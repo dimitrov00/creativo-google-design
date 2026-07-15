@@ -1,0 +1,70 @@
+/*
+ * Global (unscoped) styles for the `[crMaterial]` directive — a Directive
+ * has no component view, so none of this can live as component-scoped CSS.
+ * Import this once per app alongside the design-token CSS files, e.g.:
+ *   @import '../../../libs/shared/ui/src/lib/material/material.css';
+ *
+ * Reserved for genuine translucent overlay/glass contexts (dropdowns,
+ * menus, toasts, cr-cursor-dot) — regular composable surfaces (cards,
+ * sheets) should stay opaque via Card's --cr-color-surface-N elevation
+ * tokens instead; compounding transparency breaks down once surfaces stack
+ * on surfaces (see docs/design-research/design-system-proposal.md §5.4-5.5).
+ */
+@layer cr-components {
+  [data-material] {
+    background: var(--cr-material-regular);
+    backdrop-filter: blur(var(--cr-material-blur-regular)) saturate(1.2);
+    -webkit-backdrop-filter: blur(var(--cr-material-blur-regular)) saturate(1.2);
+  }
+
+  [data-material='none'] {
+    background: var(--cr-color-surface-plain);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+
+  /* No blur, tint only — matches iOS's own thinnest material. */
+  [data-material='ultra-thin'] {
+    background: var(--cr-material-ultra-thin);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+
+  [data-material='thin'] {
+    background: var(--cr-material-thin);
+    backdrop-filter: blur(var(--cr-material-blur-thin)) saturate(1.2);
+    -webkit-backdrop-filter: blur(var(--cr-material-blur-thin)) saturate(1.2);
+  }
+
+  [data-material='thick'] {
+    background: var(--cr-material-thick);
+    backdrop-filter: blur(var(--cr-material-blur-thick)) saturate(1.2);
+    -webkit-backdrop-filter: blur(var(--cr-material-blur-thick)) saturate(1.2);
+  }
+
+  [data-material='ultra-thick'] {
+    background: var(--cr-material-ultra-thick);
+    backdrop-filter: blur(var(--cr-material-blur-thick)) saturate(1.4);
+    -webkit-backdrop-filter: blur(var(--cr-material-blur-thick)) saturate(1.4);
+  }
+
+  /* Browsers without backdrop-filter support get a plain opaque surface
+     rather than a flat, unblurred tint sitting on top of arbitrary content. */
+  @supports not (backdrop-filter: blur(1px)) {
+    [data-material] {
+      background: var(--cr-color-surface-plain);
+      backdrop-filter: none;
+    }
+  }
+
+  /* Mirrors this repo's prefers-reduced-motion discipline (button.css) for
+     the transparency equivalent — an opaque, elevated surface instead of a
+     blurred/translucent one. */
+  @media (prefers-reduced-transparency: reduce) {
+    [data-material] {
+      background: var(--cr-color-surface-4);
+      backdrop-filter: none;
+      -webkit-backdrop-filter: none;
+    }
+  }
+}

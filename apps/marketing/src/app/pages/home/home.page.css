@@ -1,0 +1,10 @@
+.cr-hero {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cr-space-compact);
+}
+
+.cr-hero h1 {
+  font-size: var(--cr-font-size-title);
+  margin: 0;
+}

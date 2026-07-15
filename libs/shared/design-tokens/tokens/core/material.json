@@ -1,0 +1,11 @@
+{
+  "material": {
+    "blur": {
+      "$type": "dimension",
+      "$description": "Paired with the --cr-material-* tint tiers (see generated/css/tokens.css, appended post-build since they reference var(--cr-color-surface-tint) and must resolve against whichever theme is active) to build the backdrop-filter blur for each translucent tier. No 'none'/'ultra-thin' entry — none is unblurred and ultra-thin is intentionally a light tint with no blur at all, matching iOS's own thinnest material.",
+      "thin": { "$value": "8px" },
+      "regular": { "$value": "16px" },
+      "thick": { "$value": "24px" }
+    }
+  }
+}

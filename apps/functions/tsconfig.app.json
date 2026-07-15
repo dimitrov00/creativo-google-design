@@ -1,0 +1,23 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "outDir": "../../dist/out-tsc",
+    "module": "commonjs",
+    "types": ["node"]
+  },
+  "include": ["src/**/*.ts"],
+  "exclude": [
+    "src/**/*.spec.ts",
+    "src/**/*.test.ts",
+    "src/test-support/**/*",
+    "vite.config.mts"
+  ],
+  "references": [
+    {
+      "path": "../../libs/domain/kernel/tsconfig.lib.json"
+    },
+    {
+      "path": "../../libs/domain/models/tsconfig.lib.json"
+    }
+  ]
+}

@@ -1,0 +1,248 @@
+<section class="cr-gallery__section">
+  <h2>Buttons</h2>
+  <p>
+    Every button is automatically a cursor target (no attribute needed) —
+    hovering an outline/ghost button (<code>fill</code>) hides its own
+    border/background and lets the cursor morph into its exact shape instead,
+    staying the plain white ring (<code>mix-blend-mode: exclusion</code>) — it
+    blends with, rather than covers, whatever's underneath, so the label stays
+    visible throughout. Everything else just scales the dot (<code>scale</code>,
+    the default). The button itself is never recolored either way. Primary is
+    the neutral, high-contrast CTA (foreground-on-background); Accent is the
+    rarer, branded highlight color, reserved for standing out rather than every
+    button's default.
+  </p>
+  <div class="cr-gallery__row">
+    @for (variant of variants; track variant) {
+    <button crButton [variant]="variant">{{ variant }}</button>
+    }
+  </div>
+  <div class="cr-gallery__row">
+    <button crButton size="mini">Mini</button>
+    <button crButton size="small">Small</button>
+    <button crButton size="regular">Regular</button>
+    <button crButton size="large">Large</button>
+    <button crButton size="extraLarge">Extra large</button>
+    <button crButton [loading]="true">Loading</button>
+    <button crButton disabled>Disabled</button>
+  </div>
+</section>
+
+<section class="cr-gallery__section">
+  <h2>Tone — bordered destructive</h2>
+  <p>
+    <code>tone</code> is a modifier independent of <code>variant</code> —
+    <code>outline</code> + <code>tone="danger"</code> is the one, canonical
+    "bordered destructive" look (border width always matches every other
+    bordered button — one shared token, never a per-variant guess). Its red
+    text/border stay exactly as-is at rest and on hover; only the cursor morphs
+    onto it, same as any other outline/ghost button.
+  </p>
+  <div class="cr-gallery__row">
+    <button crButton variant="outline" tone="danger">Delete account</button>
+    <button crButton variant="destructive">Delete permanently</button>
+  </div>
+</section>
+
+<section class="cr-gallery__section">
+  <h2>Shape — rounded vs. pill</h2>
+  <p>
+    Google Design uses both squared (8px) and fully-rounded pill (100px) outline
+    buttons, depending on context —
+    <code>shape</code> controls this independently of <code>variant</code>. The
+    cursor morph reads each button's actual <code>border-radius</code>, so it
+    conforms to whichever shape is hovered rather than always becoming a fixed
+    pill.
+  </p>
+  <div class="cr-gallery__row">
+    <button crButton variant="outline" shape="rounded">Rounded outline</button>
+    <button crButton variant="outline" shape="pill">Pill outline</button>
+    <button crButton variant="primary" shape="pill">Pill primary</button>
+  </div>
+</section>
+
+<section class="cr-gallery__section">
+  <h2>Inputs</h2>
+  <p>
+    Inputs are interactive too — hovering one just grows the cursor to 40×40,
+    same as a plain button.
+  </p>
+  <div class="cr-gallery__row">
+    <label for="gallery-search-services">Search</label>
+    <input
+      id="gallery-search-services"
+      crInput
+      placeholder="Search services…"
+      size="large"
+    />
+    <label for="gallery-invalid-example">Promo code</label>
+    <input
+      id="gallery-invalid-example"
+      crInput
+      placeholder="Invalid state"
+      [invalid]="true"
+      errorId="gallery-invalid-example-error"
+    />
+    <span id="gallery-invalid-example-error" role="alert"
+      >Enter a valid promo code.</span
+    >
+  </div>
+</section>
+
+<section class="cr-gallery__section">
+  <h2>Badges</h2>
+  <div class="cr-gallery__row">
+    @for (tone of tones; track tone) {
+    <cr-badge [tone]="tone">{{ tone }}</cr-badge>
+    }
+  </div>
+</section>
+
+<section class="cr-gallery__section">
+  <h2>Cards</h2>
+  <p>
+    Elevation (1-5) tints each card toward
+    <code>--cr-color-surface-tint</code> (the accent hue, pale in light theme /
+    white in dark) as the primary cue stays <code>box-shadow</code> — see the
+    Materials section below for why cards stay opaque rather than using
+    <code>crMaterial</code>. <code>interactive</code> adds the same tint,
+    stronger, on hover — a presentational affordance for a card the caller is
+    structuring as clickable. The filter toggle's mount/unmount is driven by
+    <code>animate.enter</code>/<code>animate.leave</code> — Angular's native
+    replacement for the deprecated <code>@angular/animations</code> package (see
+    docs/design-research/decisions.md).
+  </p>
+  <button
+    crButton
+    variant="secondary"
+    size="small"
+    (click)="showAllCards.set(!showAllCards())"
+  >
+    {{ showAllCards() ? 'Show featured only' : 'Show all' }}
+  </button>
+  <div class="cr-gallery__row cr-gallery__row--cards">
+    <cr-card
+      [elevation]="2"
+      animate.enter="cr-card-enter"
+      animate.leave="cr-card-leave"
+    >
+      <h3>Haircut &amp; style</h3>
+      <p>60 min · from $85</p>
+      <button crButton variant="primary" size="small">Book now</button>
+    </cr-card>
+    <cr-card [elevation]="2" [interactive]="true">
+      <h3>Interactive (hover me)</h3>
+      <p>Tints toward accent on hover</p>
+      <button crButton variant="secondary" size="small">Book now</button>
+    </cr-card>
+    @if (showAllCards()) {
+    <cr-card
+      [elevation]="2"
+      imageUrl="https://images.unsplash.com/photo-1522337660859-02fbefca4702?w=480"
+      imageAlt="A bright, plant-filled salon interior"
+      animate.enter="cr-card-enter"
+      animate.leave="cr-card-leave"
+    >
+      <h3>Deep tissue massage</h3>
+      <p>90 min · from $140</p>
+      <button crButton variant="secondary" size="small">Book now</button>
+    </cr-card>
+    }
+  </div>
+</section>
+
+<section class="cr-gallery__section">
+  <h2>Materials</h2>
+  <p>
+    <code>crMaterial</code> is reserved for genuine translucent overlay/glass
+    contexts floating <em>above</em> other content — menus, toasts, dropdowns —
+    not for regular composable surfaces like Card, which stay opaque via the
+    elevation tokens above: a card needs to stay legible regardless of what's
+    behind it, and compounding transparency breaks down once surfaces stack on
+    surfaces (a card on a sheet on a page). Each tier tints from
+    <code>--cr-color-surface-tint</code> at increasing opacity, with blur
+    growing alongside it (except <code>ultra-thin</code>, which is tint-only, no
+    blur) — shown twice: over a photo, so the blur itself is legible in both
+    themes, and over the plain <code>--cr-color-surface</code> base, so the tint
+    alone (the part that still matters when there's nothing busy behind it to
+    blur, e.g. a toast on a plain page) is legible too. Each tier's name sits in
+    a small opaque chip (independent of the tier's own translucency, so the
+    label always reads).
+  </p>
+  <div class="cr-gallery__materials-backdrop">
+    <div class="cr-gallery__row">
+      @for (tier of materialTiers; track tier) {
+      <div [crMaterial]="tier" class="cr-gallery__material-swatch">
+        <span class="cr-gallery__material-label">{{ tier }}</span>
+      </div>
+      }
+    </div>
+  </div>
+  <div
+    class="cr-gallery__materials-backdrop cr-gallery__materials-backdrop--surface"
+  >
+    <div class="cr-gallery__row">
+      @for (tier of materialTiers; track tier) {
+      <div [crMaterial]="tier" class="cr-gallery__material-swatch">
+        <span class="cr-gallery__material-label">{{ tier }}</span>
+      </div>
+      }
+    </div>
+  </div>
+</section>
+
+<section class="cr-gallery__section">
+  <h2>Shapes</h2>
+  <p>
+    <code>crShape</code>/<code>crShapeHover</code> clip an element into a basic
+    shape via <code>border-radius</code>, with an optional distinct shape to
+    morph into under the pointer — a plain CSS <code>:hover</code> transition,
+    no cursor involvement. The custom cursor stays its normal small dot; only
+    the image itself animates.
+  </p>
+  <div class="cr-gallery__row">
+    @for (tile of shapeTiles; track tile.shape) {
+    <img
+      class="cr-gallery__shape-tile"
+      [crShape]="tile.shape"
+      [crShapeHover]="tile.hover"
+      src="https://images.unsplash.com/photo-1522337660859-02fbefca4702?w=240"
+      alt="A bright, plant-filled salon interior"
+    />
+    }
+  </div>
+</section>
+
+<section class="cr-gallery__section">
+  <h2>Google Design Interactive Section</h2>
+  <p>
+    Hovering the card below scales the custom cursor (40×40), highlights the
+    headline with the accent color, and morphs the image inside from a square to
+    a circle instantly.
+  </p>
+  <div class="cr-gallery__row">
+    <div
+      class="cr-gallery__interactive-card"
+      crCursorTarget
+      crCursorTargetStyle="scale"
+      [crMaterial]="'regular'"
+    >
+      <img
+        class="cr-gallery__shape-tile"
+        [crShape]="'square'"
+        [crShapeHover]="'circle'"
+        src="https://images.unsplash.com/photo-1522337660859-02fbefca4702?w=240"
+        alt="Salon interior"
+      />
+      <div class="cr-gallery__interactive-card-content">
+        <h3 class="cr-gallery__interactive-headline">
+          Google Sans Flex Typography
+        </h3>
+        <p class="cr-gallery__interactive-subline">
+          Experience the seamless transition of typography and circular shape
+          morphing, inspired by design.google.
+        </p>
+      </div>
+    </div>
+  </div>
+</section>

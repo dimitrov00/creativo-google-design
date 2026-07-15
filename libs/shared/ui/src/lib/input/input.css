@@ -1,0 +1,93 @@
+@layer cr-components {
+  :host {
+    display: block;
+    inline-size: 100%;
+    box-sizing: border-box;
+    border: 1px solid var(--cr-color-border);
+    border-radius: var(--cr-radius-regular);
+    background: var(--cr-color-background);
+    color: var(--cr-color-foreground);
+    font-family: var(--cr-font-family-heading);
+    transition:
+      border-color var(--cr-motion-duration-fast)
+        var(--cr-motion-easing-standard),
+      box-shadow var(--cr-motion-duration-fast) var(--cr-motion-easing-standard);
+  }
+
+  /*
+   * Hover feedback is a subtle inset ring, not a border-color swap — border
+   * color is reserved for real state changes (focus, invalid), matching the
+   * same alpha-layer philosophy as Button's state-layer overlay rather than
+   * an ad-hoc per-element color change. Excluded once already invalid: that
+   * state already has its own red border communicating something real, and
+   * layering a neutral foreground-colored ring on top of it read as a
+   * separate, contradictory "primary-ish" hover state fighting the invalid
+   * one instead of reinforcing it.
+   */
+  :host(:hover:not(:disabled):not(:focus-visible):not([data-invalid])) {
+    box-shadow: inset 0 0 0 1px var(--cr-color-foreground);
+  }
+
+  :host([data-invalid]:hover:not(:disabled):not(:focus-visible)) {
+    box-shadow: inset 0 0 0 1px var(--cr-color-danger);
+  }
+
+  /* Same five-tier mini/small/regular/large/extraLarge scale as Button
+     (button.css) — min-block-size mirrors its WCAG 2.5.8 touch-target
+     floor tier-for-tier. */
+  :host([data-size='mini']) {
+    padding: var(--cr-space-tight) var(--cr-space-tight);
+    font-size: var(--cr-font-size-caption);
+    min-block-size: 1.75rem;
+  }
+
+  :host([data-size='small']) {
+    padding: var(--cr-space-tight) var(--cr-space-compact);
+    font-size: var(--cr-font-size-footnote);
+    min-block-size: 2.25rem;
+  }
+
+  :host([data-size='regular']) {
+    padding: var(--cr-space-compact) var(--cr-space-regular);
+    font-size: var(--cr-font-size-subheadline);
+    min-block-size: 2.5rem;
+  }
+
+  :host([data-size='large']) {
+    padding: var(--cr-space-regular) var(--cr-space-comfortable);
+    font-size: var(--cr-font-size-body);
+    min-block-size: 3rem;
+  }
+
+  :host([data-size='extraLarge']) {
+    padding: var(--cr-space-comfortable) var(--cr-space-loose);
+    font-size: var(--cr-font-size-callout);
+    min-block-size: 3.5rem;
+  }
+
+  :host(:focus-visible) {
+    outline: none;
+    border-color: var(--cr-color-accent);
+    box-shadow: 0 0 0 3px
+      color-mix(in srgb, var(--cr-color-accent) 25%, transparent);
+  }
+
+  :host([data-invalid]) {
+    border-color: var(--cr-color-danger);
+  }
+
+  :host([data-invalid]:focus-visible) {
+    box-shadow: 0 0 0 3px
+      color-mix(in srgb, var(--cr-color-danger) 25%, transparent);
+  }
+
+  :host(:disabled) {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  :host::placeholder {
+    color: var(--cr-color-foreground);
+    opacity: 0.5;
+  }
+}

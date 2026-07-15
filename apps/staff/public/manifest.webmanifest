@@ -1,0 +1,10 @@
+{
+  "name": "Creativo Staff",
+  "short_name": "Creativo Staff",
+  "description": "Owner and performer dashboard for Creativo.",
+  "theme_color": "#12110c",
+  "background_color": "#12110c",
+  "display": "standalone",
+  "scope": "./",
+  "start_url": "./"
+}

@@ -1,0 +1,6 @@
+@if (imageUrl()) {
+<img class="cr-card__media" [src]="imageUrl()" [alt]="imageAlt()" />
+}
+<div class="cr-card__body">
+  <ng-content />
+</div>

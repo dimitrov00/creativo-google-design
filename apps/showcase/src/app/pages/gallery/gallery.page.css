@@ -1,0 +1,182 @@
+:host {
+  display: block;
+  max-inline-size: 960px;
+}
+
+.cr-gallery__section {
+  margin-block-end: var(--cr-space-spacious);
+}
+
+.cr-gallery__section h2 {
+  font-size: var(--cr-font-size-headline);
+  margin-block-end: var(--cr-space-compact);
+}
+
+.cr-gallery__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--cr-space-regular);
+  margin-block-start: var(--cr-space-regular);
+}
+
+.cr-gallery__row--cards {
+  align-items: stretch;
+}
+
+.cr-gallery__row--cards cr-card {
+  inline-size: 280px;
+}
+
+.cr-gallery__row--cards h3 {
+  margin: 0;
+}
+
+.cr-gallery__row--cards p {
+  margin: 0;
+  opacity: 0.7;
+}
+
+input[crInput] {
+  max-inline-size: 260px;
+}
+
+/* Materials need underlying content to blur/tint against — a photo (not a
+   flat gradient) so the blur itself is obviously legible, and so the demo
+   looks the same regardless of which theme's accent hue is active. */
+.cr-gallery__materials-backdrop {
+  padding: var(--cr-space-loose);
+  border-radius: var(--cr-radius-large);
+  background-image: url('https://images.unsplash.com/photo-1522337660859-02fbefca4702?w=800');
+  background-size: cover;
+  background-position: center;
+  margin-block-end: var(--cr-space-comfortable);
+}
+
+/* Second demo context: the plain --cr-color-surface-plain base, no photo —
+   shows the tint alone, since there's nothing busy behind it to blur. */
+.cr-gallery__materials-backdrop--surface {
+  background-image: none;
+  background-color: var(--cr-color-surface-plain);
+}
+
+.cr-gallery__shape-tile {
+  inline-size: 140px;
+  block-size: 140px;
+  object-fit: cover;
+}
+
+.cr-gallery__material-swatch {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  inline-size: 120px;
+  block-size: 96px;
+  padding-block-end: var(--cr-space-compact);
+  border-radius: var(--cr-radius-regular);
+  /* A thin border on every tier, including the fully-transparent 'none' —
+     otherwise 'none'/'ultra-thin' have no visible edge against the photo at
+     all, and the whole point of this row is comparing tiers side by side. */
+  border: 1px solid
+    color-mix(in srgb, var(--cr-color-foreground) 16%, transparent);
+}
+
+.cr-gallery__material-label {
+  padding: var(--cr-space-tight) var(--cr-space-compact);
+  border-radius: var(--cr-radius-full);
+  /* Deliberately opaque and independent of the swatch's own material tier —
+     the label must stay readable at 'none' AND 'ultra-thick' alike. */
+  background: var(--cr-color-surface);
+  color: var(--cr-color-foreground);
+  font-family: var(--cr-font-family-heading);
+  font-size: var(--cr-font-size-caption);
+}
+
+/* animate.enter/animate.leave hooks (see gallery.page.html's Cards filter
+   toggle) — Angular applies/removes these classes itself around the
+   mount/unmount, waiting for the animation to finish before considering the
+   transition complete. */
+.cr-card-enter {
+  animation: cr-card-enter-keyframes var(--cr-motion-duration-slow)
+    var(--cr-motion-easing-decelerate);
+}
+
+.cr-card-leave {
+  animation: cr-card-leave-keyframes var(--cr-motion-duration-slow)
+    var(--cr-motion-easing-accelerate);
+}
+
+@keyframes cr-card-enter-keyframes {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes cr-card-leave-keyframes {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-12px) scale(0.98);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cr-card-enter,
+  .cr-card-leave {
+    animation-duration: 1ms;
+  }
+}
+
+.cr-gallery__interactive-card {
+  display: flex;
+  align-items: center;
+  gap: var(--cr-space-comfortable);
+  padding: var(--cr-space-comfortable);
+  border-radius: var(--cr-radius-large);
+  border: 1px solid var(--cr-color-border);
+  inline-size: 100%;
+  max-inline-size: 600px;
+  cursor: pointer;
+}
+
+.cr-gallery__interactive-card-content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cr-space-tight);
+}
+
+.cr-gallery__interactive-headline {
+  margin: 0;
+  font-family: var(--cr-font-family-heading);
+  font-size: var(--cr-font-size-title3);
+  font-weight: var(--cr-font-weight-semibold);
+  color: var(--cr-color-foreground);
+  transition: color 0.1s var(--cr-motion-easing-standard);
+}
+
+.cr-gallery__interactive-subline {
+  margin: 0;
+  font-size: var(--cr-font-size-footnote);
+  opacity: 0.7;
+}
+
+/* Hover and active tracking classes */
+.cr-gallery__interactive-card:hover .cr-gallery__interactive-headline,
+.cr-gallery__interactive-card[data-cr-cursor-hover]
+  .cr-gallery__interactive-headline {
+  color: var(--cr-color-accent) !important;
+}
+
+.cr-gallery__interactive-card:hover .cr-shape[data-cr-shape-morphs],
+.cr-gallery__interactive-card[data-cr-cursor-hover]
+  .cr-shape[data-cr-shape-morphs] {
+  border-radius: var(--cr-shape-hover-radius) !important;
+}

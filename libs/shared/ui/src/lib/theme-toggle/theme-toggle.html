@@ -1,0 +1,15 @@
+<button
+  crButton
+  type="button"
+  variant="ghost"
+  size="small"
+  [attr.aria-pressed]="themeService.theme() === 'dark'"
+  aria-label="Toggle color theme"
+  (click)="themeService.toggle()"
+>
+  @if (themeService.theme() === 'dark') {
+  <span aria-hidden="true">🌙</span>
+  } @else {
+  <span aria-hidden="true">☀️</span>
+  }
+</button>

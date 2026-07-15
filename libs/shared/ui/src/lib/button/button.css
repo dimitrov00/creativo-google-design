@@ -1,0 +1,240 @@
+@layer cr-components {
+  :host {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--cr-space-compact);
+    border: var(--cr-border-width-hairline) solid transparent;
+    border-radius: var(--cr-radius-regular);
+    font-family: var(--cr-font-family-heading);
+    font-weight: var(--cr-font-weight-medium);
+    cursor: pointer;
+    /* Border color never changes on plain hover/press (those only ever
+       modulate the state layer below) — a deliberate, consistent rule across
+       every variant rather than each one swapping a different property. The
+       one exception is the "fill" cursor morph (outline/ghost only, see
+       libs/shared/cursor's cursor-target.css), which intentionally hides
+       border/background entirely in favor of the cursor overlay — hence
+       border-color is still in the transition list, so that hand-off eases
+       rather than snapping. `color` is deliberately NOT in this list (for
+       now, per explicit request) — the cursor-fill text-color flip snaps
+       instantly rather than easing alongside background/border. */
+    transition:
+      background-color var(--cr-motion-duration-fast)
+        var(--cr-motion-easing-standard),
+      border-color var(--cr-motion-duration-fast)
+        var(--cr-motion-easing-standard),
+      transform var(--cr-motion-duration-fast) var(--cr-motion-easing-standard);
+  }
+
+  /*
+   * One consistent hover/press language for every variant: a `currentColor`
+   * wash that fades in via opacity, rather than each variant hard-swapping a
+   * different property (a background token here, a border color there). It
+   * automatically reads correctly for any variant/theme combination because
+   * currentColor always resolves to whatever `color` that variant already
+   * set — no per-variant "active" token needed.
+   *
+   * Hover/press use the shared --cr-alpha-* scale (also used for surface
+   * elevation, see cr-card) rather than bespoke opacity literals — hover is
+   * --cr-alpha-1 (4%), press is --cr-alpha-3 (8%). These are NOT the same
+   * numbers as the previous hardcoded 0.08/0.16 (8%/16%): the scale is
+   * shared across elevation and interaction-state so it can't be a 1:1 copy
+   * of the old bespoke values. `opacity` accepts a <percentage> directly, no
+   * conversion needed.
+   */
+  .cr-button__state-layer {
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: currentColor;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity var(--cr-motion-duration-fast)
+      var(--cr-motion-easing-standard);
+  }
+
+  :host(:hover:not(:disabled)) .cr-button__state-layer {
+    opacity: var(--cr-alpha-1);
+  }
+
+  :host(:active:not(:disabled)) .cr-button__state-layer {
+    opacity: var(--cr-alpha-3);
+  }
+
+  /*
+   * Five tiers mirroring SwiftUI's ControlSize (mini/small/regular/large/
+   * extraLarge) instead of sm/md/lg. min-block-size keeps the hit area at a
+   * reasonable touch-target size (Lighthouse/WCAG 2.5.5) even at "mini" —
+   * still below the 44px "comfortable" recommendation, but "mini" is an
+   * explicit opt-in for dense UI, same tradeoff SwiftUI itself makes.
+   * rem throughout, so every tier scales with the user's text-size
+   * preference, not just font-size.
+   */
+  :host([data-size='mini']) {
+    padding: var(--cr-space-tight) var(--cr-space-compact);
+    font-size: var(--cr-font-size-caption);
+    min-block-size: 1.75rem;
+  }
+
+  :host([data-size='small']) {
+    padding: var(--cr-space-tight) var(--cr-space-regular);
+    font-size: var(--cr-font-size-footnote);
+    min-block-size: 2.25rem;
+  }
+
+  :host([data-size='regular']) {
+    padding: var(--cr-space-compact) var(--cr-space-comfortable);
+    font-size: var(--cr-font-size-subheadline);
+    min-block-size: 2.5rem;
+  }
+
+  :host([data-size='large']) {
+    padding: var(--cr-space-regular) var(--cr-space-loose);
+    font-size: var(--cr-font-size-body);
+    min-block-size: 3rem;
+  }
+
+  :host([data-size='extraLarge']) {
+    padding: var(--cr-space-comfortable) var(--cr-space-spacious);
+    font-size: var(--cr-font-size-callout);
+    min-block-size: 3.5rem;
+  }
+
+  :host([data-shape='pill']) {
+    border-radius: var(--cr-radius-full);
+  }
+
+  /*
+   * Primary is the neutral, high-contrast CTA — foreground-on-background
+   * (true white-on-near-black in dark theme, black-on-white in light theme),
+   * NOT the yellow accent. Accent is a distinct, deliberately rarer variant
+   * for the branded highlight color, matching how design.google actually uses
+   * its yellow (links, focus rings, a sparing highlight) rather than as every
+   * button's default fill.
+   */
+  :host([data-variant='primary']) {
+    background: var(--cr-color-foreground);
+    color: var(--cr-color-background);
+  }
+
+  :host([data-variant='accent']) {
+    background: var(--cr-color-accent);
+    color: var(--cr-color-background);
+  }
+
+  :host([data-variant='secondary']) {
+    background: var(--cr-color-surface);
+    color: var(--cr-color-foreground);
+    border-color: var(--cr-color-border);
+  }
+
+  :host([data-variant='ghost']) {
+    background: transparent;
+    color: var(--cr-color-foreground);
+  }
+
+  :host([data-variant='outline']) {
+    background: transparent;
+    color: var(--cr-color-foreground);
+    border-color: var(--cr-color-foreground);
+  }
+
+  :host([data-variant='destructive']) {
+    background: var(--cr-color-danger);
+    color: var(--cr-color-background);
+  }
+
+  /*
+   * Only outline gets a resting border-color change for tone="danger" — ghost
+   * never shows a border in any tone, at rest or hovered. Two different
+   * "bordered destructive" widths (outline's vs. a border ghost picked up by
+   * accident) read as an inconsistent design system; only variant="outline"
+   * is ever bordered, and every bordered element shares the one
+   * --cr-border-width-hairline token, so widths are always identical.
+   */
+  :host([data-variant='outline'][data-tone='danger']),
+  :host([data-variant='ghost'][data-tone='danger']) {
+    color: var(--cr-color-danger);
+  }
+
+  :host([data-variant='outline'][data-tone='danger']) {
+    border-color: var(--cr-color-danger);
+  }
+
+  /*
+   * --cr-cursor-fill-color declares the solid color this button becomes when
+   * the cursor morphs onto it ("fill" style, outline/ghost only — see
+   * libs/shared/cursor/cursor-target.css, a @property-registered <color>
+   * custom property, which reads it to flip this element's own background to
+   * that color and its text to --cr-color-background, i.e. a real
+   * border-prominent-style inversion, not a cursor-only trick). tone="danger" overrides the plain foreground
+   * default to the danger color instead, so a bordered-destructive button
+   * becomes a solid destructive-red pill with dark text, same as the
+   * Destructive variant's own resting colors. CursorDotComponent reads this
+   * same property to tint its ring to match while it's flying toward the
+   * target — see that component for why it fades itself out once settled
+   * rather than trying to out-z-index this element's own (now correctly
+   * colored) label text.
+   */
+  :host([data-variant='outline']),
+  :host([data-variant='ghost']) {
+    --cr-cursor-fill-color: var(--cr-color-foreground);
+  }
+
+  :host([data-tone='danger']) {
+    --cr-cursor-fill-color: var(--cr-color-danger);
+  }
+
+  /* Tactile press feedback, every variant — layered on top of the state
+     layer above. Guarded under reduced-motion below. */
+  :host(:active:not(:disabled)) {
+    transform: scale(0.97);
+  }
+
+  :host(:focus-visible) {
+    outline: 2px solid var(--cr-color-focus-ring);
+    outline-offset: 2px;
+  }
+
+  :host(:disabled) {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .cr-button__label,
+  .cr-button__spinner {
+    position: relative;
+  }
+
+  .cr-button__label--hidden {
+    visibility: hidden;
+  }
+
+  .cr-button__spinner {
+    position: absolute;
+    inline-size: 1em;
+    block-size: 1em;
+    border: 2px solid currentColor;
+    border-inline-end-color: transparent;
+    border-radius: var(--cr-radius-full);
+    animation: cr-button-spin var(--cr-motion-duration-slower) linear infinite;
+  }
+
+  @keyframes cr-button-spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .cr-button__spinner {
+      animation-duration: 1.5s;
+    }
+
+    :host(:active:not(:disabled)) {
+      transform: none;
+    }
+  }
+}

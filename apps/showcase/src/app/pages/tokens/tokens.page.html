@@ -1,0 +1,85 @@
+<section class="cr-tokens__section">
+  <h2>Color (semantic)</h2>
+  <div class="cr-tokens__row">
+    @for (color of colors; track color) {
+    <div class="cr-swatch">
+      <div
+        class="cr-swatch__color"
+        [style.background]="'var(--cr-color-' + color + ')'"
+      ></div>
+      <code>--cr-color-{{ color }}</code>
+    </div>
+    }
+  </div>
+</section>
+
+<section class="cr-tokens__section">
+  <h2>Spacing</h2>
+  <div class="cr-tokens__row cr-tokens__row--spacing">
+    @for (step of spacing; track step) {
+    <div class="cr-spacing-sample">
+      <div
+        class="cr-spacing-sample__bar"
+        [style.inline-size]="'var(--cr-space-' + step + ')'"
+      ></div>
+      <code>--cr-space-{{ step }}</code>
+    </div>
+    }
+  </div>
+</section>
+
+<section class="cr-tokens__section">
+  <h2>Type scale</h2>
+  <div class="cr-tokens__type-scale">
+    @for (size of fontSizes; track size) {
+    <p [style.font-size]="'var(--cr-font-size-' + size + ')'">
+      --cr-font-size-{{ size }} — Book your next appointment
+    </p>
+    }
+  </div>
+</section>
+
+<section class="cr-tokens__section">
+  <h2>Radius</h2>
+  <div class="cr-tokens__row">
+    @for (radius of radii; track radius) {
+    <div class="cr-radius-sample">
+      <div
+        class="cr-radius-sample__box"
+        [style.border-radius]="'var(--cr-radius-' + radius + ')'"
+      ></div>
+      <code>--cr-radius-{{ radius }}</code>
+    </div>
+    }
+  </div>
+</section>
+
+<section class="cr-tokens__section">
+  <h2>Elevation</h2>
+  <div class="cr-tokens__row">
+    @for (elevation of elevations; track elevation) {
+    <div class="cr-elevation-sample">
+      <div
+        class="cr-elevation-sample__box"
+        [style.box-shadow]="'var(--cr-shadow-' + elevation + ')'"
+      ></div>
+      <code>--cr-shadow-{{ elevation }}</code>
+    </div>
+    }
+  </div>
+</section>
+
+<section class="cr-tokens__section">
+  <h2>Motion easing</h2>
+  <div class="cr-tokens__row">
+    @for (easing of easings; track easing) {
+    <div class="cr-easing-sample">
+      <div
+        class="cr-easing-sample__dot"
+        [style.transition-timing-function]="'var(--cr-motion-easing-' + easing + ')'"
+      ></div>
+      <code>--cr-motion-easing-{{ easing }}</code>
+    </div>
+    }
+  </div>
+</section>

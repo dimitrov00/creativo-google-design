@@ -1,0 +1,40 @@
+<cr-cursor-dot />
+
+<div class="cr-shell">
+  <header class="cr-shell__header">
+    <span class="cr-shell__brand">Creativo Design System</span>
+    <nav class="cr-shell__nav">
+      <a
+        routerLink="/"
+        routerLinkActive="cr-shell__nav-link--active"
+        [routerLinkActiveOptions]="{ exact: true }"
+        crCursorTarget
+        crCursorTargetStyle="scale"
+        crCursorTargetLabel="View"
+      >
+        Components
+      </a>
+      <a
+        routerLink="/tokens"
+        routerLinkActive="cr-shell__nav-link--active"
+        crCursorTarget
+        crCursorTargetStyle="scale"
+        crCursorTargetLabel="View"
+        >Tokens</a
+      >
+      <a
+        routerLink="/cursor"
+        routerLinkActive="cr-shell__nav-link--active"
+        crCursorTarget
+        crCursorTargetStyle="scale"
+        crCursorTargetLabel="View"
+        >Cursor</a
+      >
+    </nav>
+    <cr-theme-toggle />
+  </header>
+
+  <main class="cr-shell__main">
+    <router-outlet />
+  </main>
+</div>

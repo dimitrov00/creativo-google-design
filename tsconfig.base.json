@@ -1,25 +1,35 @@
 {
   "compilerOptions": {
-    "composite": true,
-    "declarationMap": true,
-    "emitDeclarationOnly": true,
     "importHelpers": true,
     "isolatedModules": true,
-    "lib": ["es2022"],
-    "module": "nodenext",
-    "moduleResolution": "nodenext",
+    "lib": ["es2022", "dom"],
+    "module": "esnext",
+    "moduleResolution": "bundler",
     "noEmitOnError": true,
     "noFallthroughCasesInSwitch": true,
     "noImplicitOverride": true,
     "noImplicitReturns": true,
     "noUnusedLocals": true,
+    "noPropertyAccessFromIndexSignature": true,
+    "noUncheckedIndexedAccess": true,
     "skipLibCheck": true,
     "strict": true,
     "target": "es2022",
-    "customConditions": ["@org/source"],
     "noUncheckedSideEffectImports": false,
     "types": ["*"],
-    "esModuleInterop": false,
-    "ignoreDeprecations": "6.0"
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "ignoreDeprecations": "6.0",
+    "paths": {
+      "@creativo/shared/design-tokens": [
+        "./libs/shared/design-tokens/src/index.ts"
+      ],
+      "@creativo/shared/ui": ["./libs/shared/ui/src/index.ts"],
+      "@creativo/shared/cursor": ["./libs/shared/cursor/src/index.ts"],
+      "@creativo/domain/models": ["./libs/domain/models/src/index.ts"],
+      "@creativo/adapters/firebase": ["./libs/adapters/firebase/src/index.ts"],
+      "@creativo/domain/kernel": ["./libs/domain/kernel/src/index.ts"],
+      "@creativo/adapters/i18n": ["./libs/adapters/i18n/src/index.ts"]
+    }
   }
 }

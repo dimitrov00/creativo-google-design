@@ -1,0 +1,25 @@
+/**
+ * Do not edit directly, this file was auto-generated.
+ */
+
+[data-theme='dark'] {
+  --cr-color-background: #12110c;
+  --cr-color-surface: #32302a;
+  --cr-color-surface-tint: #ffffff; /** The lighten-with-elevation tint mixed into --cr-color-surface-1..5 (see generated/css/light.css and dark.css) — matches foreground exactly, deliberately: dark-theme elevation lightens toward white, same direction as Material 2/YouTube's white-alpha-on-dark technique. */
+  --cr-color-foreground: #ffffff;
+  --cr-color-accent: #fae366;
+  --cr-color-accent-active: #fff1b3;
+  --cr-color-analogous-0: #c3ecd0;
+  --cr-color-analogous-1: #ffdad3;
+  --cr-color-analogous-2: #bff28d;
+  --cr-color-border: #4a473d;
+  --cr-color-focus-ring: #fae366;
+  --cr-color-link: #fae366;
+  --cr-color-link-hover: #fff1b3;
+  --cr-color-success: #5fbd65;
+  --cr-color-success-active: #8eda90;
+  --cr-color-warning: #d8951f;
+  --cr-color-warning-active: #f2b966;
+  --cr-color-danger: #fe736c;
+  --cr-color-danger-active: #ffaba3;
+}

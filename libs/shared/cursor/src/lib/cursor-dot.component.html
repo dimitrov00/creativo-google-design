@@ -1,0 +1,8 @@
+<span #ring class="cr-cursor-dot__ring" aria-hidden="true"></span>
+<span
+  #label
+  class="cr-cursor-dot__label"
+  [attr.data-visible]="cursorService.activeTarget()?.label ? '' : null"
+  aria-hidden="true"
+  >{{ cursorService.activeTarget()?.label }}</span
+>

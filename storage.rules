@@ -1,0 +1,14 @@
+rules_version = '2';
+
+// Placeholder deny-all — Cloud Storage isn't used by anything in this
+// Foundation pass. This exists only so Storage isn't left wide open if it
+// gets provisioned incidentally (e.g. via `firebase init`). Real policy
+// (staff/service photo uploads, tenant-scoped paths) is follow-up work,
+// see firestore.rules for the equivalent Firestore-side reasoning.
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

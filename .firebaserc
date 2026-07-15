@@ -1,0 +1,15 @@
+{
+  "//": "Template — replace 'creativo-replace-me' with the real Firebase project ID once it exists, then run `firebase use --add` yourself; no Firebase CLI auth actions are taken on your behalf. Hosting site IDs (client/staff/marketing below) must also be created first via `firebase hosting:sites:create <site-id>` and mapped with `firebase target:apply hosting <target> <site-id>`.",
+  "projects": {
+    "default": "creativo-replace-me"
+  },
+  "targets": {
+    "creativo-replace-me": {
+      "hosting": {
+        "client": ["creativo-client"],
+        "staff": ["creativo-staff"],
+        "marketing": ["creativo-marketing"]
+      }
+    }
+  }
+}

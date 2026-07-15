@@ -1,0 +1,38 @@
+@layer cr-components {
+  :host {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--cr-space-tight);
+    padding: var(--cr-space-tight) var(--cr-space-compact);
+    border-radius: var(--cr-radius-full);
+    font-family: var(--cr-font-family-heading);
+    font-size: var(--cr-font-size-caption);
+    font-weight: var(--cr-font-weight-semibold);
+    line-height: var(--cr-font-line-height-caption);
+  }
+
+  :host([data-tone='neutral']) {
+    background: var(--cr-color-surface);
+    color: var(--cr-color-foreground);
+  }
+
+  :host([data-tone='accent']) {
+    background: var(--cr-color-accent);
+    color: var(--cr-color-background);
+  }
+
+  :host([data-tone='success']) {
+    background: var(--cr-color-success);
+    color: var(--cr-color-background);
+  }
+
+  :host([data-tone='warning']) {
+    background: var(--cr-color-warning);
+    color: var(--cr-color-background);
+  }
+
+  :host([data-tone='danger']) {
+    background: var(--cr-color-danger);
+    color: var(--cr-color-background);
+  }
+}

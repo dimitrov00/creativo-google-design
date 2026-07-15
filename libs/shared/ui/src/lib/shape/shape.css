@@ -1,0 +1,28 @@
+/*
+ * Global (unscoped) styles for the `[crShape]` directive — a Directive has
+ * no component view, so none of this can live as component-scoped CSS.
+ * Import this once per app alongside the design-token CSS files, e.g.:
+ *   @import '../../../libs/shared/ui/src/lib/shape/shape.css';
+ */
+@layer cr-components {
+  .cr-shape {
+    overflow: hidden;
+    border-radius: var(--cr-shape-radius, var(--cr-radius-none));
+    transition: border-radius 0.1s var(--cr-motion-easing-standard);
+  }
+
+  /* Reacts to both plain :hover (works everywhere, zero JS) AND
+     data-cr-cursor-hover (the custom cursor's own tracked-hover state, see
+     useCursorTarget/CursorTargetDirective) — kept in sync in case the two
+     ever diverge, e.g. pointer capture edge cases. */
+  .cr-shape[data-cr-shape-morphs]:hover,
+  .cr-shape[data-cr-shape-morphs][data-cr-cursor-hover] {
+    border-radius: var(--cr-shape-hover-radius);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .cr-shape {
+      transition-duration: 1ms;
+    }
+  }
+}

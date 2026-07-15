@@ -1,0 +1,33 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended"],
+  "schedule": ["before 6am on monday"],
+  "timezone": "UTC",
+  "lockFileMaintenance": {
+    "enabled": true,
+    "schedule": ["before 6am on monday"]
+  },
+  "vulnerabilityAlerts": {
+    "enabled": true,
+    "labels": ["security"]
+  },
+  "packageRules": [
+    {
+      "matchPackagePatterns": ["^@nx/", "^nx$"],
+      "groupName": "Nx"
+    },
+    {
+      "matchPackagePatterns": [
+        "^@angular/",
+        "^@angular-devkit/",
+        "^@schematics/angular$",
+        "angular-eslint"
+      ],
+      "groupName": "Angular"
+    },
+    {
+      "matchPackagePatterns": ["^eslint", "typescript-eslint"],
+      "groupName": "ESLint"
+    }
+  ]
+}

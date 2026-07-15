@@ -1,0 +1,60 @@
+{
+  "shadow": {
+    "$type": "shadow",
+    "$description": "Tiers 1-2 were strengthened (blur/offset/opacity all up) versus their original values per docs/design-research/elevation-surface-case-study.md: light-theme cards now carry elevation via shadow alone (no background tint, see tokens/core/surface-alpha.json and card.css), and the original tier-1/2 values were tuned assuming a tint would share the visual load — shadow-only at the old values read as a flat grey box against the 1px card border. Tiers 3-5 got a small monotonic nudge to keep the progression ordered, not a substantive re-tune.",
+    "0": {
+      "$value": {
+        "offsetX": "0px",
+        "offsetY": "0px",
+        "blur": "0px",
+        "spread": "0px",
+        "color": "rgba(21, 22, 25, 0)"
+      }
+    },
+    "1": {
+      "$value": {
+        "offsetX": "0px",
+        "offsetY": "2px",
+        "blur": "4px",
+        "spread": "0px",
+        "color": "rgba(21, 22, 25, 0.12)"
+      }
+    },
+    "2": {
+      "$value": {
+        "offsetX": "0px",
+        "offsetY": "3px",
+        "blur": "9px",
+        "spread": "0px",
+        "color": "rgba(21, 22, 25, 0.14)"
+      }
+    },
+    "3": {
+      "$value": {
+        "offsetX": "0px",
+        "offsetY": "4px",
+        "blur": "12px",
+        "spread": "0px",
+        "color": "rgba(21, 22, 25, 0.16)"
+      }
+    },
+    "4": {
+      "$value": {
+        "offsetX": "0px",
+        "offsetY": "8px",
+        "blur": "24px",
+        "spread": "0px",
+        "color": "rgba(21, 22, 25, 0.18)"
+      }
+    },
+    "5": {
+      "$value": {
+        "offsetX": "0px",
+        "offsetY": "16px",
+        "blur": "40px",
+        "spread": "-4px",
+        "color": "rgba(21, 22, 25, 0.22)"
+      }
+    }
+  }
+}

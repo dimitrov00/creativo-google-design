@@ -1,0 +1,7 @@
+<span class="cr-button__state-layer" aria-hidden="true"></span>
+@if (loading()) {
+<span class="cr-button__spinner" aria-hidden="true"></span>
+}
+<span class="cr-button__label" [class.cr-button__label--hidden]="loading()">
+  <ng-content />
+</span>

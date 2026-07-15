@@ -1,0 +1,106 @@
+:host {
+  display: contents;
+}
+
+.cr-cursor-dot__ring {
+  position: fixed;
+  top: 0;
+  left: 0;
+  inline-size: 24px;
+  block-size: 24px;
+  border-radius: var(--cr-radius-full);
+  /* No border — a static border color doesn't get the same auto-invert
+     treatment as the fill (it's blended too, but as a distinct thin edge
+     against whatever's directly under it), which read as a stray outline
+     rather than a clean dot. The solid white fill alone, blended, is
+     enough to read clearly against any background. */
+  background: #fff;
+  mix-blend-mode: exclusion;
+  pointer-events: none;
+  z-index: 9999;
+  opacity: 0;
+  /* Static centering offset only — never animated. Position itself comes
+     from `top`/`left` (set directly, uneased) so tracking has zero lag;
+     only width/height/opacity transition, matching design.google. */
+  transform: translate3d(-50%, -50%, 0);
+  transition:
+    width var(--cr-motion-duration-fast) var(--cr-motion-easing-standard),
+    height var(--cr-motion-duration-fast) var(--cr-motion-easing-standard),
+    opacity var(--cr-motion-duration-fast) var(--cr-motion-easing-standard);
+}
+
+.cr-cursor-dot__label {
+  position: fixed;
+  top: 0;
+  left: 0;
+  margin-inline-start: 24px;
+  max-inline-size: 200px;
+  color: #fff;
+  font-family: var(--cr-font-family-content);
+  font-size: var(--cr-font-size-subheadline);
+  font-weight: var(--cr-font-weight-medium);
+  line-height: 1.24;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+  mix-blend-mode: exclusion;
+  pointer-events: none;
+  -webkit-user-select: none;
+  user-select: none;
+  z-index: 9999;
+  opacity: 0;
+  transform: translate3d(0, -50%, 0);
+  transition: opacity var(--cr-motion-duration-fast)
+    var(--cr-motion-easing-standard);
+}
+
+/*
+ * Full opacity, always — mix-blend-mode: exclusion needs the ring at 100%
+ * opacity to correctly invert (a white pixel excluded with itself = black,
+ * which is what makes it auto-adapt: white on a dark background, black on
+ * a light one). A reduced opacity here is what made it read as grey and
+ * broke the light-theme auto-invert.
+ */
+:host([data-active]) .cr-cursor-dot__ring {
+  opacity: 1;
+}
+
+/*
+ * Only while actively morphing onto a "fill" target does position itself
+ * ease — confirmed live against design.google's own `-active` cursor
+ * state. Plain pointer-follow (no data-morphing) stays instant.
+ */
+.cr-cursor-dot__ring[data-morphing] {
+  /* No `opacity` here (unlike the base rule below) — CursorDotComponent
+     intentionally cuts the ring invisible INSTANTLY once it settles into a
+     "fill" target (see cursor-dot.component.ts), not via a fade. A CSS
+     transition on opacity would still animate that instant change (a CSS
+     transition applies to ANY value change regardless of whether JS wrote
+     it with a 0-duration tween), turning the intended instant cut into a
+     ~120ms fade — which visually looked like the target's already-changed
+     text was itself slowly animating color as it got gradually uncovered.
+     Confirmed live as the cause of that exact complaint. */
+  transition:
+    top 0.2s cubic-bezier(0, 0.1, 0.1, 1),
+    left 0.25s cubic-bezier(0, 0.1, 0.1, 1),
+    width 0.1s ease-in-out,
+    height 0.2s ease-in-out,
+    border-radius 0.15s ease-in-out;
+  /* z-index stays the base 9999 (no override here) — a target-relative
+     z-index was tried here previously to let the target's own label paint
+     above the ring, but whether that actually wins depends on where
+     CursorDotComponent happens to sit in the DOM relative to routed page
+     content, which isn't something this component controls or should have
+     to reason about. Confirmed live: it made the ring render behind real
+     buttons. The ring is meant to always sit on top, full stop. */
+}
+
+:host([data-active]) .cr-cursor-dot__label[data-visible] {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cr-cursor-dot__ring,
+  .cr-cursor-dot__label {
+    display: none !important;
+  }
+}

@@ -1,0 +1,88 @@
+{
+  "name": "staff",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "projectType": "application",
+  "prefix": "cr",
+  "sourceRoot": "apps/staff/src",
+  "tags": ["scope:owner", "type:app"],
+  "targets": {
+    "build": {
+      "executor": "@angular/build:application",
+      "outputs": ["{options.outputPath}"],
+      "defaultConfiguration": "production",
+      "options": {
+        "outputPath": "dist/apps/staff",
+        "browser": "apps/staff/src/main.ts",
+        "tsConfig": "apps/staff/tsconfig.app.json",
+        "assets": [
+          {
+            "glob": "**/*",
+            "input": "apps/staff/public"
+          }
+        ],
+        "styles": ["apps/staff/src/styles.css"]
+      },
+      "configurations": {
+        "production": {
+          "budgets": [
+            {
+              "type": "initial",
+              "maximumWarning": "800kb",
+              "maximumError": "1.5mb"
+            },
+            {
+              "type": "anyComponentStyle",
+              "maximumWarning": "4kb",
+              "maximumError": "8kb"
+            }
+          ],
+          "outputHashing": "all",
+          "serviceWorker": "apps/staff/ngsw-config.json",
+          "fileReplacements": [
+            {
+              "replace": "apps/staff/src/environments/environment.ts",
+              "with": "apps/staff/src/environments/environment.production.ts"
+            }
+          ]
+        },
+        "development": {
+          "optimization": false,
+          "extractLicenses": false,
+          "sourceMap": true
+        }
+      }
+    },
+    "serve": {
+      "continuous": true,
+      "executor": "@angular/build:dev-server",
+      "defaultConfiguration": "development",
+      "configurations": {
+        "production": {
+          "buildTarget": "staff:build:production"
+        },
+        "development": {
+          "buildTarget": "staff:build:development"
+        }
+      }
+    },
+    "lint": {
+      "executor": "@nx/eslint:lint"
+    },
+    "test": {
+      "executor": "@angular/build:unit-test",
+      "options": {
+        "watch": false,
+        "setupFiles": ["apps/staff/src/test-setup.ts"]
+      }
+    },
+    "serve-static": {
+      "continuous": true,
+      "executor": "@nx/web:file-server",
+      "options": {
+        "buildTarget": "staff:build",
+        "staticFilePath": "dist/apps/staff/browser",
+        "spa": true
+      }
+    }
+  }
+}

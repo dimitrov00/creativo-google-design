@@ -1,0 +1,97 @@
+rules_version = '2';
+
+// See docs/architecture/module-boundaries.md's scope:backend note and
+// docs/security/csp-baseline.md for the surrounding security model. These
+// rules are the tenant/role isolation boundary for the Foundation pass —
+// verify with the Firestore Rules Emulator before treating changes as final,
+// the diff()/hasOnly() field-level restrictions below are easy to get
+// subtly wrong and this repo has no prior rules file to pattern-match.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function tenantId() {
+      return request.auth.token.tenantId;
+    }
+
+    function role() {
+      return request.auth.token.role;
+    }
+
+    function isTenant(tid) {
+      return isSignedIn() && tenantId() == tid;
+    }
+
+    function isOwnerOrPerformer(tid) {
+      return isTenant(tid) && (role() == 'owner' || role() == 'performer');
+    }
+
+    function isOwner(tid) {
+      return isTenant(tid) && role() == 'owner';
+    }
+
+    match /tenants/{tenantId} {
+      // Business profile is public — the marketing site and pre-auth
+      // booking browse both need this, and it's non-sensitive listing data.
+      allow read: if true;
+      allow write: if isOwner(tenantId);
+
+      match /services/{serviceId} {
+        allow read: if true;
+        allow write: if isOwner(tenantId);
+      }
+
+      match /staff/{staffId} {
+        allow read: if true;
+        allow write: if isOwner(tenantId);
+      }
+
+      match /appointments/{appointmentId} {
+        allow read: if isOwnerOrPerformer(tenantId)
+          || (isTenant(tenantId) && resource.data.clientUid == request.auth.uid);
+
+        allow create: if isTenant(tenantId)
+          && request.resource.data.clientUid == request.auth.uid;
+
+        // Owner/performer manage the full appointment lifecycle. A client
+        // may only cancel their own appointment — nothing else, and never
+        // the staff/service/payment assignment fields.
+        allow update: if isOwnerOrPerformer(tenantId)
+          || (
+            isTenant(tenantId)
+            && resource.data.clientUid == request.auth.uid
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
+            && request.resource.data.status == 'cancelled'
+          );
+
+        // Never hard-delete — status transitions only, so history/analytics
+        // stay intact.
+        allow delete: if false;
+      }
+    }
+
+    match /users/{uid} {
+      allow read: if isSignedIn() && request.auth.uid == uid;
+      allow create: if isSignedIn() && request.auth.uid == uid;
+
+      // tenantMemberships (role/tenant grants) is Admin-SDK-only — a client
+      // can update their own profile fields but can never self-grant a
+      // role or tenant membership.
+      allow update: if isSignedIn()
+        && request.auth.uid == uid
+        && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['tenantMemberships']);
+
+      allow delete: if false;
+    }
+
+    // Cloud Functions only, via the Admin SDK, which bypasses rules
+    // entirely — this collection is fully closed to every client SDK by
+    // design (see apps/functions/src/lib/otp).
+    match /otps/{otpId} {
+      allow read, write: if false;
+    }
+  }
+}

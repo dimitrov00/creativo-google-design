@@ -1,0 +1,26 @@
+/**
+ * Do not edit directly, this file was auto-generated.
+ */
+
+:root,
+[data-theme='light'] {
+  --cr-color-background: #ffffff;
+  --cr-color-surface: #e3e3e3;
+  --cr-color-surface-tint: #e8f0fe; /** The tint mixed into --cr-color-surface-1..5 AND into Card's interactive-hover state (see card.css) — a PALE, high-lightness step of the accent hue, not a neutral. Matches current light-mode UI/UX consensus. */
+  --cr-color-foreground: #000000;
+  --cr-color-accent: #1b6ef3;
+  --cr-color-accent-active: #0b49c0;
+  --cr-color-analogous-0: #2a8647;
+  --cr-color-analogous-1: #e52500;
+  --cr-color-analogous-2: #49850f;
+  --cr-color-border: #d0d0d0;
+  --cr-color-focus-ring: #1b6ef3;
+  --cr-color-link: #1b6ef3;
+  --cr-color-link-hover: #0b49c0;
+  --cr-color-success: #2a652d;
+  --cr-color-success-active: #2a7f2c;
+  --cr-color-warning: #765211;
+  --cr-color-warning-active: #9b610d;
+  --cr-color-danger: #b40a01;
+  --cr-color-danger-active: #de1300;
+}

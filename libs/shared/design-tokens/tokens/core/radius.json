@@ -1,0 +1,12 @@
+{
+  "radius": {
+    "$type": "dimension",
+    "$description": "Reuses the same small/regular/large/extraLarge vocabulary as ButtonSize/InputSize (see libs/shared/ui) for one consistent scale-naming language across the whole system, instead of a separate xs/sm/md/lg/xl letter scale. rem, not px, except `full` — 9999px is a deliberate escape-hatch idiom for a pill/circle radius, not a value meant to scale with type size.",
+    "none": { "$value": "0rem" },
+    "small": { "$value": "0.25rem" },
+    "regular": { "$value": "0.5rem" },
+    "large": { "$value": "0.75rem" },
+    "extraLarge": { "$value": "1rem" },
+    "full": { "$value": "9999px" }
+  }
+}

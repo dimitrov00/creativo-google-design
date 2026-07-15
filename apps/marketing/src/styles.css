@@ -1,0 +1,69 @@
+@layer cr-tokens, cr-reset, cr-base, cr-components, cr-utilities;
+
+@import '../../../libs/shared/design-tokens/generated/css/tokens.css';
+@import '../../../libs/shared/design-tokens/generated/css/light.css';
+@import '../../../libs/shared/design-tokens/generated/css/dark.css';
+@import '../../../libs/shared/cursor/src/lib/cursor-target.css';
+@import '../../../libs/shared/ui/src/lib/material/material.css';
+@import '../../../libs/shared/ui/src/lib/shape/shape.css';
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background: var(--cr-color-background);
+  color: var(--cr-color-foreground);
+  font-family: var(--cr-font-family-heading);
+  font-size: var(--cr-font-size-subheadline);
+  line-height: var(--cr-font-line-height-subheadline);
+  transition:
+    background-color var(--cr-motion-duration-base)
+      var(--cr-motion-easing-standard),
+    color var(--cr-motion-duration-base) var(--cr-motion-easing-standard);
+}
+
+a {
+  color: var(--cr-color-link);
+}
+
+a:hover {
+  color: var(--cr-color-link-hover);
+}
+
+:focus-visible {
+  outline: 2px solid var(--cr-color-focus-ring);
+  outline-offset: 2px;
+}
+
+/*
+ * View Transitions pseudo-elements (::view-transition-*) must live in a
+ * global stylesheet — Angular's emulated encapsulation blocks pseudo-element
+ * selectors from ever matching inside a component-scoped stylesheet, so
+ * these can't move into app.css alongside AppComponent's other styles.
+ * app.config.ts's withViewTransitions() call is the JS half of this pair.
+ */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: var(--cr-motion-duration-slow);
+  animation-timing-function: var(--cr-motion-easing-standard);
+}
+
+/* Defense in depth alongside app.config.ts's onViewTransitionCreated check
+   — covers any future document.startViewTransition() call this app makes
+   outside the router (which onViewTransitionCreated can't see). */
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation: none !important;
+  }
+}

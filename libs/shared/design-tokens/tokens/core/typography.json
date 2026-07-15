@@ -1,0 +1,47 @@
+{
+  "font": {
+    "family": {
+      "$type": "fontFamily",
+      "heading": {
+        "$value": ["Roboto Flex", "system-ui", "sans-serif"],
+        "$description": "Matches design.google's --font-heading. Roboto Flex is Apache-2.0 licensed and has been a general-purpose open Google Font for years — not brand-exclusive."
+      },
+      "content": {
+        "$value": ["Roboto", "system-ui", "sans-serif"],
+        "$description": "Matches design.google's --font-content. Roboto is Apache-2.0 licensed, the long-established open Google Font (Android's system font since 2011)."
+      }
+    },
+    "weight": {
+      "$type": "fontWeight",
+      "regular": { "$value": 400 },
+      "medium": { "$value": 500 },
+      "semibold": { "$value": 600 },
+      "bold": { "$value": 700 }
+    },
+    "size": {
+      "$type": "dimension",
+      "$description": "rem, not px — semantic names corresponding to SwiftUI conventions.",
+      "caption": { "$value": "0.75rem" },
+      "footnote": { "$value": "0.875rem" },
+      "subheadline": { "$value": "1rem" },
+      "body": { "$value": "1.125rem" },
+      "callout": { "$value": "1.25rem" },
+      "headline": { "$value": "1.5rem" },
+      "title3": { "$value": "1.875rem" },
+      "title2": { "$value": "2.25rem" },
+      "title": { "$value": "3rem" }
+    },
+    "lineHeight": {
+      "$type": "number",
+      "caption": { "$value": 1.5 },
+      "footnote": { "$value": 1.5 },
+      "subheadline": { "$value": 1.5 },
+      "body": { "$value": 1.4 },
+      "callout": { "$value": 1.35 },
+      "headline": { "$value": 1.3 },
+      "title3": { "$value": 1.25 },
+      "title2": { "$value": 1.2 },
+      "title": { "$value": 1.15 }
+    }
+  }
+}

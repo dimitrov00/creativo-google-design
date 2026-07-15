@@ -1,0 +1,101 @@
+@layer cr-components {
+  /*
+   * No border — elevation is communicated entirely by --cr-shadow-N (light)
+   * / --cr-shadow-N + tint (dark), per
+   * docs/design-research/elevation-surface-case-study.md. A border was an
+   * extra competing edge signal that made low shadow tiers read as flat.
+   */
+  :host {
+    display: block;
+    overflow: hidden;
+    border-radius: var(--cr-radius-large);
+    background: var(--cr-color-surface-plain);
+    color: var(--cr-color-foreground);
+  }
+
+  /*
+   * data-elevation pairs a shadow tier with a background tier, but the two
+   * themes now derive --cr-color-surface-N differently — see
+   * docs/design-research/elevation-surface-case-study.md and build.mjs's
+   * appendDerivedSurfaceTokens:
+   *   - Dark theme: --cr-color-surface-N tints UP toward --cr-color-surface-
+   *     tint (white) via the shared --cr-alpha-* scale, pre-baked opaque via
+   *     color-mix() (not compounded tier-over-tier, so cards stay safe to
+   *     nest on other elevated surfaces) — shadows barely register against
+   *     a dark base, so lightening the surface carries the elevation signal.
+   *     Tier 0 (this :host rule) already matches --cr-color-surface-plain
+   *     exactly, so nothing to override at rest.
+   *   - Light theme: --cr-color-surface-N is a flat alias to
+   *     --cr-color-surface-plain, which equals `background` — a card is
+   *     flush with the page at every tier; --cr-shadow-N alone communicates
+   *     elevation, matching Material 2's own spec (shadow is the documented
+   *     default; background-tint is flagged "Caution" because it signals
+   *     separation but not degree).
+   */
+  :host([data-elevation='0']) {
+    box-shadow: var(--cr-shadow-0);
+  }
+  :host([data-elevation='1']) {
+    background: var(--cr-color-surface-1);
+    box-shadow: var(--cr-shadow-1);
+  }
+  :host([data-elevation='2']) {
+    background: var(--cr-color-surface-2);
+    box-shadow: var(--cr-shadow-2);
+  }
+  :host([data-elevation='3']) {
+    background: var(--cr-color-surface-3);
+    box-shadow: var(--cr-shadow-3);
+  }
+  :host([data-elevation='4']) {
+    background: var(--cr-color-surface-4);
+    box-shadow: var(--cr-shadow-4);
+  }
+  :host([data-elevation='5']) {
+    background: var(--cr-color-surface-5);
+    box-shadow: var(--cr-shadow-5);
+  }
+
+  /*
+   * Opt-in hover affordance for a card that's about to become clickable —
+   * tints toward --cr-color-surface-tint (the accent hue) a bit more
+   * strongly than any static elevation tier, same mechanism, just a fixed
+   * higher alpha regardless of the card's own data-elevation. Presentational
+   * only: this does NOT make the card focusable/keyboard-activatable — a
+   * real clickable card must be structured as an actual <a>/<button> by the
+   * consumer (see docs/accessibility-conventions.md's non-interactive-by-
+   * default guidance), at which point data-interactive is the matching
+   * visual treatment for it.
+   */
+  :host([data-interactive]) {
+    cursor: pointer;
+    transition: background-color var(--cr-motion-duration-fast)
+      var(--cr-motion-easing-standard);
+  }
+
+  :host([data-interactive]:hover) {
+    background: color-mix(
+      in srgb,
+      var(--cr-color-surface-tint) var(--cr-alpha-4),
+      var(--cr-color-surface-plain)
+    );
+  }
+
+  .cr-card__media {
+    display: block;
+    inline-size: 100%;
+    block-size: auto;
+    aspect-ratio: 16 / 9;
+    object-fit: cover;
+  }
+
+  .cr-card__body {
+    display: flex;
+    flex-direction: column;
+    gap: var(--cr-space-compact);
+  }
+
+  :host([data-padded]) .cr-card__body {
+    padding: var(--cr-space-comfortable);
+  }
+}

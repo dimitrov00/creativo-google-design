@@ -1,0 +1,100 @@
+/*
+ * Global (unscoped) styles supporting the custom cursor system — a
+ * Directive has no component view, so none of this can live as
+ * component-scoped CSS. Import this once per app alongside the
+ * design-token CSS files, e.g.:
+ *   @import '../../../libs/shared/cursor/src/lib/cursor-target.css';
+ */
+
+/*
+ * Registered here (not in the design-tokens package) because this is the
+ * library that actually consumes it — keeping the registration next to its
+ * usage. It's the one custom property that's genuinely cross-component
+ * (Button sets it per variant/tone, this file and CursorDotComponent both
+ * read it), so it earns typed validation; discrete on/off values elsewhere
+ * (e.g. Button's state-layer opacity) don't need @property and stay plain
+ * var() custom properties.
+ *
+ * @property's initial-value must be a computationally-independent literal —
+ * it CANNOT reference var(--cr-color-foreground), so a themed default can't
+ * live here. That's why the `[crCursorTarget]` rule below now assigns
+ * `--cr-cursor-fill-color: var(--cr-color-foreground)` directly as its
+ * baseline default instead of relying on a var()-fallback second argument:
+ * once a property is registered, an unset reference resolves to this
+ * initial-value, not to the fallback text at the call site.
+ */
+@property --cr-cursor-fill-color {
+  syntax: '<color>';
+  inherits: false;
+  initial-value: transparent;
+}
+
+/*
+ * The native cursor. `body { cursor: none }` alone isn't enough — native
+ * <button>/<input>/<a> elements carry their own UA-stylesheet `cursor`
+ * value (pointer/text/etc.), which is MORE specific than an inherited
+ * value and silently wins, so the native pointer/text cursor reappears
+ * over exactly the elements you're trying to hide it from. `*` with
+ * `!important` is the actual fix. Toggled by CursorDotComponent.
+ */
+html[data-cr-cursor-active],
+html[data-cr-cursor-active] * {
+  cursor: none !important;
+}
+
+/*
+ * style="fill" (an explicit opt-in — outline/ghost buttons, chip/pill
+ * targets): the element BECOMES its own solid, "border-prominent" style —
+ * background flips to `--cr-cursor-fill-color` (foreground by default, or
+ * whatever a tone override sets it to, e.g. danger — see Button's own CSS),
+ * border hides, and text flips to `--cr-color-background` so it stays
+ * readable against the new solid fill. CursorDotComponent reads the same
+ * `--cr-cursor-fill-color` to tint its ring to match while flying toward
+ * the target, then fades itself out once it settles into position — by
+ * then this element's own CSS has already flipped, so there's a real,
+ * readable, natively-stacked label underneath with no need for the ring to
+ * keep covering it (which would require the label to out-z-index a
+ * fixed-position element mounted in a completely different part of the
+ * DOM — fragile in a real app and confirmed live as a real bug once
+ * already, see cursor-dot.component.ts for specifics).
+ *
+ * This rule keys off `data-cr-cursor-hover`/`data-cr-cursor-style` alone —
+ * NOT `[crCursorTarget]` — because those two data-attributes are the real
+ * shared contract: CursorTargetDirective sets both AND the `crCursorTarget`
+ * attribute, but Button/Input bake the exact same host bindings in
+ * intrinsically (via useCursorTarget()) without ever setting
+ * `crCursorTarget` itself. Scoping to `[crCursorTarget]` silently excluded
+ * every Button — confirmed live: an outline button's border stayed solid
+ * on hover instead of disappearing. The `[crCursorTarget]` baseline default
+ * below covers a bare `crCursorTargetStyle="fill"` directive usage that
+ * never set the property itself.
+ *
+ * style="scale" is deliberately NOT given a matching unscoped rule —
+ * Button already implements its own dedicated hover feedback (the alpha
+ * state-layer, tuned per variant/tone), so forcing a shared accent-color
+ * override on top would fight with it. The accent-color-on-hover rule below
+ * stays scoped to plain `[crCursorTarget]` elements (e.g. nav links) that
+ * have no hover feedback of their own.
+ *
+ * !important is deliberate: this must win over a component's own scoped
+ * `:hover` rule (e.g. Button's own `:host([data-variant]) { border-color }`),
+ * which Angular's view-encapsulation attribute bumps above this selector's
+ * specificity otherwise — confirmed live without it.
+ */
+[crCursorTarget] {
+  --cr-cursor-fill-color: var(--cr-color-foreground);
+  transition:
+    background-color 0.1s var(--cr-motion-easing-standard),
+    border-color 0.1s var(--cr-motion-easing-standard),
+    color 0.1s var(--cr-motion-easing-standard);
+}
+
+[data-cr-cursor-hover][data-cr-cursor-style='fill'] {
+  background: var(--cr-cursor-fill-color) !important;
+  border-color: transparent !important;
+  color: var(--cr-color-background) !important;
+}
+
+[crCursorTarget][data-cr-cursor-hover][data-cr-cursor-style='scale'] {
+  color: var(--cr-color-accent) !important;
+}

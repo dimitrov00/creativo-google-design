@@ -1,0 +1,53 @@
+<section>
+  <h2>Cursor playground</h2>
+  <p>
+    The native cursor is fully replaced by a small dot, always white with
+    <code>mix-blend-mode: exclusion</code>, so it auto-inverts correctly on any
+    background — white on dark, black on light — with no per-target color logic.
+    (An earlier version tinted the ring to a solid, opaque per-button color;
+    that made labels unreadable under the fill and read worse than the plain
+    auto-inverting white, so it was reverted.) Every interactive element
+    (buttons, inputs) is a cursor target automatically — no attribute needed.
+    Two distinct strategies:
+  </p>
+  <ul>
+    <li>
+      <strong>scale</strong> (the default) — for most buttons, inputs, and
+      links: the dot just grows to 40×40 and keeps following the pointer; the
+      target itself is untouched.
+    </li>
+    <li>
+      <strong>fill</strong> (outline/ghost buttons only — solid variants like
+      <code>destructive</code> already read clearly on their own, so they just
+      scale) — the target's own border/background hide, and the cursor morphs
+      into a pill exactly overlaying it (adopting its actual
+      <code>border-radius</code>). Because the ring blends rather than covers,
+      the label stays fully readable throughout.
+    </li>
+  </ul>
+
+  <div class="cr-cursor-playground__row">
+    <button crButton variant="outline" shape="pill" cursorLabel="Filter">
+      Spotlight
+    </button>
+    <button crButton variant="outline" shape="pill">Categories</button>
+    <button crButton variant="outline" tone="danger">Delete account</button>
+    <button crButton variant="destructive">Delete permanently</button>
+    <a
+      crCursorTarget
+      crCursorTargetStyle="scale"
+      crCursorTargetLabel="Open"
+      class="cr-cursor-playground__link"
+      href="https://www.figma.com/community"
+      target="_blank"
+      rel="noopener"
+      >Figma Design Kit</a
+    >
+  </div>
+
+  <div class="cr-cursor-playground__grid">
+    @for (tile of denseGrid; track tile) {
+    <button crButton variant="secondary" size="small">{{ tile + 1 }}</button>
+    }
+  </div>
+</section>
