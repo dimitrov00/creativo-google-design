@@ -1,4 +1,5 @@
 import { DOCUMENT } from '@angular/common';
+import { provideHttpClient } from '@angular/common/http';
 import {
   ApplicationConfig,
   inject,
@@ -9,6 +10,7 @@ import {
   withEventReplay,
 } from '@angular/platform-browser';
 import { provideRouter, withViewTransitions } from '@angular/router';
+import { provideI18n } from '@creativo/adapters/i18n';
 import { appRoutes } from './app.routes';
 
 export const appConfig: ApplicationConfig = {
@@ -31,5 +33,7 @@ export const appConfig: ApplicationConfig = {
         },
       }),
     ),
+    provideHttpClient(),
+    ...provideI18n(),
   ],
 };

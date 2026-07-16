@@ -1,30 +1,87 @@
-<cr-cursor-dot />
+<ng-container *transloco="let t">
+  <cr-cursor-dot />
 
-<div class="cr-shell">
-  <header class="cr-shell__header">
-    <span class="cr-shell__brand">Creativo</span>
-    <nav class="cr-shell__nav">
+  <div class="cr-shell">
+    <header class="cr-shell__header">
       <a
+        class="cr-shell__brand"
         routerLink="/"
-        routerLinkActive="cr-shell__nav-link--active"
-        [routerLinkActiveOptions]="{ exact: true }"
+        [attr.aria-label]="t('marketing.app.homeAria')"
         crCursorTarget
         crCursorTargetStyle="scale"
       >
-        Home
+        <img class="logo-light" src="/logo-black.svg" alt="Creativo" />
+        <img class="logo-dark" src="/logo-white.svg" alt="Creativo" />
       </a>
-      <a
-        routerLink="/about"
-        routerLinkActive="cr-shell__nav-link--active"
-        crCursorTarget
-        crCursorTargetStyle="scale"
-        >About</a
-      >
-    </nav>
-    <cr-theme-toggle />
-  </header>
 
-  <main class="cr-shell__main">
-    <router-outlet />
-  </main>
-</div>
+      <nav
+        class="cr-shell__nav"
+        [class.is-open]="menuOpen()"
+        [attr.aria-label]="t('marketing.app.primaryNav')"
+      >
+        <a href="/#work" crCursorTarget (click)="closeMenu()">
+          {{ t('marketing.app.work') }}
+        </a>
+        <a href="/#services" crCursorTarget (click)="closeMenu()">
+          {{ t('marketing.app.services') }}
+        </a>
+        <a href="/#team" crCursorTarget (click)="closeMenu()">
+          {{ t('marketing.app.barbers') }}
+        </a>
+      </nav>
+
+      <div class="cr-shell__actions">
+        <div
+          class="cr-shell__language"
+          role="group"
+          [attr.aria-label]="t('marketing.app.language')"
+        >
+          <button
+            type="button"
+            [class.is-active]="activeLang() === 'bg'"
+            (click)="setLanguage('bg')"
+            crCursorTarget
+          >
+            BG
+          </button>
+          <button
+            type="button"
+            [class.is-active]="activeLang() === 'en'"
+            (click)="setLanguage('en')"
+            crCursorTarget
+          >
+            EN
+          </button>
+        </div>
+
+        <a
+          class="cr-shell__cta"
+          href="/client"
+          crCursorTarget
+          crCursorTargetStyle="fill"
+        >
+          {{ t('marketing.app.book') }}
+          <span class="material-symbols-rounded" aria-hidden="true"
+            >arrow_outward</span
+          >
+        </a>
+
+        <button
+          type="button"
+          class="cr-shell__menu"
+          [attr.aria-label]="t('marketing.app.toggleMenu')"
+          [attr.aria-expanded]="menuOpen()"
+          (click)="toggleMenu()"
+          crCursorTarget
+          crCursorTargetStyle="fill"
+        >
+          <span></span><span></span>
+        </button>
+      </div>
+    </header>
+
+    <main class="cr-shell__main">
+      <router-outlet />
+    </main>
+  </div>
+</ng-container>

@@ -1,8 +1,9 @@
-import { DOCUMENT } from '@angular/common';
+import { DOCUMENT, isPlatformBrowser } from '@angular/common';
 import {
   ChangeDetectionStrategy,
   Component,
   ElementRef,
+  PLATFORM_ID,
   effect,
   inject,
   viewChild,
@@ -91,6 +92,7 @@ const MORPH_HIDE_SECONDS = 0;
 export class CursorDotComponent {
   protected readonly cursorService = inject(CursorService);
   private readonly document = inject(DOCUMENT);
+  private readonly isBrowser = isPlatformBrowser(inject(PLATFORM_ID));
   private readonly window = this.document.defaultView;
   private readonly ring = viewChild.required<ElementRef<HTMLElement>>('ring');
   private readonly label = viewChild.required<ElementRef<HTMLElement>>('label');
@@ -103,7 +105,7 @@ export class CursorDotComponent {
     // the first real pointermove event arrives.
     effect(() => {
       const enabled = this.cursorService.isEnabled();
-      if (enabled) {
+      if (enabled && this.isBrowser) {
         gsap.set([this.ring().nativeElement, this.label().nativeElement], {
           left: -100,
           top: -100,
@@ -125,6 +127,7 @@ export class CursorDotComponent {
       const target = this.cursorService.activeTarget();
       this.stopTrackingTarget();
       const ring = this.ring().nativeElement;
+      if (!this.isBrowser) return;
 
       if (target?.style === 'fill') {
         // Set BEFORE the first measure() so the CSS transition is already
@@ -146,7 +149,7 @@ export class CursorDotComponent {
   }
 
   protected onPointerMove(event: PointerEvent): void {
-    if (!this.cursorService.isEnabled()) return;
+    if (!this.isBrowser || !this.cursorService.isEnabled()) return;
     gsap.set(this.label().nativeElement, {
       left: event.clientX,
       top: event.clientY,
@@ -208,6 +211,7 @@ export class CursorDotComponent {
       this.window?.removeEventListener('scroll', this.scrollHandler, true);
       this.scrollHandler = undefined;
     }
+    if (!this.isBrowser) return;
     // Cancel any pending/completed fade-out and reset to full opacity +
     // plain white before the next branch (fill/scale/null) decides what
     // happens next — otherwise switching directly from one fill target to

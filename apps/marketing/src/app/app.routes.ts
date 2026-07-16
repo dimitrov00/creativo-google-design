@@ -11,4 +11,9 @@ export const appRoutes: Route[] = [
     loadComponent: () =>
       import('./pages/about/about.page').then((m) => m.AboutPage),
   },
+  {
+    path: 'services',
+    redirectTo: '',
+    pathMatch: 'full',
+  },
 ];

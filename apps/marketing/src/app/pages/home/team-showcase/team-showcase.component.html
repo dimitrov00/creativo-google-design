@@ -1,0 +1,135 @@
+<ng-container *transloco="let t">
+  <section
+    id="team"
+    class="team"
+    data-nav-tone="dark"
+    aria-labelledby="team-title"
+  >
+    <header class="team__heading" data-reveal>
+      <p class="eyebrow">{{ t('marketing.team.eyebrow') }}</p>
+      <h2 id="team-title">
+        {{ t('marketing.team.titleA') }}<br />{{ t('marketing.team.titleB') }}
+      </h2>
+      <p>{{ t('marketing.team.intro') }}</p>
+    </header>
+
+    <div class="team-grid">
+      @for (barber of barbers; track barber.nameKey; let index = $index) {
+        <article
+          class="team-card"
+          role="button"
+          tabindex="0"
+          [attr.aria-label]="
+            t('marketing.team.exploreBarber', { barber: t(barber.nameKey) })
+          "
+          aria-haspopup="dialog"
+          aria-controls="barber-detail-sheet"
+          [attr.aria-expanded]="sheetOpen() && activeBarberIndex() === index"
+          (click)="openBarber(index)"
+          (keydown)="onCardKeydown(index, $event)"
+          data-reveal
+        >
+          <div class="team-card__image">
+            <img
+              [src]="barber.image"
+              [alt]="t(barber.nameKey)"
+              loading="lazy"
+            />
+          </div>
+
+          <div class="team-card__copy">
+            <p>{{ t(barber.roleKey) }}</p>
+            <h3>{{ t(barber.nameKey) }}</h3>
+            <span>{{ t(barber.specialtyKey) }}</span>
+            <span class="team-card__action" aria-hidden="true">
+              <span
+                class="team-card__explore-label"
+                crCursorTarget
+                crCursorTargetStyle="fill"
+              >
+                {{ t('marketing.team.explore') }}
+              </span>
+              <span
+                class="team-card__explore-icon material-symbols-rounded"
+                crCursorTarget
+                crCursorTargetStyle="fill"
+                >arrow_forward</span
+              >
+            </span>
+          </div>
+        </article>
+      }
+    </div>
+  </section>
+
+  <cr-modal-sheet
+    sheetId="barber-detail-sheet"
+    labelledBy="barber-sheet-title"
+    [closeLabel]="t('marketing.team.closeDetails')"
+    [open]="sheetOpen() && !sheetClosing()"
+    [closing]="sheetClosing()"
+    (dismissed)="closeBarber()"
+  >
+    @if (activeBarber(); as barber) {
+      <div class="barber-sheet__layout">
+        <section
+          class="barber-sheet__gallery"
+          [attr.aria-label]="
+            t('marketing.team.galleryLabel', { barber: t(barber.nameKey) })
+          "
+        >
+          @for (image of barber.gallery; track image) {
+            <figure>
+              <img
+                [src]="image"
+                [alt]="
+                  t('marketing.team.galleryImageAlt', {
+                    barber: t(barber.nameKey),
+                  })
+                "
+                loading="lazy"
+              />
+            </figure>
+          }
+        </section>
+
+        <article class="barber-sheet__profile">
+          <img
+            class="barber-sheet__avatar"
+            [src]="barber.image"
+            [alt]="t(barber.nameKey)"
+          />
+          <p class="barber-sheet__role">{{ t(barber.roleKey) }}</p>
+          <h2 id="barber-sheet-title">{{ t(barber.nameKey) }}</h2>
+          <p class="barber-sheet__specialty">
+            {{ t(barber.specialtyKey) }}
+          </p>
+          @if (barber.aboutKey) {
+            <p class="barber-sheet__about">{{ t(barber.aboutKey) }}</p>
+          }
+          @if (barber.rating !== undefined) {
+            <div class="barber-sheet__rating">
+              <span class="material-symbols-rounded" aria-hidden="true"
+                >star</span
+              >
+              <strong>{{ barber.rating }}</strong>
+              <span>{{ t('marketing.team.ratingLabel') }}</span>
+            </div>
+          }
+          <a href="/client" crCursorTarget crCursorTargetStyle="fill">
+            <span>
+              {{
+                t('marketing.team.bookWith', {
+                  barber: t(barber.nameKey),
+                })
+              }}
+            </span>
+            <span class="material-symbols-rounded" aria-hidden="true"
+              >arrow_outward</span
+            >
+          </a>
+        </article>
+      </div>
+    }
+  </cr-modal-sheet>
+</ng-container>

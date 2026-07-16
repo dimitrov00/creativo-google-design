@@ -36,5 +36,269 @@
     "user_validation_failed": "The information provided is invalid.",
     "token_minting_failure": "We couldn't sign you in — please try again.",
     "unknown": "Something went wrong — please try again."
+  },
+  "marketing": {
+    "app": {
+      "homeAria": "Creativo home",
+      "primaryNav": "Primary navigation",
+      "work": "Looks",
+      "services": "Services",
+      "barbers": "Barbers",
+      "book": "Book now",
+      "toggleMenu": "Open or close navigation",
+      "language": "Language"
+    },
+    "hero": {
+      "eyebrow": "Barber culture · precision at every location",
+      "titleA": "A look",
+      "titleB": "that stays.",
+      "intro": "Precise shape, considered detail, and the quiet confidence that arrives before you say a word.",
+      "videoAria": "The tools and ritual behind a Creativo cut",
+      "play": "Play",
+      "pause": "Pause",
+      "playVideo": "Play the video",
+      "pauseVideo": "Pause the video",
+      "book": "Book your chair"
+    },
+    "work": {
+      "eyebrow": "Selected looks",
+      "titleA": "The cut",
+      "titleB": "changes everything.",
+      "scroll": "Scroll to move through the work.",
+      "bookCursor": "Book",
+      "endTitle": "Seen enough?",
+      "endCta": "Take the chair",
+      "items": {
+        "precision": {
+          "title": "Precision",
+          "body": "Cut to the way you move.",
+          "alt": "Precision scissor work in progress"
+        },
+        "texture": {
+          "title": "Texture",
+          "body": "Character without stiffness.",
+          "alt": "Modern textured haircut"
+        },
+        "structure": {
+          "title": "Structure",
+          "body": "Strong lines. Clean finish.",
+          "alt": "Classic clipper work"
+        },
+        "gradient": {
+          "title": "Gradient",
+          "body": "Blended down to nothing.",
+          "alt": "Finished fade styling"
+        },
+        "contour": {
+          "title": "Contour",
+          "body": "Every edge intentional.",
+          "alt": "Straight razor beard detailing"
+        },
+        "finish": {
+          "title": "Finish",
+          "body": "The detail people notice.",
+          "alt": "Finishing detail on a haircut"
+        }
+      }
+    },
+    "services": {
+      "eyebrow": "The services",
+      "titleA": "Serious craft.",
+      "titleB": "No theatre.",
+      "intro": "Every appointment starts with a conversation and ends only when the shape is right.",
+      "viewAll": "View all services",
+      "items": {
+        "signature": {
+          "title": "Signature cut",
+          "body": "Consultation, wash, precision shape, and a considered finish.",
+          "price": "from BGN 29"
+        },
+        "fade": {
+          "title": "Fade architecture",
+          "body": "A seamless gradient mapped to your profile and hair structure.",
+          "price": "from BGN 32"
+        },
+        "beard": {
+          "title": "Beard contour",
+          "body": "Shape, hot towel, clean lines, and considered skin care.",
+          "price": "from BGN 20"
+        },
+        "ritual": {
+          "title": "The full ritual",
+          "body": "Cut, beard, hot towel, and final styling composed as one complete look.",
+          "price": "from BGN 52"
+        },
+        "long": {
+          "title": "Long-form shape",
+          "body": "Scissor work, balanced volume, and natural movement without excess weight.",
+          "price": "from BGN 35"
+        },
+        "styling": {
+          "title": "Finish and styling",
+          "body": "Wash, shape, and the right products for a look you can recreate yourself.",
+          "price": "from BGN 18"
+        }
+      }
+    },
+    "servicesPage": {
+      "catalogGridTitle": "Choose by result.",
+      "catalogGuide": "Name, estimated price, and timing remain visible. Choose a service for the complete story.",
+      "indexEyebrow": "Six ways to begin",
+      "explore": "Explore",
+      "exploreService": "Explore {{service}}",
+      "closeService": "Close service details",
+      "workBy": "Work by",
+      "bookService": "Book this service",
+      "stepVariant": "Ways to wear it",
+      "stepBarber": "The artists behind it",
+      "galleryLabel": "Results gallery",
+      "viewGallery": "View every result",
+      "closeGallery": "Close gallery",
+      "galleryLayout": "Gallery layout",
+      "carouselView": "Carousel view",
+      "gridView": "Grid view",
+      "stepExtras": "Complete the visit",
+      "required": "Required",
+      "optional": "Optional",
+      "noPreference": "No preference",
+      "noPreferenceBody": "We’ll match you with the best available professional.",
+      "addons": {
+        "care": {
+          "title": "Scalp care ritual",
+          "body": "Wash, massage, and personalized care.",
+          "price": "+ BGN 12"
+        },
+        "finish": {
+          "title": "Premium finish",
+          "body": "Styling with guidance for maintaining it at home.",
+          "price": "+ BGN 8"
+        }
+      },
+      "variantsLabel": "Variants",
+      "examplesEyebrow": "Real work",
+      "examplesTitle": "Results with provenance.",
+      "performersEyebrow": "Who offers it",
+      "performersTitle": "Choose a signature.",
+      "choose": "Choose",
+      "choosePerformer": "Choose {{performer}}",
+      "durations": {
+        "m25": "≈ 25 min",
+        "m30": "≈ 30 min",
+        "m35": "≈ 35 min",
+        "m45": "≈ 45 min",
+        "m50": "≈ 50 min",
+        "m55": "≈ 55 min",
+        "m60": "≈ 60 min",
+        "m80": "≈ 80 min",
+        "m85": "≈ 85 min"
+      },
+      "dates": {
+        "march": "March 2026",
+        "april": "April 2026",
+        "may": "May 2026"
+      },
+      "locations": {
+        "center": "Creativo Center",
+        "mladost": "Creativo Mladost"
+      },
+      "offerings": {
+        "consultation": "Personal consultation",
+        "wash": "Wash and preparation",
+        "scissors": "Precision scissor work",
+        "finish": "Considered finish",
+        "gradient": "Personalized gradient",
+        "contour": "Clean contour",
+        "hotTowel": "Hot towel",
+        "razor": "Razor detailing",
+        "care": "Skin care",
+        "cut": "Complete haircut",
+        "beard": "Beard shaping",
+        "blowdry": "Blow-dry styling",
+        "products": "Product selection"
+      },
+      "variants": {
+        "short": "Short hair",
+        "medium": "Medium length",
+        "long": "Long hair",
+        "natural": "Natural movement",
+        "lowFade": "Low fade",
+        "midFade": "Mid fade",
+        "highFade": "High fade",
+        "skinFade": "Skin fade",
+        "shortBeard": "Short beard",
+        "longBeard": "Long beard",
+        "razorContour": "Razor contour",
+        "skinCare": "Skin care",
+        "cutBeard": "Hair and beard",
+        "hotTowel": "Hot towel",
+        "fullFinish": "Complete finish",
+        "layers": "Layers",
+        "everyday": "Everyday styling",
+        "event": "Event styling",
+        "volume": "Volume",
+        "texture": "Texture"
+      },
+      "labels": {
+        "shape": "Shape and balance",
+        "gradient": "Gradient and geometry",
+        "contour": "Line and care",
+        "complete": "Complete look",
+        "movement": "Texture and movement",
+        "finish": "Preparation and finish"
+      },
+      "finalEyebrow": "You know the direction",
+      "finalTitle": "Leave the rest to us.",
+      "finalCta": "Book your chair"
+    },
+    "craft": {
+      "eyebrow": "Built one detail at a time",
+      "titleA": "Quiet hands.",
+      "titleB": "Sharp eye.",
+      "body": "Good work does not need to explain itself. It simply arrives finished."
+    },
+    "team": {
+      "eyebrow": "The hands behind the look",
+      "titleA": "Three signatures.",
+      "titleB": "One standard.",
+      "intro": "You are not choosing a title. You are choosing energy, a point of view, and someone you trust.",
+      "choose": "Choose",
+      "explore": "Explore",
+      "exploreBarber": "Explore {{barber}}'s profile",
+      "closeDetails": "Close barber profile",
+      "galleryLabel": "Selected looks by {{barber}}",
+      "galleryImageAlt": "A look created by {{barber}}",
+      "ratingLabel": "client rating",
+      "bookWith": "Book with {{barber}}",
+      "statement": "Choose by instinct. The detail will follow.",
+      "ivan": {
+        "name": "Ivan Kolev",
+        "role": "Chief barber",
+        "specialty": "Scissors · shape · natural movement",
+        "about": "Ivan builds a shape that continues to work after you leave the chair — precise, natural, and considered around the way you live."
+      },
+      "niko": {
+        "name": "Niko Dimov",
+        "role": "Top barber",
+        "specialty": "Modern fades · clean geometry",
+        "about": "Niko combines technically clean fades with a sharp instinct for proportion, texture, and a modern silhouette."
+      },
+      "stefan": {
+        "name": "Stefan Iliev",
+        "role": "Senior barber",
+        "specialty": "Razor · ritual · beard contour"
+      }
+    },
+    "final": {
+      "eyebrow": "Choose a convenient location while booking",
+      "title": "Your chair is waiting.",
+      "cta": "Book now",
+      "availability": "Locations and live availability appear during booking"
+    },
+    "footer": {
+      "tagline": "Shape, care, and confidence.",
+      "location": "Find your nearest Creativo.",
+      "navigation": "Footer navigation",
+      "copyright": "© 2026 Creativo. All rights reserved."
+    }
   }
 }

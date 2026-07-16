@@ -1,0 +1,220 @@
+<ng-container *transloco="let t">
+  <div class="services-page">
+    <section
+      class="catalog"
+      data-service-catalog
+      data-nav-tone="light"
+      [attr.aria-label]="t('marketing.servicesPage.catalogGridTitle')"
+      [attr.aria-hidden]="sheetOpen() ? 'true' : null"
+      [attr.inert]="sheetOpen() ? '' : null"
+    >
+      <header class="catalog-intro" data-service-reveal>
+        <p>{{ t('marketing.servicesPage.indexEyebrow') }}</p>
+        <h2>{{ t('marketing.servicesPage.catalogGridTitle') }}</h2>
+        <span>{{ t('marketing.servicesPage.catalogGuide') }}</span>
+      </header>
+
+      <div class="catalog-grid">
+        @for (service of services; track service.titleKey; let index = $index) {
+        <article
+          class="service-tile"
+          role="button"
+          tabindex="0"
+          [attr.aria-label]="
+            t('marketing.servicesPage.exploreService', {
+              service: t(service.titleKey),
+            })
+          "
+          aria-haspopup="dialog"
+          aria-controls="service-detail-sheet"
+          [attr.aria-expanded]="
+            sheetOpen() && activeServiceIndex() === index
+          "
+          (click)="openService(index)"
+          (keydown)="onServiceCardKeydown(index, $event)"
+          data-service-reveal
+        >
+          <div class="service-tile__media">
+            <img
+              [src]="service.image"
+              [alt]="t(service.titleKey)"
+              loading="lazy"
+            />
+          </div>
+
+          <div class="service-tile__copy">
+            <p>{{ t(service.labelKey) }}</p>
+            <h3>{{ t(service.titleKey) }}</h3>
+            <div class="service-tile__facts">
+              <span>{{ t(service.durationKey) }}</span>
+              <strong>{{ t(service.priceKey) }}</strong>
+            </div>
+            <span class="service-tile__action" aria-hidden="true">
+              <span
+                class="service-tile__explore-label"
+                crCursorTarget
+                crCursorTargetStyle="fill"
+              >
+                {{ t('marketing.servicesPage.explore') }}
+              </span>
+              <span
+                class="service-tile__explore-icon material-symbols-rounded"
+                crCursorTarget
+                crCursorTargetStyle="fill"
+                >arrow_forward</span
+              >
+            </span>
+          </div>
+        </article>
+        }
+      </div>
+    </section>
+
+    <cr-modal-sheet
+      sheetId="service-detail-sheet"
+      labelledBy="service-sheet-title"
+      [closeLabel]="t('marketing.servicesPage.closeService')"
+      [class.is-open]="sheetOpen() && !sheetClosing()"
+      [open]="sheetOpen() && !sheetClosing()"
+      [closing]="sheetClosing()"
+      [titleVisible]="sheetHeaderCondensed()"
+      (dismissed)="closeService()"
+      (sheetScrolled)="onSheetScroll($event)"
+    >
+      @if (activeService(); as service) {
+      <p sheet-title class="service-sheet__compact-title">
+        {{ t(service.titleKey) }}
+      </p>
+      } @if (activeService(); as service) {
+      <div class="service-sheet__body">
+        <section
+          class="service-showcase"
+          [class.is-expanded]="galleryExpanded()"
+          [attr.aria-label]="t('marketing.servicesPage.galleryLabel')"
+        >
+          <button
+            type="button"
+            class="service-showcase__layout-toggle"
+            [attr.aria-label]="
+                  t(
+                    galleryExpanded()
+                      ? 'marketing.servicesPage.carouselView'
+                      : 'marketing.servicesPage.gridView'
+                  )
+                "
+            (click)="setGalleryLayout(!galleryExpanded())"
+            crCursorTarget
+            crCursorTargetStyle="fill"
+          >
+            <span class="material-symbols-rounded" aria-hidden="true">
+              {{ galleryExpanded() ? 'view_carousel' : 'grid_view' }}
+            </span>
+          </button>
+
+          <div class="service-showcase__gallery">
+            @for (example of service.examples; track example.appointmentRef; let
+            exampleIndex = $index) {
+            <figure [class.is-active]="showcasedImageIndex() === exampleIndex">
+              <img
+                [src]="example.image"
+                [alt]="t(service.titleKey)"
+                loading="lazy"
+              />
+            </figure>
+            }
+          </div>
+        </section>
+
+        <div class="service-sheet__story">
+          <section class="service-sheet__intro">
+            <div>
+              <p>{{ t(service.labelKey) }}</p>
+              <h2 id="service-sheet-title">{{ t(service.titleKey) }}</h2>
+            </div>
+            <div class="service-sheet__summary">
+              <p>{{ t(service.bodyKey) }}</p>
+              <div>
+                <span>
+                  <span class="material-symbols-rounded" aria-hidden="true"
+                    >schedule</span
+                  >
+                  {{ t(service.durationKey) }}
+                </span>
+                <strong>{{ t(service.priceKey) }}</strong>
+              </div>
+              <a href="/client" crCursorTarget crCursorTargetStyle="fill">
+                <span>{{ t('marketing.servicesPage.bookService') }}</span>
+                <span class="material-symbols-rounded" aria-hidden="true"
+                  >arrow_outward</span
+                >
+              </a>
+            </div>
+          </section>
+
+          <section class="service-sheet__variants">
+            <header>
+              <h3>{{ t('marketing.servicesPage.stepVariant') }}</h3>
+            </header>
+            <ul>
+              @for (variantKey of service.variantKeys; track variantKey) {
+              <li>{{ t(variantKey) }}</li>
+              }
+            </ul>
+          </section>
+
+          <section
+            class="service-performers"
+            aria-labelledby="service-performers-title"
+          >
+            <header>
+              <h3 id="service-performers-title">
+                {{ t('marketing.servicesPage.stepBarber') }}
+              </h3>
+            </header>
+
+            <ul>
+              @for (performer of service.performers; track performer.nameKey) {
+              <li>
+                <article class="service-performer">
+                  <div class="service-performer__media">
+                    <img
+                      [src]="performer.image"
+                      [alt]="t(performer.nameKey)"
+                      loading="lazy"
+                    />
+                  </div>
+                  <div class="service-performer__identity">
+                    <p>{{ t(barberRoleKey(performer.nameKey)) }}</p>
+                    <h4>{{ t(performer.nameKey) }}</h4>
+                    <span>{{ t(performer.roleKey) }}</span>
+                  </div>
+                </article>
+              </li>
+              }
+            </ul>
+          </section>
+        </div>
+      </div>
+      }
+
+      <div
+        sheet-overlay
+        class="service-sheet__booking-bar"
+        [class.is-visible]="sheetBookingBarVisible()"
+        [attr.aria-hidden]="sheetBookingBarVisible() ? null : 'true'"
+      >
+        <a
+          href="/client"
+          [attr.tabindex]="sheetBookingBarVisible() ? null : -1"
+          crCursorTarget
+          crCursorTargetStyle="fill"
+        >
+          <span>{{ t('marketing.servicesPage.bookService') }}</span>
+          <span class="material-symbols-rounded" aria-hidden="true"
+            >arrow_outward</span
+          >
+        </a>
+      </div>
+    </cr-modal-sheet>
+  </div>
+</ng-container>

@@ -1,4 +1,225 @@
-<section class="cr-hero">
-  <h1>Creativo</h1>
-  <p>Book your next cut in seconds.</p>
-</section>
+<ng-container *transloco="let t">
+  <div id="top" class="landing">
+    <section class="hero" data-nav-tone="light" aria-labelledby="hero-title">
+      <div class="hero__copy">
+        <p class="eyebrow" data-hero-reveal>
+          {{ t('marketing.hero.eyebrow') }}
+        </p>
+        <h1 id="hero-title">
+          <span
+            ><span data-hero-reveal
+              >{{ t('marketing.hero.titleA') }}</span
+            ></span
+          >
+          <span
+            ><span data-hero-reveal
+              >{{ t('marketing.hero.titleB') }}</span
+            ></span
+          >
+        </h1>
+        <p class="hero__intro" data-hero-reveal>
+          {{ t('marketing.hero.intro') }}
+        </p>
+      </div>
+
+      <div class="hero__visual" data-reveal>
+        <div
+          class="hero-film"
+          (pointermove)="onHeroPointerMove($event)"
+          crCursorTarget
+          [crCursorTargetLabel]="
+            heroPaused()
+              ? t('marketing.hero.play')
+              : t('marketing.hero.pause')
+          "
+        >
+          <video
+            data-hero-video
+            autoplay
+            muted
+            loop
+            playsinline
+            preload="metadata"
+            poster="/work/landing-poster.jpg"
+            [attr.aria-label]="t('marketing.hero.videoAria')"
+          >
+            <source src="/welcome.mp4" type="video/mp4" />
+          </video>
+          <div class="hero-film__shade"></div>
+          <div class="hero-film__spotlight" aria-hidden="true"></div>
+          <div class="hero-film__meta">
+            <button
+              type="button"
+              class="film-control"
+              [attr.aria-label]="
+                heroPaused()
+                  ? t('marketing.hero.playVideo')
+                  : t('marketing.hero.pauseVideo')
+              "
+              (click)="toggleHeroVideo()"
+              crCursorTarget
+              crCursorTargetStyle="fill"
+            >
+              @if (heroPaused()) {
+              <span class="material-symbols-rounded" aria-hidden="true"
+                >play_arrow</span
+              >
+              } @else {
+              <span class="material-symbols-rounded" aria-hidden="true"
+                >pause</span
+              >
+              }
+            </button>
+          </div>
+        </div>
+
+        <a
+          class="hero-book"
+          href="/client"
+          crCursorTarget
+          crCursorTargetStyle="fill"
+        >
+          <span>{{ t('marketing.hero.book') }}</span>
+          <span class="material-symbols-rounded" aria-hidden="true"
+            >arrow_outward</span
+          >
+        </a>
+      </div>
+    </section>
+
+    <section
+      id="work"
+      class="gallery-scene"
+      data-gallery-scene
+      data-nav-tone="dark"
+      aria-labelledby="work-title"
+    >
+      <div class="gallery-sticky">
+        <header class="gallery-heading">
+          <p class="eyebrow">{{ t('marketing.work.eyebrow') }}</p>
+          <h2 id="work-title">
+            <span>{{ t('marketing.work.titleA') }}</span>
+            <span>{{ t('marketing.work.titleB') }}</span>
+          </h2>
+          <p>{{ t('marketing.work.scroll') }}</p>
+        </header>
+
+        <div class="gallery-track" data-gallery-track>
+          @for (item of galleryItems; track item.image; let index = $index) {
+          <article
+            [class]="'work-card ' + item.className"
+            [style.--card-order]="index"
+            data-gallery-reveal
+          >
+            <a
+              href="/client"
+              crCursorTarget
+              [crCursorTargetLabel]="t('marketing.work.bookCursor')"
+            >
+              <img
+                [src]="item.image"
+                [alt]="t(item.altKey)"
+                [attr.loading]="index === 0 ? 'eager' : 'lazy'"
+              />
+            </a>
+            <div>
+              <h3>{{ t(item.titleKey) }}</h3>
+              <p>{{ t(item.bodyKey) }}</p>
+            </div>
+          </article>
+          }
+          <aside class="gallery-end">
+            <div>
+              <p>{{ t('marketing.work.endTitle') }}</p>
+              <a href="/client" crCursorTarget crCursorTargetStyle="fill">
+                {{ t('marketing.work.endCta') }}
+                <span class="material-symbols-rounded" aria-hidden="true"
+                  >arrow_outward</span
+                >
+              </a>
+            </div>
+          </aside>
+        </div>
+
+        <div class="mobile-gallery-caption" aria-live="polite">
+          @if (activeGalleryItem(); as item) {
+          <div>
+            <h3>{{ t(item.titleKey) }}</h3>
+            <p>{{ t(item.bodyKey) }}</p>
+          </div>
+          }
+        </div>
+      </div>
+    </section>
+
+    <cr-services-page id="services" />
+
+    <section
+      class="craft-film"
+      data-nav-tone="dark"
+      aria-labelledby="craft-title"
+    >
+      <video
+        autoplay
+        muted
+        loop
+        playsinline
+        preload="metadata"
+        aria-hidden="true"
+        data-parallax
+      >
+        <source src="/hero.mp4" type="video/mp4" />
+      </video>
+      <div class="craft-film__veil"></div>
+      <div class="craft-film__copy" data-reveal>
+        <p class="eyebrow">{{ t('marketing.craft.eyebrow') }}</p>
+        <h2 id="craft-title">
+          {{ t('marketing.craft.titleA') }}<br />{{ t('marketing.craft.titleB')
+          }}
+        </h2>
+        <p>{{ t('marketing.craft.body') }}</p>
+      </div>
+    </section>
+
+    <cr-team-showcase />
+
+    <section
+      class="final-book"
+      data-nav-tone="accent"
+      aria-labelledby="book-title"
+    >
+      <p class="eyebrow" data-reveal>{{ t('marketing.final.eyebrow') }}</p>
+      <h2 id="book-title" data-reveal>{{ t('marketing.final.title') }}</h2>
+      <a href="/client" data-reveal crCursorTarget crCursorTargetStyle="fill">
+        <span>{{ t('marketing.final.cta') }}</span>
+        <span class="material-symbols-rounded" aria-hidden="true"
+          >arrow_outward</span
+        >
+      </a>
+      <div class="final-book__foot">
+        <span>{{ t('marketing.final.availability') }}</span>
+      </div>
+    </section>
+
+    <footer class="footer" data-nav-tone="dark">
+      <a
+        href="#top"
+        class="footer__brand"
+        [attr.aria-label]="t('marketing.app.homeAria')"
+      >
+        <img src="/logo-full-white.svg" alt="" />
+      </a>
+      <p>
+        {{ t('marketing.footer.tagline') }}<br />{{
+        t('marketing.footer.location') }}
+      </p>
+      <nav [attr.aria-label]="t('marketing.footer.navigation')">
+        <a href="#work">{{ t('marketing.app.work') }}</a>
+        <a href="#services">{{ t('marketing.app.services') }}</a>
+        <a href="#team">{{ t('marketing.app.barbers') }}</a>
+        <a href="/client">{{ t('marketing.app.book') }}</a>
+      </nav>
+      <small>{{ t('marketing.footer.copyright') }}</small>
+    </footer>
+  </div>
+</ng-container>

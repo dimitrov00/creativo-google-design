@@ -1,0 +1,187 @@
+:host {
+  display: contents;
+}
+
+.modal-sheet {
+  --modal-sheet-safe: clamp(1.25rem, 4vw, 4rem);
+  --modal-sheet-drag-y: 0px;
+  position: fixed;
+  z-index: 1300;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  visibility: hidden;
+  pointer-events: none;
+  background: transparent;
+  color: #050505;
+  transition:
+    visibility 0s linear 380ms,
+    background 320ms ease,
+    backdrop-filter 320ms ease;
+}
+
+.modal-sheet.is-open {
+  visibility: visible;
+  pointer-events: auto;
+  background: rgb(0 0 0 / 0.72);
+  backdrop-filter: blur(14px) saturate(0.7);
+  transition:
+    visibility 0s,
+    background 320ms ease,
+    backdrop-filter 320ms ease;
+}
+
+.modal-sheet.is-closing {
+  visibility: visible;
+  background: transparent;
+  backdrop-filter: blur(0) saturate(1);
+}
+
+.modal-sheet__surface {
+  position: relative;
+  inline-size: min(72rem, calc(100vw - 2rem));
+  block-size: min(90svh, 58rem);
+  overflow: hidden;
+  border-radius: 2rem;
+  background: #f7f7f4;
+  box-shadow: 0 2rem 7rem rgb(0 0 0 / 0.45);
+  opacity: 0;
+  transform: translateY(calc(2rem + var(--modal-sheet-drag-y))) scale(0.985);
+  transition:
+    opacity 280ms ease,
+    transform 540ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.modal-sheet.is-open .modal-sheet__surface {
+  opacity: 1;
+  transform: translateY(var(--modal-sheet-drag-y)) scale(1);
+}
+
+.modal-sheet.is-dragging .modal-sheet__surface {
+  transition: none;
+}
+
+.modal-sheet.is-closing .modal-sheet__surface {
+  opacity: 0;
+  transform: translateY(calc(2.5rem + var(--modal-sheet-drag-y))) scale(0.985);
+}
+
+.modal-sheet__scroll {
+  block-size: 100%;
+  min-block-size: 0;
+  overflow-y: auto;
+  overflow-anchor: none;
+  overscroll-behavior: contain;
+  padding-block-end: var(--modal-sheet-scroll-padding-bottom, 0px);
+  scrollbar-width: thin;
+}
+
+.modal-sheet__toolbar {
+  position: sticky;
+  z-index: 10;
+  inset-block-start: 0;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  min-block-size: 4.1rem;
+  padding: 0.65rem 0.8rem;
+  background: #f7f7f4;
+  touch-action: none;
+}
+
+.modal-sheet__title {
+  grid-column: 2;
+  max-inline-size: calc(100vw - 10rem);
+  overflow: hidden;
+  opacity: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transform: translateY(0.55rem);
+  transition:
+    opacity 260ms ease,
+    transform 480ms cubic-bezier(0.16, 1, 0.3, 1);
+  pointer-events: none;
+}
+
+.modal-sheet__title.is-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.modal-sheet__close {
+  --cr-cursor-fill-color: #050505;
+  --cr-color-background: #fff;
+  grid-column: 3;
+  justify-self: end;
+  inline-size: 2.8rem;
+  block-size: 2.8rem;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: rgb(5 5 5 / 0.07);
+  color: #050505;
+  cursor: pointer;
+  transition: transform 260ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.modal-sheet__close:active {
+  transform: scale(0.9);
+}
+
+@starting-style {
+  .modal-sheet.is-open .modal-sheet__surface {
+    opacity: 0;
+    transform: translateY(2rem) scale(0.985);
+  }
+}
+
+@media (max-width: 760px) {
+  .modal-sheet {
+    --modal-sheet-safe: 1.1rem;
+    place-items: end center;
+    padding: 0;
+  }
+
+  .modal-sheet__surface {
+    inline-size: 100%;
+    block-size: min(96svh, 60rem);
+    border-radius: 1.5rem 1.5rem 0 0;
+  }
+
+  .modal-sheet.is-closing .modal-sheet__surface {
+    transform: translateY(100%);
+  }
+
+  .modal-sheet__toolbar {
+    min-block-size: 3.75rem;
+    padding: 0.55rem 0.65rem;
+    cursor: grab;
+  }
+
+  .modal-sheet.is-dragging .modal-sheet__toolbar {
+    cursor: grabbing;
+  }
+
+  .modal-sheet__close {
+    inline-size: 2.65rem;
+    block-size: 2.65rem;
+  }
+
+  @starting-style {
+    .modal-sheet.is-open .modal-sheet__surface {
+      transform: translateY(100%);
+    }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .modal-sheet,
+  .modal-sheet__surface,
+  .modal-sheet__title,
+  .modal-sheet__close {
+    transition: none;
+  }
+}

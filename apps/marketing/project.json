@@ -4,6 +4,11 @@
   "projectType": "application",
   "prefix": "cr",
   "sourceRoot": "apps/marketing/src",
+  "cli": {
+    "cache": {
+      "enabled": false
+    }
+  },
   "tags": ["scope:marketing", "type:app"],
   "targets": {
     "build": {
@@ -18,6 +23,11 @@
           {
             "glob": "**/*",
             "input": "apps/marketing/public"
+          },
+          {
+            "glob": "*.json",
+            "input": "libs/adapters/i18n/src/assets/i18n",
+            "output": "assets/i18n"
           }
         ],
         "styles": ["apps/marketing/src/styles.css"],
@@ -37,8 +47,8 @@
             },
             {
               "type": "anyComponentStyle",
-              "maximumWarning": "4kb",
-              "maximumError": "8kb"
+              "maximumWarning": "22kb",
+              "maximumError": "26kb"
             }
           ],
           "outputHashing": "all"

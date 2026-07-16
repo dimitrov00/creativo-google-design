@@ -2,7 +2,7 @@ import { EnvironmentProviders } from '@angular/core';
 import { provideTransloco } from '@jsverse/transloco';
 import { TranslationHttpLoader } from './translation-loader';
 
-export const SUPPORTED_LANGS = ['en', 'bg'] as const;
+export const SUPPORTED_LANGS = ['bg', 'en'] as const;
 export type SupportedLang = (typeof SUPPORTED_LANGS)[number];
 
 /**
@@ -14,8 +14,8 @@ export function provideI18n(): EnvironmentProviders[] {
   return provideTransloco({
     config: {
       availableLangs: [...SUPPORTED_LANGS],
-      defaultLang: 'en',
-      fallbackLang: 'en',
+      defaultLang: 'bg',
+      fallbackLang: 'bg',
       reRenderOnLangChange: true,
       prodMode: true,
       // translateDomainError() owns the missing-key fallback (raw code) —

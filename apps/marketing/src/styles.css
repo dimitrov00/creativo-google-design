@@ -19,6 +19,11 @@ body {
   padding: 0;
 }
 
+html {
+  scroll-behavior: smooth;
+  scroll-padding-top: 6rem;
+}
+
 body {
   background: var(--cr-color-background);
   color: var(--cr-color-foreground);
@@ -29,6 +34,22 @@ body {
     background-color var(--cr-motion-duration-base)
       var(--cr-motion-easing-standard),
     color var(--cr-motion-duration-base) var(--cr-motion-easing-standard);
+}
+
+body,
+button,
+a {
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background: var(--cr-color-accent);
+  color: var(--cr-color-background);
+}
+
+img,
+video {
+  display: block;
 }
 
 a {
@@ -61,6 +82,9 @@ a:hover {
    — covers any future document.startViewTransition() call this app makes
    outside the router (which onViewTransitionCreated can't see). */
 @media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
   ::view-transition-group(*),
   ::view-transition-old(*),
   ::view-transition-new(*) {

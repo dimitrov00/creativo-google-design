@@ -1,0 +1,47 @@
+<div
+  class="modal-sheet"
+  [class.is-open]="open()"
+  [class.is-closing]="closing()"
+  [class.is-dragging]="dragging()"
+  [attr.id]="sheetId()"
+  role="dialog"
+  [attr.aria-labelledby]="labelledBy()"
+  [attr.aria-modal]="open() || closing() ? 'true' : null"
+  [attr.aria-hidden]="open() || closing() ? null : 'true'"
+  (pointerdown)="onBackdropPointerDown($event)"
+  (keydown)="onKeydown($event)"
+>
+  <div class="modal-sheet__surface">
+    <div class="modal-sheet__scroll" (scroll)="onScroll($event)">
+      <header
+        class="modal-sheet__toolbar"
+        (pointerdown)="onDragStart($event)"
+        (pointermove)="onDragMove($event)"
+        (pointerup)="onDragEnd($event)"
+        (pointercancel)="onDragEnd($event)"
+      >
+        <div
+          class="modal-sheet__title"
+          [class.is-visible]="titleVisible()"
+          aria-hidden="true"
+        >
+          <ng-content select="[sheet-title]" />
+        </div>
+        <button
+          type="button"
+          class="modal-sheet__close"
+          [attr.aria-label]="closeLabel()"
+          (click)="requestDismiss()"
+          crCursorTarget
+          crCursorTargetStyle="fill"
+        >
+          <span class="material-symbols-rounded" aria-hidden="true">close</span>
+        </button>
+      </header>
+
+      <ng-content />
+    </div>
+
+    <ng-content select="[sheet-overlay]" />
+  </div>
+</div>
