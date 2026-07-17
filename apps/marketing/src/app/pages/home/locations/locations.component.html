@@ -1,0 +1,411 @@
+<ng-container *transloco="let t">
+  <section
+    id="locations"
+    class="locations"
+    data-nav-tone="light"
+    aria-labelledby="locations-title"
+  >
+    <header class="locations__heading" data-reveal>
+      <p class="eyebrow">{{ t('marketing.locations.eyebrow') }}</p>
+      <h2 id="locations-title">
+        {{ t('marketing.locations.titleA') }}<br />{{
+          t('marketing.locations.titleB')
+        }}
+      </h2>
+      <p>{{ t('marketing.locations.intro') }}</p>
+    </header>
+
+    <div class="locations__content">
+      <aside class="locations__panel locations__panel--list">
+        <ul class="locations__list">
+          @for (
+            location of locations;
+            track location.nameKey;
+            let index = $index
+          ) {
+            @let status = statusFor(location);
+            <li>
+              <article
+                class="location-card"
+                role="button"
+                tabindex="0"
+                [attr.aria-label]="
+                  t('marketing.locations.exploreLocation', {
+                    location: t(location.nameKey),
+                  })
+                "
+                aria-haspopup="dialog"
+                aria-controls="location-detail-sheet"
+                [attr.aria-expanded]="sheetOpen() && activeIndex() === index"
+                (click)="openLocation(index)"
+                (keydown)="onCardKeydown(index, $event)"
+                data-reveal
+              >
+                <span
+                  class="location-card__icon material-symbols-rounded"
+                  aria-hidden="true"
+                  >location_on</span
+                >
+
+                <div class="location-card__copy">
+                  <h3>{{ t(location.nameKey) }}</h3>
+                  <p>{{ t(location.addressKey) }}</p>
+
+                  <span
+                    class="location-card__status"
+                    [class.is-open]="status.isOpen"
+                  >
+                    <span
+                      class="location-card__status-dot"
+                      aria-hidden="true"
+                    ></span>
+                    {{
+                      status.isOpen
+                        ? t('marketing.locations.openNow')
+                        : t('marketing.locations.closedNow')
+                    }}
+                  </span>
+
+                  @if (location.phoneKey) {
+                    <a
+                      class="location-card__phone"
+                      [href]="phoneHref(t(location.phoneKey))"
+                      [attr.aria-label]="
+                        t('marketing.locations.callAria', {
+                          location: t(location.nameKey),
+                        })
+                      "
+                      (click)="$event.stopPropagation()"
+                      crCursorTarget
+                    >
+                      <span class="material-symbols-rounded" aria-hidden="true"
+                        >call</span
+                      >
+                      {{ t(location.phoneKey) }}
+                    </a>
+                  }
+
+                  <span class="location-card__action" aria-hidden="true">
+                    <span
+                      class="location-card__explore-label"
+                      crCursorTarget
+                      crCursorTargetStyle="fill"
+                    >
+                      {{ t('marketing.locations.explore') }}
+                    </span>
+                  </span>
+                </div>
+
+                <a
+                  class="location-card__maps"
+                  [href]="directionsUrl(location)"
+                  target="_blank"
+                  rel="noopener"
+                  [attr.aria-label]="
+                    t('marketing.locations.directionsAria', {
+                      location: t(location.nameKey),
+                    })
+                  "
+                  (click)="$event.stopPropagation()"
+                  crCursorTarget
+                  crCursorTargetStyle="fill"
+                >
+                  <span class="material-symbols-rounded" aria-hidden="true"
+                    >near_me</span
+                  >
+                </a>
+              </article>
+            </li>
+          }
+        </ul>
+      </aside>
+
+      <aside class="locations__panel locations__panel--map">
+        <div
+          class="locations__map"
+          data-locations-map
+          [attr.aria-label]="t('marketing.locations.mapAria')"
+          role="img"
+        ></div>
+        <div
+          class="locations-map__indicators"
+          data-locations-map-indicators
+          aria-hidden="true"
+        ></div>
+      </aside>
+    </div>
+  </section>
+
+  <cr-modal-sheet
+    sheetId="location-detail-sheet"
+    labelledBy="location-sheet-title"
+    [closeLabel]="t('marketing.locations.closeDetails')"
+    [open]="sheetOpen() && !sheetClosing()"
+    [closing]="sheetClosing()"
+    [titleVisible]="sheetHeaderCondensed()"
+    (dismissed)="closeLocation()"
+    (sheetScrolled)="onSheetScroll($event)"
+  >
+    @if (activeLocation(); as location) {
+      <p sheet-title class="location-sheet__compact-title">
+        {{ t(location.nameKey) }}
+      </p>
+    }
+    @if (activeLocation(); as location) {
+      @let status = statusFor(location);
+
+      <div class="location-sheet">
+        <div class="location-sheet__layout">
+          <div class="location-sheet__map-pane">
+            <div
+              class="location-sheet__map"
+              data-location-sheet-map
+              [attr.aria-label]="
+                t('marketing.locations.sheetMapAria', {
+                  location: t(location.nameKey),
+                })
+              "
+              role="img"
+            ></div>
+          </div>
+
+          <article class="location-sheet__profile">
+            <header class="location-sheet__intro">
+              <h2 id="location-sheet-title">{{ t(location.nameKey) }}</h2>
+              <p class="location-sheet__address">
+                <span class="material-symbols-rounded" aria-hidden="true"
+                  >location_on</span
+                >
+                {{ t(location.addressKey) }}
+              </p>
+              @if (location.phoneKey) {
+                <a
+                  class="location-sheet__phone-line"
+                  [href]="phoneHref(t(location.phoneKey))"
+                  crCursorTarget
+                >
+                  <span class="material-symbols-rounded" aria-hidden="true"
+                    >call</span
+                  >
+                  {{ t(location.phoneKey) }}
+                </a>
+              }
+
+              <div class="location-sheet__hero-actions">
+                <a
+                  class="location-sheet__book"
+                  href="/client"
+                  crCursorTarget
+                  crCursorTargetStyle="fill"
+                >
+                  <span>{{
+                    t('marketing.locations.bookAt', {
+                      location: t(location.nameKey),
+                    })
+                  }}</span>
+                  <span class="material-symbols-rounded" aria-hidden="true"
+                    >arrow_outward</span
+                  >
+                </a>
+
+                <a
+                  class="location-sheet__icon-action"
+                  [href]="directionsUrl(location)"
+                  target="_blank"
+                  rel="noopener"
+                  [attr.aria-label]="
+                    t('marketing.locations.directionsAria', {
+                      location: t(location.nameKey),
+                    })
+                  "
+                  crCursorTarget
+                  crCursorTargetStyle="fill"
+                >
+                  <span class="material-symbols-rounded" aria-hidden="true"
+                    >near_me</span
+                  >
+                </a>
+
+                @if (location.phoneKey) {
+                  <a
+                    class="location-sheet__icon-action"
+                    [href]="phoneHref(t(location.phoneKey))"
+                    [attr.aria-label]="
+                      t('marketing.locations.callAria', {
+                        location: t(location.nameKey),
+                      })
+                    "
+                    crCursorTarget
+                    crCursorTargetStyle="fill"
+                  >
+                    <span class="material-symbols-rounded" aria-hidden="true"
+                      >call</span
+                    >
+                  </a>
+                }
+              </div>
+            </header>
+
+            <div class="location-sheet__status-card">
+              <div
+                class="location-sheet__status"
+                [class.is-open]="status.isOpen"
+                [class.is-soon]="status.kind === 'closesSoon'"
+              >
+                <span
+                  class="location-sheet__status-dot"
+                  aria-hidden="true"
+                ></span>
+                <span>{{
+                  status.isOpen
+                    ? t('marketing.locations.openNow')
+                    : t('marketing.locations.closedNow')
+                }}</span>
+                <span class="location-sheet__status-detail">
+                  @switch (status.kind) {
+                    @case ('closesAt') {
+                      {{
+                        t('marketing.locations.closesAt', { time: status.time })
+                      }}
+                    }
+                    @case ('closesSoon') {
+                      {{
+                        t('marketing.locations.closesSoon', {
+                          time: status.time,
+                        })
+                      }}
+                    }
+                    @case ('opensAt') {
+                      {{
+                        t('marketing.locations.opensAt', { time: status.time })
+                      }}
+                    }
+                    @case ('opensOn') {
+                      {{
+                        t('marketing.locations.opensOn', {
+                          day: t(
+                            'marketing.locations.weekdays.' +
+                              weekdayKeys[status.dayIndex]
+                          ),
+                          time: status.time,
+                        })
+                      }}
+                    }
+                  }
+                </span>
+              </div>
+
+              <ul class="location-sheet__week">
+                @for (dayIndex of weekOrder; track dayIndex) {
+                  <li
+                    class="location-sheet__day"
+                    [class.is-today]="dayIndex === todayIndex()"
+                  >
+                    <span class="location-sheet__day-name">
+                      {{
+                        t(
+                          'marketing.locations.weekdays.' +
+                            weekdayKeys[dayIndex]
+                        )
+                      }}
+                      @if (dayIndex === todayIndex()) {
+                        <span class="location-sheet__today-tag">{{
+                          t('marketing.locations.today')
+                        }}</span>
+                      }
+                    </span>
+                    <span class="location-sheet__day-hours">
+                      @if (location.schedule[dayIndex]; as hours) {
+                        {{ hours.open }} – {{ hours.close }}
+                      } @else {
+                        {{ t('marketing.locations.closed') }}
+                      }
+                    </span>
+                  </li>
+                }
+              </ul>
+            </div>
+          </article>
+        </div>
+
+        <section class="location-sheet__gallery">
+          <header class="location-sheet__gallery-heading">
+            <h3>{{ t('marketing.locations.galleryHeading') }}</h3>
+          </header>
+          <cr-showcase-gallery
+            [images]="location.gallery"
+            [imageAlt]="t(location.nameKey)"
+            [ariaLabel]="
+              t('marketing.locations.galleryLabel', {
+                location: t(location.nameKey),
+              })
+            "
+            [gridViewLabel]="t('marketing.gallery.gridView')"
+            [carouselViewLabel]="t('marketing.gallery.carouselView')"
+            [expanded]="true"
+            [showToggle]="false"
+          />
+        </section>
+      </div>
+    }
+    @if (activeLocation(); as location) {
+      <div
+        sheet-overlay
+        class="location-sheet__toolbar"
+        [class.is-visible]="sheetToolbarVisible()"
+        [attr.aria-hidden]="sheetToolbarVisible() ? null : 'true'"
+      >
+        @if (location.phoneKey) {
+          <a
+            class="location-sheet__toolbar-icon"
+            [href]="phoneHref(t(location.phoneKey))"
+            [attr.aria-label]="
+              t('marketing.locations.callAria', {
+                location: t(location.nameKey),
+              })
+            "
+            [attr.tabindex]="sheetToolbarVisible() ? null : -1"
+            crCursorTarget
+            crCursorTargetStyle="fill"
+          >
+            <span class="material-symbols-rounded" aria-hidden="true"
+              >call</span
+            >
+          </a>
+        }
+        <a
+          class="location-sheet__toolbar-icon"
+          [href]="directionsUrl(location)"
+          target="_blank"
+          rel="noopener"
+          [attr.aria-label]="
+            t('marketing.locations.directionsAria', {
+              location: t(location.nameKey),
+            })
+          "
+          [attr.tabindex]="sheetToolbarVisible() ? null : -1"
+          crCursorTarget
+          crCursorTargetStyle="fill"
+        >
+          <span class="material-symbols-rounded" aria-hidden="true"
+            >near_me</span
+          >
+        </a>
+        <a
+          class="location-sheet__toolbar-book"
+          href="/client"
+          [attr.tabindex]="sheetToolbarVisible() ? null : -1"
+          crCursorTarget
+          crCursorTargetStyle="fill"
+        >
+          <span>{{
+            t('marketing.locations.bookAt', { location: t(location.nameKey) })
+          }}</span>
+          <span class="material-symbols-rounded" aria-hidden="true"
+            >arrow_outward</span
+          >
+        </a>
+      </div>
+    }
+  </cr-modal-sheet>
+</ng-container>

@@ -6,30 +6,25 @@ import {
   DestroyRef,
   ElementRef,
   PLATFORM_ID,
-  computed,
   inject,
   signal,
 } from '@angular/core';
 import { TranslocoDirective } from '@jsverse/transloco';
 import { CursorTargetDirective } from '@creativo/shared/cursor';
 import { ServicesPage } from '../services/services.page';
+import { LocationsComponent } from './locations/locations.component';
 import { TeamShowcaseComponent } from './team-showcase/team-showcase.component';
-
-interface GalleryItem {
-  readonly image: string;
-  readonly titleKey: string;
-  readonly bodyKey: string;
-  readonly altKey: string;
-  readonly className: string;
-}
+import { WorkGalleryComponent } from './work-gallery/work-gallery.component';
 
 @Component({
   selector: 'cr-home-page',
   imports: [
     CursorTargetDirective,
+    LocationsComponent,
     ServicesPage,
     TeamShowcaseComponent,
     TranslocoDirective,
+    WorkGalleryComponent,
   ],
   templateUrl: './home.page.html',
   styleUrl: './home.page.css',
@@ -42,56 +37,6 @@ export class HomePage implements AfterViewInit {
   private readonly destroyRef = inject(DestroyRef);
 
   protected readonly heroPaused = signal(false);
-  protected readonly activeGalleryIndex = signal(0);
-
-  protected readonly galleryItems: readonly GalleryItem[] = [
-    {
-      image: '/work/scissors-trim.jpg',
-      titleKey: 'marketing.work.items.precision.title',
-      bodyKey: 'marketing.work.items.precision.body',
-      altKey: 'marketing.work.items.precision.alt',
-      className: 'work-card--one',
-    },
-    {
-      image: '/work/modern-cut.jpg',
-      titleKey: 'marketing.work.items.texture.title',
-      bodyKey: 'marketing.work.items.texture.body',
-      altKey: 'marketing.work.items.texture.alt',
-      className: 'work-card--two',
-    },
-    {
-      image: '/work/classic-clippers.jpg',
-      titleKey: 'marketing.work.items.structure.title',
-      bodyKey: 'marketing.work.items.structure.body',
-      altKey: 'marketing.work.items.structure.alt',
-      className: 'work-card--three',
-    },
-    {
-      image: '/work/fade-styling.jpg',
-      titleKey: 'marketing.work.items.gradient.title',
-      bodyKey: 'marketing.work.items.gradient.body',
-      altKey: 'marketing.work.items.gradient.alt',
-      className: 'work-card--four',
-    },
-    {
-      image: '/work/beard-shave.jpg',
-      titleKey: 'marketing.work.items.contour.title',
-      bodyKey: 'marketing.work.items.contour.body',
-      altKey: 'marketing.work.items.contour.alt',
-      className: 'work-card--five',
-    },
-    {
-      image: '/work/finishing-touch.jpg',
-      titleKey: 'marketing.work.items.finish.title',
-      bodyKey: 'marketing.work.items.finish.body',
-      altKey: 'marketing.work.items.finish.alt',
-      className: 'work-card--six',
-    },
-  ];
-
-  protected readonly activeGalleryItem = computed(
-    () => this.galleryItems[this.activeGalleryIndex()] ?? this.galleryItems[0],
-  );
 
   ngAfterViewInit(): void {
     if (!isPlatformBrowser(this.platformId)) return;
@@ -101,15 +46,6 @@ export class HomePage implements AfterViewInit {
       '(prefers-reduced-motion: reduce)',
     ).matches;
     const hero = host.querySelector<HTMLElement>('.hero');
-    const galleryScene = host.querySelector<HTMLElement>(
-      '[data-gallery-scene]',
-    );
-    const galleryTrack = host.querySelector<HTMLElement>(
-      '[data-gallery-track]',
-    );
-    const galleryCards = Array.from(
-      host.querySelectorAll<HTMLElement>('[data-gallery-reveal]'),
-    );
     const parallaxItems = Array.from(
       host.querySelectorAll<HTMLElement>('[data-parallax]'),
     );
@@ -216,108 +152,24 @@ export class HomePage implements AfterViewInit {
       hero.style.setProperty('--hero-progress', progress.toString());
     };
 
-    const updateGallery = () => {
+    const updateScroll = () => {
       frame = 0;
       updateNavigationTone();
       updateParallax();
       updateHero();
-      if (!galleryScene || !galleryTrack) return;
-
-      if (reducedMotion) {
-        galleryTrack.style.removeProperty('transform');
-        galleryScene.style.setProperty('--gallery-progress', '0');
-        galleryScene.style.setProperty('--gallery-intro', '0');
-        galleryScene.style.setProperty('--gallery-end', '0');
-        galleryCards.forEach((card) =>
-          card.style.setProperty('--card-reveal', '1'),
-        );
-        return;
-      }
-
-      const rect = galleryScene.getBoundingClientRect();
-      const range = Math.max(1, galleryScene.offsetHeight - window.innerHeight);
-      const progress = clamp(-rect.top / range);
-      const overflow = Math.max(
-        0,
-        galleryTrack.scrollWidth - window.innerWidth,
-      );
-      const introProgress = clamp(progress * 9.5);
-      const endProgress = clamp((progress - 0.88) / 0.12);
-
-      galleryTrack.style.transform = `translate3d(${-progress * overflow}px, 0, 0)`;
-      galleryScene.style.setProperty('--gallery-progress', progress.toString());
-      galleryScene.style.setProperty(
-        '--gallery-intro',
-        introProgress.toString(),
-      );
-      galleryScene.style.setProperty('--gallery-end', endProgress.toString());
-
-      let nearestIndex = this.activeGalleryIndex();
-      let nearestDistance = Number.POSITIVE_INFINITY;
-      const entryLine = window.innerWidth * 1.03;
-      const revealDistance = Math.max(
-        200,
-        window.innerWidth * (window.innerWidth < 820 ? 0.72 : 0.42),
-      );
-
-      galleryCards.forEach((card, index) => {
-        const cardRect = card.getBoundingClientRect();
-        const incoming = clamp((entryLine - cardRect.left) / revealDistance);
-        const outgoing = clamp(
-          (cardRect.right + window.innerWidth * 0.18) /
-            (window.innerWidth * 0.42),
-        );
-        const reveal = Math.min(incoming, outgoing);
-        card.style.setProperty('--card-reveal', reveal.toString());
-
-        if (reveal < 0.18) return;
-        const distance = Math.abs(
-          cardRect.left + cardRect.width / 2 - window.innerWidth * 0.5,
-        );
-        if (distance < nearestDistance) {
-          nearestDistance = distance;
-          nearestIndex = index;
-        }
-      });
-
-      this.activeGalleryIndex.set(nearestIndex);
     };
 
     const requestUpdate = () => {
-      if (!frame) frame = requestAnimationFrame(updateGallery);
-    };
-
-    const measureGallery = () => {
-      if (!galleryScene || !galleryTrack) return;
-      if (reducedMotion) {
-        galleryScene.style.removeProperty('height');
-        galleryTrack.style.removeProperty('transform');
-      } else {
-        const overflow = Math.max(
-          0,
-          galleryTrack.scrollWidth - window.innerWidth,
-        );
-        const travelRatio = window.innerWidth < 820 ? 0.58 : 0.72;
-        galleryScene.style.height = `${
-          window.innerHeight + overflow * travelRatio
-        }px`;
-      }
-      requestUpdate();
+      if (!frame) frame = requestAnimationFrame(updateScroll);
     };
 
     window.addEventListener('scroll', requestUpdate, { passive: true });
-    window.addEventListener('resize', measureGallery, { passive: true });
+    window.addEventListener('resize', requestUpdate, { passive: true });
     cleanups.push(() => window.removeEventListener('scroll', requestUpdate));
-    cleanups.push(() => window.removeEventListener('resize', measureGallery));
+    cleanups.push(() => window.removeEventListener('resize', requestUpdate));
     cleanups.push(() => frame && cancelAnimationFrame(frame));
 
-    if (typeof ResizeObserver === 'function' && galleryTrack) {
-      const resizeObserver = new ResizeObserver(measureGallery);
-      resizeObserver.observe(galleryTrack);
-      cleanups.push(() => resizeObserver.disconnect());
-    }
-
-    requestAnimationFrame(measureGallery);
+    requestAnimationFrame(updateScroll);
 
     this.destroyRef.onDestroy(() => {
       cleanups.forEach((cleanup) => cleanup());

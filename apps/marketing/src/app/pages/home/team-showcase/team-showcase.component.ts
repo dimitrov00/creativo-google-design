@@ -11,6 +11,7 @@ import {
 import { TranslocoDirective } from '@jsverse/transloco';
 import { CursorTargetDirective } from '@creativo/shared/cursor';
 import { ModalSheetComponent } from '../../../shared/modal-sheet/modal-sheet.component';
+import { ShowcaseGalleryComponent } from '../../../shared/showcase-gallery/showcase-gallery.component';
 
 interface BarberItem {
   readonly nameKey: string;
@@ -24,7 +25,12 @@ interface BarberItem {
 
 @Component({
   selector: 'cr-team-showcase',
-  imports: [CursorTargetDirective, ModalSheetComponent, TranslocoDirective],
+  imports: [
+    CursorTargetDirective,
+    ModalSheetComponent,
+    ShowcaseGalleryComponent,
+    TranslocoDirective,
+  ],
   templateUrl: './team-showcase.component.html',
   styleUrl: './team-showcase.component.css',
   changeDetection: ChangeDetectionStrategy.OnPush,

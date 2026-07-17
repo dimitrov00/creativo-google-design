@@ -21,9 +21,7 @@ describe('TeamShowcaseComponent', () => {
     ).toBe(3);
     expect(host.querySelectorAll('.team-card__explore-label').length).toBe(3);
     expect(host.querySelectorAll('.team-card__explore-icon').length).toBe(3);
-    expect(host.querySelectorAll('.barber-sheet__gallery figure').length).toBe(
-      4,
-    );
+    expect(host.querySelectorAll('.showcase-gallery figure').length).toBe(4);
     expect(host.querySelector('.barber-sheet__about')).not.toBeNull();
     expect(host.querySelector('.barber-sheet__rating')).not.toBeNull();
     expect(

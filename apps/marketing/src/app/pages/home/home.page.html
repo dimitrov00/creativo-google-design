@@ -87,70 +87,7 @@
       </div>
     </section>
 
-    <section
-      id="work"
-      class="gallery-scene"
-      data-gallery-scene
-      data-nav-tone="dark"
-      aria-labelledby="work-title"
-    >
-      <div class="gallery-sticky">
-        <header class="gallery-heading">
-          <p class="eyebrow">{{ t('marketing.work.eyebrow') }}</p>
-          <h2 id="work-title">
-            <span>{{ t('marketing.work.titleA') }}</span>
-            <span>{{ t('marketing.work.titleB') }}</span>
-          </h2>
-          <p>{{ t('marketing.work.scroll') }}</p>
-        </header>
-
-        <div class="gallery-track" data-gallery-track>
-          @for (item of galleryItems; track item.image; let index = $index) {
-          <article
-            [class]="'work-card ' + item.className"
-            [style.--card-order]="index"
-            data-gallery-reveal
-          >
-            <a
-              href="/client"
-              crCursorTarget
-              [crCursorTargetLabel]="t('marketing.work.bookCursor')"
-            >
-              <img
-                [src]="item.image"
-                [alt]="t(item.altKey)"
-                [attr.loading]="index === 0 ? 'eager' : 'lazy'"
-              />
-            </a>
-            <div>
-              <h3>{{ t(item.titleKey) }}</h3>
-              <p>{{ t(item.bodyKey) }}</p>
-            </div>
-          </article>
-          }
-          <aside class="gallery-end">
-            <div>
-              <p>{{ t('marketing.work.endTitle') }}</p>
-              <a href="/client" crCursorTarget crCursorTargetStyle="fill">
-                {{ t('marketing.work.endCta') }}
-                <span class="material-symbols-rounded" aria-hidden="true"
-                  >arrow_outward</span
-                >
-              </a>
-            </div>
-          </aside>
-        </div>
-
-        <div class="mobile-gallery-caption" aria-live="polite">
-          @if (activeGalleryItem(); as item) {
-          <div>
-            <h3>{{ t(item.titleKey) }}</h3>
-            <p>{{ t(item.bodyKey) }}</p>
-          </div>
-          }
-        </div>
-      </div>
-    </section>
+    <cr-work-gallery />
 
     <cr-services-page id="services" />
 
@@ -182,6 +119,8 @@
     </section>
 
     <cr-team-showcase />
+
+    <cr-locations />
 
     <section
       class="final-book"
@@ -217,6 +156,7 @@
         <a href="#work">{{ t('marketing.app.work') }}</a>
         <a href="#services">{{ t('marketing.app.services') }}</a>
         <a href="#team">{{ t('marketing.app.barbers') }}</a>
+        <a href="#locations">{{ t('marketing.app.locations') }}</a>
         <a href="/client">{{ t('marketing.app.book') }}</a>
       </nav>
       <small>{{ t('marketing.footer.copyright') }}</small>

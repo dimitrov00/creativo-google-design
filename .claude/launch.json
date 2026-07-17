@@ -1,0 +1,18 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "marketing",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": [
+        "nx",
+        "serve",
+        "marketing",
+        "--host",
+        "0.0.0.0",
+        "--allowedHosts"
+      ],
+      "port": 4200
+    }
+  ]
+}

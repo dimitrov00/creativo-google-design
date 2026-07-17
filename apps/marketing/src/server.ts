@@ -28,7 +28,14 @@ function cspHeader(nonce: string): string {
     `style-src 'self' 'nonce-${nonce}' https://fonts.googleapis.com`,
     "font-src 'self' https://fonts.gstatic.com",
     "img-src 'self' data:",
-    "connect-src 'self'",
+    // The Locations section's MapLibre GL map fetches its style/tiles/sprite/
+    // glyphs from OpenFreeMap over `fetch()`, which connect-src governs (not
+    // img-src — MapLibre never loads tiles via native <img> tags).
+    "connect-src 'self' https://tiles.openfreemap.org",
+    // MapLibre GL JS runs its tile-processing pipeline on a Web Worker it
+    // spins up from a `blob:` URL — without this, default-src's 'self'
+    // blocks that worker's creation and the map silently never renders.
+    "worker-src 'self' blob:",
     "object-src 'none'",
     "base-uri 'self'",
     "frame-ancestors 'none'",

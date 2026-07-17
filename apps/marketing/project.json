@@ -30,7 +30,10 @@
             "output": "assets/i18n"
           }
         ],
-        "styles": ["apps/marketing/src/styles.css"],
+        "styles": [
+          "apps/marketing/src/styles.css",
+          "node_modules/maplibre-gl/dist/maplibre-gl.css"
+        ],
         "server": "apps/marketing/src/main.server.ts",
         "ssr": {
           "entry": "apps/marketing/src/server.ts"

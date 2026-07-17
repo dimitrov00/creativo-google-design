@@ -20,6 +20,12 @@ body {
 }
 
 html {
+  /* Mirrors index.html's <meta name="color-scheme">: this page manages its
+     own per-section theming (home.page.ts's data-nav-tone system), so this
+     opts native UA chrome (scrollbars, form controls) out of following OS
+     dark mode too, and is the CSS-level half of the same "don't auto-invert
+     this page" signal for browsers that check the property over the meta. */
+  color-scheme: light;
   scroll-behavior: smooth;
   scroll-padding-top: 6rem;
 }

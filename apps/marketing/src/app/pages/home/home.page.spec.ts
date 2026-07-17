@@ -13,11 +13,9 @@ describe('HomePage', () => {
     await fixture.whenStable();
     const host: HTMLElement = fixture.nativeElement;
     expect(host.querySelector('h1')?.textContent).toContain('Визия');
-    expect(host.querySelectorAll('.work-card').length).toBe(6);
-    expect(host.querySelectorAll('.work-card > a + div').length).toBe(6);
-    expect(host.querySelector('[data-gallery-scene]')).not.toBeNull();
-    expect(host.querySelector('.edition-line')).toBeNull();
-    expect(host.querySelector('.gallery-meter')).toBeNull();
+    expect(host.querySelectorAll('.wg-card').length).toBe(6);
+    expect(host.querySelectorAll('.wg-card__frame img').length).toBe(6);
+    expect(host.querySelector('[data-wg-section]')).not.toBeNull();
     expect(host.querySelector('.film-control')).not.toBeNull();
     expect(host.querySelectorAll('.team-card').length).toBe(3);
     expect(

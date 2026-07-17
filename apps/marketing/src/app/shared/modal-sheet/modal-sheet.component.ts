@@ -13,6 +13,11 @@ import {
 } from '@angular/core';
 import { CursorTargetDirective } from '@creativo/shared/cursor';
 
+export interface ModalSheetScrollEvent {
+  readonly scroller: HTMLElement;
+  readonly progress: number;
+}
+
 @Component({
   selector: 'cr-modal-sheet',
   imports: [CursorTargetDirective],
@@ -42,7 +47,7 @@ export class ModalSheetComponent {
   readonly closing = input(false);
   readonly titleVisible = input(false);
   readonly dismissed = output<void>();
-  readonly sheetScrolled = output<HTMLElement>();
+  readonly sheetScrolled = output<ModalSheetScrollEvent>();
   protected readonly dragging = signal(false);
 
   constructor() {
@@ -81,7 +86,15 @@ export class ModalSheetComponent {
   }
 
   protected onScroll(event: Event): void {
-    this.sheetScrolled.emit(event.currentTarget as HTMLElement);
+    const scroller = event.currentTarget as HTMLElement;
+    const scrollable = Math.max(
+      1,
+      scroller.scrollHeight - scroller.clientHeight,
+    );
+    this.sheetScrolled.emit({
+      scroller,
+      progress: Math.min(1, Math.max(0, scroller.scrollTop / scrollable)),
+    });
   }
 
   protected onKeydown(event: KeyboardEvent): void {

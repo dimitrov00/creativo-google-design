@@ -1,0 +1,221 @@
+:host {
+  position: sticky;
+  inset-block-start: 5.1rem;
+  display: block;
+  min-inline-size: 0;
+  block-size: calc(min(90svh, 58rem) - 6.4rem);
+}
+
+:host.is-expanded {
+  block-size: auto;
+}
+
+.showcase-gallery {
+  position: relative;
+  min-inline-size: 0;
+  block-size: 100%;
+}
+
+.showcase-gallery__track {
+  position: relative;
+  min-block-size: 0;
+  overflow: hidden;
+  block-size: 100%;
+  border-radius: 1.5rem;
+  background: transparent;
+}
+
+figure {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  opacity: 0;
+  clip-path: inset(7% round 2.4rem);
+  transform: scale(1.035);
+  transition:
+    opacity 650ms ease,
+    clip-path 950ms cubic-bezier(0.16, 1, 0.3, 1),
+    transform 1.2s cubic-bezier(0.16, 1, 0.3, 1);
+  pointer-events: none;
+}
+
+figure.is-active {
+  z-index: 1;
+  opacity: 1;
+  clip-path: inset(0 round 1.5rem);
+  transform: scale(1);
+}
+
+img {
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+  filter: saturate(0.86) contrast(1.03);
+}
+
+.showcase-gallery__layout-toggle {
+  --cr-cursor-fill-color: #050505;
+  --cr-color-background: #fff;
+  position: absolute;
+  z-index: 4;
+  inset: 0.8rem 0.8rem auto auto;
+  inline-size: 2.55rem;
+  block-size: 2.55rem;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: rgb(247 247 244 / 0.78);
+  color: rgb(5 5 5 / 0.74);
+  box-shadow: 0 0.4rem 1.4rem rgb(0 0 0 / 0.08);
+  backdrop-filter: blur(14px) saturate(0.8);
+  cursor: pointer;
+  opacity: 0.86;
+  transition:
+    opacity 220ms ease,
+    color 220ms ease,
+    transform 360ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.showcase-gallery__layout-toggle:hover,
+.showcase-gallery__layout-toggle:focus-visible {
+  color: #050505;
+  opacity: 1;
+}
+
+.showcase-gallery__layout-toggle:active {
+  transform: scale(0.92);
+}
+
+.showcase-gallery__layout-toggle .material-symbols-rounded {
+  font-size: 1.18rem;
+}
+
+:host.is-expanded .showcase-gallery__track {
+  block-size: auto;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-auto-rows: max-content;
+  gap: 0.5rem;
+  align-content: start;
+  overflow: visible;
+  border-radius: 0;
+  scrollbar-width: none;
+}
+
+:host.is-expanded .showcase-gallery__track::-webkit-scrollbar {
+  display: none;
+}
+
+:host.is-expanded figure,
+:host.is-expanded figure:first-child {
+  position: relative;
+  inset: auto;
+  grid-column: auto;
+  grid-row: auto;
+  aspect-ratio: 1;
+  align-self: start;
+  opacity: 1;
+  clip-path: inset(0 round 0.85rem);
+  transform: none;
+  pointer-events: auto;
+}
+
+@media (max-width: 760px) {
+  :host {
+    position: relative;
+    inset-block-start: auto;
+    order: 2;
+    block-size: min(68svh, 32rem);
+    display: flex;
+    flex-direction: column;
+  }
+
+  .showcase-gallery {
+    min-block-size: 0;
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+  }
+
+  .showcase-gallery__layout-toggle {
+    position: relative;
+    inset: auto;
+    flex: 0 0 auto;
+    align-self: flex-end;
+    margin: 0 var(--modal-sheet-safe) 0.65rem 0;
+    background: transparent;
+    box-shadow: none;
+    backdrop-filter: none;
+    color: rgb(5 5 5 / 0.56);
+    opacity: 1;
+  }
+
+  .showcase-gallery__track {
+    flex: 1 1 auto;
+    block-size: auto;
+    display: flex;
+    gap: 0.55rem;
+    overflow-x: auto;
+    padding-inline-start: var(--modal-sheet-safe);
+    border-radius: 0;
+    scroll-padding-inline-start: var(--modal-sheet-safe);
+    scroll-snap-type: x mandatory;
+    scrollbar-width: none;
+  }
+
+  .showcase-gallery__track::-webkit-scrollbar {
+    display: none;
+  }
+
+  figure,
+  figure.is-active {
+    position: relative;
+    inset: auto;
+    flex: 0 0 87%;
+    opacity: 1;
+    clip-path: inset(0 round 1.15rem);
+    transform: none;
+    scroll-snap-align: center;
+    pointer-events: auto;
+  }
+
+  figure:last-child {
+    margin-inline-end: var(--modal-sheet-safe);
+  }
+
+  :host.is-expanded {
+    block-size: auto;
+  }
+
+  :host.is-expanded .showcase-gallery__track {
+    box-sizing: border-box;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-auto-rows: max-content;
+    gap: 0.35rem;
+    align-content: start;
+    overflow-x: hidden;
+    overflow-y: visible;
+    padding-inline: var(--modal-sheet-safe);
+    scroll-snap-type: none;
+  }
+
+  :host.is-expanded figure,
+  :host.is-expanded figure:first-child {
+    grid-column: auto;
+    grid-row: auto;
+    aspect-ratio: 1;
+    flex: none;
+    margin-inline-end: 0;
+    scroll-snap-align: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  figure,
+  .showcase-gallery__layout-toggle {
+    transition: none;
+  }
+}

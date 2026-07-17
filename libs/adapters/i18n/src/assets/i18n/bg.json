@@ -44,6 +44,7 @@
       "work": "Визии",
       "services": "Услуги",
       "barbers": "Барбъри",
+      "locations": "Локации",
       "book": "Запази час",
       "toggleMenu": "Отвори или затвори менюто",
       "language": "Език"
@@ -140,6 +141,10 @@
         }
       }
     },
+    "gallery": {
+      "carouselView": "Каруселен изглед",
+      "gridView": "Изглед в решетка"
+    },
     "servicesPage": {
       "catalogGridTitle": "Избери по резултат.",
       "catalogGuide": "Името, ориентировъчната цена и времето остават видими. Избери услуга за цялата история.",
@@ -155,8 +160,6 @@
       "viewGallery": "Виж всички резултати",
       "closeGallery": "Затвори галерията",
       "galleryLayout": "Изглед на галерията",
-      "carouselView": "Каруселен изглед",
-      "gridView": "Изглед в решетка",
       "stepExtras": "Завърши посещението",
       "required": "Задължително",
       "optional": "По желание",
@@ -286,6 +289,48 @@
         "name": "Стефан Илиев",
         "role": "Старши барбър",
         "specialty": "Бръснач · ритуал · контур на брада"
+      }
+    },
+    "locations": {
+      "eyebrow": "Намери своя стол",
+      "titleA": "Две студия,",
+      "titleB": "един стандарт.",
+      "intro": "И двете локации на Creativo пазят един и същ ритъм — прецизна работа, спокойно темпо и стол, който си заслужава пътя.",
+      "explore": "Разгледай",
+      "exploreLocation": "Разгледай {{location}}",
+      "closeDetails": "Затвори детайлите за локацията",
+      "galleryLabel": "Снимки от {{location}}",
+      "galleryHeading": "Вътре в студиото",
+      "directionsAria": "Виж маршрут до {{location}}",
+      "callAria": "Обади се в {{location}}",
+      "bookAt": "Запази час в {{location}}",
+      "mapAria": "Карта с локациите на Creativo",
+      "sheetMapAria": "Карта, показваща {{location}}",
+      "openNow": "Отворено сега",
+      "closedNow": "Затворено",
+      "closesAt": "Затваря в {{time}}",
+      "closesSoon": "Скоро затваря · {{time}}",
+      "opensAt": "Отваря в {{time}}",
+      "opensOn": "Отваря в {{day}} в {{time}}",
+      "closed": "Затворено",
+      "today": "Днес",
+      "weekdays": {
+        "sun": "Неделя",
+        "mon": "Понеделник",
+        "tue": "Вторник",
+        "wed": "Сряда",
+        "thu": "Четвъртък",
+        "fri": "Петък",
+        "sat": "Събота"
+      },
+      "center": {
+        "name": "Creativo Център",
+        "address": "ул. Граф Игнатиев 5, София",
+        "phone": "+359 2 981 2345"
+      },
+      "mladost": {
+        "name": "Creativo Младост",
+        "address": "бул. Александър Малинов 12, София"
       }
     },
     "final": {

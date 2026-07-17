@@ -34,8 +34,8 @@ describe('ServicesPage', () => {
       ).length,
     ).toBe(6);
     expect(host.querySelector('.service-tile__provenance')).toBeNull();
-    expect(host.querySelectorAll('.service-showcase figure').length).toBe(6);
-    expect(host.querySelectorAll('.service-showcase figcaption').length).toBe(
+    expect(host.querySelectorAll('.showcase-gallery figure').length).toBe(6);
+    expect(host.querySelectorAll('.showcase-gallery figcaption').length).toBe(
       0,
     );
     expect(host.querySelectorAll('.service-performer').length).toBe(2);
@@ -47,9 +47,9 @@ describe('ServicesPage', () => {
     ).toBe(0);
     expect(host.querySelector('.service-addons')).toBeNull();
     expect(
-      host.querySelector('button.service-showcase__layout-toggle'),
+      host.querySelector('button.showcase-gallery__layout-toggle'),
     ).not.toBeNull();
-    expect(host.querySelector('.service-showcase__progress')).toBeNull();
+    expect(host.querySelector('.showcase-gallery__progress')).toBeNull();
     expect(
       host.querySelector('#service-detail-sheet.modal-sheet[role="dialog"]'),
     ).not.toBeNull();

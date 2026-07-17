@@ -12,7 +12,11 @@ import {
 } from '@angular/core';
 import { TranslocoDirective } from '@jsverse/transloco';
 import { CursorTargetDirective } from '@creativo/shared/cursor';
-import { ModalSheetComponent } from '../../shared/modal-sheet/modal-sheet.component';
+import {
+  ModalSheetComponent,
+  type ModalSheetScrollEvent,
+} from '../../shared/modal-sheet/modal-sheet.component';
+import { ShowcaseGalleryComponent } from '../../shared/showcase-gallery/showcase-gallery.component';
 
 interface ServiceExample {
   readonly image: string;
@@ -44,7 +48,12 @@ interface CatalogServiceItem {
 
 @Component({
   selector: 'cr-services-page',
-  imports: [CursorTargetDirective, ModalSheetComponent, TranslocoDirective],
+  imports: [
+    CursorTargetDirective,
+    ModalSheetComponent,
+    ShowcaseGalleryComponent,
+    TranslocoDirective,
+  ],
   templateUrl: './services.page.html',
   styleUrl: './services.page.css',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -437,81 +446,17 @@ export class ServicesPage implements AfterViewInit {
   protected readonly sheetClosing = signal(false);
   protected readonly sheetHeaderCondensed = signal(false);
   protected readonly sheetBookingBarVisible = signal(false);
-  protected readonly showcasedImageIndex = signal(0);
+  protected readonly sheetScrollProgress = signal(0);
   protected readonly galleryExpanded = signal(false);
   protected readonly activeService = computed(
     () => this.services[this.activeServiceIndex()] ?? this.services[0],
   );
+  protected readonly activeServiceImages = computed(
+    () => this.activeService()?.examples.map((example) => example.image) ?? [],
+  );
 
   protected barberRoleKey(nameKey: string): string {
     return nameKey.replace(/\.name$/, '.role');
-  }
-
-  protected setGalleryLayout(expanding: boolean): void {
-    if (this.galleryExpanded() === expanding) return;
-    if (!isPlatformBrowser(this.platformId)) {
-      this.galleryExpanded.set(expanding);
-      return;
-    }
-
-    const showcase =
-      this.elementRef.nativeElement.querySelector<HTMLElement>(
-        '.service-showcase',
-      );
-    const figures = Array.from(
-      showcase?.querySelectorAll<HTMLElement>('figure') ?? [],
-    );
-    const firstRects = figures.map((figure) => figure.getBoundingClientRect());
-    const reducedMotion = window.matchMedia(
-      '(prefers-reduced-motion: reduce)',
-    ).matches;
-
-    this.galleryExpanded.set(expanding);
-    if (!showcase || reducedMotion || typeof showcase.animate !== 'function') {
-      return;
-    }
-
-    requestAnimationFrame(() => {
-      const nextFigures = Array.from(
-        showcase.querySelectorAll<HTMLElement>('figure'),
-      );
-      nextFigures.forEach((figure, index) => {
-        const first = firstRects[index];
-        const last = figure.getBoundingClientRect();
-        if (!first || last.width === 0 || last.height === 0) return;
-
-        const deltaX = first.left - last.left;
-        const deltaY = first.top - last.top;
-        const scaleX = first.width / last.width;
-        const scaleY = first.height / last.height;
-        const remainsVisible =
-          expanding || index === this.showcasedImageIndex();
-
-        figure.animate(
-          [
-            {
-              opacity: expanding
-                ? index === this.showcasedImageIndex()
-                  ? 1
-                  : 0
-                : 1,
-              transform: `translate(${deltaX}px, ${deltaY}px) scale(${scaleX}, ${scaleY})`,
-              transformOrigin: 'top left',
-            },
-            {
-              opacity: remainsVisible ? 1 : 0,
-              transform: 'translate(0, 0) scale(1)',
-              transformOrigin: 'top left',
-            },
-          ],
-          {
-            duration: 820,
-            delay: index * 55,
-            easing: 'cubic-bezier(0.16, 1, 0.3, 1)',
-          },
-        );
-      });
-    });
   }
 
   ngAfterViewInit(): void {
@@ -562,7 +507,7 @@ export class ServicesPage implements AfterViewInit {
     this.sheetClosing.set(false);
     this.sheetHeaderCondensed.set(false);
     this.sheetBookingBarVisible.set(false);
-    this.showcasedImageIndex.set(0);
+    this.sheetScrollProgress.set(0);
     this.galleryExpanded.set(false);
   }
 
@@ -584,7 +529,8 @@ export class ServicesPage implements AfterViewInit {
     );
   }
 
-  protected onSheetScroll(scroller: HTMLElement): void {
+  protected onSheetScroll({ scroller, progress }: ModalSheetScrollEvent): void {
+    this.sheetScrollProgress.set(progress);
     const sheet = scroller.closest<HTMLElement>('.modal-sheet');
     const title = scroller.querySelector<HTMLElement>(
       '.service-sheet__intro h2',
@@ -610,25 +556,6 @@ export class ServicesPage implements AfterViewInit {
         this.sheetBookingBarVisible.set(bookingBarVisible);
       }
     }
-
-    const imageCount = this.activeService()?.examples.length ?? 0;
-    if (imageCount > 1 && !this.galleryExpanded()) {
-      const scrollable = Math.max(
-        1,
-        scroller.scrollHeight - scroller.clientHeight,
-      );
-      const progress = Math.min(
-        1,
-        Math.max(0, scroller.scrollTop / scrollable),
-      );
-      const imageIndex = Math.min(
-        imageCount - 1,
-        Math.floor(progress * imageCount),
-      );
-      if (imageIndex !== this.showcasedImageIndex()) {
-        this.showcasedImageIndex.set(imageIndex);
-      }
-    }
   }
 
   protected onSheetClosed(): void {
@@ -636,7 +563,7 @@ export class ServicesPage implements AfterViewInit {
     this.sheetClosing.set(false);
     this.sheetHeaderCondensed.set(false);
     this.sheetBookingBarVisible.set(false);
-    this.showcasedImageIndex.set(0);
+    this.sheetScrollProgress.set(0);
     this.galleryExpanded.set(false);
   }
 

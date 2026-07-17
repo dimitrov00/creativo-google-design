@@ -50,6 +50,24 @@ product decision (a future contact/waitlist form would go through a single
 named Cloud Function endpoint, not broad Firebase domains — add that single
 URL when the form exists, not before).
 
+- **`apps/marketing`'s Locations section** (MapLibre GL JS + OpenFreeMap,
+  `apps/marketing/src/app/pages/home/locations/`) needs two additions beyond
+  the shared baseline:
+
+  ```
+  connect-src 'self' https://tiles.openfreemap.org;
+  worker-src 'self' blob:;
+  ```
+
+  `connect-src` covers the style JSON, vector tiles, sprite, and glyphs —
+  MapLibre fetches all of them via `fetch()`, never native `<img>` tags, so
+  `img-src` doesn't need the OpenFreeMap host. `worker-src` is needed because
+  MapLibre spins up its tile-processing pipeline on a `blob:` Web Worker;
+  without it, `default-src 'self'` silently blocks worker creation and the
+  map never renders (no console-visible CSP violation makes this obvious
+  unless devtools' Console/Network tabs are checked directly). Both are set
+  in `apps/marketing/src/server.ts`'s `cspHeader()`, not just here.
+
 - **`apps/client`, `apps/staff`** — both use `@creativo/adapters/firebase`
   (Auth, Firestore, Functions), so both need:
   ```

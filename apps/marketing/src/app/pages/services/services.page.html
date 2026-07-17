@@ -87,43 +87,16 @@
       </p>
       } @if (activeService(); as service) {
       <div class="service-sheet__body">
-        <section
-          class="service-showcase"
-          [class.is-expanded]="galleryExpanded()"
-          [attr.aria-label]="t('marketing.servicesPage.galleryLabel')"
-        >
-          <button
-            type="button"
-            class="service-showcase__layout-toggle"
-            [attr.aria-label]="
-                  t(
-                    galleryExpanded()
-                      ? 'marketing.servicesPage.carouselView'
-                      : 'marketing.servicesPage.gridView'
-                  )
-                "
-            (click)="setGalleryLayout(!galleryExpanded())"
-            crCursorTarget
-            crCursorTargetStyle="fill"
-          >
-            <span class="material-symbols-rounded" aria-hidden="true">
-              {{ galleryExpanded() ? 'view_carousel' : 'grid_view' }}
-            </span>
-          </button>
-
-          <div class="service-showcase__gallery">
-            @for (example of service.examples; track example.appointmentRef; let
-            exampleIndex = $index) {
-            <figure [class.is-active]="showcasedImageIndex() === exampleIndex">
-              <img
-                [src]="example.image"
-                [alt]="t(service.titleKey)"
-                loading="lazy"
-              />
-            </figure>
-            }
-          </div>
-        </section>
+        <cr-showcase-gallery
+          [images]="activeServiceImages()"
+          [imageAlt]="t(service.titleKey)"
+          [ariaLabel]="t('marketing.servicesPage.galleryLabel')"
+          [gridViewLabel]="t('marketing.gallery.gridView')"
+          [carouselViewLabel]="t('marketing.gallery.carouselView')"
+          [scrollProgress]="sheetScrollProgress()"
+          [expanded]="galleryExpanded()"
+          (expandedChange)="galleryExpanded.set($event)"
+        />
 
         <div class="service-sheet__story">
           <section class="service-sheet__intro">

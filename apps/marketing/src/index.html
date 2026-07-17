@@ -6,6 +6,16 @@
     <base href="/" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#12110c" />
+    <!--
+      Tells the browser this page manages its own light/dark/accent theming
+      per-section (see home.page.ts's scroll-driven data-nav-tone system) —
+      without this, Chrome/Android's "force dark" auto-inversion heuristic
+      kicks in on any page that doesn't declare a scheme, re-coloring
+      hardcoded text/background pairs independently and breaking the
+      carefully paired combinations (e.g. white barber-card text landing on
+      an inverted white background instead of the intended black one).
+    -->
+    <meta name="color-scheme" content="light" />
     <meta
       name="description"
       content="Discover exceptional independent beauty professionals, explore real work, and book your next look in minutes."

@@ -44,6 +44,7 @@
       "work": "Looks",
       "services": "Services",
       "barbers": "Barbers",
+      "locations": "Locations",
       "book": "Book now",
       "toggleMenu": "Open or close navigation",
       "language": "Language"
@@ -140,6 +141,10 @@
         }
       }
     },
+    "gallery": {
+      "carouselView": "Carousel view",
+      "gridView": "Grid view"
+    },
     "servicesPage": {
       "catalogGridTitle": "Choose by result.",
       "catalogGuide": "Name, estimated price, and timing remain visible. Choose a service for the complete story.",
@@ -155,8 +160,6 @@
       "viewGallery": "View every result",
       "closeGallery": "Close gallery",
       "galleryLayout": "Gallery layout",
-      "carouselView": "Carousel view",
-      "gridView": "Grid view",
       "stepExtras": "Complete the visit",
       "required": "Required",
       "optional": "Optional",
@@ -286,6 +289,48 @@
         "name": "Stefan Iliev",
         "role": "Senior barber",
         "specialty": "Razor · ritual · beard contour"
+      }
+    },
+    "locations": {
+      "eyebrow": "Find your chair",
+      "titleA": "Two studios,",
+      "titleB": "one standard.",
+      "intro": "Both Creativo locations keep the same rhythm — precise work, considered pace, and a chair worth the trip.",
+      "explore": "Explore",
+      "exploreLocation": "Explore {{location}}",
+      "closeDetails": "Close location details",
+      "galleryLabel": "Photos from {{location}}",
+      "galleryHeading": "Inside the studio",
+      "directionsAria": "Get directions to {{location}}",
+      "callAria": "Call {{location}}",
+      "bookAt": "Book at {{location}}",
+      "mapAria": "Map of Creativo locations",
+      "sheetMapAria": "Map showing {{location}}",
+      "openNow": "Open now",
+      "closedNow": "Closed",
+      "closesAt": "Closes at {{time}}",
+      "closesSoon": "Closes soon · {{time}}",
+      "opensAt": "Opens at {{time}}",
+      "opensOn": "Opens {{day}} at {{time}}",
+      "closed": "Closed",
+      "today": "Today",
+      "weekdays": {
+        "sun": "Sunday",
+        "mon": "Monday",
+        "tue": "Tuesday",
+        "wed": "Wednesday",
+        "thu": "Thursday",
+        "fri": "Friday",
+        "sat": "Saturday"
+      },
+      "center": {
+        "name": "Creativo Center",
+        "address": "5 Graf Ignatiev St, Sofia",
+        "phone": "+359 2 981 2345"
+      },
+      "mladost": {
+        "name": "Creativo Mladost",
+        "address": "12 Alexander Malinov Blvd, Sofia"
       }
     },
     "final": {
