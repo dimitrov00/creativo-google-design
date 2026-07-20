@@ -51,7 +51,12 @@ House rules for every app and lib in this workspace. Derived from the
   `crText`/`data-text` — and at most a modifier. Role metrics live only in
   `libs/shared/ui/src/lib/typography/typography.css`, built from
   `--cr-text-*` role tokens. Fluid sizing (`clamp()`) lives inside role
-  tokens, never at call sites.
+  tokens, never at call sites. `TextDirective` modifier inputs follow
+  SwiftUI's Text modifier names **verbatim** (`fontWeight`, `fontDesign`,
+  `fontWidth`, `foregroundStyle`, `bold`, `italic`, `monospacedDigit`, …);
+  a new modifier needs a SwiftUI counterpart or a documented deviation
+  (see docs/design-research/swiftui-text-modifiers-research.md §3 for the
+  mapping and the deliberate non-ports, e.g. `.font(.system(size:))`).
 - **Color:** only `--cr-color-*` semantic tokens (plus `currentColor` /
   `transparent` / `inherit`). No hex, `rgb()`, or ad-hoc `color-mix()`
   emphasis blends in app CSS — muted text uses the

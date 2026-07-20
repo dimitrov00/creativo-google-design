@@ -8,12 +8,15 @@ import { TextDirective } from './text.directive';
   imports: [TextDirective],
   template: `
     <h2 crText="title">Role only</h2>
+    <span crText bold>Marker only, bold sugar</span>
+    <em crText="footnote" italic monospacedDigit underline>Bare booleans</em>
+    <strong crText="body" fontWeight="medium" bold>Explicit beats sugar</strong>
     <p
       crText="body"
-      weight="semibold"
-      design="heading"
-      width="expanded"
-      tone="secondary"
+      fontWeight="semibold"
+      fontDesign="heading"
+      fontWidth="expanded"
+      foregroundStyle="secondary"
       textCase="uppercase"
       tracking="wide"
       [underline]="underline()"
@@ -35,15 +38,14 @@ describe('TextDirective', () => {
   function render() {
     const fixture = TestBed.createComponent(HostComponent);
     fixture.detectChanges();
-    return {
-      fixture,
-      heading: fixture.nativeElement.querySelector('h2') as HTMLElement,
-      paragraph: fixture.nativeElement.querySelector('p') as HTMLElement,
-    };
+    const query = (selector: string) =>
+      fixture.nativeElement.querySelector(selector) as HTMLElement;
+    return { fixture, query };
   }
 
   it('stamps the role as data-text and omits absent modifiers entirely', () => {
-    const { heading } = render();
+    const { query } = render();
+    const heading = query('h2');
     expect(heading.getAttribute('data-text')).toBe('title');
     // Absent modifiers must not render as empty attributes — an empty
     // data-text-weight would still match CSS [data-text-weight] guards.
@@ -54,15 +56,40 @@ describe('TextDirective', () => {
       'data-text-tone',
       'data-text-case',
       'data-text-tracking',
+      'data-text-italic',
       'data-text-underline',
       'data-text-strike',
+      'data-text-monospaced-digit',
     ]) {
       expect(heading.hasAttribute(attr), attr).toBe(false);
     }
   });
 
-  it('maps every modifier input onto its data-text-* attribute', () => {
-    const { paragraph } = render();
+  it('bare crText is a marker: no data-text, modifiers still apply', () => {
+    const { query } = render();
+    const marker = query('span');
+    expect(marker.hasAttribute('data-text')).toBe(false);
+    expect(marker.getAttribute('data-text-weight')).toBe('bold');
+  });
+
+  it('bare boolean attributes toggle their presence data-attrs', () => {
+    // `italic` / `underline` etc. as bare static attributes pass '' — the
+    // booleanAttribute transform must read that as true.
+    const { query } = render();
+    const em = query('em');
+    expect(em.getAttribute('data-text-italic')).toBe('');
+    expect(em.getAttribute('data-text-monospaced-digit')).toBe('');
+    expect(em.getAttribute('data-text-underline')).toBe('');
+  });
+
+  it('explicit fontWeight beats the bold() sugar', () => {
+    const { query } = render();
+    expect(query('strong').getAttribute('data-text-weight')).toBe('medium');
+  });
+
+  it('maps every SwiftUI-named input onto its data-text-* attribute', () => {
+    const { query } = render();
+    const paragraph = query('p');
     expect(paragraph.getAttribute('data-text')).toBe('body');
     expect(paragraph.getAttribute('data-text-weight')).toBe('semibold');
     expect(paragraph.getAttribute('data-text-design')).toBe('heading');
@@ -73,8 +100,9 @@ describe('TextDirective', () => {
     expect(paragraph.getAttribute('data-text-strike')).toBe('');
   });
 
-  it('toggles boolean decorations as presence attributes', () => {
-    const { fixture, paragraph } = render();
+  it('toggles bound boolean decorations reactively', () => {
+    const { fixture, query } = render();
+    const paragraph = query('p');
     expect(paragraph.hasAttribute('data-text-underline')).toBe(false);
 
     fixture.componentInstance.underline.set(true);

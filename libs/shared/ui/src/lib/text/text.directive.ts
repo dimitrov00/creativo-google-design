@@ -1,4 +1,4 @@
-import { Directive, input } from '@angular/core';
+import { Directive, booleanAttribute, computed, input } from '@angular/core';
 
 /**
  * SwiftUI `Font.TextStyle`-shaped role vocabulary, one name per
@@ -20,14 +20,14 @@ export type TextRole =
   | 'caption'
   | 'eyebrow';
 
-/** Modifier weights — the token scale, NOT the per-role identity weights. */
+/** ≙ SwiftUI Font.Weight — the modifier scale, NOT per-role identity weights. */
 export type TextWeight = 'regular' | 'medium' | 'semibold' | 'bold';
-/** ≙ SwiftUI fontDesign: which of the two token families to force. */
+/** ≙ SwiftUI Font.Design: which of the two token families to force. */
 export type TextDesign = 'heading' | 'content';
-/** ≙ SwiftUI fontWidth — Roboto Flex's variable width axis via font-stretch. */
+/** ≙ SwiftUI Font.Width — Roboto Flex's variable width axis via font-stretch. */
 export type TextWidth = 'condensed' | 'standard' | 'expanded';
 /** ≙ SwiftUI foregroundStyle, restricted to semantic color roles. */
-export type TextTone =
+export type TextForegroundStyle =
   | 'primary'
   | 'secondary'
   | 'tertiary'
@@ -35,7 +35,7 @@ export type TextTone =
   | 'danger'
   | 'success'
   | 'warning';
-/** ≙ SwiftUI textCase. `none` cancels a role's own transform (eyebrow). */
+/** ≙ SwiftUI Text.Case. `none` cancels a role's own transform (eyebrow). */
 export type TextCase = 'uppercase' | 'lowercase' | 'none';
 /** Call-site tracking escape hatches (--cr-tracking-*); roles carry their own. */
 export type TextTracking = 'tight' | 'wide';
@@ -50,33 +50,53 @@ export type TextTracking = 'tight' | 'wide';
  * markup (`<p data-text="footnote">`) keeps working with zero JS — the
  * directive adds the typed vocabulary, not a runtime dependency.
  *
+ * Inputs follow SwiftUI's Text modifier names verbatim (fontWeight,
+ * fontDesign, fontWidth, foregroundStyle, bold, italic, …). Bare `crText`
+ * with no role is the `Text(…)` marker itself — it stamps no `data-text`,
+ * so the element keeps its inherited metrics and only the modifiers apply
+ * (SwiftUI modifiers never float free of a Text either; see
+ * docs/design-research/swiftui-text-modifiers-research.md).
+ *
  * Role metrics are single-sourced in the `--cr-text-*` tokens; modifiers
- * only exist for the axes SwiftUI models (weight/design/width/tone/case/
- * decoration/tracking). There is deliberately no numeric font-size input —
- * an off-ramp size is a token change, not a call-site override.
+ * only exist for the axes SwiftUI models. There is deliberately no numeric
+ * font-size input (`.font(.system(size:))` is not ported) — an off-ramp
+ * size is a token change, not a call-site override.
  */
 @Directive({
   selector: '[crText]',
   host: {
-    '[attr.data-text]': 'role()',
-    '[attr.data-text-weight]': 'weight() ?? null',
-    '[attr.data-text-design]': 'design() ?? null',
-    '[attr.data-text-width]': 'width() ?? null',
-    '[attr.data-text-tone]': 'tone() ?? null',
+    '[attr.data-text]': 'role() || null',
+    '[attr.data-text-weight]': 'resolvedWeight() ?? null',
+    '[attr.data-text-design]': 'fontDesign() ?? null',
+    '[attr.data-text-width]': 'fontWidth() ?? null',
+    '[attr.data-text-tone]': 'foregroundStyle() ?? null',
     '[attr.data-text-case]': 'textCase() ?? null',
     '[attr.data-text-tracking]': 'tracking() ?? null',
+    '[attr.data-text-italic]': 'italic() ? "" : null',
     '[attr.data-text-underline]': 'underline() ? "" : null',
     '[attr.data-text-strike]': 'strikethrough() ? "" : null',
+    '[attr.data-text-monospaced-digit]': 'monospacedDigit() ? "" : null',
   },
 })
 export class TextDirective {
-  readonly role = input.required<TextRole>({ alias: 'crText' });
-  readonly weight = input<TextWeight | undefined>(undefined);
-  readonly design = input<TextDesign | undefined>(undefined);
-  readonly width = input<TextWidth | undefined>(undefined);
-  readonly tone = input<TextTone | undefined>(undefined);
+  /** ≙ `.font(.title)` — empty/omitted value = marker only, no role stamp. */
+  readonly role = input<TextRole | ''>('', { alias: 'crText' });
+  readonly fontWeight = input<TextWeight | undefined>(undefined);
+  /** ≙ `.bold()` — sugar for fontWeight="bold"; explicit fontWeight wins. */
+  readonly bold = input(false, { transform: booleanAttribute });
+  /** ≙ `.italic()` — real oblique via Roboto Flex's slnt axis (typography.css). */
+  readonly italic = input(false, { transform: booleanAttribute });
+  readonly fontDesign = input<TextDesign | undefined>(undefined);
+  readonly fontWidth = input<TextWidth | undefined>(undefined);
+  readonly foregroundStyle = input<TextForegroundStyle | undefined>(undefined);
   readonly textCase = input<TextCase | undefined>(undefined);
   readonly tracking = input<TextTracking | undefined>(undefined);
-  readonly underline = input(false);
-  readonly strikethrough = input(false);
+  readonly underline = input(false, { transform: booleanAttribute });
+  readonly strikethrough = input(false, { transform: booleanAttribute });
+  /** ≙ `.monospacedDigit()` — tabular figures, proportional everything else. */
+  readonly monospacedDigit = input(false, { transform: booleanAttribute });
+
+  protected readonly resolvedWeight = computed(
+    () => this.fontWeight() ?? (this.bold() ? 'bold' : undefined),
+  );
 }

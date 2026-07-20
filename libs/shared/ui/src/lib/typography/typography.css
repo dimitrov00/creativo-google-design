@@ -153,6 +153,19 @@
     letter-spacing: var(--cr-tracking-wide);
   }
 
+  /* Roboto Flex has a real slant axis (slnt 0…-10) — italic here is a true
+     oblique of the same design, not a faux-skew or a separate cut. Declared
+     after the roles so it survives their `font:` shorthand reset. */
+  [data-text-italic] {
+    font-style: oblique 10deg;
+  }
+
+  /* ≙ SwiftUI monospacedDigit(): tabular figures, proportional everything
+     else — for meters/counters whose digits must not reflow as they tick. */
+  [data-text-monospaced-digit] {
+    font-variant-numeric: tabular-nums;
+  }
+
   [data-text-underline] {
     text-decoration-line: underline;
   }
