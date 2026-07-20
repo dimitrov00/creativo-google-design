@@ -1,6 +1,5 @@
 import { DOCUMENT, isPlatformBrowser } from '@angular/common';
 import {
-  ChangeDetectionStrategy,
   Component,
   DestroyRef,
   ElementRef,
@@ -23,7 +22,14 @@ export interface ModalSheetScrollEvent {
   imports: [CursorTargetDirective],
   templateUrl: './modal-sheet.component.html',
   styleUrl: './modal-sheet.component.css',
-  changeDetection: ChangeDetectionStrategy.OnPush,
+  host: {
+    // The sheet stamps its own open state — consumers' content-in
+    // animations key off `cr-modal-sheet[data-open]`, and state a component
+    // owns belongs on its own host, not on each consumer's template
+    // (locations' sheet animations were silently dead because only
+    // services.page.html remembered to bind this).
+    '[attr.data-open]': "open() ? '' : null",
+  },
 })
 export class ModalSheetComponent {
   private readonly document = inject(DOCUMENT);

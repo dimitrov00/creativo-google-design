@@ -1,6 +1,13 @@
 <span class="cr-button__state-layer" aria-hidden="true"></span>
 @if (loading()) {
-<span class="cr-button__spinner" aria-hidden="true"></span>
+<!-- data-motion-essential: the spin IS the loading signal, not decoration —
+     exempts it from the global reduced-motion kill-switch; the local
+     reduced-motion rule in button.css still slows it down. -->
+<span
+  class="cr-button__spinner"
+  data-motion-essential
+  aria-hidden="true"
+></span>
 }
 <span class="cr-button__label" [class.cr-button__label--hidden]="loading()">
   <ng-content />

@@ -1,11 +1,10 @@
-import { ChangeDetectionStrategy, Component } from '@angular/core';
+import { Component } from '@angular/core';
 
 @Component({
   selector: 'cr-tokens-page',
   imports: [],
   templateUrl: './tokens.page.html',
   styleUrl: './tokens.page.css',
-  changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class TokensPage {
   protected readonly colors = [
@@ -13,10 +12,8 @@ export class TokensPage {
     'surface',
     'foreground',
     'accent',
-    'accent-active',
-    'analogous-0',
-    'analogous-1',
-    'analogous-2',
+    'highlight',
+    'highlight-foreground',
     'border',
     'focus-ring',
     'link',
@@ -32,7 +29,19 @@ export class TokensPage {
     'loose',
     'spacious',
   ];
-  protected readonly fontSizes = [
+  protected readonly textWeights = ['regular', 'medium', 'semibold', 'bold'];
+  protected readonly textTones = [
+    'primary',
+    'secondary',
+    'tertiary',
+    'accent',
+    'danger',
+    'success',
+    'warning',
+  ];
+  /** Rendered smallest→largest via `data-text` (see typography.css). */
+  protected readonly textRoles = [
+    'eyebrow',
     'caption',
     'footnote',
     'subheadline',
@@ -41,7 +50,9 @@ export class TokensPage {
     'headline',
     'title3',
     'title2',
+    'largeTitle',
     'title',
+    'display',
   ];
   // Kebab-cased to match the actual generated CSS custom property name
   // (Style Dictionary's nameKebab transform turns the "extraLarge" token

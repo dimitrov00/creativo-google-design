@@ -1,6 +1,5 @@
 import { DOCUMENT, isPlatformBrowser } from '@angular/common';
 import {
-  ChangeDetectionStrategy,
   Component,
   ElementRef,
   PLATFORM_ID,
@@ -11,7 +10,7 @@ import {
 import { gsap } from 'gsap';
 import { CursorService } from './cursor.service';
 
-const SCALE_HOVER_SIZE = 40;
+const SCALE_HOVER_SIZE = 56;
 const FILL_COLOR_PROPERTY = '--cr-cursor-fill-color';
 const FILL_COLOR_FALLBACK = 'var(--cr-color-foreground)';
 // Longest of the position/size transitions on .cr-cursor-dot__ring[data-morphing]
@@ -81,7 +80,6 @@ const MORPH_HIDE_SECONDS = 0;
   imports: [],
   templateUrl: './cursor-dot.component.html',
   styleUrl: './cursor-dot.component.css',
-  changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
     role: 'presentation',
     '[attr.aria-hidden]': 'true',

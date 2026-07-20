@@ -1,4 +1,4 @@
-import { TestBed } from '@angular/core/testing';
+import { DeferBlockState, TestBed } from '@angular/core/testing';
 import { provideTestI18n } from '../../test-i18n.providers';
 import { HomePage } from './home.page';
 
@@ -11,11 +11,17 @@ describe('HomePage', () => {
     const fixture = TestBed.createComponent(HomePage);
     fixture.detectChanges();
     await fixture.whenStable();
+    // The below-fold sections are wrapped in `@defer (on viewport)` —
+    // complete them all so the full page is assertable.
+    for (const block of await fixture.getDeferBlocks()) {
+      await block.render(DeferBlockState.Complete);
+    }
+    fixture.detectChanges();
     const host: HTMLElement = fixture.nativeElement;
     expect(host.querySelector('h1')?.textContent).toContain('Визия');
-    expect(host.querySelectorAll('.wg-card').length).toBe(6);
-    expect(host.querySelectorAll('.wg-card__frame img').length).toBe(6);
-    expect(host.querySelector('[data-wg-section]')).not.toBeNull();
+    expect(host.querySelectorAll('.work-card').length).toBe(6);
+    expect(host.querySelectorAll('.work-card__frame img').length).toBe(6);
+    expect(host.querySelector('[data-work-gallery-section]')).not.toBeNull();
     expect(host.querySelector('.film-control')).not.toBeNull();
     expect(host.querySelectorAll('.team-card').length).toBe(3);
     expect(

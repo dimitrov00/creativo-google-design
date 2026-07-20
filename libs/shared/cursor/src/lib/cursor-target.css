@@ -81,18 +81,28 @@ html[data-cr-cursor-active] * {
  * which Angular's view-encapsulation attribute bumps above this selector's
  * specificity otherwise — confirmed live without it.
  */
+/*
+ * Theme/tone awareness: the baseline ink and its contrast route through the
+ * inherited `--cr-cursor-ink` / `--cr-cursor-surface` indirections, so a
+ * page that repaints itself outside data-theme (e.g. marketing's
+ * scroll-driven data-nav-tone sections) can flip the morph palette for a
+ * whole subtree by setting those two vars — while per-element
+ * `--cr-cursor-fill-color` overrides (e.g. media chrome over a dark film)
+ * still win, and apps without the vars fall back to the theme tokens.
+ */
 [crCursorTarget] {
-  --cr-cursor-fill-color: var(--cr-color-foreground);
+  --cr-cursor-fill-color: var(--cr-cursor-ink, var(--cr-color-foreground));
   transition:
-    background-color 0.1s var(--cr-motion-easing-standard),
-    border-color 0.1s var(--cr-motion-easing-standard),
-    color 0.1s var(--cr-motion-easing-standard);
+    background-color var(--cr-motion-duration-fast)
+      var(--cr-motion-easing-standard),
+    border-color var(--cr-motion-duration-fast) var(--cr-motion-easing-standard),
+    color var(--cr-motion-duration-fast) var(--cr-motion-easing-standard);
 }
 
 [data-cr-cursor-hover][data-cr-cursor-style='fill'] {
   background: var(--cr-cursor-fill-color) !important;
   border-color: transparent !important;
-  color: var(--cr-color-background) !important;
+  color: var(--cr-cursor-surface, var(--cr-color-background)) !important;
 }
 
 [crCursorTarget][data-cr-cursor-hover][data-cr-cursor-style='scale'] {

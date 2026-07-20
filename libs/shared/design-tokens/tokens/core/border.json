@@ -1,8 +1,0 @@
-{
-  "border": {
-    "width": {
-      "$type": "dimension",
-      "hairline": { "$value": "1px" }
-    }
-  }
-}

@@ -1,0 +1,70 @@
+/**
+ * Shared modern baseline reset — the single source for the `cr-reset` layer
+ * every app declares in its styles.css. Modern practice (Bell/Comeau-style):
+ * a small set of sensible defaults layered so any component or utility rule
+ * wins without specificity fights — NOT an old-school "zero everything"
+ * Meyer reset, which fights the UA stylesheet instead of correcting it.
+ *
+ * App styles.css files must not re-declare any of these rules; app-specific
+ * base styling (body colors/fonts, links, selection, focus ring) belongs in
+ * the `cr-base` layer, not here.
+ */
+
+@layer cr-reset {
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
+
+  /* Components own their spacing explicitly; UA default margins (h1-h6, p,
+     ul, figure, …) never leak into layouts. */
+  * {
+    margin: 0;
+  }
+
+  html {
+    /* Stop iOS Safari inflating text after an orientation change. */
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+
+  body {
+    /* svh, not vh — vh overshoots behind mobile Safari's collapsing URL bar. */
+    min-block-size: 100svh;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Media are layout objects, not inline text: block display kills the
+     baseline-gap artifact, and the inline-size cap stops any image from
+     forcing horizontal overflow. */
+  img,
+  picture,
+  video,
+  canvas,
+  svg {
+    display: block;
+    max-inline-size: 100%;
+  }
+
+  /* Form controls never inherit typography from the page by default —
+     opt them all in so <button>/<input> match surrounding text. */
+  input,
+  button,
+  textarea,
+  select {
+    font: inherit;
+    letter-spacing: inherit;
+    color: inherit;
+  }
+
+  p,
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    overflow-wrap: break-word;
+  }
+}

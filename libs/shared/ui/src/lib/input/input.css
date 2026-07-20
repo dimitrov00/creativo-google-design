@@ -35,33 +35,42 @@
   /* Same five-tier mini/small/regular/large/extraLarge scale as Button
      (button.css) — min-block-size mirrors its WCAG 2.5.8 touch-target
      floor tier-for-tier. */
+  /* Type size per tier comes from the matching text role via `font:`
+     (same 1:1 ControlSize↔role map as button.css); the shorthand resets
+     font-family, so the control's heading family is re-asserted per tier
+     (weight stays the roles' regular — inputs never bolden). */
   :host([data-size='mini']) {
     padding: var(--cr-space-tight) var(--cr-space-tight);
-    font-size: var(--cr-font-size-caption);
+    font: var(--cr-text-caption);
+    font-family: var(--cr-font-family-heading);
     min-block-size: 1.75rem;
   }
 
   :host([data-size='small']) {
     padding: var(--cr-space-tight) var(--cr-space-compact);
-    font-size: var(--cr-font-size-footnote);
+    font: var(--cr-text-footnote);
+    font-family: var(--cr-font-family-heading);
     min-block-size: 2.25rem;
   }
 
   :host([data-size='regular']) {
     padding: var(--cr-space-compact) var(--cr-space-regular);
-    font-size: var(--cr-font-size-subheadline);
+    font: var(--cr-text-subheadline);
+    font-family: var(--cr-font-family-heading);
     min-block-size: 2.5rem;
   }
 
   :host([data-size='large']) {
     padding: var(--cr-space-regular) var(--cr-space-comfortable);
-    font-size: var(--cr-font-size-body);
+    font: var(--cr-text-body);
+    font-family: var(--cr-font-family-heading);
     min-block-size: 3rem;
   }
 
   :host([data-size='extraLarge']) {
     padding: var(--cr-space-comfortable) var(--cr-space-loose);
-    font-size: var(--cr-font-size-callout);
+    font: var(--cr-text-callout);
+    font-family: var(--cr-font-family-heading);
     min-block-size: 3.5rem;
   }
 

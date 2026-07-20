@@ -4,7 +4,7 @@
 }
 
 h2 {
-  font-size: var(--cr-font-size-headline);
+  font: var(--cr-text-headline);
   margin-block-end: var(--cr-space-compact);
 }
 

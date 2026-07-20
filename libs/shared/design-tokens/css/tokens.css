@@ -1,0 +1,169 @@
+/**
+ * Core (theme-independent) design tokens — THE source of truth, edited by
+ * hand. Theme-dependent color tokens live next door in light.css / dark.css;
+ * every file wraps its variables in `@layer cr-tokens` so app styles layered
+ * later always win without specificity fights.
+ *
+ * Naming follows SwiftUI-style semantic scales (caption/body/title,
+ * tight/comfortable/loose …) rather than numbered or sm/md/lg scales.
+ */
+
+@layer cr-tokens {
+  :root {
+    /* Spacing */
+    --cr-space-none: 0rem;
+    --cr-space-tight: 0.25rem;
+    --cr-space-compact: 0.5rem;
+    --cr-space-regular: 0.75rem;
+    --cr-space-comfortable: 1rem;
+    --cr-space-loose: 1.5rem;
+    --cr-space-spacious: 2rem;
+
+    /* Typography — Roboto Flex / Roboto match design.google's heading and
+       content pairing; both are Apache-2.0 licensed general-purpose Google
+       Fonts, not brand-exclusive. */
+    --cr-font-family-heading: 'Roboto Flex', system-ui, sans-serif;
+    --cr-font-family-content: Roboto, system-ui, sans-serif;
+    --cr-font-weight-regular: 400;
+    --cr-font-weight-medium: 500;
+    --cr-font-weight-semibold: 600;
+    --cr-font-weight-bold: 700;
+
+    /* Text roles — the public typography API (see typography.css, which is
+       the ONLY stylesheet allowed to consume these). Each role is a complete
+       `font` shorthand (weight size/line-height family) so a role can never
+       be half-applied — the shorthand's full sub-property reset is a
+       feature: a role always lands on a clean slate, then data-text-*
+       modifiers layer on top. Fluid roles carry their clamp() here, never
+       at call sites. The raw 630/610/760 weights are deliberate Roboto Flex
+       variable-font choices — part of the role's identity, distinct from
+       the small modifier weight scale above. The caption→callout run keeps
+       the original evenly-spaced ladder (0.75/0.875/1/1.125/1.25) because
+       Button/Input's five ControlSizes map onto it 1:1. */
+    --cr-text-display: 630 clamp(3.3rem, 6vw, 6.6rem) / 0.86
+      var(--cr-font-family-heading);
+    --cr-text-display-tracking: -0.074em;
+    --cr-text-large-title: var(--cr-font-weight-bold) 3rem / 1.15
+      var(--cr-font-family-heading);
+    --cr-text-large-title-tracking: 0em;
+    --cr-text-title: 610 clamp(2rem, 3.1vw, 3.6rem) / 0.94
+      var(--cr-font-family-heading);
+    --cr-text-title-tracking: -0.058em;
+    --cr-text-title2: var(--cr-font-weight-bold) 2.25rem / 1.2
+      var(--cr-font-family-heading);
+    --cr-text-title2-tracking: 0em;
+    --cr-text-title3: var(--cr-font-weight-bold) 1.875rem / 1.25
+      var(--cr-font-family-heading);
+    --cr-text-title3-tracking: 0em;
+    --cr-text-headline: var(--cr-font-weight-semibold) 1.5rem / 1.3
+      var(--cr-font-family-heading);
+    --cr-text-headline-tracking: 0em;
+    --cr-text-callout: var(--cr-font-weight-regular) 1.25rem / 1.35
+      var(--cr-font-family-content);
+    --cr-text-callout-tracking: 0em;
+    --cr-text-body: var(--cr-font-weight-regular) 1.125rem / 1.4
+      var(--cr-font-family-content);
+    --cr-text-body-tracking: 0em;
+    --cr-text-subheadline: var(--cr-font-weight-regular) 1rem / 1.5
+      var(--cr-font-family-content);
+    --cr-text-subheadline-tracking: 0em;
+    --cr-text-footnote: var(--cr-font-weight-regular) 0.875rem / 1.5
+      var(--cr-font-family-content);
+    --cr-text-footnote-tracking: 0em;
+    --cr-text-caption: var(--cr-font-weight-regular) 0.75rem / 1.5
+      var(--cr-font-family-content);
+    --cr-text-caption-tracking: 0em;
+    --cr-text-eyebrow: 760 0.64rem / 1.2 var(--cr-font-family-heading);
+    --cr-text-eyebrow-tracking: 0.13em;
+
+    /* Tracking modifiers — call-site escape hatches used via
+       data-text-tracking, NOT part of any role (role tracking lives in the
+       per-role tokens above). */
+    --cr-tracking-tight: -0.06em;
+    --cr-tracking-wide: 0.12em;
+
+    /* Icon glyph sizes — icon fonts (Material Symbols) size via font-size
+       but must NOT take a text role (the `font:` shorthand would reset the
+       icon font-family). Two steps; em-relative icon sizing next to role
+       text also remains fine. */
+    --cr-icon-size-small: 1rem;
+    --cr-icon-size-regular: 1.2rem;
+
+    /* Radius — `full` is the pill/circle escape hatch, deliberately px. */
+    --cr-radius-none: 0rem;
+    --cr-radius-small: 0.25rem;
+    --cr-radius-regular: 0.5rem;
+    --cr-radius-large: 0.75rem;
+    --cr-radius-extra-large: 1rem;
+    --cr-radius-full: 9999px;
+
+    /* Elevation shadows — tier N pairs with --cr-color-surface-N. */
+    --cr-shadow-0: 0px 0px 0px 0px rgba(21, 22, 25, 0);
+    --cr-shadow-1: 0px 2px 4px 0px rgba(21, 22, 25, 0.12);
+    --cr-shadow-2: 0px 3px 9px 0px rgba(21, 22, 25, 0.14);
+    --cr-shadow-3: 0px 4px 12px 0px rgba(21, 22, 25, 0.16);
+    --cr-shadow-4: 0px 8px 24px 0px rgba(21, 22, 25, 0.18);
+    --cr-shadow-5: 0px 16px 40px -4px rgba(21, 22, 25, 0.22);
+
+    /* Motion — mirrored 1:1 by src/lib/motion.ts for WAAPI call sites
+       (parity enforced by tokens.spec.ts); edit both together. slowest/
+       cinematic exist for section choreography (tone cross-fades, media
+       morphs) — interaction feedback stays fast/base. */
+    --cr-motion-duration-fast: 120ms;
+    --cr-motion-duration-base: 200ms;
+    --cr-motion-duration-slow: 320ms;
+    --cr-motion-duration-slower: 480ms;
+    --cr-motion-duration-slowest: 650ms;
+    --cr-motion-duration-cinematic: 900ms;
+    --cr-motion-easing-standard: cubic-bezier(0.32, 0, 0.16, 1);
+    --cr-motion-easing-decelerate: cubic-bezier(0, 0, 0.18, 1);
+    --cr-motion-easing-accelerate: cubic-bezier(0.44, 0, 1, 1);
+    --cr-motion-easing-emphasized: cubic-bezier(0.16, 1, 0.3, 1);
+
+    /* Border */
+    --cr-border-width-hairline: 1px;
+
+    /* Focus ring — pairs with --cr-color-focus-ring; every app's global
+       :focus-visible rule reads these instead of hardcoding 2px/2px. */
+    --cr-focus-ring-width: 2px;
+    --cr-focus-ring-offset: 2px;
+
+    /* Stacking — the only legal z-index values (see
+       docs/styling-conventions.md). base/raised/float order content within
+       a section; nav and above are page-level chrome tiers. */
+    --cr-layer-base: 0;
+    --cr-layer-raised: 1;
+    --cr-layer-float: 10;
+    --cr-layer-nav: 100;
+    --cr-layer-scrim: 1000;
+    --cr-layer-sheet: 1100;
+    --cr-layer-cursor: 1300;
+
+    /* Wash alphas — one shared intensity scale, DELIBERATELY generic: dark
+       theme's elevation tint (--cr-color-surface-N, see dark.css) and
+       interaction state-layers (button hover/press) draw from the same
+       ramp, so it is not named after either use. Validated by
+       src/lib/tokens.spec.ts's contrast test. */
+    --cr-alpha-1: 4%;
+    --cr-alpha-2: 6%;
+    --cr-alpha-3: 8%;
+    --cr-alpha-4: 11%;
+    --cr-alpha-5: 14%;
+
+    /* Materials (translucent chrome) — opacity ramp over the theme's
+       surface-tint, blur radii for backdrop-filter. */
+    --cr-material-blur-thin: 8px;
+    --cr-material-blur-regular: 16px;
+    --cr-material-blur-thick: 24px;
+    --cr-material-none: none;
+    --cr-material-ultra-thin: hsl(
+      from var(--cr-color-surface-tint) h s l / 20%
+    );
+    --cr-material-thin: hsl(from var(--cr-color-surface-tint) h s l / 40%);
+    --cr-material-regular: hsl(from var(--cr-color-surface-tint) h s l / 60%);
+    --cr-material-thick: hsl(from var(--cr-color-surface-tint) h s l / 80%);
+    --cr-material-ultra-thick: hsl(
+      from var(--cr-color-surface-tint) h s l / 92%
+    );
+  }
+}

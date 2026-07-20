@@ -1,0 +1,99 @@
+/**
+ * Dark theme semantic colors — THE source of truth, edited by hand.
+ * Must define the exact same set of `--cr-color-*` tokens as light.css
+ * (enforced by src/lib/tokens.spec.ts, which also checks the surface-N
+ * elevation ramp keeps >= 4.5:1 contrast against foreground).
+ */
+
+@layer cr-tokens {
+  [data-theme='dark'] {
+    --cr-color-background: #12110c;
+    --cr-color-surface: #32302a;
+
+    /* Deliberately identical to `surface` (not `background`) in dark theme
+       — per docs/design-research/elevation-surface-case-study.md, a card's
+       resting state is already lifted off the page here, since shadows
+       barely register on a dark base and the lighten-with-elevation tint
+       needs headroom. Light theme deliberately diverges (see light.css). */
+    --cr-color-surface-plain: #32302a;
+
+    /* The lighten-with-elevation tint mixed into surface-1..5 below —
+       matches foreground exactly, deliberately: dark-theme elevation
+       lightens toward white (the Material 2 white-alpha-on-dark idiom). */
+    --cr-color-surface-tint: #ffffff;
+
+    --cr-color-foreground: #ffffff;
+
+    /* Muted text hierarchy — see light.css for the contract. Slightly
+       higher percentages than light theme: white-on-dark loses apparent
+       contrast faster than black-on-light at equal alpha. */
+    --cr-color-foreground-secondary: color-mix(
+      in srgb,
+      var(--cr-color-foreground) 66%,
+      transparent
+    );
+    --cr-color-foreground-tertiary: color-mix(
+      in srgb,
+      var(--cr-color-foreground) 54%,
+      transparent
+    );
+
+    --cr-color-action-background: #145cf3;
+    --cr-color-action-background-active: #0b46c8;
+    --cr-color-action-foreground: #ffffff;
+    --cr-color-accent: #7aa5ff;
+
+    /* Same expressive yellow as light theme (a highlight SURFACE is hue-
+       stable across themes); its paired foreground stays near-black — white
+       text on #f6d800 fails contrast. (The old dark `accent-active` value
+       #a5c2ff was a brighter-accent state, not a highlight — that role is
+       covered by link-hover below.) */
+    --cr-color-highlight: #f6d800;
+    --cr-color-highlight-foreground: #000000;
+
+    --cr-color-border: #4a473d;
+
+    /* Alias chains — see light.css for the contract. Dark's link ramp rides
+       the accent pair (dark accent is already the bright step); link-hover
+       keeps its own literal because the hover step (#a5c2ff) exists nowhere
+       else in this theme's ramp. */
+    --cr-color-focus-ring: var(--cr-color-accent);
+    --cr-color-link: var(--cr-color-accent);
+    --cr-color-link-hover: #a5c2ff;
+
+    --cr-color-success: #5fbd65;
+    --cr-color-success-active: #8eda90;
+    --cr-color-warning: #d8b91f;
+    --cr-color-warning-active: #f2db66;
+    --cr-color-danger: #fe736c;
+    --cr-color-danger-active: #ffaba3;
+
+    /* Elevation surfaces — tier N mixes --cr-alpha-N of surface-tint into
+       surface-plain (tokens.css defines the alpha ramp). */
+    --cr-color-surface-1: color-mix(
+      in srgb,
+      var(--cr-color-surface-tint) var(--cr-alpha-1),
+      var(--cr-color-surface-plain)
+    );
+    --cr-color-surface-2: color-mix(
+      in srgb,
+      var(--cr-color-surface-tint) var(--cr-alpha-2),
+      var(--cr-color-surface-plain)
+    );
+    --cr-color-surface-3: color-mix(
+      in srgb,
+      var(--cr-color-surface-tint) var(--cr-alpha-3),
+      var(--cr-color-surface-plain)
+    );
+    --cr-color-surface-4: color-mix(
+      in srgb,
+      var(--cr-color-surface-tint) var(--cr-alpha-4),
+      var(--cr-color-surface-plain)
+    );
+    --cr-color-surface-5: color-mix(
+      in srgb,
+      var(--cr-color-surface-tint) var(--cr-alpha-5),
+      var(--cr-color-surface-plain)
+    );
+  }
+}

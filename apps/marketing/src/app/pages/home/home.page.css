@@ -1,31 +1,35 @@
 :host {
-  --page-bg: #fff;
-  --page-fg: #000;
+  --page-bg: var(--cr-color-background);
+  --page-fg: var(--cr-color-foreground);
+  /* Cursor fill morphs follow the scroll-driven tone, not just data-theme
+     (see cursor-target.css) — on dark sections the morph ink flips to the
+     light page color automatically. */
+  --cr-cursor-ink: var(--page-fg);
+  --cr-cursor-surface: var(--page-bg);
   display: block;
   overflow: clip;
   background: var(--page-bg);
   color: var(--page-fg);
   transition:
-    background-color 650ms cubic-bezier(0.16, 1, 0.3, 1),
-    color 650ms cubic-bezier(0.16, 1, 0.3, 1);
+    background-color var(--cr-motion-duration-slowest)
+      var(--cr-motion-easing-emphasized),
+    color var(--cr-motion-duration-slowest) var(--cr-motion-easing-emphasized);
 }
 
+/* :host-context, not @container style() — see app.css's nav-tone comment. */
 :host-context(html[data-nav-tone='dark']) {
-  --page-bg: #000;
-  --page-fg: #fff;
+  --page-bg: var(--cr-color-foreground);
+  --page-fg: var(--cr-color-background);
 }
 
 :host-context(html[data-nav-tone='accent']) {
-  --page-bg: #f6d800;
-  --page-fg: #000;
+  --page-bg: var(--cr-color-highlight);
+  --page-fg: var(--cr-color-foreground);
 }
 
+/* Background/color and their 650ms tone transition live on :host alone —
+   duplicating them here made every tone flip repaint the page twice. */
 .landing {
-  background: var(--page-bg);
-  color: var(--page-fg);
-  transition:
-    background-color 650ms cubic-bezier(0.16, 1, 0.3, 1),
-    color 650ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .landing h1,
@@ -36,59 +40,65 @@
   margin-block-start: 0;
 }
 
+/* Type comes from [data-text='eyebrow'] in the markup — this class only
+   carries the section rhythm below the label. */
 .eyebrow {
   margin-block-end: 1.5rem;
-  font-size: 0.68rem;
-  font-weight: 780;
-  letter-spacing: 0.15em;
-  line-height: 1.2;
-  text-transform: uppercase;
 }
 
-:host(.motion-ready) [data-reveal] {
+:host([data-motion-ready]) [data-reveal] {
   opacity: 0;
   filter: blur(9px);
   transform: translateY(4rem) rotate(0.75deg);
   transition:
-    opacity 900ms cubic-bezier(0.16, 1, 0.3, 1),
-    filter 900ms cubic-bezier(0.16, 1, 0.3, 1),
-    transform 1000ms cubic-bezier(0.16, 1, 0.3, 1);
+    opacity var(--cr-motion-duration-cinematic)
+      var(--cr-motion-easing-emphasized),
+    filter var(--cr-motion-duration-cinematic)
+      var(--cr-motion-easing-emphasized),
+    transform var(--cr-motion-duration-cinematic)
+      var(--cr-motion-easing-emphasized);
 }
 
-:host(.motion-ready) [data-reveal].is-visible {
+:host([data-motion-ready]) [data-reveal][data-visible] {
   opacity: 1;
   filter: blur(0);
   transform: translateY(0) rotate(0);
 }
 
+/* Hero — media-first: the film in its rounded frame directly under the
+   64px bar with the copy inset bottom-left over a decisive scrim, and the
+   one CTA centered on the page surface below (the transactional element
+   never sits on media). */
 .hero {
   --hero-progress: 0;
-  min-block-size: 100svh;
-  display: grid;
-  grid-template-columns: minmax(22rem, 0.92fr) minmax(28rem, 1.08fr);
-  gap: clamp(3rem, 7vw, 8rem);
+  display: flex;
+  flex-direction: column;
   align-items: center;
-  padding: clamp(8rem, 13vh, 10rem) clamp(1.5rem, 4.2vw, 4.25rem)
-    clamp(4rem, 8vh, 7rem);
+  gap: clamp(1.5rem, 3vh, 2.25rem);
+  min-block-size: 100svh;
+  padding: calc(4rem + var(--frame-inset)) var(--frame-inset)
+    clamp(1.5rem, 4vh, 3rem);
 }
 
+/* Identical layout structure to craft-film__copy: eyebrow, display line,
+   body — bottom-left over the scrim, same paddings and rhythm. */
 .hero__copy {
-  position: relative;
-  z-index: 3;
+  position: absolute;
+  z-index: 2;
+  inset: auto auto 0 0;
+  max-inline-size: min(48rem, 100% - 8rem);
+  padding: clamp(3rem, 7vw, 7rem) var(--page-gutter);
 }
 
-.hero h1 {
-  margin: 0;
-  font-size: clamp(4rem, 7.2vw, 7.8rem);
-  font-weight: 630;
-  letter-spacing: -0.078em;
-  line-height: 0.84;
+.hero__intro {
+  max-inline-size: 29rem;
+  margin: 1.5rem 0 0;
+  color: rgb(255 255 255 / 0.78);
 }
 
 .hero h1 > span {
   display: block;
   overflow: hidden;
-  padding: 0.05em 0.08em 0.06em 0;
 }
 
 .hero h1 > span > span {
@@ -96,76 +106,59 @@
   transform-origin: left bottom;
 }
 
-.hero__intro {
-  max-inline-size: 32rem;
-  margin: clamp(2rem, 4vw, 4rem) 0 0;
-  font-size: clamp(1rem, 1.35vw, 1.25rem);
-  line-height: 1.48;
-}
-
-.hero__visual {
-  align-self: center;
-  transform: translateY(calc(var(--hero-progress) * -2rem))
-    scale(calc(1 - var(--hero-progress) * 0.025));
-  transform-origin: center top;
-}
-
-.hero-film {
-  --pointer-x: 50%;
-  --pointer-y: 50%;
+.hero__frame {
   position: relative;
+  flex: 1;
+  align-self: stretch;
+  min-block-size: 24rem;
   overflow: hidden;
-  min-block-size: min(64svh, 45rem);
-  border-radius: clamp(1.4rem, 2.4vw, 2.4rem);
-  background: #090909;
-  clip-path: inset(0 round clamp(1.4rem, 2.4vw, 2.4rem));
+  border-radius: var(--radius-frame);
   contain: paint;
   isolation: isolate;
 }
 
-.hero-film video {
+/* Shared film-frame video treatment — both full-bleed films (hero + craft)
+   use the same oversized inset and grayscale grade; colour on the page is
+   reserved for the CTA blue and the highlight yellow. Only each film's
+   parallax transform (and the craft film's framing) stays on its own
+   selector below. */
+.film-video {
   position: absolute;
-  inset: -2%;
-  inline-size: 104%;
-  block-size: 104%;
+  inset: -6% 0;
+  inline-size: 100%;
+  block-size: 112%;
   object-fit: cover;
-  transform: scale(calc(1.02 + var(--hero-progress) * 0.05));
-  transition: transform 1.2s cubic-bezier(0.16, 1, 0.3, 1);
+  filter: grayscale(1) contrast(1.08);
 }
 
-.hero-film:hover video {
-  transform: scale(1.06);
+.hero__frame video {
+  transform: translateY(calc(var(--hero-progress) * 3rem))
+    scale(calc(1.04 + var(--hero-progress) * 0.04));
 }
 
-.hero-film__shade,
-.hero-film__spotlight {
+/* Decisive graded scrim (Apple's 32→64%) under the inset copy. */
+.hero__veil {
   position: absolute;
   inset: 0;
   pointer-events: none;
-}
-
-.hero-film__shade {
-  background: linear-gradient(180deg, rgb(0 0 0 / 0.05) 30%, rgb(0 0 0 / 0.64));
-}
-
-.hero-film__spotlight {
-  background: radial-gradient(
-    circle 10rem at var(--pointer-x) var(--pointer-y),
-    rgb(255 255 255 / 0.16),
-    transparent 72%
+  background: linear-gradient(
+    180deg,
+    rgb(0 0 0 / 0.2),
+    rgb(0 0 0 / 0.05) 36%,
+    rgb(0 0 0 / 0.5) 74%,
+    rgb(0 0 0 / 0.66)
   );
-  mix-blend-mode: screen;
 }
 
-.hero-film__meta {
+/* Film pause toggle — outlined glass circle, bottom-right of the media it
+   controls. Its morph palette comes from the [data-surface='film']
+   environment, not per-element overrides. */
+.film-control {
   position: absolute;
   z-index: 2;
-  inset: auto 1.15rem 1.15rem auto;
-  color: #fff;
-}
-
-.film-control {
-  inline-size: 3.4rem;
+  inset-block-end: clamp(1.5rem, 3vh, 2rem);
+  inset-inline-end: clamp(1.5rem, 3vw, 2.5rem);
+  inline-size: 3.5rem;
   aspect-ratio: 1;
   display: grid;
   place-items: center;
@@ -173,37 +166,15 @@
   border: 1px solid rgb(255 255 255 / 0.72);
   border-radius: 50%;
   background: rgb(0 0 0 / 0.14);
-  color: #fff;
+  color: currentColor;
   backdrop-filter: blur(14px);
-  --cr-cursor-fill-color: #fff;
-  --cr-color-background: #000;
-}
-
-.hero-book {
-  min-block-size: 5.2rem;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-block-start: 0.8rem;
-  padding-inline: 1.6rem;
-  border: 0;
-  border-radius: 1.2rem;
-  background: #145cf3;
-  color: #fff;
-  font-size: 1.05rem;
-  font-weight: 720;
-  text-decoration: none;
-}
-
-.hero-book:hover {
-  background: #0b46c8;
 }
 
 .services {
   display: grid;
   grid-template-columns: 0.68fr 1.32fr;
   gap: clamp(3rem, 8vw, 9rem);
-  padding: clamp(5rem, 9vw, 9rem) clamp(1.5rem, 4.2vw, 4.25rem);
+  padding: clamp(5rem, 9vw, 9rem) var(--page-gutter);
   background: transparent;
   color: inherit;
 }
@@ -216,22 +187,19 @@
 
 .services__heading h2 {
   margin: 0;
-  font-size: clamp(3.3rem, 6vw, 6.6rem);
-  font-weight: 630;
-  letter-spacing: -0.074em;
-  line-height: 0.86;
+  font: var(--cr-text-display);
+  letter-spacing: var(--cr-text-display-tracking);
 }
 
 .services__heading h2 em {
-  color: #145cf3;
-  font-weight: 430;
+  color: var(--cr-color-action-background);
+  font-weight: var(--cr-font-weight-regular);
 }
 
 .services__heading > p:last-child {
   max-inline-size: 25rem;
   margin: 2.3rem 0 0;
-  font-size: 1rem;
-  line-height: 1.52;
+  font: var(--cr-text-subheadline);
 }
 
 .service-list {
@@ -255,23 +223,26 @@
 
 .service-card h3 {
   margin: 0;
-  font-size: clamp(2rem, 3.1vw, 3.6rem);
-  font-weight: 610;
-  letter-spacing: -0.058em;
-  line-height: 0.94;
+  font: var(--cr-text-title);
+  letter-spacing: var(--cr-text-title-tracking);
 }
 
 .service-card p {
   max-inline-size: 26rem;
   margin: 0.5rem 0 0;
-  color: rgb(0 0 0 / 0.58);
-  font-size: 0.84rem;
-  line-height: 1.5;
+  color: color-mix(
+    in srgb,
+    var(--cr-color-foreground) calc(0.58 * 100%),
+    transparent
+  );
+  font: var(--cr-text-footnote);
 }
 
 .service-card strong {
   margin-block-start: 1rem;
-  font-size: 0.74rem;
+  font: var(--cr-text-caption);
+  /* The caption shorthand resets the element's bold — restore it. */
+  font-weight: var(--cr-font-weight-bold);
 }
 
 .service-media {
@@ -283,8 +254,8 @@
   --parallax-y: 0px;
   overflow: hidden;
   block-size: 100%;
-  border-radius: clamp(1rem, 1.8vw, 1.7rem);
-  background: #e8e8e8;
+  border-radius: var(--radius-media);
+  background: var(--cr-color-surface);
 }
 
 .service-media img {
@@ -292,71 +263,52 @@
   block-size: calc(100% + 70px);
   object-fit: cover;
   transform: translateY(calc(var(--parallax-y) - 35px)) scale(1.03);
-  transition: transform 100ms linear;
+  transition: transform var(--cr-motion-duration-fast) linear;
 }
 
-.services__all {
-  display: flex;
-  justify-content: space-between;
-  gap: 2rem;
-  padding: 1.45rem 1.6rem;
-  border-radius: 1rem;
-  background: #145cf3;
-  color: #fff;
-  font-size: 0.78rem;
-  font-weight: 760;
-  text-decoration: none;
-}
-
+/* Same inset-frame treatment as the hero, so both films read as one
+   family of framed sections. */
 .craft-film {
   position: relative;
-  min-block-size: 100svh;
+  min-block-size: calc(100svh - var(--frame-inset) * 2);
   display: flex;
   align-items: flex-end;
   overflow: hidden;
-  background: #000;
-  color: #fff;
+  margin: var(--frame-inset);
+  border-radius: var(--radius-frame);
+  clip-path: inset(0 round var(--radius-frame));
+  contain: paint;
+  isolation: isolate;
 }
 
 .craft-film > video {
   --parallax-y: 0px;
-  position: absolute;
-  inset: -6% 0;
-  inline-size: 100%;
-  block-size: 112%;
-  object-fit: cover;
   object-position: center 45%;
-  filter: grayscale(1) contrast(1.08);
   transform: translateY(var(--parallax-y)) scale(1.04);
 }
 
 .craft-film__veil {
   position: absolute;
   inset: 0;
+  pointer-events: none;
   background: linear-gradient(90deg, rgb(0 0 0 / 0.9), rgb(0 0 0 / 0.06) 74%);
 }
 
+/* Width-capped exactly like the hero's film copy so the text can never
+   run under the pause control at the bottom-right. */
 .craft-film__copy {
   position: relative;
   z-index: 2;
-  max-inline-size: 52rem;
-  padding: clamp(3rem, 7vw, 7rem) clamp(1.5rem, 4.2vw, 4.25rem);
+  max-inline-size: min(48rem, 100% - 8rem);
+  padding: clamp(3rem, 7vw, 7rem) var(--page-gutter);
 }
 
-.craft-film__copy h2 {
-  margin: 0;
-  font-size: clamp(4rem, 8vw, 9rem);
-  font-weight: 630;
-  letter-spacing: -0.078em;
-  line-height: 0.82;
-}
-
+/* Type comes from the shared data-text roles — identical to the hero's
+   film copy; only layout and film-legibility color live here. */
 .craft-film__copy > p:last-child {
   max-inline-size: 29rem;
-  margin: 2.5rem 0 0;
-  color: rgb(255 255 255 / 0.7);
-  font-size: 1rem;
-  line-height: 1.5;
+  margin: 1.5rem 0 0;
+  color: rgb(255 255 255 / 0.78);
 }
 
 .final-book {
@@ -364,7 +316,7 @@
   display: flex;
   flex-direction: column;
   justify-content: center;
-  padding: clamp(7rem, 12vw, 12rem) clamp(1.5rem, 4.2vw, 4.25rem) 2rem;
+  padding: clamp(7rem, 12vw, 12rem) var(--page-gutter) 2rem;
   background: transparent;
   color: inherit;
 }
@@ -372,75 +324,146 @@
 .final-book h2 {
   max-inline-size: 9ch;
   margin: 0;
+  /* stylelint-disable declaration-property-value-allowed-list --
+     Art-directed one-off, deliberately outside the type ramp (case study §F3). */
   font-size: clamp(5rem, 12vw, 14rem);
-  font-weight: 640;
+  font-weight: var(--cr-font-weight-semibold);
   letter-spacing: -0.086em;
   line-height: 0.78;
+  /* stylelint-enable declaration-property-value-allowed-list */
 }
 
 .final-book > a {
   align-self: flex-end;
   inline-size: min(34rem, 100%);
-  display: flex;
-  justify-content: space-between;
   margin-block-start: 4rem;
-  padding: 1.5rem 1.6rem;
-  border-radius: 1rem;
-  background: #145cf3;
-  color: #fff;
-  font-size: 1rem;
-  font-weight: 720;
-  text-decoration: none;
+  /* CTA radius vocabulary — consumed by Button's documented override hook. */
+  --cr-button-radius: var(--radius-action);
 }
 
-.final-book__foot {
-  display: flex;
-  justify-content: space-between;
-  gap: 2rem;
-  margin-block-start: auto;
-  padding-block-start: 5rem;
-  font-size: 0.64rem;
-  font-weight: 730;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.footer {
-  display: grid;
-  grid-template-columns: 1fr 1fr auto;
-  gap: 3rem;
-  align-items: end;
-  padding: 5rem clamp(1.5rem, 4.2vw, 4.25rem) 2rem;
+.site-footer {
+  position: relative;
+  padding: clamp(3.5rem, 7vw, 6rem) var(--page-gutter)
+    clamp(1.5rem, 2.5vw, 2rem);
   background: transparent;
   color: inherit;
 }
 
-.footer__brand img {
-  inline-size: clamp(9rem, 16vw, 15rem);
+.site-footer__grid {
+  display: grid;
+  grid-template-columns: minmax(16rem, 1.5fr) repeat(3, minmax(9rem, 1fr));
+  gap: 3rem 2rem;
+  padding-block-end: clamp(2.5rem, 5vw, 4rem);
 }
 
-.footer p {
+.site-footer__intro {
+  display: grid;
+  gap: 1.2rem;
+  align-content: start;
+  justify-items: start;
+}
+
+.site-footer__brand {
+  display: block;
+  inline-size: 7rem;
+  color: currentColor;
+  transition: opacity var(--cr-motion-duration-base)
+    var(--cr-motion-easing-standard);
+}
+
+.site-footer__brand:hover {
+  opacity: 0.68;
+}
+
+.site-footer__logo {
+  display: block;
+  inline-size: 100%;
+  aspect-ratio: 1920 / 419.82;
+  background: currentColor;
+  mask: url('/logo-black.svg') center / contain no-repeat;
+}
+
+.site-footer__tagline {
+  max-inline-size: 16rem;
   margin: 0;
-  color: rgb(255 255 255 / 0.58);
-  font-size: 0.85rem;
-  line-height: 1.45;
+  opacity: 0.6;
 }
 
-.footer nav {
+.site-footer__book {
+  margin-block-start: 0.4rem;
+}
+
+.site-footer__book .material-symbols-rounded {
+  font-size: var(--cr-icon-size-small);
+}
+
+.site-footer__column {
+  display: grid;
+  gap: 0.7rem;
+  align-content: start;
+  justify-items: start;
+}
+
+.site-footer__column h3 {
+  margin: 0 0 0.4rem;
+  opacity: 0.45;
+}
+
+.site-footer__column a {
+  color: currentColor;
+  font: var(--cr-text-footnote);
+  font-weight: var(--cr-font-weight-medium);
+  text-decoration: none;
+  opacity: 0.78;
+  transition:
+    opacity var(--cr-motion-duration-base) var(--cr-motion-easing-standard),
+    transform var(--cr-motion-duration-base) var(--cr-motion-easing-standard);
+}
+
+.site-footer__column a:hover {
+  opacity: 1;
+  transform: translateY(-0.1rem);
+}
+
+.site-footer__bottom {
   display: flex;
-  gap: 1.4rem;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem 1.5rem;
+  padding-block-start: clamp(1.25rem, 3vw, 2rem);
+  border-block-start: var(--cr-border-width-hairline) solid
+    color-mix(in srgb, currentColor 16%, transparent);
+  color: currentColor;
 }
 
-.footer nav a {
-  color: inherit;
-  font-size: 0.75rem;
+.site-footer__bottom small {
+  opacity: 0.5;
 }
 
-.footer small {
-  grid-column: 1 / -1;
-  padding-block-start: 2rem;
-  color: rgb(255 255 255 / 0.42);
-  font-size: 0.62rem;
+.site-footer__top-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: currentColor;
+  text-decoration: none;
+  opacity: 0.7;
+  transition: opacity var(--cr-motion-duration-base)
+    var(--cr-motion-easing-standard);
+}
+
+.site-footer__top-link:hover {
+  opacity: 1;
+}
+
+.site-footer__top-link .material-symbols-rounded {
+  font-size: var(--cr-icon-size-small);
+  transition: transform var(--cr-motion-duration-base)
+    var(--cr-motion-easing-standard);
+}
+
+.site-footer__top-link:hover .material-symbols-rounded {
+  transform: translateY(-0.15rem);
 }
 
 @media (max-width: 1100px) {
@@ -454,11 +477,6 @@
 }
 
 @media (max-width: 980px) {
-  .hero {
-    grid-template-columns: 0.82fr 1.18fr;
-    gap: 2rem;
-  }
-
   .services {
     grid-template-columns: 1fr;
   }
@@ -470,72 +488,23 @@
 
 @media (max-width: 819px) {
   .hero {
-    position: relative;
-    min-block-size: 100svh;
-    display: block;
-    padding: 5.15rem 1rem 0.8rem;
+    gap: 1.25rem;
   }
 
   .hero__copy {
-    position: absolute;
-    z-index: 5;
-    inset: 8.2rem 2rem auto;
-    color: #fff;
-    pointer-events: none;
-    opacity: calc(1 - var(--hero-progress) * 0.82);
-    transform: translateY(calc(var(--hero-progress) * -3rem));
+    max-inline-size: none;
+    padding: 1.25rem;
+    padding-inline-end: 4.75rem;
   }
 
-  .hero__copy .eyebrow {
-    max-inline-size: 24rem;
-    margin-block-end: 1.2rem;
-    color: rgb(255 255 255 / 0.82);
-  }
-
-  .hero h1 {
-    max-inline-size: 7ch;
-    font-size: clamp(4rem, 18vw, 6rem);
-    text-shadow: 0 0.08em 0.7em rgb(0 0 0 / 0.2);
-  }
-
-  .hero__intro {
-    max-inline-size: 20rem;
-    margin-block-start: 1.5rem;
-    color: rgb(255 255 255 / 0.82);
-    font-size: 0.9rem;
-  }
-
-  .hero__visual {
-    block-size: calc(100svh - 5.95rem);
-    display: grid;
-    grid-template-rows: minmax(0, 1fr) auto;
-    transform: none;
-  }
-
-  .hero-film {
-    min-block-size: 0;
-    block-size: 100%;
-    border-radius: 1.45rem;
-    clip-path: inset(0 round 1.45rem);
-  }
-
-  .hero-film__shade {
-    background: linear-gradient(
-      180deg,
-      rgb(0 0 0 / 0.58),
-      rgb(0 0 0 / 0.03) 54%,
-      rgb(0 0 0 / 0.66)
-    );
+  .hero__frame {
+    min-block-size: 20rem;
   }
 
   .film-control {
-    inline-size: 3.2rem;
-  }
-
-  .hero-book {
-    min-block-size: 4.55rem;
-    margin-block-start: 0.7rem;
-    border-radius: 1rem;
+    inset-block-end: 1.15rem;
+    inset-inline-end: 1.15rem;
+    inline-size: 3rem;
   }
 
   .services {
@@ -551,28 +520,20 @@
     min-block-size: 24rem;
   }
 
-  .footer {
-    grid-template-columns: 1fr;
+  .site-footer {
+    padding-inline: 1rem;
   }
 
-  .footer nav {
-    flex-wrap: wrap;
+  .site-footer__grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .site-footer__intro {
+    grid-column: 1 / -1;
   }
 }
 
 @media (max-width: 560px) {
-  .hero__copy {
-    inset-inline: 1.8rem;
-  }
-
-  .hero__intro {
-    max-inline-size: 18rem;
-  }
-
-  .services__heading h2 {
-    font-size: clamp(3.3rem, 15vw, 5rem);
-  }
-
   .service-media {
     min-block-size: 20rem;
   }
@@ -581,12 +542,10 @@
     padding-inline: 1rem;
   }
 
+  /* Control clearance on the right, matching the hero's film copy. */
   .craft-film__copy {
-    padding-inline: 1rem;
-  }
-
-  .craft-film__copy h2 {
-    font-size: clamp(4rem, 18vw, 6rem);
+    max-inline-size: none;
+    padding-inline: 1.25rem 4.75rem;
   }
 
   .final-book {
@@ -594,30 +553,22 @@
     padding-inline: 1rem;
   }
 
+  /* Art-directed one-off, deliberately outside the type ramp (case study §F3). */
   .final-book h2 {
+    /* stylelint-disable-next-line declaration-property-value-allowed-list --
+       Art-directed one-off, deliberately outside the type ramp (case study §F3). */
     font-size: clamp(5rem, 23vw, 7.5rem);
-  }
-
-  .final-book__foot {
-    flex-direction: column;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  :host(.motion-ready) [data-reveal] {
+  :host([data-motion-ready]) [data-reveal] {
     opacity: 1;
     filter: none;
     transform: none;
-    transition: none;
   }
 
-  .hero__visual,
-  .hero__copy,
-  .hero-film video,
-  .service-media img,
-  .craft-film > video {
-    height: auto !important;
-    min-block-size: auto;
-    padding-block: 7rem 3rem;
+  .hero__frame video {
+    transform: none;
   }
 }

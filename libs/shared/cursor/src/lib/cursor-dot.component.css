@@ -6,8 +6,8 @@
   position: fixed;
   top: 0;
   left: 0;
-  inline-size: 24px;
-  block-size: 24px;
+  inline-size: 30px;
+  block-size: 30px;
   border-radius: var(--cr-radius-full);
   /* No border — a static border color doesn't get the same auto-invert
      treatment as the fill (it's blended too, but as a distinct thin edge
@@ -17,7 +17,7 @@
   background: #fff;
   mix-blend-mode: exclusion;
   pointer-events: none;
-  z-index: 9999;
+  z-index: var(--cr-layer-cursor);
   opacity: 0;
   /* Static centering offset only — never animated. Position itself comes
      from `top`/`left` (set directly, uneased) so tracking has zero lag;
@@ -33,20 +33,17 @@
   position: fixed;
   top: 0;
   left: 0;
-  margin-inline-start: 24px;
+  margin-inline-start: 30px;
   max-inline-size: 200px;
   color: #fff;
-  font-family: var(--cr-font-family-content);
-  font-size: var(--cr-font-size-subheadline);
+  font: var(--cr-text-subheadline);
   font-weight: var(--cr-font-weight-medium);
-  line-height: 1.24;
-  letter-spacing: 0.5px;
   white-space: nowrap;
   mix-blend-mode: exclusion;
   pointer-events: none;
   -webkit-user-select: none;
   user-select: none;
-  z-index: 9999;
+  z-index: var(--cr-layer-cursor);
   opacity: 0;
   transform: translate3d(0, -50%, 0);
   transition: opacity var(--cr-motion-duration-fast)
@@ -79,13 +76,19 @@
      ~120ms fade — which visually looked like the target's already-changed
      text was itself slowly animating color as it got gradually uncovered.
      Confirmed live as the cause of that exact complaint. */
+  /* Deliberately outside the motion-token scale: the trailing-cursor feel
+     comes from asymmetric per-axis lag (top 0.2s vs left 0.25s) and a
+     hand-tuned curve — hero micro-interaction physics, not a drift risk
+     the token lint exists to catch (case-study §F18 exception). */
+  /* stylelint-disable declaration-property-value-disallowed-list */
   transition:
     top 0.2s cubic-bezier(0, 0.1, 0.1, 1),
     left 0.25s cubic-bezier(0, 0.1, 0.1, 1),
     width 0.1s ease-in-out,
     height 0.2s ease-in-out,
     border-radius 0.15s ease-in-out;
-  /* z-index stays the base 9999 (no override here) — a target-relative
+  /* stylelint-enable declaration-property-value-disallowed-list */
+  /* z-index stays the base --cr-layer-cursor (no override here) — a target-relative
      z-index was tried here previously to let the target's own label paint
      above the ring, but whether that actually wins depends on where
      CursorDotComponent happens to sit in the DOM relative to routed page

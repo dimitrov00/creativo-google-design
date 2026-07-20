@@ -3,11 +3,15 @@
   "version": "0.0.0",
   "license": "MIT",
   "scripts": {
-    "prepare": "husky"
+    "prepare": "husky",
+    "lint:styles": "stylelint \"apps/**/*.css\" \"libs/**/*.css\""
   },
   "lint-staged": {
     "*.{ts,html,css,json,md}": [
       "prettier --write"
+    ],
+    "*.css": [
+      "stylelint"
     ]
   },
   "private": true,
@@ -60,6 +64,7 @@
     "postcss": "^8.4.5",
     "prettier": "^3.8.1",
     "style-dictionary": "^5.5.0",
+    "stylelint": "^17.14.1",
     "tslib": "^2.3.0",
     "typescript": "~6.0.3",
     "typescript-eslint": "^8.58.0",
@@ -68,6 +73,8 @@
   },
   "dependencies": {
     "@angular-devkit/build-angular": "~22.0.4",
+    "@angular/aria": "~22.0.0",
+    "@angular/cdk": "~22.0.0",
     "@angular/common": "~22.0.4",
     "@angular/compiler": "~22.0.4",
     "@angular/core": "~22.0.4",

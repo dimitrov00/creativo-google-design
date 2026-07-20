@@ -41,7 +41,9 @@ describe('LocationsComponent', () => {
     expect(host.querySelector('.location-sheet__book')).not.toBeNull();
     expect(host.querySelector('[data-location-sheet-map]')).not.toBeNull();
     expect(host.querySelectorAll('.location-sheet__day').length).toBe(7);
-    expect(host.querySelector('.location-sheet__day.is-today')).not.toBeNull();
+    expect(
+      host.querySelector('.location-sheet__day[data-today]'),
+    ).not.toBeNull();
     expect(host.querySelector('.location-sheet__status-dot')).not.toBeNull();
   });
 });

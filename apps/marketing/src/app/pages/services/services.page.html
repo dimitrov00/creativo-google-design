@@ -9,15 +9,19 @@
       [attr.inert]="sheetOpen() ? '' : null"
     >
       <header class="catalog-intro" data-service-reveal>
-        <p>{{ t('marketing.servicesPage.indexEyebrow') }}</p>
+        <p data-text="eyebrow">
+          {{ t('marketing.servicesPage.indexEyebrow') }}
+        </p>
         <h2>{{ t('marketing.servicesPage.catalogGridTitle') }}</h2>
-        <span>{{ t('marketing.servicesPage.catalogGuide') }}</span>
+        <span data-text="footnote"
+          >{{ t('marketing.servicesPage.catalogGuide') }}</span
+        >
       </header>
 
       <div class="catalog-grid">
         @for (service of services; track service.titleKey; let index = $index) {
         <article
-          class="service-tile"
+          class="service-tile morph-card"
           role="button"
           tabindex="0"
           [attr.aria-label]="
@@ -34,7 +38,7 @@
           (keydown)="onServiceCardKeydown(index, $event)"
           data-service-reveal
         >
-          <div class="service-tile__media">
+          <div class="service-tile__media media-morph">
             <img
               [src]="service.image"
               [alt]="t(service.titleKey)"
@@ -43,22 +47,27 @@
           </div>
 
           <div class="service-tile__copy">
-            <p>{{ t(service.labelKey) }}</p>
-            <h3>{{ t(service.titleKey) }}</h3>
-            <div class="service-tile__facts">
+            <p data-text="eyebrow">{{ t(service.labelKey) }}</p>
+            <h3 data-text="title">{{ t(service.titleKey) }}</h3>
+            <div class="service-tile__facts" data-text="caption">
               <span>{{ t(service.durationKey) }}</span>
               <strong>{{ t(service.priceKey) }}</strong>
             </div>
-            <span class="service-tile__action" aria-hidden="true">
+            <span
+              class="service-tile__action explore-affordance"
+              aria-hidden="true"
+            >
               <span
-                class="service-tile__explore-label"
+                class="service-tile__explore-label explore-affordance__label"
+                data-text="caption"
+                data-text-weight="bold"
                 crCursorTarget
                 crCursorTargetStyle="fill"
               >
                 {{ t('marketing.servicesPage.explore') }}
               </span>
               <span
-                class="service-tile__explore-icon material-symbols-rounded"
+                class="service-tile__explore-icon explore-affordance__icon material-symbols-rounded"
                 crCursorTarget
                 crCursorTargetStyle="fill"
                 >arrow_forward</span
@@ -74,7 +83,6 @@
       sheetId="service-detail-sheet"
       labelledBy="service-sheet-title"
       [closeLabel]="t('marketing.servicesPage.closeService')"
-      [class.is-open]="sheetOpen() && !sheetClosing()"
       [open]="sheetOpen() && !sheetClosing()"
       [closing]="sheetClosing()"
       [titleVisible]="sheetHeaderCondensed()"
@@ -82,7 +90,12 @@
       (sheetScrolled)="onSheetScroll($event)"
     >
       @if (activeService(); as service) {
-      <p sheet-title class="service-sheet__compact-title">
+      <p
+        sheet-title
+        class="service-sheet__compact-title"
+        data-text="caption"
+        data-text-weight="bold"
+      >
         {{ t(service.titleKey) }}
       </p>
       } @if (activeService(); as service) {
@@ -101,12 +114,12 @@
         <div class="service-sheet__story">
           <section class="service-sheet__intro">
             <div>
-              <p>{{ t(service.labelKey) }}</p>
+              <p data-text="eyebrow">{{ t(service.labelKey) }}</p>
               <h2 id="service-sheet-title">{{ t(service.titleKey) }}</h2>
             </div>
             <div class="service-sheet__summary">
-              <p>{{ t(service.bodyKey) }}</p>
-              <div>
+              <p data-text="footnote">{{ t(service.bodyKey) }}</p>
+              <div data-text="caption">
                 <span>
                   <span class="material-symbols-rounded" aria-hidden="true"
                     >schedule</span
@@ -115,7 +128,7 @@
                 </span>
                 <strong>{{ t(service.priceKey) }}</strong>
               </div>
-              <a href="/client" crCursorTarget crCursorTargetStyle="fill">
+              <a href="/client" crButton variant="action" size="extraLarge">
                 <span>{{ t('marketing.servicesPage.bookService') }}</span>
                 <span class="material-symbols-rounded" aria-hidden="true"
                   >arrow_outward</span
@@ -126,11 +139,15 @@
 
           <section class="service-sheet__variants">
             <header>
-              <h3>{{ t('marketing.servicesPage.stepVariant') }}</h3>
+              <h3 data-text="display">
+                {{ t('marketing.servicesPage.stepVariant') }}
+              </h3>
             </header>
             <ul>
               @for (variantKey of service.variantKeys; track variantKey) {
-              <li>{{ t(variantKey) }}</li>
+              <li data-text="caption" data-text-weight="semibold">
+                {{ t(variantKey) }}
+              </li>
               }
             </ul>
           </section>
@@ -140,7 +157,7 @@
             aria-labelledby="service-performers-title"
           >
             <header>
-              <h3 id="service-performers-title">
+              <h3 id="service-performers-title" data-text="display">
                 {{ t('marketing.servicesPage.stepBarber') }}
               </h3>
             </header>
@@ -157,9 +174,11 @@
                     />
                   </div>
                   <div class="service-performer__identity">
-                    <p>{{ t(barberRoleKey(performer.nameKey)) }}</p>
-                    <h4>{{ t(performer.nameKey) }}</h4>
-                    <span>{{ t(performer.roleKey) }}</span>
+                    <p data-text="eyebrow">
+                      {{ t(barberRoleKey(performer.nameKey)) }}
+                    </p>
+                    <h4 data-text="title">{{ t(performer.nameKey) }}</h4>
+                    <span data-text="caption">{{ t(performer.roleKey) }}</span>
                   </div>
                 </article>
               </li>
@@ -172,15 +191,17 @@
 
       <div
         sheet-overlay
-        class="service-sheet__booking-bar"
-        [class.is-visible]="sheetBookingBarVisible()"
+        class="service-sheet__booking-bar sheet-bar-reveal"
+        [attr.data-visible]="sheetBookingBarVisible() ? '' : null"
         [attr.aria-hidden]="sheetBookingBarVisible() ? null : 'true'"
       >
         <a
           href="/client"
           [attr.tabindex]="sheetBookingBarVisible() ? null : -1"
-          crCursorTarget
-          crCursorTargetStyle="fill"
+          crButton
+          variant="action"
+          size="large"
+          shape="pill"
         >
           <span>{{ t('marketing.servicesPage.bookService') }}</span>
           <span class="material-symbols-rounded" aria-hidden="true"

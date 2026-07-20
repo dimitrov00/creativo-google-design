@@ -1,7 +1,6 @@
 import { isPlatformBrowser } from '@angular/common';
 import {
   AfterViewInit,
-  ChangeDetectionStrategy,
   Component,
   DestroyRef,
   ElementRef,
@@ -12,6 +11,7 @@ import {
 } from '@angular/core';
 import { TranslocoDirective } from '@jsverse/transloco';
 import { CursorService, CursorTargetDirective } from '@creativo/shared/cursor';
+import { Button } from '@creativo/shared/ui';
 import type { Map as MapLibreMap, Marker as MapLibreMarker } from 'maplibre-gl';
 import {
   ModalSheetComponent,
@@ -85,6 +85,7 @@ const MLADOST_SCHEDULE: WeekSchedule = [
 @Component({
   selector: 'cr-locations',
   imports: [
+    Button,
     CursorTargetDirective,
     ModalSheetComponent,
     ShowcaseGalleryComponent,
@@ -92,7 +93,6 @@ const MLADOST_SCHEDULE: WeekSchedule = [
   ],
   templateUrl: './locations.component.html',
   styleUrl: './locations.component.css',
-  changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class LocationsComponent implements AfterViewInit {
   private readonly elementRef = inject<ElementRef<HTMLElement>>(ElementRef);
@@ -266,7 +266,7 @@ export class LocationsComponent implements AfterViewInit {
         sheetMap.on('load', () => {
           if (this.destroyed) return;
           const element = this.createMarkerElement(this.activeIndex());
-          element.classList.add('is-active');
+          element.setAttribute('data-active', '');
           this.sheetMarker = new maplibregl.Marker({
             element,
             anchor: 'bottom',
@@ -456,10 +456,10 @@ export class LocationsComponent implements AfterViewInit {
   private updateActiveMarker(): void {
     const active = this.activeIndex();
     this.markerElements.forEach((element, index) => {
-      element.classList.toggle('is-active', index === active);
+      element.toggleAttribute('data-active', index === active);
     });
     this.indicatorElements.forEach((element, index) => {
-      element.classList.toggle('is-active', index === active);
+      element.toggleAttribute('data-active', index === active);
     });
   }
 
@@ -513,29 +513,11 @@ export class LocationsComponent implements AfterViewInit {
     });
 
     element.append(head, tail);
-    this.applyNgContentAttr(element, head, icon, tail);
+    // No scope-attribute stamping needed: pin/indicator chrome lives in the
+    // GLOBAL locations-map.css (imported by styles.css), because these
+    // elements are MapLibre-created and never receive Angular's
+    // `_ngcontent-*` attribute — see that file's header.
     return element;
-  }
-
-  /**
-   * Emulated view encapsulation scopes this component's CSS to elements
-   * carrying Angular's generated `_ngcontent-*` attribute, which only
-   * template-rendered elements get for free. Markers are built with raw
-   * `document.createElement` for MapLibre, so without this the entire
-   * `.locations-map__pin*` stylesheet silently no-ops on them.
-   */
-  private applyNgContentAttr(...elements: HTMLElement[]): void {
-    // The host element itself carries the *parent's* scope attribute, not
-    // this component's own — read it off a template-rendered descendant
-    // instead, which carries the attribute this component's CSS is scoped to.
-    const templateNode = this.elementRef.nativeElement.querySelector('[class]');
-    const contentAttr = templateNode
-      ? Array.from(templateNode.attributes).find((attr) =>
-          attr.name.startsWith('_ngcontent'),
-        )?.name
-      : undefined;
-    if (!contentAttr) return;
-    for (const el of elements) el.setAttribute(contentAttr, '');
   }
 
   /**
@@ -579,7 +561,6 @@ export class LocationsComponent implements AfterViewInit {
           this.cursorService.activeTarget.set(null);
         }
       });
-      this.applyNgContentAttr(indicator, arrow);
       container.appendChild(indicator);
       return { element: indicator, arrow, location };
     });
@@ -604,7 +585,7 @@ export class LocationsComponent implements AfterViewInit {
         const isVisible =
           point.x >= 0 && point.x <= width && point.y >= 0 && point.y <= height;
 
-        element.classList.toggle('is-visible', !isVisible);
+        element.toggleAttribute('data-visible', !isVisible);
         if (isVisible) continue;
 
         const dx = point.x - centerX;

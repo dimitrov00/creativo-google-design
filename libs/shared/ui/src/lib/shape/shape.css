@@ -8,21 +8,19 @@
   .cr-shape {
     overflow: hidden;
     border-radius: var(--cr-shape-radius, var(--cr-radius-none));
-    transition: border-radius 0.1s var(--cr-motion-easing-standard);
+    transition: border-radius var(--cr-motion-duration-fast)
+      var(--cr-motion-easing-standard);
   }
 
-  /* Reacts to both plain :hover (works everywhere, zero JS) AND
-     data-cr-cursor-hover (the custom cursor's own tracked-hover state, see
-     useCursorTarget/CursorTargetDirective) — kept in sync in case the two
-     ever diverge, e.g. pointer capture edge cases. */
+  /* Reacts to plain :hover (works everywhere, zero JS), data-cr-cursor-hover
+     (the custom cursor's own tracked-hover state, see useCursorTarget/
+     CursorTargetDirective), AND :focus-visible — keyboard users get the same
+     morph a pointer hover triggers on interactive hosts; non-focusable hosts
+     simply never match it. :hover and cursor-hover are kept in sync in case
+     the two ever diverge, e.g. pointer capture edge cases. */
   .cr-shape[data-cr-shape-morphs]:hover,
+  .cr-shape[data-cr-shape-morphs]:focus-visible,
   .cr-shape[data-cr-shape-morphs][data-cr-cursor-hover] {
     border-radius: var(--cr-shape-hover-radius);
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .cr-shape {
-      transition-duration: 1ms;
-    }
   }
 }

@@ -25,13 +25,13 @@ describe('ShowcaseGalleryComponent', () => {
     expect(host.querySelectorAll('figure').length).toBe(3);
     expect(host.querySelectorAll('img[alt="Example result"]').length).toBe(3);
     expect(
-      host.querySelector('figure.is-active img')?.getAttribute('src'),
+      host.querySelector('figure[data-active] img')?.getAttribute('src'),
     ).toBe('/two.jpg');
 
     host.querySelector<HTMLButtonElement>('button')?.click();
     fixture.detectChanges();
 
-    expect(host.classList).toContain('is-expanded');
+    expect(host.hasAttribute('data-expanded')).toBe(true);
     expect(host.querySelector('button')?.getAttribute('aria-pressed')).toBe(
       'true',
     );

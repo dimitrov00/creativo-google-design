@@ -8,7 +8,11 @@ Explicit rejections from the [design system modernization proposal](./design-sys
 
 ## No CSS-in-JS (vanilla-extract, StyleX, etc.)
 
-Neither vanilla-extract nor StyleX has a supported esbuild-plugin path into `@angular/build:application`, the executor `apps/showcase` actually uses — and this repo doesn't want CSS-rule-authoring-in-TypeScript in the first place. Styling stays in per-component `.css` files. What the repo actually wants — typed, zero-runtime-cost token _references_ — is already delivered by `libs/shared/design-tokens`'s generated `vars` object (see `generated/ts/vars.ts`). Do not add a CSS-in-JS dependency to chase that ergonomics goal; extend the Style Dictionary pipeline instead.
+Neither vanilla-extract nor StyleX has a supported esbuild-plugin path into `@angular/build:application`, the executor `apps/showcase` actually uses — and this repo doesn't want CSS-rule-authoring-in-TypeScript in the first place. Styling stays in per-component `.css` files. Do not add a CSS-in-JS dependency to chase typed-token ergonomics; the token source of truth is plain CSS (see the next decision), and the few TypeScript call sites that need token _values_ (WAAPI durations/easings) get a small hand-maintained mirror in `libs/shared/design-tokens`, not a codegen dependency.
+
+## Tokens are plain hand-edited CSS — no build pipeline
+
+The original Style Dictionary pipeline (`build.mjs`, `tokens/core/*.json`, `tokens/semantic/*.json`, `generated/{css,ts}/*`) was removed in July 2026. The token source of truth is now the three hand-edited files in `libs/shared/design-tokens/css/` (`tokens.css`, `light.css`, `dark.css`), with their invariants (theme key parity, elevation contrast) enforced by `src/lib/tokens.spec.ts` instead of build-time generation. Do not reintroduce a token build step, JSON token sources, or generated TS exports — edit the CSS directly and extend the spec when a new invariant appears. References to `build.mjs`/`generated/*` in older sections below are historical.
 
 ## Light-mode elevation is shadow-only; dark-mode keeps the tint stack
 
@@ -20,11 +24,12 @@ light-mode elevation and flags background-tint-only as "Caution" (it shows separ
 dark mode's tint-based approach is real (Material 2, Atlassian) but specifically because shadows
 barely register against a dark base — an asymmetry, not a single formula applied twice.
 
-`build.mjs`'s `appendDerivedSurfaceTokens` now takes a `tinted` flag: dark theme keeps the
-`color-mix()` stack (`tinted: true`), light theme aliases `--cr-color-surface-1..5` flatly to
-`--cr-color-surface` (`tinted: false`) — elevation there reads via `--cr-shadow-N` alone.
-`tokens/core/elevation.json`'s shadow tiers 1-2 were strengthened alongside this change, because an
-earlier attempt at flat light-mode surfaces (visible in `build.mjs`'s history/comments) had reverted
+Dark theme keeps the `color-mix()` tint stack for `--cr-color-surface-1..5`; light theme aliases
+them flatly to `--cr-color-surface-plain` — elevation there reads via `--cr-shadow-N` alone (see
+`css/dark.css` / `css/light.css`; originally implemented via `build.mjs`'s
+`appendDerivedSurfaceTokens(tinted)` flag before the pipeline's removal).
+The shadow tiers 1-2 were strengthened alongside this change, because an
+earlier attempt at flat light-mode surfaces had reverted
 for looking like "a static grey box sinking into the white page" — that was a real regression, but
 it was the old, weaker shadow values failing to carry the elevation signal alone, not evidence that
 shadow-only can't work. If light-mode elevation ever looks flat again, re-tune the shadow scale

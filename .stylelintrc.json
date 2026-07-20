@@ -1,0 +1,36 @@
+{
+  "//": "Token-enforcement lint (docs/styling-conventions.md). Design values may only come from --cr-* tokens: typography via text roles, stacking via the layer scale, motion via the motion tokens. The token sources themselves (design-tokens/css, typography.css) are exempt via overrides. Deliberate one-offs (the three art-directed heroes, icon glyph sizes) carry inline stylelint-disable comments naming their case-study rationale.",
+  "rules": {
+    "declaration-property-value-allowed-list": {
+      "font": ["/^var\\(--cr-text-/", "inherit"],
+      "font-size": ["/^var\\(--cr-/", "/^[0-9.]+em$/", "inherit"],
+      "font-weight": ["/^var\\(--cr-font-weight-/", "inherit"],
+      "letter-spacing": ["/^var\\(--cr-/", "normal", "inherit"],
+      "line-height": ["/^var\\(--cr-/", "1", "normal", "inherit"],
+      "text-transform": ["uppercase", "none"],
+      "z-index": ["/^var\\(--cr-layer-/", "/^-?[0-9]$/", "auto"]
+    },
+    "declaration-property-value-disallowed-list": {
+      "/^(transition|animation)$/": ["/(^|[^-\\w])[0-9]+m?s/"],
+      "/^(transition-duration|animation-duration|transition-delay|animation-delay)$/": [
+        "/^(?!1ms$|0m?s$)[0-9]+m?s$/"
+      ],
+      "/^(transition-timing-function|animation-timing-function)$/": [
+        "/cubic-bezier|^ease/"
+      ]
+    }
+  },
+  "overrides": [
+    {
+      "files": [
+        "libs/shared/design-tokens/css/**/*.css",
+        "libs/shared/ui/src/lib/typography/typography.css",
+        "libs/shared/ui/src/lib/reset/reset.css"
+      ],
+      "rules": {
+        "declaration-property-value-allowed-list": null,
+        "declaration-property-value-disallowed-list": null
+      }
+    }
+  ]
+}

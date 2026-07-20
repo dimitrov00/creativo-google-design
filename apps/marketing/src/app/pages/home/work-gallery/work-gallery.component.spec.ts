@@ -14,10 +14,14 @@ describe('WorkGalleryComponent', () => {
     await fixture.whenStable();
     const host: HTMLElement = fixture.nativeElement;
 
-    expect(host.querySelector('[data-wg-section]#work')).not.toBeNull();
-    expect(host.querySelectorAll('.wg-card').length).toBe(6);
-    expect(host.querySelectorAll('.wg-card__frame img').length).toBe(6);
-    expect(host.querySelector('.wg-end')).not.toBeNull();
-    expect(host.querySelector('.wg__meter-count')?.textContent).toContain('01');
+    expect(
+      host.querySelector('[data-work-gallery-section]#work'),
+    ).not.toBeNull();
+    expect(host.querySelectorAll('.work-card').length).toBe(6);
+    expect(host.querySelectorAll('.work-card__frame img').length).toBe(6);
+    expect(host.querySelector('.work-gallery__end')).not.toBeNull();
+    expect(
+      host.querySelector('.work-gallery__meter-count')?.textContent,
+    ).toContain('01');
   });
 });

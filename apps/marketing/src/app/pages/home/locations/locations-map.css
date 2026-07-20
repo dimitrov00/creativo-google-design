@@ -1,0 +1,146 @@
+/*
+ * Global (unscoped) styles for the MapLibre-created pin/indicator elements —
+ * same rationale as shape.css/material.css: this DOM is built imperatively
+ * (locations.component.ts hands elements to MapLibre markers), so it never
+ * receives Angular's `_ngcontent-*` scope attribute and component-scoped
+ * CSS can't reach it. Previously worked around by copying the scope
+ * attribute off a template-rendered sibling onto every imperative element
+ * (`applyNgContentAttr`) — a coupling to a framework private this file
+ * replaces. Imported once from apps/marketing/src/styles.css.
+ */
+@layer cr-components {
+  .locations-map__indicators {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    border-radius: clamp(1.4rem, 2.4vw, 2.4rem);
+    pointer-events: none;
+  }
+
+  .locations-map__indicator {
+    position: absolute;
+    inset-block-start: 0;
+    inset-inline-start: 0;
+    display: grid;
+    place-items: center;
+    inline-size: 2.4rem;
+    aspect-ratio: 1;
+    border-radius: 50%;
+    border: 2px solid var(--cr-color-foreground);
+    background: #fff;
+    color: var(--cr-color-foreground);
+    opacity: 0;
+    pointer-events: none;
+    /* `transform` is deliberately excluded — its position is recomputed on
+       every MapLibre `move` event (many times per pan/zoom gesture), and
+       transitioning a value that's rewritten faster than the transition
+       itself can finish makes it perpetually chase a moving target instead
+       of tracking it 1:1 (looks "springy"/laggy). Only opacity, which
+       toggles at most once per gesture, benefits from easing. */
+    transition: opacity var(--cr-motion-duration-base)
+      var(--cr-motion-easing-standard);
+  }
+
+  .locations-map__indicator[data-visible] {
+    opacity: 1;
+    pointer-events: auto;
+    cursor: pointer;
+  }
+
+  /* Selected uses the same "primary" treatment as Button's primary variant
+     (foreground-on-background, see button.css) — not a bespoke accent color —
+     so a selected pin/indicator reads as "this is the pressed/active one",
+     consistent with the rest of the site's solid-fill selected state. */
+  .locations-map__indicator[data-active] {
+    background: var(--cr-color-foreground);
+    border-color: var(--cr-color-foreground);
+    color: var(--cr-color-background);
+  }
+
+  .locations-map__indicator-arrow {
+    display: block;
+    /* Glyph box math, not copy — body supplies the size, but the icon family
+       and 1:1 box must be restated after the `font` shorthand's reset (this
+       selector out-specifies the Material Symbols class). */
+    font: var(--cr-text-body);
+    font-family: 'Material Symbols Rounded';
+    line-height: 1;
+  }
+
+  .locations-map__pin {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    inline-size: 2.9rem;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    cursor: pointer;
+    /* No `transition` here — MapLibre rewrites this element's own `transform`
+       (inline style) on every `move` event during a pan/zoom gesture, many
+       times a second. Transitioning it makes the pin perpetually chase a
+       moving target with an eased curve instead of tracking 1:1 — the
+       "springy"/laggy motion. A hover-lift `transform` override would hit
+       the same problem (and inline style wins over it anyway), so that
+       effect isn't attempted here. */
+  }
+
+  .locations-map__pin-head {
+    --cr-cursor-fill-color: var(--cr-color-foreground);
+    --cr-cursor-surface: #fff;
+    position: relative;
+    z-index: 1;
+    display: grid;
+    place-items: center;
+    inline-size: 2.9rem;
+    aspect-ratio: 1;
+    border-radius: 50%;
+    border: 2px solid var(--cr-color-foreground);
+    background: #fff;
+    transition:
+      background-color var(--cr-motion-duration-slow)
+        var(--cr-motion-easing-standard),
+      border-color var(--cr-motion-duration-slow)
+        var(--cr-motion-easing-standard),
+      color var(--cr-motion-duration-slow) var(--cr-motion-easing-standard);
+  }
+
+  .locations-map__pin-icon {
+    color: var(--cr-color-foreground);
+    /* Glyph box math, not copy — callout supplies the size, but the icon
+       family and 1:1 box must be restated after the `font` shorthand's reset
+       (this selector out-specifies the Material Symbols class). */
+    font: var(--cr-text-callout);
+    font-family: 'Material Symbols Rounded';
+    line-height: 1;
+    transition: color var(--cr-motion-duration-slow)
+      var(--cr-motion-easing-standard);
+  }
+
+  /* !important, matching the same rationale as the global cursor directive's
+     own fill rule (cursor-target.css): this must win over `[data-active]`'s
+     own icon color regardless of selector order/specificity, since the
+     hovered state can land on either the resting or the active pin. */
+  .locations-map__pin-head[data-cr-cursor-hover] .locations-map__pin-icon {
+    color: var(--cr-color-background) !important;
+  }
+
+  .locations-map__pin-tail {
+    position: relative;
+    z-index: 0;
+    inline-size: 0.75rem;
+    block-size: 0.75rem;
+    margin-block-start: -0.5rem;
+    background: var(--cr-color-foreground);
+    clip-path: polygon(50% 100%, 0 15%, 100% 15%);
+  }
+
+  .locations-map__pin[data-active] .locations-map__pin-head {
+    border-color: var(--cr-color-foreground);
+    background: var(--cr-color-foreground);
+  }
+
+  .locations-map__pin[data-active] .locations-map__pin-icon {
+    color: var(--cr-color-background);
+  }
+}

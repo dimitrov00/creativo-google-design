@@ -105,7 +105,7 @@ describe('CursorDotComponent', () => {
 
     expect(gsap.set).toHaveBeenCalledWith(
       expect.any(HTMLElement),
-      expect.objectContaining({ width: 40, height: 40 }),
+      expect.objectContaining({ width: 56, height: 56 }),
     );
 
     // Position tracking must still follow the pointer for "scale" (unlike "fill").

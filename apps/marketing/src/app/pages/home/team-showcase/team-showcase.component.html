@@ -6,17 +6,19 @@
     aria-labelledby="team-title"
   >
     <header class="team__heading" data-reveal>
-      <p class="eyebrow">{{ t('marketing.team.eyebrow') }}</p>
-      <h2 id="team-title">
+      <p class="eyebrow" data-text="eyebrow">
+        {{ t('marketing.team.eyebrow') }}
+      </p>
+      <h2 id="team-title" data-text="display">
         {{ t('marketing.team.titleA') }}<br />{{ t('marketing.team.titleB') }}
       </h2>
-      <p>{{ t('marketing.team.intro') }}</p>
+      <p data-text="footnote">{{ t('marketing.team.intro') }}</p>
     </header>
 
     <div class="team-grid">
       @for (barber of barbers; track barber.nameKey; let index = $index) {
         <article
-          class="team-card"
+          class="team-card morph-card"
           role="button"
           tabindex="0"
           [attr.aria-label]="
@@ -29,7 +31,7 @@
           (keydown)="onCardKeydown(index, $event)"
           data-reveal
         >
-          <div class="team-card__media">
+          <div class="team-card__media media-morph">
             <img
               [src]="barber.image"
               [alt]="t(barber.nameKey)"
@@ -38,9 +40,9 @@
           </div>
 
           <div class="team-card__copy">
-            <p>{{ t(barber.roleKey) }}</p>
-            <h3>{{ t(barber.nameKey) }}</h3>
-            <div class="team-card__facts">
+            <p data-text="eyebrow">{{ t(barber.roleKey) }}</p>
+            <h3 data-text="title">{{ t(barber.nameKey) }}</h3>
+            <div class="team-card__facts" data-text="caption">
               <span>{{ t(barber.specialtyKey) }}</span>
               @if (barber.rating !== undefined) {
                 <strong>
@@ -51,16 +53,21 @@
                 </strong>
               }
             </div>
-            <span class="team-card__action" aria-hidden="true">
+            <span
+              class="team-card__action explore-affordance"
+              aria-hidden="true"
+            >
               <span
-                class="team-card__explore-label"
+                class="team-card__explore-label explore-affordance__label"
+                data-text="caption"
+                data-text-weight="bold"
                 crCursorTarget
                 crCursorTargetStyle="fill"
               >
                 {{ t('marketing.team.explore') }}
               </span>
               <span
-                class="team-card__explore-icon material-symbols-rounded"
+                class="team-card__explore-icon explore-affordance__icon material-symbols-rounded"
                 crCursorTarget
                 crCursorTargetStyle="fill"
                 >arrow_forward</span
@@ -88,16 +95,26 @@
             [src]="barber.image"
             [alt]="t(barber.nameKey)"
           />
-          <p class="barber-sheet__role">{{ t(barber.roleKey) }}</p>
-          <h2 id="barber-sheet-title">{{ t(barber.nameKey) }}</h2>
-          <p class="barber-sheet__specialty">
+          <p class="barber-sheet__role" data-text="eyebrow">
+            {{ t(barber.roleKey) }}
+          </p>
+          <h2 id="barber-sheet-title" data-text="display">
+            {{ t(barber.nameKey) }}
+          </h2>
+          <p
+            class="barber-sheet__specialty"
+            data-text="caption"
+            data-text-weight="bold"
+          >
             {{ t(barber.specialtyKey) }}
           </p>
           @if (barber.aboutKey) {
-            <p class="barber-sheet__about">{{ t(barber.aboutKey) }}</p>
+            <p class="barber-sheet__about" data-text="footnote">
+              {{ t(barber.aboutKey) }}
+            </p>
           }
           @if (barber.rating !== undefined) {
-            <div class="barber-sheet__rating">
+            <div class="barber-sheet__rating" data-text="caption">
               <span class="material-symbols-rounded" aria-hidden="true"
                 >star</span
               >
@@ -105,7 +122,7 @@
               <span>{{ t('marketing.team.ratingLabel') }}</span>
             </div>
           }
-          <a href="/client" crCursorTarget crCursorTargetStyle="fill">
+          <a href="/client" crButton variant="action" size="extraLarge">
             <span>
               {{
                 t('marketing.team.bookWith', {

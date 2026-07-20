@@ -1,16 +1,17 @@
 import { DOCUMENT, isPlatformBrowser } from '@angular/common';
 import {
   AfterViewInit,
-  ChangeDetectionStrategy,
   Component,
   DestroyRef,
   ElementRef,
   PLATFORM_ID,
+  WritableSignal,
   inject,
   signal,
 } from '@angular/core';
 import { TranslocoDirective } from '@jsverse/transloco';
 import { CursorTargetDirective } from '@creativo/shared/cursor';
+import { Button } from '@creativo/shared/ui';
 import { ServicesPage } from '../services/services.page';
 import { LocationsComponent } from './locations/locations.component';
 import { TeamShowcaseComponent } from './team-showcase/team-showcase.component';
@@ -19,6 +20,7 @@ import { WorkGalleryComponent } from './work-gallery/work-gallery.component';
 @Component({
   selector: 'cr-home-page',
   imports: [
+    Button,
     CursorTargetDirective,
     LocationsComponent,
     ServicesPage,
@@ -28,7 +30,6 @@ import { WorkGalleryComponent } from './work-gallery/work-gallery.component';
   ],
   templateUrl: './home.page.html',
   styleUrl: './home.page.css',
-  changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class HomePage implements AfterViewInit {
   private readonly document = inject(DOCUMENT);
@@ -37,6 +38,7 @@ export class HomePage implements AfterViewInit {
   private readonly destroyRef = inject(DestroyRef);
 
   protected readonly heroPaused = signal(false);
+  protected readonly craftPaused = signal(false);
 
   ngAfterViewInit(): void {
     if (!isPlatformBrowser(this.platformId)) return;
@@ -54,7 +56,6 @@ export class HomePage implements AfterViewInit {
     );
     const cleanups: Array<() => void> = [];
     let frame = 0;
-    let currentTone = '';
 
     if (window.location.hash) {
       const targetId = decodeURIComponent(window.location.hash.slice(1));
@@ -74,7 +75,7 @@ export class HomePage implements AfterViewInit {
     }
 
     if (!reducedMotion) {
-      host.classList.add('motion-ready');
+      host.setAttribute('data-motion-ready', '');
       host
         .querySelectorAll<HTMLElement>('[data-hero-reveal]')
         .forEach((element, index) => {
@@ -107,7 +108,7 @@ export class HomePage implements AfterViewInit {
         (entries, observer) => {
           for (const entry of entries) {
             if (!entry.isIntersecting) continue;
-            (entry.target as HTMLElement).classList.add('is-visible');
+            (entry.target as HTMLElement).setAttribute('data-visible', '');
             observer.unobserve(entry.target);
           }
         },
@@ -117,9 +118,60 @@ export class HomePage implements AfterViewInit {
         .querySelectorAll<HTMLElement>('[data-reveal]')
         .forEach((element) => revealObserver.observe(element));
       cleanups.push(() => revealObserver.disconnect());
+
+      // Ambient films only decode while on screen; a user's explicit pause
+      // (data-user-paused, set by toggleFilm) wins over the viewport
+      // resuming them.
+      const filmObserver = new IntersectionObserver(
+        (entries) => {
+          for (const entry of entries) {
+            const video = entry.target as HTMLVideoElement;
+            if (!entry.isIntersecting) video.pause();
+            else if (!reducedMotion && !('userPaused' in video.dataset))
+              video.play().catch(() => undefined);
+          }
+        },
+        { rootMargin: '120px' },
+      );
+      host
+        .querySelectorAll<HTMLVideoElement>('video[data-film]')
+        .forEach((video) => filmObserver.observe(video));
+      cleanups.push(() => filmObserver.disconnect());
+    }
+
+    if (reducedMotion) {
+      host
+        .querySelectorAll<HTMLVideoElement>('video[data-film]')
+        .forEach((video) => {
+          video.dataset['userPaused'] = '';
+          video.pause();
+        });
+      this.heroPaused.set(true);
+      this.craftPaused.set(true);
     }
 
     const clamp = (value: number) => Math.min(1, Math.max(0, value));
+
+    // Mirrors home.page.css's tone → --page-bg mapping. Keeping the browser
+    // chrome (`<meta name="theme-color">`: Safari/Chrome URL-bar + iOS
+    // status-bar color) on the same token the page background uses makes the
+    // frame melt into whichever section is active — same per-section theming
+    // the in-page header already follows.
+    const toneBackgroundTokens = new Map([
+      ['light', '--cr-color-background'],
+      ['dark', '--cr-color-foreground'],
+      ['accent', '--cr-color-highlight'],
+    ]);
+
+    const syncBrowserThemeColor = (tone: string) => {
+      const token = toneBackgroundTokens.get(tone) ?? '--cr-color-background';
+      const background = window
+        .getComputedStyle(this.document.documentElement)
+        .getPropertyValue(token)
+        .trim();
+      const meta = this.document.querySelector('meta[name="theme-color"]');
+      if (background && meta) meta.setAttribute('content', background);
+    };
 
     const updateNavigationTone = () => {
       const center = window.innerHeight * 0.46;
@@ -128,9 +180,10 @@ export class HomePage implements AfterViewInit {
         return rect.top <= center && rect.bottom > center;
       });
       const tone = active?.dataset['navTone'] ?? 'light';
-      if (tone === currentTone) return;
-      currentTone = tone;
-      this.document.documentElement.setAttribute('data-nav-tone', tone);
+      const root = this.document.documentElement;
+      if (root.getAttribute('data-nav-tone') === tone) return;
+      root.setAttribute('data-nav-tone', tone);
+      syncBrowserThemeColor(tone);
     };
 
     const updateParallax = () => {
@@ -148,6 +201,7 @@ export class HomePage implements AfterViewInit {
     const updateHero = () => {
       if (!hero) return;
       const rect = hero.getBoundingClientRect();
+      // 0→1 as the hero scrolls out — drives the film's slow drift in CSS.
       const progress = clamp(-rect.top / Math.max(1, rect.height * 0.72));
       hero.style.setProperty('--hero-progress', progress.toString());
     };
@@ -169,34 +223,42 @@ export class HomePage implements AfterViewInit {
     cleanups.push(() => window.removeEventListener('resize', requestUpdate));
     cleanups.push(() => frame && cancelAnimationFrame(frame));
 
+    // Section heights change without any scroll when @defer blocks hydrate
+    // (map, gallery pinning) — recompute the tone then too, or the theme
+    // sticks on a stale section until the next scroll event.
+    if (typeof ResizeObserver === 'function') {
+      const layoutObserver = new ResizeObserver(requestUpdate);
+      layoutObserver.observe(host);
+      cleanups.push(() => layoutObserver.disconnect());
+    }
+
     requestAnimationFrame(updateScroll);
 
     this.destroyRef.onDestroy(() => {
       cleanups.forEach((cleanup) => cleanup());
       this.document.documentElement.removeAttribute('data-nav-tone');
+      // Tone attribute is gone, so the page is back on the default light
+      // background — walk the browser chrome back with it.
+      syncBrowserThemeColor('light');
     });
   }
 
-  protected async toggleHeroVideo(): Promise<void> {
+  protected async toggleFilm(
+    selector: string,
+    paused: WritableSignal<boolean>,
+  ): Promise<void> {
     const video =
-      this.elementRef.nativeElement.querySelector<HTMLVideoElement>(
-        '[data-hero-video]',
-      );
+      this.elementRef.nativeElement.querySelector<HTMLVideoElement>(selector);
     if (!video) return;
 
     if (video.paused) {
+      delete video.dataset['userPaused'];
       await video.play();
-      this.heroPaused.set(false);
+      paused.set(false);
     } else {
+      video.dataset['userPaused'] = '';
       video.pause();
-      this.heroPaused.set(true);
+      paused.set(true);
     }
-  }
-
-  protected onHeroPointerMove(event: PointerEvent): void {
-    const target = event.currentTarget as HTMLElement;
-    const rect = target.getBoundingClientRect();
-    target.style.setProperty('--pointer-x', `${event.clientX - rect.left}px`);
-    target.style.setProperty('--pointer-y', `${event.clientY - rect.top}px`);
   }
 }

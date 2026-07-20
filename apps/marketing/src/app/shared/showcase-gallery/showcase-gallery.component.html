@@ -17,7 +17,7 @@
 
   <div class="showcase-gallery__track">
     @for (image of images(); track $index; let imageIndex = $index) {
-      <figure [class.is-active]="activeIndex() === imageIndex">
+      <figure [attr.data-active]="activeIndex() === imageIndex ? '' : null">
         <img [src]="image" [alt]="imageAlt()" loading="lazy" />
       </figure>
     }

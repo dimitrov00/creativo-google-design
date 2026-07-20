@@ -6,3 +6,4 @@ export * from './lib/theme-toggle/theme-toggle';
 export * from './lib/theme/theme.service';
 export * from './lib/material/material.directive';
 export * from './lib/shape/shape.directive';
+export * from './lib/text/text.directive';

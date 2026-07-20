@@ -7,9 +7,9 @@
   grid-template-columns: minmax(15rem, 0.55fr) minmax(0, 1.45fr);
   gap: clamp(3rem, 7vw, 8rem);
   align-items: start;
-  padding: clamp(7rem, 12vw, 12rem) clamp(1.5rem, 4.2vw, 4.25rem);
+  padding: clamp(7rem, 12vw, 12rem) var(--page-gutter);
   background: transparent;
-  color: #fff;
+  color: var(--page-fg);
 }
 
 .team__heading {
@@ -18,29 +18,21 @@
   align-self: start;
 }
 
+/* Type metrics come from the shared data-text roles (eyebrow/display/footnote,
+   see libs/shared/ui typography.css) — only layout modifiers live here. */
 .eyebrow {
   margin: 0 0 1.2rem;
-  font-size: 0.64rem;
-  font-weight: 760;
-  letter-spacing: 0.13em;
-  text-transform: uppercase;
 }
 
 .team__heading h2 {
   max-inline-size: 8ch;
   margin: 0;
-  font-size: clamp(3.3rem, 6vw, 6.6rem);
-  font-weight: 630;
-  letter-spacing: -0.074em;
-  line-height: 0.86;
 }
 
 .team__heading > p:last-child {
   max-inline-size: 22rem;
   margin: 2rem 0 0;
-  color: rgb(255 255 255 / 0.58);
-  font-size: 0.9rem;
-  line-height: 1.5;
+  color: color-mix(in srgb, var(--page-fg) calc(0.58 * 100%), transparent);
 }
 
 .team-grid {
@@ -53,46 +45,30 @@
   position: relative;
   min-inline-size: 0;
   cursor: pointer;
-  outline: none;
 }
 
 .team-card:focus-visible h3 {
-  color: #f6d800;
+  color: var(--cr-color-highlight);
 }
 
+/* Skeleton + hover morph live in styles.css (.media-morph / .morph-card) —
+   only this card's clip endpoints (circle at rest → rounded on hover), film
+   grade and backing surface remain here. */
 .team-card__media {
-  position: relative;
-  overflow: hidden;
-  aspect-ratio: 1;
-  clip-path: inset(0 round 50%);
-  background: #161616;
-  transform: translateZ(0);
-  transition:
-    clip-path 750ms cubic-bezier(0.16, 1, 0.3, 1),
-    transform 750ms cubic-bezier(0.16, 1, 0.3, 1);
+  --media-morph-clip-rest: 50%;
+  --media-morph-clip-hover: var(--radius-media);
+  --media-morph-rotate: -0.7deg;
+  --media-morph-filter-duration: var(--cr-motion-duration-slowest);
+  background: var(--surface-film);
 }
 
 .team-card__media img {
-  inline-size: 100%;
-  block-size: 100%;
-  object-fit: cover;
   filter: saturate(1.02) contrast(1.02);
-  transform: scale(1.025);
-  transition:
-    filter 700ms ease,
-    transform 900ms cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-.team-card:hover .team-card__media,
-.team-card:focus-within .team-card__media {
-  clip-path: inset(0 round clamp(1rem, 1.7vw, 1.7rem));
-  transform: scale(0.97);
 }
 
 .team-card:hover .team-card__media img,
 .team-card:focus-within .team-card__media img {
   filter: saturate(1.08) contrast(1.02);
-  transform: scale(1.09) rotate(-0.7deg);
 }
 
 .team-card__copy {
@@ -106,28 +82,21 @@
 .team-card__copy > p {
   grid-column: 1 / -1;
   margin: 0;
-  color: rgb(255 255 255 / 0.52);
-  font-size: 0.59rem;
-  font-weight: 740;
-  letter-spacing: 0.11em;
-  text-transform: uppercase;
+  color: color-mix(in srgb, var(--page-fg) calc(0.52 * 100%), transparent);
 }
 
 .team-card h3 {
   max-inline-size: 11ch;
   margin: 0;
-  font-size: clamp(1.9rem, 3vw, 3.4rem);
-  font-weight: 590;
-  letter-spacing: -0.06em;
-  line-height: 0.92;
   transition:
-    color 320ms ease,
-    transform 500ms cubic-bezier(0.16, 1, 0.3, 1);
+    color var(--cr-motion-duration-slow) var(--cr-motion-easing-standard),
+    transform var(--cr-motion-duration-slower)
+      var(--cr-motion-easing-emphasized);
 }
 
 .team-card:hover h3,
 .team-card:focus-within h3 {
-  color: #f6d800;
+  color: var(--cr-color-highlight);
   transform: translateX(0.12em);
 }
 
@@ -137,71 +106,41 @@
   justify-items: end;
   align-content: start;
   max-inline-size: 11rem;
-  color: rgb(255 255 255 / 0.55);
+  color: color-mix(in srgb, var(--page-fg) calc(0.55 * 100%), transparent);
   text-align: end;
-  font-size: 0.67rem;
 }
 
 .team-card__facts strong {
   display: inline-flex;
   align-items: center;
   gap: 0.25rem;
-  color: #fff;
-  font-weight: 680;
+  color: var(--page-fg);
+  font-weight: var(--cr-font-weight-bold);
 }
 
 .team-card__facts .material-symbols-rounded {
   font-size: 0.9em;
 }
 
+/* Skeleton + hover morph live in styles.css (.explore-affordance) — only
+   this card's spacing, border ink and icon glyph metrics remain here. */
 .team-card__action {
-  grid-column: 1 / -1;
-  display: inline-flex;
-  gap: 0.42rem;
-  align-items: center;
-  justify-self: start;
   margin-block-start: 0.35rem;
 }
 
 .team-card__explore-label,
 .team-card__explore-icon {
-  min-block-size: 2.8rem;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid rgb(255 255 255 / 0.34);
-  color: #fff;
-  transition:
-    border-color 320ms ease,
-    transform 500ms cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-.team-card__explore-label {
-  --cr-cursor-fill-color: #f6d800;
-  --cr-color-background: #050505;
-  min-inline-size: 6.2rem;
-  padding-inline: 1rem;
-  border-radius: 0.85rem;
-  font-size: 0.67rem;
-  font-weight: 680;
+  border-color: color-mix(in srgb, var(--page-fg) 34%, transparent);
+  color: var(--page-fg);
 }
 
 .team-card__explore-icon {
-  --cr-cursor-fill-color: #f6d800;
-  --cr-color-background: #050505;
-  inline-size: 3.7rem;
-  border-radius: 999px;
-  font-size: 1.05rem;
-}
-
-.team-card:hover .team-card__action > span,
-.team-card:focus-within .team-card__action > span {
-  border-color: #f6d800;
-}
-
-.team-card:hover .team-card__explore-icon,
-.team-card:focus-within .team-card__explore-icon {
-  transform: translateX(0.2rem) rotate(-8deg);
+  /* Glyph box math, not copy — subheadline supplies the size, but the icon
+     family and 1:1 box must be restated after the `font` shorthand's reset
+     (this selector out-specifies the Material Symbols class). */
+  font: var(--cr-text-subheadline);
+  font-family: 'Material Symbols Rounded';
+  line-height: 1;
 }
 
 .barber-sheet {
@@ -228,37 +167,29 @@
 
 .barber-sheet__role {
   margin: 2rem 0 0;
-  font-size: 0.62rem;
-  font-weight: 760;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
 }
 
 .barber-sheet__profile h2 {
   max-inline-size: 8ch;
   margin: 0.7rem 0 0;
-  font-size: clamp(4rem, 6.3vw, 7rem);
-  font-weight: 620;
-  letter-spacing: -0.08em;
-  line-height: 0.8;
 }
 
 .barber-sheet__specialty,
 .barber-sheet__about {
   max-inline-size: 30rem;
-  color: rgb(5 5 5 / 0.58);
-  line-height: 1.55;
+  color: color-mix(
+    in srgb,
+    var(--cr-color-foreground) calc(0.58 * 100%),
+    transparent
+  );
 }
 
 .barber-sheet__specialty {
   margin: 1.8rem 0 0;
-  font-size: 0.75rem;
-  font-weight: 680;
 }
 
 .barber-sheet__about {
   margin: 1rem 0 0;
-  font-size: 0.86rem;
 }
 
 .barber-sheet__rating {
@@ -266,33 +197,31 @@
   gap: 0.4rem;
   align-items: center;
   margin-block-start: 1.5rem;
-  color: rgb(5 5 5 / 0.52);
-  font-size: 0.65rem;
+  color: color-mix(
+    in srgb,
+    var(--cr-color-foreground) calc(0.52 * 100%),
+    transparent
+  );
 }
 
 .barber-sheet__rating .material-symbols-rounded {
-  color: #050505;
-  font-size: 1rem;
+  color: var(--cr-color-foreground);
+  /* Glyph box math, not copy — subheadline supplies the size, but the icon
+     family and 1:1 box must be restated after the `font` shorthand's reset
+     (this selector out-specifies the Material Symbols class). */
+  font: var(--cr-text-subheadline);
+  font-family: 'Material Symbols Rounded';
+  line-height: 1;
 }
 
 .barber-sheet__rating strong {
-  color: #050505;
-  font-size: 0.78rem;
+  color: var(--cr-color-foreground);
 }
 
 .barber-sheet__profile > a {
-  display: flex;
-  justify-content: space-between;
-  gap: 2rem;
-  align-items: center;
   margin-block-start: 2rem;
-  padding: 1.15rem 1.25rem;
-  border-radius: 1rem;
-  background: #145cf3;
-  color: #fff;
-  font-size: 0.72rem;
-  font-weight: 720;
-  text-decoration: none;
+  /* CTA radius vocabulary — consumed by Button's documented override hook. */
+  --cr-button-radius: var(--radius-action);
 }
 
 @media (max-width: 760px) {
@@ -311,7 +240,6 @@
 
   .team__heading h2 {
     max-inline-size: 7ch;
-    font-size: clamp(4rem, 17vw, 6.5rem);
   }
 
   .team__heading > p:last-child {
@@ -332,7 +260,6 @@
 
   .team-card h3 {
     min-block-size: 2.45em;
-    font-size: clamp(1.35rem, 6.2vw, 2rem);
   }
 
   .team-card__facts {
@@ -341,26 +268,10 @@
     justify-items: start;
     max-inline-size: none;
     text-align: start;
-    font-size: 0.58rem;
   }
 
   .team-card__action {
     margin-block-start: 0.2rem;
-  }
-
-  .team-card__explore-label,
-  .team-card__explore-icon {
-    min-block-size: 2.45rem;
-  }
-
-  .team-card__explore-label {
-    min-inline-size: 0;
-    padding-inline: 0.75rem;
-    font-size: 0.58rem;
-  }
-
-  .team-card__explore-icon {
-    inline-size: 2.85rem;
   }
 
   .barber-sheet {
@@ -370,14 +281,6 @@
   .barber-sheet__profile {
     padding-block-start: 1rem;
   }
-
-  .barber-sheet__profile h2 {
-    font-size: clamp(4rem, 18vw, 6rem);
-  }
-
-  .barber-sheet__profile > a {
-    min-block-size: 4rem;
-  }
 }
 
 @media (max-width: 430px) {
@@ -386,39 +289,13 @@
   }
 
   .team-grid {
-    gap-block: 3rem;
-  }
-
-  .team-card__copy > p {
-    font-size: 0.52rem;
-  }
-
-  .team-card h3 {
-    font-size: clamp(1.25rem, 6.3vw, 1.7rem);
+    row-gap: 3rem;
   }
 }
 
 @media (hover: none) {
-  .team-card:hover .team-card__media {
-    clip-path: inset(0 round 50%);
-    transform: none;
-  }
-
-  .team-card:hover .team-card__media img {
-    transform: scale(1.025);
-  }
-
   .team-card:hover h3 {
     color: currentColor;
     transform: none;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .team-card__media,
-  .team-card__media img,
-  .team-card h3,
-  .team-card__explore-icon {
-    transition: none;
   }
 }

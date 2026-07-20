@@ -1,7 +1,6 @@
 import { isPlatformBrowser } from '@angular/common';
 import {
   AfterViewInit,
-  ChangeDetectionStrategy,
   Component,
   DestroyRef,
   ElementRef,
@@ -11,6 +10,7 @@ import {
 } from '@angular/core';
 import { TranslocoDirective } from '@jsverse/transloco';
 import { CursorTargetDirective } from '@creativo/shared/cursor';
+import { Button } from '@creativo/shared/ui';
 import { gsap } from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import { attachPointerTilt } from '../../../shared/motion/pointer-tilt';
@@ -26,10 +26,9 @@ const TILT_ANGLES = [-4, 5, -6, 4, -5, 6] as const;
 
 @Component({
   selector: 'cr-work-gallery',
-  imports: [CursorTargetDirective, TranslocoDirective],
+  imports: [Button, CursorTargetDirective, TranslocoDirective],
   templateUrl: './work-gallery.component.html',
   styleUrl: './work-gallery.component.css',
-  changeDetection: ChangeDetectionStrategy.OnPush,
   host: { style: 'display: contents' },
 })
 export class WorkGalleryComponent implements AfterViewInit {
@@ -86,11 +85,16 @@ export class WorkGalleryComponent implements AfterViewInit {
     if (!isPlatformBrowser(this.platformId)) return;
 
     gsap.registerPlugin(ScrollTrigger);
+    // Mobile browsers change the viewport's reported height when the
+    // address bar/toolbar hides or shows *during* a scroll gesture, which
+    // fires a `resize` event mid-scroll. ScrollTrigger's own built-in resize
+    // handling would otherwise treat that as a real layout change and
+    // refresh (re-measure + re-pin) while the user is actively flicking
+    // through the pinned track — that remeasure-mid-gesture is what was
+    // causing cards to flash blank/stuck-blurred. This tells it to ignore
+    // resizes that are just toolbar show/hide noise on touch devices.
+    ScrollTrigger.config({ ignoreMobileResize: true });
     this.build();
-
-    const onResize = () => ScrollTrigger.refresh();
-    window.addEventListener('resize', onResize, { passive: true });
-    this.cleanups.push(() => window.removeEventListener('resize', onResize));
 
     this.destroyRef.onDestroy(() => {
       this.cleanups.forEach((cleanup) => cleanup());
@@ -122,13 +126,17 @@ export class WorkGalleryComponent implements AfterViewInit {
   }
 
   private buildPinned(host: HTMLElement): void {
-    const section = host.querySelector<HTMLElement>('[data-wg-section]');
-    const sticky = host.querySelector<HTMLElement>('[data-wg-sticky]');
-    const track = host.querySelector<HTMLElement>('[data-wg-track]');
-    const cards = Array.from(
-      host.querySelectorAll<HTMLElement>('[data-wg-card]'),
+    const section = host.querySelector<HTMLElement>(
+      '[data-work-gallery-section]',
     );
-    const endPanel = host.querySelector<HTMLElement>('[data-wg-end]');
+    const sticky = host.querySelector<HTMLElement>(
+      '[data-work-gallery-sticky]',
+    );
+    const track = host.querySelector<HTMLElement>('[data-work-gallery-track]');
+    const cards = Array.from(
+      host.querySelectorAll<HTMLElement>('[data-work-gallery-card]'),
+    );
+    const endPanel = host.querySelector<HTMLElement>('[data-work-gallery-end]');
     if (!section || !sticky || !track) return;
 
     gsap.set(cards, { autoAlpha: 0 });
@@ -141,17 +149,25 @@ export class WorkGalleryComponent implements AfterViewInit {
         start: 'top top',
         end: () => `+=${track.scrollWidth - sticky.clientWidth}`,
         scrub: 0.65,
+        fastScrollEnd: true,
         pin: sticky,
         anticipatePin: 1,
         invalidateOnRefresh: true,
         onUpdate: (self) =>
-          section.style.setProperty('--wg-progress', self.progress.toFixed(4)),
+          section.style.setProperty(
+            '--work-gallery-progress',
+            self.progress.toFixed(4),
+          ),
       },
     });
 
     cards.forEach((card, index) => {
-      const frame = card.querySelector<HTMLElement>('[data-wg-frame]');
-      const image = card.querySelector<HTMLElement>('[data-wg-image]');
+      const frame = card.querySelector<HTMLElement>(
+        '[data-work-gallery-frame]',
+      );
+      const image = card.querySelector<HTMLElement>(
+        '[data-work-gallery-image]',
+      );
       const tilt = TILT_ANGLES[index % TILT_ANGLES.length];
 
       gsap.fromTo(
@@ -176,6 +192,7 @@ export class WorkGalleryComponent implements AfterViewInit {
             start: 'left 88%',
             end: 'left 42%',
             scrub: 0.4,
+            fastScrollEnd: true,
           },
         },
       );
@@ -191,6 +208,7 @@ export class WorkGalleryComponent implements AfterViewInit {
           start: 'right 45%',
           end: 'right -10%',
           scrub: 0.4,
+          fastScrollEnd: true,
         },
       });
 
@@ -218,6 +236,7 @@ export class WorkGalleryComponent implements AfterViewInit {
               start: 'left right',
               end: 'right left',
               scrub: 0.4,
+              fastScrollEnd: true,
             },
           },
         );
@@ -230,7 +249,7 @@ export class WorkGalleryComponent implements AfterViewInit {
 
     if (endPanel) {
       gsap.fromTo(
-        endPanel.querySelectorAll('[data-wg-end-reveal]'),
+        endPanel.querySelectorAll('[data-work-gallery-end-reveal]'),
         { autoAlpha: 0, y: 40 },
         {
           autoAlpha: 1,
@@ -243,6 +262,7 @@ export class WorkGalleryComponent implements AfterViewInit {
             start: 'left 75%',
             end: 'left 30%',
             scrub: 0.4,
+            fastScrollEnd: true,
           },
         },
       );

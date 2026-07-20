@@ -1,10 +1,4 @@
-import {
-  ChangeDetectionStrategy,
-  Component,
-  ElementRef,
-  inject,
-  input,
-} from '@angular/core';
+import { Component, ElementRef, inject, input } from '@angular/core';
 import { useCursorTarget } from '@creativo/shared/cursor';
 
 export type InputSize = 'mini' | 'small' | 'regular' | 'large' | 'extraLarge';
@@ -14,7 +8,6 @@ export type InputSize = 'mini' | 'small' | 'regular' | 'large' | 'extraLarge';
   imports: [],
   template: '',
   styleUrl: './input.css',
-  changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
     class: 'cr-input',
     '[attr.data-size]': 'size()',

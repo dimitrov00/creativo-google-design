@@ -1,6 +1,5 @@
 import { isPlatformBrowser } from '@angular/common';
 import {
-  ChangeDetectionStrategy,
   Component,
   DestroyRef,
   PLATFORM_ID,
@@ -10,6 +9,7 @@ import {
 } from '@angular/core';
 import { TranslocoDirective } from '@jsverse/transloco';
 import { CursorTargetDirective } from '@creativo/shared/cursor';
+import { Button } from '@creativo/shared/ui';
 import { ModalSheetComponent } from '../../../shared/modal-sheet/modal-sheet.component';
 import { ShowcaseGalleryComponent } from '../../../shared/showcase-gallery/showcase-gallery.component';
 
@@ -26,6 +26,7 @@ interface BarberItem {
 @Component({
   selector: 'cr-team-showcase',
   imports: [
+    Button,
     CursorTargetDirective,
     ModalSheetComponent,
     ShowcaseGalleryComponent,
@@ -33,7 +34,6 @@ interface BarberItem {
   ],
   templateUrl: './team-showcase.component.html',
   styleUrl: './team-showcase.component.css',
-  changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class TeamShowcaseComponent {
   private readonly platformId = inject(PLATFORM_ID);

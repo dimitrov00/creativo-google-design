@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, input } from '@angular/core';
+import { Component, input } from '@angular/core';
 
 export type CardElevation = 0 | 1 | 2 | 3 | 4 | 5;
 
@@ -7,7 +7,6 @@ export type CardElevation = 0 | 1 | 2 | 3 | 4 | 5;
   imports: [],
   templateUrl: './card.html',
   styleUrl: './card.css',
-  changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
     class: 'cr-card',
     '[attr.data-elevation]': 'elevation()',

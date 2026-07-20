@@ -12,7 +12,39 @@
         "0.0.0.0",
         "--allowedHosts"
       ],
-      "port": 4200
+      "port": 4200,
+      "autoPort": true
+    },
+    {
+      "name": "marketing-prod",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": [
+        "nx",
+        "serve",
+        "marketing",
+        "--configuration",
+        "production",
+        "--port",
+        "4310",
+        "--host",
+        "0.0.0.0",
+        "--allowedHosts"
+      ],
+      "port": 4310,
+      "autoPort": true
+    },
+    {
+      "name": "marketing-static",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "4477",
+        "-d",
+        "dist/apps/marketing/browser"
+      ],
+      "port": 4477,
+      "autoPort": true
     }
   ]
 }

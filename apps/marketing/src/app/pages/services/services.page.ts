@@ -1,7 +1,6 @@
 import { isPlatformBrowser } from '@angular/common';
 import {
   AfterViewInit,
-  ChangeDetectionStrategy,
   Component,
   DestroyRef,
   ElementRef,
@@ -12,6 +11,7 @@ import {
 } from '@angular/core';
 import { TranslocoDirective } from '@jsverse/transloco';
 import { CursorTargetDirective } from '@creativo/shared/cursor';
+import { Button } from '@creativo/shared/ui';
 import {
   ModalSheetComponent,
   type ModalSheetScrollEvent,
@@ -49,6 +49,7 @@ interface CatalogServiceItem {
 @Component({
   selector: 'cr-services-page',
   imports: [
+    Button,
     CursorTargetDirective,
     ModalSheetComponent,
     ShowcaseGalleryComponent,
@@ -56,7 +57,6 @@ interface CatalogServiceItem {
   ],
   templateUrl: './services.page.html',
   styleUrl: './services.page.css',
-  changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class ServicesPage implements AfterViewInit {
   private readonly elementRef = inject<ElementRef<HTMLElement>>(ElementRef);
@@ -469,12 +469,12 @@ export class ServicesPage implements AfterViewInit {
       '(prefers-reduced-motion: reduce)',
     ).matches;
     if (!reducedMotion && typeof IntersectionObserver === 'function') {
-      host.classList.add('motion-ready');
+      host.setAttribute('data-motion-ready', '');
       const observer = new IntersectionObserver(
         (entries) => {
           for (const entry of entries) {
             if (!entry.isIntersecting) continue;
-            (entry.target as HTMLElement).classList.add('is-visible');
+            (entry.target as HTMLElement).setAttribute('data-visible', '');
             observer.unobserve(entry.target);
           }
         },

@@ -16,8 +16,8 @@
   /*
    * data-elevation pairs a shadow tier with a background tier, but the two
    * themes now derive --cr-color-surface-N differently — see
-   * docs/design-research/elevation-surface-case-study.md and build.mjs's
-   * appendDerivedSurfaceTokens:
+   * docs/design-research/elevation-surface-case-study.md and the surface-N
+   * ramps in libs/shared/design-tokens/css/{light,dark}.css:
    *   - Dark theme: --cr-color-surface-N tints UP toward --cr-color-surface-
    *     tint (white) via the shared --cr-alpha-* scale, pre-baked opaque via
    *     color-mix() (not compounded tier-over-tier, so cards stay safe to

@@ -1,47 +1,42 @@
 @layer cr-tokens, cr-reset, cr-base, cr-components, cr-utilities;
 
-@import '../../../libs/shared/design-tokens/generated/css/tokens.css';
-@import '../../../libs/shared/design-tokens/generated/css/light.css';
-@import '../../../libs/shared/design-tokens/generated/css/dark.css';
+@import '../../../libs/shared/design-tokens/css/tokens.css';
+@import '../../../libs/shared/design-tokens/css/light.css';
+@import '../../../libs/shared/design-tokens/css/dark.css';
+@import '../../../libs/shared/ui/src/lib/reset/reset.css';
+@import '../../../libs/shared/ui/src/lib/motion/reduced-motion.css';
+@import '../../../libs/shared/ui/src/lib/typography/typography.css';
 @import '../../../libs/shared/cursor/src/lib/cursor-target.css';
 @import '../../../libs/shared/ui/src/lib/material/material.css';
 @import '../../../libs/shared/ui/src/lib/shape/shape.css';
 
-*,
-*::before,
-*::after {
-  box-sizing: border-box;
-}
+/* Element defaults live in cr-base so component styles can override them
+   without specificity games — unlayered they'd win over every layered rule
+   (see the a[crButton] color bug this caused in apps/marketing). */
+@layer cr-base {
+  body {
+    background: var(--cr-color-background);
+    color: var(--cr-color-foreground);
+    font: var(--cr-text-subheadline);
+    font-family: var(--cr-font-family-heading);
+    transition:
+      background-color var(--cr-motion-duration-base)
+        var(--cr-motion-easing-standard),
+      color var(--cr-motion-duration-base) var(--cr-motion-easing-standard);
+  }
 
-html,
-body {
-  margin: 0;
-  padding: 0;
-}
+  a {
+    color: var(--cr-color-link);
+  }
 
-body {
-  background: var(--cr-color-background);
-  color: var(--cr-color-foreground);
-  font-family: var(--cr-font-family-heading);
-  font-size: var(--cr-font-size-subheadline);
-  line-height: var(--cr-font-line-height-subheadline);
-  transition:
-    background-color var(--cr-motion-duration-base)
-      var(--cr-motion-easing-standard),
-    color var(--cr-motion-duration-base) var(--cr-motion-easing-standard);
-}
+  a:hover {
+    color: var(--cr-color-link-hover);
+  }
 
-a {
-  color: var(--cr-color-link);
-}
-
-a:hover {
-  color: var(--cr-color-link-hover);
-}
-
-:focus-visible {
-  outline: 2px solid var(--cr-color-focus-ring);
-  outline-offset: 2px;
+  :focus-visible {
+    outline: var(--cr-focus-ring-width) solid var(--cr-color-focus-ring);
+    outline-offset: var(--cr-focus-ring-offset);
+  }
 }
 
 /*

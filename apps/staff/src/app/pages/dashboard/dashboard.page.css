@@ -1,4 +1,4 @@
 h1 {
-  font-size: var(--cr-font-size-title2);
+  font: var(--cr-text-title2);
   margin: 0;
 }

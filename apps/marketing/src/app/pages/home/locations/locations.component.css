@@ -7,9 +7,9 @@
   grid-template-columns: minmax(15rem, 0.55fr) minmax(0, 1.45fr);
   gap: clamp(3rem, 7vw, 8rem);
   align-items: start;
-  padding: clamp(7rem, 12vw, 12rem) clamp(1.5rem, 4.2vw, 4.25rem);
+  padding: clamp(7rem, 12vw, 12rem) var(--page-gutter);
   background: transparent;
-  color: #050505;
+  color: var(--cr-color-foreground);
 }
 
 .locations__heading {
@@ -18,29 +18,20 @@
   align-self: start;
 }
 
+/* Type metrics come from the shared data-text roles (eyebrow/display/body,
+   see libs/shared/ui typography.css) — only layout modifiers live here. */
 .locations__heading .eyebrow {
-  margin: 0 0 1.2rem;
-  font-size: 0.64rem;
-  font-weight: 760;
-  letter-spacing: 0.13em;
-  text-transform: uppercase;
+  margin-block-end: 1.2rem;
 }
 
 .locations__heading h2 {
   max-inline-size: 8ch;
-  margin: 0;
-  font-size: clamp(3.3rem, 6vw, 6.6rem);
-  font-weight: 630;
-  letter-spacing: -0.074em;
-  line-height: 0.86;
 }
 
 .locations__heading > p:last-child {
   max-inline-size: 22rem;
-  margin: 2rem 0 0;
-  color: rgb(5 5 5 / 0.58);
-  font-size: 0.9rem;
-  line-height: 1.5;
+  margin-block-start: 2rem;
+  color: var(--cr-color-foreground-secondary);
 }
 
 .locations__content {
@@ -60,58 +51,9 @@
   position: relative;
 }
 
-.locations-map__indicators {
-  position: absolute;
-  inset: 0;
-  overflow: hidden;
-  border-radius: clamp(1.4rem, 2.4vw, 2.4rem);
-  pointer-events: none;
-}
-
-.locations-map__indicator {
-  position: absolute;
-  inset-block-start: 0;
-  inset-inline-start: 0;
-  display: grid;
-  place-items: center;
-  inline-size: 2.4rem;
-  aspect-ratio: 1;
-  border-radius: 50%;
-  border: 2px solid #050505;
-  background: #fff;
-  color: #050505;
-  opacity: 0;
-  pointer-events: none;
-  /* `transform` is deliberately excluded — its position is recomputed on
-     every MapLibre `move` event (many times per pan/zoom gesture), and
-     transitioning a value that's rewritten faster than the transition
-     itself can finish makes it perpetually chase a moving target instead
-     of tracking it 1:1 (looks "springy"/laggy). Only opacity, which
-     toggles at most once per gesture, benefits from easing. */
-  transition: opacity 200ms ease;
-}
-
-.locations-map__indicator.is-visible {
-  opacity: 1;
-  pointer-events: auto;
-  cursor: pointer;
-}
-
-/* Selected uses the same "primary" treatment as Button's primary variant
-   (foreground-on-background, see button.css) — not a bespoke accent color —
-   so a selected pin/indicator reads as "this is the pressed/active one",
-   consistent with the rest of the site's solid-fill selected state. */
-.locations-map__indicator.is-active {
-  background: var(--cr-color-foreground);
-  border-color: var(--cr-color-foreground);
-  color: var(--cr-color-background);
-}
-
-.locations-map__indicator-arrow {
-  display: block;
-  font-size: 1.1rem;
-  line-height: 1;
-}
+/* Map pin/indicator chrome lives in locations-map.css (global) — the
+   elements are MapLibre-created and never carry Angular's scope attribute,
+   so component-scoped rules can't reach them. */
 
 .locations__list {
   display: grid;
@@ -129,9 +71,9 @@
   position: relative;
   min-inline-size: 0;
   padding-block: 1.5rem;
-  border-block-end: 1px solid rgb(5 5 5 / 0.1);
+  border-block-end: 1px solid
+    color-mix(in srgb, var(--cr-color-foreground) calc(0.1 * 100%), transparent);
   cursor: pointer;
-  outline: none;
 }
 
 .locations__list > li:first-child .location-card {
@@ -145,18 +87,28 @@
   inline-size: 2.75rem;
   aspect-ratio: 1;
   border-radius: 50%;
-  background: rgb(5 5 5 / 0.06);
-  color: rgb(5 5 5 / 0.55);
-  font-size: 1.15rem;
+  background: color-mix(
+    in srgb,
+    var(--cr-color-foreground) calc(0.06 * 100%),
+    transparent
+  );
+  color: var(--cr-color-foreground-secondary);
+  /* Glyph box math, not copy — body supplies the size, but the icon family
+     and 1:1 box must be restated after the `font` shorthand's reset (this
+     selector out-specifies the Material Symbols class). */
+  font: var(--cr-text-body);
+  font-family: 'Material Symbols Rounded';
+  line-height: 1;
   transition:
-    background-color 320ms ease,
-    color 320ms ease;
+    background-color var(--cr-motion-duration-slow)
+      var(--cr-motion-easing-standard),
+    color var(--cr-motion-duration-slow) var(--cr-motion-easing-standard);
 }
 
 .location-card:hover .location-card__icon,
 .location-card:focus-within .location-card__icon {
-  background: #f6d800;
-  color: #050505;
+  background: var(--cr-color-highlight);
+  color: var(--cr-color-foreground);
 }
 
 .location-card__copy {
@@ -166,25 +118,22 @@
 
 .location-card:hover h3,
 .location-card:focus-within h3 {
-  color: #f6d800;
+  color: var(--cr-color-highlight);
 }
 
 .location-card:focus-visible h3 {
-  color: #145cf3;
+  color: var(--cr-color-action-background);
 }
 
 .location-card__copy h3 {
   margin: 0;
-  font-size: clamp(1.15rem, 1.4vw, 1.3rem);
-  font-weight: 610;
-  letter-spacing: -0.03em;
-  transition: color 320ms ease;
+  transition: color var(--cr-motion-duration-slow)
+    var(--cr-motion-easing-standard);
 }
 
 .location-card__copy p {
   margin: 0.35rem 0 0;
-  color: rgb(5 5 5 / 0.58);
-  font-size: 0.78rem;
+  color: var(--cr-color-foreground-secondary);
 }
 
 .location-card__status {
@@ -192,13 +141,11 @@
   align-items: center;
   gap: 0.4rem;
   margin: 0.55rem 0 0;
-  color: #c8392f;
-  font-size: 0.7rem;
-  font-weight: 650;
+  color: var(--cr-color-danger);
 }
 
-.location-card__status.is-open {
-  color: #1f9d55;
+.location-card__status[data-open] {
+  color: var(--cr-color-success);
 }
 
 .location-card__status-dot {
@@ -213,10 +160,10 @@
   align-items: center;
   gap: 0.35rem;
   margin: 0.5rem 0 0;
-  color: rgb(5 5 5 / 0.5);
-  font-size: 0.72rem;
+  color: var(--cr-color-foreground-tertiary);
   text-decoration: none;
-  transition: color 260ms ease;
+  transition: color var(--cr-motion-duration-slow)
+    var(--cr-motion-easing-standard);
 }
 
 .location-card__phone .material-symbols-rounded {
@@ -225,7 +172,7 @@
 
 .location-card__phone:hover,
 .location-card__phone:focus-visible {
-  color: #050505;
+  color: var(--cr-color-foreground);
 }
 
 .location-card__action {
@@ -234,47 +181,56 @@
 }
 
 .location-card__explore-label {
-  --cr-cursor-fill-color: #f6d800;
-  --cr-color-background: #050505;
+  --cr-cursor-fill-color: var(--cr-color-highlight);
+  --cr-cursor-surface: var(--cr-color-foreground);
   display: inline-flex;
   align-items: center;
   justify-content: center;
   min-block-size: 2.4rem;
   min-inline-size: 5.6rem;
   padding-inline: 0.9rem;
-  border: 1px solid rgb(5 5 5 / 0.22);
+  border: 1px solid
+    color-mix(
+      in srgb,
+      var(--cr-color-foreground) calc(0.22 * 100%),
+      transparent
+    );
   border-radius: 0.75rem;
-  color: #050505;
-  font-size: 0.65rem;
-  font-weight: 680;
-  transition: border-color 320ms ease;
+  color: var(--cr-color-foreground);
+  transition: border-color var(--cr-motion-duration-slow)
+    var(--cr-motion-easing-standard);
 }
 
 .location-card:hover .location-card__explore-label,
 .location-card:focus-within .location-card__explore-label {
-  border-color: #f6d800;
+  border-color: var(--cr-color-highlight);
 }
 
 .location-card__maps {
-  --cr-cursor-fill-color: #f6d800;
-  --cr-color-background: #050505;
+  --cr-cursor-fill-color: var(--cr-color-highlight);
+  --cr-cursor-surface: var(--cr-color-foreground);
   display: grid;
   flex: 0 0 auto;
   place-items: center;
   inline-size: 2.6rem;
   aspect-ratio: 1;
-  border-radius: 999px;
-  border: 1px solid rgb(5 5 5 / 0.22);
-  color: #050505;
+  border-radius: var(--cr-radius-full);
+  border: 1px solid
+    color-mix(
+      in srgb,
+      var(--cr-color-foreground) calc(0.22 * 100%),
+      transparent
+    );
+  color: var(--cr-color-foreground);
   text-decoration: none;
   transition:
-    border-color 260ms ease,
-    transform 320ms cubic-bezier(0.16, 1, 0.3, 1);
+    border-color var(--cr-motion-duration-slow) var(--cr-motion-easing-standard),
+    transform var(--cr-motion-duration-slow) var(--cr-motion-easing-emphasized);
 }
 
 .location-card__maps:hover,
 .location-card__maps:focus-visible {
-  border-color: #f6d800;
+  border-color: var(--cr-color-highlight);
   transform: translateX(0.15rem) rotate(8deg);
 }
 
@@ -291,81 +247,7 @@
   overflow: hidden;
   block-size: min(70svh, 42rem);
   border-radius: clamp(1.4rem, 2.4vw, 2.4rem);
-  background: #e9e6df;
-}
-
-.locations-map__pin {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  inline-size: 2.9rem;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  cursor: pointer;
-  /* No `transition` here — MapLibre rewrites this element's own `transform`
-     (inline style) on every `move` event during a pan/zoom gesture, many
-     times a second. Transitioning it makes the pin perpetually chase a
-     moving target with an eased curve instead of tracking 1:1 — the
-     "springy"/laggy motion. A hover-lift `transform` override would hit
-     the same problem (and inline style wins over it anyway), so that
-     effect isn't attempted here. */
-}
-
-.locations-map__pin-head {
-  --cr-cursor-fill-color: #050505;
-  --cr-color-background: #fff;
-  position: relative;
-  z-index: 1;
-  display: grid;
-  place-items: center;
-  inline-size: 2.9rem;
-  aspect-ratio: 1;
-  border-radius: 50%;
-  border: 2px solid #050505;
-  background: #fff;
-  transition:
-    background-color 280ms ease,
-    border-color 280ms ease,
-    color 280ms ease;
-}
-
-.locations-map__pin-icon {
-  color: #050505;
-  font-size: 1.25rem;
-  transition: color 280ms ease;
-}
-
-/* !important, matching the same rationale as the global cursor directive's
-   own fill rule (cursor-target.css): this must win over `.is-active`'s own
-   icon color regardless of selector order/specificity, since the hovered
-   state can land on either the resting or the active pin. */
-.locations-map__pin-head[data-cr-cursor-hover] .locations-map__pin-icon {
-  color: var(--cr-color-background) !important;
-}
-
-.locations-map__pin-tail {
-  position: relative;
-  z-index: 0;
-  inline-size: 0.75rem;
-  block-size: 0.75rem;
-  margin-block-start: -0.5rem;
-  background: #050505;
-  clip-path: polygon(50% 100%, 0 15%, 100% 15%);
-}
-
-/* Selected uses the same "primary" treatment as Button's primary variant
-   (foreground-on-background, see button.css) — not a bespoke accent color —
-   so a selected pin reads as "this is the pressed/active one", matching the
-   momentary hover/press fill instead of introducing a third, unrelated
-   accent color into the map. */
-.locations-map__pin.is-active .locations-map__pin-head {
-  border-color: var(--cr-color-foreground);
-  background: var(--cr-color-foreground);
-}
-
-.locations-map__pin.is-active .locations-map__pin-icon {
-  color: var(--cr-color-background);
+  background: var(--cr-color-surface);
 }
 
 @media (max-width: 980px) {
@@ -403,7 +285,6 @@
 
   .locations__heading h2 {
     max-inline-size: 7ch;
-    font-size: clamp(4rem, 17vw, 6.5rem);
   }
 
   .locations__heading > p:last-child {
@@ -418,10 +299,7 @@
 
 .location-sheet__compact-title {
   margin: 0;
-  color: #050505;
-  font-size: 0.76rem;
-  font-weight: 690;
-  letter-spacing: -0.025em;
+  color: var(--cr-color-foreground);
 }
 
 .location-sheet {
@@ -444,7 +322,7 @@
   overflow: hidden;
   block-size: min(70svh, 40rem);
   border-radius: clamp(1.4rem, 2.4vw, 2rem);
-  background: #e9e6df;
+  background: var(--cr-color-surface);
 }
 
 .location-sheet__map {
@@ -460,10 +338,6 @@
 .location-sheet__intro h2 {
   max-inline-size: 10ch;
   margin: 0;
-  font-size: clamp(2.6rem, 4.2vw, 4.4rem);
-  font-weight: 620;
-  letter-spacing: -0.07em;
-  line-height: 0.9;
 }
 
 .location-sheet__address {
@@ -472,15 +346,12 @@
   gap: 0.5rem;
   max-inline-size: 24rem;
   margin: 1rem 0 0;
-  color: rgb(5 5 5 / 0.62);
-  font-size: 0.92rem;
-  font-weight: 560;
-  line-height: 1.45;
+  color: var(--cr-color-foreground-secondary);
 }
 
 .location-sheet__address .material-symbols-rounded {
   flex: 0 0 auto;
-  color: rgb(5 5 5 / 0.4);
+  color: var(--cr-color-foreground-tertiary);
   font-size: 1.05em;
 }
 
@@ -489,11 +360,11 @@
   align-items: center;
   gap: 0.5rem;
   margin: 0.6rem 0 0;
-  color: rgb(5 5 5 / 0.5);
-  font-size: 0.78rem;
+  color: var(--cr-color-foreground-tertiary);
   font-variant-numeric: tabular-nums;
   text-decoration: none;
-  transition: color 260ms ease;
+  transition: color var(--cr-motion-duration-slow)
+    var(--cr-motion-easing-standard);
 }
 
 .location-sheet__phone-line .material-symbols-rounded {
@@ -502,7 +373,7 @@
 
 .location-sheet__phone-line:hover,
 .location-sheet__phone-line:focus-visible {
-  color: #050505;
+  color: var(--cr-color-foreground);
 }
 
 .location-sheet__hero-actions {
@@ -513,20 +384,9 @@
 }
 
 .location-sheet__book {
-  --cr-cursor-fill-color: #050505;
-  --cr-color-background: #fff;
-  display: flex;
   flex: 1 1 auto;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.7rem;
-  padding: 1.15rem 1.25rem;
-  border-radius: 1rem;
-  background: #145cf3;
-  color: #fff;
-  font-size: 0.76rem;
-  font-weight: 720;
-  text-decoration: none;
+  /* CTA radius vocabulary — consumed by Button's documented override hook. */
+  --cr-button-radius: var(--radius-action);
 }
 
 .location-sheet__book .material-symbols-rounded {
@@ -540,11 +400,16 @@
   inline-size: 3.25rem;
   aspect-ratio: 1;
   border-radius: 50%;
-  border: 1.5px solid rgb(5 5 5 / 0.16);
-  color: #050505;
-  font-size: 0.76rem;
+  border: 1.5px solid
+    color-mix(
+      in srgb,
+      var(--cr-color-foreground) calc(0.16 * 100%),
+      transparent
+    );
+  color: var(--cr-color-foreground);
   text-decoration: none;
-  transition: border-color 280ms ease;
+  transition: border-color var(--cr-motion-duration-slow)
+    var(--cr-motion-easing-standard);
 }
 
 .location-sheet__icon-action .material-symbols-rounded {
@@ -553,15 +418,20 @@
 
 .location-sheet__icon-action:hover,
 .location-sheet__icon-action:focus-visible {
-  border-color: #050505;
+  border-color: var(--cr-color-foreground);
 }
 
 .location-sheet__status-card {
   margin-block-start: 2.25rem;
   padding: 1.4rem 1.5rem;
-  border: 1px solid rgb(5 5 5 / 0.06);
+  border: 1px solid
+    color-mix(
+      in srgb,
+      var(--cr-color-foreground) calc(0.06 * 100%),
+      transparent
+    );
   border-radius: 1.25rem;
-  background: #fff;
+  background: var(--cr-color-surface-plain);
   box-shadow:
     0 1.5rem 3rem rgb(0 0 0 / 0.05),
     0 0.25rem 0.6rem rgb(0 0 0 / 0.04);
@@ -572,17 +442,15 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 0.55rem;
-  color: #c8392f;
-  font-size: 0.84rem;
-  font-weight: 650;
+  color: var(--cr-color-danger);
 }
 
-.location-sheet__status.is-open {
-  color: #1f9d55;
+.location-sheet__status[data-open] {
+  color: var(--cr-color-success);
 }
 
-.location-sheet__status.is-soon {
-  color: #b45309;
+.location-sheet__status[data-soon] {
+  color: var(--cr-color-warning);
 }
 
 .location-sheet__status-dot {
@@ -593,14 +461,12 @@
 }
 
 .location-sheet__status-detail {
-  color: rgb(5 5 5 / 0.48);
-  font-size: 0.76rem;
-  font-weight: 500;
+  color: var(--cr-color-foreground-tertiary);
 }
 
-.location-sheet__status.is-soon .location-sheet__status-detail {
-  color: #b45309;
-  font-weight: 650;
+.location-sheet__status[data-soon] .location-sheet__status-detail {
+  color: var(--cr-color-warning);
+  font-weight: var(--cr-font-weight-semibold);
 }
 
 .location-sheet__week {
@@ -609,7 +475,12 @@
   margin: 1.1rem 0 0;
   padding: 1.1rem 0 0;
   list-style: none;
-  border-block-start: 1px solid rgb(5 5 5 / 0.07);
+  border-block-start: 1px solid
+    color-mix(
+      in srgb,
+      var(--cr-color-foreground) calc(0.07 * 100%),
+      transparent
+    );
 }
 
 .location-sheet__day {
@@ -620,14 +491,13 @@
   min-block-size: 2.75rem;
   padding: 0.4rem 0.65rem;
   border-radius: 0.75rem;
-  color: rgb(5 5 5 / 0.6);
-  font-size: 0.8rem;
+  color: var(--cr-color-foreground-secondary);
 }
 
-.location-sheet__day.is-today {
-  background: rgb(246 216 0 / 0.18);
-  color: #050505;
-  font-weight: 680;
+.location-sheet__day[data-today] {
+  background: color-mix(in srgb, var(--cr-color-highlight) 18%, transparent);
+  color: var(--cr-color-foreground);
+  font-weight: var(--cr-font-weight-bold);
 }
 
 .location-sheet__day-name {
@@ -638,13 +508,9 @@
 
 .location-sheet__today-tag {
   padding: 0.15rem 0.45rem;
-  border-radius: 999px;
-  background: #050505;
-  color: #f6d800;
-  font-size: 0.55rem;
-  font-weight: 720;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  border-radius: var(--cr-radius-full);
+  background: var(--cr-color-foreground);
+  color: var(--cr-color-highlight);
 }
 
 .location-sheet__day-hours {
@@ -663,32 +529,14 @@
 .location-sheet__gallery-heading h3 {
   max-inline-size: 13ch;
   margin: 0;
-  font-size: clamp(1.75rem, 3vw, 2.6rem);
-  font-weight: 610;
-  letter-spacing: -0.05em;
-  line-height: 0.92;
 }
 
+/* Bar skeleton + [data-visible] reveal live in styles.css
+   (.sheet-bar-reveal); only this toolbar's row layout stays local. */
 .location-sheet__toolbar {
-  position: absolute;
-  z-index: 12;
-  inset: auto auto max(1rem, env(safe-area-inset-bottom)) 50%;
   display: flex;
   align-items: center;
   gap: 0.6rem;
-  max-inline-size: calc(100% - 2.5rem);
-  opacity: 0;
-  transform: translate(-50%, calc(100% + 2rem)) scale(0.96);
-  transition:
-    opacity 180ms ease,
-    transform 480ms cubic-bezier(0.16, 1, 0.3, 1);
-  pointer-events: none;
-}
-
-.location-sheet__toolbar.is-visible {
-  opacity: 1;
-  transform: translate(-50%, 0) scale(1);
-  pointer-events: auto;
 }
 
 .location-sheet__toolbar-icon {
@@ -700,15 +548,15 @@
   border-radius: 50%;
   border: 1.5px solid rgb(255 255 255 / 0.6);
   background: rgb(255 255 255 / 0.78);
-  color: #050505;
-  font-size: 0.76rem;
+  color: var(--cr-color-foreground);
   text-decoration: none;
   box-shadow: 0 0.6rem 1.6rem rgb(0 0 0 / 0.16);
   backdrop-filter: blur(40px) saturate(200%);
   -webkit-backdrop-filter: blur(40px) saturate(200%);
   transition:
-    background-color 260ms ease,
-    border-color 260ms ease;
+    background-color var(--cr-motion-duration-slow)
+      var(--cr-motion-easing-standard),
+    border-color var(--cr-motion-duration-slow) var(--cr-motion-easing-standard);
 }
 
 .location-sheet__toolbar-icon .material-symbols-rounded {
@@ -717,24 +565,11 @@
 
 .location-sheet__toolbar-icon:hover,
 .location-sheet__toolbar-icon:focus-visible {
-  border-color: #050505;
+  border-color: var(--cr-color-foreground);
   background: rgb(255 255 255 / 0.92);
 }
 
 .location-sheet__toolbar-book {
-  --cr-cursor-fill-color: #050505;
-  --cr-color-background: #fff;
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-  min-block-size: 3rem;
-  padding: 0 1.1rem;
-  border-radius: 999px;
-  background: #145cf3;
-  color: #fff;
-  font-size: 0.72rem;
-  font-weight: 720;
-  text-decoration: none;
   white-space: nowrap;
   box-shadow: 0 0.6rem 1.6rem rgb(0 0 0 / 0.22);
 }
@@ -743,26 +578,17 @@
   font-size: 1.2em;
 }
 
-@keyframes location-sheet-content-in {
-  from {
-    opacity: 0;
-    filter: blur(8px);
-    transform: translateY(1.5rem);
-  }
-  to {
-    opacity: 1;
-    filter: blur(0);
-    transform: translateY(0);
-  }
+/* `sheet-content-in` is the shared global keyframe in styles.css — the
+   scoped animation-name resolves to it since no local @keyframes shadows
+   the name. */
+cr-modal-sheet[data-open] .location-sheet__intro > *,
+cr-modal-sheet[data-open] .location-sheet__status-card {
+  animation: sheet-content-in var(--cr-motion-duration-slowest)
+    var(--cr-motion-easing-emphasized) both;
 }
 
-cr-modal-sheet.is-open .location-sheet__intro > *,
-cr-modal-sheet.is-open .location-sheet__status-card {
-  animation: location-sheet-content-in 700ms cubic-bezier(0.16, 1, 0.3, 1) both;
-}
-
-cr-modal-sheet.is-open .location-sheet__status-card {
-  animation-delay: 90ms;
+cr-modal-sheet[data-open] .location-sheet__status-card {
+  animation-delay: var(--cr-motion-duration-fast);
 }
 
 @media (max-width: 760px) {
@@ -808,24 +634,5 @@ cr-modal-sheet.is-open .location-sheet__status-card {
 
   .location-sheet__toolbar {
     max-inline-size: calc(100% - 1.6rem);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .location-card__copy h3,
-  .location-card__maps,
-  .locations-map__pin,
-  .locations-map__pin-head,
-  .locations-map__pin-icon,
-  .locations-map__pin-tail,
-  .location-sheet__icon-action,
-  .location-sheet__toolbar,
-  .location-sheet__toolbar-icon {
-    transition: none;
-  }
-
-  cr-modal-sheet.is-open .location-sheet__intro > *,
-  cr-modal-sheet.is-open .location-sheet__status-card {
-    animation: none;
   }
 }

@@ -1,0 +1,30 @@
+/*
+ * Global reduced-motion kill-switch — THE one place prefers-reduced-motion
+ * is honored, replacing the 13 per-component blocks that each hand-listed
+ * selectors to null out (and inevitably missed new ones). Import once per
+ * app alongside the other shared CSS.
+ *
+ * !important is deliberate and confined to this accessibility context:
+ * component transition/animation declarations are unlayered (they'd beat a
+ * cr-base rule), and the OS-level "reduce motion" preference must win over
+ * every one of them, present and future. 1ms rather than 0s/none so
+ * transitionend/animationend events still fire for any logic awaiting them.
+ *
+ * Opt-out: motion that carries MEANING (not decoration) may mark its
+ * element `data-motion-essential` and re-declare its own reduced-motion
+ * treatment locally — e.g. an opacity cue that indicates state. Use
+ * sparingly; decorative morphs/parallax/reveals never qualify.
+ */
+@layer cr-base {
+  @media (prefers-reduced-motion: reduce) {
+    *:not([data-motion-essential]),
+    *:not([data-motion-essential])::before,
+    *:not([data-motion-essential])::after {
+      transition-duration: 1ms !important;
+      transition-delay: 0s !important;
+      animation-duration: 1ms !important;
+      animation-delay: 0s !important;
+      animation-iteration-count: 1 !important;
+    }
+  }
+}

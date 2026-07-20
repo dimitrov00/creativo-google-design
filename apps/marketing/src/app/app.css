@@ -11,20 +11,22 @@
 .cr-shell__header {
   position: fixed;
   inset: 0 0 auto;
-  z-index: 100;
+  z-index: var(--cr-layer-nav);
   display: grid;
   grid-template-columns: 1fr auto 1fr;
   align-items: center;
-  min-height: 5.25rem;
-  padding-inline: clamp(1.25rem, 4.2vw, 4.25rem);
-  border-block-end: 1px solid rgb(0 0 0 / 0.16);
-  background: rgb(255 255 255 / 0.82);
-  color: #000;
-  backdrop-filter: blur(18px) saturate(1.25);
+  min-height: 4rem;
+  padding-inline: var(--page-gutter);
+  border-block-end: var(--cr-border-width-hairline) solid
+    color-mix(in srgb, var(--cr-color-foreground) 16%, transparent);
+  background: color-mix(in srgb, var(--cr-color-background) 82%, transparent);
+  color: var(--cr-color-foreground);
+  backdrop-filter: blur(10px) saturate(1.25);
   transition:
-    color 350ms ease,
-    background-color 350ms ease,
-    border-color 350ms ease;
+    color var(--cr-motion-duration-slow) var(--cr-motion-easing-standard),
+    background-color var(--cr-motion-duration-slow)
+      var(--cr-motion-easing-standard),
+    border-color var(--cr-motion-duration-slow) var(--cr-motion-easing-standard);
 }
 
 .cr-shell__brand {
@@ -36,7 +38,8 @@
 .cr-shell__brand img {
   display: block;
   inline-size: 100%;
-  transition: opacity 300ms ease;
+  transition: opacity var(--cr-motion-duration-slow)
+    var(--cr-motion-easing-standard);
 }
 
 .cr-shell__brand .logo-dark {
@@ -52,101 +55,187 @@
 
 .cr-shell__nav a {
   color: currentColor;
-  font-size: 0.67rem;
-  font-weight: 750;
-  letter-spacing: 0.12em;
   text-decoration: none;
-  text-transform: uppercase;
+  transition: opacity var(--cr-motion-duration-base)
+    var(--cr-motion-easing-standard);
 }
 
+.cr-shell__nav a:hover {
+  color: currentColor;
+  opacity: 0.6;
+}
+
+/* Login/book duplicates that only exist for the mobile menu panel. */
+.cr-shell__nav-extra {
+  display: none;
+}
+
+/* Ghost buttons carry their own padding, so the row needs no gap — only
+   the solid login pill gets breathing room (Apple/design.google pattern). */
 .cr-shell__actions {
   display: flex;
   align-items: center;
-  gap: 0.65rem;
+  gap: 0;
   justify-self: end;
 }
 
 .cr-shell__language {
-  display: flex;
-  gap: 0.1rem;
-  padding: 0.2rem;
-  border-radius: 999px;
-  background: rgb(0 0 0 / 0.055);
+  position: relative;
 }
 
-.cr-shell__language button {
-  min-inline-size: 2.1rem;
-  min-block-size: 1.8rem;
+/* Icon-only ghost globe — the current language is announced via the
+   aria-label and shown with a check inside the menu. */
+.cr-shell__language-toggle {
+  display: grid;
+  place-items: center;
+  inline-size: 2.75rem;
+  aspect-ratio: 1;
   padding: 0;
   border: 0;
-  border-radius: 999px;
+  border-radius: 50%;
   background: transparent;
   color: currentColor;
-  font-size: 0.58rem;
-  font-weight: 780;
-  letter-spacing: 0.06em;
-  opacity: 0.44;
+  transition: background-color var(--cr-motion-duration-base)
+    var(--cr-motion-easing-standard);
 }
 
-.cr-shell__language button.is-active {
-  background: #000;
-  color: #fff;
-  opacity: 1;
+.cr-shell__language-toggle:hover {
+  background: color-mix(in srgb, currentColor 7%, transparent);
 }
 
-.cr-shell__cta {
+.cr-shell__language-toggle .material-symbols-rounded {
+  font-size: var(--cr-icon-size-regular);
+}
+
+/* ngMenu stamps data-visible="true|false" (framework-owned state, styled
+   directly per docs/styling-conventions.md's @angular/aria refinement); the
+   element is now always in the DOM (content lazy via ngMenuContent), so the
+   closed state must hide the empty chrome. */
+.cr-shell__language-menu[data-visible='false'] {
+  display: none;
+}
+
+.cr-shell__language-menu {
+  position: absolute;
+  z-index: var(--cr-layer-float);
+  inset-inline-end: 0;
+  inset-block-start: calc(100% + 0.5rem);
+  min-inline-size: 11rem;
+  display: grid;
+  padding: 0.4rem;
+  border: var(--cr-border-width-hairline) solid
+    color-mix(in srgb, var(--cr-color-foreground) 10%, transparent);
+  border-radius: var(--radius-action);
+  background: var(--cr-color-background);
+  color: var(--cr-color-foreground);
+  box-shadow: 0 1rem 2.5rem rgb(0 0 0 / 0.16);
+}
+
+.cr-shell__language-menu button {
   display: flex;
   align-items: center;
-  gap: 2.3rem;
-  padding: 0.9rem 1rem;
-  border-radius: 0.75rem;
-  background: #145cf3;
-  color: #fff;
-  font-size: 0.72rem;
-  font-weight: 760;
-  text-decoration: none;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.65rem 0.75rem;
+  border: 0;
+  border-radius: 0.55rem;
+  background: transparent;
+  color: inherit;
+  text-align: start;
 }
 
+.cr-shell__language-menu button:hover {
+  background: color-mix(in srgb, var(--cr-color-foreground) 6%, transparent);
+}
+
+.cr-shell__language-menu button .material-symbols-rounded {
+  font-size: var(--cr-icon-size-small);
+}
+
+/* Login is the shell's single CTA at the trailing edge — outline-primary
+   (the Button lib's outline variant in the action tone) so it reads as an
+   action without shouting over the page. Booking lives in the hero and
+   section CTAs instead. */
+.cr-shell__login {
+  display: flex;
+  align-items: center;
+  min-block-size: 2.5rem;
+  padding: 0 1.25rem;
+  border: 1px solid var(--cr-color-action-background);
+  border-radius: var(--cr-radius-full);
+  background: transparent;
+  color: var(--cr-color-action-background);
+  text-decoration: none;
+  /* The morph must land ON the Button primary variant — action pair, both
+     halves — in every theme and tone, not just swap the fill. */
+  --cr-cursor-fill-color: var(--cr-color-action-background);
+  --cr-cursor-surface: var(--cr-color-action-foreground);
+  transition:
+    background-color var(--cr-motion-duration-base)
+      var(--cr-motion-easing-standard),
+    color var(--cr-motion-duration-base) var(--cr-motion-easing-standard);
+}
+
+.cr-shell__login:hover {
+  background: var(--cr-color-action-background);
+  color: var(--cr-color-action-foreground);
+}
+
+/* Circular ghost, matching the language toggle. */
 .cr-shell__menu {
   display: none;
-  inline-size: 3.85rem;
-  block-size: 2.4rem;
-  padding: 0.55rem 0.9rem;
+  align-content: center;
+  justify-items: center;
+  inline-size: 2.75rem;
+  aspect-ratio: 1;
+  padding: 0;
   border: 0;
-  border-radius: 999px;
-  background: rgb(0 0 0 / 0.055);
+  border-radius: 50%;
+  background: transparent;
   color: currentColor;
-  --cr-cursor-fill-color: #000;
-  --cr-color-background: #fff;
+  transition: background-color var(--cr-motion-duration-base)
+    var(--cr-motion-easing-standard);
+}
+
+.cr-shell__menu:hover {
+  background: color-mix(in srgb, currentColor 7%, transparent);
 }
 
 .cr-shell__menu span {
   display: block;
   inline-size: 1.25rem;
   block-size: 1px;
-  margin: 0.27rem auto;
+  margin: 0.14rem auto;
   background: currentColor;
+  transition: transform var(--cr-motion-duration-slow)
+    var(--cr-motion-easing-emphasized);
 }
 
+/* Open state: the two lines fold into an X. */
+.cr-shell__menu[data-open] span:first-child {
+  transform: translateY(calc(0.14rem + 0.5px)) rotate(45deg);
+}
+
+.cr-shell__menu[data-open] span:last-child {
+  transform: translateY(calc(-0.14rem - 0.5px)) rotate(-45deg);
+}
+
+/* Each tone also remaps the cursor-morph palette (see cursor-target.css's
+   --cr-cursor-ink/--cr-cursor-surface contract), so header buttons morph
+   light-on-dark over dark sections and follow the theme tokens everywhere
+   — never a hardcoded black/white pair. */
+/* :host-context deliberately, NOT `@container style(--nav-tone: …)`: the
+   style-query migration was attempted 2026-07-20 and reverted — a live
+   probe showed container style queries silently no-op in embedded Chromium
+   contexts (case study §A2 addendum), and a nav that stays black-on-dark
+   is not an acceptable failure mode. Revisit when style queries are
+   verifiably everywhere this site ships. */
 :host-context(html[data-nav-tone='dark']) .cr-shell__header {
-  border-color: rgb(255 255 255 / 0.18);
-  background: rgb(0 0 0 / 0.78);
-  color: #fff;
-}
-
-:host-context(html[data-nav-tone='dark']) .cr-shell__menu {
-  --cr-cursor-fill-color: #fff;
-  --cr-color-background: #000;
-}
-
-:host-context(html[data-nav-tone='dark']) .cr-shell__language,
-:host-context(html[data-nav-tone='dark']) .cr-shell__menu {
-  background: rgb(255 255 255 / 0.11);
-}
-
-:host-context(html[data-nav-tone='dark']) .cr-shell__language button.is-active {
-  background: #fff;
-  color: #000;
+  --cr-cursor-ink: var(--cr-color-background);
+  --cr-cursor-surface: var(--cr-color-foreground);
+  border-color: color-mix(in srgb, var(--cr-color-background) 18%, transparent);
+  background: color-mix(in srgb, var(--cr-color-foreground) 78%, transparent);
+  color: var(--cr-color-background);
 }
 
 :host-context(html[data-nav-tone='dark']) .logo-light {
@@ -158,14 +247,30 @@
 }
 
 :host-context(html[data-nav-tone='accent']) .cr-shell__header {
-  border-color: rgb(0 0 0 / 0.22);
-  background: rgb(246 216 0 / 0.84);
-  color: #000;
+  --cr-cursor-ink: var(--cr-color-foreground);
+  --cr-cursor-surface: var(--cr-color-highlight);
+  border-color: color-mix(in srgb, var(--cr-color-foreground) 24%, transparent);
+  background: color-mix(in srgb, var(--cr-color-highlight) 84%, transparent);
+  color: var(--cr-color-foreground);
 }
 
-:host-context(html[data-nav-tone='accent']) .cr-shell__menu {
-  --cr-cursor-fill-color: #000;
-  --cr-color-background: #fff;
+/* While the full-screen menu is open the header sits on the overlay's
+   light surface — force readable ink whatever the scroll tone was. */
+:host-context(html[data-menu-open]) .cr-shell__header {
+  --cr-cursor-ink: var(--cr-color-foreground);
+  --cr-cursor-surface: var(--cr-color-background);
+  border-color: transparent;
+  background: transparent;
+  color: var(--cr-color-foreground);
+  backdrop-filter: none;
+}
+
+:host-context(html[data-menu-open]) .logo-light {
+  opacity: 1;
+}
+
+:host-context(html[data-menu-open]) .logo-dark {
+  opacity: 0;
 }
 
 .cr-shell__main {
@@ -175,7 +280,6 @@
 @media (max-width: 760px) {
   .cr-shell__header {
     grid-template-columns: 1fr auto;
-    min-height: 4.5rem;
     padding-inline: 1rem;
   }
 
@@ -183,39 +287,59 @@
     inline-size: 6.7rem;
   }
 
+  /* Full-screen menu overlay (design.google/Apple pattern): the whole
+     viewport, solid page surface, oversized display links. Sits behind the
+     header row so the logo and the X toggle stay visible on top. */
   .cr-shell__nav {
-    position: absolute;
-    inset: calc(100% + 1px) 0 auto;
+    position: fixed;
+    z-index: -1;
+    inset: 0;
     display: grid;
     gap: 0;
-    padding: 0.6rem 1rem 1rem;
+    align-content: center;
+    padding: 5rem var(--page-gutter) 3rem;
     visibility: hidden;
     opacity: 0;
-    background: inherit;
-    backdrop-filter: blur(18px);
-    transform: translateY(-0.5rem);
+    background: var(--cr-color-background);
+    color: var(--cr-color-foreground);
+    transform: translateY(-0.75rem);
     transition:
-      opacity 180ms ease,
-      transform 180ms ease,
-      visibility 180ms ease;
+      opacity var(--cr-motion-duration-slow) var(--cr-motion-easing-standard),
+      transform var(--cr-motion-duration-slower)
+        var(--cr-motion-easing-emphasized),
+      visibility var(--cr-motion-duration-slow);
   }
 
-  .cr-shell__nav.is-open {
+  .cr-shell__nav[data-open] {
     visibility: visible;
     opacity: 1;
     transform: translateY(0);
   }
 
-  .cr-shell__nav a {
-    padding: 1rem 0;
-    border-block-end: 1px solid currentColor;
+  /* The overlay's big links step up from the eyebrow role (in markup) to
+     the fluid title role; the nav-extra rows keep their markup eyebrow. */
+  .cr-shell__nav a:not(.cr-shell__nav-extra) {
+    padding: 0.85rem 0;
+    font: var(--cr-text-title);
+    letter-spacing: var(--cr-text-title-tracking);
+    text-transform: none;
   }
 
-  .cr-shell__cta {
-    display: none;
+  /* The login/book duplicates read as secondary rows under the big links. */
+  .cr-shell__nav .cr-shell__nav-extra {
+    margin-block-start: 0.5rem;
+    padding: 0.5rem 0;
+  }
+
+  .cr-shell__login {
+    padding-inline: 1rem;
+  }
+
+  .cr-shell__nav-extra {
+    display: block;
   }
 
   .cr-shell__menu {
-    display: block;
+    display: grid;
   }
 }

@@ -1,15 +1,14 @@
-import {
-  ChangeDetectionStrategy,
-  Component,
-  ElementRef,
-  computed,
-  inject,
-  input,
-} from '@angular/core';
+import { Component, ElementRef, computed, inject, input } from '@angular/core';
 import { CursorTargetStyle, useCursorTarget } from '@creativo/shared/cursor';
 
 export type ButtonVariant =
-  'primary' | 'accent' | 'secondary' | 'ghost' | 'outline' | 'destructive';
+  | 'primary'
+  | 'action'
+  | 'accent'
+  | 'secondary'
+  | 'ghost'
+  | 'outline'
+  | 'destructive';
 export type ButtonSize = 'mini' | 'small' | 'regular' | 'large' | 'extraLarge';
 export type ButtonShape = 'rounded' | 'pill';
 /** Combines with variant (typically 'outline'/'ghost') for a "bordered destructive" look. */
@@ -23,11 +22,15 @@ export type ButtonTone = 'neutral' | 'danger';
 const FILL_VARIANTS = new Set<ButtonVariant>(['outline', 'ghost']);
 
 @Component({
-  selector: 'button[crButton]',
+  // Anchors get the same host API — every marketing CTA is a link, and a
+  // hand-rolled `<a>` copy of Button was the single biggest source of style
+  // drift (case study §F9). Anchor hosts simply never match the :disabled
+  // CSS states; `loading` still blocks activation via the click guard +
+  // aria-disabled, which work identically for both elements.
+  selector: 'button[crButton], a[crButton]',
   imports: [],
   templateUrl: './button.html',
   styleUrl: './button.css',
-  changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
     class: 'cr-button',
     '[attr.data-variant]': 'variant()',

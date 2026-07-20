@@ -17,10 +17,11 @@ describe('App', () => {
     await fixture.whenStable();
     const host: HTMLElement = fixture.nativeElement;
 
-    expect(host.querySelectorAll('nav a').length).toBe(3);
+    // 4 section links + the 2 mobile-only login/book duplicates.
+    expect(host.querySelectorAll('nav a').length).toBe(6);
     expect(host.querySelectorAll('cr-cursor-dot').length).toBe(1);
-    expect(host.querySelector('.cr-shell__cta')?.textContent).toContain(
-      'Запази час',
+    expect(host.querySelector('.cr-shell__login')?.textContent).toContain(
+      'Вход',
     );
   });
 });

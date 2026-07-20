@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, signal } from '@angular/core';
+import { Component, signal } from '@angular/core';
 import {
   Badge,
   BadgeTone,
@@ -17,7 +17,6 @@ import {
   imports: [Button, Input, Card, Badge, MaterialDirective, ShapeDirective],
   templateUrl: './gallery.page.html',
   styleUrl: './gallery.page.css',
-  changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class GalleryPage {
   protected readonly variants: ButtonVariant[] = [

@@ -5,10 +5,11 @@
     gap: var(--cr-space-tight);
     padding: var(--cr-space-tight) var(--cr-space-compact);
     border-radius: var(--cr-radius-full);
+    /* caption role for size/line-height; chip chrome re-asserts family and
+       weight over the role's (the `font:` shorthand resets both). */
+    font: var(--cr-text-caption);
     font-family: var(--cr-font-family-heading);
-    font-size: var(--cr-font-size-caption);
     font-weight: var(--cr-font-weight-semibold);
-    line-height: var(--cr-font-line-height-caption);
   }
 
   :host([data-tone='neutral']) {

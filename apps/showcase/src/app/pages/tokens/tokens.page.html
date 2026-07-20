@@ -29,13 +29,43 @@
 </section>
 
 <section class="cr-tokens__section">
-  <h2>Type scale</h2>
+  <h2>Text roles</h2>
   <div class="cr-tokens__type-scale">
-    @for (size of fontSizes; track size) {
-    <p [style.font-size]="'var(--cr-font-size-' + size + ')'">
-      --cr-font-size-{{ size }} — Book your next appointment
+    @for (role of textRoles; track role) {
+    <p [attr.data-text]="role">{{ role }} — Book your next appointment</p>
+    }
+  </div>
+</section>
+
+<section class="cr-tokens__section">
+  <h2>Text modifiers</h2>
+  <div class="cr-tokens__type-scale">
+    @for (weight of textWeights; track weight) {
+    <p data-text="body" [attr.data-text-weight]="weight">
+      weight={{ weight }} — Book your next appointment
+    </p>
+    } @for (tone of textTones; track tone) {
+    <p data-text="body" [attr.data-text-tone]="tone">
+      tone={{ tone }} — Book your next appointment
     </p>
     }
+    <p data-text="body" data-text-underline>underline</p>
+    <p data-text="body" data-text-strike>strikethrough</p>
+    <p data-text="body" data-text-underline data-text-strike>
+      underline + strikethrough
+    </p>
+    <p data-text="body" data-text-case="uppercase">case=uppercase</p>
+    <p data-text="body" data-text-tracking="tight">
+      tracking=tight — Book your next appointment
+    </p>
+    <p data-text="body" data-text-tracking="wide">
+      tracking=wide — Book your next appointment
+    </p>
+    <p data-text="body" data-text-design="heading">
+      design=heading — Book your next appointment
+    </p>
+    <p data-text="headline" data-text-width="condensed">width=condensed</p>
+    <p data-text="headline" data-text-width="expanded">width=expanded</p>
   </div>
 </section>
 

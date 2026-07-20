@@ -13,8 +13,9 @@
 }
 
 .cr-shell__brand {
+  font: var(--cr-text-body);
+  font-family: var(--cr-font-family-heading);
   font-weight: var(--cr-font-weight-semibold);
-  font-size: var(--cr-font-size-body);
 }
 
 .cr-shell__nav {

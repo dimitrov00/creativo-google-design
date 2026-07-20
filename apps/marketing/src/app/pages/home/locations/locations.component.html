@@ -6,13 +6,15 @@
     aria-labelledby="locations-title"
   >
     <header class="locations__heading" data-reveal>
-      <p class="eyebrow">{{ t('marketing.locations.eyebrow') }}</p>
-      <h2 id="locations-title">
+      <p class="eyebrow" data-text="eyebrow">
+        {{ t('marketing.locations.eyebrow') }}
+      </p>
+      <h2 id="locations-title" data-text="display">
         {{ t('marketing.locations.titleA') }}<br />{{
           t('marketing.locations.titleB')
         }}
       </h2>
-      <p>{{ t('marketing.locations.intro') }}</p>
+      <p data-text="body">{{ t('marketing.locations.intro') }}</p>
     </header>
 
     <div class="locations__content">
@@ -48,12 +50,16 @@
                 >
 
                 <div class="location-card__copy">
-                  <h3>{{ t(location.nameKey) }}</h3>
-                  <p>{{ t(location.addressKey) }}</p>
+                  <h3 data-text="callout" data-text-weight="semibold">
+                    {{ t(location.nameKey) }}
+                  </h3>
+                  <p data-text="caption">{{ t(location.addressKey) }}</p>
 
                   <span
                     class="location-card__status"
-                    [class.is-open]="status.isOpen"
+                    data-text="caption"
+                    data-text-weight="semibold"
+                    [attr.data-open]="status.isOpen ? '' : null"
                   >
                     <span
                       class="location-card__status-dot"
@@ -69,6 +75,7 @@
                   @if (location.phoneKey) {
                     <a
                       class="location-card__phone"
+                      data-text="caption"
                       [href]="phoneHref(t(location.phoneKey))"
                       [attr.aria-label]="
                         t('marketing.locations.callAria', {
@@ -88,6 +95,8 @@
                   <span class="location-card__action" aria-hidden="true">
                     <span
                       class="location-card__explore-label"
+                      data-text="caption"
+                      data-text-weight="bold"
                       crCursorTarget
                       crCursorTargetStyle="fill"
                     >
@@ -147,7 +156,12 @@
     (sheetScrolled)="onSheetScroll($event)"
   >
     @if (activeLocation(); as location) {
-      <p sheet-title class="location-sheet__compact-title">
+      <p
+        sheet-title
+        class="location-sheet__compact-title"
+        data-text="caption"
+        data-text-weight="bold"
+      >
         {{ t(location.nameKey) }}
       </p>
     }
@@ -171,8 +185,14 @@
 
           <article class="location-sheet__profile">
             <header class="location-sheet__intro">
-              <h2 id="location-sheet-title">{{ t(location.nameKey) }}</h2>
-              <p class="location-sheet__address">
+              <h2 id="location-sheet-title" data-text="title">
+                {{ t(location.nameKey) }}
+              </h2>
+              <p
+                class="location-sheet__address"
+                data-text="footnote"
+                data-text-weight="semibold"
+              >
                 <span class="material-symbols-rounded" aria-hidden="true"
                   >location_on</span
                 >
@@ -181,6 +201,7 @@
               @if (location.phoneKey) {
                 <a
                   class="location-sheet__phone-line"
+                  data-text="caption"
                   [href]="phoneHref(t(location.phoneKey))"
                   crCursorTarget
                 >
@@ -195,8 +216,9 @@
                 <a
                   class="location-sheet__book"
                   href="/client"
-                  crCursorTarget
-                  crCursorTargetStyle="fill"
+                  crButton
+                  variant="action"
+                  size="extraLarge"
                 >
                   <span>{{
                     t('marketing.locations.bookAt', {
@@ -210,6 +232,7 @@
 
                 <a
                   class="location-sheet__icon-action"
+                  data-text="caption"
                   [href]="directionsUrl(location)"
                   target="_blank"
                   rel="noopener"
@@ -229,6 +252,7 @@
                 @if (location.phoneKey) {
                   <a
                     class="location-sheet__icon-action"
+                    data-text="caption"
                     [href]="phoneHref(t(location.phoneKey))"
                     [attr.aria-label]="
                       t('marketing.locations.callAria', {
@@ -249,8 +273,10 @@
             <div class="location-sheet__status-card">
               <div
                 class="location-sheet__status"
-                [class.is-open]="status.isOpen"
-                [class.is-soon]="status.kind === 'closesSoon'"
+                data-text="footnote"
+                data-text-weight="semibold"
+                [attr.data-open]="status.isOpen ? '' : null"
+                [attr.data-soon]="status.kind === 'closesSoon' ? '' : null"
               >
                 <span
                   class="location-sheet__status-dot"
@@ -261,7 +287,11 @@
                     ? t('marketing.locations.openNow')
                     : t('marketing.locations.closedNow')
                 }}</span>
-                <span class="location-sheet__status-detail">
+                <span
+                  class="location-sheet__status-detail"
+                  data-text="caption"
+                  data-text-weight="medium"
+                >
                   @switch (status.kind) {
                     @case ('closesAt') {
                       {{
@@ -299,7 +329,8 @@
                 @for (dayIndex of weekOrder; track dayIndex) {
                   <li
                     class="location-sheet__day"
-                    [class.is-today]="dayIndex === todayIndex()"
+                    data-text="caption"
+                    [attr.data-today]="dayIndex === todayIndex() ? '' : null"
                   >
                     <span class="location-sheet__day-name">
                       {{
@@ -309,9 +340,11 @@
                         )
                       }}
                       @if (dayIndex === todayIndex()) {
-                        <span class="location-sheet__today-tag">{{
-                          t('marketing.locations.today')
-                        }}</span>
+                        <span
+                          class="location-sheet__today-tag"
+                          data-text="eyebrow"
+                          >{{ t('marketing.locations.today') }}</span
+                        >
                       }
                     </span>
                     <span class="location-sheet__day-hours">
@@ -330,7 +363,9 @@
 
         <section class="location-sheet__gallery">
           <header class="location-sheet__gallery-heading">
-            <h3>{{ t('marketing.locations.galleryHeading') }}</h3>
+            <h3 data-text="title">
+              {{ t('marketing.locations.galleryHeading') }}
+            </h3>
           </header>
           <cr-showcase-gallery
             [images]="location.gallery"
@@ -351,13 +386,14 @@
     @if (activeLocation(); as location) {
       <div
         sheet-overlay
-        class="location-sheet__toolbar"
-        [class.is-visible]="sheetToolbarVisible()"
+        class="location-sheet__toolbar sheet-bar-reveal"
+        [attr.data-visible]="sheetToolbarVisible() ? '' : null"
         [attr.aria-hidden]="sheetToolbarVisible() ? null : 'true'"
       >
         @if (location.phoneKey) {
           <a
             class="location-sheet__toolbar-icon"
+            data-text="caption"
             [href]="phoneHref(t(location.phoneKey))"
             [attr.aria-label]="
               t('marketing.locations.callAria', {
@@ -375,6 +411,7 @@
         }
         <a
           class="location-sheet__toolbar-icon"
+          data-text="caption"
           [href]="directionsUrl(location)"
           target="_blank"
           rel="noopener"
@@ -395,8 +432,10 @@
           class="location-sheet__toolbar-book"
           href="/client"
           [attr.tabindex]="sheetToolbarVisible() ? null : -1"
-          crCursorTarget
-          crCursorTargetStyle="fill"
+          crButton
+          variant="action"
+          size="large"
+          shape="pill"
         >
           <span>{{
             t('marketing.locations.bookAt', { location: t(location.nameKey) })

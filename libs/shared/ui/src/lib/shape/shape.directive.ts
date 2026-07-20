@@ -31,6 +31,30 @@ const SQUARE_ASPECT_SHAPES: ReadonlySet<ShapeKind> = new Set([
 ]);
 
 /**
+ * Radius token vocabulary for `crShapeRadius` — token names get IDE
+ * autocomplete and map to their `--cr-radius-*` var; the `(string & {})`
+ * branch keeps raw CSS lengths / var() expressions as the escape hatch
+ * without collapsing the union's literal suggestions.
+ */
+export type ShapeRadius =
+  | 'none'
+  | 'small'
+  | 'regular'
+  | 'large'
+  | 'extraLarge'
+  | 'full'
+  | (string & {});
+
+const RADIUS_TOKENS: Record<string, string> = {
+  none: 'var(--cr-radius-none)',
+  small: 'var(--cr-radius-small)',
+  regular: 'var(--cr-radius-regular)',
+  large: 'var(--cr-radius-large)',
+  extraLarge: 'var(--cr-radius-extra-large)',
+  full: 'var(--cr-radius-full)',
+};
+
+/**
  * Clips an element into a basic shape, with an optional distinct shape to
  * morph into on hover — e.g. `crShape="square" crShapeHover="circle"` for
  * an image that becomes circular under the pointer. Deliberately NOT paired
@@ -63,8 +87,9 @@ export class ShapeDirective {
   readonly hover = input<ShapeKind | undefined>(undefined, {
     alias: 'crShapeHover',
   });
-  /** Corner radius for the 'roundedRectangle' shape only — any --cr-radius-* var() or raw CSS length. */
-  readonly radius = input<string>('var(--cr-radius-regular)', {
+  /** Corner radius for the 'roundedRectangle' shape only — a radius token
+   * name ('regular', 'extraLarge', …) or any raw CSS length / var(). */
+  readonly radius = input<ShapeRadius>('regular', {
     alias: 'crShapeRadius',
   });
 
@@ -73,6 +98,11 @@ export class ShapeDirective {
     const hover = this.hover();
     return hover ? this.radiusFor(hover) : null;
   });
+
+  private resolvedRadius(): string {
+    const radius = this.radius();
+    return RADIUS_TOKENS[radius] ?? radius;
+  }
   protected readonly forcesSquareAspect = computed(() =>
     [this.shape(), this.hover()].some(
       (shape) => shape && SQUARE_ASPECT_SHAPES.has(shape),
@@ -80,6 +110,6 @@ export class ShapeDirective {
   );
 
   private radiusFor(shape: ShapeKind): string {
-    return FIXED_RADIUS[shape] ?? this.radius();
+    return FIXED_RADIUS[shape] ?? this.resolvedRadius();
   }
 }

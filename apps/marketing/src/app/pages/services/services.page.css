@@ -1,8 +1,20 @@
 :host {
-  --page-fg: #050505;
-  --page-muted-weak: rgb(5 5 5 / 0.46);
-  --page-muted: rgb(5 5 5 / 0.58);
-  --page-surface: rgb(5 5 5 / 0.07);
+  --page-fg: var(--cr-color-foreground);
+  --page-muted-weak: color-mix(
+    in srgb,
+    var(--cr-color-foreground) calc(0.46 * 100%),
+    transparent
+  );
+  --page-muted: color-mix(
+    in srgb,
+    var(--cr-color-foreground) calc(0.58 * 100%),
+    transparent
+  );
+  --page-surface: color-mix(
+    in srgb,
+    var(--cr-color-foreground) calc(0.07 * 100%),
+    transparent
+  );
   display: block;
   overflow: clip;
   background: transparent;
@@ -45,36 +57,29 @@
 .catalog-intro p {
   margin: 0 0 1.2rem;
   color: var(--page-muted-weak);
-  font-size: 0.62rem;
-  font-weight: 760;
-  letter-spacing: 0.13em;
-  text-transform: uppercase;
 }
 
+/* Art-directed one-off, deliberately outside the type ramp (case study §F3). */
+/* stylelint-disable declaration-property-value-allowed-list -- art-directed one-off (case study §F3) */
 .catalog-intro h2 {
   max-inline-size: 8ch;
   margin: 0;
   font-size: clamp(4rem, 7vw, 7.6rem);
-  font-weight: 610;
+  font-weight: var(--cr-font-weight-semibold);
   letter-spacing: -0.082em;
   line-height: 0.8;
 }
+/* stylelint-enable declaration-property-value-allowed-list */
 
 .catalog-intro span {
   display: block;
   max-inline-size: 24rem;
   margin-block-start: 2rem;
   color: var(--page-muted);
-  font-size: 0.82rem;
-  line-height: 1.55;
 }
 
 .service-sheet__intro > div:first-child > p {
   margin: 0;
-  font-size: 0.64rem;
-  font-weight: 760;
-  letter-spacing: 0.13em;
-  text-transform: uppercase;
 }
 
 .catalog-grid {
@@ -87,50 +92,29 @@
   position: relative;
   min-inline-size: 0;
   cursor: pointer;
-  outline: none;
-}
-
-.service-tile:focus-visible {
-  outline: none;
 }
 
 .service-tile:focus-visible h3 {
-  color: #145cf3;
+  color: var(--cr-color-action-background);
 }
 
+/* Skeleton + hover morph live in styles.css (.media-morph / .morph-card) —
+   only this tile's clip endpoints (rounded at rest → circle on hover, the
+   inverse of the team cards), film grade and backing surface remain here.
+   Rotation (-0.8deg) and filter duration (750ms) match the shared defaults. */
 .service-tile__media {
-  position: relative;
-  overflow: hidden;
-  aspect-ratio: 1;
-  clip-path: inset(0 round clamp(1rem, 1.7vw, 1.7rem));
+  --media-morph-clip-rest: var(--radius-media);
+  --media-morph-clip-hover: 50%;
   background: var(--page-surface);
-  transform: translateZ(0);
-  transition:
-    clip-path 750ms cubic-bezier(0.16, 1, 0.3, 1),
-    transform 750ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .service-tile__media img {
-  inline-size: 100%;
-  block-size: 100%;
-  object-fit: cover;
   filter: saturate(0.78) contrast(1.04);
-  transform: scale(1.025);
-  transition:
-    filter 750ms ease,
-    transform 900ms cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-.service-tile:hover .service-tile__media,
-.service-tile:focus-within .service-tile__media {
-  clip-path: inset(0 round 50%);
-  transform: scale(0.97);
 }
 
 .service-tile:hover .service-tile__media img,
 .service-tile:focus-within .service-tile__media img {
   filter: saturate(1) contrast(1);
-  transform: scale(1.09) rotate(-0.8deg);
 }
 
 .service-tile__copy {
@@ -145,27 +129,20 @@
   grid-column: 1 / -1;
   margin: 0;
   color: var(--page-muted-weak);
-  font-size: 0.59rem;
-  font-weight: 740;
-  letter-spacing: 0.11em;
-  text-transform: uppercase;
 }
 
 .service-tile h3 {
   max-inline-size: 11ch;
   margin: 0;
-  font-size: clamp(2rem, 3.2vw, 3.8rem);
-  font-weight: 590;
-  letter-spacing: -0.06em;
-  line-height: 0.9;
   transition:
-    color 320ms ease,
-    transform 500ms cubic-bezier(0.16, 1, 0.3, 1);
+    color var(--cr-motion-duration-slow) var(--cr-motion-easing-standard),
+    transform var(--cr-motion-duration-slower)
+      var(--cr-motion-easing-emphasized);
 }
 
 .service-tile:hover h3,
 .service-tile:focus-within h3 {
-  color: #f6d800;
+  color: var(--cr-color-highlight);
   transform: translateX(0.12em);
 }
 
@@ -175,21 +152,17 @@
   justify-items: end;
   align-content: start;
   color: var(--page-muted);
-  font-size: 0.67rem;
   white-space: nowrap;
 }
 
 .service-tile__facts strong {
   color: currentColor;
-  font-weight: 680;
+  font-weight: var(--cr-font-weight-bold);
 }
 
+/* Skeleton + hover morph live in styles.css (.explore-affordance) — only
+   this tile's spacing/stacking, border ink and icon size remain here. */
 .service-tile__action {
-  grid-column: 1 / -1;
-  display: inline-flex;
-  gap: 0.42rem;
-  align-items: center;
-  justify-self: start;
   margin-block-start: 0.4rem;
   position: relative;
   z-index: 2;
@@ -197,100 +170,28 @@
 
 .service-tile__explore-label,
 .service-tile__explore-icon {
-  min-block-size: 2.8rem;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid var(--page-muted-weak);
-  color: currentColor;
-  transition:
-    border-color 320ms ease,
-    transform 500ms cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-.service-tile__explore-label {
-  --cr-cursor-fill-color: #f6d800;
-  --cr-color-background: #050505;
-  min-inline-size: 6.2rem;
-  padding-inline: 1rem;
-  border-radius: 0.85rem;
-  font-size: 0.67rem;
-  font-weight: 680;
+  border-color: var(--page-muted-weak);
 }
 
 .service-tile__explore-icon {
-  --cr-cursor-fill-color: #f6d800;
-  --cr-color-background: #050505;
-  inline-size: 3.7rem;
-  border-radius: 999px;
-  font-size: 1.05rem;
-}
-
-.service-tile:hover .service-tile__action > span,
-.service-tile:focus-within .service-tile__action > span {
-  border-color: #f6d800;
-}
-
-.service-tile:hover .service-tile__explore-icon,
-.service-tile:focus-within .service-tile__explore-icon {
-  transform: translateX(0.2rem) rotate(-8deg);
+  font-size: var(--cr-icon-size-small);
 }
 
 .service-sheet__compact-title {
   margin: 0;
-  color: #050505;
-  font-size: 0.76rem;
-  font-weight: 690;
-  letter-spacing: -0.025em;
+  color: var(--cr-color-foreground);
 }
 
-.service-sheet__booking-bar {
-  position: absolute;
-  z-index: 12;
-  inset: auto auto max(1rem, env(safe-area-inset-bottom)) 50%;
-  inline-size: auto;
-  max-inline-size: calc(100% - 2.5rem);
-  opacity: 0;
-  transform: translate(-50%, calc(100% + 2rem)) scale(0.96);
-  transition:
-    opacity 180ms ease,
-    transform 480ms cubic-bezier(0.16, 1, 0.3, 1);
-  pointer-events: none;
-}
-
-.service-sheet__booking-bar.is-visible {
-  opacity: 1;
-  transform: translate(-50%, 0) scale(1);
-  pointer-events: auto;
-}
-
+/* Bar skeleton + [data-visible] reveal live in styles.css
+   (.sheet-bar-reveal); only the mobile right-docking below stays local. */
 .service-sheet__booking-bar a {
-  --cr-cursor-fill-color: #050505;
-  --cr-color-background: #fff;
-  display: flex;
-  justify-content: space-between;
-  gap: 0.8rem;
-  align-items: center;
-  min-block-size: 3.25rem;
-  padding: 0.8rem 1.05rem 0.8rem 1.2rem;
-  border-radius: 999px;
-  background: #145cf3;
-  color: #fff;
   box-shadow: 0 0.8rem 2.8rem rgb(0 0 0 / 0.22);
-  font-size: 0.72rem;
-  font-weight: 720;
-  text-decoration: none;
   white-space: nowrap;
 }
 
 .service-sheet__booking-bar .material-symbols-rounded {
   flex: 0 0 auto;
-  font-size: 1.1rem;
-}
-
-.service-sheet__booking-bar a:focus-visible {
-  outline: 2px solid #050505;
-  outline-offset: 0.2rem;
+  font-size: var(--cr-icon-size-regular);
 }
 
 .service-sheet__intro {
@@ -302,21 +203,26 @@
   margin-inline: var(--modal-sheet-safe);
 }
 
+/* Art-directed one-off, deliberately outside the type ramp (case study §F3). */
+/* stylelint-disable declaration-property-value-allowed-list -- art-directed one-off (case study §F3) */
 .service-sheet__intro h2 {
   max-inline-size: 9ch;
   margin: 1rem 0 0;
   font-size: clamp(4.2rem, 8vw, 8rem);
-  font-weight: 620;
+  font-weight: var(--cr-font-weight-semibold);
   letter-spacing: -0.084em;
   line-height: 0.78;
 }
+/* stylelint-enable declaration-property-value-allowed-list */
 
 .service-sheet__summary > p {
   max-inline-size: 30rem;
   margin: 0;
-  color: rgb(5 5 5 / 0.64);
-  font-size: 0.9rem;
-  line-height: 1.58;
+  color: color-mix(
+    in srgb,
+    var(--cr-color-foreground) calc(0.64 * 100%),
+    transparent
+  );
 }
 
 .service-sheet__summary > div {
@@ -324,29 +230,23 @@
   justify-content: space-between;
   gap: 2rem;
   margin-block-start: 1.8rem;
-  font-size: 0.72rem;
 }
 
 .service-sheet__summary > div span {
   display: inline-flex;
   gap: 0.4rem;
   align-items: center;
-  color: rgb(5 5 5 / 0.55);
+  color: color-mix(
+    in srgb,
+    var(--cr-color-foreground) calc(0.55 * 100%),
+    transparent
+  );
 }
 
 .service-sheet__summary > a {
-  display: flex;
-  justify-content: space-between;
-  gap: 3rem;
-  align-items: center;
   margin-block-start: 2rem;
-  padding: 1.2rem 1.3rem;
-  border-radius: 1rem;
-  background: #145cf3;
-  color: #fff;
-  font-size: 0.75rem;
-  font-weight: 720;
-  text-decoration: none;
+  /* CTA radius vocabulary — consumed by Button's documented override hook. */
+  --cr-button-radius: var(--radius-action);
 }
 
 .service-sheet__variants {
@@ -399,10 +299,6 @@
 .service-performers h3 {
   max-inline-size: 13ch;
   margin: 0;
-  font-size: clamp(2.6rem, 4.6vw, 4.8rem);
-  font-weight: 600;
-  letter-spacing: -0.075em;
-  line-height: 0.82;
 }
 
 .service-performers > ul {
@@ -427,25 +323,35 @@
   padding: 0.7rem;
   border: 1px solid transparent;
   border-radius: 1.5rem;
-  background: rgb(5 5 5 / 0.055);
-  color: #050505;
+  background: color-mix(
+    in srgb,
+    var(--cr-color-foreground) calc(0.055 * 100%),
+    transparent
+  );
+  color: var(--cr-color-foreground);
   text-decoration: none;
   text-align: start;
   font: inherit;
   cursor: pointer;
   transition:
-    background-color 350ms ease,
-    transform 600ms cubic-bezier(0.16, 1, 0.3, 1);
+    background-color var(--cr-motion-duration-slow)
+      var(--cr-motion-easing-standard),
+    transform var(--cr-motion-duration-slowest)
+      var(--cr-motion-easing-emphasized);
 }
 
 .service-performer:hover,
 .service-performer:focus-visible {
-  background: rgb(5 5 5 / 0.09);
+  background: color-mix(
+    in srgb,
+    var(--cr-color-foreground) calc(0.09 * 100%),
+    transparent
+  );
   transform: translateY(-0.35rem);
 }
 
 .service-performer:focus-visible {
-  outline: 2px solid #145cf3;
+  outline: 2px solid var(--cr-color-action-background);
   outline-offset: 0.25rem;
 }
 
@@ -454,7 +360,11 @@
   overflow: hidden;
   aspect-ratio: 1.45;
   border-radius: 1.05rem;
-  background: rgb(5 5 5 / 0.08);
+  background: color-mix(
+    in srgb,
+    var(--cr-color-foreground) calc(0.08 * 100%),
+    transparent
+  );
 }
 
 .service-performer__media img {
@@ -464,8 +374,9 @@
   filter: saturate(0.78) contrast(1.03);
   transform: scale(1.01);
   transition:
-    filter 650ms ease,
-    transform 850ms cubic-bezier(0.16, 1, 0.3, 1);
+    filter var(--cr-motion-duration-slowest) var(--cr-motion-easing-standard),
+    transform var(--cr-motion-duration-cinematic)
+      var(--cr-motion-easing-emphasized);
 }
 
 .service-performer:hover .service-performer__media img,
@@ -481,43 +392,29 @@
 
 .service-performers h4 {
   margin: 0.3rem 0 0;
-  font-size: clamp(1.75rem, 3vw, 2.8rem);
-  font-weight: 610;
-  letter-spacing: -0.06em;
-  line-height: 0.92;
 }
 
 .service-performer__identity p {
   margin: 0;
-  color: rgb(5 5 5 / 0.46);
-  font-size: 0.55rem;
-  font-weight: 720;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
+  color: color-mix(
+    in srgb,
+    var(--cr-color-foreground) calc(0.46 * 100%),
+    transparent
+  );
 }
 
 .service-performer__identity > span {
   display: block;
   max-inline-size: 28rem;
   margin-block-start: 0.65rem;
-  color: rgb(5 5 5 / 0.48);
-  font-size: 0.62rem;
-  line-height: 1.4;
+  color: color-mix(
+    in srgb,
+    var(--cr-color-foreground) calc(0.48 * 100%),
+    transparent
+  );
 }
 
-@keyframes sheet-content-in {
-  from {
-    opacity: 0;
-    filter: blur(8px);
-    transform: translateY(1.5rem);
-  }
-  to {
-    opacity: 1;
-    filter: blur(0);
-    transform: translateY(0);
-  }
-}
-
+/* `sheet-content-in` is the shared global keyframe in styles.css. */
 @keyframes sheet-image-in {
   from {
     opacity: 0;
@@ -531,45 +428,48 @@
   }
 }
 
-cr-modal-sheet.is-open .service-sheet__intro > *,
-cr-modal-sheet.is-open .service-sheet__variants,
-cr-modal-sheet.is-open .service-examples > header,
-cr-modal-sheet.is-open .service-performers > header,
-cr-modal-sheet.is-open .service-addons > header {
-  animation: sheet-content-in 700ms cubic-bezier(0.16, 1, 0.3, 1) both;
+cr-modal-sheet[data-open] .service-sheet__intro > *,
+cr-modal-sheet[data-open] .service-sheet__variants,
+cr-modal-sheet[data-open] .service-examples > header,
+cr-modal-sheet[data-open] .service-performers > header,
+cr-modal-sheet[data-open] .service-addons > header {
+  animation: sheet-content-in var(--cr-motion-duration-slowest)
+    var(--cr-motion-easing-emphasized) both;
 }
 
-cr-modal-sheet.is-open .service-sheet__intro > :nth-child(2) {
-  animation-delay: 70ms;
+cr-modal-sheet[data-open] .service-sheet__intro > :nth-child(2) {
+  animation-delay: var(--cr-motion-duration-fast);
 }
 
-cr-modal-sheet.is-open .service-sheet__variants {
-  animation-delay: 120ms;
+cr-modal-sheet[data-open] .service-sheet__variants {
+  animation-delay: var(--cr-motion-duration-fast);
 }
 
-cr-modal-sheet.is-open .service-examples figure {
-  animation: sheet-image-in 850ms cubic-bezier(0.16, 1, 0.3, 1) both;
+cr-modal-sheet[data-open] .service-examples figure {
+  animation: sheet-image-in var(--cr-motion-duration-cinematic)
+    var(--cr-motion-easing-emphasized) both;
 }
 
-cr-modal-sheet.is-open .service-examples figure:nth-child(2) {
-  animation-delay: 90ms;
+cr-modal-sheet[data-open] .service-examples figure:nth-child(2) {
+  animation-delay: var(--cr-motion-duration-fast);
 }
 
-cr-modal-sheet.is-open .service-examples figure:nth-child(3) {
-  animation-delay: 180ms;
+cr-modal-sheet[data-open] .service-examples figure:nth-child(3) {
+  animation-delay: var(--cr-motion-duration-base);
 }
 
-.motion-ready [data-service-reveal] {
+[data-motion-ready] [data-service-reveal] {
   opacity: 0;
   filter: blur(9px);
   transform: translateY(3.5rem);
   transition:
-    opacity 800ms ease,
-    filter 800ms ease,
-    transform 950ms cubic-bezier(0.16, 1, 0.3, 1);
+    opacity var(--cr-motion-duration-cinematic) var(--cr-motion-easing-standard),
+    filter var(--cr-motion-duration-cinematic) var(--cr-motion-easing-standard),
+    transform var(--cr-motion-duration-cinematic)
+      var(--cr-motion-easing-emphasized);
 }
 
-.motion-ready [data-service-reveal].is-visible {
+[data-motion-ready] [data-service-reveal][data-visible] {
   opacity: 1;
   filter: blur(0);
   transform: translateY(0);
@@ -608,8 +508,10 @@ cr-modal-sheet.is-open .service-examples figure:nth-child(3) {
     padding-inline: 0.25rem;
   }
 
+  /* Art-directed one-off, deliberately outside the type ramp (case study §F3). */
   .catalog-intro h2 {
     max-inline-size: 7ch;
+    /* stylelint-disable-next-line declaration-property-value-allowed-list -- art-directed one-off (case study §F3) */
     font-size: clamp(4rem, 17vw, 6.5rem);
   }
 
@@ -624,7 +526,7 @@ cr-modal-sheet.is-open .service-examples figure:nth-child(3) {
   }
 
   .service-tile__media {
-    clip-path: inset(0 round 1rem);
+    --media-morph-clip-rest: 1rem;
   }
 
   .service-tile__copy {
@@ -635,33 +537,16 @@ cr-modal-sheet.is-open .service-examples figure:nth-child(3) {
 
   .service-tile h3 {
     min-block-size: 2.45em;
-    font-size: clamp(1.35rem, 6.2vw, 2rem);
   }
 
   .service-tile__facts {
     display: flex;
     justify-content: space-between;
     justify-items: start;
-    font-size: 0.58rem;
   }
 
   .service-tile__action {
     margin-block-start: 0.2rem;
-  }
-
-  .service-tile__explore-label,
-  .service-tile__explore-icon {
-    min-block-size: 2.45rem;
-  }
-
-  .service-tile__explore-label {
-    min-inline-size: 0;
-    padding-inline: 0.75rem;
-    font-size: 0.58rem;
-  }
-
-  .service-tile__explore-icon {
-    inline-size: 2.85rem;
   }
 
   cr-modal-sheet {
@@ -675,13 +560,12 @@ cr-modal-sheet.is-open .service-examples figure:nth-child(3) {
     inset-block-end: max(0.75rem, env(safe-area-inset-bottom));
     inset-inline-start: auto;
     inset-inline-end: var(--modal-sheet-safe);
-    inline-size: auto;
     max-inline-size: calc(100% - 2 * var(--modal-sheet-safe));
     transform: translateY(calc(100% + 2rem)) scale(0.96);
     transform-origin: 100% 100%;
   }
 
-  .service-sheet__booking-bar.is-visible {
+  .service-sheet__booking-bar[data-visible] {
     transform: translateY(0) scale(1);
   }
 
@@ -691,16 +575,15 @@ cr-modal-sheet.is-open .service-examples figure:nth-child(3) {
     padding-block-start: 1rem;
   }
 
+  /* Art-directed one-off, deliberately outside the type ramp (case study §F3). */
+  /* stylelint-disable declaration-property-value-allowed-list -- art-directed one-off (case study §F3) */
   .service-sheet__intro h2 {
     max-inline-size: 10ch;
     margin-block-start: 0.7rem;
     font-size: clamp(3.2rem, 13.5vw, 5.2rem);
     line-height: 0.84;
   }
-
-  .service-sheet__summary > p {
-    font-size: 0.84rem;
-  }
+  /* stylelint-enable declaration-property-value-allowed-list */
 
   .service-sheet__summary > div {
     margin-block-start: 1.2rem;
@@ -709,7 +592,6 @@ cr-modal-sheet.is-open .service-examples figure:nth-child(3) {
   .service-sheet__summary > a {
     inline-size: 100%;
     margin-block-start: 1.25rem;
-    padding: 1.05rem 1.1rem;
   }
 
   .service-sheet__variants {
@@ -736,11 +618,6 @@ cr-modal-sheet.is-open .service-examples figure:nth-child(3) {
     margin-block-end: 1.6rem;
   }
 
-  .service-performers h3 {
-    font-size: clamp(2.5rem, 11vw, 3.8rem);
-    line-height: 0.88;
-  }
-
   .service-performers > ul {
     display: flex;
     gap: 0.65rem;
@@ -764,10 +641,6 @@ cr-modal-sheet.is-open .service-examples figure:nth-child(3) {
   .service-performer__media {
     aspect-ratio: 1.25;
   }
-
-  .service-performers h4 {
-    font-size: clamp(2rem, 9vw, 2.8rem);
-  }
 }
 
 @media (max-width: 430px) {
@@ -776,32 +649,11 @@ cr-modal-sheet.is-open .service-examples figure:nth-child(3) {
   }
 
   .catalog-grid {
-    gap-block: 3rem;
-  }
-
-  .service-tile__copy > p {
-    font-size: 0.52rem;
-  }
-
-  .service-tile h3 {
-    font-size: clamp(1.25rem, 6.3vw, 1.7rem);
-  }
-
-  .service-performer__identity > span {
-    font-size: 0.58rem;
+    row-gap: 3rem;
   }
 }
 
 @media (hover: none) {
-  .service-tile:hover .service-tile__media {
-    clip-path: inset(0 round 1rem);
-    transform: none;
-  }
-
-  .service-tile:hover .service-tile__media img {
-    transform: scale(1.025);
-  }
-
   .service-tile:hover h3 {
     color: currentColor;
     transform: none;
@@ -809,27 +661,12 @@ cr-modal-sheet.is-open .service-examples figure:nth-child(3) {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .motion-ready [data-service-reveal] {
+  /* Endpoint override (forces the revealed state — opacity/blur/offset), not
+     duration-nulling; that lives in the global kill-switch (reduced-motion.css). */
+  [data-motion-ready] [data-service-reveal] {
     opacity: 1;
     filter: none;
     transform: none;
-    transition: none;
-  }
-
-  .service-tile__media,
-  .service-tile__media img,
-  .service-tile h3,
-  .service-tile__action > span,
-  .service-sheet__booking-bar,
-  .service-sheet__booking-bar .material-symbols-rounded,
-  cr-modal-sheet.is-open .service-sheet__intro > *,
-  cr-modal-sheet.is-open .service-sheet__variants,
-  cr-modal-sheet.is-open .service-examples > header,
-  cr-modal-sheet.is-open .service-performers > header,
-  cr-modal-sheet.is-open .service-addons > header,
-  cr-modal-sheet.is-open .service-examples figure {
-    transition: none;
-    animation: none;
   }
 }
 
@@ -852,13 +689,12 @@ cr-modal-sheet.is-open .service-examples figure:nth-child(3) {
 
 .service-sheet__story .service-sheet__intro h2 {
   max-inline-size: 8ch;
-  font-size: clamp(4rem, 6.2vw, 6.7rem);
-  line-height: 0.8;
+  font: var(--cr-text-display);
+  letter-spacing: var(--cr-text-display-tracking);
 }
 
 .service-sheet__story .service-sheet__summary > p {
   max-inline-size: 34rem;
-  font-size: 0.92rem;
 }
 
 .service-sheet__story .service-sheet__variants,
@@ -877,10 +713,6 @@ cr-modal-sheet.is-open .service-examples figure:nth-child(3) {
 .service-sheet__story .service-performers h3 {
   max-inline-size: 11ch;
   margin: 0;
-  font-size: clamp(2.6rem, 4.8vw, 4.5rem);
-  font-weight: 600;
-  letter-spacing: -0.072em;
-  line-height: 0.84;
 }
 
 .service-sheet__story .service-sheet__variants ul {
@@ -895,11 +727,13 @@ cr-modal-sheet.is-open .service-examples figure:nth-child(3) {
 .service-sheet__story .service-sheet__variants li {
   min-inline-size: 0;
   padding: 0.9rem 1.05rem;
-  border-radius: 999px;
-  background: rgb(5 5 5 / 0.055);
-  color: #050505;
-  font-size: 0.68rem;
-  font-weight: 650;
+  border-radius: var(--cr-radius-full);
+  background: color-mix(
+    in srgb,
+    var(--cr-color-foreground) calc(0.055 * 100%),
+    transparent
+  );
+  color: var(--cr-color-foreground);
 }
 
 .service-sheet__story .service-performers > ul {
@@ -938,11 +772,12 @@ cr-modal-sheet.is-open .service-examples figure:nth-child(3) {
   inline-size: min(84%, 13rem);
   aspect-ratio: 1;
   margin-inline: auto;
-  border-radius: 1.1rem;
+  border-radius: var(--radius-action);
   clip-path: inset(0 round 50%);
   transform: translateZ(0);
   will-change: clip-path;
-  transition: clip-path 850ms cubic-bezier(0.16, 1, 0.3, 1);
+  transition: clip-path var(--cr-motion-duration-cinematic)
+    var(--cr-motion-easing-emphasized);
 }
 
 @media (hover: hover) and (pointer: fine) {
@@ -960,10 +795,6 @@ cr-modal-sheet.is-open .service-examples figure:nth-child(3) {
 
 .service-sheet__story .service-performer__media img {
   object-position: center;
-}
-
-.service-sheet__story .service-performers h4 {
-  font-size: clamp(1.75rem, 3vw, 2.8rem);
 }
 
 @media (min-width: 761px) {
@@ -1001,10 +832,6 @@ cr-modal-sheet.is-open .service-examples figure:nth-child(3) {
     padding: 1rem var(--modal-sheet-safe) 3.5rem;
   }
 
-  .service-sheet__story .service-sheet__intro h2 {
-    font-size: clamp(3.3rem, 14vw, 5.2rem);
-  }
-
   .service-sheet__story .service-sheet__variants,
   .service-sheet__story .service-performers {
     margin-inline: var(--modal-sheet-safe);
@@ -1033,7 +860,7 @@ cr-modal-sheet.is-open .service-examples figure:nth-child(3) {
     flex: initial;
   }
 
-  .service-sheet__body:has(cr-showcase-gallery.is-expanded)
+  .service-sheet__body:has(cr-showcase-gallery[data-expanded])
     .service-sheet__variants {
     margin-block-start: 3rem;
   }

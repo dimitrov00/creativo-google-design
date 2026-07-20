@@ -8,7 +8,7 @@
 }
 
 .cr-tokens__section h2 {
-  font-size: var(--cr-font-size-headline);
+  font: var(--cr-text-headline);
   margin-block-end: var(--cr-space-compact);
 }
 
@@ -28,7 +28,7 @@
   flex-direction: column;
   align-items: flex-start;
   gap: var(--cr-space-compact);
-  font-size: var(--cr-font-size-caption);
+  font: var(--cr-text-caption);
 }
 
 .cr-swatch__color {

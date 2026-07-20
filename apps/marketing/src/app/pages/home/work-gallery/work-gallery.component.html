@@ -1,67 +1,99 @@
 <ng-container *transloco="let t">
   <section
     id="work"
-    class="wg"
-    data-wg-section
+    class="work-gallery"
+    data-work-gallery-section
     data-nav-tone="dark"
-    aria-labelledby="wg-title"
+    aria-labelledby="work-gallery-title"
   >
-    <div class="wg__sticky" data-wg-sticky>
-      <div class="wg__backdrop" aria-hidden="true">
+    <div class="work-gallery__sticky" data-work-gallery-sticky>
+      <div class="work-gallery__backdrop" aria-hidden="true">
         <span>{{ t('marketing.work.titleB') }}</span>
         <span>{{ t('marketing.work.titleB') }}</span>
       </div>
 
-      <header class="wg__heading">
-        <p class="eyebrow">{{ t('marketing.work.eyebrow') }}</p>
-        <h2 id="wg-title">
+      <header class="work-gallery__heading">
+        <p class="eyebrow" data-text="eyebrow">
+          {{ t('marketing.work.eyebrow') }}
+        </p>
+        <h2 id="work-gallery-title" data-text="display">
           <span>{{ t('marketing.work.titleA') }}</span>
           <span>{{ t('marketing.work.titleB') }}</span>
         </h2>
-        <p class="wg__scroll-hint">{{ t('marketing.work.scroll') }}</p>
+        <p class="work-gallery__scroll-hint" data-text="caption">
+          {{ t('marketing.work.scroll') }}
+        </p>
 
-        <div class="wg__meter" aria-hidden="true">
-          <span class="wg__meter-count">{{ pad(activeIndex() + 1) }}</span>
-          <span class="wg__meter-track">
-            <span class="wg__meter-fill"></span>
+        <div class="work-gallery__meter" aria-hidden="true">
+          <span
+            class="work-gallery__meter-count"
+            data-text="caption"
+            data-text-weight="bold"
+            >{{ pad(activeIndex() + 1) }}</span
+          >
+          <span class="work-gallery__meter-track">
+            <span class="work-gallery__meter-fill"></span>
           </span>
-          <span class="wg__meter-total">{{ pad(total) }}</span>
+          <span
+            class="work-gallery__meter-total"
+            data-text="caption"
+            data-text-weight="bold"
+            >{{ pad(total) }}</span
+          >
         </div>
       </header>
 
-      <div class="wg__track" data-wg-track>
+      <div class="work-gallery__track" data-work-gallery-track>
         @for (item of galleryItems; track item.image; let index = $index) {
-          <article class="wg-card" data-wg-card [style.--wg-card-index]="index">
+          <article
+            class="work-card"
+            data-work-gallery-card
+            [style.--work-card-index]="index"
+          >
             <a
-              class="wg-card__frame"
-              data-wg-frame
+              class="work-card__frame"
+              data-work-gallery-frame
               href="/client"
               crCursorTarget
               [crCursorTargetLabel]="t('marketing.work.bookCursor')"
             >
               <img
-                data-wg-image
+                data-work-gallery-image
                 [src]="item.image"
                 [alt]="t(item.altKey)"
                 [attr.loading]="index === 0 ? 'eager' : 'lazy'"
               />
-              <span class="wg-card__index">{{ pad(index + 1) }}</span>
+              <span
+                class="work-card__index"
+                data-text="caption"
+                data-text-weight="bold"
+                >{{ pad(index + 1) }}</span
+              >
             </a>
-            <div class="wg-card__copy">
-              <h3>{{ t(item.titleKey) }}</h3>
-              <p>{{ t(item.bodyKey) }}</p>
+            <div class="work-card__copy">
+              <h3
+                data-text="callout"
+                data-text-weight="semibold"
+                data-text-tracking="tight"
+              >
+                {{ t(item.titleKey) }}
+              </h3>
+              <p data-text="caption">{{ t(item.bodyKey) }}</p>
             </div>
           </article>
         }
 
-        <aside class="wg-end" data-wg-end>
+        <aside class="work-gallery__end" data-work-gallery-end>
           <div>
-            <p data-wg-end-reveal>{{ t('marketing.work.endTitle') }}</p>
+            <p data-work-gallery-end-reveal data-text="display">
+              {{ t('marketing.work.endTitle') }}
+            </p>
             <a
               href="/client"
-              data-wg-end-reveal
-              crCursorTarget
-              crCursorTargetStyle="fill"
+              data-work-gallery-end-reveal
+              crButton
+              variant="action"
+              size="extraLarge"
             >
               {{ t('marketing.work.endCta') }}
               <span class="material-symbols-rounded" aria-hidden="true"

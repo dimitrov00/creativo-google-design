@@ -8,7 +8,7 @@
 }
 
 .cr-gallery__section h2 {
-  font-size: var(--cr-font-size-headline);
+  font: var(--cr-text-headline);
   margin-block-end: var(--cr-space-compact);
 }
 
@@ -88,8 +88,8 @@ input[crInput] {
      the label must stay readable at 'none' AND 'ultra-thick' alike. */
   background: var(--cr-color-surface);
   color: var(--cr-color-foreground);
+  font: var(--cr-text-caption);
   font-family: var(--cr-font-family-heading);
-  font-size: var(--cr-font-size-caption);
 }
 
 /* animate.enter/animate.leave hooks (see gallery.page.html's Cards filter
@@ -128,13 +128,6 @@ input[crInput] {
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .cr-card-enter,
-  .cr-card-leave {
-    animation-duration: 1ms;
-  }
-}
-
 .cr-gallery__interactive-card {
   display: flex;
   align-items: center;
@@ -155,16 +148,16 @@ input[crInput] {
 
 .cr-gallery__interactive-headline {
   margin: 0;
-  font-family: var(--cr-font-family-heading);
-  font-size: var(--cr-font-size-title3);
+  font: var(--cr-text-title3);
   font-weight: var(--cr-font-weight-semibold);
   color: var(--cr-color-foreground);
-  transition: color 0.1s var(--cr-motion-easing-standard);
+  transition: color var(--cr-motion-duration-fast)
+    var(--cr-motion-easing-standard);
 }
 
 .cr-gallery__interactive-subline {
   margin: 0;
-  font-size: var(--cr-font-size-footnote);
+  font: var(--cr-text-footnote);
   opacity: 0.7;
 }
 

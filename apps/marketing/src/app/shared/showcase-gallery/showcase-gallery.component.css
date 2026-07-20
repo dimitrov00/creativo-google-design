@@ -6,7 +6,7 @@
   block-size: calc(min(90svh, 58rem) - 6.4rem);
 }
 
-:host.is-expanded {
+:host([data-expanded]) {
   block-size: auto;
 }
 
@@ -33,13 +33,15 @@ figure {
   clip-path: inset(7% round 2.4rem);
   transform: scale(1.035);
   transition:
-    opacity 650ms ease,
-    clip-path 950ms cubic-bezier(0.16, 1, 0.3, 1),
-    transform 1.2s cubic-bezier(0.16, 1, 0.3, 1);
+    opacity var(--cr-motion-duration-slowest) var(--cr-motion-easing-standard),
+    clip-path var(--cr-motion-duration-cinematic)
+      var(--cr-motion-easing-emphasized),
+    transform var(--cr-motion-duration-cinematic)
+      var(--cr-motion-easing-emphasized);
   pointer-events: none;
 }
 
-figure.is-active {
+figure[data-active] {
   z-index: 1;
   opacity: 1;
   clip-path: inset(0 round 1.5rem);
@@ -54,8 +56,8 @@ img {
 }
 
 .showcase-gallery__layout-toggle {
-  --cr-cursor-fill-color: #050505;
-  --cr-color-background: #fff;
+  --cr-cursor-fill-color: var(--cr-color-foreground);
+  --cr-cursor-surface: #fff;
   position: absolute;
   z-index: 4;
   inset: 0.8rem 0.8rem auto auto;
@@ -67,20 +69,24 @@ img {
   border: 0;
   border-radius: 50%;
   background: rgb(247 247 244 / 0.78);
-  color: rgb(5 5 5 / 0.74);
+  color: color-mix(
+    in srgb,
+    var(--cr-color-foreground) calc(0.74 * 100%),
+    transparent
+  );
   box-shadow: 0 0.4rem 1.4rem rgb(0 0 0 / 0.08);
   backdrop-filter: blur(14px) saturate(0.8);
   cursor: pointer;
   opacity: 0.86;
   transition:
-    opacity 220ms ease,
-    color 220ms ease,
-    transform 360ms cubic-bezier(0.16, 1, 0.3, 1);
+    opacity var(--cr-motion-duration-base) var(--cr-motion-easing-standard),
+    color var(--cr-motion-duration-base) var(--cr-motion-easing-standard),
+    transform var(--cr-motion-duration-slow) var(--cr-motion-easing-emphasized);
 }
 
 .showcase-gallery__layout-toggle:hover,
 .showcase-gallery__layout-toggle:focus-visible {
-  color: #050505;
+  color: var(--cr-color-foreground);
   opacity: 1;
 }
 
@@ -89,10 +95,10 @@ img {
 }
 
 .showcase-gallery__layout-toggle .material-symbols-rounded {
-  font-size: 1.18rem;
+  font-size: var(--cr-icon-size-regular);
 }
 
-:host.is-expanded .showcase-gallery__track {
+:host([data-expanded]) .showcase-gallery__track {
   block-size: auto;
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -104,12 +110,12 @@ img {
   scrollbar-width: none;
 }
 
-:host.is-expanded .showcase-gallery__track::-webkit-scrollbar {
+:host([data-expanded]) .showcase-gallery__track::-webkit-scrollbar {
   display: none;
 }
 
-:host.is-expanded figure,
-:host.is-expanded figure:first-child {
+:host([data-expanded]) figure,
+:host([data-expanded]) figure:first-child {
   position: relative;
   inset: auto;
   grid-column: auto;
@@ -148,7 +154,11 @@ img {
     background: transparent;
     box-shadow: none;
     backdrop-filter: none;
-    color: rgb(5 5 5 / 0.56);
+    color: color-mix(
+      in srgb,
+      var(--cr-color-foreground) calc(0.56 * 100%),
+      transparent
+    );
     opacity: 1;
   }
 
@@ -170,7 +180,7 @@ img {
   }
 
   figure,
-  figure.is-active {
+  figure[data-active] {
     position: relative;
     inset: auto;
     flex: 0 0 87%;
@@ -185,11 +195,11 @@ img {
     margin-inline-end: var(--modal-sheet-safe);
   }
 
-  :host.is-expanded {
+  :host([data-expanded]) {
     block-size: auto;
   }
 
-  :host.is-expanded .showcase-gallery__track {
+  :host([data-expanded]) .showcase-gallery__track {
     box-sizing: border-box;
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -202,20 +212,13 @@ img {
     scroll-snap-type: none;
   }
 
-  :host.is-expanded figure,
-  :host.is-expanded figure:first-child {
+  :host([data-expanded]) figure,
+  :host([data-expanded]) figure:first-child {
     grid-column: auto;
     grid-row: auto;
     aspect-ratio: 1;
     flex: none;
     margin-inline-end: 0;
     scroll-snap-align: none;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  figure,
-  .showcase-gallery__layout-toggle {
-    transition: none;
   }
 }

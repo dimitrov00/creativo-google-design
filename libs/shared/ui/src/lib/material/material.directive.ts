@@ -6,7 +6,8 @@ export type MaterialTier =
 /**
  * Applies one of the SwiftUI/UIKit-style Materials tiers (none/ultra-thin/
  * thin/regular/thick/ultra-thick — see the --cr-material-* tokens in
- * generated/css/tokens.css and material.css's `[data-material]` rules) to
+ * libs/shared/design-tokens/css/tokens.css and material.css's
+ * `[data-material]` rules) to
  * an arbitrary element: a translucent, blurred surface tinted from
  * --cr-color-surface-tint. Reserved for genuine overlay/glass contexts
  * (dropdowns, menus, toasts) — NOT for regular composable surfaces, which

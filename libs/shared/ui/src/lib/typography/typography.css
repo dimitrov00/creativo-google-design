@@ -1,0 +1,165 @@
+/*
+ * The ONLY stylesheet that turns `--cr-text-*` role tokens into rendered
+ * type. Roles are applied as `data-text` attributes — statically in markup
+ * or via the typed `crText` directive (text.directive.ts), which compiles
+ * to exactly these attributes. Markup stays semantic: any h1-h6/p/span can
+ * carry any role, like SwiftUI's `.font(.largeTitle)` on any Text.
+ *
+ * Each role sets the `font` shorthand (weight size/line-height family) from
+ * its token — the shorthand's full sub-property reset is deliberate: a role
+ * always lands on a clean slate. Modifier rules (`data-text-weight` etc.)
+ * are declared AFTER the roles so they win within the layer at equal
+ * specificity. No other stylesheet may declare font-size/font-weight/
+ * line-height/letter-spacing/text-transform (docs/styling-conventions.md).
+ *
+ * Global (unscoped) like shape.css/material.css — imported once per app
+ * alongside the design-token CSS files.
+ */
+
+@layer cr-base {
+  /* ---- Roles ---- */
+
+  [data-text='display'] {
+    font: var(--cr-text-display);
+    letter-spacing: var(--cr-text-display-tracking);
+  }
+
+  [data-text='largeTitle'] {
+    font: var(--cr-text-large-title);
+    letter-spacing: var(--cr-text-large-title-tracking);
+  }
+
+  [data-text='title'] {
+    font: var(--cr-text-title);
+    letter-spacing: var(--cr-text-title-tracking);
+  }
+
+  [data-text='title2'] {
+    font: var(--cr-text-title2);
+    letter-spacing: var(--cr-text-title2-tracking);
+  }
+
+  [data-text='title3'] {
+    font: var(--cr-text-title3);
+    letter-spacing: var(--cr-text-title3-tracking);
+  }
+
+  [data-text='headline'] {
+    font: var(--cr-text-headline);
+    letter-spacing: var(--cr-text-headline-tracking);
+  }
+
+  [data-text='callout'] {
+    font: var(--cr-text-callout);
+    letter-spacing: var(--cr-text-callout-tracking);
+  }
+
+  [data-text='body'] {
+    font: var(--cr-text-body);
+    letter-spacing: var(--cr-text-body-tracking);
+  }
+
+  [data-text='subheadline'] {
+    font: var(--cr-text-subheadline);
+    letter-spacing: var(--cr-text-subheadline-tracking);
+  }
+
+  [data-text='footnote'] {
+    font: var(--cr-text-footnote);
+    letter-spacing: var(--cr-text-footnote-tracking);
+  }
+
+  [data-text='caption'] {
+    font: var(--cr-text-caption);
+    letter-spacing: var(--cr-text-caption-tracking);
+  }
+
+  [data-text='eyebrow'] {
+    font: var(--cr-text-eyebrow);
+    letter-spacing: var(--cr-text-eyebrow-tracking);
+    text-transform: uppercase;
+  }
+
+  /* ---- Modifiers (after roles, so they win at equal specificity) ---- */
+
+  [data-text-weight='regular'] {
+    font-weight: var(--cr-font-weight-regular);
+  }
+  [data-text-weight='medium'] {
+    font-weight: var(--cr-font-weight-medium);
+  }
+  [data-text-weight='semibold'] {
+    font-weight: var(--cr-font-weight-semibold);
+  }
+  [data-text-weight='bold'] {
+    font-weight: var(--cr-font-weight-bold);
+  }
+
+  [data-text-design='heading'] {
+    font-family: var(--cr-font-family-heading);
+  }
+  [data-text-design='content'] {
+    font-family: var(--cr-font-family-content);
+  }
+
+  /* Roboto Flex's variable width axis; percentages per CSS font-stretch
+     keywords (semi-)condensed/expanded. */
+  [data-text-width='condensed'] {
+    font-stretch: 87.5%;
+  }
+  [data-text-width='standard'] {
+    font-stretch: 100%;
+  }
+  [data-text-width='expanded'] {
+    font-stretch: 112.5%;
+  }
+
+  [data-text-tone='primary'] {
+    color: var(--cr-color-foreground);
+  }
+  [data-text-tone='secondary'] {
+    color: var(--cr-color-foreground-secondary);
+  }
+  [data-text-tone='tertiary'] {
+    color: var(--cr-color-foreground-tertiary);
+  }
+  [data-text-tone='accent'] {
+    color: var(--cr-color-accent);
+  }
+  [data-text-tone='danger'] {
+    color: var(--cr-color-danger);
+  }
+  [data-text-tone='success'] {
+    color: var(--cr-color-success);
+  }
+  [data-text-tone='warning'] {
+    color: var(--cr-color-warning);
+  }
+
+  [data-text-case='uppercase'] {
+    text-transform: uppercase;
+  }
+  [data-text-case='lowercase'] {
+    text-transform: lowercase;
+  }
+  [data-text-case='none'] {
+    text-transform: none;
+  }
+
+  [data-text-tracking='tight'] {
+    letter-spacing: var(--cr-tracking-tight);
+  }
+  [data-text-tracking='wide'] {
+    letter-spacing: var(--cr-tracking-wide);
+  }
+
+  [data-text-underline] {
+    text-decoration-line: underline;
+  }
+  [data-text-strike] {
+    text-decoration-line: line-through;
+  }
+  [data-text-underline][data-text-strike] {
+    text-decoration-line: underline line-through;
+  }
+}

@@ -46,11 +46,12 @@
       "barbers": "Barbers",
       "locations": "Locations",
       "book": "Book now",
+      "login": "Log in",
       "toggleMenu": "Open or close navigation",
       "language": "Language"
     },
     "hero": {
-      "eyebrow": "Barber culture · precision at every location",
+      "eyebrow": "Barbershop · Sofia",
       "titleA": "A look",
       "titleB": "that stays.",
       "intro": "Precise shape, considered detail, and the quiet confidence that arrives before you say a word.",
@@ -59,7 +60,7 @@
       "pause": "Pause",
       "playVideo": "Play the video",
       "pauseVideo": "Pause the video",
-      "book": "Book your chair"
+      "book": "Book appointment"
     },
     "work": {
       "eyebrow": "Selected looks",
@@ -343,6 +344,10 @@
       "tagline": "Shape, care, and confidence.",
       "location": "Find your nearest Creativo.",
       "navigation": "Footer navigation",
+      "explore": "Explore",
+      "contact": "Get in touch",
+      "follow": "Follow us",
+      "backToTop": "Back to top",
       "copyright": "© 2026 Creativo. All rights reserved."
     }
   }

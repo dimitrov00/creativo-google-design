@@ -31,6 +31,7 @@ export class ThemeService {
       // identical `data-theme="..."` attribute the CSS selectors key off.
       this.document.documentElement.setAttribute('data-theme', theme);
       this.setStoredTheme(theme);
+      this.syncBrowserThemeColor();
     });
 
     this.darkSchemeQuery?.addEventListener('change', (event) => {
@@ -49,6 +50,33 @@ export class ThemeService {
     // palette) — only fall back to light when the OS explicitly prefers it.
     if (this.lightSchemeQuery?.matches) return 'light';
     return 'dark';
+  }
+
+  /**
+   * Keeps `<meta name="theme-color">` — the color Safari/Chrome paint the
+   * browser chrome (URL bar, tab strip, iOS status-bar area) with — in sync
+   * with the active theme, so toggling dark/light restyles the browser
+   * frame too, not just the page. Reads the resolved `--cr-color-background`
+   * AFTER `data-theme` is stamped, so the tokens stay the single source of
+   * truth (no duplicated hex values here).
+   */
+  private syncBrowserThemeColor(): void {
+    if (typeof this.window?.getComputedStyle !== 'function') return;
+    const background = this.window
+      .getComputedStyle(this.document.documentElement)
+      .getPropertyValue('--cr-color-background')
+      .trim();
+    if (!background) return;
+
+    let meta = this.document.querySelector<HTMLMetaElement>(
+      'meta[name="theme-color"]',
+    );
+    if (!meta) {
+      meta = this.document.createElement('meta');
+      meta.setAttribute('name', 'theme-color');
+      this.document.head.appendChild(meta);
+    }
+    meta.setAttribute('content', background);
   }
 
   private matchMediaSafe(query: string): MediaQueryList | undefined {

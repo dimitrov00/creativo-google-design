@@ -1,0 +1,95 @@
+/**
+ * Light theme semantic colors — THE source of truth, edited by hand.
+ * `:root` doubles as the default so the page is never themeless before
+ * ThemeService stamps `data-theme`. Must define the exact same set of
+ * `--cr-color-*` tokens as dark.css (enforced by src/lib/tokens.spec.ts).
+ *
+ * background/surface/foreground/border are independently-authored neutrals.
+ * The palette is deliberately TWO hues (Apple/Radix "one tint" practice):
+ * blue is the single interactive hue — action-* for the solid CTA pair,
+ * accent/link as its darker step-11 text tone (7.7:1 on white), focus-ring
+ * and link-hover as the brighter CTA step (5.45:1, still AA). highlight is
+ * deliberately the expressive #f6d800 yellow — a SURFACE, always paired
+ * with highlight-foreground, never used as text on background.
+ * warning/warning-active keep their darker semantic yellow ramp for status.
+ */
+
+@layer cr-tokens {
+  :root,
+  [data-theme='light'] {
+    --cr-color-background: #ffffff;
+
+    /* A soft, warm off-white one step down from background — not a flat
+       cold grey. Used for chip-like chrome that WANTS to read as distinct
+       from the page (badge neutral tone, secondary button) — NOT for
+       Card/Material's resting background, which uses surface-plain. */
+    --cr-color-surface: #efeeeb;
+
+    /* Per docs/design-research/elevation-surface-case-study.md: the base
+       that Card/Material's resting background and --cr-color-surface-1..5
+       derive from — deliberately identical to `background` in light theme
+       (a resting card is flush with the page; only --cr-shadow-N conveys
+       elevation). A separate key so dark.css can point it at `surface`
+       instead without touching consumers. */
+    --cr-color-surface-plain: #ffffff;
+
+    /* Only used for Card's interactive-hover state — a PALE, high-lightness
+       step of the accent hue, not a neutral. Light theme's surface-1..5
+       stay untinted (flat aliases below). */
+    --cr-color-surface-tint: #eaf0fe;
+
+    --cr-color-foreground: #000000;
+
+    /* SwiftUI-style muted text hierarchy — supporting copy (secondary) and
+       captions/metadata (tertiary). Alpha mixes of foreground so they sit
+       correctly on any surface in either theme; components must use these
+       instead of hand-rolled color-mix(foreground N%) values. */
+    --cr-color-foreground-secondary: color-mix(
+      in srgb,
+      var(--cr-color-foreground) 60%,
+      transparent
+    );
+    --cr-color-foreground-tertiary: color-mix(
+      in srgb,
+      var(--cr-color-foreground) 48%,
+      transparent
+    );
+
+    --cr-color-action-background: #145cf3;
+    --cr-color-action-background-active: #0b46c8;
+    --cr-color-action-foreground: #ffffff;
+    --cr-color-accent: #0b46c8;
+
+    /* The expressive #f6d800 yellow — a SURFACE, never text on background;
+       always pair it with --cr-color-highlight-foreground. (Formerly
+       misnamed `accent-active` — it is not a state of accent.) */
+    --cr-color-highlight: #f6d800;
+    --cr-color-highlight-foreground: #000000;
+
+    --cr-color-border: #c5c4be;
+
+    /* Deliberate alias chains — link/focus-ring reuse the blue ramp's two
+       steps by REFERENCE, so a brand-blue edit propagates: accent (step 11,
+       7.7:1 text tone) also serves as link; action-background (the brighter
+       5.45:1 CTA step) also serves as link-hover and focus-ring. Break a
+       chain into a literal hex only when a theme deliberately diverges. */
+    --cr-color-focus-ring: var(--cr-color-action-background);
+    --cr-color-link: var(--cr-color-accent);
+    --cr-color-link-hover: var(--cr-color-action-background);
+
+    --cr-color-success: #2a652d;
+    --cr-color-success-active: #2a7f2c;
+    --cr-color-warning: #67580f;
+    --cr-color-warning-active: #826f0b;
+    --cr-color-danger: #b40a01;
+    --cr-color-danger-active: #de1300;
+
+    /* Elevation surfaces — flat aliases in light theme (no tint; elevation
+       reads via --cr-shadow-N alone). Dark theme tints instead. */
+    --cr-color-surface-1: var(--cr-color-surface-plain);
+    --cr-color-surface-2: var(--cr-color-surface-plain);
+    --cr-color-surface-3: var(--cr-color-surface-plain);
+    --cr-color-surface-4: var(--cr-color-surface-plain);
+    --cr-color-surface-5: var(--cr-color-surface-plain);
+  }
+}

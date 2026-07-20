@@ -1,8 +1,8 @@
 <div
   class="modal-sheet"
-  [class.is-open]="open()"
-  [class.is-closing]="closing()"
-  [class.is-dragging]="dragging()"
+  [attr.data-open]="open() ? '' : null"
+  [attr.data-closing]="closing() ? '' : null"
+  [attr.data-dragging]="dragging() ? '' : null"
   [attr.id]="sheetId()"
   role="dialog"
   [attr.aria-labelledby]="labelledBy()"
@@ -22,7 +22,7 @@
       >
         <div
           class="modal-sheet__title"
-          [class.is-visible]="titleVisible()"
+          [attr.data-visible]="titleVisible() ? '' : null"
           aria-hidden="true"
         >
           <ng-content select="[sheet-title]" />

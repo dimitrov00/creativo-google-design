@@ -1,8 +1,9 @@
-// Re-exports the generated `var(--cr-...)` reference constants — regenerate
-// via `nx run design-tokens:build` (runs libs/shared/design-tokens/build.mjs).
-export * from '../generated/ts/core';
-export * from '../generated/ts/color';
-export * from '../generated/ts/vars';
+// The design tokens themselves live in ../css/{tokens,light,dark}.css as
+// hand-written CSS custom properties — apps @import those files directly.
+// This entry point only carries the theme vocabulary shared with TS code
+// (ThemeService and friends).
 
 export type Theme = 'light' | 'dark';
 export const THEMES: readonly Theme[] = ['light', 'dark'];
+
+export { motion } from './lib/motion';

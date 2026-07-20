@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, inject } from '@angular/core';
+import { Component, inject } from '@angular/core';
 import { Button } from '../button/button';
 import { ThemeService } from '../theme/theme.service';
 
@@ -7,7 +7,6 @@ import { ThemeService } from '../theme/theme.service';
   imports: [Button],
   templateUrl: './theme-toggle.html',
   styleUrl: './theme-toggle.css',
-  changeDetection: ChangeDetectionStrategy.OnPush,
   host: { class: 'cr-theme-toggle' },
 })
 export class ThemeToggle {

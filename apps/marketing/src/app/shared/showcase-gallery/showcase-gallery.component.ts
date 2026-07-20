@@ -1,6 +1,5 @@
 import { isPlatformBrowser } from '@angular/common';
 import {
-  ChangeDetectionStrategy,
   Component,
   ElementRef,
   Injector,
@@ -18,9 +17,8 @@ import { CursorTargetDirective } from '@creativo/shared/cursor';
   imports: [CursorTargetDirective],
   templateUrl: './showcase-gallery.component.html',
   styleUrl: './showcase-gallery.component.css',
-  changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
-    '[class.is-expanded]': 'expanded()',
+    '[attr.data-expanded]': "expanded() ? '' : null",
   },
 })
 export class ShowcaseGalleryComponent {

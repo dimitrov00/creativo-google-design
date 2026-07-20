@@ -6,7 +6,14 @@
     justify-content: center;
     gap: var(--cr-space-compact);
     border: var(--cr-border-width-hairline) solid transparent;
-    border-radius: var(--cr-radius-regular);
+    /* --cr-button-radius is the one component-local override hook (resolves
+       to radius tokens only, per §3.2 of the design-system proposal) — for
+       consumers whose radius vocabulary sits between the two shapes, e.g.
+       marketing's --radius-action CTAs. data-shape="pill" below overrides
+       the hook deliberately: a pill is a pill. */
+    border-radius: var(--cr-button-radius, var(--cr-radius-regular));
+    /* Inert on <button>, needed for a[crButton] anchor hosts. */
+    text-decoration: none;
     font-family: var(--cr-font-family-heading);
     font-weight: var(--cr-font-weight-medium);
     cursor: pointer;
@@ -72,33 +79,47 @@
    * rem throughout, so every tier scales with the user's text-size
    * preference, not just font-size.
    */
+  /* Each tier takes its type SIZE from the matching text role (caption→
+     callout maps 1:1 onto the five ControlSizes), via the `font:` shorthand
+     — which also resets family/weight to the role's, so the control chrome
+     (heading family, medium weight) is re-asserted per tier. */
   :host([data-size='mini']) {
     padding: var(--cr-space-tight) var(--cr-space-compact);
-    font-size: var(--cr-font-size-caption);
+    font: var(--cr-text-caption);
+    font-family: var(--cr-font-family-heading);
+    font-weight: var(--cr-font-weight-medium);
     min-block-size: 1.75rem;
   }
 
   :host([data-size='small']) {
     padding: var(--cr-space-tight) var(--cr-space-regular);
-    font-size: var(--cr-font-size-footnote);
+    font: var(--cr-text-footnote);
+    font-family: var(--cr-font-family-heading);
+    font-weight: var(--cr-font-weight-medium);
     min-block-size: 2.25rem;
   }
 
   :host([data-size='regular']) {
     padding: var(--cr-space-compact) var(--cr-space-comfortable);
-    font-size: var(--cr-font-size-subheadline);
+    font: var(--cr-text-subheadline);
+    font-family: var(--cr-font-family-heading);
+    font-weight: var(--cr-font-weight-medium);
     min-block-size: 2.5rem;
   }
 
   :host([data-size='large']) {
     padding: var(--cr-space-regular) var(--cr-space-loose);
-    font-size: var(--cr-font-size-body);
+    font: var(--cr-text-body);
+    font-family: var(--cr-font-family-heading);
+    font-weight: var(--cr-font-weight-medium);
     min-block-size: 3rem;
   }
 
   :host([data-size='extraLarge']) {
     padding: var(--cr-space-comfortable) var(--cr-space-spacious);
-    font-size: var(--cr-font-size-callout);
+    font: var(--cr-text-callout);
+    font-family: var(--cr-font-family-heading);
+    font-weight: var(--cr-font-weight-medium);
     min-block-size: 3.5rem;
   }
 
@@ -117,6 +138,18 @@
   :host([data-variant='primary']) {
     background: var(--cr-color-foreground);
     color: var(--cr-color-background);
+  }
+
+  /* The solid blue conversion CTA — the one variant on the action-* token
+     pair (which light.css documents as "the solid CTA pair"). Bold label
+     deliberately overrides the size ladder's medium: these are the page's
+     loudest elements (marketing hero/footer "book" pills), and 700 is the
+     tokenized snap of their shipped 720. Declared after the size rules so
+     the weight override wins at equal specificity. */
+  :host([data-variant='action']) {
+    background: var(--cr-color-action-background);
+    color: var(--cr-color-action-foreground);
+    font-weight: var(--cr-font-weight-bold);
   }
 
   :host([data-variant='accent']) {
@@ -229,12 +262,16 @@
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .cr-button__spinner {
-      animation-duration: 1.5s;
-    }
-
     :host(:active:not(:disabled)) {
       transform: none;
+    }
+
+    /* The spinner carries data-motion-essential (see button.html) — exempt
+       from the global kill-switch because the spin IS the loading signal.
+       Still slowed here: the cue survives, the motion calms. */
+    .cr-button__spinner {
+      animation-duration: 1.5s;
+      animation-iteration-count: infinite;
     }
   }
 }
