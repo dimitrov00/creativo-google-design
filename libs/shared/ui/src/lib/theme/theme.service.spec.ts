@@ -22,7 +22,7 @@ describe('ThemeService', () => {
         media: query,
         addEventListener: () => undefined,
         removeEventListener: () => undefined,
-      }) as MediaQueryList) as typeof window.matchMedia;
+      }) as unknown as MediaQueryList) as typeof window.matchMedia;
 
     const service = TestBed.inject(ThemeService);
     TestBed.flushEffects();

@@ -1,0 +1,9 @@
+{
+  "name": "governance",
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "libs/application/governance/src",
+  "projectType": "library",
+  "tags": ["scope:shared", "type:application"],
+  "// targets": "to see all targets run: nx show project governance --web",
+  "targets": {}
+}

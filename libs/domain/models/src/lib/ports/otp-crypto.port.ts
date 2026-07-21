@@ -1,3 +1,10 @@
+// TODO(goal-03): superseded by @creativo/application/identity's
+// OtpCodeGenerator/OtpCodeHasher (blueprint §0.3 moves ports to
+// libs/application/*/ports). Kept here, temporarily duplicated, only so
+// apps/functions keeps compiling without a circular
+// domain/models <-> application/* project reference. Delete this file once
+// goal-03 ports every consumer over to importing from
+// @creativo/application/identity.
 /**
  * OTP code generation and hashing genuinely need `node:crypto`
  * (`randomInt`, `scryptSync`, `timingSafeEqual`) — but `domain-models` is

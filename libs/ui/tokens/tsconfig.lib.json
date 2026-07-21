@@ -1,0 +1,11 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "outDir": "../../../dist/out-tsc",
+    "declaration": true,
+    "types": ["node"],
+    "composite": true,
+    "rootDir": "../../.."
+  },
+  "include": ["src/**/*.ts"]
+}

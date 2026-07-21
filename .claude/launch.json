@@ -2,12 +2,12 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "marketing",
+      "name": "web",
       "runtimeExecutable": "pnpm",
       "runtimeArgs": [
         "nx",
         "serve",
-        "marketing",
+        "web",
         "--host",
         "0.0.0.0",
         "--allowedHosts"
@@ -16,12 +16,12 @@
       "autoPort": true
     },
     {
-      "name": "marketing-prod",
+      "name": "web-prod",
       "runtimeExecutable": "pnpm",
       "runtimeArgs": [
         "nx",
         "serve",
-        "marketing",
+        "web",
         "--configuration",
         "production",
         "--port",
@@ -34,14 +34,14 @@
       "autoPort": true
     },
     {
-      "name": "marketing-static",
+      "name": "web-static",
       "runtimeExecutable": "python3",
       "runtimeArgs": [
         "-m",
         "http.server",
         "4477",
         "-d",
-        "dist/apps/marketing/browser"
+        "dist/apps/web/browser"
       ],
       "port": 4477,
       "autoPort": true

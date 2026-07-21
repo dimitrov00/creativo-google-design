@@ -37,7 +37,14 @@ describe('branded IDs', () => {
         const a = cls.generate();
         const b = cls.generate();
         expect(a.value.length).toBeGreaterThan(0);
-        expect(a.equals(b)).toBe(false);
+        // `cls` is a union across all six branded ID classes in this loop,
+        // so `a`/`b` don't narrow to the same branded type here even
+        // though they're always the same class at runtime — cast through
+        // the shared `equals(other: unknown)` shape to sidestep the
+        // brand-intersection false negative.
+        expect((a as { equals(other: unknown): boolean }).equals(b)).toBe(
+          false,
+        );
       });
     });
   }

@@ -1,0 +1,316 @@
+/*
+ * Preserved donor CSS from the old apps/marketing/src/styles.css, kept
+ * verbatim (Phase 0: workspace alignment — CSS/token integration is
+ * explicitly out of scope here, that's goal-01). NOT currently imported by
+ * apps/web — wiring this into the app shell's global stylesheet (and
+ * migrating the --cr-* token references to the new libs/ui/tokens --sys-*
+ * system) is goal-01/goal-05 work.
+ */
+@layer cr-tokens, cr-reset, cr-base, cr-components, cr-utilities;
+
+@import '../../../../../shared/design-tokens/css/tokens.css';
+@import '../../../../../shared/design-tokens/css/light.css';
+@import '../../../../../shared/design-tokens/css/dark.css';
+@import '../../../../../shared/ui/src/lib/reset/reset.css';
+@import '../../../../../shared/ui/src/lib/motion/reduced-motion.css';
+@import '../../../../../shared/ui/src/lib/typography/typography.css';
+@import '../../../../../shared/cursor/src/lib/cursor-target.css';
+@import '../../../../../shared/ui/src/lib/material/material.css';
+@import '../../../../../shared/ui/src/lib/shape/shape.css';
+@import './pages/home/locations/locations-map.css';
+
+/* Page-level layout rhythm — ONE gutter, ONE frame inset (0.75rem: the
+   spacious 12px step, in rem so it scales with the user's font size), and
+   a three-value radius vocabulary shared by the shell and every section,
+   so spacing and rounding read as a single system across the page. */
+:root {
+  --page-gutter: clamp(1.5rem, 4.2vw, 4.25rem);
+  --frame-inset: 0.75rem;
+  --radius-frame: clamp(1.75rem, 3vw, 2.75rem);
+  --radius-media: clamp(1.25rem, 2.2vw, 2.25rem);
+  --radius-action: var(--cr-radius-extra-large);
+  /* The near-black every film/media frame sits on. */
+  --surface-film: #0a0a0a;
+}
+
+@media (max-width: 819px) {
+  :root {
+    --page-gutter: 1rem;
+  }
+}
+
+/* SwiftUI-style text roles (data-text) live in the shared
+   libs/shared/ui typography.css, imported above. */
+
+/* The open full-screen menu owns the viewport. */
+html[data-menu-open] {
+  overflow: hidden;
+}
+
+/* Surface environment provider — a wrapper declares what its descendants
+   sit on, and interactive chrome adapts by itself: text goes light and the
+   cursor fill morph flips to white-ink-on-dark (see cursor-target.css's
+   --cr-cursor-ink/--cr-cursor-surface contract). Buttons dropped into any
+   film no longer need per-element color overrides. */
+[data-surface='film'] {
+  --cr-cursor-ink: #fff;
+  --cr-cursor-surface: var(--surface-film);
+  /* crMaterial glass inside a film (e.g. the hero language pill) frosts
+     LIGHT — the film is a dark environment, so the material tint flips to
+     white here instead of the light-theme dark neutral. */
+  --cr-color-surface-tint: #fff;
+  background: var(--surface-film);
+  color: #fff;
+}
+
+html {
+  /* Mirrors index.html's <meta name="color-scheme">: this page manages its
+     own per-section theming (home.page.ts's data-nav-tone system), so this
+     opts native UA chrome (scrollbars, form controls) out of following OS
+     dark mode too, and is the CSS-level half of the same "don't auto-invert
+     this page" signal for browsers that check the property over the meta. */
+  color-scheme: light;
+  scroll-behavior: smooth;
+  scroll-padding-top: 6rem;
+}
+
+/* Element defaults live in cr-base so component styles (cr-components, and
+   Angular component CSS generally) can override them without specificity
+   games. Unlayered they'd silently WIN over every layered rule — that's how
+   the bare `a { color }` default once painted dark-blue labels onto the
+   blue a[crButton] CTAs. */
+@layer cr-base {
+  body {
+    background: var(--cr-color-background);
+    color: var(--cr-color-foreground);
+    font: var(--cr-text-subheadline);
+    font-family: var(--cr-font-family-heading);
+    transition:
+      background-color var(--cr-motion-duration-base)
+        var(--cr-motion-easing-standard),
+      color var(--cr-motion-duration-base) var(--cr-motion-easing-standard);
+  }
+
+  ::selection {
+    background: var(--cr-color-accent);
+    color: var(--cr-color-background);
+  }
+
+  a {
+    color: var(--cr-color-link);
+  }
+
+  a:hover {
+    color: var(--cr-color-link-hover);
+  }
+
+  :focus-visible {
+    outline: var(--cr-focus-ring-width) solid var(--cr-color-focus-ring);
+    outline-offset: var(--cr-focus-ring-offset);
+  }
+}
+
+/*
+ * View Transitions pseudo-elements (::view-transition-*) must live in a
+ * global stylesheet — Angular's emulated encapsulation blocks pseudo-element
+ * selectors from ever matching inside a component-scoped stylesheet, so
+ * these can't move into app.css alongside AppComponent's other styles.
+ * app.config.ts's withViewTransitions() call is the JS half of this pair.
+ */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: var(--cr-motion-duration-slow);
+  animation-timing-function: var(--cr-motion-easing-standard);
+}
+
+/* Defense in depth alongside app.config.ts's onViewTransitionCreated check
+   — covers any future document.startViewTransition() call this app makes
+   outside the router (which onViewTransitionCreated can't see). */
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation: none !important;
+  }
+}
+
+/* ==========================================================================
+   Shared section patterns
+   --------------------------------------------------------------------------
+   Near-verbatim blocks extracted from the marketing section components.
+   These are plain global classes applied in templates ALONGSIDE each
+   component's identity classes (emulated encapsulation only scopes
+   component-authored CSS, so globals apply inside components); the component
+   stylesheets keep only their genuine deltas — border/filter inks, clip
+   endpoints, offsets.
+
+   `.morph-card` marks the interactive card ancestor (team card, service
+   tile) whose :hover / :focus-within drives both the media morph and the
+   explore-affordance morph below.
+   ========================================================================== */
+
+/* Explore affordance — label pill + arrow-icon circle on cards that open a
+   detail sheet. Border COLOR stays per-component (each page mixes its own
+   muted ink), so only width/style live here. */
+.explore-affordance {
+  grid-column: 1 / -1;
+  display: inline-flex;
+  gap: 0.42rem;
+  align-items: center;
+  justify-self: start;
+}
+
+.explore-affordance__label,
+.explore-affordance__icon {
+  --cr-cursor-fill-color: var(--cr-color-highlight);
+  --cr-cursor-surface: var(--cr-color-foreground);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-block-size: 2.8rem;
+  border-style: solid;
+  border-width: 1px;
+  transition:
+    border-color var(--cr-motion-duration-slow) var(--cr-motion-easing-standard),
+    transform var(--cr-motion-duration-slower)
+      var(--cr-motion-easing-emphasized);
+}
+
+.explore-affordance__label {
+  min-inline-size: 6.2rem;
+  padding-inline: 1rem;
+  border-radius: var(--radius-action);
+}
+
+.explore-affordance__icon {
+  inline-size: 3.7rem;
+  border-radius: var(--cr-radius-full);
+}
+
+.morph-card:hover .explore-affordance__label,
+.morph-card:hover .explore-affordance__icon,
+.morph-card:focus-within .explore-affordance__label,
+.morph-card:focus-within .explore-affordance__icon {
+  border-color: var(--cr-color-highlight);
+}
+
+/* Label emphasis on card hover via the GRAD axis — heavier stroke, zero
+   glyph-width change, so the pill never resizes (see tokens.css). */
+.morph-card:hover .explore-affordance__label,
+.morph-card:focus-within .explore-affordance__label {
+  font-variation-settings: 'GRAD' var(--cr-font-grade-emphasis);
+}
+
+.morph-card:hover .explore-affordance__icon,
+.morph-card:focus-within .explore-affordance__icon {
+  transform: translateX(0.2rem) rotate(-8deg);
+}
+
+/* Media hover-morph — square media whose rounding morphs between a circle
+   and the media radius on card hover. The morph runs in OPPOSITE directions
+   on its two consumers, so each declares its clip endpoints (plus its own
+   film grade and background) via the custom properties below. */
+.media-morph {
+  position: relative;
+  overflow: hidden;
+  aspect-ratio: 1;
+  clip-path: inset(0 round var(--media-morph-clip-rest, 50%));
+  transform: translateZ(0);
+  transition:
+    clip-path var(--cr-motion-duration-slowest)
+      var(--cr-motion-easing-emphasized),
+    transform var(--cr-motion-duration-slowest)
+      var(--cr-motion-easing-emphasized);
+}
+
+.media-morph img {
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+  transform: scale(1.025);
+  transition:
+    filter var(--media-morph-filter-duration, var(--cr-motion-duration-slowest))
+      var(--cr-motion-easing-standard),
+    transform var(--cr-motion-duration-cinematic)
+      var(--cr-motion-easing-emphasized);
+}
+
+.morph-card:hover .media-morph,
+.morph-card:focus-within .media-morph {
+  clip-path: inset(0 round var(--media-morph-clip-hover, var(--radius-media)));
+  transform: scale(0.97);
+}
+
+.morph-card:hover .media-morph img,
+.morph-card:focus-within .media-morph img {
+  transform: scale(1.09) rotate(var(--media-morph-rotate, -0.8deg));
+}
+
+/* Sheet content entrance — shared by the service and location sheets. A
+   component-scoped `animation-name` resolves to this global keyframe
+   because neither component declares a local @keyframes of the same name. */
+@keyframes sheet-content-in {
+  from {
+    opacity: 0;
+    filter: blur(8px);
+    transform: translateY(1.5rem);
+  }
+  to {
+    opacity: 1;
+    filter: blur(0);
+    transform: translateY(0);
+  }
+}
+
+/* Off-screen sheet bar — bottom-docked overlay bar that slides in when the
+   sheet's inline CTA scrolls out of view ([data-visible] is toggled by the
+   owning component). Positioning deltas stay per-component. */
+.sheet-bar-reveal {
+  position: absolute;
+  z-index: var(--cr-layer-float);
+  inset: auto auto max(1rem, env(safe-area-inset-bottom)) 50%;
+  max-inline-size: calc(100% - 2.5rem);
+  opacity: 0;
+  transform: translate(-50%, calc(100% + 2rem)) scale(0.96);
+  transition:
+    opacity var(--cr-motion-duration-base) var(--cr-motion-easing-standard),
+    transform var(--cr-motion-duration-slower)
+      var(--cr-motion-easing-emphasized);
+  pointer-events: none;
+}
+
+.sheet-bar-reveal[data-visible] {
+  opacity: 1;
+  transform: translate(-50%, 0) scale(1);
+  pointer-events: auto;
+}
+
+@media (max-width: 760px) {
+  .explore-affordance__label,
+  .explore-affordance__icon {
+    min-block-size: 2.45rem;
+  }
+
+  .explore-affordance__label {
+    min-inline-size: 0;
+    padding-inline: 0.75rem;
+  }
+
+  .explore-affordance__icon {
+    inline-size: 2.85rem;
+  }
+}
+
+@media (hover: none) {
+  .morph-card:hover .media-morph {
+    clip-path: inset(0 round var(--media-morph-clip-rest, 50%));
+    transform: none;
+  }
+
+  .morph-card:hover .media-morph img {
+    transform: scale(1.025);
+  }
+}

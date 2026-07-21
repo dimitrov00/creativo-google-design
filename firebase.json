@@ -12,30 +12,10 @@
   },
   "hosting": [
     {
-      "target": "client",
-      "public": "dist/apps/client/browser",
+      "target": "web",
+      "public": "dist/apps/web/browser",
       "ignore": ["firebase.json", "**/.*"],
       "rewrites": [{ "source": "**", "destination": "/index.html" }]
-    },
-    {
-      "target": "staff",
-      "public": "dist/apps/staff/browser",
-      "ignore": ["firebase.json", "**/.*"],
-      "rewrites": [{ "source": "**", "destination": "/index.html" }]
-    },
-    {
-      "target": "marketing",
-      "public": "dist/apps/marketing/browser",
-      "ignore": ["firebase.json", "**/.*"],
-      "rewrites": [
-        {
-          "source": "**",
-          "run": {
-            "serviceId": "marketing-ssr",
-            "region": "us-central1"
-          }
-        }
-      ]
     }
   ],
   "emulators": {

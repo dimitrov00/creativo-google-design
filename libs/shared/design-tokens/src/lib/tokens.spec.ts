@@ -14,7 +14,7 @@ function readCss(fileName: string): string {
 function collectCustomProperties(css: string): Map<string, string> {
   const declarations = new Map<string, string>();
   for (const match of css.matchAll(/(--cr-[\w-]+)\s*:\s*([^;]+);/g)) {
-    declarations.set(match[1], match[2].trim());
+    declarations.set(match[1] as string, (match[2] as string).trim());
   }
   return declarations;
 }
@@ -48,14 +48,14 @@ function relativeLuminance([r, g, b]: Rgb): number {
   const [rs, gs, bs] = [r, g, b].map((channel) => {
     const s = channel / 255;
     return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
-  });
+  }) as Rgb;
   return 0.2126 * rs + 0.7152 * gs + 0.0722 * bs;
 }
 
 function contrastRatio(a: Rgb, b: Rgb): number {
   const [lighter, darker] = [relativeLuminance(a), relativeLuminance(b)].sort(
     (x, y) => y - x,
-  );
+  ) as [number, number];
   return (lighter + 0.05) / (darker + 0.05);
 }
 

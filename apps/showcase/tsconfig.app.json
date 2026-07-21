@@ -2,16 +2,18 @@
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "outDir": "../../dist/out-tsc",
-    "types": []
+    "rootDir": "../..",
+    "types": [],
+    "declaration": true
   },
   "include": ["src/**/*.ts"],
   "exclude": ["src/**/*.spec.ts", "src/**/*.test.ts"],
   "references": [
     {
-      "path": "../../libs/shared/ui"
+      "path": "../../libs/shared/ui/tsconfig.lib.json"
     },
     {
-      "path": "../../libs/shared/cursor"
+      "path": "../../libs/shared/cursor/tsconfig.lib.json"
     }
   ]
 }

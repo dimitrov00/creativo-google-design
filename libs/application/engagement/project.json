@@ -1,0 +1,9 @@
+{
+  "name": "engagement",
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "libs/application/engagement/src",
+  "projectType": "library",
+  "tags": ["scope:shared", "type:application"],
+  "// targets": "to see all targets run: nx show project engagement --web",
+  "targets": {}
+}

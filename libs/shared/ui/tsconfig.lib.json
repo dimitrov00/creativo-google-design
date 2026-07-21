@@ -6,7 +6,9 @@
     "declarationMap": true,
     "sourceMap": true,
     "inlineSources": true,
-    "types": []
+    "types": [],
+    "composite": true,
+    "rootDir": "../../.."
   },
   "include": ["src/**/*.ts"],
   "exclude": [
@@ -27,6 +29,9 @@
   "references": [
     {
       "path": "../design-tokens/tsconfig.lib.json"
+    },
+    {
+      "path": "../cursor/tsconfig.lib.json"
     }
   ]
 }

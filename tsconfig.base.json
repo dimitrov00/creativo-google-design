@@ -27,9 +27,60 @@
       "@creativo/shared/ui": ["./libs/shared/ui/src/index.ts"],
       "@creativo/shared/cursor": ["./libs/shared/cursor/src/index.ts"],
       "@creativo/domain/models": ["./libs/domain/models/src/index.ts"],
-      "@creativo/adapters/firebase": ["./libs/adapters/firebase/src/index.ts"],
       "@creativo/domain/kernel": ["./libs/domain/kernel/src/index.ts"],
-      "@creativo/adapters/i18n": ["./libs/adapters/i18n/src/index.ts"]
+      "@creativo/application/identity": [
+        "./libs/application/identity/src/index.ts"
+      ],
+      "@creativo/application/booking": [
+        "./libs/application/booking/src/index.ts"
+      ],
+      "@creativo/application/catalog": [
+        "./libs/application/catalog/src/index.ts"
+      ],
+      "@creativo/application/engagement": [
+        "./libs/application/engagement/src/index.ts"
+      ],
+      "@creativo/application/accounts": [
+        "./libs/application/accounts/src/index.ts"
+      ],
+      "@creativo/application/governance": [
+        "./libs/application/governance/src/index.ts"
+      ],
+      "@creativo/application/shared": [
+        "./libs/application/shared/src/index.ts"
+      ],
+      "@creativo/ui/tokens": ["./libs/ui/tokens/src/index.ts"],
+      "@creativo/ui/modifiers": ["./libs/ui/modifiers/src/index.ts"],
+      "@creativo/ui/controls": ["./libs/ui/controls/src/index.ts"],
+      "@creativo/ui/layout": ["./libs/ui/layout/src/index.ts"],
+      "@creativo/ui/patterns": ["./libs/ui/patterns/src/index.ts"],
+      "@creativo/features/marketing/landing": [
+        "./libs/features/marketing/landing/src/index.ts"
+      ],
+      "@creativo/features/client/auth": [
+        "./libs/features/client/auth/src/index.ts"
+      ],
+      "@creativo/features/client/onboarding": [
+        "./libs/features/client/onboarding/src/index.ts"
+      ],
+      "@creativo/features/client/booking": [
+        "./libs/features/client/booking/src/index.ts"
+      ],
+      "@creativo/features/client/account": [
+        "./libs/features/client/account/src/index.ts"
+      ],
+      "@creativo/features/staff/dashboard": [
+        "./libs/features/staff/dashboard/src/index.ts"
+      ],
+      "@creativo/features/admin/impersonation": [
+        "./libs/features/admin/impersonation/src/index.ts"
+      ],
+      "@creativo/infrastructure/firebase-app": [
+        "./libs/infrastructure/firebase-app/src/index.ts"
+      ],
+      "@creativo/infrastructure/i18n": [
+        "./libs/infrastructure/i18n/src/index.ts"
+      ]
     }
   }
 }

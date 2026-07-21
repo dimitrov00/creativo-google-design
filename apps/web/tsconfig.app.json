@@ -1,0 +1,40 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "outDir": "../../dist/out-tsc",
+    "types": [],
+    "declaration": true,
+    "rootDir": "../.."
+  },
+  "include": ["src/**/*.ts"],
+  "exclude": ["src/**/*.spec.ts", "src/**/*.test.ts"],
+  "references": [
+    {
+      "path": "../../libs/features/admin/impersonation/tsconfig.lib.json"
+    },
+    {
+      "path": "../../libs/features/staff/dashboard/tsconfig.lib.json"
+    },
+    {
+      "path": "../../libs/features/client/account/tsconfig.lib.json"
+    },
+    {
+      "path": "../../libs/features/client/booking/tsconfig.lib.json"
+    },
+    {
+      "path": "../../libs/features/client/onboarding/tsconfig.lib.json"
+    },
+    {
+      "path": "../../libs/features/client/auth/tsconfig.lib.json"
+    },
+    {
+      "path": "../../libs/features/marketing/landing/tsconfig.lib.json"
+    },
+    {
+      "path": "../../libs/infrastructure/i18n/tsconfig.lib.json"
+    },
+    {
+      "path": "../../libs/infrastructure/firebase-app/tsconfig.lib.json"
+    }
+  ]
+}

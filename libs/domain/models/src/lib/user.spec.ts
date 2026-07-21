@@ -20,7 +20,7 @@ describe('User.create', () => {
     if (result.isSuccess()) {
       expect(result.value.referralCode).toBe('ABC123');
       expect(result.value.tenantMemberships).toHaveLength(1);
-      expect(result.value.tenantMemberships[0].role).toBe('client');
+      expect(result.value.tenantMemberships[0]?.role).toBe('client');
     }
   });
 
