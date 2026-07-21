@@ -1,5 +1,15 @@
 @layer cr-components {
   :host {
+    /* Baseline color the "fill" cursor morph flips this button to. REQUIRED
+       on every variant: --cr-cursor-fill-color is @property-registered
+       `inherits: false; initial-value: transparent`, so a host that doesn't
+       set it morphs to transparent (an invisible pill). Button uses the
+       useCursorTarget composable, not the [crCursorTarget] attribute, so it
+       never picked up that directive's baseline — hence this. Routed through
+       the tone-aware --cr-cursor-ink/-surface indirections (same contract as
+       cursor-target.css) so buttons on a scroll-toned or film section invert
+       correctly; outline/ghost/danger refine it below. */
+    --cr-cursor-fill-color: var(--cr-cursor-ink, var(--cr-color-foreground));
     position: relative;
     display: inline-flex;
     align-items: center;
@@ -211,11 +221,9 @@
    * rather than trying to out-z-index this element's own (now correctly
    * colored) label text.
    */
-  :host([data-variant='outline']),
-  :host([data-variant='ghost']) {
-    --cr-cursor-fill-color: var(--cr-color-foreground);
-  }
-
+  /* outline/ghost inherit the tone-aware base fill above (was a redundant
+     non-tone-aware --cr-color-foreground override). danger still forces the
+     semantic red regardless of nav tone. */
   :host([data-tone='danger']) {
     --cr-cursor-fill-color: var(--cr-color-danger);
   }
