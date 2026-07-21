@@ -19,9 +19,6 @@
       "path": "../../libs/ui/controls/tsconfig.lib.json"
     },
     {
-      "path": "../../libs/shared/ui/tsconfig.lib.json"
-    },
-    {
       "path": "../../libs/shared/cursor/tsconfig.lib.json"
     }
   ]

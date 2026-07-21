@@ -16,7 +16,7 @@ describe('App', () => {
     await fixture.whenStable();
     const host: HTMLElement = fixture.nativeElement;
 
-    expect(host.querySelectorAll('nav a').length).toBe(4);
+    expect(host.querySelectorAll('nav a').length).toBe(2);
     expect(host.querySelectorAll('cr-cursor-dot').length).toBe(1);
     expect(
       host.querySelector('[data-testid="design-system-toggles"]'),
