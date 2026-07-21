@@ -37,6 +37,13 @@ White-label barbershop **booking + loyalty PWA** ("Creativo" tenant): Bulgarian-
 - **No strangler/cutover machinery.** No side-by-side operation, no data migration, no schema-compat mappers. v2 is a spec donor (visuals, flows, business rules) and is otherwise left untouched.
 - **v2 bugs are not fixed in v2.** The bug ledger (§7) exists only so the same mistakes are _designed out_ of the Angular domain — zero effort goes into patching the React app.
 
+### 0.5 Definition of done — 100% of v2 lands in `apps/web`; showcase is NOT a product surface
+
+The migration is complete **only when every v2 route, screen, flow, and Cloud Function has a working equivalent in `apps/web` + `apps/functions`** (modulo documented renames in `docs/architecture/domain-deviations.md`). Two rules every executing agent must internalize:
+
+1. **`apps/showcase` does not exist in v2 and is not part of the product.** It is an _internal design-system workbench_ (control gallery + Playwright screenshot baselines for Goals 01/08). It is never deployed, never appears in `firebase.json` hosting targets, and must never import from `libs/features`, `libs/application`, `libs/domain`, or `libs/infrastructure` — it consumes `libs/ui` only. A v2 feature that renders only in showcase is **not migrated**.
+2. **Nothing from v2 is left behind.** The ledger [docs/migration/v2-parity-checklist.md](migration/v2-parity-checklist.md) enumerates every v2 surface (routes, flow steps, account screens, staff/admin tools, Cloud Functions, PWA behaviors) mapped to its owning goal and target location. Goal 06 slices tick their rows as they land; Goal 08 blocks until every row is checked with a concrete `apps/web` route or `apps/functions` handler; Goal 09 verifies showcase is excluded from all deploy artifacts.
+
 ---
 
 ## 1. Deliverable 1 — Nx workspace & Ports/Adapters layout
@@ -1012,11 +1019,11 @@ Re-implement v2's functions use-cases on the new domain in `apps/functions` (OTP
 
 ### Phase 8 — Quality & parity hardening (≈ 1 week)
 
-Full-page screenshot diffs (light + dark × bg/en × mobile/desktop) against a locally running v2; Lighthouse/PWA audit (install, offline shell); a11y sweep (CDK + axe); bundle budget (lazy Firestore/Storage/MapLibre confirmed).
+Full-page screenshot diffs (light + dark × bg/en × mobile/desktop) against a locally running v2; Lighthouse/PWA audit (install, offline shell); a11y sweep (CDK + axe); bundle budget (lazy Firestore/Storage/MapLibre confirmed). **Parity close-out (§0.5):** every row of `docs/migration/v2-parity-checklist.md` checked with its `apps/web`/`apps/functions` location filled in — nothing from v2 may remain unmapped or exist only in `apps/showcase`.
 
 ### Phase 9 — Launch
 
-Deploy functions + rules + indexes → hosting preview channel soak → go live on the hosting target. No cutover machinery needed (greenfield — nothing to migrate or keep warm); v2 is archived as reference.
+Deploy functions + rules + indexes → hosting preview channel soak → go live on the hosting target. No cutover machinery needed (greenfield — nothing to migrate or keep warm); v2 is archived as reference. `apps/showcase` is excluded from every deploy artifact (§0.5).
 
 ---
 

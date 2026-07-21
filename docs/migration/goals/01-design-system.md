@@ -23,5 +23,6 @@ Phase 1 of docs/migration-blueprint.md is complete: (1) libs/ui/tokens/tokens.cs
 ## Scope guard
 
 - No feature screens, no Firebase, no domain imports in `libs/ui` (boundary: `ui → ui|tokens|util` only).
+- `apps/showcase` is an **internal design-system workbench only** (blueprint §0.5): it has no v2 counterpart, is never deployed, and imports `libs/ui` exclusively — no business features ever land there. The product app is `apps/web`.
 - Pixel targets come from v2's values already transcribed in blueprint §3 — do not invent a new aesthetic.
 - Blue brand explicitly out of scope.

@@ -44,3 +44,5 @@ Every condition ends with a turn bound (`or stop after N turns`) so a stuck run 
 | [09-launch.md](09-launch.md)                           | Deploy + preview soak + go live                          | 08         |
 
 Ground rules baked into every kickoff prompt: greenfield (v2 read-only reference, never patched, schema freedom), black-and-white brand only, no Tailwind/Zod/Valibot/Reactive-Forms validators, `Result`-returning factories, `[data-*]` styling, wiring only in `app.config.ts`.
+
+**Full-parity rule (blueprint §0.5):** the product is `apps/web` (+ `apps/functions`) and the migration is done only when 100% of v2 works there — [../v2-parity-checklist.md](../v2-parity-checklist.md) is the ledger every goal ticks and Goal 08 audits to zero unchecked rows. `apps/showcase` has **no v2 counterpart**: it is an internal design-system workbench (control gallery + screenshot baselines), never deployed, imports `libs/ui` only, and never satisfies a parity row.
