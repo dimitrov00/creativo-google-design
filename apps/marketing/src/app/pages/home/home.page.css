@@ -136,18 +136,18 @@
     scale(calc(1.04 + var(--hero-progress) * 0.04));
 }
 
-/* Decisive graded scrim (Apple's 32→64%) under the inset copy. */
+/* Cinematic scrim — same left-dark wash as .craft-film__veil so the hero's
+   bottom-left copy reads with the identical contrast as the craft film
+   (the two film sections are one family). A faint bottom stop is layered
+   under it because the hero's footage is brighter than the craft film and
+   the copy sits lower in the frame. */
 .hero__veil {
   position: absolute;
   inset: 0;
   pointer-events: none;
-  background: linear-gradient(
-    180deg,
-    rgb(0 0 0 / 0.2),
-    rgb(0 0 0 / 0.05) 36%,
-    rgb(0 0 0 / 0.5) 74%,
-    rgb(0 0 0 / 0.66)
-  );
+  background:
+    linear-gradient(90deg, rgb(0 0 0 / 0.9), rgb(0 0 0 / 0.06) 74%),
+    linear-gradient(180deg, transparent 55%, rgb(0 0 0 / 0.4));
 }
 
 /* Film pause toggle — outlined glass circle, bottom-right of the media it
@@ -391,6 +391,12 @@
 
 .site-footer__book {
   margin-block-start: 0.4rem;
+  /* On the yellow footer the black primary pill reads its label in the
+     section's own base color (--page-bg = highlight here) instead of the
+     global white — a knockout that belongs to the theme. Tracks the tone
+     var, and the fill morph's own text (var(--cr-cursor-surface)) already
+     resolves to the same value, so hover stays consistent. */
+  color: var(--page-bg);
 }
 
 .site-footer__book .material-symbols-rounded {
