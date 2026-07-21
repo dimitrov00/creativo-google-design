@@ -122,17 +122,17 @@
 }
 
 /* Shared film-frame video treatment — both full-bleed films (hero + craft)
-   use the same oversized inset and grayscale grade; colour on the page is
-   reserved for the CTA blue and the highlight yellow. Only each film's
-   parallax transform (and the craft film's framing) stays on its own
-   selector below. */
+   use the same oversized inset. Footage plays in full colour (a slight
+   contrast lift keeps it filmic); the .hero__veil / .craft-film__veil dark
+   scrim over each is what carries text legibility. Only each film's parallax
+   transform (and the craft film's framing) stays on its own selector below. */
 .film-video {
   position: absolute;
   inset: -6% 0;
   inline-size: 100%;
   block-size: 112%;
   object-fit: cover;
-  filter: grayscale(1) contrast(1.08);
+  filter: contrast(1.05) saturate(1.02);
 }
 
 .hero__frame video {

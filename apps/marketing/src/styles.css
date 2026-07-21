@@ -18,8 +18,8 @@
 :root {
   --page-gutter: clamp(1.5rem, 4.2vw, 4.25rem);
   --frame-inset: 0.75rem;
-  --radius-frame: clamp(1.25rem, 2vw, 2rem);
-  --radius-media: clamp(1rem, 1.7vw, 1.7rem);
+  --radius-frame: clamp(1.75rem, 3vw, 2.75rem);
+  --radius-media: clamp(1.25rem, 2.2vw, 2.25rem);
   --radius-action: var(--cr-radius-extra-large);
   /* The near-black every film/media frame sits on. */
   --surface-film: #0a0a0a;
