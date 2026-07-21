@@ -9,11 +9,11 @@
       [attr.inert]="sheetOpen() ? '' : null"
     >
       <header class="catalog-intro" data-service-reveal>
-        <p crText font="eyebrow">
+        <p text font="eyebrow">
           {{ t('marketing.servicesPage.indexEyebrow') }}
         </p>
         <h2>{{ t('marketing.servicesPage.catalogGridTitle') }}</h2>
-        <span crText font="footnote"
+        <span text font="footnote"
           >{{ t('marketing.servicesPage.catalogGuide') }}</span
         >
       </header>
@@ -47,9 +47,9 @@
           </div>
 
           <div class="service-tile__copy">
-            <p crText font="eyebrow">{{ t(service.labelKey) }}</p>
-            <h3 crText font="title">{{ t(service.titleKey) }}</h3>
-            <div class="service-tile__facts" crText font="caption">
+            <p text font="eyebrow">{{ t(service.labelKey) }}</p>
+            <h3 text font="title">{{ t(service.titleKey) }}</h3>
+            <div class="service-tile__facts" text font="caption">
               <span>{{ t(service.durationKey) }}</span>
               <strong>{{ t(service.priceKey) }}</strong>
             </div>
@@ -59,7 +59,7 @@
             >
               <span
                 class="service-tile__explore-label explore-affordance__label"
-                crText
+                text
                 font="caption"
                 bold
                 crCursorTarget
@@ -94,7 +94,7 @@
       <p
         sheet-title
         class="service-sheet__compact-title"
-        crText
+        text
         font="caption"
         bold
       >
@@ -116,12 +116,12 @@
         <div class="service-sheet__story">
           <section class="service-sheet__intro">
             <div>
-              <p crText font="eyebrow">{{ t(service.labelKey) }}</p>
+              <p text font="eyebrow">{{ t(service.labelKey) }}</p>
               <h2 id="service-sheet-title">{{ t(service.titleKey) }}</h2>
             </div>
             <div class="service-sheet__summary">
-              <p crText font="footnote">{{ t(service.bodyKey) }}</p>
-              <div crText font="caption">
+              <p text font="footnote">{{ t(service.bodyKey) }}</p>
+              <div text font="caption">
                 <span>
                   <span class="material-symbols-rounded" aria-hidden="true"
                     >schedule</span
@@ -130,7 +130,7 @@
                 </span>
                 <strong>{{ t(service.priceKey) }}</strong>
               </div>
-              <a href="/client" crButton variant="action" size="extraLarge">
+              <a href="/client" crButton variant="action" size="mini">
                 <span>{{ t('marketing.servicesPage.bookService') }}</span>
                 <span class="material-symbols-rounded" aria-hidden="true"
                   >arrow_outward</span
@@ -141,13 +141,13 @@
 
           <section class="service-sheet__variants">
             <header>
-              <h3 crText font="display">
+              <h3 text font="extraLargeTitle">
                 {{ t('marketing.servicesPage.stepVariant') }}
               </h3>
             </header>
             <ul>
               @for (variantKey of service.variantKeys; track variantKey) {
-              <li crText font="caption" fontWeight="semibold">
+              <li text font="caption" fontWeight="semibold">
                 {{ t(variantKey) }}
               </li>
               }
@@ -159,7 +159,7 @@
             aria-labelledby="service-performers-title"
           >
             <header>
-              <h3 id="service-performers-title" crText font="display">
+              <h3 id="service-performers-title" text font="extraLargeTitle">
                 {{ t('marketing.servicesPage.stepBarber') }}
               </h3>
             </header>
@@ -176,13 +176,11 @@
                     />
                   </div>
                   <div class="service-performer__identity">
-                    <p crText font="eyebrow">
+                    <p text font="eyebrow">
                       {{ t(barberRoleKey(performer.nameKey)) }}
                     </p>
-                    <h4 crText font="title">{{ t(performer.nameKey) }}</h4>
-                    <span crText font="caption"
-                      >{{ t(performer.roleKey) }}</span
-                    >
+                    <h4 text font="title">{{ t(performer.nameKey) }}</h4>
+                    <span text font="caption">{{ t(performer.roleKey) }}</span>
                   </div>
                 </article>
               </li>
@@ -204,7 +202,7 @@
           [attr.tabindex]="sheetBookingBarVisible() ? null : -1"
           crButton
           variant="action"
-          size="large"
+          size="mini"
           shape="pill"
         >
           <span>{{ t('marketing.servicesPage.bookService') }}</span>

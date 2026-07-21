@@ -222,6 +222,12 @@
   margin-block-start: 2rem;
   /* CTA radius vocabulary — consumed by Button's documented override hook. */
   --cr-button-radius: var(--radius-action);
+  /* Tall-pill/small-label sheet-CTA geometry: size="mini" supplies the
+     label scale; the host restores the chunky box and spreads label from
+     arrow (Button's label span mirrors host justify/gap, see button.css). */
+  justify-content: space-between;
+  gap: 2rem;
+  padding: 1.15rem 1.25rem;
 }
 
 @media (max-width: 760px) {

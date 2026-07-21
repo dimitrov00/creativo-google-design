@@ -63,6 +63,7 @@ export class TokensPage {
     'title2',
     'largeTitle',
     'title',
+    'extraLargeTitle',
     'display',
   ];
   // Kebab-cased to match the actual generated CSS custom property name

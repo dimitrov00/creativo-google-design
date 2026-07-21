@@ -43,6 +43,13 @@
     --cr-text-display: 630 clamp(3.3rem, 6vw, 6.6rem) / 0.86
       var(--cr-font-family-heading);
     --cr-text-display-tracking: -0.074em;
+    /* Between title and display — SwiftUI's extraLargeTitle. Sheet-scale
+       hero type (modal intro headings, variant/performer names), whose
+       shipped metrics clustered at clamp(2.6rem, 4.2-4.6vw, 4.4-4.8rem):
+       display was measurably too loud inside a sheet. */
+    --cr-text-extra-large-title: 610 clamp(2.6rem, 4.5vw, 4.6rem) / 0.88
+      var(--cr-font-family-heading);
+    --cr-text-extra-large-title-tracking: -0.072em;
     --cr-text-large-title: var(--cr-font-weight-bold) 3rem / 1.15
       var(--cr-font-family-heading);
     --cr-text-large-title-tracking: 0em;

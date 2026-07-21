@@ -48,10 +48,10 @@ House rules for every app and lib in this workspace. Derived from the
 
 - **Typography:** components never declare `font-size`, `font-weight`,
   `line-height`, `letter-spacing`, or `text-transform`. Text gets a role —
-  `crText`/`data-text` — and at most a modifier. Role metrics live only in
+  `text`/`data-text` — and at most a modifier. Role metrics live only in
   `libs/shared/ui/src/lib/typography/typography.css`, built from
   `--cr-text-*` role tokens. Fluid sizing (`clamp()`) lives inside role
-  tokens, never at call sites. `TextDirective` modifier inputs follow
+  tokens, never at call sites. `CrText` modifier inputs follow
   SwiftUI's Text modifier names **verbatim** (`fontWeight`, `fontDesign`,
   `fontWidth`, `foregroundStyle`, `bold`, `italic`, `monospacedDigit`, …);
   a new modifier needs a SwiftUI counterpart or a documented deviation
@@ -95,7 +95,7 @@ reference (`@container style(--nav-tone: dark)`).
 'variant()'`); decorators (`@HostBinding`/`@HostListener`) are banned.
 - Native elements are upgraded in place: `selector:
 'button[crButton], a[crButton]'` — never wrapper elements for things the
-  platform already has. Typography is a directive (`crText`) compiling to
+  platform already has. Typography is a directive (`text`, the one sanctioned unprefixed selector — see decisions.md) compiling to
   `data-text-*` attributes, never a wrapper element.
 - Directives without a view ship global CSS in a named `@layer`
   (`shape.css`, `material.css`, `cursor-target.css` pattern), imported once

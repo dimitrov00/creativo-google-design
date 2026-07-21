@@ -32,7 +32,7 @@
   <h2>Text roles</h2>
   <div class="cr-tokens__type-scale">
     @for (role of textRoles; track role) {
-    <p crText [font]="role">{{ role }} — Book your next appointment</p>
+    <p text [font]="role">{{ role }} — Book your next appointment</p>
     }
   </div>
 </section>
@@ -41,35 +41,35 @@
   <h2>Text modifiers</h2>
   <div class="cr-tokens__type-scale">
     @for (weight of textWeights; track weight) {
-    <p crText font="body" [fontWeight]="weight">
+    <p text font="body" [fontWeight]="weight">
       weight={{ weight }} — Book your next appointment
     </p>
     } @for (tone of textTones; track tone) {
-    <p crText font="body" [foregroundStyle]="tone">
+    <p text font="body" [foregroundStyle]="tone">
       tone={{ tone }} — Book your next appointment
     </p>
     }
-    <p crText font="body" italic>
+    <p text font="body" italic>
       italic — a true oblique via Roboto Flex's slnt axis
     </p>
-    <p crText font="body" monospacedDigit>
+    <p text font="body" monospacedDigit>
       monospacedDigit — 0123456789 vs 1111111111
     </p>
-    <p crText font="body" underline>underline</p>
-    <p crText font="body" strikethrough>strikethrough</p>
-    <p crText font="body" underline strikethrough>underline + strikethrough</p>
-    <p crText font="body" textCase="uppercase">case=uppercase</p>
-    <p crText font="body" tracking="tight">
+    <p text font="body" underline>underline</p>
+    <p text font="body" strikethrough>strikethrough</p>
+    <p text font="body" underline strikethrough>underline + strikethrough</p>
+    <p text font="body" textCase="uppercase">case=uppercase</p>
+    <p text font="body" tracking="tight">
       tracking=tight — Book your next appointment
     </p>
-    <p crText font="body" tracking="wide">
+    <p text font="body" tracking="wide">
       tracking=wide — Book your next appointment
     </p>
-    <p crText font="body" fontDesign="heading">
+    <p text font="body" fontDesign="heading">
       design=heading — Book your next appointment
     </p>
-    <p crText font="headline" fontWidth="condensed">width=condensed</p>
-    <p crText font="headline" fontWidth="expanded">width=expanded</p>
+    <p text font="headline" fontWidth="condensed">width=condensed</p>
+    <p text font="headline" fontWidth="expanded">width=expanded</p>
   </div>
 </section>
 

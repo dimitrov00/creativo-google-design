@@ -7,16 +7,16 @@ import { CrText } from './text.directive';
 @Component({
   imports: [CrText],
   template: `
-    <h2 crText font="title">Role only</h2>
-    <span crText bold>Marker only, bold sugar</span>
-    <em crText font="footnote" italic monospacedDigit underline>
+    <h2 text font="title">Role only</h2>
+    <span text bold>Marker only, bold sugar</span>
+    <em text font="footnote" italic monospacedDigit underline>
       Bare booleans
     </em>
-    <strong crText font="body" fontWeight="medium" bold>
+    <strong text font="body" fontWeight="medium" bold>
       Explicit beats sugar
     </strong>
     <p
-      crText
+      text
       font="body"
       fontWeight="semibold"
       fontDesign="heading"
@@ -70,7 +70,7 @@ describe('CrText', () => {
     }
   });
 
-  it('bare crText is the Text() marker: no data-text, modifiers still apply', () => {
+  it('bare text is the Text() marker: no data-text, modifiers still apply', () => {
     const { query } = render();
     const marker = query('span');
     expect(marker.hasAttribute('data-text')).toBe(false);

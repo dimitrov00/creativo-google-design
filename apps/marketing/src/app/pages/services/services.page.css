@@ -184,9 +184,18 @@
 
 /* Bar skeleton + [data-visible] reveal live in styles.css
    (.sheet-bar-reveal); only the mobile right-docking below stays local. */
+/* Sheet-CTA geometry: the shipped design is a TALL pill with a SMALL bold
+   label spread from its arrow — Button's size ladder couples font and
+   padding, so size="mini" supplies the label scale and these host
+   overrides restore the chunky box (Button's label span mirrors the
+   host's justify-content/gap by design, see button.css). */
 .service-sheet__booking-bar a {
   box-shadow: 0 0.8rem 2.8rem rgb(0 0 0 / 0.22);
   white-space: nowrap;
+  justify-content: space-between;
+  gap: 0.8rem;
+  min-block-size: 3.25rem;
+  padding: 0.8rem 1.05rem 0.8rem 1.2rem;
 }
 
 .service-sheet__booking-bar .material-symbols-rounded {
@@ -247,6 +256,10 @@
   margin-block-start: 2rem;
   /* CTA radius vocabulary — consumed by Button's documented override hook. */
   --cr-button-radius: var(--radius-action);
+  /* Tall-pill/small-label sheet-CTA geometry — see booking-bar comment. */
+  justify-content: space-between;
+  gap: 3rem;
+  padding: 1.2rem 1.3rem;
 }
 
 .service-sheet__variants {
@@ -592,6 +605,7 @@ cr-modal-sheet[data-open] .service-examples figure:nth-child(3) {
   .service-sheet__summary > a {
     inline-size: 100%;
     margin-block-start: 1.25rem;
+    padding: 1.05rem 1.1rem;
   }
 
   .service-sheet__variants {

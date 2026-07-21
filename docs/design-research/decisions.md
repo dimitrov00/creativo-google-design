@@ -58,3 +58,17 @@ signal alongside the (previously too-subtle) shadow.
 Discovered building `apps/marketing` (the first SSR consumer of `libs/shared/ui`/`libs/shared/cursor`): Angular's SSR/prerender DOM shim provides a truthy `document.defaultView` that does **not** implement `matchMedia`/`localStorage` the way a real browser does, and a `document.documentElement` whose `.dataset` property is `undefined` even though `setAttribute` works fine. `ThemeService`/`CursorService`'s original `this.window?.matchMedia(...)` guards only protect against `window` being nullish — they don't protect against `window` existing but lacking the method, which is exactly the SSR shim's shape, and threw `TypeError: ... is not a function` during prerender.
 
 Fixed in both services: feature-detect with `typeof this.window?.matchMedia === 'function'` (not just `?.`) before calling it, wrap `localStorage` access in try/catch (some real-browser privacy modes throw on access too, not just SSR), and use `setAttribute('data-theme', ...)` instead of `.dataset['theme'] = ...` for the one DOM write that has to survive SSR. Apply the same pattern to any future shared service that touches `window`/`document` APIs beyond basic presence — a component/service only being exercised by CSR apps so far doesn't mean it's actually SSR-safe, it means it's untested against SSR.
+
+## Unprefixed `[text]` directive selector — deliberate style-guide deviation
+
+The typography directive's selector is bare `[text]` (owner decision, 2026-07-21), not the
+`cr`-prefixed form the [Angular style guide](https://angular.dev/style-guide) and this repo's own
+`@angular-eslint/directive-selector` rule mandate — SwiftUI fidelity (`<h2 text font="title">` ≈
+`Text().font(.title)`) outweighed the prefix convention for this one directive. The deviation is
+sound HERE because: (1) this greenfield workspace pulls in no third-party Angular UI libraries whose
+components could carry a colliding `text` attribute/input; (2) an accidental `[text]="expr"`
+property binding fails LOUDLY at compile time (NG8002 — the directive deliberately exposes no input
+named `text`), so the classic silent-double-binding hazard doesn't apply; (3) the rule stays ON for
+everything else — the directive carries a single documented inline eslint-disable. Every OTHER
+directive keeps the `cr` prefix; revisit this one only if a dependency ever ships a `text`
+attribute/input.

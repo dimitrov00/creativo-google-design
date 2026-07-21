@@ -24,6 +24,11 @@
     letter-spacing: var(--cr-text-display-tracking);
   }
 
+  [data-text='extraLargeTitle'] {
+    font: var(--cr-text-extra-large-title);
+    letter-spacing: var(--cr-text-extra-large-title-tracking);
+  }
+
   [data-text='largeTitle'] {
     font: var(--cr-text-large-title);
     letter-spacing: var(--cr-text-large-title-tracking);

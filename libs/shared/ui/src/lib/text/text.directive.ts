@@ -8,6 +8,7 @@ import { Directive, booleanAttribute, computed, input } from '@angular/core';
  */
 export type FontTextStyle =
   | 'display'
+  | 'extraLargeTitle'
   | 'largeTitle'
   | 'title'
   | 'title2'
@@ -50,17 +51,22 @@ export type TextTracking = 'tight' | 'wide';
  * global `@layer cr-base` rules keyed on those attributes, so static
  * markup (`<p data-text="footnote">`) keeps working with zero JS.
  *
- * The template mirrors SwiftUI 1:1 — `crText` is `Text(…)` itself (the
- * `cr` prefix is only on the SELECTOR, mandated by Angular's style guide:
- * a bare `[font]`/`[text]` selector would instantiate this directive on
- * any element carrying such an attribute); every input is a verbatim
- * SwiftUI modifier:
+ * The template mirrors SwiftUI 1:1 — `text` is `Text(…)` itself; every
+ * input is a verbatim SwiftUI modifier:
  *
  *   Text("…").font(.title).fontWeight(.semibold)
- *   <h2 crText font="title" fontWeight="semibold">…</h2>
+ *   <h2 text font="title" fontWeight="semibold">…</h2>
  *
  *   Text("…").bold().italic()
- *   <span crText bold italic>…</span>
+ *   <span text bold italic>…</span>
+ *
+ * The unprefixed `[text]` selector is a DELIBERATE deviation from the
+ * Angular style guide's prefix rule (see decisions.md): this greenfield
+ * workspace has no third-party Angular UI libraries whose inputs could
+ * collide, an accidental `[text]="expr"` binding fails LOUDLY at compile
+ * (NG8002 — the directive exposes no `text` input), and the owner values
+ * SwiftUI fidelity over the prefix convention here. Revisit only if a
+ * dependency ever ships a `text` attribute/input.
  *
  * Role metrics are single-sourced in the `--cr-text-*` tokens; modifiers
  * only exist for the axes SwiftUI models. There is deliberately no numeric
@@ -69,7 +75,8 @@ export type TextTracking = 'tight' | 'wide';
  * docs/design-research/swiftui-text-modifiers-research.md.
  */
 @Directive({
-  selector: '[crText]',
+  // eslint-disable-next-line @angular-eslint/directive-selector -- deliberate SwiftUI-fidelity deviation, see class docs + decisions.md
+  selector: '[text]',
   host: {
     '[attr.data-text]': 'font() || null',
     '[attr.data-text-weight]': 'resolvedWeight() ?? null',

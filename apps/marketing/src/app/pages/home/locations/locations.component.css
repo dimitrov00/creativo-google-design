@@ -387,6 +387,12 @@
   flex: 1 1 auto;
   /* CTA radius vocabulary — consumed by Button's documented override hook. */
   --cr-button-radius: var(--radius-action);
+  /* Tall-pill/small-label sheet-CTA geometry: size="mini" supplies the
+     label scale; the host restores the chunky box and spreads label from
+     arrow (Button's label span mirrors host justify/gap, see button.css). */
+  justify-content: space-between;
+  gap: 0.7rem;
+  padding: 1.15rem 1.25rem;
 }
 
 .location-sheet__book .material-symbols-rounded {
@@ -572,6 +578,10 @@
 .location-sheet__toolbar-book {
   white-space: nowrap;
   box-shadow: 0 0.6rem 1.6rem rgb(0 0 0 / 0.22);
+  /* Tall-pill/small-label sheet-CTA geometry — see .location-sheet__book. */
+  gap: 0.6rem;
+  min-block-size: 3rem;
+  padding: 0 1.1rem;
 }
 
 .location-sheet__toolbar-book .material-symbols-rounded {

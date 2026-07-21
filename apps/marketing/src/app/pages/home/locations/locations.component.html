@@ -6,15 +6,15 @@
     aria-labelledby="locations-title"
   >
     <header class="locations__heading" data-reveal>
-      <p class="eyebrow" crText font="eyebrow">
+      <p class="eyebrow" text font="eyebrow">
         {{ t('marketing.locations.eyebrow') }}
       </p>
-      <h2 id="locations-title" crText font="display">
+      <h2 id="locations-title" text font="display">
         {{ t('marketing.locations.titleA') }}<br />{{
           t('marketing.locations.titleB')
         }}
       </h2>
-      <p crText font="body">{{ t('marketing.locations.intro') }}</p>
+      <p text font="body">{{ t('marketing.locations.intro') }}</p>
     </header>
 
     <div class="locations__content">
@@ -50,14 +50,14 @@
                 >
 
                 <div class="location-card__copy">
-                  <h3 crText font="callout" fontWeight="semibold">
+                  <h3 text font="callout" fontWeight="semibold">
                     {{ t(location.nameKey) }}
                   </h3>
-                  <p crText font="caption">{{ t(location.addressKey) }}</p>
+                  <p text font="caption">{{ t(location.addressKey) }}</p>
 
                   <span
                     class="location-card__status"
-                    crText
+                    text
                     font="caption"
                     fontWeight="semibold"
                     [attr.data-open]="status.isOpen ? '' : null"
@@ -76,7 +76,7 @@
                   @if (location.phoneKey) {
                     <a
                       class="location-card__phone"
-                      crText
+                      text
                       font="caption"
                       [href]="phoneHref(t(location.phoneKey))"
                       [attr.aria-label]="
@@ -97,7 +97,7 @@
                   <span class="location-card__action" aria-hidden="true">
                     <span
                       class="location-card__explore-label"
-                      crText
+                      text
                       font="caption"
                       bold
                       crCursorTarget
@@ -162,7 +162,7 @@
       <p
         sheet-title
         class="location-sheet__compact-title"
-        crText
+        text
         font="caption"
         bold
       >
@@ -189,12 +189,12 @@
 
           <article class="location-sheet__profile">
             <header class="location-sheet__intro">
-              <h2 id="location-sheet-title" crText font="title">
+              <h2 id="location-sheet-title" text font="extraLargeTitle">
                 {{ t(location.nameKey) }}
               </h2>
               <p
                 class="location-sheet__address"
-                crText
+                text
                 font="footnote"
                 fontWeight="semibold"
               >
@@ -206,7 +206,7 @@
               @if (location.phoneKey) {
                 <a
                   class="location-sheet__phone-line"
-                  crText
+                  text
                   font="caption"
                   [href]="phoneHref(t(location.phoneKey))"
                   crCursorTarget
@@ -224,7 +224,7 @@
                   href="/client"
                   crButton
                   variant="action"
-                  size="extraLarge"
+                  size="mini"
                 >
                   <span>{{
                     t('marketing.locations.bookAt', {
@@ -238,7 +238,7 @@
 
                 <a
                   class="location-sheet__icon-action"
-                  crText
+                  text
                   font="caption"
                   [href]="directionsUrl(location)"
                   target="_blank"
@@ -259,7 +259,7 @@
                 @if (location.phoneKey) {
                   <a
                     class="location-sheet__icon-action"
-                    crText
+                    text
                     font="caption"
                     [href]="phoneHref(t(location.phoneKey))"
                     [attr.aria-label]="
@@ -281,7 +281,7 @@
             <div class="location-sheet__status-card">
               <div
                 class="location-sheet__status"
-                crText
+                text
                 font="footnote"
                 fontWeight="semibold"
                 [attr.data-open]="status.isOpen ? '' : null"
@@ -298,7 +298,7 @@
                 }}</span>
                 <span
                   class="location-sheet__status-detail"
-                  crText
+                  text
                   font="caption"
                   fontWeight="medium"
                 >
@@ -339,7 +339,7 @@
                 @for (dayIndex of weekOrder; track dayIndex) {
                   <li
                     class="location-sheet__day"
-                    crText
+                    text
                     font="caption"
                     [attr.data-today]="dayIndex === todayIndex() ? '' : null"
                   >
@@ -353,7 +353,7 @@
                       @if (dayIndex === todayIndex()) {
                         <span
                           class="location-sheet__today-tag"
-                          crText
+                          text
                           font="eyebrow"
                           >{{ t('marketing.locations.today') }}</span
                         >
@@ -375,7 +375,7 @@
 
         <section class="location-sheet__gallery">
           <header class="location-sheet__gallery-heading">
-            <h3 crText font="title">
+            <h3 text font="title">
               {{ t('marketing.locations.galleryHeading') }}
             </h3>
           </header>
@@ -405,7 +405,7 @@
         @if (location.phoneKey) {
           <a
             class="location-sheet__toolbar-icon"
-            crText
+            text
             font="caption"
             [href]="phoneHref(t(location.phoneKey))"
             [attr.aria-label]="
@@ -424,7 +424,7 @@
         }
         <a
           class="location-sheet__toolbar-icon"
-          crText
+          text
           font="caption"
           [href]="directionsUrl(location)"
           target="_blank"
@@ -448,7 +448,7 @@
           [attr.tabindex]="sheetToolbarVisible() ? null : -1"
           crButton
           variant="action"
-          size="large"
+          size="mini"
           shape="pill"
         >
           <span>{{
