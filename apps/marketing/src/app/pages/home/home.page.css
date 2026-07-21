@@ -79,9 +79,11 @@
   align-items: center;
   gap: clamp(1.5rem, 3vh, 2.25rem);
   min-block-size: 100svh;
-  /* Sides and bottom share --frame-inset so the film frame sits symmetric
-     in its inset; top adds the 4rem fixed-header clearance on top of it. */
-  padding: calc(4rem + var(--frame-inset)) var(--frame-inset) var(--frame-inset);
+  /* Symmetric --frame-inset on all four sides — the film frame now runs up
+     to the top too, BEHIND the fixed shell header, which floats transparent
+     inside the film's top band and turns solid on scroll (app.css
+     `[data-header]`). No top clearance: the header overlaps the film here. */
+  padding: var(--frame-inset);
 }
 
 /* Identical layout structure to craft-film__copy: eyebrow, display line,

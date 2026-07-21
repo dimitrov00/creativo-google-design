@@ -16,14 +16,19 @@
   grid-template-columns: 1fr auto 1fr;
   align-items: center;
   min-height: 4rem;
+  padding-block: 0;
   padding-inline: var(--page-gutter);
   border-block-end: var(--cr-border-width-hairline) solid
     color-mix(in srgb, var(--cr-color-foreground) 16%, transparent);
-  background: color-mix(in srgb, var(--cr-color-background) 82%, transparent);
+  /* Solid base (opaque), not the old translucent glass — this is the
+     scrolled/default state. The overlay state below turns it transparent
+     while it floats inside the hero film. */
+  background: var(--cr-color-background);
   color: var(--cr-color-foreground);
-  backdrop-filter: blur(10px) saturate(1.25);
   transition:
     color var(--cr-motion-duration-slow) var(--cr-motion-easing-standard),
+    padding-block-start var(--cr-motion-duration-slow)
+      var(--cr-motion-easing-emphasized),
     background-color var(--cr-motion-duration-slow)
       var(--cr-motion-easing-standard),
     border-color var(--cr-motion-duration-slow) var(--cr-motion-easing-standard);
@@ -240,7 +245,7 @@
   --cr-cursor-ink: var(--cr-color-background);
   --cr-cursor-surface: var(--cr-color-foreground);
   border-color: color-mix(in srgb, var(--cr-color-background) 18%, transparent);
-  background: color-mix(in srgb, var(--cr-color-foreground) 78%, transparent);
+  background: var(--cr-color-foreground);
   color: var(--cr-color-background);
 }
 
@@ -256,8 +261,32 @@
   --cr-cursor-ink: var(--cr-color-foreground);
   --cr-cursor-surface: var(--cr-color-highlight);
   border-color: color-mix(in srgb, var(--cr-color-foreground) 24%, transparent);
-  background: color-mix(in srgb, var(--cr-color-highlight) 84%, transparent);
+  background: var(--cr-color-highlight);
   color: var(--cr-color-foreground);
+}
+
+/* Overlay state — the header floats transparent INSIDE the hero film's top
+   band (home page, scrolled to top; home.page.ts sets data-header). Declared
+   after the tone rules so it wins when both are present (it only pairs with
+   the hero's light tone anyway). Content is pushed down by --frame-inset so
+   it sits inside the rounded film frame; white ink over the dark film. On
+   scroll → data-header='solid', these drop and the base solid rule takes
+   over, reading as a translate-up-and-solidify. */
+:host-context(html[data-header='overlay']) .cr-shell__header {
+  --cr-cursor-ink: var(--cr-color-background);
+  --cr-cursor-surface: var(--cr-color-foreground);
+  padding-block-start: calc(var(--frame-inset) + 0.5rem);
+  border-color: transparent;
+  background: transparent;
+  color: var(--cr-color-background);
+}
+
+:host-context(html[data-header='overlay']) .logo-light {
+  opacity: 0;
+}
+
+:host-context(html[data-header='overlay']) .logo-dark {
+  opacity: 1;
 }
 
 /* While the full-screen menu is open the header sits on the overlay's

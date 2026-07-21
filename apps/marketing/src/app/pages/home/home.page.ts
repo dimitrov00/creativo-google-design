@@ -49,6 +49,7 @@ export class HomePage implements AfterViewInit {
       '(prefers-reduced-motion: reduce)',
     ).matches;
     const hero = host.querySelector<HTMLElement>('.hero');
+    const heroFrame = host.querySelector<HTMLElement>('.hero__frame');
     const parallaxItems = Array.from(
       host.querySelectorAll<HTMLElement>('[data-parallax]'),
     );
@@ -220,9 +221,27 @@ export class HomePage implements AfterViewInit {
       hero.style.setProperty('--hero-progress', progress.toString());
     };
 
+    // The shell header floats transparent INSIDE the hero film while the film
+    // still sits behind it; once the film scrolls up past the header band it
+    // translates flush and turns solid (app.css `[data-header]` rules). The
+    // 88px band ≈ the 4rem header + a small lead so the swap lands as the
+    // film leaves, not after. Home owns this because the film is a home
+    // concern; other routes never set it, so the header stays solid there.
+    const updateHeaderMode = () => {
+      const root = this.document.documentElement;
+      const overlay = heroFrame
+        ? heroFrame.getBoundingClientRect().bottom > 88
+        : false;
+      const mode = overlay ? 'overlay' : 'solid';
+      if (root.getAttribute('data-header') !== mode) {
+        root.setAttribute('data-header', mode);
+      }
+    };
+
     const updateScroll = () => {
       frame = 0;
       updateNavigationTone();
+      updateHeaderMode();
       updateParallax();
       updateHero();
     };
@@ -255,7 +274,12 @@ export class HomePage implements AfterViewInit {
 
     this.destroyRef.onDestroy(() => {
       cleanups.forEach((cleanup) => cleanup());
-      this.document.documentElement.removeAttribute('data-nav-tone');
+      const root = this.document.documentElement;
+      root.removeAttribute('data-nav-tone');
+      // Clear the header-overlay mode so other routes get the solid header
+      // (they never set it, but leaving 'overlay' behind would strand them
+      // transparent-over-nothing).
+      root.removeAttribute('data-header');
       // Tone attribute is gone, so the page is back on the default light
       // background — walk the browser chrome back with it.
       syncBrowserThemeColor('light');
