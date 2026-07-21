@@ -32,11 +32,14 @@
 .landing {
 }
 
-.landing h1,
-.landing h2,
-.landing h3,
-.landing p,
-.landing figure {
+/* Zero the UA top margins so component rules own vertical rhythm — wrapped
+   in :where() so this reset carries ZERO specificity. A plain `.landing p`
+   reset is (0,1,1) and silently BEAT single-class spacing rules like
+   `.hero__intro` (0,1,0) — the hero's title→body gap collapsed to 0 while
+   craft's higher-specificity `> p:last-child` rule survived, so the two
+   film sections drifted apart. Zero-specificity resets never fight
+   component styles. */
+:where(.landing) :where(h1, h2, h3, p, figure) {
   margin-block-start: 0;
 }
 
