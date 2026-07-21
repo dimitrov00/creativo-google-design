@@ -9,7 +9,10 @@
   align-items: start;
   padding: clamp(7rem, 12vw, 12rem) var(--page-gutter);
   background: transparent;
-  color: var(--cr-color-foreground);
+  /* Tone-aware like every other section (team/services use --page-fg) —
+     was hardcoded --cr-color-foreground, so the heading stayed black
+     instead of following the scroll-driven data-nav-tone theme. */
+  color: var(--page-fg);
 }
 
 .locations__heading {
@@ -31,7 +34,9 @@
 .locations__heading > p:last-child {
   max-inline-size: 22rem;
   margin-block-start: 2rem;
-  color: var(--cr-color-foreground-secondary);
+  /* Muted from the tone-aware page ink (matches team's secondary copy),
+     not the fixed --cr-color-foreground-secondary token. */
+  color: color-mix(in srgb, var(--page-fg) calc(0.58 * 100%), transparent);
 }
 
 .locations__content {

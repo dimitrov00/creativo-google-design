@@ -79,8 +79,9 @@
   align-items: center;
   gap: clamp(1.5rem, 3vh, 2.25rem);
   min-block-size: 100svh;
-  padding: calc(4rem + var(--frame-inset)) var(--frame-inset)
-    clamp(1.5rem, 4vh, 3rem);
+  /* Sides and bottom share --frame-inset so the film frame sits symmetric
+     in its inset; top adds the 4rem fixed-header clearance on top of it. */
+  padding: calc(4rem + var(--frame-inset)) var(--frame-inset) var(--frame-inset);
 }
 
 /* Identical layout structure to craft-film__copy: eyebrow, display line,
