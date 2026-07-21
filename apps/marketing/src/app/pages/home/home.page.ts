@@ -52,11 +52,9 @@ export class HomePage implements AfterViewInit {
     const parallaxItems = Array.from(
       host.querySelectorAll<HTMLElement>('[data-parallax]'),
     );
-    const toneSections = Array.from(
-      host.querySelectorAll<HTMLElement>('[data-nav-tone]'),
-    );
     const cleanups: Array<() => void> = [];
     let frame = 0;
+    let observeReveals: (() => void) | undefined;
 
     if (window.location.hash) {
       const targetId = decodeURIComponent(window.location.hash.slice(1));
@@ -115,9 +113,17 @@ export class HomePage implements AfterViewInit {
         },
         { rootMargin: '0px 0px -7% 0px', threshold: 0.08 },
       );
-      host
-        .querySelectorAll<HTMLElement>('[data-reveal]')
-        .forEach((element) => revealObserver.observe(element));
+      // Re-run whenever `@defer` blocks hydrate (the layout observer below
+      // fires then): team/locations render their data-reveal headings only
+      // at that point, and elements the one-shot init scan never saw would
+      // otherwise sit at the reveal's opacity: 0 start state forever.
+      // observe() on an already-observed target is a spec'd no-op, so
+      // re-scanning is idempotent.
+      observeReveals = () =>
+        host
+          .querySelectorAll<HTMLElement>('[data-reveal]')
+          .forEach((element) => revealObserver.observe(element));
+      observeReveals();
       cleanups.push(() => revealObserver.disconnect());
 
       // Ambient films only decode while on screen; a user's explicit pause
@@ -176,7 +182,14 @@ export class HomePage implements AfterViewInit {
 
     const updateNavigationTone = () => {
       const center = window.innerHeight * 0.46;
-      const active = toneSections.find((section) => {
+      // Queried LIVE, not cached at init: three tone sections live inside
+      // `@defer (on viewport)` blocks, so on the client path they don't
+      // exist yet when ngAfterViewInit runs — a captured list permanently
+      // missed them and the header stayed light over the dark sections.
+      // This runs at most once per animation frame over ~7 nodes.
+      const active = Array.from(
+        host.querySelectorAll<HTMLElement>('[data-nav-tone]'),
+      ).find((section) => {
         const rect = section.getBoundingClientRect();
         return rect.top <= center && rect.bottom > center;
       });
@@ -228,7 +241,12 @@ export class HomePage implements AfterViewInit {
     // (map, gallery pinning) — recompute the tone then too, or the theme
     // sticks on a stale section until the next scroll event.
     if (typeof ResizeObserver === 'function') {
-      const layoutObserver = new ResizeObserver(requestUpdate);
+      const layoutObserver = new ResizeObserver(() => {
+        // Deferred sections just appeared/resized — catch their reveal
+        // hooks and recompute the tone over the live section list.
+        observeReveals?.();
+        requestUpdate();
+      });
       layoutObserver.observe(host);
       cleanups.push(() => layoutObserver.disconnect());
     }
