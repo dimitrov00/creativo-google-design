@@ -11,7 +11,8 @@ import {
 } from '@angular/core';
 import { TranslocoDirective } from '@jsverse/transloco';
 import { CursorTargetDirective } from '@creativo/shared/cursor';
-import { Button, CrText } from '@creativo/shared/ui';
+import { Button, CrText, MaterialDirective } from '@creativo/shared/ui';
+import { LanguageService } from '../../language.service';
 import { ServicesPage } from '../services/services.page';
 import { LocationsComponent } from './locations/locations.component';
 import { TeamShowcaseComponent } from './team-showcase/team-showcase.component';
@@ -24,6 +25,7 @@ import { WorkGalleryComponent } from './work-gallery/work-gallery.component';
     CrText,
     CursorTargetDirective,
     LocationsComponent,
+    MaterialDirective,
     ServicesPage,
     TeamShowcaseComponent,
     TranslocoDirective,
@@ -37,6 +39,11 @@ export class HomePage implements AfterViewInit {
   private readonly elementRef = inject<ElementRef<HTMLElement>>(ElementRef);
   private readonly platformId = inject(PLATFORM_ID);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly language = inject(LanguageService);
+
+  /** Shared with the shell header's language menu (LanguageService). */
+  protected readonly languages = this.language.languages;
+  protected readonly activeLang = this.language.activeLang;
 
   protected readonly heroPaused = signal(false);
   protected readonly craftPaused = signal(false);
@@ -270,6 +277,13 @@ export class HomePage implements AfterViewInit {
       cleanups.push(() => layoutObserver.disconnect());
     }
 
+    // The home page always loads at the top over the hero film, so seed the
+    // overlay header synchronously — don't measure the frame here (flex/svh
+    // layout may not be settled yet at ngAfterViewInit, which would misread
+    // as solid). Scroll then flips it to solid via updateHeaderMode with a
+    // real measurement. Nav tone is safe to compute now.
+    this.document.documentElement.setAttribute('data-header', 'overlay');
+    updateNavigationTone();
     requestAnimationFrame(updateScroll);
 
     this.destroyRef.onDestroy(() => {
@@ -284,6 +298,10 @@ export class HomePage implements AfterViewInit {
       // background — walk the browser chrome back with it.
       syncBrowserThemeColor('light');
     });
+  }
+
+  protected setLanguage(code: (typeof this.languages)[number]['code']): void {
+    this.language.set(code);
   }
 
   protected async toggleFilm(

@@ -19,6 +19,32 @@
         <div class="hero__veil" aria-hidden="true"></div>
 
         <div class="hero__copy">
+          <div
+            class="hero__lang"
+            crMaterial="regular"
+            data-hero-reveal
+            role="group"
+            [attr.aria-label]="t('marketing.app.language')"
+          >
+            <span class="material-symbols-rounded" aria-hidden="true"
+              >language</span
+            >
+            @for (lang of languages; track lang.code) {
+            <button
+              type="button"
+              class="hero__lang-option"
+              [attr.data-active]="
+                  activeLang() === lang.code ? '' : null
+                "
+              [attr.aria-pressed]="activeLang() === lang.code"
+              [attr.aria-label]="lang.label"
+              (click)="setLanguage(lang.code)"
+              crCursorTarget
+            >
+              {{ lang.code }}
+            </button>
+            }
+          </div>
           <p class="eyebrow" text font="eyebrow" data-hero-reveal>
             {{ t('marketing.hero.eyebrow') }}
           </p>

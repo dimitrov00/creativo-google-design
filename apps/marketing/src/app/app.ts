@@ -1,20 +1,15 @@
-import { DOCUMENT, isPlatformBrowser } from '@angular/common';
-import {
-  Component,
-  PLATFORM_ID,
-  afterNextRender,
-  inject,
-  signal,
-} from '@angular/core';
+import { DOCUMENT } from '@angular/common';
+import { Component, inject, signal } from '@angular/core';
 import { RouterLink, RouterOutlet } from '@angular/router';
 import { Menu, MenuContent, MenuItem, MenuTrigger } from '@angular/aria/menu';
-import { TranslocoDirective, TranslocoService } from '@jsverse/transloco';
+import { TranslocoDirective } from '@jsverse/transloco';
 import { SupportedLang } from '@creativo/adapters/i18n';
 import {
   CursorDotComponent,
   CursorTargetDirective,
 } from '@creativo/shared/cursor';
 import { CrText } from '@creativo/shared/ui';
+import { LanguageService } from './language.service';
 
 @Component({
   selector: 'cr-root',
@@ -35,43 +30,12 @@ import { CrText } from '@creativo/shared/ui';
 })
 export class App {
   private readonly document = inject(DOCUMENT);
-  private readonly platformId = inject(PLATFORM_ID);
-  private readonly transloco = inject(TranslocoService);
+  private readonly language = inject(LanguageService);
 
   protected readonly menuOpen = signal(false);
-  protected readonly activeLang = signal<SupportedLang>('bg');
-
-  /**
-   * One entry per locale — adding a language is a single line here (plus its
-   * translation file), unlike the old fixed BG/EN two-button toggle. Labels
-   * are each language's own name for itself, so they are deliberately not
-   * run through transloco.
-   */
-  protected readonly languages: ReadonlyArray<{
-    code: SupportedLang;
-    label: string;
-  }> = [
-    { code: 'bg', label: 'Български' },
-    { code: 'en', label: 'English' },
-  ];
-
-  constructor() {
-    this.applyLanguage('bg', false);
-
-    // The stored language is applied only after first render: hydrating
-    // against the server-rendered (bg) DOM first avoids NG0500 text
-    // mismatches for returning EN visitors, which would otherwise force a
-    // destructive re-render of the whole shell.
-    afterNextRender(() => {
-      try {
-        const stored =
-          this.document.defaultView?.localStorage.getItem('creativo-language');
-        if (stored === 'en') this.applyLanguage(stored, false);
-      } catch {
-        // Storage can be unavailable in privacy-restricted browsers.
-      }
-    });
-  }
+  /** Delegated to LanguageService (shared with the hero's in-film pill). */
+  protected readonly activeLang = this.language.activeLang;
+  protected readonly languages = this.language.languages;
 
   protected toggleMenu(): void {
     this.menuOpen.update((open) => !open);
@@ -93,22 +57,6 @@ export class App {
   }
 
   protected setLanguage(lang: SupportedLang): void {
-    this.applyLanguage(lang, true);
-  }
-
-  private applyLanguage(lang: SupportedLang, persist: boolean): void {
-    this.activeLang.set(lang);
-    this.transloco.setActiveLang(lang);
-    this.document.documentElement.lang = lang;
-
-    if (!persist || !isPlatformBrowser(this.platformId)) return;
-    try {
-      this.document.defaultView?.localStorage.setItem(
-        'creativo-language',
-        lang,
-      );
-    } catch {
-      // The language still changes when storage is unavailable.
-    }
+    this.language.set(lang);
   }
 }

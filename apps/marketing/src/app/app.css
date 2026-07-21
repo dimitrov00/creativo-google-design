@@ -289,6 +289,18 @@
   opacity: 1;
 }
 
+/* Overlay bar carries only logo · login · menu — the language control lives
+   in the hero copy while the film is in view (moves back to the header once
+   solid). Login reads white over the film instead of its action blue. */
+:host-context(html[data-header='overlay']) .cr-shell__language {
+  display: none;
+}
+
+:host-context(html[data-header='overlay']) .cr-shell__login {
+  border-color: currentColor;
+  color: inherit;
+}
+
 /* While the full-screen menu is open the header sits on the overlay's
    light surface — force readable ink whatever the scroll tone was. */
 :host-context(html[data-menu-open]) .cr-shell__header {

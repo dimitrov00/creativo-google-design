@@ -47,6 +47,10 @@ html[data-menu-open] {
 [data-surface='film'] {
   --cr-cursor-ink: #fff;
   --cr-cursor-surface: var(--surface-film);
+  /* crMaterial glass inside a film (e.g. the hero language pill) frosts
+     LIGHT — the film is a dark environment, so the material tint flips to
+     white here instead of the light-theme dark neutral. */
+  --cr-color-surface-tint: #fff;
   background: var(--surface-film);
   color: #fff;
 }

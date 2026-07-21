@@ -102,6 +102,49 @@
   color: rgb(255 255 255 / 0.78);
 }
 
+/* In-film language pill — moved off the shell header into the hero copy
+   (above the eyebrow) as a frosted crMaterial overlay button; globe + the
+   two locale codes. The [data-surface='film'] context frosts it light (see
+   styles.css). White ink over the film. */
+.hero__lang {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  align-self: start;
+  margin-block-end: 1.4rem;
+  padding: 0.35rem 0.5rem 0.35rem 0.7rem;
+  border-radius: var(--cr-radius-full);
+  color: #fff;
+}
+
+.hero__lang .material-symbols-rounded {
+  font-size: var(--cr-icon-size-small);
+  opacity: 0.85;
+}
+
+.hero__lang-option {
+  padding: 0.25rem 0.55rem;
+  border: 0;
+  border-radius: var(--cr-radius-full);
+  background: transparent;
+  color: inherit;
+  font: var(--cr-text-caption);
+  font-family: var(--cr-font-family-heading);
+  font-weight: var(--cr-font-weight-semibold);
+  text-transform: uppercase;
+  cursor: pointer;
+  opacity: 0.55;
+  transition:
+    opacity var(--cr-motion-duration-fast) var(--cr-motion-easing-standard),
+    background-color var(--cr-motion-duration-fast)
+      var(--cr-motion-easing-standard);
+}
+
+.hero__lang-option[data-active] {
+  opacity: 1;
+  background: rgb(255 255 255 / 0.16);
+}
+
 .hero h1 > span {
   display: block;
   overflow: hidden;
