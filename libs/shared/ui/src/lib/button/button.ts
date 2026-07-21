@@ -44,7 +44,7 @@ const FILL_VARIANTS = new Set<ButtonVariant>(['outline', 'ghost']);
     // stays fully under the caller's own control.
     '[attr.aria-disabled]': 'loading() ? "true" : null',
     '(click)': 'blockClickWhileLoading($event)',
-    '[attr.data-cr-cursor-style]': 'cursorStyle()',
+    '[attr.data-cr-cursor-style]': 'resolvedCursorStyle()',
     '(pointerenter)': 'cursorHost.onPointerEnter()',
     '(pointerleave)': 'cursorHost.onPointerLeave()',
     '[attr.data-cr-cursor-hover]': 'cursorHost.isHovering() ? "" : null',
@@ -60,13 +60,20 @@ export class Button {
   readonly loading = input(false);
   /** Text shown next to the cursor dot while hovering (cursor-target label). */
   readonly cursorLabel = input<string | undefined>(undefined);
+  /** Overrides the variant-derived cursor morph. The default stands
+   * (outline/ghost fill, solid scale), but marketing's conversion CTAs are
+   * solid pills whose signature interaction IS the fill morph — that's a
+   * design decision the consumer owns, not the variant. */
+  readonly cursorStyle = input<CursorTargetStyle | undefined>(undefined);
 
-  protected readonly cursorStyle = computed<CursorTargetStyle>(() =>
-    FILL_VARIANTS.has(this.variant()) ? 'fill' : 'scale',
+  protected readonly resolvedCursorStyle = computed<CursorTargetStyle>(
+    () =>
+      this.cursorStyle() ??
+      (FILL_VARIANTS.has(this.variant()) ? 'fill' : 'scale'),
   );
   protected readonly cursorHost = useCursorTarget(
     this.elementRef,
-    () => this.cursorStyle(),
+    () => this.resolvedCursorStyle(),
     () => this.cursorLabel(),
   );
 

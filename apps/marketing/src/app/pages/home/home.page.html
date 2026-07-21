@@ -67,6 +67,7 @@
         href="/client"
         crButton
         variant="action"
+        cursorStyle="fill"
         size="extraLarge"
         shape="pill"
       >
@@ -146,7 +147,7 @@
     <cr-team-showcase />
     } @placeholder {
     <div id="team" style="min-height: 100vh"></div>
-    } @defer (on viewport; hydrate on viewport) {
+    } @defer (on viewport; hydrate on idle) {
     <cr-locations />
     } @placeholder {
     <div id="locations" style="min-height: 40rem"></div>
@@ -161,7 +162,14 @@
         {{ t('marketing.final.eyebrow') }}
       </p>
       <h2 id="book-title" data-reveal>{{ t('marketing.final.title') }}</h2>
-      <a href="/client" data-reveal crButton variant="action" size="extraLarge">
+      <a
+        href="/client"
+        data-reveal
+        crButton
+        variant="action"
+        cursorStyle="fill"
+        size="extraLarge"
+      >
         <span>{{ t('marketing.final.cta') }}</span>
         <span class="material-symbols-rounded" aria-hidden="true"
           >arrow_outward</span
@@ -192,7 +200,8 @@
             href="/client"
             crButton
             variant="primary"
-            size="small"
+            cursorStyle="fill"
+            size="regular"
             shape="pill"
           >
             {{ t('marketing.app.book') }}

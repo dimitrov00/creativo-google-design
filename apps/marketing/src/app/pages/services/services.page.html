@@ -130,7 +130,13 @@
                 </span>
                 <strong>{{ t(service.priceKey) }}</strong>
               </div>
-              <a href="/client" crButton variant="action" size="mini">
+              <a
+                href="/client"
+                crButton
+                variant="action"
+                cursorStyle="fill"
+                size="mini"
+              >
                 <span>{{ t('marketing.servicesPage.bookService') }}</span>
                 <span class="material-symbols-rounded" aria-hidden="true"
                   >arrow_outward</span
@@ -202,6 +208,7 @@
           [attr.tabindex]="sheetBookingBarVisible() ? null : -1"
           crButton
           variant="action"
+          cursorStyle="fill"
           size="mini"
           shape="pill"
         >

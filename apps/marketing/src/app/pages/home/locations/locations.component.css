@@ -71,8 +71,9 @@
   position: relative;
   min-inline-size: 0;
   padding-block: 1.5rem;
-  border-block-end: 1px solid
-    color-mix(in srgb, var(--cr-color-foreground) calc(0.1 * 100%), transparent);
+  /* No divider rule — this was the only section using borders between
+     items; the padding rhythm alone separates cards, matching how every
+     other section breathes (owner call, 2026-07-21). */
   cursor: pointer;
 }
 
