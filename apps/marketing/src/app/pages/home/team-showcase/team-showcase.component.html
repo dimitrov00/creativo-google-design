@@ -6,13 +6,13 @@
     aria-labelledby="team-title"
   >
     <header class="team__heading" data-reveal>
-      <p class="eyebrow" data-text="eyebrow">
+      <p class="eyebrow" crText font="eyebrow">
         {{ t('marketing.team.eyebrow') }}
       </p>
-      <h2 id="team-title" data-text="display">
+      <h2 id="team-title" crText font="display">
         {{ t('marketing.team.titleA') }}<br />{{ t('marketing.team.titleB') }}
       </h2>
-      <p data-text="footnote">{{ t('marketing.team.intro') }}</p>
+      <p crText font="footnote">{{ t('marketing.team.intro') }}</p>
     </header>
 
     <div class="team-grid">
@@ -40,9 +40,9 @@
           </div>
 
           <div class="team-card__copy">
-            <p data-text="eyebrow">{{ t(barber.roleKey) }}</p>
-            <h3 data-text="title">{{ t(barber.nameKey) }}</h3>
-            <div class="team-card__facts" data-text="caption">
+            <p crText font="eyebrow">{{ t(barber.roleKey) }}</p>
+            <h3 crText font="title">{{ t(barber.nameKey) }}</h3>
+            <div class="team-card__facts" crText font="caption">
               <span>{{ t(barber.specialtyKey) }}</span>
               @if (barber.rating !== undefined) {
                 <strong>
@@ -59,8 +59,9 @@
             >
               <span
                 class="team-card__explore-label explore-affordance__label"
-                data-text="caption"
-                data-text-weight="bold"
+                crText
+                font="caption"
+                bold
                 crCursorTarget
                 crCursorTargetStyle="fill"
               >
@@ -95,26 +96,22 @@
             [src]="barber.image"
             [alt]="t(barber.nameKey)"
           />
-          <p class="barber-sheet__role" data-text="eyebrow">
+          <p class="barber-sheet__role" crText font="eyebrow">
             {{ t(barber.roleKey) }}
           </p>
-          <h2 id="barber-sheet-title" data-text="display">
+          <h2 id="barber-sheet-title" crText font="display">
             {{ t(barber.nameKey) }}
           </h2>
-          <p
-            class="barber-sheet__specialty"
-            data-text="caption"
-            data-text-weight="bold"
-          >
+          <p class="barber-sheet__specialty" crText font="caption" bold>
             {{ t(barber.specialtyKey) }}
           </p>
           @if (barber.aboutKey) {
-            <p class="barber-sheet__about" data-text="footnote">
+            <p class="barber-sheet__about" crText font="footnote">
               {{ t(barber.aboutKey) }}
             </p>
           }
           @if (barber.rating !== undefined) {
-            <div class="barber-sheet__rating" data-text="caption">
+            <div class="barber-sheet__rating" crText font="caption">
               <span class="material-symbols-rounded" aria-hidden="true"
                 >star</span
               >

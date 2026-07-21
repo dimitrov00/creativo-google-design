@@ -9,11 +9,11 @@
       [attr.inert]="sheetOpen() ? '' : null"
     >
       <header class="catalog-intro" data-service-reveal>
-        <p data-text="eyebrow">
+        <p crText font="eyebrow">
           {{ t('marketing.servicesPage.indexEyebrow') }}
         </p>
         <h2>{{ t('marketing.servicesPage.catalogGridTitle') }}</h2>
-        <span data-text="footnote"
+        <span crText font="footnote"
           >{{ t('marketing.servicesPage.catalogGuide') }}</span
         >
       </header>
@@ -47,9 +47,9 @@
           </div>
 
           <div class="service-tile__copy">
-            <p data-text="eyebrow">{{ t(service.labelKey) }}</p>
-            <h3 data-text="title">{{ t(service.titleKey) }}</h3>
-            <div class="service-tile__facts" data-text="caption">
+            <p crText font="eyebrow">{{ t(service.labelKey) }}</p>
+            <h3 crText font="title">{{ t(service.titleKey) }}</h3>
+            <div class="service-tile__facts" crText font="caption">
               <span>{{ t(service.durationKey) }}</span>
               <strong>{{ t(service.priceKey) }}</strong>
             </div>
@@ -59,8 +59,9 @@
             >
               <span
                 class="service-tile__explore-label explore-affordance__label"
-                data-text="caption"
-                data-text-weight="bold"
+                crText
+                font="caption"
+                bold
                 crCursorTarget
                 crCursorTargetStyle="fill"
               >
@@ -93,8 +94,9 @@
       <p
         sheet-title
         class="service-sheet__compact-title"
-        data-text="caption"
-        data-text-weight="bold"
+        crText
+        font="caption"
+        bold
       >
         {{ t(service.titleKey) }}
       </p>
@@ -114,12 +116,12 @@
         <div class="service-sheet__story">
           <section class="service-sheet__intro">
             <div>
-              <p data-text="eyebrow">{{ t(service.labelKey) }}</p>
+              <p crText font="eyebrow">{{ t(service.labelKey) }}</p>
               <h2 id="service-sheet-title">{{ t(service.titleKey) }}</h2>
             </div>
             <div class="service-sheet__summary">
-              <p data-text="footnote">{{ t(service.bodyKey) }}</p>
-              <div data-text="caption">
+              <p crText font="footnote">{{ t(service.bodyKey) }}</p>
+              <div crText font="caption">
                 <span>
                   <span class="material-symbols-rounded" aria-hidden="true"
                     >schedule</span
@@ -139,13 +141,13 @@
 
           <section class="service-sheet__variants">
             <header>
-              <h3 data-text="display">
+              <h3 crText font="display">
                 {{ t('marketing.servicesPage.stepVariant') }}
               </h3>
             </header>
             <ul>
               @for (variantKey of service.variantKeys; track variantKey) {
-              <li data-text="caption" data-text-weight="semibold">
+              <li crText font="caption" fontWeight="semibold">
                 {{ t(variantKey) }}
               </li>
               }
@@ -157,7 +159,7 @@
             aria-labelledby="service-performers-title"
           >
             <header>
-              <h3 id="service-performers-title" data-text="display">
+              <h3 id="service-performers-title" crText font="display">
                 {{ t('marketing.servicesPage.stepBarber') }}
               </h3>
             </header>
@@ -174,11 +176,13 @@
                     />
                   </div>
                   <div class="service-performer__identity">
-                    <p data-text="eyebrow">
+                    <p crText font="eyebrow">
                       {{ t(barberRoleKey(performer.nameKey)) }}
                     </p>
-                    <h4 data-text="title">{{ t(performer.nameKey) }}</h4>
-                    <span data-text="caption">{{ t(performer.roleKey) }}</span>
+                    <h4 crText font="title">{{ t(performer.nameKey) }}</h4>
+                    <span crText font="caption"
+                      >{{ t(performer.roleKey) }}</span
+                    >
                   </div>
                 </article>
               </li>

@@ -11,7 +11,7 @@ import {
 } from '@angular/core';
 import { TranslocoDirective } from '@jsverse/transloco';
 import { CursorService, CursorTargetDirective } from '@creativo/shared/cursor';
-import { Button } from '@creativo/shared/ui';
+import { Button, CrText } from '@creativo/shared/ui';
 import type { Map as MapLibreMap, Marker as MapLibreMarker } from 'maplibre-gl';
 import {
   ModalSheetComponent,
@@ -86,6 +86,7 @@ const MLADOST_SCHEDULE: WeekSchedule = [
   selector: 'cr-locations',
   imports: [
     Button,
+    CrText,
     CursorTargetDirective,
     ModalSheetComponent,
     ShowcaseGalleryComponent,

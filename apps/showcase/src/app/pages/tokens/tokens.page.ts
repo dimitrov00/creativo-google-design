@@ -1,8 +1,14 @@
 import { Component } from '@angular/core';
+import {
+  CrText,
+  FontTextStyle,
+  FontWeight,
+  ForegroundStyle,
+} from '@creativo/shared/ui';
 
 @Component({
   selector: 'cr-tokens-page',
-  imports: [],
+  imports: [CrText],
   templateUrl: './tokens.page.html',
   styleUrl: './tokens.page.css',
 })
@@ -29,8 +35,13 @@ export class TokensPage {
     'loose',
     'spacious',
   ];
-  protected readonly textWeights = ['regular', 'medium', 'semibold', 'bold'];
-  protected readonly textTones = [
+  protected readonly textWeights: FontWeight[] = [
+    'regular',
+    'medium',
+    'semibold',
+    'bold',
+  ];
+  protected readonly textTones: ForegroundStyle[] = [
     'primary',
     'secondary',
     'tertiary',
@@ -39,8 +50,8 @@ export class TokensPage {
     'success',
     'warning',
   ];
-  /** Rendered smallest→largest via `data-text` (see typography.css). */
-  protected readonly textRoles = [
+  /** Rendered smallest→largest via `CrText`'s `font` roles (typography.css). */
+  protected readonly textRoles: FontTextStyle[] = [
     'eyebrow',
     'caption',
     'footnote',

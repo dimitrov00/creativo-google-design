@@ -89,6 +89,13 @@
     --cr-icon-size-small: 1rem;
     --cr-icon-size-regular: 1.2rem;
 
+    /* Hover/active weight emphasis WITHOUT layout shift — Roboto Flex's
+       GRAD axis (-200…150) changes apparent stroke weight while keeping
+       glyph widths constant, so emphasized text never reflows its line.
+       Apply via `font-variation-settings: 'GRAD' var(--cr-font-grade-emphasis)`
+       on interaction states only; resting text stays at the axis default. */
+    --cr-font-grade-emphasis: 60;
+
     /* Radius — `full` is the pill/circle escape hatch, deliberately px. */
     --cr-radius-none: 0rem;
     --cr-radius-small: 0.25rem;

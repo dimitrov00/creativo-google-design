@@ -13,33 +13,27 @@
       </div>
 
       <header class="work-gallery__heading">
-        <p class="eyebrow" data-text="eyebrow">
+        <p class="eyebrow" crText font="eyebrow">
           {{ t('marketing.work.eyebrow') }}
         </p>
-        <h2 id="work-gallery-title" data-text="display">
+        <h2 id="work-gallery-title" crText font="display">
           <span>{{ t('marketing.work.titleA') }}</span>
           <span>{{ t('marketing.work.titleB') }}</span>
         </h2>
-        <p class="work-gallery__scroll-hint" data-text="caption">
+        <p class="work-gallery__scroll-hint" crText font="caption">
           {{ t('marketing.work.scroll') }}
         </p>
 
         <div class="work-gallery__meter" aria-hidden="true">
-          <span
-            class="work-gallery__meter-count"
-            data-text="caption"
-            data-text-weight="bold"
-            >{{ pad(activeIndex() + 1) }}</span
-          >
+          <span class="work-gallery__meter-count" crText font="caption" bold>{{
+            pad(activeIndex() + 1)
+          }}</span>
           <span class="work-gallery__meter-track">
             <span class="work-gallery__meter-fill"></span>
           </span>
-          <span
-            class="work-gallery__meter-total"
-            data-text="caption"
-            data-text-weight="bold"
-            >{{ pad(total) }}</span
-          >
+          <span class="work-gallery__meter-total" crText font="caption" bold>{{
+            pad(total)
+          }}</span>
         </div>
       </header>
 
@@ -63,29 +57,22 @@
                 [alt]="t(item.altKey)"
                 [attr.loading]="index === 0 ? 'eager' : 'lazy'"
               />
-              <span
-                class="work-card__index"
-                data-text="caption"
-                data-text-weight="bold"
-                >{{ pad(index + 1) }}</span
-              >
+              <span class="work-card__index" crText font="caption" bold>{{
+                pad(index + 1)
+              }}</span>
             </a>
             <div class="work-card__copy">
-              <h3
-                data-text="callout"
-                data-text-weight="semibold"
-                data-text-tracking="tight"
-              >
+              <h3 crText font="callout" fontWeight="semibold" tracking="tight">
                 {{ t(item.titleKey) }}
               </h3>
-              <p data-text="caption">{{ t(item.bodyKey) }}</p>
+              <p crText font="caption">{{ t(item.bodyKey) }}</p>
             </div>
           </article>
         }
 
         <aside class="work-gallery__end" data-work-gallery-end>
           <div>
-            <p data-work-gallery-end-reveal data-text="display">
+            <p data-work-gallery-end-reveal crText font="display">
               {{ t('marketing.work.endTitle') }}
             </p>
             <a

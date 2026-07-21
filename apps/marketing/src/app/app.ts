@@ -14,12 +14,14 @@ import {
   CursorDotComponent,
   CursorTargetDirective,
 } from '@creativo/shared/cursor';
+import { CrText } from '@creativo/shared/ui';
 
 @Component({
   selector: 'cr-root',
   imports: [
     RouterLink,
     RouterOutlet,
+    CrText,
     CursorDotComponent,
     CursorTargetDirective,
     TranslocoDirective,

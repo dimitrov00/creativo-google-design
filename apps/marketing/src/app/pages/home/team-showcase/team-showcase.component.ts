@@ -9,7 +9,7 @@ import {
 } from '@angular/core';
 import { TranslocoDirective } from '@jsverse/transloco';
 import { CursorTargetDirective } from '@creativo/shared/cursor';
-import { Button } from '@creativo/shared/ui';
+import { Button, CrText } from '@creativo/shared/ui';
 import { ModalSheetComponent } from '../../../shared/modal-sheet/modal-sheet.component';
 import { ShowcaseGalleryComponent } from '../../../shared/showcase-gallery/showcase-gallery.component';
 
@@ -27,6 +27,7 @@ interface BarberItem {
   selector: 'cr-team-showcase',
   imports: [
     Button,
+    CrText,
     CursorTargetDirective,
     ModalSheetComponent,
     ShowcaseGalleryComponent,

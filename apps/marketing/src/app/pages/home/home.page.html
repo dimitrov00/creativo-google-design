@@ -19,10 +19,10 @@
         <div class="hero__veil" aria-hidden="true"></div>
 
         <div class="hero__copy">
-          <p class="eyebrow" data-text="eyebrow" data-hero-reveal>
+          <p class="eyebrow" crText font="eyebrow" data-hero-reveal>
             {{ t('marketing.hero.eyebrow') }}
           </p>
-          <h1 id="hero-title" class="hero__title" data-text="display">
+          <h1 id="hero-title" class="hero__title" crText font="display">
             <span
               ><span data-hero-reveal
                 >{{ t('marketing.hero.titleA') }}</span
@@ -34,7 +34,7 @@
               ></span
             >
           </h1>
-          <p class="hero__intro" data-text="body" data-hero-reveal>
+          <p class="hero__intro" crText font="body" data-hero-reveal>
             {{ t('marketing.hero.intro') }}
           </p>
         </div>
@@ -109,14 +109,14 @@
       </video>
       <div class="craft-film__veil"></div>
       <div class="craft-film__copy" data-reveal>
-        <p class="eyebrow" data-text="eyebrow">
+        <p class="eyebrow" crText font="eyebrow">
           {{ t('marketing.craft.eyebrow') }}
         </p>
-        <h2 id="craft-title" data-text="display">
+        <h2 id="craft-title" crText font="display">
           {{ t('marketing.craft.titleA') }}<br />{{ t('marketing.craft.titleB')
           }}
         </h2>
-        <p data-text="body">{{ t('marketing.craft.body') }}</p>
+        <p crText font="body">{{ t('marketing.craft.body') }}</p>
       </div>
       <!-- After the copy so its hit area is never shadowed by the copy's
            padded box — hover/morph reaches it directly. -->
@@ -157,7 +157,7 @@
       data-nav-tone="accent"
       aria-labelledby="book-title"
     >
-      <p class="eyebrow" data-text="eyebrow" data-reveal>
+      <p class="eyebrow" crText font="eyebrow" data-reveal>
         {{ t('marketing.final.eyebrow') }}
       </p>
       <h2 id="book-title" data-reveal>{{ t('marketing.final.title') }}</h2>
@@ -181,7 +181,7 @@
           >
             <span class="site-footer__logo" aria-hidden="true"></span>
           </a>
-          <p class="site-footer__tagline" data-text="footnote">
+          <p class="site-footer__tagline" crText font="footnote">
             {{ t('marketing.footer.tagline') }}
           </p>
           <a
@@ -203,7 +203,7 @@
           class="site-footer__column"
           [attr.aria-label]="t('marketing.footer.navigation')"
         >
-          <h3 data-text="eyebrow">{{ t('marketing.footer.explore') }}</h3>
+          <h3 crText font="eyebrow">{{ t('marketing.footer.explore') }}</h3>
           <a href="#work" crCursorTarget>{{ t('marketing.app.work') }}</a>
           <a href="#services" crCursorTarget>
             {{ t('marketing.app.services') }}
@@ -215,7 +215,7 @@
         </nav>
 
         <div class="site-footer__column">
-          <h3 data-text="eyebrow">{{ t('marketing.footer.contact') }}</h3>
+          <h3 crText font="eyebrow">{{ t('marketing.footer.contact') }}</h3>
           <a href="tel:+35929812345" crCursorTarget>+359 2 981 2345</a>
           <a href="mailto:hello@creativo.bg" crCursorTarget>
             hello&#64;creativo.bg
@@ -224,7 +224,7 @@
         </div>
 
         <div class="site-footer__column">
-          <h3 data-text="eyebrow">{{ t('marketing.footer.follow') }}</h3>
+          <h3 crText font="eyebrow">{{ t('marketing.footer.follow') }}</h3>
           <a
             href="https://www.instagram.com/creativo"
             target="_blank"
@@ -253,11 +253,14 @@
       </div>
 
       <div class="site-footer__bottom">
-        <small data-text="caption">{{ t('marketing.footer.copyright') }}</small>
+        <small crText font="caption"
+          >{{ t('marketing.footer.copyright') }}</small
+        >
         <a
           class="site-footer__top-link"
-          data-text="caption"
-          data-text-weight="semibold"
+          crText
+          font="caption"
+          fontWeight="semibold"
           href="#top"
           crCursorTarget
         >

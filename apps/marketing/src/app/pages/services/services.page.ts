@@ -11,7 +11,7 @@ import {
 } from '@angular/core';
 import { TranslocoDirective } from '@jsverse/transloco';
 import { CursorTargetDirective } from '@creativo/shared/cursor';
-import { Button } from '@creativo/shared/ui';
+import { Button, CrText } from '@creativo/shared/ui';
 import {
   ModalSheetComponent,
   type ModalSheetScrollEvent,
@@ -50,6 +50,7 @@ interface CatalogServiceItem {
   selector: 'cr-services-page',
   imports: [
     Button,
+    CrText,
     CursorTargetDirective,
     ModalSheetComponent,
     ShowcaseGalleryComponent,

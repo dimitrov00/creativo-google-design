@@ -10,7 +10,7 @@ import {
 } from '@angular/core';
 import { TranslocoDirective } from '@jsverse/transloco';
 import { CursorTargetDirective } from '@creativo/shared/cursor';
-import { Button } from '@creativo/shared/ui';
+import { Button, CrText } from '@creativo/shared/ui';
 import { gsap } from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import { attachPointerTilt } from '../../../shared/motion/pointer-tilt';
@@ -26,7 +26,7 @@ const TILT_ANGLES = [-4, 5, -6, 4, -5, 6] as const;
 
 @Component({
   selector: 'cr-work-gallery',
-  imports: [Button, CursorTargetDirective, TranslocoDirective],
+  imports: [Button, CrText, CursorTargetDirective, TranslocoDirective],
   templateUrl: './work-gallery.component.html',
   styleUrl: './work-gallery.component.css',
   host: { style: 'display: contents' },

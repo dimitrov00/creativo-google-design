@@ -185,6 +185,13 @@ html {
   border-color: var(--cr-color-highlight);
 }
 
+/* Label emphasis on card hover via the GRAD axis — heavier stroke, zero
+   glyph-width change, so the pill never resizes (see tokens.css). */
+.morph-card:hover .explore-affordance__label,
+.morph-card:focus-within .explore-affordance__label {
+  font-variation-settings: 'GRAD' var(--cr-font-grade-emphasis);
+}
+
 .morph-card:hover .explore-affordance__icon,
 .morph-card:focus-within .explore-affordance__icon {
   transform: translateX(0.2rem) rotate(-8deg);

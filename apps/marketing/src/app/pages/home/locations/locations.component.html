@@ -6,15 +6,15 @@
     aria-labelledby="locations-title"
   >
     <header class="locations__heading" data-reveal>
-      <p class="eyebrow" data-text="eyebrow">
+      <p class="eyebrow" crText font="eyebrow">
         {{ t('marketing.locations.eyebrow') }}
       </p>
-      <h2 id="locations-title" data-text="display">
+      <h2 id="locations-title" crText font="display">
         {{ t('marketing.locations.titleA') }}<br />{{
           t('marketing.locations.titleB')
         }}
       </h2>
-      <p data-text="body">{{ t('marketing.locations.intro') }}</p>
+      <p crText font="body">{{ t('marketing.locations.intro') }}</p>
     </header>
 
     <div class="locations__content">
@@ -50,15 +50,16 @@
                 >
 
                 <div class="location-card__copy">
-                  <h3 data-text="callout" data-text-weight="semibold">
+                  <h3 crText font="callout" fontWeight="semibold">
                     {{ t(location.nameKey) }}
                   </h3>
-                  <p data-text="caption">{{ t(location.addressKey) }}</p>
+                  <p crText font="caption">{{ t(location.addressKey) }}</p>
 
                   <span
                     class="location-card__status"
-                    data-text="caption"
-                    data-text-weight="semibold"
+                    crText
+                    font="caption"
+                    fontWeight="semibold"
                     [attr.data-open]="status.isOpen ? '' : null"
                   >
                     <span
@@ -75,7 +76,8 @@
                   @if (location.phoneKey) {
                     <a
                       class="location-card__phone"
-                      data-text="caption"
+                      crText
+                      font="caption"
                       [href]="phoneHref(t(location.phoneKey))"
                       [attr.aria-label]="
                         t('marketing.locations.callAria', {
@@ -95,8 +97,9 @@
                   <span class="location-card__action" aria-hidden="true">
                     <span
                       class="location-card__explore-label"
-                      data-text="caption"
-                      data-text-weight="bold"
+                      crText
+                      font="caption"
+                      bold
                       crCursorTarget
                       crCursorTargetStyle="fill"
                     >
@@ -159,8 +162,9 @@
       <p
         sheet-title
         class="location-sheet__compact-title"
-        data-text="caption"
-        data-text-weight="bold"
+        crText
+        font="caption"
+        bold
       >
         {{ t(location.nameKey) }}
       </p>
@@ -185,13 +189,14 @@
 
           <article class="location-sheet__profile">
             <header class="location-sheet__intro">
-              <h2 id="location-sheet-title" data-text="title">
+              <h2 id="location-sheet-title" crText font="title">
                 {{ t(location.nameKey) }}
               </h2>
               <p
                 class="location-sheet__address"
-                data-text="footnote"
-                data-text-weight="semibold"
+                crText
+                font="footnote"
+                fontWeight="semibold"
               >
                 <span class="material-symbols-rounded" aria-hidden="true"
                   >location_on</span
@@ -201,7 +206,8 @@
               @if (location.phoneKey) {
                 <a
                   class="location-sheet__phone-line"
-                  data-text="caption"
+                  crText
+                  font="caption"
                   [href]="phoneHref(t(location.phoneKey))"
                   crCursorTarget
                 >
@@ -232,7 +238,8 @@
 
                 <a
                   class="location-sheet__icon-action"
-                  data-text="caption"
+                  crText
+                  font="caption"
                   [href]="directionsUrl(location)"
                   target="_blank"
                   rel="noopener"
@@ -252,7 +259,8 @@
                 @if (location.phoneKey) {
                   <a
                     class="location-sheet__icon-action"
-                    data-text="caption"
+                    crText
+                    font="caption"
                     [href]="phoneHref(t(location.phoneKey))"
                     [attr.aria-label]="
                       t('marketing.locations.callAria', {
@@ -273,8 +281,9 @@
             <div class="location-sheet__status-card">
               <div
                 class="location-sheet__status"
-                data-text="footnote"
-                data-text-weight="semibold"
+                crText
+                font="footnote"
+                fontWeight="semibold"
                 [attr.data-open]="status.isOpen ? '' : null"
                 [attr.data-soon]="status.kind === 'closesSoon' ? '' : null"
               >
@@ -289,8 +298,9 @@
                 }}</span>
                 <span
                   class="location-sheet__status-detail"
-                  data-text="caption"
-                  data-text-weight="medium"
+                  crText
+                  font="caption"
+                  fontWeight="medium"
                 >
                   @switch (status.kind) {
                     @case ('closesAt') {
@@ -329,7 +339,8 @@
                 @for (dayIndex of weekOrder; track dayIndex) {
                   <li
                     class="location-sheet__day"
-                    data-text="caption"
+                    crText
+                    font="caption"
                     [attr.data-today]="dayIndex === todayIndex() ? '' : null"
                   >
                     <span class="location-sheet__day-name">
@@ -342,7 +353,8 @@
                       @if (dayIndex === todayIndex()) {
                         <span
                           class="location-sheet__today-tag"
-                          data-text="eyebrow"
+                          crText
+                          font="eyebrow"
                           >{{ t('marketing.locations.today') }}</span
                         >
                       }
@@ -363,7 +375,7 @@
 
         <section class="location-sheet__gallery">
           <header class="location-sheet__gallery-heading">
-            <h3 data-text="title">
+            <h3 crText font="title">
               {{ t('marketing.locations.galleryHeading') }}
             </h3>
           </header>
@@ -393,7 +405,8 @@
         @if (location.phoneKey) {
           <a
             class="location-sheet__toolbar-icon"
-            data-text="caption"
+            crText
+            font="caption"
             [href]="phoneHref(t(location.phoneKey))"
             [attr.aria-label]="
               t('marketing.locations.callAria', {
@@ -411,7 +424,8 @@
         }
         <a
           class="location-sheet__toolbar-icon"
-          data-text="caption"
+          crText
+          font="caption"
           [href]="directionsUrl(location)"
           target="_blank"
           rel="noopener"

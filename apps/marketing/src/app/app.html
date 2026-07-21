@@ -21,7 +21,8 @@
       >
         <a
           href="/#work"
-          data-text="eyebrow"
+          crText
+          font="eyebrow"
           crCursorTarget
           (click)="closeMenu()"
         >
@@ -29,7 +30,8 @@
         </a>
         <a
           href="/#services"
-          data-text="eyebrow"
+          crText
+          font="eyebrow"
           crCursorTarget
           (click)="closeMenu()"
         >
@@ -37,7 +39,8 @@
         </a>
         <a
           href="/#team"
-          data-text="eyebrow"
+          crText
+          font="eyebrow"
           crCursorTarget
           (click)="closeMenu()"
         >
@@ -45,7 +48,8 @@
         </a>
         <a
           href="/#locations"
-          data-text="eyebrow"
+          crText
+          font="eyebrow"
           crCursorTarget
           (click)="closeMenu()"
         >
@@ -54,7 +58,8 @@
         <a
           class="cr-shell__nav-extra"
           href="/client"
-          data-text="eyebrow"
+          crText
+          font="eyebrow"
           crCursorTarget
           (click)="closeMenu()"
         >
@@ -63,7 +68,8 @@
         <a
           class="cr-shell__nav-extra"
           href="/client"
-          data-text="eyebrow"
+          crText
+          font="eyebrow"
           crCursorTarget
           (click)="closeMenu()"
         >
@@ -75,7 +81,8 @@
         <a
           class="cr-shell__login"
           href="/client"
-          data-text="eyebrow"
+          crText
+          font="eyebrow"
           crCursorTarget
           crCursorTargetStyle="fill"
         >
@@ -116,8 +123,9 @@
                 [value]="lang.code"
                 role="menuitemradio"
                 [attr.aria-checked]="activeLang() === lang.code"
-                data-text="caption"
-                data-text-weight="semibold"
+                crText
+                font="caption"
+                fontWeight="semibold"
                 [attr.data-active]="activeLang() === lang.code ? '' : null"
                 crCursorTarget
               >

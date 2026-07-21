@@ -56,13 +56,19 @@
 .cr-shell__nav a {
   color: currentColor;
   text-decoration: none;
-  transition: opacity var(--cr-motion-duration-base)
-    var(--cr-motion-easing-standard);
+  transition:
+    opacity var(--cr-motion-duration-base) var(--cr-motion-easing-standard),
+    font-variation-settings var(--cr-motion-duration-base)
+      var(--cr-motion-easing-standard);
 }
 
+/* Hover emphasis via Roboto Flex's GRAD axis — apparent weight rises with
+   ZERO glyph-width change, so the nav row never reflows (the classic
+   hover-bold layout-shift bug this axis exists to solve). */
 .cr-shell__nav a:hover {
   color: currentColor;
   opacity: 0.6;
+  font-variation-settings: 'GRAD' var(--cr-font-grade-emphasis);
 }
 
 /* Login/book duplicates that only exist for the mobile menu panel. */

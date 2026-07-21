@@ -2,17 +2,22 @@ import { Component, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { describe, beforeEach, expect, it } from 'vitest';
 
-import { TextDirective } from './text.directive';
+import { CrText } from './text.directive';
 
 @Component({
-  imports: [TextDirective],
+  imports: [CrText],
   template: `
-    <h2 crText="title">Role only</h2>
+    <h2 crText font="title">Role only</h2>
     <span crText bold>Marker only, bold sugar</span>
-    <em crText="footnote" italic monospacedDigit underline>Bare booleans</em>
-    <strong crText="body" fontWeight="medium" bold>Explicit beats sugar</strong>
+    <em crText font="footnote" italic monospacedDigit underline>
+      Bare booleans
+    </em>
+    <strong crText font="body" fontWeight="medium" bold>
+      Explicit beats sugar
+    </strong>
     <p
-      crText="body"
+      crText
+      font="body"
       fontWeight="semibold"
       fontDesign="heading"
       fontWidth="expanded"
@@ -30,7 +35,7 @@ class HostComponent {
   readonly underline = signal(false);
 }
 
-describe('TextDirective', () => {
+describe('CrText', () => {
   beforeEach(() => {
     TestBed.configureTestingModule({ imports: [HostComponent] });
   });
@@ -43,7 +48,7 @@ describe('TextDirective', () => {
     return { fixture, query };
   }
 
-  it('stamps the role as data-text and omits absent modifiers entirely', () => {
+  it('stamps .font() as data-text and omits absent modifiers entirely', () => {
     const { query } = render();
     const heading = query('h2');
     expect(heading.getAttribute('data-text')).toBe('title');
@@ -65,7 +70,7 @@ describe('TextDirective', () => {
     }
   });
 
-  it('bare crText is a marker: no data-text, modifiers still apply', () => {
+  it('bare crText is the Text() marker: no data-text, modifiers still apply', () => {
     const { query } = render();
     const marker = query('span');
     expect(marker.hasAttribute('data-text')).toBe(false);

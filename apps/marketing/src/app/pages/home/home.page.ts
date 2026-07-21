@@ -11,7 +11,7 @@ import {
 } from '@angular/core';
 import { TranslocoDirective } from '@jsverse/transloco';
 import { CursorTargetDirective } from '@creativo/shared/cursor';
-import { Button } from '@creativo/shared/ui';
+import { Button, CrText } from '@creativo/shared/ui';
 import { ServicesPage } from '../services/services.page';
 import { LocationsComponent } from './locations/locations.component';
 import { TeamShowcaseComponent } from './team-showcase/team-showcase.component';
@@ -21,6 +21,7 @@ import { WorkGalleryComponent } from './work-gallery/work-gallery.component';
   selector: 'cr-home-page',
   imports: [
     Button,
+    CrText,
     CursorTargetDirective,
     LocationsComponent,
     ServicesPage,
