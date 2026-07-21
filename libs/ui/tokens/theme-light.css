@@ -1,0 +1,40 @@
+/* ════════════════════════════════════════════════════════════════
+   libs/ui/tokens/theme-light.css — v2 palette, verbatim values
+   Black-and-white brand ONLY — v2's alternate blue-brand theme variant is
+   deliberately NOT ported. All color routes through --sys-color-*, so a
+   future brand is one override block, not a refactor.
+   ════════════════════════════════════════════════════════════════ */
+@layer sys-tokens {
+  :root {
+    color-scheme: light;
+    --sys-color-background: #ffffff;
+    --sys-color-foreground: #121212;
+    --sys-color-surface: #ffffff; /* v2 card */
+    --sys-color-surface-secondary: #f7f7f7; /* v2 secondary/muted */
+    --sys-color-primary: #121212;
+    --sys-color-on-primary: #ffffff;
+    --sys-color-secondary-label: #666666; /* v2 muted-foreground */
+    --sys-color-accent: #f26b22;
+    --sys-color-on-accent: #ffffff;
+    --sys-color-destructive: #c62828;
+    --sys-color-success: #1f8a5f;
+    --sys-color-warning: #b26a00;
+    --sys-color-promo: #c2710c;
+    --sys-color-on-promo: #241a00;
+    --sys-color-ring: #121212;
+    --sys-separator-strength: 4%; /* v2 --border-strength light */
+    --sys-color-separator: color-mix(
+      in srgb,
+      var(--sys-color-foreground) var(--sys-separator-strength),
+      var(--sys-color-background)
+    );
+    --sys-color-scrim: color-mix(in srgb, #000 45%, transparent);
+    --sys-color-media-scrim: color-mix(in srgb, #000 70%, transparent);
+    /* v2 alpha foundations (light) */
+    --sys-alpha-fill: 4%;
+    --sys-alpha-fill-hover: 6.5%;
+    --sys-alpha-press: 9%;
+    --sys-alpha-interactive: 7%;
+    --sys-alpha-segment-selected: 14%;
+  }
+}

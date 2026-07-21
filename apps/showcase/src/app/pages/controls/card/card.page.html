@@ -1,0 +1,82 @@
+<a
+  routerLink="/controls"
+  uiText
+  [uiFont]="'callout'"
+  [uiWeight]="'regular'"
+  [uiForeground]="'accent'"
+  class="page__back"
+>
+  ← All controls
+</a>
+
+<h1 uiText [uiFont]="'largeTitle'" [uiWeight]="'bold'">Card</h1>
+<p
+  uiText
+  [uiFont]="'body'"
+  [uiWeight]="'regular'"
+  [uiForeground]="'secondary'"
+  class="page__intro"
+>
+  <code>ui-card</code> — uiTone × uiInteractive (at uiPadding=comfortable), then
+  the full uiPadding scale (at uiTone=plain, uiInteractive=false).
+</p>
+
+<section class="page__section">
+  <h2 uiText [uiFont]="'title2'" [uiWeight]="'bold'">Tone × Interactive</h2>
+  <ui-stack uiAxis="vertical" uiGap="comfortable">
+    @for (tone of tones; track tone) {
+    <ui-stack uiAxis="horizontal" uiGap="regular" uiAlign="start">
+      @for (interactive of interactiveStates; track interactive) {
+      <ui-stack uiAxis="vertical" uiGap="tight" uiAlign="start">
+        <ui-card
+          [uiTone]="tone"
+          [uiInteractive]="interactive"
+          class="card-demo"
+        >
+          <h3 uiText [uiFont]="'headline'" [uiWeight]="'semibold'">Card</h3>
+          <p
+            uiText
+            [uiFont]="'footnote'"
+            [uiWeight]="'medium'"
+            [uiForeground]="'secondary'"
+          >
+            Some supporting body copy for this card.
+          </p>
+        </ui-card>
+        <p
+          uiText
+          [uiFont]="'caption'"
+          [uiWeight]="'medium'"
+          [uiForeground]="'secondary'"
+        >
+          tone={{ tone }} interactive={{ interactive }}
+        </p>
+      </ui-stack>
+      }
+    </ui-stack>
+    }
+  </ui-stack>
+</section>
+
+<section class="page__section">
+  <h2 uiText [uiFont]="'title2'" [uiWeight]="'bold'">Padding scale</h2>
+  <ui-stack uiAxis="horizontal" uiGap="comfortable" uiAlign="start">
+    @for (padding of paddings; track padding) {
+    <ui-stack uiAxis="vertical" uiGap="tight" uiAlign="start">
+      <ui-card [uiPadding]="padding" class="card-demo">
+        <p uiText [uiFont]="'caption'" [uiWeight]="'medium'" class="card-fill">
+          content
+        </p>
+      </ui-card>
+      <p
+        uiText
+        [uiFont]="'caption'"
+        [uiWeight]="'medium'"
+        [uiForeground]="'secondary'"
+      >
+        uiPadding={{ padding }}
+      </p>
+    </ui-stack>
+    }
+  </ui-stack>
+</section>

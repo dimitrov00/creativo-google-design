@@ -1,32 +1,72 @@
-import { Component } from '@angular/core';
+import { ChangeDetectionStrategy, Component } from '@angular/core';
+import type {
+  UiFontStyle,
+  UiFontWeight,
+  UiPaddingScale,
+  UiRadiusScale,
+} from '@creativo/ui/modifiers';
 import {
-  CrText,
-  FontTextStyle,
-  FontWeight,
-  ForegroundStyle,
-} from '@creativo/shared/ui';
+  UiPaddingDirective,
+  UiRadiusDirective,
+  UiTextDirective,
+} from '@creativo/ui/modifiers';
+
+interface ControlSizeSample {
+  readonly name: 'compact' | 'regular' | 'prominent';
+  readonly px: number;
+}
+
+/** [uiWeight] is required alongside [uiFont] — mirrors each role's intrinsic weight from tokens.css. */
+const WEIGHT_BY_ROLE: Record<UiFontStyle, UiFontWeight> = {
+  extraLargeTitle: 'bold',
+  largeTitle: 'bold',
+  title: 'bold',
+  title2: 'bold',
+  title3: 'semibold',
+  headline: 'semibold',
+  body: 'regular',
+  callout: 'regular',
+  subheadline: 'medium',
+  footnote: 'medium',
+  caption: 'medium',
+};
 
 @Component({
   selector: 'cr-tokens-page',
-  imports: [CrText],
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [UiTextDirective, UiPaddingDirective, UiRadiusDirective],
   templateUrl: './tokens.page.html',
   styleUrl: './tokens.page.css',
 })
 export class TokensPage {
   protected readonly colors = [
     'background',
-    'surface',
     'foreground',
+    'surface',
+    'surface-secondary',
+    'primary',
     'accent',
-    'highlight',
-    'highlight-foreground',
-    'border',
-    'focus-ring',
-    'link',
-    'link-hover',
+    'destructive',
+    'success',
+    'warning',
   ];
 
-  protected readonly spacing = [
+  /** Rendered smallest→largest via `[uiFont]`'s SwiftUI text roles. */
+  protected readonly textRoles: UiFontStyle[] = [
+    'caption',
+    'footnote',
+    'subheadline',
+    'callout',
+    'body',
+    'headline',
+    'title3',
+    'title2',
+    'title',
+    'largeTitle',
+    'extraLargeTitle',
+  ];
+
+  protected readonly spacing: UiPaddingScale[] = [
     'none',
     'tight',
     'compact',
@@ -35,55 +75,23 @@ export class TokensPage {
     'loose',
     'spacious',
   ];
-  protected readonly textWeights: FontWeight[] = [
+
+  protected readonly radii: UiRadiusScale[] = [
+    'subtle',
     'regular',
-    'medium',
-    'semibold',
-    'bold',
+    'prominent',
+    'capsule',
   ];
-  protected readonly textTones: ForegroundStyle[] = [
-    'primary',
-    'secondary',
-    'tertiary',
-    'accent',
-    'danger',
-    'success',
-    'warning',
+
+  /** px equivalents at --sys-density: 1 (density="regular"), per tokens.css's own comments. */
+  protected readonly controlSizes: ControlSizeSample[] = [
+    { name: 'compact', px: 36 },
+    { name: 'regular', px: 44 },
+    { name: 'prominent', px: 52 },
   ];
-  /** Rendered smallest→largest via `CrText`'s `font` roles (typography.css). */
-  protected readonly textRoles: FontTextStyle[] = [
-    'eyebrow',
-    'caption',
-    'footnote',
-    'subheadline',
-    'body',
-    'callout',
-    'headline',
-    'title3',
-    'title2',
-    'largeTitle',
-    'title',
-    'extraLargeTitle',
-    'display',
-  ];
-  // Kebab-cased to match the actual generated CSS custom property name
-  // (Style Dictionary's nameKebab transform turns the "extraLarge" token
-  // key into --cr-radius-extra-large) — unlike ButtonSize/InputSize's
-  // "extraLarge", which is this repo's own literal data-size attribute
-  // value, never run through that transform.
-  protected readonly radii = [
-    'none',
-    'small',
-    'regular',
-    'large',
-    'extra-large',
-    'full',
-  ];
-  protected readonly elevations = ['0', '1', '2', '3', '4', '5'];
-  protected readonly easings = [
-    'standard',
-    'decelerate',
-    'accelerate',
-    'emphasized',
-  ];
+
+  protected weightFor(role: UiFontStyle): UiFontWeight {
+    // eslint-disable-next-line security/detect-object-injection -- `role` is always one of the closed UiFontStyle union values from `textRoles`, never external input.
+    return WEIGHT_BY_ROLE[role];
+  }
 }

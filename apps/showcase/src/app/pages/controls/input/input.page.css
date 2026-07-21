@@ -1,0 +1,26 @@
+:host {
+  display: block;
+  max-inline-size: 960px;
+}
+
+.page__back {
+  display: inline-block;
+  margin-block-end: var(--sys-space-regular);
+  text-decoration: none;
+}
+
+.page__intro {
+  margin-block-end: var(--sys-space-loose);
+}
+
+.page__section {
+  margin-block-end: var(--sys-space-spacious);
+}
+
+.page__section h2 {
+  margin-block-end: var(--sys-space-compact);
+}
+
+.field-wrap {
+  inline-size: 220px;
+}

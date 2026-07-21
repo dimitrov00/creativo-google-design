@@ -1,0 +1,31 @@
+<h1 uiText [uiFont]="'largeTitle'" [uiWeight]="'bold'">Controls</h1>
+<p
+  uiText
+  [uiFont]="'body'"
+  [uiWeight]="'regular'"
+  [uiForeground]="'secondary'"
+  class="page__intro"
+>
+  Every control in <code>@creativo/ui/controls</code> — one living-spec page per
+  component, exhaustively demonstrating each variant, size and state.
+</p>
+
+<div class="controls__grid">
+  @for (control of controls; track control.slug) {
+  <a [routerLink]="['/controls', control.slug]" class="controls__link">
+    <ui-card uiTone="plain" [uiInteractive]="true">
+      <h2 uiText [uiFont]="'headline'" [uiWeight]="'semibold'">
+        {{ control.name }}
+      </h2>
+      <p
+        uiText
+        [uiFont]="'footnote'"
+        [uiWeight]="'medium'"
+        [uiForeground]="'secondary'"
+      >
+        /controls/{{ control.slug }}
+      </p>
+    </ui-card>
+  </a>
+  }
+</div>

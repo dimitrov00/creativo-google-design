@@ -1,0 +1,94 @@
+/* ════════════════════════════════════════════════════════════════
+   libs/ui/tokens/tokens.css — system tokens (theme-independent)
+   Naming: SwiftUI semantic scales. Scale vocabulary (NO t-shirt sizes):
+   none · tight · compact · regular · comfortable · loose · spacious
+   Control emphasis: subtle · regular · prominent · capsule
+   ════════════════════════════════════════════════════════════════ */
+@layer sys-tokens {
+  :root {
+    /* ── Typography: families (v2 parity: Onest / DM Sans / Geist Mono) ── */
+    --sys-font-family-display: 'Onest Variable', system-ui, sans-serif;
+    --sys-font-family-text: 'DM Sans', system-ui, sans-serif;
+    --sys-font-family-mono: 'Geist Mono', ui-monospace, monospace;
+
+    /* ── Typography: SwiftUI text roles (size/line-height ← v2 heading/text ladder) ── */
+    --sys-font-extraLargeTitle: 800 clamp(2.125rem, 5vw, 2.75rem)/1.02
+      var(--sys-font-family-display);
+    --sys-font-largeTitle: 800 2.25rem/0.96 var(--sys-font-family-display); /* v2 heading, extra large tier */
+    --sys-font-title: 700 1.75rem/1.08 var(--sys-font-family-display); /* v2 heading, large tier, 28px */
+    --sys-font-title2: 700 1.5rem/1.1 var(--sys-font-family-display); /* v2 heading, medium tier */
+    --sys-font-title3: 600 1.25rem/1.2 var(--sys-font-family-display); /* v2 heading, small tier */
+    --sys-font-headline: 600 1.125rem/1.3 var(--sys-font-family-display); /* v2 heading, extra small tier */
+    --sys-font-body: 400 0.9375rem/1.5 var(--sys-font-family-text); /* v2 text, large tier, 15px */
+    --sys-font-callout: 400 0.875rem/1.45 var(--sys-font-family-text); /* v2 label, large tier, 14px */
+    --sys-font-subheadline: 500 0.8125rem/1.4 var(--sys-font-family-text); /* v2 label, 13px */
+    --sys-font-footnote: 500 0.75rem/1.35 var(--sys-font-family-text); /* v2 label, small tier, 12px */
+    --sys-font-caption: 500 0.6875rem/1.3 var(--sys-font-family-text); /* v2 label, extra small tier, 11px */
+
+    --sys-tracking-largeTitle: -0.075rem; /* v2 -1.2px */
+    --sys-tracking-title: -0.0375rem; /* v2 -0.6px */
+    --sys-tracking-caption: 0.02em;
+
+    /* ── Spacing: density-aware scale (v2 --spacing × --spacing-scale) ── */
+    --sys-density: 1; /* [data-density] overrides */
+    --sys-space-unit: calc(0.25rem * var(--sys-density));
+    --sys-space-none: 0;
+    --sys-space-tight: var(--sys-space-unit); /*  4px */
+    --sys-space-compact: calc(var(--sys-space-unit) * 2); /*  8px */
+    --sys-space-regular: calc(var(--sys-space-unit) * 4); /* 16px — v2 gutter */
+    --sys-space-comfortable: calc(var(--sys-space-unit) * 6); /* 24px */
+    --sys-space-loose: calc(var(--sys-space-unit) * 8); /* 32px */
+    --sys-space-spacious: calc(var(--sys-space-unit) * 12); /* 48px */
+
+    /* ── Controls (v2: sm 36 / md 44 HIG tap / lg 52) ── */
+    --control-size-compact: calc(var(--sys-space-unit) * 9);
+    --control-size-regular: calc(var(--sys-space-unit) * 11);
+    --control-size-prominent: calc(var(--sys-space-unit) * 13);
+
+    /* ── Radii (v2: --radius 0.75rem × --radius-scale 0.85) ── */
+    --sys-radius-base: 0.75rem;
+    --sys-radius-scale: 0.85;
+    --control-radius-subtle: calc(
+      var(--sys-radius-base) * var(--sys-radius-scale) * 0.5
+    );
+    --control-radius-regular: calc(
+      var(--sys-radius-base) * var(--sys-radius-scale)
+    );
+    --control-radius-prominent: calc(
+      var(--sys-radius-base) * var(--sys-radius-scale) * 1.75
+    );
+    --control-radius-capsule: 9999px;
+
+    /* ── Containment (v2 parity) ── */
+    --sys-container-content: 40rem; /* v2 --app-max-width */
+    --sys-container-console: 48rem;
+    --sys-container-drawer: 36rem;
+    --sys-container-sidebar: 17rem;
+
+    /* ── Elevation ── */
+    --sys-elevation-raised:
+      0 1px 2px rgb(0 0 0 / 0.06), 0 2px 8px rgb(0 0 0 / 0.04);
+    --sys-elevation-overlay: 0 8px 30px rgb(0 0 0 / 0.12);
+
+    /* ── Motion (v2: 200ms default / 150 fast / 300 medium) ── */
+    --sys-motion-duration-instant: 150ms;
+    --sys-motion-duration-regular: 200ms;
+    --sys-motion-duration-deliberate: 300ms;
+    --sys-motion-ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+    --sys-motion-ease-emphasized: cubic-bezier(0.22, 1, 0.36, 1);
+
+    /* ── Layering (v2 z-ladder) ── */
+    --sys-layer-header: 60;
+    --sys-layer-banner: 70;
+    --sys-layer-overlay: 100;
+    --sys-layer-alert: 110;
+    --sys-layer-popover: 200;
+  }
+
+  :root[data-density='compact'] {
+    --sys-density: 0.92;
+  }
+  :root[data-density='spacious'] {
+    --sys-density: 1.08;
+  }
+}

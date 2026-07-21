@@ -1,0 +1,53 @@
+@layer sys-components {
+  .ui-stack {
+    display: flex;
+  }
+
+  .ui-stack[data-axis='vertical'] {
+    flex-direction: column;
+  }
+  .ui-stack[data-axis='horizontal'] {
+    flex-direction: row;
+  }
+  .ui-stack[data-axis='z'] {
+    display: grid;
+  }
+  .ui-stack[data-axis='z'] > * {
+    grid-area: 1 / 1;
+  }
+
+  .ui-stack[data-align='start'] {
+    align-items: flex-start;
+  }
+  .ui-stack[data-align='center'] {
+    align-items: center;
+  }
+  .ui-stack[data-align='end'] {
+    align-items: flex-end;
+  }
+  .ui-stack[data-align='stretch'] {
+    align-items: stretch;
+  }
+
+  .ui-stack[data-gap='none'] {
+    gap: var(--sys-space-none);
+  }
+  .ui-stack[data-gap='tight'] {
+    gap: var(--sys-space-tight);
+  }
+  .ui-stack[data-gap='compact'] {
+    gap: var(--sys-space-compact);
+  }
+  .ui-stack[data-gap='regular'] {
+    gap: var(--sys-space-regular);
+  }
+  .ui-stack[data-gap='comfortable'] {
+    gap: var(--sys-space-comfortable);
+  }
+  .ui-stack[data-gap='loose'] {
+    gap: var(--sys-space-loose);
+  }
+  .ui-stack[data-gap='spacious'] {
+    gap: var(--sys-space-spacious);
+  }
+}

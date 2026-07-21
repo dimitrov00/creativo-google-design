@@ -1,0 +1,86 @@
+<a
+  routerLink="/controls"
+  uiText
+  [uiFont]="'callout'"
+  [uiWeight]="'regular'"
+  [uiForeground]="'accent'"
+  class="page__back"
+>
+  ← All controls
+</a>
+
+<h1 uiText [uiFont]="'largeTitle'" [uiWeight]="'bold'">Sheet</h1>
+<p
+  uiText
+  [uiFont]="'body'"
+  [uiWeight]="'regular'"
+  [uiForeground]="'secondary'"
+  class="page__intro"
+>
+  <code>ui-sheet</code> — uiOpen × uiPlacement. Its host CSS is
+  <code>position: fixed; inset: 0;</code>, so opening any sheet below covers the
+  full viewport — that's the real overlay behavior, not a demo artifact.
+</p>
+
+<section class="page__section">
+  <h2 uiText [uiFont]="'title2'" [uiWeight]="'bold'">uiPlacement = bottom</h2>
+  <button uiButton uiVariant="bordered" (click)="bottomOpen.set(true)">
+    Open bottom sheet
+  </button>
+  <ui-sheet [uiOpen]="bottomOpen()" uiPlacement="bottom">
+    <h3 uiText [uiFont]="'title3'" [uiWeight]="'semibold'">Bottom sheet</h3>
+    <p
+      uiText
+      [uiFont]="'body'"
+      [uiWeight]="'regular'"
+      [uiForeground]="'secondary'"
+    >
+      uiPlacement=bottom
+    </p>
+    <button uiButton uiVariant="prominent" (click)="bottomOpen.set(false)">
+      Close
+    </button>
+  </ui-sheet>
+</section>
+
+<section class="page__section">
+  <h2 uiText [uiFont]="'title2'" [uiWeight]="'bold'">uiPlacement = center</h2>
+  <button uiButton uiVariant="bordered" (click)="centerOpen.set(true)">
+    Open center sheet
+  </button>
+  <ui-sheet [uiOpen]="centerOpen()" uiPlacement="center">
+    <h3 uiText [uiFont]="'title3'" [uiWeight]="'semibold'">Center sheet</h3>
+    <p
+      uiText
+      [uiFont]="'body'"
+      [uiWeight]="'regular'"
+      [uiForeground]="'secondary'"
+    >
+      uiPlacement=center
+    </p>
+    <button uiButton uiVariant="prominent" (click)="centerOpen.set(false)">
+      Close
+    </button>
+  </ui-sheet>
+</section>
+
+<section class="page__section">
+  <h2 uiText [uiFont]="'title2'" [uiWeight]="'bold'">uiPlacement = end</h2>
+  <button uiButton uiVariant="bordered" (click)="endOpen.set(true)">
+    Open end sheet
+  </button>
+  <ui-sheet [uiOpen]="endOpen()" uiPlacement="end">
+    <h3 uiText [uiFont]="'title3'" [uiWeight]="'semibold'">End sheet</h3>
+    <p
+      uiText
+      [uiFont]="'body'"
+      [uiWeight]="'regular'"
+      [uiForeground]="'secondary'"
+    >
+      uiPlacement=end
+    </p>
+    <button uiButton uiVariant="prominent" (click)="endOpen.set(false)">
+      Close
+    </button>
+  </ui-sheet>
+</section>

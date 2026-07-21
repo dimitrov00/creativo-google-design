@@ -1,0 +1,71 @@
+@layer sys-components {
+  .ui-sheet {
+    position: fixed;
+    inset: 0;
+    z-index: var(--sys-layer-overlay);
+    display: flex;
+    background: var(--sys-color-scrim);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity var(--sys-motion-duration-regular)
+      var(--sys-motion-ease-standard);
+  }
+
+  .ui-sheet[data-open] {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  .ui-sheet__surface {
+    background: var(--sys-color-surface);
+    box-shadow: var(--sys-elevation-overlay);
+    margin: auto 0 0;
+    inline-size: 100%;
+    max-inline-size: var(--sys-container-drawer);
+    border-start-start-radius: var(--control-radius-prominent);
+    border-start-end-radius: var(--control-radius-prominent);
+    padding: var(--sys-space-comfortable);
+    transform: translateY(100%);
+    transition: transform var(--sys-motion-duration-deliberate)
+      var(--sys-motion-ease-emphasized);
+  }
+
+  .ui-sheet[data-open] .ui-sheet__surface {
+    transform: translateY(0);
+  }
+
+  /* Placement: center */
+  .ui-sheet[data-placement='center'] {
+    align-items: center;
+    justify-content: center;
+  }
+  .ui-sheet[data-placement='center'] .ui-sheet__surface {
+    margin: auto;
+    max-inline-size: var(--sys-container-drawer);
+    border-radius: var(--control-radius-prominent);
+    transform: scale(0.95);
+    opacity: 0;
+  }
+  .ui-sheet[data-placement='center'][data-open] .ui-sheet__surface {
+    transform: scale(1);
+    opacity: 1;
+  }
+
+  /* Placement: end */
+  .ui-sheet[data-placement='end'] {
+    justify-content: flex-end;
+  }
+  .ui-sheet[data-placement='end'] .ui-sheet__surface {
+    margin: 0 0 0 auto;
+    inline-size: auto;
+    max-inline-size: var(--sys-container-sidebar);
+    block-size: 100%;
+    border-radius: 0;
+    border-start-start-radius: var(--control-radius-prominent);
+    border-end-start-radius: var(--control-radius-prominent);
+    transform: translateX(100%);
+  }
+  .ui-sheet[data-placement='end'][data-open] .ui-sheet__surface {
+    transform: translateX(0);
+  }
+}

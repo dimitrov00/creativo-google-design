@@ -1,0 +1,35 @@
+@layer sys-components {
+  .ui-avatar {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    flex-shrink: 0;
+    border-radius: var(--control-radius-capsule);
+    background: var(--sys-color-surface-secondary);
+    color: var(--sys-color-secondary-label);
+    font-weight: 700;
+  }
+
+  .ui-avatar[data-size='compact'] {
+    inline-size: var(--control-size-compact);
+    block-size: var(--control-size-compact);
+    font: var(--sys-font-footnote);
+  }
+  .ui-avatar[data-size='regular'] {
+    inline-size: var(--control-size-regular);
+    block-size: var(--control-size-regular);
+    font: var(--sys-font-callout);
+  }
+  .ui-avatar[data-size='prominent'] {
+    inline-size: var(--control-size-prominent);
+    block-size: var(--control-size-prominent);
+    font: var(--sys-font-title3);
+  }
+
+  .ui-avatar__image {
+    inline-size: 100%;
+    block-size: 100%;
+    object-fit: cover;
+  }
+}

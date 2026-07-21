@@ -1,0 +1,18 @@
+@layer sys-components {
+  .ui-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--sys-space-regular);
+    padding-inline: var(--sys-space-regular);
+    min-block-size: var(--control-size-prominent);
+    background: var(--sys-color-background);
+    border-block-end: 1px solid var(--sys-color-separator);
+  }
+
+  .ui-toolbar[data-sticky] {
+    position: sticky;
+    inset-block-start: 0;
+    z-index: var(--sys-layer-header);
+  }
+}

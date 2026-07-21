@@ -3,79 +3,81 @@
   max-inline-size: 960px;
 }
 
-.cr-tokens__section {
-  margin-block-end: var(--cr-space-spacious);
+.page__intro {
+  margin-block-end: var(--sys-space-loose);
 }
 
-.cr-tokens__section h2 {
-  font: var(--cr-text-headline);
-  margin-block-end: var(--cr-space-compact);
+.tokens__section {
+  margin-block-end: var(--sys-space-spacious);
 }
 
-.cr-tokens__row {
+.tokens__section h2 {
+  margin-block-end: var(--sys-space-compact);
+}
+
+.tokens__row {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--cr-space-comfortable);
-  margin-block-start: var(--cr-space-regular);
+  gap: var(--sys-space-comfortable);
+  margin-block-start: var(--sys-space-regular);
 }
 
-.cr-swatch,
-.cr-spacing-sample,
-.cr-radius-sample,
-.cr-elevation-sample,
-.cr-easing-sample {
+.tokens__swatch,
+.tokens__spacing-sample,
+.tokens__radius-sample,
+.tokens__control-size-sample {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: var(--cr-space-compact);
-  font: var(--cr-text-caption);
+  gap: var(--sys-space-compact);
 }
 
-.cr-swatch__color {
-  inline-size: 72px;
-  block-size: 48px;
-  border-radius: var(--cr-radius-small);
-  border: 1px solid var(--cr-color-border);
+.tokens__swatch p,
+.tokens__spacing-sample p,
+.tokens__radius-sample p,
+.tokens__control-size-sample p {
+  margin: 0;
 }
 
-.cr-spacing-sample__bar {
-  block-size: var(--cr-space-comfortable);
-  background: var(--cr-color-accent);
-  border-radius: var(--cr-radius-small);
-}
-
-.cr-radius-sample__box {
-  inline-size: 56px;
+.tokens__swatch-color {
+  inline-size: 88px;
   block-size: 56px;
-  background: var(--cr-color-accent);
+  border-radius: var(--control-radius-subtle);
+  border: 1px solid var(--sys-color-separator);
 }
 
-.cr-elevation-sample__box {
-  inline-size: 56px;
-  block-size: 56px;
-  border-radius: var(--cr-radius-regular);
-  background: var(--cr-color-surface);
-}
-
-.cr-easing-sample {
-  inline-size: 140px;
+.tokens__spacing-track {
+  inline-size: 200px;
+  /* Fixed to the largest step + a little breathing room, and clipped —
+     the bar's own size (padding-driven, see .tokens__spacing-bar) grows
+     past this for the larger steps, which is fine: this track is a
+     comparison frame, not a container the bar must fit inside. */
+  block-size: calc(var(--sys-space-spacious) + var(--sys-space-tight));
   overflow: hidden;
+  background: var(--sys-color-surface-secondary);
+  border-radius: var(--control-radius-subtle);
+  display: flex;
+  align-items: center;
 }
 
-.cr-easing-sample__dot {
-  inline-size: 16px;
-  block-size: 16px;
-  border-radius: var(--cr-radius-full);
-  background: var(--cr-color-accent);
-  transform: translateX(0);
-  transition-property: transform;
-  transition-duration: var(--cr-motion-duration-slower);
+.tokens__spacing-bar {
+  block-size: var(--sys-space-comfortable);
+  background: var(--sys-color-accent);
+  border-radius: var(--control-radius-subtle);
 }
 
-.cr-easing-sample:hover .cr-easing-sample__dot {
-  transform: translateX(96px);
+.tokens__radius-box {
+  inline-size: 64px;
+  block-size: 64px;
+  background: var(--sys-color-accent);
 }
 
-.cr-tokens__type-scale p {
-  margin: 0 0 var(--cr-space-compact);
+.tokens__control-size-box {
+  inline-size: 96px;
+  background: var(--sys-color-accent);
+  border-radius: var(--control-radius-regular);
+}
+
+.tokens__type-scale p {
+  margin: 0 0 var(--sys-space-compact);
 }

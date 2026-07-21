@@ -1,0 +1,48 @@
+<a
+  routerLink="/controls"
+  uiText
+  [uiFont]="'callout'"
+  [uiWeight]="'regular'"
+  [uiForeground]="'accent'"
+  class="page__back"
+>
+  ← All controls
+</a>
+
+<h1 uiText [uiFont]="'largeTitle'" [uiWeight]="'bold'">Skeleton</h1>
+<p
+  uiText
+  [uiFont]="'body'"
+  [uiWeight]="'regular'"
+  [uiForeground]="'secondary'"
+  class="page__intro"
+>
+  <code>ui-skeleton</code> — uiAnimation × uiRadius. Sized from the outside via
+  a wrapping <code>.skeleton-box</code> class (UiSkeleton itself takes no size
+  input).
+</p>
+
+<section class="page__section">
+  <h2 uiText [uiFont]="'title2'" [uiWeight]="'bold'">Animation × Radius</h2>
+  <ui-stack uiAxis="vertical" uiGap="comfortable">
+    @for (animation of animations; track animation) {
+    <ui-stack uiAxis="horizontal" uiGap="regular" uiAlign="center">
+      @for (radius of radii; track radius) {
+      <ui-stack uiAxis="vertical" uiGap="tight" uiAlign="start">
+        <div class="skeleton-box">
+          <ui-skeleton [uiAnimation]="animation" [uiRadius]="radius" />
+        </div>
+        <p
+          uiText
+          [uiFont]="'caption'"
+          [uiWeight]="'medium'"
+          [uiForeground]="'secondary'"
+        >
+          animation={{ animation }} radius={{ radius }}
+        </p>
+      </ui-stack>
+      }
+    </ui-stack>
+    }
+  </ui-stack>
+</section>

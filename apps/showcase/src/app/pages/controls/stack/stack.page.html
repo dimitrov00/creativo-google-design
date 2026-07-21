@@ -1,0 +1,107 @@
+<a
+  routerLink="/controls"
+  uiText
+  [uiFont]="'callout'"
+  [uiWeight]="'regular'"
+  [uiForeground]="'accent'"
+  class="page__back"
+>
+  ← All controls
+</a>
+
+<h1 uiText [uiFont]="'largeTitle'" [uiWeight]="'bold'">Stack</h1>
+<p
+  uiText
+  [uiFont]="'body'"
+  [uiWeight]="'regular'"
+  [uiForeground]="'secondary'"
+  class="page__intro"
+>
+  <code>ui-stack</code> — three inputs (uiAxis, uiGap, uiAlign) demonstrated one
+  at a time, each with the other two held at a sensible default, to keep the
+  full cross-product of all three legible.
+</p>
+
+<section class="page__section">
+  <h2 uiText [uiFont]="'title2'" [uiWeight]="'bold'">Axis</h2>
+  <ui-stack uiAxis="vertical" uiGap="comfortable">
+    @for (axis of axes; track axis) {
+    <ui-stack uiAxis="vertical" uiGap="tight" uiAlign="start">
+      <ui-stack
+        [uiAxis]="axis"
+        uiGap="compact"
+        uiAlign="center"
+        class="stack-demo"
+      >
+        <span class="stack-box">A</span>
+        <span class="stack-box">B</span>
+        <span class="stack-box">C</span>
+      </ui-stack>
+      <p
+        uiText
+        [uiFont]="'caption'"
+        [uiWeight]="'medium'"
+        [uiForeground]="'secondary'"
+      >
+        uiAxis={{ axis }}
+      </p>
+    </ui-stack>
+    }
+  </ui-stack>
+</section>
+
+<section class="page__section">
+  <h2 uiText [uiFont]="'title2'" [uiWeight]="'bold'">Gap</h2>
+  <ui-stack uiAxis="vertical" uiGap="comfortable">
+    @for (gap of gaps; track gap) {
+    <ui-stack uiAxis="vertical" uiGap="tight" uiAlign="start">
+      <ui-stack
+        uiAxis="horizontal"
+        [uiGap]="gap"
+        uiAlign="center"
+        class="stack-demo"
+      >
+        <span class="stack-box">A</span>
+        <span class="stack-box">B</span>
+        <span class="stack-box">C</span>
+      </ui-stack>
+      <p
+        uiText
+        [uiFont]="'caption'"
+        [uiWeight]="'medium'"
+        [uiForeground]="'secondary'"
+      >
+        uiGap={{ gap }}
+      </p>
+    </ui-stack>
+    }
+  </ui-stack>
+</section>
+
+<section class="page__section">
+  <h2 uiText [uiFont]="'title2'" [uiWeight]="'bold'">Align</h2>
+  <ui-stack uiAxis="vertical" uiGap="comfortable">
+    @for (align of aligns; track align) {
+    <ui-stack uiAxis="vertical" uiGap="tight" uiAlign="start">
+      <ui-stack
+        uiAxis="horizontal"
+        uiGap="compact"
+        [uiAlign]="align"
+        class="stack-demo stack-demo--align"
+      >
+        <span class="stack-box stack-box--short">A</span>
+        <span class="stack-box stack-box--tall">B</span>
+        <span class="stack-box stack-box--medium">C</span>
+      </ui-stack>
+      <p
+        uiText
+        [uiFont]="'caption'"
+        [uiWeight]="'medium'"
+        [uiForeground]="'secondary'"
+      >
+        uiAlign={{ align }}
+      </p>
+    </ui-stack>
+    }
+  </ui-stack>
+</section>

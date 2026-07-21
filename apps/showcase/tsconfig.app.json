@@ -10,6 +10,15 @@
   "exclude": ["src/**/*.spec.ts", "src/**/*.test.ts"],
   "references": [
     {
+      "path": "../../libs/ui/modifiers/tsconfig.lib.json"
+    },
+    {
+      "path": "../../libs/ui/tokens/tsconfig.lib.json"
+    },
+    {
+      "path": "../../libs/ui/controls/tsconfig.lib.json"
+    },
+    {
       "path": "../../libs/shared/ui/tsconfig.lib.json"
     },
     {

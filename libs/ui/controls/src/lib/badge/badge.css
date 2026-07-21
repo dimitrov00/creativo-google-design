@@ -1,0 +1,37 @@
+@layer sys-components {
+  .ui-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--sys-space-tight);
+    padding: var(--sys-space-tight) var(--sys-space-compact);
+    border-radius: var(--control-radius-capsule);
+    font: var(--sys-font-caption);
+    font-weight: 600;
+    letter-spacing: var(--sys-tracking-caption);
+  }
+
+  .ui-badge[data-tone='neutral'] {
+    background: var(--sys-color-surface-secondary);
+    color: var(--sys-color-foreground);
+  }
+  .ui-badge[data-tone='accent'] {
+    background: color-mix(in srgb, var(--sys-color-accent) 14%, transparent);
+    color: var(--sys-color-accent);
+  }
+  .ui-badge[data-tone='success'] {
+    background: color-mix(in srgb, var(--sys-color-success) 14%, transparent);
+    color: var(--sys-color-success);
+  }
+  .ui-badge[data-tone='warning'] {
+    background: color-mix(in srgb, var(--sys-color-warning) 14%, transparent);
+    color: var(--sys-color-warning);
+  }
+  .ui-badge[data-tone='destructive'] {
+    background: color-mix(
+      in srgb,
+      var(--sys-color-destructive) 14%,
+      transparent
+    );
+    color: var(--sys-color-destructive);
+  }
+}

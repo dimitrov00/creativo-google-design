@@ -30,8 +30,38 @@
         crCursorTargetLabel="View"
         >Cursor</a
       >
+      <a
+        routerLink="/controls"
+        routerLinkActive="cr-shell__nav-link--active"
+        crCursorTarget
+        crCursorTargetStyle="scale"
+        crCursorTargetLabel="View"
+        >Controls</a
+      >
     </nav>
-    <cr-theme-toggle />
+
+    <div class="cr-shell__ds-toggles" data-testid="design-system-toggles">
+      @for (density of densities; track density) {
+      <button
+        uiChip
+        [uiSelected]="preferences.density() === density"
+        [uiSize]="'compact'"
+        type="button"
+        (click)="preferences.setDensity(density)"
+      >
+        {{ density }}
+      </button>
+      }
+      <button
+        uiButton
+        [uiVariant]="'bordered'"
+        [uiSize]="'compact'"
+        type="button"
+        (click)="preferences.toggleTheme()"
+      >
+        {{ preferences.theme() === 'dark' ? 'Light' : 'Dark' }}
+      </button>
+    </div>
   </header>
 
   <main class="cr-shell__main">

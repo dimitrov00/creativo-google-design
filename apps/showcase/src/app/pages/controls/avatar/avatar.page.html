@@ -1,0 +1,49 @@
+<a
+  routerLink="/controls"
+  uiText
+  [uiFont]="'callout'"
+  [uiWeight]="'regular'"
+  [uiForeground]="'accent'"
+  class="page__back"
+>
+  ← All controls
+</a>
+
+<h1 uiText [uiFont]="'largeTitle'" [uiWeight]="'bold'">Avatar</h1>
+<p
+  uiText
+  [uiFont]="'body'"
+  [uiWeight]="'regular'"
+  [uiForeground]="'secondary'"
+  class="page__intro"
+>
+  <code>ui-avatar</code> — uiSize × (uiSrc present or null, falling back to
+  uiName's initial).
+</p>
+
+<section class="page__section">
+  <h2 uiText [uiFont]="'title2'" [uiWeight]="'bold'">Size × Image</h2>
+  <ui-stack uiAxis="vertical" uiGap="comfortable">
+    @for (withImage of withImageStates; track withImage) {
+    <ui-stack uiAxis="horizontal" uiGap="regular" uiAlign="center">
+      @for (size of sizes; track size) {
+      <ui-stack uiAxis="vertical" uiGap="tight" uiAlign="start">
+        <ui-avatar
+          [uiSrc]="withImage ? demoImage : null"
+          uiName="Ada Lovelace"
+          [uiSize]="size"
+        />
+        <p
+          uiText
+          [uiFont]="'caption'"
+          [uiWeight]="'medium'"
+          [uiForeground]="'secondary'"
+        >
+          size={{ size }} image={{ withImage }}
+        </p>
+      </ui-stack>
+      }
+    </ui-stack>
+    }
+  </ui-stack>
+</section>

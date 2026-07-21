@@ -1,0 +1,68 @@
+@layer sys-components {
+  .ui-card {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sys-space-compact);
+    border-radius: var(--control-radius-prominent);
+    background: var(--sys-color-surface);
+    box-shadow: var(--sys-elevation-raised);
+    color: var(--sys-color-foreground);
+  }
+
+  .ui-card[data-padding='none'] {
+    padding: var(--sys-space-none);
+  }
+  .ui-card[data-padding='tight'] {
+    padding: var(--sys-space-tight);
+  }
+  .ui-card[data-padding='compact'] {
+    padding: var(--sys-space-compact);
+  }
+  .ui-card[data-padding='regular'] {
+    padding: var(--sys-space-regular);
+  }
+  .ui-card[data-padding='comfortable'] {
+    padding: var(--sys-space-comfortable);
+  }
+  .ui-card[data-padding='loose'] {
+    padding: var(--sys-space-loose);
+  }
+  .ui-card[data-padding='spacious'] {
+    padding: var(--sys-space-spacious);
+  }
+
+  .ui-card[data-tone='accent'] {
+    background: color-mix(
+      in srgb,
+      var(--sys-color-accent) 8%,
+      var(--sys-color-surface)
+    );
+    box-shadow: inset 0 0 0 1px
+      color-mix(in srgb, var(--sys-color-accent) 30%, transparent);
+  }
+  .ui-card[data-tone='muted'] {
+    background: var(--sys-color-surface-secondary);
+    box-shadow: none;
+  }
+
+  .ui-card[data-interactive] {
+    cursor: pointer;
+    transition:
+      box-shadow var(--sys-motion-duration-regular)
+        var(--sys-motion-ease-standard),
+      transform var(--sys-motion-duration-instant)
+        var(--sys-motion-ease-standard);
+  }
+  .ui-card[data-interactive]:hover {
+    box-shadow: var(--sys-elevation-overlay);
+  }
+  .ui-card[data-interactive]:active {
+    transform: scale(0.99);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .ui-card[data-interactive]:active {
+      transform: none;
+    }
+  }
+}

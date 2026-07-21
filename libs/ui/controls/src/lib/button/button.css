@@ -1,0 +1,86 @@
+@layer sys-components {
+  .ui-button {
+    box-sizing: border-box;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--sys-space-compact);
+    min-block-size: var(--control-size-regular);
+    padding-inline: var(--sys-space-regular);
+    border: 0;
+    border-radius: var(--control-radius-regular);
+    font: var(--sys-font-callout);
+    font-weight: 600;
+    background: transparent;
+    color: var(--sys-color-foreground);
+    cursor: pointer;
+    text-decoration: none;
+    transition:
+      background-color var(--sys-motion-duration-regular)
+        var(--sys-motion-ease-standard),
+      transform var(--sys-motion-duration-instant)
+        var(--sys-motion-ease-standard);
+  }
+
+  /* Variants — SwiftUI button-style vocabulary */
+  .ui-button[data-variant='prominent'] {
+    /* v2 "default" */
+    background: var(--sys-color-primary);
+    color: var(--sys-color-on-primary);
+  }
+  .ui-button[data-variant='bordered'] {
+    /* v2 "outline" */
+    box-shadow: inset 0 0 0 1px var(--sys-color-separator);
+  }
+  .ui-button[data-variant='tinted'] {
+    /* v2 "soft" */
+    background: color-mix(in srgb, var(--sys-color-accent) 12%, transparent);
+    color: var(--sys-color-accent);
+  }
+  .ui-button[data-variant='plain'] {
+    color: var(--sys-color-secondary-label);
+  } /* v2 ghost */
+  .ui-button[data-variant='destructive'] {
+    background: var(--sys-color-destructive);
+    color: var(--sys-color-on-primary);
+  }
+
+  /* Sizes — semantic, not t-shirt */
+  .ui-button[data-size='compact'] {
+    min-block-size: var(--control-size-compact);
+    padding-inline: var(--sys-space-compact);
+    font: var(--sys-font-subheadline);
+    font-weight: 600;
+  }
+  .ui-button[data-size='prominent'] {
+    min-block-size: var(--control-size-prominent);
+    padding-inline: var(--sys-space-comfortable);
+    border-radius: var(--control-radius-prominent);
+  }
+  .ui-button[data-shape='capsule'] {
+    border-radius: var(--control-radius-capsule);
+  }
+
+  /* States — attributes only, never modifier classes */
+  .ui-button[data-state='loading'] {
+    pointer-events: none;
+    opacity: 0.65;
+  }
+  .ui-button:active:not(:disabled) {
+    transform: scale(0.98);
+  }
+  .ui-button:disabled {
+    opacity: 0.4;
+    pointer-events: none;
+  }
+  .ui-button:focus-visible {
+    outline: 2px solid var(--sys-color-ring);
+    outline-offset: 2px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .ui-button:active:not(:disabled) {
+      transform: none;
+    }
+  }
+}

@@ -1,0 +1,33 @@
+@layer sys-components {
+  .ui-spinner {
+    display: inline-block;
+    inline-size: 1.5rem;
+    block-size: 1.5rem;
+    border: 2px solid var(--sys-color-separator);
+    border-top-color: var(--sys-color-accent);
+    border-radius: var(--control-radius-capsule);
+    animation: ui-spinner-spin calc(var(--sys-motion-duration-deliberate) * 2)
+      linear infinite;
+  }
+
+  .ui-spinner[data-size='compact'] {
+    inline-size: 1rem;
+    block-size: 1rem;
+  }
+  .ui-spinner[data-size='prominent'] {
+    inline-size: 2.5rem;
+    block-size: 2.5rem;
+  }
+
+  @keyframes ui-spinner-spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .ui-spinner {
+      animation-duration: 1.5s;
+    }
+  }
+}

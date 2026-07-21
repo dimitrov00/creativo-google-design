@@ -1,4 +1,22 @@
-@layer cr-tokens, cr-reset, cr-base, cr-components, cr-utilities;
+/*
+ * All `@import` rules must be the very first rules in the stylesheet (a hard
+ * CSS requirement — anything else here, including a bare `@layer name;`
+ * pre-declaration, causes browsers to silently DROP every @import that
+ * follows it). So every @import lives in this one leading block, and their
+ * RELATIVE ORDER is what fixes cascade-layer priority: a layer name is
+ * registered the first time it's encountered, and later-registered layers
+ * always beat earlier ones regardless of selector specificity. The legacy
+ * `cr-*` system (imported first below) still powers the not-yet-migrated
+ * gallery/cursor-playground pages and shell nav; it's registered first so
+ * the new `sys-*` system (imported second) — what every control demo
+ * actually renders with — always wins wherever the two would otherwise
+ * collide (e.g. a bare `:focus-visible` fallback vs. `.ui-button:focus-visible`).
+ */
+@import '@fontsource-variable/onest';
+@import '@fontsource/dm-sans/400.css';
+@import '@fontsource/dm-sans/500.css';
+@import '@fontsource/geist-mono/400.css';
+@import '@fontsource/geist-mono/700.css';
 
 @import '../../../libs/shared/design-tokens/css/tokens.css';
 @import '../../../libs/shared/design-tokens/css/light.css';
@@ -10,21 +28,15 @@
 @import '../../../libs/shared/ui/src/lib/material/material.css';
 @import '../../../libs/shared/ui/src/lib/shape/shape.css';
 
-/* Element defaults live in cr-base so component styles can override them
-   without specificity games — unlayered they'd win over every layered rule
-   (see the a[crButton] color bug this caused in apps/marketing). */
-@layer cr-base {
-  body {
-    background: var(--cr-color-background);
-    color: var(--cr-color-foreground);
-    font: var(--cr-text-subheadline);
-    font-family: var(--cr-font-family-heading);
-    transition:
-      background-color var(--cr-motion-duration-base)
-        var(--cr-motion-easing-standard),
-      color var(--cr-motion-duration-base) var(--cr-motion-easing-standard);
-  }
+@import '../../../libs/ui/tokens/tokens.css';
+@import '../../../libs/ui/tokens/theme-light.css';
+@import '../../../libs/ui/tokens/theme-dark.css';
+@import '../../../libs/ui/modifiers/modifiers.css';
 
+/* Fallback chrome for the old pages/shell only — everything under the new
+   libs/ui/* system styles its own link/focus states via [data-*] selectors
+   in its own co-located CSS and doesn't depend on this. */
+@layer cr-base {
   a {
     color: var(--cr-color-link);
   }
@@ -39,13 +51,40 @@
   }
 }
 
-/*
- * View Transitions pseudo-elements (::view-transition-*) must live in a
- * global stylesheet — Angular's emulated encapsulation blocks pseudo-element
- * selectors from ever matching inside a component-scoped stylesheet, so
- * these can't move into app.css alongside AppComponent's other styles.
- * app.config.ts's withViewTransitions() call is the JS half of this pair.
- */
+@layer sys-reset {
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
+
+  body {
+    margin: 0;
+  }
+}
+
+@layer sys-base {
+  body {
+    background: var(--sys-color-background);
+    color: var(--sys-color-foreground);
+    font: var(--sys-font-body);
+    font-family: var(--sys-font-family-text);
+    transition:
+      background-color var(--sys-motion-duration-regular)
+        var(--sys-motion-ease-standard),
+      color var(--sys-motion-duration-regular) var(--sys-motion-ease-standard);
+  }
+
+  a {
+    color: var(--sys-color-accent);
+  }
+}
+
+/* View Transitions pseudo-elements (::view-transition-*) must live in a
+   global stylesheet — Angular's emulated encapsulation blocks pseudo-element
+   selectors from ever matching inside a component-scoped stylesheet, so
+   these can't move into app.css alongside AppComponent's other styles.
+   app.config.ts's withViewTransitions() call is the JS half of this pair. */
 ::view-transition-old(root),
 ::view-transition-new(root) {
   animation-duration: var(--cr-motion-duration-slow);

@@ -1,0 +1,33 @@
+:host {
+  display: block;
+  max-inline-size: 960px;
+}
+
+.page__back {
+  display: inline-block;
+  margin-block-end: var(--sys-space-regular);
+  text-decoration: none;
+}
+
+.page__intro {
+  margin-block-end: var(--sys-space-loose);
+}
+
+.page__section {
+  margin-block-end: var(--sys-space-spacious);
+}
+
+.page__section h2 {
+  margin-block-end: var(--sys-space-compact);
+}
+
+.toolbar-scroll {
+  block-size: 220px;
+  overflow-y: auto;
+  border: 1px solid var(--sys-color-separator);
+  border-radius: var(--control-radius-subtle);
+}
+
+.toolbar-scroll__content {
+  padding: var(--sys-space-regular);
+}

@@ -1,0 +1,88 @@
+<a
+  routerLink="/controls"
+  uiText
+  [uiFont]="'callout'"
+  [uiWeight]="'regular'"
+  [uiForeground]="'accent'"
+  class="page__back"
+>
+  ← All controls
+</a>
+
+<h1 uiText [uiFont]="'largeTitle'" [uiWeight]="'bold'">Button</h1>
+<p
+  uiText
+  [uiFont]="'body'"
+  [uiWeight]="'regular'"
+  [uiForeground]="'secondary'"
+  class="page__intro"
+>
+  <code>button[uiButton], a[uiButton]</code> — uiVariant × uiSize, plus
+  uiLoading, uiShape and native disabled state.
+</p>
+
+<section class="page__section">
+  <h2 uiText [uiFont]="'title2'" [uiWeight]="'bold'">Variant × Size</h2>
+  <ui-stack uiAxis="vertical" uiGap="comfortable">
+    @for (variant of variants; track variant) {
+    <ui-stack uiAxis="horizontal" uiGap="regular" uiAlign="end">
+      @for (size of sizes; track size) {
+      <ui-stack uiAxis="vertical" uiGap="tight" uiAlign="start">
+        <button uiButton [uiVariant]="variant" [uiSize]="size">Button</button>
+        <p
+          uiText
+          [uiFont]="'caption'"
+          [uiWeight]="'medium'"
+          [uiForeground]="'secondary'"
+        >
+          variant={{ variant }} size={{ size }}
+        </p>
+      </ui-stack>
+      }
+    </ui-stack>
+    }
+  </ui-stack>
+</section>
+
+<section class="page__section">
+  <h2 uiText [uiFont]="'title2'" [uiWeight]="'bold'">
+    Loading, shape and disabled
+  </h2>
+  <ui-stack uiAxis="horizontal" uiGap="regular" uiAlign="end">
+    <ui-stack uiAxis="vertical" uiGap="tight" uiAlign="start">
+      <button uiButton uiVariant="prominent" [uiLoading]="true">Loading</button>
+      <p
+        uiText
+        [uiFont]="'caption'"
+        [uiWeight]="'medium'"
+        [uiForeground]="'secondary'"
+      >
+        uiLoading=true
+      </p>
+    </ui-stack>
+    <ui-stack uiAxis="vertical" uiGap="tight" uiAlign="start">
+      <button uiButton uiVariant="bordered" uiShape="capsule">Capsule</button>
+      <p
+        uiText
+        [uiFont]="'caption'"
+        [uiWeight]="'medium'"
+        [uiForeground]="'secondary'"
+      >
+        uiShape=capsule
+      </p>
+    </ui-stack>
+    <ui-stack uiAxis="vertical" uiGap="tight" uiAlign="start">
+      <button uiButton uiVariant="prominent" uiShape="capsule" disabled>
+        Disabled
+      </button>
+      <p
+        uiText
+        [uiFont]="'caption'"
+        [uiWeight]="'medium'"
+        [uiForeground]="'secondary'"
+      >
+        disabled
+      </p>
+    </ui-stack>
+  </ui-stack>
+</section>

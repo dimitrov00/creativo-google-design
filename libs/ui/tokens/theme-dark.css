@@ -1,0 +1,37 @@
+/* ════════════════════════════════════════════════════════════════
+   libs/ui/tokens/theme-dark.css — v2 palette, verbatim values
+   Applied via [data-theme="dark"] on <html>, stamped pre-paint.
+   ════════════════════════════════════════════════════════════════ */
+@layer sys-tokens {
+  :root[data-theme='dark'] {
+    color-scheme: dark;
+    --sys-color-background: #000000;
+    --sys-color-foreground: #ededed;
+    --sys-color-surface: #171717;
+    --sys-color-surface-secondary: #242424;
+    --sys-color-primary: #ededed;
+    --sys-color-on-primary: #0d0d0d;
+    --sys-color-secondary-label: #8c8c8c;
+    --sys-color-accent: #f26b22;
+    --sys-color-on-accent: #ffffff;
+    --sys-color-destructive: #d32f2f;
+    --sys-color-success: #3fa56e;
+    --sys-color-warning: #d08a2c;
+    --sys-color-promo: #fbbf24;
+    --sys-color-on-promo: #241a00;
+    --sys-color-ring: #ededed;
+    --sys-separator-strength: 12%;
+    --sys-color-separator: color-mix(
+      in srgb,
+      var(--sys-color-foreground) var(--sys-separator-strength),
+      var(--sys-color-background)
+    );
+    --sys-color-scrim: color-mix(in srgb, #000 45%, transparent);
+    --sys-color-media-scrim: color-mix(in srgb, #000 70%, transparent);
+    --sys-alpha-fill: 8%;
+    --sys-alpha-fill-hover: 12%;
+    --sys-alpha-press: 16%;
+    --sys-alpha-interactive: 12%;
+    --sys-alpha-segment-selected: 20%;
+  }
+}

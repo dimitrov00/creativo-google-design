@@ -1,0 +1,103 @@
+/* ════════════════════════════════════════════════════════════════
+   libs/ui/modifiers/modifiers.css — [data-*] targets written by the ui*
+   modifier directives (§4). Zero styles live in TS; this file is the only
+   place these attributes are given meaning.
+   ════════════════════════════════════════════════════════════════ */
+@layer sys-components {
+  [data-font='extraLargeTitle'] {
+    font: var(--sys-font-extraLargeTitle);
+    letter-spacing: var(--sys-tracking-largeTitle);
+  }
+  [data-font='largeTitle'] {
+    font: var(--sys-font-largeTitle);
+    letter-spacing: var(--sys-tracking-largeTitle);
+  }
+  [data-font='title'] {
+    font: var(--sys-font-title);
+    letter-spacing: var(--sys-tracking-title);
+  }
+  [data-font='title2'] {
+    font: var(--sys-font-title2);
+  }
+  [data-font='title3'] {
+    font: var(--sys-font-title3);
+  }
+  [data-font='headline'] {
+    font: var(--sys-font-headline);
+  }
+  [data-font='body'] {
+    font: var(--sys-font-body);
+  }
+  [data-font='callout'] {
+    font: var(--sys-font-callout);
+  }
+  [data-font='subheadline'] {
+    font: var(--sys-font-subheadline);
+  }
+  [data-font='footnote'] {
+    font: var(--sys-font-footnote);
+  }
+  [data-font='caption'] {
+    font: var(--sys-font-caption);
+    letter-spacing: var(--sys-tracking-caption);
+    color: var(--sys-color-secondary-label);
+  }
+
+  [data-weight='regular'] {
+    font-weight: 400;
+  }
+  [data-weight='medium'] {
+    font-weight: 500;
+  }
+  [data-weight='semibold'] {
+    font-weight: 600;
+  }
+  [data-weight='bold'] {
+    font-weight: 700;
+  }
+
+  [data-foreground='secondary'] {
+    color: var(--sys-color-secondary-label);
+  }
+  [data-foreground='accent'] {
+    color: var(--sys-color-accent);
+  }
+  [data-foreground='destructive'] {
+    color: var(--sys-color-destructive);
+  }
+
+  [data-padding='none'] {
+    padding: var(--sys-space-none);
+  }
+  [data-padding='tight'] {
+    padding: var(--sys-space-tight);
+  }
+  [data-padding='compact'] {
+    padding: var(--sys-space-compact);
+  }
+  [data-padding='regular'] {
+    padding: var(--sys-space-regular);
+  }
+  [data-padding='comfortable'] {
+    padding: var(--sys-space-comfortable);
+  }
+  [data-padding='loose'] {
+    padding: var(--sys-space-loose);
+  }
+  [data-padding='spacious'] {
+    padding: var(--sys-space-spacious);
+  }
+
+  [data-radius='subtle'] {
+    border-radius: var(--control-radius-subtle);
+  }
+  [data-radius='regular'] {
+    border-radius: var(--control-radius-regular);
+  }
+  [data-radius='prominent'] {
+    border-radius: var(--control-radius-prominent);
+  }
+  [data-radius='capsule'] {
+    border-radius: var(--control-radius-capsule);
+  }
+}

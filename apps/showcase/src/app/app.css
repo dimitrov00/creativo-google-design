@@ -45,3 +45,9 @@
   flex: 1;
   padding: var(--cr-space-loose);
 }
+
+.cr-shell__ds-toggles {
+  display: flex;
+  align-items: center;
+  gap: var(--cr-space-tight);
+}

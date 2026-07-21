@@ -1,0 +1,50 @@
+@layer sys-components {
+  .ui-skeleton {
+    display: block;
+    background: var(--sys-color-surface-secondary);
+  }
+
+  .ui-skeleton[data-animation='shimmer'] {
+    background: linear-gradient(
+      90deg,
+      var(--sys-color-surface-secondary) 25%,
+      color-mix(
+          in srgb,
+          var(--sys-color-surface-secondary) 50%,
+          var(--sys-color-foreground) 6%
+        )
+        37%,
+      var(--sys-color-surface-secondary) 63%
+    );
+    background-size: 400% 100%;
+    animation: ui-skeleton-shimmer 1.4s ease infinite;
+  }
+  @keyframes ui-skeleton-shimmer {
+    0% {
+      background-position: 100% 50%;
+    }
+    100% {
+      background-position: 0 50%;
+    }
+  }
+
+  .ui-skeleton[data-animation='pulse'] {
+    animation: ui-skeleton-pulse 1.5s ease-in-out infinite;
+  }
+  @keyframes ui-skeleton-pulse {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.5;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .ui-skeleton[data-animation='shimmer'],
+    .ui-skeleton[data-animation='pulse'] {
+      animation: none;
+    }
+  }
+}

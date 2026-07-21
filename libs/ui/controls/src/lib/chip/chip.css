@@ -1,0 +1,44 @@
+@layer sys-components {
+  .ui-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--sys-space-tight);
+    border: 0;
+    border-radius: var(--control-radius-capsule);
+    padding-inline: var(--sys-space-regular);
+    padding-block: var(--sys-space-tight);
+    background: var(--sys-color-surface-secondary);
+    color: var(--sys-color-foreground);
+    font: var(--sys-font-subheadline);
+    font-weight: 600;
+    cursor: pointer;
+    transition:
+      background-color var(--sys-motion-duration-regular)
+        var(--sys-motion-ease-standard),
+      color var(--sys-motion-duration-regular) var(--sys-motion-ease-standard);
+  }
+
+  .ui-chip[data-size='compact'] {
+    padding-inline: var(--sys-space-compact);
+    font: var(--sys-font-footnote);
+  }
+  .ui-chip[data-size='prominent'] {
+    padding-inline: var(--sys-space-comfortable);
+    font: var(--sys-font-callout);
+  }
+
+  .ui-chip[data-selected] {
+    background: var(--sys-color-primary);
+    color: var(--sys-color-on-primary);
+  }
+
+  .ui-chip:focus-visible {
+    outline: 2px solid var(--sys-color-ring);
+    outline-offset: 2px;
+  }
+
+  .ui-chip:disabled {
+    opacity: 0.4;
+    pointer-events: none;
+  }
+}

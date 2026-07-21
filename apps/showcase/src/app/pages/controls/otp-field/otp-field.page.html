@@ -1,0 +1,47 @@
+<a
+  routerLink="/controls"
+  uiText
+  [uiFont]="'callout'"
+  [uiWeight]="'regular'"
+  [uiForeground]="'accent'"
+  class="page__back"
+>
+  ← All controls
+</a>
+
+<h1 uiText [uiFont]="'largeTitle'" [uiWeight]="'bold'">OTP Field</h1>
+<p
+  uiText
+  [uiFont]="'body'"
+  [uiWeight]="'regular'"
+  [uiForeground]="'secondary'"
+  class="page__intro"
+>
+  <code>ui-otp-field</code> — uiLength × uiInvalid. Each field is prefilled with
+  a digit or two so both the "filled" and "idle" slot states are visible; focus
+  a slot to see the "active" state.
+</p>
+
+<section class="page__section">
+  <h2 uiText [uiFont]="'title2'" [uiWeight]="'bold'">Length × Invalid</h2>
+  <ui-stack uiAxis="horizontal" uiGap="comfortable" uiAlign="start">
+    @for (demo of demos; track demo.length + '-' + demo.invalid) {
+    <ui-stack uiAxis="vertical" uiGap="tight" uiAlign="start">
+      <ui-otp-field
+        [uiLength]="demo.length"
+        [uiInvalid]="demo.invalid"
+        [value]="demo.value()"
+        (valueChange)="demo.value.set($event)"
+      />
+      <p
+        uiText
+        [uiFont]="'caption'"
+        [uiWeight]="'medium'"
+        [uiForeground]="'secondary'"
+      >
+        length={{ demo.length }} invalid={{ demo.invalid }}
+      </p>
+    </ui-stack>
+    }
+  </ui-stack>
+</section>

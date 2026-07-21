@@ -1,0 +1,61 @@
+<a
+  routerLink="/controls"
+  uiText
+  [uiFont]="'callout'"
+  [uiWeight]="'regular'"
+  [uiForeground]="'accent'"
+  class="page__back"
+>
+  ← All controls
+</a>
+
+<h1 uiText [uiFont]="'largeTitle'" [uiWeight]="'bold'">Toolbar</h1>
+<p
+  uiText
+  [uiFont]="'body'"
+  [uiWeight]="'regular'"
+  [uiForeground]="'secondary'"
+  class="page__intro"
+>
+  <code>ui-toolbar</code> — uiSticky.
+</p>
+
+<section class="page__section">
+  <h2 uiText [uiFont]="'title2'" [uiWeight]="'bold'">uiSticky = false</h2>
+  <ui-toolbar>
+    <span uiText [uiFont]="'headline'" [uiWeight]="'semibold'"
+      >Toolbar title</span
+    >
+    <ui-stack uiAxis="horizontal" uiGap="compact">
+      <button uiButton uiVariant="bordered" uiSize="compact">Action</button>
+      <button uiButton uiVariant="prominent" uiSize="compact">Primary</button>
+    </ui-stack>
+  </ui-toolbar>
+</section>
+
+<section class="page__section">
+  <h2 uiText [uiFont]="'title2'" [uiWeight]="'bold'">
+    uiSticky = true (scroll the box)
+  </h2>
+  <div class="toolbar-scroll">
+    <ui-toolbar [uiSticky]="true">
+      <span uiText [uiFont]="'headline'" [uiWeight]="'semibold'"
+        >Sticky toolbar</span
+      >
+      <button uiButton uiVariant="bordered" uiSize="compact">Action</button>
+    </ui-toolbar>
+    <div class="toolbar-scroll__content">
+      @for (line of scrollLines; track line) {
+      <p
+        uiText
+        [uiFont]="'body'"
+        [uiWeight]="'regular'"
+        [uiForeground]="'secondary'"
+      >
+        Scrollable content line {{ line }} — the toolbar above stays pinned to
+        the top of this box while you scroll.
+      </p>
+      }
+    </div>
+  </div>
+</section>

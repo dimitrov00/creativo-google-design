@@ -1,0 +1,42 @@
+@layer sys-components {
+  .ui-otp-field {
+    display: inline-flex;
+    gap: var(--sys-space-compact);
+  }
+
+  .ui-otp-field__slot {
+    box-sizing: border-box;
+    inline-size: var(--control-size-regular);
+    block-size: var(--control-size-regular);
+    text-align: center;
+    border: 1px solid var(--sys-color-separator);
+    border-radius: var(--control-radius-regular);
+    background: var(--sys-color-surface-secondary);
+    color: var(--sys-color-foreground);
+    font: var(--sys-font-title2);
+    font-family: var(--sys-font-family-mono);
+    font-weight: 700;
+    transition:
+      border-color var(--sys-motion-duration-regular)
+        var(--sys-motion-ease-standard),
+      box-shadow var(--sys-motion-duration-regular)
+        var(--sys-motion-ease-standard);
+  }
+
+  .ui-otp-field__slot[data-state='active'] {
+    border-color: var(--sys-color-accent);
+    box-shadow: 0 0 0 3px
+      color-mix(in srgb, var(--sys-color-accent) 20%, transparent);
+  }
+
+  .ui-otp-field[data-invalid] .ui-otp-field__slot {
+    border-color: var(--sys-color-destructive);
+  }
+
+  .ui-otp-field__slot:focus-visible {
+    outline: none;
+    border-color: var(--sys-color-accent);
+    box-shadow: 0 0 0 3px
+      color-mix(in srgb, var(--sys-color-accent) 20%, transparent);
+  }
+}

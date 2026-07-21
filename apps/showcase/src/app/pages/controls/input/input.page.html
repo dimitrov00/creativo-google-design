@@ -1,0 +1,129 @@
+<a
+  routerLink="/controls"
+  uiText
+  [uiFont]="'callout'"
+  [uiWeight]="'regular'"
+  [uiForeground]="'accent'"
+  class="page__back"
+>
+  ← All controls
+</a>
+
+<h1 uiText [uiFont]="'largeTitle'" [uiWeight]="'bold'">Input</h1>
+<p
+  uiText
+  [uiFont]="'body'"
+  [uiWeight]="'regular'"
+  [uiForeground]="'secondary'"
+  class="page__intro"
+>
+  <code>input[uiInput], textarea[uiInput]</code> — uiSize × uiInvalid, plus
+  native disabled state.
+</p>
+
+<section class="page__section">
+  <h2 uiText [uiFont]="'title2'" [uiWeight]="'bold'">Input — Size × Invalid</h2>
+  <ui-stack uiAxis="vertical" uiGap="comfortable">
+    @for (invalid of invalidStates; track invalid) {
+    <ui-stack uiAxis="horizontal" uiGap="regular" uiAlign="start">
+      @for (size of sizes; track size) {
+      <ui-stack
+        uiAxis="vertical"
+        uiGap="tight"
+        uiAlign="start"
+        class="field-wrap"
+      >
+        <input
+          uiInput
+          [uiSize]="size"
+          [uiInvalid]="invalid"
+          placeholder="Text"
+        />
+        <p
+          uiText
+          [uiFont]="'caption'"
+          [uiWeight]="'medium'"
+          [uiForeground]="'secondary'"
+        >
+          size={{ size }} invalid={{ invalid }}
+        </p>
+      </ui-stack>
+      }
+    </ui-stack>
+    }
+  </ui-stack>
+</section>
+
+<section class="page__section">
+  <h2 uiText [uiFont]="'title2'" [uiWeight]="'bold'">
+    Textarea — Size × Invalid
+  </h2>
+  <ui-stack uiAxis="vertical" uiGap="comfortable">
+    @for (invalid of invalidStates; track invalid) {
+    <ui-stack uiAxis="horizontal" uiGap="regular" uiAlign="start">
+      @for (size of sizes; track size) {
+      <ui-stack
+        uiAxis="vertical"
+        uiGap="tight"
+        uiAlign="start"
+        class="field-wrap"
+      >
+        <textarea
+          uiInput
+          [uiSize]="size"
+          [uiInvalid]="invalid"
+          placeholder="Text"
+          rows="3"
+        ></textarea>
+        <p
+          uiText
+          [uiFont]="'caption'"
+          [uiWeight]="'medium'"
+          [uiForeground]="'secondary'"
+        >
+          size={{ size }} invalid={{ invalid }}
+        </p>
+      </ui-stack>
+      }
+    </ui-stack>
+    }
+  </ui-stack>
+</section>
+
+<section class="page__section">
+  <h2 uiText [uiFont]="'title2'" [uiWeight]="'bold'">Disabled</h2>
+  <ui-stack uiAxis="horizontal" uiGap="regular" uiAlign="start">
+    <ui-stack
+      uiAxis="vertical"
+      uiGap="tight"
+      uiAlign="start"
+      class="field-wrap"
+    >
+      <input uiInput placeholder="Text" disabled />
+      <p
+        uiText
+        [uiFont]="'caption'"
+        [uiWeight]="'medium'"
+        [uiForeground]="'secondary'"
+      >
+        input disabled
+      </p>
+    </ui-stack>
+    <ui-stack
+      uiAxis="vertical"
+      uiGap="tight"
+      uiAlign="start"
+      class="field-wrap"
+    >
+      <textarea uiInput placeholder="Text" rows="3" disabled></textarea>
+      <p
+        uiText
+        [uiFont]="'caption'"
+        [uiWeight]="'medium'"
+        [uiForeground]="'secondary'"
+      >
+        textarea disabled
+      </p>
+    </ui-stack>
+  </ui-stack>
+</section>

@@ -1,118 +1,106 @@
-<section class="cr-tokens__section">
-  <h2>Color (semantic)</h2>
-  <div class="cr-tokens__row">
+<h1 uiText [uiFont]="'largeTitle'" [uiWeight]="'bold'">Design Tokens</h1>
+<p
+  uiText
+  [uiFont]="'body'"
+  [uiWeight]="'regular'"
+  [uiForeground]="'secondary'"
+  class="page__intro"
+>
+  The <code>sys-*</code> token system — every custom property consumed by
+  <code>@creativo/ui/*</code>. Live values follow the shell's theme/density
+  toggles.
+</p>
+
+<section class="tokens__section">
+  <h2 uiText [uiFont]="'title2'" [uiWeight]="'bold'">Colors</h2>
+  <div class="tokens__row">
     @for (color of colors; track color) {
-    <div class="cr-swatch">
+    <div class="tokens__swatch">
       <div
-        class="cr-swatch__color"
-        [style.background]="'var(--cr-color-' + color + ')'"
+        class="tokens__swatch-color"
+        [style.background]="'var(--sys-color-' + color + ')'"
       ></div>
-      <code>--cr-color-{{ color }}</code>
+      <p
+        uiText
+        [uiFont]="'caption'"
+        [uiWeight]="'medium'"
+        [uiForeground]="'secondary'"
+      >
+        --sys-color-{{ color }}
+      </p>
     </div>
     }
   </div>
 </section>
 
-<section class="cr-tokens__section">
-  <h2>Spacing</h2>
-  <div class="cr-tokens__row cr-tokens__row--spacing">
-    @for (step of spacing; track step) {
-    <div class="cr-spacing-sample">
-      <div
-        class="cr-spacing-sample__bar"
-        [style.inline-size]="'var(--cr-space-' + step + ')'"
-      ></div>
-      <code>--cr-space-{{ step }}</code>
-    </div>
-    }
-  </div>
-</section>
-
-<section class="cr-tokens__section">
-  <h2>Text roles</h2>
-  <div class="cr-tokens__type-scale">
+<section class="tokens__section">
+  <h2 uiText [uiFont]="'title2'" [uiWeight]="'bold'">Typography</h2>
+  <div class="tokens__type-scale">
     @for (role of textRoles; track role) {
-    <p text [font]="role">{{ role }} — Book your next appointment</p>
+    <p uiText [uiFont]="role" [uiWeight]="weightFor(role)">
+      {{ role }} — The quick brown fox jumps
+    </p>
     }
   </div>
 </section>
 
-<section class="cr-tokens__section">
-  <h2>Text modifiers</h2>
-  <div class="cr-tokens__type-scale">
-    @for (weight of textWeights; track weight) {
-    <p text font="body" [fontWeight]="weight">
-      weight={{ weight }} — Book your next appointment
-    </p>
-    } @for (tone of textTones; track tone) {
-    <p text font="body" [foregroundStyle]="tone">
-      tone={{ tone }} — Book your next appointment
-    </p>
+<section class="tokens__section">
+  <h2 uiText [uiFont]="'title2'" [uiWeight]="'bold'">Spacing</h2>
+  <div class="tokens__row">
+    @for (step of spacing; track step) {
+    <div class="tokens__spacing-sample">
+      <div class="tokens__spacing-track">
+        <div class="tokens__spacing-bar" [uiPadding]="step"></div>
+      </div>
+      <p
+        uiText
+        [uiFont]="'caption'"
+        [uiWeight]="'medium'"
+        [uiForeground]="'secondary'"
+      >
+        --sys-space-{{ step }}
+      </p>
+    </div>
     }
-    <p text font="body" italic>
-      italic — a true oblique via Roboto Flex's slnt axis
-    </p>
-    <p text font="body" monospacedDigit>
-      monospacedDigit — 0123456789 vs 1111111111
-    </p>
-    <p text font="body" underline>underline</p>
-    <p text font="body" strikethrough>strikethrough</p>
-    <p text font="body" underline strikethrough>underline + strikethrough</p>
-    <p text font="body" textCase="uppercase">case=uppercase</p>
-    <p text font="body" tracking="tight">
-      tracking=tight — Book your next appointment
-    </p>
-    <p text font="body" tracking="wide">
-      tracking=wide — Book your next appointment
-    </p>
-    <p text font="body" fontDesign="heading">
-      design=heading — Book your next appointment
-    </p>
-    <p text font="headline" fontWidth="condensed">width=condensed</p>
-    <p text font="headline" fontWidth="expanded">width=expanded</p>
   </div>
 </section>
 
-<section class="cr-tokens__section">
-  <h2>Radius</h2>
-  <div class="cr-tokens__row">
+<section class="tokens__section">
+  <h2 uiText [uiFont]="'title2'" [uiWeight]="'bold'">Radii</h2>
+  <div class="tokens__row">
     @for (radius of radii; track radius) {
-    <div class="cr-radius-sample">
-      <div
-        class="cr-radius-sample__box"
-        [style.border-radius]="'var(--cr-radius-' + radius + ')'"
-      ></div>
-      <code>--cr-radius-{{ radius }}</code>
+    <div class="tokens__radius-sample">
+      <div class="tokens__radius-box" [uiRadius]="radius"></div>
+      <p
+        uiText
+        [uiFont]="'caption'"
+        [uiWeight]="'medium'"
+        [uiForeground]="'secondary'"
+      >
+        --control-radius-{{ radius }}
+      </p>
     </div>
     }
   </div>
 </section>
 
-<section class="cr-tokens__section">
-  <h2>Elevation</h2>
-  <div class="cr-tokens__row">
-    @for (elevation of elevations; track elevation) {
-    <div class="cr-elevation-sample">
+<section class="tokens__section">
+  <h2 uiText [uiFont]="'title2'" [uiWeight]="'bold'">Control sizes</h2>
+  <div class="tokens__row">
+    @for (size of controlSizes; track size.name) {
+    <div class="tokens__control-size-sample">
       <div
-        class="cr-elevation-sample__box"
-        [style.box-shadow]="'var(--cr-shadow-' + elevation + ')'"
+        class="tokens__control-size-box"
+        [style.block-size]="'var(--control-size-' + size.name + ')'"
       ></div>
-      <code>--cr-shadow-{{ elevation }}</code>
-    </div>
-    }
-  </div>
-</section>
-
-<section class="cr-tokens__section">
-  <h2>Motion easing</h2>
-  <div class="cr-tokens__row">
-    @for (easing of easings; track easing) {
-    <div class="cr-easing-sample">
-      <div
-        class="cr-easing-sample__dot"
-        [style.transition-timing-function]="'var(--cr-motion-easing-' + easing + ')'"
-      ></div>
-      <code>--cr-motion-easing-{{ easing }}</code>
+      <p
+        uiText
+        [uiFont]="'caption'"
+        [uiWeight]="'medium'"
+        [uiForeground]="'secondary'"
+      >
+        --control-size-{{ size.name }} ({{ size.px }}px @ regular density)
+      </p>
     </div>
     }
   </div>
