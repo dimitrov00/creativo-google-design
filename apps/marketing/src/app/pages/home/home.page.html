@@ -184,12 +184,15 @@
           <p class="site-footer__tagline" text font="footnote">
             {{ t('marketing.footer.tagline') }}
           </p>
+          <!-- Primary (foreground-on-background), not the action blue: on
+               the yellow footer this pill reads black — the shipped look
+               the action-variant conversion had accidentally repainted. -->
           <a
             class="site-footer__book"
             href="/client"
             crButton
-            variant="action"
-            size="large"
+            variant="primary"
+            size="small"
             shape="pill"
           >
             {{ t('marketing.app.book') }}
