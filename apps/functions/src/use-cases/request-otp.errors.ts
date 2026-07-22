@@ -1,5 +1,6 @@
-import { IssueOtpError, RepositoryError } from '@creativo/domain/models';
+import { IssueOtpError } from '@creativo/domain/models';
 import { DomainError, InvalidTimeZoneError } from '@creativo/domain/kernel';
+import { RepositoryError } from '@creativo/application/shared';
 
 export class InvalidInputError extends DomainError {
   readonly code = 'invalid_input' as const;

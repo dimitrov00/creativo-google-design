@@ -1,8 +1,11 @@
+import { Otp } from '@creativo/domain/models';
 import {
-  Otp,
+  OtpCode,
+  OtpDestination,
   OtpRepositoryPort,
-  RepositoryError,
-} from '@creativo/domain/models';
+  otpDestinationValue,
+} from '@creativo/application/identity';
+import { RepositoryError } from '@creativo/application/shared';
 import { Result, ZonedDateTime, ok } from '@creativo/domain/kernel';
 import { describe, expect, it } from 'vitest';
 import { SystemClock } from '../adapters/system-clock';
@@ -35,10 +38,10 @@ function fakeRepository(): OtpRepositoryPort & { saved: Otp[] } {
     },
     async findRecentUnconsumedByDestination(
       destination,
-      sinceIso,
+      since,
     ): Promise<Result<boolean, RepositoryError>> {
-      const lastCreated = recentSince.get(destination);
-      const isRecent = !!lastCreated && lastCreated >= sinceIso;
+      const lastCreated = recentSince.get(otpDestinationValue(destination));
+      const isRecent = !!lastCreated && lastCreated >= since.toISO();
       return ok(isRecent);
     },
   };
@@ -55,9 +58,9 @@ class FixedClock {
 }
 
 class FakeSender {
-  sent: Array<{ destination: string; channel: string; code: string }> = [];
-  async send(destination: string, channel: 'email' | 'sms', code: string) {
-    this.sent.push({ destination, channel, code });
+  sent: Array<{ destination: OtpDestination; code: OtpCode }> = [];
+  async send(destination: OtpDestination, code: OtpCode) {
+    this.sent.push({ destination, code });
     return ok(undefined);
   }
 }

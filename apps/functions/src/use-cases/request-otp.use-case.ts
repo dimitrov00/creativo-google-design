@@ -1,15 +1,14 @@
+import { Email, Otp, OtpId, OtpPurpose } from '@creativo/domain/models';
+import { PhoneNumber, Result, fail, ok } from '@creativo/domain/kernel';
 import {
-  ClockPort,
-  Otp,
   OtpCodeGenerator,
   OtpCodeHasher,
-  OtpDestinationType,
-  OtpId,
-  OtpPurpose,
+  OtpDestination,
   OtpRepositoryPort,
   OtpSenderPort,
-} from '@creativo/domain/models';
-import { Result, fail, ok } from '@creativo/domain/kernel';
+  toOtpCode,
+} from '@creativo/application/identity';
+import { ClockPort } from '@creativo/application/shared';
 import {
   InvalidInputError,
   RateLimitedError,
@@ -27,7 +26,7 @@ const OTP_ZONE = 'UTC';
 export interface RequestOtpInput {
   tenantId: string;
   destination: string;
-  destinationType: OtpDestinationType;
+  destinationType: 'email' | 'sms';
   purpose: OtpPurpose;
 }
 
@@ -58,6 +57,23 @@ function parseInput(raw: unknown): Result<RequestOtpInput, InvalidInputError> {
   return ok({ tenantId, destination, destinationType, purpose });
 }
 
+function parseDestination(
+  input: RequestOtpInput,
+): Result<OtpDestination, InvalidInputError> {
+  if (input.destinationType === 'email') {
+    const emailResult = Email.create(input.destination);
+    if (emailResult.isFailure()) {
+      return fail(new InvalidInputError('invalid email destination'));
+    }
+    return ok({ kind: 'email', email: emailResult.value });
+  }
+  const phoneResult = PhoneNumber.create(input.destination);
+  if (phoneResult.isFailure()) {
+    return fail(new InvalidInputError('invalid phone destination'));
+  }
+  return ok({ kind: 'sms', phone: phoneResult.value });
+}
+
 export class RequestOtpUseCase {
   constructor(
     private readonly otpRepository: OtpRepositoryPort,
@@ -75,17 +91,23 @@ export class RequestOtpUseCase {
     }
     const input = inputResult.value;
 
+    const destinationResult = parseDestination(input);
+    if (destinationResult.isFailure()) {
+      return fail(destinationResult.error);
+    }
+    const destination = destinationResult.value;
+
     const nowResult = this.clock.now(OTP_ZONE);
     if (nowResult.isFailure()) {
       return fail(nowResult.error);
     }
     const now = nowResult.value;
 
-    const sinceIso = now.plusMinutes(-RATE_LIMIT_WINDOW_MINUTES).toISO();
+    const since = now.plusMinutes(-RATE_LIMIT_WINDOW_MINUTES);
     const recentResult =
       await this.otpRepository.findRecentUnconsumedByDestination(
-        input.destination,
-        sinceIso,
+        destination,
+        since,
       );
     if (recentResult.isFailure()) {
       return fail(new RepositoryFailure(recentResult.error));
@@ -118,11 +140,7 @@ export class RequestOtpUseCase {
       return fail(new RepositoryFailure(saveResult.error));
     }
 
-    const sendResult = await this.sender.send(
-      otp.destination,
-      otp.destinationType,
-      rawCode,
-    );
+    const sendResult = await this.sender.send(destination, toOtpCode(rawCode));
     if (sendResult.isFailure()) {
       return fail(new SendFailure(sendResult.error));
     }

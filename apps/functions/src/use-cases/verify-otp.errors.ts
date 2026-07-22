@@ -1,9 +1,7 @@
-import {
-  AuthTokenError,
-  RepositoryError,
-  UserValidationError,
-} from '@creativo/domain/models';
+import { UserValidationError } from '@creativo/domain/models';
 import { DomainError, InvalidTimeZoneError } from '@creativo/domain/kernel';
+import { AuthTokenError } from '@creativo/application/identity';
+import { RepositoryError } from '@creativo/application/shared';
 
 export class InvalidInputError extends DomainError {
   readonly code = 'invalid_input' as const;
@@ -61,6 +59,14 @@ export class UserValidationFailure extends DomainError {
   }
 }
 
+/** The persisted `Otp.destination` no longer parses as a valid `Email`/`PhoneNumber` — a storage-corruption signal, not a user input error. */
+export class CorruptedOtpDestinationError extends DomainError {
+  readonly code = 'otp_destination_corrupted' as const;
+  constructor(public override readonly cause: unknown) {
+    super('Stored OTP destination is malformed');
+  }
+}
+
 export class TokenMintingFailure extends DomainError {
   readonly code = 'token_minting_failure' as const;
   constructor(public override readonly cause: AuthTokenError) {
@@ -78,6 +84,7 @@ export type VerifyOtpError =
   | IncorrectCodeError
   | UserValidationFailure
   | TokenMintingFailure
+  | CorruptedOtpDestinationError
   // Only reachable if OTP_ZONE ('UTC', hardcoded) were ever invalid —
   // structurally impossible today, kept typed rather than cast away.
   | InvalidTimeZoneError;

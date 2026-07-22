@@ -2,10 +2,10 @@ import type { Auth } from 'firebase-admin/auth';
 import {
   AuthTokenError,
   AuthTokenPort,
-  OtpDestinationType,
-  Role,
-  UserId,
-} from '@creativo/domain/models';
+  OtpDestination,
+  otpDestinationValue,
+} from '@creativo/application/identity';
+import { Role, TenantId, UserId } from '@creativo/domain/models';
 import { Result, fail, ok } from '@creativo/domain/kernel';
 
 export class FirebaseAuthTokenAdapter implements AuthTokenPort {
@@ -13,10 +13,13 @@ export class FirebaseAuthTokenAdapter implements AuthTokenPort {
 
   async createCustomToken(
     uid: UserId,
-    claims: { tenantId: string; role: Role },
+    claims: { tenantId: TenantId; role: Role },
   ): Promise<Result<string, AuthTokenError>> {
     try {
-      const token = await this.auth.createCustomToken(uid.value, claims);
+      const token = await this.auth.createCustomToken(uid.value, {
+        tenantId: claims.tenantId.value,
+        role: claims.role,
+      });
       return ok(token);
     } catch (error) {
       return fail(new AuthTokenError('Failed to mint custom token', error));
@@ -24,14 +27,13 @@ export class FirebaseAuthTokenAdapter implements AuthTokenPort {
   }
 
   async provisionAuthUser(
-    destination: string,
-    destinationType: OtpDestinationType,
+    destination: OtpDestination,
   ): Promise<Result<UserId, AuthTokenError>> {
     try {
       const authUser = await this.auth.createUser(
-        destinationType === 'email'
-          ? { email: destination }
-          : { phoneNumber: destination },
+        destination.kind === 'email'
+          ? { email: otpDestinationValue(destination) }
+          : { phoneNumber: otpDestinationValue(destination) },
       );
       const idResult = UserId.create(authUser.uid);
       if (idResult.isFailure()) {

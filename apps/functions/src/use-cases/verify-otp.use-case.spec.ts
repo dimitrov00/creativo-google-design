@@ -1,11 +1,10 @@
+import { Otp, User, UserId } from '@creativo/domain/models';
 import {
-  Otp,
   OtpRepositoryPort,
-  RepositoryError,
-  User,
-  UserId,
   UserRepositoryPort,
-} from '@creativo/domain/models';
+  otpDestinationValue,
+} from '@creativo/application/identity';
+import { RepositoryError } from '@creativo/application/shared';
 import { Result, ZonedDateTime, ok } from '@creativo/domain/kernel';
 import { describe, expect, it } from 'vitest';
 import { SystemClock } from '../adapters/system-clock';
@@ -76,9 +75,9 @@ function fakeUserRepository(): UserRepositoryPort & {
     async findByDestination(
       destination,
     ): Promise<Result<User | null, RepositoryError>> {
+      const raw = otpDestinationValue(destination);
       for (const user of store.values()) {
-        if (user.email?.value === destination || user.phone === destination)
-          return ok(user);
+        if (user.email?.value === raw || user.phone === raw) return ok(user);
       }
       return ok(null);
     },
@@ -148,10 +147,12 @@ describe('VerifyOtpUseCase', () => {
     if (result.isSuccess()) {
       expect(result.value.customToken).toContain('token:');
     }
-    expect(authToken.mintedTokens[0].claims).toEqual({
-      tenantId: 'creativo',
-      role: 'client',
-    });
+    const claims = authToken.mintedTokens[0].claims as {
+      tenantId: { value: string };
+      role: string;
+    };
+    expect(claims.tenantId.value).toBe('creativo');
+    expect(claims.role).toBe('client');
     expect(users.store.size).toBe(1);
   });
 

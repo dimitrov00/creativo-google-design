@@ -1,5 +1,6 @@
 import type { Firestore } from 'firebase-admin/firestore';
-import { Otp, OtpId } from '@creativo/domain/models';
+import { Email, Otp, OtpId } from '@creativo/domain/models';
+import { OtpDestination } from '@creativo/application/identity';
 import { ZonedDateTime } from '@creativo/domain/kernel';
 import { describe, expect, it } from 'vitest';
 import { createFakeFirestore } from '../test-support/fake-firestore';
@@ -22,6 +23,12 @@ function at(iso: string): ZonedDateTime {
   const result = ZonedDateTime.fromISO(iso, 'UTC');
   if (result.isFailure()) throw new Error('unexpected failure in test fixture');
   return result.value;
+}
+
+function emailDestination(raw: string): OtpDestination {
+  const result = Email.create(raw);
+  if (result.isFailure()) throw new Error('unexpected failure in test fixture');
+  return { kind: 'email', email: result.value };
 }
 
 function issueOtp(nowIso: string): Otp {
@@ -78,8 +85,8 @@ describe('FirestoreOtpRepository', () => {
     await repo.save(otp);
 
     const hasRecent = await repo.findRecentUnconsumedByDestination(
-      'client@example.com',
-      '2026-01-01T00:00:00.000Z',
+      emailDestination('client@example.com'),
+      at('2026-01-01T00:00:00.000Z'),
     );
     expect(hasRecent.isSuccess()).toBe(true);
     if (hasRecent.isSuccess()) {
@@ -100,8 +107,8 @@ describe('FirestoreOtpRepository', () => {
     await repo.save(verified.value);
 
     const hasRecent = await repo.findRecentUnconsumedByDestination(
-      'client@example.com',
-      '2026-01-01T00:00:00.000Z',
+      emailDestination('client@example.com'),
+      at('2026-01-01T00:00:00.000Z'),
     );
     expect(hasRecent.isSuccess()).toBe(true);
     if (hasRecent.isSuccess()) {
@@ -115,8 +122,8 @@ describe('FirestoreOtpRepository', () => {
     await repo.save(otp);
 
     const hasRecent = await repo.findRecentUnconsumedByDestination(
-      'client@example.com',
-      '2026-01-01T00:00:00.000Z',
+      emailDestination('client@example.com'),
+      at('2026-01-01T00:00:00.000Z'),
     );
     expect(hasRecent.isSuccess()).toBe(true);
     if (hasRecent.isSuccess()) {

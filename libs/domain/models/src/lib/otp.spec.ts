@@ -1,7 +1,6 @@
 import { ZonedDateTime } from '@creativo/domain/kernel';
 import { describe, expect, it } from 'vitest';
-import { Otp } from './otp';
-import { OtpCodeGenerator, OtpCodeHasher } from './ports/otp-crypto.port';
+import { Otp, OtpCodeGenerator, OtpCodeHasher } from './otp';
 
 /** Deterministic fakes — the entity's own logic is what's under test here, not a real hashing algorithm (that's `apps/functions`'s adapter concern). */
 function fakeCrypto(fixedCode = '123456'): OtpCodeGenerator & OtpCodeHasher {

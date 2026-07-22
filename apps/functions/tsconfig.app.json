@@ -16,10 +16,16 @@
   ],
   "references": [
     {
-      "path": "../../libs/domain/kernel/tsconfig.lib.json"
+      "path": "../../libs/application/shared/tsconfig.lib.json"
     },
     {
       "path": "../../libs/domain/models/tsconfig.lib.json"
+    },
+    {
+      "path": "../../libs/domain/kernel/tsconfig.lib.json"
+    },
+    {
+      "path": "../../libs/application/identity/tsconfig.lib.json"
     }
   ]
 }

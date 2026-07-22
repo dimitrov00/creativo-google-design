@@ -1,11 +1,12 @@
 import type { DocumentData, Firestore } from 'firebase-admin/firestore';
+import { Otp, OtpId } from '@creativo/domain/models';
 import {
-  Otp,
-  OtpId,
+  OtpDestination,
   OtpRepositoryPort,
-  RepositoryError,
-} from '@creativo/domain/models';
-import { Result, fail, ok } from '@creativo/domain/kernel';
+  otpDestinationValue,
+} from '@creativo/application/identity';
+import { RepositoryError } from '@creativo/application/shared';
+import { Result, ZonedDateTime, fail, ok } from '@creativo/domain/kernel';
 
 const COLLECTION = 'otps';
 
@@ -83,15 +84,15 @@ export class FirestoreOtpRepository implements OtpRepositoryPort {
   }
 
   async findRecentUnconsumedByDestination(
-    destination: string,
-    sinceIso: string,
+    destination: OtpDestination,
+    since: ZonedDateTime,
   ): Promise<Result<boolean, RepositoryError>> {
     try {
       const snapshot = await this.db
         .collection(COLLECTION)
-        .where('destination', '==', destination)
+        .where('destination', '==', otpDestinationValue(destination))
         .where('consumedAt', '==', null)
-        .where('createdAt', '>=', sinceIso)
+        .where('createdAt', '>=', since.toISO())
         .limit(1)
         .get();
       return ok(!snapshot.empty);

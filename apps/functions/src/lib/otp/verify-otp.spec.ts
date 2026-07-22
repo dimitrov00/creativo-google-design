@@ -1,7 +1,5 @@
-import {
-  AuthTokenError,
-  EmptyReferralCodeError,
-} from '@creativo/domain/models';
+import { EmptyReferralCodeError } from '@creativo/domain/models';
+import { AuthTokenError } from '@creativo/application/identity';
 import { describe, expect, it } from 'vitest';
 import {
   IncorrectCodeError,

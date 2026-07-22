@@ -20,7 +20,8 @@
     "src/**/*.test.js",
     "src/**/*.spec.js",
     "src/**/*.test.jsx",
-    "src/**/*.spec.jsx"
+    "src/**/*.spec.jsx",
+    "src/**/*.type-spec.ts"
   ],
   "references": [
     {
@@ -28,6 +29,12 @@
     },
     {
       "path": "../../domain/models/tsconfig.lib.json"
+    },
+    {
+      "path": "../../domain/catalog/tsconfig.lib.json"
+    },
+    {
+      "path": "../../domain/identity/tsconfig.lib.json"
     },
     {
       "path": "../../domain/kernel/tsconfig.lib.json"

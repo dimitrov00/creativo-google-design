@@ -4,7 +4,10 @@ import {
   scryptSync,
   timingSafeEqual,
 } from 'node:crypto';
-import { OtpCodeGenerator, OtpCodeHasher } from '@creativo/domain/models';
+import {
+  OtpCodeGenerator,
+  OtpCodeHasher,
+} from '@creativo/application/identity';
 
 /**
  * `node:crypto`-backed implementation of the OTP crypto ports declared in

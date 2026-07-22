@@ -23,16 +23,3 @@ export * from './lib/appointment';
 export * from './lib/appointment.errors';
 export * from './lib/otp';
 export * from './lib/otp.errors';
-
-// Ports
-export * from './lib/ports/repository.errors';
-export * from './lib/ports/otp-crypto.port';
-export * from './lib/ports/otp-repository.port';
-export * from './lib/ports/user-repository.port';
-export * from './lib/ports/tenant-repository.port';
-export * from './lib/ports/service-repository.port';
-export * from './lib/ports/staff-repository.port';
-export * from './lib/ports/appointment-repository.port';
-export * from './lib/ports/clock.port';
-export * from './lib/ports/otp-sender.port';
-export * from './lib/ports/auth-token.port';

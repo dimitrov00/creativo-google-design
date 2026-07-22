@@ -1,4 +1,4 @@
-import { ClockPort } from '@creativo/domain/models';
+import { ClockPort } from '@creativo/application/shared';
 import {
   InvalidTimeZoneError,
   Result,

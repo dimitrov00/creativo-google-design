@@ -12,10 +12,27 @@ import {
   IssueOtpError,
   OtpVerificationError,
 } from './otp.errors';
-import { OtpCodeGenerator, OtpCodeHasher } from './ports/otp-crypto.port';
 
 export type OtpDestinationType = 'email' | 'sms';
 export type OtpPurpose = 'login' | 'signup';
+
+/**
+ * `Otp`'s own crypto seam — kept local (not imported from a `ports/`
+ * folder) now that the real port duplicates have moved to
+ * `@creativo/application/identity`; structurally identical to that
+ * package's `OtpCodeGenerator`/`OtpCodeHasher`, so any implementation of
+ * those also satisfies these.
+ */
+export interface OtpCodeGenerator {
+  generateCode(): string;
+  generateSalt(): string;
+}
+
+export interface OtpCodeHasher {
+  hash(code: string, salt: string): string;
+  /** Must be constant-time — never `hash(...) === expectedHash`. */
+  verify(code: string, salt: string, expectedHash: string): boolean;
+}
 
 /** UTC throughout — these are internal system instants, not user-facing local wall-clock times. */
 const OTP_ZONE = 'UTC';

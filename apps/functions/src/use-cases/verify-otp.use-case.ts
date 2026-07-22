@@ -1,15 +1,18 @@
 import { randomBytes } from 'node:crypto';
-import {
-  AuthTokenPort,
-  ClockPort,
-  OtpCodeHasher,
-  OtpId,
-  OtpRepositoryPort,
-  User,
-  UserRepositoryPort,
-} from '@creativo/domain/models';
+import { OtpId, User } from '@creativo/domain/models';
 import { Result, fail, ok } from '@creativo/domain/kernel';
 import {
+  AuthTokenPort,
+  OtpCodeHasher,
+  OtpDestination,
+  OtpRepositoryPort,
+  UserRepositoryPort,
+  otpDestinationFromRaw,
+  otpDestinationValue,
+} from '@creativo/application/identity';
+import { ClockPort } from '@creativo/application/shared';
+import {
+  CorruptedOtpDestinationError,
   IncorrectCodeError,
   InvalidInputError,
   OtpAlreadyConsumedError,
@@ -109,20 +112,23 @@ export class VerifyOtpUseCase {
       return fail(new RepositoryFailure(saveResult.error));
     }
 
-    const userResult = await this.userRepository.findByDestination(
+    const destinationResult = otpDestinationFromRaw(
       verifiedOtp.destination,
       verifiedOtp.destinationType,
     );
+    if (destinationResult.isFailure()) {
+      return fail(new CorruptedOtpDestinationError(destinationResult.error));
+    }
+    const destination = destinationResult.value;
+
+    const userResult = await this.userRepository.findByDestination(destination);
     if (userResult.isFailure()) {
       return fail(new RepositoryFailure(userResult.error));
     }
 
     let user = userResult.value;
     if (!user) {
-      const provisioned = await this.provisionNewUser(
-        verifiedOtp.destination,
-        verifiedOtp.destinationType,
-      );
+      const provisioned = await this.provisionNewUser(destination);
       if (provisioned.isFailure()) {
         return fail(provisioned.error);
       }
@@ -134,7 +140,7 @@ export class VerifyOtpUseCase {
     // out-of-band via the Admin SDK, closing the obvious privilege-
     // escalation hole a self-service role parameter would open.
     const tokenResult = await this.authToken.createCustomToken(user.id, {
-      tenantId: verifiedOtp.tenantId.value,
+      tenantId: verifiedOtp.tenantId,
       role: 'client',
     });
     if (tokenResult.isFailure()) {
@@ -145,13 +151,9 @@ export class VerifyOtpUseCase {
   }
 
   private async provisionNewUser(
-    destination: string,
-    destinationType: 'email' | 'sms',
+    destination: OtpDestination,
   ): Promise<Result<User, VerifyOtpError>> {
-    const provisionResult = await this.authToken.provisionAuthUser(
-      destination,
-      destinationType,
-    );
+    const provisionResult = await this.authToken.provisionAuthUser(destination);
     if (provisionResult.isFailure()) {
       return fail(new TokenMintingFailure(provisionResult.error));
     }
@@ -162,8 +164,14 @@ export class VerifyOtpUseCase {
       referralCode: generateReferralCode(),
       gamificationPoints: 0,
       tenantMemberships: [],
-      email: destinationType === 'email' ? destination : undefined,
-      phone: destinationType === 'sms' ? destination : undefined,
+      email:
+        destination.kind === 'email'
+          ? otpDestinationValue(destination)
+          : undefined,
+      phone:
+        destination.kind === 'sms'
+          ? otpDestinationValue(destination)
+          : undefined,
     });
     if (newUserResult.isFailure()) {
       return fail(new UserValidationFailure(newUserResult.error));

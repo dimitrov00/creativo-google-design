@@ -1,3 +1,4 @@
+import { InjectionToken } from '@angular/core';
 import {
   InvalidTimeZoneError,
   Result,
@@ -8,3 +9,5 @@ import {
 export interface ClockPort {
   now(zone: string): Result<ZonedDateTime, InvalidTimeZoneError>;
 }
+
+export const CLOCK = new InjectionToken<ClockPort>('ClockPort');

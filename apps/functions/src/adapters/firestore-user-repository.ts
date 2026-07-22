@@ -1,10 +1,11 @@
 import type { DocumentData, Firestore } from 'firebase-admin/firestore';
+import { User } from '@creativo/domain/models';
 import {
-  OtpDestinationType,
-  RepositoryError,
-  User,
+  OtpDestination,
   UserRepositoryPort,
-} from '@creativo/domain/models';
+  otpDestinationValue,
+} from '@creativo/application/identity';
+import { RepositoryError } from '@creativo/application/shared';
 import { Result, fail, ok } from '@creativo/domain/kernel';
 
 const COLLECTION = 'users';
@@ -62,14 +63,13 @@ export class FirestoreUserRepository implements UserRepositoryPort {
   }
 
   async findByDestination(
-    destination: string,
-    destinationType: OtpDestinationType,
+    destination: OtpDestination,
   ): Promise<Result<User | null, RepositoryError>> {
     try {
-      const field = destinationType === 'email' ? 'email' : 'phone';
+      const field = destination.kind === 'email' ? 'email' : 'phone';
       const snapshot = await this.db
         .collection(COLLECTION)
-        .where(field, '==', destination)
+        .where(field, '==', otpDestinationValue(destination))
         .limit(1)
         .get();
       if (snapshot.empty) {
