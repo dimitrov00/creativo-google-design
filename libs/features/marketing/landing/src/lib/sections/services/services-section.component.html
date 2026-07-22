@@ -1,0 +1,152 @@
+<ng-container *transloco="let t">
+  <div crFadeUp>
+    <p class="cr-section-eyebrow">{{ t('landing.services.eyebrow') }}</p>
+    <h2 class="cr-section-title">{{ t('landing.services.title') }}</h2>
+    <p class="cr-section-subtitle">{{ t('landing.services.subtitle') }}</p>
+  </div>
+
+  <!-- Base services — swipeable portrait-tile carousel; the next tile peeks
+       past the edge so the row reads as "more to the side". -->
+  <div
+    class="cr-services__carousel cr-scrollbar-hide cr-services__carousel--singles"
+  >
+    @for (service of content.singleServices; track service.id) {
+      <div class="cr-services__item">
+        <button
+          type="button"
+          class="cr-services__tile"
+          [attr.data-testid]="'service-tile-' + service.id"
+          (click)="open(service)"
+        >
+          <span class="cr-services__image-wrap">
+            <span class="cr-services__image-frame">
+              @if (service.coverSrc) {
+                <img
+                  [src]="service.coverSrc"
+                  alt=""
+                  aria-hidden="true"
+                  loading="lazy"
+                  class="cr-services__image"
+                />
+              } @else {
+                <!-- Graceful degradation — a styled scissors motif reads as
+                     intentional, never broken (v2 imageFallback). -->
+                <span class="cr-services__fallback">
+                  <cr-icon
+                    name="content_cut"
+                    class="cr-services__fallback-glyph"
+                  />
+                </span>
+              }
+              <span class="cr-services__ring" aria-hidden="true"></span>
+            </span>
+
+            @if (service.kind === 'bundle') {
+              <span
+                class="cr-services__bundle-chip"
+                role="img"
+                [attr.aria-label]="t('landing.services.bundle')"
+              >
+                <cr-icon name="layers" class="cr-services__bundle-glyph" />
+              </span>
+            }
+          </span>
+
+          <span class="cr-services__copy">
+            <span class="cr-services__name">{{
+              content.text(service.name)
+            }}</span>
+            <span class="cr-services__meta">
+              <span>
+                {{ t('landing.services.from') }}
+                <span class="cr-services__price">{{
+                  content.price(servicePriceFrom(service))
+                }}</span>
+              </span>
+              @if (service.variants.length > 0) {
+                <span class="cr-services__variants">
+                  <cr-icon name="tune" class="cr-services__variants-glyph" />
+                  {{ service.variants.length }}
+                </span>
+              }
+            </span>
+          </span>
+        </button>
+      </div>
+    }
+  </div>
+
+  <!-- Bundles — their own titled shelf below. -->
+  @if (content.bundleServices.length > 0) {
+    <div class="cr-services__bundles">
+      <p crFadeUp class="cr-section-eyebrow">
+        {{ t('landing.services.bundlesTitle') }}
+      </p>
+      <div
+        class="cr-services__carousel cr-scrollbar-hide cr-services__carousel--bundles"
+      >
+        @for (service of content.bundleServices; track service.id) {
+          <div class="cr-services__item">
+            <button
+              type="button"
+              class="cr-services__tile"
+              [attr.data-testid]="'service-tile-' + service.id"
+              (click)="open(service)"
+            >
+              <span class="cr-services__image-wrap">
+                <span class="cr-services__image-frame">
+                  @if (service.coverSrc) {
+                    <img
+                      [src]="service.coverSrc"
+                      alt=""
+                      aria-hidden="true"
+                      loading="lazy"
+                      class="cr-services__image"
+                    />
+                  } @else {
+                    <span class="cr-services__fallback">
+                      <cr-icon
+                        name="content_cut"
+                        class="cr-services__fallback-glyph"
+                      />
+                    </span>
+                  }
+                  <span class="cr-services__ring" aria-hidden="true"></span>
+                </span>
+                <span
+                  class="cr-services__bundle-chip"
+                  role="img"
+                  [attr.aria-label]="t('landing.services.bundle')"
+                >
+                  <cr-icon name="layers" class="cr-services__bundle-glyph" />
+                </span>
+              </span>
+
+              <span class="cr-services__copy">
+                <span class="cr-services__name">{{
+                  content.text(service.name)
+                }}</span>
+                <span class="cr-services__meta">
+                  <span>
+                    {{ t('landing.services.from') }}
+                    <span class="cr-services__price">{{
+                      content.price(servicePriceFrom(service))
+                    }}</span>
+                  </span>
+                </span>
+              </span>
+            </button>
+          </div>
+        }
+      </div>
+    </div>
+  }
+
+  <!-- Read-only detail sheet — renders inline, portals itself (modal-sheet). -->
+  @if (selectedService(); as service) {
+    <cr-service-detail
+      [service]="service"
+      (closed)="selectedService.set(null)"
+    />
+  }
+</ng-container>

@@ -1,5 +1,10 @@
 :host {
   display: contents;
+  /* Legacy rhythm vars this restored (old-app) component reads — the
+     rewritten landing-shared.css no longer defines them, so they live here
+     as a local compat block (old values, verbatim). */
+  --radius-media: clamp(1.25rem, 2.2vw, 2.25rem);
+  --surface-film: #0a0a0a;
 }
 
 .team {
@@ -7,7 +12,8 @@
   grid-template-columns: minmax(15rem, 0.55fr) minmax(0, 1.45fr);
   gap: clamp(3rem, 7vw, 8rem);
   align-items: start;
-  padding: clamp(7rem, 12vw, 12rem) var(--page-gutter);
+  /* Normalized to the landing's shared section rhythm (7rem). */
+  padding: 7rem var(--page-gutter);
   background: transparent;
   color: var(--page-fg);
 }

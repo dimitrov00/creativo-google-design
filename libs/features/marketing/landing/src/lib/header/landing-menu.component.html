@@ -1,0 +1,116 @@
+<ng-container *transloco="let t">
+  @if (open()) {
+    <div class="cr-menu__backdrop" aria-hidden="true" (click)="close()"></div>
+
+    <div
+      class="cr-menu"
+      role="dialog"
+      aria-modal="true"
+      data-testid="landing-menu"
+      [attr.aria-label]="t('landing.nav.primary')"
+    >
+      <div class="cr-menu__body">
+        <!-- Preferences lead — locale + theme (v2 MenuSection delay 0.02). -->
+        <div class="cr-menu__section" style="--menu-delay: 0.02s">
+          <div class="cr-menu__toolbar">
+            <cr-locale-theme-toggle variant="toolbar" />
+          </div>
+        </div>
+
+        <!-- Book now — the standalone inverted primary CTA. -->
+        <div
+          class="cr-menu__section cr-menu__section--first"
+          style="--menu-delay: 0.1s"
+        >
+          <a
+            routerLink="/book"
+            class="cr-menu__row cr-menu__row--inverted"
+            data-testid="menu-book"
+            (click)="close()"
+          >
+            <cr-icon name="calendar_month" class="cr-menu__glyph" />
+            <span class="cr-menu__label">{{ t('landing.hero.cta') }}</span>
+          </a>
+        </div>
+
+        <!-- Your account — guest-locked rows route through /auth. -->
+        <div class="cr-menu__section" style="--menu-delay: 0.14s">
+          <div class="cr-menu__card">
+            <a
+              [routerLink]="isAuthed() ? '/account' : '/auth'"
+              [queryParams]="isAuthed() ? null : { redirect: '/account' }"
+              class="cr-menu__row"
+              (click)="close()"
+            >
+              <cr-icon name="event_available" class="cr-menu__glyph" />
+              <span class="cr-menu__label">{{
+                t('landing.menu.bookings')
+              }}</span>
+              @if (!isAuthed()) {
+                <cr-icon name="lock" class="cr-menu__trail" />
+              }
+            </a>
+            <div class="cr-menu__divider" aria-hidden="true"></div>
+            <a
+              [routerLink]="isAuthed() ? '/account' : '/auth'"
+              [queryParams]="isAuthed() ? null : { redirect: '/account' }"
+              class="cr-menu__row"
+              (click)="close()"
+            >
+              <cr-icon name="redeem" class="cr-menu__glyph" />
+              <span class="cr-menu__label">{{
+                t('landing.menu.rewards')
+              }}</span>
+              @if (!isAuthed()) {
+                <cr-icon name="lock" class="cr-menu__trail" />
+              }
+            </a>
+          </div>
+        </div>
+
+        <!-- Site — in-page anchors. -->
+        <div
+          class="cr-menu__section cr-menu__section--last"
+          style="--menu-delay: 0.18s"
+        >
+          <div class="cr-menu__card">
+            <a href="/#work" class="cr-menu__row" (click)="close()">
+              <cr-icon name="photo_library" class="cr-menu__glyph" />
+              <span class="cr-menu__label">{{
+                t('landing.footer.nav.work')
+              }}</span>
+            </a>
+            <div class="cr-menu__divider" aria-hidden="true"></div>
+            <a href="/#team" class="cr-menu__row" (click)="close()">
+              <cr-icon name="group" class="cr-menu__glyph" />
+              <span class="cr-menu__label">{{
+                t('landing.footer.nav.team')
+              }}</span>
+            </a>
+            <div class="cr-menu__divider" aria-hidden="true"></div>
+            <a href="/#services" class="cr-menu__row" (click)="close()">
+              <cr-icon name="layers" class="cr-menu__glyph" />
+              <span class="cr-menu__label">{{
+                t('landing.footer.nav.services')
+              }}</span>
+            </a>
+            <div class="cr-menu__divider" aria-hidden="true"></div>
+            <a href="/#visit" class="cr-menu__row" (click)="close()">
+              <cr-icon name="location_on" class="cr-menu__glyph" />
+              <span class="cr-menu__label">{{
+                t('landing.footer.nav.visit')
+              }}</span>
+            </a>
+            <div class="cr-menu__divider" aria-hidden="true"></div>
+            <a href="/#hiring" class="cr-menu__row" (click)="close()">
+              <cr-icon name="work" class="cr-menu__glyph" />
+              <span class="cr-menu__label">{{
+                t('landing.menu.openPositions')
+              }}</span>
+            </a>
+          </div>
+        </div>
+      </div>
+    </div>
+  }
+</ng-container>

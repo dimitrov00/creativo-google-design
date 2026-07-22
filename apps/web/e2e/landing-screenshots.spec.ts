@@ -1,14 +1,19 @@
 import { expect, test, type Page } from '@playwright/test';
 
 /**
- * Goal 06.1 screenshot baseline (docs/migration/goals/06-feature-slices.md
- * — "Add a Playwright screenshot spec... per screen"). Scoped to the hero
- * fold only, not full-page: the locations section renders a live MapLibre
- * canvas fed by network tiles and several sections carry autoplaying video,
- * neither of which paints deterministically in CI — see `landing.spec.ts`
- * for the functional (non-visual) assertions covering those sections.
- * Mirrors `apps/showcase/e2e/design-system.spec.ts`'s theme-via-init-script
- * + no-networkidle-wait pattern.
+ * Goal 06.1 visual-parity gate. The baseline PNGs in
+ * `landing-screenshots.spec.ts-snapshots/` are captured from *running v2*
+ * by `tools/capture-v2-landing-baselines.mjs` — NEVER regenerate them with
+ * `--update-snapshots` against this app (that produced a self-referential
+ * "parity" claim once; see the Visual-parity evidence rule in
+ * docs/migration/v2-parity-checklist.md). This spec renders the Angular
+ * landing under the same determinism setup the capture script uses and
+ * diffs the hero fold against v2's pixels.
+ *
+ * Scoped to the hero fold only, not full-page: the locations section
+ * renders a live MapLibre canvas fed by network tiles and several sections
+ * carry autoplaying video, neither of which paints deterministically in CI
+ * — see `landing.spec.ts` for the functional assertions covering those.
  */
 const THEMES = ['light', 'dark'] as const;
 
@@ -29,35 +34,30 @@ async function gotoWithTheme(
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.goto('/');
   await expect(page.getByTestId('landing-hero')).toBeVisible();
-  // Belt-and-suspenders: reduced-motion is honored by the app's own JS
-  // (home.page.ts's `data-motion-ready` gate), but the custom cursor dot
-  // and any other host-level CSS transition aren't gated on it — freeze
-  // everything for a deterministic screenshot.
+  // Freeze animations + backdrop-filter for a deterministic capture —
+  // byte-identical to the capture script's FREEZE_CSS.
   await page.addStyleTag({
     content: `
       *, *::before, *::after {
         animation-play-state: paused !important;
         transition: none !important;
-        /* backdrop-filter blur (the hero language pill) re-samples the
-           frame it sits over every paint — genuinely non-deterministic
-           pixel-for-pixel between two otherwise-identical captures in a
-           headless compositor, so it's dropped for this baseline only. */
         backdrop-filter: none !important;
       }
-      cr-cursor-dot { display: none !important; }
     `,
   });
 }
 
-test.describe('marketing landing — hero screenshot baseline', () => {
+test.describe('marketing landing — hero visual parity vs v2', () => {
   for (const theme of THEMES) {
     test(`hero fold — ${theme}`, async ({ page }) => {
       await gotoWithTheme(page, theme);
-      // A cinematic video hero never reaches pixel-for-pixel determinism in
-      // a headless compositor (poster/video-frame decode timing) — a small
-      // tolerance is the honest trade-off; anything beyond it still fails.
+      // Cross-app parity (Angular render vs v2 render) can't be
+      // pixel-for-pixel: video poster decode and font rasterization differ
+      // between two runs even of the SAME app. The checklist's cross-cutting
+      // target is ≤1% pixel delta on key pages (Goal 08 audits); the hero
+      // gate here uses the same envelope.
       await expect(page).toHaveScreenshot(`landing-hero-${theme}.png`, {
-        maxDiffPixelRatio: 0.08,
+        maxDiffPixelRatio: 0.01,
       });
     });
   }

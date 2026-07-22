@@ -25,8 +25,8 @@ describe('LocationsComponent', () => {
     );
     expect(host.querySelectorAll('.location-card__maps').length).toBe(2);
     expect(host.querySelectorAll('.location-card__status').length).toBe(2);
-    // Only the Center location has a phone number configured.
-    expect(host.querySelectorAll('.location-card__phone').length).toBe(1);
+    // Both shops carry a venue phone (synced to the v2 demo-seed content).
+    expect(host.querySelectorAll('.location-card__phone').length).toBe(2);
     expect(host.querySelector('[data-locations-map]')).not.toBeNull();
     expect(host.querySelector('.location-card__media')).toBeNull();
 

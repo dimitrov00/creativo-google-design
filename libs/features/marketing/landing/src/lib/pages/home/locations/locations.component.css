@@ -7,7 +7,8 @@
   grid-template-columns: minmax(15rem, 0.55fr) minmax(0, 1.45fr);
   gap: clamp(3rem, 7vw, 8rem);
   align-items: start;
-  padding: clamp(7rem, 12vw, 12rem) var(--page-gutter);
+  /* Normalized to the landing's shared section rhythm (7rem). */
+  padding: 7rem var(--page-gutter);
   background: transparent;
   /* Tone-aware like every other section (team/services use --page-fg) —
      was hardcoded to a fixed foreground token, so the heading stayed black
@@ -23,20 +24,13 @@
 
 /* Type metrics come from the shared data-text roles (eyebrow/display/body,
    see libs/shared/ui typography.css) — only layout modifiers live here. */
-.locations__heading .eyebrow {
-  margin-block-end: 1.2rem;
-}
 
-.locations__heading h2 {
-  max-inline-size: 8ch;
-}
-
+/* Intro reads as the shared section subtitle (cr-section-subtitle look). */
 .locations__heading > p:last-child {
   max-inline-size: 22rem;
-  margin-block-start: 2rem;
-  /* Muted from the tone-aware page ink (matches team's secondary copy),
-     not the fixed --sys-color-secondary-label token. */
-  color: color-mix(in srgb, var(--page-fg) calc(0.58 * 100%), transparent);
+  margin-block-start: 0.75rem;
+  font: var(--sys-font-body);
+  color: var(--landing-muted-foreground);
 }
 
 .locations__content {

@@ -1,0 +1,140 @@
+/* v2 LandingHero — `mx-auto flex min-h-[100svh] w-full max-w-app flex-col
+   bg-background` with the inset VideoHero card and the CTA strip below. */
+
+:host {
+  display: flex;
+  flex-direction: column;
+  min-block-size: 100svh;
+  inline-size: 100%;
+  max-inline-size: var(--landing-max-width);
+  margin-inline: auto;
+  background: var(--sys-color-background);
+}
+
+/* ── The video card ── */
+
+.cr-hero__card {
+  position: relative;
+  flex: 1;
+  overflow: hidden;
+  margin-inline: var(--landing-gutter);
+  margin-block-start: var(--landing-safe-pad-top);
+  border-radius: var(--landing-radius-sheet);
+  background: #0a0a0a;
+}
+
+.cr-hero__video {
+  position: absolute;
+  inset: 0;
+  block-size: 100%;
+  inline-size: 100%;
+  object-fit: cover;
+  opacity: 0;
+  transition: opacity 1s var(--sys-motion-ease-standard);
+}
+.cr-hero__video[data-loaded] {
+  opacity: 0.5;
+}
+
+.cr-hero__poster {
+  position: absolute;
+  inset: 0;
+  block-size: 100%;
+  inline-size: 100%;
+  object-fit: cover;
+  opacity: 0.6;
+}
+
+/* Dark overlay — heavier at bottom for text readability (v2 scrim slot). */
+.cr-hero__scrim {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    to bottom,
+    rgb(0 0 0 / 0.25) 0%,
+    rgb(0 0 0 / 0.4) 40%,
+    rgb(0 0 0 / 0.8) 100%
+  );
+}
+
+.cr-hero__content {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+}
+
+.cr-hero__spacer {
+  flex: 1;
+}
+
+/* ── Bottom copy block (px-7 pb-9 sm:px-10 sm:pb-11) ── */
+
+.cr-hero__copy {
+  padding-inline: 1.75rem;
+  padding-block-end: 2.25rem;
+  color: var(--landing-media-fg);
+}
+@media (min-width: 640px) {
+  .cr-hero__copy {
+    padding-inline: 2.5rem;
+    padding-block-end: 2.75rem;
+  }
+}
+
+.cr-hero__prefs {
+  margin-block-end: 1.75rem;
+}
+
+/* v2 caption({uppercase}) — 11px semibold, +0.8px. */
+.cr-hero__tagline {
+  margin: 0;
+  font: var(--sys-font-caption);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: var(--landing-media-fg-subtle);
+}
+
+.cr-hero__heading {
+  margin: 0;
+  margin-block-start: 0.75rem;
+  font: var(--sys-font-extraLargeTitle);
+  /* v2 heading 2xl leading is 0.98 — the token's 1.02 drifts ~2px at 44px. */
+  line-height: 0.98;
+  letter-spacing: var(--sys-tracking-largeTitle);
+  color: var(--landing-media-fg);
+}
+
+.cr-hero__subtitle {
+  margin: 0;
+  margin-block-start: 1rem;
+  max-inline-size: 20.625rem;
+  font: var(--sys-font-body);
+  white-space: pre-line;
+  color: var(--landing-media-fg-muted);
+}
+
+/* ── Primary CTA below the card ── */
+
+.cr-hero__cta-wrap {
+  padding-inline: var(--landing-gutter);
+  padding-block-start: 1.25rem;
+  padding-block-end: var(--landing-safe-pad-bottom);
+}
+
+.cr-hero__cta-link {
+  display: block;
+  text-decoration: none;
+}
+
+.cr-hero__button {
+  inline-size: 100%;
+  pointer-events: none;
+}
+
+.cr-hero__glyph {
+  font-size: 18px;
+  margin-inline-end: 8px;
+}

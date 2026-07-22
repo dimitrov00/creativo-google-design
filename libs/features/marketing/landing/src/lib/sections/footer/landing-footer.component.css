@@ -1,0 +1,92 @@
+/* v2 landing-footer.tsx — compact sitemap footer in the e-commerce register. */
+
+:host {
+  display: block;
+  /* The accent closing band above provides the separation. */
+  margin-block-start: 0;
+  border-block-start: 1px solid var(--landing-border);
+  background: var(--sys-color-surface);
+  padding-block-end: var(--landing-safe-pad-bottom);
+}
+
+.cr-footer__inner {
+  inline-size: 100%;
+  max-inline-size: var(--landing-max-width);
+  margin-inline: auto;
+  padding-inline: var(--landing-gutter);
+  padding-block-start: 3rem;
+}
+
+.cr-footer__grid {
+  margin-block-start: 3rem;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: 1.5rem;
+  row-gap: 2.5rem;
+}
+@media (min-width: 640px) {
+  .cr-footer__grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+/* Column header — the same overline used across the landing's sections,
+   in its neutral (muted) tone. */
+.cr-footer__col-header {
+  margin-block-end: 0.875rem;
+  font: var(--sys-font-caption);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: var(--landing-muted-foreground);
+}
+
+.cr-footer__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+}
+
+/* Sitemap link — muted 14px, lifts to foreground on hover. */
+.cr-footer__link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font: var(--sys-font-callout);
+  color: var(--landing-muted-foreground);
+  text-decoration: none;
+  transition: color 0.2s var(--sys-motion-ease-standard);
+}
+.cr-footer__link:hover {
+  color: var(--sys-color-foreground);
+}
+
+/* Trailing ↗ on external links — nudges on hover. */
+.cr-footer__external {
+  font-size: 12px;
+  transform: rotate(-45deg);
+  opacity: 0.5;
+  transition: transform 0.2s var(--sys-motion-ease-standard);
+}
+.cr-footer__link:hover .cr-footer__external {
+  transform: rotate(-45deg) translate(1px, -1px);
+}
+
+.cr-footer__social {
+  font-size: 14px;
+}
+
+.cr-footer__legal {
+  margin-block-start: 3.5rem;
+  border-block-start: 1px solid var(--landing-border);
+  padding-block-start: 1.5rem;
+}
+
+.cr-footer__legal-text {
+  font: var(--sys-font-caption);
+  letter-spacing: var(--sys-tracking-caption);
+  color: var(--landing-muted-foreground);
+}

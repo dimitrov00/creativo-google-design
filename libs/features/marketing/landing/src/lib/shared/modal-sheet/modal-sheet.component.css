@@ -124,8 +124,6 @@
 }
 
 .modal-sheet__close {
-  --cr-cursor-fill-color: var(--sys-color-foreground);
-  --cr-cursor-surface: #fff;
   grid-column: 3;
   justify-self: end;
   inline-size: 2.8rem;
@@ -148,6 +146,10 @@
 
 .modal-sheet__close:active {
   transform: scale(0.9);
+}
+
+.modal-sheet__close-glyph {
+  font-size: 1.25rem;
 }
 
 @starting-style {

@@ -1,0 +1,78 @@
+/* v2 toggleButton — toolbarControl md (44px) chips, `rounded-toolbar` pills.
+   `toolbar` = the `track` surface: no border, ascending-alpha foreground
+   fill, toolbar-tinted ink (accent in light / foreground in dark).
+   `overlay` = chrome-media over the hero video. */
+
+:host {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.cr-prefs__chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  block-size: var(--control-size-regular);
+  min-inline-size: var(--control-size-regular);
+  padding-inline: 12px;
+  border: 0;
+  border-radius: 9999px;
+  font: var(--sys-font-caption);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.025em; /* v2 tracking-wide */
+  cursor: pointer;
+  transition:
+    background-color var(--sys-motion-duration-regular)
+      var(--sys-motion-ease-standard),
+    transform var(--sys-motion-duration-instant) var(--sys-motion-ease-standard);
+}
+.cr-prefs__chip:active {
+  transform: scale(0.95);
+}
+
+.cr-prefs__chip--theme {
+  aspect-ratio: 1;
+  padding-inline: 0;
+}
+
+.cr-prefs__glyph {
+  font-size: 15px;
+  opacity: 0.8;
+}
+
+.cr-prefs__glyph--theme {
+  font-size: 18px;
+  opacity: 1;
+}
+
+/* toolbar — v2 `track`: foreground-alpha fill, toolbar ink, borderless. */
+:host([data-variant='toolbar']) .cr-prefs__chip {
+  color: var(--landing-toolbar-fg);
+  background: var(--landing-toolbar-fill);
+}
+:host([data-variant='toolbar']) .cr-prefs__chip:hover,
+:host([data-variant='toolbar']) .cr-prefs__chip:focus-visible {
+  background: var(--landing-toolbar-fill-hover);
+}
+:host([data-variant='toolbar']) .cr-prefs__chip:active {
+  background: var(--landing-toolbar-fill-press);
+}
+
+/* overlay — chrome-media chips over the dark hero video (ink at 90%). */
+:host([data-variant='overlay']) .cr-prefs__chip {
+  color: color-mix(in srgb, var(--landing-media-fg) 90%, transparent);
+  border: 1px solid var(--landing-chrome-border);
+  background: var(--landing-chrome-fill);
+  -webkit-backdrop-filter: var(--landing-chrome-blur);
+  backdrop-filter: var(--landing-chrome-blur);
+}
+:host([data-variant='overlay']) .cr-prefs__chip:hover,
+:host([data-variant='overlay']) .cr-prefs__chip:focus-visible {
+  background: var(--landing-chrome-fill-hover);
+}
+:host([data-variant='overlay']) .cr-prefs__chip:active {
+  background: var(--landing-chrome-fill-press);
+}

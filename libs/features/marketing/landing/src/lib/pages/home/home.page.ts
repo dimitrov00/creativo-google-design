@@ -1,326 +1,88 @@
 import { DOCUMENT, isPlatformBrowser } from '@angular/common';
 import {
-  AfterViewInit,
+  ChangeDetectionStrategy,
   Component,
   DestroyRef,
-  ElementRef,
   PLATFORM_ID,
-  WritableSignal,
+  afterNextRender,
+  effect,
   inject,
-  signal,
 } from '@angular/core';
-import { TranslocoDirective } from '@jsverse/transloco';
-import { CursorTargetDirective } from '@creativo/shared/cursor';
-import { UiButton } from '@creativo/ui/controls';
-import { UiTextDirective } from '@creativo/ui/modifiers';
-import { LanguageService } from '../../language.service';
-import { ServicesPage } from '../services/services.page';
+import { LandingHeaderComponent } from '../../header/landing-header.component';
+import { ClosingCtaComponent } from '../../sections/closing-cta/closing-cta.component';
+import { LandingFooterComponent } from '../../sections/footer/landing-footer.component';
+import { LandingHeroComponent } from '../../sections/hero/landing-hero.component';
+import { HiringSectionComponent } from '../../sections/hiring/hiring-section.component';
 import { LocationsComponent } from './locations/locations.component';
 import { TeamShowcaseComponent } from './team-showcase/team-showcase.component';
-import { WorkGalleryComponent } from './work-gallery/work-gallery.component';
+import { ServicesSectionComponent } from '../../sections/services/services-section.component';
+import { WorkGalleryComponent } from '../../sections/work-gallery/work-gallery.component';
+import { ThemeService } from '../../shared/prefs/theme.service';
 
+/**
+ * The marketing landing — a 1:1 port of v2's `routes/index.tsx` composition:
+ * fixed AppHeader (hero treatment) → inset video hero → the anchored section
+ * run (work · team · services · hiring · visit) inside the centred app
+ * column → closing CTA → sitemap footer. The installed-PWA active-user
+ * redirect lives in `apps/web` `homeGuard` (v2's `isStandalone && settled
+ * === 'active'` check).
+ */
 @Component({
   selector: 'cr-home-page',
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
-    CursorTargetDirective,
-    LocationsComponent,
-    ServicesPage,
     TeamShowcaseComponent,
-    TranslocoDirective,
-    UiButton,
-    UiTextDirective,
+    ClosingCtaComponent,
+    HiringSectionComponent,
+    LandingFooterComponent,
+    LandingHeaderComponent,
+    LandingHeroComponent,
+    LocationsComponent,
+    ServicesSectionComponent,
     WorkGalleryComponent,
   ],
   templateUrl: './home.page.html',
   styleUrl: './home.page.css',
-  host: { 'data-testid': 'landing-page' },
+  host: { class: 'cr-landing-page', 'data-testid': 'landing-page' },
 })
-export class HomePage implements AfterViewInit {
+export class HomePage {
   private readonly document = inject(DOCUMENT);
-  private readonly elementRef = inject<ElementRef<HTMLElement>>(ElementRef);
   private readonly platformId = inject(PLATFORM_ID);
   private readonly destroyRef = inject(DestroyRef);
-  private readonly language = inject(LanguageService);
+  private readonly theme = inject(ThemeService);
 
-  /** Shared with the shell header's language menu (LanguageService). */
-  protected readonly languages = this.language.languages;
-  protected readonly activeLang = this.language.activeLang;
+  constructor() {
+    // v2 `useLandingThemeColor`: the inset hero leaves plain background above
+    // it, so the browser chrome just tracks the resolved theme's background —
+    // read straight from the token so no per-theme hex is duplicated here.
+    effect(() => {
+      this.theme.theme();
+      const background = this.document.defaultView
+        ?.getComputedStyle(this.document.documentElement)
+        .getPropertyValue('--sys-color-background')
+        .trim();
+      if (background) {
+        this.document
+          .querySelector('meta[name="theme-color"]')
+          ?.setAttribute('content', background);
+      }
+    });
 
-  protected readonly heroPaused = signal(false);
-  protected readonly craftPaused = signal(false);
-
-  ngAfterViewInit(): void {
-    if (!isPlatformBrowser(this.platformId)) return;
-
-    const host = this.elementRef.nativeElement;
-    const reducedMotion = window.matchMedia(
-      '(prefers-reduced-motion: reduce)',
-    ).matches;
-    const hero = host.querySelector<HTMLElement>('.hero');
-    const heroFrame = host.querySelector<HTMLElement>('.hero__frame');
-    const parallaxItems = Array.from(
-      host.querySelectorAll<HTMLElement>('[data-parallax]'),
-    );
-    const cleanups: Array<() => void> = [];
-    let frame = 0;
-    let observeReveals: (() => void) | undefined;
-
-    if (window.location.hash) {
-      const targetId = decodeURIComponent(window.location.hash.slice(1));
-      const alignToFragment = () => {
+    // #work/#team/… deep links land aligned under the fixed header.
+    afterNextRender(() => {
+      if (!isPlatformBrowser(this.platformId)) return;
+      const hash = window.location.hash;
+      if (!hash) return;
+      const targetId = decodeURIComponent(hash.slice(1));
+      const align = () => {
         const target = this.document.getElementById(targetId);
         if (!target) return;
         const top = target.getBoundingClientRect().top + window.scrollY - 80;
         window.scrollTo({ top: Math.max(0, top) });
       };
-      requestAnimationFrame(() => requestAnimationFrame(alignToFragment));
-      const fragmentTimer = window.setTimeout(alignToFragment, 700);
-      window.addEventListener('load', alignToFragment, { once: true });
-      cleanups.push(() => {
-        window.clearTimeout(fragmentTimer);
-        window.removeEventListener('load', alignToFragment);
-      });
-    }
-
-    if (!reducedMotion) {
-      host.setAttribute('data-motion-ready', '');
-      host
-        .querySelectorAll<HTMLElement>('[data-hero-reveal]')
-        .forEach((element, index) => {
-          if (typeof element.animate !== 'function') return;
-          element.animate(
-            [
-              {
-                opacity: 0,
-                transform: 'translateY(115%) rotate(2deg)',
-                filter: 'blur(12px)',
-              },
-              {
-                opacity: 1,
-                transform: 'translateY(0) rotate(0)',
-                filter: 'blur(0)',
-              },
-            ],
-            {
-              duration: 1050,
-              delay: 100 + index * 150,
-              easing: 'cubic-bezier(.16,1,.3,1)',
-              fill: 'both',
-            },
-          );
-        });
-    }
-
-    if (typeof IntersectionObserver === 'function') {
-      const revealObserver = new IntersectionObserver(
-        (entries, observer) => {
-          for (const entry of entries) {
-            if (!entry.isIntersecting) continue;
-            (entry.target as HTMLElement).setAttribute('data-visible', '');
-            observer.unobserve(entry.target);
-          }
-        },
-        { rootMargin: '0px 0px -7% 0px', threshold: 0.08 },
-      );
-      // Re-run whenever `@defer` blocks hydrate (the layout observer below
-      // fires then): team/locations render their data-reveal headings only
-      // at that point, and elements the one-shot init scan never saw would
-      // otherwise sit at the reveal's opacity: 0 start state forever.
-      // observe() on an already-observed target is a spec'd no-op, so
-      // re-scanning is idempotent.
-      observeReveals = () =>
-        host
-          .querySelectorAll<HTMLElement>('[data-reveal]')
-          .forEach((element) => revealObserver.observe(element));
-      observeReveals();
-      cleanups.push(() => revealObserver.disconnect());
-
-      // Ambient films only decode while on screen; a user's explicit pause
-      // (data-user-paused, set by toggleFilm) wins over the viewport
-      // resuming them.
-      const filmObserver = new IntersectionObserver(
-        (entries) => {
-          for (const entry of entries) {
-            const video = entry.target as HTMLVideoElement;
-            if (!entry.isIntersecting) video.pause();
-            else if (!reducedMotion && !('userPaused' in video.dataset))
-              video.play().catch(() => undefined);
-          }
-        },
-        { rootMargin: '120px' },
-      );
-      host
-        .querySelectorAll<HTMLVideoElement>('video[data-film]')
-        .forEach((video) => filmObserver.observe(video));
-      cleanups.push(() => filmObserver.disconnect());
-    }
-
-    if (reducedMotion) {
-      host
-        .querySelectorAll<HTMLVideoElement>('video[data-film]')
-        .forEach((video) => {
-          video.dataset['userPaused'] = '';
-          video.pause();
-        });
-      this.heroPaused.set(true);
-      this.craftPaused.set(true);
-    }
-
-    const clamp = (value: number) => Math.min(1, Math.max(0, value));
-
-    // Mirrors home.page.css's tone → --page-bg mapping. Keeping the browser
-    // chrome (`<meta name="theme-color">`: Safari/Chrome URL-bar + iOS
-    // status-bar color) on the same token the page background uses makes the
-    // frame melt into whichever section is active — same per-section theming
-    // the in-page header already follows.
-    const toneBackgroundTokens = new Map([
-      ['light', '--sys-color-background'],
-      ['dark', '--sys-color-foreground'],
-      ['accent', '--sys-color-accent'],
-    ]);
-
-    const syncBrowserThemeColor = (tone: string) => {
-      const token = toneBackgroundTokens.get(tone) ?? '--sys-color-background';
-      const background = window
-        .getComputedStyle(this.document.documentElement)
-        .getPropertyValue(token)
-        .trim();
-      const meta = this.document.querySelector('meta[name="theme-color"]');
-      if (background && meta) meta.setAttribute('content', background);
-    };
-
-    const updateNavigationTone = () => {
-      const center = window.innerHeight * 0.46;
-      // Queried LIVE, not cached at init: three tone sections live inside
-      // `@defer (on viewport)` blocks, so on the client path they don't
-      // exist yet when ngAfterViewInit runs — a captured list permanently
-      // missed them and the header stayed light over the dark sections.
-      // This runs at most once per animation frame over ~7 nodes.
-      const active = Array.from(
-        host.querySelectorAll<HTMLElement>('[data-nav-tone]'),
-      ).find((section) => {
-        const rect = section.getBoundingClientRect();
-        return rect.top <= center && rect.bottom > center;
-      });
-      const tone = active?.dataset['navTone'] ?? 'light';
-      const root = this.document.documentElement;
-      if (root.getAttribute('data-nav-tone') === tone) return;
-      root.setAttribute('data-nav-tone', tone);
-      syncBrowserThemeColor(tone);
-    };
-
-    const updateParallax = () => {
-      if (reducedMotion) return;
-      for (const item of parallaxItems) {
-        const rect = item.getBoundingClientRect();
-        if (rect.bottom < -100 || rect.top > window.innerHeight + 100) continue;
-        const progress = clamp(
-          (window.innerHeight - rect.top) / (window.innerHeight + rect.height),
-        );
-        item.style.setProperty('--parallax-y', `${(progress - 0.5) * 52}px`);
-      }
-    };
-
-    const updateHero = () => {
-      if (!hero) return;
-      const rect = hero.getBoundingClientRect();
-      // 0→1 as the hero scrolls out — drives the film's slow drift in CSS.
-      const progress = clamp(-rect.top / Math.max(1, rect.height * 0.72));
-      hero.style.setProperty('--hero-progress', progress.toString());
-    };
-
-    // The shell header floats transparent INSIDE the hero film while the film
-    // still sits behind it; once the film scrolls up past the header band it
-    // translates flush and turns solid (app.css `[data-header]` rules). The
-    // 88px band ≈ the 4rem header + a small lead so the swap lands as the
-    // film leaves, not after. Home owns this because the film is a home
-    // concern; other routes never set it, so the header stays solid there.
-    const updateHeaderMode = () => {
-      const root = this.document.documentElement;
-      const overlay = heroFrame
-        ? heroFrame.getBoundingClientRect().bottom > 88
-        : false;
-      const mode = overlay ? 'overlay' : 'solid';
-      if (root.getAttribute('data-header') !== mode) {
-        root.setAttribute('data-header', mode);
-      }
-    };
-
-    const updateScroll = () => {
-      frame = 0;
-      updateNavigationTone();
-      updateHeaderMode();
-      updateParallax();
-      updateHero();
-    };
-
-    const requestUpdate = () => {
-      if (!frame) frame = requestAnimationFrame(updateScroll);
-    };
-
-    window.addEventListener('scroll', requestUpdate, { passive: true });
-    window.addEventListener('resize', requestUpdate, { passive: true });
-    cleanups.push(() => window.removeEventListener('scroll', requestUpdate));
-    cleanups.push(() => window.removeEventListener('resize', requestUpdate));
-    cleanups.push(() => frame && cancelAnimationFrame(frame));
-
-    // Section heights change without any scroll when @defer blocks hydrate
-    // (map, gallery pinning) — recompute the tone then too, or the theme
-    // sticks on a stale section until the next scroll event.
-    if (typeof ResizeObserver === 'function') {
-      const layoutObserver = new ResizeObserver(() => {
-        // Deferred sections just appeared/resized — catch their reveal
-        // hooks and recompute the tone over the live section list.
-        observeReveals?.();
-        requestUpdate();
-      });
-      layoutObserver.observe(host);
-      cleanups.push(() => layoutObserver.disconnect());
-    }
-
-    // The home page always loads at the top over the hero film, so seed the
-    // overlay header synchronously — don't measure the frame here (flex/svh
-    // layout may not be settled yet at ngAfterViewInit, which would misread
-    // as solid). Scroll then flips it to solid via updateHeaderMode with a
-    // real measurement. Nav tone is safe to compute now.
-    this.document.documentElement.setAttribute('data-header', 'overlay');
-    updateNavigationTone();
-    requestAnimationFrame(updateScroll);
-
-    this.destroyRef.onDestroy(() => {
-      cleanups.forEach((cleanup) => cleanup());
-      const root = this.document.documentElement;
-      root.removeAttribute('data-nav-tone');
-      // Clear the header-overlay mode so other routes get the solid header
-      // (they never set it, but leaving 'overlay' behind would strand them
-      // transparent-over-nothing).
-      root.removeAttribute('data-header');
-      // Tone attribute is gone, so the page is back on the default light
-      // background — walk the browser chrome back with it.
-      syncBrowserThemeColor('light');
+      requestAnimationFrame(() => requestAnimationFrame(align));
+      const timer = window.setTimeout(align, 700);
+      this.destroyRef.onDestroy(() => window.clearTimeout(timer));
     });
-  }
-
-  protected setLanguage(code: (typeof this.languages)[number]['code']): void {
-    this.language.set(code);
-  }
-
-  protected async toggleFilm(
-    selector: string,
-    paused: WritableSignal<boolean>,
-  ): Promise<void> {
-    const video =
-      this.elementRef.nativeElement.querySelector<HTMLVideoElement>(selector);
-    if (!video) return;
-
-    if (video.paused) {
-      delete video.dataset['userPaused'];
-      await video.play();
-      paused.set(false);
-    } else {
-      video.dataset['userPaused'] = '';
-      video.pause();
-      paused.set(true);
-    }
   }
 }

@@ -1,0 +1,78 @@
+<ng-container *transloco="let t">
+  <section class="cr-hiring__section">
+    <div crFadeUp>
+      <div
+        #card
+        class="cr-hiring__card cr-squircle"
+        (mousemove)="onMouseMove($event)"
+        (mouseleave)="onMouseLeave()"
+      >
+        <!-- ── Video ── -->
+        <video
+          class="cr-hiring__video"
+          [attr.autoplay]="reducedMotion() ? null : ''"
+          muted
+          loop
+          playsinline
+          aria-hidden="true"
+          poster="/work/landing-poster.jpg"
+        >
+          <source src="/welcome.mp4" type="video/mp4" />
+        </video>
+
+        <!-- ── Static overlays ── -->
+        <div class="cr-hiring__shade" aria-hidden="true"></div>
+        <div class="cr-hiring__warmth" aria-hidden="true"></div>
+
+        <!-- ── Cursor spotlight ── -->
+        @if (!reducedMotion()) {
+          <div class="cr-hiring__spotlight" aria-hidden="true"></div>
+        }
+
+        <!-- Film grain -->
+        <div class="cr-hiring__grain cr-grain" aria-hidden="true"></div>
+
+        <!-- ── Content ── -->
+        <div class="cr-hiring__content">
+          <div crFadeUp [crFadeUpDelay]="0.05">
+            <p class="cr-hiring__eyebrow">{{ t('landing.hiring.eyebrow') }}</p>
+          </div>
+
+          <h2
+            #title
+            class="cr-hiring__title"
+            [attr.data-motion]="motionReady() ? '' : null"
+            [attr.data-revealed]="revealed() ? '' : null"
+          >
+            @for (word of words(); track $index) {
+              <span class="cr-hiring__word" [style.--word-i]="$index">{{
+                word
+              }}</span>
+            }
+          </h2>
+
+          <div crFadeUp [crFadeUpDelay]="0.42">
+            <p class="cr-hiring__subtitle">
+              {{ t('landing.hiring.subtitle') }}
+            </p>
+          </div>
+
+          <div crFadeUp [crFadeUpDelay]="0.58">
+            <div class="cr-hiring__actions">
+              <button
+                uiButton
+                uiSize="regular"
+                class="cr-landing-cta cr-hiring__cta"
+                data-tone="overlay"
+                type="button"
+              >
+                {{ t('landing.hiring.cta') }}
+                <cr-icon name="arrow_right_alt" class="cr-hiring__cta-glyph" />
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+</ng-container>

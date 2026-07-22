@@ -69,18 +69,18 @@ const CENTER_SCHEDULE: WeekSchedule = [
   { open: '09:00', close: '20:00' },
   { open: '09:00', close: '20:00' },
   { open: '09:00', close: '20:00' },
-  { open: '09:00', close: '20:00' },
-  { open: '09:00', close: '20:00' },
+  { open: '09:00', close: '21:00' },
+  { open: '10:00', close: '18:00' },
 ];
 
 const MLADOST_SCHEDULE: WeekSchedule = [
-  { open: '10:00', close: '19:00' },
+  null,
   null,
   { open: '10:00', close: '19:00' },
   { open: '10:00', close: '19:00' },
   { open: '10:00', close: '19:00' },
   { open: '10:00', close: '19:00' },
-  { open: '10:00', close: '19:00' },
+  { open: '09:00', close: '16:00' },
 ];
 
 @Component({
@@ -136,20 +136,21 @@ export class LocationsComponent implements AfterViewInit {
         '/work/modern-cut.jpg',
         '/work/finishing-touch.jpg',
       ],
-      lat: 42.6957,
-      lng: 23.3222,
+      lat: 42.4271,
+      lng: 25.6366,
     },
     {
       nameKey: 'marketing.locations.mladost.name',
       addressKey: 'marketing.locations.mladost.address',
+      phoneKey: 'marketing.locations.mladost.phone',
       schedule: MLADOST_SCHEDULE,
       gallery: [
         '/work/fade-styling.jpg',
         '/work/classic-clippers.jpg',
         '/work/beard-shave.jpg',
       ],
-      lat: 42.6525,
-      lng: 23.3771,
+      lat: 42.46,
+      lng: 25.685,
     },
   ];
 

@@ -1,328 +1,42 @@
-<ng-container *transloco="let t">
-  <div id="top" class="landing">
-    <section
-      class="hero"
-      data-nav-tone="light"
-      data-testid="landing-hero"
-      aria-labelledby="hero-title"
-    >
-      <div class="hero__frame" data-surface="film">
-        <video
-          class="film-video"
-          data-hero-video
-          data-film
-          autoplay
-          muted
-          loop
-          playsinline
-          preload="metadata"
-          poster="/hero-poster.jpg"
-          [attr.aria-label]="t('marketing.hero.videoAria')"
-        >
-          <source src="/hero.mp4" type="video/mp4" />
-        </video>
-        <div class="hero__veil" aria-hidden="true"></div>
+<!-- v2 routes/index.tsx LandingPage — the page shell. -->
+<div class="cr-landing" data-page-shell>
+  <!-- Safe-area strips: keep the notch / home-indicator on plain background
+       as content scrolls beneath (v2's fixed h-safe-top/bottom bands). -->
+  <div class="cr-landing__safe cr-landing__safe--top" aria-hidden="true"></div>
+  <div
+    class="cr-landing__safe cr-landing__safe--bottom"
+    aria-hidden="true"
+  ></div>
 
-        <div class="hero__copy">
-          <div
-            class="hero__lang"
-            data-testid="landing-language-toggle"
-            data-hero-reveal
-            role="group"
-            [attr.aria-label]="t('marketing.app.language')"
-          >
-            <span class="material-symbols-rounded" aria-hidden="true"
-              >language</span
-            >
-            @for (lang of languages; track lang.code) {
-            <button
-              type="button"
-              class="hero__lang-option"
-              [attr.data-active]="
-                  activeLang() === lang.code ? '' : null
-                "
-              [attr.aria-pressed]="activeLang() === lang.code"
-              [attr.aria-label]="lang.label"
-              (click)="setLanguage(lang.code)"
-              crCursorTarget
-            >
-              {{ lang.code }}
-            </button>
-            }
-          </div>
-          <p class="eyebrow" uiText uiFont="eyebrow" data-hero-reveal>
-            {{ t('marketing.hero.eyebrow') }}
-          </p>
-          <h1 id="hero-title" class="hero__title" uiText uiFont="display">
-            <span
-              ><span data-hero-reveal
-                >{{ t('marketing.hero.titleA') }}</span
-              ></span
-            >
-            <span
-              ><span data-hero-reveal
-                >{{ t('marketing.hero.titleB') }}</span
-              ></span
-            >
-          </h1>
-          <p class="hero__intro" uiText uiFont="body" data-hero-reveal>
-            {{ t('marketing.hero.intro') }}
-          </p>
-        </div>
+  <cr-landing-header />
+  <cr-landing-hero />
 
-        <button
-          type="button"
-          class="film-control"
-          [attr.data-state]="heroPaused() ? 'paused' : 'playing'"
-          [attr.aria-label]="
-            heroPaused()
-              ? t('marketing.hero.playVideo')
-              : t('marketing.hero.pauseVideo')
-          "
-          (click)="toggleFilm('[data-hero-video]', heroPaused)"
-          crCursorTarget
-          crCursorTargetStyle="fill"
-        >
-          @if (heroPaused()) {
-          <span class="material-symbols-rounded" aria-hidden="true"
-            >play_arrow</span
-          >
-          } @else {
-          <span class="material-symbols-rounded" aria-hidden="true">pause</span>
-          }
-        </button>
-      </div>
+  <main class="cr-landing__main">
+    <div id="work" class="cr-landing__anchor">
+      <cr-work-gallery />
+    </div>
+    <!-- Old-app full-width spread — breaks out of the app column like the
+         locations section (design call). -->
+    <div id="team" class="cr-landing__anchor cr-landing__anchor--breakout">
+      <cr-team-showcase />
+    </div>
+    <div id="services" class="cr-landing__anchor">
+      <cr-services-section />
+    </div>
+    <div id="hiring" class="cr-landing__anchor">
+      <cr-hiring-section />
+    </div>
+    <div id="visit" class="cr-landing__anchor cr-landing__anchor--breakout">
+      <!-- The locations section owns a MapLibre map (~1MB) — `@defer (on
+           viewport)` keeps it out of the initial bundle (v2 lazy rule). -->
+      @defer (on viewport) {
+      <cr-locations />
+      } @placeholder {
+      <div class="cr-landing__locations-placeholder" aria-hidden="true"></div>
+      }
+    </div>
+    <cr-closing-cta />
+  </main>
 
-      <a
-        class="hero-book"
-        data-testid="landing-hero-cta"
-        data-hero-reveal
-        href="/client"
-        uiButton
-        uiVariant="prominent"
-        uiSize="prominent"
-        uiShape="capsule"
-        crCursorTarget
-        crCursorTargetStyle="fill"
-      >
-        {{ t('marketing.hero.book') }}
-      </a>
-    </section>
-
-    <!-- Layout-measuring sections (gsap ScrollTrigger, cursor targets)
-         hydrate on idle: still off the critical path, but initialized while
-         the page is settled instead of mid-scroll, which broke pinning. -->
-    @defer (on viewport; hydrate on idle) {
-    <cr-work-gallery />
-    } @placeholder {
-    <div style="min-height: 100vh"></div>
-    } @defer (on viewport; hydrate on idle) {
-    <cr-services-page id="services" />
-    } @placeholder {
-    <div id="services" style="min-height: 100vh"></div>
-    }
-
-    <section
-      class="craft-film"
-      data-nav-tone="dark"
-      data-surface="film"
-      data-testid="landing-hiring"
-      aria-labelledby="craft-title"
-    >
-      <video
-        class="film-video"
-        data-film
-        data-craft-video
-        muted
-        loop
-        playsinline
-        preload="none"
-        poster="/work/landing-poster.jpg"
-        aria-hidden="true"
-        data-parallax
-      >
-        <source src="/welcome.mp4" type="video/mp4" />
-      </video>
-      <div class="craft-film__veil"></div>
-      <div class="craft-film__copy" data-reveal>
-        <p class="eyebrow" uiText uiFont="eyebrow">
-          {{ t('marketing.craft.eyebrow') }}
-        </p>
-        <h2 id="craft-title" uiText uiFont="display">
-          {{ t('marketing.craft.titleA') }}<br />{{ t('marketing.craft.titleB')
-          }}
-        </h2>
-        <p uiText uiFont="body">{{ t('marketing.craft.body') }}</p>
-      </div>
-      <!-- After the copy so its hit area is never shadowed by the copy's
-           padded box — hover/morph reaches it directly. -->
-      <button
-        type="button"
-        class="film-control"
-        [attr.data-state]="craftPaused() ? 'paused' : 'playing'"
-        [attr.aria-label]="
-          craftPaused()
-            ? t('marketing.hero.playVideo')
-            : t('marketing.hero.pauseVideo')
-        "
-        (click)="toggleFilm('[data-craft-video]', craftPaused)"
-        crCursorTarget
-        crCursorTargetStyle="fill"
-      >
-        @if (craftPaused()) {
-        <span class="material-symbols-rounded" aria-hidden="true"
-          >play_arrow</span
-        >
-        } @else {
-        <span class="material-symbols-rounded" aria-hidden="true">pause</span>
-        }
-      </button>
-    </section>
-
-    @defer (on viewport; hydrate on idle) {
-    <cr-team-showcase />
-    } @placeholder {
-    <div id="team" style="min-height: 100vh"></div>
-    } @defer (on viewport; hydrate on idle) {
-    <cr-locations />
-    } @placeholder {
-    <div id="locations" style="min-height: 40rem"></div>
-    }
-
-    <section
-      class="final-book"
-      data-nav-tone="accent"
-      data-testid="landing-closing-cta"
-      aria-labelledby="book-title"
-    >
-      <p class="eyebrow" uiText uiFont="eyebrow" data-reveal>
-        {{ t('marketing.final.eyebrow') }}
-      </p>
-      <h2 id="book-title" data-reveal>{{ t('marketing.final.title') }}</h2>
-      <a
-        href="/client"
-        data-reveal
-        uiButton
-        uiVariant="prominent"
-        uiSize="prominent"
-        crCursorTarget
-        crCursorTargetStyle="fill"
-      >
-        <span>{{ t('marketing.final.cta') }}</span>
-        <span class="material-symbols-rounded" aria-hidden="true"
-          >arrow_outward</span
-        >
-      </a>
-    </section>
-
-    <footer
-      class="site-footer"
-      data-nav-tone="accent"
-      data-testid="landing-footer"
-    >
-      <div class="site-footer__grid">
-        <div class="site-footer__intro">
-          <a
-            href="#top"
-            class="site-footer__brand"
-            [attr.aria-label]="t('marketing.app.homeAria')"
-            crCursorTarget
-            crCursorTargetStyle="scale"
-          >
-            <span class="site-footer__logo" aria-hidden="true"></span>
-          </a>
-          <p class="site-footer__tagline" uiText uiFont="footnote">
-            {{ t('marketing.footer.tagline') }}
-          </p>
-          <!-- Prominent (foreground-on-background), not the retired blue
-               action variant: on the yellow footer this pill reads black. -->
-          <a
-            class="site-footer__book"
-            href="/client"
-            uiButton
-            uiVariant="prominent"
-            uiShape="capsule"
-            crCursorTarget
-            crCursorTargetStyle="fill"
-          >
-            {{ t('marketing.app.book') }}
-            <span class="material-symbols-rounded" aria-hidden="true"
-              >arrow_outward</span
-            >
-          </a>
-        </div>
-
-        <nav
-          class="site-footer__column"
-          [attr.aria-label]="t('marketing.footer.navigation')"
-        >
-          <h3 uiText uiFont="eyebrow">{{ t('marketing.footer.explore') }}</h3>
-          <a href="#work" crCursorTarget>{{ t('marketing.app.work') }}</a>
-          <a href="#services" crCursorTarget>
-            {{ t('marketing.app.services') }}
-          </a>
-          <a href="#team" crCursorTarget>{{ t('marketing.app.barbers') }}</a>
-          <a href="#locations" crCursorTarget>
-            {{ t('marketing.app.locations') }}
-          </a>
-        </nav>
-
-        <div class="site-footer__column">
-          <h3 uiText uiFont="eyebrow">{{ t('marketing.footer.contact') }}</h3>
-          <a href="tel:+35929812345" crCursorTarget>+359 2 981 2345</a>
-          <a href="mailto:hello@creativo.bg" crCursorTarget>
-            hello&#64;creativo.bg
-          </a>
-          <a href="/client" crCursorTarget>{{ t('marketing.app.login') }}</a>
-        </div>
-
-        <div class="site-footer__column">
-          <h3 uiText uiFont="eyebrow">{{ t('marketing.footer.follow') }}</h3>
-          <a
-            href="https://www.instagram.com/creativo"
-            target="_blank"
-            rel="noopener"
-            crCursorTarget
-          >
-            Instagram
-          </a>
-          <a
-            href="https://www.facebook.com/creativo"
-            target="_blank"
-            rel="noopener"
-            crCursorTarget
-          >
-            Facebook
-          </a>
-          <a
-            href="https://www.youtube.com/@creativo"
-            target="_blank"
-            rel="noopener"
-            crCursorTarget
-          >
-            YouTube
-          </a>
-        </div>
-      </div>
-
-      <div class="site-footer__bottom">
-        <small uiText uiFont="caption"
-          >{{ t('marketing.footer.copyright') }}</small
-        >
-        <a
-          class="site-footer__top-link"
-          uiText
-          uiFont="caption"
-          uiWeight="semibold"
-          href="#top"
-          crCursorTarget
-        >
-          {{ t('marketing.footer.backToTop') }}
-          <span class="material-symbols-rounded" aria-hidden="true"
-            >arrow_upward</span
-          >
-        </a>
-      </div>
-    </footer>
-  </div>
-</ng-container>
+  <cr-landing-footer />
+</div>

@@ -32,10 +32,12 @@
           class="modal-sheet__close"
           [attr.aria-label]="closeLabel()"
           (click)="requestDismiss()"
-          crCursorTarget
-          crCursorTargetStyle="fill"
         >
-          <span class="material-symbols-rounded" aria-hidden="true">close</span>
+          <span
+            class="material-symbols-rounded modal-sheet__close-glyph"
+            aria-hidden="true"
+            >close</span
+          >
         </button>
       </header>
 

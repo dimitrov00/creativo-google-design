@@ -28,6 +28,9 @@
       "path": "../../libs/features/staff/dashboard/tsconfig.lib.json"
     },
     {
+      "path": "../../libs/features/client/appointments/tsconfig.lib.json"
+    },
+    {
       "path": "../../libs/features/client/account/tsconfig.lib.json"
     },
     {
@@ -41,6 +44,9 @@
     },
     {
       "path": "../../libs/features/marketing/landing/tsconfig.lib.json"
+    },
+    {
+      "path": "../../libs/infrastructure/clock/tsconfig.lib.json"
     },
     {
       "path": "../../libs/infrastructure/web-storage/tsconfig.lib.json"

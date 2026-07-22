@@ -1,0 +1,225 @@
+/* v2 work-gallery.tsx — sticky stage + translated strip. */
+
+:host {
+  display: block;
+}
+
+.cr-gallery {
+  position: relative;
+}
+
+.cr-gallery__stage {
+  position: sticky;
+  top: 0;
+  block-size: 100vh;
+  overflow: hidden;
+  background: var(--sys-color-background);
+}
+
+.cr-gallery__strip {
+  position: absolute;
+  inset-block: 0;
+  left: 0;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding-inline-start: var(--landing-gutter);
+  will-change: transform;
+}
+
+/* Card — per-shot aspect box at 52vh, resting at its drift offset. */
+.cr-gallery__card {
+  flex-shrink: 0;
+  block-size: 52vh;
+  cursor: pointer;
+  perspective: 900px;
+  transform: translateY(var(--drift, 0px));
+  transition: scale 0.3s var(--sys-motion-ease-emphasized);
+}
+.cr-gallery__card--motion:hover {
+  scale: 1.03;
+}
+
+.cr-gallery__figure {
+  position: relative;
+  margin: 0;
+  block-size: 100%;
+  overflow: hidden;
+  border-radius: var(--landing-radius-2xl);
+  background: var(--landing-muted);
+  box-shadow: var(--sys-elevation-overlay);
+  transform: rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg));
+  transform-style: preserve-3d;
+  transition: transform 0.2s var(--sys-motion-ease-standard);
+}
+
+.cr-gallery__image {
+  block-size: 100%;
+  inline-size: 100%;
+  object-fit: cover;
+  transition: transform 0.7s ease-out;
+}
+.cr-gallery__card--motion:hover .cr-gallery__image {
+  transform: scale(1.06);
+}
+
+/* Shimmer gloss — radial highlight tracking --gx/--gy. */
+.cr-gallery__gloss {
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  border-radius: var(--landing-radius-2xl);
+  opacity: 0;
+  transition: opacity 0.2s var(--sys-motion-ease-standard);
+  background: radial-gradient(
+    circle at var(--gx, 50%) var(--gy, 50%),
+    rgb(255 255 255 / 0.13) 0%,
+    transparent 55%
+  );
+}
+.cr-gallery__card--motion:hover .cr-gallery__gloss {
+  opacity: 1;
+}
+
+/* Hairline inset ring keeps the frame crisp against the page. */
+.cr-gallery__ring {
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  border-radius: var(--landing-radius-2xl);
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.07);
+}
+
+/* Gradient grounding the caption + progress bar. */
+.cr-gallery__fade {
+  pointer-events: none;
+  position: absolute;
+  inset-inline: 0;
+  bottom: 0;
+  block-size: 8rem;
+  background: linear-gradient(
+    to top,
+    color-mix(in srgb, var(--sys-color-background) 85%, transparent),
+    transparent
+  );
+}
+
+.cr-gallery__caption-slot {
+  pointer-events: none;
+  position: absolute;
+  bottom: 52px;
+  left: var(--landing-gutter);
+  z-index: 10;
+  max-inline-size: 75%;
+}
+
+.cr-gallery__caption {
+  margin: 0;
+  font: var(--sys-font-largeTitle);
+  letter-spacing: var(--sys-tracking-largeTitle);
+  color: var(--sys-color-foreground);
+  animation: cr-caption-in 0.45s var(--sys-motion-ease-emphasized) both;
+}
+
+@keyframes cr-caption-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+    filter: blur(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+    filter: blur(0);
+  }
+}
+
+/* Progress bar — h-[3px] accent fill on a border track. */
+.cr-gallery__progress {
+  position: absolute;
+  bottom: 1.5rem;
+  left: 50%;
+  z-index: 10;
+  block-size: 3px;
+  inline-size: 6rem;
+  transform: translateX(-50%);
+  border-radius: 9999px;
+  background: var(--landing-border);
+}
+
+.cr-gallery__progress-fill {
+  block-size: 100%;
+  inline-size: 100%;
+  border-radius: 9999px;
+  background: var(--sys-color-accent);
+  transform: scaleX(0);
+  transform-origin: left;
+}
+
+/* ── Lightbox ── */
+.cr-gallery__lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: cr-lightbox-fade 0.22s var(--sys-motion-ease-standard) both;
+}
+
+.cr-gallery__lightbox-backdrop {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  background: rgb(0 0 0 / 0.85);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+}
+
+.cr-gallery__lightbox-image {
+  position: relative;
+  z-index: 10;
+  inline-size: 88vw;
+  max-inline-size: 24rem;
+  border-radius: var(--landing-radius-3xl);
+  object-fit: cover;
+  box-shadow:
+    0 32px 80px rgb(0 0 0 / 0.7),
+    0 0 0 1px rgb(255 255 255 / 0.1);
+  animation: cr-lightbox-pop 0.32s var(--sys-motion-ease-emphasized) both;
+}
+
+@keyframes cr-lightbox-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes cr-lightbox-pop {
+  from {
+    opacity: 0;
+    transform: translateY(28px) scale(0.86);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cr-gallery__caption,
+  .cr-gallery__lightbox,
+  .cr-gallery__lightbox-image {
+    animation: none;
+  }
+  .cr-gallery__image,
+  .cr-gallery__figure,
+  .cr-gallery__card {
+    transition: none;
+  }
+}

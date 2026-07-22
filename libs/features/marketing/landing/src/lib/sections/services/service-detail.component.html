@@ -1,0 +1,174 @@
+<ng-container *transloco="let t">
+  <cr-modal-sheet
+    data-testid="landing-service-detail"
+    sheetId="service-detail-sheet"
+    labelledBy="service-detail-title"
+    [attr.data-state]="sheetOpen() ? 'open' : 'closed'"
+    [closeLabel]="t('landing.nav.close')"
+    [open]="sheetOpen()"
+    [closing]="sheetClosing()"
+    [titleVisible]="sheetHeaderCondensed()"
+    (dismissed)="close()"
+    (sheetScrolled)="onSheetScroll($event)"
+  >
+    <!-- Condensed toolbar title — appears once the intro heading scrolls
+         under the sheet toolbar (old services.page behavior). -->
+    <p sheet-title class="service-sheet__compact-title">
+      {{ content.text(service().name) }}
+    </p>
+
+    <div class="service-sheet__body" data-testid="service-detail">
+      @if (service().gallery.length > 0) {
+        <cr-showcase-gallery
+          [images]="service().gallery"
+          [imageAlt]="content.text(service().name)"
+          [ariaLabel]="t('marketing.servicesPage.galleryLabel')"
+          [gridViewLabel]="t('marketing.gallery.gridView')"
+          [carouselViewLabel]="t('marketing.gallery.carouselView')"
+          [scrollProgress]="sheetScrollProgress()"
+          [expanded]="galleryExpanded()"
+          (expandedChange)="galleryExpanded.set($event)"
+        />
+      }
+
+      <div class="service-sheet__story">
+        <!-- ── Intro: eyebrow · title · summary ── -->
+        <section class="service-sheet__intro">
+          <div class="service-sheet__lede">
+            <p class="cr-section-eyebrow">
+              {{ t('landing.services.eyebrow') }}
+            </p>
+            <h2 id="service-detail-title">
+              {{ content.text(service().name) }}
+            </h2>
+            @if (service().kind === 'bundle') {
+              <span class="service-sheet__bundle-badge">
+                <cr-icon name="layers" class="service-sheet__bundle-glyph" />
+                {{ t('landing.services.bundle') }}
+              </span>
+            }
+          </div>
+
+          <div class="service-sheet__summary">
+            <p>{{ content.text(service().description) }}</p>
+            <div>
+              <span>
+                <cr-icon name="schedule" class="service-sheet__meta-glyph" />
+                {{ duration() }}
+              </span>
+              <strong
+                >{{ t('landing.services.from') }} {{ fromPrice() }}</strong
+              >
+            </div>
+            <a
+              routerLink="/auth"
+              [queryParams]="{ redirect: '/book' }"
+              uiButton
+              uiVariant="prominent"
+              uiSize="compact"
+              data-testid="service-detail-book"
+            >
+              <span>{{ t('landing.services.book') }}</span>
+              <cr-icon name="arrow_outward" class="service-sheet__cta-glyph" />
+            </a>
+          </div>
+        </section>
+
+        <!-- ── Variants — capsule chips in the old sheet's language ── -->
+        @if (service().variants.length > 0) {
+          <section class="service-sheet__variants">
+            <header>
+              <h3>{{ t('landing.services.variantsLabel') }}</h3>
+            </header>
+            <ul>
+              @for (variant of service().variants; track variant.id) {
+                <li>{{ content.text(variant.name) }}</li>
+              }
+            </ul>
+          </section>
+        }
+
+        <!-- ── Bundle includes — same chip language ── -->
+        @if (service().kind === 'bundle' && includedServices().length > 0) {
+          <section class="service-sheet__variants">
+            <header>
+              <h3>{{ t('landing.services.includesLabel') }}</h3>
+            </header>
+            <ul>
+              @for (included of includedServices(); track included.id) {
+                <li>{{ content.text(included.name) }}</li>
+              }
+            </ul>
+          </section>
+        }
+
+        <!-- ── Performers — old card look + each barber's own terms ── -->
+        <section
+          class="service-performers"
+          aria-labelledby="service-performers-title"
+        >
+          <header>
+            <h3 id="service-performers-title">
+              {{ t('landing.services.whoLabel') }}
+            </h3>
+          </header>
+
+          <ul>
+            @for (performer of performers(); track performer.barber.id) {
+              <li>
+                <article class="service-performer">
+                  <div class="service-performer__media">
+                    <img
+                      [src]="performer.barber.avatarSrc"
+                      [alt]="content.text(performer.barber.name)"
+                      [style.object-position]="performer.barber.objectPosition"
+                      loading="lazy"
+                    />
+                  </div>
+                  <div class="service-performer__identity">
+                    <h4>{{ content.text(performer.barber.name) }}</h4>
+                    <span>{{ content.text(performer.barber.title) }}</span>
+                  </div>
+                  <div class="service-performer__terms">
+                    <span class="service-performer__price">{{
+                      content.price(performer.price)
+                    }}</span>
+                    <span class="service-performer__duration">
+                      <cr-icon
+                        name="schedule"
+                        class="service-performer__duration-glyph"
+                      />
+                      {{ performer.minutes }}
+                      {{ t('landing.services.durationLabel') }}
+                    </span>
+                  </div>
+                </article>
+              </li>
+            }
+          </ul>
+        </section>
+      </div>
+    </div>
+
+    <!-- ── Bottom booking bar — reveals once the inline CTA scrolls away ── -->
+    <div
+      sheet-overlay
+      class="service-sheet__booking-bar sheet-bar-reveal"
+      [attr.data-visible]="sheetBookingBarVisible() ? '' : null"
+      [attr.aria-hidden]="sheetBookingBarVisible() ? null : 'true'"
+    >
+      <a
+        routerLink="/auth"
+        [queryParams]="{ redirect: '/book' }"
+        [attr.tabindex]="sheetBookingBarVisible() ? null : -1"
+        uiButton
+        uiVariant="prominent"
+        uiSize="compact"
+        uiShape="capsule"
+      >
+        <span>{{ t('landing.services.book') }}</span>
+        <cr-icon name="arrow_outward" class="service-sheet__cta-glyph" />
+      </a>
+    </div>
+  </cr-modal-sheet>
+</ng-container>

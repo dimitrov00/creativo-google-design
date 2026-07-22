@@ -1,0 +1,113 @@
+<ng-container *transloco="let t">
+  <div class="cr-footer__inner">
+    <!-- Preferences lead — mirrors the nav menu's controls. -->
+    <cr-locale-theme-toggle variant="toolbar" />
+
+    <!-- ── Sitemap columns ── -->
+    <nav [attr.aria-label]="t('landing.nav.primary')" class="cr-footer__grid">
+      <!-- Explore — in-page sections -->
+      <div>
+        <div class="cr-footer__col-header">
+          {{ t('landing.footer.cols.explore') }}
+        </div>
+        <ul class="cr-footer__list">
+          <li>
+            <a href="/#work" class="cr-footer__link">{{
+              t('landing.footer.nav.work')
+            }}</a>
+          </li>
+          <li>
+            <a href="/#team" class="cr-footer__link">{{
+              t('landing.footer.nav.team')
+            }}</a>
+          </li>
+          <li>
+            <a href="/#hiring" class="cr-footer__link">{{
+              t('landing.footer.nav.careers')
+            }}</a>
+          </li>
+        </ul>
+      </div>
+
+      <!-- Visit — practical, link-shaped (the full card lives in #visit) -->
+      <div>
+        <div class="cr-footer__col-header">
+          {{ t('landing.footer.cols.visit') }}
+        </div>
+        <ul class="cr-footer__list">
+          @if (location; as flagship) {
+            <li>
+              <a
+                [href]="flagship.mapUrl"
+                target="_blank"
+                rel="noreferrer"
+                class="cr-footer__link"
+              >
+                {{ t('landing.footer.links.directions') }}
+                <cr-icon name="arrow_forward" class="cr-footer__external" />
+              </a>
+            </li>
+            <li>
+              <a [href]="'tel:' + flagship.phoneE164" class="cr-footer__link">
+                {{ t('landing.footer.links.call') }}
+              </a>
+            </li>
+          }
+          <li>
+            <a href="/#visit" class="cr-footer__link">
+              {{ t('landing.footer.links.hours') }}
+            </a>
+          </li>
+        </ul>
+      </div>
+
+      <!-- Connect — social + account actions -->
+      <div>
+        <div class="cr-footer__col-header">
+          {{ t('landing.footer.cols.connect') }}
+        </div>
+        <ul class="cr-footer__list">
+          <li>
+            <a
+              href="https://instagram.com/creativo.barbershop"
+              target="_blank"
+              rel="noreferrer"
+              class="cr-footer__link"
+            >
+              <svg crIconInstagram class="cr-footer__social"></svg>
+              {{ t('landing.footer.links.instagram') }}
+              <cr-icon name="arrow_forward" class="cr-footer__external" />
+            </a>
+          </li>
+          <li>
+            <a routerLink="/book" class="cr-footer__link">
+              {{ t('landing.footer.links.book') }}
+            </a>
+          </li>
+          <li>
+            @if (isAuthed()) {
+              <a routerLink="/account" class="cr-footer__link">
+                {{ t('landing.footer.links.account') }}
+              </a>
+            } @else {
+              <a
+                routerLink="/auth"
+                [queryParams]="{ redirect: '/account' }"
+                class="cr-footer__link"
+              >
+                {{ t('landing.footer.links.login') }}
+              </a>
+            }
+          </li>
+        </ul>
+      </div>
+    </nav>
+
+    <!-- ── Legal bar ── -->
+    <div class="cr-footer__legal">
+      <span class="cr-footer__legal-text">
+        © {{ year }} Creativo · {{ t('landing.footer.rights') }}
+      </span>
+    </div>
+  </div>
+</ng-container>

@@ -1,4 +1,4 @@
-# Goal 06 — Feature slices (nine sequential sub-goals)
+# Goal 06 — Feature slices (ten sequential sub-goals)
 
 **Depends on:** 05 · **Blueprint refs:** §1.4, §5, §8 Phase 6
 
@@ -52,3 +52,8 @@ v2 ref: `routes/staff/*`, `findClients`. Role-gated dashboard, client search, st
 
 v2 ref: `routes/admin/*`, `components/impersonation-banner.tsx`. User search, scope+reason form, session banner with return action, audit visibility.
 **/goal:** `An admin can start an impersonation session from /admin/impersonate (user search, read/write scope, reason), the shell banner appears with a working return action, expiry is enforced via ImpersonationSession.isExpired, and the E2E verifies the audit entries; …`
+
+## 6.10 Design playground (`/playground`) — `libs/features/marketing/playground` (dev-gated)
+
+v2 ref: `components/playground/*` (playground-controls, knobs, playground.store), nav entry gated `'dev'` in `components/nav/menu-config.ts`. Added 2026-07-22 — this surface was omitted from the original blueprint without a recorded decision. Note: `apps/showcase` does NOT satisfy this row (blueprint §0.5) — v2's playground lives inside the product app behind a dev gate; if the team instead decides to descope it, move it to the checklist's "Explicitly out of scope" list with the reasoning and delete this sub-goal.
+**/goal:** `/playground renders the ported playground controls and knobs in apps/web behind the same dev-only gate as v2's nav entry (hidden in production builds, verified by a test on the gate logic); …`

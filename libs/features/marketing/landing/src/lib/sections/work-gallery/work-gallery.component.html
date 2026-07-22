@@ -1,0 +1,82 @@
+<ng-container *transloco="let t">
+  <div
+    #container
+    class="cr-gallery"
+    [style.height]="'calc(100vh + ' + scrollDistance() + 'px)'"
+  >
+    <div class="cr-gallery__stage">
+      <!-- Scroll-driven image strip -->
+      <div #strip class="cr-gallery__strip">
+        @for (shot of shots; track shot.id) {
+          <div
+            #card
+            class="cr-gallery__card"
+            [class.cr-gallery__card--motion]="motionEnabled()"
+            [style.aspect-ratio]="shot.aspectRatio"
+            [style.--drift]="motionEnabled() ? shot.driftY + 'px' : '0px'"
+            [attr.data-drift]="shot.driftY"
+            (mousemove)="onCardMove($event, card)"
+            (mouseleave)="onCardLeave(card)"
+            (click)="openLightbox(shot)"
+            (keydown.enter)="openLightbox(shot)"
+            tabindex="0"
+            role="button"
+            [attr.aria-label]="content.text(shot.alt)"
+          >
+            <figure class="cr-gallery__figure">
+              <img
+                [src]="shot.src"
+                [alt]="content.text(shot.alt)"
+                loading="lazy"
+                class="cr-gallery__image"
+              />
+              <!-- Shimmer gloss — follows the cursor via --gx/--gy -->
+              <div class="cr-gallery__gloss" aria-hidden="true"></div>
+              <div class="cr-gallery__ring" aria-hidden="true"></div>
+            </figure>
+          </div>
+        }
+      </div>
+
+      <!-- Gradient grounds the caption and progress bar -->
+      <div class="cr-gallery__fade" aria-hidden="true"></div>
+
+      <!-- Per-image caption — recreated per index so the entrance replays -->
+      <div class="cr-gallery__caption-slot">
+        @for (index of [activeIndex()]; track index) {
+          <p class="cr-gallery__caption" data-testid="work-gallery-caption">
+            {{ t(shots[index]?.captionKey ?? '') }}
+          </p>
+        }
+      </div>
+
+      <!-- Progress bar — 3px accent fill -->
+      <div class="cr-gallery__progress" aria-hidden="true">
+        <div #progressFill class="cr-gallery__progress-fill"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Lightbox -->
+  @if (lightboxShot(); as shot) {
+    <div
+      class="cr-gallery__lightbox"
+      data-testid="work-gallery-lightbox"
+      role="dialog"
+      aria-modal="true"
+      [attr.aria-label]="content.text(shot.alt)"
+    >
+      <button
+        type="button"
+        class="cr-gallery__lightbox-backdrop"
+        [attr.aria-label]="t('landing.nav.close')"
+        (click)="closeLightbox()"
+      ></button>
+      <img
+        class="cr-gallery__lightbox-image"
+        [src]="shot.src"
+        [alt]="content.text(shot.alt)"
+      />
+    </div>
+  }
+</ng-container>

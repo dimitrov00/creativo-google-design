@@ -1,0 +1,55 @@
+<ng-container *transloco="let t">
+  <header
+    class="cr-header"
+    data-testid="landing-header"
+    [attr.data-view]="isSolid() ? 'solid' : 'float'"
+    [style.transform]="headerTransform()"
+  >
+    <div class="cr-header__inner">
+      <a routerLink="/" class="cr-header__brand" aria-label="Creativo">
+        <img
+          [src]="logoWhite() ? '/logo-white.svg' : '/logo-black.svg'"
+          alt="Creativo"
+          class="cr-header__logo"
+        />
+      </a>
+
+      <div class="cr-header__cluster">
+        @if (!isAuthed()) {
+          <a
+            routerLink="/auth"
+            [queryParams]="{ redirect: '/account' }"
+            class="cr-header__login"
+            [attr.data-surface]="isSolid() ? 'solid' : 'overlay'"
+            data-testid="landing-login-pill"
+          >
+            <cr-icon name="lock" class="cr-header__login-glyph" />
+            {{ t('landing.nav.login') }}
+          </a>
+        }
+
+        <button
+          type="button"
+          class="cr-header__trigger"
+          data-testid="nav-menu-trigger"
+          [attr.data-surface]="
+            menuOpen() ? 'open' : isSolid() ? 'solid' : 'overlay'
+          "
+          [attr.aria-label]="
+            menuOpen() ? t('landing.nav.close') : t('landing.nav.menu')
+          "
+          [attr.aria-expanded]="menuOpen()"
+          (click)="toggleMenu()"
+        >
+          <cr-menu-icon [open]="menuOpen()" />
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <cr-landing-menu
+    [open]="menuOpen()"
+    [isAuthed]="isAuthed()"
+    (closed)="menuOpen.set(false)"
+  />
+</ng-container>

@@ -10,7 +10,6 @@ import {
   output,
   signal,
 } from '@angular/core';
-import { CursorTargetDirective } from '@creativo/shared/cursor';
 
 export interface ModalSheetScrollEvent {
   readonly scroller: HTMLElement;
@@ -19,7 +18,7 @@ export interface ModalSheetScrollEvent {
 
 @Component({
   selector: 'cr-modal-sheet',
-  imports: [CursorTargetDirective],
+  imports: [],
   templateUrl: './modal-sheet.component.html',
   styleUrl: './modal-sheet.component.css',
   host: {

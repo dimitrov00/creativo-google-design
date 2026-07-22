@@ -15,7 +15,11 @@ export interface LanguageOption {
   readonly label: string;
 }
 
-const STORAGE_KEY = 'creativo-language';
+// The pre-paint boot script reads this exact key before Angular runs
+// (`@creativo/ui/tokens` LANG_STORAGE_KEY — module boundaries keep
+// `type:tokens` TS out of feature libs, so the stable contract string is
+// spelled here). The old 'creativo-language' key drifted from boot.
+const STORAGE_KEY = 'ui-lang';
 
 /**
  * Owns the active locale so both the shell header and the hero's in-film

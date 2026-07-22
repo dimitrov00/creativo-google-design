@@ -38,6 +38,9 @@
     },
     {
       "path": "../../../infrastructure/i18n/tsconfig.lib.json"
+    },
+    {
+      "path": "../../../application/identity/tsconfig.lib.json"
     }
   ]
 }

@@ -1,0 +1,172 @@
+/* v2 hiring-section.tsx — dark video card with cursor spotlight. */
+
+:host {
+  display: block;
+}
+
+.cr-hiring__section {
+  padding-inline: var(--landing-gutter);
+  padding-block-start: 7rem;
+}
+
+.cr-hiring__card {
+  position: relative;
+  overflow: hidden;
+  border-radius: 32px;
+  background: #050505;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.cr-hiring__video {
+  position: absolute;
+  inset: 0;
+  block-size: 100%;
+  inline-size: 100%;
+  object-fit: cover;
+  opacity: 0.38;
+}
+
+/* Dark diagonal shade — heavier toward the lower right. */
+.cr-hiring__shade {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    145deg,
+    rgb(0 0 0 / 0.68) 0%,
+    rgb(5 2 0 / 0.82) 55%,
+    rgb(0 0 0 / 0.93) 100%
+  );
+}
+
+/* Warm amber breath in the top-left corner. */
+.cr-hiring__warmth {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(
+    ellipse 70% 55% at 5% 20%,
+    rgb(242 107 34 / 0.1) 0%,
+    transparent 65%
+  );
+}
+
+/* Cursor spotlight — follows --spot-x/--spot-y set from mousemove; the
+   spring-animated opacity of v2 approximated by a CSS transition. */
+.cr-hiring__spotlight {
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  transition: opacity 0.3s var(--sys-motion-ease-standard);
+  background: radial-gradient(
+    480px circle at var(--spot-x, -500px) var(--spot-y, -500px),
+    rgb(242 107 34 / 0.13),
+    transparent 70%
+  );
+}
+.cr-hiring__card[data-spot] .cr-hiring__spotlight {
+  opacity: 1;
+}
+
+.cr-hiring__grain {
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  opacity: 0.14;
+  mix-blend-mode: overlay;
+}
+
+.cr-hiring__content {
+  position: relative;
+  padding: 5rem 2rem;
+  text-align: center;
+}
+@media (min-width: 640px) {
+  .cr-hiring__content {
+    padding: 6rem 3.5rem;
+  }
+}
+
+/* Overline eyebrow — accent at 80% over the dark card. */
+.cr-hiring__eyebrow {
+  margin: 0;
+  font: var(--sys-font-caption);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: color-mix(in srgb, var(--sys-color-accent) 80%, transparent);
+}
+
+/* Headline — flex + column-gap so word spacing is layout, not collapsed
+   whitespace (v2 WordReveal). */
+.cr-hiring__title {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  column-gap: 0.28em;
+  margin: 1rem auto 0;
+  max-inline-size: 340px;
+  font: var(--sys-font-extraLargeTitle);
+  /* v2 heading 2xl leading is 0.98 — the token's 1.02 drifts at 44px. */
+  line-height: 0.98;
+  letter-spacing: var(--sys-tracking-largeTitle);
+  color: var(--landing-media-fg);
+}
+
+.cr-hiring__word {
+  display: inline-block;
+}
+
+/* Per-word blur + lift reveal — hidden only once the JS gate confirms the
+   observer will fire; latched [data-revealed] plays the stagger. */
+.cr-hiring__title[data-motion] .cr-hiring__word {
+  opacity: 0;
+}
+.cr-hiring__title[data-motion][data-revealed] .cr-hiring__word {
+  animation: cr-hiring-word 0.68s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation-delay: calc(0.22s + var(--word-i) * 0.11s);
+}
+
+@keyframes cr-hiring-word {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+    filter: blur(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+    filter: blur(0);
+  }
+}
+
+.cr-hiring__subtitle {
+  margin: 1rem auto 0;
+  max-inline-size: 300px;
+  font-family: var(--sys-font-family-text);
+  font-size: 1rem;
+  line-height: 1.5;
+  color: var(--landing-media-fg-muted);
+}
+
+.cr-hiring__actions {
+  margin-block-start: 2.5rem;
+}
+
+.cr-hiring__cta {
+  inline-size: fit-content;
+}
+
+.cr-hiring__cta-glyph {
+  font-size: 16px;
+  margin-inline-start: 8px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cr-hiring__title[data-motion] .cr-hiring__word {
+    opacity: 1;
+    animation: none;
+  }
+  .cr-hiring__spotlight {
+    display: none;
+  }
+}

@@ -1,0 +1,90 @@
+<ng-container *transloco="let t">
+  <!-- The inset video card (v2 VideoHero: squircle, sheet radius, #0a0a0a). -->
+  <div class="cr-hero__card cr-squircle">
+    @if (reducedMotion()) {
+      <img
+        src="/work/landing-poster.jpg"
+        alt=""
+        aria-hidden="true"
+        class="cr-hero__poster"
+      />
+    } @else {
+      <video
+        #heroVideo
+        class="cr-hero__video"
+        [attr.data-loaded]="videoLoaded() ? '' : null"
+        src="/hero.mp4"
+        poster="/work/landing-poster.jpg"
+        autoplay
+        muted
+        loop
+        playsinline
+        preload="auto"
+        (loadeddata)="onVideoLoaded()"
+      ></video>
+    }
+
+    <!-- Dark overlay — heavier at the bottom for text readability. -->
+    <div class="cr-hero__scrim" aria-hidden="true"></div>
+
+    <div class="cr-hero__content">
+      <div class="cr-hero__spacer"></div>
+
+      <!-- Bottom — overlay controls + headline. -->
+      <div class="cr-hero__copy">
+        <div class="cr-hero__prefs">
+          <cr-locale-theme-toggle variant="overlay" />
+        </div>
+
+        <p
+          class="cr-hero__tagline"
+          data-hero-enter
+          data-enter-y="12"
+          data-enter-delay="100"
+          data-enter-duration="700"
+        >
+          {{ t('landing.hero.tagline') }}
+        </p>
+        <h1
+          class="cr-hero__heading"
+          data-hero-enter
+          data-enter-y="18"
+          data-enter-delay="200"
+          data-enter-duration="800"
+        >
+          {{ t('landing.hero.heading') }}
+        </h1>
+        <p
+          class="cr-hero__subtitle"
+          data-hero-enter
+          data-enter-y="12"
+          data-enter-delay="400"
+          data-enter-duration="700"
+        >
+          {{ t('landing.hero.subtitle') }}
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Primary CTA below the card. -->
+  <div
+    class="cr-hero__cta-wrap"
+    data-hero-enter
+    data-enter-y="16"
+    data-enter-delay="550"
+    data-enter-duration="700"
+  >
+    <a
+      routerLink="/auth"
+      [queryParams]="{ redirect: '/book' }"
+      class="cr-hero__cta-link"
+      data-testid="landing-hero-cta"
+    >
+      <button uiButton uiSize="prominent" class="cr-hero__button" tabindex="-1">
+        <cr-icon name="calendar_month" class="cr-hero__glyph" />
+        {{ t('landing.hero.cta') }}
+      </button>
+    </a>
+  </div>
+</ng-container>
