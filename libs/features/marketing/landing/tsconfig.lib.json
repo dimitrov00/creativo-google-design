@@ -28,16 +28,19 @@
   ],
   "references": [
     {
-      "path": "../../../ui/modifiers/tsconfig.lib.json"
+      "path": "../../../ui/patterns/tsconfig.lib.json"
     },
     {
-      "path": "../../../ui/controls/tsconfig.lib.json"
+      "path": "../../../ui/modifiers/tsconfig.lib.json"
     },
     {
       "path": "../../../shared/cursor/tsconfig.lib.json"
     },
     {
       "path": "../../../infrastructure/i18n/tsconfig.lib.json"
+    },
+    {
+      "path": "../../../ui/controls/tsconfig.lib.json"
     },
     {
       "path": "../../../application/identity/tsconfig.lib.json"

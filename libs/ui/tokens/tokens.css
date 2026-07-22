@@ -12,7 +12,10 @@
     --sys-font-family-mono: 'Geist Mono', ui-monospace, monospace;
 
     /* ── Typography: SwiftUI text roles (size/line-height ← v2 heading/text ladder) ── */
-    --sys-font-extraLargeTitle: 800 clamp(2.125rem, 5vw, 2.75rem)/1.02
+    /* Line-height 0.98: the nominal 1.02 drifted ~2px versus the drawn
+       comps — hero/hiring/closing all want the tighter cut, so it lives in
+       the token instead of per-section overrides. */
+    --sys-font-extraLargeTitle: 800 clamp(2.125rem, 5vw, 2.75rem)/0.98
       var(--sys-font-family-display);
     --sys-font-largeTitle: 800 2.25rem/0.96 var(--sys-font-family-display); /* v2 heading, extra large tier */
     --sys-font-title: 700 1.75rem/1.08 var(--sys-font-family-display); /* v2 heading, large tier, 28px */
@@ -31,13 +34,16 @@
        verbatim (pixel parity over reusing the nearest control-scale role). */
     --sys-font-display: 630 clamp(3.3rem, 6vw, 6.6rem)/0.86
       var(--sys-font-family-display);
-    --sys-font-eyebrow: 760 0.64rem/1.2 var(--sys-font-family-display);
+    /* Eyebrow: reconciled 2026-07 onto the caption-based overline recipe
+       (DM Sans 600 11px, +0.8px) — the cut 5 of 6 landing call sites were
+       hand-rolling — replacing the never-adopted Onest 760/0.64rem cut. */
+    --sys-font-eyebrow: 600 0.6875rem/1.3 var(--sys-font-family-text);
 
     --sys-tracking-largeTitle: -0.075rem; /* v2 -1.2px */
     --sys-tracking-title: -0.0375rem; /* v2 -0.6px */
     --sys-tracking-caption: 0.02em;
     --sys-tracking-display: -0.074em;
-    --sys-tracking-eyebrow: 0.13em;
+    --sys-tracking-eyebrow: 0.073em; /* ≈0.8px at the 11px eyebrow size */
 
     /* ── Spacing: density-aware scale (v2 --spacing × --spacing-scale) ── */
     --sys-density: 1; /* [data-density] overrides */

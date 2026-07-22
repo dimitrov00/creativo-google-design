@@ -1,16 +1,16 @@
 <ng-container *transloco="let t">
   <section id="locations" class="locations" aria-labelledby="locations-title">
-    <header class="locations__heading">
-      <p class="cr-section-eyebrow">
+    <ui-section-header class="locations__heading">
+      <p uiEyebrow>
         {{ t('marketing.locations.eyebrow') }}
       </p>
-      <h2 id="locations-title" class="cr-section-title">
+      <h2 id="locations-title" uiTitle>
         {{ t('marketing.locations.titleA') }}<br />{{
           t('marketing.locations.titleB')
         }}
       </h2>
-      <p uiText uiFont="body">{{ t('marketing.locations.intro') }}</p>
-    </header>
+      <p uiLede>{{ t('marketing.locations.intro') }}</p>
+    </ui-section-header>
 
     <div class="locations__content">
       <aside class="locations__panel locations__panel--list">

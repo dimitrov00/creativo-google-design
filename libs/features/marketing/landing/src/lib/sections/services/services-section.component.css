@@ -33,6 +33,11 @@
   margin-block-start: 3.5rem;
 }
 
+.cr-services__bundles-title {
+  margin: 0;
+  color: var(--sys-color-foreground);
+}
+
 .cr-services__carousel--bundles {
   margin-block-start: 1rem;
 }

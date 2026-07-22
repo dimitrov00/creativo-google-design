@@ -40,6 +40,8 @@ describe('LandingHeroComponent', () => {
     );
     expect(cta).not.toBeNull();
     expect(cta?.getAttribute('href')).toContain('/auth');
-    expect(cta?.querySelector('button[uiButton]')).not.toBeNull();
+    // The anchor IS the button (a[uiButton]) — no pointer-events:none
+    // wrapper, so hover/press/focus land on the real interactive element.
+    expect(cta?.classList.contains('ui-button')).toBe(true);
   });
 });

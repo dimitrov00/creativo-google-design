@@ -2,6 +2,7 @@ import { ChangeDetectionStrategy, Component } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { TranslocoDirective } from '@jsverse/transloco';
 import { UiButton } from '@creativo/ui/controls';
+import { UiSectionHeader } from '@creativo/ui/patterns';
 import { FadeUpDirective } from '../../shared/motion/fade-up.directive';
 
 /**
@@ -12,16 +13,24 @@ import { FadeUpDirective } from '../../shared/motion/fade-up.directive';
 @Component({
   selector: 'cr-closing-cta',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FadeUpDirective, RouterLink, TranslocoDirective, UiButton],
+  imports: [
+    FadeUpDirective,
+    RouterLink,
+    TranslocoDirective,
+    UiButton,
+    UiSectionHeader,
+  ],
   host: { class: 'cr-closing', 'data-testid': 'landing-closing-cta' },
   template: `
     <ng-container *transloco="let t">
-      <h2 crFadeUp class="cr-closing__heading">
-        {{ t('landing.closing.heading') }}
-      </h2>
-      <p crFadeUp [crFadeUpDelay]="0.08" class="cr-closing__subtitle">
-        {{ t('landing.closing.subtitle') }}
-      </p>
+      <ui-section-header uiAlign="center">
+        <h2 crFadeUp uiTitle class="cr-closing__heading">
+          {{ t('landing.closing.heading') }}
+        </h2>
+        <p crFadeUp [crFadeUpDelay]="0.08" uiLede class="cr-closing__subtitle">
+          {{ t('landing.closing.subtitle') }}
+        </p>
+      </ui-section-header>
       <div crFadeUp [crFadeUpDelay]="0.16" class="cr-closing__actions">
         <a
           routerLink="/auth"
@@ -49,18 +58,12 @@ import { FadeUpDirective } from '../../shared/motion/fade-up.directive';
         padding-block-start: 10rem;
       }
     }
+    /* Type metrics come from ui-section-header — only measures stay here. */
     .cr-closing__heading {
-      margin: 0 auto;
       max-inline-size: 25rem;
-      font: var(--sys-font-extraLargeTitle);
-      letter-spacing: var(--sys-tracking-largeTitle);
-      color: var(--sys-color-foreground);
     }
     .cr-closing__subtitle {
-      margin: 1rem auto 0;
       max-inline-size: 24rem;
-      font: var(--sys-font-body);
-      color: var(--landing-muted-foreground);
     }
     .cr-closing__actions {
       margin-block-start: 2rem;

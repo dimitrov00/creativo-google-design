@@ -87,13 +87,12 @@
   margin-block-end: 1.75rem;
 }
 
-/* v2 caption({uppercase}) — 11px semibold, +0.8px. */
+/* The sanctioned eyebrow recipe, media-subtle ink over the video. */
 .cr-hero__tagline {
   margin: 0;
-  font: var(--sys-font-caption);
-  font-weight: 600;
+  font: var(--sys-font-eyebrow);
+  letter-spacing: var(--sys-tracking-eyebrow);
   text-transform: uppercase;
-  letter-spacing: 0.8px;
   color: var(--landing-media-fg-subtle);
 }
 
@@ -101,8 +100,6 @@
   margin: 0;
   margin-block-start: 0.75rem;
   font: var(--sys-font-extraLargeTitle);
-  /* v2 heading 2xl leading is 0.98 — the token's 1.02 drifts ~2px at 44px. */
-  line-height: 0.98;
   letter-spacing: var(--sys-tracking-largeTitle);
   color: var(--landing-media-fg);
 }

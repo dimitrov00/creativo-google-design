@@ -11,6 +11,7 @@ import { TranslocoDirective } from '@jsverse/transloco';
 import { CursorTargetDirective } from '@creativo/shared/cursor';
 import { UiButton } from '@creativo/ui/controls';
 import { UiTextDirective } from '@creativo/ui/modifiers';
+import { UiSectionHeader } from '@creativo/ui/patterns';
 import { ModalSheetComponent } from '../../../shared/modal-sheet/modal-sheet.component';
 import { ShowcaseGalleryComponent } from '../../../shared/showcase-gallery/showcase-gallery.component';
 
@@ -32,6 +33,7 @@ interface BarberItem {
     ShowcaseGalleryComponent,
     TranslocoDirective,
     UiButton,
+    UiSectionHeader,
     UiTextDirective,
   ],
   templateUrl: './team-showcase.component.html',

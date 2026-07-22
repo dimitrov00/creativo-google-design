@@ -6,6 +6,7 @@ import {
   ElementRef,
   PLATFORM_ID,
   computed,
+  effect,
   inject,
   signal,
 } from '@angular/core';
@@ -13,14 +14,20 @@ import { TranslocoDirective, TranslocoService } from '@jsverse/transloco';
 import { CursorService, CursorTargetDirective } from '@creativo/shared/cursor';
 import { UiButton } from '@creativo/ui/controls';
 import { UiTextDirective } from '@creativo/ui/modifiers';
+import { UiSectionHeader } from '@creativo/ui/patterns';
 import type { Map as MapLibreMap, Marker as MapLibreMarker } from 'maplibre-gl';
 import {
   ModalSheetComponent,
   type ModalSheetScrollEvent,
 } from '../../../shared/modal-sheet/modal-sheet.component';
+import { ThemeService } from '../../../shared/prefs/theme.service';
 import { ShowcaseGalleryComponent } from '../../../shared/showcase-gallery/showcase-gallery.component';
 
-const MAP_STYLE_URL = 'https://tiles.openfreemap.org/styles/positron';
+/** Theme-matched basemap styles (OpenFreeMap hosts both). */
+const MAP_STYLE_URLS = {
+  light: 'https://tiles.openfreemap.org/styles/positron',
+  dark: 'https://tiles.openfreemap.org/styles/dark',
+} as const;
 const STATUS_REFRESH_MS = 60_000;
 
 /** Index convention matches `Date.getDay()` — 0 is Sunday, 6 is Saturday. */
@@ -91,6 +98,7 @@ const MLADOST_SCHEDULE: WeekSchedule = [
     ShowcaseGalleryComponent,
     TranslocoDirective,
     UiButton,
+    UiSectionHeader,
     UiTextDirective,
   ],
   templateUrl: './locations.component.html',
@@ -105,6 +113,7 @@ export class LocationsComponent implements AfterViewInit {
   private readonly destroyRef = inject(DestroyRef);
   private readonly cursorService = inject(CursorService);
   private readonly transloco = inject(TranslocoService);
+  private readonly theme = inject(ThemeService);
 
   private map: MapLibreMap | undefined;
   private markerElements: HTMLElement[] = [];
@@ -174,6 +183,15 @@ export class LocationsComponent implements AfterViewInit {
       }
     });
 
+    // Basemap follows the app theme — setStyle swaps tiles in place (DOM
+    // markers and indicators survive; they're positioned by projection, not
+    // by style layers).
+    effect(() => {
+      const style = MAP_STYLE_URLS[this.theme.theme()];
+      this.map?.setStyle(style);
+      this.sheetMap?.setStyle(style);
+    });
+
     if (isPlatformBrowser(this.platformId)) {
       const timer = window.setInterval(
         () => this.now.set(new Date()),
@@ -204,7 +222,7 @@ export class LocationsComponent implements AfterViewInit {
       try {
         const map = new maplibregl.Map({
           container: mapContainer,
-          style: MAP_STYLE_URL,
+          style: MAP_STYLE_URLS[this.theme.theme()],
           bounds: this.computeBounds(),
           fitBoundsOptions: { padding: 56, duration: 0 },
           attributionControl: { compact: true },
@@ -260,7 +278,7 @@ export class LocationsComponent implements AfterViewInit {
       try {
         const sheetMap = new maplibregl.Map({
           container: sheetMapContainer,
-          style: MAP_STYLE_URL,
+          style: MAP_STYLE_URLS[this.theme.theme()],
           center: [location.lng, location.lat],
           zoom: 14.5,
           attributionControl: { compact: true },

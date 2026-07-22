@@ -24,21 +24,9 @@
   align-self: start;
 }
 
-/* Type metrics come from the shared data-text roles (eyebrow/display/footnote,
-   see libs/shared/ui typography.css) — only layout modifiers live here. */
-.eyebrow {
-  margin: 0 0 1.2rem;
-}
-
-.team__heading h2 {
-  max-inline-size: 8ch;
-  margin: 0;
-}
-
-.team__heading > p:last-child {
+/* Type metrics come from ui-section-header — only layout stays here. */
+.team__heading [uilede] {
   max-inline-size: 22rem;
-  margin: 2rem 0 0;
-  color: color-mix(in srgb, var(--page-fg) calc(0.58 * 100%), transparent);
 }
 
 .team-grid {
@@ -246,15 +234,6 @@
     inset: auto;
     margin-block-end: 4.5rem;
     padding-inline: 0.25rem;
-  }
-
-  .team__heading h2 {
-    max-inline-size: 7ch;
-  }
-
-  .team__heading > p:last-child {
-    max-inline-size: 21rem;
-    margin-block-start: 1.5rem;
   }
 
   .team-grid {

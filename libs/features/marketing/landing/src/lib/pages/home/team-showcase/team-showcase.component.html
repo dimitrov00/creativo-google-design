@@ -1,14 +1,14 @@
 <ng-container *transloco="let t">
   <section id="team" class="team" aria-labelledby="team-title">
-    <header class="team__heading">
-      <p class="eyebrow" uiText uiFont="eyebrow">
+    <ui-section-header class="team__heading">
+      <p uiEyebrow>
         {{ t('marketing.team.eyebrow') }}
       </p>
-      <h2 id="team-title" uiText uiFont="display">
+      <h2 id="team-title" uiTitle>
         {{ t('marketing.team.titleA') }}<br />{{ t('marketing.team.titleB') }}
       </h2>
-      <p uiText uiFont="footnote">{{ t('marketing.team.intro') }}</p>
-    </header>
+      <p uiLede>{{ t('marketing.team.intro') }}</p>
+    </ui-section-header>
 
     <div class="team-grid">
       @for (barber of barbers; track barber.nameKey; let index = $index) {

@@ -1,0 +1,49 @@
+@layer sys-components {
+  .ui-section-header {
+    display: block;
+  }
+
+  /* Slot attributes are lowercased by the HTML parser (uiEyebrow →
+     uieyebrow) — selectors use the DOM form. */
+  .ui-section-header > [uieyebrow] {
+    margin: 0;
+    font: var(--sys-font-eyebrow);
+    letter-spacing: var(--sys-tracking-eyebrow);
+    text-transform: uppercase;
+    color: var(--sys-color-accent);
+  }
+
+  .ui-section-header > [uititle] {
+    margin: 0.625rem 0 0;
+    font: var(--sys-font-extraLargeTitle);
+    letter-spacing: var(--sys-tracking-largeTitle);
+    color: var(--sys-color-foreground);
+  }
+
+  .ui-section-header > [uilede] {
+    margin: 0.75rem 0 0;
+    max-inline-size: 26.25rem;
+    font: var(--sys-font-body);
+    color: var(--sys-color-secondary-label);
+  }
+
+  .ui-section-header[data-align='center'] {
+    text-align: center;
+  }
+  .ui-section-header[data-align='center'] > [uititle],
+  .ui-section-header[data-align='center'] > [uilede] {
+    margin-inline: auto;
+  }
+
+  /* Over media (video/photography) the ink rides the white overlay ramp —
+     theme-independent by design, like ui-button's overlay variant. */
+  .ui-section-header[data-on-media] > [uieyebrow] {
+    color: rgb(255 255 255 / 0.6);
+  }
+  .ui-section-header[data-on-media] > [uititle] {
+    color: #ffffff;
+  }
+  .ui-section-header[data-on-media] > [uilede] {
+    color: rgb(255 255 255 / 0.78);
+  }
+}

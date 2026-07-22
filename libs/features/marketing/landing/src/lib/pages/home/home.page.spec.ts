@@ -32,7 +32,9 @@ describe('HomePage', () => {
     const anchors = [...host.querySelectorAll('.cr-landing__anchor')].map(
       (anchor) => anchor.id,
     );
-    expect(anchors).toEqual(['work', 'team', 'services', 'hiring', 'visit']);
+    // Conversion-ordered funnel (case study §2.9): offer → proof →
+    // logistics, recruiting demoted below locations.
+    expect(anchors).toEqual(['services', 'work', 'team', 'visit', 'hiring']);
 
     const main = host.querySelector('main');
     expect(main?.querySelector('#work cr-work-gallery')).not.toBeNull();

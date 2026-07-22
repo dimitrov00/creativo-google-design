@@ -137,7 +137,10 @@
     block-size: 1em;
   }
 
-  /* ── Section-opening header trio (v2 landing-recipes `sectionHeader`) ── */
+  /* ── DEPRECATED section-header trio — superseded by <ui-section-header>
+     (libs/ui/patterns). Sole remaining consumer: the service-detail sheet
+     intro, which migrates with the sheet redesign (backlog #15); delete
+     these three rules with it. ── */
   /* Eyebrow: caption 11px semibold uppercase +0.8px, accent. */
   .cr-section-eyebrow {
     font: var(--sys-font-caption);

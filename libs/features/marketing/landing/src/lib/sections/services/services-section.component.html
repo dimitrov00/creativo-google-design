@@ -1,9 +1,9 @@
 <ng-container *transloco="let t">
-  <div crFadeUp>
-    <p class="cr-section-eyebrow">{{ t('landing.services.eyebrow') }}</p>
-    <h2 class="cr-section-title">{{ t('landing.services.title') }}</h2>
-    <p class="cr-section-subtitle">{{ t('landing.services.subtitle') }}</p>
-  </div>
+  <ui-section-header crFadeUp>
+    <p uiEyebrow>{{ t('landing.services.eyebrow') }}</p>
+    <h2 uiTitle>{{ t('landing.services.title') }}</h2>
+    <p uiLede>{{ t('landing.services.subtitle') }}</p>
+  </ui-section-header>
 
   <!-- Base services — swipeable portrait-tile carousel; the next tile peeks
        past the edge so the row reads as "more to the side". -->
@@ -76,12 +76,13 @@
     }
   </div>
 
-  <!-- Bundles — their own titled shelf below. -->
+  <!-- Bundles — their own titled shelf below (a real subsection heading,
+       not a paragraph in eyebrow dress — case-study §2.4). -->
   @if (content.bundleServices.length > 0) {
     <div class="cr-services__bundles">
-      <p crFadeUp class="cr-section-eyebrow">
+      <h3 crFadeUp uiText uiFont="title3" class="cr-services__bundles-title">
         {{ t('landing.services.bundlesTitle') }}
-      </p>
+      </h3>
       <div
         class="cr-services__carousel cr-scrollbar-hide cr-services__carousel--bundles"
       >

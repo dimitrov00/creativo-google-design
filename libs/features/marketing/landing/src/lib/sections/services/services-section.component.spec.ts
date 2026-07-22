@@ -20,10 +20,10 @@ describe('ServicesSectionComponent', () => {
     const fixture = await render();
     const host: HTMLElement = fixture.nativeElement;
 
-    expect(host.querySelector('.cr-section-eyebrow')?.textContent).toContain(
-      'Услугите',
-    );
-    expect(host.querySelector('.cr-section-title')).not.toBeNull();
+    expect(
+      host.querySelector('ui-section-header [uiEyebrow]')?.textContent,
+    ).toContain('Услугите');
+    expect(host.querySelector('ui-section-header [uiTitle]')).not.toBeNull();
 
     // v2 shelf: 4 singles + 2 bundles; upsell-only add-ons never appear.
     expect(host.querySelectorAll('.cr-services__tile').length).toBe(6);

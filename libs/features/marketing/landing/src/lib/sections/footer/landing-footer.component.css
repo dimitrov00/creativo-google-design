@@ -30,15 +30,15 @@
   }
 }
 
-/* Column header — the same overline used across the landing's sections,
-   in its neutral (muted) tone. */
+/* Column header — a nav label, not a section eyebrow: caption + secondary
+   ink, tokenized tracking (case-study §2.4). */
 .cr-footer__col-header {
   margin-block-end: 0.875rem;
   font: var(--sys-font-caption);
   font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.8px;
-  color: var(--landing-muted-foreground);
+  letter-spacing: var(--sys-tracking-caption);
+  color: var(--sys-color-secondary-label);
 }
 
 .cr-footer__list {

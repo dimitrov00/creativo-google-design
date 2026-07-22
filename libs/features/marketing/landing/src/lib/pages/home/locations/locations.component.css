@@ -20,15 +20,9 @@
   align-self: start;
 }
 
-/* Type metrics come from the shared data-text roles (eyebrow/display/body,
-   see libs/shared/ui typography.css) — only layout modifiers live here. */
-
-/* Intro reads as the shared section subtitle (cr-section-subtitle look). */
-.locations__heading > p:last-child {
+/* Type metrics come from ui-section-header — only layout stays here. */
+.locations__heading [uilede] {
   max-inline-size: 22rem;
-  margin-block-start: 0.75rem;
-  font: var(--sys-font-body);
-  color: var(--landing-muted-foreground);
 }
 
 .locations__content {
@@ -553,8 +547,12 @@
   inline-size: 3rem;
   aspect-ratio: 1;
   border-radius: 50%;
-  border: 1.5px solid rgb(255 255 255 / 0.6);
-  background: rgb(255 255 255 / 0.78);
+  /* Theme-aware glass — surface-alpha over the sheet, foreground ink (the
+     old white-alpha fill + foreground ink failed contrast in dark). Same
+     recipe family as .location-sheet__icon-action below. */
+  border: 1.5px solid
+    color-mix(in srgb, var(--sys-color-foreground) 16%, transparent);
+  background: color-mix(in srgb, var(--sys-color-surface) 78%, transparent);
   color: var(--sys-color-foreground);
   text-decoration: none;
   box-shadow: 0 0.6rem 1.6rem rgb(0 0 0 / 0.16);
@@ -574,7 +572,7 @@
 .location-sheet__toolbar-icon:hover,
 .location-sheet__toolbar-icon:focus-visible {
   border-color: var(--sys-color-foreground);
-  background: rgb(255 255 255 / 0.92);
+  background: color-mix(in srgb, var(--sys-color-surface) 92%, transparent);
 }
 
 .location-sheet__toolbar-book {

@@ -28,7 +28,7 @@
     aspect-ratio: 1;
     border-radius: 50%;
     border: 2px solid var(--sys-color-foreground);
-    background: #fff;
+    background: var(--sys-color-background);
     color: var(--sys-color-foreground);
     opacity: 0;
     pointer-events: none;
@@ -88,7 +88,7 @@
 
   .locations-map__pin-head {
     --cr-cursor-fill-color: var(--sys-color-foreground);
-    --cr-cursor-surface: #fff;
+    --cr-cursor-surface: var(--sys-color-background);
     position: relative;
     z-index: 1;
     display: grid;
@@ -97,7 +97,7 @@
     aspect-ratio: 1;
     border-radius: 50%;
     border: 2px solid var(--sys-color-foreground);
-    background: #fff;
+    background: var(--sys-color-background);
     transition:
       background-color var(--sys-motion-duration-deliberate)
         var(--sys-motion-ease-standard),
@@ -144,5 +144,20 @@
 
   .locations-map__pin[data-active] .locations-map__pin-icon {
     color: var(--sys-color-background);
+  }
+
+  /* MapLibre's own attribution strip — token-themed so it doesn't glare
+     white over the dark basemap (MapLibre injects this DOM; like the pins,
+     only global CSS can reach it). */
+  .maplibregl-ctrl-attrib {
+    background: color-mix(
+      in srgb,
+      var(--sys-color-background) 70%,
+      transparent
+    );
+  }
+  .maplibregl-ctrl-attrib,
+  .maplibregl-ctrl-attrib a {
+    color: var(--sys-color-secondary-label);
   }
 }
