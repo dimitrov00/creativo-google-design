@@ -99,8 +99,14 @@
       "@creativo/infrastructure/web-storage": [
         "./libs/infrastructure/web-storage/src/index.ts"
       ],
+      "@creativo/infrastructure/clock": [
+        "./libs/infrastructure/clock/src/index.ts"
+      ],
       "@creativo/features/client/account-state": [
         "./libs/features/client/account-state/src/index.ts"
+      ],
+      "@creativo/features/client/appointments": [
+        "./libs/features/client/appointments/src/index.ts"
       ]
     }
   }

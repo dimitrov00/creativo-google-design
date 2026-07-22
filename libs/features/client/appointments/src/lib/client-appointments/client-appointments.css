@@ -1,0 +1,79 @@
+:host {
+  display: block;
+  min-block-size: 100svh;
+  background: var(--sys-color-background);
+  color: var(--sys-color-foreground);
+}
+
+.appointments-shell {
+  display: grid;
+  gap: var(--sys-space-comfortable);
+  max-inline-size: var(--sys-container-content);
+  margin-inline: auto;
+  padding: var(--sys-space-spacious) var(--sys-space-regular);
+}
+
+.appointments-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sys-space-compact);
+}
+
+.appointments-view-toggle {
+  display: flex;
+  gap: var(--sys-space-compact);
+}
+
+.appointments-calendar-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.appointments-weekday-header {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: var(--sys-space-tight);
+  text-align: center;
+  margin-block: var(--sys-space-compact);
+}
+
+.appointments-calendar-day {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--sys-space-tight);
+  border: none;
+  background: none;
+  cursor: pointer;
+}
+
+.appointment-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sys-space-compact);
+  padding: var(--sys-space-comfortable);
+  border-block-end: 1px solid var(--sys-color-separator);
+}
+
+.appointment-row:last-child {
+  border-block-end: none;
+}
+
+.appointments-cancel-reason-label {
+  display: grid;
+  gap: var(--sys-space-tight);
+}
+
+.appointments-cancel-reason-label textarea {
+  font: inherit;
+  color: inherit;
+  background: var(--sys-color-surface-secondary);
+  border: none;
+  border-radius: var(--control-radius-regular);
+  padding: var(--sys-space-compact);
+  resize: vertical;
+  min-block-size: 4rem;
+}

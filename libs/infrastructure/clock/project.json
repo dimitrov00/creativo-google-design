@@ -1,0 +1,13 @@
+{
+  "name": "clock",
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "libs/infrastructure/clock/src",
+  "prefix": "cr",
+  "projectType": "library",
+  "tags": ["scope:shared", "type:infrastructure"],
+  "targets": {
+    "lint": {
+      "executor": "@nx/eslint:lint"
+    }
+  }
+}

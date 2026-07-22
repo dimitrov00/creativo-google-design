@@ -1,0 +1,38 @@
+@layer sys-components {
+  .ui-date-badge {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    inline-size: var(--control-size-regular);
+    block-size: var(--control-size-regular);
+    border-radius: var(--control-radius-capsule);
+    font: var(--sys-font-body);
+    color: var(--sys-color-foreground);
+  }
+
+  .ui-date-badge[data-state='outside'] {
+    color: var(--sys-color-secondary-label);
+    opacity: 0.5;
+  }
+
+  .ui-date-badge[data-state='today'] {
+    box-shadow: inset 0 0 0 1px var(--sys-color-accent);
+    font-weight: 600;
+  }
+
+  .ui-date-badge[data-state='selected'] {
+    background: var(--sys-color-accent);
+    color: var(--sys-color-on-accent);
+    font-weight: 600;
+  }
+
+  .ui-date-badge__marker {
+    position: absolute;
+    inset-block-end: 2px;
+    inline-size: 4px;
+    block-size: 4px;
+    border-radius: var(--control-radius-capsule);
+    background: currentColor;
+  }
+}

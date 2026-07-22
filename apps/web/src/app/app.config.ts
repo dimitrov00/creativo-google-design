@@ -44,7 +44,7 @@ import {
   IMPERSONATION_PORT,
   USER_SEARCH_PORT,
 } from '@creativo/application/governance';
-import { KEY_VALUE_STORE } from '@creativo/application/shared';
+import { CLOCK, KEY_VALUE_STORE } from '@creativo/application/shared';
 
 // Adapters (infrastructure layer) — named ONLY here (blueprint §1.3)
 import {
@@ -70,6 +70,7 @@ import {
   LocalStorageKeyValueStore,
   SessionStorageDraftStore,
 } from '@creativo/infrastructure/web-storage';
+import { SystemClock } from '@creativo/infrastructure/clock';
 
 import { appRoutes } from './app.routes';
 import { environment } from '../environments/environment';
@@ -112,10 +113,11 @@ export const appConfig: ApplicationConfig = {
     provideFirebaseStorage(),
 
     // ── Port → Adapter map (the hexagon's outer wiring, blueprint §1.3) ──
-    // CLOCK/ID_GENERATOR (@creativo/application/shared) have no adapter yet
-    // — no `libs/infrastructure/clock` lib exists and nothing implements
-    // `IdGenerator`. Flagged rather than invented (scope guard); nothing
-    // wired through Phase 5's routes consumes either token today.
+    // ID_GENERATOR (@creativo/application/shared) still has no adapter —
+    // nothing implements `IdGenerator` yet. Flagged rather than invented
+    // (scope guard); nothing wired through the routes lands so far
+    // consumes it.
+    { provide: CLOCK, useClass: SystemClock },
     { provide: AUTH_GATEWAY, useClass: FirebaseAuthGateway },
     { provide: OTP_CLIENT, useClass: CallableOtpClient },
     {

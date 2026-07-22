@@ -107,4 +107,47 @@ describe('ZonedDateTime comparisons and arithmetic', () => {
     expect(birthDate.yearsUntil(onTheDay)).toBe(26);
     expect(birthDate.yearsUntil(justAfter)).toBe(26);
   });
+
+  it('plusDays()/plusMonths() move forward and backward', () => {
+    const start = at('2026-01-31T09:00:00.000Z');
+    expect(start.plusDays(1).day).toBe(1);
+    expect(start.plusDays(1).month).toBe(2);
+    expect(start.plusDays(-1).day).toBe(30);
+    expect(start.plusMonths(1).month).toBe(2);
+    expect(start.plusMonths(-1).month).toBe(12);
+    expect(start.plusMonths(-1).year).toBe(2025);
+  });
+
+  it('startOfMonth() resets to midnight on the 1st', () => {
+    const mid = at('2026-03-17T14:32:00.000Z');
+    const start = mid.startOfMonth();
+    expect(start.day).toBe(1);
+    expect(start.hour).toBe(0);
+    expect(start.minute).toBe(0);
+  });
+
+  it('hour/minute/weekday/daysInMonth expose calendar fields', () => {
+    const result = ZonedDateTime.fromISO('2026-03-05T14:32:00', 'Europe/Sofia');
+    if (result.isFailure())
+      throw new Error('unexpected failure in test fixture');
+    const value = result.value;
+    expect(value.hour).toBe(14);
+    expect(value.minute).toBe(32);
+    expect(value.weekday).toBe(4); // Thursday
+    expect(value.daysInMonth).toBe(31);
+  });
+
+  it('toLocaleString() formats using the given locale/options', () => {
+    const value = at('2026-06-15T10:00:00.000Z');
+    expect(value.toLocaleString('en', { weekday: 'short' })).toBe('Mon');
+  });
+});
+
+describe('ZonedDateTime.weekdayLabels', () => {
+  it('returns 7 Monday-first short weekday labels', () => {
+    const labels = ZonedDateTime.weekdayLabels('Europe/Sofia', 'en');
+    expect(labels).toHaveLength(7);
+    expect(labels[0]).toBe('Mon');
+    expect(labels[6]).toBe('Sun');
+  });
 });

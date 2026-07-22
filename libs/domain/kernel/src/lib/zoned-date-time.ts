@@ -37,8 +37,37 @@ export class ZonedDateTime {
     return DateTime.now().setZone(zone).isValid;
   }
 
+  /**
+   * Short weekday labels (Mon…Sun) for a calendar header, localized. Built
+   * from a fixed reference Monday rather than "now" — the labels never
+   * depend on the current date, only on `locale`.
+   */
+  static weekdayLabels(zone: string, locale: string): readonly string[] {
+    const referenceMonday = DateTime.fromISO('2025-01-06T00:00:00', {
+      zone,
+    }).setLocale(locale);
+    return Array.from({ length: 7 }, (_, i) =>
+      referenceMonday.plus({ days: i }).toLocaleString({ weekday: 'short' }),
+    );
+  }
+
   plusMinutes(minutes: number): ZonedDateTime {
     return new ZonedDateTime(this.inner.plus({ minutes }));
+  }
+
+  /** Negative values move backward — there is no separate `minusDays`. */
+  plusDays(days: number): ZonedDateTime {
+    return new ZonedDateTime(this.inner.plus({ days }));
+  }
+
+  /** Negative values move backward — there is no separate `minusMonths`. */
+  plusMonths(months: number): ZonedDateTime {
+    return new ZonedDateTime(this.inner.plus({ months }));
+  }
+
+  /** Midnight on the 1st of this instant's calendar month, same zone. */
+  startOfMonth(): ZonedDateTime {
+    return new ZonedDateTime(this.inner.startOf('month'));
   }
 
   isBefore(other: ZonedDateTime): boolean {
@@ -76,6 +105,33 @@ export class ZonedDateTime {
 
   get day(): number {
     return this.inner.day;
+  }
+
+  get hour(): number {
+    return this.inner.hour;
+  }
+
+  get minute(): number {
+    return this.inner.minute;
+  }
+
+  /** ISO weekday: 1 = Monday … 7 = Sunday. */
+  get weekday(): number {
+    return this.inner.weekday;
+  }
+
+  /** Number of days in this instant's calendar month. */
+  get daysInMonth(): number {
+    return this.inner.daysInMonth ?? 0;
+  }
+
+  /**
+   * Locale-formatted rendering for display — the one sanctioned escape
+   * hatch for turning an instant into user-facing text without any caller
+   * touching `Date`/`Intl` directly (kernel-only Luxon import rule, §7.1).
+   */
+  toLocaleString(locale: string, options: Intl.DateTimeFormatOptions): string {
+    return this.inner.setLocale(locale).toLocaleString(options);
   }
 
   toISO(): string {

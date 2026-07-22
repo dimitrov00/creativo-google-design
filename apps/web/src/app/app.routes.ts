@@ -41,6 +41,14 @@ export const appRoutes: Route[] = [
       import('@creativo/features/client/account').then((m) => m.ClientAccount),
   },
   {
+    path: 'account/appointments',
+    canActivate: [activeGuard],
+    loadComponent: () =>
+      import('@creativo/features/client/appointments').then(
+        (m) => m.ClientAppointments,
+      ),
+  },
+  {
     path: 'staff',
     canActivate: [activeGuard, rolesGuard('staff')],
     loadComponent: () =>

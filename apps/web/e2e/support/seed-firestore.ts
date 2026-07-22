@@ -33,6 +33,37 @@ function plus30Minutes(iso: string): string {
 }
 
 /**
+ * Rewrites a naive `YYYY-MM-DDTHH:mm:ss` local wall-clock string into the
+ * canonical offset-suffixed form `FirestoreAppointmentRepository`'s
+ * `toPersistence` always produces (`ZonedDateTime#toISO()`, Luxon under the
+ * hood: `.SSS±HH:MM`). Seeding a doc that doesn't already look like a real
+ * `toPersistence` write matters here specifically: `firestore.rules`'
+ * client-cancel rule requires `affectedKeys().hasOnly(['status'])`, and a
+ * full-aggregate `setDoc` re-serializes `timeSlot` on every save — if the
+ * seed's `startIso`/`endIso` differ from what a genuine round-trip through
+ * the repository would write, cancelling flags `timeSlot` as "affected"
+ * too and the security rule rejects the write. Uses `Intl` (not `Date`/
+ * luxon) to look up the zone's UTC offset — safe for fixture times picked
+ * well clear of a DST transition, same caveat as `plus30Minutes`.
+ */
+function toCanonicalIso(localIso: string, zone: string): string {
+  const [datePart = '', timePart = '00:00:00'] = localIso.split('T');
+  const [year = 1970, month = 1, day = 1] = datePart.split('-').map(Number);
+  const [hour = 0, minute = 0, second = 0] = timePart.split(':').map(Number);
+  const asIfUtc = new Date(
+    Date.UTC(year, month - 1, day, hour, minute, second),
+  );
+  const offsetPart = new Intl.DateTimeFormat('en-US', {
+    timeZone: zone,
+    timeZoneName: 'longOffset',
+  })
+    .formatToParts(asIfUtc)
+    .find((part) => part.type === 'timeZoneName')?.value;
+  const offset = offsetPart?.replace('GMT', '') || '+00:00';
+  return `${datePart}T${timePart}.000${offset}`;
+}
+
+/**
  * Seeds a `users/{uid}` doc directly via the Admin SDK (bypasses Firestore
  * Security Rules), matching `FirestoreProfileAdapter`'s persisted shape
  * (`libs/infrastructure/firestore/src/lib/profile.adapter.ts`). No seeding
@@ -82,8 +113,8 @@ export async function seedUpcomingAppointment(
       locationId: 'e2e-location',
       ownerUserId,
       timeSlot: {
-        startIso,
-        endIso: plus30Minutes(startIso),
+        startIso: toCanonicalIso(startIso, 'Europe/Sofia'),
+        endIso: toCanonicalIso(plus30Minutes(startIso), 'Europe/Sofia'),
         zone: 'Europe/Sofia',
       },
       seats: [
@@ -99,4 +130,20 @@ export async function seedUpcomingAppointment(
       ],
       status: { kind: 'confirmed' },
     });
+}
+
+/**
+ * Reads back `appointments/{id}`'s persisted `status.kind` directly via the
+ * Admin SDK — used to prove a cancel-own flow actually persisted the
+ * domain transition (goal 6.4), not just updated the UI optimistically.
+ */
+export async function readAppointmentStatusKind(
+  id: string,
+): Promise<string | null> {
+  const snapshot = await getFirestore(adminApp())
+    .collection('appointments')
+    .doc(id)
+    .get();
+  const data = snapshot.data() as { status?: { kind?: string } } | undefined;
+  return data?.status?.kind ?? null;
 }

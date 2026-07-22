@@ -1,0 +1,259 @@
+<ng-container *transloco="let t">
+  <div class="appointments-shell">
+    <header class="appointments-header">
+      <a
+        uiButton
+        uiVariant="plain"
+        uiSize="compact"
+        routerLink="/account"
+        data-testid="appointments-back"
+      >
+        {{ t('appointments.header.back') }}
+      </a>
+      <h1 uiText uiFont="title">{{ t('appointments.header.title') }}</h1>
+      <a
+        uiButton
+        uiVariant="tinted"
+        uiSize="compact"
+        routerLink="/book"
+        data-testid="appointments-book-cta"
+      >
+        {{ t('appointments.bookCta') }}
+      </a>
+    </header>
+
+    @switch (store.upcoming().kind) { @case ('loading') {
+    <ui-stack uiGap="comfortable" data-testid="appointments-skeleton">
+      <ui-skeleton style="block-size: 3rem" />
+      <ui-skeleton style="block-size: 8rem" />
+      <ui-skeleton style="block-size: 8rem" />
+    </ui-stack>
+    } @case ('error') {
+    <p
+      uiText
+      uiFont="footnote"
+      uiForeground="destructive"
+      role="alert"
+      data-testid="appointments-error"
+    >
+      {{ translateListError() }}
+    </p>
+    } @default {
+    <ui-stack uiGap="comfortable">
+      <div class="appointments-view-toggle" role="tablist">
+        <button
+          type="button"
+          uiChip
+          [uiSelected]="view() === 'list'"
+          data-testid="appointments-view-list"
+          (click)="setView('list')"
+        >
+          {{ t('appointments.view.list') }}
+        </button>
+        <button
+          type="button"
+          uiChip
+          [uiSelected]="view() === 'calendar'"
+          data-testid="appointments-view-calendar"
+          (click)="setView('calendar')"
+        >
+          {{ t('appointments.view.calendar') }}
+        </button>
+      </div>
+
+      @if (view() === 'calendar') {
+      <ui-card uiPadding="comfortable" data-testid="appointments-calendar">
+        <div class="appointments-calendar-nav">
+          <button
+            type="button"
+            uiButton
+            uiVariant="plain"
+            uiSize="compact"
+            data-testid="appointments-calendar-prev"
+            [attr.aria-label]="t('appointments.calendar.prev')"
+            (click)="store.previousMonth()"
+          >
+            ‹
+          </button>
+          <p
+            uiText
+            uiFont="headline"
+            data-testid="appointments-calendar-month-label"
+          >
+            {{ formatMonthLabel() }}
+          </p>
+          <button
+            type="button"
+            uiButton
+            uiVariant="plain"
+            uiSize="compact"
+            data-testid="appointments-calendar-next"
+            [attr.aria-label]="t('appointments.calendar.next')"
+            (click)="store.nextMonth()"
+          >
+            ›
+          </button>
+        </div>
+        <div class="appointments-weekday-header">
+          @for (label of weekdayLabels(); track $index) {
+          <span uiText uiFont="caption" uiForeground="secondary"
+            >{{ label }}</span
+          >
+          }
+        </div>
+        <ui-calendar-grid>
+          @for (week of calendarMonth().weeks; track $index) { @for (cell of
+          week; track cell.dayKey) {
+          <button
+            type="button"
+            class="appointments-calendar-day"
+            data-testid="appointments-calendar-day"
+            [attr.data-day-key]="cell.dayKey"
+            [attr.data-selected]="selectedDayKey() === cell.dayKey ? '' : null"
+            (click)="selectDay(cell.dayKey)"
+          >
+            <ui-date-badge
+              [uiDay]="cell.date.day"
+              [uiState]="
+                          !cell.inCurrentMonth
+                            ? 'outside'
+                            : selectedDayKey() === cell.dayKey
+                              ? 'selected'
+                              : cell.isToday
+                                ? 'today'
+                                : 'plain'
+                        "
+              [uiMarker]="cell.appointmentCount > 0"
+            />
+          </button>
+          } }
+        </ui-calendar-grid>
+      </ui-card>
+      }
+
+      <div
+        data-testid="appointments-list"
+        [attr.data-state]="groups().length > 0 ? 'populated' : 'empty'"
+      >
+        @if (groups().length === 0) {
+        <ui-card uiPadding="comfortable" data-testid="appointments-empty">
+          <p uiText uiFont="body" uiForeground="secondary">
+            {{ t('appointments.empty.title') }}
+          </p>
+          <a
+            uiButton
+            uiVariant="tinted"
+            uiSize="compact"
+            routerLink="/book"
+            data-testid="appointments-empty-cta"
+          >
+            {{ t('appointments.empty.cta') }}
+          </a>
+        </ui-card>
+        } @else {
+        <ui-stack uiGap="comfortable">
+          @for (group of groups(); track group.dayKey) {
+          <section>
+            <p uiText uiFont="footnote" uiForeground="secondary">
+              {{ formatDayLabel(group.date) }}
+            </p>
+            <ui-card uiPadding="none">
+              <ui-stack uiGap="none">
+                @for (appointment of group.appointments; track
+                appointment.id.value) {
+                <div
+                  class="appointment-row"
+                  data-testid="appointment-row"
+                  [attr.data-appointment-id]="appointment.id.value"
+                  [attr.data-status]="appointment.status.kind"
+                >
+                  <ui-stack uiGap="tight">
+                    <p uiText uiFont="body">
+                      {{ formatTime(appointment.timeSlot.start) }}
+                    </p>
+                    <span
+                      uiBadge
+                      [uiTone]="statusTone(appointment.status.kind)"
+                    >
+                      {{ t('appointments.status.' + appointment.status.kind) }}
+                    </span>
+                  </ui-stack>
+                  @if (canCancel(appointment)) {
+                  <button
+                    type="button"
+                    uiButton
+                    uiVariant="destructive"
+                    uiSize="compact"
+                    data-testid="appointment-cancel-trigger"
+                    [attr.data-appointment-id]="appointment.id.value"
+                    (click)="requestCancel(appointment.id)"
+                  >
+                    {{ t('appointments.cancel.trigger') }}
+                  </button>
+                  }
+                </div>
+                }
+              </ui-stack>
+            </ui-card>
+          </section>
+          }
+        </ui-stack>
+        }
+      </div>
+    </ui-stack>
+    } }
+
+    <ui-sheet
+      [uiOpen]="confirmingId() !== null"
+      data-testid="appointment-cancel-sheet"
+    >
+      <ui-stack uiGap="comfortable">
+        <p uiText uiFont="headline">
+          {{ t('appointments.cancel.sheetTitle') }}
+        </p>
+        <label class="appointments-cancel-reason-label">
+          <span uiText uiFont="footnote" uiForeground="secondary">
+            {{ t('appointments.cancel.reasonLabel') }}
+          </span>
+          <textarea
+            data-testid="appointment-cancel-reason"
+            [value]="cancelReason()"
+            (input)="cancelReason.set($any($event.target).value)"
+          ></textarea>
+        </label>
+        @if (translateCancelError(); as error) {
+        <p
+          uiText
+          uiFont="footnote"
+          uiForeground="destructive"
+          role="alert"
+          data-testid="appointment-cancel-error"
+        >
+          {{ error }}
+        </p>
+        }
+        <ui-stack uiAxis="horizontal" uiGap="compact">
+          <button
+            type="button"
+            uiButton
+            uiVariant="plain"
+            data-testid="appointment-cancel-dismiss"
+            (click)="dismissCancel()"
+          >
+            {{ t('appointments.cancel.dismiss') }}
+          </button>
+          <button
+            type="button"
+            uiButton
+            uiVariant="destructive"
+            [uiLoading]="store.cancellingId() !== null"
+            data-testid="appointment-cancel-confirm"
+            (click)="confirmCancel()"
+          >
+            {{ t('appointments.cancel.confirm') }}
+          </button>
+        </ui-stack>
+      </ui-stack>
+    </ui-sheet>
+  </div>
+</ng-container>
