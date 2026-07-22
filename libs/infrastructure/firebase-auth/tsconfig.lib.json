@@ -1,0 +1,29 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "outDir": "../../../dist/out-tsc",
+    "declaration": true,
+    "declarationMap": true,
+    "inlineSources": true,
+    "types": [],
+    "composite": true,
+    "rootDir": "../../..",
+    "sourceMap": true
+  },
+  "include": ["src/**/*.ts"],
+  "exclude": ["src/**/*.spec.ts", "src/**/*.test.ts"],
+  "references": [
+    {
+      "path": "../firebase-app/tsconfig.lib.json"
+    },
+    {
+      "path": "../../domain/identity/tsconfig.lib.json"
+    },
+    {
+      "path": "../../application/identity/tsconfig.lib.json"
+    },
+    {
+      "path": "../../domain/kernel/tsconfig.lib.json"
+    }
+  ]
+}

@@ -290,3 +290,68 @@ boolean` as the _one_ place the comparison is written, so a future Cloud
 - No `ports/*.port.ts` files exist in any of the six contexts — per the
   Goal 02 scope guard, all port interfaces (repositories, crypto,
   key-value stores) are deferred to Goal 03's `libs/application/*`.
+
+# Infrastructure / Firestore schema deviations — v2 → `libs/infrastructure/*` (Goal 04)
+
+Per `docs/migration/goals/04-infrastructure.md`: v2's Firestore schema
+(`v2/packages/infrastructure/src/firestore-paths.ts`, `v2/firestore.rules`)
+is a reference inventory only — the schema in `firestore.rules`/
+`firestore.indexes.json`/`libs/infrastructure/firestore/src/lib/firestore-paths.ts`
+is designed fresh from the Goal 02/03 domain vocabulary. v2 itself was never
+modified. This also fully replaces an earlier, unrelated generic
+tenant-scoped `firestore.rules` draft (`tenants/{tenantId}/...`) that
+predated the bounded-context domain model.
+
+- **Dropped v2's orphaned indexes/collections entirely**: `referralRules`
+  and `discountGrants` (zero references anywhere in v2 outside
+  `firestore.indexes.json` — confirmed via grep) and `achievementDefinitions`
+  / the per-user `achievements` subcollection (defined in v2's paths file and
+  domain docstring only — zero ref factory, adapter, rule, or index; v2's own
+  rules file even comments "Future: … achievements" confirming it was never
+  wired up).
+- **`coupons` opened to authed client read** — v2 left this collection fully
+  closed (Admin-SDK-only). This pass's `CouponGrant` only embeds its own
+  `CouponValue` snapshot, not the coupon's display name/policy, so
+  `FirestoreCouponGrantRepository` must join against the `Coupon` definition
+  doc client-side to build `CouponGrantWithCoupon`.
+- **`appointments` carries a denormalized `ownerUserId` field** — not part of
+  the `Appointment` domain aggregate at all, written by
+  `FirestoreAppointmentRepository.toPersistence()` purely so `firestore.rules`
+  and `observeUpcomingFor(userId)` can identify "my appointments" without
+  scanning the `seats` array (the field is the `UserId` of the seat whose
+  `subject.kind === 'account' && relationship === 'self'`, or `null` for a
+  staff-only booking with no self seat).
+- **`invitations` is client-writable** (create your own; redeem via a
+  doc-existence check in the `redemptions` subcollection), unlike v2's fully
+  server-only/Admin-SDK-only model — matches this pass's `InvitationPort`
+  being a direct repository interface (Goal 03), not a callable. Hardened
+  with narrow field-level rules: `create` requires `inviterUserId == self`
+  and `redemptionCount == 0`; `update` is restricted to a `redemptionCount`
+  `+1` bump only; a redemption doc's `create` requires the caller to be the
+  referee and rejects self-redemption.
+- **`identities`/`identifiers`** (v2's channel-index for O(1) account-merge
+  detection) dropped entirely — no `IdentityRepository` port exists in
+  `libs/application/identity` (Goal 03 didn't build one), so there is nothing
+  to adapt against; nothing schema-level to design either.
+- **`users/{uid}` schema seam with `apps/functions`**: the pre-Phase-7 OTP
+  scaffold's `FirestoreUserRepository`/`FirestoreOtpRepository`
+  (`apps/functions/src/adapters/*`) still read/write the legacy
+  `@creativo/domain/models` `User` shape (`displayName`/`referralCode`/
+  `tenantMemberships`) at the same `users/{uid}` path this phase's
+  `FirestoreProfileAdapter` writes the new `@creativo/domain/accounts` `User`
+  shape to (`firstName`/`lastName`/`roles`/`status`/`searchName`/
+  `searchPrefixes`). Phase 7 ("port v2's use-cases onto the new domain inside
+  `apps/functions`") must reconcile this before both write paths are live
+  simultaneously — flagged here, not fixed; out of Goal 04's scope
+  (`libs/infrastructure` only, `apps/functions` untouched).
+- **`ContactChangePort`/`OtpClient` are thin `httpsCallable` wrappers** even
+  though their backing Cloud Functions callables don't exist yet
+  (`apps/functions` Phase 7 work) — the adapters are correct and fully typed
+  against their ports; the callable names each adapter's own file comment
+  documents are a contract Phase 7's callables must honor.
+- **`CLOCK`/`ID_GENERATOR`** (`libs/application/shared`) are not wired to a
+  concrete infrastructure adapter in this phase — neither token is named in
+  Goal 04's kickoff prompt or its `/goal` condition; deferred to whichever
+  goal first needs a concrete `systemClock`/id-generator adapter (likely
+  Goal 05's app-shell composition root, mirroring `apps/functions`' existing
+  `system-clock.ts`).

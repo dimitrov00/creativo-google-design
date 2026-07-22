@@ -1,11 +1,20 @@
 rules_version = '2';
 
-// See docs/architecture/module-boundaries.md's scope:backend note and
-// docs/security/csp-baseline.md for the surrounding security model. These
-// rules are the tenant/role isolation boundary for the Foundation pass —
-// verify with the Firestore Rules Emulator before treating changes as final,
-// the diff()/hasOnly() field-level restrictions below are easy to get
-// subtly wrong and this repo has no prior rules file to pattern-match.
+// Fresh, greenfield schema (migration-blueprint.md §0.4/§6, Goal 04). This
+// REPLACES the earlier generic tenant-scoped draft (`tenants/{tenantId}/...`)
+// that predates the bounded-context domain model — that shape has no
+// relationship to the schema below (see docs/architecture/domain-deviations.md).
+//
+// Philosophy (ported from v2, `v2/firestore.rules`): default-deny root, every
+// collection opts in explicitly. `otps`/`rateLimits`/`blocklist` stay fully
+// closed — Cloud Functions write them via the Admin SDK, which bypasses rules
+// entirely. Roles come from a `roles: string[]` custom claim on the ID token
+// (`AuthClaims.activeClaims`, `@creativo/domain/identity`) — minted by
+// Cloud Functions (Phase 7), never self-assigned by a client write.
+//
+// Verify with the Firestore Rules Emulator / `@firebase/rules-unit-testing`
+// before treating a change here as final — see
+// `libs/infrastructure/firestore/src/lib/firestore.rules.integration.spec.ts`.
 service cloud.firestore {
   match /databases/{database}/documents {
 
@@ -13,84 +22,211 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    function tenantId() {
-      return request.auth.token.tenantId;
+    function roles() {
+      return isSignedIn() && 'roles' in request.auth.token
+        ? request.auth.token.roles
+        : [];
     }
 
-    function role() {
-      return request.auth.token.role;
+    function hasAnyRole(candidates) {
+      return roles().hasAny(candidates);
     }
 
-    function isTenant(tid) {
-      return isSignedIn() && tenantId() == tid;
+    // Everyone who isn't a plain `client` — mirrors
+    // `@creativo/domain/accounts`' `isStaff` (barber | receptionist |
+    // content_manager | admin | sysadmin).
+    function isStaff() {
+      return hasAnyRole(['barber', 'receptionist', 'content_manager', 'admin', 'sysadmin']);
     }
 
-    function isOwnerOrPerformer(tid) {
-      return isTenant(tid) && (role() == 'owner' || role() == 'performer');
+    function isCatalogManager() {
+      return hasAnyRole(['content_manager', 'admin', 'sysadmin']);
     }
 
-    function isOwner(tid) {
-      return isTenant(tid) && role() == 'owner';
+    function isAdmin() {
+      return hasAnyRole(['admin', 'sysadmin']);
     }
 
-    match /tenants/{tenantId} {
-      // Business profile is public — the marketing site and pre-auth
-      // booking browse both need this, and it's non-sensitive listing data.
-      allow read: if true;
-      allow write: if isOwner(tenantId);
-
-      match /services/{serviceId} {
-        allow read: if true;
-        allow write: if isOwner(tenantId);
-      }
-
-      match /staff/{staffId} {
-        allow read: if true;
-        allow write: if isOwner(tenantId);
-      }
-
-      match /appointments/{appointmentId} {
-        allow read: if isOwnerOrPerformer(tenantId)
-          || (isTenant(tenantId) && resource.data.clientUid == request.auth.uid);
-
-        allow create: if isTenant(tenantId)
-          && request.resource.data.clientUid == request.auth.uid;
-
-        // Owner/performer manage the full appointment lifecycle. A client
-        // may only cancel their own appointment — nothing else, and never
-        // the staff/service/payment assignment fields.
-        allow update: if isOwnerOrPerformer(tenantId)
-          || (
-            isTenant(tenantId)
-            && resource.data.clientUid == request.auth.uid
-            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
-            && request.resource.data.status == 'cancelled'
-          );
-
-        // Never hard-delete — status transitions only, so history/analytics
-        // stay intact.
-        allow delete: if false;
-      }
+    function isOwner(uid) {
+      return isSignedIn() && request.auth.uid == uid;
     }
 
+    function affectedKeys() {
+      return request.resource.data.diff(resource.data).affectedKeys();
+    }
+
+    // Default deny — every collection below must opt in explicitly.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // ── accounts ────────────────────────────────────────────────────────
     match /users/{uid} {
-      allow read: if isSignedIn() && request.auth.uid == uid;
-      allow create: if isSignedIn() && request.auth.uid == uid;
+      // Staff need to read client profiles (search, booking, dashboards);
+      // a client only ever sees their own doc.
+      allow read: if isOwner(uid) || isStaff();
 
-      // tenantMemberships (role/tenant grants) is Admin-SDK-only — a client
-      // can update their own profile fields but can never self-grant a
-      // role or tenant membership.
-      allow update: if isSignedIn()
-        && request.auth.uid == uid
-        && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['tenantMemberships']);
+      // Self-registration always starts as a plain `client` — every other
+      // role is granted server-side only (Admin SDK bypasses these rules).
+      allow create: if isOwner(uid) && request.resource.data.roles == ['client'];
 
+      // A client may edit their own profile fields but can never grant
+      // themselves a role or change their own account status (block/unblock
+      // is staff/admin-only, done through a Cloud Function).
+      allow update: if isOwner(uid) && !affectedKeys().hasAny(['roles', 'status']);
+      allow update: if isAdmin();
+
+      allow delete: if false;
+
+      match /couponGrants/{grantId} {
+        allow read: if isOwner(uid);
+        // Grants are minted server-side only; the owner may transition
+        // their own grant's `state` (active → used), nothing security-
+        // relevant. Deliberately NOT `affectedKeys().hasOnly(['state'])` —
+        // `grantedAt` is free to re-serialize to a different (but
+        // instant-equal) ISO string across a read→reconstitute→persist
+        // round trip (the adapter's `ZonedDateTime` parsing always
+        // normalizes to a fixed zone), which would otherwise make a
+        // perfectly legal state transition fail this check. What actually
+        // must never change is the grant's identity/value/ownership.
+        allow update: if isOwner(uid)
+          && !affectedKeys().hasAny(['id', 'userId', 'couponId', 'value']);
+        allow create, delete: if false;
+      }
+
+      match /rewardProgress/{programId} {
+        // Materialized by Cloud Functions only (reward-progress sweep,
+        // Phase 7) — matches v2's owner-read/server-write split exactly.
+        allow read: if isOwner(uid);
+        allow write: if false;
+      }
+    }
+
+    // `FirestoreCouponGrantRepository.findById` looks a grant up by id alone
+    // (a `CouponGrantId` doesn't carry the owning `userId`), via a
+    // `collectionGroup('couponGrants')` query filtered on `id`, not
+    // `userId`. Firestore only authorizes a collection-group query against a
+    // rule declared with the `{path=**}` wildcard — the nested
+    // `users/{uid}/couponGrants/{grantId}` rule above covers direct reads
+    // under a known parent only, not this query shape. A rule conditioned
+    // on `resource.data.userId` here fails Firestore's `list`-time static
+    // check (the query's own equality filter is on a *different* field, so
+    // it can't statically prove every matched doc has `userId` set) — so
+    // this intentionally widens to any signed-in user. Acceptable: grant
+    // ids are unguessable UUIDs, this is a point lookup (never a listing),
+    // and the grant's own data (a coupon value/state) isn't sensitive.
+    match /{path=**}/couponGrants/{grantId} {
+      allow read: if isSignedIn();
+    }
+
+    // ── scheduling ──────────────────────────────────────────────────────
+    match /appointments/{appointmentId} {
+      // `ownerUserId` is a denormalized field (not part of the `Appointment`
+      // domain aggregate) written by the adapter purely so rules/queries can
+      // identify "my appointments" without scanning the `seats` array.
+      allow read: if isStaff()
+        || (isSignedIn() && resource.data.ownerUserId == request.auth.uid);
+
+      allow create: if isStaff()
+        || (isSignedIn() && request.resource.data.ownerUserId == request.auth.uid);
+
+      // Staff manage the full lifecycle. A client may only cancel their own
+      // appointment — nothing else, and never seats/barber/service/status
+      // fields beyond that one transition.
+      allow update: if isStaff()
+        || (
+          isSignedIn()
+          && resource.data.ownerUserId == request.auth.uid
+          && affectedKeys().hasOnly(['status'])
+          && request.resource.data.status.kind == 'cancelled'
+        );
+
+      // Never hard-delete — status transitions only, so day-sheets and
+      // history/analytics stay intact.
       allow delete: if false;
     }
 
-    // Cloud Functions only, via the Admin SDK, which bypasses rules
-    // entirely — this collection is fully closed to every client SDK by
-    // design (see apps/functions/src/lib/otp).
+    // ── catalog (public browse, staff/content-manager write) ──────────────
+    match /serviceCategories/{categoryId} {
+      allow read: if true;
+      allow write: if isCatalogManager();
+    }
+
+    match /services/{serviceId} {
+      allow read: if true;
+      allow write: if isCatalogManager();
+    }
+
+    match /barbers/{barberId} {
+      allow read: if true;
+      allow write: if isCatalogManager();
+    }
+
+    match /locations/{locationId} {
+      allow read: if true;
+      allow write: if isCatalogManager();
+    }
+
+    // ── engagement ──────────────────────────────────────────────────────
+    // Deviation from v2 (which left `coupons` closed entirely): a
+    // `CouponGrant` here only embeds its own `CouponValue` snapshot, not the
+    // coupon's display name/policy, so the client-side repository joins
+    // against the `Coupon` definition doc — see domain-deviations.md.
+    match /coupons/{couponId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    match /rewardPrograms/{programId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    match /invitations/{invitationId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn()
+        && request.resource.data.inviterUserId == request.auth.uid
+        && request.resource.data.redemptionCount == 0;
+      // `redemptionCount` only ever moves forward by exactly one, driven by
+      // a redemption being recorded (see the `redemptions` rule below) — no
+      // other field on an invitation is ever mutated by a client.
+      allow update: if isSignedIn()
+        && affectedKeys().hasOnly(['redemptionCount'])
+        && request.resource.data.redemptionCount == resource.data.redemptionCount + 1;
+      allow delete: if false;
+
+      match /redemptions/{refereeUserId} {
+        allow read: if isSignedIn();
+        // Doc id IS the referee's uid — existence alone prevents double
+        // redemption; self-redemption is rejected by requiring the doc id
+        // to differ from the parent invitation's inviter.
+        allow create: if isOwner(refereeUserId)
+          && get(/databases/$(database)/documents/invitations/$(invitationId)).data.inviterUserId != refereeUserId;
+        allow update, delete: if false;
+      }
+    }
+
+    // ── governance (admin-tier only) ───────────────────────────────────
+    match /impersonationSessions/{sessionId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /auditLog/{entryId} {
+      // Append-only — admins can read and create, never update or delete.
+      allow read, create: if isAdmin();
+      allow update, delete: if false;
+    }
+
+    // ── server-only (Admin SDK bypasses rules; closed to every client) ──
     match /otps/{otpId} {
+      allow read, write: if false;
+    }
+
+    match /rateLimits/{key} {
+      allow read, write: if false;
+    }
+
+    match /blocklist/{id} {
       allow read, write: if false;
     }
   }

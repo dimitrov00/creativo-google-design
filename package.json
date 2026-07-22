@@ -4,7 +4,8 @@
   "license": "MIT",
   "scripts": {
     "prepare": "husky",
-    "lint:styles": "stylelint \"apps/**/*.css\" \"libs/**/*.css\""
+    "lint:styles": "stylelint \"apps/**/*.css\" \"libs/**/*.css\"",
+    "test:emulator": "firebase emulators:exec --only firestore,auth --project demo-creativo-test \"pnpm nx run-many -t test-integration\""
   },
   "lint-staged": {
     "*.{ts,html,css,json,md}": [

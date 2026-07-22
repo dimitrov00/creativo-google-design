@@ -116,8 +116,18 @@ export default [
               onlyDependOnLibsWithTags: ['type:ui', 'type:tokens', 'type:util'],
             },
             {
+              // `type:infrastructure` may also depend on itself (added
+              // Goal 04): every Firebase-backed adapter lib (`firestore`,
+              // `firebase-auth`, `storage`) injects the `FIREBASE_*` SDK
+              // singleton tokens from `infrastructure/firebase-app`
+              // (blueprint §1.3's composition-root wiring — `useClass`
+              // providers resolve those tokens from inside the adapter
+              // class itself, not just at `app.config.ts`) — this is the
+              // one legitimate infra→infra edge, not a general license for
+              // one adapter concern to reach into an unrelated one.
               sourceTag: 'type:infrastructure',
               onlyDependOnLibsWithTags: [
+                'type:infrastructure',
                 'type:application',
                 'type:domain',
                 'type:util',

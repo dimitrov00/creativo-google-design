@@ -1,4 +1,79 @@
 {
-  "indexes": [],
+  "indexes": [
+    {
+      "collectionGroup": "services",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "categoryId", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "sortOrder", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "services",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "sortOrder", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "barbers",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "locationIds", "arrayConfig": "CONTAINS" },
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "sortOrder", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "barbers",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "sortOrder", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "locations",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "sortOrder", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "appointments",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "ownerUserId", "order": "ASCENDING" },
+        { "fieldPath": "timeSlot.startIso", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "users",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "searchPrefixes", "arrayConfig": "CONTAINS" },
+        { "fieldPath": "searchName", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "couponGrants",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "state.kind", "order": "ASCENDING" },
+        { "fieldPath": "grantedAt", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "impersonationSessions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "adminUserId", "order": "ASCENDING" },
+        { "fieldPath": "status.kind", "order": "ASCENDING" }
+      ]
+    }
+  ],
   "fieldOverrides": []
 }

@@ -1,0 +1,23 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "outDir": "../../../dist/out-tsc",
+    "declaration": true,
+    "declarationMap": true,
+    "inlineSources": true,
+    "types": [],
+    "composite": true,
+    "rootDir": "../../..",
+    "sourceMap": true
+  },
+  "include": ["src/**/*.ts"],
+  "exclude": ["src/**/*.spec.ts", "src/**/*.test.ts"],
+  "references": [
+    { "path": "../../domain/kernel/tsconfig.lib.json" },
+    { "path": "../../domain/accounts/tsconfig.lib.json" },
+    { "path": "../../domain/scheduling/tsconfig.lib.json" },
+    { "path": "../../domain/catalog/tsconfig.lib.json" },
+    { "path": "../../application/booking/tsconfig.lib.json" },
+    { "path": "../../application/shared/tsconfig.lib.json" }
+  ]
+}

@@ -1,0 +1,19 @@
+{
+  "name": "firestore",
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "libs/infrastructure/firestore/src",
+  "prefix": "cr",
+  "projectType": "library",
+  "tags": ["scope:shared", "type:infrastructure"],
+  "targets": {
+    "lint": {
+      "executor": "@nx/eslint:lint"
+    },
+    "test-integration": {
+      "executor": "@nx/vitest:test",
+      "options": {
+        "configFile": "libs/infrastructure/firestore/vitest.integration.config.mts"
+      }
+    }
+  }
+}

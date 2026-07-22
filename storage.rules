@@ -1,12 +1,32 @@
 rules_version = '2';
 
-// Placeholder deny-all — Cloud Storage isn't used by anything in this
-// Foundation pass. This exists only so Storage isn't left wide open if it
-// gets provisioned incidentally (e.g. via `firebase init`). Real policy
-// (staff/service photo uploads, tenant-scoped paths) is follow-up work,
-// see firestore.rules for the equivalent Firestore-side reasoning.
+// Fresh policy for Goal 04's `libs/infrastructure/storage` adapters
+// (`FirebaseStorageAvatarUploader`) — replaces the earlier Foundation-pass
+// placeholder deny-all. Media library assets (catalog/location photos,
+// resolved by `StorageMediaReader` via `MediaRef.path`) are managed
+// server-side/by staff tooling, not uploaded by clients, so only the
+// avatar path is opened up here.
 service firebase.storage {
   match /b/{bucket}/o {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(uid) {
+      return isSignedIn() && request.auth.uid == uid;
+    }
+
+    // One object per user, overwritten on re-upload. Publicly readable
+    // (avatars are shown across staff dashboards and to other booking
+    // parties, and carry no sensitive data) — write restricted to the
+    // owner, capped at 5 MiB, image content-types only.
+    match /avatars/{userId}/{fileName} {
+      allow read: if true;
+      allow write: if isOwner(userId)
+        && request.resource.size < 5 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
+    }
+
     match /{allPaths=**} {
       allow read, write: if false;
     }
