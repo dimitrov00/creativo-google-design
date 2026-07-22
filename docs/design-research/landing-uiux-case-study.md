@@ -1,5 +1,11 @@
 # Landing Route Case Study — "/" (creativo-google-design)
 
+> **Execution status (2026-07-22):** the full backlog was executed in commits
+> `5c32614`…`738b529` (batches A–F). Item 1 was withdrawn by owner
+> correction (orange is the sanctioned accent; only the hardcoded literals
+> were tokenized). All other 27 items landed; landing e2e green under
+> emulators, screenshot baselines regenerated for the redesigned hero.
+
 **Scope:** `libs/features/marketing/landing/src/lib/` against the design system in `libs/ui/`. Every claim below was verified in code; file:line citations are to the current `main` (16b8120).
 
 ---
