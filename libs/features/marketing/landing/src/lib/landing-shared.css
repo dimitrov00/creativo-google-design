@@ -23,19 +23,22 @@
     --landing-chrome-border: rgb(255 255 255 / 0.2);
     --landing-chrome-blur: blur(20px);
 
-    /* ── Radius ladder — v2's (--radius 0.75rem ± step) × 0.85 scale ── */
-    --landing-radius-lg: calc(0.75rem * 0.85); /* 10.2px — rounded-lg */
+    /* ── Radius ladder — derived from the sys tokens (base 0.75rem ± step,
+       × 0.85 scale); identical computed values to v2's literals. ── */
+    --landing-radius-lg: calc(
+      var(--sys-radius-base) * var(--sys-radius-scale)
+    ); /* 10.2px — rounded-lg */
     --landing-radius-xl: calc(
-      (0.75rem + 4px) * 0.85
+      (var(--sys-radius-base) + 4px) * var(--sys-radius-scale)
     ); /* 13.6px — rounded-xl / controls */
     --landing-radius-2xl: calc(
-      (0.75rem + 8px) * 0.85
+      (var(--sys-radius-base) + 8px) * var(--sys-radius-scale)
     ); /* 17px — cards, tiles */
     --landing-radius-3xl: calc(
-      (0.75rem + 16px) * 0.85
+      (var(--sys-radius-base) + 16px) * var(--sys-radius-scale)
     ); /* 23.8px — location card */
     --landing-radius-sheet: calc(
-      (0.75rem + 20px) * 0.85
+      (var(--sys-radius-base) + 20px) * var(--sys-radius-scale)
     ); /* 27.2px — hero card, sheets */
 
     /* ── Safe-area floors (v2 --safe-top/--safe-pad-top) ── */
@@ -47,6 +50,8 @@
     /* ── Layout knobs (v2 --app-max-width / --container-padding) ── */
     --landing-max-width: var(--sys-container-content);
     --landing-gutter: 1rem;
+    /* Shared section block rhythm (breakpoint exceptions stay local). */
+    --landing-section-gap: 7rem;
     /* Viewport-edge → content-edge distance — a LENGTH (not %), so it means
        the same thing in padding and scroll-padding (percentages resolve
        against different boxes there, which desynchronizes snap points). */
@@ -137,32 +142,8 @@
     block-size: 1em;
   }
 
-  /* ── DEPRECATED section-header trio — superseded by <ui-section-header>
-     (libs/ui/patterns). Sole remaining consumer: the service-detail sheet
-     intro, which migrates with the sheet redesign (backlog #15); delete
-     these three rules with it. ── */
-  /* Eyebrow: caption 11px semibold uppercase +0.8px, accent. */
-  .cr-section-eyebrow {
-    font: var(--sys-font-caption);
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.8px;
-    color: var(--sys-color-accent);
-  }
-  /* Title: v2 heading xl — 36px/0.96 extra-bold, -1.2px. */
-  .cr-section-title {
-    margin-block-start: 0.625rem;
-    font: var(--sys-font-largeTitle);
-    letter-spacing: var(--sys-tracking-largeTitle);
-    color: var(--sys-color-foreground);
-  }
-  /* Subtitle: v2 text lg muted — 15px/1.5, max-w-105 (26.25rem). */
-  .cr-section-subtitle {
-    margin-block-start: 0.75rem;
-    max-inline-size: 26.25rem;
-    font: var(--sys-font-body);
-    color: var(--landing-muted-foreground);
-  }
+  /* Section headers live in <ui-section-header> (libs/ui/patterns) — the
+     old .cr-section-* trio was deleted with its last consumer. */
 
   /* ── Oversized landing CTA (v2 landing-recipes `landingCta`) ──
      Composes onto [uiButton]: min-height 54px, wraps long localized labels. */

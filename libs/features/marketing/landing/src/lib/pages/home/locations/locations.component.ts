@@ -11,7 +11,6 @@ import {
   signal,
 } from '@angular/core';
 import { TranslocoDirective, TranslocoService } from '@jsverse/transloco';
-import { CursorService, CursorTargetDirective } from '@creativo/shared/cursor';
 import { UiButton } from '@creativo/ui/controls';
 import { UiTextDirective } from '@creativo/ui/modifiers';
 import { UiSectionHeader } from '@creativo/ui/patterns';
@@ -93,7 +92,6 @@ const MLADOST_SCHEDULE: WeekSchedule = [
 @Component({
   selector: 'cr-locations',
   imports: [
-    CursorTargetDirective,
     ModalSheetComponent,
     ShowcaseGalleryComponent,
     TranslocoDirective,
@@ -111,7 +109,6 @@ export class LocationsComponent implements AfterViewInit {
   private readonly elementRef = inject<ElementRef<HTMLElement>>(ElementRef);
   private readonly platformId = inject(PLATFORM_ID);
   private readonly destroyRef = inject(DestroyRef);
-  private readonly cursorService = inject(CursorService);
   private readonly transloco = inject(TranslocoService);
   private readonly theme = inject(ThemeService);
 
@@ -500,12 +497,9 @@ export class LocationsComponent implements AfterViewInit {
   /**
    * Builds a map pin: a rounded head carrying a shop icon plus a pointed
    * tail so the marker's `anchor: 'bottom'` lands exactly on the
-   * coordinate. The head is wired into the shared cursor system so
-   * hovering it morphs the custom cursor into a primary black/white fill,
-   * matching the rest of the site's buttons — this element is created
-   * imperatively for MapLibre, outside Angular's view tree, so it can't
-   * pick up `crCursorTarget` declaratively and instead replicates
-   * `useCursorTarget()`'s pointerenter/pointerleave wiring by hand.
+   * coordinate. Created imperatively for MapLibre, outside Angular's view
+   * tree — hover feedback is plain CSS (the legacy custom-cursor wiring
+   * was removed: its cursor dot never mounts in apps/web, case study §2.5).
    */
   private createMarkerElement(_index: number): HTMLElement {
     const element = document.createElement('button');
@@ -514,7 +508,6 @@ export class LocationsComponent implements AfterViewInit {
 
     const head = document.createElement('span');
     head.className = 'locations-map__pin-head';
-    head.setAttribute('data-cr-cursor-style', 'fill');
 
     const icon = document.createElement('span');
     icon.className = 'locations-map__pin-icon material-symbols-rounded';
@@ -524,18 +517,6 @@ export class LocationsComponent implements AfterViewInit {
 
     const tail = document.createElement('span');
     tail.className = 'locations-map__pin-tail';
-
-    element.addEventListener('pointerenter', () => {
-      if (!this.cursorService.isEnabled()) return;
-      head.setAttribute('data-cr-cursor-hover', '');
-      this.cursorService.activeTarget.set({ element: head, style: 'fill' });
-    });
-    element.addEventListener('pointerleave', () => {
-      head.removeAttribute('data-cr-cursor-hover');
-      if (this.cursorService.activeTarget()?.element === head) {
-        this.cursorService.activeTarget.set(null);
-      }
-    });
 
     element.append(head, tail);
     // No scope-attribute stamping needed: pin/indicator chrome lives in the
@@ -579,18 +560,6 @@ export class LocationsComponent implements AfterViewInit {
       indicator.appendChild(arrow);
 
       indicator.addEventListener('click', () => this.centerOnLocation(index));
-      indicator.addEventListener('pointerenter', () => {
-        if (!this.cursorService.isEnabled()) return;
-        this.cursorService.activeTarget.set({
-          element: indicator,
-          style: 'scale',
-        });
-      });
-      indicator.addEventListener('pointerleave', () => {
-        if (this.cursorService.activeTarget()?.element === indicator) {
-          this.cursorService.activeTarget.set(null);
-        }
-      });
       container.appendChild(indicator);
       return { element: indicator, arrow, location };
     });

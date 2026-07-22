@@ -30,7 +30,9 @@
 .modal-sheet[data-open] {
   visibility: visible;
   pointer-events: auto;
-  background: rgb(0 0 0 / 0.72);
+  /* Standard media scrim (#000 @ 70%, ≈ the old 0.72 black) — one scrim
+     weight across menu/modal/lightbox (case-study §2.7). */
+  background: var(--sys-color-media-scrim);
   backdrop-filter: blur(14px) saturate(0.7);
   /* No visibility entry: on open it flips instantly (the old
      `visibility 0s`), since untransitioned properties change immediately. */
@@ -123,6 +125,52 @@
   transform: translateY(0);
 }
 
+/* Scroll-linked compact-title reveal (Apple large-title collapse): when a
+   consumer names its headline `--modal-sheet-headline` (view-timeline),
+   the compact title fades/rises in EXACTLY as the headline slides under
+   the toolbar — the [data-visible] boolean flip above stays as the
+   fallback for browsers without scroll-driven animations (an unattached
+   timeline leaves this animation inert there). */
+.modal-sheet {
+  timeline-scope: --modal-sheet-headline;
+}
+
+@supports (animation-timeline: view()) {
+  @media (prefers-reduced-motion: no-preference) {
+    .modal-sheet__title {
+      animation: modal-sheet-title-in linear both;
+      animation-timeline: --modal-sheet-headline;
+      animation-range: exit 20% exit 100%;
+    }
+
+    /* The toolbar 'lands' with a hairline as the headline tucks under it
+       (UINavigationBar behavior). */
+    .modal-sheet__toolbar {
+      border-block-end: 1px solid transparent;
+      animation: modal-sheet-hairline-in linear both;
+      animation-timeline: --modal-sheet-headline;
+      animation-range: exit 20% exit 100%;
+    }
+  }
+}
+
+@keyframes modal-sheet-hairline-in {
+  to {
+    border-block-end-color: var(--sys-color-separator);
+  }
+}
+
+@keyframes modal-sheet-title-in {
+  from {
+    opacity: 0;
+    transform: translateY(0.55rem);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 .modal-sheet__close {
   grid-column: 3;
   justify-self: end;
@@ -135,7 +183,7 @@
   border-radius: 50%;
   background: color-mix(
     in srgb,
-    var(--sys-color-foreground) calc(0.07 * 100%),
+    var(--sys-color-foreground) var(--sys-alpha-interactive),
     transparent
   );
   color: var(--sys-color-foreground);
@@ -145,7 +193,7 @@
 }
 
 .modal-sheet__close:active {
-  transform: scale(0.9);
+  transform: scale(var(--sys-press-scale-control));
 }
 
 .modal-sheet__close-glyph {

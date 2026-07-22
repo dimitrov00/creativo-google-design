@@ -7,8 +7,8 @@
   grid-template-columns: minmax(15rem, 0.55fr) minmax(0, 1.45fr);
   gap: clamp(3rem, 7vw, 8rem);
   align-items: start;
-  /* Normalized to the landing's shared section rhythm (7rem). */
-  padding: 7rem var(--page-gutter);
+  /* Normalized to the landing's shared section rhythm. */
+  padding: var(--landing-section-gap) var(--page-gutter);
   background: transparent;
   /* Tone-aware like every other section (team/services use --page-fg). */
   color: var(--page-fg);
@@ -113,8 +113,11 @@
   color: var(--sys-color-accent);
 }
 
-.location-card:focus-visible h3 {
-  color: var(--sys-color-primary);
+/* Explicit ring for keyboard focus — the hover/:focus-within accent color
+   stays consistent across input modalities (case-study §2.5). */
+.location-card:focus-visible {
+  outline: 2px solid var(--sys-color-ring);
+  outline-offset: 2px;
 }
 
 .location-card__copy h3 {
@@ -169,14 +172,17 @@
   color: var(--sys-color-foreground);
 }
 
+.location-card__phone:focus-visible {
+  outline: 2px solid var(--sys-color-ring);
+  outline-offset: 2px;
+}
+
 .location-card__action {
   display: flex;
   margin-block-start: 0.9rem;
 }
 
 .location-card__explore-label {
-  --cr-cursor-fill-color: var(--sys-color-accent);
-  --cr-cursor-surface: var(--sys-color-foreground);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -201,8 +207,6 @@
 }
 
 .location-card__maps {
-  --cr-cursor-fill-color: var(--sys-color-accent);
-  --cr-cursor-surface: var(--sys-color-foreground);
   display: grid;
   flex: 0 0 auto;
   place-items: center;
@@ -229,6 +233,11 @@
 .location-card__maps:focus-visible {
   border-color: var(--sys-color-accent);
   transform: translateX(0.15rem) rotate(8deg);
+}
+
+.location-card__maps:focus-visible {
+  outline: 2px solid var(--sys-color-ring);
+  outline-offset: 2px;
 }
 
 .locations__map {
@@ -380,14 +389,10 @@
   margin-block-start: 1.75rem;
 }
 
+/* Geometry comes from ui-button[data-spread]; only the flex share is
+   local. */
 .location-sheet__book {
   flex: 1 1 auto;
-  /* Tall-pill/small-label sheet-CTA geometry: uiSize="compact" supplies the
-     label scale; the host restores the chunky box and spreads label from
-     arrow (Button's label span mirrors host justify/gap, see button.css). */
-  justify-content: space-between;
-  gap: 0.7rem;
-  padding: 1.15rem 1.25rem;
 }
 
 .location-sheet__book .material-symbols-rounded {
@@ -575,13 +580,16 @@
   background: color-mix(in srgb, var(--sys-color-surface) 92%, transparent);
 }
 
+.location-sheet__toolbar-icon:focus-visible {
+  outline: 2px solid var(--sys-color-ring);
+  outline-offset: 2px;
+}
+
+/* Geometry comes from ui-button[data-spread]; the shadow + narrow-screen
+   shrink behavior stay local. */
 .location-sheet__toolbar-book {
   white-space: nowrap;
   box-shadow: 0 0.6rem 1.6rem rgb(0 0 0 / 0.22);
-  /* Tall-pill/small-label sheet-CTA geometry — see .location-sheet__book. */
-  gap: 0.6rem;
-  min-block-size: 3rem;
-  padding: 0 1.1rem;
   /* Long localized labels (location name in the CTA) must shrink inside
      the floating bar on narrow screens instead of pushing past the edge. */
   min-inline-size: 0;

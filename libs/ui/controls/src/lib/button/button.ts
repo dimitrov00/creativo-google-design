@@ -27,6 +27,7 @@ export type UiControlShape = 'rounded' | 'capsule';
     '[attr.data-size]': 'uiSize()',
     '[attr.data-shape]': 'uiShape()',
     '[attr.data-state]': 'uiLoading() ? "loading" : null',
+    '[attr.data-spread]': "uiSpread() ? '' : null",
     '[attr.aria-busy]': 'uiLoading() || null',
   },
   hostDirectives: [{ directive: UiPaddingDirective, inputs: ['uiPadding'] }],
@@ -36,4 +37,6 @@ export class UiButton {
   readonly uiSize = input<UiControlSize>('regular');
   readonly uiShape = input<UiControlShape>('rounded');
   readonly uiLoading = input(false);
+  /** Sheet-CTA geometry: tall pill, label spread from trailing glyph. */
+  readonly uiSpread = input(false);
 }

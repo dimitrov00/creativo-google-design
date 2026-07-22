@@ -88,7 +88,8 @@ export class IconInstagram {}
       block-size: 1.5px;
       border-radius: 9999px;
       background: currentColor;
-      transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+      transition: transform var(--sys-motion-duration-deliberate)
+        var(--sys-motion-ease-entrance);
     }
     .cr-menu-icon__bar[data-bar='top'] {
       top: 2px;

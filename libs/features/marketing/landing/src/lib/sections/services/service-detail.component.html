@@ -3,7 +3,6 @@
     data-testid="landing-service-detail"
     sheetId="service-detail-sheet"
     labelledBy="service-detail-title"
-    [attr.data-state]="sheetOpen() ? 'open' : 'closed'"
     [closeLabel]="t('landing.nav.close')"
     [open]="sheetOpen()"
     [closing]="sheetClosing()"
@@ -34,13 +33,17 @@
       <div class="service-sheet__story">
         <!-- ── Intro: eyebrow · title · summary ── -->
         <section class="service-sheet__intro">
+          <!-- Title leads (Apple large-title order); the section eyebrow
+               reads as a caption line under it. As the title scrolls under
+               the toolbar it scales/fades into the compact toolbar title
+               (scroll-driven, see CSS). -->
           <div class="service-sheet__lede">
-            <p class="cr-section-eyebrow">
-              {{ t('landing.services.eyebrow') }}
-            </p>
             <h2 id="service-detail-title">
               {{ content.text(service().name) }}
             </h2>
+            <p class="service-sheet__eyebrow">
+              {{ t('landing.services.eyebrow') }}
+            </p>
             @if (service().kind === 'bundle') {
               <span class="service-sheet__bundle-badge">
                 <cr-icon name="layers" class="service-sheet__bundle-glyph" />
@@ -66,6 +69,7 @@
               uiButton
               uiVariant="prominent"
               uiSize="compact"
+              [uiSpread]="true"
               data-testid="service-detail-book"
             >
               <span>{{ t('landing.services.book') }}</span>
@@ -165,6 +169,7 @@
         uiVariant="prominent"
         uiSize="compact"
         uiShape="capsule"
+        [uiSpread]="true"
       >
         <span>{{ t('landing.services.book') }}</span>
         <cr-icon name="arrow_outward" class="service-sheet__cta-glyph" />

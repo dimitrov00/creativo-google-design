@@ -67,6 +67,8 @@ export class FadeUpDirective {
               {
                 duration: 800,
                 delay: this.crFadeUpDelay() * 1000,
+                // Mirrors --sys-motion-ease-emphasized — WAAPI `easing`
+                // cannot read CSS custom properties.
                 easing: 'cubic-bezier(0.22, 1, 0.36, 1)',
                 fill: 'both',
               },

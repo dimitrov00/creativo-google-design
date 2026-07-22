@@ -37,9 +37,6 @@
       "path": "../../../ui/modifiers/tsconfig.lib.json"
     },
     {
-      "path": "../../../shared/cursor/tsconfig.lib.json"
-    },
-    {
       "path": "../../../infrastructure/i18n/tsconfig.lib.json"
     },
     {

@@ -61,7 +61,8 @@
   font: var(--sys-font-callout);
   color: var(--landing-muted-foreground);
   text-decoration: none;
-  transition: color 0.2s var(--sys-motion-ease-standard);
+  transition: color var(--sys-motion-duration-regular)
+    var(--sys-motion-ease-standard);
 }
 .cr-footer__link:hover {
   color: var(--sys-color-foreground);
@@ -72,7 +73,8 @@
   font-size: 12px;
   transform: rotate(-45deg);
   opacity: 0.5;
-  transition: transform 0.2s var(--sys-motion-ease-standard);
+  transition: transform var(--sys-motion-duration-regular)
+    var(--sys-motion-ease-standard);
 }
 .cr-footer__link:hover .cr-footer__external {
   transform: rotate(-45deg) translate(1px, -1px);

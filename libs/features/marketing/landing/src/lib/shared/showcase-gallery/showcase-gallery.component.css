@@ -56,8 +56,6 @@ img {
 }
 
 .showcase-gallery__layout-toggle {
-  --cr-cursor-fill-color: var(--sys-color-foreground);
-  --cr-cursor-surface: #fff;
   position: absolute;
   z-index: 4;
   inset: 0.8rem 0.8rem auto auto;
@@ -69,7 +67,9 @@ img {
   padding: 0;
   border: 0;
   border-radius: 50%;
-  background: rgb(247 247 244 / 0.78);
+  /* Theme-aware glass — surface-alpha instead of the hardcoded warm
+     off-white, so the chip reads in dark mode (case-study §2.7). */
+  background: color-mix(in srgb, var(--sys-color-surface) 78%, transparent);
   color: color-mix(
     in srgb,
     var(--sys-color-foreground) calc(0.74 * 100%),
@@ -92,8 +92,13 @@ img {
   opacity: 1;
 }
 
+.showcase-gallery__layout-toggle:focus-visible {
+  outline: 2px solid var(--sys-color-ring);
+  outline-offset: 2px;
+}
+
 .showcase-gallery__layout-toggle:active {
-  transform: scale(0.92);
+  transform: scale(var(--sys-press-scale-control));
 }
 
 .showcase-gallery__layout-toggle .material-symbols-rounded {

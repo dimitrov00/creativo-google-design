@@ -8,7 +8,6 @@ import {
   signal,
 } from '@angular/core';
 import { TranslocoDirective } from '@jsverse/transloco';
-import { CursorTargetDirective } from '@creativo/shared/cursor';
 import { UiButton } from '@creativo/ui/controls';
 import { UiTextDirective } from '@creativo/ui/modifiers';
 import { UiSectionHeader } from '@creativo/ui/patterns';
@@ -28,7 +27,6 @@ interface BarberItem {
 @Component({
   selector: 'cr-team-showcase',
   imports: [
-    CursorTargetDirective,
     ModalSheetComponent,
     ShowcaseGalleryComponent,
     TranslocoDirective,

@@ -6,8 +6,6 @@
       [attr.aria-label]="expanded() ? carouselViewLabel() : gridViewLabel()"
       [attr.aria-pressed]="expanded()"
       (click)="toggleLayout()"
-      crCursorTarget
-      crCursorTargetStyle="fill"
     >
       <span class="material-symbols-rounded" aria-hidden="true">
         {{ expanded() ? 'view_carousel' : 'grid_view' }}

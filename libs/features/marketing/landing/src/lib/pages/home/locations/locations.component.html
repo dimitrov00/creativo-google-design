@@ -79,7 +79,6 @@
                         })
                       "
                       (click)="$event.stopPropagation()"
-                      crCursorTarget
                     >
                       <span class="material-symbols-rounded" aria-hidden="true"
                         >call</span
@@ -94,8 +93,6 @@
                       uiText
                       uiFont="caption"
                       uiWeight="bold"
-                      crCursorTarget
-                      crCursorTargetStyle="fill"
                     >
                       {{ t('marketing.locations.explore') }}
                     </span>
@@ -113,8 +110,6 @@
                     })
                   "
                   (click)="$event.stopPropagation()"
-                  crCursorTarget
-                  crCursorTargetStyle="fill"
                 >
                   <span class="material-symbols-rounded" aria-hidden="true"
                     >near_me</span
@@ -211,7 +206,6 @@
                   uiText
                   uiFont="caption"
                   [href]="phoneHref(t(location.phoneKey))"
-                  crCursorTarget
                 >
                   <span class="material-symbols-rounded" aria-hidden="true"
                     >call</span
@@ -227,8 +221,7 @@
                   uiButton
                   uiVariant="prominent"
                   uiSize="compact"
-                  crCursorTarget
-                  crCursorTargetStyle="fill"
+                  [uiSpread]="true"
                 >
                   <span>{{
                     t('marketing.locations.bookAt', {
@@ -252,8 +245,6 @@
                       location: t(location.nameKey),
                     })
                   "
-                  crCursorTarget
-                  crCursorTargetStyle="fill"
                 >
                   <span class="material-symbols-rounded" aria-hidden="true"
                     >near_me</span
@@ -271,8 +262,6 @@
                         location: t(location.nameKey),
                       })
                     "
-                    crCursorTarget
-                    crCursorTargetStyle="fill"
                   >
                     <span class="material-symbols-rounded" aria-hidden="true"
                       >call</span
@@ -418,8 +407,6 @@
               })
             "
             [attr.tabindex]="sheetToolbarVisible() ? null : -1"
-            crCursorTarget
-            crCursorTargetStyle="fill"
           >
             <span class="material-symbols-rounded" aria-hidden="true"
               >call</span
@@ -439,8 +426,6 @@
             })
           "
           [attr.tabindex]="sheetToolbarVisible() ? null : -1"
-          crCursorTarget
-          crCursorTargetStyle="fill"
         >
           <span class="material-symbols-rounded" aria-hidden="true"
             >near_me</span
@@ -454,8 +439,7 @@
           uiVariant="prominent"
           uiSize="compact"
           uiShape="capsule"
-          crCursorTarget
-          crCursorTargetStyle="fill"
+          [uiSpread]="true"
         >
           <span>{{
             t('marketing.locations.bookAt', { location: t(location.nameKey) })

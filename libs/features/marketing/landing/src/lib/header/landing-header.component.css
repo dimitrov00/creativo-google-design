@@ -5,7 +5,19 @@
   inset-inline: 0;
   top: 0;
   z-index: var(--sys-z-header, 60);
-  transition: all 0.3s var(--sys-motion-ease-standard);
+  /* Enumerated properties — `all` on a fixed header transitions layout
+     properties it never animates (case-study §2.5). */
+  transition:
+    padding var(--sys-motion-duration-deliberate)
+      var(--sys-motion-ease-standard),
+    background-color var(--sys-motion-duration-deliberate)
+      var(--sys-motion-ease-standard),
+    border-color var(--sys-motion-duration-deliberate)
+      var(--sys-motion-ease-standard),
+    box-shadow var(--sys-motion-duration-deliberate)
+      var(--sys-motion-ease-standard),
+    transform var(--sys-motion-duration-deliberate)
+      var(--sys-motion-ease-standard);
 }
 
 /* Float — transparent bar inset over the hero card; the 44px gutters are
@@ -31,7 +43,8 @@
   block-size: 3.5rem;
   inline-size: 100%;
   margin-inline: auto;
-  transition: padding 0.3s var(--sys-motion-ease-standard);
+  transition: padding var(--sys-motion-duration-deliberate)
+    var(--sys-motion-ease-standard);
 }
 
 /* Float keeps the app column too (v2 `width: lg` → inner max-w-app in BOTH

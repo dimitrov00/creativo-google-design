@@ -8,6 +8,17 @@
   position: relative;
 }
 
+/* Screen-reader-only section heading — the section otherwise exposes no
+   accessible name in the document outline. */
+.cr-visually-hidden {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
 .cr-gallery__stage {
   position: sticky;
   top: 0;
@@ -34,10 +45,15 @@
   cursor: pointer;
   perspective: 900px;
   transform: translateY(var(--drift, 0px));
-  transition: scale 0.3s var(--sys-motion-ease-emphasized);
+  transition: scale var(--sys-motion-duration-deliberate)
+    var(--sys-motion-ease-emphasized);
 }
 .cr-gallery__card--motion:hover {
   scale: 1.03;
+}
+.cr-gallery__card:focus-visible {
+  outline: 2px solid var(--sys-color-ring);
+  outline-offset: 2px;
 }
 
 .cr-gallery__figure {
@@ -50,14 +66,15 @@
   box-shadow: var(--sys-elevation-overlay);
   transform: rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg));
   transform-style: preserve-3d;
-  transition: transform 0.2s var(--sys-motion-ease-standard);
+  transition: transform var(--sys-motion-duration-regular)
+    var(--sys-motion-ease-standard);
 }
 
 .cr-gallery__image {
   block-size: 100%;
   inline-size: 100%;
   object-fit: cover;
-  transition: transform 0.7s ease-out;
+  transition: transform var(--sys-motion-duration-slowest) ease-out;
 }
 .cr-gallery__card--motion:hover .cr-gallery__image {
   transform: scale(1.06);
@@ -70,7 +87,8 @@
   inset: 0;
   border-radius: var(--landing-radius-2xl);
   opacity: 0;
-  transition: opacity 0.2s var(--sys-motion-ease-standard);
+  transition: opacity var(--sys-motion-duration-regular)
+    var(--sys-motion-ease-standard);
   background: radial-gradient(
     circle at var(--gx, 50%) var(--gy, 50%),
     rgb(255 255 255 / 0.13) 0%,
@@ -115,10 +133,13 @@
 
 .cr-gallery__caption {
   margin: 0;
-  font: var(--sys-font-largeTitle);
-  letter-spacing: var(--sys-tracking-largeTitle);
+  /* Title tier — captions are wayfinding labels, not section headlines
+     (case-study item 25). */
+  font: var(--sys-font-title);
+  letter-spacing: var(--sys-tracking-title);
   color: var(--sys-color-foreground);
-  animation: cr-caption-in 0.45s var(--sys-motion-ease-emphasized) both;
+  animation: cr-caption-in var(--sys-motion-duration-slow)
+    var(--sys-motion-ease-emphasized) both;
 }
 
 @keyframes cr-caption-in {
@@ -164,7 +185,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  animation: cr-lightbox-fade 0.22s var(--sys-motion-ease-standard) both;
+  animation: cr-lightbox-fade var(--sys-motion-duration-regular)
+    var(--sys-motion-ease-standard) both;
 }
 
 .cr-gallery__lightbox-backdrop {
@@ -173,9 +195,51 @@
   border: 0;
   padding: 0;
   cursor: pointer;
-  background: rgb(0 0 0 / 0.85);
+  /* Standard media scrim (#000 @ 70%) — the blur carries the remaining
+     separation the old 85% black provided (case-study §2.7). */
+  background: var(--sys-color-media-scrim);
   -webkit-backdrop-filter: blur(12px);
   backdrop-filter: blur(12px);
+}
+
+/* Visible close control — the invisible full-screen backdrop button is not
+   a discoverable affordance on its own (case-study item 25). Modal-sheet
+   close idiom, translated to the media-ink ramp because the scrim below is
+   black in both themes. */
+.cr-gallery__lightbox-close {
+  position: absolute;
+  top: max(1rem, env(safe-area-inset-top));
+  right: 1rem;
+  z-index: 20;
+  inline-size: var(--control-size-regular);
+  block-size: var(--control-size-regular);
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--landing-chrome-fill);
+  color: var(--landing-media-fg);
+  cursor: pointer;
+  transition: transform var(--sys-motion-duration-deliberate)
+    var(--sys-motion-ease-emphasized);
+}
+
+.cr-gallery__lightbox-close:hover {
+  background: var(--landing-chrome-fill-hover);
+}
+
+.cr-gallery__lightbox-close:active {
+  transform: scale(var(--sys-press-scale-control));
+}
+
+.cr-gallery__lightbox-close:focus-visible {
+  outline: 2px solid var(--landing-media-fg);
+  outline-offset: 2px;
+}
+
+.cr-gallery__lightbox-close-glyph {
+  font-size: 1.25rem;
 }
 
 .cr-gallery__lightbox-image {
@@ -188,7 +252,8 @@
   box-shadow:
     0 32px 80px rgb(0 0 0 / 0.7),
     0 0 0 1px rgb(255 255 255 / 0.1);
-  animation: cr-lightbox-pop 0.32s var(--sys-motion-ease-emphasized) both;
+  animation: cr-lightbox-pop var(--sys-motion-duration-deliberate)
+    var(--sys-motion-ease-emphasized) both;
 }
 
 @keyframes cr-lightbox-fade {

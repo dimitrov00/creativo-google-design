@@ -46,6 +46,7 @@
   }
 
   .ui-card[data-interactive] {
+    position: relative;
     cursor: pointer;
     transition:
       box-shadow var(--sys-motion-duration-regular)
@@ -53,11 +54,34 @@
       transform var(--sys-motion-duration-instant)
         var(--sys-motion-ease-standard);
   }
-  .ui-card[data-interactive]:hover {
-    box-shadow: var(--sys-elevation-overlay);
+
+  /* Shared state layer — one hover/press grammar for interactive surfaces
+     (currentColor mixed at the theme alpha ladder). */
+  .ui-card[data-interactive]::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    pointer-events: none;
+    background: transparent;
+    transition: background-color var(--sys-motion-duration-regular)
+      var(--sys-motion-ease-standard);
   }
+
+  @media (hover: hover) {
+    .ui-card[data-interactive]:hover {
+      box-shadow: var(--sys-elevation-overlay);
+    }
+    .ui-card[data-interactive]:hover::after {
+      background: var(--sys-state-layer-hover);
+    }
+  }
+
   .ui-card[data-interactive]:active {
-    transform: scale(0.99);
+    transform: scale(var(--sys-press-scale-surface));
+  }
+  .ui-card[data-interactive]:active::after {
+    background: var(--sys-state-layer-press);
   }
 
   @media (prefers-reduced-motion: reduce) {

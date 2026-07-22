@@ -15,6 +15,8 @@ import { TranslocoDirective } from '@jsverse/transloco';
 import { LandingContentService } from '../../content/landing-content.service';
 import type { WorkShotVm } from '../../content/landing-content';
 
+/** Mirrors --sys-motion-ease-emphasized — WAAPI `easing` cannot read CSS
+ *  custom properties, so the curve is restated here. */
 const EASE = 'cubic-bezier(0.22, 1, 0.36, 1)';
 
 /**
@@ -65,10 +67,13 @@ export class WorkGalleryComponent {
     viewChild<ElementRef<HTMLElement>>('progressFill');
   private readonly cardRefs = viewChildren<ElementRef<HTMLElement>>('card');
 
+  private readonly hostRef = inject<ElementRef<HTMLElement>>(ElementRef);
   private cardCenters: number[] = [];
   private containerWidth = 390;
   private frame = 0;
   private bootstrapped = false;
+  /** The card that opened the lightbox — focus returns here on close. */
+  private previousFocus: HTMLElement | null = null;
 
   constructor() {
     // Runs when BOTH the browser render and the transloco view (the template
@@ -215,11 +220,33 @@ export class WorkGalleryComponent {
     card.style.setProperty('--ry', '0deg');
   }
 
+  /** role="button" cards must activate on Enter AND Space (same contract
+   *  as team-showcase's onCardKeydown). */
+  protected onCardKeydown(shot: WorkShotVm, event: KeyboardEvent): void {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    event.preventDefault();
+    this.openLightbox(shot);
+  }
+
   protected openLightbox(shot: WorkShotVm): void {
     this.lightboxShot.set(shot);
+    if (!isPlatformBrowser(this.platformId)) return;
+    // Move focus into the dialog (mirrors modal-sheet's focus handling);
+    // remember the triggering card so close can hand focus back.
+    this.previousFocus = document.activeElement as HTMLElement | null;
+    requestAnimationFrame(() => {
+      this.hostRef.nativeElement
+        .querySelector<HTMLElement>('.cr-gallery__lightbox-close')
+        ?.focus();
+    });
   }
 
   protected closeLightbox(): void {
+    if (this.lightboxShot() === null) return;
     this.lightboxShot.set(null);
+    if (!isPlatformBrowser(this.platformId)) return;
+    const previous = this.previousFocus;
+    this.previousFocus = null;
+    requestAnimationFrame(() => previous?.focus());
   }
 }

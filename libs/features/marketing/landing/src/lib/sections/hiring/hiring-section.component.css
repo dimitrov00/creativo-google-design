@@ -6,7 +6,7 @@
 
 .cr-hiring__section {
   padding-inline: var(--landing-gutter);
-  padding-block-start: 7rem;
+  padding-block-start: var(--landing-section-gap);
 }
 
 .cr-hiring__card {
@@ -56,7 +56,8 @@
   position: absolute;
   inset: 0;
   opacity: 0;
-  transition: opacity 0.3s var(--sys-motion-ease-standard);
+  transition: opacity var(--sys-motion-duration-deliberate)
+    var(--sys-motion-ease-standard);
   background: radial-gradient(
     480px circle at var(--spot-x, -500px) var(--spot-y, -500px),
     color-mix(in srgb, var(--sys-color-accent) 13%, transparent),
@@ -120,7 +121,8 @@
   opacity: 0;
 }
 .cr-hiring__title[data-motion][data-revealed] .cr-hiring__word {
-  animation: cr-hiring-word 0.68s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: cr-hiring-word var(--sys-motion-duration-slowest)
+    var(--sys-motion-ease-emphasized) both;
   animation-delay: calc(0.22s + var(--word-i) * 0.11s);
 }
 

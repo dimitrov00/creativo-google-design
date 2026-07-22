@@ -56,15 +56,11 @@
                 uiText
                 uiFont="caption"
                 uiWeight="bold"
-                crCursorTarget
-                crCursorTargetStyle="fill"
               >
                 {{ t('marketing.team.explore') }}
               </span>
               <span
                 class="team-card__explore-icon explore-affordance__icon material-symbols-rounded"
-                crCursorTarget
-                crCursorTargetStyle="fill"
                 >arrow_forward</span
               >
             </span>
@@ -123,8 +119,7 @@
             uiButton
             uiVariant="prominent"
             uiSize="compact"
-            crCursorTarget
-            crCursorTargetStyle="fill"
+            [uiSpread]="true"
           >
             <span>
               {{

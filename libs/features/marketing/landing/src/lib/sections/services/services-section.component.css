@@ -5,7 +5,7 @@
 :host {
   display: block;
   padding-inline: var(--landing-gutter);
-  padding-block-start: 7rem;
+  padding-block-start: var(--landing-section-gap);
 }
 
 /* Full-bleed scroller (design call): the scroll AREA spans the whole
@@ -62,6 +62,11 @@
   color: var(--sys-color-foreground);
 }
 
+.cr-services__tile:focus-visible {
+  outline: 2px solid var(--sys-color-ring);
+  outline-offset: 2px;
+}
+
 .cr-services__image-wrap {
   position: relative;
   display: block;
@@ -83,7 +88,8 @@
   inline-size: 100%;
   block-size: 100%;
   object-fit: cover;
-  transition: transform 0.5s var(--sys-motion-ease-standard);
+  transition: transform var(--sys-motion-duration-slow)
+    var(--sys-motion-ease-standard);
 }
 .cr-services__tile:hover .cr-services__image {
   transform: scale(1.04);
@@ -113,7 +119,9 @@
   position: absolute;
   inset: 0;
   border-radius: var(--landing-radius-2xl);
-  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.06);
+  /* Separator token instead of black-alpha — scales 4%→12% per theme, so
+     the crispness ring survives dark mode (case-study §2.7). */
+  box-shadow: inset 0 0 0 1px var(--sys-color-separator);
 }
 
 /* Bundle tell — floating brand chip on the photo corner. */
@@ -155,7 +163,8 @@
   font-weight: 700;
   letter-spacing: -0.2px;
   line-height: 1.375;
-  transition: color 0.2s var(--sys-motion-ease-standard);
+  transition: color var(--sys-motion-duration-regular)
+    var(--sys-motion-ease-standard);
 }
 .cr-services__tile:hover .cr-services__name {
   color: var(--sys-color-accent);

@@ -109,6 +109,19 @@
     border-radius: var(--control-radius-capsule);
   }
 
+  /* Sheet-CTA geometry (SwiftUI: full-width bordered-prominent row):
+     chunky pill box with a small label, content spread edge-to-edge —
+     replaces the five per-sheet "compact size + hand-restored box" hacks
+     (case study §2.3). Composes with any size/variant/shape. */
+  .ui-button[data-spread] {
+    justify-content: space-between;
+    block-size: auto;
+    min-block-size: 3.25rem;
+    gap: var(--sys-space-regular);
+    padding-block: 0.8rem;
+    padding-inline: 1.2rem 1.05rem;
+  }
+
   /* States — attributes only, never modifier classes */
   .ui-button[data-state='loading'] {
     pointer-events: none;

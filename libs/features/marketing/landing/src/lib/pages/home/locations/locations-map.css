@@ -87,8 +87,6 @@
   }
 
   .locations-map__pin-head {
-    --cr-cursor-fill-color: var(--sys-color-foreground);
-    --cr-cursor-surface: var(--sys-color-background);
     position: relative;
     z-index: 1;
     display: grid;
@@ -117,14 +115,6 @@
     line-height: 1;
     transition: color var(--sys-motion-duration-deliberate)
       var(--sys-motion-ease-standard);
-  }
-
-  /* !important, matching the same rationale as the global cursor directive's
-     own fill rule (cursor-target.css): this must win over `[data-active]`'s
-     own icon color regardless of selector order/specificity, since the
-     hovered state can land on either the resting or the active pin. */
-  .locations-map__pin-head[data-cr-cursor-hover] .locations-map__pin-icon {
-    color: var(--sys-color-background) !important;
   }
 
   .locations-map__pin-tail {

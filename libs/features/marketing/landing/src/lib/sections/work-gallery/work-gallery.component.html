@@ -4,6 +4,10 @@
     class="cr-gallery"
     [style.height]="'calc(100vh + ' + scrollDistance() + 'px)'"
   >
+    <!-- Accessible section heading (visually hidden) — reuses the sitemap's
+         section name key. -->
+    <h2 class="cr-visually-hidden">{{ t('landing.footer.nav.work') }}</h2>
+
     <div class="cr-gallery__stage">
       <!-- Scroll-driven image strip -->
       <div #strip class="cr-gallery__strip">
@@ -18,7 +22,7 @@
             (mousemove)="onCardMove($event, card)"
             (mouseleave)="onCardLeave(card)"
             (click)="openLightbox(shot)"
-            (keydown.enter)="openLightbox(shot)"
+            (keydown)="onCardKeydown(shot, $event)"
             tabindex="0"
             role="button"
             [attr.aria-label]="content.text(shot.alt)"
@@ -69,7 +73,8 @@
       <button
         type="button"
         class="cr-gallery__lightbox-backdrop"
-        [attr.aria-label]="t('landing.nav.close')"
+        tabindex="-1"
+        aria-hidden="true"
         (click)="closeLightbox()"
       ></button>
       <img
@@ -77,6 +82,17 @@
         [src]="shot.src"
         [alt]="content.text(shot.alt)"
       />
+      <button
+        type="button"
+        class="cr-gallery__lightbox-close"
+        data-testid="work-gallery-lightbox-close"
+        [attr.aria-label]="t('landing.nav.close')"
+        (click)="closeLightbox()"
+      >
+        <span class="material-symbols-rounded cr-gallery__lightbox-close-glyph"
+          >close</span
+        >
+      </button>
     </div>
   }
 </ng-container>

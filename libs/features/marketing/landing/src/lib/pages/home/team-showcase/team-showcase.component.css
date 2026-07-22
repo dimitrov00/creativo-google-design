@@ -12,8 +12,8 @@
   grid-template-columns: minmax(15rem, 0.55fr) minmax(0, 1.45fr);
   gap: clamp(3rem, 7vw, 8rem);
   align-items: start;
-  /* Normalized to the landing's shared section rhythm (7rem). */
-  padding: 7rem var(--page-gutter);
+  /* Normalized to the landing's shared section rhythm. */
+  padding: var(--landing-section-gap) var(--page-gutter);
   background: transparent;
   color: var(--page-fg);
 }
@@ -41,8 +41,9 @@
   cursor: pointer;
 }
 
-.team-card:focus-visible h3 {
-  color: var(--sys-color-accent);
+.team-card:focus-visible {
+  outline: 2px solid var(--sys-color-ring);
+  outline-offset: 2px;
 }
 
 /* Base morph recipe lives in landing-shared.css (.media-morph /
@@ -212,14 +213,9 @@
   color: var(--sys-color-foreground);
 }
 
+/* Geometry comes from ui-button[data-spread]; only the margin is local. */
 .barber-sheet__profile > a {
   margin-block-start: 2rem;
-  /* Tall-pill/small-label sheet-CTA geometry: uiSize="compact" supplies the
-     label scale; the host restores the chunky box and spreads label from
-     arrow (Button's label span mirrors host justify/gap, see button.css). */
-  justify-content: space-between;
-  gap: 2rem;
-  padding: 1.15rem 1.25rem;
 }
 
 @media (max-width: 760px) {
@@ -274,7 +270,7 @@
 
 @media (max-width: 430px) {
   .team {
-    padding-block-start: 7rem;
+    padding-block-start: var(--landing-section-gap);
   }
 
   .team-grid {

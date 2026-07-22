@@ -10,11 +10,10 @@ import {
   input,
   model,
 } from '@angular/core';
-import { CursorTargetDirective } from '@creativo/shared/cursor';
 
 @Component({
   selector: 'cr-showcase-gallery',
-  imports: [CursorTargetDirective],
+  imports: [],
   templateUrl: './showcase-gallery.component.html',
   styleUrl: './showcase-gallery.component.css',
   host: {

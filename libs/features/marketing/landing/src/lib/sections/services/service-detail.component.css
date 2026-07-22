@@ -36,12 +36,48 @@
   margin: 0;
 }
 
-/* Adapted: the old sheet's display-cut headline steps down to `title`. */
+/* Title leads at largeTitle (Apple large-title register); as it scrolls
+   under the toolbar it scales down and fades — scroll-driven, zero JS in
+   supporting browsers (the rect-based [titleVisible] flip stays as the
+   fallback, see the @supports block below). */
 .service-sheet__intro h2 {
-  margin: 0.7rem 0 0;
-  font: var(--sys-font-title);
-  letter-spacing: var(--sys-tracking-title);
+  margin: 0;
+  font: var(--sys-font-largeTitle);
+  letter-spacing: var(--sys-tracking-largeTitle);
   color: var(--sys-color-foreground);
+  transform-origin: left top;
+}
+
+/* The section eyebrow reads as a caption line under the title. */
+.service-sheet__eyebrow {
+  margin-block-start: 0.5rem;
+  font: var(--sys-font-eyebrow);
+  letter-spacing: var(--sys-tracking-eyebrow);
+  text-transform: uppercase;
+  color: var(--sys-color-accent);
+}
+
+@supports (animation-timeline: view()) {
+  @media (prefers-reduced-motion: no-preference) {
+    .service-sheet__intro h2 {
+      /* Named timeline consumed by the sheet toolbar's compact title
+         (cr-modal-sheet declares the matching timeline-scope); the inset
+         mirrors the sticky toolbar height so 'exit' means 'sliding under
+         the toolbar', not 'leaving the scrollport'. */
+      view-timeline-name: --modal-sheet-headline;
+      view-timeline-inset: 4.1rem 0;
+      animation: service-sheet-title-collapse linear both;
+      animation-timeline: view();
+      animation-range: exit 0% exit 100%;
+    }
+  }
+}
+
+@keyframes service-sheet-title-collapse {
+  to {
+    opacity: 0;
+    transform: scale(0.62);
+  }
 }
 
 .service-sheet__bundle-badge {
@@ -100,12 +136,9 @@
   font-size: 14px;
 }
 
-/* Tall-pill/small-label sheet-CTA geometry (old booking-bar comment). */
+/* Geometry comes from ui-button[data-spread]; only the margin is local. */
 .service-sheet__summary > a {
-  justify-content: space-between;
-  gap: 3rem;
   margin-block-start: 1.6rem;
-  padding: 1.05rem 1.15rem 1.05rem 1.3rem;
 }
 
 .service-sheet__cta-glyph {
@@ -289,13 +322,11 @@
 /* ── Bottom booking bar — skeleton/reveal is the shared .sheet-bar-reveal
    recipe in landing-shared.css; only this bar's row layout stays local. ── */
 
+/* Geometry comes from ui-button[data-spread]; the float shadow stays
+   local. */
 .service-sheet__booking-bar a {
   box-shadow: 0 0.8rem 2.8rem rgb(0 0 0 / 0.22);
   white-space: nowrap;
-  justify-content: space-between;
-  gap: 0.8rem;
-  min-block-size: 3.25rem;
-  padding: 0.8rem 1.05rem 0.8rem 1.2rem;
 }
 
 /* ── Entrance choreography — `sheet-content-in` keyframes are shared in

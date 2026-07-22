@@ -81,6 +81,23 @@
     --sys-container-drawer: 36rem;
     --sys-container-sidebar: 17rem;
 
+    /* ── Interaction states (SwiftUI parity: .hoverEffect(.highlight)) ──
+       One state-layer grammar for every interactive surface: hover/press
+       fills mix currentColor at the theme's alpha ladder; press scales are
+       the only two sanctioned values (controls vs large surfaces). */
+    --sys-state-layer-hover: color-mix(
+      in srgb,
+      currentColor var(--sys-alpha-fill-hover),
+      transparent
+    );
+    --sys-state-layer-press: color-mix(
+      in srgb,
+      currentColor var(--sys-alpha-press),
+      transparent
+    );
+    --sys-press-scale-control: 0.97;
+    --sys-press-scale-surface: 0.99;
+
     /* ── Elevation ── */
     --sys-elevation-raised:
       0 1px 2px rgb(0 0 0 / 0.06), 0 2px 8px rgb(0 0 0 / 0.04);
