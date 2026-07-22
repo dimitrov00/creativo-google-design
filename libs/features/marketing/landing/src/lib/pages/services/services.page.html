@@ -9,11 +9,11 @@
       [attr.inert]="sheetOpen() ? '' : null"
     >
       <header class="catalog-intro" data-service-reveal>
-        <p text font="eyebrow">
+        <p uiText uiFont="eyebrow">
           {{ t('marketing.servicesPage.indexEyebrow') }}
         </p>
         <h2>{{ t('marketing.servicesPage.catalogGridTitle') }}</h2>
-        <span text font="footnote"
+        <span uiText uiFont="footnote"
           >{{ t('marketing.servicesPage.catalogGuide') }}</span
         >
       </header>
@@ -47,9 +47,9 @@
           </div>
 
           <div class="service-tile__copy">
-            <p text font="eyebrow">{{ t(service.labelKey) }}</p>
-            <h3 text font="title">{{ t(service.titleKey) }}</h3>
-            <div class="service-tile__facts" text font="caption">
+            <p uiText uiFont="eyebrow">{{ t(service.labelKey) }}</p>
+            <h3 uiText uiFont="title">{{ t(service.titleKey) }}</h3>
+            <div class="service-tile__facts" uiText uiFont="caption">
               <span>{{ t(service.durationKey) }}</span>
               <strong>{{ t(service.priceKey) }}</strong>
             </div>
@@ -59,9 +59,9 @@
             >
               <span
                 class="service-tile__explore-label explore-affordance__label"
-                text
-                font="caption"
-                bold
+                uiText
+                uiFont="caption"
+                uiWeight="bold"
                 crCursorTarget
                 crCursorTargetStyle="fill"
               >
@@ -81,6 +81,8 @@
     </section>
 
     <cr-modal-sheet
+      data-testid="landing-service-detail"
+      [attr.data-state]="sheetOpen() ? 'open' : 'closed'"
       sheetId="service-detail-sheet"
       labelledBy="service-sheet-title"
       [closeLabel]="t('marketing.servicesPage.closeService')"
@@ -94,9 +96,9 @@
       <p
         sheet-title
         class="service-sheet__compact-title"
-        text
-        font="caption"
-        bold
+        uiText
+        uiFont="caption"
+        uiWeight="bold"
       >
         {{ t(service.titleKey) }}
       </p>
@@ -116,12 +118,12 @@
         <div class="service-sheet__story">
           <section class="service-sheet__intro">
             <div>
-              <p text font="eyebrow">{{ t(service.labelKey) }}</p>
+              <p uiText uiFont="eyebrow">{{ t(service.labelKey) }}</p>
               <h2 id="service-sheet-title">{{ t(service.titleKey) }}</h2>
             </div>
             <div class="service-sheet__summary">
-              <p text font="footnote">{{ t(service.bodyKey) }}</p>
-              <div text font="caption">
+              <p uiText uiFont="footnote">{{ t(service.bodyKey) }}</p>
+              <div uiText uiFont="caption">
                 <span>
                   <span class="material-symbols-rounded" aria-hidden="true"
                     >schedule</span
@@ -132,10 +134,11 @@
               </div>
               <a
                 href="/client"
-                crButton
-                variant="action"
-                cursorStyle="fill"
-                size="mini"
+                uiButton
+                uiVariant="prominent"
+                uiSize="compact"
+                crCursorTarget
+                crCursorTargetStyle="fill"
               >
                 <span>{{ t('marketing.servicesPage.bookService') }}</span>
                 <span class="material-symbols-rounded" aria-hidden="true"
@@ -147,13 +150,13 @@
 
           <section class="service-sheet__variants">
             <header>
-              <h3 text font="extraLargeTitle">
+              <h3 uiText uiFont="extraLargeTitle">
                 {{ t('marketing.servicesPage.stepVariant') }}
               </h3>
             </header>
             <ul>
               @for (variantKey of service.variantKeys; track variantKey) {
-              <li text font="caption" fontWeight="semibold">
+              <li uiText uiFont="caption" uiWeight="semibold">
                 {{ t(variantKey) }}
               </li>
               }
@@ -165,7 +168,7 @@
             aria-labelledby="service-performers-title"
           >
             <header>
-              <h3 id="service-performers-title" text font="extraLargeTitle">
+              <h3 id="service-performers-title" uiText uiFont="extraLargeTitle">
                 {{ t('marketing.servicesPage.stepBarber') }}
               </h3>
             </header>
@@ -182,11 +185,13 @@
                     />
                   </div>
                   <div class="service-performer__identity">
-                    <p text font="eyebrow">
+                    <p uiText uiFont="eyebrow">
                       {{ t(barberRoleKey(performer.nameKey)) }}
                     </p>
-                    <h4 text font="title">{{ t(performer.nameKey) }}</h4>
-                    <span text font="caption">{{ t(performer.roleKey) }}</span>
+                    <h4 uiText uiFont="title">{{ t(performer.nameKey) }}</h4>
+                    <span uiText uiFont="caption"
+                      >{{ t(performer.roleKey) }}</span
+                    >
                   </div>
                 </article>
               </li>
@@ -206,11 +211,12 @@
         <a
           href="/client"
           [attr.tabindex]="sheetBookingBarVisible() ? null : -1"
-          crButton
-          variant="action"
-          cursorStyle="fill"
-          size="mini"
-          shape="pill"
+          uiButton
+          uiVariant="prominent"
+          uiSize="compact"
+          uiShape="capsule"
+          crCursorTarget
+          crCursorTargetStyle="fill"
         >
           <span>{{ t('marketing.servicesPage.bookService') }}</span>
           <span class="material-symbols-rounded" aria-hidden="true"

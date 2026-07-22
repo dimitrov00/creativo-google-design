@@ -11,7 +11,8 @@ import {
 } from '@angular/core';
 import { TranslocoDirective } from '@jsverse/transloco';
 import { CursorTargetDirective } from '@creativo/shared/cursor';
-import { Button, CrText } from '@creativo/shared/ui';
+import { UiButton } from '@creativo/ui/controls';
+import { UiTextDirective } from '@creativo/ui/modifiers';
 import {
   ModalSheetComponent,
   type ModalSheetScrollEvent,
@@ -49,15 +50,16 @@ interface CatalogServiceItem {
 @Component({
   selector: 'cr-services-page',
   imports: [
-    Button,
-    CrText,
     CursorTargetDirective,
     ModalSheetComponent,
     ShowcaseGalleryComponent,
     TranslocoDirective,
+    UiButton,
+    UiTextDirective,
   ],
   templateUrl: './services.page.html',
   styleUrl: './services.page.css',
+  host: { 'data-testid': 'landing-services' },
 })
 export class ServicesPage implements AfterViewInit {
   private readonly elementRef = inject<ElementRef<HTMLElement>>(ElementRef);

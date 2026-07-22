@@ -33,11 +33,11 @@ figure {
   clip-path: inset(7% round 2.4rem);
   transform: scale(1.035);
   transition:
-    opacity var(--cr-motion-duration-slowest) var(--cr-motion-easing-standard),
-    clip-path var(--cr-motion-duration-cinematic)
-      var(--cr-motion-easing-emphasized),
-    transform var(--cr-motion-duration-cinematic)
-      var(--cr-motion-easing-emphasized);
+    opacity var(--sys-motion-duration-slowest) var(--sys-motion-ease-standard),
+    clip-path var(--sys-motion-duration-cinematic)
+      var(--sys-motion-ease-emphasized),
+    transform var(--sys-motion-duration-cinematic)
+      var(--sys-motion-ease-emphasized);
   pointer-events: none;
 }
 
@@ -56,7 +56,7 @@ img {
 }
 
 .showcase-gallery__layout-toggle {
-  --cr-cursor-fill-color: var(--cr-color-foreground);
+  --cr-cursor-fill-color: var(--sys-color-foreground);
   --cr-cursor-surface: #fff;
   position: absolute;
   z-index: 4;
@@ -71,7 +71,7 @@ img {
   background: rgb(247 247 244 / 0.78);
   color: color-mix(
     in srgb,
-    var(--cr-color-foreground) calc(0.74 * 100%),
+    var(--sys-color-foreground) calc(0.74 * 100%),
     transparent
   );
   box-shadow: 0 0.4rem 1.4rem rgb(0 0 0 / 0.08);
@@ -79,14 +79,15 @@ img {
   cursor: pointer;
   opacity: 0.86;
   transition:
-    opacity var(--cr-motion-duration-base) var(--cr-motion-easing-standard),
-    color var(--cr-motion-duration-base) var(--cr-motion-easing-standard),
-    transform var(--cr-motion-duration-slow) var(--cr-motion-easing-emphasized);
+    opacity var(--sys-motion-duration-regular) var(--sys-motion-ease-standard),
+    color var(--sys-motion-duration-regular) var(--sys-motion-ease-standard),
+    transform var(--sys-motion-duration-deliberate)
+      var(--sys-motion-ease-emphasized);
 }
 
 .showcase-gallery__layout-toggle:hover,
 .showcase-gallery__layout-toggle:focus-visible {
-  color: var(--cr-color-foreground);
+  color: var(--sys-color-foreground);
   opacity: 1;
 }
 
@@ -95,7 +96,7 @@ img {
 }
 
 .showcase-gallery__layout-toggle .material-symbols-rounded {
-  font-size: var(--cr-icon-size-regular);
+  font-size: 1.2rem;
 }
 
 :host([data-expanded]) .showcase-gallery__track {
@@ -156,7 +157,7 @@ img {
     backdrop-filter: none;
     color: color-mix(
       in srgb,
-      var(--cr-color-foreground) calc(0.56 * 100%),
+      var(--sys-color-foreground) calc(0.56 * 100%),
       transparent
     );
     opacity: 1;

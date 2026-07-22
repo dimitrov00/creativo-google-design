@@ -33,7 +33,7 @@
 /* stylelint-disable declaration-property-value-allowed-list -- art-directed one-off (case study §F3) */
 .work-gallery__backdrop span {
   font-size: clamp(6rem, 19vw, 22rem);
-  font-weight: var(--cr-font-weight-bold);
+  font-weight: 700;
   letter-spacing: -0.05em;
   color: transparent;
   -webkit-text-stroke: 1px rgb(255 255 255 / 0.08);
@@ -89,10 +89,12 @@
 
 .work-gallery__meter-count {
   color: #fff;
+  font-weight: 700;
 }
 
 .work-gallery__meter-total {
   color: rgb(255 255 255 / 0.4);
+  font-weight: 700;
 }
 
 .work-gallery__meter-track {
@@ -176,12 +178,13 @@
   border-radius: 999px;
   background: color-mix(
     in srgb,
-    var(--cr-color-foreground) calc(0.4 * 100%),
+    var(--sys-color-foreground) calc(0.4 * 100%),
     transparent
   );
   backdrop-filter: blur(10px);
   color: rgb(255 255 255 / 0.86);
   font-variant-numeric: tabular-nums;
+  font-weight: 700;
 }
 
 .work-card__copy {
@@ -192,6 +195,8 @@
 
 .work-card__copy h3 {
   margin: 0;
+  /* tracking="tight" had no libs/ui equivalent — preserved locally. */
+  letter-spacing: -0.06em;
 }
 
 .work-card__copy p {
@@ -221,11 +226,6 @@
 .work-gallery__end p {
   max-inline-size: 16ch;
   margin: 0;
-}
-
-.work-gallery__end a {
-  /* CTA radius vocabulary — consumed by Button's documented override hook. */
-  --cr-button-radius: var(--radius-action);
 }
 
 @media (max-width: 820px) {

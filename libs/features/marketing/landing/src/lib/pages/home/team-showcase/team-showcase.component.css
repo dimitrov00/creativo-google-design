@@ -48,7 +48,7 @@
 }
 
 .team-card:focus-visible h3 {
-  color: var(--cr-color-highlight);
+  color: var(--sys-color-accent);
 }
 
 /* Skeleton + hover morph live in styles.css (.media-morph / .morph-card) —
@@ -58,7 +58,7 @@
   --media-morph-clip-rest: 50%;
   --media-morph-clip-hover: var(--radius-media);
   --media-morph-rotate: -0.7deg;
-  --media-morph-filter-duration: var(--cr-motion-duration-slowest);
+  --media-morph-filter-duration: var(--sys-motion-duration-slowest);
   background: var(--surface-film);
 }
 
@@ -89,14 +89,13 @@
   max-inline-size: 11ch;
   margin: 0;
   transition:
-    color var(--cr-motion-duration-slow) var(--cr-motion-easing-standard),
-    transform var(--cr-motion-duration-slower)
-      var(--cr-motion-easing-emphasized);
+    color var(--sys-motion-duration-deliberate) var(--sys-motion-ease-standard),
+    transform var(--sys-motion-duration-slow) var(--sys-motion-ease-emphasized);
 }
 
 .team-card:hover h3,
 .team-card:focus-within h3 {
-  color: var(--cr-color-highlight);
+  color: var(--sys-color-accent);
   transform: translateX(0.12em);
 }
 
@@ -115,7 +114,7 @@
   align-items: center;
   gap: 0.25rem;
   color: var(--page-fg);
-  font-weight: var(--cr-font-weight-bold);
+  font-weight: 700;
 }
 
 .team-card__facts .material-symbols-rounded {
@@ -138,7 +137,7 @@
   /* Glyph box math, not copy — subheadline supplies the size, but the icon
      family and 1:1 box must be restated after the `font` shorthand's reset
      (this selector out-specifies the Material Symbols class). */
-  font: var(--cr-text-subheadline);
+  font: var(--sys-font-subheadline);
   font-family: 'Material Symbols Rounded';
   line-height: 1;
 }
@@ -179,7 +178,7 @@
   max-inline-size: 30rem;
   color: color-mix(
     in srgb,
-    var(--cr-color-foreground) calc(0.58 * 100%),
+    var(--sys-color-foreground) calc(0.58 * 100%),
     transparent
   );
 }
@@ -199,30 +198,28 @@
   margin-block-start: 1.5rem;
   color: color-mix(
     in srgb,
-    var(--cr-color-foreground) calc(0.52 * 100%),
+    var(--sys-color-foreground) calc(0.52 * 100%),
     transparent
   );
 }
 
 .barber-sheet__rating .material-symbols-rounded {
-  color: var(--cr-color-foreground);
+  color: var(--sys-color-foreground);
   /* Glyph box math, not copy — subheadline supplies the size, but the icon
      family and 1:1 box must be restated after the `font` shorthand's reset
      (this selector out-specifies the Material Symbols class). */
-  font: var(--cr-text-subheadline);
+  font: var(--sys-font-subheadline);
   font-family: 'Material Symbols Rounded';
   line-height: 1;
 }
 
 .barber-sheet__rating strong {
-  color: var(--cr-color-foreground);
+  color: var(--sys-color-foreground);
 }
 
 .barber-sheet__profile > a {
   margin-block-start: 2rem;
-  /* CTA radius vocabulary — consumed by Button's documented override hook. */
-  --cr-button-radius: var(--radius-action);
-  /* Tall-pill/small-label sheet-CTA geometry: size="mini" supplies the
+  /* Tall-pill/small-label sheet-CTA geometry: uiSize="compact" supplies the
      label scale; the host restores the chunky box and spreads label from
      arrow (Button's label span mirrors host justify/gap, see button.css). */
   justify-content: space-between;

@@ -1,0 +1,226 @@
+/*
+ * Landing composition rhythm + cross-section interaction classes, on the
+ * `--sys-*` system (blueprint §0.3 — `libs/ui`/`--sys-*` is the system of
+ * record; `libs/shared/ui`'s `--cr-*` set is donor code). Global (imported
+ * by `apps/web/src/styles.css`) because these classes are shared verbatim
+ * across sibling section components (hero, work-gallery, team-showcase,
+ * services, locations) — Angular's emulated encapsulation only scopes a
+ * component's OWN stylesheet, never a global one, so templates apply these
+ * classes alongside their component-authored ones.
+ *
+ * Replaces the never-imported `marketing-globals.css` (Phase 0 donor
+ * carry-over) — that file's page-rhythm custom properties and shared
+ * `.morph-card`/`.media-morph`/`.explore-affordance`/`.sheet-bar-reveal`
+ * classes were referenced by every section component but never actually
+ * reached the page, since nothing @imported it.
+ */
+
+/* Page-level layout rhythm — ONE gutter, ONE frame inset, and a
+   three-value radius vocabulary shared by the shell and every section. */
+:root {
+  --page-gutter: clamp(1.5rem, 4.2vw, 4.25rem);
+  --frame-inset: 0.75rem;
+  --radius-frame: clamp(1.75rem, 3vw, 2.75rem);
+  --radius-media: clamp(1.25rem, 2.2vw, 2.25rem);
+  --radius-action: var(--control-radius-prominent);
+  /* The near-black every film/media frame sits on, regardless of theme. */
+  --surface-film: #0a0a0a;
+}
+
+@media (max-width: 819px) {
+  :root {
+    --page-gutter: 1rem;
+  }
+}
+
+/* Surface environment provider — a wrapper declares what its descendants
+   sit on, and interactive chrome adapts by itself: text goes light and the
+   cursor fill morph flips to white-ink-on-dark (cursor-target.css's
+   --cr-cursor-ink/--cr-cursor-surface contract — the cursor system is
+   cross-cutting UX chrome, not a `libs/ui` design-system component, so it
+   keeps its own var names). Buttons dropped into any film no longer need
+   per-element color overrides. */
+[data-surface='film'] {
+  --cr-cursor-ink: #fff;
+  --cr-cursor-surface: var(--surface-film);
+  background: var(--surface-film);
+  color: #fff;
+}
+
+html {
+  /* This page manages its own per-section theming (home.page.ts's
+     data-nav-tone system), so this opts native UA chrome (scrollbars, form
+     controls) out of following OS dark mode too. */
+  color-scheme: light;
+  scroll-behavior: smooth;
+  scroll-padding-top: 6rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+}
+
+/* ==========================================================================
+   Shared section patterns
+   --------------------------------------------------------------------------
+   `.morph-card` marks the interactive card ancestor (team card, service
+   tile) whose :hover / :focus-within drives both the media morph and the
+   explore-affordance morph below.
+   ========================================================================== */
+
+/* Explore affordance — label pill + arrow-icon circle on cards that open a
+   detail sheet. Border COLOR stays per-component (each page mixes its own
+   muted ink), so only width/style live here. */
+.explore-affordance {
+  grid-column: 1 / -1;
+  display: inline-flex;
+  gap: 0.42rem;
+  align-items: center;
+  justify-self: start;
+}
+
+.explore-affordance__label,
+.explore-affordance__icon {
+  --cr-cursor-fill-color: var(--sys-color-accent);
+  --cr-cursor-surface: var(--sys-color-foreground);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-block-size: 2.8rem;
+  border-style: solid;
+  border-width: 1px;
+  transition:
+    border-color var(--sys-motion-duration-slow) var(--sys-motion-ease-standard),
+    transform var(--sys-motion-duration-slow) var(--sys-motion-ease-emphasized);
+}
+
+.explore-affordance__label {
+  min-inline-size: 6.2rem;
+  padding-inline: 1rem;
+  border-radius: var(--radius-action);
+}
+
+.explore-affordance__icon {
+  inline-size: 3.7rem;
+  border-radius: var(--control-radius-capsule);
+}
+
+.morph-card:hover .explore-affordance__label,
+.morph-card:hover .explore-affordance__icon,
+.morph-card:focus-within .explore-affordance__label,
+.morph-card:focus-within .explore-affordance__icon {
+  border-color: var(--sys-color-accent);
+}
+
+.morph-card:hover .explore-affordance__icon,
+.morph-card:focus-within .explore-affordance__icon {
+  transform: translateX(0.2rem) rotate(-8deg);
+}
+
+/* Media hover-morph — square media whose rounding morphs between a circle
+   and the media radius on card hover. The morph runs in OPPOSITE directions
+   on its two consumers, so each declares its clip endpoints (plus its own
+   film grade and background) via the custom properties below. */
+.media-morph {
+  position: relative;
+  overflow: hidden;
+  aspect-ratio: 1;
+  clip-path: inset(0 round var(--media-morph-clip-rest, 50%));
+  transform: translateZ(0);
+  transition:
+    clip-path var(--sys-motion-duration-slowest)
+      var(--sys-motion-ease-emphasized),
+    transform var(--sys-motion-duration-slowest)
+      var(--sys-motion-ease-emphasized);
+}
+
+.media-morph img {
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+  transform: scale(1.025);
+  transition:
+    filter
+      var(--media-morph-filter-duration, var(--sys-motion-duration-slowest))
+      var(--sys-motion-ease-standard),
+    transform var(--sys-motion-duration-cinematic)
+      var(--sys-motion-ease-emphasized);
+}
+
+.morph-card:hover .media-morph,
+.morph-card:focus-within .media-morph {
+  clip-path: inset(0 round var(--media-morph-clip-hover, var(--radius-media)));
+  transform: scale(0.97);
+}
+
+.morph-card:hover .media-morph img,
+.morph-card:focus-within .media-morph img {
+  transform: scale(1.09) rotate(var(--media-morph-rotate, -0.8deg));
+}
+
+/* Sheet content entrance — shared by the service and location sheets. A
+   component-scoped `animation-name` resolves to this global keyframe
+   because neither component declares a local @keyframes of the same name. */
+@keyframes sheet-content-in {
+  from {
+    opacity: 0;
+    filter: blur(8px);
+    transform: translateY(1.5rem);
+  }
+  to {
+    opacity: 1;
+    filter: blur(0);
+    transform: translateY(0);
+  }
+}
+
+/* Off-screen sheet bar — bottom-docked overlay bar that slides in when the
+   sheet's inline CTA scrolls out of view ([data-visible] is toggled by the
+   owning component). Positioning deltas stay per-component. */
+.sheet-bar-reveal {
+  position: absolute;
+  z-index: var(--sys-layer-popover);
+  inset: auto auto max(1rem, env(safe-area-inset-bottom)) 50%;
+  max-inline-size: calc(100% - 2.5rem);
+  opacity: 0;
+  transform: translate(-50%, calc(100% + 2rem)) scale(0.96);
+  transition:
+    opacity var(--sys-motion-duration-regular) var(--sys-motion-ease-standard),
+    transform var(--sys-motion-duration-slow) var(--sys-motion-ease-emphasized);
+  pointer-events: none;
+}
+
+.sheet-bar-reveal[data-visible] {
+  opacity: 1;
+  transform: translate(-50%, 0) scale(1);
+  pointer-events: auto;
+}
+
+@media (max-width: 760px) {
+  .explore-affordance__label,
+  .explore-affordance__icon {
+    min-block-size: 2.45rem;
+  }
+
+  .explore-affordance__label {
+    min-inline-size: 0;
+    padding-inline: 0.75rem;
+  }
+
+  .explore-affordance__icon {
+    inline-size: 2.85rem;
+  }
+}
+
+@media (hover: none) {
+  .morph-card:hover .media-morph {
+    clip-path: inset(0 round var(--media-morph-clip-rest, 50%));
+    transform: none;
+  }
+
+  .morph-card:hover .media-morph img {
+    transform: scale(1.025);
+  }
+}

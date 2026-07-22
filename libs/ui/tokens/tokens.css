@@ -24,10 +24,20 @@
     --sys-font-subheadline: 500 0.8125rem/1.4 var(--sys-font-family-text); /* v2 label, 13px */
     --sys-font-footnote: 500 0.75rem/1.35 var(--sys-font-family-text); /* v2 label, small tier, 12px */
     --sys-font-caption: 500 0.6875rem/1.3 var(--sys-font-family-text); /* v2 label, extra small tier, 11px */
+    /* Marketing-scale roles (Phase 6 §1.4 landing) — beyond the control
+       type ramp at both ends: a hero-scale display headline and a tiny
+       overline label. Values carry forward the donor
+       `libs/shared/design-tokens` cr-text-display/cr-text-eyebrow tiers
+       verbatim (pixel parity over reusing the nearest control-scale role). */
+    --sys-font-display: 630 clamp(3.3rem, 6vw, 6.6rem)/0.86
+      var(--sys-font-family-display);
+    --sys-font-eyebrow: 760 0.64rem/1.2 var(--sys-font-family-display);
 
     --sys-tracking-largeTitle: -0.075rem; /* v2 -1.2px */
     --sys-tracking-title: -0.0375rem; /* v2 -0.6px */
     --sys-tracking-caption: 0.02em;
+    --sys-tracking-display: -0.074em;
+    --sys-tracking-eyebrow: 0.13em;
 
     /* ── Spacing: density-aware scale (v2 --spacing × --spacing-scale) ── */
     --sys-density: 1; /* [data-density] overrides */
@@ -74,6 +84,14 @@
     --sys-motion-duration-instant: 150ms;
     --sys-motion-duration-regular: 200ms;
     --sys-motion-duration-deliberate: 300ms;
+    /* Marketing-scale tiers (Phase 6 §1.4 landing) — cinematic reveals run
+       longer than any control transition needs, so the control-motion scale
+       stops at `deliberate` and these three extend it rather than
+       stretching that scale's meaning. Values carry forward the donor
+       `libs/shared/design-tokens` slower/slowest/cinematic tiers verbatim. */
+    --sys-motion-duration-slow: 480ms;
+    --sys-motion-duration-slowest: 650ms;
+    --sys-motion-duration-cinematic: 900ms;
     --sys-motion-ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
     --sys-motion-ease-emphasized: cubic-bezier(0.22, 1, 0.36, 1);
 

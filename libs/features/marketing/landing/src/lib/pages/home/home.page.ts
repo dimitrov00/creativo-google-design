@@ -11,7 +11,8 @@ import {
 } from '@angular/core';
 import { TranslocoDirective } from '@jsverse/transloco';
 import { CursorTargetDirective } from '@creativo/shared/cursor';
-import { Button, CrText, MaterialDirective } from '@creativo/shared/ui';
+import { UiButton } from '@creativo/ui/controls';
+import { UiTextDirective } from '@creativo/ui/modifiers';
 import { LanguageService } from '../../language.service';
 import { ServicesPage } from '../services/services.page';
 import { LocationsComponent } from './locations/locations.component';
@@ -21,18 +22,18 @@ import { WorkGalleryComponent } from './work-gallery/work-gallery.component';
 @Component({
   selector: 'cr-home-page',
   imports: [
-    Button,
-    CrText,
     CursorTargetDirective,
     LocationsComponent,
-    MaterialDirective,
     ServicesPage,
     TeamShowcaseComponent,
     TranslocoDirective,
+    UiButton,
+    UiTextDirective,
     WorkGalleryComponent,
   ],
   templateUrl: './home.page.html',
   styleUrl: './home.page.css',
+  host: { 'data-testid': 'landing-page' },
 })
 export class HomePage implements AfterViewInit {
   private readonly document = inject(DOCUMENT);
@@ -173,13 +174,13 @@ export class HomePage implements AfterViewInit {
     // frame melt into whichever section is active — same per-section theming
     // the in-page header already follows.
     const toneBackgroundTokens = new Map([
-      ['light', '--cr-color-background'],
-      ['dark', '--cr-color-foreground'],
-      ['accent', '--cr-color-highlight'],
+      ['light', '--sys-color-background'],
+      ['dark', '--sys-color-foreground'],
+      ['accent', '--sys-color-accent'],
     ]);
 
     const syncBrowserThemeColor = (tone: string) => {
-      const token = toneBackgroundTokens.get(tone) ?? '--cr-color-background';
+      const token = toneBackgroundTokens.get(tone) ?? '--sys-color-background';
       const background = window
         .getComputedStyle(this.document.documentElement)
         .getPropertyValue(token)

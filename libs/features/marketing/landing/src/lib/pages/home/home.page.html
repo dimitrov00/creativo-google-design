@@ -1,6 +1,11 @@
 <ng-container *transloco="let t">
   <div id="top" class="landing">
-    <section class="hero" data-nav-tone="light" aria-labelledby="hero-title">
+    <section
+      class="hero"
+      data-nav-tone="light"
+      data-testid="landing-hero"
+      aria-labelledby="hero-title"
+    >
       <div class="hero__frame" data-surface="film">
         <video
           class="film-video"
@@ -21,7 +26,7 @@
         <div class="hero__copy">
           <div
             class="hero__lang"
-            crMaterial="regular"
+            data-testid="landing-language-toggle"
             data-hero-reveal
             role="group"
             [attr.aria-label]="t('marketing.app.language')"
@@ -45,10 +50,10 @@
             </button>
             }
           </div>
-          <p class="eyebrow" text font="eyebrow" data-hero-reveal>
+          <p class="eyebrow" uiText uiFont="eyebrow" data-hero-reveal>
             {{ t('marketing.hero.eyebrow') }}
           </p>
-          <h1 id="hero-title" class="hero__title" text font="display">
+          <h1 id="hero-title" class="hero__title" uiText uiFont="display">
             <span
               ><span data-hero-reveal
                 >{{ t('marketing.hero.titleA') }}</span
@@ -60,7 +65,7 @@
               ></span
             >
           </h1>
-          <p class="hero__intro" text font="body" data-hero-reveal>
+          <p class="hero__intro" uiText uiFont="body" data-hero-reveal>
             {{ t('marketing.hero.intro') }}
           </p>
         </div>
@@ -68,6 +73,7 @@
         <button
           type="button"
           class="film-control"
+          [attr.data-state]="heroPaused() ? 'paused' : 'playing'"
           [attr.aria-label]="
             heroPaused()
               ? t('marketing.hero.playVideo')
@@ -89,13 +95,15 @@
 
       <a
         class="hero-book"
+        data-testid="landing-hero-cta"
         data-hero-reveal
         href="/client"
-        crButton
-        variant="action"
-        cursorStyle="fill"
-        size="large"
-        shape="pill"
+        uiButton
+        uiVariant="prominent"
+        uiSize="prominent"
+        uiShape="capsule"
+        crCursorTarget
+        crCursorTargetStyle="fill"
       >
         {{ t('marketing.hero.book') }}
       </a>
@@ -118,6 +126,7 @@
       class="craft-film"
       data-nav-tone="dark"
       data-surface="film"
+      data-testid="landing-hiring"
       aria-labelledby="craft-title"
     >
       <video
@@ -136,20 +145,21 @@
       </video>
       <div class="craft-film__veil"></div>
       <div class="craft-film__copy" data-reveal>
-        <p class="eyebrow" text font="eyebrow">
+        <p class="eyebrow" uiText uiFont="eyebrow">
           {{ t('marketing.craft.eyebrow') }}
         </p>
-        <h2 id="craft-title" text font="display">
+        <h2 id="craft-title" uiText uiFont="display">
           {{ t('marketing.craft.titleA') }}<br />{{ t('marketing.craft.titleB')
           }}
         </h2>
-        <p text font="body">{{ t('marketing.craft.body') }}</p>
+        <p uiText uiFont="body">{{ t('marketing.craft.body') }}</p>
       </div>
       <!-- After the copy so its hit area is never shadowed by the copy's
            padded box — hover/morph reaches it directly. -->
       <button
         type="button"
         class="film-control"
+        [attr.data-state]="craftPaused() ? 'paused' : 'playing'"
         [attr.aria-label]="
           craftPaused()
             ? t('marketing.hero.playVideo')
@@ -182,19 +192,21 @@
     <section
       class="final-book"
       data-nav-tone="accent"
+      data-testid="landing-closing-cta"
       aria-labelledby="book-title"
     >
-      <p class="eyebrow" text font="eyebrow" data-reveal>
+      <p class="eyebrow" uiText uiFont="eyebrow" data-reveal>
         {{ t('marketing.final.eyebrow') }}
       </p>
       <h2 id="book-title" data-reveal>{{ t('marketing.final.title') }}</h2>
       <a
         href="/client"
         data-reveal
-        crButton
-        variant="action"
-        cursorStyle="fill"
-        size="extraLarge"
+        uiButton
+        uiVariant="prominent"
+        uiSize="prominent"
+        crCursorTarget
+        crCursorTargetStyle="fill"
       >
         <span>{{ t('marketing.final.cta') }}</span>
         <span class="material-symbols-rounded" aria-hidden="true"
@@ -203,7 +215,11 @@
       </a>
     </section>
 
-    <footer class="site-footer" data-nav-tone="accent">
+    <footer
+      class="site-footer"
+      data-nav-tone="accent"
+      data-testid="landing-footer"
+    >
       <div class="site-footer__grid">
         <div class="site-footer__intro">
           <a
@@ -215,20 +231,19 @@
           >
             <span class="site-footer__logo" aria-hidden="true"></span>
           </a>
-          <p class="site-footer__tagline" text font="footnote">
+          <p class="site-footer__tagline" uiText uiFont="footnote">
             {{ t('marketing.footer.tagline') }}
           </p>
-          <!-- Primary (foreground-on-background), not the action blue: on
-               the yellow footer this pill reads black — the shipped look
-               the action-variant conversion had accidentally repainted. -->
+          <!-- Prominent (foreground-on-background), not the retired blue
+               action variant: on the yellow footer this pill reads black. -->
           <a
             class="site-footer__book"
             href="/client"
-            crButton
-            variant="primary"
-            cursorStyle="fill"
-            size="regular"
-            shape="pill"
+            uiButton
+            uiVariant="prominent"
+            uiShape="capsule"
+            crCursorTarget
+            crCursorTargetStyle="fill"
           >
             {{ t('marketing.app.book') }}
             <span class="material-symbols-rounded" aria-hidden="true"
@@ -241,7 +256,7 @@
           class="site-footer__column"
           [attr.aria-label]="t('marketing.footer.navigation')"
         >
-          <h3 text font="eyebrow">{{ t('marketing.footer.explore') }}</h3>
+          <h3 uiText uiFont="eyebrow">{{ t('marketing.footer.explore') }}</h3>
           <a href="#work" crCursorTarget>{{ t('marketing.app.work') }}</a>
           <a href="#services" crCursorTarget>
             {{ t('marketing.app.services') }}
@@ -253,7 +268,7 @@
         </nav>
 
         <div class="site-footer__column">
-          <h3 text font="eyebrow">{{ t('marketing.footer.contact') }}</h3>
+          <h3 uiText uiFont="eyebrow">{{ t('marketing.footer.contact') }}</h3>
           <a href="tel:+35929812345" crCursorTarget>+359 2 981 2345</a>
           <a href="mailto:hello@creativo.bg" crCursorTarget>
             hello&#64;creativo.bg
@@ -262,7 +277,7 @@
         </div>
 
         <div class="site-footer__column">
-          <h3 text font="eyebrow">{{ t('marketing.footer.follow') }}</h3>
+          <h3 uiText uiFont="eyebrow">{{ t('marketing.footer.follow') }}</h3>
           <a
             href="https://www.instagram.com/creativo"
             target="_blank"
@@ -291,12 +306,14 @@
       </div>
 
       <div class="site-footer__bottom">
-        <small text font="caption">{{ t('marketing.footer.copyright') }}</small>
+        <small uiText uiFont="caption"
+          >{{ t('marketing.footer.copyright') }}</small
+        >
         <a
           class="site-footer__top-link"
-          text
-          font="caption"
-          fontWeight="semibold"
+          uiText
+          uiFont="caption"
+          uiWeight="semibold"
           href="#top"
           crCursorTarget
         >

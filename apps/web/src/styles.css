@@ -32,6 +32,17 @@
 @import '../../../libs/ui/tokens/theme-dark.css';
 @import '../../../libs/ui/modifiers/modifiers.css';
 
+/* Marketing landing (Phase 6 slice 06.1) — page-rhythm custom properties
+   and cross-section classes shared by hero/work-gallery/team-showcase/
+   services/locations. Global for the same reason libs/ui/modifiers.css is:
+   Angular's emulated encapsulation never scopes a global stylesheet. */
+@import '../../../libs/features/marketing/landing/src/lib/landing-shared.css';
+/* MapLibre-created pin/indicator DOM (locations.component.ts builds it
+   imperatively) never receives Angular's `_ngcontent-*` scope attribute, so
+   its styling can only ever live in a global stylesheet — same rationale as
+   the import above. */
+@import '../../../libs/features/marketing/landing/src/lib/pages/home/locations/locations-map.css';
+
 /* Fallback chrome for the not-yet-migrated marketing pages only —
    everything under the new libs/ui/* system styles its own link/focus
    states via [data-*] selectors in its own co-located CSS. */
@@ -86,8 +97,8 @@
    app.config.ts's withViewTransitions() call is the JS half of this pair. */
 ::view-transition-old(root),
 ::view-transition-new(root) {
-  animation-duration: var(--cr-motion-duration-slow);
-  animation-timing-function: var(--cr-motion-easing-standard);
+  animation-duration: var(--sys-motion-duration-slow);
+  animation-timing-function: var(--sys-motion-ease-standard);
 }
 
 /* Defense in depth alongside app.config.ts's onViewTransitionCreated check

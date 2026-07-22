@@ -1,18 +1,18 @@
 :host {
-  --page-fg: var(--cr-color-foreground);
+  --page-fg: var(--sys-color-foreground);
   --page-muted-weak: color-mix(
     in srgb,
-    var(--cr-color-foreground) calc(0.46 * 100%),
+    var(--sys-color-foreground) calc(0.46 * 100%),
     transparent
   );
   --page-muted: color-mix(
     in srgb,
-    var(--cr-color-foreground) calc(0.58 * 100%),
+    var(--sys-color-foreground) calc(0.58 * 100%),
     transparent
   );
   --page-surface: color-mix(
     in srgb,
-    var(--cr-color-foreground) calc(0.07 * 100%),
+    var(--sys-color-foreground) calc(0.07 * 100%),
     transparent
   );
   display: block;
@@ -65,7 +65,7 @@
   max-inline-size: 8ch;
   margin: 0;
   font-size: clamp(4rem, 7vw, 7.6rem);
-  font-weight: var(--cr-font-weight-semibold);
+  font-weight: 600;
   letter-spacing: -0.082em;
   line-height: 0.8;
 }
@@ -95,7 +95,7 @@
 }
 
 .service-tile:focus-visible h3 {
-  color: var(--cr-color-action-background);
+  color: var(--sys-color-accent);
 }
 
 /* Skeleton + hover morph live in styles.css (.media-morph / .morph-card) —
@@ -135,14 +135,13 @@
   max-inline-size: 11ch;
   margin: 0;
   transition:
-    color var(--cr-motion-duration-slow) var(--cr-motion-easing-standard),
-    transform var(--cr-motion-duration-slower)
-      var(--cr-motion-easing-emphasized);
+    color var(--sys-motion-duration-deliberate) var(--sys-motion-ease-standard),
+    transform var(--sys-motion-duration-slow) var(--sys-motion-ease-emphasized);
 }
 
 .service-tile:hover h3,
 .service-tile:focus-within h3 {
-  color: var(--cr-color-highlight);
+  color: var(--sys-color-accent);
   transform: translateX(0.12em);
 }
 
@@ -157,7 +156,7 @@
 
 .service-tile__facts strong {
   color: currentColor;
-  font-weight: var(--cr-font-weight-bold);
+  font-weight: 700;
 }
 
 /* Skeleton + hover morph live in styles.css (.explore-affordance) — only
@@ -174,12 +173,12 @@
 }
 
 .service-tile__explore-icon {
-  font-size: var(--cr-icon-size-small);
+  font-size: 1rem;
 }
 
 .service-sheet__compact-title {
   margin: 0;
-  color: var(--cr-color-foreground);
+  color: var(--sys-color-foreground);
 }
 
 /* Bar skeleton + [data-visible] reveal live in styles.css
@@ -200,7 +199,7 @@
 
 .service-sheet__booking-bar .material-symbols-rounded {
   flex: 0 0 auto;
-  font-size: var(--cr-icon-size-regular);
+  font-size: 1.2rem;
 }
 
 .service-sheet__intro {
@@ -218,7 +217,7 @@
   max-inline-size: 9ch;
   margin: 1rem 0 0;
   font-size: clamp(4.2rem, 8vw, 8rem);
-  font-weight: var(--cr-font-weight-semibold);
+  font-weight: 600;
   letter-spacing: -0.084em;
   line-height: 0.78;
 }
@@ -229,7 +228,7 @@
   margin: 0;
   color: color-mix(
     in srgb,
-    var(--cr-color-foreground) calc(0.64 * 100%),
+    var(--sys-color-foreground) calc(0.64 * 100%),
     transparent
   );
 }
@@ -247,15 +246,13 @@
   align-items: center;
   color: color-mix(
     in srgb,
-    var(--cr-color-foreground) calc(0.55 * 100%),
+    var(--sys-color-foreground) calc(0.55 * 100%),
     transparent
   );
 }
 
 .service-sheet__summary > a {
   margin-block-start: 2rem;
-  /* CTA radius vocabulary — consumed by Button's documented override hook. */
-  --cr-button-radius: var(--radius-action);
   /* Tall-pill/small-label sheet-CTA geometry — see booking-bar comment. */
   justify-content: space-between;
   gap: 3rem;
@@ -338,33 +335,33 @@
   border-radius: 1.5rem;
   background: color-mix(
     in srgb,
-    var(--cr-color-foreground) calc(0.055 * 100%),
+    var(--sys-color-foreground) calc(0.055 * 100%),
     transparent
   );
-  color: var(--cr-color-foreground);
+  color: var(--sys-color-foreground);
   text-decoration: none;
   text-align: start;
   font: inherit;
   cursor: pointer;
   transition:
-    background-color var(--cr-motion-duration-slow)
-      var(--cr-motion-easing-standard),
-    transform var(--cr-motion-duration-slowest)
-      var(--cr-motion-easing-emphasized);
+    background-color var(--sys-motion-duration-deliberate)
+      var(--sys-motion-ease-standard),
+    transform var(--sys-motion-duration-slowest)
+      var(--sys-motion-ease-emphasized);
 }
 
 .service-performer:hover,
 .service-performer:focus-visible {
   background: color-mix(
     in srgb,
-    var(--cr-color-foreground) calc(0.09 * 100%),
+    var(--sys-color-foreground) calc(0.09 * 100%),
     transparent
   );
   transform: translateY(-0.35rem);
 }
 
 .service-performer:focus-visible {
-  outline: 2px solid var(--cr-color-action-background);
+  outline: 2px solid var(--sys-color-accent);
   outline-offset: 0.25rem;
 }
 
@@ -375,7 +372,7 @@
   border-radius: 1.05rem;
   background: color-mix(
     in srgb,
-    var(--cr-color-foreground) calc(0.08 * 100%),
+    var(--sys-color-foreground) calc(0.08 * 100%),
     transparent
   );
 }
@@ -387,9 +384,9 @@
   filter: saturate(0.78) contrast(1.03);
   transform: scale(1.01);
   transition:
-    filter var(--cr-motion-duration-slowest) var(--cr-motion-easing-standard),
-    transform var(--cr-motion-duration-cinematic)
-      var(--cr-motion-easing-emphasized);
+    filter var(--sys-motion-duration-slowest) var(--sys-motion-ease-standard),
+    transform var(--sys-motion-duration-cinematic)
+      var(--sys-motion-ease-emphasized);
 }
 
 .service-performer:hover .service-performer__media img,
@@ -411,7 +408,7 @@
   margin: 0;
   color: color-mix(
     in srgb,
-    var(--cr-color-foreground) calc(0.46 * 100%),
+    var(--sys-color-foreground) calc(0.46 * 100%),
     transparent
   );
 }
@@ -422,7 +419,7 @@
   margin-block-start: 0.65rem;
   color: color-mix(
     in srgb,
-    var(--cr-color-foreground) calc(0.48 * 100%),
+    var(--sys-color-foreground) calc(0.48 * 100%),
     transparent
   );
 }
@@ -446,29 +443,29 @@ cr-modal-sheet[data-open] .service-sheet__variants,
 cr-modal-sheet[data-open] .service-examples > header,
 cr-modal-sheet[data-open] .service-performers > header,
 cr-modal-sheet[data-open] .service-addons > header {
-  animation: sheet-content-in var(--cr-motion-duration-slowest)
-    var(--cr-motion-easing-emphasized) both;
+  animation: sheet-content-in var(--sys-motion-duration-slowest)
+    var(--sys-motion-ease-emphasized) both;
 }
 
 cr-modal-sheet[data-open] .service-sheet__intro > :nth-child(2) {
-  animation-delay: var(--cr-motion-duration-fast);
+  animation-delay: var(--sys-motion-duration-instant);
 }
 
 cr-modal-sheet[data-open] .service-sheet__variants {
-  animation-delay: var(--cr-motion-duration-fast);
+  animation-delay: var(--sys-motion-duration-instant);
 }
 
 cr-modal-sheet[data-open] .service-examples figure {
-  animation: sheet-image-in var(--cr-motion-duration-cinematic)
-    var(--cr-motion-easing-emphasized) both;
+  animation: sheet-image-in var(--sys-motion-duration-cinematic)
+    var(--sys-motion-ease-emphasized) both;
 }
 
 cr-modal-sheet[data-open] .service-examples figure:nth-child(2) {
-  animation-delay: var(--cr-motion-duration-fast);
+  animation-delay: var(--sys-motion-duration-instant);
 }
 
 cr-modal-sheet[data-open] .service-examples figure:nth-child(3) {
-  animation-delay: var(--cr-motion-duration-base);
+  animation-delay: var(--sys-motion-duration-regular);
 }
 
 [data-motion-ready] [data-service-reveal] {
@@ -476,10 +473,10 @@ cr-modal-sheet[data-open] .service-examples figure:nth-child(3) {
   filter: blur(9px);
   transform: translateY(3.5rem);
   transition:
-    opacity var(--cr-motion-duration-cinematic) var(--cr-motion-easing-standard),
-    filter var(--cr-motion-duration-cinematic) var(--cr-motion-easing-standard),
-    transform var(--cr-motion-duration-cinematic)
-      var(--cr-motion-easing-emphasized);
+    opacity var(--sys-motion-duration-cinematic) var(--sys-motion-ease-standard),
+    filter var(--sys-motion-duration-cinematic) var(--sys-motion-ease-standard),
+    transform var(--sys-motion-duration-cinematic)
+      var(--sys-motion-ease-emphasized);
 }
 
 [data-motion-ready] [data-service-reveal][data-visible] {
@@ -703,8 +700,8 @@ cr-modal-sheet[data-open] .service-examples figure:nth-child(3) {
 
 .service-sheet__story .service-sheet__intro h2 {
   max-inline-size: 8ch;
-  font: var(--cr-text-display);
-  letter-spacing: var(--cr-text-display-tracking);
+  font: var(--sys-font-display);
+  letter-spacing: var(--sys-tracking-display);
 }
 
 .service-sheet__story .service-sheet__summary > p {
@@ -741,13 +738,13 @@ cr-modal-sheet[data-open] .service-examples figure:nth-child(3) {
 .service-sheet__story .service-sheet__variants li {
   min-inline-size: 0;
   padding: 0.9rem 1.05rem;
-  border-radius: var(--cr-radius-full);
+  border-radius: var(--control-radius-capsule);
   background: color-mix(
     in srgb,
-    var(--cr-color-foreground) calc(0.055 * 100%),
+    var(--sys-color-foreground) calc(0.055 * 100%),
     transparent
   );
-  color: var(--cr-color-foreground);
+  color: var(--sys-color-foreground);
 }
 
 .service-sheet__story .service-performers > ul {
@@ -790,8 +787,8 @@ cr-modal-sheet[data-open] .service-examples figure:nth-child(3) {
   clip-path: inset(0 round 50%);
   transform: translateZ(0);
   will-change: clip-path;
-  transition: clip-path var(--cr-motion-duration-cinematic)
-    var(--cr-motion-easing-emphasized);
+  transition: clip-path var(--sys-motion-duration-cinematic)
+    var(--sys-motion-ease-emphasized);
 }
 
 @media (hover: hover) and (pointer: fine) {

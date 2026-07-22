@@ -13,25 +13,25 @@
       </div>
 
       <header class="work-gallery__heading">
-        <p class="eyebrow" text font="eyebrow">
+        <p class="eyebrow" uiText uiFont="eyebrow">
           {{ t('marketing.work.eyebrow') }}
         </p>
-        <h2 id="work-gallery-title" text font="display">
+        <h2 id="work-gallery-title" uiText uiFont="display">
           <span>{{ t('marketing.work.titleA') }}</span>
           <span>{{ t('marketing.work.titleB') }}</span>
         </h2>
-        <p class="work-gallery__scroll-hint" text font="caption">
+        <p class="work-gallery__scroll-hint" uiText uiFont="caption">
           {{ t('marketing.work.scroll') }}
         </p>
 
         <div class="work-gallery__meter" aria-hidden="true">
-          <span class="work-gallery__meter-count" text font="caption" bold>{{
+          <span class="work-gallery__meter-count" uiText uiFont="caption">{{
             pad(activeIndex() + 1)
           }}</span>
           <span class="work-gallery__meter-track">
             <span class="work-gallery__meter-fill"></span>
           </span>
-          <span class="work-gallery__meter-total" text font="caption" bold>{{
+          <span class="work-gallery__meter-total" uiText uiFont="caption">{{
             pad(total)
           }}</span>
         </div>
@@ -57,31 +57,32 @@
                 [alt]="t(item.altKey)"
                 [attr.loading]="index === 0 ? 'eager' : 'lazy'"
               />
-              <span class="work-card__index" text font="caption" bold>{{
+              <span class="work-card__index" uiText uiFont="caption">{{
                 pad(index + 1)
               }}</span>
             </a>
             <div class="work-card__copy">
-              <h3 text font="callout" fontWeight="semibold" tracking="tight">
+              <h3 uiText uiFont="callout" uiWeight="semibold">
                 {{ t(item.titleKey) }}
               </h3>
-              <p text font="caption">{{ t(item.bodyKey) }}</p>
+              <p uiText uiFont="caption">{{ t(item.bodyKey) }}</p>
             </div>
           </article>
         }
 
         <aside class="work-gallery__end" data-work-gallery-end>
           <div>
-            <p data-work-gallery-end-reveal text font="display">
+            <p data-work-gallery-end-reveal uiText uiFont="display">
               {{ t('marketing.work.endTitle') }}
             </p>
             <a
               href="/client"
               data-work-gallery-end-reveal
-              crButton
-              variant="action"
-              cursorStyle="fill"
-              size="extraLarge"
+              uiButton
+              uiVariant="prominent"
+              uiSize="prominent"
+              crCursorTarget
+              crCursorTargetStyle="fill"
             >
               {{ t('marketing.work.endCta') }}
               <span class="material-symbols-rounded" aria-hidden="true"

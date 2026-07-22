@@ -9,7 +9,8 @@ import {
 } from '@angular/core';
 import { TranslocoDirective } from '@jsverse/transloco';
 import { CursorTargetDirective } from '@creativo/shared/cursor';
-import { Button, CrText } from '@creativo/shared/ui';
+import { UiButton } from '@creativo/ui/controls';
+import { UiTextDirective } from '@creativo/ui/modifiers';
 import { ModalSheetComponent } from '../../../shared/modal-sheet/modal-sheet.component';
 import { ShowcaseGalleryComponent } from '../../../shared/showcase-gallery/showcase-gallery.component';
 
@@ -26,15 +27,19 @@ interface BarberItem {
 @Component({
   selector: 'cr-team-showcase',
   imports: [
-    Button,
-    CrText,
     CursorTargetDirective,
     ModalSheetComponent,
     ShowcaseGalleryComponent,
     TranslocoDirective,
+    UiButton,
+    UiTextDirective,
   ],
   templateUrl: './team-showcase.component.html',
   styleUrl: './team-showcase.component.css',
+  host: {
+    'data-testid': 'landing-barbers',
+    '[attr.data-state]': "sheetOpen() ? 'open' : 'closed'",
+  },
 })
 export class TeamShowcaseComponent {
   private readonly platformId = inject(PLATFORM_ID);

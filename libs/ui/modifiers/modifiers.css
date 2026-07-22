@@ -4,6 +4,15 @@
    place these attributes are given meaning.
    ════════════════════════════════════════════════════════════════ */
 @layer sys-components {
+  [data-font='display'] {
+    font: var(--sys-font-display);
+    letter-spacing: var(--sys-tracking-display);
+  }
+  [data-font='eyebrow'] {
+    font: var(--sys-font-eyebrow);
+    letter-spacing: var(--sys-tracking-eyebrow);
+    text-transform: uppercase;
+  }
   [data-font='extraLargeTitle'] {
     font: var(--sys-font-extraLargeTitle);
     letter-spacing: var(--sys-tracking-largeTitle);

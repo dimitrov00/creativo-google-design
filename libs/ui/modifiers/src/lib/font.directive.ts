@@ -1,6 +1,7 @@
 import { Directive, input } from '@angular/core';
 
 export type UiFontStyle =
+  | 'display'
   | 'extraLargeTitle'
   | 'largeTitle'
   | 'title'
@@ -11,7 +12,8 @@ export type UiFontStyle =
   | 'callout'
   | 'subheadline'
   | 'footnote'
-  | 'caption';
+  | 'caption'
+  | 'eyebrow';
 
 /** ≙ SwiftUI `.font(_:)` — writes `data-font`; `[data-font="…"]` in CSS does 100% of the styling. */
 @Directive({

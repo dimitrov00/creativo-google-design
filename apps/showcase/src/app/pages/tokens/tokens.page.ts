@@ -18,6 +18,8 @@ interface ControlSizeSample {
 
 /** [uiWeight] is required alongside [uiFont] — mirrors each role's intrinsic weight from tokens.css. */
 const WEIGHT_BY_ROLE: Record<UiFontStyle, UiFontWeight> = {
+  display: 'bold',
+  eyebrow: 'bold',
   extraLargeTitle: 'bold',
   largeTitle: 'bold',
   title: 'bold',

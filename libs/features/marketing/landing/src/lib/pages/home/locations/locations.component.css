@@ -10,7 +10,7 @@
   padding: clamp(7rem, 12vw, 12rem) var(--page-gutter);
   background: transparent;
   /* Tone-aware like every other section (team/services use --page-fg) —
-     was hardcoded --cr-color-foreground, so the heading stayed black
+     was hardcoded to a fixed foreground token, so the heading stayed black
      instead of following the scroll-driven data-nav-tone theme. */
   color: var(--page-fg);
 }
@@ -35,7 +35,7 @@
   max-inline-size: 22rem;
   margin-block-start: 2rem;
   /* Muted from the tone-aware page ink (matches team's secondary copy),
-     not the fixed --cr-color-foreground-secondary token. */
+     not the fixed --sys-color-secondary-label token. */
   color: color-mix(in srgb, var(--page-fg) calc(0.58 * 100%), transparent);
 }
 
@@ -95,26 +95,26 @@
   border-radius: 50%;
   background: color-mix(
     in srgb,
-    var(--cr-color-foreground) calc(0.06 * 100%),
+    var(--sys-color-foreground) calc(0.06 * 100%),
     transparent
   );
-  color: var(--cr-color-foreground-secondary);
+  color: var(--sys-color-secondary-label);
   /* Glyph box math, not copy — body supplies the size, but the icon family
      and 1:1 box must be restated after the `font` shorthand's reset (this
      selector out-specifies the Material Symbols class). */
-  font: var(--cr-text-body);
+  font: var(--sys-font-body);
   font-family: 'Material Symbols Rounded';
   line-height: 1;
   transition:
-    background-color var(--cr-motion-duration-slow)
-      var(--cr-motion-easing-standard),
-    color var(--cr-motion-duration-slow) var(--cr-motion-easing-standard);
+    background-color var(--sys-motion-duration-deliberate)
+      var(--sys-motion-ease-standard),
+    color var(--sys-motion-duration-deliberate) var(--sys-motion-ease-standard);
 }
 
 .location-card:hover .location-card__icon,
 .location-card:focus-within .location-card__icon {
-  background: var(--cr-color-highlight);
-  color: var(--cr-color-foreground);
+  background: var(--sys-color-accent);
+  color: var(--sys-color-foreground);
 }
 
 .location-card__copy {
@@ -124,22 +124,22 @@
 
 .location-card:hover h3,
 .location-card:focus-within h3 {
-  color: var(--cr-color-highlight);
+  color: var(--sys-color-accent);
 }
 
 .location-card:focus-visible h3 {
-  color: var(--cr-color-action-background);
+  color: var(--sys-color-primary);
 }
 
 .location-card__copy h3 {
   margin: 0;
-  transition: color var(--cr-motion-duration-slow)
-    var(--cr-motion-easing-standard);
+  transition: color var(--sys-motion-duration-deliberate)
+    var(--sys-motion-ease-standard);
 }
 
 .location-card__copy p {
   margin: 0.35rem 0 0;
-  color: var(--cr-color-foreground-secondary);
+  color: var(--sys-color-secondary-label);
 }
 
 .location-card__status {
@@ -147,11 +147,11 @@
   align-items: center;
   gap: 0.4rem;
   margin: 0.55rem 0 0;
-  color: var(--cr-color-danger);
+  color: var(--sys-color-destructive);
 }
 
 .location-card__status[data-open] {
-  color: var(--cr-color-success);
+  color: var(--sys-color-success);
 }
 
 .location-card__status-dot {
@@ -166,10 +166,10 @@
   align-items: center;
   gap: 0.35rem;
   margin: 0.5rem 0 0;
-  color: var(--cr-color-foreground-tertiary);
+  color: color-mix(in srgb, var(--sys-color-foreground) 55%, transparent);
   text-decoration: none;
-  transition: color var(--cr-motion-duration-slow)
-    var(--cr-motion-easing-standard);
+  transition: color var(--sys-motion-duration-deliberate)
+    var(--sys-motion-ease-standard);
 }
 
 .location-card__phone .material-symbols-rounded {
@@ -178,7 +178,7 @@
 
 .location-card__phone:hover,
 .location-card__phone:focus-visible {
-  color: var(--cr-color-foreground);
+  color: var(--sys-color-foreground);
 }
 
 .location-card__action {
@@ -187,8 +187,8 @@
 }
 
 .location-card__explore-label {
-  --cr-cursor-fill-color: var(--cr-color-highlight);
-  --cr-cursor-surface: var(--cr-color-foreground);
+  --cr-cursor-fill-color: var(--sys-color-accent);
+  --cr-cursor-surface: var(--sys-color-foreground);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -198,45 +198,47 @@
   border: 1px solid
     color-mix(
       in srgb,
-      var(--cr-color-foreground) calc(0.22 * 100%),
+      var(--sys-color-foreground) calc(0.22 * 100%),
       transparent
     );
   border-radius: 0.75rem;
-  color: var(--cr-color-foreground);
-  transition: border-color var(--cr-motion-duration-slow)
-    var(--cr-motion-easing-standard);
+  color: var(--sys-color-foreground);
+  transition: border-color var(--sys-motion-duration-deliberate)
+    var(--sys-motion-ease-standard);
 }
 
 .location-card:hover .location-card__explore-label,
 .location-card:focus-within .location-card__explore-label {
-  border-color: var(--cr-color-highlight);
+  border-color: var(--sys-color-accent);
 }
 
 .location-card__maps {
-  --cr-cursor-fill-color: var(--cr-color-highlight);
-  --cr-cursor-surface: var(--cr-color-foreground);
+  --cr-cursor-fill-color: var(--sys-color-accent);
+  --cr-cursor-surface: var(--sys-color-foreground);
   display: grid;
   flex: 0 0 auto;
   place-items: center;
   inline-size: 2.6rem;
   aspect-ratio: 1;
-  border-radius: var(--cr-radius-full);
+  border-radius: var(--control-radius-capsule);
   border: 1px solid
     color-mix(
       in srgb,
-      var(--cr-color-foreground) calc(0.22 * 100%),
+      var(--sys-color-foreground) calc(0.22 * 100%),
       transparent
     );
-  color: var(--cr-color-foreground);
+  color: var(--sys-color-foreground);
   text-decoration: none;
   transition:
-    border-color var(--cr-motion-duration-slow) var(--cr-motion-easing-standard),
-    transform var(--cr-motion-duration-slow) var(--cr-motion-easing-emphasized);
+    border-color var(--sys-motion-duration-deliberate)
+      var(--sys-motion-ease-standard),
+    transform var(--sys-motion-duration-deliberate)
+      var(--sys-motion-ease-emphasized);
 }
 
 .location-card__maps:hover,
 .location-card__maps:focus-visible {
-  border-color: var(--cr-color-highlight);
+  border-color: var(--sys-color-accent);
   transform: translateX(0.15rem) rotate(8deg);
 }
 
@@ -253,7 +255,7 @@
   overflow: hidden;
   block-size: min(70svh, 42rem);
   border-radius: clamp(1.4rem, 2.4vw, 2.4rem);
-  background: var(--cr-color-surface);
+  background: var(--sys-color-surface);
 }
 
 @media (max-width: 980px) {
@@ -305,7 +307,7 @@
 
 .location-sheet__compact-title {
   margin: 0;
-  color: var(--cr-color-foreground);
+  color: var(--sys-color-foreground);
 }
 
 .location-sheet {
@@ -328,7 +330,7 @@
   overflow: hidden;
   block-size: min(70svh, 40rem);
   border-radius: clamp(1.4rem, 2.4vw, 2rem);
-  background: var(--cr-color-surface);
+  background: var(--sys-color-surface);
 }
 
 .location-sheet__map {
@@ -352,12 +354,12 @@
   gap: 0.5rem;
   max-inline-size: 24rem;
   margin: 1rem 0 0;
-  color: var(--cr-color-foreground-secondary);
+  color: var(--sys-color-secondary-label);
 }
 
 .location-sheet__address .material-symbols-rounded {
   flex: 0 0 auto;
-  color: var(--cr-color-foreground-tertiary);
+  color: color-mix(in srgb, var(--sys-color-foreground) 55%, transparent);
   font-size: 1.05em;
 }
 
@@ -366,11 +368,11 @@
   align-items: center;
   gap: 0.5rem;
   margin: 0.6rem 0 0;
-  color: var(--cr-color-foreground-tertiary);
+  color: color-mix(in srgb, var(--sys-color-foreground) 55%, transparent);
   font-variant-numeric: tabular-nums;
   text-decoration: none;
-  transition: color var(--cr-motion-duration-slow)
-    var(--cr-motion-easing-standard);
+  transition: color var(--sys-motion-duration-deliberate)
+    var(--sys-motion-ease-standard);
 }
 
 .location-sheet__phone-line .material-symbols-rounded {
@@ -379,7 +381,7 @@
 
 .location-sheet__phone-line:hover,
 .location-sheet__phone-line:focus-visible {
-  color: var(--cr-color-foreground);
+  color: var(--sys-color-foreground);
 }
 
 .location-sheet__hero-actions {
@@ -391,9 +393,7 @@
 
 .location-sheet__book {
   flex: 1 1 auto;
-  /* CTA radius vocabulary — consumed by Button's documented override hook. */
-  --cr-button-radius: var(--radius-action);
-  /* Tall-pill/small-label sheet-CTA geometry: size="mini" supplies the
+  /* Tall-pill/small-label sheet-CTA geometry: uiSize="compact" supplies the
      label scale; the host restores the chunky box and spreads label from
      arrow (Button's label span mirrors host justify/gap, see button.css). */
   justify-content: space-between;
@@ -415,13 +415,13 @@
   border: 1.5px solid
     color-mix(
       in srgb,
-      var(--cr-color-foreground) calc(0.16 * 100%),
+      var(--sys-color-foreground) calc(0.16 * 100%),
       transparent
     );
-  color: var(--cr-color-foreground);
+  color: var(--sys-color-foreground);
   text-decoration: none;
-  transition: border-color var(--cr-motion-duration-slow)
-    var(--cr-motion-easing-standard);
+  transition: border-color var(--sys-motion-duration-deliberate)
+    var(--sys-motion-ease-standard);
 }
 
 .location-sheet__icon-action .material-symbols-rounded {
@@ -430,7 +430,7 @@
 
 .location-sheet__icon-action:hover,
 .location-sheet__icon-action:focus-visible {
-  border-color: var(--cr-color-foreground);
+  border-color: var(--sys-color-foreground);
 }
 
 .location-sheet__status-card {
@@ -439,11 +439,11 @@
   border: 1px solid
     color-mix(
       in srgb,
-      var(--cr-color-foreground) calc(0.06 * 100%),
+      var(--sys-color-foreground) calc(0.06 * 100%),
       transparent
     );
   border-radius: 1.25rem;
-  background: var(--cr-color-surface-plain);
+  background: var(--sys-color-surface);
   box-shadow:
     0 1.5rem 3rem rgb(0 0 0 / 0.05),
     0 0.25rem 0.6rem rgb(0 0 0 / 0.04);
@@ -454,15 +454,15 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 0.55rem;
-  color: var(--cr-color-danger);
+  color: var(--sys-color-destructive);
 }
 
 .location-sheet__status[data-open] {
-  color: var(--cr-color-success);
+  color: var(--sys-color-success);
 }
 
 .location-sheet__status[data-soon] {
-  color: var(--cr-color-warning);
+  color: var(--sys-color-warning);
 }
 
 .location-sheet__status-dot {
@@ -473,12 +473,12 @@
 }
 
 .location-sheet__status-detail {
-  color: var(--cr-color-foreground-tertiary);
+  color: color-mix(in srgb, var(--sys-color-foreground) 55%, transparent);
 }
 
 .location-sheet__status[data-soon] .location-sheet__status-detail {
-  color: var(--cr-color-warning);
-  font-weight: var(--cr-font-weight-semibold);
+  color: var(--sys-color-warning);
+  font-weight: 600;
 }
 
 .location-sheet__week {
@@ -490,7 +490,7 @@
   border-block-start: 1px solid
     color-mix(
       in srgb,
-      var(--cr-color-foreground) calc(0.07 * 100%),
+      var(--sys-color-foreground) calc(0.07 * 100%),
       transparent
     );
 }
@@ -503,13 +503,13 @@
   min-block-size: 2.75rem;
   padding: 0.4rem 0.65rem;
   border-radius: 0.75rem;
-  color: var(--cr-color-foreground-secondary);
+  color: var(--sys-color-secondary-label);
 }
 
 .location-sheet__day[data-today] {
-  background: color-mix(in srgb, var(--cr-color-highlight) 18%, transparent);
-  color: var(--cr-color-foreground);
-  font-weight: var(--cr-font-weight-bold);
+  background: color-mix(in srgb, var(--sys-color-accent) 18%, transparent);
+  color: var(--sys-color-foreground);
+  font-weight: 700;
 }
 
 .location-sheet__day-name {
@@ -520,9 +520,9 @@
 
 .location-sheet__today-tag {
   padding: 0.15rem 0.45rem;
-  border-radius: var(--cr-radius-full);
-  background: var(--cr-color-foreground);
-  color: var(--cr-color-highlight);
+  border-radius: var(--control-radius-capsule);
+  background: var(--sys-color-foreground);
+  color: var(--sys-color-accent);
 }
 
 .location-sheet__day-hours {
@@ -560,15 +560,16 @@
   border-radius: 50%;
   border: 1.5px solid rgb(255 255 255 / 0.6);
   background: rgb(255 255 255 / 0.78);
-  color: var(--cr-color-foreground);
+  color: var(--sys-color-foreground);
   text-decoration: none;
   box-shadow: 0 0.6rem 1.6rem rgb(0 0 0 / 0.16);
   backdrop-filter: blur(40px) saturate(200%);
   -webkit-backdrop-filter: blur(40px) saturate(200%);
   transition:
-    background-color var(--cr-motion-duration-slow)
-      var(--cr-motion-easing-standard),
-    border-color var(--cr-motion-duration-slow) var(--cr-motion-easing-standard);
+    background-color var(--sys-motion-duration-deliberate)
+      var(--sys-motion-ease-standard),
+    border-color var(--sys-motion-duration-deliberate)
+      var(--sys-motion-ease-standard);
 }
 
 .location-sheet__toolbar-icon .material-symbols-rounded {
@@ -577,7 +578,7 @@
 
 .location-sheet__toolbar-icon:hover,
 .location-sheet__toolbar-icon:focus-visible {
-  border-color: var(--cr-color-foreground);
+  border-color: var(--sys-color-foreground);
   background: rgb(255 255 255 / 0.92);
 }
 
@@ -599,12 +600,12 @@
    the name. */
 cr-modal-sheet[data-open] .location-sheet__intro > *,
 cr-modal-sheet[data-open] .location-sheet__status-card {
-  animation: sheet-content-in var(--cr-motion-duration-slowest)
-    var(--cr-motion-easing-emphasized) both;
+  animation: sheet-content-in var(--sys-motion-duration-slowest)
+    var(--sys-motion-ease-emphasized) both;
 }
 
 cr-modal-sheet[data-open] .location-sheet__status-card {
-  animation-delay: var(--cr-motion-duration-fast);
+  animation-delay: var(--sys-motion-duration-instant);
 }
 
 @media (max-width: 760px) {

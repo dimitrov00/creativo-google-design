@@ -29,6 +29,12 @@ export interface ModalSheetScrollEvent {
     // (locations' sheet animations were silently dead because only
     // services.page.html remembered to bind this).
     '[attr.data-open]': "open() ? '' : null",
+    // Generic, reusable-shell testid/state — this component is used by
+    // several consumers (locations, team-showcase, …), so this stays
+    // call-site-agnostic; consumers add their own specific testid on their
+    // own sheet content element instead of overloading this one.
+    'data-testid': 'modal-sheet',
+    '[attr.data-state]': "open() ? 'open' : closing() ? 'closing' : 'closed'",
   },
 })
 export class ModalSheetComponent {

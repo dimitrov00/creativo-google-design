@@ -6,15 +6,15 @@
     aria-labelledby="locations-title"
   >
     <header class="locations__heading" data-reveal>
-      <p class="eyebrow" text font="eyebrow">
+      <p class="eyebrow" uiText uiFont="eyebrow">
         {{ t('marketing.locations.eyebrow') }}
       </p>
-      <h2 id="locations-title" text font="display">
+      <h2 id="locations-title" uiText uiFont="display">
         {{ t('marketing.locations.titleA') }}<br />{{
           t('marketing.locations.titleB')
         }}
       </h2>
-      <p text font="body">{{ t('marketing.locations.intro') }}</p>
+      <p uiText uiFont="body">{{ t('marketing.locations.intro') }}</p>
     </header>
 
     <div class="locations__content">
@@ -50,16 +50,16 @@
                 >
 
                 <div class="location-card__copy">
-                  <h3 text font="callout" fontWeight="semibold">
+                  <h3 uiText uiFont="callout" uiWeight="semibold">
                     {{ t(location.nameKey) }}
                   </h3>
-                  <p text font="caption">{{ t(location.addressKey) }}</p>
+                  <p uiText uiFont="caption">{{ t(location.addressKey) }}</p>
 
                   <span
                     class="location-card__status"
-                    text
-                    font="caption"
-                    fontWeight="semibold"
+                    uiText
+                    uiFont="caption"
+                    uiWeight="semibold"
                     [attr.data-open]="status.isOpen ? '' : null"
                   >
                     <span
@@ -76,8 +76,8 @@
                   @if (location.phoneKey) {
                     <a
                       class="location-card__phone"
-                      text
-                      font="caption"
+                      uiText
+                      uiFont="caption"
                       [href]="phoneHref(t(location.phoneKey))"
                       [attr.aria-label]="
                         t('marketing.locations.callAria', {
@@ -97,9 +97,9 @@
                   <span class="location-card__action" aria-hidden="true">
                     <span
                       class="location-card__explore-label"
-                      text
-                      font="caption"
-                      bold
+                      uiText
+                      uiFont="caption"
+                      uiWeight="bold"
                       crCursorTarget
                       crCursorTargetStyle="fill"
                     >
@@ -162,9 +162,9 @@
       <p
         sheet-title
         class="location-sheet__compact-title"
-        text
-        font="caption"
-        bold
+        uiText
+        uiFont="caption"
+        uiWeight="bold"
       >
         {{ t(location.nameKey) }}
       </p>
@@ -172,7 +172,13 @@
     @if (activeLocation(); as location) {
       @let status = statusFor(location);
 
-      <div class="location-sheet">
+      <div
+        class="location-sheet"
+        data-testid="landing-location-sheet"
+        [attr.data-state]="
+          sheetOpen() ? 'open' : sheetClosing() ? 'closing' : 'closed'
+        "
+      >
         <div class="location-sheet__layout">
           <div class="location-sheet__map-pane">
             <div
@@ -189,14 +195,14 @@
 
           <article class="location-sheet__profile">
             <header class="location-sheet__intro">
-              <h2 id="location-sheet-title" text font="extraLargeTitle">
+              <h2 id="location-sheet-title" uiText uiFont="extraLargeTitle">
                 {{ t(location.nameKey) }}
               </h2>
               <p
                 class="location-sheet__address"
-                text
-                font="footnote"
-                fontWeight="semibold"
+                uiText
+                uiFont="footnote"
+                uiWeight="semibold"
               >
                 <span class="material-symbols-rounded" aria-hidden="true"
                   >location_on</span
@@ -206,8 +212,8 @@
               @if (location.phoneKey) {
                 <a
                   class="location-sheet__phone-line"
-                  text
-                  font="caption"
+                  uiText
+                  uiFont="caption"
                   [href]="phoneHref(t(location.phoneKey))"
                   crCursorTarget
                 >
@@ -222,10 +228,11 @@
                 <a
                   class="location-sheet__book"
                   href="/client"
-                  crButton
-                  variant="action"
-                  cursorStyle="fill"
-                  size="mini"
+                  uiButton
+                  uiVariant="prominent"
+                  uiSize="compact"
+                  crCursorTarget
+                  crCursorTargetStyle="fill"
                 >
                   <span>{{
                     t('marketing.locations.bookAt', {
@@ -239,8 +246,8 @@
 
                 <a
                   class="location-sheet__icon-action"
-                  text
-                  font="caption"
+                  uiText
+                  uiFont="caption"
                   [href]="directionsUrl(location)"
                   target="_blank"
                   rel="noopener"
@@ -260,8 +267,8 @@
                 @if (location.phoneKey) {
                   <a
                     class="location-sheet__icon-action"
-                    text
-                    font="caption"
+                    uiText
+                    uiFont="caption"
                     [href]="phoneHref(t(location.phoneKey))"
                     [attr.aria-label]="
                       t('marketing.locations.callAria', {
@@ -282,9 +289,9 @@
             <div class="location-sheet__status-card">
               <div
                 class="location-sheet__status"
-                text
-                font="footnote"
-                fontWeight="semibold"
+                uiText
+                uiFont="footnote"
+                uiWeight="semibold"
                 [attr.data-open]="status.isOpen ? '' : null"
                 [attr.data-soon]="status.kind === 'closesSoon' ? '' : null"
               >
@@ -299,9 +306,9 @@
                 }}</span>
                 <span
                   class="location-sheet__status-detail"
-                  text
-                  font="caption"
-                  fontWeight="medium"
+                  uiText
+                  uiFont="caption"
+                  uiWeight="medium"
                 >
                   @switch (status.kind) {
                     @case ('closesAt') {
@@ -340,8 +347,8 @@
                 @for (dayIndex of weekOrder; track dayIndex) {
                   <li
                     class="location-sheet__day"
-                    text
-                    font="caption"
+                    uiText
+                    uiFont="caption"
                     [attr.data-today]="dayIndex === todayIndex() ? '' : null"
                   >
                     <span class="location-sheet__day-name">
@@ -354,8 +361,8 @@
                       @if (dayIndex === todayIndex()) {
                         <span
                           class="location-sheet__today-tag"
-                          text
-                          font="eyebrow"
+                          uiText
+                          uiFont="eyebrow"
                           >{{ t('marketing.locations.today') }}</span
                         >
                       }
@@ -376,7 +383,7 @@
 
         <section class="location-sheet__gallery">
           <header class="location-sheet__gallery-heading">
-            <h3 text font="title">
+            <h3 uiText uiFont="title">
               {{ t('marketing.locations.galleryHeading') }}
             </h3>
           </header>
@@ -406,8 +413,8 @@
         @if (location.phoneKey) {
           <a
             class="location-sheet__toolbar-icon"
-            text
-            font="caption"
+            uiText
+            uiFont="caption"
             [href]="phoneHref(t(location.phoneKey))"
             [attr.aria-label]="
               t('marketing.locations.callAria', {
@@ -425,8 +432,8 @@
         }
         <a
           class="location-sheet__toolbar-icon"
-          text
-          font="caption"
+          uiText
+          uiFont="caption"
           [href]="directionsUrl(location)"
           target="_blank"
           rel="noopener"
@@ -447,11 +454,12 @@
           class="location-sheet__toolbar-book"
           href="/client"
           [attr.tabindex]="sheetToolbarVisible() ? null : -1"
-          crButton
-          variant="action"
-          cursorStyle="fill"
-          size="mini"
-          shape="pill"
+          uiButton
+          uiVariant="prominent"
+          uiSize="compact"
+          uiShape="capsule"
+          crCursorTarget
+          crCursorTargetStyle="fill"
         >
           <span>{{
             t('marketing.locations.bookAt', { location: t(location.nameKey) })

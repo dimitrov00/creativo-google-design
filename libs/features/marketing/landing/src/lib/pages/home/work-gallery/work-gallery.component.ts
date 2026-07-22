@@ -10,7 +10,8 @@ import {
 } from '@angular/core';
 import { TranslocoDirective } from '@jsverse/transloco';
 import { CursorTargetDirective } from '@creativo/shared/cursor';
-import { Button, CrText } from '@creativo/shared/ui';
+import { UiButton } from '@creativo/ui/controls';
+import { UiTextDirective } from '@creativo/ui/modifiers';
 import { gsap } from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import { attachPointerTilt } from '../../../shared/motion/pointer-tilt';
@@ -26,10 +27,15 @@ const TILT_ANGLES = [-4, 5, -6, 4, -5, 6] as const;
 
 @Component({
   selector: 'cr-work-gallery',
-  imports: [Button, CrText, CursorTargetDirective, TranslocoDirective],
+  imports: [
+    UiButton,
+    UiTextDirective,
+    CursorTargetDirective,
+    TranslocoDirective,
+  ],
   templateUrl: './work-gallery.component.html',
   styleUrl: './work-gallery.component.css',
-  host: { style: 'display: contents' },
+  host: { style: 'display: contents', 'data-testid': 'landing-work-gallery' },
 })
 export class WorkGalleryComponent implements AfterViewInit {
   private readonly elementRef = inject<ElementRef<HTMLElement>>(ElementRef);

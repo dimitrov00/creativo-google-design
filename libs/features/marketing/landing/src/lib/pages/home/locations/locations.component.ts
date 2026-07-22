@@ -11,7 +11,8 @@ import {
 } from '@angular/core';
 import { TranslocoDirective } from '@jsverse/transloco';
 import { CursorService, CursorTargetDirective } from '@creativo/shared/cursor';
-import { Button, CrText } from '@creativo/shared/ui';
+import { UiButton } from '@creativo/ui/controls';
+import { UiTextDirective } from '@creativo/ui/modifiers';
 import type { Map as MapLibreMap, Marker as MapLibreMarker } from 'maplibre-gl';
 import {
   ModalSheetComponent,
@@ -85,15 +86,18 @@ const MLADOST_SCHEDULE: WeekSchedule = [
 @Component({
   selector: 'cr-locations',
   imports: [
-    Button,
-    CrText,
     CursorTargetDirective,
     ModalSheetComponent,
     ShowcaseGalleryComponent,
     TranslocoDirective,
+    UiButton,
+    UiTextDirective,
   ],
   templateUrl: './locations.component.html',
   styleUrl: './locations.component.css',
+  host: {
+    'data-testid': 'landing-locations',
+  },
 })
 export class LocationsComponent implements AfterViewInit {
   private readonly elementRef = inject<ElementRef<HTMLElement>>(ElementRef);
