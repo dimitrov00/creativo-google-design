@@ -1,4 +1,5 @@
 export * from './lib/font.directive';
+export * from './lib/interactive.directive';
 export * from './lib/weight.directive';
 export * from './lib/foreground.directive';
 export * from './lib/padding.directive';

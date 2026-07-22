@@ -109,4 +109,45 @@
   [data-radius='capsule'] {
     border-radius: var(--control-radius-capsule);
   }
+
+  /* ── Interactive surface (uiInteractive → data-interactive) ──
+     ≙ SwiftUI .hoverEffect(.highlight): THE one hover/press grammar for
+     cards/rows/tiles — a state-layer overlay filling with currentColor at
+     the theme alpha ladder. Surfaces never invent their own hover
+     treatments; ui-button/ui-chip carry per-variant tiers instead. */
+  [data-interactive] {
+    position: relative;
+    cursor: pointer;
+  }
+
+  [data-interactive]::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    pointer-events: none;
+    background: transparent;
+    transition: background-color var(--sys-motion-duration-regular)
+      var(--sys-motion-ease-standard);
+  }
+
+  @media (hover: hover) {
+    [data-interactive]:hover::after {
+      background: var(--sys-state-layer-hover);
+    }
+  }
+
+  [data-interactive]:active::after {
+    background: var(--sys-state-layer-press);
+  }
+
+  [data-interactive]:active {
+    transform: scale(var(--sys-press-scale-surface));
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    [data-interactive]:active {
+      transform: none;
+    }
+  }
 }

@@ -6,6 +6,11 @@
     justify-content: center;
     gap: var(--sys-space-compact);
     min-block-size: var(--control-size-regular);
+    /* Height comes from the size token ALONE. The UiPadding host directive
+       defaults to data-padding="regular", whose `padding` shorthand was
+       adding 16px block padding — every button then rendered content+32px
+       tall (46/50/52.3px…) instead of the exact 36/44/52 scale. */
+    padding-block: 0;
     padding-inline: var(--sys-space-regular);
     border: 0;
     border-radius: var(--control-radius-regular);
@@ -44,6 +49,14 @@
     background: var(--sys-color-destructive);
     color: var(--sys-color-on-primary);
   }
+  /* On media (video/photography) the prominent pill is white-on-media in
+     BOTH themes — the light theme's near-black primary would sink into
+     dark footage. Theme-independent by design, like the overlay variant. */
+  .ui-button[data-variant='prominent'][data-on-media] {
+    background: #ffffff;
+    color: #0d0d0d;
+  }
+
   .ui-button[data-variant='overlay'] {
     /* Glass chrome over media (video cards, photo overlays) — white-alpha
        fill + blur, theme-independent by design: it always sits on dark
@@ -88,6 +101,9 @@
     .ui-button[data-variant='overlay']:hover:not(:disabled) {
       background: rgb(255 255 255 / 0.2);
     }
+    .ui-button[data-variant='prominent'][data-on-media]:hover:not(:disabled) {
+      background: rgb(255 255 255 / 0.88);
+    }
   }
   .ui-button[data-variant='overlay']:active:not(:disabled) {
     background: rgb(255 255 255 / 0.28);
@@ -116,9 +132,11 @@
   .ui-button[data-spread] {
     justify-content: space-between;
     block-size: auto;
-    min-block-size: 3.25rem;
+    /* The chunky box IS the prominent size tier — no ad-hoc heights; the
+       min-block-size centers the content, block padding would only push
+       the box off the scale. */
+    min-block-size: var(--control-size-prominent);
     gap: var(--sys-space-regular);
-    padding-block: 0.8rem;
     padding-inline: 1.2rem 1.05rem;
   }
 

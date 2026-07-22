@@ -144,7 +144,8 @@
      Composes onto [uiButton]: min-height 54px, wraps long localized labels. */
   .cr-landing-cta {
     block-size: auto;
-    min-block-size: 3.375rem;
+    /* Oversized CTA = the prominent size tier exactly (no 54px one-off). */
+    min-block-size: var(--control-size-prominent);
     max-inline-size: 100%;
     padding-block: 0.625rem;
     white-space: normal;

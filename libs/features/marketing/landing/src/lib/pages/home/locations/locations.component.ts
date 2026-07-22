@@ -12,7 +12,10 @@ import {
 } from '@angular/core';
 import { TranslocoDirective, TranslocoService } from '@jsverse/transloco';
 import { UiButton } from '@creativo/ui/controls';
-import { UiTextDirective } from '@creativo/ui/modifiers';
+import {
+  UiInteractiveDirective,
+  UiTextDirective,
+} from '@creativo/ui/modifiers';
 import { UiSectionHeader } from '@creativo/ui/patterns';
 import type { Map as MapLibreMap, Marker as MapLibreMarker } from 'maplibre-gl';
 import {
@@ -96,6 +99,7 @@ const MLADOST_SCHEDULE: WeekSchedule = [
     ShowcaseGalleryComponent,
     TranslocoDirective,
     UiButton,
+    UiInteractiveDirective,
     UiSectionHeader,
     UiTextDirective,
   ],

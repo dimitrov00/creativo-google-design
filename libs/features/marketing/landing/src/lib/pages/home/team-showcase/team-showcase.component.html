@@ -14,6 +14,7 @@
       @for (barber of barbers; track barber.nameKey; let index = $index) {
         <article
           class="team-card morph-card"
+          uiInteractive
           role="button"
           tabindex="0"
           [attr.aria-label]="

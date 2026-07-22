@@ -10,7 +10,10 @@ import {
   signal,
 } from '@angular/core';
 import { TranslocoDirective } from '@jsverse/transloco';
-import { UiTextDirective } from '@creativo/ui/modifiers';
+import {
+  UiInteractiveDirective,
+  UiTextDirective,
+} from '@creativo/ui/modifiers';
 import { UiSectionHeader } from '@creativo/ui/patterns';
 import { LandingContentService } from '../../content/landing-content.service';
 import {
@@ -36,6 +39,7 @@ import { ServiceDetailComponent } from './service-detail.component';
     FadeUpDirective,
     ServiceDetailComponent,
     TranslocoDirective,
+    UiInteractiveDirective,
     UiSectionHeader,
     UiTextDirective,
   ],

@@ -50,6 +50,9 @@
 
 /* ── Tile ── */
 
+/* Hover/press feedback = the shared [data-interactive] state layer
+   (uiInteractive); the image zoom is this tile's one signature
+   embellishment. */
 .cr-services__tile {
   display: flex;
   inline-size: 100%;
@@ -57,8 +60,8 @@
   text-align: start;
   padding: 0;
   border: 0;
+  border-radius: var(--landing-radius-2xl);
   background: none;
-  cursor: pointer;
   color: var(--sys-color-foreground);
 }
 
@@ -168,9 +171,6 @@
   line-height: 1.375;
   transition: color var(--sys-motion-duration-regular)
     var(--sys-motion-ease-standard);
-}
-.cr-services__tile:hover .cr-services__name {
-  color: var(--sys-color-accent);
 }
 
 .cr-services__meta {

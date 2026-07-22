@@ -28,6 +28,7 @@ export type UiControlShape = 'rounded' | 'capsule';
     '[attr.data-shape]': 'uiShape()',
     '[attr.data-state]': 'uiLoading() ? "loading" : null',
     '[attr.data-spread]': "uiSpread() ? '' : null",
+    '[attr.data-on-media]': "uiOnMedia() ? '' : null",
     '[attr.aria-busy]': 'uiLoading() || null',
   },
   hostDirectives: [{ directive: UiPaddingDirective, inputs: ['uiPadding'] }],
@@ -39,4 +40,7 @@ export class UiButton {
   readonly uiLoading = input(false);
   /** Sheet-CTA geometry: tall pill, label spread from trailing glyph. */
   readonly uiSpread = input(false);
+  /** Over video/photography: prominent renders white-on-media in both
+   *  themes (a theme-colored pill sinks into dark footage). */
+  readonly uiOnMedia = input(false);
 }

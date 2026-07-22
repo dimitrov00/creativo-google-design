@@ -34,10 +34,13 @@
   gap: 3.5rem 1rem;
 }
 
+/* Hover/press feedback = the shared [data-interactive] state layer
+   (uiInteractive) — same grammar as the menu rows/toolbar. The morph is
+   this card's one signature embellishment. */
 .team-card {
   position: relative;
   min-inline-size: 0;
-  cursor: pointer;
+  border-radius: var(--landing-radius-2xl);
 }
 
 .team-card:focus-visible {
@@ -88,15 +91,6 @@
   max-inline-size: 11ch;
   min-block-size: 2.45em;
   margin: 0;
-  transition:
-    color var(--sys-motion-duration-deliberate) var(--sys-motion-ease-standard),
-    transform var(--sys-motion-duration-slow) var(--sys-motion-ease-emphasized);
-}
-
-.team-card:hover h3,
-.team-card:focus-within h3 {
-  color: var(--sys-color-accent);
-  transform: translateX(0.12em);
 }
 
 .team-card__facts {
@@ -230,9 +224,11 @@
   }
 }
 
-@media (hover: none) {
-  .team-card:hover h3 {
-    color: currentColor;
-    transform: none;
+/* The explore affordance is a hover-era desktop flourish — on touch (and
+   narrow) screens the whole card is the tap target, so the pseudo-buttons
+   only add noise (owner call, 2026-07-22). */
+@media (hover: none), (max-width: 760px) {
+  .team-card__action {
+    display: none;
   }
 }

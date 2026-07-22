@@ -9,7 +9,10 @@ import {
 } from '@angular/core';
 import { TranslocoDirective } from '@jsverse/transloco';
 import { UiAvatar, UiButton } from '@creativo/ui/controls';
-import { UiTextDirective } from '@creativo/ui/modifiers';
+import {
+  UiInteractiveDirective,
+  UiTextDirective,
+} from '@creativo/ui/modifiers';
 import { UiSectionHeader } from '@creativo/ui/patterns';
 import { ModalSheetComponent } from '../../../shared/modal-sheet/modal-sheet.component';
 import { ShowcaseGalleryComponent } from '../../../shared/showcase-gallery/showcase-gallery.component';
@@ -32,6 +35,7 @@ interface BarberItem {
     TranslocoDirective,
     UiAvatar,
     UiButton,
+    UiInteractiveDirective,
     UiSectionHeader,
     UiTextDirective,
   ],

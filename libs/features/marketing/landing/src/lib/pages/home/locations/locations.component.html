@@ -22,6 +22,7 @@
             <li>
               <article
                 class="location-card"
+                uiInteractive
                 role="button"
                 tabindex="0"
                 [attr.aria-label]="
@@ -98,6 +99,9 @@
                 </div>
 
                 <a
+                  uiButton
+                  uiVariant="bordered"
+                  uiShape="capsule"
                   class="location-card__maps"
                   [href]="directionsUrl(location)"
                   target="_blank"

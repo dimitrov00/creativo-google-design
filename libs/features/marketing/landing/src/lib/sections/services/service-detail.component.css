@@ -210,6 +210,8 @@
   min-inline-size: 0;
 }
 
+/* Not interactive (no click target) — so no hover affordance either:
+   hover feedback on a dead surface is a fake promise (case-study §2.5). */
 .service-performer {
   position: relative;
   display: grid;
@@ -225,16 +227,6 @@
     transparent
   );
   color: var(--sys-color-foreground);
-  transition: background-color var(--sys-motion-duration-deliberate)
-    var(--sys-motion-ease-standard);
-}
-
-.service-performer:hover {
-  background: color-mix(
-    in srgb,
-    var(--sys-color-foreground) calc(0.09 * 100%),
-    transparent
-  );
 }
 
 .service-performer__media {
@@ -259,11 +251,6 @@
     filter var(--sys-motion-duration-slowest) var(--sys-motion-ease-standard),
     transform var(--sys-motion-duration-cinematic)
       var(--sys-motion-ease-emphasized);
-}
-
-.service-performer:hover .service-performer__media img {
-  filter: saturate(0.95) contrast(1.03);
-  transform: scale(1.055);
 }
 
 .service-performer__identity {
@@ -355,7 +342,6 @@ cr-modal-sheet[data-state='open'] .service-sheet__variants {
   .service-sheet__summary > a {
     inline-size: 100%;
     margin-block-start: 1.25rem;
-    padding: 1.05rem 1.1rem;
   }
 
   .service-sheet__variants ul {

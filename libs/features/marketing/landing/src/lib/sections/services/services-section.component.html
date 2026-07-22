@@ -14,6 +14,7 @@
       <div class="cr-services__item">
         <button
           type="button"
+          uiInteractive
           class="cr-services__tile"
           [attr.data-testid]="'service-tile-' + service.id"
           (click)="open(service)"
@@ -90,6 +91,7 @@
           <div class="cr-services__item">
             <button
               type="button"
+              uiInteractive
               class="cr-services__tile"
               [attr.data-testid]="'service-tile-' + service.id"
               (click)="open(service)"

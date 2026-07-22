@@ -49,6 +49,8 @@
   list-style: none;
 }
 
+/* Hover/press feedback = the shared [data-interactive] state layer
+   (uiInteractive) — same grammar as the menu rows/toolbar. */
 .location-card {
   display: flex;
   align-items: flex-start;
@@ -56,10 +58,10 @@
   position: relative;
   min-inline-size: 0;
   padding-block: 1.5rem;
+  border-radius: var(--landing-radius-2xl);
   /* No divider rule — this was the only section using borders between
      items; the padding rhythm alone separates cards, matching how every
      other section breathes (owner call, 2026-07-21). */
-  cursor: pointer;
 }
 
 .locations__list > li:first-child .location-card {
@@ -91,20 +93,9 @@
     color var(--sys-motion-duration-deliberate) var(--sys-motion-ease-standard);
 }
 
-.location-card:hover .location-card__icon,
-.location-card:focus-within .location-card__icon {
-  background: var(--sys-color-accent);
-  color: var(--sys-color-foreground);
-}
-
 .location-card__copy {
   flex: 1 1 auto;
   min-inline-size: 0;
-}
-
-.location-card:hover h3,
-.location-card:focus-within h3 {
-  color: var(--sys-color-accent);
 }
 
 /* Explicit ring for keyboard focus — the hover/:focus-within accent color
@@ -195,43 +186,22 @@
     var(--sys-motion-ease-standard);
 }
 
-.location-card:hover .location-card__explore-label,
-.location-card:focus-within .location-card__explore-label {
-  border-color: var(--sys-color-accent);
+/* The explore affordance is a hover-era desktop flourish — on touch (and
+   narrow) screens the whole card is the tap target (owner call,
+   2026-07-22). */
+@media (hover: none), (max-width: 760px) {
+  .location-card__action {
+    display: none;
+  }
 }
 
+/* ui-button (bordered capsule) supplies the chrome + hover/press — only
+   the icon-only square box stays local. */
 .location-card__maps {
-  display: grid;
   flex: 0 0 auto;
-  place-items: center;
-  /* HIG 44px floor. */
   inline-size: var(--control-size-regular);
   aspect-ratio: 1;
-  border-radius: var(--control-radius-capsule);
-  border: 1px solid
-    color-mix(
-      in srgb,
-      var(--sys-color-foreground) calc(0.22 * 100%),
-      transparent
-    );
-  color: var(--sys-color-foreground);
-  text-decoration: none;
-  transition:
-    border-color var(--sys-motion-duration-deliberate)
-      var(--sys-motion-ease-standard),
-    transform var(--sys-motion-duration-deliberate)
-      var(--sys-motion-ease-emphasized);
-}
-
-.location-card__maps:hover,
-.location-card__maps:focus-visible {
-  border-color: var(--sys-color-accent);
-  transform: translateX(0.15rem) rotate(8deg);
-}
-
-.location-card__maps:focus-visible {
-  outline: 2px solid var(--sys-color-ring);
-  outline-offset: 2px;
+  padding-inline: 0;
 }
 
 .locations__map {
