@@ -12,18 +12,18 @@ import {
 import { RouterLink } from '@angular/router';
 import { TranslocoDirective } from '@jsverse/transloco';
 import { UiButton } from '@creativo/ui/controls';
-import { CrIcon } from '../../shared/icons/icons';
+import { UiToolbar } from '@creativo/ui/layout';
 import { LocaleThemeToggleComponent } from '../../shared/prefs/locale-theme-toggle.component';
 
-/** v2 `landing-hero.tsx` entrance ease. */
-const EASE = 'cubic-bezier(0.16, 1, 0.3, 1)';
+/** Fallback when the token can't be read (SSR/test environments). */
+const ENTRANCE_EASE_FALLBACK = 'cubic-bezier(0.16, 1, 0.3, 1)';
 
 /**
- * Inset hero — v2 `landing-hero.tsx` + `video-hero.tsx`: a rounded B&W video
- * card (squircle, sheet radius) floating inside the app column, overlay
- * locale/theme chips + tagline/heading/subtitle pinned to its bottom edge,
- * and the primary CTA on plain background below the card. The fixed
- * LandingHeader owns the wordmark; the hero carries no top bar of its own.
+ * Inset hero — closing-CTA register (case study §3): a rounded B&W video
+ * card (squircle, sheet radius) filling the viewport column, a centered
+ * title/paragraph/capsule-CTA trio mid-card, and the locale/theme toggles
+ * on a bottom overlay toolbar inside the media. The fixed LandingHeader
+ * owns the wordmark; the hero carries no top bar of its own.
  *
  * Under reduced motion the poster replaces the video and the staged copy
  * entrance is skipped entirely (v2 `useReducedMotion` behavior).
@@ -32,11 +32,11 @@ const EASE = 'cubic-bezier(0.16, 1, 0.3, 1)';
   selector: 'cr-landing-hero',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
-    CrIcon,
     LocaleThemeToggleComponent,
     RouterLink,
     TranslocoDirective,
     UiButton,
+    UiToolbar,
   ],
   templateUrl: './landing-hero.component.html',
   styleUrl: './landing-hero.component.css',
@@ -84,30 +84,37 @@ export class LandingHeroComponent {
   }
 
   /**
-   * v2's staged mount entrance — tagline → heading → subtitle → CTA rise in
+   * Staged mount entrance — heading → subtitle → CTA → toolbar rise in
    * once, on the page load (not scroll-linked). Each `[data-hero-enter]`
-   * element declares its own rise/delay/duration, mirroring the per-element
-   * motion props in the JSX.
+   * element declares its own rise/delay/duration (and optional start
+   * scale); the curve is the shared `--sys-motion-ease-entrance` token.
    */
   private runEntrance(): void {
+    const ease =
+      getComputedStyle(this.elementRef.nativeElement)
+        .getPropertyValue('--sys-motion-ease-entrance')
+        .trim() || ENTRANCE_EASE_FALLBACK;
     const targets =
       this.elementRef.nativeElement.querySelectorAll<HTMLElement>(
         '[data-hero-enter]',
       );
     for (const target of targets) {
       if (typeof target.animate !== 'function') return;
+      const y = target.dataset['enterY'] ?? '12';
+      const scale = target.dataset['enterScale'];
+      const from = scale
+        ? `translateY(${y}px) scale(${scale})`
+        : `translateY(${y}px)`;
+      const to = scale ? 'translateY(0) scale(1)' : 'translateY(0)';
       target.animate(
         [
-          {
-            opacity: 0,
-            transform: `translateY(${target.dataset['enterY'] ?? '12'}px)`,
-          },
-          { opacity: 1, transform: 'translateY(0)' },
+          { opacity: 0, transform: from },
+          { opacity: 1, transform: to },
         ],
         {
           duration: Number(target.dataset['enterDuration'] ?? '700'),
           delay: Number(target.dataset['enterDelay'] ?? '0'),
-          easing: EASE,
+          easing: ease,
           fill: 'both',
         },
       );

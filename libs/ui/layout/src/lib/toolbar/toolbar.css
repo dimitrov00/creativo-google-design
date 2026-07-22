@@ -10,9 +10,26 @@
     border-block-end: 1px solid var(--sys-color-separator);
   }
 
+  /* Bottom bar (SwiftUI `.bottomBar`) — hairline flips to the top edge. */
+  .ui-toolbar[data-placement='bottom'] {
+    border-block-end: 0;
+    border-block-start: 1px solid var(--sys-color-separator);
+  }
+
+  /* Overlay tone (SwiftUI `.toolbarBackground(.hidden)`) — transparent
+     chrome for bars floating over media; contents carry their own fills. */
+  .ui-toolbar[data-tone='overlay'] {
+    background: transparent;
+    border: 0;
+  }
+
   .ui-toolbar[data-sticky] {
     position: sticky;
     inset-block-start: 0;
     z-index: var(--sys-layer-header);
+  }
+  .ui-toolbar[data-placement='bottom'][data-sticky] {
+    inset-block-start: auto;
+    inset-block-end: 0;
   }
 }

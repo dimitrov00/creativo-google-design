@@ -1,5 +1,7 @@
-/* v2 LandingHero — `mx-auto flex min-h-[100svh] w-full max-w-app flex-col
-   bg-background` with the inset VideoHero card and the CTA strip below. */
+/* Hero — closing-CTA register (case study §3): the inset video card fills
+   the viewport column; a centered title/paragraph/capsule-CTA trio sits
+   mid-card over a center vignette; the locale/theme toggles ride a bottom
+   overlay toolbar inside the media (SwiftUI bottomBar placement). */
 
 :host {
   display: flex;
@@ -19,6 +21,9 @@
   overflow: hidden;
   margin-inline: var(--landing-gutter);
   margin-block-start: var(--landing-safe-pad-top);
+  /* The card reclaims the old CTA strip's height; only the safe-area floor
+     stays below it. */
+  margin-block-end: var(--landing-safe-pad-bottom);
   border-radius: var(--landing-radius-sheet);
   background: #0a0a0a;
 }
@@ -30,10 +35,16 @@
   inline-size: 100%;
   object-fit: cover;
   opacity: 0;
-  transition: opacity 1s var(--sys-motion-ease-standard);
+  /* Settle: the film eases from a slight zoom to rest as it fades in. */
+  transform: scale(1.04);
+  transition:
+    opacity 1s var(--sys-motion-ease-standard),
+    transform var(--sys-motion-duration-cinematic)
+      var(--sys-motion-ease-entrance);
 }
 .cr-hero__video[data-loaded] {
   opacity: 0.5;
+  transform: scale(1);
 }
 
 .cr-hero__poster {
@@ -45,15 +56,16 @@
   opacity: 0.6;
 }
 
-/* Dark overlay — heavier at bottom for text readability (v2 scrim slot). */
+/* Center vignette — text sits mid-card now, so weight lives in the middle
+   instead of the old bottom-heavy ramp. */
 .cr-hero__scrim {
   position: absolute;
   inset: 0;
-  background: linear-gradient(
-    to bottom,
-    rgb(0 0 0 / 0.25) 0%,
-    rgb(0 0 0 / 0.4) 40%,
-    rgb(0 0 0 / 0.8) 100%
+  background: radial-gradient(
+    ellipse 120% 90% at 50% 55%,
+    rgb(0 0 0 / 0.55) 0%,
+    rgb(0 0 0 / 0.45) 45%,
+    rgb(0 0 0 / 0.2) 100%
   );
 }
 
@@ -63,69 +75,79 @@
   z-index: 10;
   display: flex;
   flex-direction: column;
+  align-items: center;
+  justify-content: center;
 }
 
-.cr-hero__spacer {
-  flex: 1;
-}
-
-/* ── Bottom copy block (px-7 pb-9 sm:px-10 sm:pb-11) ── */
+/* ── Centered trio (mirrors .cr-closing measures) ── */
 
 .cr-hero__copy {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0;
+  max-inline-size: 25rem;
   padding-inline: 1.75rem;
-  padding-block-end: 2.25rem;
+  text-align: center;
   color: var(--landing-media-fg);
-}
-@media (min-width: 640px) {
-  .cr-hero__copy {
-    padding-inline: 2.5rem;
-    padding-block-end: 2.75rem;
-  }
-}
-
-.cr-hero__prefs {
-  margin-block-end: 1.75rem;
-}
-
-/* The sanctioned eyebrow recipe, media-subtle ink over the video. */
-.cr-hero__tagline {
-  margin: 0;
-  font: var(--sys-font-eyebrow);
-  letter-spacing: var(--sys-tracking-eyebrow);
-  text-transform: uppercase;
-  color: var(--landing-media-fg-subtle);
 }
 
 .cr-hero__heading {
   margin: 0;
-  margin-block-start: 0.75rem;
   font: var(--sys-font-extraLargeTitle);
   letter-spacing: var(--sys-tracking-largeTitle);
   color: var(--landing-media-fg);
 }
 
 .cr-hero__subtitle {
-  margin: 0;
-  margin-block-start: 1rem;
-  max-inline-size: 20.625rem;
+  margin: 1rem 0 0;
+  max-inline-size: 24rem;
   font: var(--sys-font-body);
-  white-space: pre-line;
   color: var(--landing-media-fg-muted);
 }
 
-/* ── Primary CTA below the card ── */
-
-.cr-hero__cta-wrap {
-  padding-inline: var(--landing-gutter);
-  padding-block-start: 1.25rem;
-  padding-block-end: var(--landing-safe-pad-bottom);
-}
-
 .cr-hero__button {
-  inline-size: 100%;
+  margin-block-start: 2rem;
+  padding-inline: 2rem;
 }
 
-.cr-hero__glyph {
-  font-size: 18px;
-  margin-inline-end: 8px;
+/* ── Bottom overlay toolbar (prefs) — bottom-left inside the media ── */
+
+.cr-hero__toolbar {
+  position: absolute;
+  inset-inline-start: 1.75rem;
+  inset-block-end: max(1.75rem, var(--landing-safe-bottom));
+  justify-content: flex-start;
+  padding-inline: 0;
+  min-block-size: 0;
+}
+
+/* ── Scroll exit — compositor-only depth parallax (zero JS; the video is
+   deliberately NOT parallaxed: object-fit cover repaints). ── */
+@supports (animation-timeline: view()) {
+  @media (prefers-reduced-motion: no-preference) {
+    .cr-hero__content {
+      animation: cr-hero-exit linear both;
+      animation-timeline: view();
+      animation-range: exit 0% exit 60%;
+    }
+    .cr-hero__scrim {
+      animation: cr-hero-scrim-exit linear both;
+      animation-timeline: view();
+      animation-range: exit 0% exit 60%;
+    }
+  }
+}
+
+@keyframes cr-hero-exit {
+  to {
+    opacity: 0;
+    transform: translateY(-15%);
+  }
+}
+
+@keyframes cr-hero-scrim-exit {
+  to {
+    opacity: 0;
+  }
 }

@@ -167,10 +167,9 @@
       "switchToDark": "Switch to dark theme"
     },
     "hero": {
-      "tagline": "MALE IMAGE & GROOMING · STARA ZAGORA",
-      "heading": "Your chair.",
-      "subtitle": "Book an appointment in seconds.\nNo phone calls.",
-      "cta": "Book now"
+      "heading": "Time well taken.",
+      "subtitle": "Book in seconds. Walk in on time. Walk out a new man.",
+      "cta": "Pick a time"
     },
     "gallery": {
       "c0": "The precise trim.",

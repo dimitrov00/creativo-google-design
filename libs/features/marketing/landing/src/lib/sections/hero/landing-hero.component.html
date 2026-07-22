@@ -24,32 +24,19 @@
       ></video>
     }
 
-    <!-- Dark overlay — heavier at the bottom for text readability. -->
+    <!-- Center vignette — copy now sits mid-card (closing-CTA register). -->
     <div class="cr-hero__scrim" aria-hidden="true"></div>
 
     <div class="cr-hero__content">
-      <div class="cr-hero__spacer"></div>
-
-      <!-- Bottom — overlay controls + headline. -->
+      <!-- Centered trio — title, paragraph, one capsule CTA (no icon),
+           mirroring the closing CTA so the page opens and closes on the
+           same chord. -->
       <div class="cr-hero__copy">
-        <div class="cr-hero__prefs">
-          <cr-locale-theme-toggle variant="overlay" />
-        </div>
-
-        <p
-          class="cr-hero__tagline"
-          data-hero-enter
-          data-enter-y="12"
-          data-enter-delay="100"
-          data-enter-duration="700"
-        >
-          {{ t('landing.hero.tagline') }}
-        </p>
         <h1
           class="cr-hero__heading"
           data-hero-enter
           data-enter-y="18"
-          data-enter-delay="200"
+          data-enter-delay="150"
           data-enter-duration="800"
         >
           {{ t('landing.hero.heading') }}
@@ -58,33 +45,43 @@
           class="cr-hero__subtitle"
           data-hero-enter
           data-enter-y="12"
-          data-enter-delay="400"
+          data-enter-delay="320"
           data-enter-duration="700"
         >
           {{ t('landing.hero.subtitle') }}
         </p>
+        <a
+          routerLink="/auth"
+          [queryParams]="{ redirect: '/book' }"
+          uiButton
+          uiVariant="prominent"
+          uiSize="regular"
+          uiShape="capsule"
+          class="cr-hero__button"
+          data-testid="landing-hero-cta"
+          data-hero-enter
+          data-enter-y="14"
+          data-enter-delay="480"
+          data-enter-duration="700"
+          data-enter-scale="0.96"
+        >
+          {{ t('landing.hero.cta') }}
+        </a>
       </div>
-    </div>
-  </div>
 
-  <!-- Primary CTA below the card. -->
-  <div
-    class="cr-hero__cta-wrap"
-    data-hero-enter
-    data-enter-y="16"
-    data-enter-delay="550"
-    data-enter-duration="700"
-  >
-    <a
-      routerLink="/auth"
-      [queryParams]="{ redirect: '/book' }"
-      uiButton
-      uiSize="prominent"
-      class="cr-hero__button"
-      data-testid="landing-hero-cta"
-    >
-      <cr-icon name="calendar_month" class="cr-hero__glyph" />
-      {{ t('landing.hero.cta') }}
-    </a>
+      <!-- Bottom toolbar inside the media (SwiftUI bottomBar placement) —
+           chrome appears, it doesn't perform: opacity-only entrance. -->
+      <ui-toolbar
+        uiPlacement="bottom"
+        uiTone="overlay"
+        class="cr-hero__toolbar"
+        data-hero-enter
+        data-enter-y="0"
+        data-enter-delay="650"
+        data-enter-duration="500"
+      >
+        <cr-locale-theme-toggle variant="overlay" />
+      </ui-toolbar>
+    </div>
   </div>
 </ng-container>

@@ -28,6 +28,9 @@
   ],
   "references": [
     {
+      "path": "../../../ui/layout/tsconfig.lib.json"
+    },
+    {
       "path": "../../../ui/patterns/tsconfig.lib.json"
     },
     {

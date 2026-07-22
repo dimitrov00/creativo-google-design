@@ -5,7 +5,12 @@ import {
   input,
 } from '@angular/core';
 
-/** Horizontal bar — app header / action bar, typically sticky. */
+/** SwiftUI parity: `ToolbarItemPlacement` top bar vs `.bottomBar`. */
+export type UiToolbarPlacement = 'top' | 'bottom';
+/** SwiftUI parity: default chrome vs `.toolbarBackground(.hidden)`. */
+export type UiToolbarTone = 'default' | 'overlay';
+
+/** Horizontal bar — app header / action bar (top), or a bottom action bar. */
 @Component({
   selector: 'ui-toolbar',
   template: `<ng-content />`,
@@ -18,8 +23,12 @@ import {
   host: {
     class: 'ui-toolbar',
     '[attr.data-sticky]': "uiSticky() ? '' : null",
+    '[attr.data-placement]': 'uiPlacement()',
+    '[attr.data-tone]': 'uiTone()',
   },
 })
 export class UiToolbar {
   readonly uiSticky = input(false);
+  readonly uiPlacement = input<UiToolbarPlacement>('top');
+  readonly uiTone = input<UiToolbarTone>('default');
 }
