@@ -54,9 +54,11 @@
   inline-size: min(72rem, calc(100vw - 2rem));
   block-size: min(90svh, 58rem);
   overflow: hidden;
-  border-radius: 2rem;
+  /* Landing sheet-radius token (≈27.2px, replaces hardcoded 2rem/32px) —
+     same corner as the hero card, per the shared radius ladder. */
+  border-radius: var(--landing-radius-sheet);
   background: var(--sys-color-surface);
-  box-shadow: 0 2rem 7rem rgb(0 0 0 / 0.45);
+  box-shadow: var(--sys-elevation-floating); /* was the same literal cut */
   opacity: 0;
   transform: translateY(calc(2rem + var(--modal-sheet-drag-y))) scale(0.985);
   transition:
@@ -217,7 +219,9 @@
   .modal-sheet__surface {
     inline-size: 100%;
     block-size: min(96svh, 60rem);
-    border-radius: 1.5rem 1.5rem 0 0;
+    /* Sheet-radius token (≈27.2px, replaces hardcoded 1.5rem/24px) — one
+       corner value for the sheet at every breakpoint. */
+    border-radius: var(--landing-radius-sheet) var(--landing-radius-sheet) 0 0;
   }
 
   .modal-sheet[data-closing] .modal-sheet__surface {

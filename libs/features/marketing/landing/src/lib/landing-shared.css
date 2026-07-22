@@ -93,11 +93,6 @@
       var(--sys-color-accent) 12%,
       transparent
     );
-
-    /* ── Legacy landing rhythm — the restored (old-app) locations section
-       + showcase gallery read these (kept by design call). ── */
-    --page-gutter: clamp(1.5rem, 4.2vw, 4.25rem);
-    --page-fg: var(--sys-color-foreground);
   }
 
   /* The tinted recipe is theme-stable — accent ink + accent fill read the

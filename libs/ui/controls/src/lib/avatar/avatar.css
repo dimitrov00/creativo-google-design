@@ -26,6 +26,14 @@
     block-size: var(--control-size-prominent);
     font: var(--sys-font-title3);
   }
+  .ui-avatar[data-size='display'] {
+    /* Profile-portrait tier (avatar-only, see UiAvatarSize): 28 units =
+       112px at density 1 — no shared --control-size token since no other
+       control renders at portrait scale. */
+    inline-size: calc(var(--sys-space-unit) * 28);
+    block-size: calc(var(--sys-space-unit) * 28);
+    font: var(--sys-font-largeTitle);
+  }
 
   .ui-avatar__image {
     inline-size: 100%;

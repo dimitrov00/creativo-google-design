@@ -80,17 +80,9 @@
   }
 }
 
+/* Look comes from ui-badge (accent tone); only the flow margin is local. */
 .service-sheet__bundle-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
   margin-block-start: 0.8rem;
-  padding: 0.35rem 0.75rem;
-  border-radius: var(--control-radius-capsule);
-  background: color-mix(in srgb, var(--sys-color-accent) 12%, transparent);
-  color: var(--sys-color-accent);
-  font: var(--sys-font-caption);
-  font-weight: 600;
 }
 
 .service-sheet__bundle-glyph {
@@ -171,6 +163,11 @@
   list-style: none;
 }
 
+/* Deliberately NOT ui-badge/ui-chip: non-interactive display capsules in
+   the old sheet's chunky rhythm (tap-target-scale padding, quiet 5.5%
+   foreground fill) — badge's caption-tight padding and 14% tone tints
+   would break the sheet's visual weight. Built on the DS capsule-radius
+   and type tokens instead. */
 .service-sheet__variants li {
   padding: 0.9rem 1.05rem;
   border-radius: var(--control-radius-capsule);

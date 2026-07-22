@@ -13,7 +13,7 @@ import {
 } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { TranslocoDirective } from '@jsverse/transloco';
-import { UiButton } from '@creativo/ui/controls';
+import { UiBadge, UiButton } from '@creativo/ui/controls';
 import { LandingContentService } from '../../content/landing-content.service';
 import {
   type BarberVm,
@@ -56,6 +56,7 @@ const CLOSE_ANIMATION_MS = 380;
     RouterLink,
     ShowcaseGalleryComponent,
     TranslocoDirective,
+    UiBadge,
     UiButton,
   ],
   templateUrl: './service-detail.component.html',

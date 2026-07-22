@@ -8,7 +8,7 @@ import {
   signal,
 } from '@angular/core';
 import { TranslocoDirective } from '@jsverse/transloco';
-import { UiButton } from '@creativo/ui/controls';
+import { UiAvatar, UiButton } from '@creativo/ui/controls';
 import { UiTextDirective } from '@creativo/ui/modifiers';
 import { UiSectionHeader } from '@creativo/ui/patterns';
 import { ModalSheetComponent } from '../../../shared/modal-sheet/modal-sheet.component';
@@ -30,6 +30,7 @@ interface BarberItem {
     ModalSheetComponent,
     ShowcaseGalleryComponent,
     TranslocoDirective,
+    UiAvatar,
     UiButton,
     UiSectionHeader,
     UiTextDirective,
@@ -48,11 +49,11 @@ export class TeamShowcaseComponent {
 
   protected readonly barbers: readonly BarberItem[] = [
     {
-      nameKey: 'marketing.team.ivan.name',
+      nameKey: 'landing.barbers.ivan.name',
       image: '/barbers/ivan.jpg',
-      roleKey: 'marketing.team.ivan.role',
-      specialtyKey: 'marketing.team.ivan.specialty',
-      aboutKey: 'marketing.team.ivan.about',
+      roleKey: 'landing.barbers.ivan.role',
+      specialtyKey: 'landing.barbers.ivan.specialty',
+      aboutKey: 'landing.barbers.ivan.about',
       rating: 4.9,
       gallery: [
         '/work/scissors-trim.jpg',
@@ -62,11 +63,11 @@ export class TeamShowcaseComponent {
       ],
     },
     {
-      nameKey: 'marketing.team.niko.name',
+      nameKey: 'landing.barbers.niko.name',
       image: '/barbers/niko.jpg',
-      roleKey: 'marketing.team.niko.role',
-      specialtyKey: 'marketing.team.niko.specialty',
-      aboutKey: 'marketing.team.niko.about',
+      roleKey: 'landing.barbers.niko.role',
+      specialtyKey: 'landing.barbers.niko.specialty',
+      aboutKey: 'landing.barbers.niko.about',
       rating: 4.8,
       gallery: [
         '/work/fade-styling.jpg',
@@ -76,10 +77,10 @@ export class TeamShowcaseComponent {
       ],
     },
     {
-      nameKey: 'marketing.team.stefan.name',
+      nameKey: 'landing.barbers.stefan.name',
       image: '/barbers/stefan.jpg',
-      roleKey: 'marketing.team.stefan.role',
-      specialtyKey: 'marketing.team.stefan.specialty',
+      roleKey: 'landing.barbers.stefan.role',
+      specialtyKey: 'landing.barbers.stefan.specialty',
       gallery: [
         '/work/beard-shave.jpg',
         '/work/classic-clippers.jpg',

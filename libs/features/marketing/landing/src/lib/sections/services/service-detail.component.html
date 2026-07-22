@@ -45,7 +45,7 @@
               {{ t('landing.services.eyebrow') }}
             </p>
             @if (service().kind === 'bundle') {
-              <span class="service-sheet__bundle-badge">
+              <span uiBadge uiTone="accent" class="service-sheet__bundle-badge">
                 <cr-icon name="layers" class="service-sheet__bundle-glyph" />
                 {{ t('landing.services.bundle') }}
               </span>

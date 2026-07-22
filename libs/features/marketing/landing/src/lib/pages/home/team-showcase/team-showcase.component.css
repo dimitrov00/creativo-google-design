@@ -7,21 +7,20 @@
   --surface-film: #0a0a0a;
 }
 
+/* Single-column flow inside the 640px app column — header on top, then the
+   card grid (§2.9 register convergence; the old full-bleed two-column
+   spread with a sticky heading rail is gone). Sections own their inline
+   gutters (the page column adds none), same as services/hiring. */
 .team {
-  display: grid;
-  grid-template-columns: minmax(15rem, 0.55fr) minmax(0, 1.45fr);
-  gap: clamp(3rem, 7vw, 8rem);
-  align-items: start;
-  /* Normalized to the landing's shared section rhythm. */
-  padding: var(--landing-section-gap) var(--page-gutter);
+  display: block;
+  padding: var(--landing-section-gap) var(--landing-gutter);
   background: transparent;
-  color: var(--page-fg);
+  color: var(--sys-color-foreground);
 }
 
 .team__heading {
-  position: sticky;
-  inset-block-start: 8rem;
-  align-self: start;
+  display: block;
+  margin-block-end: 4.5rem;
 }
 
 /* Type metrics come from ui-section-header — only layout stays here. */
@@ -32,7 +31,7 @@
 .team-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: clamp(3rem, 6vw, 5rem) clamp(1.25rem, 2.4vw, 2.5rem);
+  gap: 3.5rem 1rem;
 }
 
 .team-card {
@@ -66,22 +65,28 @@
   filter: saturate(1.08) contrast(1.02);
 }
 
+/* Cards run ~290px wide inside the column, so the stacked (former mobile)
+   copy layout is the only layout now. */
 .team-card__copy {
   position: relative;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 0.5rem 1.5rem;
-  padding-block-start: 1rem;
+  grid-template-columns: 1fr;
+  gap: 0.55rem;
+  padding-block-start: 0.85rem;
 }
 
 .team-card__copy > p {
-  grid-column: 1 / -1;
   margin: 0;
-  color: color-mix(in srgb, var(--page-fg) calc(0.52 * 100%), transparent);
+  color: color-mix(
+    in srgb,
+    var(--sys-color-foreground) calc(0.52 * 100%),
+    transparent
+  );
 }
 
 .team-card h3 {
   max-inline-size: 11ch;
+  min-block-size: 2.45em;
   margin: 0;
   transition:
     color var(--sys-motion-duration-deliberate) var(--sys-motion-ease-standard),
@@ -95,20 +100,21 @@
 }
 
 .team-card__facts {
-  display: grid;
+  display: flex;
+  justify-content: space-between;
   gap: 0.35rem;
-  justify-items: end;
-  align-content: start;
-  max-inline-size: 11rem;
-  color: color-mix(in srgb, var(--page-fg) calc(0.55 * 100%), transparent);
-  text-align: end;
+  color: color-mix(
+    in srgb,
+    var(--sys-color-foreground) calc(0.55 * 100%),
+    transparent
+  );
 }
 
 .team-card__facts strong {
   display: inline-flex;
   align-items: center;
   gap: 0.25rem;
-  color: var(--page-fg);
+  color: var(--sys-color-foreground);
   font-weight: 700;
 }
 
@@ -120,13 +126,17 @@
    — only this card's spacing, border ink and icon glyph metrics remain
    here. */
 .team-card__action {
-  margin-block-start: 0.25rem;
+  margin-block-start: 0.2rem;
 }
 
 .team-card__explore-label,
 .team-card__explore-icon {
-  border-color: color-mix(in srgb, var(--page-fg) 34%, transparent);
-  color: var(--page-fg);
+  border-color: color-mix(
+    in srgb,
+    var(--sys-color-foreground) 34%,
+    transparent
+  );
+  color: var(--sys-color-foreground);
 }
 
 .team-card__explore-icon {
@@ -150,14 +160,6 @@
 .barber-sheet__gallery {
   display: block;
   margin-block-start: clamp(2.5rem, 4.5vw, 4rem);
-}
-
-.barber-sheet__avatar {
-  inline-size: 7rem;
-  aspect-ratio: 1;
-  border-radius: 50%;
-  object-fit: cover;
-  object-position: center;
 }
 
 .barber-sheet__role {
@@ -219,62 +221,12 @@
 }
 
 @media (max-width: 760px) {
-  .team {
-    display: block;
-    padding-block-start: 8rem;
-    padding-inline: 0.75rem;
-  }
-
-  .team__heading {
-    position: relative;
-    inset: auto;
-    margin-block-end: 4.5rem;
-    padding-inline: 0.25rem;
-  }
-
-  .team-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 3.5rem 0.75rem;
-  }
-
-  .team-card__copy {
-    grid-template-columns: 1fr;
-    gap: 0.55rem;
-    padding-block-start: 0.85rem;
-  }
-
-  .team-card h3 {
-    min-block-size: 2.45em;
-  }
-
-  .team-card__facts {
-    display: flex;
-    justify-content: space-between;
-    justify-items: start;
-    max-inline-size: none;
-    text-align: start;
-  }
-
-  .team-card__action {
-    margin-block-start: 0.2rem;
-  }
-
   .barber-sheet {
     padding: 0 var(--modal-sheet-safe) 6rem;
   }
 
   .barber-sheet__profile {
     padding-block-start: 1rem;
-  }
-}
-
-@media (max-width: 430px) {
-  .team {
-    padding-block-start: var(--landing-section-gap);
-  }
-
-  .team-grid {
-    row-gap: 3rem;
   }
 }
 

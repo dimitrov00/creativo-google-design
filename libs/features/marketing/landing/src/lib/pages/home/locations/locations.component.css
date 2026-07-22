@@ -2,22 +2,20 @@
   display: contents;
 }
 
+/* Single-column flow inside the 640px app column — header on top, then the
+   map canvas, then the list (§2.9 register convergence; the old full-bleed
+   two-column spread with a sticky heading rail is gone). Sections own their
+   inline gutters (the page column adds none), same as services/hiring. */
 .locations {
-  display: grid;
-  grid-template-columns: minmax(15rem, 0.55fr) minmax(0, 1.45fr);
-  gap: clamp(3rem, 7vw, 8rem);
-  align-items: start;
-  /* Normalized to the landing's shared section rhythm. */
-  padding: var(--landing-section-gap) var(--page-gutter);
+  display: block;
+  padding: var(--landing-section-gap) var(--landing-gutter);
   background: transparent;
-  /* Tone-aware like every other section (team/services use --page-fg). */
-  color: var(--page-fg);
+  color: var(--sys-color-foreground);
 }
 
 .locations__heading {
-  position: sticky;
-  inset-block-start: 8rem;
-  align-self: start;
+  display: block;
+  margin-block-end: 3rem;
 }
 
 /* Type metrics come from ui-section-header — only layout stays here. */
@@ -27,19 +25,15 @@
 
 .locations__content {
   display: grid;
-  grid-template-columns: minmax(19rem, 25rem) minmax(0, 1fr);
+  grid-template-columns: 1fr;
   gap: clamp(2rem, 4vw, 3rem);
   align-items: start;
 }
 
-.locations__panel--list {
-  max-block-size: min(70svh, 42rem);
-  overflow-y: auto;
-  padding-inline-end: 0.25rem;
-}
-
+/* Map-first: the canvas leads, the list follows on every width. */
 .locations__panel--map {
   position: relative;
+  order: -1;
 }
 
 /* Map pin/indicator chrome lives in locations-map.css (global) — the
@@ -251,56 +245,9 @@
      process). A fixed size breaks that cycle before it can start. */
   position: relative;
   overflow: hidden;
-  block-size: min(70svh, 42rem);
+  block-size: clamp(18rem, 52svh, 28rem);
   border-radius: clamp(1.4rem, 2.4vw, 2.4rem);
   background: var(--sys-color-surface);
-}
-
-@media (max-width: 980px) {
-  .locations__content {
-    grid-template-columns: 1fr;
-  }
-
-  .locations__panel--map {
-    order: -1;
-  }
-
-  .locations__panel--list {
-    max-block-size: none;
-    overflow-y: visible;
-  }
-
-  .locations__map {
-    block-size: min(60svh, 28rem);
-  }
-}
-
-@media (max-width: 760px) {
-  .locations {
-    display: block;
-    padding-block-start: 8rem;
-    padding-inline: 0.75rem;
-  }
-
-  .locations__heading {
-    position: relative;
-    inset: auto;
-    margin-block-end: 3rem;
-    padding-inline: 0.25rem;
-  }
-
-  .locations__heading h2 {
-    max-inline-size: 7ch;
-  }
-
-  .locations__heading > p:last-child {
-    max-inline-size: 21rem;
-    margin-block-start: 1.5rem;
-  }
-
-  .locations__map {
-    block-size: min(52svh, 22rem);
-  }
 }
 
 .location-sheet__compact-title {
@@ -443,6 +390,10 @@
     0 0.25rem 0.6rem rgb(0 0 0 / 0.04);
 }
 
+/* Deliberately NOT ui-badge: this is a flat status line (leading dot +
+   text + muted detail), not a tinted capsule — the badge control has no
+   leading-dot slot and its tinted fill would add a pill where the design
+   wants plain text inside the status card. */
 .location-sheet__status {
   display: flex;
   flex-wrap: wrap;
@@ -512,6 +463,10 @@
   gap: 0.55rem;
 }
 
+/* Deliberately NOT ui-badge: the row behind it is already an 18% accent
+   tint, so the badge's accent tone (14% accent fill) would disappear —
+   this tag needs the inverted solid-foreground fill for contrast. Capsule
+   radius still comes from the DS token. */
 .location-sheet__today-tag {
   padding: 0.15rem 0.45rem;
   border-radius: var(--control-radius-capsule);

@@ -2,12 +2,12 @@
   <section id="team" class="team" aria-labelledby="team-title">
     <ui-section-header class="team__heading">
       <p uiEyebrow>
-        {{ t('marketing.team.eyebrow') }}
+        {{ t('landing.barbers.eyebrow') }}
       </p>
       <h2 id="team-title" uiTitle>
-        {{ t('marketing.team.titleA') }}<br />{{ t('marketing.team.titleB') }}
+        {{ t('landing.barbers.title') }}
       </h2>
-      <p uiLede>{{ t('marketing.team.intro') }}</p>
+      <p uiLede>{{ t('landing.barbers.subtitle') }}</p>
     </ui-section-header>
 
     <div class="team-grid">
@@ -17,7 +17,7 @@
           role="button"
           tabindex="0"
           [attr.aria-label]="
-            t('marketing.team.exploreBarber', { barber: t(barber.nameKey) })
+            t('landing.barbers.exploreBarber', { barber: t(barber.nameKey) })
           "
           aria-haspopup="dialog"
           aria-controls="barber-detail-sheet"
@@ -57,7 +57,7 @@
                 uiFont="caption"
                 uiWeight="bold"
               >
-                {{ t('marketing.team.explore') }}
+                {{ t('landing.barbers.explore') }}
               </span>
               <span
                 class="team-card__explore-icon explore-affordance__icon material-symbols-rounded"
@@ -73,7 +73,7 @@
   <cr-modal-sheet
     sheetId="barber-detail-sheet"
     labelledBy="barber-sheet-title"
-    [closeLabel]="t('marketing.team.closeDetails')"
+    [closeLabel]="t('landing.barbers.closeDetails')"
     [open]="sheetOpen() && !sheetClosing()"
     [closing]="sheetClosing()"
     (dismissed)="closeBarber()"
@@ -81,10 +81,10 @@
     @if (activeBarber(); as barber) {
       <div class="barber-sheet">
         <article class="barber-sheet__profile">
-          <img
-            class="barber-sheet__avatar"
-            [src]="barber.image"
-            [alt]="t(barber.nameKey)"
+          <ui-avatar
+            [uiSrc]="barber.image"
+            [uiName]="t(barber.nameKey)"
+            uiSize="display"
           />
           <p class="barber-sheet__role" uiText uiFont="eyebrow">
             {{ t(barber.roleKey) }}
@@ -111,7 +111,7 @@
                 >star</span
               >
               <strong>{{ barber.rating }}</strong>
-              <span>{{ t('marketing.team.ratingLabel') }}</span>
+              <span>{{ t('landing.barbers.ratingLabel') }}</span>
             </div>
           }
           <a
@@ -123,7 +123,7 @@
           >
             <span>
               {{
-                t('marketing.team.bookWith', {
+                t('landing.barbers.bookWith', {
                   barber: t(barber.nameKey),
                 })
               }}
@@ -138,12 +138,12 @@
           class="barber-sheet__gallery"
           [images]="barber.gallery"
           [imageAlt]="
-            t('marketing.team.galleryImageAlt', {
+            t('landing.barbers.galleryImageAlt', {
               barber: t(barber.nameKey),
             })
           "
           [ariaLabel]="
-            t('marketing.team.galleryLabel', { barber: t(barber.nameKey) })
+            t('landing.barbers.galleryLabel', { barber: t(barber.nameKey) })
           "
           [gridViewLabel]="t('marketing.gallery.gridView')"
           [carouselViewLabel]="t('marketing.gallery.carouselView')"

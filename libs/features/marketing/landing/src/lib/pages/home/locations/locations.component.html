@@ -2,14 +2,12 @@
   <section id="locations" class="locations" aria-labelledby="locations-title">
     <ui-section-header class="locations__heading">
       <p uiEyebrow>
-        {{ t('marketing.locations.eyebrow') }}
+        {{ t('landing.location.eyebrow') }}
       </p>
       <h2 id="locations-title" uiTitle>
-        {{ t('marketing.locations.titleA') }}<br />{{
-          t('marketing.locations.titleB')
-        }}
+        {{ t('landing.location.titleMulti') }}
       </h2>
-      <p uiLede>{{ t('marketing.locations.intro') }}</p>
+      <p uiLede>{{ t('landing.location.intro') }}</p>
     </ui-section-header>
 
     <div class="locations__content">
@@ -27,7 +25,7 @@
                 role="button"
                 tabindex="0"
                 [attr.aria-label]="
-                  t('marketing.locations.exploreLocation', {
+                  t('landing.location.exploreLocation', {
                     location: t(location.nameKey),
                   })
                 "
@@ -62,8 +60,8 @@
                     ></span>
                     {{
                       status.isOpen
-                        ? t('marketing.locations.openNow')
-                        : t('marketing.locations.closedNow')
+                        ? t('landing.location.open')
+                        : t('landing.location.closed')
                     }}
                   </span>
 
@@ -74,7 +72,7 @@
                       uiFont="caption"
                       [href]="phoneHref(t(location.phoneKey))"
                       [attr.aria-label]="
-                        t('marketing.locations.callAria', {
+                        t('landing.location.callAria', {
                           location: t(location.nameKey),
                         })
                       "
@@ -94,7 +92,7 @@
                       uiFont="caption"
                       uiWeight="bold"
                     >
-                      {{ t('marketing.locations.explore') }}
+                      {{ t('landing.location.explore') }}
                     </span>
                   </span>
                 </div>
@@ -105,7 +103,7 @@
                   target="_blank"
                   rel="noopener"
                   [attr.aria-label]="
-                    t('marketing.locations.directionsAria', {
+                    t('landing.location.directionsAria', {
                       location: t(location.nameKey),
                     })
                   "
@@ -125,7 +123,7 @@
         <div
           class="locations__map"
           data-locations-map
-          [attr.aria-label]="t('marketing.locations.mapAria')"
+          [attr.aria-label]="t('landing.location.mapAria')"
           role="img"
         ></div>
         <!-- Off-screen pin indicators are real, labeled buttons (they pan
@@ -142,7 +140,7 @@
   <cr-modal-sheet
     sheetId="location-detail-sheet"
     labelledBy="location-sheet-title"
-    [closeLabel]="t('marketing.locations.closeDetails')"
+    [closeLabel]="t('landing.location.closeDetails')"
     [open]="sheetOpen() && !sheetClosing()"
     [closing]="sheetClosing()"
     [titleVisible]="sheetHeaderCondensed()"
@@ -176,7 +174,7 @@
               class="location-sheet__map"
               data-location-sheet-map
               [attr.aria-label]="
-                t('marketing.locations.sheetMapAria', {
+                t('landing.location.sheetMapAria', {
                   location: t(location.nameKey),
                 })
               "
@@ -224,7 +222,7 @@
                   [uiSpread]="true"
                 >
                   <span>{{
-                    t('marketing.locations.bookAt', {
+                    t('landing.location.bookAt', {
                       location: t(location.nameKey),
                     })
                   }}</span>
@@ -241,7 +239,7 @@
                   target="_blank"
                   rel="noopener"
                   [attr.aria-label]="
-                    t('marketing.locations.directionsAria', {
+                    t('landing.location.directionsAria', {
                       location: t(location.nameKey),
                     })
                   "
@@ -258,7 +256,7 @@
                     uiFont="caption"
                     [href]="phoneHref(t(location.phoneKey))"
                     [attr.aria-label]="
-                      t('marketing.locations.callAria', {
+                      t('landing.location.callAria', {
                         location: t(location.nameKey),
                       })
                     "
@@ -286,8 +284,8 @@
                 ></span>
                 <span>{{
                   status.isOpen
-                    ? t('marketing.locations.openNow')
-                    : t('marketing.locations.closedNow')
+                    ? t('landing.location.open')
+                    : t('landing.location.closed')
                 }}</span>
                 <span
                   class="location-sheet__status-detail"
@@ -298,26 +296,24 @@
                   @switch (status.kind) {
                     @case ('closesAt') {
                       {{
-                        t('marketing.locations.closesAt', { time: status.time })
+                        t('landing.location.closesAt', { time: status.time })
                       }}
                     }
                     @case ('closesSoon') {
                       {{
-                        t('marketing.locations.closesSoon', {
+                        t('landing.location.closesSoon', {
                           time: status.time,
                         })
                       }}
                     }
                     @case ('opensAt') {
-                      {{
-                        t('marketing.locations.opensAt', { time: status.time })
-                      }}
+                      {{ t('landing.location.opensAt', { time: status.time }) }}
                     }
                     @case ('opensOn') {
                       {{
-                        t('marketing.locations.opensOn', {
+                        t('landing.location.opensOn', {
                           day: t(
-                            'marketing.locations.weekdays.' +
+                            'landing.location.weekdays.' +
                               weekdayKeys[status.dayIndex]
                           ),
                           time: status.time,
@@ -338,17 +334,14 @@
                   >
                     <span class="location-sheet__day-name">
                       {{
-                        t(
-                          'marketing.locations.weekdays.' +
-                            weekdayKeys[dayIndex]
-                        )
+                        t('landing.location.weekdays.' + weekdayKeys[dayIndex])
                       }}
                       @if (dayIndex === todayIndex()) {
                         <span
                           class="location-sheet__today-tag"
                           uiText
                           uiFont="eyebrow"
-                          >{{ t('marketing.locations.today') }}</span
+                          >{{ t('landing.location.today') }}</span
                         >
                       }
                     </span>
@@ -356,7 +349,7 @@
                       @if (location.schedule[dayIndex]; as hours) {
                         {{ hours.open }} – {{ hours.close }}
                       } @else {
-                        {{ t('marketing.locations.closed') }}
+                        {{ t('landing.location.closedDay') }}
                       }
                     </span>
                   </li>
@@ -369,14 +362,14 @@
         <section class="location-sheet__gallery">
           <header class="location-sheet__gallery-heading">
             <h3 uiText uiFont="title">
-              {{ t('marketing.locations.galleryHeading') }}
+              {{ t('landing.location.galleryHeading') }}
             </h3>
           </header>
           <cr-showcase-gallery
             [images]="location.gallery"
             [imageAlt]="t(location.nameKey)"
             [ariaLabel]="
-              t('marketing.locations.galleryLabel', {
+              t('landing.location.galleryLabel', {
                 location: t(location.nameKey),
               })
             "
@@ -402,7 +395,7 @@
             uiFont="caption"
             [href]="phoneHref(t(location.phoneKey))"
             [attr.aria-label]="
-              t('marketing.locations.callAria', {
+              t('landing.location.callAria', {
                 location: t(location.nameKey),
               })
             "
@@ -421,7 +414,7 @@
           target="_blank"
           rel="noopener"
           [attr.aria-label]="
-            t('marketing.locations.directionsAria', {
+            t('landing.location.directionsAria', {
               location: t(location.nameKey),
             })
           "
@@ -442,7 +435,7 @@
           [uiSpread]="true"
         >
           <span>{{
-            t('marketing.locations.bookAt', { location: t(location.nameKey) })
+            t('landing.location.bookAt', { location: t(location.nameKey) })
           }}</span>
           <span class="material-symbols-rounded" aria-hidden="true"
             >arrow_outward</span

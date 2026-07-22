@@ -7,6 +7,13 @@ import {
 } from '@angular/core';
 import type { UiControlSize } from '../button/button';
 
+/**
+ * Avatar sizes extend the shared control vocabulary with a `display` tier —
+ * the large profile portrait (112px) used by detail sheets. It's avatar-only:
+ * no button/chip ever renders at portrait scale.
+ */
+export type UiAvatarSize = UiControlSize | 'display';
+
 /** Custom element — conditional img-vs-initial rendering, not a native element fit. */
 @Component({
   selector: 'ui-avatar',
@@ -37,7 +44,7 @@ import type { UiControlSize } from '../button/button';
 export class UiAvatar {
   readonly uiSrc = input<string | null>(null);
   readonly uiName = input('');
-  readonly uiSize = input<UiControlSize>('regular');
+  readonly uiSize = input<UiAvatarSize>('regular');
 
   protected readonly initial = computed(() =>
     (this.uiName() || '?').slice(0, 1).toUpperCase(),

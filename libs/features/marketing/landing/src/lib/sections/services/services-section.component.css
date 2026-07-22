@@ -124,7 +124,10 @@
   box-shadow: inset 0 0 0 1px var(--sys-color-separator);
 }
 
-/* Bundle tell — floating brand chip on the photo corner. */
+/* Bundle tell — floating brand chip on the photo corner.
+   Deliberately NOT ui-badge/ui-chip: an icon-only 28px elevated disc
+   floating over a photo (solid surface + shadow), not a tinted text
+   capsule and not interactive — only the DS tokens are shared. */
 .cr-services__bundle-chip {
   position: absolute;
   top: 8px;
@@ -135,7 +138,7 @@
   justify-content: center;
   inline-size: 28px;
   block-size: 28px;
-  border-radius: 9999px;
+  border-radius: var(--control-radius-capsule);
   background: var(--sys-color-surface);
   box-shadow: var(--sys-elevation-raised);
   color: var(--sys-color-accent);

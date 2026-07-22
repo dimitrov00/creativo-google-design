@@ -21,12 +21,10 @@
     <div id="work" class="cr-landing__anchor">
       <cr-work-gallery />
     </div>
-    <!-- Old-app full-width spread — breaks out of the app column like the
-         locations section (design call). -->
-    <div id="team" class="cr-landing__anchor cr-landing__anchor--breakout">
+    <div id="team" class="cr-landing__anchor">
       <cr-team-showcase />
     </div>
-    <div id="visit" class="cr-landing__anchor cr-landing__anchor--breakout">
+    <div id="visit" class="cr-landing__anchor">
       <!-- The locations section owns a MapLibre map (~1MB) — `@defer (on
            viewport)` keeps it out of the initial bundle (v2 lazy rule). -->
       @defer (on viewport) {

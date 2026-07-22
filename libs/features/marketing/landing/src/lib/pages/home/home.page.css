@@ -38,14 +38,6 @@
   scroll-margin-block-start: 5rem;
 }
 
-/* The restored (old-app) locations section is a full-width two-column
-   spread with its own --page-gutter — break it out of the 640px app column
-   to the viewport edges, as it laid out in the old app. */
-.cr-landing__anchor--breakout {
-  inline-size: 100vw;
-  margin-inline: calc(50% - 50vw);
-}
-
 /* Reserves room so the deferred locations section doesn't jump on hydrate. */
 .cr-landing__locations-placeholder {
   min-block-size: 40rem;

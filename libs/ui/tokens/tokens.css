@@ -102,6 +102,11 @@
     --sys-elevation-raised:
       0 1px 2px rgb(0 0 0 / 0.06), 0 2px 8px rgb(0 0 0 / 0.04);
     --sys-elevation-overlay: 0 8px 30px rgb(0 0 0 / 0.12);
+    /* Floating set-pieces (modal sheets over a media scrim): deliberately
+       heavier than `overlay` — deep offset + wide soft blur so the surface
+       reads as detached from the darkened page behind it. Value carried
+       forward from the landing modal sheet verbatim. */
+    --sys-elevation-floating: 0 2rem 7rem rgb(0 0 0 / 0.45);
 
     /* ── Motion (v2: 200ms default / 150 fast / 300 medium) ── */
     --sys-motion-duration-instant: 150ms;

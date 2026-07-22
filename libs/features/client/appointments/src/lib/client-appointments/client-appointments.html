@@ -205,6 +205,7 @@
 
     <ui-sheet
       [uiOpen]="confirmingId() !== null"
+      (uiDismissed)="dismissCancel()"
       data-testid="appointment-cancel-sheet"
     >
       <ui-stack uiGap="comfortable">

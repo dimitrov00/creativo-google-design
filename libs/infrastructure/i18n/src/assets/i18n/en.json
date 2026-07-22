@@ -184,7 +184,31 @@
       "title": "Hands you can trust.",
       "subtitle": "Each barber, their own craft — and their own chair.",
       "years": "yrs",
-      "viewAll": "Show {{count}} more"
+      "viewAll": "Show {{count}} more",
+      "explore": "Explore",
+      "exploreBarber": "Explore {{barber}}'s profile",
+      "closeDetails": "Close barber profile",
+      "galleryLabel": "Selected looks by {{barber}}",
+      "galleryImageAlt": "A look created by {{barber}}",
+      "ratingLabel": "client rating",
+      "bookWith": "Book with {{barber}}",
+      "ivan": {
+        "name": "Ivan Kolev",
+        "role": "Chief barber",
+        "specialty": "Scissors · shape · natural movement",
+        "about": "Ivan builds a shape that continues to work after you leave the chair — precise, natural, and considered around the way you live."
+      },
+      "niko": {
+        "name": "Niko Dimov",
+        "role": "Top barber",
+        "specialty": "Modern fades · clean geometry",
+        "about": "Niko combines technically clean fades with a sharp instinct for proportion, texture, and a modern silhouette."
+      },
+      "stefan": {
+        "name": "Stefan Iliev",
+        "role": "Senior barber",
+        "specialty": "Razor · ritual · beard contour"
+      }
     },
     "services": {
       "eyebrow": "The services",
@@ -206,13 +230,49 @@
       "eyebrow": "Find us",
       "title": "One address.",
       "titleMulti": "Our locations.",
+      "intro": "Both Creativo locations keep the same rhythm — precise work, considered pace, and a chair worth the trip.",
       "open": "Open",
       "openUntil": "Open until {{time}}",
       "closed": "Closed",
       "hoursLabel": "Opening hours",
       "closedDay": "Closed",
       "directions": "Get directions",
-      "call": "Call us"
+      "call": "Call us",
+      "explore": "Explore",
+      "exploreLocation": "Explore {{location}}",
+      "closeDetails": "Close location details",
+      "galleryLabel": "Photos from {{location}}",
+      "galleryHeading": "Inside the studio",
+      "directionsAria": "Get directions to {{location}}",
+      "callAria": "Call {{location}}",
+      "bookAt": "Book at {{location}}",
+      "mapAria": "Map of Creativo locations",
+      "sheetMapAria": "Map showing {{location}}",
+      "showOnMap": "Show {{location}} on the map",
+      "closesAt": "Closes at {{time}}",
+      "closesSoon": "Closes soon · {{time}}",
+      "opensAt": "Opens at {{time}}",
+      "opensOn": "Opens {{day}} at {{time}}",
+      "today": "Today",
+      "weekdays": {
+        "sun": "Sunday",
+        "mon": "Monday",
+        "tue": "Tuesday",
+        "wed": "Wednesday",
+        "thu": "Thursday",
+        "fri": "Friday",
+        "sat": "Saturday"
+      },
+      "center": {
+        "name": "Creativo · Center",
+        "address": "120 Tsar Simeon Veliki Blvd, Stara Zagora",
+        "phone": "+359 88 123 4567"
+      },
+      "mladost": {
+        "name": "Creativo · Mladost",
+        "address": "14 Armeyska St, Mladost, Stara Zagora",
+        "phone": "+359 88 765 4321"
+      }
     },
     "closing": {
       "heading": "There's always a chair waiting.",
@@ -251,50 +311,6 @@
     }
   },
   "marketing": {
-    "locations": {
-      "eyebrow": "Find your chair",
-      "titleA": "Two studios,",
-      "titleB": "one standard.",
-      "intro": "Both Creativo locations keep the same rhythm — precise work, considered pace, and a chair worth the trip.",
-      "explore": "Explore",
-      "exploreLocation": "Explore {{location}}",
-      "closeDetails": "Close location details",
-      "galleryLabel": "Photos from {{location}}",
-      "galleryHeading": "Inside the studio",
-      "directionsAria": "Get directions to {{location}}",
-      "callAria": "Call {{location}}",
-      "bookAt": "Book at {{location}}",
-      "mapAria": "Map of Creativo locations",
-      "sheetMapAria": "Map showing {{location}}",
-      "openNow": "Open now",
-      "closedNow": "Closed",
-      "closesAt": "Closes at {{time}}",
-      "closesSoon": "Closes soon · {{time}}",
-      "opensAt": "Opens at {{time}}",
-      "opensOn": "Opens {{day}} at {{time}}",
-      "closed": "Closed",
-      "today": "Today",
-      "weekdays": {
-        "sun": "Sunday",
-        "mon": "Monday",
-        "tue": "Tuesday",
-        "wed": "Wednesday",
-        "thu": "Thursday",
-        "fri": "Friday",
-        "sat": "Saturday"
-      },
-      "center": {
-        "name": "Creativo · Center",
-        "address": "120 Tsar Simeon Veliki Blvd, Stara Zagora",
-        "phone": "+359 88 123 4567"
-      },
-      "mladost": {
-        "name": "Creativo · Mladost",
-        "address": "14 Armeyska St, Mladost, Stara Zagora",
-        "phone": "+359 88 765 4321"
-      },
-      "showOnMap": "Show {{location}} on the map"
-    },
     "gallery": {
       "carouselView": "Carousel view",
       "gridView": "Grid view"
@@ -304,38 +320,6 @@
       "title": "Your chair is waiting.",
       "cta": "Book now",
       "availability": "Locations and live availability appear during booking"
-    },
-    "team": {
-      "eyebrow": "The hands behind the look",
-      "titleA": "Three signatures.",
-      "titleB": "One standard.",
-      "intro": "You are not choosing a title. You are choosing energy, a point of view, and someone you trust.",
-      "choose": "Choose",
-      "explore": "Explore",
-      "exploreBarber": "Explore {{barber}}'s profile",
-      "closeDetails": "Close barber profile",
-      "galleryLabel": "Selected looks by {{barber}}",
-      "galleryImageAlt": "A look created by {{barber}}",
-      "ratingLabel": "client rating",
-      "bookWith": "Book with {{barber}}",
-      "statement": "Choose by instinct. The detail will follow.",
-      "ivan": {
-        "name": "Ivan Kolev",
-        "role": "Chief barber",
-        "specialty": "Scissors · shape · natural movement",
-        "about": "Ivan builds a shape that continues to work after you leave the chair — precise, natural, and considered around the way you live."
-      },
-      "niko": {
-        "name": "Niko Dimov",
-        "role": "Top barber",
-        "specialty": "Modern fades · clean geometry",
-        "about": "Niko combines technically clean fades with a sharp instinct for proportion, texture, and a modern silhouette."
-      },
-      "stefan": {
-        "name": "Stefan Iliev",
-        "role": "Senior barber",
-        "specialty": "Razor · ritual · beard contour"
-      }
     },
     "servicesPage": {
       "catalogGridTitle": "Choose by result.",

@@ -1,26 +1,27 @@
-import { DOCUMENT, isPlatformBrowser } from '@angular/common';
-import {
-  Component,
-  DestroyRef,
-  ElementRef,
-  PLATFORM_ID,
-  effect,
-  inject,
-  input,
-  output,
-  signal,
-} from '@angular/core';
+import { Component, inject, input } from '@angular/core';
+import { UiSheetBehavior, type UiSheetScrollEvent } from '@creativo/ui/layout';
 
-export interface ModalSheetScrollEvent {
-  readonly scroller: HTMLElement;
-  readonly progress: number;
-}
+/** Kept as the landing-facing name; the shape now lives in the DS layer. */
+export type ModalSheetScrollEvent = UiSheetScrollEvent;
 
 @Component({
   selector: 'cr-modal-sheet',
   imports: [],
   templateUrl: './modal-sheet.component.html',
   styleUrl: './modal-sheet.component.css',
+  // All modal machinery (body scroll lock, focus trap/restore, Escape +
+  // backdrop dismissal, drag-to-dismiss, inert background, scroll progress)
+  // is the shared UiSheetBehavior from libs/ui/layout — this component owns
+  // only the landing sheet's surface/markup and delegates events to it.
+  hostDirectives: [
+    {
+      directive: UiSheetBehavior,
+      outputs: [
+        'uiSheetDismissed: dismissed',
+        'uiSheetScrolled: sheetScrolled',
+      ],
+    },
+  ],
   host: {
     // The sheet stamps its own open state — consumers' content-in
     // animations key off `cr-modal-sheet[data-open]`, and state a component
@@ -37,19 +38,7 @@ export interface ModalSheetScrollEvent {
   },
 })
 export class ModalSheetComponent {
-  private readonly document = inject(DOCUMENT);
-  private readonly elementRef = inject<ElementRef<HTMLElement>>(ElementRef);
-  private readonly platformId = inject(PLATFORM_ID);
-  private readonly destroyRef = inject(DestroyRef);
-  private previousBodyOverflow = '';
-  private backgroundHeader: HTMLElement | null = null;
-  private previousFocus: HTMLElement | null = null;
-  private environmentActive = false;
-  private wasOpen = false;
-  private dragPointerId: number | null = null;
-  private dragStartY = 0;
-  private dragStartTime = 0;
-  private dragOffset = 0;
+  private readonly behavior = inject(UiSheetBehavior);
 
   readonly sheetId = input.required<string>();
   readonly labelledBy = input.required<string>();
@@ -57,147 +46,45 @@ export class ModalSheetComponent {
   readonly open = input(false);
   readonly closing = input(false);
   readonly titleVisible = input(false);
-  readonly dismissed = output<void>();
-  readonly sheetScrolled = output<ModalSheetScrollEvent>();
-  protected readonly dragging = signal(false);
+  protected readonly dragging = this.behavior.dragging;
 
   constructor() {
-    effect(() => {
-      const open = this.open();
-      const active = open || this.closing();
-      if (!isPlatformBrowser(this.platformId)) return;
-
-      if (active && !this.environmentActive) this.activateEnvironment();
-      if (open && !this.wasOpen) {
-        requestAnimationFrame(() => {
-          const host = this.elementRef.nativeElement;
-          const scroller = host.querySelector<HTMLElement>(
-            '.modal-sheet__scroll',
-          );
-          if (scroller) scroller.scrollTop = 0;
-          host.querySelector<HTMLElement>('.modal-sheet__close')?.focus();
-        });
-      }
-      if (!active && this.environmentActive) this.deactivateEnvironment();
-      this.wasOpen = open;
-    });
-
-    this.destroyRef.onDestroy(() => {
-      if (isPlatformBrowser(this.platformId)) this.deactivateEnvironment();
+    this.behavior.connect({
+      open: this.open,
+      closing: this.closing,
+      dialogSelector: '.modal-sheet',
+      scrollerSelector: '.modal-sheet__scroll',
+      initialFocusSelector: '.modal-sheet__close',
+      inertSelectors: ['.cr-shell__header'],
+      dragVar: '--modal-sheet-drag-y',
     });
   }
 
   protected requestDismiss(): void {
-    if (!this.open() || this.closing()) return;
-    this.dismissed.emit();
+    this.behavior.requestDismiss();
   }
 
   protected onBackdropPointerDown(event: PointerEvent): void {
-    if (event.target === event.currentTarget) this.requestDismiss();
+    this.behavior.onBackdropPointerDown(event);
   }
 
   protected onScroll(event: Event): void {
-    const scroller = event.currentTarget as HTMLElement;
-    const scrollable = Math.max(
-      1,
-      scroller.scrollHeight - scroller.clientHeight,
-    );
-    this.sheetScrolled.emit({
-      scroller,
-      progress: Math.min(1, Math.max(0, scroller.scrollTop / scrollable)),
-    });
+    this.behavior.onScroll(event);
   }
 
   protected onKeydown(event: KeyboardEvent): void {
-    if (event.key === 'Escape') {
-      event.preventDefault();
-      this.requestDismiss();
-      return;
-    }
-    if (event.key !== 'Tab') return;
-
-    const dialog = event.currentTarget as HTMLElement;
-    const focusable = Array.from(
-      dialog.querySelectorAll<HTMLElement>(
-        'a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"])',
-      ),
-    ).filter((element) => element.getClientRects().length > 0);
-    const first = focusable[0];
-    const last = focusable.at(-1);
-    if (!first || !last) return;
-    if (event.shiftKey && this.document.activeElement === first) {
-      event.preventDefault();
-      last.focus();
-    } else if (!event.shiftKey && this.document.activeElement === last) {
-      event.preventDefault();
-      first.focus();
-    }
+    this.behavior.onKeydown(event);
   }
 
   protected onDragStart(event: PointerEvent): void {
-    if (event.button !== 0 || this.closing()) return;
-    if ((event.target as Element | null)?.closest('button, a')) return;
-
-    this.dragPointerId = event.pointerId;
-    this.dragStartY = event.clientY;
-    this.dragStartTime = performance.now();
-    this.dragOffset = 0;
-    this.dragging.set(true);
-    (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
+    this.behavior.onDragStart(event);
   }
 
   protected onDragMove(event: PointerEvent): void {
-    if (event.pointerId !== this.dragPointerId) return;
-    this.dragOffset = Math.max(0, event.clientY - this.dragStartY);
-    this.dialogElement()?.style.setProperty(
-      '--modal-sheet-drag-y',
-      `${this.dragOffset}px`,
-    );
-    if (this.dragOffset > 0) event.preventDefault();
+    this.behavior.onDragMove(event);
   }
 
   protected onDragEnd(event: PointerEvent): void {
-    if (event.pointerId !== this.dragPointerId) return;
-    const handle = event.currentTarget as HTMLElement;
-    this.dragPointerId = null;
-    this.dragging.set(false);
-    if (handle.hasPointerCapture(event.pointerId)) {
-      handle.releasePointerCapture(event.pointerId);
-    }
-
-    const elapsed = Math.max(1, performance.now() - this.dragStartTime);
-    const velocity = this.dragOffset / elapsed;
-    if (this.dragOffset > 110 || velocity > 0.65) {
-      this.requestDismiss();
-      return;
-    }
-    this.dialogElement()?.style.setProperty('--modal-sheet-drag-y', '0px');
-  }
-
-  private dialogElement(): HTMLElement | null {
-    return this.elementRef.nativeElement.querySelector<HTMLElement>(
-      '.modal-sheet',
-    );
-  }
-
-  private activateEnvironment(): void {
-    this.environmentActive = true;
-    this.previousFocus = this.document.activeElement as HTMLElement | null;
-    this.previousBodyOverflow = this.document.body.style.overflow;
-    this.document.body.style.overflow = 'hidden';
-    this.backgroundHeader =
-      this.document.querySelector<HTMLElement>('.cr-shell__header');
-    this.backgroundHeader?.setAttribute('inert', '');
-  }
-
-  private deactivateEnvironment(): void {
-    if (!this.environmentActive) return;
-    this.environmentActive = false;
-    this.document.body.style.overflow = this.previousBodyOverflow;
-    this.backgroundHeader?.removeAttribute('inert');
-    this.backgroundHeader = null;
-    this.dialogElement()?.style.removeProperty('--modal-sheet-drag-y');
-    requestAnimationFrame(() => this.previousFocus?.focus());
-    this.previousFocus = null;
+    this.behavior.onDragEnd(event);
   }
 }

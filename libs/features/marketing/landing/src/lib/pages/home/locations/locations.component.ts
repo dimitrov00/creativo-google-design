@@ -134,9 +134,9 @@ export class LocationsComponent implements AfterViewInit {
 
   protected readonly locations: readonly LocationItem[] = [
     {
-      nameKey: 'marketing.locations.center.name',
-      addressKey: 'marketing.locations.center.address',
-      phoneKey: 'marketing.locations.center.phone',
+      nameKey: 'landing.location.center.name',
+      addressKey: 'landing.location.center.address',
+      phoneKey: 'landing.location.center.phone',
       schedule: CENTER_SCHEDULE,
       gallery: [
         '/work/scissors-trim.jpg',
@@ -147,9 +147,9 @@ export class LocationsComponent implements AfterViewInit {
       lng: 25.6366,
     },
     {
-      nameKey: 'marketing.locations.mladost.name',
-      addressKey: 'marketing.locations.mladost.address',
-      phoneKey: 'marketing.locations.mladost.phone',
+      nameKey: 'landing.location.mladost.name',
+      addressKey: 'landing.location.mladost.address',
+      phoneKey: 'landing.location.mladost.phone',
       schedule: MLADOST_SCHEDULE,
       gallery: [
         '/work/fade-styling.jpg',
@@ -547,7 +547,7 @@ export class LocationsComponent implements AfterViewInit {
       indicator.className = 'locations-map__indicator';
       indicator.setAttribute(
         'aria-label',
-        this.transloco.translate('marketing.locations.showOnMap', {
+        this.transloco.translate('landing.location.showOnMap', {
           location: this.transloco.translate(location.nameKey),
         }),
       );
