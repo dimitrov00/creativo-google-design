@@ -124,14 +124,8 @@
   padding-block-end: var(--landing-safe-pad-bottom);
 }
 
-.cr-hero__cta-link {
-  display: block;
-  text-decoration: none;
-}
-
 .cr-hero__button {
   inline-size: 100%;
-  pointer-events: none;
 }
 
 .cr-hero__glyph {

@@ -19,8 +19,10 @@
           <a
             routerLink="/auth"
             [queryParams]="{ redirect: '/account' }"
+            uiButton
+            [uiVariant]="isSolid() ? 'tinted' : 'overlay'"
+            uiShape="capsule"
             class="cr-header__login"
-            [attr.data-surface]="isSolid() ? 'solid' : 'overlay'"
             data-testid="landing-login-pill"
           >
             <cr-icon name="lock" class="cr-header__login-glyph" />
@@ -30,11 +32,12 @@
 
         <button
           type="button"
+          uiButton
+          [uiVariant]="isSolid() || menuOpen() ? 'tinted' : 'overlay'"
+          uiShape="capsule"
           class="cr-header__trigger"
           data-testid="nav-menu-trigger"
-          [attr.data-surface]="
-            menuOpen() ? 'open' : isSolid() ? 'solid' : 'overlay'
-          "
+          [attr.data-open]="menuOpen() ? '' : null"
           [attr.aria-label]="
             menuOpen() ? t('landing.nav.close') : t('landing.nav.menu')
           "

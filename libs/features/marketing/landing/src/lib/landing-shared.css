@@ -173,20 +173,48 @@
     text-align: center;
     border-radius: var(--landing-radius-xl);
   }
-  /* Overlay tone — chrome-media treatment on the dark hiring card. */
-  .cr-landing-cta[data-tone='overlay'] {
-    border: 1px solid var(--landing-chrome-border);
-    background: var(--landing-chrome-fill);
-    color: var(--landing-media-fg);
-    -webkit-backdrop-filter: var(--landing-chrome-blur);
-    backdrop-filter: var(--landing-chrome-blur);
+  /* Overlay/glass chrome now lives in the design system:
+     ui-button[data-variant='overlay'] (see libs/ui/controls button.css). */
+
+  /* ── Media morph (barber portraits & interactive media) ──
+     Circle at rest → rounded panel on hover: person imagery reads as an
+     avatar until the card invites exploration. Consumers configure the
+     endpoints via --media-morph-clip-rest/-hover/-rotate on the media box;
+     .morph-card is the hover scope (card root). ── */
+  .media-morph {
+    position: relative;
+    overflow: hidden;
+    aspect-ratio: 1;
+    border-radius: var(--media-morph-clip-rest, 50%);
+    transition:
+      border-radius var(--sys-motion-duration-slow)
+        var(--sys-motion-ease-emphasized),
+      transform var(--sys-motion-duration-slow)
+        var(--sys-motion-ease-emphasized);
   }
-  .cr-landing-cta[data-tone='overlay']:hover,
-  .cr-landing-cta[data-tone='overlay']:focus-visible {
-    background: var(--landing-chrome-fill-hover);
+  .media-morph img {
+    display: block;
+    inline-size: 100%;
+    block-size: 100%;
+    object-fit: cover;
+    object-position: center;
+    transition: filter
+      var(--media-morph-filter-duration, var(--sys-motion-duration-deliberate))
+      var(--sys-motion-ease-standard);
   }
-  .cr-landing-cta[data-tone='overlay']:active {
-    background: var(--landing-chrome-fill-press);
+  .morph-card:hover .media-morph,
+  .morph-card:focus-within .media-morph {
+    border-radius: var(
+      --media-morph-clip-hover,
+      var(--control-radius-prominent)
+    );
+    transform: rotate(var(--media-morph-rotate, 0deg));
+  }
+  @media (hover: none) {
+    .morph-card:hover .media-morph {
+      border-radius: var(--media-morph-clip-rest, 50%);
+      transform: none;
+    }
   }
 
   /* ── Sheet floating action bar (shared by service-detail + locations
@@ -218,6 +246,49 @@
    live outside component CSS: Angular's emulated encapsulation scopes
    locally-defined @keyframes names, which is exactly the bug that left the
    locations sheet without its entrance animation. */
+/* ── Explore affordance (capsule label + circular glyph pair) ──
+   The 'Разгледай →' action on morph cards, drawn in the design system's
+   button vocabulary: capsule border, 44px tap-height boxes, state-layer
+   fill on card hover. Consumers set border-color/color + margins.
+   Unlayered on purpose: the icon box must out-cascade the vendor
+   `.material-symbols-rounded` display/inline-block rule (also unlayered,
+   imported earlier in styles.css). ── */
+.explore-affordance {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.explore-affordance__label {
+  display: inline-flex;
+  align-items: center;
+  min-block-size: var(--control-size-regular);
+  padding-inline: 1.1rem;
+  border: 1.5px solid;
+  border-radius: var(--control-radius-capsule);
+  transition: background-color var(--sys-motion-duration-regular)
+    var(--sys-motion-ease-standard);
+}
+.explore-affordance__icon {
+  display: grid;
+  place-items: center;
+  inline-size: var(--control-size-regular);
+  aspect-ratio: 1;
+  border: 1.5px solid;
+  border-radius: 50%;
+  transition: background-color var(--sys-motion-duration-regular)
+    var(--sys-motion-ease-standard);
+}
+.morph-card:hover .explore-affordance__label,
+.morph-card:focus-within .explore-affordance__label,
+.morph-card:hover .explore-affordance__icon,
+.morph-card:focus-within .explore-affordance__icon {
+  background-color: color-mix(
+    in srgb,
+    currentColor var(--sys-alpha-fill-hover),
+    transparent
+  );
+}
+
 @keyframes sheet-content-in {
   from {
     opacity: 0;

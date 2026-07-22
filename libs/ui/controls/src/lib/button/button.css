@@ -44,6 +44,54 @@
     background: var(--sys-color-destructive);
     color: var(--sys-color-on-primary);
   }
+  .ui-button[data-variant='overlay'] {
+    /* Glass chrome over media (video cards, photo overlays) — white-alpha
+       fill + blur, theme-independent by design: it always sits on dark
+       imagery, never on the page surface. */
+    background: rgb(255 255 255 / 0.13);
+    box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.2);
+    color: #ffffff;
+    -webkit-backdrop-filter: blur(20px);
+    backdrop-filter: blur(20px);
+  }
+
+  /* Hover tier — one state-layer grammar per variant (filled variants mix
+     toward background; quiet variants gain a foreground-alpha fill; tinted
+     deepens its accent fill 12% → 18%, the recipe the landing toolbar
+     controls already proved out). Pointer-hover devices only. */
+  @media (hover: hover) {
+    .ui-button[data-variant='prominent']:hover:not(:disabled) {
+      background: color-mix(
+        in srgb,
+        var(--sys-color-primary) 85%,
+        var(--sys-color-background)
+      );
+    }
+    .ui-button[data-variant='bordered']:hover:not(:disabled),
+    .ui-button[data-variant='plain']:hover:not(:disabled) {
+      background: color-mix(
+        in srgb,
+        currentColor var(--sys-alpha-fill-hover),
+        transparent
+      );
+    }
+    .ui-button[data-variant='tinted']:hover:not(:disabled) {
+      background: color-mix(in srgb, var(--sys-color-accent) 18%, transparent);
+    }
+    .ui-button[data-variant='destructive']:hover:not(:disabled) {
+      background: color-mix(
+        in srgb,
+        var(--sys-color-destructive) 85%,
+        var(--sys-color-background)
+      );
+    }
+    .ui-button[data-variant='overlay']:hover:not(:disabled) {
+      background: rgb(255 255 255 / 0.2);
+    }
+  }
+  .ui-button[data-variant='overlay']:active:not(:disabled) {
+    background: rgb(255 255 255 / 0.28);
+  }
 
   /* Sizes — semantic, not t-shirt */
   .ui-button[data-size='compact'] {

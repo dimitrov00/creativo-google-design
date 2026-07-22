@@ -23,7 +23,8 @@
     inset-inline-start: 0;
     display: grid;
     place-items: center;
-    inline-size: 2.4rem;
+    /* HIG 44px floor. */
+    inline-size: var(--control-size-regular);
     aspect-ratio: 1;
     border-radius: 50%;
     border: 2px solid var(--sys-color-foreground);

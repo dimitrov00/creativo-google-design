@@ -293,7 +293,8 @@
         "name": "Creativo · Mladost",
         "address": "14 Armeyska St, Mladost, Stara Zagora",
         "phone": "+359 88 765 4321"
-      }
+      },
+      "showOnMap": "Show {{location}} on the map"
     },
     "gallery": {
       "carouselView": "Carousel view",

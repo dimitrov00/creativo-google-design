@@ -9,7 +9,7 @@ import {
   inject,
   signal,
 } from '@angular/core';
-import { TranslocoDirective } from '@jsverse/transloco';
+import { TranslocoDirective, TranslocoService } from '@jsverse/transloco';
 import { CursorService, CursorTargetDirective } from '@creativo/shared/cursor';
 import { UiButton } from '@creativo/ui/controls';
 import { UiTextDirective } from '@creativo/ui/modifiers';
@@ -104,6 +104,7 @@ export class LocationsComponent implements AfterViewInit {
   private readonly platformId = inject(PLATFORM_ID);
   private readonly destroyRef = inject(DestroyRef);
   private readonly cursorService = inject(CursorService);
+  private readonly transloco = inject(TranslocoService);
 
   private map: MapLibreMap | undefined;
   private markerElements: HTMLElement[] = [];
@@ -545,7 +546,12 @@ export class LocationsComponent implements AfterViewInit {
       const indicator = document.createElement('button');
       indicator.type = 'button';
       indicator.className = 'locations-map__indicator';
-      indicator.setAttribute('aria-label', 'Show location');
+      indicator.setAttribute(
+        'aria-label',
+        this.transloco.translate('marketing.locations.showOnMap', {
+          location: this.transloco.translate(location.nameKey),
+        }),
+      );
 
       const arrow = document.createElement('span');
       arrow.className =

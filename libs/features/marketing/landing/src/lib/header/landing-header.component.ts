@@ -13,6 +13,7 @@ import { toSignal } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
 import { TranslocoDirective } from '@jsverse/transloco';
 import { AUTH_GATEWAY } from '@creativo/application/identity';
+import { UiButton } from '@creativo/ui/controls';
 import { CrIcon, MenuIconComponent } from '../shared/icons/icons';
 import { ThemeService } from '../shared/prefs/theme.service';
 import { LandingMenuComponent } from './landing-menu.component';
@@ -35,6 +36,7 @@ import { LandingMenuComponent } from './landing-menu.component';
     MenuIconComponent,
     RouterLink,
     TranslocoDirective,
+    UiButton,
   ],
   templateUrl: './landing-header.component.html',
   styleUrl: './landing-header.component.css',

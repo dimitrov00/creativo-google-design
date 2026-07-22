@@ -10,9 +10,7 @@
   /* Normalized to the landing's shared section rhythm (7rem). */
   padding: 7rem var(--page-gutter);
   background: transparent;
-  /* Tone-aware like every other section (team/services use --page-fg) —
-     was hardcoded to a fixed foreground token, so the heading stayed black
-     instead of following the scroll-driven data-nav-tone theme. */
+  /* Tone-aware like every other section (team/services use --page-fg). */
   color: var(--page-fg);
 }
 
@@ -159,7 +157,9 @@
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
-  margin: 0.5rem 0 0;
+  /* HIG 44px tap height (block margin compensates the visual rhythm). */
+  min-block-size: var(--control-size-regular);
+  margin: 0;
   color: color-mix(in srgb, var(--sys-color-foreground) 55%, transparent);
   text-decoration: none;
   transition: color var(--sys-motion-duration-deliberate)
@@ -212,7 +212,8 @@
   display: grid;
   flex: 0 0 auto;
   place-items: center;
-  inline-size: 2.6rem;
+  /* HIG 44px floor. */
+  inline-size: var(--control-size-regular);
   aspect-ratio: 1;
   border-radius: var(--control-radius-capsule);
   border: 1px solid

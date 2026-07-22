@@ -7,7 +7,7 @@ import {
 import { UiPaddingDirective } from '@creativo/ui/modifiers';
 
 export type UiButtonVariant =
-  'prominent' | 'bordered' | 'tinted' | 'plain' | 'destructive';
+  'prominent' | 'bordered' | 'tinted' | 'plain' | 'destructive' | 'overlay';
 export type UiControlSize = 'compact' | 'regular' | 'prominent';
 export type UiControlShape = 'rounded' | 'capsule';
 

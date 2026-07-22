@@ -78,13 +78,13 @@
     <a
       routerLink="/auth"
       [queryParams]="{ redirect: '/book' }"
-      class="cr-hero__cta-link"
+      uiButton
+      uiSize="prominent"
+      class="cr-hero__button"
       data-testid="landing-hero-cta"
     >
-      <button uiButton uiSize="prominent" class="cr-hero__button" tabindex="-1">
-        <cr-icon name="calendar_month" class="cr-hero__glyph" />
-        {{ t('landing.hero.cta') }}
-      </button>
+      <cr-icon name="calendar_month" class="cr-hero__glyph" />
+      {{ t('landing.hero.cta') }}
     </a>
   </div>
 </ng-container>

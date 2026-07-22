@@ -66,25 +66,14 @@
   gap: 6px;
 }
 
-/* Login pill — compact h-9 toolbar chip, uppercase micro-label (v2 `pill`). */
+/* Login pill — ui-button (tinted on the solid bar / overlay glass over the
+   hero); only the uppercase micro-label typography stays local. */
 .cr-header__login {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
   gap: 6px;
-  block-size: 2.25rem;
-  padding-inline: 12px;
-  border-radius: var(--control-radius-capsule);
-  border: 1px solid transparent;
   font: var(--sys-font-caption);
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.025em; /* v2 tracking-wide */
-  text-decoration: none;
-  transition:
-    background-color var(--sys-motion-duration-regular)
-      var(--sys-motion-ease-standard),
-    color var(--sys-motion-duration-regular) var(--sys-motion-ease-standard);
 }
 
 .cr-header__login-glyph {
@@ -92,67 +81,14 @@
   opacity: 0.8;
 }
 
-.cr-header__login[data-surface='overlay'] {
-  color: color-mix(in srgb, var(--landing-media-fg) 90%, transparent);
-  border-color: var(--landing-chrome-border);
-  background: var(--landing-chrome-fill);
-  -webkit-backdrop-filter: var(--landing-chrome-blur);
-  backdrop-filter: var(--landing-chrome-blur);
-}
-.cr-header__login[data-surface='overlay']:hover {
-  background: var(--landing-chrome-fill-hover);
-}
-
-/* Solid bar — the design system's tinted chip (accent fill + accent ink). */
-.cr-header__login[data-surface='solid'] {
-  color: var(--landing-toolbar-fg);
-  background: var(--landing-control-fill);
-}
-.cr-header__login[data-surface='solid']:hover {
-  background: var(--landing-toolbar-fill-hover);
-}
-
-/* Menu trigger — circular 36px (v2 `rounded-toolbar` = pill);
-   overlay / track / filled chrome per state. */
+/* Menu trigger — icon-only ui-button; only the square box stays local. */
 .cr-header__trigger {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  inline-size: var(--control-size-compact);
-  block-size: var(--control-size-compact);
-  border-radius: 9999px;
-  border: 0;
+  inline-size: var(--control-size-regular);
+  padding-inline: 0;
   overflow: hidden;
-  cursor: pointer;
-  transition:
-    background-color var(--sys-motion-duration-regular)
-      var(--sys-motion-ease-standard),
-    color var(--sys-motion-duration-regular) var(--sys-motion-ease-standard),
-    transform var(--sys-motion-duration-instant) var(--sys-motion-ease-standard);
-}
-.cr-header__trigger:active {
-  transform: scale(0.95);
-}
-
-.cr-header__trigger[data-surface='overlay'] {
-  color: color-mix(in srgb, var(--landing-media-fg) 90%, transparent);
-  border: 1px solid var(--landing-chrome-border);
-  background: var(--landing-chrome-fill);
-  -webkit-backdrop-filter: var(--landing-chrome-blur);
-  backdrop-filter: var(--landing-chrome-blur);
-}
-
-/* v2 `track` — foreground-alpha fill, toolbar ink, borderless. */
-.cr-header__trigger[data-surface='solid'] {
-  color: var(--landing-toolbar-fg);
-  background: var(--landing-toolbar-fill);
-}
-.cr-header__trigger[data-surface='solid']:hover {
-  background: var(--landing-toolbar-fill-hover);
 }
 
 /* While the menu is open — pressed-tier tinted fill. */
-.cr-header__trigger[data-surface='open'] {
-  color: var(--landing-toolbar-fg);
+.cr-header__trigger[data-open] {
   background: var(--landing-toolbar-fill-press);
 }

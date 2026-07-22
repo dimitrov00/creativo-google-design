@@ -61,8 +61,9 @@ img {
   position: absolute;
   z-index: 4;
   inset: 0.8rem 0.8rem auto auto;
-  inline-size: 2.55rem;
-  block-size: 2.55rem;
+  /* HIG 44px floor. */
+  inline-size: var(--control-size-regular);
+  block-size: var(--control-size-regular);
   display: grid;
   place-items: center;
   padding: 0;
@@ -152,14 +153,8 @@ img {
     flex: 0 0 auto;
     align-self: flex-end;
     margin: 0 var(--modal-sheet-safe) 0.65rem 0;
-    background: transparent;
-    box-shadow: none;
-    backdrop-filter: none;
-    color: color-mix(
-      in srgb,
-      var(--sys-color-foreground) calc(0.56 * 100%),
-      transparent
-    );
+    /* Keep the chip surface on mobile — a bare glyph reads as decoration,
+       not a control (HIG affordance + the 44px box needs a visible bound). */
     opacity: 1;
   }
 

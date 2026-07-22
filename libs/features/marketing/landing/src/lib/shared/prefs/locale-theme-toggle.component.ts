@@ -5,6 +5,7 @@ import {
   input,
 } from '@angular/core';
 import { TranslocoDirective } from '@jsverse/transloco';
+import { UiButton } from '@creativo/ui/controls';
 import { LanguageService } from '../../language.service';
 import { CrIcon } from '../icons/icons';
 import { ThemeService } from './theme.service';
@@ -19,12 +20,15 @@ import { ThemeService } from './theme.service';
 @Component({
   selector: 'cr-locale-theme-toggle',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [CrIcon, TranslocoDirective],
+  imports: [CrIcon, TranslocoDirective, UiButton],
   host: { class: 'cr-prefs', '[attr.data-variant]': 'variant()' },
   template: `
     <ng-container *transloco="let t">
       <button
         type="button"
+        uiButton
+        [uiVariant]="variant() === 'overlay' ? 'overlay' : 'tinted'"
+        uiShape="capsule"
         class="cr-prefs__chip cr-prefs__chip--locale"
         data-testid="landing-locale-toggle"
         [attr.aria-label]="t('landing.nav.locale')"
@@ -35,6 +39,9 @@ import { ThemeService } from './theme.service';
       </button>
       <button
         type="button"
+        uiButton
+        [uiVariant]="variant() === 'overlay' ? 'overlay' : 'tinted'"
+        uiShape="capsule"
         class="cr-prefs__chip cr-prefs__chip--theme"
         data-testid="landing-theme-toggle"
         [attr.aria-label]="

@@ -26,19 +26,14 @@ import { FadeUpDirective } from '../../shared/motion/fade-up.directive';
         <a
           routerLink="/auth"
           [queryParams]="{ redirect: '/book' }"
-          class="cr-closing__link"
+          uiButton
+          uiVariant="prominent"
+          uiSize="regular"
+          uiShape="capsule"
+          class="cr-closing__button"
           data-testid="landing-closing-link"
         >
-          <button
-            uiButton
-            uiVariant="prominent"
-            uiSize="regular"
-            uiShape="capsule"
-            class="cr-closing__button"
-            tabindex="-1"
-          >
-            {{ t('landing.closing.cta') }}
-          </button>
+          {{ t('landing.closing.cta') }}
         </a>
       </div>
     </ng-container>
@@ -70,13 +65,8 @@ import { FadeUpDirective } from '../../shared/motion/fade-up.directive';
     .cr-closing__actions {
       margin-block-start: 2rem;
     }
-    .cr-closing__link {
-      display: inline-block;
-      text-decoration: none;
-    }
     .cr-closing__button {
       padding-inline: 2rem;
-      pointer-events: none;
     }
   `,
 })

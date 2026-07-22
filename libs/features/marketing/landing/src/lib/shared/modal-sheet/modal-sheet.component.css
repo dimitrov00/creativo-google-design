@@ -186,11 +186,6 @@
     cursor: grabbing;
   }
 
-  .modal-sheet__close {
-    inline-size: 2.65rem;
-    block-size: 2.65rem;
-  }
-
   @starting-style {
     .modal-sheet[data-open] .modal-sheet__surface {
       transform: translateY(100%);

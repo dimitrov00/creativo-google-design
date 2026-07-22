@@ -9,6 +9,7 @@ import {
 } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { TranslocoDirective } from '@jsverse/transloco';
+import { UiButton } from '@creativo/ui/controls';
 import { CrIcon } from '../shared/icons/icons';
 import { LocaleThemeToggleComponent } from '../shared/prefs/locale-theme-toggle.component';
 
@@ -23,7 +24,13 @@ import { LocaleThemeToggleComponent } from '../shared/prefs/locale-theme-toggle.
 @Component({
   selector: 'cr-landing-menu',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [CrIcon, LocaleThemeToggleComponent, RouterLink, TranslocoDirective],
+  imports: [
+    CrIcon,
+    LocaleThemeToggleComponent,
+    RouterLink,
+    TranslocoDirective,
+    UiButton,
+  ],
   templateUrl: './landing-menu.component.html',
   styleUrl: './landing-menu.component.css',
 })

@@ -1,11 +1,6 @@
 <ng-container *transloco="let t">
-  <section
-    id="locations"
-    class="locations"
-    data-nav-tone="light"
-    aria-labelledby="locations-title"
-  >
-    <header class="locations__heading" data-reveal>
+  <section id="locations" class="locations" aria-labelledby="locations-title">
+    <header class="locations__heading">
       <p class="cr-section-eyebrow">
         {{ t('marketing.locations.eyebrow') }}
       </p>
@@ -41,7 +36,6 @@
                 [attr.aria-expanded]="sheetOpen() && activeIndex() === index"
                 (click)="openLocation(index)"
                 (keydown)="onCardKeydown(index, $event)"
-                data-reveal
               >
                 <span
                   class="location-card__icon material-symbols-rounded"
@@ -139,10 +133,12 @@
           [attr.aria-label]="t('marketing.locations.mapAria')"
           role="img"
         ></div>
+        <!-- Off-screen pin indicators are real, labeled buttons (they pan
+             the map) — the container must NOT be aria-hidden: focusable
+             descendants inside aria-hidden are an a11y violation. -->
         <div
           class="locations-map__indicators"
           data-locations-map-indicators
-          aria-hidden="true"
         ></div>
       </aside>
     </div>

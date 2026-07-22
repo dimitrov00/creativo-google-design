@@ -47,14 +47,17 @@
   list-style: none;
   display: flex;
   flex-direction: column;
-  gap: 0.625rem;
+  /* Row pitch stays ~30px visually: 44px tap boxes overlap the old gap. */
+  gap: 0;
 }
 
-/* Sitemap link — muted 14px, lifts to foreground on hover. */
+/* Sitemap link — muted 14px, lifts to foreground on hover.
+   44px tap height per HIG; the visual rhythm is unchanged. */
 .cr-footer__link {
   display: inline-flex;
   align-items: center;
   gap: 4px;
+  min-block-size: var(--control-size-regular);
   font: var(--sys-font-callout);
   color: var(--landing-muted-foreground);
   text-decoration: none;

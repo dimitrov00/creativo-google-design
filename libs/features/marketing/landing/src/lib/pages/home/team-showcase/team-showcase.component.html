@@ -1,11 +1,6 @@
 <ng-container *transloco="let t">
-  <section
-    id="team"
-    class="team"
-    data-nav-tone="dark"
-    aria-labelledby="team-title"
-  >
-    <header class="team__heading" data-reveal>
+  <section id="team" class="team" aria-labelledby="team-title">
+    <header class="team__heading">
       <p class="eyebrow" uiText uiFont="eyebrow">
         {{ t('marketing.team.eyebrow') }}
       </p>
@@ -29,7 +24,6 @@
           [attr.aria-expanded]="sheetOpen() && activeBarberIndex() === index"
           (click)="openBarber(index)"
           (keydown)="onCardKeydown(index, $event)"
-          data-reveal
         >
           <div class="team-card__media media-morph">
             <img
