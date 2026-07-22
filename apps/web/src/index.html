@@ -1,12 +1,63 @@
 <!doctype html>
-<html lang="en">
+<html lang="bg">
   <head>
     <meta charset="utf-8" />
-    <title>web</title>
+    <title>Creativo</title>
     <base href="/" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#000000" />
     <link rel="icon" type="image/x-icon" href="favicon.ico" />
     <link rel="manifest" href="manifest.webmanifest" />
+    <!--
+      Pre-paint theme/density/lang init (blueprint §7.6) — runs before
+      Angular boots so the page never flashes the wrong theme. Values here
+      mirror libs/ui/tokens/src/lib/pre-paint.ts EXACTLY (storage keys,
+      default theme/density/lang, meta theme-color per theme) — that
+      module is the single source `pre-paint.spec.ts` checks these against
+      one direction (CSS ↔ TS); this script is the other copy, kept
+      honest by hand until index.html can import it directly.
+    -->
+    <script>
+      (function () {
+        var THEME_KEY = 'ui-theme';
+        var DENSITY_KEY = 'ui-density';
+        var LANG_KEY = 'ui-lang';
+        var META_THEME_COLOR = { light: '#ffffff', dark: '#000000' };
+        var root = document.documentElement;
+
+        function read(key) {
+          try {
+            return window.localStorage.getItem(key);
+          } catch (e) {
+            return null;
+          }
+        }
+
+        var storedTheme = read(THEME_KEY);
+        var theme =
+          storedTheme === 'light' || storedTheme === 'dark'
+            ? storedTheme
+            : window.matchMedia &&
+                window.matchMedia('(prefers-color-scheme: light)').matches
+              ? 'light'
+              : 'dark';
+        root.setAttribute('data-theme', theme);
+
+        var storedDensity = read(DENSITY_KEY);
+        if (storedDensity === 'compact' || storedDensity === 'spacious') {
+          root.setAttribute('data-density', storedDensity);
+        }
+
+        var storedLang = read(LANG_KEY);
+        root.lang =
+          storedLang === 'bg' || storedLang === 'en' ? storedLang : 'bg';
+
+        var meta = document.querySelector('meta[name="theme-color"]');
+        if (meta) {
+          meta.setAttribute('content', META_THEME_COLOR[theme]);
+        }
+      })();
+    </script>
   </head>
   <body>
     <cr-root></cr-root>

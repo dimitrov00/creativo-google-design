@@ -10,6 +10,18 @@
   "exclude": ["src/**/*.spec.ts", "src/**/*.test.ts"],
   "references": [
     {
+      "path": "../../libs/ui/tokens/tsconfig.lib.json"
+    },
+    {
+      "path": "../../libs/domain/accounts/tsconfig.lib.json"
+    },
+    {
+      "path": "../../libs/domain/identity/tsconfig.lib.json"
+    },
+    {
+      "path": "../../libs/domain/kernel/tsconfig.lib.json"
+    },
+    {
       "path": "../../libs/features/admin/impersonation/tsconfig.lib.json"
     },
     {
@@ -31,7 +43,40 @@
       "path": "../../libs/features/marketing/landing/tsconfig.lib.json"
     },
     {
+      "path": "../../libs/infrastructure/web-storage/tsconfig.lib.json"
+    },
+    {
+      "path": "../../libs/infrastructure/firestore/tsconfig.lib.json"
+    },
+    {
+      "path": "../../libs/infrastructure/firebase-auth/tsconfig.lib.json"
+    },
+    {
+      "path": "../../libs/application/shared/tsconfig.lib.json"
+    },
+    {
+      "path": "../../libs/application/governance/tsconfig.lib.json"
+    },
+    {
+      "path": "../../libs/application/accounts/tsconfig.lib.json"
+    },
+    {
+      "path": "../../libs/application/engagement/tsconfig.lib.json"
+    },
+    {
+      "path": "../../libs/application/catalog/tsconfig.lib.json"
+    },
+    {
+      "path": "../../libs/application/booking/tsconfig.lib.json"
+    },
+    {
+      "path": "../../libs/application/identity/tsconfig.lib.json"
+    },
+    {
       "path": "../../libs/infrastructure/i18n/tsconfig.lib.json"
+    },
+    {
+      "path": "../../libs/infrastructure/storage/tsconfig.lib.json"
     },
     {
       "path": "../../libs/infrastructure/firebase-app/tsconfig.lib.json"

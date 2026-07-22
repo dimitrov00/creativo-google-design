@@ -1,24 +1,29 @@
 import { Route } from '@angular/router';
 import { activeGuard } from './guards/active.guard';
+import { anonGuard } from './guards/anon.guard';
+import { homeGuard } from './guards/home.guard';
 import { rolesGuard } from './guards/roles.guard';
 
-// Placeholder route tree mirroring v2 (blueprint §1.4). Feature libs are
-// still empty skeletons at this phase (Phase 0: workspace alignment) —
-// real screens land with their respective feature-slice passes.
+// Route tree per blueprint §1.4 — 1:1 with v2. Feature libs are still
+// placeholder screens (Phase 6 lands real UI); this phase only wires the
+// guard/redirect shape v2 has today.
 export const appRoutes: Route[] = [
   {
     path: '',
+    canActivate: [homeGuard],
     loadComponent: () =>
       import('@creativo/features/marketing/landing').then((m) => m.HomePage),
   },
   {
+    // No route guard — v2 deliberately lets the user become authed
+    // mid-flow via in-component latch logic (blueprint §1.4/§7.5).
     path: 'auth',
     loadComponent: () =>
       import('@creativo/features/client/auth').then((m) => m.ClientAuth),
   },
   {
     path: 'onboarding',
-    canActivate: [activeGuard],
+    canActivate: [anonGuard],
     loadComponent: () =>
       import('@creativo/features/client/onboarding').then(
         (m) => m.ClientOnboarding,
@@ -51,4 +56,10 @@ export const appRoutes: Route[] = [
         (m) => m.AdminImpersonation,
       ),
   },
+  {
+    path: 'forbidden',
+    loadComponent: () =>
+      import('./pages/forbidden.page').then((m) => m.ForbiddenPage),
+  },
+  { path: '**', redirectTo: '' },
 ];

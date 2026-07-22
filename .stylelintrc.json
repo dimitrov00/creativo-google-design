@@ -34,7 +34,11 @@
     },
     {
       "//": "The new --sys-* design system (blueprint docs/migration-blueprint.md §3) is its own self-contained, newly-introduced token-governed subsystem — every design value already traces to a --sys-* custom property (or a small set of deliberate literal font-weight numbers, matching the blueprint's own §3.1 example code) enforced by the co-located CSS itself rather than this cr-*-specific allow-list. Exempted the same way the cr-* token sources above are.",
-      "files": ["libs/ui/**/*.css", "apps/showcase/src/**/*.css"],
+      "files": [
+        "libs/ui/**/*.css",
+        "apps/showcase/src/**/*.css",
+        "apps/web/src/styles.css"
+      ],
       "rules": {
         "declaration-property-value-allowed-list": null,
         "declaration-property-value-disallowed-list": null

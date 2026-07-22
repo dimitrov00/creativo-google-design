@@ -1,1 +1,102 @@
-/* You can add global styles to this file, and also import other style files */
+/*
+ * All `@import` rules must be the very first rules in the stylesheet (a hard
+ * CSS requirement — anything else here, including a bare `@layer name;`
+ * pre-declaration, causes browsers to silently DROP every @import that
+ * follows it). So every @import lives in this one leading block, and their
+ * RELATIVE ORDER is what fixes cascade-layer priority: a layer name is
+ * registered the first time it's encountered, and later-registered layers
+ * always beat earlier ones regardless of selector specificity. The legacy
+ * `cr-*` system (imported first below) still powers the not-yet-migrated
+ * marketing donor screens carried over from Phase 0; it's registered first
+ * so the new `sys-*` system (imported second) — what Phase 6 feature
+ * slices build with — always wins wherever the two would otherwise collide.
+ */
+@import '@fontsource-variable/onest';
+@import '@fontsource/dm-sans/400.css';
+@import '@fontsource/dm-sans/500.css';
+@import '@fontsource/geist-mono/400.css';
+@import '@fontsource/geist-mono/700.css';
+
+@import '../../../libs/shared/design-tokens/css/tokens.css';
+@import '../../../libs/shared/design-tokens/css/light.css';
+@import '../../../libs/shared/design-tokens/css/dark.css';
+@import '../../../libs/shared/ui/src/lib/reset/reset.css';
+@import '../../../libs/shared/ui/src/lib/motion/reduced-motion.css';
+@import '../../../libs/shared/ui/src/lib/typography/typography.css';
+@import '../../../libs/shared/cursor/src/lib/cursor-target.css';
+@import '../../../libs/shared/ui/src/lib/material/material.css';
+@import '../../../libs/shared/ui/src/lib/shape/shape.css';
+
+@import '../../../libs/ui/tokens/tokens.css';
+@import '../../../libs/ui/tokens/theme-light.css';
+@import '../../../libs/ui/tokens/theme-dark.css';
+@import '../../../libs/ui/modifiers/modifiers.css';
+
+/* Fallback chrome for the not-yet-migrated marketing pages only —
+   everything under the new libs/ui/* system styles its own link/focus
+   states via [data-*] selectors in its own co-located CSS. */
+@layer cr-base {
+  a {
+    color: var(--cr-color-link);
+  }
+
+  a:hover {
+    color: var(--cr-color-link-hover);
+  }
+
+  :focus-visible {
+    outline: var(--cr-focus-ring-width) solid var(--cr-color-focus-ring);
+    outline-offset: var(--cr-focus-ring-offset);
+  }
+}
+
+@layer sys-reset {
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
+
+  body {
+    margin: 0;
+  }
+}
+
+@layer sys-base {
+  body {
+    background: var(--sys-color-background);
+    color: var(--sys-color-foreground);
+    font: var(--sys-font-body);
+    font-family: var(--sys-font-family-text);
+    transition:
+      background-color var(--sys-motion-duration-regular)
+        var(--sys-motion-ease-standard),
+      color var(--sys-motion-duration-regular) var(--sys-motion-ease-standard);
+  }
+
+  a {
+    color: var(--sys-color-accent);
+  }
+}
+
+/* View Transitions pseudo-elements (::view-transition-*) must live in a
+   global stylesheet — Angular's emulated encapsulation blocks pseudo-element
+   selectors from ever matching inside a component-scoped stylesheet, so
+   these can't move into app.css alongside AppComponent's other styles.
+   app.config.ts's withViewTransitions() call is the JS half of this pair. */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: var(--cr-motion-duration-slow);
+  animation-timing-function: var(--cr-motion-easing-standard);
+}
+
+/* Defense in depth alongside app.config.ts's onViewTransitionCreated check
+   — covers any future document.startViewTransition() call this app makes
+   outside the router (which onViewTransitionCreated can't see). */
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation: none !important;
+  }
+}

@@ -5,7 +5,8 @@
   "scripts": {
     "prepare": "husky",
     "lint:styles": "stylelint \"apps/**/*.css\" \"libs/**/*.css\"",
-    "test:emulator": "firebase emulators:exec --only firestore,auth --project demo-creativo-test \"pnpm nx run-many -t test-integration\""
+    "test:emulator": "firebase emulators:exec --only firestore,auth --project demo-creativo-test \"pnpm nx run-many -t test-integration\"",
+    "e2e:web": "firebase emulators:exec --only firestore,auth --project demo-creativo-test \"pnpm nx e2e web\""
   },
   "lint-staged": {
     "*.{ts,html,css,json,md}": [

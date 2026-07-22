@@ -16,6 +16,7 @@
     "appointment_not_in_future": "New appointments must start in the future.",
     "invalid_appointment_transition": "This appointment cannot move from \"{{from}}\" to \"{{to}}\".",
     "otp_destination_empty": "An email or phone number is required.",
+    "otp_destination_corrupted": "Something went wrong on our end — please try again.",
     "invalid_otp_max_attempts": "Invalid attempt limit configuration.",
     "invalid_session_claims": "Your session is invalid — please sign in again.",
     "invalid_money_amount": "That is not a valid amount.",
@@ -349,6 +350,12 @@
       "follow": "Follow us",
       "backToTop": "Back to top",
       "copyright": "© 2026 Creativo. All rights reserved."
+    }
+  },
+  "shell": {
+    "forbidden": {
+      "title": "Forbidden",
+      "body": "You don't have access to this page."
     }
   }
 }

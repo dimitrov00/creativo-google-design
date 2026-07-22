@@ -38,10 +38,11 @@ repo.findById('appt_1');
 
 // (d) CancelAppointmentInput.appointmentId is branded, not a bare string.
 
-// @ts-expect-error — appointmentId must be an AppointmentId, not a bare string.
 const _cancelInput: CancelAppointmentInput = {
+  // @ts-expect-error — appointmentId must be an AppointmentId, not a bare string.
   appointmentId: 'appt_1',
   reason: 'no longer needed',
 };
+void _cancelInput;
 
 export {};

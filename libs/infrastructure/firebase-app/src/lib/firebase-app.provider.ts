@@ -4,9 +4,17 @@ import {
   makeEnvironmentProviders,
 } from '@angular/core';
 import { FirebaseApp, FirebaseOptions, initializeApp } from 'firebase/app';
-import { Auth, getAuth } from 'firebase/auth';
-import { Firestore, getFirestore } from 'firebase/firestore';
-import { Functions, getFunctions } from 'firebase/functions';
+import { Auth, connectAuthEmulator, getAuth } from 'firebase/auth';
+import {
+  Firestore,
+  connectFirestoreEmulator,
+  getFirestore,
+} from 'firebase/firestore';
+import {
+  Functions,
+  connectFunctionsEmulator,
+  getFunctions,
+} from 'firebase/functions';
 
 /**
  * Public, non-secret client config (Firebase web config is safe to commit —
@@ -36,29 +44,66 @@ export function provideFirebaseApp(options: FirebaseOptions) {
   ]);
 }
 
-export function provideFirebaseAuth() {
+/** Emulator host/port config, sourced from each app's `environment.ts` — never hardcoded in a provider. */
+export interface FirebaseEmulatorConfig {
+  readonly authUrl?: string;
+  readonly firestoreHost?: string;
+  readonly firestorePort?: number;
+  readonly functionsHost?: string;
+  readonly functionsPort?: number;
+}
+
+export function provideFirebaseAuth(emulator?: FirebaseEmulatorConfig) {
   return makeEnvironmentProviders([
     {
       provide: FIREBASE_AUTH,
-      useFactory: () => getAuth(inject(FIREBASE_APP)),
+      useFactory: () => {
+        const auth = getAuth(inject(FIREBASE_APP));
+        if (emulator?.authUrl) {
+          connectAuthEmulator(auth, emulator.authUrl, {
+            disableWarnings: true,
+          });
+        }
+        return auth;
+      },
     },
   ]);
 }
 
-export function provideFirestoreDb() {
+export function provideFirestoreDb(emulator?: FirebaseEmulatorConfig) {
   return makeEnvironmentProviders([
     {
       provide: FIREBASE_FIRESTORE,
-      useFactory: () => getFirestore(inject(FIREBASE_APP)),
+      useFactory: () => {
+        const firestore = getFirestore(inject(FIREBASE_APP));
+        if (emulator?.firestoreHost && emulator.firestorePort) {
+          connectFirestoreEmulator(
+            firestore,
+            emulator.firestoreHost,
+            emulator.firestorePort,
+          );
+        }
+        return firestore;
+      },
     },
   ]);
 }
 
-export function provideFirebaseFunctions() {
+export function provideFirebaseFunctions(emulator?: FirebaseEmulatorConfig) {
   return makeEnvironmentProviders([
     {
       provide: FIREBASE_FUNCTIONS,
-      useFactory: () => getFunctions(inject(FIREBASE_APP)),
+      useFactory: () => {
+        const functions = getFunctions(inject(FIREBASE_APP));
+        if (emulator?.functionsHost && emulator.functionsPort) {
+          connectFunctionsEmulator(
+            functions,
+            emulator.functionsHost,
+            emulator.functionsPort,
+          );
+        }
+        return functions;
+      },
     },
   ]);
 }

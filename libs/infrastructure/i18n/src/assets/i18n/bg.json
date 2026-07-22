@@ -16,6 +16,7 @@
     "appointment_not_in_future": "Нови резервации трябва да започват в бъдещето.",
     "invalid_appointment_transition": "Тази резервация не може да премине от „{{from}}“ към „{{to}}“.",
     "otp_destination_empty": "Необходим е имейл или телефонен номер.",
+    "otp_destination_corrupted": "Възникна проблем от наша страна — моля, опитайте отново.",
     "invalid_otp_max_attempts": "Невалидна конфигурация на лимита за опити.",
     "invalid_session_claims": "Сесията ви е невалидна — моля, влезте отново.",
     "invalid_money_amount": "Това не е валидна сума.",
@@ -349,6 +350,12 @@
       "follow": "Последвай ни",
       "backToTop": "Обратно нагоре",
       "copyright": "© 2026 Creativo. Всички права запазени."
+    }
+  },
+  "shell": {
+    "forbidden": {
+      "title": "Забранено",
+      "body": "Нямате достъп до тази страница."
     }
   }
 }

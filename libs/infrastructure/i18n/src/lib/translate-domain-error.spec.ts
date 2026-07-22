@@ -73,4 +73,42 @@ describe('translateDomainError', () => {
       translateDomainError(transloco, { code: 'totally_made_up_code' }),
     ).toBe('totally_made_up_code');
   });
+
+  // Every `code` a `DomainError` in `apps/functions/src/use-cases/{request,verify}-otp.errors.ts`
+  // carries — the auth flow's `requestOtpChallenge`/`verifyOtpChallenge`
+  // callables surface these via `FunctionsError.details`, and
+  // `translateFunctionsError` routes them through `translateDomainError`.
+  const AUTH_FLOW_ERROR_CODES = [
+    'invalid_input',
+    'otp_rate_limited',
+    'repository_failure',
+    'otp_send_failure',
+    'otp_validation_failed',
+    'otp_not_found',
+    'otp_already_consumed',
+    'otp_expired',
+    'otp_locked_out',
+    'otp_incorrect_code',
+    'user_validation_failed',
+    'otp_destination_corrupted',
+    'token_minting_failure',
+  ];
+
+  it.each(AUTH_FLOW_ERROR_CODES)(
+    'resolves auth-flow error code %s in en (not a raw-code fallback)',
+    async (code) => {
+      await transloco.load('en').toPromise();
+      transloco.setActiveLang('en');
+      expect(translateDomainError(transloco, { code })).not.toBe(code);
+    },
+  );
+
+  it.each(AUTH_FLOW_ERROR_CODES)(
+    'resolves auth-flow error code %s in bg (not a raw-code fallback)',
+    async (code) => {
+      await transloco.load('bg').toPromise();
+      transloco.setActiveLang('bg');
+      expect(translateDomainError(transloco, { code })).not.toBe(code);
+    },
+  );
 });
