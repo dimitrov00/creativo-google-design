@@ -1,6 +1,6 @@
 import { Result } from '@creativo/domain/kernel';
 import { OtpDestination } from './otp-destination';
-import { OtpCode } from './otp-code';
+import { RawOtpCode } from './otp-code';
 
 export class OtpSendError extends Error {
   constructor(
@@ -22,6 +22,6 @@ export class OtpSendError extends Error {
 export interface OtpSenderPort {
   send(
     destination: OtpDestination,
-    code: OtpCode,
+    code: RawOtpCode,
   ): Promise<Result<void, OtpSendError>>;
 }

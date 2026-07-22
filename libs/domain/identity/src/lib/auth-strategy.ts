@@ -208,3 +208,27 @@ export function createAuthStrategy(
     policy: policyResult.value as OtpPolicy,
   });
 }
+
+/**
+ * Single-tenant deployment stand-in (blueprint §0.4 greenfield schema
+ * freedom) — `libs/domain/governance`'s `TenantConfig` deliberately
+ * doesn't carry auth strategy (see that lib's own docs), and no runtime
+ * tenant-config source exists yet for `/auth`+`/onboarding` (Phase 6
+ * slice 06.2) to read a real one from. Both the web app (`AuthFlow`'s
+ * identify step, `RegisterUserUseCase` caller) and `apps/functions`
+ * (`completeRegistration`'s server-side validation) import this ONE
+ * instance rather than each hardcoding their own copy of the same policy.
+ * Phone-OTP, matching the booking app's phone-contact requirement
+ * (`validateRequired`'s `AuthStrategyPhoneMissingError` invariant above).
+ */
+const DEFAULT_AUTH_STRATEGY_RESULT = createAuthStrategy({
+  kind: 'phone_otp',
+  required: ['phone', 'firstName', 'lastName'],
+  policy: { ttlMinutes: 5, maxAttempts: 5, sessionDays: 30 },
+});
+if (DEFAULT_AUTH_STRATEGY_RESULT.isFailure()) {
+  // Unreachable — the literal input above is a known-valid strategy.
+  throw new Error('DEFAULT_AUTH_STRATEGY failed to construct');
+}
+export const DEFAULT_AUTH_STRATEGY: AuthStrategy =
+  DEFAULT_AUTH_STRATEGY_RESULT.value;

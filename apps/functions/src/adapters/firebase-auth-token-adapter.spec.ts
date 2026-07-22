@@ -19,7 +19,7 @@ function phoneDestination(raw: string): OtpDestination {
 }
 
 describe('FirebaseAuthTokenAdapter.createCustomToken', () => {
-  it('mints a token carrying the given claims', async () => {
+  it('mints a token carrying onboarding-stage claims', async () => {
     const fakeAuth = createFakeAuth();
     const adapter = new FirebaseAuthTokenAdapter(fakeAuth as unknown as Auth);
     const uidResult = UserId.create('uid_1');
@@ -29,17 +29,64 @@ describe('FirebaseAuthTokenAdapter.createCustomToken', () => {
     if (tenantIdResult.isFailure())
       throw new Error('unexpected failure in test fixture');
 
-    const result = await adapter.createCustomToken(uidResult.value, {
-      tenantId: tenantIdResult.value,
-      role: 'client',
-    });
+    const result = await adapter.createCustomToken(
+      uidResult.value,
+      tenantIdResult.value,
+      { stage: 'onboarding' },
+    );
     expect(result.isSuccess()).toBe(true);
     if (result.isSuccess()) {
       expect(result.value).toContain('uid_1');
     }
     expect(fakeAuth.customTokens[0].claims).toEqual({
       tenantId: 'creativo',
-      role: 'client',
+      stage: 'onboarding',
+    });
+  });
+
+  it('mints a token carrying active-stage claims with roles', async () => {
+    const fakeAuth = createFakeAuth();
+    const adapter = new FirebaseAuthTokenAdapter(fakeAuth as unknown as Auth);
+    const uidResult = UserId.create('uid_2');
+    if (uidResult.isFailure())
+      throw new Error('unexpected failure in test fixture');
+    const tenantIdResult = TenantId.create('creativo');
+    if (tenantIdResult.isFailure())
+      throw new Error('unexpected failure in test fixture');
+
+    await adapter.createCustomToken(uidResult.value, tenantIdResult.value, {
+      stage: 'active',
+      roles: ['client'],
+    });
+    expect(fakeAuth.customTokens[0].claims).toEqual({
+      tenantId: 'creativo',
+      stage: 'active',
+      roles: ['client'],
+    });
+  });
+});
+
+describe('FirebaseAuthTokenAdapter.setUserClaims', () => {
+  it('sets custom claims for an already-signed-in user', async () => {
+    const fakeAuth = createFakeAuth();
+    const adapter = new FirebaseAuthTokenAdapter(fakeAuth as unknown as Auth);
+    const uidResult = UserId.create('uid_3');
+    if (uidResult.isFailure())
+      throw new Error('unexpected failure in test fixture');
+    const tenantIdResult = TenantId.create('creativo');
+    if (tenantIdResult.isFailure())
+      throw new Error('unexpected failure in test fixture');
+
+    const result = await adapter.setUserClaims(
+      uidResult.value,
+      tenantIdResult.value,
+      { stage: 'active', roles: ['client'] },
+    );
+    expect(result.isSuccess()).toBe(true);
+    expect(fakeAuth.claimsByUid.get('uid_3')).toEqual({
+      tenantId: 'creativo',
+      stage: 'active',
+      roles: ['client'],
     });
   });
 });

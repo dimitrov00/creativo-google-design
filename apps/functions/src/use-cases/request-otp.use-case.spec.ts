@@ -73,7 +73,7 @@ const validInput = {
 };
 
 describe('RequestOtpUseCase', () => {
-  it('creates an OTP, sends the raw code, and returns only otpId', async () => {
+  it('creates an OTP, sends the raw code, and returns otpId + rawCode', async () => {
     const repo = fakeRepository();
     const sender = new FakeSender();
     const clock = new FixedClock('2026-01-01T00:00:00.000Z');
@@ -84,6 +84,7 @@ describe('RequestOtpUseCase', () => {
     expect(result.isSuccess()).toBe(true);
     if (result.isSuccess()) {
       expect(result.value.otpId).toBeTruthy();
+      expect(result.value.rawCode).toBe('123456');
     }
     expect(sender.sent).toHaveLength(1);
     expect(sender.sent[0].code).toBe('123456');

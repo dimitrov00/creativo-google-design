@@ -86,12 +86,23 @@ function fakeUserRepository(): UserRepositoryPort & {
 
 function fakeAuthToken() {
   let uidCounter = 0;
-  const mintedTokens: Array<{ uid: string; claims: unknown }> = [];
+  const mintedTokens: Array<{
+    uid: string;
+    tenantId: unknown;
+    claims: unknown;
+  }> = [];
   return {
     mintedTokens,
-    async createCustomToken(uid: { value: string }, claims: unknown) {
-      mintedTokens.push({ uid: uid.value, claims });
+    async createCustomToken(
+      uid: { value: string },
+      tenantId: unknown,
+      claims: unknown,
+    ) {
+      mintedTokens.push({ uid: uid.value, tenantId, claims });
       return ok(`token:${uid.value}`);
+    },
+    async setUserClaims() {
+      return ok(undefined);
     },
     async provisionAuthUser() {
       uidCounter++;
@@ -146,13 +157,13 @@ describe('VerifyOtpUseCase', () => {
     expect(result.isSuccess()).toBe(true);
     if (result.isSuccess()) {
       expect(result.value.customToken).toContain('token:');
+      expect(result.value.sessionKind).toBe('new');
     }
-    const claims = authToken.mintedTokens[0].claims as {
-      tenantId: { value: string };
-      role: string;
-    };
-    expect(claims.tenantId.value).toBe('creativo');
-    expect(claims.role).toBe('client');
+    const minted = authToken.mintedTokens[0];
+    expect((minted.tenantId as { value: string }).value).toBe('creativo');
+    // A freshly provisioned user has no `displayName` yet — claims stay
+    // `onboarding` until `completeRegistration` sets one.
+    expect(minted.claims).toEqual({ stage: 'onboarding' });
     expect(users.store.size).toBe(1);
   });
 
@@ -197,8 +208,15 @@ describe('VerifyOtpUseCase', () => {
       throw new Error('unexpected failure in test fixture');
     await otps.save(second.value.otp);
 
-    await useCase.execute({ otpId: 'otp_2', code: '654321' });
+    const second_result = await useCase.execute({
+      otpId: 'otp_2',
+      code: '654321',
+    });
 
+    expect(second_result.isSuccess()).toBe(true);
+    if (second_result.isSuccess()) {
+      expect(second_result.value.sessionKind).toBe('returning');
+    }
     expect(users.store.size).toBe(1); // still just one user
     expect(authToken.mintedTokens).toHaveLength(2);
     expect(authToken.mintedTokens[0].uid).toBe(authToken.mintedTokens[1].uid);
@@ -318,13 +336,25 @@ describe('VerifyOtpUseCase', () => {
     }
   });
 
-  it('never mints owner/performer/admin claims through this path', async () => {
+  it('never mints owner/performer/admin claims through this path, even for an already-registered returning user', async () => {
     const otps = fakeOtpRepository();
     const users = fakeUserRepository();
     const authToken = fakeAuthToken();
     const clock = new FixedClock('2026-01-01T00:00:00.000Z');
     const otp = issueOtp(clock);
     await otps.save(otp);
+
+    const registeredUser = User.create({
+      id: 'uid_existing',
+      displayName: 'Existing Client',
+      email: 'client@example.com',
+      referralCode: 'REF12345',
+      gamificationPoints: 0,
+      tenantMemberships: [],
+    });
+    if (registeredUser.isFailure())
+      throw new Error('unexpected failure in test fixture');
+    await users.save(registeredUser.value);
 
     const useCase = new VerifyOtpUseCase(
       otps,
@@ -333,10 +363,18 @@ describe('VerifyOtpUseCase', () => {
       clock,
       fakeCrypto(),
     );
-    await useCase.execute({ otpId: 'otp_1', code: '123456' });
+    const result = await useCase.execute({ otpId: 'otp_1', code: '123456' });
 
-    const claims = authToken.mintedTokens[0].claims as { role: string };
-    expect(claims.role).toBe('client');
+    expect(result.isSuccess()).toBe(true);
+    if (result.isSuccess()) {
+      expect(result.value.sessionKind).toBe('returning');
+    }
+    const claims = authToken.mintedTokens[0].claims as {
+      stage: string;
+      roles: string[];
+    };
+    expect(claims.stage).toBe('active');
+    expect(claims.roles).toEqual(['client']);
   });
 });
 

@@ -2,6 +2,12 @@ import { randomBytes } from 'node:crypto';
 import { OtpId, User } from '@creativo/domain/models';
 import { Result, fail, ok } from '@creativo/domain/kernel';
 import {
+  ONBOARDING_CLAIMS,
+  activeClaims,
+  roleFromPrimitive,
+} from '@creativo/domain/identity';
+import {
+  AuthTokenError,
   AuthTokenPort,
   OtpCodeHasher,
   OtpDestination,
@@ -63,7 +69,12 @@ export class VerifyOtpUseCase {
 
   async execute(
     rawInput: unknown,
-  ): Promise<Result<{ customToken: string }, VerifyOtpError>> {
+  ): Promise<
+    Result<
+      { customToken: string; sessionKind: 'new' | 'returning' },
+      VerifyOtpError
+    >
+  > {
     const inputResult = parseInput(rawInput);
     if (inputResult.isFailure()) {
       return fail(inputResult.error);
@@ -127,27 +138,44 @@ export class VerifyOtpUseCase {
     }
 
     let user = userResult.value;
+    let sessionKind: 'new' | 'returning' = 'returning';
     if (!user) {
       const provisioned = await this.provisionNewUser(destination);
       if (provisioned.isFailure()) {
         return fail(provisioned.error);
       }
       user = provisioned.value;
+      sessionKind = 'new';
     }
 
     // Self-service verifyOtp can only ever mint 'client' claims — there is
     // no path here to 'owner'/'performer'/'admin'. Staff roles are granted
     // out-of-band via the Admin SDK, closing the obvious privilege-
     // escalation hole a self-service role parameter would open.
-    const tokenResult = await this.authToken.createCustomToken(user.id, {
-      tenantId: verifiedOtp.tenantId,
-      role: 'client',
-    });
+    //
+    // Activation is keyed off `displayName` (set by `completeRegistration`,
+    // never at provisioning time): a user found on a *second* login who
+    // never finished onboarding (abandoned mid-flow) must still land back
+    // in `onboarding`, not be waved through as `active` just because a
+    // Firestore record already exists for them.
+    const claims = user.displayName
+      ? activeClaims([roleFromPrimitive('client')])
+      : ok(ONBOARDING_CLAIMS);
+    if (claims.isFailure()) {
+      // Unreachable — the literal roles array above is never empty.
+      return fail(new TokenMintingFailure(new AuthTokenError('empty roles')));
+    }
+
+    const tokenResult = await this.authToken.createCustomToken(
+      user.id,
+      verifiedOtp.tenantId,
+      claims.value,
+    );
     if (tokenResult.isFailure()) {
       return fail(new TokenMintingFailure(tokenResult.error));
     }
 
-    return ok({ customToken: tokenResult.value });
+    return ok({ customToken: tokenResult.value, sessionKind });
   }
 
   private async provisionNewUser(

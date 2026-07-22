@@ -1,3 +1,4 @@
+import { DOCUMENT } from '@angular/common';
 import { Injectable, inject } from '@angular/core';
 import { signInWithCustomToken } from 'firebase/auth';
 import { httpsCallable } from 'firebase/functions';
@@ -24,12 +25,42 @@ function toOtpChallengeId(raw: string): OtpChallengeId {
   return raw as OtpChallengeId;
 }
 
+/**
+ * Extracts the app-level `errors.<code>` key off a callable's `HttpsError`
+ * details (duck-typed, not `instanceof FunctionsError` — the SDK's error
+ * shape is stable across its versions, and this avoids importing the class
+ * just for a type guard). `OtpClientError.code` is the only thing feature
+ * stores ever read — never this raw `error`, which stays firebase-shaped
+ * and infrastructure-only.
+ */
+function functionsErrorCode(error: unknown): string {
+  if (typeof error !== 'object' || error === null || !('details' in error)) {
+    return 'unknown';
+  }
+  const details = (error as { details?: unknown }).details;
+  if (typeof details !== 'object' || details === null || !('code' in details)) {
+    return 'unknown';
+  }
+  const code = (details as { code?: unknown }).code;
+  return typeof code === 'string' ? code : 'unknown';
+}
+
 interface RequestChallengeResponse {
   readonly challengeId: string;
+  /** Emulator-only (`FUNCTIONS_EMULATOR==='true'` server-side) — never present in a real deployment, so stashing it unconditionally below is a production no-op, not a guarded dev path. */
+  readonly devCode?: string;
+}
+
+interface E2eWindow extends Window {
+  __e2eLastOtpCode?: string;
 }
 
 interface VerifyChallengeResponse {
   readonly sessionKind: 'new' | 'returning';
+  readonly customToken: string;
+}
+
+interface CompleteRegistrationResponse {
   readonly customToken: string;
 }
 
@@ -50,6 +81,7 @@ interface VerifyChallengeResponse {
 export class CallableOtpClient implements OtpClient {
   private readonly functions = inject(FIREBASE_FUNCTIONS);
   private readonly auth = inject(FIREBASE_AUTH);
+  private readonly document = inject(DOCUMENT);
 
   async requestChallenge(
     identifier: Identifier,
@@ -64,10 +96,19 @@ export class CallableOtpClient implements OtpClient {
         kind: identifier.kind,
         value: identifier.value.toString(),
       });
+      if (response.data.devCode !== undefined) {
+        const window = this.document.defaultView as E2eWindow | null;
+        if (window) window.__e2eLastOtpCode = response.data.devCode;
+      }
       return ok(toOtpChallengeId(response.data.challengeId));
     } catch (error) {
       return fail(
-        new OtpClientError('Failed to request OTP challenge', false, error),
+        new OtpClientError(
+          'Failed to request OTP challenge',
+          false,
+          error,
+          functionsErrorCode(error),
+        ),
       );
     }
   }
@@ -102,6 +143,7 @@ export class CallableOtpClient implements OtpClient {
           'Failed to verify OTP challenge',
           userBlocked,
           error,
+          functionsErrorCode(error),
         ),
       );
     }
@@ -119,18 +161,28 @@ export class CallableOtpClient implements OtpClient {
           value: string;
           fields: Partial<Record<RegistrationField, string>>;
         },
-        void
+        CompleteRegistrationResponse
       >(this.functions, 'completeRegistration');
-      await callable({
+      const response = await callable({
         channelKey: identifierChannelKey(identifier),
         kind: identifier.kind,
         value: identifier.value.toString(),
         fields,
       });
+      // Re-signs in with the freshly-promoted-claims token rather than
+      // relying on this session's *next* refresh to pick up the change —
+      // see `CompleteRegistrationUseCase`'s own doc for why a mere refresh
+      // isn't reliable against the Auth emulator.
+      await signInWithCustomToken(this.auth, response.data.customToken);
       return ok(undefined);
     } catch (error) {
       return fail(
-        new OtpClientError('Failed to complete registration', false, error),
+        new OtpClientError(
+          'Failed to complete registration',
+          false,
+          error,
+          functionsErrorCode(error),
+        ),
       );
     }
   }

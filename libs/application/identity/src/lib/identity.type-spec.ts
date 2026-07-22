@@ -7,7 +7,7 @@
  */
 import { PrincipalId } from '@creativo/domain/identity';
 import { OtpChallengeId } from './ports/otp-client.port';
-import { OtpCode as BackendOtpCode } from './ports/otp-code';
+import { RawOtpCode as BackendOtpCode } from './ports/otp-code';
 
 // (a) A plain `string` is rejected where a branded type is expected.
 

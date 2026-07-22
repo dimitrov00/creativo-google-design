@@ -113,9 +113,12 @@ describe('CallableOtpClient', () => {
     expect(result.isFailure()).toBe(true);
   });
 
-  it('completeRegistration forwards the identifier and fields', async () => {
-    const callable = vi.fn().mockResolvedValue({ data: undefined });
+  it('completeRegistration forwards the identifier and fields, then signs in with the freshly-promoted token', async () => {
+    const callable = vi
+      .fn()
+      .mockResolvedValue({ data: { customToken: 'promoted-token' } });
     httpsCallableMock.mockReturnValue(callable);
+    signInWithCustomTokenMock.mockResolvedValue({ user: {} });
     const client = createClient(functions, auth);
 
     const result = await client.completeRegistration(identifier, {
@@ -128,6 +131,10 @@ describe('CallableOtpClient', () => {
       expect.objectContaining({
         fields: { firstName: 'Ivan', lastName: 'Petrov' },
       }),
+    );
+    expect(signInWithCustomTokenMock).toHaveBeenCalledWith(
+      auth,
+      'promoted-token',
     );
   });
 });

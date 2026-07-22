@@ -1,8 +1,8 @@
 import {
-  OtpCode,
   OtpDestination,
   OtpSendError,
   OtpSenderPort,
+  RawOtpCode,
   otpDestinationValue,
 } from '@creativo/application/identity';
 import { Result, ok } from '@creativo/domain/kernel';
@@ -16,7 +16,7 @@ import { Result, ok } from '@creativo/domain/kernel';
 export class ConsoleLogOtpSender implements OtpSenderPort {
   async send(
     destination: OtpDestination,
-    code: OtpCode,
+    code: RawOtpCode,
   ): Promise<Result<void, OtpSendError>> {
     console.log(
       `[otp] would send ${destination.kind} OTP to ${otpDestinationValue(destination)}: ${code}`,

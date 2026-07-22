@@ -19,6 +19,9 @@
       "path": "../../libs/application/shared/tsconfig.lib.json"
     },
     {
+      "path": "../../libs/domain/identity/tsconfig.lib.json"
+    },
+    {
       "path": "../../libs/domain/models/tsconfig.lib.json"
     },
     {

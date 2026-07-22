@@ -6,7 +6,7 @@ import {
   OtpDestination,
   OtpRepositoryPort,
   OtpSenderPort,
-  toOtpCode,
+  toRawOtpCode,
 } from '@creativo/application/identity';
 import { ClockPort } from '@creativo/application/shared';
 import {
@@ -84,7 +84,7 @@ export class RequestOtpUseCase {
 
   async execute(
     rawInput: unknown,
-  ): Promise<Result<{ otpId: string }, RequestOtpError>> {
+  ): Promise<Result<{ otpId: string; rawCode: string }, RequestOtpError>> {
     const inputResult = parseInput(rawInput);
     if (inputResult.isFailure()) {
       return fail(inputResult.error);
@@ -140,11 +140,18 @@ export class RequestOtpUseCase {
       return fail(new RepositoryFailure(saveResult.error));
     }
 
-    const sendResult = await this.sender.send(destination, toOtpCode(rawCode));
+    const sendResult = await this.sender.send(
+      destination,
+      toRawOtpCode(rawCode),
+    );
     if (sendResult.isFailure()) {
       return fail(new SendFailure(sendResult.error));
     }
 
-    return ok({ otpId: otp.id.value });
+    // `rawCode` is returned to the caller (never persisted) purely so the
+    // callable wrapper can echo it back to the client in emulator mode
+    // only (E2E has no real SMS/email inbox to read) — production callers
+    // must never forward it past this boundary.
+    return ok({ otpId: otp.id.value, rawCode });
   }
 }

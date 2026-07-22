@@ -14,6 +14,15 @@ export class OtpClientError extends Error {
     message: string,
     public readonly userBlocked = false,
     public override readonly cause?: unknown,
+    /**
+     * The stable `errors.<code>` key off the callable's `HttpsError`
+     * details — extracted by the adapter (the one place allowed to touch
+     * `firebase/functions`), never by the feature store, so
+     * `translateDomainError` is reachable from `type:feature` code without
+     * a `firebase/*` import. Defaults to `'unknown'` when the failure
+     * didn't carry a structured code (a network error, say).
+     */
+    public readonly code = 'unknown',
   ) {
     super(message);
   }

@@ -1,0 +1,35 @@
+:host {
+  display: block;
+  min-block-size: 100svh;
+  background: var(--sys-color-background);
+  color: var(--sys-color-foreground);
+}
+
+.onboarding-shell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-block-size: 100svh;
+  padding: var(--sys-space-spacious) var(--sys-space-regular);
+}
+
+.onboarding-step {
+  display: grid;
+  gap: var(--sys-space-comfortable);
+  inline-size: min(28rem, 100%);
+}
+
+.onboarding-field {
+  display: grid;
+  gap: var(--sys-space-tight);
+}
+
+.onboarding-error {
+  margin: 0;
+}
+
+.onboarding-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sys-space-compact);
+}

@@ -1,1 +1,163 @@
-<p>ClientOnboarding works!</p>
+<ng-container *transloco="let t">
+  <div class="onboarding-shell">
+    @switch (store.state().kind) { @case ('about') {
+    <section class="onboarding-step" data-testid="onboarding-about">
+      <h1 uiText uiFont="title">{{ t('onboarding.about.title') }}</h1>
+      <p uiText uiFont="body">{{ t('onboarding.about.body') }}</p>
+
+      <label class="onboarding-field">
+        <span uiText uiFont="footnote"
+          >{{ t('onboarding.about.firstName') }}</span
+        >
+        <input
+          type="text"
+          uiInput
+          autocomplete="given-name"
+          data-testid="onboarding-first-name"
+          [value]="firstName()"
+          (input)="firstName.set($any($event.target).value)"
+        />
+      </label>
+      <label class="onboarding-field">
+        <span uiText uiFont="footnote"
+          >{{ t('onboarding.about.lastName') }}</span
+        >
+        <input
+          type="text"
+          uiInput
+          autocomplete="family-name"
+          data-testid="onboarding-last-name"
+          [value]="lastName()"
+          (input)="lastName.set($any($event.target).value)"
+        />
+      </label>
+
+      @if (translateError(currentError()); as error) {
+      <p
+        class="onboarding-error"
+        uiText
+        uiFont="footnote"
+        uiForeground="destructive"
+        data-testid="onboarding-about-error"
+        role="alert"
+      >
+        {{ error }}
+      </p>
+      }
+
+      <button
+        type="button"
+        uiButton
+        uiVariant="prominent"
+        uiSize="prominent"
+        data-testid="onboarding-submit-about"
+        [uiLoading]="store.pending()"
+        [disabled]="!firstName().trim() || !lastName().trim()"
+        (click)="submitAbout()"
+      >
+        {{ t('onboarding.about.continue') }}
+      </button>
+    </section>
+    } @case ('reward') {
+    <section class="onboarding-step" data-testid="onboarding-reward">
+      <h1 uiText uiFont="title">{{ t('onboarding.reward.title') }}</h1>
+      <p uiText uiFont="body">{{ t('onboarding.reward.body') }}</p>
+
+      <button
+        type="button"
+        uiButton
+        uiVariant="prominent"
+        uiSize="prominent"
+        data-testid="onboarding-personalize"
+        (click)="store.personalize()"
+      >
+        {{ t('onboarding.reward.personalize') }}
+      </button>
+      <button
+        type="button"
+        uiButton
+        uiVariant="plain"
+        data-testid="onboarding-enter-app"
+        (click)="enterAppNow()"
+      >
+        {{ t('onboarding.reward.skip') }}
+      </button>
+    </section>
+    } @case ('services') {
+    <section class="onboarding-step" data-testid="onboarding-services">
+      <h1 uiText uiFont="title">{{ t('onboarding.services.title') }}</h1>
+      <p uiText uiFont="body">{{ t('onboarding.services.body') }}</p>
+
+      <div class="onboarding-chips" data-testid="onboarding-services-list">
+        @for (service of services(); track service.id.value) {
+        <button
+          type="button"
+          uiChip
+          [uiSelected]="isServiceSelected(service.id)"
+          [attr.data-testid]="'onboarding-service-' + service.id.value"
+          (click)="toggleService(service.id)"
+        >
+          {{ serviceName(service) }}
+        </button>
+        }
+      </div>
+
+      <button
+        type="button"
+        uiButton
+        uiVariant="prominent"
+        uiSize="prominent"
+        data-testid="onboarding-submit-services"
+        (click)="submitServices()"
+      >
+        {{ t('onboarding.services.continue') }}
+      </button>
+      <button
+        type="button"
+        uiButton
+        uiVariant="plain"
+        data-testid="onboarding-skip-services"
+        (click)="store.skipServices()"
+      >
+        {{ t('onboarding.services.skip') }}
+      </button>
+    </section>
+    } @case ('avatar') {
+    <section class="onboarding-step" data-testid="onboarding-avatar">
+      <h1 uiText uiFont="title">{{ t('onboarding.avatar.title') }}</h1>
+      <p uiText uiFont="body">{{ t('onboarding.avatar.body') }}</p>
+
+      <button
+        type="button"
+        uiButton
+        uiVariant="prominent"
+        uiSize="prominent"
+        data-testid="onboarding-skip-avatar"
+        (click)="skipAvatarNow()"
+      >
+        {{ t('onboarding.avatar.skip') }}
+      </button>
+    </section>
+    } @case ('entering') {
+    <section class="onboarding-step" data-testid="onboarding-entering">
+      @if (enteringFailed()) {
+      <h1 uiText uiFont="title">{{ t('onboarding.entering.failedTitle') }}</h1>
+      <p uiText uiFont="body">{{ t('onboarding.entering.failedBody') }}</p>
+      <button
+        type="button"
+        uiButton
+        uiVariant="prominent"
+        uiSize="prominent"
+        data-testid="onboarding-retry-entering"
+        (click)="retryEntering()"
+      >
+        {{ t('onboarding.entering.retry') }}
+      </button>
+      } @else {
+      <h1 uiText uiFont="title">{{ t('onboarding.entering.title') }}</h1>
+      <ui-spinner data-testid="onboarding-entering-spinner" />
+      }
+    </section>
+    } }
+  </div>
+</ng-container>

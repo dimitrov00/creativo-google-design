@@ -8,7 +8,8 @@
   },
   "functions": {
     "source": "dist/apps/functions",
-    "predeploy": ["pnpm nx build functions"]
+    "predeploy": ["pnpm nx build functions"],
+    "runtime": "nodejs22"
   },
   "hosting": [
     {

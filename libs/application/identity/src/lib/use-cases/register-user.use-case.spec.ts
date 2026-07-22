@@ -76,4 +76,30 @@ describe('RegisterUserUseCase', () => {
     }
     expect(client.registered).toHaveLength(0);
   });
+
+  it('treats the identifier itself as satisfying its own required field, even when the caller never resupplies it', async () => {
+    const client = fakeOtpClient();
+    const phoneStrategy: AuthStrategy = {
+      kind: 'phone_otp',
+      required: ['phone', 'firstName', 'lastName'],
+      policy: { ttlMinutes: 5, maxAttempts: 5, sessionDays: 30 },
+    };
+    const phoneIdentifier: Identifier = requiredValue(
+      createIdentifier({ kind: 'phone', value: '+14155552671' }),
+    );
+    const useCase = new RegisterUserUseCase(client);
+
+    // No `phone` key in `fields` — the about step never re-collects the
+    // number that was just used to sign in.
+    const result = await useCase.execute(phoneIdentifier, phoneStrategy, {
+      firstName: 'Ada',
+      lastName: 'Lovelace',
+    });
+
+    expect(result.isSuccess()).toBe(true);
+    const [{ fields }] = client.registered as [
+      { fields: Record<string, string> },
+    ];
+    expect(fields['phone']).toBe(phoneIdentifier.value.toString());
+  });
 });

@@ -38,7 +38,18 @@ export function toHttpsError(error: VerifyOtpError): HttpsError {
   }
 }
 
-export const verifyOtp = onCall(async (request) => {
+/**
+ * `CallableOtpClient`'s wire contract names the challenge `challengeId`
+ * and expects `{sessionKind, customToken}` back — `VerifyOtpUseCase`
+ * itself already speaks `otpId`/`{customToken, sessionKind}` (the
+ * `otpId`↔`challengeId` rename is the only shape gap left to bridge here).
+ */
+interface VerifyOtpChallengeInput {
+  readonly challengeId: string;
+  readonly code: string;
+}
+
+export const verifyOtpChallenge = onCall(async (request) => {
   const db = adminFirestore();
   const crypto = new NodeOtpCrypto();
   const useCase = new VerifyOtpUseCase(
@@ -49,9 +60,16 @@ export const verifyOtp = onCall(async (request) => {
     crypto,
   );
 
-  const result = await useCase.execute(request.data);
+  const input = request.data as VerifyOtpChallengeInput;
+  const result = await useCase.execute({
+    otpId: input?.challengeId,
+    code: input?.code,
+  });
   return match(result, {
-    success: (value) => value,
+    success: (value) => ({
+      sessionKind: value.sessionKind,
+      customToken: value.customToken,
+    }),
     failure: (error) => {
       throw toHttpsError(error);
     },

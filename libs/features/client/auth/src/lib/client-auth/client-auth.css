@@ -1,0 +1,29 @@
+:host {
+  display: block;
+  min-block-size: 100svh;
+  background: var(--sys-color-background);
+  color: var(--sys-color-foreground);
+}
+
+.auth-shell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-block-size: 100svh;
+  padding: var(--sys-space-spacious) var(--sys-space-regular);
+}
+
+.auth-step {
+  display: grid;
+  gap: var(--sys-space-comfortable);
+  inline-size: min(28rem, 100%);
+}
+
+.auth-field {
+  display: grid;
+  gap: var(--sys-space-tight);
+}
+
+.auth-error {
+  margin: 0;
+}

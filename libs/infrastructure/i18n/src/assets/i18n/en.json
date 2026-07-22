@@ -36,7 +36,17 @@
     "otp_incorrect_code": "That code is incorrect.",
     "user_validation_failed": "The information provided is invalid.",
     "token_minting_failure": "We couldn't sign you in — please try again.",
-    "unknown": "Something went wrong — please try again."
+    "unknown": "Something went wrong — please try again.",
+    "identity": {
+      "identifier": {
+        "invalid": "Enter a valid phone number or email address."
+      },
+      "otp_code": {
+        "invalid": "Enter the 6-digit code."
+      }
+    },
+    "identifier_missing": "We couldn't find your phone number or email — please sign in again.",
+    "registration_field_missing": "Please fill in all required fields."
   },
   "marketing": {
     "app": {
@@ -356,6 +366,64 @@
     "forbidden": {
       "title": "Forbidden",
       "body": "You don't have access to this page."
+    }
+  },
+  "auth": {
+    "back": "Back",
+    "settling": "One moment…",
+    "welcome": {
+      "title": "Welcome to Creativo",
+      "body": "Sign in with your phone number to book and manage your appointments.",
+      "getStarted": "Get started"
+    },
+    "identify": {
+      "title": "What's your phone number?",
+      "body": "We'll text you a 6-digit code to sign in.",
+      "phoneLabel": "Phone number",
+      "continue": "Continue"
+    },
+    "otp": {
+      "title": "Enter the code",
+      "body": "We sent a 6-digit code to your phone.",
+      "verify": "Verify",
+      "resend": "Resend code",
+      "changeIdentifier": "Use a different number"
+    },
+    "blocked": {
+      "title": "You've been temporarily blocked",
+      "body": "Too many attempts — please try again later."
+    }
+  },
+  "onboarding": {
+    "about": {
+      "title": "Tell us about yourself",
+      "body": "We'll use this to personalize your bookings.",
+      "firstName": "First name",
+      "lastName": "Last name",
+      "continue": "Continue"
+    },
+    "reward": {
+      "title": "You've earned a welcome reward",
+      "body": "Personalize your profile to unlock more, or jump straight in.",
+      "personalize": "Personalize my profile",
+      "skip": "Skip for now"
+    },
+    "services": {
+      "title": "What are you interested in?",
+      "body": "Pick a few services — you can always change this later.",
+      "continue": "Continue",
+      "skip": "Skip"
+    },
+    "avatar": {
+      "title": "Add a profile photo",
+      "body": "Help your barber recognize you (optional).",
+      "skip": "Skip for now"
+    },
+    "entering": {
+      "title": "Setting up your account…",
+      "failedTitle": "This is taking longer than expected",
+      "failedBody": "We couldn't confirm your account just yet — please try again.",
+      "retry": "Try again"
     }
   }
 }

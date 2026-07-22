@@ -26,12 +26,21 @@ export class RegisterUserUseCase {
     strategy: AuthStrategy,
     fields: Partial<Record<RegistrationField, string>>,
   ): Promise<Result<void, RegisterUserError>> {
+    // The identifier itself already satisfies whichever of phone/email is
+    // the login channel — the "about" step never re-collects it as a form
+    // field for the requirement to be met (mirrors `completeRegistration`'s
+    // own server-side check, which applies this same fallback).
+    const effectiveFields: Partial<Record<RegistrationField, string>> = {
+      ...fields,
+      [identifier.kind]: fields[identifier.kind] ?? identifier.value.toString(),
+    };
+
     for (const field of strategy.required) {
       if (!authStrategyRequires(strategy, field)) continue;
       // `field` is always one of the four `RegistrationField` literals
       // (`strategy.required`'s own element type), never external input.
       // eslint-disable-next-line security/detect-object-injection
-      const value = fields[field];
+      const value = effectiveFields[field];
       if (!value?.trim()) {
         return fail(new MissingRegistrationFieldError(field));
       }
@@ -39,7 +48,7 @@ export class RegisterUserUseCase {
 
     const result = await this.otpClient.completeRegistration(
       identifier,
-      fields,
+      effectiveFields,
     );
     if (result.isFailure()) {
       return fail({ kind: 'client_error', error: result.error });
