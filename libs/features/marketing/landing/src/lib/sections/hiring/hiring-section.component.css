@@ -44,7 +44,7 @@
   inset: 0;
   background: radial-gradient(
     ellipse 70% 55% at 5% 20%,
-    rgb(242 107 34 / 0.1) 0%,
+    color-mix(in srgb, var(--sys-color-accent) 10%, transparent) 0%,
     transparent 65%
   );
 }
@@ -59,7 +59,7 @@
   transition: opacity 0.3s var(--sys-motion-ease-standard);
   background: radial-gradient(
     480px circle at var(--spot-x, -500px) var(--spot-y, -500px),
-    rgb(242 107 34 / 0.13),
+    color-mix(in srgb, var(--sys-color-accent) 13%, transparent),
     transparent 70%
   );
 }

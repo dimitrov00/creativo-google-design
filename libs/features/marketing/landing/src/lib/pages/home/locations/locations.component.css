@@ -537,7 +537,7 @@
   margin: 0;
 }
 
-/* Bar skeleton + [data-visible] reveal live in styles.css
+/* Bar skeleton + [data-visible] reveal live in landing-shared.css
    (.sheet-bar-reveal); only this toolbar's row layout stays local. */
 .location-sheet__toolbar {
   display: flex;
@@ -583,15 +583,20 @@
   gap: 0.6rem;
   min-block-size: 3rem;
   padding: 0 1.1rem;
+  /* Long localized labels (location name in the CTA) must shrink inside
+     the floating bar on narrow screens instead of pushing past the edge. */
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .location-sheet__toolbar-book .material-symbols-rounded {
   font-size: 1.2em;
 }
 
-/* `sheet-content-in` is the shared global keyframe in styles.css — the
-   scoped animation-name resolves to it since no local @keyframes shadows
-   the name. */
+/* `sheet-content-in` is the shared global keyframe in landing-shared.css —
+   the scoped animation-name resolves to it since no local @keyframes
+   shadows the name. */
 cr-modal-sheet[data-open] .location-sheet__intro > *,
 cr-modal-sheet[data-open] .location-sheet__status-card {
   animation: sheet-content-in var(--sys-motion-duration-slowest)

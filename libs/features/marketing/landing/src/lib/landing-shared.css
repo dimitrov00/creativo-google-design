@@ -188,4 +188,45 @@
   .cr-landing-cta[data-tone='overlay']:active {
     background: var(--landing-chrome-fill-press);
   }
+
+  /* ── Sheet floating action bar (shared by service-detail + locations
+     sheets). Skeleton + [data-visible] reveal; each sheet keeps only its
+     own row layout local. ── */
+  .sheet-bar-reveal {
+    position: absolute;
+    z-index: var(--sys-layer-popover);
+    inset: auto auto max(1rem, env(safe-area-inset-bottom)) 50%;
+    max-inline-size: calc(100% - 2.5rem);
+    opacity: 0;
+    transform: translate(-50%, calc(100% + 2rem)) scale(0.96);
+    transition:
+      opacity var(--sys-motion-duration-regular) var(--sys-motion-ease-standard),
+      transform var(--sys-motion-duration-slow)
+        var(--sys-motion-ease-emphasized);
+    pointer-events: none;
+  }
+
+  .sheet-bar-reveal[data-visible] {
+    opacity: 1;
+    transform: translate(-50%, 0) scale(1);
+    pointer-events: auto;
+  }
+}
+
+/* Sheet-content entrance choreography — shared keyframes, referenced from
+   the service-detail and locations sheet component styles. Keyframes must
+   live outside component CSS: Angular's emulated encapsulation scopes
+   locally-defined @keyframes names, which is exactly the bug that left the
+   locations sheet without its entrance animation. */
+@keyframes sheet-content-in {
+  from {
+    opacity: 0;
+    filter: blur(8px);
+    transform: translateY(1.5rem);
+  }
+  to {
+    opacity: 1;
+    filter: blur(0);
+    transform: translateY(0);
+  }
 }

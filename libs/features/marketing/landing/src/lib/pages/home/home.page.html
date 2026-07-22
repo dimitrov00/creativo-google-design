@@ -11,7 +11,13 @@
   <cr-landing-header />
   <cr-landing-hero />
 
+  <!-- Conversion-ordered funnel (UI/UX case study §2.9): offer first
+       (services), then proof (work, team), then logistics (locations),
+       with the recruiting pitch demoted below locations. -->
   <main class="cr-landing__main">
+    <div id="services" class="cr-landing__anchor">
+      <cr-services-section />
+    </div>
     <div id="work" class="cr-landing__anchor">
       <cr-work-gallery />
     </div>
@@ -19,12 +25,6 @@
          locations section (design call). -->
     <div id="team" class="cr-landing__anchor cr-landing__anchor--breakout">
       <cr-team-showcase />
-    </div>
-    <div id="services" class="cr-landing__anchor">
-      <cr-services-section />
-    </div>
-    <div id="hiring" class="cr-landing__anchor">
-      <cr-hiring-section />
     </div>
     <div id="visit" class="cr-landing__anchor cr-landing__anchor--breakout">
       <!-- The locations section owns a MapLibre map (~1MB) — `@defer (on
@@ -34,6 +34,9 @@
       } @placeholder {
       <div class="cr-landing__locations-placeholder" aria-hidden="true"></div>
       }
+    </div>
+    <div id="hiring" class="cr-landing__anchor">
+      <cr-hiring-section />
     </div>
     <cr-closing-cta />
   </main>
