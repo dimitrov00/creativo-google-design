@@ -1,0 +1,9 @@
+{
+  "name": "domain-scheduling",
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "libs/domain/scheduling/src",
+  "projectType": "library",
+  "tags": ["scope:shared", "type:domain"],
+  "// targets": "to see all targets run: nx show project domain-scheduling --web",
+  "targets": {}
+}

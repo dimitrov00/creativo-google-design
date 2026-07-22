@@ -185,9 +185,25 @@ three at the time — see `docs/architecture/domain-model.md`'s "Why
 | `i18n`                 | `libs/infrastructure/i18n`          | `scope:shared`, `type:infrastructure` |
 | `kernel`               | `libs/domain/kernel`                | `scope:shared`, `type:domain`         |
 | `models`               | `libs/domain/models`                | `scope:shared`, `type:domain`         |
+| `domain-identity`      | `libs/domain/identity`              | `scope:shared`, `type:domain`         |
+| `domain-accounts`      | `libs/domain/accounts`              | `scope:shared`, `type:domain`         |
+| `domain-scheduling`    | `libs/domain/scheduling`            | `scope:shared`, `type:domain`         |
+| `domain-catalog`       | `libs/domain/catalog`               | `scope:shared`, `type:domain`         |
+| `domain-engagement`    | `libs/domain/engagement`            | `scope:shared`, `type:domain`         |
+| `domain-governance`    | `libs/domain/governance`            | `scope:shared`, `type:domain`         |
 | `design-tokens`        | `libs/shared/design-tokens`         | `scope:shared`, `type:tokens`         |
 | `ui` (shared)          | `libs/shared/ui`                    | `scope:shared`, `type:ui`             |
 | `cursor`               | `libs/shared/cursor`                | `scope:shared`, `type:util`           |
+
+**Why `domain-*` project names for the six new bounded contexts** (Goal 02):
+Nx project names are workspace-unique regardless of directory, and
+`libs/application/{identity,accounts,catalog,engagement,governance}` (Goal 00) already claimed the unprefixed names — `libs/domain/identity`'s Nx
+project is therefore `domain-identity`, not `identity`, and likewise for
+the other five. `kernel`/`models` predate this collision (no
+`libs/application/kernel` or `.../models` exists) so they keep their plain
+names. Import paths are unaffected either way — every one of these
+resolves via its own `@creativo/domain/<name>` TS path alias, never by Nx
+project name.
 
 Verify the graph matches this table at any time with `nx graph`.
 

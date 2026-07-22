@@ -1,0 +1,9 @@
+{
+  "name": "domain-catalog",
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "libs/domain/catalog/src",
+  "projectType": "library",
+  "tags": ["scope:shared", "type:domain"],
+  "// targets": "to see all targets run: nx show project domain-catalog --web",
+  "targets": {}
+}

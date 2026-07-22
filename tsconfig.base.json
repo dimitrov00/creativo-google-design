@@ -28,6 +28,12 @@
       "@creativo/shared/cursor": ["./libs/shared/cursor/src/index.ts"],
       "@creativo/domain/models": ["./libs/domain/models/src/index.ts"],
       "@creativo/domain/kernel": ["./libs/domain/kernel/src/index.ts"],
+      "@creativo/domain/identity": ["./libs/domain/identity/src/index.ts"],
+      "@creativo/domain/accounts": ["./libs/domain/accounts/src/index.ts"],
+      "@creativo/domain/scheduling": ["./libs/domain/scheduling/src/index.ts"],
+      "@creativo/domain/catalog": ["./libs/domain/catalog/src/index.ts"],
+      "@creativo/domain/engagement": ["./libs/domain/engagement/src/index.ts"],
+      "@creativo/domain/governance": ["./libs/domain/governance/src/index.ts"],
       "@creativo/application/identity": [
         "./libs/application/identity/src/index.ts"
       ],

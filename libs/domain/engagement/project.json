@@ -1,0 +1,9 @@
+{
+  "name": "domain-engagement",
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "libs/domain/engagement/src",
+  "projectType": "library",
+  "tags": ["scope:shared", "type:domain"],
+  "// targets": "to see all targets run: nx show project domain-engagement --web",
+  "targets": {}
+}

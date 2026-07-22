@@ -49,6 +49,35 @@ export class ZonedDateTime {
     return this.inner > other.inner;
   }
 
+  isSameOrBefore(other: ZonedDateTime): boolean {
+    return this.inner <= other.inner;
+  }
+
+  isSameOrAfter(other: ZonedDateTime): boolean {
+    return this.inner >= other.inner;
+  }
+
+  /**
+   * Whole years elapsed from this instant to `other`, counting a birthday
+   * only once the calendar month/day has actually passed — the one true way
+   * to compute an age without ever touching a raw `Date`.
+   */
+  yearsUntil(other: ZonedDateTime): number {
+    return Math.trunc(other.inner.diff(this.inner, 'years').years);
+  }
+
+  get year(): number {
+    return this.inner.year;
+  }
+
+  get month(): number {
+    return this.inner.month;
+  }
+
+  get day(): number {
+    return this.inner.day;
+  }
+
   toISO(): string {
     // Only ever constructed from an already-valid DateTime (both factories
     // check .isValid before wrapping), so toISO() cannot actually return

@@ -77,4 +77,34 @@ describe('ZonedDateTime comparisons and arithmetic', () => {
       throw new Error('unexpected failure in test fixture');
     expect(result.value.zoneName).toBe('Europe/Sofia');
   });
+
+  it('isSameOrBefore()/isSameOrAfter() include the equal instant', () => {
+    const a = at('2026-08-01T09:00:00.000Z');
+    const b = at('2026-08-01T09:00:00.000Z');
+    const later = at('2026-08-01T09:30:00.000Z');
+    expect(a.isSameOrBefore(b)).toBe(true);
+    expect(a.isSameOrAfter(b)).toBe(true);
+    expect(a.isSameOrBefore(later)).toBe(true);
+    expect(later.isSameOrBefore(a)).toBe(false);
+    expect(a.isSameOrAfter(later)).toBe(false);
+  });
+
+  it('year/month/day expose the calendar date in the constructed zone', () => {
+    const result = ZonedDateTime.fromISO('2026-03-05T10:00:00', 'Europe/Sofia');
+    if (result.isFailure())
+      throw new Error('unexpected failure in test fixture');
+    expect(result.value.year).toBe(2026);
+    expect(result.value.month).toBe(3);
+    expect(result.value.day).toBe(5);
+  });
+
+  it('yearsUntil() computes whole calendar years, counting a birthday only once it has passed', () => {
+    const birthDate = at('2000-06-15T00:00:00.000Z');
+    const justBefore = at('2026-06-14T00:00:00.000Z');
+    const onTheDay = at('2026-06-15T00:00:00.000Z');
+    const justAfter = at('2026-06-16T00:00:00.000Z');
+    expect(birthDate.yearsUntil(justBefore)).toBe(25);
+    expect(birthDate.yearsUntil(onTheDay)).toBe(26);
+    expect(birthDate.yearsUntil(justAfter)).toBe(26);
+  });
 });
