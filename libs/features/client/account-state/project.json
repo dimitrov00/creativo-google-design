@@ -1,0 +1,13 @@
+{
+  "name": "client-account-state",
+  "$schema": "../../../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "libs/features/client/account-state/src",
+  "prefix": "lib",
+  "projectType": "library",
+  "tags": ["scope:client", "type:feature"],
+  "targets": {
+    "lint": {
+      "executor": "@nx/eslint:lint"
+    }
+  }
+}

@@ -1,1 +1,130 @@
-<p>ClientAccount works!</p>
+<ng-container *transloco="let t">
+  <div class="account-shell">
+    <header class="account-header">
+      <h1 uiText uiFont="title">{{ t('account.header.title') }}</h1>
+      <button
+        type="button"
+        uiButton
+        uiVariant="plain"
+        uiSize="compact"
+        data-testid="account-sign-out"
+        (click)="signOut()"
+      >
+        {{ t('account.header.signOut') }}
+      </button>
+    </header>
+
+    @if (accountState.accountLoading()) {
+    <ui-stack uiGap="comfortable" data-testid="account-skeleton">
+      <ui-skeleton style="block-size: 4.5rem" />
+      <ui-skeleton style="block-size: 6rem" />
+      <ui-skeleton style="block-size: 8rem" />
+    </ui-stack>
+    } @else {
+    <ui-stack uiGap="comfortable">
+      <section class="account-tiles" data-testid="account-tiles">
+        <a
+          class="account-tile"
+          routerLink="/book"
+          data-testid="account-tile-book"
+        >
+          <p uiText uiFont="headline">{{ t('account.tiles.book.title') }}</p>
+          <p uiText uiFont="footnote" uiForeground="secondary">
+            {{ t('account.tiles.book.subtitle') }}
+          </p>
+        </a>
+        <div
+          class="account-tile account-tile-inert"
+          data-testid="account-tile-appointments"
+          data-state="soon"
+          aria-disabled="true"
+        >
+          <p uiText uiFont="headline">
+            {{ t('account.tiles.appointments.title') }}
+          </p>
+          <span uiBadge uiTone="neutral"
+            >{{ t('account.tiles.comingSoon') }}</span
+          >
+        </div>
+        <div
+          class="account-tile account-tile-inert"
+          data-testid="account-tile-settings"
+          data-state="soon"
+          aria-disabled="true"
+        >
+          <p uiText uiFont="headline">
+            {{ t('account.tiles.settings.title') }}
+          </p>
+          <span uiBadge uiTone="neutral"
+            >{{ t('account.tiles.comingSoon') }}</span
+          >
+        </div>
+      </section>
+
+      <ui-card
+        uiPadding="comfortable"
+        data-testid="account-upcoming"
+        [attr.data-state]="upcoming().kind"
+      >
+        <p uiText uiFont="headline">{{ t('account.upcoming.title') }}</p>
+        @switch (upcoming().kind) { @case ('populated') { @if
+        (upcomingAppointment(); as visit) {
+        <ui-stack uiGap="tight">
+          <p uiText uiFont="body">
+            {{ formatAppointmentDate(visit) }} · {{ formatAppointmentTime(visit)
+            }}
+          </p>
+          <span uiBadge uiTone="accent">{{ visit.status.kind }}</span>
+        </ui-stack>
+        } } @case ('error') {
+        <p uiText uiFont="footnote" uiForeground="destructive" role="alert">
+          {{ translateRepositoryError() }}
+        </p>
+        } @default {
+        <ui-stack uiGap="tight">
+          <p uiText uiFont="body" uiForeground="secondary">
+            {{ t('account.upcoming.empty') }}
+          </p>
+          <a
+            uiButton
+            uiVariant="tinted"
+            uiSize="compact"
+            routerLink="/book"
+            data-testid="account-upcoming-book-cta"
+          >
+            {{ t('account.upcoming.bookCta') }}
+          </a>
+        </ui-stack>
+        } }
+      </ui-card>
+
+      @if (completion(); as progress) {
+      <ui-card
+        uiPadding="comfortable"
+        data-testid="account-completion"
+        [attr.data-state]="progress.complete ? 'complete' : 'open'"
+      >
+        <p uiText uiFont="headline">{{ t('account.completion.title') }}</p>
+        <p uiText uiFont="footnote" uiForeground="secondary">
+          {{ t('account.completion.progress', { done: progress.done, total:
+          progress.total }) }}
+        </p>
+        <ui-stack uiGap="tight">
+          @for (item of progress.items; track item.key) {
+          <p
+            uiText
+            uiFont="footnote"
+            [attr.data-done]="item.done"
+            [attr.data-testid]="'account-completion-' + item.key"
+          >
+            {{ item.done ? '✓' : '○' }} {{ t('account.completion.items.' +
+            item.key) }}
+          </p>
+          }
+        </ui-stack>
+      </ui-card>
+      }
+    </ui-stack>
+    }
+  </div>
+</ng-container>

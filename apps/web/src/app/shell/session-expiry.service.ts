@@ -1,7 +1,7 @@
 import { Injectable, effect, inject } from '@angular/core';
 import { Router } from '@angular/router';
 import { AUTH_GATEWAY } from '@creativo/application/identity';
-import { AccountStateService } from './account-state.service';
+import { AccountStateService } from '@creativo/features/client/account-state';
 
 const CHECK_INTERVAL_MS = 5 * 60 * 1000;
 

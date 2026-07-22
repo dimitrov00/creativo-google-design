@@ -7,15 +7,27 @@ import {
   signal,
 } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
-import { AUTH_GATEWAY } from '@creativo/application/identity';
-import { PROFILE_PORT } from '@creativo/application/accounts';
-import { ANONYMOUS_PRINCIPAL, Principal } from '@creativo/domain/identity';
-import { User, UserId } from '@creativo/domain/accounts';
+import {
+  AUTH_GATEWAY,
+  ANONYMOUS_PRINCIPAL,
+  Principal,
+} from '@creativo/application/identity';
+import { PROFILE_PORT, User, UserId } from '@creativo/application/accounts';
 
 /**
  * Root-provided, single `onIdTokenChanged` listener for the whole shell
  * (blueprint §1.4) — every route/guard/component reads `principal`/
- * `claims`/`account` from here rather than re-subscribing to `AuthGateway`.
+ * `claims`/`account`/`accountLoading` from here rather than re-subscribing
+ * to `AuthGateway` or re-fetching the profile themselves.
+ *
+ * Lives in its own lib (not `apps/web`, not the `client/account` dashboard
+ * lib) for two reasons: Nx module boundaries forbid a `type:feature` lib
+ * from depending on `type:app` (`apps/web`), and `apps/web`'s
+ * `SessionExpiryService` — eager, injected from the always-loaded root
+ * `App` component — already depends on this service; if it lived inside
+ * the lazy-loaded `client/account` dashboard lib instead, that static
+ * eager import would pull the whole dashboard screen into the main
+ * bundle and defeat `/account`'s lazy chunk.
  *
  * The "single `users/{uid}` snapshot" half of the brief is a partial
  * implementation: `ProfilePort` only exposes a one-shot `getProfile`, not a
@@ -43,20 +55,28 @@ export class AccountStateService {
   private readonly _account = signal<User | null>(null);
   readonly account = this._account.asReadonly();
 
+  /** True while the current uid's profile fetch is in flight — lets consumers (e.g. dashboard skeletons) tell "still loading" apart from "loaded, no profile". */
+  private readonly _accountLoading = signal(false);
+  readonly accountLoading = this._accountLoading.asReadonly();
+
   constructor() {
     effect(() => {
       const principal = this.principal();
       if (principal.kind === 'anonymous') {
         this._account.set(null);
+        this._accountLoading.set(false);
         return;
       }
       const userIdResult = UserId.create(principal.uid.value);
       if (userIdResult.isFailure()) {
         this._account.set(null);
+        this._accountLoading.set(false);
         return;
       }
+      this._accountLoading.set(true);
       void this.profilePort.getProfile(userIdResult.value).then((result) => {
         this._account.set(result.isSuccess() ? result.value : null);
+        this._accountLoading.set(false);
       });
     });
   }

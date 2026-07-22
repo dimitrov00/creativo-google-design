@@ -425,5 +425,38 @@
       "failedBody": "We couldn't confirm your account just yet — please try again.",
       "retry": "Try again"
     }
+  },
+  "account": {
+    "header": {
+      "title": "My account",
+      "signOut": "Sign out"
+    },
+    "tiles": {
+      "book": {
+        "title": "Book a visit",
+        "subtitle": "Pick a barber, service and time"
+      },
+      "appointments": {
+        "title": "Appointments"
+      },
+      "settings": {
+        "title": "Settings"
+      },
+      "comingSoon": "Coming soon"
+    },
+    "upcoming": {
+      "title": "Upcoming appointment",
+      "empty": "You have no upcoming appointments.",
+      "bookCta": "Book a visit"
+    },
+    "completion": {
+      "title": "Complete your profile",
+      "progress": "{{done}} of {{total}} complete",
+      "items": {
+        "name": "Name",
+        "phone": "Phone",
+        "birthday": "Birthday"
+      }
+    }
   }
 }

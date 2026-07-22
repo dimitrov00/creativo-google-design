@@ -1,0 +1,41 @@
+:host {
+  display: block;
+  min-block-size: 100svh;
+  background: var(--sys-color-background);
+  color: var(--sys-color-foreground);
+}
+
+.account-shell {
+  display: grid;
+  gap: var(--sys-space-comfortable);
+  max-inline-size: var(--sys-container-content);
+  margin-inline: auto;
+  padding: var(--sys-space-spacious) var(--sys-space-regular);
+}
+
+.account-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.account-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  gap: var(--sys-space-regular);
+}
+
+.account-tile {
+  display: grid;
+  gap: var(--sys-space-tight);
+  border-radius: var(--control-radius-regular);
+  background: var(--sys-color-surface);
+  padding: var(--sys-space-comfortable);
+  text-decoration: none;
+  color: inherit;
+}
+
+.account-tile-inert {
+  opacity: 0.6;
+  pointer-events: none;
+}
