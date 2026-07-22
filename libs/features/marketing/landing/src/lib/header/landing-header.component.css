@@ -4,7 +4,7 @@
   position: fixed;
   inset-inline: 0;
   top: 0;
-  z-index: var(--sys-z-header, 60);
+  z-index: var(--sys-layer-header);
   /* Enumerated properties — `all` on a fixed header transitions layout
      properties it never animates (case-study §2.5). */
   transition:

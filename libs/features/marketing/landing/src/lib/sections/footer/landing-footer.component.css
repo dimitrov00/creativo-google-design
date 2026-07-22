@@ -2,7 +2,7 @@
 
 :host {
   display: block;
-  /* The accent closing band above provides the separation. */
+  /* Separated from the closing CTA by the hairline alone. */
   margin-block-start: 0;
   border-block-start: 1px solid var(--landing-border);
   background: var(--sys-color-surface);

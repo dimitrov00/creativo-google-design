@@ -68,6 +68,10 @@ export class ModalSheetComponent {
     this.behavior.onBackdropPointerDown(event);
   }
 
+  protected onBackdropPointerUp(event: PointerEvent): void {
+    this.behavior.onBackdropPointerUp(event);
+  }
+
   protected onScroll(event: Event): void {
     this.behavior.onScroll(event);
   }

@@ -9,6 +9,7 @@
   [attr.aria-modal]="open() || closing() ? 'true' : null"
   [attr.aria-hidden]="open() || closing() ? null : 'true'"
   (pointerdown)="onBackdropPointerDown($event)"
+  (pointerup)="onBackdropPointerUp($event)"
   (keydown)="onKeydown($event)"
 >
   <div class="modal-sheet__surface">
@@ -20,6 +21,9 @@
         (pointerup)="onDragEnd($event)"
         (pointercancel)="onDragEnd($event)"
       >
+        <!-- Grabber — signals the bottom sheet's drag-to-dismiss gesture
+             (mobile presentation only, see CSS). -->
+        <span class="modal-sheet__grabber" aria-hidden="true"></span>
         <div
           class="modal-sheet__title"
           [attr.data-visible]="titleVisible() ? '' : null"

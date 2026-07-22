@@ -3,7 +3,7 @@
 .cr-menu__backdrop {
   position: fixed;
   inset: 0;
-  z-index: 30;
+  z-index: calc(var(--sys-layer-header) - 30); /* below the fixed header */
   background: var(--sys-color-scrim);
   animation: cr-menu-fade var(--sys-motion-duration-regular)
     var(--sys-motion-ease-standard) both;
@@ -12,7 +12,7 @@
 .cr-menu {
   position: fixed;
   inset: 0;
-  z-index: 40;
+  z-index: calc(var(--sys-layer-header) - 20); /* below the fixed header */
   display: flex;
   flex-direction: column;
   background: var(--sys-color-background);

@@ -380,7 +380,7 @@ export class LocationsComponent implements AfterViewInit {
     ).matches;
     this.closeTimer = window.setTimeout(
       () => this.finishClosing(),
-      reducedMotion ? 0 : 380,
+      reducedMotion ? 0 : 300, // sheet exit = opacity track (deliberate, 300ms)
     );
   }
 

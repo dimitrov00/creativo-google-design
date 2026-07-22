@@ -35,7 +35,11 @@ interface PerformerVm {
   readonly minutes: number;
 }
 
-const CLOSE_ANIMATION_MS = 380;
+/* The sheet exit is visually done when its opacity transition completes —
+   --sys-motion-duration-deliberate (300ms). The old 380ms matched neither
+   the 300ms opacity nor the 480ms transform track (drift risk flagged in
+   the case study §2.8). */
+const CLOSE_ANIMATION_MS = 300;
 
 /**
  * The service-detail bottom sheet in the pre-migration landing's design

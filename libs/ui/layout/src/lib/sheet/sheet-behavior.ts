@@ -38,6 +38,9 @@ export interface UiSheetBehaviorOptions {
   readonly inertSelectors?: readonly string[];
   /** Name of the CSS custom property carrying the drag offset (px). */
   readonly dragVar?: string;
+  /** Media query gating drag-to-dismiss (default: the mobile bottom
+   *  sheet, `(max-width: 760px)`) — centered desktop dialogs don't drag. */
+  readonly dragMedia?: string;
 }
 
 const FOCUSABLE_SELECTOR =
@@ -69,6 +72,7 @@ export class UiSheetBehavior {
 
   private readonly options = signal<UiSheetBehaviorOptions | null>(null);
   private previousBodyOverflow = '';
+  private previousBodyPaddingRight = '';
   private inertedElements: HTMLElement[] = [];
   private previousFocus: HTMLElement | null = null;
   private environmentActive = false;
@@ -135,9 +139,21 @@ export class UiSheetBehavior {
     this.uiSheetDismissed.emit();
   }
 
-  /** Attach to the backdrop element: dismiss on a direct backdrop press. */
+  private backdropPressArmed = false;
+
+  /** Attach to the backdrop element: arms a dismiss on a direct press.
+   *  Dismissal fires on the paired pointerup (also on the backdrop) — a
+   *  stray touch that lands on the backdrop but slides onto the sheet no
+   *  longer closes it. */
   onBackdropPointerDown(event: PointerEvent): void {
-    if (event.target === event.currentTarget) this.requestDismiss();
+    this.backdropPressArmed = event.target === event.currentTarget;
+  }
+
+  /** Attach to the backdrop element's `(pointerup)`. */
+  onBackdropPointerUp(event: PointerEvent): void {
+    const armed = this.backdropPressArmed;
+    this.backdropPressArmed = false;
+    if (armed && event.target === event.currentTarget) this.requestDismiss();
   }
 
   /** Attach to the scroller's `(scroll)`: emits normalized progress. */
@@ -182,6 +198,11 @@ export class UiSheetBehavior {
   onDragStart(event: PointerEvent): void {
     if (event.button !== 0 || (this.options()?.closing?.() ?? false)) return;
     if ((event.target as Element | null)?.closest('button, a')) return;
+    // Drag-to-dismiss is a bottom-sheet gesture — centered desktop dialogs
+    // don't slide down, so the gesture is gated to the presentation that
+    // actually has the affordance (default: the mobile bottom sheet).
+    const media = this.options()?.dragMedia ?? '(max-width: 760px)';
+    if (!this.document.defaultView?.matchMedia(media).matches) return;
 
     this.dragPointerId = event.pointerId;
     this.dragStartY = event.clientY;
@@ -235,6 +256,16 @@ export class UiSheetBehavior {
     this.environmentActive = true;
     this.previousFocus = this.document.activeElement as HTMLElement | null;
     this.previousBodyOverflow = this.document.body.style.overflow;
+    // Compensate the vanished scrollbar so the page doesn't shift sideways
+    // while locked (scrollbar-gutter can't help here: the lock removes the
+    // scroll container's scrollbar entirely).
+    const scrollbarWidth =
+      (this.document.defaultView?.innerWidth ?? 0) -
+      this.document.documentElement.clientWidth;
+    this.previousBodyPaddingRight = this.document.body.style.paddingRight;
+    if (scrollbarWidth > 0) {
+      this.document.body.style.paddingRight = `${scrollbarWidth}px`;
+    }
     this.document.body.style.overflow = 'hidden';
     this.inertedElements = (options.inertSelectors ?? [])
       .map((selector) => this.document.querySelector<HTMLElement>(selector))
@@ -248,6 +279,7 @@ export class UiSheetBehavior {
     if (!this.environmentActive) return;
     this.environmentActive = false;
     this.document.body.style.overflow = this.previousBodyOverflow;
+    this.document.body.style.paddingRight = this.previousBodyPaddingRight;
     for (const element of this.inertedElements) {
       element.removeAttribute('inert');
     }

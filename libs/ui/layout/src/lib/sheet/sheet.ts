@@ -37,6 +37,7 @@ export type UiSheetPlacement = 'bottom' | 'center' | 'end';
     // The host IS the scrim — a direct press on it (not on the surface)
     // requests dismissal; Escape/Tab handling delegates to the behavior.
     '(pointerdown)': 'behavior.onBackdropPointerDown($event)',
+    '(pointerup)': 'behavior.onBackdropPointerUp($event)',
     '(keydown)': 'behavior.onKeydown($event)',
   },
 })

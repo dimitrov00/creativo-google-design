@@ -107,6 +107,20 @@
   touch-action: none;
 }
 
+/* Grabber pill — hidden on the centered desktop dialog (no drag gesture
+   there); shown on the mobile bottom sheet where drag-to-dismiss lives. */
+.modal-sheet__grabber {
+  display: none;
+  position: absolute;
+  inset-block-start: 0.4rem;
+  inset-inline-start: 50%;
+  transform: translateX(-50%);
+  inline-size: 2.25rem;
+  block-size: 0.3rem;
+  border-radius: var(--control-radius-capsule);
+  background: color-mix(in srgb, var(--sys-color-foreground) 18%, transparent);
+}
+
 .modal-sheet__title {
   grid-column: 2;
   max-inline-size: calc(100vw - 10rem);
@@ -210,6 +224,10 @@
 }
 
 @media (max-width: 760px) {
+  .modal-sheet__grabber {
+    display: block;
+  }
+
   .modal-sheet {
     --modal-sheet-safe: 1.1rem;
     place-items: end center;
