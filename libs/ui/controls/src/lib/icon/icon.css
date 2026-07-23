@@ -1,0 +1,76 @@
+@layer sys-components {
+  /* The FIXED icon size ladder (owner ruling): every explicitly scaled
+     glyph renders at one of exactly three absolute sizes — font-derived
+     fractions produced odd in-between values (17.5px next to 20px next
+     to 24px). Published as custom properties so other contexts
+     (button.css glyph tiers, list rows) plumb onto the SAME three
+     numbers instead of restating them. */
+  :root {
+    --ui-icon-small: 1rem; /* 16px — trailing/status accessories */
+    --ui-icon-medium: 1.25rem; /* 20px — control glyphs (compact/regular) */
+    --ui-icon-large: 1.5rem; /* 24px — prominent-control glyphs */
+  }
+
+  .ui-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+    flex-shrink: 0;
+    /* Optical baseline seat for icons in inline text flow (ignored inside
+       flex/grid parents like buttons, where align-items centers instead):
+       drops the em box slightly below the baseline so the glyph's visual
+       center rides the x-height, matching how SwiftUI seats SF Symbols
+       beside text. */
+    vertical-align: -0.125em;
+  }
+
+  .ui-icon__glyph {
+    /* House look — Material Symbols Rounded, FILLED. The vendor sheet
+       leaves FILL at 0 (outlined), so this is load-bearing everywhere. */
+    font-variation-settings:
+      'FILL' 1,
+      'wght' 400,
+      'opsz' 24;
+  }
+
+  /* Landing-local brand marks (e.g. svg[crIconInstagram]) carry the
+     .ui-icon host class themselves; any svg icon on the class shares the
+     same em box. */
+  svg.ui-icon,
+  .ui-icon svg {
+    inline-size: 1em;
+    block-size: 1em;
+  }
+}
+
+/* UNLAYERED on purpose — the one sanctioned exception to the "everything
+   in @layer sys-components" contract, and it exists because of how the
+   cascade treats layers: UNLAYERED author CSS beats ALL layered CSS
+   regardless of specificity. The vendor `material-symbols/rounded.css`
+   (imported unlayered in each app's styles.css) hard-codes
+   `.material-symbols-rounded { font-size: 24px }`, which silently
+   overrode a layered `font-size: inherit` here and froze every icon at
+   24px no matter the surrounding text. These rules must therefore live
+   OUTSIDE the layer; they out-specify the vendor's single class
+   (0,1,0 < 0,2,0) and restore the contract: unscaled glyphs ride the
+   current font, scaled glyphs snap to the fixed ladder.
+
+   Scale mapping:
+     no data-scale       → 1em (default — inherits the surrounding font;
+                           correct for glyphs inline in running text)
+     data-scale='small'  → var(--ui-icon-small)  1rem (16px)
+     data-scale='medium' → var(--ui-icon-medium) 1.25rem (20px)
+     data-scale='large'  → var(--ui-icon-large)  1.5rem (24px) */
+.ui-icon .ui-icon__glyph {
+  font-size: 1em;
+}
+.ui-icon[data-scale='small'] .ui-icon__glyph {
+  font-size: var(--ui-icon-small);
+}
+.ui-icon[data-scale='medium'] .ui-icon__glyph {
+  font-size: var(--ui-icon-medium);
+}
+.ui-icon[data-scale='large'] .ui-icon__glyph {
+  font-size: var(--ui-icon-large);
+}

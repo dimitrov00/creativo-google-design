@@ -9,6 +9,16 @@
     --sys-color-foreground: #ededed;
     --sys-color-surface: #171717;
     --sys-color-surface-secondary: #242424;
+    /* Elevated surface — SwiftUI secondarySystemGroupedBackground parity
+       (dark elevation = LIGHTER surface, iOS #2C2C2E over #1C1C1E ≈ a
+       6–8% lift): base surface mixed 7% toward foreground. Consumed by
+       ui-card[data-tone='elevated'] (added 2026-07-23; a plain card on a
+       dark sheet was invisible). */
+    --sys-color-surface-elevated: color-mix(
+      in srgb,
+      var(--sys-color-foreground) 7%,
+      var(--sys-color-surface)
+    );
     --sys-color-primary: #ededed;
     --sys-color-on-primary: #0d0d0d;
     --sys-color-secondary-label: #8c8c8c;
@@ -28,6 +38,13 @@
     );
     --sys-color-scrim: color-mix(in srgb, #000 45%, transparent);
     --sys-color-media-scrim: color-mix(in srgb, #000 70%, transparent);
+    /* Material glass fill — surface-alpha under the --sys-material-*-blur
+       tiers (recipe family: locations sheet chrome, theme-aware glass). */
+    --sys-material-fill: color-mix(
+      in srgb,
+      var(--sys-color-surface) 78%,
+      transparent
+    );
     --sys-alpha-fill: 8%;
     --sys-alpha-fill-hover: 12%;
     --sys-alpha-press: 16%;

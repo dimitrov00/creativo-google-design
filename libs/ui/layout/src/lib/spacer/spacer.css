@@ -1,0 +1,9 @@
+@layer sys-components {
+  .ui-spacer {
+    flex: 1 1 0;
+    align-self: stretch;
+    /* Collapsible to zero — the spacer must never force overflow. */
+    min-inline-size: 0;
+    min-block-size: 0;
+  }
+}

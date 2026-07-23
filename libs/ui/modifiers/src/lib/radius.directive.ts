@@ -1,6 +1,7 @@
 import { Directive, input } from '@angular/core';
 
-export type UiRadiusScale = 'subtle' | 'regular' | 'prominent' | 'capsule';
+export type UiRadiusScale =
+  'subtle' | 'regular' | 'prominent' | 'hero' | 'capsule';
 
 /** ≙ SwiftUI `.clipShape(RoundedRectangle(cornerRadius:))` — writes `data-radius`. */
 @Directive({

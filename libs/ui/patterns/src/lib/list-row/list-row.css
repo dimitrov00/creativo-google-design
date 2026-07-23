@@ -1,0 +1,84 @@
+@layer sys-components {
+  .ui-list-row {
+    display: flex;
+    align-items: center;
+    gap: var(--sys-space-regular);
+    min-block-size: var(--control-size-prominent);
+    padding: var(--sys-space-compact) var(--sys-space-regular);
+    font: var(--sys-font-callout);
+    /* Row labels read at medium — a deliberate weight override on the
+       callout role (which bakes 400); part of the list-row recipe, not a
+       per-consumer choice. */
+    font-weight: 500;
+    color: var(--sys-color-foreground);
+  }
+
+  .ui-list-row[data-size='regular'] {
+    min-block-size: var(--control-size-regular);
+  }
+  .ui-list-row[data-size='prominent'] {
+    min-block-size: var(--control-size-prominent);
+  }
+
+  /* Variant — DS button vocabulary (SwiftUI: a tinted/prominent list row).
+     `prominent` = primary fill + on-primary ink for the label AND every
+     glyph (leading and trailing alike — the trailing secondary-ink rule
+     below is overridden for this variant). A STANDALONE prominent row takes
+     the prominent rung of the control radius ladder, same as the 52px
+     button tier; rows inside cards stay edge-to-edge square via the
+     existing card-clip context (the card zeroes the radius and its
+     overflow clip rounds the outer corners). The uiInteractive state layer
+     composes on the filled surface untouched: it fills with currentColor,
+     which is on-primary here — the same relationship as uiButton
+     prominent's hover tier. */
+  .ui-list-row[data-variant='prominent'] {
+    background: var(--sys-color-primary);
+    color: var(--sys-color-on-primary);
+    border-radius: var(--control-radius-prominent);
+  }
+  .ui-card .ui-list-row[data-variant='prominent'] {
+    border-radius: 0;
+  }
+  .ui-list-row[data-variant='prominent'] > [uitrailing] {
+    color: var(--sys-color-on-primary);
+  }
+
+  /* Native-element forms (a/button rows) — strip the UA chrome; row
+     typography comes from the host rule above, interaction feedback from
+     the shared [data-interactive] grammar (libs/ui/modifiers). */
+  a.ui-list-row,
+  button.ui-list-row {
+    inline-size: 100%;
+    border: 0;
+    background: none;
+    color: inherit;
+    text-decoration: none;
+    text-align: start;
+  }
+
+  /* Slot attributes are lowercased by the HTML parser (uiLeading →
+     uileading) — selectors use the DOM form. */
+  .ui-list-row > [uileading] {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  .ui-list-row__label {
+    flex: 1;
+    min-inline-size: 0;
+    /* Single-line ellipsis by default; multi-line identity stacks reset
+       white-space in their own content. */
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* Trailing detail reads at secondary ink automatically — the DS
+     expresses de-emphasis through the foreground role, never opacity. */
+  .ui-list-row > [uitrailing] {
+    flex-shrink: 0;
+    color: var(--sys-color-secondary-label);
+  }
+}

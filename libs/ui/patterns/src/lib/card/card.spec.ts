@@ -1,6 +1,6 @@
 import { Component, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { UiCard } from './card';
+import { UiCard, type UiCardTone } from './card';
 
 @Component({
   imports: [UiCard],
@@ -13,7 +13,7 @@ import { UiCard } from './card';
   >`,
 })
 class HostComponent {
-  tone = signal<'plain' | 'accent' | 'muted'>('accent');
+  tone = signal<UiCardTone>('accent');
   interactive = signal(false);
 }
 
@@ -45,6 +45,15 @@ describe('UiCard', () => {
       '[data-testid="card"]',
     );
     expect(el.getAttribute('data-interactive')).toBe('');
+  });
+
+  it('accepts the "elevated" tone (SwiftUI secondarySystemGroupedBackground parity) and writes it as data-tone', () => {
+    fixture.componentInstance.tone.set('elevated');
+    fixture.detectChanges();
+    const el: HTMLElement = fixture.nativeElement.querySelector(
+      '[data-testid="card"]',
+    );
+    expect(el.getAttribute('data-tone')).toBe('elevated');
   });
 
   it('defaults uiPadding to "comfortable" and uiTone to "plain" when unbound', () => {

@@ -4,19 +4,32 @@ import { UiRadiusDirective } from './radius.directive';
 
 @Component({
   imports: [UiRadiusDirective],
-  template: `<div uiRadius [uiRadius]="'capsule'">content</div>`,
+  template: `<div uiRadius [uiRadius]="radius">content</div>`,
 })
-class HostComponent {}
+class HostComponent {
+  radius: 'hero' | 'capsule' = 'capsule';
+}
 
 describe('UiRadiusDirective', () => {
-  it('writes data-radius from the uiRadius input', async () => {
+  let fixture: ComponentFixture<HostComponent>;
+
+  beforeEach(async () => {
     await TestBed.configureTestingModule({
       imports: [HostComponent],
     }).compileComponents();
-    const fixture: ComponentFixture<HostComponent> =
-      TestBed.createComponent(HostComponent);
+    fixture = TestBed.createComponent(HostComponent);
+  });
+
+  it('writes data-radius from the uiRadius input', () => {
     fixture.detectChanges();
     const el: HTMLElement = fixture.nativeElement.querySelector('div');
     expect(el.getAttribute('data-radius')).toBe('capsule');
+  });
+
+  it('accepts the marketing set-piece "hero" tier', () => {
+    fixture.componentInstance.radius = 'hero';
+    fixture.detectChanges();
+    const el: HTMLElement = fixture.nativeElement.querySelector('div');
+    expect(el.getAttribute('data-radius')).toBe('hero');
   });
 });

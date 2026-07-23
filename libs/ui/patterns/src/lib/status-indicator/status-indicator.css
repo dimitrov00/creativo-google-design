@@ -1,0 +1,37 @@
+@layer sys-components {
+  .ui-status-indicator {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--sys-space-tight);
+    font: var(--sys-font-footnote);
+  }
+
+  /* Dot and label share the tone ink (dot fills with currentColor). */
+  .ui-status-indicator[data-tone='success'] {
+    color: var(--sys-color-success);
+  }
+  .ui-status-indicator[data-tone='warning'] {
+    color: var(--sys-color-warning);
+  }
+  .ui-status-indicator[data-tone='destructive'] {
+    color: var(--sys-color-destructive);
+  }
+
+  /* ONE dot geometry — replaces the diverging 0.4rem/0.55rem hand-rolled
+     copies this pattern consolidates. */
+  .ui-status-indicator__dot {
+    inline-size: 0.5rem;
+    aspect-ratio: 1;
+    flex-shrink: 0;
+    border-radius: var(--control-radius-capsule);
+    background: currentColor;
+  }
+
+  /* Slot attributes are lowercased by the HTML parser (uiDetail →
+     uidetail) — selectors use the DOM form. Detail reads at secondary
+     ink, independent of the tone. */
+  .ui-status-indicator > [uidetail] {
+    color: var(--sys-color-secondary-label);
+  }
+}

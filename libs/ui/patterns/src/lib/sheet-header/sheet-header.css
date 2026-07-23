@@ -1,0 +1,183 @@
+@layer sys-components {
+  .ui-sheet-header {
+    position: sticky;
+    inset-block-start: 0;
+    /* Semantic header tier — any value works inside the sheet's own
+       stacking context, so the semantic token is free (replaces the old
+       popover-tier misuse). */
+    z-index: var(--sys-layer-header);
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: center;
+    /* Toolbar norm — same 52px bar as ui-toolbar (replaces the off-scale
+       65.6/60px sheet toolbars this pattern consolidates). */
+    min-block-size: var(--control-size-prominent);
+    /* The header keeps its OWN tight inline padding — deliberately NOT the
+       sheet's shared `--ui-sheet-inset` (owner revert, 2026-07-23: the bar
+       chrome hugging the sheet edge looked better than chrome pushed onto
+       the content gutter; the content/surface inset system is untouched).
+       iOS parity: UINavigationBar controls sit tighter to the edge than
+       the content's readable margin. */
+    padding: var(--sys-space-compact) var(--sys-space-tight);
+    /* At rest the bar is TRANSPARENT chrome (SwiftUI large-title collapse:
+       the in-content large title carries the identity; the bar only
+       "lands" — fill + hairline — once that title tucks under it). */
+    background-color: transparent;
+    border-block-end: 1px solid transparent;
+    color: var(--sys-color-foreground);
+    transition:
+      background-color var(--sys-motion-duration-regular)
+        var(--sys-motion-ease-standard),
+      border-color var(--sys-motion-duration-regular)
+        var(--sys-motion-ease-standard);
+    /* The bar doubles as the bottom sheet's drag handle — the owner wires
+       pointer events to UiSheetBehavior; scrolling must not eat them. */
+    touch-action: none;
+  }
+
+  /* Grabber pill — signals drag-to-dismiss; hidden on the centered desktop
+     dialog (no drag gesture there), shown inside the drag media below.
+     Pressed-tier tint, not a foreground-alpha one-off — sheet chrome reads
+     the same state-layer recipe as every other surface. Pill geometry
+     (36×4.8px) is the bespoke signature dimension carried over from
+     cr-modal-sheet. */
+  .ui-sheet-header__grabber {
+    display: none;
+    position: absolute;
+    inset-block-start: var(--sys-space-tight);
+    inset-inline-start: 50%;
+    transform: translateX(-50%);
+    inline-size: 2.25rem;
+    block-size: 0.3rem;
+    border-radius: var(--control-radius-capsule);
+    background: var(--sys-state-layer-press);
+  }
+
+  /* Slot attributes are lowercased by the HTML parser (uiTitle → uititle)
+     — selectors use the DOM form. Compact title: hidden until the body
+     large title collapses under the bar (data-collapsed from the
+     component's sentinel observation, scroll-linked animation below, or
+     the owner's [data-visible] flip). Typography belongs to the consumer's
+     title element. */
+  .ui-sheet-header > [uititle] {
+    grid-column: 2;
+    margin: 0;
+    /* Functional overflow guard from cr-modal-sheet — keeps long titles
+       from blowing the auto grid column past the viewport. */
+    max-inline-size: calc(100vw - 10rem);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    text-align: center;
+    opacity: 0;
+    transform: translateY(0.55rem);
+    transition:
+      opacity var(--sys-motion-duration-deliberate)
+        var(--sys-motion-ease-standard),
+      transform var(--sys-motion-duration-slow)
+        var(--sys-motion-ease-emphasized);
+    pointer-events: none;
+  }
+
+  .ui-sheet-header > [uititle][data-visible],
+  .ui-sheet-header[data-collapsed] > [uititle] {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  /* The landed bar: surface fill + hairline (UINavigationBar edge) appear
+     only once the large title is under the bar. Triggered by the
+     component's own `data-collapsed` (sentinel observation / uiCollapsed
+     input) or by the legacy owner-driven title flip (`:has` covers owners
+     that only stamp [data-visible] on their title, e.g. locations'
+     IntersectionObserver fallback). */
+  .ui-sheet-header[data-collapsed],
+  .ui-sheet-header:has(> [uititle][data-visible]) {
+    background-color: var(--sys-color-surface);
+    border-block-end-color: var(--sys-color-separator);
+  }
+
+  .ui-sheet-header > [uitrailing] {
+    grid-column: 3;
+    justify-self: end;
+  }
+
+  /* Labelling the in-content large title `uiSheetLargeTitle` (the sentinel
+     the component observes) also names its view-timeline, so supporting
+     browsers get the scroll-linked reveal below with zero extra CSS from
+     the consumer. Consumers may equally name the timeline themselves. */
+  [uisheetlargetitle] {
+    view-timeline-name: --ui-sheet-headline;
+  }
+
+  /* Scroll-linked compact-title reveal (Apple large-title collapse): the
+     consumer's headline carries the `--ui-sheet-headline` view-timeline
+     and the compact title + bar chrome fade in EXACTLY as the headline
+     slides under the bar. The timeline scope must live on a common
+     ancestor of this header and the headline — for DS sheets that ancestor
+     is the ui-sheet surface, scoped here (via :has) so composition works
+     out of the box; non-ui-sheet owners declare
+     `timeline-scope: --ui-sheet-headline` on their own root. The
+     data-collapsed / [data-visible] flips above stay as the fallback for
+     browsers without scroll-driven animations (an unattached timeline
+     leaves these animations inert there). */
+  .ui-sheet__surface:has(.ui-sheet-header) {
+    timeline-scope: --ui-sheet-headline;
+  }
+
+  @supports (animation-timeline: view()) {
+    @media (prefers-reduced-motion: no-preference) {
+      .ui-sheet-header > [uititle] {
+        animation: ui-sheet-header-title-in linear both;
+        animation-timeline: --ui-sheet-headline;
+        animation-range: exit 20% exit 100%;
+      }
+
+      /* The bar 'lands' — fill + hairline — as the headline tucks under
+         it (UINavigationBar behavior). */
+      .ui-sheet-header {
+        animation: ui-sheet-header-chrome-in linear both;
+        animation-timeline: --ui-sheet-headline;
+        animation-range: exit 20% exit 100%;
+      }
+    }
+  }
+
+  /* Explicit `from` frames: the animation must pin the resting state to
+     transparent even while the binary data-collapsed flip is also stamped
+     (the scroll-linked binding is the finer-grained source of truth in
+     supporting browsers). */
+  @keyframes ui-sheet-header-chrome-in {
+    from {
+      background-color: transparent;
+      border-block-end-color: transparent;
+    }
+    to {
+      background-color: var(--sys-color-surface);
+      border-block-end-color: var(--sys-color-separator);
+    }
+  }
+
+  @keyframes ui-sheet-header-title-in {
+    from {
+      opacity: 0;
+      transform: translateY(0.55rem);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  /* Matches UiSheetBehavior's default dragMedia — the grabber appears
+     where drag-to-dismiss lives. */
+  @media (max-width: 760px) {
+    .ui-sheet-header__grabber {
+      display: block;
+    }
+
+    .ui-sheet-header {
+      cursor: grab;
+    }
+  }
+}

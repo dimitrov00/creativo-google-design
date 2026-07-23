@@ -106,6 +106,9 @@
   [data-radius='prominent'] {
     border-radius: var(--control-radius-prominent);
   }
+  [data-radius='hero'] {
+    border-radius: var(--control-radius-hero);
+  }
   [data-radius='capsule'] {
     border-radius: var(--control-radius-capsule);
   }
@@ -145,9 +148,156 @@
     transform: scale(var(--sys-press-scale-surface));
   }
 
+  /* The shared focus ring — matches button.css so non-button interactive
+     surfaces (cards, rows, tiles, map pins) stop hand-copying the recipe. */
+  [data-interactive]:focus-visible {
+    outline: 2px solid var(--sys-color-ring);
+    outline-offset: 2px;
+  }
+
   @media (prefers-reduced-motion: reduce) {
     [data-interactive]:active {
       transform: none;
     }
+  }
+
+  /* ── Material (uiMaterial → data-material) ──
+     ≙ SwiftUI .background(.thinMaterial/.regularMaterial/.thickMaterial):
+     the one glass recipe — tiered blur over the shared surface-alpha fill.
+     Replaces every hand-rolled backdrop-filter chrome recipe. */
+  [data-material] {
+    --ui-material-fill: var(--sys-material-fill);
+    background-color: var(--ui-material-fill);
+    -webkit-backdrop-filter: blur(var(--ui-material-blur))
+      saturate(var(--sys-material-saturation));
+    backdrop-filter: blur(var(--ui-material-blur))
+      saturate(var(--sys-material-saturation));
+  }
+
+  /* Controls reset `background` in their own base rule (`.ui-button {
+     background: transparent }` lands LATER in sys-components via component
+     style injection, so the generic rule above loses the fill and the
+     button reads as blur-only glass — confirmed live 2026-07-23). Restated
+     at control specificity; filled variants (prominent/tinted/destructive)
+     still win with their own (0,2,0) variant rules further down the layer,
+     so material fill only shows through the quiet variants — the intended
+     composition. */
+  .ui-button[data-material] {
+    background-color: var(--ui-material-fill);
+  }
+
+  /* Hover/press on a glass button LAYERS the state tint INTO the material
+     fill — it must never replace it (button.css's quiet-variant hover sets
+     a plain currentColor fill, which killed the glass on hover: the button
+     flashed from translucent to flat. Owner call 2026-07-23). Higher
+     specificity than the variant hover rules so the material composition
+     wins for background-color while blur stays untouched. */
+  @media (hover: hover) {
+    .ui-button[data-material][data-variant='bordered']:hover:not(:disabled),
+    .ui-button[data-material][data-variant='plain']:hover:not(:disabled) {
+      background-color: color-mix(
+        in srgb,
+        currentColor var(--sys-alpha-fill-hover),
+        var(--ui-material-fill)
+      );
+    }
+  }
+  .ui-button[data-material][data-variant='bordered']:active:not(:disabled),
+  .ui-button[data-material][data-variant='plain']:active:not(:disabled) {
+    background-color: color-mix(
+      in srgb,
+      currentColor var(--sys-alpha-press),
+      var(--ui-material-fill)
+    );
+  }
+
+  [data-material='thin'] {
+    --ui-material-blur: var(--sys-material-thin-blur);
+  }
+
+  [data-material='regular'] {
+    --ui-material-blur: var(--sys-material-regular-blur);
+  }
+
+  [data-material='thick'] {
+    --ui-material-blur: var(--sys-material-thick-blur);
+    /* ≙ .thickMaterial: near-opaque (owner call 2026-07-23 — thick must
+       read SOLID over busy media/map surfaces; the shared 78% fill is the
+       thin/regular translucency). Same recipe family as the theme files'
+       --sys-material-fill, coverage raised to the thick tier's 92%. */
+    --ui-material-fill: color-mix(
+      in srgb,
+      var(--sys-color-surface) 92%,
+      transparent
+    );
+  }
+
+  /* ── Overlay (uiOverlay → data-overlay) ──
+     ≙ SwiftUI .overlay(_:): the absolute-inset layer scaffold. The parent
+     must be positioned (a ui-stack z-axis layer or position: relative
+     surface). Gradient stops live ONLY here — no literal rgb() scrims in
+     feature CSS. */
+  [data-overlay] {
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    pointer-events: none;
+  }
+
+  /* 1px inset hairline keeping media frames crisp against the page. */
+  [data-overlay='ring'] {
+    box-shadow: inset 0 0 0 1px var(--sys-color-separator);
+  }
+
+  /* Over media the hairline flips to the theme-independent white ramp. */
+  [data-on-media] [data-overlay='ring'],
+  [data-on-media][data-overlay='ring'] {
+    box-shadow: inset 0 0 0 1px
+      color-mix(in srgb, var(--sys-color-on-media) 12%, transparent);
+  }
+
+  /* Bottom-anchored legibility grade for captions/CTAs over media. */
+  [data-overlay='scrim-media'] {
+    background: linear-gradient(
+      to top,
+      var(--sys-color-media-scrim) 0%,
+      color-mix(in srgb, var(--sys-color-media-scrim) 55%, transparent) 40%,
+      transparent 78%
+    );
+  }
+
+  /* Center radial grade grounding hero copy over ambient video. */
+  [data-overlay='vignette'] {
+    background: radial-gradient(
+      ellipse 120% 90% at 50% 55%,
+      color-mix(in srgb, var(--sys-color-media-scrim) 80%, transparent) 0%,
+      color-mix(in srgb, var(--sys-color-media-scrim) 65%, transparent) 45%,
+      color-mix(in srgb, var(--sys-color-media-scrim) 30%, transparent) 100%
+    );
+  }
+
+  /* ── Reveal (uiReveal → data-reveal) ──
+     Entrance-motion start state. The directive stamps
+     data-reveal-state="hidden" ONLY once it knows the WAAPI animation will
+     run (browser, no reduced-motion, WAAPI/IO available), so SSR/no-JS
+     renders stay visible; the attribute is removed as the animation starts
+     (fill: both holds the first keyframe through any delay). */
+  [data-reveal][data-reveal-state='hidden'] {
+    opacity: 0;
+  }
+
+  /* ── Visually hidden (uiVisuallyHidden → data-visually-hidden) ──
+     ≙ .accessibilityLabel on hidden Text: the SR-only clip recipe, kept in
+     the accessibility tree while rendering as a 1px clipped box. */
+  [data-visually-hidden] {
+    position: absolute;
+    inline-size: 1px;
+    block-size: 1px;
+    margin: -1px;
+    padding: 0;
+    border: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
   }
 }

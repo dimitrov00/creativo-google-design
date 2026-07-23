@@ -1,0 +1,30 @@
+@layer sys-components {
+  .ui-ambient-video {
+    position: relative;
+    display: block;
+    overflow: hidden;
+  }
+
+  /* Poster and film both cover-fill the host; consumers size the host
+     (typically a z-stack layer or an absolutely-placed media backdrop). */
+  .ui-ambient-video__poster,
+  .ui-ambient-video__video {
+    position: absolute;
+    inset: 0;
+    inline-size: 100%;
+    block-size: 100%;
+    object-fit: cover;
+  }
+
+  /* The film fades in over the poster once its first frame is decodable —
+     cinematic tier, the slow set-piece entrance. (Under reduced motion the
+     component renders no video element at all.) */
+  .ui-ambient-video__video {
+    opacity: 0;
+    transition: opacity var(--sys-motion-duration-cinematic)
+      var(--sys-motion-ease-standard);
+  }
+  .ui-ambient-video[data-state='loaded'] .ui-ambient-video__video {
+    opacity: 1;
+  }
+}

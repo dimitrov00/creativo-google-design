@@ -24,7 +24,12 @@
     max-inline-size: var(--sys-container-drawer);
     border-start-start-radius: var(--control-radius-prominent);
     border-start-end-radius: var(--control-radius-prominent);
-    padding: var(--sys-space-comfortable);
+    /* ONE shared inline inset for the whole sheet: content padding here and
+       ui-sheet-header's inline padding both consume `--ui-sheet-inset`, so
+       sheet chrome and sheet body always sit on the same gutter. Token-
+       backed default; shells with fluid gutters override the property. */
+    --ui-sheet-inset: var(--sys-space-comfortable);
+    padding: var(--sys-space-comfortable) var(--ui-sheet-inset);
     transform: translateY(100%);
     transition: transform var(--sys-motion-duration-deliberate)
       var(--sys-motion-ease-emphasized);
@@ -67,5 +72,12 @@
   }
   .ui-sheet[data-placement='end'][data-open] .ui-sheet__surface {
     transform: translateX(0);
+  }
+
+  /* Size: wide — set-piece sheets (galleries, location detail) trade the
+     drawer measure for the wide sheet container. Declared after the
+     placement rules so it wins their equal-specificity max-inline-size. */
+  .ui-sheet[data-size='wide'] .ui-sheet__surface {
+    max-inline-size: var(--sys-container-sheet-wide);
   }
 }

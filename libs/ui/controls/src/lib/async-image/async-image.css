@@ -1,0 +1,54 @@
+@layer sys-components {
+  .ui-async-image {
+    position: relative;
+    display: block;
+    overflow: hidden;
+  }
+
+  /* Placeholder fills the box under the image; it cross-fades out as the
+     image fades in, and simply stays put for null-src / error states. */
+  .ui-async-image__placeholder {
+    position: absolute;
+    inset: 0;
+    transition: opacity var(--sys-motion-duration-regular)
+      var(--sys-motion-ease-standard);
+  }
+  .ui-async-image[data-state='loaded'] .ui-async-image__placeholder {
+    opacity: 0;
+  }
+  .ui-async-image__skeleton {
+    inline-size: 100%;
+    block-size: 100%;
+  }
+
+  .ui-async-image__image {
+    display: block;
+    inline-size: 100%;
+    block-size: 100%;
+    object-fit: cover;
+    opacity: 0;
+    transition: opacity var(--sys-motion-duration-regular)
+      var(--sys-motion-ease-standard);
+  }
+  .ui-async-image[data-state='loaded'] .ui-async-image__image {
+    opacity: 1;
+  }
+
+  /* Inset hairline riding above the image — same recipe as the uiOverlay
+     'ring' scaffold (1px separator, radius-following, hit-transparent). */
+  .ui-async-image[data-ring]::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    pointer-events: none;
+    box-shadow: inset 0 0 0 1px var(--sys-color-separator);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .ui-async-image__placeholder,
+    .ui-async-image__image {
+      transition: none;
+    }
+  }
+}

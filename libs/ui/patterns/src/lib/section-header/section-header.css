@@ -38,12 +38,12 @@
   /* Over media (video/photography) the ink rides the white overlay ramp —
      theme-independent by design, like ui-button's overlay variant. */
   .ui-section-header[data-on-media] > [uieyebrow] {
-    color: rgb(255 255 255 / 0.6);
+    color: var(--sys-color-on-media-subtle);
   }
   .ui-section-header[data-on-media] > [uititle] {
-    color: #ffffff;
+    color: var(--sys-color-on-media);
   }
   .ui-section-header[data-on-media] > [uilede] {
-    color: rgb(255 255 255 / 0.78);
+    color: var(--sys-color-on-media-muted);
   }
 }

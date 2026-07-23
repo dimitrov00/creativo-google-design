@@ -55,6 +55,10 @@
     --sys-space-comfortable: calc(var(--sys-space-unit) * 6); /* 24px */
     --sys-space-loose: calc(var(--sys-space-unit) * 8); /* 32px */
     --sys-space-spacious: calc(var(--sys-space-unit) * 12); /* 48px */
+    /* Section rhythm (landing ~7rem) — the vertical beat between page
+       sections, promoted from per-section 8/6/10rem literals. Density-aware
+       like the rest of the scale. */
+    --sys-space-section: calc(var(--sys-space-unit) * 28); /* 112px */
 
     /* ── Controls (v2: sm 36 / md 44 HIG tap / lg 52) ── */
     --control-size-compact: calc(var(--sys-space-unit) * 9);
@@ -73,6 +77,11 @@
     --control-radius-prominent: calc(
       var(--sys-radius-base) * var(--sys-radius-scale) * 1.75
     );
+    /* Hero set-pieces (marketing cards, wide sheets) — absorbs the landing's
+       --landing-radius-sheet tier (≈27.2px) into the shared ladder. */
+    --control-radius-hero: calc(
+      var(--sys-radius-base) * var(--sys-radius-scale) * 2.67
+    );
     --control-radius-capsule: 9999px;
 
     /* ── Containment (v2 parity) ── */
@@ -80,6 +89,9 @@
     --sys-container-console: 48rem;
     --sys-container-drawer: 36rem;
     --sys-container-sidebar: 17rem;
+    /* Wide sheet surface (ui-sheet uiSize="wide") — the landing modal
+       sheet's 72rem editorial width, promoted from a per-sheet literal. */
+    --sys-container-sheet-wide: 72rem;
 
     /* ── Interaction states (SwiftUI parity: .hoverEffect(.highlight)) ──
        One state-layer grammar for every interactive surface: hover/press
@@ -97,6 +109,23 @@
     );
     --sys-press-scale-control: 0.97;
     --sys-press-scale-surface: 0.99;
+
+    /* ── Materials (SwiftUI parity: .ultraThinMaterial / .regularMaterial /
+       .thickMaterial) — one glass grammar. Blur tiers consolidate the
+       landing's divergent recipes (sheet scrim 14, chrome 20, map toolbar
+       40); fill is per-theme (--sys-material-fill in the theme files). ── */
+    --sys-material-thin-blur: 14px;
+    --sys-material-regular-blur: 20px;
+    --sys-material-thick-blur: 40px;
+    --sys-material-saturation: 1.5;
+
+    /* ── On-media ink (theme-independent by design, like ui-button's
+       overlay variant): white overlay ramp for text over video/photography,
+       plus the film/letterbox canvas behind ambient media. ── */
+    --sys-color-on-media: #ffffff;
+    --sys-color-on-media-muted: rgb(255 255 255 / 0.78);
+    --sys-color-on-media-subtle: rgb(255 255 255 / 0.6);
+    --sys-color-media-canvas: #0a0a0a;
 
     /* ── Elevation ── */
     --sys-elevation-raised:
@@ -126,6 +155,10 @@
     --sys-motion-ease-entrance: cubic-bezier(0.16, 1, 0.3, 1);
 
     /* ── Layering (v2 z-ladder) ── */
+    /* Shell chrome that floats above content but below the header (safe-area
+       veils, deep-link anchors) — replaces calc(--sys-layer-header - n)
+       arithmetic at the call sites. */
+    --sys-layer-shell: 40;
     --sys-layer-header: 60;
     --sys-layer-banner: 70;
     --sys-layer-overlay: 100;

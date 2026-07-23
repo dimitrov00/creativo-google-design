@@ -6,13 +6,17 @@ import { UiSheet } from './sheet';
   imports: [UiSheet],
   template: `<ui-sheet
     [uiOpen]="open()"
+    [uiClosing]="closing()"
     [uiPlacement]="'end'"
+    [uiSize]="size()"
     data-testid="sheet"
     >content</ui-sheet
   >`,
 })
 class HostComponent {
   open = signal(false);
+  closing = signal(false);
+  size = signal<'regular' | 'wide'>('regular');
 }
 
 describe('UiSheet', () => {
@@ -45,6 +49,41 @@ describe('UiSheet', () => {
     );
     expect(el.getAttribute('data-open')).toBe('');
     expect(el.getAttribute('aria-modal')).toBe('true');
+  });
+
+  it('writes the default size as data-size="regular"', () => {
+    fixture.detectChanges();
+    const el: HTMLElement = fixture.nativeElement.querySelector(
+      '[data-testid="sheet"]',
+    );
+    expect(el.getAttribute('data-size')).toBe('regular');
+  });
+
+  it('writes data-size="wide" when uiSize is wide', () => {
+    fixture.componentInstance.size.set('wide');
+    fixture.detectChanges();
+    const el: HTMLElement = fixture.nativeElement.querySelector(
+      '[data-testid="sheet"]',
+    );
+    expect(el.getAttribute('data-size')).toBe('wide');
+  });
+
+  it('keeps the modal environment active while uiClosing is true', () => {
+    fixture.componentInstance.open.set(true);
+    fixture.detectChanges();
+    expect(document.body.style.overflow).toBe('hidden');
+
+    // Owner starts its exit transition: open flips off, closing flips on —
+    // the behavior's environment (body scroll lock) must stay active.
+    fixture.componentInstance.open.set(false);
+    fixture.componentInstance.closing.set(true);
+    fixture.detectChanges();
+    expect(document.body.style.overflow).toBe('hidden');
+
+    // Exit transition done — environment releases.
+    fixture.componentInstance.closing.set(false);
+    fixture.detectChanges();
+    expect(document.body.style.overflow).not.toBe('hidden');
   });
 
   it('projects content inside a .ui-sheet__surface wrapper', () => {

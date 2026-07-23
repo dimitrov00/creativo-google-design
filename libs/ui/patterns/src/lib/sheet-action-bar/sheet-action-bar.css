@@ -1,0 +1,81 @@
+@layer sys-components {
+  /* Clearance contract — the vertical room a sheet body must reserve so
+     content scrolls clear of the docked bar: the bar's own box (block
+     padding + one prominent control + safe-area floor) + breathing room.
+     Sheet bodies use `padding-block-end:
+     var(--ui-sheet-action-bar-clearance)` instead of hardcoding the bar's
+     height. */
+  :root {
+    --ui-sheet-action-bar-clearance: calc(
+      max(var(--sys-space-compact), env(safe-area-inset-bottom)) +
+        var(--control-size-prominent) + var(--sys-space-compact) +
+        var(--sys-space-spacious)
+    );
+  }
+
+  /* SwiftUI `.safeAreaInset(edge: .bottom)` composition: the row spans
+     the FULL width of the sheet surface (edge to edge — inset: 0 inline)
+     but is CHROMELESS — no material, no fill, no hairline. The projected
+     controls carry their own surfaces and float directly over the
+     scrolling content; the row lays them out as leading secondaries +
+     trailing primary. The inline gutter mirrors ui-sheet-header's tight
+     chrome padding (owner call 2026-07-23) — bar and header are the
+     sheet's two chrome rails and share one edge rhythm, deliberately
+     tighter than the content gutter — floored by the device safe areas. */
+  .ui-sheet-action-bar {
+    position: absolute;
+    /* Bar chrome tier — same semantic rung as ui-sheet-header; any value
+       works inside the sheet's own stacking context. */
+    z-index: var(--sys-layer-header);
+    inset: auto 0 0 0;
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: var(--sys-space-compact);
+    min-block-size: calc(
+      var(--control-size-prominent) + var(--sys-space-compact) * 2
+    );
+    padding-block: var(--sys-space-compact)
+      max(var(--sys-space-compact), env(safe-area-inset-bottom));
+    padding-inline: max(var(--sys-space-tight), env(safe-area-inset-left))
+      max(var(--sys-space-tight), env(safe-area-inset-right));
+    opacity: 0;
+    /* Reveal: HIG toolbars slide on-axis — the bar rises from below the
+       sheet edge; no settle scale (that grammar belongs to the floating
+       cluster this bar replaced). */
+    transform: translateY(100%);
+    transition:
+      opacity var(--sys-motion-duration-regular) var(--sys-motion-ease-standard),
+      transform var(--sys-motion-duration-slow)
+        var(--sys-motion-ease-emphasized);
+    pointer-events: none;
+  }
+
+  .ui-sheet-action-bar[data-visible] {
+    opacity: 1;
+    transform: translateY(0);
+    pointer-events: auto;
+  }
+
+  /* Slot contract — the PRIMARY child docks trailing (thumb side); every
+     other child clusters leading in projection order. Primary is content-
+     driven: the sheet-CTA geometry (`[data-spread]`), the prominent
+     variant, or an explicit `uiPrimary` marker (DOM lowercases slot
+     attributes — selector uses the parsed form). Like every control the
+     primary HUGS its label by default; a consumer that wants the
+     full-width row composes `uiFrame uiFrameMaxWidth="infinity"` on it
+     (.frame(maxWidth: .infinity)) — in this flex row the 100% basis
+     shrinks back to the leftover space next to the leading icons. */
+  .ui-sheet-action-bar > [data-spread],
+  .ui-sheet-action-bar > [data-variant='prominent'],
+  .ui-sheet-action-bar > [uiprimary] {
+    margin-inline-start: auto;
+  }
+
+  /* Secondaries hold their intrinsic box — the primary is the flexible /
+     ellipsizing one when a long localized label competes for the row. */
+  .ui-sheet-action-bar
+    > :not([data-spread], [data-variant='prominent'], [uiprimary]) {
+    flex: 0 0 auto;
+  }
+}

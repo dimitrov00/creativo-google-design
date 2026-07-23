@@ -44,6 +44,13 @@
     background: var(--sys-color-surface-secondary);
     box-shadow: none;
   }
+  /* SwiftUI secondarySystemGroupedBackground parity (see UiCardTone JSDoc):
+     one surface level above the container. Dark themes resolve the token to
+     a lighter surface; light themes resolve it to plain surface white and
+     the base card shadow above carries the lift. */
+  .ui-card[data-tone='elevated'] {
+    background: var(--sys-color-surface-elevated);
+  }
 
   /* State layer + press scale come from the shared [data-interactive]
      grammar (libs/ui/modifiers modifiers.css) — the card adds only its

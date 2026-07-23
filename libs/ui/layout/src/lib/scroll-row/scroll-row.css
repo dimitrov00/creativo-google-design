@@ -1,0 +1,65 @@
+@layer sys-components {
+  .ui-scroll-row {
+    display: flex;
+    overflow-x: auto;
+    /* Indicators hidden ALWAYS (SwiftUI .scrollIndicators(.hidden)) —
+       subsumes the landing's .cr-scrollbar-hide utility. */
+    scrollbar-width: none;
+  }
+  .ui-scroll-row::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Carousel children keep their intrinsic size — no shrinking. */
+  .ui-scroll-row > * {
+    flex: 0 0 auto;
+  }
+
+  .ui-scroll-row[data-snap='start'] {
+    scroll-snap-type: x mandatory;
+  }
+  .ui-scroll-row[data-snap='start'] > * {
+    scroll-snap-align: start;
+  }
+  .ui-scroll-row[data-snap='center'] {
+    scroll-snap-type: x mandatory;
+  }
+  .ui-scroll-row[data-snap='center'] > * {
+    scroll-snap-align: center;
+  }
+
+  .ui-scroll-row[data-gap='none'] {
+    gap: var(--sys-space-none);
+  }
+  .ui-scroll-row[data-gap='tight'] {
+    gap: var(--sys-space-tight);
+  }
+  .ui-scroll-row[data-gap='compact'] {
+    gap: var(--sys-space-compact);
+  }
+  .ui-scroll-row[data-gap='regular'] {
+    gap: var(--sys-space-regular);
+  }
+  .ui-scroll-row[data-gap='comfortable'] {
+    gap: var(--sys-space-comfortable);
+  }
+  .ui-scroll-row[data-gap='loose'] {
+    gap: var(--sys-space-loose);
+  }
+  .ui-scroll-row[data-gap='spacious'] {
+    gap: var(--sys-space-spacious);
+  }
+
+  /* Full bleed — break out of the centered column to the viewport edges;
+     padding + scroll-padding keep items aligned to the page gutter
+     (override --ui-scroll-row-gutter to match the page's own gutter). */
+  .ui-scroll-row[data-full-bleed] {
+    inline-size: 100vw;
+    margin-inline: calc(50% - 50vw);
+    padding-inline: var(--ui-scroll-row-gutter, var(--sys-space-regular));
+    scroll-padding-inline: var(
+      --ui-scroll-row-gutter,
+      var(--sys-space-regular)
+    );
+  }
+}

@@ -1,0 +1,22 @@
+@layer sys-components {
+  .ui-divider {
+    flex-shrink: 0;
+    background: var(--sys-color-separator);
+  }
+
+  .ui-divider[data-orientation='horizontal'] {
+    block-size: 1px;
+  }
+
+  /* Vertical — stretches to the row's height inside a horizontal stack. */
+  .ui-divider[data-orientation='vertical'] {
+    inline-size: 1px;
+    align-self: stretch;
+  }
+
+  /* Inset — leading margin for list-row groups, so the hairline starts
+     where the row's label column does (past a leading glyph/avatar). */
+  .ui-divider[data-inset] {
+    margin-inline-start: var(--sys-space-spacious);
+  }
+}

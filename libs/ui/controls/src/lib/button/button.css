@@ -34,8 +34,15 @@
     color: var(--sys-color-on-primary);
   }
   .ui-button[data-variant='bordered'] {
-    /* v2 "outline" */
-    box-shadow: inset 0 0 0 1px var(--sys-color-separator);
+    /* v2 "outline". The outline rides currentColor, not the separator
+       token: separator (~8-12% ink) reads too faint for a control edge,
+       and a currentColor mix is theme-proof for free — white-ish over
+       dark media, near-black ink in light theme, no per-surface tuning.
+       28% is the optical match for the old hand-rolled glass borders
+       (rgb(255 255 255 / 0.2-0.3)) while staying quieter than the
+       hover fill it composes with. */
+    box-shadow: inset 0 0 0 1px
+      color-mix(in srgb, currentColor 28%, transparent);
   }
   .ui-button[data-variant='tinted'] {
     /* v2 "soft" */
@@ -130,7 +137,16 @@
      replaces the five per-sheet "compact size + hand-restored box" hacks
      (case study §2.3). Composes with any size/variant/shape. */
   .ui-button[data-spread] {
-    justify-content: space-between;
+    /* Spread = the chunky ROW GRAMMAR only, never width: like every
+       uiButton, a spread button hugs its content (SwiftUI: buttons size to
+       their label). Full width is an explicit consumer decision via
+       uiFrame uiFrameMaxWidth="infinity" (.frame(maxWidth: .infinity)) —
+       owner ruling 2026-07-23. */
+    /* List-row grammar, not naive space-between: leading content (icon +
+       label, SwiftUI Label order) clusters at the start; only a TRAILING
+       glyph is pushed to the far edge (the margin rule below). A leading
+       icon that is the button's only element child stays with its label. */
+    justify-content: flex-start;
     block-size: auto;
     /* The chunky box IS the prominent size tier — no ad-hoc heights; the
        min-block-size centers the content, block padding would only push
@@ -138,6 +154,91 @@
     min-block-size: var(--control-size-prominent);
     gap: var(--sys-space-regular);
     padding-inline: 1.2rem 1.05rem;
+  }
+  /* Trailing affordance (arrow_outward etc.): a glyph that closes the
+     spread row sits at the far edge — but a LEADING glyph (first element,
+     SwiftUI Label icon) is exempt even when it is the only element child. */
+  .ui-button[data-spread] > .ui-icon:last-child:not(:first-child),
+  .ui-button[data-spread] > [uiTrailing] {
+    margin-inline-start: auto;
+  }
+
+  /* Icon-only (SwiftUI .labelStyle(.iconOnly)) — a square glyph box at the
+     exact 36/44/52 tier: inline-size comes from the SAME size token as the
+     height, inline padding is zeroed so the box never stretches, and
+     aspect-ratio holds the square even when a consumer overrides one axis.
+     Pair with data-shape="capsule" for the circular icon button. */
+  .ui-button[data-icon-only] {
+    inline-size: var(--control-size-regular);
+    padding-inline: 0;
+    aspect-ratio: 1;
+  }
+  .ui-button[data-icon-only][data-size='compact'] {
+    inline-size: var(--control-size-compact);
+  }
+  .ui-button[data-icon-only][data-size='prominent'] {
+    inline-size: var(--control-size-prominent);
+  }
+
+  /* Control-glyph tier — ONE optical glyph size per button tier, labeled
+     and icon-only alike (policy study: icon/README.md §"Icon size
+     policy"). SwiftUI keeps toolbar symbols optically uniform because
+     every control in the bar resolves its symbol from the same ambient
+     font; our icon-only boxes instead owned a fixed glyph ladder
+     (1.25rem in the 36/44 boxes, 1.5rem in the 52 box — the landing's
+     proven sizes) while labeled buttons let the glyph ride the label
+     font (~17px). Result: a 24px icon-only glyph next to a 17px trailing
+     arrow in the same 52px action row. The TIER now owns the glyph size
+     for every button, so a prominent row's trailing arrow matches its
+     icon-only neighbors. `data-spread` rows sit on the prominent box
+     (min-block-size above) and therefore take the prominent glyph even
+     without data-size.
+
+     Plumbed onto the FIXED icon ladder (--ui-icon-* in icon.css) so the
+     tiers and explicit uiScale steps are the SAME three numbers:
+     compact/regular → medium (20px), prominent/spread → large (24px).
+     An explicit uiScale inside a button also snaps to that ladder (it
+     sets the glyph's own font-size in icon.css), so no glyph can render
+     off-ladder inside a control — but it should be rare here since the
+     tier already picks the right step. Layered on purpose: consumer
+     component styles are unlayered and can still override locally
+     (e.g. the header locale/theme chips). */
+  .ui-button .ui-icon {
+    font-size: var(--ui-icon-medium);
+  }
+  .ui-button[data-size='prominent'] .ui-icon,
+  .ui-button[data-spread] .ui-icon {
+    font-size: var(--ui-icon-large);
+  }
+
+  /* Selected (toggle isOn) — the open/pressed resting state for triggers
+     and layout toggles. Each quiet variant deepens along its OWN hover
+     grammar: tinted to its press-tier 18% accent fill, bordered/plain to
+     the segment-selected rung of the alpha ladder. */
+  .ui-button[data-variant='tinted'][data-selected] {
+    background: color-mix(in srgb, var(--sys-color-accent) 18%, transparent);
+  }
+  .ui-button[data-variant='bordered'][data-selected],
+  .ui-button[data-variant='plain'][data-selected] {
+    background: color-mix(
+      in srgb,
+      currentColor var(--sys-alpha-segment-selected),
+      transparent
+    );
+  }
+
+  /* Multiline — a genuinely wrapping label (localized CTAs). Height GROWS
+     from the size tier's min-block-size; this padding-block is the ONE
+     sanctioned block padding on a button (the base `padding-block: 0` keeps
+     the exact 36/44/52 scale — see the comment up top), needed so wrapped
+     lines don't kiss the box edges. Single-line multiline buttons still
+     land exactly on the size tier: compact padding × 2 stays inside the
+     min-block-size at every tier. */
+  .ui-button[data-multiline] {
+    block-size: auto;
+    white-space: normal;
+    text-wrap: balance;
+    padding-block: var(--sys-space-compact);
   }
 
   /* States — attributes only, never modifier classes */

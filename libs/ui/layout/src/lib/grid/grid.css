@@ -1,0 +1,56 @@
+@layer sys-components {
+  .ui-grid {
+    display: grid;
+    /* Column count rides the --ui-grid-columns custom property (written by
+       the component, overridable by consumers in media queries). minmax(0,)
+       lets content shrink instead of blowing the track out. */
+    grid-template-columns: repeat(var(--ui-grid-columns, 2), minmax(0, 1fr));
+    grid-auto-rows: max-content;
+    align-content: start;
+  }
+
+  .ui-grid[data-gap='none'] {
+    gap: var(--sys-space-none);
+  }
+  .ui-grid[data-gap='tight'] {
+    gap: var(--sys-space-tight);
+  }
+  .ui-grid[data-gap='compact'] {
+    gap: var(--sys-space-compact);
+  }
+  .ui-grid[data-gap='regular'] {
+    gap: var(--sys-space-regular);
+  }
+  .ui-grid[data-gap='comfortable'] {
+    gap: var(--sys-space-comfortable);
+  }
+  .ui-grid[data-gap='loose'] {
+    gap: var(--sys-space-loose);
+  }
+  .ui-grid[data-gap='spacious'] {
+    gap: var(--sys-space-spacious);
+  }
+
+  /* Optional row-gap override — declared after data-gap so it wins. */
+  .ui-grid[data-row-gap='none'] {
+    row-gap: var(--sys-space-none);
+  }
+  .ui-grid[data-row-gap='tight'] {
+    row-gap: var(--sys-space-tight);
+  }
+  .ui-grid[data-row-gap='compact'] {
+    row-gap: var(--sys-space-compact);
+  }
+  .ui-grid[data-row-gap='regular'] {
+    row-gap: var(--sys-space-regular);
+  }
+  .ui-grid[data-row-gap='comfortable'] {
+    row-gap: var(--sys-space-comfortable);
+  }
+  .ui-grid[data-row-gap='loose'] {
+    row-gap: var(--sys-space-loose);
+  }
+  .ui-grid[data-row-gap='spacious'] {
+    row-gap: var(--sys-space-spacious);
+  }
+}

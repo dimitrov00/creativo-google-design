@@ -8,6 +8,8 @@ import {
 import { UiSheetBehavior } from './sheet-behavior';
 
 export type UiSheetPlacement = 'bottom' | 'center' | 'end';
+/** SwiftUI parity: `.presentationDetents` — surface measure, not placement. */
+export type UiSheetSize = 'regular' | 'wide';
 
 /**
  * Headless modal/drawer surface — bottom sheet on mobile, side drawer/dialog
@@ -33,6 +35,7 @@ export type UiSheetPlacement = 'bottom' | 'center' | 'end';
     role: 'dialog',
     '[attr.data-open]': "uiOpen() ? '' : null",
     '[attr.data-placement]': 'uiPlacement()',
+    '[attr.data-size]': 'uiSize()',
     '[attr.aria-modal]': 'uiOpen() || null',
     // The host IS the scrim — a direct press on it (not on the surface)
     // requests dismissal; Escape/Tab handling delegates to the behavior.
@@ -46,10 +49,18 @@ export class UiSheet {
 
   readonly uiOpen = input(false);
   readonly uiPlacement = input<UiSheetPlacement>('bottom');
+  readonly uiSize = input<UiSheetSize>('regular');
+  /**
+   * The owner is playing its exit transition — forwarded to the behavior's
+   * `closing` signal so the modal environment (scroll lock, `inert`, focus
+   * restore) stays active until the close animation actually finishes.
+   */
+  readonly uiClosing = input(false);
 
   constructor() {
     this.behavior.connect({
       open: this.uiOpen,
+      closing: this.uiClosing,
       dialogSelector: '.ui-sheet__surface',
       // Standard dialog a11y: move focus to the first focusable control so
       // keyboard users land inside the sheet (and Escape reaches it).
