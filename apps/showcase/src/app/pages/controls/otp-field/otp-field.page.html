@@ -1,47 +1,73 @@
-<a
-  routerLink="/controls"
-  uiText
-  [uiFont]="'callout'"
-  [uiWeight]="'regular'"
-  [uiForeground]="'accent'"
-  class="page__back"
->
-  ← All controls
-</a>
+<sc-page scTitle="OTP Field">
+  <ng-container scLede>
+    <code>ui-otp-field</code> — fixed-length code entry built from native,
+    individually focusable one-character slots. ≙ SwiftUI
+    <code>TextField</code> with <code>.textContentType(.oneTimeCode)</code>,
+    drawn as the slot-per-digit pattern.
+  </ng-container>
 
-<h1 uiText [uiFont]="'largeTitle'" [uiWeight]="'bold'">OTP Field</h1>
-<p
-  uiText
-  [uiFont]="'body'"
-  [uiWeight]="'regular'"
-  [uiForeground]="'secondary'"
-  class="page__intro"
->
-  <code>ui-otp-field</code> — uiLength × uiInvalid. Each field is prefilled with
-  a digit or two so both the "filled" and "idle" slot states are visible; focus
-  a slot to see the "active" state.
-</p>
-
-<section class="page__section">
-  <h2 uiText [uiFont]="'title2'" [uiWeight]="'bold'">Length × Invalid</h2>
-  <ui-stack uiAxis="horizontal" uiGap="comfortable" uiAlign="start">
-    @for (demo of demos; track demo.length + '-' + demo.invalid) {
-    <ui-stack uiAxis="vertical" uiGap="tight" uiAlign="start">
-      <ui-otp-field
-        [uiLength]="demo.length"
-        [uiInvalid]="demo.invalid"
-        [value]="demo.value()"
-        (valueChange)="demo.value.set($event)"
-      />
-      <p
-        uiText
-        [uiFont]="'caption'"
-        [uiWeight]="'medium'"
-        [uiForeground]="'secondary'"
+  <sc-demo scTitle="States">
+    <ng-container scAbout>
+      Live fields — type into them. Slots derive their own state (<code
+        >idle</code
       >
-        length={{ demo.length }} invalid={{ demo.invalid }}
-      </p>
-    </ui-stack>
-    }
-  </ui-stack>
-</section>
+      / <code>active</code> / <code>filled</code>); <code>uiInvalid</code> is
+      the one input-driven state, recoloring every slot for a rejected code.
+    </ng-container>
+    <ui-flow uiSpacing="comfortable" uiAlignment="trailing">
+      <ui-stack uiAxis="vertical" uiSpacing="compact" uiAlignment="leading">
+        <ui-otp-field
+          [value]="defaultValue()"
+          (valueChange)="defaultValue.set($event)"
+        />
+        <p uiText [uiFont]="'caption'" class="otp-field__mono">
+          length=6 · value=""
+        </p>
+      </ui-stack>
+      <ui-stack uiAxis="vertical" uiSpacing="compact" uiAlignment="leading">
+        <ui-otp-field
+          [value]="filledValue()"
+          (valueChange)="filledValue.set($event)"
+        />
+        <p uiText [uiFont]="'caption'" class="otp-field__mono">
+          length=6 · value=492817
+        </p>
+      </ui-stack>
+      <ui-stack uiAxis="vertical" uiSpacing="compact" uiAlignment="leading">
+        <ui-otp-field
+          [uiInvalid]="true"
+          [value]="invalidValue()"
+          (valueChange)="invalidValue.set($event)"
+        />
+        <p uiText [uiFont]="'caption'" class="otp-field__mono">
+          length=6 · invalid=true
+        </p>
+      </ui-stack>
+    </ui-flow>
+  </sc-demo>
+
+  <sc-demo scTitle="Length">
+    <ng-container scAbout>
+      <code>uiLength</code> sets the slot count — 4 for short PINs, 8 for long
+      recovery codes.
+    </ng-container>
+    <ui-flow uiSpacing="comfortable" uiAlignment="trailing">
+      <ui-stack uiAxis="vertical" uiSpacing="compact" uiAlignment="leading">
+        <ui-otp-field
+          [uiLength]="4"
+          [value]="shortValue()"
+          (valueChange)="shortValue.set($event)"
+        />
+        <p uiText [uiFont]="'caption'" class="otp-field__mono">length=4</p>
+      </ui-stack>
+      <ui-stack uiAxis="vertical" uiSpacing="compact" uiAlignment="leading">
+        <ui-otp-field
+          [uiLength]="8"
+          [value]="longValue()"
+          (valueChange)="longValue.set($event)"
+        />
+        <p uiText [uiFont]="'caption'" class="otp-field__mono">length=8</p>
+      </ui-stack>
+    </ui-flow>
+  </sc-demo>
+</sc-page>

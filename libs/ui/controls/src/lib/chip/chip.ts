@@ -19,11 +19,11 @@ import type { UiControlSize } from '../button/button';
   host: {
     class: 'ui-chip',
     '[attr.data-selected]': 'uiSelected() ? "" : null',
-    '[attr.data-size]': 'uiSize()',
+    '[attr.data-control-size]': 'uiControlSize()',
     '[attr.aria-pressed]': 'uiSelected()',
   },
 })
 export class UiChip {
   readonly uiSelected = input(false);
-  readonly uiSize = input<UiControlSize>('regular');
+  readonly uiControlSize = input<UiControlSize>('regular');
 }

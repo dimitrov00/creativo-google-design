@@ -11,7 +11,7 @@ import {
  * numeric value (tabular-nums so lists of ratings align), with optional
  * projected trailing content (e.g. a review count).
  *
- * Ink is `currentColor` — consumers set `uiForeground` (or leave the
+ * Ink is `currentColor` — consumers set `uiForegroundStyle` (or leave the
  * inherited ink) on the host; the cluster never picks its own color.
  * ```html
  * <ui-rating [uiValue]="barber.rating">(128)</ui-rating>

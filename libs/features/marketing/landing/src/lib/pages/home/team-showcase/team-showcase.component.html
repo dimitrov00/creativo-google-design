@@ -1,82 +1,90 @@
 <ng-container *transloco="let t">
   <section id="team" class="team" aria-labelledby="team-title">
-    <ui-section-header class="team__heading">
-      <p uiEyebrow>
-        {{ t('landing.barbers.eyebrow') }}
-      </p>
-      <h2 id="team-title" uiTitle>
-        {{ t('landing.barbers.title') }}
-      </h2>
-      <p uiLede>{{ t('landing.barbers.subtitle') }}</p>
-    </ui-section-header>
+    <!-- Heading → grid rhythm = the stack gap (parent owns sibling
+         spacing; the old heading margin-block-end is gone). -->
+    <ui-stack uiSpacing="spacious">
+      <ui-section-header class="team__heading">
+        <p uiEyebrow>
+          {{ t('landing.barbers.eyebrow') }}
+        </p>
+        <h2 id="team-title" uiTitle>
+          {{ t('landing.barbers.title') }}
+        </h2>
+        <p uiLede>{{ t('landing.barbers.subtitle') }}</p>
+      </ui-section-header>
 
-    <ui-grid [uiColumns]="2" uiGap="regular" uiRowGap="spacious">
-      @for (barber of barbers; track barber.nameKey; let index = $index) {
-        <button
-          type="button"
-          class="team-card morph-card"
-          uiInteractive
-          uiRadius="prominent"
-          [attr.aria-label]="
-            t('landing.barbers.exploreBarber', { barber: t(barber.nameKey) })
-          "
-          aria-haspopup="dialog"
-          aria-controls="barber-detail-sheet"
-          [attr.aria-expanded]="sheetOpen() && activeBarberIndex() === index"
-          (click)="openBarber(index)"
-        >
-          <div class="team-card__media media-morph">
-            <img
-              [src]="barber.image"
-              [alt]="t(barber.nameKey)"
-              loading="lazy"
-            />
-          </div>
+      <ui-grid [uiColumns]="2" uiSpacing="regular" uiRowSpacing="spacious">
+        @for (barber of barbers; track barber.nameKey; let index = $index) {
+          <button
+            type="button"
+            class="team-card morph-card"
+            uiInteractive
+            uiRadius="prominent"
+            [attr.aria-label]="
+              t('landing.barbers.exploreBarber', { barber: t(barber.nameKey) })
+            "
+            aria-haspopup="dialog"
+            aria-controls="barber-detail-sheet"
+            [attr.aria-expanded]="sheetOpen() && activeBarberIndex() === index"
+            (click)="openBarber(index)"
+          >
+            <div class="team-card__media media-morph">
+              <img
+                [src]="barber.image"
+                [alt]="t(barber.nameKey)"
+                loading="lazy"
+              />
+            </div>
 
-          <ui-stack class="team-card__copy" uiGap="tight">
-            <p uiText uiFont="eyebrow" uiForeground="secondary">
-              {{ t(barber.roleKey) }}
-            </p>
-            <!-- Rating rides the name line (HIG: the identifying facts
-                 cluster with the title, not with secondary metadata). -->
-            <ui-stack uiAxis="horizontal" uiAlign="end" uiGap="compact">
-              <h3 uiText uiFont="title">{{ t(barber.nameKey) }}</h3>
-              @if (barber.rating !== undefined) {
-                <ui-spacer />
-                <ui-rating [uiValue]="barber.rating" />
-              }
-            </ui-stack>
-            <ui-stack
-              class="team-card__facts"
-              uiAxis="horizontal"
-              uiGap="tight"
-              uiText
-              uiFont="caption"
-            >
-              <span>{{ t(barber.specialtyKey) }}</span>
-            </ui-stack>
-            <ui-spacer />
-            <span
-              class="team-card__action explore-affordance"
-              aria-hidden="true"
-            >
-              <span
-                class="team-card__explore-label explore-affordance__label"
+            <ui-stack class="team-card__copy" uiSpacing="tight">
+              <p uiText uiFont="eyebrow" uiForegroundStyle="secondary">
+                {{ t(barber.roleKey) }}
+              </p>
+              <!-- Rating rides the name line (HIG: the identifying facts
+                   cluster with the title, not with secondary metadata). -->
+              <ui-stack
+                uiAxis="horizontal"
+                uiAlignment="trailing"
+                uiSpacing="compact"
+              >
+                <h3 uiText uiFont="title">{{ t(barber.nameKey) }}</h3>
+                @if (barber.rating !== undefined) {
+                  <ui-spacer />
+                  <ui-rating [uiValue]="barber.rating" />
+                }
+              </ui-stack>
+              <ui-stack
+                class="team-card__facts"
+                uiAxis="horizontal"
+                uiSpacing="tight"
                 uiText
                 uiFont="caption"
-                uiWeight="bold"
               >
-                {{ t('landing.barbers.explore') }}
+                <span>{{ t(barber.specialtyKey) }}</span>
+              </ui-stack>
+              <ui-spacer />
+              <span
+                class="team-card__action explore-affordance"
+                aria-hidden="true"
+              >
+                <span
+                  class="team-card__explore-label explore-affordance__label"
+                  uiText
+                  uiFont="caption"
+                  uiWeight="bold"
+                >
+                  {{ t('landing.barbers.explore') }}
+                </span>
+                <ui-icon
+                  class="team-card__explore-icon explore-affordance__icon"
+                  uiName="nav.explore"
+                />
               </span>
-              <ui-icon
-                class="team-card__explore-icon explore-affordance__icon"
-                uiName="nav.explore"
-              />
-            </span>
-          </ui-stack>
-        </button>
-      }
-    </ui-grid>
+            </ui-stack>
+          </button>
+        }
+      </ui-grid>
+    </ui-stack>
   </section>
 
   <cr-modal-sheet
@@ -88,50 +96,55 @@
     (dismissed)="closeBarber()"
   >
     @if (activeBarber(); as barber) {
-      <div class="barber-sheet">
-        <ui-stack class="barber-sheet__profile" uiGap="regular">
-          <ui-avatar
-            [uiSrc]="barber.image"
-            [uiName]="t(barber.nameKey)"
-            uiSize="display"
-          />
-          <p class="barber-sheet__role" uiText uiFont="eyebrow">
-            {{ t(barber.roleKey) }}
-          </p>
-          <h2 id="barber-sheet-title" uiText uiFont="display">
-            {{ t(barber.nameKey) }}
-          </h2>
-          @if (barber.rating !== undefined) {
-            <!-- Rating clusters with the name (HIG) — it's an identity
-                 fact, not body copy. -->
-            <ui-rating class="barber-sheet__rating" [uiValue]="barber.rating">
-              <span uiText uiFont="caption">
-                {{ t('landing.barbers.ratingLabel') }}
-              </span>
-            </ui-rating>
-          }
-          <p
-            class="barber-sheet__specialty"
-            uiText
-            uiFont="caption"
-            uiWeight="bold"
-          >
-            {{ t(barber.specialtyKey) }}
-          </p>
-          @if (barber.aboutKey) {
-            <p
-              class="barber-sheet__about"
-              uiText
-              uiFont="footnote"
-              uiForeground="secondary"
-            >
-              {{ t(barber.aboutKey) }}
+      <!-- Profile → gallery rhythm = the sheet stack's gap (the old
+           gallery margin-block-start is gone). -->
+      <ui-stack class="barber-sheet" uiSpacing="spacious">
+        <!-- The wrapper owns the sheet gutter as padding so the gallery
+             sibling stays full-bleed (it pads its own gutters). -->
+        <div class="barber-sheet__profile-inset">
+          <ui-stack class="barber-sheet__profile" uiSpacing="regular">
+            <ui-avatar
+              [uiSrc]="barber.image"
+              [uiName]="t(barber.nameKey)"
+              uiControlSize="extraLarge"
+            />
+            <p class="barber-sheet__role" uiText uiFont="eyebrow">
+              {{ t(barber.roleKey) }}
             </p>
-          }
-        </ui-stack>
+            <h2 id="barber-sheet-title" uiText uiFont="display">
+              {{ t(barber.nameKey) }}
+            </h2>
+            @if (barber.rating !== undefined) {
+              <!-- Rating clusters with the name (HIG) — it's an identity
+                   fact, not body copy. -->
+              <ui-rating class="barber-sheet__rating" [uiValue]="barber.rating">
+                <span uiText uiFont="caption">
+                  {{ t('landing.barbers.ratingLabel') }}
+                </span>
+              </ui-rating>
+            }
+            <p
+              class="barber-sheet__specialty"
+              uiText
+              uiFont="caption"
+              uiWeight="bold"
+            >
+              {{ t(barber.specialtyKey) }}
+            </p>
+            @if (barber.aboutKey) {
+              <p
+                class="barber-sheet__about"
+                uiText
+                uiFont="footnote"
+                uiForegroundStyle="secondary"
+              >
+                {{ t(barber.aboutKey) }}
+              </p>
+            }
+          </ui-stack>
+        </div>
 
         <cr-showcase-gallery
-          class="barber-sheet__gallery"
           [images]="barber.gallery"
           [imageAlt]="
             t('landing.barbers.galleryImageAlt', {
@@ -146,7 +159,7 @@
           [expanded]="true"
           [showToggle]="false"
         />
-      </div>
+      </ui-stack>
     }
 
     <!-- ── Bottom booking bar — docked and visible for the sheet's whole
@@ -168,8 +181,8 @@
             t('landing.barbers.bookWith', { barber: t(barber.nameKey) })
           "
           uiButton
-          uiVariant="prominent"
-          uiShape="capsule"
+          uiButtonStyle="borderedProminent"
+          uiButtonBorderShape="capsule"
           [uiSpread]="true"
         >
           <span>{{ t('landing.barbers.book') }}</span>

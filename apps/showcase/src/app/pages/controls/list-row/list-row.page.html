@@ -1,0 +1,202 @@
+<sc-page scTitle="List Row">
+  <ng-container scLede>
+    <code>ui-list-row</code> — the leading-glyph / label / trailing-detail
+    shape. ≙ a SwiftUI <code>List</code> row with a
+    <code>LabeledContent</code>-style trailing detail. Prefer the
+    <code>a[uiListRow]</code> / <code>button[uiListRow]</code> forms for
+    navigable or actionable rows — free native semantics, zero hand-rolled ARIA.
+  </ng-container>
+
+  <sc-demo scTitle="Element forms">
+    <ng-container scAbout>
+      Static element, anchor, and button — <code>uiInteractive</code> stamps the
+      ONE sanctioned hover/press grammar (state layer, press scale, focus ring);
+      rows never invent their own hover treatment.
+    </ng-container>
+    <ui-stack uiSpacing="comfortable" uiAlignment="leading">
+      <ui-stack uiSpacing="tight" uiAlignment="leading">
+        <ui-card
+          uiPadding="none"
+          uiTone="elevated"
+          uiFrame
+          [uiFrameWidth]="'24rem'"
+        >
+          <ui-list-row>
+            <ui-icon uiLeading uiName="service.duration" uiScale="medium" />
+            Duration
+            <span uiTrailing>2h 30m</span>
+          </ui-list-row>
+        </ui-card>
+        <p uiText [uiFont]="'caption'" class="list-row__mono">
+          ui-list-row · static
+        </p>
+      </ui-stack>
+      <ui-stack uiSpacing="tight" uiAlignment="leading">
+        <ui-card
+          uiPadding="none"
+          uiTone="elevated"
+          uiFrame
+          [uiFrameWidth]="'24rem'"
+        >
+          <a uiListRow routerLink="/controls" [uiInteractive]="true">
+            <ui-icon uiLeading uiName="nav.services" uiScale="medium" />
+            All controls
+            <ui-icon uiTrailing uiName="nav.explore" uiScale="small" />
+          </a>
+        </ui-card>
+        <p uiText [uiFont]="'caption'" class="list-row__mono">
+          a[uiListRow] · uiInteractive
+        </p>
+      </ui-stack>
+      <ui-stack uiSpacing="tight" uiAlignment="leading">
+        <ui-card
+          uiPadding="none"
+          uiTone="elevated"
+          uiFrame
+          [uiFrameWidth]="'24rem'"
+        >
+          <button uiListRow type="button" [uiInteractive]="true">
+            <ui-icon uiLeading uiName="prefs.theme.dark" uiScale="medium" />
+            Dark appearance
+            <span uiTrailing>Off</span>
+          </button>
+        </ui-card>
+        <p uiText [uiFont]="'caption'" class="list-row__mono">
+          button[uiListRow] · uiInteractive
+        </p>
+      </ui-stack>
+    </ui-stack>
+  </sc-demo>
+
+  <sc-demo scTitle="Grouped list">
+    <ng-container scAbout>
+      Rows inside a <code>ui-card uiPadding="none"</code>, separated by inset
+      dividers — the iOS grouped-list recipe for account/settings surfaces.
+    </ng-container>
+    <ui-stack uiSpacing="tight" uiAlignment="leading">
+      <ui-card
+        uiPadding="none"
+        uiTone="elevated"
+        uiFrame
+        [uiFrameWidth]="'24rem'"
+      >
+        <button uiListRow type="button" [uiInteractive]="true">
+          <ui-icon uiLeading uiName="account.reservations" uiScale="medium" />
+          Reservations
+          <span uiTrailing>3</span>
+        </button>
+        <ui-divider [uiInset]="true" />
+        <button uiListRow type="button" [uiInteractive]="true">
+          <ui-icon uiLeading uiName="account.rewards" uiScale="medium" />
+          Rewards
+          <span uiTrailing>120 pts</span>
+        </button>
+        <ui-divider [uiInset]="true" />
+        <button uiListRow type="button" [uiInteractive]="true">
+          <ui-icon uiLeading uiName="prefs.language" uiScale="medium" />
+          Language
+          <span uiTrailing>EN</span>
+        </button>
+      </ui-card>
+      <p uiText [uiFont]="'caption'" class="list-row__mono">
+        ui-card uiPadding=none · ui-divider uiInset
+      </p>
+    </ui-stack>
+  </sc-demo>
+
+  <sc-demo scTitle="uiSize">
+    <ng-container scAbout>
+      Row heights ride the control-size ladder (≙
+      <code>.controlSize</code> naming) — <code>large</code> is the default.
+    </ng-container>
+    <ui-stack uiSpacing="comfortable" uiAlignment="leading">
+      <ui-stack uiSpacing="tight" uiAlignment="leading">
+        <ui-card
+          uiPadding="none"
+          uiTone="elevated"
+          uiFrame
+          [uiFrameWidth]="'24rem'"
+        >
+          <ui-list-row uiSize="regular">
+            <ui-icon uiLeading uiName="location.place" uiScale="medium" />
+            Main Street Studio
+            <span uiTrailing>1.2 km</span>
+          </ui-list-row>
+        </ui-card>
+        <p uiText [uiFont]="'caption'" class="list-row__mono">uiSize=regular</p>
+      </ui-stack>
+      <ui-stack uiSpacing="tight" uiAlignment="leading">
+        <ui-card
+          uiPadding="none"
+          uiTone="elevated"
+          uiFrame
+          [uiFrameWidth]="'24rem'"
+        >
+          <ui-list-row uiSize="large">
+            <ui-icon uiLeading uiName="location.place" uiScale="medium" />
+            Main Street Studio
+            <span uiTrailing>1.2 km</span>
+          </ui-list-row>
+        </ui-card>
+        <p uiText [uiFont]="'caption'" class="list-row__mono">
+          uiSize=large (default)
+        </p>
+      </ui-stack>
+    </ui-stack>
+  </sc-demo>
+
+  <sc-demo scTitle="uiVariant">
+    <ng-container scAbout>
+      <code>prominent</code> fills the row with
+      <code>--sys-color-primary</code> and flips label AND glyph ink — the
+      "primary CTA that reads as a list row" shape (≙
+      <code>.listRowBackground(Color.accentColor)</code>).
+    </ng-container>
+    <ui-stack uiSpacing="comfortable" uiAlignment="leading">
+      <ui-stack uiSpacing="tight" uiAlignment="leading">
+        <ui-card
+          uiPadding="none"
+          uiTone="elevated"
+          uiFrame
+          [uiFrameWidth]="'24rem'"
+        >
+          <button
+            uiListRow
+            type="button"
+            uiVariant="plain"
+            [uiInteractive]="true"
+          >
+            <ui-icon uiLeading uiName="appointment.book" uiScale="medium" />
+            Book an appointment
+            <ui-icon uiTrailing uiName="appointment.launch" uiScale="small" />
+          </button>
+        </ui-card>
+        <p uiText [uiFont]="'caption'" class="list-row__mono">
+          uiVariant=plain (default)
+        </p>
+      </ui-stack>
+      <ui-stack uiSpacing="tight" uiAlignment="leading">
+        <ui-card
+          uiPadding="none"
+          uiTone="elevated"
+          uiFrame
+          [uiFrameWidth]="'24rem'"
+        >
+          <button
+            uiListRow
+            type="button"
+            uiVariant="prominent"
+            [uiInteractive]="true"
+          >
+            <ui-icon uiLeading uiName="appointment.book" uiScale="medium" />
+            Book an appointment
+            <ui-icon uiTrailing uiName="appointment.launch" uiScale="small" />
+          </button>
+        </ui-card>
+        <p uiText [uiFont]="'caption'" class="list-row__mono">
+          uiVariant=prominent
+        </p>
+      </ui-stack>
+    </ui-stack>
+  </sc-demo>
+</sc-page>

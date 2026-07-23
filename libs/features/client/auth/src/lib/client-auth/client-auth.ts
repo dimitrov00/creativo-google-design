@@ -12,8 +12,13 @@ import {
   latchSettledPrincipal,
 } from '@creativo/application/identity';
 import { OtpCode, createIdentifier } from '@creativo/application/identity';
-import { UiButton, UiInput, UiOtpField } from '@creativo/ui/controls';
-import { UiTextDirective } from '@creativo/ui/modifiers';
+import { UiButton, UiTextField, UiOtpField } from '@creativo/ui/controls';
+import { UiSpacer, UiStack } from '@creativo/ui/layout';
+import {
+  UiFrameDirective,
+  UiPaddingDirective,
+  UiTextDirective,
+} from '@creativo/ui/modifiers';
 import { translateDomainError } from '@creativo/infrastructure/i18n';
 import { AuthFlowStore } from '../auth-flow.store';
 
@@ -31,7 +36,17 @@ import { AuthFlowStore } from '../auth-flow.store';
  */
 @Component({
   selector: 'lib-client-auth',
-  imports: [TranslocoDirective, UiButton, UiInput, UiOtpField, UiTextDirective],
+  imports: [
+    TranslocoDirective,
+    UiButton,
+    UiFrameDirective,
+    UiTextField,
+    UiOtpField,
+    UiPaddingDirective,
+    UiSpacer,
+    UiStack,
+    UiTextDirective,
+  ],
   providers: [AuthFlowStore],
   templateUrl: './client-auth.html',
   styleUrl: './client-auth.css',

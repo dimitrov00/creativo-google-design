@@ -1,0 +1,61 @@
+<sc-page scTitle="Icon">
+  <ng-container scLede>
+    <code>ui-icon</code> — the one icon vocabulary. ≙ SwiftUI
+    <code>Image(systemName:)</code>: call sites name the INTENT
+    (<code>'sheet.close'</code>), never the glyph — the registry resolves intent
+    → Material Symbols ligature, so intents sharing a glyph today can diverge
+    later by editing one registry line.
+  </ng-container>
+
+  <sc-demo scTitle="Semantic registry">
+    <ng-container scAbout>
+      A sampler of the closed <code>UiIconName</code> union — a typo'd or
+      unregistered intent is a compile error at the call site.
+    </ng-container>
+    <ui-flow uiSpacing="comfortable" uiAlignment="trailing">
+      @for (name of names; track name) {
+      <ui-stack uiSpacing="tight" uiAlignment="center" class="icon__sample">
+        <ui-icon [uiName]="name" uiScale="large" />
+        <p uiText [uiFont]="'caption'" class="icon__mono">{{ name }}</p>
+      </ui-stack>
+      }
+    </ui-flow>
+  </sc-demo>
+
+  <sc-demo scTitle="uiScale">
+    <ng-container scAbout>
+      The FIXED size ladder — explicit scales snap to absolute rem steps (never
+      font-derived fractions), the right mode for control and accessory glyphs.
+    </ng-container>
+    <ui-flow uiSpacing="loose" uiAlignment="trailing">
+      @for (sample of scales; track sample.scale) {
+      <ui-stack uiSpacing="tight" uiAlignment="center" class="icon__sample">
+        <ui-icon uiName="appointment.book" [uiScale]="sample.scale" />
+        <p uiText [uiFont]="'caption'" class="icon__mono">
+          uiScale={{ sample.scale }} · {{ sample.px }}px
+        </p>
+      </ui-stack>
+      }
+    </ui-flow>
+  </sc-demo>
+
+  <sc-demo scTitle="Font inheritance (unscaled)">
+    <ng-container scAbout>
+      No <code>uiScale</code> — the glyph rides the current font at 1em, exactly
+      like <code>Image(systemName:)</code> inline in a SwiftUI
+      <code>Text</code>. The right mode for glyphs in running copy.
+    </ng-container>
+    <ui-stack uiSpacing="comfortable" uiAlignment="leading">
+      @for (font of inheritFonts; track font) {
+      <ui-stack uiSpacing="tight" uiAlignment="leading">
+        <p uiText [uiFont]="font">
+          Get directions <ui-icon uiName="location.directions" />
+        </p>
+        <p uiText [uiFont]="'caption'" class="icon__mono">
+          unscaled · inherits uiFont={{ font }}
+        </p>
+      </ui-stack>
+      }
+    </ui-stack>
+  </sc-demo>
+</sc-page>

@@ -1,33 +1,33 @@
 :host {
   display: block;
-  max-inline-size: 960px;
 }
 
-.page__back {
-  display: inline-block;
-  margin-block-end: var(--sys-space-regular);
-  text-decoration: none;
+.toolbar__mono {
+  font-family: var(--sys-font-family-mono);
 }
 
-.page__intro {
-  margin-block-end: var(--sys-space-loose);
+.toolbar__mono--media {
+  color: var(--sys-color-on-media-muted);
 }
 
-.page__section {
-  margin-block-end: var(--sys-space-spacious);
+/* Rounded frame so the bar reads as a sample sitting on the canvas. */
+.toolbar__bar {
+  border: 1px solid var(--sys-color-separator);
+  border-radius: var(--control-radius-regular);
 }
 
-.page__section h2 {
-  margin-block-end: var(--sys-space-compact);
+.toolbar__on-media {
+  color: var(--sys-color-on-media);
 }
 
-.toolbar-scroll {
+.toolbar__scroll {
   block-size: 220px;
   overflow-y: auto;
   border: 1px solid var(--sys-color-separator);
-  border-radius: var(--control-radius-subtle);
+  border-radius: var(--control-radius-regular);
+  background: var(--sys-color-background);
 }
 
-.toolbar-scroll__content {
+.toolbar__scroll-content {
   padding: var(--sys-space-regular);
 }

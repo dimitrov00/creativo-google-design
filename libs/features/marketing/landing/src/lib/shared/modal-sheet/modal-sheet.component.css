@@ -23,7 +23,7 @@ ui-sheet.modal-sheet {
    (opacity/pointer-events), which would leave the closed sheet's controls
    in the tab order and its content exposed to AT. data-closing is stamped
    by this template so the exit transition isn't cut short. */
-ui-sheet.modal-sheet:not([data-open]):not([data-closing]) {
+ui-sheet.modal-sheet:not([data-presented]):not([data-closing]) {
   visibility: hidden;
 }
 
@@ -50,7 +50,7 @@ ui-sheet.modal-sheet:not([data-open]):not([data-closing]) {
    `--ui-sheet-drag-y`; the DS surface transform doesn't consume it (yet),
    so the mobile drag-to-dismiss gesture tracks the finger via this
    override, exactly as the old local sheet did. */
-.modal-sheet[data-open] .ui-sheet__surface {
+.modal-sheet[data-presented] .ui-sheet__surface {
   transform: translateY(var(--ui-sheet-drag-y, 0px));
 }
 
@@ -63,8 +63,9 @@ ui-sheet.modal-sheet:not([data-open]):not([data-closing]) {
    cancels that padding and owns the box. Height is viewport-capped so the
    sticky header and any floating action bar stay reachable. */
 .modal-sheet__scroll {
-  /* Cancel exactly what the surface pads: comfortable block padding,
-     `--ui-sheet-inset` (= the safe gutter here) inline padding. */
+  /* Sanctioned negative-margin keep: full-bleed cancellation of exactly
+     what the DS surface pads (comfortable block padding, `--ui-sheet-inset`
+     inline padding) — no DS composition expresses "un-pad my parent". */
   margin-block: calc(-1 * var(--sys-space-comfortable));
   margin-inline: calc(-1 * var(--ui-sheet-inset));
   block-size: min(90svh, 58rem);

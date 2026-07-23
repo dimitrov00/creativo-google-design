@@ -1,88 +1,178 @@
-<a
-  routerLink="/controls"
-  uiText
-  [uiFont]="'callout'"
-  [uiWeight]="'regular'"
-  [uiForeground]="'accent'"
-  class="page__back"
->
-  ← All controls
-</a>
+<sc-page scTitle="Button">
+  <ng-container scLede>
+    ≙ SwiftUI <code>Button</code> with <code>.buttonStyle(_:)</code>,
+    <code>.controlSize(_:)</code> and <code>.buttonBorderShape(_:)</code> —
+    rendered on native <code>button[uiButton] / a[uiButton]</code> elements, so
+    focus, keyboard and disabled semantics come for free.
+  </ng-container>
 
-<h1 uiText [uiFont]="'largeTitle'" [uiWeight]="'bold'">Button</h1>
-<p
-  uiText
-  [uiFont]="'body'"
-  [uiWeight]="'regular'"
-  [uiForeground]="'secondary'"
-  class="page__intro"
->
-  <code>button[uiButton], a[uiButton]</code> — uiVariant × uiSize, plus
-  uiLoading, uiShape and native disabled state.
-</p>
+  <sc-demo scTitle="Style × Size">
+    <ng-container scAbout>
+      Every <code>uiButtonStyle</code> across the 36 / 44 / 52 ladder — the last
+      row composes <code>uiRole="destructive"</code> exactly like
+      <code>Button(role: .destructive)</code>. <code>glass</code> lives on the
+      media canvas below.
+    </ng-container>
+    <ui-stack uiSpacing="comfortable" uiAlignment="leading">
+      @for (row of styleRows; track $index) {
+      <ui-flow uiSpacing="comfortable" uiAlignment="trailing">
+        @for (size of sizes; track size) {
+        <ui-stack uiSpacing="tight" uiAlignment="leading">
+          <button
+            uiButton
+            [uiButtonStyle]="row.style"
+            [uiRole]="row.role"
+            [uiControlSize]="size"
+          >
+            Book now
+          </button>
+          <p uiText [uiFont]="'caption'" class="button__mono">
+            buttonStyle={{ row.style }}{{ row.role ? ' · role=' + row.role : ''
+            }} · controlSize={{ size }}
+          </p>
+        </ui-stack>
+        }
+      </ui-flow>
+      }
+    </ui-stack>
+  </sc-demo>
 
-<section class="page__section">
-  <h2 uiText [uiFont]="'title2'" [uiWeight]="'bold'">Variant × Size</h2>
-  <ui-stack uiAxis="vertical" uiGap="comfortable">
-    @for (variant of variants; track variant) {
-    <ui-stack uiAxis="horizontal" uiGap="regular" uiAlign="end">
+  <sc-demo scTitle="Glass & on-media" scTone="media">
+    <ng-container scAbout>
+      iOS 26 Liquid Glass chrome over media
+      (<code>uiButtonStyle="glass"</code>), the white-on-media prominent pill
+      (<code>uiOnMedia</code>), and glass composed on a
+      <code>uiMaterial</code> panel.
+    </ng-container>
+    <ui-flow uiSpacing="comfortable" uiAlignment="trailing">
       @for (size of sizes; track size) {
-      <ui-stack uiAxis="vertical" uiGap="tight" uiAlign="start">
-        <button uiButton [uiVariant]="variant" [uiSize]="size">Button</button>
-        <p
-          uiText
-          [uiFont]="'caption'"
-          [uiWeight]="'medium'"
-          [uiForeground]="'secondary'"
-        >
-          variant={{ variant }} size={{ size }}
+      <ui-stack uiSpacing="tight" uiAlignment="leading">
+        <button uiButton uiButtonStyle="glass" [uiControlSize]="size">
+          Watch reel
+        </button>
+        <p uiText [uiFont]="'caption'" class="button__mono button__mono--media">
+          buttonStyle=glass · controlSize={{ size }}
         </p>
       </ui-stack>
       }
-    </ui-stack>
-    }
-  </ui-stack>
-</section>
+      <ui-stack uiSpacing="tight" uiAlignment="leading">
+        <button uiButton uiButtonStyle="borderedProminent" [uiOnMedia]="true">
+          Book now
+        </button>
+        <p uiText [uiFont]="'caption'" class="button__mono button__mono--media">
+          buttonStyle=borderedProminent · onMedia
+        </p>
+      </ui-stack>
+      <ui-stack uiSpacing="tight" uiAlignment="leading">
+        <div uiMaterial="thick" uiRadius="prominent" uiPadding="compact">
+          <ui-stack
+            uiAxis="horizontal"
+            uiSpacing="compact"
+            uiAlignment="center"
+          >
+            <button uiButton uiButtonStyle="glass" uiControlSize="small">
+              Share
+            </button>
+            <button uiButton uiButtonStyle="glass" uiControlSize="small">
+              Save
+            </button>
+          </ui-stack>
+        </div>
+        <p uiText [uiFont]="'caption'" class="button__mono button__mono--media">
+          uiMaterial=thick + buttonStyle=glass
+        </p>
+      </ui-stack>
+    </ui-flow>
+  </sc-demo>
 
-<section class="page__section">
-  <h2 uiText [uiFont]="'title2'" [uiWeight]="'bold'">
-    Loading, shape and disabled
-  </h2>
-  <ui-stack uiAxis="horizontal" uiGap="regular" uiAlign="end">
-    <ui-stack uiAxis="vertical" uiGap="tight" uiAlign="start">
-      <button uiButton uiVariant="prominent" [uiLoading]="true">Loading</button>
-      <p
-        uiText
-        [uiFont]="'caption'"
-        [uiWeight]="'medium'"
-        [uiForeground]="'secondary'"
-      >
-        uiLoading=true
-      </p>
+  <sc-demo scTitle="Loading · disabled · border shape">
+    <ng-container scAbout>
+      <code>uiLoading</code> announces via <code>aria-busy</code>; disabled is
+      the NATIVE attribute; <code>uiButtonBorderShape="capsule"</code> ≙
+      <code>.buttonBorderShape(.capsule)</code>.
+    </ng-container>
+    <ui-flow uiSpacing="comfortable" uiAlignment="trailing">
+      <ui-stack uiSpacing="tight" uiAlignment="leading">
+        <button uiButton uiButtonStyle="borderedProminent" [uiLoading]="true">
+          Booking…
+        </button>
+        <p uiText [uiFont]="'caption'" class="button__mono">uiLoading=true</p>
+      </ui-stack>
+      <ui-stack uiSpacing="tight" uiAlignment="leading">
+        <button uiButton uiButtonStyle="borderedProminent" disabled>
+          Book now
+        </button>
+        <p uiText [uiFont]="'caption'" class="button__mono">disabled</p>
+      </ui-stack>
+      <ui-stack uiSpacing="tight" uiAlignment="leading">
+        <button
+          uiButton
+          uiButtonStyle="borderedProminent"
+          uiButtonBorderShape="capsule"
+        >
+          Book now
+        </button>
+        <p uiText [uiFont]="'caption'" class="button__mono">
+          buttonBorderShape=capsule
+        </p>
+      </ui-stack>
+      <ui-stack uiSpacing="tight" uiAlignment="leading">
+        <button
+          uiButton
+          uiButtonStyle="strokedBorder"
+          uiButtonBorderShape="capsule"
+        >
+          Book now
+        </button>
+        <p uiText [uiFont]="'caption'" class="button__mono">
+          buttonStyle=strokedBorder · buttonBorderShape=capsule
+        </p>
+      </ui-stack>
+    </ui-flow>
+  </sc-demo>
+
+  <sc-demo scTitle="Icon-only & spread">
+    <ng-container scAbout>
+      <code>uiIconOnly</code> ≙ <code>.labelStyle(.iconOnly)</code> — a square
+      glyph box at the exact size tier. <code>uiSpread</code> is the sheet-CTA
+      row grammar: leading content clustered, trailing glyph at the far edge;
+      width comes from composing <code>uiFrameMaxWidth="infinity"</code>.
+    </ng-container>
+    <ui-stack uiSpacing="comfortable" uiAlignment="leading">
+      <ui-flow uiSpacing="comfortable" uiAlignment="trailing">
+        @for (size of sizes; track size) {
+        <ui-stack uiSpacing="tight" uiAlignment="leading">
+          <button
+            uiButton
+            uiButtonStyle="bordered"
+            [uiIconOnly]="true"
+            [uiControlSize]="size"
+          >
+            <ui-icon uiName="sheet.close" />
+          </button>
+          <p uiText [uiFont]="'caption'" class="button__mono">
+            iconOnly · controlSize={{ size }}
+          </p>
+        </ui-stack>
+        }
+      </ui-flow>
+      <ui-stack uiSpacing="tight" uiAlignment="leading" class="button__rail">
+        <button
+          uiButton
+          uiButtonStyle="borderedProminent"
+          uiControlSize="large"
+          [uiSpread]="true"
+          uiFrame
+          uiFrameMaxWidth="infinity"
+        >
+          <ui-icon uiName="appointment.book" />
+          <span>Book appointment</span>
+          <ui-icon uiName="appointment.launch" />
+        </button>
+        <p uiText [uiFont]="'caption'" class="button__mono">
+          uiSpread · uiFrameMaxWidth=infinity · controlSize=large
+        </p>
+      </ui-stack>
     </ui-stack>
-    <ui-stack uiAxis="vertical" uiGap="tight" uiAlign="start">
-      <button uiButton uiVariant="bordered" uiShape="capsule">Capsule</button>
-      <p
-        uiText
-        [uiFont]="'caption'"
-        [uiWeight]="'medium'"
-        [uiForeground]="'secondary'"
-      >
-        uiShape=capsule
-      </p>
-    </ui-stack>
-    <ui-stack uiAxis="vertical" uiGap="tight" uiAlign="start">
-      <button uiButton uiVariant="prominent" uiShape="capsule" disabled>
-        Disabled
-      </button>
-      <p
-        uiText
-        [uiFont]="'caption'"
-        [uiWeight]="'medium'"
-        [uiForeground]="'secondary'"
-      >
-        disabled
-      </p>
-    </ui-stack>
-  </ui-stack>
-</section>
+  </sc-demo>
+</sc-page>

@@ -6,6 +6,7 @@
   /* Slot attributes are lowercased by the HTML parser (uiEyebrow →
      uieyebrow) — selectors use the DOM form. */
   .ui-section-header > [uieyebrow] {
+    /* UA-margin reset only (the slot accepts any p/heading element). */
     margin: 0;
     font: var(--sys-font-eyebrow);
     letter-spacing: var(--sys-tracking-eyebrow);
@@ -14,6 +15,9 @@
   }
 
   .ui-section-header > [uititle] {
+    /* Sanctioned internal contract: the eyebrow→title rhythm (10px) is
+       this pattern's art-directed typographic geometry — off the space
+       scale by design, and top-margin-only so optional slots collapse. */
     margin: 0.625rem 0 0;
     font: var(--sys-font-extraLargeTitle);
     letter-spacing: var(--sys-tracking-largeTitle);
@@ -21,17 +25,24 @@
   }
 
   .ui-section-header > [uilede] {
+    /* Sanctioned internal contract: the title→lede rhythm (12px) is this
+       pattern's art-directed typographic geometry — off the space scale by
+       design, and distinct from the eyebrow→title step, so a single stack
+       gap cannot express the trio. */
     margin: 0.75rem 0 0;
     max-inline-size: 26.25rem;
     font: var(--sys-font-body);
     color: var(--sys-color-secondary-label);
   }
 
-  .ui-section-header[data-align='center'] {
+  .ui-section-header[data-alignment='center'] {
     text-align: center;
   }
-  .ui-section-header[data-align='center'] > [uititle],
-  .ui-section-header[data-align='center'] > [uilede] {
+  .ui-section-header[data-alignment='center'] > [uititle],
+  .ui-section-header[data-alignment='center'] > [uilede] {
+    /* Sanctioned internal contract: auto inline margins center the
+       max-width-capped lede (uiFrame-maxWidth-style centering) on the
+       pattern's own projected slots. */
     margin-inline: auto;
   }
 

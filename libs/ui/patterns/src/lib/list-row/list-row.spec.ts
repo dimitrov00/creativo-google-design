@@ -19,7 +19,7 @@ import { UiListRow } from './list-row';
   `,
 })
 class HostComponent {
-  size = signal<'regular' | 'prominent'>('prominent');
+  size = signal<'regular' | 'large'>('large');
   variant = signal<'plain' | 'prominent'>('plain');
   interactive = signal(false);
 }
@@ -34,13 +34,13 @@ describe('UiListRow', () => {
     fixture = TestBed.createComponent(HostComponent);
   });
 
-  it('stamps the host class and defaults to the prominent size, non-interactive', () => {
+  it('stamps the host class and defaults to the large size, non-interactive', () => {
     fixture.detectChanges();
     const el: HTMLElement = fixture.nativeElement.querySelector(
       '[data-testid="row"]',
     );
     expect(el.classList.contains('ui-list-row')).toBe(true);
-    expect(el.getAttribute('data-size')).toBe('prominent');
+    expect(el.getAttribute('data-size')).toBe('large');
     expect(el.getAttribute('data-variant')).toBe('plain');
     expect(el.getAttribute('data-interactive')).toBeNull();
   });
@@ -89,7 +89,7 @@ describe('UiListRow', () => {
     );
     expect(el.tagName).toBe('A');
     expect(el.classList.contains('ui-list-row')).toBe(true);
-    expect(el.getAttribute('data-size')).toBe('prominent');
+    expect(el.getAttribute('data-size')).toBe('large');
     expect(el.querySelector('.ui-list-row__label')?.textContent?.trim()).toBe(
       'Anchor label',
     );

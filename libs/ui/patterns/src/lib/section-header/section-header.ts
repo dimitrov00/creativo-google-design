@@ -5,7 +5,7 @@ import {
   input,
 } from '@angular/core';
 
-export type UiSectionHeaderAlign = 'start' | 'center';
+export type UiSectionHeaderAlign = 'leading' | 'center';
 
 /**
  * Section-opening header trio — the ONE sanctioned eyebrow/title/lede
@@ -34,11 +34,11 @@ export type UiSectionHeaderAlign = 'start' | 'center';
   encapsulation: ViewEncapsulation.None,
   host: {
     class: 'ui-section-header',
-    '[attr.data-align]': 'uiAlign()',
+    '[attr.data-alignment]': 'uiAlignment()',
     '[attr.data-on-media]': "uiOnMedia() ? '' : null",
   },
 })
 export class UiSectionHeader {
-  readonly uiAlign = input<UiSectionHeaderAlign>('start');
+  readonly uiAlignment = input<UiSectionHeaderAlign>('leading');
   readonly uiOnMedia = input(false);
 }

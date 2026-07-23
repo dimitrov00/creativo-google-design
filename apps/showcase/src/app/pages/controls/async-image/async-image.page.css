@@ -1,0 +1,18 @@
+:host {
+  display: block;
+}
+
+.async-image__mono {
+  font-family: var(--sys-font-family-mono);
+}
+
+/* Projected placeholder fills the box — the placeholder slot is
+   absolutely inset by the component; this styles its content. */
+.async-image__placeholder {
+  inline-size: 100%;
+  block-size: 100%;
+  display: grid;
+  place-items: center;
+  background: color-mix(in srgb, var(--sys-color-accent) 12%, transparent);
+  color: var(--sys-color-accent);
+}

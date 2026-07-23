@@ -11,14 +11,15 @@ import {
 } from '@creativo/application/booking';
 import { UserId } from '@creativo/application/accounts';
 import { AccountStateService } from '@creativo/features/client/account-state';
+import { UiBadge, UiButton, UiSkeleton } from '@creativo/ui/controls';
+import { UiGrid, UiSpacer, UiStack } from '@creativo/ui/layout';
+import { UiCard } from '@creativo/ui/patterns';
 import {
-  UiBadge,
-  UiButton,
-  UiCard,
-  UiSkeleton,
-  UiStack,
-} from '@creativo/ui/controls';
-import { UiTextDirective } from '@creativo/ui/modifiers';
+  UiDisabledDirective,
+  UiFrameDirective,
+  UiPaddingDirective,
+  UiTextDirective,
+} from '@creativo/ui/modifiers';
 import { translateDomainError } from '@creativo/infrastructure/i18n';
 import { profileCompletion } from '../profile-completion';
 
@@ -56,7 +57,12 @@ type UpcomingState =
     UiBadge,
     UiButton,
     UiCard,
+    UiDisabledDirective,
+    UiFrameDirective,
+    UiGrid,
+    UiPaddingDirective,
     UiSkeleton,
+    UiSpacer,
     UiStack,
     UiTextDirective,
   ],

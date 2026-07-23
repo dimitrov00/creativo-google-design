@@ -3,7 +3,7 @@
     display: flex;
     align-items: center;
     gap: var(--sys-space-regular);
-    min-block-size: var(--control-size-prominent);
+    min-block-size: var(--control-size-large);
     padding: var(--sys-space-compact) var(--sys-space-regular);
     font: var(--sys-font-callout);
     /* Row labels read at medium — a deliberate weight override on the
@@ -16,8 +16,8 @@
   .ui-list-row[data-size='regular'] {
     min-block-size: var(--control-size-regular);
   }
-  .ui-list-row[data-size='prominent'] {
-    min-block-size: var(--control-size-prominent);
+  .ui-list-row[data-size='large'] {
+    min-block-size: var(--control-size-large);
   }
 
   /* Variant — DS button vocabulary (SwiftUI: a tinted/prominent list row).

@@ -1,82 +1,117 @@
-<a
-  routerLink="/controls"
-  uiText
-  [uiFont]="'callout'"
-  [uiWeight]="'regular'"
-  [uiForeground]="'accent'"
-  class="page__back"
->
-  ← All controls
-</a>
+<sc-page scTitle="Card">
+  <ng-container scLede>
+    <code>ui-card</code> — the elevated content surface, ≙ SwiftUI
+    <code>GroupBox</code> / a grouped-inset cell. The
+    <code>a[uiCard]</code> form is the <code>NavigationLink</code> whose label
+    is the whole card: native anchor semantics, zero ARIA hand-rolling.
+  </ng-container>
 
-<h1 uiText [uiFont]="'largeTitle'" [uiWeight]="'bold'">Card</h1>
-<p
-  uiText
-  [uiFont]="'body'"
-  [uiWeight]="'regular'"
-  [uiForeground]="'secondary'"
-  class="page__intro"
->
-  <code>ui-card</code> — uiTone × uiInteractive (at uiPadding=comfortable), then
-  the full uiPadding scale (at uiTone=plain, uiInteractive=false).
-</p>
-
-<section class="page__section">
-  <h2 uiText [uiFont]="'title2'" [uiWeight]="'bold'">Tone × Interactive</h2>
-  <ui-stack uiAxis="vertical" uiGap="comfortable">
-    @for (tone of tones; track tone) {
-    <ui-stack uiAxis="horizontal" uiGap="regular" uiAlign="start">
-      @for (interactive of interactiveStates; track interactive) {
-      <ui-stack uiAxis="vertical" uiGap="tight" uiAlign="start">
-        <ui-card
-          [uiTone]="tone"
-          [uiInteractive]="interactive"
-          class="card-demo"
-        >
-          <h3 uiText [uiFont]="'headline'" [uiWeight]="'semibold'">Card</h3>
-          <p
-            uiText
-            [uiFont]="'footnote'"
-            [uiWeight]="'medium'"
-            [uiForeground]="'secondary'"
-          >
+  <sc-demo scTitle="Tone">
+    <ng-container scAbout>
+      Semantic surface tones — <code>plain</code> on the base surface,
+      <code>accent</code> for the brand moment, <code>muted</code> for the quiet
+      grouping. (<code>elevated</code> gets its own demo below — it only reads
+      against a muted container.)
+    </ng-container>
+    <ui-flow uiSpacing="comfortable" uiAlignment="trailing">
+      @for (tone of tones; track tone) {
+      <ui-stack uiAxis="vertical" uiSpacing="compact" uiAlignment="leading">
+        <ui-card [uiTone]="tone" class="card__demo">
+          <h3 uiText [uiFont]="'headline'">Card</h3>
+          <p uiText [uiFont]="'footnote'" uiForegroundStyle="secondary">
             Some supporting body copy for this card.
           </p>
         </ui-card>
-        <p
-          uiText
-          [uiFont]="'caption'"
-          [uiWeight]="'medium'"
-          [uiForeground]="'secondary'"
-        >
-          tone={{ tone }} interactive={{ interactive }}
+        <p uiText [uiFont]="'caption'" class="card__mono">tone={{ tone }}</p>
+      </ui-stack>
+      }
+    </ui-flow>
+  </sc-demo>
+
+  <sc-demo scTitle="Elevated on a muted container">
+    <ng-container scAbout>
+      ≙ SwiftUI <code>secondarySystemGroupedBackground</code> on
+      <code>systemGroupedBackground</code>: the card renders one surface level
+      ABOVE its container — lighter fill in dark themes, shadow-carried lift in
+      light. Next to it, a <code>plain</code> card sinks into the same
+      container.
+    </ng-container>
+    <div class="card__muted-canvas">
+      <ui-flow uiSpacing="comfortable" uiAlignment="trailing">
+        <ui-stack uiAxis="vertical" uiSpacing="compact" uiAlignment="leading">
+          <ui-card uiTone="elevated" class="card__demo">
+            <h3 uiText [uiFont]="'headline'">Elevated</h3>
+            <p uiText [uiFont]="'footnote'" uiForegroundStyle="secondary">
+              One surface level above the container.
+            </p>
+          </ui-card>
+          <p uiText [uiFont]="'caption'" class="card__mono">tone=elevated</p>
+        </ui-stack>
+        <ui-stack uiAxis="vertical" uiSpacing="compact" uiAlignment="leading">
+          <ui-card uiTone="plain" class="card__demo">
+            <h3 uiText [uiFont]="'headline'">Plain</h3>
+            <p uiText [uiFont]="'footnote'" uiForegroundStyle="secondary">
+              Same container — no lift, it sinks in.
+            </p>
+          </ui-card>
+          <p uiText [uiFont]="'caption'" class="card__mono">tone=plain</p>
+        </ui-stack>
+      </ui-flow>
+    </div>
+  </sc-demo>
+
+  <sc-demo scTitle="Padding rungs">
+    <ng-container scAbout>
+      The full semantic <code>uiPadding</code> scale — the tinted block is the
+      projected content, so the ring around it IS the padding rung.
+    </ng-container>
+    <ui-flow uiSpacing="comfortable" uiAlignment="trailing">
+      @for (padding of paddings; track padding) {
+      <ui-stack uiAxis="vertical" uiSpacing="compact" uiAlignment="leading">
+        <ui-card [uiPadding]="padding" class="card__demo-narrow">
+          <p uiText [uiFont]="'caption'" class="card__fill">content</p>
+        </ui-card>
+        <p uiText [uiFont]="'caption'" class="card__mono">
+          padding={{ padding }}
         </p>
       </ui-stack>
       }
-    </ui-stack>
-    }
-  </ui-stack>
-</section>
+    </ui-flow>
+  </sc-demo>
 
-<section class="page__section">
-  <h2 uiText [uiFont]="'title2'" [uiWeight]="'bold'">Padding scale</h2>
-  <ui-stack uiAxis="horizontal" uiGap="comfortable" uiAlign="start">
-    @for (padding of paddings; track padding) {
-    <ui-stack uiAxis="vertical" uiGap="tight" uiAlign="start">
-      <ui-card [uiPadding]="padding" class="card-demo">
-        <p uiText [uiFont]="'caption'" [uiWeight]="'medium'" class="card-fill">
-          content
+  <sc-demo scTitle="Interactive & link card">
+    <ng-container scAbout>
+      <code>uiInteractive</code> opts the surface into the shared state-layer
+      grammar (hover tint, press scale). The <code>a[uiCard]</code> link card
+      pairs it with a real <code>routerLink</code> — the whole card is the
+      navigable element.
+    </ng-container>
+    <ui-flow uiSpacing="comfortable" uiAlignment="trailing">
+      <ui-stack uiAxis="vertical" uiSpacing="compact" uiAlignment="leading">
+        <ui-card [uiInteractive]="true" class="card__demo">
+          <h3 uiText [uiFont]="'headline'">Interactive</h3>
+          <p uiText [uiFont]="'footnote'" uiForegroundStyle="secondary">
+            Hover or press me — state layer only, no navigation.
+          </p>
+        </ui-card>
+        <p uiText [uiFont]="'caption'" class="card__mono">interactive=true</p>
+      </ui-stack>
+      <ui-stack uiAxis="vertical" uiSpacing="compact" uiAlignment="leading">
+        <a
+          uiCard
+          [uiInteractive]="true"
+          routerLink="/controls"
+          class="card__demo"
+        >
+          <h3 uiText [uiFont]="'headline'">All controls →</h3>
+          <p uiText [uiFont]="'footnote'" uiForegroundStyle="secondary">
+            A NavigationLink whose label is the card.
+          </p>
+        </a>
+        <p uiText [uiFont]="'caption'" class="card__mono">
+          a[uiCard] · interactive=true
         </p>
-      </ui-card>
-      <p
-        uiText
-        [uiFont]="'caption'"
-        [uiWeight]="'medium'"
-        [uiForeground]="'secondary'"
-      >
-        uiPadding={{ padding }}
-      </p>
-    </ui-stack>
-    }
-  </ui-stack>
-</section>
+      </ui-stack>
+    </ui-flow>
+  </sc-demo>
+</sc-page>

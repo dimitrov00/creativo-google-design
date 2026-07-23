@@ -11,7 +11,7 @@
     align-items: center;
     /* Toolbar norm — same 52px bar as ui-toolbar (replaces the off-scale
        65.6/60px sheet toolbars this pattern consolidates). */
-    min-block-size: var(--control-size-prominent);
+    min-block-size: var(--control-size-large);
     /* The header keeps its OWN tight inline padding — deliberately NOT the
        sheet's shared `--ui-sheet-inset` (owner revert, 2026-07-23: the bar
        chrome hugging the sheet edge looked better than chrome pushed onto
@@ -61,6 +61,8 @@
      title element. */
   .ui-sheet-header > [uititle] {
     grid-column: 2;
+    /* UA-margin reset only (the slot accepts any heading element) — the
+       grid + its padding own all spacing here. */
     margin: 0;
     /* Functional overflow guard from cr-modal-sheet — keeps long titles
        from blowing the auto grid column past the viewport. */

@@ -3,11 +3,11 @@ export * from './lib/icon/icon';
 export * from './lib/icon/icon-registry';
 export * from './lib/async-image/async-image';
 export * from './lib/ambient-video/ambient-video';
-export * from './lib/input/input';
+export * from './lib/text-field/text-field';
 export * from './lib/chip/chip';
 export * from './lib/badge/badge';
 export * from './lib/avatar/avatar';
-export * from './lib/spinner/spinner';
+export * from './lib/progress-view/progress-view';
 export * from './lib/skeleton/skeleton';
 export * from './lib/otp-field/otp-field';
 

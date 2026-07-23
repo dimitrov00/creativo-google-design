@@ -34,20 +34,17 @@
   padding-block-start: calc(
     var(--landing-safe-pad-top) + 5rem + var(--sys-space-comfortable)
   );
-  padding-block-end: var(--sys-space-comfortable);
+  /* Spacious = the old comfortable body inset + the last section's own
+     comfortable scroll clearance, folded into the one box that owns the
+     scroll end. */
+  padding-block-end: var(--sys-space-spacious);
 }
 .cr-menu__body::-webkit-scrollbar {
   display: none;
 }
 
-/* Stack gap (regular) carries the section rhythm; the CTA leads with a
-   compact extra so its clearance lands on the comfortable step. */
-.cr-menu__section--first {
-  margin-block-start: var(--sys-space-compact);
-}
-.cr-menu__section--last {
-  padding-block-end: var(--sys-space-comfortable);
-}
+/* Section rhythm is nested stack gaps in the template: comfortable between
+   the preferences lead and the action run, regular between action cards. */
 
 /* Edge-to-edge list rows inside the cards: zero the card's own content
    gap and clip the rows' square hover state layer to the card radius. */

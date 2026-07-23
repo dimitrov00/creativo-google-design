@@ -1,0 +1,16 @@
+:host {
+  display: block;
+}
+
+.divsp__mono {
+  font-family: var(--sys-font-family-mono);
+}
+
+/* End-pinned placeholder boxes for the bare Spacer sample. */
+.divsp__box {
+  inline-size: 3rem;
+  block-size: 3rem;
+  border: 1px solid color-mix(in srgb, var(--sys-color-accent) 35%, transparent);
+  border-radius: var(--control-radius-subtle);
+  background: color-mix(in srgb, var(--sys-color-accent) 14%, transparent);
+}

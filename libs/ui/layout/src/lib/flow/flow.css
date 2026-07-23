@@ -1,0 +1,41 @@
+@layer sys-components {
+  .ui-flow {
+    display: flex;
+    flex-wrap: wrap;
+  }
+
+  .ui-flow[data-alignment='leading'] {
+    align-items: flex-start;
+  }
+  .ui-flow[data-alignment='center'] {
+    align-items: center;
+  }
+  .ui-flow[data-alignment='trailing'] {
+    align-items: flex-end;
+  }
+  .ui-flow[data-alignment='stretch'] {
+    align-items: stretch;
+  }
+
+  .ui-flow[data-spacing='none'] {
+    gap: var(--sys-space-none);
+  }
+  .ui-flow[data-spacing='tight'] {
+    gap: var(--sys-space-tight);
+  }
+  .ui-flow[data-spacing='compact'] {
+    gap: var(--sys-space-compact);
+  }
+  .ui-flow[data-spacing='regular'] {
+    gap: var(--sys-space-regular);
+  }
+  .ui-flow[data-spacing='comfortable'] {
+    gap: var(--sys-space-comfortable);
+  }
+  .ui-flow[data-spacing='loose'] {
+    gap: var(--sys-space-loose);
+  }
+  .ui-flow[data-spacing='spacious'] {
+    gap: var(--sys-space-spacious);
+  }
+}

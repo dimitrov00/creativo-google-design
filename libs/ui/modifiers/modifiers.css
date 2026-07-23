@@ -65,13 +65,13 @@
     font-weight: 700;
   }
 
-  [data-foreground='secondary'] {
+  [data-foreground-style='secondary'] {
     color: var(--sys-color-secondary-label);
   }
-  [data-foreground='accent'] {
+  [data-foreground-style='accent'] {
     color: var(--sys-color-accent);
   }
-  [data-foreground='destructive'] {
+  [data-foreground-style='destructive'] {
     color: var(--sys-color-destructive);
   }
 
@@ -95,6 +95,53 @@
   }
   [data-padding='spacious'] {
     padding: var(--sys-space-spacious);
+  }
+
+  /* Edge paddings (≙ .padding(.horizontal, _:) / .padding(.vertical, _:)) —
+     declared after the all-edges scale so a combined stamp composes the
+     SwiftUI way: the edge value wins on its axis. */
+  [data-padding-horizontal='none'] {
+    padding-inline: var(--sys-space-none);
+  }
+  [data-padding-horizontal='tight'] {
+    padding-inline: var(--sys-space-tight);
+  }
+  [data-padding-horizontal='compact'] {
+    padding-inline: var(--sys-space-compact);
+  }
+  [data-padding-horizontal='regular'] {
+    padding-inline: var(--sys-space-regular);
+  }
+  [data-padding-horizontal='comfortable'] {
+    padding-inline: var(--sys-space-comfortable);
+  }
+  [data-padding-horizontal='loose'] {
+    padding-inline: var(--sys-space-loose);
+  }
+  [data-padding-horizontal='spacious'] {
+    padding-inline: var(--sys-space-spacious);
+  }
+
+  [data-padding-vertical='none'] {
+    padding-block: var(--sys-space-none);
+  }
+  [data-padding-vertical='tight'] {
+    padding-block: var(--sys-space-tight);
+  }
+  [data-padding-vertical='compact'] {
+    padding-block: var(--sys-space-compact);
+  }
+  [data-padding-vertical='regular'] {
+    padding-block: var(--sys-space-regular);
+  }
+  [data-padding-vertical='comfortable'] {
+    padding-block: var(--sys-space-comfortable);
+  }
+  [data-padding-vertical='loose'] {
+    padding-block: var(--sys-space-loose);
+  }
+  [data-padding-vertical='spacious'] {
+    padding-block: var(--sys-space-spacious);
   }
 
   [data-radius='subtle'] {
@@ -161,6 +208,15 @@
     }
   }
 
+  /* ── Disabled (uiDisabled → data-disabled) ──
+     ≙ SwiftUI .disabled(_:): dimmed, inert. For non-form surfaces only —
+     native controls keep the native `disabled` attribute and their own
+     `:disabled` rules (same recipe, same token). */
+  [data-disabled] {
+    opacity: var(--sys-opacity-disabled);
+    pointer-events: none;
+  }
+
   /* ── Material (uiMaterial → data-material) ──
      ≙ SwiftUI .background(.thinMaterial/.regularMaterial/.thickMaterial):
      the one glass recipe — tiered blur over the shared surface-alpha fill.
@@ -193,8 +249,10 @@
      specificity than the variant hover rules so the material composition
      wins for background-color while blur stays untouched. */
   @media (hover: hover) {
-    .ui-button[data-material][data-variant='bordered']:hover:not(:disabled),
-    .ui-button[data-material][data-variant='plain']:hover:not(:disabled) {
+    .ui-button[data-material][data-button-style='strokedBorder']:hover:not(
+        :disabled
+      ),
+    .ui-button[data-material][data-button-style='plain']:hover:not(:disabled) {
       background-color: color-mix(
         in srgb,
         currentColor var(--sys-alpha-fill-hover),
@@ -202,8 +260,10 @@
       );
     }
   }
-  .ui-button[data-material][data-variant='bordered']:active:not(:disabled),
-  .ui-button[data-material][data-variant='plain']:active:not(:disabled) {
+  .ui-button[data-material][data-button-style='strokedBorder']:active:not(
+      :disabled
+    ),
+  .ui-button[data-material][data-button-style='plain']:active:not(:disabled) {
     background-color: color-mix(
       in srgb,
       currentColor var(--sys-alpha-press),

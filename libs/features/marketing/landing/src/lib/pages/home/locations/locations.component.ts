@@ -18,7 +18,7 @@ import {
   UiIcon,
   resolveUiIcon,
 } from '@creativo/ui/controls';
-import { UiDivider, UiSheet, UiStack } from '@creativo/ui/layout';
+import { UiDivider, UiSheet, UiSpacer, UiStack } from '@creativo/ui/layout';
 import {
   UiInteractiveDirective,
   UiMaterialDirective,
@@ -120,6 +120,7 @@ const MLADOST_SCHEDULE: WeekSchedule = [
     UiSheet,
     UiSheetActionBar,
     UiSheetHeader,
+    UiSpacer,
     UiStack,
     UiStatusIndicator,
     UiTextDirective,

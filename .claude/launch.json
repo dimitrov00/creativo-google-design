@@ -34,6 +34,19 @@
       "autoPort": true
     },
     {
+      "name": "showcase-static",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "4478",
+        "-d",
+        "dist/apps/showcase/browser"
+      ],
+      "port": 4478,
+      "autoPort": true
+    },
+    {
       "name": "web-static",
       "runtimeExecutable": "python3",
       "runtimeArgs": [

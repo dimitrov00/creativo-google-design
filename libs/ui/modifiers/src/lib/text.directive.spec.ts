@@ -8,7 +8,7 @@ import { UiTextDirective } from './text.directive';
     uiText
     [uiFont]="'title'"
     [uiWeight]="'bold'"
-    [uiForeground]="'accent'"
+    [uiForegroundStyle]="'accent'"
   >
     Upcoming
   </h2>`,
@@ -26,6 +26,6 @@ describe('UiTextDirective', () => {
     const el: HTMLElement = fixture.nativeElement.querySelector('h2');
     expect(el.getAttribute('data-font')).toBe('title');
     expect(el.getAttribute('data-weight')).toBe('bold');
-    expect(el.getAttribute('data-foreground')).toBe('accent');
+    expect(el.getAttribute('data-foreground-style')).toBe('accent');
   });
 });

@@ -44,11 +44,11 @@ describe('WorkGalleryComponent', () => {
       '[data-testid="work-gallery-lightbox"]',
     );
     expect(lightbox).not.toBeNull();
-    expect(lightbox?.hasAttribute('data-open')).toBe(false);
+    expect(lightbox?.hasAttribute('data-presented')).toBe(false);
 
     (host.querySelector('.cr-gallery__card') as HTMLElement).click();
     fixture.detectChanges();
-    expect(lightbox?.hasAttribute('data-open')).toBe(true);
+    expect(lightbox?.hasAttribute('data-presented')).toBe(true);
     expect(
       lightbox?.querySelector('.cr-gallery__lightbox-image'),
     ).not.toBeNull();
@@ -56,13 +56,13 @@ describe('WorkGalleryComponent', () => {
     const close = lightbox?.querySelector<HTMLButtonElement>(
       '[data-testid="work-gallery-lightbox-close"]',
     );
-    // The close control is a DS overlay icon button, not hand-rolled chrome.
+    // The close control is a DS glass icon button, not hand-rolled chrome.
     expect(close?.classList.contains('ui-button')).toBe(true);
-    expect(close?.getAttribute('data-variant')).toBe('overlay');
+    expect(close?.getAttribute('data-button-style')).toBe('glass');
     expect(close?.hasAttribute('data-icon-only')).toBe(true);
     close?.click();
     fixture.detectChanges();
-    expect(lightbox?.hasAttribute('data-open')).toBe(false);
+    expect(lightbox?.hasAttribute('data-presented')).toBe(false);
     expect(lightbox?.querySelector('.cr-gallery__lightbox-image')).toBeNull();
   });
 });

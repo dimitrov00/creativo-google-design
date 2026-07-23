@@ -40,12 +40,9 @@
 }
 
 /* The inner ui-toolbar rides the centered app column in BOTH views (v2
-   `width: lg`); height (52px prominent), row layout and tone chrome come
-   from toolbar.css. */
+   `width: lg`) via uiFrame's max-width recipe in the template; height (52px
+   prominent), row layout and tone chrome come from toolbar.css. */
 .cr-header__inner {
-  inline-size: 100%;
-  max-inline-size: var(--landing-max-width);
-  margin-inline: auto;
   /* The tone flip (overlay ⟷ default) would snap the toolbar surface while
      the outer shell cross-fades — ease both in lockstep. */
   transition:

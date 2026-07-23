@@ -1,21 +1,21 @@
 import { Component, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { UiGrid } from './grid';
-import type { UiStackGap } from '../stack/stack';
+import type { UiSpacing } from '../stack/stack';
 
 @Component({
   imports: [UiGrid],
   template: `<ui-grid
     [uiColumns]="columns()"
-    [uiGap]="'compact'"
-    [uiRowGap]="rowGap()"
+    [uiSpacing]="'compact'"
+    [uiRowSpacing]="rowGap()"
     data-testid="grid"
     >content</ui-grid
   >`,
 })
 class HostComponent {
   columns = signal(2);
-  rowGap = signal<UiStackGap | undefined>(undefined);
+  rowGap = signal<UiSpacing | undefined>(undefined);
 }
 
 describe('UiGrid', () => {
@@ -47,21 +47,21 @@ describe('UiGrid', () => {
     expect(el.style.getPropertyValue('--ui-grid-columns')).toBe('7');
   });
 
-  it('writes gap as a data-* attribute and omits data-row-gap when unset', () => {
+  it('writes gap as a data-* attribute and omits data-row-spacing when unset', () => {
     fixture.detectChanges();
     const el: HTMLElement = fixture.nativeElement.querySelector(
       '[data-testid="grid"]',
     );
-    expect(el.getAttribute('data-gap')).toBe('compact');
-    expect(el.getAttribute('data-row-gap')).toBeNull();
+    expect(el.getAttribute('data-spacing')).toBe('compact');
+    expect(el.getAttribute('data-row-spacing')).toBeNull();
   });
 
-  it('writes data-row-gap when a row-gap override is set', () => {
+  it('writes data-row-spacing when a row-gap override is set', () => {
     fixture.componentInstance.rowGap.set('spacious');
     fixture.detectChanges();
     const el: HTMLElement = fixture.nativeElement.querySelector(
       '[data-testid="grid"]',
     );
-    expect(el.getAttribute('data-row-gap')).toBe('spacious');
+    expect(el.getAttribute('data-row-spacing')).toBe('spacious');
   });
 });

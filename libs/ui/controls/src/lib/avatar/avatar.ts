@@ -6,25 +6,35 @@ import {
   input,
 } from '@angular/core';
 import type { UiControlSize } from '../button/button';
+import { UiAsyncImage } from '../async-image/async-image';
 
 /**
  * Avatar sizes extend the shared control vocabulary with a `display` tier —
  * the large profile portrait (112px) used by detail sheets. It's avatar-only:
  * no button/chip ever renders at portrait scale.
  */
-export type UiAvatarSize = UiControlSize | 'display';
+/** Avatar's display tier ≙ .controlSize(.extraLarge). */
+export type UiAvatarSize = UiControlSize | 'extraLarge';
 
-/** Custom element — conditional img-vs-initial rendering, not a native element fit. */
+/**
+ * Custom element — composes `ui-async-image` internally, mirroring SwiftUI
+ * `AsyncImage(url:) { image } placeholder: { monogram }`: the initial IS
+ * the placeholder, shown while bytes load, kept on error, and permanent
+ * for a null src.
+ */
 @Component({
   selector: 'ui-avatar',
+  imports: [UiAsyncImage],
   template: `
-    @if (uiSrc(); as src) {
-      <img [src]="src" [alt]="uiName()" class="ui-avatar__image" />
-    } @else {
-      <span class="ui-avatar__fallback" aria-hidden="true">{{
+    <ui-async-image
+      class="ui-avatar__media"
+      [uiSrc]="uiSrc()"
+      [uiAlt]="uiName()"
+    >
+      <span uiPlaceholder class="ui-avatar__fallback" aria-hidden="true">{{
         initial()
       }}</span>
-    }
+    </ui-async-image>
   `,
   styleUrl: './avatar.css',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -38,13 +48,13 @@ export type UiAvatarSize = UiControlSize | 'display';
   encapsulation: ViewEncapsulation.None,
   host: {
     class: 'ui-avatar',
-    '[attr.data-size]': 'uiSize()',
+    '[attr.data-control-size]': 'uiControlSize()',
   },
 })
 export class UiAvatar {
   readonly uiSrc = input<string | null>(null);
   readonly uiName = input('');
-  readonly uiSize = input<UiAvatarSize>('regular');
+  readonly uiControlSize = input<UiAvatarSize>('regular');
 
   protected readonly initial = computed(() =>
     (this.uiName() || '?').slice(0, 1).toUpperCase(),

@@ -1,8 +1,9 @@
 /* ════════════════════════════════════════════════════════════════
    libs/ui/tokens/tokens.css — system tokens (theme-independent)
-   Naming: SwiftUI semantic scales. Scale vocabulary (NO t-shirt sizes):
+   Naming: SwiftUI semantic scales. Space vocabulary (NO t-shirt sizes):
    none · tight · compact · regular · comfortable · loose · spacious
-   Control emphasis: subtle · regular · prominent · capsule
+   Control sizes: SwiftUI .controlSize — small · regular · large
+   Radius emphasis: subtle · regular · prominent · hero · capsule
    ════════════════════════════════════════════════════════════════ */
 @layer sys-tokens {
   :root {
@@ -60,12 +61,19 @@
        like the rest of the scale. */
     --sys-space-section: calc(var(--sys-space-unit) * 28); /* 112px */
 
-    /* ── Controls (v2: sm 36 / md 44 HIG tap / lg 52) ── */
-    --control-size-compact: calc(var(--sys-space-unit) * 9);
+    /* ── Controls — ≙ SwiftUI .controlSize(.small/.regular/.large):
+       36 / 44 (HIG tap) / 52. ── */
+    --control-size-small: calc(var(--sys-space-unit) * 9);
     --control-size-regular: calc(var(--sys-space-unit) * 11);
-    --control-size-prominent: calc(var(--sys-space-unit) * 13);
+    --control-size-large: calc(var(--sys-space-unit) * 13);
 
-    /* ── Radii (v2: --radius 0.75rem × --radius-scale 0.85) ── */
+    /* ── Radii (v2: --radius 0.75rem × --radius-scale 0.85) ──
+       Naming note: SwiftUI publishes NO radius token ladder — its only
+       named shapes are `Capsule` (our `capsule`, SwiftUI-exact) and
+       `RoundedRectangle(cornerRadius:)` with raw numbers. subtle/regular/
+       prominent/hero is therefore a HOUSE semantic ladder (per the token
+       policy: semantic rungs, never raw numbers at call sites), not a
+       SwiftUI mapping — there is nothing in SwiftUI to map it to. */
     --sys-radius-base: 0.75rem;
     --sys-radius-scale: 0.85;
     --control-radius-subtle: calc(
@@ -109,6 +117,10 @@
     );
     --sys-press-scale-control: 0.97;
     --sys-press-scale-surface: 0.99;
+    /* ≙ .disabled(_:) dimming — the one sanctioned disabled opacity (the
+       0.4 the controls' :disabled rules already use, promoted to a token
+       so uiDisabled and future controls share a single value). */
+    --sys-opacity-disabled: 0.4;
 
     /* ── Materials (SwiftUI parity: .ultraThinMaterial / .regularMaterial /
        .thickMaterial) — one glass grammar. Blur tiers consolidate the

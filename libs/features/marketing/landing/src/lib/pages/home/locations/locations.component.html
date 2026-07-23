@@ -1,153 +1,163 @@
 <ng-container *transloco="let t">
   <section id="locations" class="locations" aria-labelledby="locations-title">
-    <ui-section-header class="locations__heading">
-      <p uiEyebrow>
-        {{ t('landing.location.eyebrow') }}
-      </p>
-      <h2 id="locations-title" uiTitle>
-        {{ t('landing.location.titleMulti') }}
-      </h2>
-      <p uiLede>{{ t('landing.location.intro') }}</p>
-    </ui-section-header>
+    <!-- The heading→content step (3rem = spacious) is the stack's gap, not
+         a heading margin. -->
+    <ui-stack uiSpacing="spacious">
+      <ui-section-header class="locations__heading">
+        <p uiEyebrow>
+          {{ t('landing.location.eyebrow') }}
+        </p>
+        <h2 id="locations-title" uiTitle>
+          {{ t('landing.location.titleMulti') }}
+        </h2>
+        <p uiLede>{{ t('landing.location.intro') }}</p>
+      </ui-section-header>
 
-    <div class="locations__content">
-      <aside class="locations__panel locations__panel--list">
-        <ul class="locations__list">
-          @for (
-            location of locations;
-            track location.nameKey;
-            let index = $index
-          ) {
-            @let status = statusFor(location);
-            <li>
-              <article
-                class="location-card"
-                uiInteractive
-                uiRadius="prominent"
-                role="button"
-                tabindex="0"
-                [attr.aria-label]="
-                  t('landing.location.exploreLocation', {
-                    location: t(location.nameKey),
-                  })
-                "
-                aria-haspopup="dialog"
-                aria-controls="location-detail-sheet"
-                [attr.aria-expanded]="sheetOpen() && activeIndex() === index"
-                (click)="openLocation(index)"
-                (keydown)="onCardKeydown(index, $event)"
-              >
-                <ui-stack uiAxis="horizontal" uiGap="regular" uiAlign="start">
-                  <ui-icon
-                    class="location-card__icon"
-                    uiName="location.place"
-                    uiScale="small"
-                  />
-
+      <div class="locations__content">
+        <aside class="locations__panel locations__panel--list">
+          <ul class="locations__list">
+            @for (
+              location of locations;
+              track location.nameKey;
+              let index = $index
+            ) {
+              @let status = statusFor(location);
+              <li>
+                <article
+                  class="location-card"
+                  uiInteractive
+                  uiRadius="prominent"
+                  role="button"
+                  tabindex="0"
+                  [attr.aria-label]="
+                    t('landing.location.exploreLocation', {
+                      location: t(location.nameKey),
+                    })
+                  "
+                  aria-haspopup="dialog"
+                  aria-controls="location-detail-sheet"
+                  [attr.aria-expanded]="sheetOpen() && activeIndex() === index"
+                  (click)="openLocation(index)"
+                  (keydown)="onCardKeydown(index, $event)"
+                >
                   <ui-stack
-                    uiGap="tight"
-                    uiAlign="start"
-                    class="location-card__copy"
+                    uiAxis="horizontal"
+                    uiSpacing="regular"
+                    uiAlignment="leading"
                   >
-                    <h3 uiText uiFont="callout" uiWeight="semibold">
-                      {{ t(location.nameKey) }}
-                    </h3>
-                    <p uiText uiFont="caption">{{ t(location.addressKey) }}</p>
+                    <ui-icon
+                      class="location-card__icon"
+                      uiName="location.place"
+                      uiScale="small"
+                    />
 
-                    <ui-status-indicator
-                      [uiTone]="status.isOpen ? 'success' : 'destructive'"
+                    <ui-stack
+                      uiSpacing="tight"
+                      uiAlignment="leading"
+                      class="location-card__copy"
                     >
-                      {{
-                        status.isOpen
-                          ? t('landing.location.open')
-                          : t('landing.location.closed')
-                      }}
-                    </ui-status-indicator>
+                      <h3 uiText uiFont="callout" uiWeight="semibold">
+                        {{ t(location.nameKey) }}
+                      </h3>
+                      <p uiText uiFont="caption">
+                        {{ t(location.addressKey) }}
+                      </p>
 
-                    @if (location.phoneKey) {
-                      <a
-                        class="location-card__phone"
-                        uiText
-                        uiFont="caption"
-                        [href]="phoneHref(t(location.phoneKey))"
-                        [attr.aria-label]="
-                          t('landing.location.callAria', {
-                            location: t(location.nameKey),
-                          })
-                        "
-                        (click)="$event.stopPropagation()"
+                      <ui-status-indicator
+                        [uiTone]="status.isOpen ? 'success' : 'destructive'"
                       >
-                        <ui-icon uiName="location.call" />
-                        {{ t(location.phoneKey) }}
-                      </a>
-                    }
+                        {{
+                          status.isOpen
+                            ? t('landing.location.open')
+                            : t('landing.location.closed')
+                        }}
+                      </ui-status-indicator>
 
-                    <span class="location-card__action" aria-hidden="true">
-                      <span
-                        class="location-card__explore-label"
-                        uiText
-                        uiFont="caption"
-                        uiWeight="bold"
-                      >
-                        {{ t('landing.location.explore') }}
+                      @if (location.phoneKey) {
+                        <a
+                          class="location-card__phone"
+                          uiText
+                          uiFont="caption"
+                          [href]="phoneHref(t(location.phoneKey))"
+                          [attr.aria-label]="
+                            t('landing.location.callAria', {
+                              location: t(location.nameKey),
+                            })
+                          "
+                          (click)="$event.stopPropagation()"
+                        >
+                          <ui-icon uiName="location.call" />
+                          {{ t(location.phoneKey) }}
+                        </a>
+                      }
+
+                      <span class="location-card__action" aria-hidden="true">
+                        <span
+                          class="location-card__explore-label"
+                          uiText
+                          uiFont="caption"
+                          uiWeight="bold"
+                        >
+                          {{ t('landing.location.explore') }}
+                        </span>
                       </span>
-                    </span>
+                    </ui-stack>
+
+                    <a
+                      uiButton
+                      uiButtonStyle="strokedBorder"
+                      uiButtonBorderShape="capsule"
+                      [uiIconOnly]="true"
+                      class="location-card__maps"
+                      [href]="directionsUrl(location)"
+                      target="_blank"
+                      rel="noopener"
+                      [attr.aria-label]="
+                        t('landing.location.directionsAria', {
+                          location: t(location.nameKey),
+                        })
+                      "
+                      (click)="$event.stopPropagation()"
+                    >
+                      <ui-icon uiName="location.directions" />
+                    </a>
                   </ui-stack>
+                </article>
+              </li>
+            }
+          </ul>
+        </aside>
 
-                  <a
-                    uiButton
-                    uiVariant="bordered"
-                    uiShape="capsule"
-                    [uiIconOnly]="true"
-                    class="location-card__maps"
-                    [href]="directionsUrl(location)"
-                    target="_blank"
-                    rel="noopener"
-                    [attr.aria-label]="
-                      t('landing.location.directionsAria', {
-                        location: t(location.nameKey),
-                      })
-                    "
-                    (click)="$event.stopPropagation()"
-                  >
-                    <ui-icon uiName="location.directions" />
-                  </a>
-                </ui-stack>
-              </article>
-            </li>
-          }
-        </ul>
-      </aside>
-
-      <aside class="locations__panel locations__panel--map">
-        <div
-          class="locations__map"
-          data-locations-map
-          [attr.aria-label]="t('landing.location.mapAria')"
-          role="img"
-        ></div>
-        <!-- Off-screen pin indicators are real, labeled buttons (they pan
+        <aside class="locations__panel locations__panel--map">
+          <div
+            class="locations__map"
+            data-locations-map
+            [attr.aria-label]="t('landing.location.mapAria')"
+            role="img"
+          ></div>
+          <!-- Off-screen pin indicators are real, labeled buttons (they pan
              the map) — the container must NOT be aria-hidden: focusable
              descendants inside aria-hidden are an a11y violation. -->
-        <div
-          class="locations-map__indicators"
-          data-locations-map-indicators
-        ></div>
-      </aside>
-    </div>
+          <div
+            class="locations-map__indicators"
+            data-locations-map-indicators
+          ></div>
+        </aside>
+      </div>
+    </ui-stack>
   </section>
 
   <ui-sheet
     #sheetBehavior="uiSheetBehavior"
     id="location-detail-sheet"
     class="location-detail-sheet"
-    uiSize="wide"
+    uiPresentationSizing="page"
     uiMaterial="thin"
-    [uiOpen]="sheetOpen() && !sheetClosing()"
+    [uiIsPresented]="sheetOpen() && !sheetClosing()"
     [uiClosing]="sheetClosing()"
     [attr.data-closing]="sheetClosing() ? '' : null"
     aria-labelledby="location-sheet-title"
-    (uiDismissed)="closeLocation()"
+    (uiOnDismiss)="closeLocation()"
     (transitionend)="onSheetTransitionEnd($event)"
     (transitioncancel)="onSheetTransitionEnd($event)"
   >
@@ -178,8 +188,8 @@
           uiTrailing
           type="button"
           uiButton
-          uiVariant="tinted"
-          uiShape="capsule"
+          uiButtonStyle="bordered"
+          uiButtonBorderShape="capsule"
           [uiIconOnly]="true"
           [attr.aria-label]="t('landing.location.closeDetails')"
           (click)="closeLocation()"
@@ -207,134 +217,151 @@
             </div>
 
             <article class="location-sheet__profile">
-              <header class="location-sheet__intro">
-                <h2
-                  id="location-sheet-title"
-                  #sheetTitle
-                  uiText
-                  uiFont="extraLargeTitle"
+              <!-- intro→status-card rhythm (loose) and the intro's own
+                   headline→address (regular) / address→phone (compact)
+                   steps are stack gaps, not per-element margins. -->
+              <ui-stack uiSpacing="loose">
+                <header class="location-sheet__intro">
+                  <ui-stack uiSpacing="regular" uiAlignment="leading">
+                    <h2
+                      id="location-sheet-title"
+                      #sheetTitle
+                      uiText
+                      uiFont="extraLargeTitle"
+                    >
+                      {{ t(location.nameKey) }}
+                    </h2>
+                    <ui-stack uiSpacing="compact" uiAlignment="leading">
+                      <p
+                        class="location-sheet__address"
+                        uiText
+                        uiFont="footnote"
+                        uiWeight="semibold"
+                        uiForegroundStyle="secondary"
+                      >
+                        <ui-icon uiName="location.place" />
+                        {{ t(location.addressKey) }}
+                      </p>
+                      @if (location.phoneKey) {
+                        <a
+                          class="location-sheet__phone-line"
+                          uiText
+                          uiFont="caption"
+                          [href]="phoneHref(t(location.phoneKey))"
+                        >
+                          <ui-icon uiName="location.call" />
+                          {{ t(location.phoneKey) }}
+                        </a>
+                      }
+                    </ui-stack>
+                  </ui-stack>
+                </header>
+
+                <ui-card
+                  uiTone="elevated"
+                  uiPadding="regular"
+                  class="location-sheet__status-card"
                 >
-                  {{ t(location.nameKey) }}
-                </h2>
-                <p
-                  class="location-sheet__address"
-                  uiText
-                  uiFont="footnote"
-                  uiWeight="semibold"
-                  uiForeground="secondary"
-                >
-                  <ui-icon uiName="location.place" />
-                  {{ t(location.addressKey) }}
-                </p>
-                @if (location.phoneKey) {
-                  <a
-                    class="location-sheet__phone-line"
-                    uiText
-                    uiFont="caption"
-                    [href]="phoneHref(t(location.phoneKey))"
+                  <ui-status-indicator
+                    [uiTone]="
+                      status.isOpen
+                        ? status.kind === 'closesSoon'
+                          ? 'warning'
+                          : 'success'
+                        : 'destructive'
+                    "
                   >
-                    <ui-icon uiName="location.call" />
-                    {{ t(location.phoneKey) }}
-                  </a>
-                }
-              </header>
+                    {{
+                      status.isOpen
+                        ? t('landing.location.open')
+                        : t('landing.location.closed')
+                    }}
+                    <span uiDetail>
+                      @switch (status.kind) {
+                        @case ('closesAt') {
+                          {{
+                            t('landing.location.closesAt', {
+                              time: status.time,
+                            })
+                          }}
+                        }
+                        @case ('closesSoon') {
+                          {{
+                            t('landing.location.closesSoon', {
+                              time: status.time,
+                            })
+                          }}
+                        }
+                        @case ('opensAt') {
+                          {{
+                            t('landing.location.opensAt', { time: status.time })
+                          }}
+                        }
+                        @case ('opensOn') {
+                          {{
+                            t('landing.location.opensOn', {
+                              day: t(
+                                'landing.location.weekdays.' +
+                                  weekdayKeys[status.dayIndex]
+                              ),
+                              time: status.time,
+                            })
+                          }}
+                        }
+                      }
+                    </span>
+                  </ui-status-indicator>
 
-              <ui-card
-                uiTone="elevated"
-                uiPadding="regular"
-                class="location-sheet__status-card"
-              >
-                <ui-status-indicator
-                  [uiTone]="
-                    status.isOpen
-                      ? status.kind === 'closesSoon'
-                        ? 'warning'
-                        : 'success'
-                      : 'destructive'
-                  "
-                >
-                  {{
-                    status.isOpen
-                      ? t('landing.location.open')
-                      : t('landing.location.closed')
-                  }}
-                  <span uiDetail>
-                    @switch (status.kind) {
-                      @case ('closesAt') {
-                        {{
-                          t('landing.location.closesAt', { time: status.time })
-                        }}
-                      }
-                      @case ('closesSoon') {
-                        {{
-                          t('landing.location.closesSoon', {
-                            time: status.time,
-                          })
-                        }}
-                      }
-                      @case ('opensAt') {
-                        {{
-                          t('landing.location.opensAt', { time: status.time })
-                        }}
-                      }
-                      @case ('opensOn') {
-                        {{
-                          t('landing.location.opensOn', {
-                            day: t(
-                              'landing.location.weekdays.' +
-                                weekdayKeys[status.dayIndex]
-                            ),
-                            time: status.time,
-                          })
-                        }}
-                      }
-                    }
-                  </span>
-                </ui-status-indicator>
-
-                <!-- The one sanctioned hairline (ui-divider) between the
+                  <!-- The one sanctioned hairline (ui-divider) between the
                      status row and the week list; spacing on both sides is
                      the card's own column gap. -->
-                <ui-divider />
+                  <ui-divider />
 
-                <ul class="location-sheet__week">
-                  @for (dayIndex of weekOrder; track dayIndex) {
-                    <li
-                      class="location-sheet__day"
-                      uiText
-                      uiFont="caption"
-                      [uiWeight]="
-                        dayIndex === todayIndex() ? 'bold' : undefined
-                      "
-                      [attr.data-today]="dayIndex === todayIndex() ? '' : null"
-                    >
-                      <span class="location-sheet__day-name">
-                        {{
-                          t(
-                            'landing.location.weekdays.' + weekdayKeys[dayIndex]
-                          )
-                        }}
-                        <!-- The row already carries today's emphasis visually
+                  <ul class="location-sheet__week">
+                    @for (dayIndex of weekOrder; track dayIndex) {
+                      <li
+                        class="location-sheet__day"
+                        uiText
+                        uiFont="caption"
+                        [uiWeight]="
+                          dayIndex === todayIndex() ? 'bold' : undefined
+                        "
+                        [attr.data-today]="
+                          dayIndex === todayIndex() ? '' : null
+                        "
+                      >
+                        <span class="location-sheet__day-name">
+                          {{
+                            t(
+                              'landing.location.weekdays.' +
+                                weekdayKeys[dayIndex]
+                            )
+                          }}
+                          <!-- The row already carries today's emphasis visually
                              (accent tint + bold — HIG: no redundant tag), but
                              color/weight alone doesn't reach AT, so the fact
                              stays as SR-only text. -->
-                        @if (dayIndex === todayIndex()) {
-                          <span uiVisuallyHidden>{{
-                            t('landing.location.today')
-                          }}</span>
-                        }
-                      </span>
-                      <span class="location-sheet__day-hours">
-                        @if (location.schedule[dayIndex]; as hours) {
-                          {{ hours.open }} – {{ hours.close }}
-                        } @else {
-                          {{ t('landing.location.closedDay') }}
-                        }
-                      </span>
-                    </li>
-                  }
-                </ul>
-              </ui-card>
+                          @if (dayIndex === todayIndex()) {
+                            <span uiVisuallyHidden>{{
+                              t('landing.location.today')
+                            }}</span>
+                          }
+                        </span>
+                        <!-- Spacer() — pushes the hours to the trailing edge
+                           (replaces justify-content: space-between). -->
+                        <ui-spacer />
+                        <span class="location-sheet__day-hours">
+                          @if (location.schedule[dayIndex]; as hours) {
+                            {{ hours.open }} – {{ hours.close }}
+                          } @else {
+                            {{ t('landing.location.closedDay') }}
+                          }
+                        </span>
+                      </li>
+                    }
+                  </ul>
+                </ui-card>
+              </ui-stack>
             </article>
           </div>
 
@@ -370,9 +397,9 @@
         @if (location.phoneKey) {
           <a
             uiButton
-            uiVariant="bordered"
-            uiShape="capsule"
-            uiSize="prominent"
+            uiButtonStyle="strokedBorder"
+            uiButtonBorderShape="capsule"
+            uiControlSize="large"
             uiMaterial="regular"
             [uiIconOnly]="true"
             [href]="phoneHref(t(location.phoneKey))"
@@ -387,9 +414,9 @@
         }
         <a
           uiButton
-          uiVariant="bordered"
-          uiShape="capsule"
-          uiSize="prominent"
+          uiButtonStyle="strokedBorder"
+          uiButtonBorderShape="capsule"
+          uiControlSize="large"
           uiMaterial="regular"
           [uiIconOnly]="true"
           [href]="directionsUrl(location)"
@@ -406,7 +433,7 @@
         <!-- Bar register is short and direct ("Запази час") — the full
              venue context stays on the aria-label so AT users still hear
              WHERE the booking goes. All three bar controls share the
-             prominent 52px tier: this is the sheet's primary action row. -->
+             large 52px tier: this is the sheet's primary action row. -->
         <a
           class="location-sheet__toolbar-book"
           href="/client"
@@ -414,9 +441,9 @@
             t('landing.location.bookAt', { location: t(location.nameKey) })
           "
           uiButton
-          uiVariant="prominent"
-          uiShape="capsule"
-          uiSize="prominent"
+          uiButtonStyle="borderedProminent"
+          uiButtonBorderShape="capsule"
+          uiControlSize="large"
           [uiSpread]="true"
         >
           <span>{{ t('landing.location.book') }}</span>

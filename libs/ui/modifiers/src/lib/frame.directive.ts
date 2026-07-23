@@ -24,6 +24,7 @@ import { Directive, input } from '@angular/core';
   host: {
     '[style.inline-size]': 'inlineSize()',
     '[style.block-size]': 'uiFrameHeight() ?? null',
+    '[style.min-block-size]': 'uiFrameMinHeight() ?? null',
     '[style.max-inline-size]': 'maxInlineSize()',
     '[style.margin-inline]': 'marginInline()',
   },
@@ -31,6 +32,8 @@ import { Directive, input } from '@angular/core';
 export class UiFrameDirective {
   readonly uiFrameWidth = input<string | undefined>(undefined);
   readonly uiFrameHeight = input<string | undefined>(undefined);
+  /** ≙ SwiftUI `.frame(minHeight:)` — e.g. `"100svh"` for a full-viewport screen. */
+  readonly uiFrameMinHeight = input<string | undefined>(undefined);
   readonly uiFrameMaxWidth = input<string | undefined>(undefined);
 
   protected inlineSize(): string | null {

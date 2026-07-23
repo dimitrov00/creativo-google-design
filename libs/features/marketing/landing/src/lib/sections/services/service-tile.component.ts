@@ -89,7 +89,7 @@ import {
             >{{ content.text(service().name) }}</span
           >
           <span class="cr-services__meta">
-            <span uiText uiFont="footnote" uiForeground="secondary">
+            <span uiText uiFont="footnote" uiForegroundStyle="secondary">
               {{ t('landing.services.from') }}
               <span class="cr-services__price">{{
                 content.price(servicePriceFrom(service()))
@@ -99,7 +99,7 @@ import {
               <span
                 uiText
                 uiFont="caption"
-                uiForeground="secondary"
+                uiForegroundStyle="secondary"
                 class="cr-services__variants"
               >
                 <ui-icon uiName="service.variants" />

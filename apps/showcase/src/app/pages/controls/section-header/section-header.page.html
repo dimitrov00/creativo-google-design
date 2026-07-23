@@ -1,0 +1,104 @@
+<sc-page scTitle="Section Header">
+  <ng-container scLede>
+    <code>ui-section-header</code> — the ONE sanctioned eyebrow / title / lede
+    trio that opens a section. ≙ a SwiftUI <code>Section</code> header stack.
+    Slots are attribute-marked (<code>uiEyebrow</code>, <code>uiTitle</code>,
+    <code>uiLede</code>), take any heading level, and every slot is optional —
+    the trio's internal rhythm is art-directed and collapses cleanly when slots
+    are omitted.
+  </ng-container>
+
+  <sc-demo scTitle="Anatomy">
+    <ng-container scAbout>
+      The full trio, and a title-only form — omitted slots collapse without
+      leaving stray rhythm.
+    </ng-container>
+    <ui-stack uiSpacing="loose" uiAlignment="leading">
+      <ui-stack uiSpacing="tight" uiAlignment="leading">
+        <ui-section-header>
+          <p uiEyebrow>Our craft</p>
+          <h3 uiTitle>Color that reads as light</h3>
+          <p uiLede>
+            Balayage, gloss and dimensional color — built on a consultation, not
+            a swatch book.
+          </p>
+        </ui-section-header>
+        <p uiText [uiFont]="'caption'" class="section-header__mono">
+          uiEyebrow · uiTitle · uiLede
+        </p>
+      </ui-stack>
+      <ui-stack uiSpacing="tight" uiAlignment="leading">
+        <ui-section-header>
+          <h3 uiTitle>Color that reads as light</h3>
+        </ui-section-header>
+        <p uiText [uiFont]="'caption'" class="section-header__mono">
+          uiTitle only · optional slots collapse
+        </p>
+      </ui-stack>
+    </ui-stack>
+  </sc-demo>
+
+  <sc-demo scTitle="uiAlignment">
+    <ng-container scAbout>
+      <code>leading</code> (default) for in-flow sections;
+      <code>center</code> for hero-adjacent moments — the capped lede re-centers
+      itself.
+    </ng-container>
+    <ui-stack uiSpacing="loose" uiAlignment="stretch">
+      <ui-stack uiSpacing="tight" uiAlignment="leading">
+        <ui-section-header uiAlignment="leading">
+          <p uiEyebrow>The team</p>
+          <h3 uiTitle>Twelve chairs, one standard</h3>
+          <p uiLede>
+            Every stylist trains through the same residency before taking their
+            first client.
+          </p>
+        </ui-section-header>
+        <p uiText [uiFont]="'caption'" class="section-header__mono">
+          uiAlignment=leading (default)
+        </p>
+      </ui-stack>
+      <ui-stack uiSpacing="tight" uiAlignment="stretch">
+        <ui-section-header uiAlignment="center">
+          <p uiEyebrow>The team</p>
+          <h3 uiTitle>Twelve chairs, one standard</h3>
+          <p uiLede>
+            Every stylist trains through the same residency before taking their
+            first client.
+          </p>
+        </ui-section-header>
+        <p
+          uiText
+          [uiFont]="'caption'"
+          class="section-header__mono section-header__mono--center"
+        >
+          uiAlignment=center
+        </p>
+      </ui-stack>
+    </ui-stack>
+  </sc-demo>
+
+  <sc-demo scTitle="On media" scTone="media">
+    <ng-container scAbout>
+      <code>uiOnMedia</code> flips the ink to the theme-independent
+      white-overlay ramp — for headers over video or photography.
+    </ng-container>
+    <ui-stack uiSpacing="tight" uiAlignment="leading">
+      <ui-section-header [uiOnMedia]="true">
+        <p uiEyebrow>Visit us</p>
+        <h3 uiTitle>Two studios, one booking</h3>
+        <p uiLede>
+          Downtown and riverside — same team, same standard, whichever door is
+          closer.
+        </p>
+      </ui-section-header>
+      <p
+        uiText
+        [uiFont]="'caption'"
+        class="section-header__mono section-header__mono--on-media"
+      >
+        uiOnMedia
+      </p>
+    </ui-stack>
+  </sc-demo>
+</sc-page>

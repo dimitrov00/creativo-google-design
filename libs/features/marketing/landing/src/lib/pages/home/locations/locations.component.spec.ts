@@ -42,14 +42,14 @@ describe('LocationsComponent', () => {
       '#location-detail-sheet.ui-sheet[role="dialog"]',
     );
     expect(sheet).not.toBeNull();
-    expect(sheet?.hasAttribute('data-open')).toBe(false);
+    expect(sheet?.hasAttribute('data-presented')).toBe(false);
 
     const firstCard = host.querySelector<HTMLElement>('.location-card');
     firstCard?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     fixture.detectChanges();
     await fixture.whenStable();
 
-    expect(sheet?.hasAttribute('data-open')).toBe(true);
+    expect(sheet?.hasAttribute('data-presented')).toBe(true);
     expect(host.querySelector('[data-location-sheet-map]')).not.toBeNull();
     expect(host.querySelectorAll('.location-sheet__day').length).toBe(7);
     expect(
@@ -62,7 +62,7 @@ describe('LocationsComponent', () => {
     // The sheet's ONE action row is the bottom ui-sheet-action-bar —
     // visible for the sheet's whole open lifetime (no scroll-triggered
     // reveal), with no duplicate CTA cluster in the intro. Every bar
-    // control shares the prominent 52px tier (no mixed sizes within one
+    // control shares the large 52px tier (no mixed sizes within one
     // group), and the book CTA carries the full venue context on its
     // aria-label while showing the short register.
     expect(host.querySelector('.location-sheet__hero-actions')).toBeNull();
@@ -74,7 +74,7 @@ describe('LocationsComponent', () => {
     const toolbarActions = toolbar?.querySelectorAll<HTMLElement>('.ui-button');
     expect(toolbarActions?.length).toBe(3);
     toolbarActions?.forEach((button) => {
-      expect(button.getAttribute('data-size')).toBe('prominent');
+      expect(button.getAttribute('data-control-size')).toBe('large');
       expect(button.getAttribute('tabindex')).toBeNull();
     });
     expect(

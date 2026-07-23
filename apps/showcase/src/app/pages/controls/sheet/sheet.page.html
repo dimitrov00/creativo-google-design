@@ -1,86 +1,103 @@
-<a
-  routerLink="/controls"
-  uiText
-  [uiFont]="'callout'"
-  [uiWeight]="'regular'"
-  [uiForeground]="'accent'"
-  class="page__back"
->
-  ← All controls
-</a>
+<sc-page scTitle="Sheet">
+  <ng-container scLede>
+    <code>ui-sheet</code> ≙ SwiftUI <code>.sheet(isPresented:)</code> — a
+    headless modal surface: bottom sheet, centered dialog or end drawer.
+    Dismissal is only <em>requested</em> — Escape, a backdrop press or a Close
+    button fire <code>(uiOnDismiss)</code> and the owner flips
+    <code>uiIsPresented</code> itself.
+  </ng-container>
 
-<h1 uiText [uiFont]="'largeTitle'" [uiWeight]="'bold'">Sheet</h1>
-<p
-  uiText
-  [uiFont]="'body'"
-  [uiWeight]="'regular'"
-  [uiForeground]="'secondary'"
-  class="page__intro"
->
-  <code>ui-sheet</code> — uiOpen × uiPlacement. Its host CSS is
-  <code>position: fixed; inset: 0;</code>, so opening any sheet below covers the
-  full viewport — that's the real overlay behavior, not a demo artifact.
-</p>
-
-<section class="page__section">
-  <h2 uiText [uiFont]="'title2'" [uiWeight]="'bold'">uiPlacement = bottom</h2>
-  <button uiButton uiVariant="bordered" (click)="bottomOpen.set(true)">
-    Open bottom sheet
-  </button>
-  <ui-sheet [uiOpen]="bottomOpen()" uiPlacement="bottom">
-    <h3 uiText [uiFont]="'title3'" [uiWeight]="'semibold'">Bottom sheet</h3>
-    <p
-      uiText
-      [uiFont]="'body'"
-      [uiWeight]="'regular'"
-      [uiForeground]="'secondary'"
+  <sc-demo scTitle="Placement">
+    <ng-container scAbout>
+      One button per <code>uiPlacement</code> — each opens the real overlay
+      (full-viewport scrim, scroll lock, focus trap). Dismiss via Escape, the
+      backdrop or the Close button.
+    </ng-container>
+    <ui-flow uiSpacing="spacious" uiAlignment="trailing">
+      @for (placement of placements; track placement) {
+      <ui-stack uiSpacing="tight" uiAlignment="leading">
+        <button
+          uiButton
+          uiButtonStyle="strokedBorder"
+          (click)="presented.set(placement)"
+        >
+          Open {{ placement }}
+        </button>
+        <p uiText [uiFont]="'caption'" class="sheet__mono">
+          uiPlacement={{ placement }}
+        </p>
+      </ui-stack>
+      }
+    </ui-flow>
+    @for (placement of placements; track placement) {
+    <ui-sheet
+      [uiIsPresented]="presented() === placement"
+      [uiPlacement]="placement"
+      (uiOnDismiss)="presented.set(null)"
     >
-      uiPlacement=bottom
-    </p>
-    <button uiButton uiVariant="prominent" (click)="bottomOpen.set(false)">
-      Close
-    </button>
-  </ui-sheet>
-</section>
+      <ui-stack uiSpacing="regular" uiAlignment="leading">
+        <h3 uiText uiFont="title3">Sheet surface</h3>
+        <p uiText uiFont="body" uiForegroundStyle="secondary">
+          Body scroll is locked, focus is trapped inside, and Escape or a
+          backdrop press requests dismissal through
+          <code>(uiOnDismiss)</code>.
+        </p>
+        <p uiText [uiFont]="'caption'" class="sheet__mono">
+          uiPlacement={{ placement }} · uiPresentationSizing=automatic
+        </p>
+        <button
+          uiButton
+          uiButtonStyle="borderedProminent"
+          (click)="presented.set(null)"
+        >
+          Close
+        </button>
+      </ui-stack>
+    </ui-sheet>
+    }
+  </sc-demo>
 
-<section class="page__section">
-  <h2 uiText [uiFont]="'title2'" [uiWeight]="'bold'">uiPlacement = center</h2>
-  <button uiButton uiVariant="bordered" (click)="centerOpen.set(true)">
-    Open center sheet
-  </button>
-  <ui-sheet [uiOpen]="centerOpen()" uiPlacement="center">
-    <h3 uiText [uiFont]="'title3'" [uiWeight]="'semibold'">Center sheet</h3>
-    <p
-      uiText
-      [uiFont]="'body'"
-      [uiWeight]="'regular'"
-      [uiForeground]="'secondary'"
+  <sc-demo scTitle="Presentation sizing">
+    <ng-container scAbout>
+      ≙ SwiftUI <code>.presentationSizing(.page)</code> — the wide set-piece
+      surface for content that needs a full working canvas rather than a compact
+      dialog.
+    </ng-container>
+    <ui-stack uiSpacing="tight" uiAlignment="leading">
+      <button
+        uiButton
+        uiButtonStyle="strokedBorder"
+        (click)="presented.set('page')"
+      >
+        Open page sheet
+      </button>
+      <p uiText [uiFont]="'caption'" class="sheet__mono">
+        uiPresentationSizing=page
+      </p>
+    </ui-stack>
+    <ui-sheet
+      [uiIsPresented]="presented() === 'page'"
+      uiPlacement="center"
+      uiPresentationSizing="page"
+      (uiOnDismiss)="presented.set(null)"
     >
-      uiPlacement=center
-    </p>
-    <button uiButton uiVariant="prominent" (click)="centerOpen.set(false)">
-      Close
-    </button>
-  </ui-sheet>
-</section>
-
-<section class="page__section">
-  <h2 uiText [uiFont]="'title2'" [uiWeight]="'bold'">uiPlacement = end</h2>
-  <button uiButton uiVariant="bordered" (click)="endOpen.set(true)">
-    Open end sheet
-  </button>
-  <ui-sheet [uiOpen]="endOpen()" uiPlacement="end">
-    <h3 uiText [uiFont]="'title3'" [uiWeight]="'semibold'">End sheet</h3>
-    <p
-      uiText
-      [uiFont]="'body'"
-      [uiWeight]="'regular'"
-      [uiForeground]="'secondary'"
-    >
-      uiPlacement=end
-    </p>
-    <button uiButton uiVariant="prominent" (click)="endOpen.set(false)">
-      Close
-    </button>
-  </ui-sheet>
-</section>
+      <ui-stack uiSpacing="regular" uiAlignment="leading">
+        <h3 uiText uiFont="title3">Page sheet</h3>
+        <p uiText uiFont="body" uiForegroundStyle="secondary">
+          The <code>page</code> sizing widens the surface into a set-piece —
+          same modal behavior contract, more room to work.
+        </p>
+        <p uiText [uiFont]="'caption'" class="sheet__mono">
+          uiPlacement=center · uiPresentationSizing=page
+        </p>
+        <button
+          uiButton
+          uiButtonStyle="borderedProminent"
+          (click)="presented.set(null)"
+        >
+          Close
+        </button>
+      </ui-stack>
+    </ui-sheet>
+  </sc-demo>
+</sc-page>

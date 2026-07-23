@@ -10,14 +10,14 @@ describe('App', () => {
     }).compileComponents();
   });
 
-  it('renders the shell nav and mounts the cursor dot exactly once', async () => {
+  it('renders the DS toolbar shell: nav links and preference toggles', async () => {
     const fixture = TestBed.createComponent(App);
     fixture.detectChanges();
     await fixture.whenStable();
     const host: HTMLElement = fixture.nativeElement;
 
+    expect(host.querySelector('ui-toolbar')).not.toBeNull();
     expect(host.querySelectorAll('nav a').length).toBe(2);
-    expect(host.querySelectorAll('cr-cursor-dot').length).toBe(1);
     expect(
       host.querySelector('[data-testid="design-system-toggles"]'),
     ).not.toBeNull();

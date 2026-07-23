@@ -1,0 +1,33 @@
+:host {
+  display: block;
+}
+
+.flow__mono {
+  font-family: var(--sys-font-family-mono);
+}
+
+/* The 28rem comparison bound — dashed so the overflow story reads. */
+.flow__bound {
+  flex-shrink: 0;
+  border: 1px dashed
+    color-mix(in srgb, var(--sys-color-foreground) 35%, transparent);
+  border-radius: var(--control-radius-subtle);
+  padding: var(--sys-space-compact);
+}
+
+/* Mixed-height boxes for the cross-axis alignment sample. */
+.flow__tag {
+  inline-size: 4rem;
+  block-size: 2rem;
+  border: 1px solid color-mix(in srgb, var(--sys-color-accent) 35%, transparent);
+  border-radius: var(--control-radius-subtle);
+  background: color-mix(in srgb, var(--sys-color-accent) 14%, transparent);
+}
+
+.flow__tag--medium {
+  block-size: 2.75rem;
+}
+
+.flow__tag--tall {
+  block-size: 3.5rem;
+}

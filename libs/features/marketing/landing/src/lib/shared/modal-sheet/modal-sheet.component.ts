@@ -77,7 +77,7 @@ export class ModalSheetComponent {
   private readonly scroller = viewChild<ElementRef<HTMLElement>>('scroller');
 
   constructor() {
-    // ui-sheet re-exposes only `uiDismissed`; scroll progress is forwarded
+    // ui-sheet re-exposes only `uiOnDismiss`; scroll progress is forwarded
     // here under the landing-facing output name (one progress formula, the
     // behavior's).
     afterNextRender(() => {

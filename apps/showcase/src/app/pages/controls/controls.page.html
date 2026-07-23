@@ -1,31 +1,39 @@
-<h1 uiText [uiFont]="'largeTitle'" [uiWeight]="'bold'">Controls</h1>
-<p
-  uiText
-  [uiFont]="'body'"
-  [uiWeight]="'regular'"
-  [uiForeground]="'secondary'"
-  class="page__intro"
->
-  Every control in <code>@creativo/ui/controls</code> — one living-spec page per
-  component, exhaustively demonstrating each variant, size and state.
-</p>
+<sc-page scTitle="Controls" [scBack]="null">
+  <ng-container scLede>
+    The living spec for <code>&#64;creativo/ui</code> — one page per primitive,
+    exhaustively demonstrating every style, size and state with the exact
+    attribute strings that produce them.
+  </ng-container>
 
-<div class="controls__grid">
-  @for (control of controls; track control.slug) {
-  <a [routerLink]="['/controls', control.slug]" class="controls__link">
-    <ui-card uiTone="plain" [uiInteractive]="true">
-      <h2 uiText [uiFont]="'headline'" [uiWeight]="'semibold'">
-        {{ control.name }}
-      </h2>
-      <p
-        uiText
-        [uiFont]="'footnote'"
-        [uiWeight]="'medium'"
-        [uiForeground]="'secondary'"
+  @for (group of groups; track group.title) {
+  <ui-stack uiSpacing="comfortable" uiAlignment="stretch">
+    <ui-section-header>
+      <p uiEyebrow>{{ group.eyebrow }}</p>
+      <h2 uiTitle>{{ group.title }}</h2>
+      <p uiLede>{{ group.lede }}</p>
+    </ui-section-header>
+    <ui-grid [uiAdaptiveMinimum]="'13.75rem'" uiSpacing="comfortable">
+      @for (link of group.links; track link.slug) {
+      <a
+        [routerLink]="['/controls', link.slug]"
+        uiCard
+        uiTone="plain"
+        [uiInteractive]="true"
       >
-        /controls/{{ control.slug }}
-      </p>
-    </ui-card>
-  </a>
+        <ui-stack uiSpacing="tight" uiAlignment="leading">
+          <h3 uiText uiFont="headline">{{ link.name }}</h3>
+          <p
+            uiText
+            [uiFont]="'footnote'"
+            uiForegroundStyle="secondary"
+            class="controls__mono"
+          >
+            /controls/{{ link.slug }}
+          </p>
+        </ui-stack>
+      </a>
+      }
+    </ui-grid>
+  </ui-stack>
   }
-</div>
+</sc-page>

@@ -6,16 +6,16 @@
 <ui-sheet
   #sheetBehavior="uiSheetBehavior"
   class="modal-sheet"
-  uiSize="wide"
+  uiPresentationSizing="page"
   uiMaterial="thin"
   [attr.id]="sheetId()"
-  [uiOpen]="open()"
+  [uiIsPresented]="open()"
   [uiClosing]="closing()"
   [attr.data-closing]="closing() ? '' : null"
   [attr.data-dragging]="sheetBehavior.dragging() ? '' : null"
   [attr.aria-labelledby]="labelledBy()"
   [attr.aria-hidden]="open() || closing() ? null : 'true'"
-  (uiDismissed)="dismissed.emit()"
+  (uiOnDismiss)="dismissed.emit()"
 >
   <div
     #scroller
@@ -45,9 +45,9 @@
         uiTrailing
         type="button"
         uiButton
-        uiVariant="tinted"
-        uiShape="capsule"
-        uiSize="regular"
+        uiButtonStyle="bordered"
+        uiButtonBorderShape="capsule"
+        uiControlSize="regular"
         [uiIconOnly]="true"
         [attr.aria-label]="closeLabel()"
         (click)="sheetBehavior.requestDismiss()"

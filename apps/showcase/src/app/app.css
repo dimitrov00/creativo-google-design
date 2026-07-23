@@ -1,53 +1,21 @@
-.cr-shell {
-  min-block-size: 100vh;
+/* Shell chrome rides ui-toolbar + DS modifiers; only the nav-link active
+   state (a showcase-local navigation affordance) lives here. */
+.sc-shell__header {
+  gap: var(--sys-space-loose);
+}
+
+.sc-shell__nav {
   display: flex;
-  flex-direction: column;
+  gap: var(--sys-space-comfortable);
 }
 
-.cr-shell__header {
-  display: flex;
-  align-items: center;
-  gap: var(--cr-space-loose);
-  padding: var(--cr-space-comfortable) var(--cr-space-loose);
-  border-block-end: 1px solid var(--cr-color-border);
-}
-
-.cr-shell__brand {
-  font: var(--cr-text-body);
-  font-family: var(--cr-font-family-heading);
-  font-weight: var(--cr-font-weight-semibold);
-}
-
-.cr-shell__nav {
-  display: flex;
-  gap: var(--cr-space-comfortable);
-  margin-inline-end: auto;
-}
-
-.cr-shell__nav a {
+.sc-shell__nav a {
   text-decoration: none;
-  color: var(--cr-color-foreground);
-  opacity: 0.7;
-  padding-block-end: var(--cr-space-tight);
+  padding-block-end: var(--sys-space-tight);
   border-block-end: 2px solid transparent;
 }
 
-.cr-shell__nav a:hover {
-  opacity: 1;
-}
-
-.cr-shell__nav a.cr-shell__nav-link--active {
-  opacity: 1;
-  border-block-end-color: var(--cr-color-accent);
-}
-
-.cr-shell__main {
-  flex: 1;
-  padding: var(--cr-space-loose);
-}
-
-.cr-shell__ds-toggles {
-  display: flex;
-  align-items: center;
-  gap: var(--cr-space-tight);
+.sc-shell__nav a.sc-shell__nav-link--active {
+  color: var(--sys-color-foreground);
+  border-block-end-color: var(--sys-color-accent);
 }

@@ -1,0 +1,93 @@
+<sc-page scTitle="Text Field">
+  <ng-container scLede>
+    ≙ SwiftUI <code>TextField</code> — and <code>TextEditor</code> in its
+    multiline form. One directive on native
+    <code>input[uiTextField] / textarea[uiTextField]</code> elements, so labels,
+    autofill and validation semantics stay native.
+  </ng-container>
+
+  <sc-demo scTitle="Sizes">
+    <ng-container scAbout>
+      ≙ <code>.controlSize(_:)</code> — the same 36 / 44 / 52 ladder as every
+      other control.
+    </ng-container>
+    <ui-flow uiSpacing="comfortable" uiAlignment="trailing">
+      @for (size of sizes; track size) {
+      <ui-stack uiSpacing="tight" uiAlignment="leading">
+        <input
+          uiTextField
+          [uiControlSize]="size"
+          placeholder="Your name"
+          class="text-field__control"
+        />
+        <p uiText [uiFont]="'caption'" class="text-field__mono">
+          controlSize={{ size }}
+        </p>
+      </ui-stack>
+      }
+    </ui-flow>
+  </sc-demo>
+
+  <sc-demo scTitle="Invalid & disabled">
+    <ng-container scAbout>
+      <code>uiInvalid</code> stamps <code>aria-invalid</code> alongside the
+      destructive ring; disabled is the NATIVE attribute.
+    </ng-container>
+    <ui-flow uiSpacing="comfortable" uiAlignment="trailing">
+      <ui-stack uiSpacing="tight" uiAlignment="leading">
+        <input
+          uiTextField
+          [uiInvalid]="true"
+          value="not-an-email"
+          class="text-field__control"
+        />
+        <p uiText [uiFont]="'caption'" class="text-field__mono">
+          uiInvalid=true
+        </p>
+      </ui-stack>
+      <ui-stack uiSpacing="tight" uiAlignment="leading">
+        <input
+          uiTextField
+          placeholder="Your name"
+          disabled
+          class="text-field__control"
+        />
+        <p uiText [uiFont]="'caption'" class="text-field__mono">disabled</p>
+      </ui-stack>
+      <ui-stack uiSpacing="tight" uiAlignment="leading">
+        <textarea
+          uiTextField
+          placeholder="Notes"
+          disabled
+          class="text-field__control"
+        ></textarea>
+        <p uiText [uiFont]="'caption'" class="text-field__mono">
+          textarea · disabled
+        </p>
+      </ui-stack>
+    </ui-flow>
+  </sc-demo>
+
+  <sc-demo scTitle="Multiline">
+    <ng-container scAbout>
+      <code>textarea[uiTextField]</code> ≙ <code>TextEditor</code> — opens at 2×
+      its tier's min height, so the ladder must visibly step: large &gt; regular
+      &gt; small.
+    </ng-container>
+    <ui-flow uiSpacing="comfortable" uiAlignment="trailing">
+      @for (size of sizes; track size) {
+      <ui-stack uiSpacing="tight" uiAlignment="leading">
+        <textarea
+          uiTextField
+          [uiControlSize]="size"
+          placeholder="Notes for your stylist"
+          class="text-field__control"
+        ></textarea>
+        <p uiText [uiFont]="'caption'" class="text-field__mono">
+          textarea · controlSize={{ size }}
+        </p>
+      </ui-stack>
+      }
+    </ui-flow>
+  </sc-demo>
+</sc-page>

@@ -1,0 +1,16 @@
+:host {
+  display: block;
+}
+
+.section-header__mono {
+  font-family: var(--sys-font-family-mono);
+}
+
+.section-header__mono--center {
+  text-align: center;
+}
+
+/* Caption legibility on the dark media canvas. */
+.section-header__mono--on-media {
+  color: var(--sys-color-on-media-muted);
+}

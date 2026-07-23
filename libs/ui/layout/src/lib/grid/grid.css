@@ -9,48 +9,58 @@
     align-content: start;
   }
 
-  .ui-grid[data-gap='none'] {
+  /* Adaptive columns (GridItem(.adaptive(minimum:))) — as many tracks as
+     fit at the minimum; min() keeps a track from forcing overflow when the
+     container is narrower than the minimum itself. */
+  .ui-grid[data-adaptive] {
+    grid-template-columns: repeat(
+      auto-fit,
+      minmax(min(var(--ui-grid-adaptive-min), 100%), 1fr)
+    );
+  }
+
+  .ui-grid[data-spacing='none'] {
     gap: var(--sys-space-none);
   }
-  .ui-grid[data-gap='tight'] {
+  .ui-grid[data-spacing='tight'] {
     gap: var(--sys-space-tight);
   }
-  .ui-grid[data-gap='compact'] {
+  .ui-grid[data-spacing='compact'] {
     gap: var(--sys-space-compact);
   }
-  .ui-grid[data-gap='regular'] {
+  .ui-grid[data-spacing='regular'] {
     gap: var(--sys-space-regular);
   }
-  .ui-grid[data-gap='comfortable'] {
+  .ui-grid[data-spacing='comfortable'] {
     gap: var(--sys-space-comfortable);
   }
-  .ui-grid[data-gap='loose'] {
+  .ui-grid[data-spacing='loose'] {
     gap: var(--sys-space-loose);
   }
-  .ui-grid[data-gap='spacious'] {
+  .ui-grid[data-spacing='spacious'] {
     gap: var(--sys-space-spacious);
   }
 
-  /* Optional row-gap override — declared after data-gap so it wins. */
-  .ui-grid[data-row-gap='none'] {
+  /* Optional row-gap override — declared after data-spacing so it wins. */
+  .ui-grid[data-row-spacing='none'] {
     row-gap: var(--sys-space-none);
   }
-  .ui-grid[data-row-gap='tight'] {
+  .ui-grid[data-row-spacing='tight'] {
     row-gap: var(--sys-space-tight);
   }
-  .ui-grid[data-row-gap='compact'] {
+  .ui-grid[data-row-spacing='compact'] {
     row-gap: var(--sys-space-compact);
   }
-  .ui-grid[data-row-gap='regular'] {
+  .ui-grid[data-row-spacing='regular'] {
     row-gap: var(--sys-space-regular);
   }
-  .ui-grid[data-row-gap='comfortable'] {
+  .ui-grid[data-row-spacing='comfortable'] {
     row-gap: var(--sys-space-comfortable);
   }
-  .ui-grid[data-row-gap='loose'] {
+  .ui-grid[data-row-spacing='loose'] {
     row-gap: var(--sys-space-loose);
   }
-  .ui-grid[data-row-gap='spacious'] {
+  .ui-grid[data-row-spacing='spacious'] {
     row-gap: var(--sys-space-spacious);
   }
 }

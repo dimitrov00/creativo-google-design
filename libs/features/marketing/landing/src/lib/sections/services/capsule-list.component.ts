@@ -4,6 +4,7 @@ import {
   ViewEncapsulation,
   input,
 } from '@angular/core';
+import { UiStack } from '@creativo/ui/layout';
 import { UiTextDirective } from '@creativo/ui/modifiers';
 
 /**
@@ -19,16 +20,16 @@ import { UiTextDirective } from '@creativo/ui/modifiers';
  */
 @Component({
   selector: 'cr-capsule-list',
-  imports: [UiTextDirective],
+  imports: [UiStack, UiTextDirective],
   template: `
-    <header class="cr-capsule-list__header">
+    <ui-stack uiSpacing="regular">
       <h3 uiText uiFont="title3">{{ heading() }}</h3>
-    </header>
-    <ul class="cr-capsule-list__items">
-      @for (item of items(); track $index) {
-        <li uiText uiFont="caption" uiWeight="semibold">{{ item }}</li>
-      }
-    </ul>
+      <ul class="cr-capsule-list__items">
+        @for (item of items(); track $index) {
+          <li uiText uiFont="caption" uiWeight="semibold">{{ item }}</li>
+        }
+      </ul>
+    </ui-stack>
   `,
   // Unscoped (landing sheet-section convention for DS-composed internals);
   // the .cr-capsule-list__ prefix keeps selectors unique.
@@ -38,14 +39,10 @@ import { UiTextDirective } from '@creativo/ui/modifiers';
       display: block;
     }
 
-    .cr-capsule-list__header {
-      margin-block-end: var(--sys-space-regular);
-    }
-
-    .cr-capsule-list__header h3 {
-      margin: 0;
-    }
-
+    /* Stays a semantic <ul> (item count announced to AT) with hand-rolled
+       wrap, not ui-flow: the mobile breakpoint below morphs it into a
+       2-column grid, which no DS layout primitive expresses. UA list
+       margin/padding resets only — the header gap is the ui-stack's. */
     .cr-capsule-list__items {
       display: flex;
       flex-wrap: wrap;

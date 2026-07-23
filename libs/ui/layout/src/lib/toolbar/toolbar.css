@@ -5,7 +5,7 @@
     justify-content: space-between;
     gap: var(--sys-space-regular);
     padding-inline: var(--sys-space-regular);
-    min-block-size: var(--control-size-prominent);
+    min-block-size: var(--control-size-large);
     background: var(--sys-color-background);
     border-block-end: 1px solid var(--sys-color-separator);
   }
@@ -16,9 +16,9 @@
     border-block-start: 1px solid var(--sys-color-separator);
   }
 
-  /* Overlay tone (SwiftUI `.toolbarBackground(.hidden)`) — transparent
+  /* Overlay tone (≙ .toolbarBackground(.hidden)) — transparent
      chrome for bars floating over media; contents carry their own fills. */
-  .ui-toolbar[data-tone='overlay'] {
+  .ui-toolbar[data-toolbar-background='hidden'] {
     background: transparent;
     border: 0;
   }

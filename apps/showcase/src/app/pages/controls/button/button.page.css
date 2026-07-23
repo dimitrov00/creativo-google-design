@@ -1,22 +1,18 @@
 :host {
   display: block;
-  max-inline-size: 960px;
 }
 
-.page__back {
-  display: inline-block;
-  margin-block-end: var(--sys-space-regular);
-  text-decoration: none;
+.button__mono {
+  font-family: var(--sys-font-family-mono);
 }
 
-.page__intro {
-  margin-block-end: var(--sys-space-loose);
+/* Captions sitting on the media canvas keep on-media ink. */
+.button__mono--media {
+  color: color-mix(in srgb, var(--sys-color-on-media) 80%, transparent);
 }
 
-.page__section {
-  margin-block-end: var(--sys-space-spacious);
-}
-
-.page__section h2 {
-  margin-block-end: var(--sys-space-compact);
+/* Demo prop only — a fixed rail so the infinity-frame spread row has an
+   edge to spread against. */
+.button__rail {
+  inline-size: min(26rem, 100%);
 }

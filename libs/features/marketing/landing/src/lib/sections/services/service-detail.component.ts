@@ -14,7 +14,7 @@ import {
 import { RouterLink } from '@angular/router';
 import { TranslocoDirective } from '@jsverse/transloco';
 import { UiAvatar, UiBadge, UiButton, UiIcon } from '@creativo/ui/controls';
-import { UiGrid, UiStack } from '@creativo/ui/layout';
+import { UiGrid, UiSpacer, UiStack } from '@creativo/ui/layout';
 import { UiRadiusDirective, UiTextDirective } from '@creativo/ui/modifiers';
 import { UiListRow, UiSheetActionBar } from '@creativo/ui/patterns';
 import { LandingContentService } from '../../content/landing-content.service';
@@ -68,6 +68,7 @@ const CLOSE_ANIMATION_MS = 300;
     UiListRow,
     UiRadiusDirective,
     UiSheetActionBar,
+    UiSpacer,
     UiStack,
     UiTextDirective,
   ],

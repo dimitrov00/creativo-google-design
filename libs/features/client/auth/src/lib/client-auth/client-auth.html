@@ -1,47 +1,66 @@
 <ng-container *transloco="let t">
-  <div class="auth-shell">
+  <ui-stack
+    uiAlignment="center"
+    uiSpacing="none"
+    uiFrame
+    uiFrameMinHeight="100svh"
+    uiPaddingHorizontal="regular"
+    uiPaddingVertical="spacious"
+  >
+    <ui-spacer />
     @switch (store.state().kind) { @case ('welcome') {
-    <section class="auth-step" data-testid="auth-welcome">
+    <ui-stack
+      uiSpacing="comfortable"
+      uiFrame
+      uiFrameMaxWidth="28rem"
+      data-testid="auth-welcome"
+    >
       <h1 uiText uiFont="largeTitle">{{ t('auth.welcome.title') }}</h1>
       <p uiText uiFont="body">{{ t('auth.welcome.body') }}</p>
       <button
         type="button"
         uiButton
-        uiVariant="prominent"
-        uiSize="prominent"
+        uiButtonStyle="borderedProminent"
+        uiControlSize="large"
         data-testid="auth-get-started"
         (click)="store.getStarted()"
       >
         {{ t('auth.welcome.getStarted') }}
       </button>
-    </section>
+    </ui-stack>
     } @case ('identify') {
-    <section class="auth-step" data-testid="auth-identify">
+    <ui-stack
+      uiSpacing="comfortable"
+      uiFrame
+      uiFrameMaxWidth="28rem"
+      data-testid="auth-identify"
+    >
       <h1 uiText uiFont="title">{{ t('auth.identify.title') }}</h1>
       <p uiText uiFont="body">{{ t('auth.identify.body') }}</p>
 
-      <label class="auth-field">
-        <span uiText uiFont="footnote"
-          >{{ t('auth.identify.phoneLabel') }}</span
-        >
-        <input
-          type="tel"
-          uiInput
-          autocomplete="tel"
-          inputmode="tel"
-          data-testid="auth-identifier-input"
-          [attr.aria-invalid]="!!identifierErrorMessage()"
-          [uiInvalid]="!!identifierErrorMessage()"
-          [value]="rawIdentifier()"
-          (input)="rawIdentifier.set($any($event.target).value)"
-        />
+      <label>
+        <ui-stack uiSpacing="tight">
+          <span uiText uiFont="footnote"
+            >{{ t('auth.identify.phoneLabel') }}</span
+          >
+          <input
+            type="tel"
+            uiTextField
+            autocomplete="tel"
+            inputmode="tel"
+            data-testid="auth-identifier-input"
+            [attr.aria-invalid]="!!identifierErrorMessage()"
+            [uiInvalid]="!!identifierErrorMessage()"
+            [value]="rawIdentifier()"
+            (input)="rawIdentifier.set($any($event.target).value)"
+          />
+        </ui-stack>
       </label>
       @if (identifierErrorMessage(); as error) {
       <p
-        class="auth-error"
         uiText
         uiFont="footnote"
-        uiForeground="destructive"
+        uiForegroundStyle="destructive"
         data-testid="auth-identifier-error"
         role="alert"
       >
@@ -49,10 +68,9 @@
       </p>
       } @if (translateError(currentError()); as error) {
       <p
-        class="auth-error"
         uiText
         uiFont="footnote"
-        uiForeground="destructive"
+        uiForegroundStyle="destructive"
         data-testid="auth-request-error"
         role="alert"
       >
@@ -63,8 +81,8 @@
       <button
         type="button"
         uiButton
-        uiVariant="prominent"
-        uiSize="prominent"
+        uiButtonStyle="borderedProminent"
+        uiControlSize="large"
         data-testid="auth-submit-identifier"
         [uiLoading]="store.pending()"
         [disabled]="!identifierResult() || identifierResult()?.isFailure()"
@@ -75,15 +93,20 @@
       <button
         type="button"
         uiButton
-        uiVariant="plain"
+        uiButtonStyle="plain"
         data-testid="auth-back"
         (click)="store.back()"
       >
         {{ t('auth.back') }}
       </button>
-    </section>
+    </ui-stack>
     } @case ('otp') {
-    <section class="auth-step" data-testid="auth-otp">
+    <ui-stack
+      uiSpacing="comfortable"
+      uiFrame
+      uiFrameMaxWidth="28rem"
+      data-testid="auth-otp"
+    >
       <h1 uiText uiFont="title">{{ t('auth.otp.title') }}</h1>
       <p uiText uiFont="body">{{ t('auth.otp.body') }}</p>
 
@@ -96,10 +119,9 @@
       />
       @if (codeErrorMessage(); as error) {
       <p
-        class="auth-error"
         uiText
         uiFont="footnote"
-        uiForeground="destructive"
+        uiForegroundStyle="destructive"
         data-testid="auth-otp-format-error"
         role="alert"
       >
@@ -107,10 +129,9 @@
       </p>
       } @if (translateError(currentError()); as error) {
       <p
-        class="auth-error"
         uiText
         uiFont="footnote"
-        uiForeground="destructive"
+        uiForegroundStyle="destructive"
         data-testid="auth-verify-error"
         role="alert"
       >
@@ -121,8 +142,8 @@
       <button
         type="button"
         uiButton
-        uiVariant="prominent"
-        uiSize="prominent"
+        uiButtonStyle="borderedProminent"
+        uiControlSize="large"
         data-testid="auth-submit-code"
         [uiLoading]="store.pending()"
         (click)="submitCode()"
@@ -132,7 +153,7 @@
       <button
         type="button"
         uiButton
-        uiVariant="plain"
+        uiButtonStyle="plain"
         data-testid="auth-resend"
         (click)="store.resend()"
       >
@@ -141,22 +162,33 @@
       <button
         type="button"
         uiButton
-        uiVariant="plain"
+        uiButtonStyle="plain"
         data-testid="auth-change-identifier"
         (click)="store.changeIdentifier()"
       >
         {{ t('auth.otp.changeIdentifier') }}
       </button>
-    </section>
+    </ui-stack>
     } @case ('blocked') {
-    <section class="auth-step" data-testid="auth-blocked">
+    <ui-stack
+      uiSpacing="comfortable"
+      uiFrame
+      uiFrameMaxWidth="28rem"
+      data-testid="auth-blocked"
+    >
       <h1 uiText uiFont="title">{{ t('auth.blocked.title') }}</h1>
       <p uiText uiFont="body">{{ t('auth.blocked.body') }}</p>
-    </section>
+    </ui-stack>
     } @default {
-    <section class="auth-step" data-testid="auth-settling">
+    <ui-stack
+      uiSpacing="comfortable"
+      uiFrame
+      uiFrameMaxWidth="28rem"
+      data-testid="auth-settling"
+    >
       <p uiText uiFont="body">{{ t('auth.settling') }}</p>
-    </section>
+    </ui-stack>
     } }
-  </div>
+    <ui-spacer />
+  </ui-stack>
 </ng-container>

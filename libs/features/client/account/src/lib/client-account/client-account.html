@@ -1,43 +1,56 @@
 <ng-container *transloco="let t">
-  <div class="account-shell">
-    <header class="account-header">
+  <ui-stack
+    uiSpacing="comfortable"
+    uiFrame
+    [uiFrameMaxWidth]="'var(--sys-container-content)'"
+    uiPaddingHorizontal="regular"
+    uiPaddingVertical="spacious"
+  >
+    <ui-stack uiAxis="horizontal" uiAlignment="center" uiSpacing="compact">
       <h1 uiText uiFont="title">{{ t('account.header.title') }}</h1>
+      <ui-spacer />
       <button
         type="button"
         uiButton
-        uiVariant="plain"
-        uiSize="compact"
+        uiButtonStyle="plain"
+        uiControlSize="small"
         data-testid="account-sign-out"
         (click)="signOut()"
       >
         {{ t('account.header.signOut') }}
       </button>
-    </header>
+    </ui-stack>
 
     @if (accountState.accountLoading()) {
-    <ui-stack uiGap="comfortable" data-testid="account-skeleton">
-      <ui-skeleton style="block-size: 4.5rem" />
-      <ui-skeleton style="block-size: 6rem" />
-      <ui-skeleton style="block-size: 8rem" />
+    <ui-stack uiSpacing="comfortable" data-testid="account-skeleton">
+      <ui-skeleton uiFrame uiFrameHeight="4.5rem" />
+      <ui-skeleton uiFrame uiFrameHeight="6rem" />
+      <ui-skeleton uiFrame uiFrameHeight="8rem" />
     </ui-stack>
     } @else {
-    <ui-stack uiGap="comfortable">
-      <section class="account-tiles" data-testid="account-tiles">
+    <ui-stack uiSpacing="comfortable">
+      <ui-grid
+        [uiAdaptiveMinimum]="'9rem'"
+        uiSpacing="regular"
+        data-testid="account-tiles"
+      >
         <a
-          class="account-tile"
+          uiCard
+          uiPadding="comfortable"
+          [uiInteractive]="true"
           routerLink="/book"
           data-testid="account-tile-book"
         >
           <p uiText uiFont="headline">{{ t('account.tiles.book.title') }}</p>
-          <p uiText uiFont="footnote" uiForeground="secondary">
+          <p uiText uiFont="footnote" uiForegroundStyle="secondary">
             {{ t('account.tiles.book.subtitle') }}
           </p>
         </a>
-        <div
-          class="account-tile account-tile-inert"
+        <ui-card
+          uiPadding="comfortable"
+          uiDisabled
           data-testid="account-tile-appointments"
           data-state="soon"
-          aria-disabled="true"
         >
           <p uiText uiFont="headline">
             {{ t('account.tiles.appointments.title') }}
@@ -45,12 +58,12 @@
           <span uiBadge uiTone="neutral"
             >{{ t('account.tiles.comingSoon') }}</span
           >
-        </div>
-        <div
-          class="account-tile account-tile-inert"
+        </ui-card>
+        <ui-card
+          uiPadding="comfortable"
+          uiDisabled
           data-testid="account-tile-settings"
           data-state="soon"
-          aria-disabled="true"
         >
           <p uiText uiFont="headline">
             {{ t('account.tiles.settings.title') }}
@@ -58,8 +71,8 @@
           <span uiBadge uiTone="neutral"
             >{{ t('account.tiles.comingSoon') }}</span
           >
-        </div>
-      </section>
+        </ui-card>
+      </ui-grid>
 
       <ui-card
         uiPadding="comfortable"
@@ -69,7 +82,7 @@
         <p uiText uiFont="headline">{{ t('account.upcoming.title') }}</p>
         @switch (upcoming().kind) { @case ('populated') { @if
         (upcomingAppointment(); as visit) {
-        <ui-stack uiGap="tight">
+        <ui-stack uiSpacing="tight">
           <p uiText uiFont="body">
             {{ formatAppointmentDate(visit) }} · {{ formatAppointmentTime(visit)
             }}
@@ -77,18 +90,23 @@
           <span uiBadge uiTone="accent">{{ visit.status.kind }}</span>
         </ui-stack>
         } } @case ('error') {
-        <p uiText uiFont="footnote" uiForeground="destructive" role="alert">
+        <p
+          uiText
+          uiFont="footnote"
+          uiForegroundStyle="destructive"
+          role="alert"
+        >
           {{ translateRepositoryError() }}
         </p>
         } @default {
-        <ui-stack uiGap="tight">
-          <p uiText uiFont="body" uiForeground="secondary">
+        <ui-stack uiSpacing="tight">
+          <p uiText uiFont="body" uiForegroundStyle="secondary">
             {{ t('account.upcoming.empty') }}
           </p>
           <a
             uiButton
-            uiVariant="tinted"
-            uiSize="compact"
+            uiButtonStyle="bordered"
+            uiControlSize="small"
             routerLink="/book"
             data-testid="account-upcoming-book-cta"
           >
@@ -105,11 +123,11 @@
         [attr.data-state]="progress.complete ? 'complete' : 'open'"
       >
         <p uiText uiFont="headline">{{ t('account.completion.title') }}</p>
-        <p uiText uiFont="footnote" uiForeground="secondary">
+        <p uiText uiFont="footnote" uiForegroundStyle="secondary">
           {{ t('account.completion.progress', { done: progress.done, total:
           progress.total }) }}
         </p>
-        <ui-stack uiGap="tight">
+        <ui-stack uiSpacing="tight">
           @for (item of progress.items; track item.key) {
           <p
             uiText
@@ -126,5 +144,5 @@
       }
     </ui-stack>
     }
-  </div>
+  </ui-stack>
 </ng-container>

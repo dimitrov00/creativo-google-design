@@ -1,0 +1,144 @@
+<sc-page scTitle="Divider &amp; Spacer">
+  <ng-container scLede>
+    ≙ SwiftUI <code>Divider()</code> and <code>Spacer()</code>.
+    <code>ui-divider</code> is the one sanctioned 1px
+    <code>--sys-color-separator</code> hairline — axis follows the enclosing
+    stack. <code>ui-spacer</code> is the flexible gap that pushes flex siblings
+    apart, replacing ad-hoc <code>space-between</code> wrappers and
+    <code>margin: auto</code> pins.
+  </ng-container>
+
+  <sc-demo scTitle="Horizontal divider">
+    <ng-container scAbout>
+      The default orientation — a hairline between stacked rows.
+    </ng-container>
+    <ui-stack uiSpacing="tight" uiAlignment="leading">
+      <ui-card
+        uiPadding="comfortable"
+        uiTone="elevated"
+        uiFrame
+        [uiFrameWidth]="'24rem'"
+      >
+        <ui-stack uiSpacing="regular" uiAlignment="stretch">
+          <p uiText [uiFont]="'body'">Tuesday · 10:00</p>
+          <ui-divider />
+          <p uiText [uiFont]="'body'">Wednesday · 14:30</p>
+          <ui-divider />
+          <p uiText [uiFont]="'body'">Friday · 09:15</p>
+        </ui-stack>
+      </ui-card>
+      <p uiText [uiFont]="'caption'" class="divsp__mono">
+        uiOrientation=horizontal (default)
+      </p>
+    </ui-stack>
+  </sc-demo>
+
+  <sc-demo scTitle="Vertical divider">
+    <ng-container scAbout>
+      Inside a horizontal stack the hairline stretches to the row's height
+      (<code>align-self: stretch</code>) — the meta-row separator.
+    </ng-container>
+    <ui-stack uiSpacing="tight" uiAlignment="leading">
+      <ui-stack uiAxis="horizontal" uiSpacing="regular" uiAlignment="center">
+        <p uiText [uiFont]="'callout'" uiForegroundStyle="secondary">2h 30m</p>
+        <ui-divider uiOrientation="vertical" />
+        <p uiText [uiFont]="'callout'" uiForegroundStyle="secondary">
+          From €120
+        </p>
+        <ui-divider uiOrientation="vertical" />
+        <p uiText [uiFont]="'callout'" uiForegroundStyle="secondary">
+          3 variants
+        </p>
+      </ui-stack>
+      <p uiText [uiFont]="'caption'" class="divsp__mono">
+        uiOrientation=vertical
+      </p>
+    </ui-stack>
+  </sc-demo>
+
+  <sc-demo scTitle="uiInset">
+    <ng-container scAbout>
+      The list-group hairline — a leading inset so the divider starts where the
+      label column does, past the leading glyph (iOS grouped-list geometry).
+    </ng-container>
+    <ui-stack uiSpacing="tight" uiAlignment="leading">
+      <ui-card
+        uiPadding="comfortable"
+        uiTone="elevated"
+        uiFrame
+        [uiFrameWidth]="'24rem'"
+      >
+        <ui-stack uiSpacing="regular" uiAlignment="stretch">
+          <ui-stack
+            uiAxis="horizontal"
+            uiSpacing="regular"
+            uiAlignment="center"
+          >
+            <ui-icon uiName="account.reservations" uiScale="medium" />
+            <p uiText [uiFont]="'body'">Reservations</p>
+          </ui-stack>
+          <ui-divider [uiInset]="true" />
+          <ui-stack
+            uiAxis="horizontal"
+            uiSpacing="regular"
+            uiAlignment="center"
+          >
+            <ui-icon uiName="account.rewards" uiScale="medium" />
+            <p uiText [uiFont]="'body'">Rewards</p>
+          </ui-stack>
+          <ui-divider [uiInset]="true" />
+          <ui-stack
+            uiAxis="horizontal"
+            uiSpacing="regular"
+            uiAlignment="center"
+          >
+            <ui-icon uiName="prefs.language" uiScale="medium" />
+            <p uiText [uiFont]="'body'">Language</p>
+          </ui-stack>
+        </ui-stack>
+      </ui-card>
+      <p uiText [uiFont]="'caption'" class="divsp__mono">
+        uiOrientation=horizontal · uiInset
+      </p>
+    </ui-stack>
+  </sc-demo>
+
+  <sc-demo scTitle="Spacer">
+    <ng-container scAbout>
+      A flexible gap, not a fixed one — it absorbs the leftover space and pins
+      its siblings to the edges. The canonical use is the toolbar row: identity
+      leading, actions trailing.
+    </ng-container>
+    <ui-stack uiSpacing="comfortable" uiAlignment="stretch">
+      <ui-stack uiSpacing="tight" uiAlignment="stretch">
+        <ui-stack uiAxis="horizontal" uiSpacing="none" uiAlignment="center">
+          <span class="divsp__box"></span>
+          <ui-spacer />
+          <span class="divsp__box"></span>
+        </ui-stack>
+        <p uiText [uiFont]="'caption'" class="divsp__mono">
+          ui-stack uiAxis=horizontal · ui-spacer
+        </p>
+      </ui-stack>
+      <ui-stack uiSpacing="tight" uiAlignment="stretch">
+        <ui-toolbar uiToolbarBackground="automatic">
+          <p uiText [uiFont]="'headline'">Appointments</p>
+          <ui-spacer />
+          <button uiButton uiButtonStyle="bordered" uiControlSize="small">
+            Filter
+          </button>
+          <button
+            uiButton
+            uiButtonStyle="borderedProminent"
+            uiControlSize="small"
+          >
+            Book
+          </button>
+        </ui-toolbar>
+        <p uiText [uiFont]="'caption'" class="divsp__mono">
+          ui-toolbar uiToolbarBackground=automatic · ui-spacer
+        </p>
+      </ui-stack>
+    </ui-stack>
+  </sc-demo>
+</sc-page>

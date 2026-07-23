@@ -1,49 +1,70 @@
-<a
-  routerLink="/controls"
-  uiText
-  [uiFont]="'callout'"
-  [uiWeight]="'regular'"
-  [uiForeground]="'accent'"
-  class="page__back"
->
-  ← All controls
-</a>
+<sc-page scTitle="Avatar">
+  <ng-container scLede>
+    <code>ui-avatar</code> composes <code>ui-async-image</code> internally — ≙
+    SwiftUI <code>AsyncImage(url:)</code> with the monogram as the
+    <code>placeholder:</code> closure. The initial IS the placeholder: shown
+    while bytes load, kept on error, permanent for a null <code>uiSrc</code>.
+  </ng-container>
 
-<h1 uiText [uiFont]="'largeTitle'" [uiWeight]="'bold'">Avatar</h1>
-<p
-  uiText
-  [uiFont]="'body'"
-  [uiWeight]="'regular'"
-  [uiForeground]="'secondary'"
-  class="page__intro"
->
-  <code>ui-avatar</code> — uiSize × (uiSrc present or null, falling back to
-  uiName's initial).
-</p>
-
-<section class="page__section">
-  <h2 uiText [uiFont]="'title2'" [uiWeight]="'bold'">Size × Image</h2>
-  <ui-stack uiAxis="vertical" uiGap="comfortable">
-    @for (withImage of withImageStates; track withImage) {
-    <ui-stack uiAxis="horizontal" uiGap="regular" uiAlign="center">
+  <sc-demo scTitle="Monogram sizes">
+    <ng-container scAbout>
+      The shared control ladder plus the avatar-only
+      <code>extraLarge</code> portrait tier (112px) used by detail sheets. With
+      no <code>uiSrc</code> the monogram renders permanently.
+    </ng-container>
+    <ui-flow uiSpacing="comfortable" uiAlignment="trailing">
       @for (size of sizes; track size) {
-      <ui-stack uiAxis="vertical" uiGap="tight" uiAlign="start">
-        <ui-avatar
-          [uiSrc]="withImage ? demoImage : null"
-          uiName="Ada Lovelace"
-          [uiSize]="size"
-        />
-        <p
-          uiText
-          [uiFont]="'caption'"
-          [uiWeight]="'medium'"
-          [uiForeground]="'secondary'"
-        >
-          size={{ size }} image={{ withImage }}
+      <ui-stack uiAxis="vertical" uiSpacing="compact" uiAlignment="leading">
+        <ui-avatar uiName="Ada Lovelace" [uiControlSize]="size" />
+        <p uiText [uiFont]="'caption'" class="avatar__mono">
+          controlSize={{ size }} · src=null
         </p>
       </ui-stack>
       }
-    </ui-stack>
-    }
-  </ui-stack>
-</section>
+    </ui-flow>
+  </sc-demo>
+
+  <sc-demo scTitle="With image">
+    <ng-container scAbout>
+      A resolvable <code>uiSrc</code> fades the photo in over the monogram once
+      the bytes arrive — same load choreography as every
+      <code>ui-async-image</code>.
+    </ng-container>
+    <ui-flow uiSpacing="comfortable" uiAlignment="trailing">
+      @for (sample of imageSamples; track sample.size) {
+      <ui-stack uiAxis="vertical" uiSpacing="compact" uiAlignment="leading">
+        <ui-avatar
+          [uiSrc]="sample.src"
+          uiName="Ada Lovelace"
+          [uiControlSize]="sample.size"
+        />
+        <p uiText [uiFont]="'caption'" class="avatar__mono">
+          controlSize={{ sample.size }} · src=i.pravatar.cc
+        </p>
+      </ui-stack>
+      }
+    </ui-flow>
+  </sc-demo>
+
+  <sc-demo scTitle="Broken source">
+    <ng-container scAbout>
+      The <code>AsyncImage</code> error path: an unreachable
+      <code>uiSrc</code> never replaces the placeholder, so the monogram
+      persists — no broken-image glyph, no layout shift.
+    </ng-container>
+    <ui-flow uiSpacing="comfortable" uiAlignment="trailing">
+      @for (size of sizes; track size) {
+      <ui-stack uiAxis="vertical" uiSpacing="compact" uiAlignment="leading">
+        <ui-avatar
+          [uiSrc]="brokenSrc"
+          uiName="Ada Lovelace"
+          [uiControlSize]="size"
+        />
+        <p uiText [uiFont]="'caption'" class="avatar__mono">
+          controlSize={{ size }} · src=example.invalid/x.png
+        </p>
+      </ui-stack>
+      }
+    </ui-flow>
+  </sc-demo>
+</sc-page>

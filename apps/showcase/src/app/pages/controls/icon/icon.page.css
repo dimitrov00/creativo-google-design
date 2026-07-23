@@ -1,0 +1,12 @@
+:host {
+  display: block;
+}
+
+.icon__mono {
+  font-family: var(--sys-font-family-mono);
+}
+
+/* Fixed-width cell so the registry sampler reads as an even specimen grid. */
+.icon__sample {
+  inline-size: 9rem;
+}

@@ -13,11 +13,23 @@ import {
   UiBadgeTone,
   UiButton,
   UiChip,
+  UiTextField,
   UiSkeleton,
 } from '@creativo/ui/controls';
-import { UiSheet, UiStack } from '@creativo/ui/layout';
-import { UiCalendarGrid, UiCard, UiDateBadge } from '@creativo/ui/patterns';
-import { UiTextDirective } from '@creativo/ui/modifiers';
+import { UiDivider, UiSheet, UiSpacer, UiStack } from '@creativo/ui/layout';
+import {
+  UiCalendarGrid,
+  UiCard,
+  UiDateBadge,
+  UiListRow,
+} from '@creativo/ui/patterns';
+import {
+  UiFrameDirective,
+  UiInteractiveDirective,
+  UiPaddingDirective,
+  UiRadiusDirective,
+  UiTextDirective,
+} from '@creativo/ui/modifiers';
 import { translateDomainError } from '@creativo/infrastructure/i18n';
 import { AppointmentsStore, APPOINTMENTS_ZONE } from '../appointments.store';
 import { CalendarMonth, buildCalendarMonth } from '../calendar-month';
@@ -68,8 +80,16 @@ const DEFAULT_CANCEL_REASON = 'Cancelled by client.';
     UiCard,
     UiChip,
     UiDateBadge,
+    UiDivider,
+    UiFrameDirective,
+    UiTextField,
+    UiInteractiveDirective,
+    UiListRow,
+    UiPaddingDirective,
+    UiRadiusDirective,
     UiSheet,
     UiSkeleton,
+    UiSpacer,
     UiStack,
     UiTextDirective,
   ],

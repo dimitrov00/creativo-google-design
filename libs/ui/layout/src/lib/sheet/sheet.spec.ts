@@ -5,10 +5,10 @@ import { UiSheet } from './sheet';
 @Component({
   imports: [UiSheet],
   template: `<ui-sheet
-    [uiOpen]="open()"
+    [uiIsPresented]="open()"
     [uiClosing]="closing()"
     [uiPlacement]="'end'"
-    [uiSize]="size()"
+    [uiPresentationSizing]="sizing()"
     data-testid="sheet"
     >content</ui-sheet
   >`,
@@ -16,7 +16,7 @@ import { UiSheet } from './sheet';
 class HostComponent {
   open = signal(false);
   closing = signal(false);
-  size = signal<'regular' | 'wide'>('regular');
+  sizing = signal<'automatic' | 'page'>('automatic');
 }
 
 describe('UiSheet', () => {
@@ -29,7 +29,7 @@ describe('UiSheet', () => {
     fixture = TestBed.createComponent(HostComponent);
   });
 
-  it('writes placement as a data-* attribute and role="dialog", omitting data-open/aria-modal by default', () => {
+  it('writes placement as a data-* attribute and role="dialog", omitting data-presented/aria-modal by default', () => {
     fixture.detectChanges();
     const el: HTMLElement = fixture.nativeElement.querySelector(
       '[data-testid="sheet"]',
@@ -37,35 +37,35 @@ describe('UiSheet', () => {
     expect(el.classList.contains('ui-sheet')).toBe(true);
     expect(el.getAttribute('role')).toBe('dialog');
     expect(el.getAttribute('data-placement')).toBe('end');
-    expect(el.getAttribute('data-open')).toBeNull();
+    expect(el.getAttribute('data-presented')).toBeNull();
     expect(el.getAttribute('aria-modal')).toBeNull();
   });
 
-  it('writes data-open and aria-modal="true" when uiOpen is true', () => {
+  it('writes data-presented and aria-modal="true" when uiIsPresented is true', () => {
     fixture.componentInstance.open.set(true);
     fixture.detectChanges();
     const el: HTMLElement = fixture.nativeElement.querySelector(
       '[data-testid="sheet"]',
     );
-    expect(el.getAttribute('data-open')).toBe('');
+    expect(el.getAttribute('data-presented')).toBe('');
     expect(el.getAttribute('aria-modal')).toBe('true');
   });
 
-  it('writes the default size as data-size="regular"', () => {
+  it('writes the default sizing as data-presentation-sizing="automatic"', () => {
     fixture.detectChanges();
     const el: HTMLElement = fixture.nativeElement.querySelector(
       '[data-testid="sheet"]',
     );
-    expect(el.getAttribute('data-size')).toBe('regular');
+    expect(el.getAttribute('data-presentation-sizing')).toBe('automatic');
   });
 
-  it('writes data-size="wide" when uiSize is wide', () => {
-    fixture.componentInstance.size.set('wide');
+  it('writes data-presentation-sizing="page" for the wide set-piece', () => {
+    fixture.componentInstance.sizing.set('page');
     fixture.detectChanges();
     const el: HTMLElement = fixture.nativeElement.querySelector(
       '[data-testid="sheet"]',
     );
-    expect(el.getAttribute('data-size')).toBe('wide');
+    expect(el.getAttribute('data-presentation-sizing')).toBe('page');
   });
 
   it('keeps the modal environment active while uiClosing is true', () => {

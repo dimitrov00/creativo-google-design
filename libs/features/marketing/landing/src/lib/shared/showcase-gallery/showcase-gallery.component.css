@@ -14,17 +14,16 @@
   min-inline-size: 0;
 }
 
-.showcase-gallery {
-  display: flex;
-  flex-direction: column;
-  min-inline-size: 0;
-}
+/* The vertical rhythm (toggle row → track) is a compact ui-stack in the
+   template; the toggle is end-pinned by ui-spacer inside a horizontal
+   stack. uiButton (bordered/capsule/icon-only + uiSelected) owns the toggle
+   chrome. */
 
-/* uiButton (tinted/capsule/icon-only + uiSelected) owns the toggle chrome —
-   only the sheet-local alignment stays here. */
-.showcase-gallery__layout-toggle {
-  align-self: flex-end;
-  margin: 0 var(--modal-sheet-safe, 1rem) var(--sys-space-compact) 0;
+/* The fluid sheet gutter is a custom LENGTH (--modal-sheet-safe), not a
+   spacing token, so uiPadding can't express it — the toggle row restates
+   the track's own inline gutter to line the button up with content. */
+.showcase-gallery__toolbar {
+  padding-inline: var(--modal-sheet-safe, 1rem);
 }
 
 /* Glyph size comes from the DS icon-only tier in button.css (1.25rem at
@@ -46,6 +45,7 @@
 
 figure {
   flex: 0 0 76%;
+  /* UA <figure> margin reset — not spacing (the track's gap owns that). */
   margin: 0;
   overflow: hidden;
   aspect-ratio: 3 / 4;

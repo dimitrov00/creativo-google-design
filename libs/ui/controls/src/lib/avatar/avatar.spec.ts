@@ -7,7 +7,7 @@ import { UiAvatar } from './avatar';
   template: `<ui-avatar
     [uiSrc]="src()"
     [uiName]="name()"
-    [uiSize]="'prominent'"
+    [uiControlSize]="'large'"
   />`,
 })
 class HostComponent {
@@ -29,7 +29,7 @@ describe('UiAvatar', () => {
     fixture.detectChanges();
     const el: HTMLElement = fixture.nativeElement.querySelector('ui-avatar');
     expect(el.classList.contains('ui-avatar')).toBe(true);
-    expect(el.getAttribute('data-size')).toBe('prominent');
+    expect(el.getAttribute('data-control-size')).toBe('large');
   });
 
   it('renders the uppercased first initial when there is no src', () => {
@@ -40,17 +40,20 @@ describe('UiAvatar', () => {
     expect(fallback.textContent?.trim()).toBe('A');
   });
 
-  it('renders an img when a src is provided', async () => {
+  it('renders the AsyncImage img when a src is provided', async () => {
     fixture.detectChanges();
     fixture.componentInstance.src.set('https://example.com/a.png');
     fixture.detectChanges();
     await fixture.whenStable();
-    const img: HTMLImageElement | null =
-      fixture.nativeElement.querySelector('.ui-avatar__image');
+    const img: HTMLImageElement | null = fixture.nativeElement.querySelector(
+      '.ui-avatar .ui-async-image__image',
+    );
     expect(img).not.toBeNull();
     expect(img?.getAttribute('alt')).toBe('Ada Lovelace');
+    // AsyncImage parity: the monogram stays in the DOM as the placeholder —
+    // it cross-fades out once the image loads and persists on error.
     expect(
       fixture.nativeElement.querySelector('.ui-avatar__fallback'),
-    ).toBeNull();
+    ).not.toBeNull();
   });
 });

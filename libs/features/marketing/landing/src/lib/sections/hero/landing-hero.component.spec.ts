@@ -54,8 +54,8 @@ describe('LandingHeroComponent', () => {
     // The anchor IS the button (a[uiButton]) — no pointer-events:none
     // wrapper, so hover/press/focus land on the real interactive element.
     expect(cta?.classList.contains('ui-button')).toBe(true);
-    // Prominent tier (52px) — the matched opening/closing chord size.
-    expect(cta?.getAttribute('data-size')).toBe('prominent');
+    // Large tier (52px) — the matched opening/closing chord size.
+    expect(cta?.getAttribute('data-control-size')).toBe('large');
     expect(cta?.hasAttribute('data-on-media')).toBe(true);
   });
 });

@@ -1,34 +1,32 @@
 :host {
   display: block;
-  max-inline-size: 960px;
 }
 
-.page__back {
-  display: inline-block;
-  margin-block-end: var(--sys-space-regular);
-  text-decoration: none;
+.card__mono {
+  font-family: var(--sys-font-family-mono);
 }
 
-.page__intro {
-  margin-block-end: var(--sys-space-loose);
+/* Demo-prop chrome only: fixed sample widths so tone/padding differences
+   compare like-for-like across the row. */
+.card__demo {
+  inline-size: 240px;
 }
 
-.page__section {
-  margin-block-end: var(--sys-space-spacious);
+.card__demo-narrow {
+  inline-size: 160px;
 }
 
-.page__section h2 {
-  margin-block-end: var(--sys-space-compact);
+/* The grouped-background container the `elevated` tone is designed for. */
+.card__muted-canvas {
+  background: var(--sys-color-surface-secondary);
+  border-radius: var(--control-radius-prominent);
+  padding: var(--sys-space-comfortable);
 }
 
-.card-demo {
-  inline-size: 200px;
-}
-
-.card-fill {
+/* Tinted stand-in for projected content — makes the padding rung visible. */
+.card__fill {
   background: var(--sys-color-surface-secondary);
   border-radius: var(--control-radius-subtle);
   text-align: center;
-  margin: 0;
   padding: var(--sys-space-compact);
 }

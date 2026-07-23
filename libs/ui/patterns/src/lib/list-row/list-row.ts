@@ -5,7 +5,8 @@ import {
   input,
 } from '@angular/core';
 
-export type UiListRowSize = 'regular' | 'prominent';
+/** Row heights ride the control-size ladder (≙ .controlSize naming). */
+export type UiListRowSize = 'regular' | 'large';
 export type UiListRowVariant = 'plain' | 'prominent';
 
 /**
@@ -60,7 +61,7 @@ export type UiListRowVariant = 'plain' | 'prominent';
   },
 })
 export class UiListRow {
-  readonly uiSize = input<UiListRowSize>('prominent');
+  readonly uiSize = input<UiListRowSize>('large');
   readonly uiVariant = input<UiListRowVariant>('plain');
   readonly uiInteractive = input(false);
 }

@@ -11,7 +11,7 @@
       var(--sys-motion-ease-standard);
   }
 
-  .ui-sheet[data-open] {
+  .ui-sheet[data-presented] {
     opacity: 1;
     pointer-events: auto;
   }
@@ -19,6 +19,10 @@
   .ui-sheet__surface {
     background: var(--sys-color-surface);
     box-shadow: var(--sys-elevation-overlay);
+    /* Sanctioned internal contract: the auto top margin IS the bottom-sheet
+       docking (flex push to the viewport's bottom edge inside the fixed
+       scrim) — this is the primitive that implements the push, so no
+       ui-spacer can exist beneath it. */
     margin: auto 0 0;
     inline-size: 100%;
     max-inline-size: var(--sys-container-drawer);
@@ -35,7 +39,7 @@
       var(--sys-motion-ease-emphasized);
   }
 
-  .ui-sheet[data-open] .ui-sheet__surface {
+  .ui-sheet[data-presented] .ui-sheet__surface {
     transform: translateY(0);
   }
 
@@ -45,13 +49,15 @@
     justify-content: center;
   }
   .ui-sheet[data-placement='center'] .ui-sheet__surface {
+    /* Sanctioned internal contract: auto margins center the dialog surface
+       in the scrim — the sheet primitive owns its own placement geometry. */
     margin: auto;
     max-inline-size: var(--sys-container-drawer);
     border-radius: var(--control-radius-prominent);
     transform: scale(0.95);
     opacity: 0;
   }
-  .ui-sheet[data-placement='center'][data-open] .ui-sheet__surface {
+  .ui-sheet[data-placement='center'][data-presented] .ui-sheet__surface {
     transform: scale(1);
     opacity: 1;
   }
@@ -61,6 +67,9 @@
     justify-content: flex-end;
   }
   .ui-sheet[data-placement='end'] .ui-sheet__surface {
+    /* Sanctioned internal contract: the auto leading margin docks the
+       drawer surface to the trailing viewport edge — placement geometry
+       owned by this primitive. */
     margin: 0 0 0 auto;
     inline-size: auto;
     max-inline-size: var(--sys-container-sidebar);
@@ -70,14 +79,14 @@
     border-end-start-radius: var(--control-radius-prominent);
     transform: translateX(100%);
   }
-  .ui-sheet[data-placement='end'][data-open] .ui-sheet__surface {
+  .ui-sheet[data-placement='end'][data-presented] .ui-sheet__surface {
     transform: translateX(0);
   }
 
   /* Size: wide — set-piece sheets (galleries, location detail) trade the
      drawer measure for the wide sheet container. Declared after the
      placement rules so it wins their equal-specificity max-inline-size. */
-  .ui-sheet[data-size='wide'] .ui-sheet__surface {
+  .ui-sheet[data-presentation-sizing='page'] .ui-sheet__surface {
     max-inline-size: var(--sys-container-sheet-wide);
   }
 }

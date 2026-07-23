@@ -13,10 +13,7 @@
   color: var(--sys-color-foreground);
 }
 
-.team__heading {
-  display: block;
-  margin-block-end: var(--sys-space-spacious);
-}
+/* Heading → grid rhythm comes from the section's ui-stack gap. */
 
 /* Type metrics come from ui-section-header — only layout stays here. */
 .team__heading [uilede] {
@@ -71,6 +68,7 @@
 
 .team-card__copy p,
 .team-card h3 {
+  /* Kept margin: UA-margin zeroing so the copy stack's gap owns rhythm. */
   margin: 0;
 }
 
@@ -105,22 +103,27 @@
     var(--ui-sheet-action-bar-clearance);
 }
 
+/* The inset wrapper owns the sheet gutter as padding (parent owns edge
+   insets) — it can't ride the sheet body itself because the gallery
+   sibling must stay full-bleed, and --modal-sheet-safe is outside the
+   uiPadding scale. */
+.barber-sheet__profile-inset {
+  padding-inline: var(--modal-sheet-safe);
+}
+
 /* Vertical rhythm inside the profile = the stack gap; the old per-element
    margin ladder (2rem/0.7rem/1.4rem/1rem/0.9rem) is gone. */
 .barber-sheet__profile {
   max-inline-size: 34rem;
-  margin-inline: var(--modal-sheet-safe);
   padding-block-start: var(--sys-space-compact);
 }
 
 .barber-sheet__profile > * {
+  /* Kept margin: UA-margin zeroing so the profile stack's gap owns rhythm. */
   margin: 0;
 }
 
-.barber-sheet__gallery {
-  display: block;
-  margin-block-start: var(--sys-space-spacious);
-}
+/* Profile → gallery spacing comes from the .barber-sheet stack gap. */
 
 .barber-sheet__profile h2 {
   max-inline-size: 8ch;

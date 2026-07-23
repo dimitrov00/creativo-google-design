@@ -21,16 +21,25 @@
       {{ content.text(service().name) }}
     </p>
 
-    <div class="service-sheet__body" data-testid="service-detail">
+    <!-- Sheet rhythm: intro · gallery · details, one spacious beat apart
+         (the gallery slot simply drops out for services without photos). -->
+    <ui-stack
+      uiSpacing="spacious"
+      class="service-sheet__body"
+      data-testid="service-detail"
+    >
       <!-- ── Intro leads (title · summary — the user reads *what and for
            how much* before browsing photos; the book CTA lives in the
            docked action bar below) ── -->
-      <ui-stack uiGap="loose" class="service-sheet__story service-sheet__intro">
+      <ui-stack
+        uiSpacing="loose"
+        class="service-sheet__story service-sheet__intro"
+      >
         <!-- Title leads (Apple large-title order). `uiSheetLargeTitle` is
              the DS sentinel: ui-sheet-header watches it to reveal the
              compact title/chrome, and it names the view-timeline the
              scroll-driven collapse binds to (see CSS). -->
-        <div class="service-sheet__lede">
+        <ui-stack uiSpacing="regular" uiAlignment="leading">
           <h2
             id="service-detail-title"
             uiSheetLargeTitle
@@ -40,43 +49,39 @@
             {{ content.text(service().name) }}
           </h2>
           @if (service().kind === 'bundle') {
-            <span uiBadge uiTone="accent" class="service-sheet__bundle-badge">
+            <span uiBadge uiTone="accent">
               <ui-icon uiName="service.bundle" />
               {{ t('landing.services.bundle') }}
             </span>
           }
-        </div>
+        </ui-stack>
 
-        <div class="service-sheet__summary">
-          <p uiText uiFont="body" uiForeground="secondary">
+        <ui-stack uiSpacing="comfortable" class="service-sheet__summary">
+          <p uiText uiFont="body" uiForegroundStyle="secondary">
             {{ content.text(service().description) }}
           </p>
-          <ui-stack
-            uiAxis="horizontal"
-            uiGap="loose"
-            uiAlign="center"
-            class="service-sheet__summary-meta"
-          >
-            <span
+          <ui-stack uiAxis="horizontal" uiSpacing="loose" uiAlignment="center">
+            <ui-stack
+              uiAxis="horizontal"
+              uiSpacing="tight"
+              uiAlignment="center"
               uiText
               uiFont="caption"
-              uiForeground="secondary"
-              class="service-sheet__summary-duration"
+              uiForegroundStyle="secondary"
             >
               <ui-icon uiName="service.duration" />
               {{ duration() }}
-            </span>
+            </ui-stack>
             <strong uiText uiFont="caption" class="service-sheet__summary-price"
               >{{ t('landing.services.from') }} {{ fromPrice() }}</strong
             >
           </ui-stack>
-        </div>
+        </ui-stack>
       </ui-stack>
 
       <!-- ── Gallery — after the pitch, before the fine print ── -->
       @if (service().gallery.length > 0) {
         <cr-showcase-gallery
-          class="service-sheet__gallery"
           [images]="service().gallery"
           [imageAlt]="content.text(service().name)"
           [ariaLabel]="t('marketing.servicesPage.galleryLabel')"
@@ -87,7 +92,10 @@
         />
       }
 
-      <div class="service-sheet__story service-sheet__details">
+      <ui-stack
+        uiSpacing="spacious"
+        class="service-sheet__story service-sheet__details"
+      >
         <!-- ── Variants — capsule chips in the old sheet's language ── -->
         @if (service().variants.length > 0) {
           <cr-capsule-list
@@ -112,85 +120,105 @@
           class="service-performers"
           aria-labelledby="service-performers-title"
         >
-          <header>
-            <h3 id="service-performers-title" uiText uiFont="title3">
-              {{ t('landing.services.whoLabel') }}
-            </h3>
-            <button
-              type="button"
-              uiButton
-              uiVariant="tinted"
-              uiSize="regular"
-              uiShape="capsule"
-              [uiIconOnly]="true"
-              [uiSelected]="performersGrid()"
-              [attr.aria-label]="
-                performersGrid()
-                  ? t('landing.services.whoListView')
-                  : t('landing.services.whoGridView')
-              "
-              (click)="performersGrid.set(!performersGrid())"
-            >
-              <ui-icon
-                [uiName]="performersGrid() ? 'layout.list' : 'layout.grid'"
-              />
-            </button>
-          </header>
-
-          <ui-grid
-            role="list"
-            class="service-performers__list"
-            [uiColumns]="performersGrid() ? 2 : 1"
-            uiGap="compact"
-            [attr.data-grid]="performersGrid() ? '' : null"
-          >
-            @for (performer of performers(); track performer.barber.id) {
-              <!-- Not interactive (no click target) — so no hover affordance
-                   either: hover feedback on a dead surface is a fake promise
-                   (case-study §2.5). -->
-              <ui-list-row
-                role="listitem"
-                uiRadius="prominent"
-                class="service-performer"
+          <ui-stack uiSpacing="comfortable">
+            <header>
+              <ui-stack
+                uiAxis="horizontal"
+                uiSpacing="regular"
+                uiAlignment="center"
               >
-                <ui-avatar
-                  uiLeading
-                  class="service-performer__avatar"
-                  [uiSrc]="performer.barber.avatarSrc"
-                  [uiName]="content.text(performer.barber.name)"
-                  uiSize="prominent"
-                />
-                <span class="service-performer__identity">
-                  <h4 uiText uiFont="headline">
-                    {{ content.text(performer.barber.name) }}
-                  </h4>
-                  <span uiText uiFont="caption">{{
-                    content.text(performer.barber.title)
-                  }}</span>
-                </span>
-                <span uiTrailing class="service-performer__terms">
-                  <span
-                    uiText
-                    uiFont="headline"
-                    class="service-performer__price"
-                    >{{ content.price(performer.price) }}</span
+                <h3 id="service-performers-title" uiText uiFont="title3">
+                  {{ t('landing.services.whoLabel') }}
+                </h3>
+                <ui-spacer />
+                <button
+                  type="button"
+                  uiButton
+                  uiButtonStyle="bordered"
+                  uiControlSize="regular"
+                  uiButtonBorderShape="capsule"
+                  [uiIconOnly]="true"
+                  [uiSelected]="performersGrid()"
+                  [attr.aria-label]="
+                    performersGrid()
+                      ? t('landing.services.whoListView')
+                      : t('landing.services.whoGridView')
+                  "
+                  (click)="performersGrid.set(!performersGrid())"
+                >
+                  <ui-icon
+                    [uiName]="performersGrid() ? 'layout.list' : 'layout.grid'"
+                  />
+                </button>
+              </ui-stack>
+            </header>
+
+            <ui-grid
+              role="list"
+              class="service-performers__list"
+              [uiColumns]="performersGrid() ? 2 : 1"
+              uiSpacing="compact"
+              [attr.data-grid]="performersGrid() ? '' : null"
+            >
+              @for (performer of performers(); track performer.barber.id) {
+                <!-- Not interactive (no click target) — so no hover
+                     affordance either: hover feedback on a dead surface is
+                     a fake promise (case-study §2.5). -->
+                <ui-list-row
+                  role="listitem"
+                  uiRadius="prominent"
+                  class="service-performer"
+                >
+                  <ui-avatar
+                    uiLeading
+                    class="service-performer__avatar"
+                    [uiSrc]="performer.barber.avatarSrc"
+                    [uiName]="content.text(performer.barber.name)"
+                    uiControlSize="large"
+                  />
+                  <ui-stack
+                    uiSpacing="tight"
+                    class="service-performer__identity"
                   >
-                  <span
-                    uiText
-                    uiFont="caption"
-                    class="service-performer__duration"
+                    <h4 uiText uiFont="headline">
+                      {{ content.text(performer.barber.name) }}
+                    </h4>
+                    <span uiText uiFont="caption">{{
+                      content.text(performer.barber.title)
+                    }}</span>
+                  </ui-stack>
+                  <ui-stack
+                    uiTrailing
+                    uiSpacing="tight"
+                    [uiAlignment]="performersGrid() ? 'leading' : 'trailing'"
+                    class="service-performer__terms"
                   >
-                    <ui-icon uiName="service.duration" />
-                    {{ performer.minutes }}
-                    {{ t('landing.services.durationLabel') }}
-                  </span>
-                </span>
-              </ui-list-row>
-            }
-          </ui-grid>
+                    <span
+                      uiText
+                      uiFont="headline"
+                      class="service-performer__price"
+                      >{{ content.price(performer.price) }}</span
+                    >
+                    <ui-stack
+                      uiAxis="horizontal"
+                      uiSpacing="tight"
+                      uiAlignment="center"
+                      uiText
+                      uiFont="caption"
+                      class="service-performer__duration"
+                    >
+                      <ui-icon uiName="service.duration" />
+                      {{ performer.minutes }}
+                      {{ t('landing.services.durationLabel') }}
+                    </ui-stack>
+                  </ui-stack>
+                </ui-list-row>
+              }
+            </ui-grid>
+          </ui-stack>
         </section>
-      </div>
-    </div>
+      </ui-stack>
+    </ui-stack>
 
     <!-- ── Bottom booking bar — docked and visible for the sheet's whole
          life (it rides the sheet's own entrance; no scroll reveal). -->
@@ -203,8 +231,8 @@
         routerLink="/auth"
         [queryParams]="{ redirect: '/book' }"
         uiButton
-        uiVariant="prominent"
-        uiShape="capsule"
+        uiButtonStyle="borderedProminent"
+        uiButtonBorderShape="capsule"
         [uiSpread]="true"
         data-testid="service-detail-book"
         [attr.aria-label]="

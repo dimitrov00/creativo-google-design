@@ -6,8 +6,9 @@ import { UiButton } from './button';
   imports: [UiButton],
   template: `<button
     uiButton
-    [uiVariant]="'destructive'"
-    [uiSize]="'compact'"
+    [uiButtonStyle]="'borderedProminent'"
+    [uiRole]="'destructive'"
+    [uiControlSize]="'small'"
     [uiLoading]="loading"
     [uiMultiline]="multiline"
     [uiSpread]="spread"
@@ -25,7 +26,7 @@ class HostComponent {
   imports: [UiButton],
   template: `<button
     uiButton
-    [uiVariant]="'tinted'"
+    [uiButtonStyle]="'bordered'"
     [uiIconOnly]="true"
     [uiSelected]="selected"
   >
@@ -46,12 +47,13 @@ describe('UiButton', () => {
     fixture = TestBed.createComponent(HostComponent);
   });
 
-  it('writes variant/size as data-* attributes, never as classes', () => {
+  it('writes style/role/size as data-* attributes, never as classes', () => {
     fixture.detectChanges();
     const el: HTMLElement = fixture.nativeElement.querySelector('button');
     expect(el.classList.contains('ui-button')).toBe(true);
-    expect(el.getAttribute('data-variant')).toBe('destructive');
-    expect(el.getAttribute('data-size')).toBe('compact');
+    expect(el.getAttribute('data-button-style')).toBe('borderedProminent');
+    expect(el.getAttribute('data-role')).toBe('destructive');
+    expect(el.getAttribute('data-control-size')).toBe('small');
   });
 
   it('marks aria-busy and data-state="loading" while loading', () => {

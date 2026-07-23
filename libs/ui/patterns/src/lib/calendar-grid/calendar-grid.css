@@ -4,4 +4,23 @@
     grid-template-columns: repeat(7, 1fr);
     gap: var(--sys-space-tight);
   }
+
+  /* Slot attributes are lowercased by the HTML parser (uiWeekday →
+     uiweekday) — selectors use the DOM form, same as ui-list-row. */
+  .ui-calendar-grid > [uiweekday] {
+    text-align: center;
+  }
+
+  /* Day tap cell — UA chrome stripped, badge centered; hover/press/focus
+     ride the shared [data-interactive] grammar, never a bespoke rule. */
+  .ui-calendar-grid > button[uiday] {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: var(--sys-space-tight);
+    border: 0;
+    background: none;
+    color: inherit;
+    font: inherit;
+  }
 }

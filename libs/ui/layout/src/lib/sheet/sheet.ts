@@ -9,14 +9,15 @@ import { UiSheetBehavior } from './sheet-behavior';
 
 export type UiSheetPlacement = 'bottom' | 'center' | 'end';
 /** SwiftUI parity: `.presentationDetents` — surface measure, not placement. */
-export type UiSheetSize = 'regular' | 'wide';
+/** ≙ SwiftUI `.presentationSizing(_:)` — automatic, or the wide `.page` set-piece. */
+export type UiSheetPresentationSizing = 'automatic' | 'page';
 
 /**
  * Headless modal/drawer surface — bottom sheet on mobile, side drawer/dialog
  * on desktop. The modal behavior contract (body scroll lock, focus
  * capture/trap/restore, Escape + backdrop dismissal) comes from the shared
  * {@link UiSheetBehavior} host directive; dismissal is only *requested* —
- * `uiDismissed` fires and the owner flips `uiOpen` itself.
+ * `uiOnDismiss` fires and the owner flips `uiIsPresented` itself.
  */
 @Component({
   selector: 'ui-sheet',
@@ -28,15 +29,15 @@ export type UiSheetSize = 'regular' | 'wide';
   // global `.ui-*` classes are this system's actual styling contract (§3.1).
   encapsulation: ViewEncapsulation.None,
   hostDirectives: [
-    { directive: UiSheetBehavior, outputs: ['uiSheetDismissed: uiDismissed'] },
+    { directive: UiSheetBehavior, outputs: ['uiSheetDismissed: uiOnDismiss'] },
   ],
   host: {
     class: 'ui-sheet',
     role: 'dialog',
-    '[attr.data-open]': "uiOpen() ? '' : null",
+    '[attr.data-presented]': "uiIsPresented() ? '' : null",
     '[attr.data-placement]': 'uiPlacement()',
-    '[attr.data-size]': 'uiSize()',
-    '[attr.aria-modal]': 'uiOpen() || null',
+    '[attr.data-presentation-sizing]': 'uiPresentationSizing()',
+    '[attr.aria-modal]': 'uiIsPresented() || null',
     // The host IS the scrim — a direct press on it (not on the surface)
     // requests dismissal; Escape/Tab handling delegates to the behavior.
     '(pointerdown)': 'behavior.onBackdropPointerDown($event)',
@@ -47,9 +48,9 @@ export type UiSheetSize = 'regular' | 'wide';
 export class UiSheet {
   protected readonly behavior = inject(UiSheetBehavior);
 
-  readonly uiOpen = input(false);
+  readonly uiIsPresented = input(false);
   readonly uiPlacement = input<UiSheetPlacement>('bottom');
-  readonly uiSize = input<UiSheetSize>('regular');
+  readonly uiPresentationSizing = input<UiSheetPresentationSizing>('automatic');
   /**
    * The owner is playing its exit transition — forwarded to the behavior's
    * `closing` signal so the modal environment (scroll lock, `inert`, focus
@@ -59,7 +60,7 @@ export class UiSheet {
 
   constructor() {
     this.behavior.connect({
-      open: this.uiOpen,
+      open: this.uiIsPresented,
       closing: this.uiClosing,
       dialogSelector: '.ui-sheet__surface',
       // Standard dialog a11y: move focus to the first focusable control so

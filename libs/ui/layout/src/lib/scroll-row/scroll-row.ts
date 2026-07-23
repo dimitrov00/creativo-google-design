@@ -4,7 +4,7 @@ import {
   ViewEncapsulation,
   input,
 } from '@angular/core';
-import type { UiStackGap } from '../stack/stack';
+import type { UiSpacing } from '../stack/stack';
 
 /** SwiftUI parity: `.scrollTargetBehavior(.viewAligned)` alignment. */
 export type UiScrollRowSnap = 'none' | 'start' | 'center';
@@ -29,12 +29,12 @@ export type UiScrollRowSnap = 'none' | 'start' | 'center';
   host: {
     class: 'ui-scroll-row',
     '[attr.data-snap]': 'uiSnap()',
-    '[attr.data-gap]': 'uiGap()',
+    '[attr.data-spacing]': 'uiSpacing()',
     '[attr.data-full-bleed]': "uiFullBleed() ? '' : null",
   },
 })
 export class UiScrollRow {
   readonly uiSnap = input<UiScrollRowSnap>('start');
-  readonly uiGap = input<UiStackGap>('regular');
+  readonly uiSpacing = input<UiSpacing>('regular');
   readonly uiFullBleed = input(false);
 }

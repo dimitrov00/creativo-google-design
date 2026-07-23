@@ -24,8 +24,8 @@ import { BookingCtaComponent } from '../../shared/cta/booking-cta.component';
   host: { class: 'cr-closing', 'data-testid': 'landing-closing-cta' },
   template: `
     <ng-container *transloco="let t">
-      <ui-stack uiGap="loose" uiAlign="center">
-        <ui-section-header uiAlign="center">
+      <ui-stack uiSpacing="loose" uiAlignment="center">
+        <ui-section-header uiAlignment="center">
           <h2 uiReveal uiTitle>
             {{ t('landing.closing.heading') }}
           </h2>

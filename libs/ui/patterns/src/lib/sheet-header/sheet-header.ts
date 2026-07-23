@@ -22,7 +22,7 @@ const LARGE_TITLE_SELECTOR = '[uisheetlargetitle]';
  * trailing actions bar every sheet shares (UINavigationBar large-title
  * collapse; SwiftUI parity: a large title with
  * `.navigationBarTitleDisplayMode(.inline)` on a sheet). Extracted from the
- * landing's cr-modal-sheet so the geometry (52px `--control-size-prominent`
+ * landing's cr-modal-sheet so the geometry (52px `--control-size-large`
  * bar, sticky at `--sys-layer-header`) exists ONCE in the DS.
  *
  * At rest the bar is TRANSPARENT chrome: no fill, no hairline, compact

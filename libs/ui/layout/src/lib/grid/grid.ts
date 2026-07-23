@@ -4,7 +4,7 @@ import {
   ViewEncapsulation,
   input,
 } from '@angular/core';
-import type { UiStackGap } from '../stack/stack';
+import type { UiSpacing } from '../stack/stack';
 
 /**
  * SwiftUI parity: `LazyVGrid(columns: [GridItem(.flexible())], spacing:)` —
@@ -13,6 +13,11 @@ import type { UiStackGap } from '../stack/stack';
  * "zero styles in TS", like `uiFrame`: a raw count has no finite semantic
  * scale), so consumers can override it in their own media queries for
  * responsive column counts.
+ *
+ * `uiAdaptiveMinimum` ≙ `LazyVGrid(columns: [GridItem(.adaptive(minimum:))])`
+ * — as many equal columns as fit, each at least the given length (any CSS
+ * length; a raw length has no finite semantic scale, same exception as
+ * above). When set it takes over the template and `uiColumns` is ignored.
  */
 @Component({
   selector: 'ui-grid',
@@ -26,13 +31,17 @@ import type { UiStackGap } from '../stack/stack';
   host: {
     class: 'ui-grid',
     '[style.--ui-grid-columns]': 'uiColumns()',
-    '[attr.data-gap]': 'uiGap()',
-    '[attr.data-row-gap]': 'uiRowGap() ?? null',
+    '[style.--ui-grid-adaptive-min]': 'uiAdaptiveMinimum() ?? null',
+    '[attr.data-adaptive]': "uiAdaptiveMinimum() !== undefined ? '' : null",
+    '[attr.data-spacing]': 'uiSpacing()',
+    '[attr.data-row-spacing]': 'uiRowSpacing() ?? null',
   },
 })
 export class UiGrid {
   readonly uiColumns = input(2);
-  readonly uiGap = input<UiStackGap>('regular');
-  /** Optional row-gap override; unset leaves `uiGap` on both axes. */
-  readonly uiRowGap = input<UiStackGap | undefined>(undefined);
+  /** ≙ `GridItem(.adaptive(minimum:))` — any CSS length, e.g. `"9rem"`. */
+  readonly uiAdaptiveMinimum = input<string | undefined>(undefined);
+  readonly uiSpacing = input<UiSpacing>('regular');
+  /** Optional row-gap override; unset leaves `uiSpacing` on both axes. */
+  readonly uiRowSpacing = input<UiSpacing | undefined>(undefined);
 }

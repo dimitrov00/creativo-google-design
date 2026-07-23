@@ -1,56 +1,59 @@
 :host {
   display: block;
-  max-inline-size: 960px;
 }
 
-.page__back {
-  display: inline-block;
-  margin-block-end: var(--sys-space-regular);
-  text-decoration: none;
+.stack__mono {
+  font-family: var(--sys-font-family-mono);
 }
 
-.page__intro {
-  margin-block-end: var(--sys-space-loose);
-}
-
-.page__section {
-  margin-block-end: var(--sys-space-spacious);
-}
-
-.page__section h2 {
-  margin-block-end: var(--sys-space-compact);
-}
-
-.stack-demo {
-  background: var(--sys-color-surface-secondary);
-  border-radius: var(--control-radius-subtle);
-  padding: var(--sys-space-compact);
-}
-
-.stack-demo--align {
-  block-size: 96px;
-}
-
-.stack-box {
+/* Dashed placeholder box — the neutral "child view" glyph (never solid accent). */
+.stack__box {
   display: flex;
   align-items: center;
   justify-content: center;
-  inline-size: 40px;
-  block-size: 40px;
+  inline-size: 2.5rem;
+  min-block-size: 2.5rem;
+  border: 1px dashed
+    color-mix(in srgb, var(--sys-color-foreground) 35%, transparent);
   border-radius: var(--control-radius-subtle);
-  background: var(--sys-color-accent);
-  color: var(--sys-color-on-accent);
+  background: color-mix(in srgb, var(--sys-color-foreground) 4%, transparent);
   font: var(--sys-font-caption);
+  color: var(--sys-color-secondary-label);
 }
 
-.stack-box--short {
-  block-size: 24px;
+/* z-axis layers — translucent accents so the back-to-front overlap reads. */
+.stack__box--z-back {
+  inline-size: 4.5rem;
+  min-block-size: 4.5rem;
+}
+.stack__box--z-mid {
+  inline-size: 3.5rem;
+  min-block-size: 3.5rem;
+  border-color: color-mix(in srgb, var(--sys-color-accent) 55%, transparent);
+  background: color-mix(in srgb, var(--sys-color-accent) 12%, transparent);
+}
+.stack__box--z-front {
+  inline-size: 2.5rem;
+  min-block-size: 2.5rem;
+  border-color: var(--sys-color-accent);
+  background: color-mix(in srgb, var(--sys-color-accent) 28%, transparent);
 }
 
-.stack-box--medium {
-  block-size: 48px;
+/* Fixed-height frame so the four uiAlignment values are comparable. */
+.stack__frame {
+  inline-size: 10rem;
+  block-size: 7rem;
+  padding: var(--sys-space-tight);
+  border: 1px solid var(--sys-color-separator);
+  border-radius: var(--control-radius-regular);
 }
 
-.stack-box--tall {
-  block-size: 72px;
+.stack__box--short {
+  min-block-size: 1.5rem;
+}
+.stack__box--medium {
+  min-block-size: 2.75rem;
+}
+.stack__box--tall {
+  min-block-size: 4rem;
 }

@@ -1,0 +1,20 @@
+:host {
+  display: block;
+}
+
+.scroll-row__mono {
+  font-family: var(--sys-font-family-mono);
+}
+
+/* Card-thumbnail placeholder — accent-tinted media stand-in. */
+.scroll-row__thumb {
+  inline-size: 100%;
+  block-size: 4rem;
+  border-radius: var(--control-radius-subtle);
+  background: color-mix(in srgb, var(--sys-color-accent) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--sys-color-accent) 35%, transparent);
+}
+
+.scroll-row__thumb--strip {
+  block-size: 4.5rem;
+}

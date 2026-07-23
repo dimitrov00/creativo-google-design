@@ -1,0 +1,14 @@
+:host {
+  display: block;
+}
+
+.grid__mono {
+  font-family: var(--sys-font-family-mono);
+}
+
+.grid__cell {
+  block-size: 3rem;
+  border: 1px solid color-mix(in srgb, var(--sys-color-accent) 35%, transparent);
+  border-radius: var(--control-radius-subtle);
+  background: color-mix(in srgb, var(--sys-color-accent) 14%, transparent);
+}

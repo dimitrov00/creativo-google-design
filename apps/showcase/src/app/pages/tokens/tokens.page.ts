@@ -2,17 +2,17 @@ import { ChangeDetectionStrategy, Component } from '@angular/core';
 import type {
   UiFontStyle,
   UiFontWeight,
-  UiPaddingScale,
   UiRadiusScale,
 } from '@creativo/ui/modifiers';
-import {
-  UiPaddingDirective,
-  UiRadiusDirective,
-  UiTextDirective,
-} from '@creativo/ui/modifiers';
+import { UiRadiusDirective, UiTextDirective } from '@creativo/ui/modifiers';
+import { UiFlow, UiStack } from '@creativo/ui/layout';
+import type { UiSpacing } from '@creativo/ui/layout';
+import { ScDemo } from '../../shared/demo';
+import { ScGapViz } from '../../shared/gap-viz';
+import { ScPage } from '../../shared/page';
 
 interface ControlSizeSample {
-  readonly name: 'compact' | 'regular' | 'prominent';
+  readonly name: 'small' | 'regular' | 'large';
   readonly px: number;
 }
 
@@ -36,7 +36,15 @@ const WEIGHT_BY_ROLE: Record<UiFontStyle, UiFontWeight> = {
 @Component({
   selector: 'cr-tokens-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [UiTextDirective, UiPaddingDirective, UiRadiusDirective],
+  imports: [
+    ScDemo,
+    ScGapViz,
+    ScPage,
+    UiFlow,
+    UiRadiusDirective,
+    UiStack,
+    UiTextDirective,
+  ],
   templateUrl: './tokens.page.html',
   styleUrl: './tokens.page.css',
 })
@@ -68,8 +76,7 @@ export class TokensPage {
     'extraLargeTitle',
   ];
 
-  protected readonly spacing: UiPaddingScale[] = [
-    'none',
+  protected readonly spacing: Exclude<UiSpacing, 'none'>[] = [
     'tight',
     'compact',
     'regular',
@@ -82,14 +89,15 @@ export class TokensPage {
     'subtle',
     'regular',
     'prominent',
+    'hero',
     'capsule',
   ];
 
   /** px equivalents at --sys-density: 1 (density="regular"), per tokens.css's own comments. */
   protected readonly controlSizes: ControlSizeSample[] = [
-    { name: 'compact', px: 36 },
+    { name: 'small', px: 36 },
     { name: 'regular', px: 44 },
-    { name: 'prominent', px: 52 },
+    { name: 'large', px: 52 },
   ];
 
   protected weightFor(role: UiFontStyle): UiFontWeight {

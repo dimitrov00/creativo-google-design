@@ -1,69 +1,20 @@
 :host {
   display: block;
-  max-inline-size: 960px;
 }
 
-.page__intro {
-  margin-block-end: var(--sys-space-loose);
+.tokens__mono {
+  font-family: var(--sys-font-family-mono);
 }
 
-.tokens__section {
-  margin-block-end: var(--sys-space-spacious);
-}
-
-.tokens__section h2 {
-  margin-block-end: var(--sys-space-compact);
-}
-
-.tokens__row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--sys-space-comfortable);
-  margin-block-start: var(--sys-space-regular);
-}
-
-.tokens__swatch,
-.tokens__spacing-sample,
-.tokens__radius-sample,
-.tokens__control-size-sample {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: var(--sys-space-compact);
-}
-
-.tokens__swatch p,
-.tokens__spacing-sample p,
-.tokens__radius-sample p,
-.tokens__control-size-sample p {
-  margin: 0;
+.tokens__role-label {
+  inline-size: 7.5rem;
+  flex-shrink: 0;
 }
 
 .tokens__swatch-color {
   inline-size: 88px;
   block-size: 56px;
-  border-radius: var(--control-radius-subtle);
   border: 1px solid var(--sys-color-separator);
-}
-
-.tokens__spacing-track {
-  inline-size: 200px;
-  /* Fixed to the largest step + a little breathing room, and clipped —
-     the bar's own size (padding-driven, see .tokens__spacing-bar) grows
-     past this for the larger steps, which is fine: this track is a
-     comparison frame, not a container the bar must fit inside. */
-  block-size: calc(var(--sys-space-spacious) + var(--sys-space-tight));
-  overflow: hidden;
-  background: var(--sys-color-surface-secondary);
-  border-radius: var(--control-radius-subtle);
-  display: flex;
-  align-items: center;
-}
-
-.tokens__spacing-bar {
-  block-size: var(--sys-space-comfortable);
-  background: var(--sys-color-accent);
-  border-radius: var(--control-radius-subtle);
 }
 
 .tokens__radius-box {
@@ -75,9 +26,4 @@
 .tokens__control-size-box {
   inline-size: 96px;
   background: var(--sys-color-accent);
-  border-radius: var(--control-radius-regular);
-}
-
-.tokens__type-scale p {
-  margin: 0 0 var(--sys-space-compact);
 }

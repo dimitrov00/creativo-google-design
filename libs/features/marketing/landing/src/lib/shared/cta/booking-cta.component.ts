@@ -6,7 +6,7 @@ import { UiButton } from '@creativo/ui/controls';
 /**
  * The page's booking chord — the capsule `/auth → /book` CTA the landing
  * opens (hero) and closes (closing CTA) on. Both consumers render this one
- * component at the prominent tier (52px) so the chord stays literally
+ * component at the large tier (52px) so the chord stays literally
  * matched; `onMedia` flips the white-pill treatment when the CTA sits over
  * video. Feature-local: the `/auth` routing keeps it out of libs/ui.
  */
@@ -21,9 +21,9 @@ import { UiButton } from '@creativo/ui/controls';
         routerLink="/auth"
         [queryParams]="{ redirect: '/book' }"
         uiButton
-        uiVariant="prominent"
-        uiSize="prominent"
-        uiShape="capsule"
+        uiButtonStyle="borderedProminent"
+        uiControlSize="large"
+        uiButtonBorderShape="capsule"
         [uiOnMedia]="onMedia()"
         [attr.data-testid]="testId() ?? null"
       >

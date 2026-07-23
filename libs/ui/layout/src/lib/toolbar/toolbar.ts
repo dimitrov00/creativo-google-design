@@ -2,13 +2,14 @@ import {
   ChangeDetectionStrategy,
   Component,
   ViewEncapsulation,
+  booleanAttribute,
   input,
 } from '@angular/core';
 
 /** SwiftUI parity: `ToolbarItemPlacement` top bar vs `.bottomBar`. */
 export type UiToolbarPlacement = 'top' | 'bottom';
-/** SwiftUI parity: default chrome vs `.toolbarBackground(.hidden)`. */
-export type UiToolbarTone = 'default' | 'overlay';
+/** ≙ SwiftUI `.toolbarBackground(_:)` visibility — `automatic` chrome or `hidden`. */
+export type UiToolbarBackground = 'automatic' | 'hidden';
 
 /** Horizontal bar — app header / action bar (top), or a bottom action bar. */
 @Component({
@@ -24,11 +25,11 @@ export type UiToolbarTone = 'default' | 'overlay';
     class: 'ui-toolbar',
     '[attr.data-sticky]': "uiSticky() ? '' : null",
     '[attr.data-placement]': 'uiPlacement()',
-    '[attr.data-tone]': 'uiTone()',
+    '[attr.data-toolbar-background]': 'uiToolbarBackground()',
   },
 })
 export class UiToolbar {
-  readonly uiSticky = input(false);
+  readonly uiSticky = input(false, { transform: booleanAttribute });
   readonly uiPlacement = input<UiToolbarPlacement>('top');
-  readonly uiTone = input<UiToolbarTone>('default');
+  readonly uiToolbarBackground = input<UiToolbarBackground>('automatic');
 }

@@ -12,11 +12,19 @@
     <!-- Center vignette — copy sits mid-card (closing-CTA register). -->
     <div class="cr-hero__scrim" uiOverlay="vignette" aria-hidden="true"></div>
 
-    <ui-stack uiAlign="center" uiGap="loose" class="cr-hero__content">
+    <ui-stack
+      uiAlignment="center"
+      uiSpacing="loose"
+      uiPaddingHorizontal="comfortable"
+      class="cr-hero__content"
+    >
+      <!-- Symmetric spacers center the trio vertically in the card
+           (Spacer() pair = justify-content: center). -->
+      <ui-spacer />
       <!-- Centered trio — title, paragraph, one capsule CTA (no icon),
            mirroring the closing CTA so the page opens and closes on the
            same chord (one shared cr-booking-cta). -->
-      <ui-section-header uiAlign="center" [uiOnMedia]="true">
+      <ui-section-header uiAlignment="center" [uiOnMedia]="true">
         <h1
           uiTitle
           uiReveal
@@ -45,6 +53,7 @@
         [uiRevealDelay]="480"
         uiRevealRise="14px"
       />
+      <ui-spacer />
     </ui-stack>
 
     <!-- Bottom toolbar inside the media (SwiftUI bottomBar placement) —
@@ -55,8 +64,8 @@
     <div class="cr-hero__toolbar">
       <ui-stack
         uiAxis="horizontal"
-        uiGap="regular"
-        uiAlign="center"
+        uiSpacing="regular"
+        uiAlignment="center"
         uiReveal="fade"
         uiRevealTrigger="mount"
         [uiRevealDelay]="650"

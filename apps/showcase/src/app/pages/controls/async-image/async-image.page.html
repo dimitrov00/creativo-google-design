@@ -1,0 +1,120 @@
+<sc-page scTitle="Async Image">
+  <ng-container scLede>
+    <code>ui-async-image</code> — ≙ SwiftUI
+    <code
+      >AsyncImage(url:) &#123; image &#125; placeholder: &#123; … &#125;</code
+    >: a lazily-loaded cover image behind a placeholder surface that cross-fades
+    out when the bytes arrive. Projected <code>[uiPlaceholder]</code> content
+    replaces the default <code>ui-skeleton</code>.
+  </ng-container>
+
+  <sc-demo scTitle="Loaded">
+    <ng-container scAbout>
+      The image fades in over the placeholder once it loads.
+      <code>uiRatio</code> takes a raw CSS <code>aspect-ratio</code> — like
+      <code>uiFrame</code>, intrinsic media geometry has no finite semantic
+      scale.
+    </ng-container>
+    <ui-stack uiSpacing="tight" uiAlignment="leading">
+      <ui-async-image
+        [uiSrc]="loadedSrc"
+        uiAlt="Salon interior"
+        uiRatio="4 / 3"
+        uiRadius="regular"
+        uiFrame
+        [uiFrameWidth]="'16rem'"
+      />
+      <p uiText [uiFont]="'caption'" class="async-image__mono">
+        uiSrc=… · uiRatio=4 / 3
+      </p>
+    </ui-stack>
+  </sc-demo>
+
+  <sc-demo scTitle="Placeholder states">
+    <ng-container scAbout>
+      <code>uiSrc: null</code> renders the placeholder permanently (the
+      no-imagery fallback case); a failing source keeps it up too — the surface
+      never collapses or flashes broken-image chrome.
+    </ng-container>
+    <ui-flow uiSpacing="comfortable" uiAlignment="trailing">
+      <ui-stack uiSpacing="tight" uiAlignment="leading">
+        <ui-async-image
+          [uiSrc]="null"
+          uiRatio="4 / 3"
+          uiRadius="regular"
+          uiFrame
+          [uiFrameWidth]="'14rem'"
+        />
+        <p uiText [uiFont]="'caption'" class="async-image__mono">
+          uiSrc=null · default ui-skeleton
+        </p>
+      </ui-stack>
+      <ui-stack uiSpacing="tight" uiAlignment="leading">
+        <ui-async-image
+          [uiSrc]="null"
+          uiRatio="4 / 3"
+          uiRadius="regular"
+          uiFrame
+          [uiFrameWidth]="'14rem'"
+        >
+          <div uiPlaceholder class="async-image__placeholder">
+            <ui-icon uiName="service.placeholder" uiScale="large" />
+          </div>
+        </ui-async-image>
+        <p uiText [uiFont]="'caption'" class="async-image__mono">
+          uiSrc=null · projected [uiPlaceholder]
+        </p>
+      </ui-stack>
+      <ui-stack uiSpacing="tight" uiAlignment="leading">
+        <ui-async-image
+          [uiSrc]="brokenSrc"
+          uiAlt=""
+          uiRatio="4 / 3"
+          uiRadius="regular"
+          uiFrame
+          [uiFrameWidth]="'14rem'"
+        />
+        <p uiText [uiFont]="'caption'" class="async-image__mono">
+          uiSrc=missing.jpg · error keeps placeholder
+        </p>
+      </ui-stack>
+    </ui-flow>
+  </sc-demo>
+
+  <sc-demo scTitle="uiRing">
+    <ng-container scAbout>
+      An inset 1px separator hairline riding above the image — the same recipe
+      as <code>uiOverlay="ring"</code>, for photography that would otherwise
+      bleed into the surface.
+    </ng-container>
+    <ui-flow uiSpacing="comfortable" uiAlignment="trailing">
+      <ui-stack uiSpacing="tight" uiAlignment="leading">
+        <ui-async-image
+          [uiSrc]="loadedSrc"
+          uiAlt="Salon interior"
+          uiRatio="1 / 1"
+          uiRadius="regular"
+          uiFrame
+          [uiFrameWidth]="'11rem'"
+        />
+        <p uiText [uiFont]="'caption'" class="async-image__mono">
+          uiRatio=1 / 1
+        </p>
+      </ui-stack>
+      <ui-stack uiSpacing="tight" uiAlignment="leading">
+        <ui-async-image
+          [uiSrc]="loadedSrc"
+          uiAlt="Salon interior"
+          uiRatio="1 / 1"
+          [uiRing]="true"
+          uiRadius="regular"
+          uiFrame
+          [uiFrameWidth]="'11rem'"
+        />
+        <p uiText [uiFont]="'caption'" class="async-image__mono">
+          uiRatio=1 / 1 · uiRing
+        </p>
+      </ui-stack>
+    </ui-flow>
+  </sc-demo>
+</sc-page>

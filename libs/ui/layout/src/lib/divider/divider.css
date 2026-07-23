@@ -15,7 +15,10 @@
   }
 
   /* Inset — leading margin for list-row groups, so the hairline starts
-     where the row's label column does (past a leading glyph/avatar). */
+     where the row's label column does (past a leading glyph/avatar).
+     Sanctioned internal contract: the divider's documented self-inset
+     behavior (uiInset), a shape change on the hairline itself — not
+     sibling spacing a consumer should own. */
   .ui-divider[data-inset] {
     margin-inline-start: var(--sys-space-spacious);
   }

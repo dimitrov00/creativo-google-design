@@ -28,31 +28,33 @@
     scroll-snap-align: center;
   }
 
-  .ui-scroll-row[data-gap='none'] {
+  .ui-scroll-row[data-spacing='none'] {
     gap: var(--sys-space-none);
   }
-  .ui-scroll-row[data-gap='tight'] {
+  .ui-scroll-row[data-spacing='tight'] {
     gap: var(--sys-space-tight);
   }
-  .ui-scroll-row[data-gap='compact'] {
+  .ui-scroll-row[data-spacing='compact'] {
     gap: var(--sys-space-compact);
   }
-  .ui-scroll-row[data-gap='regular'] {
+  .ui-scroll-row[data-spacing='regular'] {
     gap: var(--sys-space-regular);
   }
-  .ui-scroll-row[data-gap='comfortable'] {
+  .ui-scroll-row[data-spacing='comfortable'] {
     gap: var(--sys-space-comfortable);
   }
-  .ui-scroll-row[data-gap='loose'] {
+  .ui-scroll-row[data-spacing='loose'] {
     gap: var(--sys-space-loose);
   }
-  .ui-scroll-row[data-gap='spacious'] {
+  .ui-scroll-row[data-spacing='spacious'] {
     gap: var(--sys-space-spacious);
   }
 
   /* Full bleed — break out of the centered column to the viewport edges;
      padding + scroll-padding keep items aligned to the page gutter
-     (override --ui-scroll-row-gutter to match the page's own gutter). */
+     (override --ui-scroll-row-gutter to match the page's own gutter).
+     Sanctioned negative-margin full-bleed cancellation — no DS equivalent
+     exists for escaping the centered column. */
   .ui-scroll-row[data-full-bleed] {
     inline-size: 100vw;
     margin-inline: calc(50% - 50vw);

@@ -113,9 +113,8 @@
   }
 }
 
-.cr-hiring__actions {
-  margin-block-start: var(--sys-space-loose);
-}
+/* The CTA's clearance under the header is the loose stack gap in the
+   template. */
 
 @media (prefers-reduced-motion: reduce) {
   .cr-hiring__title[data-motion] .cr-hiring__word {

@@ -6,8 +6,8 @@ import { UiStack } from './stack';
   imports: [UiStack],
   template: `<ui-stack
     [uiAxis]="axis()"
-    [uiGap]="'loose'"
-    [uiAlign]="'center'"
+    [uiSpacing]="'loose'"
+    [uiAlignment]="'center'"
     data-testid="stack"
     >content</ui-stack
   >`,
@@ -33,8 +33,8 @@ describe('UiStack', () => {
     );
     expect(el.classList.contains('ui-stack')).toBe(true);
     expect(el.getAttribute('data-axis')).toBe('horizontal');
-    expect(el.getAttribute('data-gap')).toBe('loose');
-    expect(el.getAttribute('data-align')).toBe('center');
+    expect(el.getAttribute('data-spacing')).toBe('loose');
+    expect(el.getAttribute('data-alignment')).toBe('center');
   });
 
   it('defaults to the "vertical" axis', () => {

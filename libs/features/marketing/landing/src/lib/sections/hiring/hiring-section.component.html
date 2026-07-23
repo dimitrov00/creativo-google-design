@@ -38,49 +38,48 @@
 
       <!-- ── Content ── -->
       <div class="cr-hiring__content">
-        <ui-section-header uiAlign="center" [uiOnMedia]="true">
-          <p uiEyebrow uiReveal="fade-up" [uiRevealDelay]="50">
-            {{ t('landing.hiring.eyebrow') }}
-          </p>
+        <!-- Loose gap = the CTA's clearance under the section header. -->
+        <ui-stack uiSpacing="loose">
+          <ui-section-header uiAlignment="center" [uiOnMedia]="true">
+            <p uiEyebrow uiReveal="fade-up" [uiRevealDelay]="50">
+              {{ t('landing.hiring.eyebrow') }}
+            </p>
 
-          <h2
-            #title
-            uiTitle
-            class="cr-hiring__title"
-            [attr.data-motion]="motionReady() ? '' : null"
-            [attr.data-revealed]="revealed() ? '' : null"
-          >
-            @for (word of words(); track $index) {
-              <span class="cr-hiring__word" [style.--word-i]="$index">{{
-                word
-              }}</span>
-            }
-          </h2>
+            <h2
+              #title
+              uiTitle
+              class="cr-hiring__title"
+              [attr.data-motion]="motionReady() ? '' : null"
+              [attr.data-revealed]="revealed() ? '' : null"
+            >
+              @for (word of words(); track $index) {
+                <span class="cr-hiring__word" [style.--word-i]="$index">{{
+                  word
+                }}</span>
+              }
+            </h2>
 
-          <p uiLede uiReveal="fade-up" [uiRevealDelay]="420">
-            {{ t('landing.hiring.subtitle') }}
-          </p>
-        </ui-section-header>
+            <p uiLede uiReveal="fade-up" [uiRevealDelay]="420">
+              {{ t('landing.hiring.subtitle') }}
+            </p>
+          </ui-section-header>
 
-        <div
-          class="cr-hiring__actions"
-          uiReveal="fade-up"
-          [uiRevealDelay]="580"
-        >
-          <a
-            uiButton
-            uiVariant="overlay"
-            uiSize="prominent"
-            uiShape="capsule"
-            class="cr-hiring__cta"
-            href="https://instagram.com/creativo.barbershop"
-            target="_blank"
-            rel="noopener"
-          >
-            {{ t('landing.hiring.cta') }}
-            <ui-icon uiName="hiring.apply" />
-          </a>
-        </div>
+          <div uiReveal="fade-up" [uiRevealDelay]="580">
+            <a
+              uiButton
+              uiButtonStyle="glass"
+              uiControlSize="large"
+              uiButtonBorderShape="capsule"
+              class="cr-hiring__cta"
+              href="https://instagram.com/creativo.barbershop"
+              target="_blank"
+              rel="noopener"
+            >
+              {{ t('landing.hiring.cta') }}
+              <ui-icon uiName="hiring.apply" />
+            </a>
+          </div>
+        </ui-stack>
       </div>
     </ui-stack>
   </section>

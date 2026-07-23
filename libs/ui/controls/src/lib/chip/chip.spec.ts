@@ -4,7 +4,7 @@ import { UiChip } from './chip';
 
 @Component({
   imports: [UiChip],
-  template: `<button uiChip [uiSelected]="selected()" [uiSize]="'compact'">
+  template: `<button uiChip [uiSelected]="selected()" [uiControlSize]="'small'">
     Filter
   </button>`,
 })
@@ -26,7 +26,7 @@ describe('UiChip', () => {
     fixture.detectChanges();
     const el: HTMLElement = fixture.nativeElement.querySelector('button');
     expect(el.classList.contains('ui-chip')).toBe(true);
-    expect(el.getAttribute('data-size')).toBe('compact');
+    expect(el.getAttribute('data-control-size')).toBe('small');
   });
 
   it('omits data-selected and reports aria-pressed=false when not selected', () => {

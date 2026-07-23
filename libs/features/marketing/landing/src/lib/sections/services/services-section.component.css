@@ -1,6 +1,7 @@
-/* v2 services-section.tsx — section frame + shelf rhythm. The carousel is
-   ui-scroll-row, the tile is cr-service-tile: geometry, snap, hidden
-   scrollbars, image frame and copy roles all live in those components. */
+/* v2 services-section.tsx — section frame only. Shelf rhythm rides the
+   ui-stack gaps in the template; the carousel is ui-scroll-row, the tile
+   is cr-service-tile: geometry, snap, hidden scrollbars, image frame and
+   copy roles all live in those components. */
 
 /* No overflow-x clip here — the full-bleed carousel below must escape the
    host box; the page shell (.cr-landing) owns horizontal clipping. */
@@ -17,16 +18,4 @@
 .cr-services__carousel {
   --ui-scroll-row-gutter: var(--landing-content-inset);
   padding-block: var(--sys-space-compact);
-}
-
-.cr-services__carousel--singles {
-  margin-block-start: var(--sys-space-loose);
-}
-
-.cr-services__bundles {
-  margin-block-start: var(--sys-space-spacious);
-}
-
-.cr-services__bundles-title {
-  margin: 0;
 }

@@ -1,12 +1,14 @@
 import { ChangeDetectionStrategy, Component } from '@angular/core';
-import { RouterLink } from '@angular/router';
-import { UiButton, UiStack, UiToolbar } from '@creativo/ui/controls';
+import { UiButton } from '@creativo/ui/controls';
+import { UiStack, UiToolbar } from '@creativo/ui/layout';
 import { UiTextDirective } from '@creativo/ui/modifiers';
+import { ScDemo } from '../../../shared/demo';
+import { ScPage } from '../../../shared/page';
 
 @Component({
   selector: 'cr-toolbar-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink, UiButton, UiStack, UiToolbar, UiTextDirective],
+  imports: [ScDemo, ScPage, UiButton, UiStack, UiToolbar, UiTextDirective],
   templateUrl: './toolbar.page.html',
   styleUrl: './toolbar.page.css',
 })

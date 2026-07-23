@@ -1,0 +1,62 @@
+<sc-page scTitle="ProgressView">
+  <ng-container scLede>
+    <code>ui-progress-view</code> ≙ SwiftUI <code>ProgressView()</code> — the
+    indeterminate spinner: a pure-CSS ring on the shared control-size ladder,
+    announcing itself as <code>role="status"</code>.
+  </ng-container>
+
+  <sc-demo scTitle="Control sizes">
+    <ng-container scAbout>
+      ≙ SwiftUI <code>.controlSize(_:)</code> — the ring scales with the tier
+      while the stroke weight stays constant.
+    </ng-container>
+    <ui-flow uiSpacing="comfortable" uiAlignment="trailing">
+      @for (size of sizes; track size) {
+      <ui-stack uiAxis="vertical" uiSpacing="compact" uiAlignment="leading">
+        <ui-progress-view [uiControlSize]="size" />
+        <p uiText [uiFont]="'caption'" class="progress-view__mono">
+          controlSize={{ size }}
+        </p>
+      </ui-stack>
+      }
+    </ui-flow>
+  </sc-demo>
+
+  <sc-demo scTitle="Inside a loading button">
+    <ng-container scAbout>
+      The busy-CTA composition: <code>uiLoading</code> dims the button and cuts
+      pointer events (plus <code>aria-busy</code>), while a
+      <code>small</code> spinner sits in the label. Native
+      <code>disabled</code> shown alongside for the non-busy resting state.
+    </ng-container>
+    <ui-flow uiSpacing="comfortable" uiAlignment="trailing">
+      <ui-stack uiAxis="vertical" uiSpacing="compact" uiAlignment="leading">
+        <button uiButton [uiLoading]="true">
+          <ui-progress-view uiControlSize="small" />
+          Saving…
+        </button>
+        <p uiText [uiFont]="'caption'" class="progress-view__mono">
+          buttonStyle=borderedProminent · loading=true
+        </p>
+      </ui-stack>
+      <ui-stack uiAxis="vertical" uiSpacing="compact" uiAlignment="leading">
+        <button uiButton uiButtonStyle="bordered" [uiLoading]="true">
+          <ui-progress-view uiControlSize="small" />
+          Loading…
+        </button>
+        <p uiText [uiFont]="'caption'" class="progress-view__mono">
+          buttonStyle=bordered · loading=true
+        </p>
+      </ui-stack>
+      <ui-stack uiAxis="vertical" uiSpacing="compact" uiAlignment="leading">
+        <button uiButton uiButtonStyle="strokedBorder" disabled>
+          <ui-progress-view uiControlSize="small" />
+          Waiting
+        </button>
+        <p uiText [uiFont]="'caption'" class="progress-view__mono">
+          buttonStyle=strokedBorder · disabled
+        </p>
+      </ui-stack>
+    </ui-flow>
+  </sc-demo>
+</sc-page>

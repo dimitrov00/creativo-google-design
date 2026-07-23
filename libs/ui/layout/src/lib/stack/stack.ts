@@ -6,7 +6,7 @@ import {
 } from '@angular/core';
 
 export type UiStackAxis = 'horizontal' | 'vertical' | 'z';
-export type UiStackGap =
+export type UiSpacing =
   | 'none'
   | 'tight'
   | 'compact'
@@ -14,7 +14,7 @@ export type UiStackGap =
   | 'comfortable'
   | 'loose'
   | 'spacious';
-export type UiStackAlign = 'start' | 'center' | 'end' | 'stretch';
+export type UiAlignment = 'leading' | 'center' | 'trailing' | 'stretch';
 
 /** Flex-layout primitive — horizontal/vertical/z-stack, the workhorse layout building block. */
 @Component({
@@ -29,12 +29,12 @@ export type UiStackAlign = 'start' | 'center' | 'end' | 'stretch';
   host: {
     class: 'ui-stack',
     '[attr.data-axis]': 'uiAxis()',
-    '[attr.data-gap]': 'uiGap()',
-    '[attr.data-align]': 'uiAlign()',
+    '[attr.data-spacing]': 'uiSpacing()',
+    '[attr.data-alignment]': 'uiAlignment()',
   },
 })
 export class UiStack {
   readonly uiAxis = input<UiStackAxis>('vertical');
-  readonly uiGap = input<UiStackGap>('regular');
-  readonly uiAlign = input<UiStackAlign>('stretch');
+  readonly uiSpacing = input<UiSpacing>('regular');
+  readonly uiAlignment = input<UiAlignment>('stretch');
 }

@@ -93,11 +93,11 @@
 
   /* Anchor default — only for bare content links, never for anchors acting
      as design-system controls (uiButton, uiListRow, anything uiInteractive)
-     or carrying an explicit uiForeground stamp: sys-base is layer-registered
+     or carrying an explicit uiForegroundStyle stamp: sys-base is layer-registered
      AFTER sys-components (landing-shared.css import order), so a bare `a`
-     rule here would beat every DS control's ink and every [data-foreground]
+     rule here would beat every DS control's ink and every [data-foreground-style]
      modifier. */
-  a:not(.ui-button):not([data-foreground]):not([data-interactive]) {
+  a:not(.ui-button):not([data-foreground-style]):not([data-interactive]) {
     color: var(--sys-color-accent);
   }
 }

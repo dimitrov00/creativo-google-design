@@ -13,12 +13,9 @@
   color: var(--sys-color-foreground);
 }
 
-.locations__heading {
-  display: block;
-  margin-block-end: 3rem;
-}
-
-/* Type metrics come from ui-section-header — only layout stays here. */
+/* Heading→content spacing is the section ui-stack's `spacious` gap (see
+   the template) — no heading margin. Type metrics come from
+   ui-section-header — only layout stays here. */
 .locations__heading [uilede] {
   max-inline-size: 22rem;
 }
@@ -44,9 +41,10 @@
   display: grid;
   align-content: start;
   gap: 0;
-  /* Cards carry symmetric block padding (see .location-card); the negative
-     start margin swallows the first card's padding so the list still sits
-     flush under the map without a one-off first-child exception. */
+  /* KEPT: sanctioned negative-margin cancellation — swallows the first
+     card's own symmetric block padding (see .location-card) so the list
+     sits flush under the map without a first-child exception; no DS
+     equivalent. */
   margin: calc(-1 * var(--sys-space-comfortable)) 0 0;
   padding: 0;
   list-style: none;
@@ -92,6 +90,7 @@
 
 .location-card__copy h3,
 .location-card__copy p {
+  /* UA-margin reset only — the copy stack's gap owns all spacing here. */
   margin: 0;
 }
 
@@ -104,7 +103,6 @@
   gap: var(--sys-space-tight);
   /* HIG 44px tap height (the stack gap compensates the visual rhythm). */
   min-block-size: var(--control-size-regular);
-  margin: 0;
   text-decoration: none;
   transition: color var(--sys-motion-duration-deliberate)
     var(--sys-motion-ease-standard);
@@ -122,6 +120,9 @@
 
 .location-card__action {
   display: flex;
+  /* KEPT: one extra rhythm step (compact) on top of the copy stack's tight
+     gap before the affordance label — per-pair gap variation inside one
+     stack has no DS equivalent. */
   margin-block-start: var(--sys-space-compact);
 }
 
@@ -132,7 +133,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-block-size: var(--control-size-compact);
+  min-block-size: var(--control-size-small);
   padding-inline: var(--sys-space-regular);
   border: 1px solid var(--sys-color-separator);
   border-radius: var(--control-radius-regular);
@@ -193,7 +194,7 @@ ui-sheet.location-detail-sheet {
    `display: none`) also keeps real layout dimensions for the sheet map
    (see locations.component.ts). data-closing is stamped by this template
    so the exit transition isn't cut short. */
-ui-sheet.location-detail-sheet:not([data-open]):not([data-closing]) {
+ui-sheet.location-detail-sheet:not([data-presented]):not([data-closing]) {
   visibility: hidden;
 }
 
@@ -208,6 +209,8 @@ ui-sheet.location-detail-sheet:not([data-open]):not([data-closing]) {
      sheet headings stay on one gutter; the sheets-misc convergence owns
      its future consolidation. */
   --modal-sheet-safe: clamp(1.25rem, 4vw, 4rem);
+  /* KEPT: negative-margin full-bleed cancellation of ui-sheet's surface
+     padding (no DS equivalent) — the scroller owns the box instead. */
   margin: calc(-1 * var(--sys-space-comfortable));
   block-size: min(90svh, 58rem);
   /* Vertical only — wide content (galleries, long unbroken strings) must
@@ -223,10 +226,10 @@ ui-sheet.location-detail-sheet:not([data-open]):not([data-closing]) {
   border-start-end-radius: var(--control-radius-prominent);
 }
 
-/* Compact title rides ui-sheet-header's [uiTitle] slot; the caption font
-   role's secondary ink is lifted back to full foreground here. */
+/* Compact title rides ui-sheet-header's [uiTitle] slot (the slot already
+   resets the UA margin); the caption font role's secondary ink is lifted
+   back to full foreground here. */
 .location-sheet__compact-title {
-  margin: 0;
   color: var(--sys-color-foreground);
 }
 
@@ -245,7 +248,9 @@ ui-sheet.location-detail-sheet:not([data-open]):not([data-closing]) {
   grid-template-columns: minmax(0, 1.05fr) minmax(20rem, 0.78fr);
   gap: clamp(2.5rem, 4.5vw, 5rem);
   align-items: start;
-  margin-inline: var(--modal-sheet-safe);
+  /* Gutter inset as PADDING on this transparent block (the sheet root
+     stays gutterless because the gallery sibling is full-bleed). */
+  padding-inline: var(--modal-sheet-safe);
 }
 
 .location-sheet__map-pane {
@@ -255,7 +260,7 @@ ui-sheet.location-detail-sheet:not([data-open]):not([data-closing]) {
      52px sheet-header bar plus one comfortable step. */
   position: sticky;
   inset-block-start: calc(
-    var(--control-size-prominent) + var(--sys-space-comfortable)
+    var(--control-size-large) + var(--sys-space-comfortable)
   );
   overflow: hidden;
   block-size: min(70svh, 40rem);
@@ -275,6 +280,7 @@ ui-sheet.location-detail-sheet:not([data-open]):not([data-closing]) {
 
 .location-sheet__intro h2 {
   max-inline-size: 10ch;
+  /* UA-margin reset only — the intro stack's gap owns all spacing. */
   margin: 0;
   /* Names the headline for ui-sheet-header's scroll-linked compact-title
      reveal (the timeline scope comes from the DS's
@@ -288,7 +294,9 @@ ui-sheet.location-detail-sheet:not([data-open]):not([data-closing]) {
   align-items: flex-start;
   gap: var(--sys-space-compact);
   max-inline-size: 24rem;
-  margin: var(--sys-space-regular) 0 0;
+  /* UA-margin reset only — headline→address spacing is the intro stack's
+     `regular` gap now. */
+  margin: 0;
 }
 
 /* Glyph is inline-text mode — unscaled, it rides the footnote font (icon
@@ -303,7 +311,6 @@ ui-sheet.location-detail-sheet:not([data-open]):not([data-closing]) {
   display: inline-flex;
   align-items: center;
   gap: var(--sys-space-compact);
-  margin: var(--sys-space-compact) 0 0;
   font-variant-numeric: tabular-nums;
   text-decoration: none;
   transition: color var(--sys-motion-duration-deliberate)
@@ -318,22 +325,22 @@ ui-sheet.location-detail-sheet:not([data-open]):not([data-closing]) {
 
 /* Surface chrome (fill, raised elevation, prominent radius, regular
    padding, column gap) comes from ui-card; the status/week hairline is the
-   ui-divider in the template (spaced by the card's own gap) — only the
-   block rhythm stays local. */
-.location-sheet__status-card {
-  margin-block-start: var(--sys-space-loose);
-}
+   ui-divider in the template (spaced by the card's own gap); the
+   intro→card rhythm is the profile stack's `loose` gap — nothing local. */
 
 .location-sheet__week {
   display: grid;
+  /* UA-margin reset only (list element). */
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
+/* The trailing push is the ui-spacer in the template (Spacer() replaces
+   justify-content: space-between); the li stays the flex context because a
+   list item can't BE a ui-stack. */
 .location-sheet__day {
   display: flex;
-  justify-content: space-between;
   align-items: center;
   gap: var(--sys-space-regular);
   min-block-size: var(--control-size-regular);
@@ -367,16 +374,24 @@ ui-sheet.location-detail-sheet:not([data-open]):not([data-closing]) {
 }
 
 .location-sheet__gallery {
+  /* KEPT: fluid set-piece rhythm before the gallery — the clamp() step is
+     art-directed viewport-scaled geometry with no rung on the fixed
+     --sys-space ladder. */
   margin-block-start: clamp(3.5rem, 7vw, 6rem);
 }
 
 .location-sheet__gallery-heading {
-  margin-inline: var(--modal-sheet-safe);
+  /* Gutter inset as PADDING on this transparent block — the gallery
+     sibling is full-bleed, so the section root stays gutterless. */
+  padding-inline: var(--modal-sheet-safe);
+  /* KEPT: fluid heading→gallery step — same art-directed clamp() register
+     as above, no rung on the fixed --sys-space ladder. */
   margin-block-end: clamp(1.25rem, 2.5vw, 2rem);
 }
 
 .location-sheet__gallery-heading h3 {
   max-inline-size: 13ch;
+  /* UA-margin reset only — the heading block's own margin owns rhythm. */
   margin: 0;
 }
 
@@ -400,13 +415,13 @@ ui-sheet.location-detail-sheet:not([data-open]):not([data-closing]) {
 /* `sheet-content-in` is the shared global keyframe in landing-shared.css —
    the scoped animation-name resolves to it since no local @keyframes
    shadows the name. */
-ui-sheet[data-open] .location-sheet__intro > *,
-ui-sheet[data-open] .location-sheet__status-card {
+ui-sheet[data-presented] .location-sheet__intro,
+ui-sheet[data-presented] .location-sheet__status-card {
   animation: sheet-content-in var(--sys-motion-duration-slowest)
     var(--sys-motion-ease-emphasized) both;
 }
 
-ui-sheet[data-open] .location-sheet__status-card {
+ui-sheet[data-presented] .location-sheet__status-card {
   animation-delay: var(--sys-motion-duration-instant);
 }
 
@@ -428,7 +443,9 @@ ui-sheet[data-open] .location-sheet__status-card {
 
   .location-sheet__profile {
     order: 1;
-    margin-inline: var(--modal-sheet-safe);
+    /* Gutter inset as PADDING on this transparent block (see
+       .location-sheet__layout). */
+    padding-inline: var(--modal-sheet-safe);
     padding-block-start: var(--sys-space-regular);
   }
 
@@ -442,7 +459,12 @@ ui-sheet[data-open] .location-sheet__status-card {
     block-size: auto;
     aspect-ratio: 1 / 1;
     max-block-size: 24rem;
+    /* KEPT: fluid gallery→map step — same art-directed clamp() register as
+       .location-sheet__gallery, no rung on the fixed --sys-space ladder. */
     margin-block-start: clamp(3.5rem, 7vw, 6rem);
+    /* KEPT: the pane is a rounded, clipped map SURFACE — a padding gutter
+       would inset the canvas inside its own frame, so the inset must stay
+       outside the box as margin. */
     margin-inline: var(--modal-sheet-safe);
   }
 }

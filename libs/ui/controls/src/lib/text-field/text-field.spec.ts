@@ -1,16 +1,20 @@
 import { Component } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { UiInput } from './input';
+import { UiTextField } from './text-field';
 
 @Component({
-  imports: [UiInput],
-  template: `<input uiInput [uiSize]="'prominent'" [uiInvalid]="invalid" />`,
+  imports: [UiTextField],
+  template: `<input
+    uiTextField
+    [uiControlSize]="'large'"
+    [uiInvalid]="invalid"
+  />`,
 })
 class HostComponent {
   invalid = false;
 }
 
-describe('UiInput', () => {
+describe('UiTextField', () => {
   let fixture: ComponentFixture<HostComponent>;
 
   beforeEach(async () => {
@@ -23,8 +27,8 @@ describe('UiInput', () => {
   it('writes size as a data-* attribute', () => {
     fixture.detectChanges();
     const el: HTMLElement = fixture.nativeElement.querySelector('input');
-    expect(el.classList.contains('ui-input')).toBe(true);
-    expect(el.getAttribute('data-size')).toBe('prominent');
+    expect(el.classList.contains('ui-text-field')).toBe(true);
+    expect(el.getAttribute('data-control-size')).toBe('large');
   });
 
   it('marks aria-invalid and data-invalid when invalid', () => {

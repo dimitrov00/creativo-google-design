@@ -1,7 +1,7 @@
 import { Directive } from '@angular/core';
 import { UiFontDirective } from './font.directive';
 import { UiWeightDirective } from './weight.directive';
-import { UiForegroundDirective } from './foreground.directive';
+import { UiForegroundStyleDirective } from './foreground.directive';
 
 /**
  * ≙ SwiftUI `Text("…").font(.title).fontWeight(.bold).foregroundStyle(.accent)`
@@ -14,7 +14,7 @@ import { UiForegroundDirective } from './foreground.directive';
   hostDirectives: [
     { directive: UiFontDirective, inputs: ['uiFont'] },
     { directive: UiWeightDirective, inputs: ['uiWeight'] },
-    { directive: UiForegroundDirective, inputs: ['uiForeground'] },
+    { directive: UiForegroundStyleDirective, inputs: ['uiForegroundStyle'] },
   ],
 })
 export class UiTextDirective {}

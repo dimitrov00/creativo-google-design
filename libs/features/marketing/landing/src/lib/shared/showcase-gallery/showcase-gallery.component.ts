@@ -10,7 +10,7 @@ import {
   model,
 } from '@angular/core';
 import { UiAsyncImage, UiButton, UiIcon } from '@creativo/ui/controls';
-import { UiGrid, UiScrollRow } from '@creativo/ui/layout';
+import { UiGrid, UiScrollRow, UiSpacer, UiStack } from '@creativo/ui/layout';
 import { UiRadiusDirective } from '@creativo/ui/modifiers';
 
 /** Mirrors --sys-motion-duration-cinematic / --sys-motion-ease-entrance —
@@ -28,6 +28,8 @@ const MORPH_EASE = 'cubic-bezier(0.16, 1, 0.3, 1)';
     UiIcon,
     UiRadiusDirective,
     UiScrollRow,
+    UiSpacer,
+    UiStack,
   ],
   templateUrl: './showcase-gallery.component.html',
   styleUrl: './showcase-gallery.component.css',

@@ -1,9 +1,10 @@
 import { ChangeDetectionStrategy, Component } from '@angular/core';
 import { TranslocoDirective } from '@jsverse/transloco';
 import { UiAmbientVideo } from '@creativo/ui/controls';
-import { UiStack } from '@creativo/ui/layout';
+import { UiSpacer, UiStack } from '@creativo/ui/layout';
 import {
   UiOverlayDirective,
+  UiPaddingDirective,
   UiRadiusDirective,
   UiRevealDirective,
 } from '@creativo/ui/modifiers';
@@ -33,9 +34,11 @@ import { LocaleThemeToggleComponent } from '../../shared/prefs/locale-theme-togg
     TranslocoDirective,
     UiAmbientVideo,
     UiOverlayDirective,
+    UiPaddingDirective,
     UiRadiusDirective,
     UiRevealDirective,
     UiSectionHeader,
+    UiSpacer,
     UiStack,
   ],
   templateUrl: './landing-hero.component.html',

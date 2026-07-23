@@ -1,52 +1,55 @@
-<cr-cursor-dot />
+<ui-toolbar uiSticky class="sc-shell__header">
+  <span uiText uiFont="headline">Creativo Design System</span>
+  <nav class="sc-shell__nav">
+    <a
+      routerLink="/tokens"
+      routerLinkActive="sc-shell__nav-link--active"
+      uiText
+      uiFont="callout"
+      uiForegroundStyle="secondary"
+      >Tokens</a
+    >
+    <a
+      routerLink="/controls"
+      routerLinkActive="sc-shell__nav-link--active"
+      uiText
+      uiFont="callout"
+      uiForegroundStyle="secondary"
+      >Controls</a
+    >
+  </nav>
 
-<div class="cr-shell">
-  <header class="cr-shell__header">
-    <span class="cr-shell__brand">Creativo Design System</span>
-    <nav class="cr-shell__nav">
-      <a
-        routerLink="/tokens"
-        routerLinkActive="cr-shell__nav-link--active"
-        crCursorTarget
-        crCursorTargetStyle="scale"
-        crCursorTargetLabel="View"
-        >Tokens</a
-      >
-      <a
-        routerLink="/controls"
-        routerLinkActive="cr-shell__nav-link--active"
-        crCursorTarget
-        crCursorTargetStyle="scale"
-        crCursorTargetLabel="View"
-        >Controls</a
-      >
-    </nav>
+  <ui-spacer />
 
-    <div class="cr-shell__ds-toggles" data-testid="design-system-toggles">
-      @for (density of densities; track density) {
-      <button
-        uiChip
-        [uiSelected]="preferences.density() === density"
-        [uiSize]="'compact'"
-        type="button"
-        (click)="preferences.setDensity(density)"
-      >
-        {{ density }}
-      </button>
-      }
-      <button
-        uiButton
-        [uiVariant]="'bordered'"
-        [uiSize]="'compact'"
-        type="button"
-        (click)="preferences.toggleTheme()"
-      >
-        {{ preferences.theme() === 'dark' ? 'Light' : 'Dark' }}
-      </button>
-    </div>
-  </header>
+  <ui-stack
+    uiAxis="horizontal"
+    uiSpacing="tight"
+    uiAlignment="center"
+    data-testid="design-system-toggles"
+  >
+    @for (density of densities; track density) {
+    <button
+      uiChip
+      [uiSelected]="preferences.density() === density"
+      [uiControlSize]="'small'"
+      type="button"
+      (click)="preferences.setDensity(density)"
+    >
+      {{ density }}
+    </button>
+    }
+    <button
+      uiButton
+      [uiButtonStyle]="'strokedBorder'"
+      [uiControlSize]="'small'"
+      type="button"
+      (click)="preferences.toggleTheme()"
+    >
+      {{ preferences.theme() === 'dark' ? 'Light' : 'Dark' }}
+    </button>
+  </ui-stack>
+</ui-toolbar>
 
-  <main class="cr-shell__main">
-    <router-outlet />
-  </main>
-</div>
+<main uiPaddingHorizontal="comfortable" uiPaddingVertical="loose">
+  <router-outlet />
+</main>

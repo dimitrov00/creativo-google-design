@@ -1,25 +1,39 @@
 import { ChangeDetectionStrategy, Component } from '@angular/core';
-import { RouterLink } from '@angular/router';
-import type { UiControlSize } from '@creativo/ui/controls';
-import { UiAvatar, UiStack } from '@creativo/ui/controls';
+import type { UiAvatarSize } from '@creativo/ui/controls';
+import { UiAvatar } from '@creativo/ui/controls';
+import { UiFlow, UiStack } from '@creativo/ui/layout';
 import { UiTextDirective } from '@creativo/ui/modifiers';
+import { ScDemo } from '../../../shared/demo';
+import { ScPage } from '../../../shared/page';
 
-const DEMO_IMAGE =
-  'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=160&h=160&fit=crop&crop=faces';
+interface AvatarImageSample {
+  readonly size: UiAvatarSize;
+  readonly src: string;
+}
 
 @Component({
   selector: 'cr-avatar-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink, UiAvatar, UiStack, UiTextDirective],
+  imports: [ScDemo, ScPage, UiAvatar, UiFlow, UiStack, UiTextDirective],
   templateUrl: './avatar.page.html',
   styleUrl: './avatar.page.css',
 })
 export class AvatarPage {
-  protected readonly sizes: UiControlSize[] = [
-    'compact',
+  /** The full avatar ladder — extraLarge is the avatar-only portrait tier. */
+  protected readonly sizes: UiAvatarSize[] = [
+    'small',
     'regular',
-    'prominent',
+    'large',
+    'extraLarge',
   ];
-  protected readonly withImageStates = [false, true];
-  protected readonly demoImage = DEMO_IMAGE;
+
+  protected readonly imageSamples: AvatarImageSample[] = [
+    { size: 'small', src: 'https://i.pravatar.cc/128?img=12' },
+    { size: 'regular', src: 'https://i.pravatar.cc/128?img=25' },
+    { size: 'large', src: 'https://i.pravatar.cc/128?img=32' },
+    { size: 'extraLarge', src: 'https://i.pravatar.cc/256?img=47' },
+  ];
+
+  /** Guaranteed-to-fail source — demonstrates the error → placeholder path. */
+  protected readonly brokenSrc = 'https://example.invalid/x.png';
 }

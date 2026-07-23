@@ -1,48 +1,79 @@
-<a
-  routerLink="/controls"
-  uiText
-  [uiFont]="'callout'"
-  [uiWeight]="'regular'"
-  [uiForeground]="'accent'"
-  class="page__back"
->
-  ← All controls
-</a>
+<sc-page scTitle="Skeleton">
+  <ng-container scLede>
+    <code>ui-skeleton</code> ≙ SwiftUI
+    <code>.redacted(reason: .placeholder)</code> — the loading stand-in block.
+    It carries no intrinsic size: geometry comes from the outside via
+    <code>uiFrame</code>, the corner from the shared <code>uiRadius</code>
+    ladder.
+  </ng-container>
 
-<h1 uiText [uiFont]="'largeTitle'" [uiWeight]="'bold'">Skeleton</h1>
-<p
-  uiText
-  [uiFont]="'body'"
-  [uiWeight]="'regular'"
-  [uiForeground]="'secondary'"
-  class="page__intro"
->
-  <code>ui-skeleton</code> — uiAnimation × uiRadius. Sized from the outside via
-  a wrapping <code>.skeleton-box</code> class (UiSkeleton itself takes no size
-  input).
-</p>
-
-<section class="page__section">
-  <h2 uiText [uiFont]="'title2'" [uiWeight]="'bold'">Animation × Radius</h2>
-  <ui-stack uiAxis="vertical" uiGap="comfortable">
-    @for (animation of animations; track animation) {
-    <ui-stack uiAxis="horizontal" uiGap="regular" uiAlign="center">
+  <sc-demo scTitle="Radius ladder">
+    <ng-container scAbout>
+      One frame, every <code>uiRadius</code> rung — the skeleton composes
+      <code>UiRadiusDirective</code> as a host directive.
+    </ng-container>
+    <ui-flow uiSpacing="comfortable" uiAlignment="trailing">
       @for (radius of radii; track radius) {
-      <ui-stack uiAxis="vertical" uiGap="tight" uiAlign="start">
-        <div class="skeleton-box">
-          <ui-skeleton [uiAnimation]="animation" [uiRadius]="radius" />
-        </div>
-        <p
-          uiText
-          [uiFont]="'caption'"
-          [uiWeight]="'medium'"
-          [uiForeground]="'secondary'"
-        >
-          animation={{ animation }} radius={{ radius }}
+      <ui-stack uiAxis="vertical" uiSpacing="compact" uiAlignment="leading">
+        <ui-skeleton
+          uiFrame
+          uiFrameWidth="140px"
+          uiFrameHeight="48px"
+          [uiRadius]="radius"
+        />
+        <p uiText [uiFont]="'caption'" class="skeleton__mono">
+          radius={{ radius }}
         </p>
       </ui-stack>
       }
-    </ui-stack>
-    }
-  </ui-stack>
-</section>
+    </ui-flow>
+  </sc-demo>
+
+  <sc-demo scTitle="Sizes via uiFrame">
+    <ng-container scAbout>
+      Placeholder geometry mirrors the content it stands in for — a text line,
+      an avatar capsule, a media thumbnail, a card block — all sized with
+      <code>uiFrame</code>, never bespoke wrapper CSS.
+    </ng-container>
+    <ui-flow uiSpacing="comfortable" uiAlignment="trailing">
+      @for (shape of shapes; track shape.name) {
+      <ui-stack uiAxis="vertical" uiSpacing="compact" uiAlignment="leading">
+        <ui-skeleton
+          uiFrame
+          [uiFrameWidth]="shape.width"
+          [uiFrameHeight]="shape.height"
+          [uiRadius]="shape.radius"
+        />
+        <p uiText [uiFont]="'caption'" class="skeleton__mono">
+          frameWidth={{ shape.width }} · frameHeight={{ shape.height }} ·
+          radius={{ shape.radius }}
+        </p>
+      </ui-stack>
+      }
+    </ui-flow>
+  </sc-demo>
+
+  <sc-demo scTitle="Animation">
+    <ng-container scAbout>
+      <code>shimmer</code> sweeps, <code>pulse</code> breathes,
+      <code>none</code> holds still — and every variant freezes under
+      <code>prefers-reduced-motion</code>.
+    </ng-container>
+    <ui-flow uiSpacing="comfortable" uiAlignment="trailing">
+      @for (animation of animations; track animation) {
+      <ui-stack uiAxis="vertical" uiSpacing="compact" uiAlignment="leading">
+        <ui-skeleton
+          uiFrame
+          uiFrameWidth="180px"
+          uiFrameHeight="48px"
+          uiRadius="regular"
+          [uiAnimation]="animation"
+        />
+        <p uiText [uiFont]="'caption'" class="skeleton__mono">
+          animation={{ animation }}
+        </p>
+      </ui-stack>
+      }
+    </ui-flow>
+  </sc-demo>
+</sc-page>

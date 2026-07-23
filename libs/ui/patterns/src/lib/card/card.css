@@ -9,6 +9,12 @@
     color: var(--sys-color-foreground);
   }
 
+  /* Navigable card (a[uiCard]) — strip the UA link chrome; ink and
+     surface come from the host rule above. */
+  a.ui-card {
+    text-decoration: none;
+  }
+
   .ui-card[data-padding='none'] {
     padding: var(--sys-space-none);
   }

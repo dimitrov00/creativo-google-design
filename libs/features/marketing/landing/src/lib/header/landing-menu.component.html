@@ -20,7 +20,11 @@
         uiFrame
         [uiFrameMaxWidth]="'var(--landing-max-width)'"
       >
-        <ui-stack uiGap="regular">
+        <!-- Outer comfortable gap separates the preferences lead from the
+             action run; the inner regular gap carries the section rhythm
+             (the old --first compact extra, expressed as nested stacks:
+             regular + compact = the comfortable step). -->
+        <ui-stack uiSpacing="comfortable">
           <!-- Preferences lead — locale + theme (v2 MenuSection delay 0.02). -->
           <div
             class="cr-menu__section"
@@ -28,158 +32,176 @@
             uiRevealTrigger="mount"
             [uiRevealDelay]="20"
           >
-            <ui-stack uiAxis="horizontal" uiAlign="center" uiGap="regular">
+            <ui-stack
+              uiAxis="horizontal"
+              uiAlignment="center"
+              uiSpacing="regular"
+            >
               <cr-locale-theme-toggle variant="toolbar" />
             </ui-stack>
           </div>
 
-          <!-- Book now — the standalone primary CTA as a PROMINENT LIST
-               ROW (owner ruling: same shape as the rows below, but filled
-               with primary). ui-list-row uiVariant="prominent" owns the
-               fill, on-primary ink, standalone radius and the 52px
-               prominent row box; the anchor form is already full-width.
-               Leading glyph sits on the SAME ladder step as every row
-               leading glyph (uiScale="medium" — see the icon-scale note
-               at the account card). -->
-          <div
-            class="cr-menu__section cr-menu__section--first"
-            [uiReveal]="'fade-up'"
-            uiRevealTrigger="mount"
-            [uiRevealDelay]="100"
-          >
-            <a
-              routerLink="/book"
-              uiListRow
-              uiSize="prominent"
-              uiVariant="prominent"
-              [uiInteractive]="true"
-              data-testid="menu-book"
-              (click)="close()"
+          <ui-stack uiSpacing="regular">
+            <!-- Book now — the standalone primary CTA as a PROMINENT LIST
+                 ROW (owner ruling: same shape as the rows below, but filled
+                 with primary). ui-list-row uiVariant="prominent" owns the
+                 fill, on-primary ink, standalone radius and the 52px
+                 large row box; the anchor form is already full-width.
+                 Leading glyph sits on the SAME ladder step as every row
+                 leading glyph (uiScale="medium" — see the icon-scale note
+                 at the account card). -->
+            <div
+              class="cr-menu__section"
+              [uiReveal]="'fade-up'"
+              uiRevealTrigger="mount"
+              [uiRevealDelay]="100"
             >
-              <ui-icon uiLeading uiName="appointment.book" uiScale="medium" />
-              {{ t('landing.hero.cta') }}
-            </a>
-          </div>
+              <a
+                routerLink="/book"
+                uiListRow
+                uiSize="large"
+                uiVariant="prominent"
+                [uiInteractive]="true"
+                data-testid="menu-book"
+                (click)="close()"
+              >
+                <ui-icon uiLeading uiName="appointment.book" uiScale="medium" />
+                {{ t('landing.hero.cta') }}
+              </a>
+            </div>
 
-          <!-- Your account — guest-locked rows route through /auth.
-               Icon scale scheme (one grammar for the whole menu, exactly
-               two rungs of the FIXED icon ladder): leading glyphs — rows
-               and the book CTA alike — sit at uiScale="medium" (20px,
-               the list-row leading step), trailing lock accessories at
-               uiScale="small" (16px) with secondary ink from the
-               list-row [uiTrailing] contract. -->
+            <!-- Your account — guest-locked rows route through /auth.
+                 Icon scale scheme (one grammar for the whole menu, exactly
+                 two rungs of the FIXED icon ladder): leading glyphs — rows
+                 and the book CTA alike — sit at uiScale="medium" (20px,
+                 the list-row leading step), trailing lock accessories at
+                 uiScale="small" (16px) with secondary ink from the
+                 list-row [uiTrailing] contract. -->
 
-          <div
-            class="cr-menu__section"
-            [uiReveal]="'fade-up'"
-            uiRevealTrigger="mount"
-            [uiRevealDelay]="140"
-          >
-            <ui-card uiTone="plain" uiPadding="none">
-              <a
-                [routerLink]="isAuthed() ? '/account' : '/auth'"
-                [queryParams]="isAuthed() ? null : { redirect: '/account' }"
-                uiListRow
-                uiSize="prominent"
-                [uiInteractive]="true"
-                (click)="close()"
-              >
-                <ui-icon
-                  uiLeading
-                  uiName="account.reservations"
-                  uiScale="medium"
-                />
-                {{ t('landing.menu.bookings') }}
-                <ng-container ngProjectAs="[uiTrailing]">
-                  @if (!isAuthed()) {
-                    <ui-icon uiTrailing uiName="auth.locked" uiScale="small" />
-                  }
-                </ng-container>
-              </a>
-              <ui-divider [uiInset]="true" />
-              <a
-                [routerLink]="isAuthed() ? '/account' : '/auth'"
-                [queryParams]="isAuthed() ? null : { redirect: '/account' }"
-                uiListRow
-                uiSize="prominent"
-                [uiInteractive]="true"
-                (click)="close()"
-              >
-                <ui-icon uiLeading uiName="account.rewards" uiScale="medium" />
-                {{ t('landing.menu.rewards') }}
-                <ng-container ngProjectAs="[uiTrailing]">
-                  @if (!isAuthed()) {
-                    <ui-icon uiTrailing uiName="auth.locked" uiScale="small" />
-                  }
-                </ng-container>
-              </a>
-            </ui-card>
-          </div>
+            <div
+              class="cr-menu__section"
+              [uiReveal]="'fade-up'"
+              uiRevealTrigger="mount"
+              [uiRevealDelay]="140"
+            >
+              <ui-card uiTone="plain" uiPadding="none">
+                <a
+                  [routerLink]="isAuthed() ? '/account' : '/auth'"
+                  [queryParams]="isAuthed() ? null : { redirect: '/account' }"
+                  uiListRow
+                  uiSize="large"
+                  [uiInteractive]="true"
+                  (click)="close()"
+                >
+                  <ui-icon
+                    uiLeading
+                    uiName="account.reservations"
+                    uiScale="medium"
+                  />
+                  {{ t('landing.menu.bookings') }}
+                  <ng-container ngProjectAs="[uiTrailing]">
+                    @if (!isAuthed()) {
+                      <ui-icon
+                        uiTrailing
+                        uiName="auth.locked"
+                        uiScale="small"
+                      />
+                    }
+                  </ng-container>
+                </a>
+                <ui-divider [uiInset]="true" />
+                <a
+                  [routerLink]="isAuthed() ? '/account' : '/auth'"
+                  [queryParams]="isAuthed() ? null : { redirect: '/account' }"
+                  uiListRow
+                  uiSize="large"
+                  [uiInteractive]="true"
+                  (click)="close()"
+                >
+                  <ui-icon
+                    uiLeading
+                    uiName="account.rewards"
+                    uiScale="medium"
+                  />
+                  {{ t('landing.menu.rewards') }}
+                  <ng-container ngProjectAs="[uiTrailing]">
+                    @if (!isAuthed()) {
+                      <ui-icon
+                        uiTrailing
+                        uiName="auth.locked"
+                        uiScale="small"
+                      />
+                    }
+                  </ng-container>
+                </a>
+              </ui-card>
+            </div>
 
-          <!-- Site — in-page anchors. -->
-          <div
-            class="cr-menu__section cr-menu__section--last"
-            [uiReveal]="'fade-up'"
-            uiRevealTrigger="mount"
-            [uiRevealDelay]="180"
-          >
-            <ui-card uiTone="plain" uiPadding="none">
-              <a
-                href="/#work"
-                uiListRow
-                uiSize="prominent"
-                [uiInteractive]="true"
-                (click)="close()"
-              >
-                <ui-icon uiLeading uiName="nav.work" uiScale="medium" />
-                {{ t('landing.footer.nav.work') }}
-              </a>
-              <ui-divider [uiInset]="true" />
-              <a
-                href="/#team"
-                uiListRow
-                uiSize="prominent"
-                [uiInteractive]="true"
-                (click)="close()"
-              >
-                <ui-icon uiLeading uiName="nav.team" uiScale="medium" />
-                {{ t('landing.footer.nav.team') }}
-              </a>
-              <ui-divider [uiInset]="true" />
-              <a
-                href="/#services"
-                uiListRow
-                uiSize="prominent"
-                [uiInteractive]="true"
-                (click)="close()"
-              >
-                <ui-icon uiLeading uiName="nav.services" uiScale="medium" />
-                {{ t('landing.footer.nav.services') }}
-              </a>
-              <ui-divider [uiInset]="true" />
-              <a
-                href="/#visit"
-                uiListRow
-                uiSize="prominent"
-                [uiInteractive]="true"
-                (click)="close()"
-              >
-                <ui-icon uiLeading uiName="nav.visit" uiScale="medium" />
-                {{ t('landing.footer.nav.visit') }}
-              </a>
-              <ui-divider [uiInset]="true" />
-              <a
-                href="/#hiring"
-                uiListRow
-                uiSize="prominent"
-                [uiInteractive]="true"
-                (click)="close()"
-              >
-                <ui-icon uiLeading uiName="nav.careers" uiScale="medium" />
-                {{ t('landing.menu.openPositions') }}
-              </a>
-            </ui-card>
-          </div>
+            <!-- Site — in-page anchors. -->
+            <div
+              class="cr-menu__section"
+              [uiReveal]="'fade-up'"
+              uiRevealTrigger="mount"
+              [uiRevealDelay]="180"
+            >
+              <ui-card uiTone="plain" uiPadding="none">
+                <a
+                  href="/#work"
+                  uiListRow
+                  uiSize="large"
+                  [uiInteractive]="true"
+                  (click)="close()"
+                >
+                  <ui-icon uiLeading uiName="nav.work" uiScale="medium" />
+                  {{ t('landing.footer.nav.work') }}
+                </a>
+                <ui-divider [uiInset]="true" />
+                <a
+                  href="/#team"
+                  uiListRow
+                  uiSize="large"
+                  [uiInteractive]="true"
+                  (click)="close()"
+                >
+                  <ui-icon uiLeading uiName="nav.team" uiScale="medium" />
+                  {{ t('landing.footer.nav.team') }}
+                </a>
+                <ui-divider [uiInset]="true" />
+                <a
+                  href="/#services"
+                  uiListRow
+                  uiSize="large"
+                  [uiInteractive]="true"
+                  (click)="close()"
+                >
+                  <ui-icon uiLeading uiName="nav.services" uiScale="medium" />
+                  {{ t('landing.footer.nav.services') }}
+                </a>
+                <ui-divider [uiInset]="true" />
+                <a
+                  href="/#visit"
+                  uiListRow
+                  uiSize="large"
+                  [uiInteractive]="true"
+                  (click)="close()"
+                >
+                  <ui-icon uiLeading uiName="nav.visit" uiScale="medium" />
+                  {{ t('landing.footer.nav.visit') }}
+                </a>
+                <ui-divider [uiInset]="true" />
+                <a
+                  href="/#hiring"
+                  uiListRow
+                  uiSize="large"
+                  [uiInteractive]="true"
+                  (click)="close()"
+                >
+                  <ui-icon uiLeading uiName="nav.careers" uiScale="medium" />
+                  {{ t('landing.menu.openPositions') }}
+                </a>
+              </ui-card>
+            </div>
+          </ui-stack>
         </ui-stack>
       </div>
     </div>

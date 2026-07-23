@@ -6,10 +6,22 @@ import {
 } from '@angular/core';
 import { UiPaddingDirective } from '@creativo/ui/modifiers';
 
-export type UiButtonVariant =
-  'prominent' | 'bordered' | 'tinted' | 'plain' | 'destructive' | 'overlay';
-export type UiControlSize = 'compact' | 'regular' | 'prominent';
-export type UiControlShape = 'rounded' | 'capsule';
+/**
+ * ≙ SwiftUI `.buttonStyle(_:)` — the exact SwiftUI vocabulary:
+ * `borderedProminent` (filled primary), `bordered` (the soft tinted fill —
+ * what iOS renders for `.bordered`), `plain` (quiet label), `glass`
+ * (iOS 26 Liquid Glass chrome over media). `strokedBorder` is the one
+ * house extension (SwiftUI has no outline style; named from
+ * `Shape.strokeBorder`).
+ */
+export type UiButtonStyle =
+  'borderedProminent' | 'bordered' | 'strokedBorder' | 'plain' | 'glass';
+/** ≙ SwiftUI `ButtonRole` — recolors any style, exactly like `Button(role:)`. */
+export type UiButtonRole = 'destructive';
+/** ≙ SwiftUI `.controlSize(_:)` — small(36) · regular(44) · large(52); avatar adds extraLarge. */
+export type UiControlSize = 'small' | 'regular' | 'large';
+/** ≙ SwiftUI `.buttonBorderShape(_:)`. */
+export type UiButtonBorderShape = 'roundedRectangle' | 'capsule';
 
 /** Native `<button>`/`<a>` element — free a11y semantics, zero ARIA hand-rolling. */
 @Component({
@@ -23,9 +35,10 @@ export type UiControlShape = 'rounded' | 'capsule';
   encapsulation: ViewEncapsulation.None,
   host: {
     class: 'ui-button',
-    '[attr.data-variant]': 'uiVariant()',
-    '[attr.data-size]': 'uiSize()',
-    '[attr.data-shape]': 'uiShape()',
+    '[attr.data-button-style]': 'uiButtonStyle()',
+    '[attr.data-role]': 'uiRole() ?? null',
+    '[attr.data-control-size]': 'uiControlSize()',
+    '[attr.data-border-shape]': 'uiButtonBorderShape()',
     '[attr.data-state]': 'uiLoading() ? "loading" : null',
     '[attr.data-spread]': "uiSpread() ? '' : null",
     '[attr.data-on-media]': "uiOnMedia() ? '' : null",
@@ -38,9 +51,11 @@ export type UiControlShape = 'rounded' | 'capsule';
   hostDirectives: [{ directive: UiPaddingDirective, inputs: ['uiPadding'] }],
 })
 export class UiButton {
-  readonly uiVariant = input<UiButtonVariant>('prominent');
-  readonly uiSize = input<UiControlSize>('regular');
-  readonly uiShape = input<UiControlShape>('rounded');
+  readonly uiButtonStyle = input<UiButtonStyle>('borderedProminent');
+  /** `Button(role: .destructive)` — composes with any uiButtonStyle. */
+  readonly uiRole = input<UiButtonRole | undefined>(undefined);
+  readonly uiControlSize = input<UiControlSize>('regular');
+  readonly uiButtonBorderShape = input<UiButtonBorderShape>('roundedRectangle');
   readonly uiLoading = input(false);
   /** Sheet-CTA ROW GRAMMAR: tall pill, leading content clustered, trailing
    *  glyph at the far edge. Width is NOT part of the grammar — like every

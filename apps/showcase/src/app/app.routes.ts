@@ -22,9 +22,11 @@ export const appRoutes: Route[] = [
       import('./pages/controls/button/button.page').then((m) => m.ButtonPage),
   },
   {
-    path: 'controls/input',
+    path: 'controls/text-field',
     loadComponent: () =>
-      import('./pages/controls/input/input.page').then((m) => m.InputPage),
+      import('./pages/controls/text-field/text-field.page').then(
+        (m) => m.TextFieldPage,
+      ),
   },
   {
     path: 'controls/otp-field',
@@ -49,10 +51,10 @@ export const appRoutes: Route[] = [
       import('./pages/controls/avatar/avatar.page').then((m) => m.AvatarPage),
   },
   {
-    path: 'controls/spinner',
+    path: 'controls/progress-view',
     loadComponent: () =>
-      import('./pages/controls/spinner/spinner.page').then(
-        (m) => m.SpinnerPage,
+      import('./pages/controls/progress-view/progress-view.page').then(
+        (m) => m.ProgressViewPage,
       ),
   },
   {
@@ -83,5 +85,55 @@ export const appRoutes: Route[] = [
     path: 'controls/card',
     loadComponent: () =>
       import('./pages/controls/card/card.page').then((m) => m.CardPage),
+  },
+  {
+    path: 'controls/grid',
+    loadComponent: () =>
+      import('./pages/controls/grid/grid.page').then((m) => m.GridPage),
+  },
+  {
+    path: 'controls/flow',
+    loadComponent: () =>
+      import('./pages/controls/flow/flow.page').then((m) => m.FlowPage),
+  },
+  {
+    path: 'controls/scroll-row',
+    loadComponent: () =>
+      import('./pages/controls/scroll-row/scroll-row.page').then(
+        (m) => m.ScrollRowPage,
+      ),
+  },
+  {
+    path: 'controls/divider-and-spacer',
+    loadComponent: () =>
+      import('./pages/controls/divider-and-spacer/divider-and-spacer.page').then(
+        (m) => m.DividerAndSpacerPage,
+      ),
+  },
+  {
+    path: 'controls/icon',
+    loadComponent: () =>
+      import('./pages/controls/icon/icon.page').then((m) => m.IconPage),
+  },
+  {
+    path: 'controls/async-image',
+    loadComponent: () =>
+      import('./pages/controls/async-image/async-image.page').then(
+        (m) => m.AsyncImagePage,
+      ),
+  },
+  {
+    path: 'controls/list-row',
+    loadComponent: () =>
+      import('./pages/controls/list-row/list-row.page').then(
+        (m) => m.ListRowPage,
+      ),
+  },
+  {
+    path: 'controls/section-header',
+    loadComponent: () =>
+      import('./pages/controls/section-header/section-header.page').then(
+        (m) => m.SectionHeaderPage,
+      ),
   },
 ];

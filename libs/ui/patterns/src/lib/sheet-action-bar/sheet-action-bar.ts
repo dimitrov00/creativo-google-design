@@ -48,8 +48,8 @@ import {
  *
  * ```html
  * <ui-sheet-action-bar [uiVisible]="true">
- *   <a uiButton uiVariant="bordered" …>…</a>          <!-- leading -->
- *   <a uiButton uiVariant="prominent" [uiSpread]="true" …>…</a> <!-- trailing -->
+ *   <a uiButton uiButtonStyle="bordered" …>…</a>          <!-- leading -->
+ *   <a uiButton uiButtonStyle="borderedProminent" [uiSpread]="true" …>…</a> <!-- trailing -->
  * </ui-sheet-action-bar>
  * ```
  */

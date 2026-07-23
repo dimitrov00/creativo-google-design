@@ -1,14 +1,14 @@
 import { Component } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { UiSpinner } from './spinner';
+import { UiProgressView } from './progress-view';
 
 @Component({
-  imports: [UiSpinner],
-  template: `<ui-spinner [uiSize]="'compact'" />`,
+  imports: [UiProgressView],
+  template: `<ui-progress-view [uiControlSize]="'small'" />`,
 })
 class HostComponent {}
 
-describe('UiSpinner', () => {
+describe('UiProgressView', () => {
   let fixture: ComponentFixture<HostComponent>;
 
   beforeEach(async () => {
@@ -20,9 +20,10 @@ describe('UiSpinner', () => {
 
   it('writes size as a data-* attribute and exposes a status role', () => {
     fixture.detectChanges();
-    const el: HTMLElement = fixture.nativeElement.querySelector('ui-spinner');
-    expect(el.classList.contains('ui-spinner')).toBe(true);
-    expect(el.getAttribute('data-size')).toBe('compact');
+    const el: HTMLElement =
+      fixture.nativeElement.querySelector('ui-progress-view');
+    expect(el.classList.contains('ui-progress-view')).toBe(true);
+    expect(el.getAttribute('data-control-size')).toBe('small');
     expect(el.getAttribute('role')).toBe('status');
     expect(el.getAttribute('aria-label')).toBe('Loading');
   });

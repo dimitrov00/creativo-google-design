@@ -31,11 +31,11 @@ describe('LandingMenuComponent', () => {
     // The CTA IS a list row (owner ruling: same shape as the rows below,
     // filled with primary): ui-list-row stamps data-variant="prominent"
     // (primary fill + on-primary ink + standalone radius, list-row.css)
-    // and the 52px prominent row box; the anchor row form is full-width
+    // and the 52px large row box; the anchor row form is full-width
     // by contract (a.ui-list-row { inline-size: 100% }).
     expect(cta!.classList.contains('ui-list-row')).toBe(true);
     expect(cta!.getAttribute('data-variant')).toBe('prominent');
-    expect(cta!.getAttribute('data-size')).toBe('prominent');
+    expect(cta!.getAttribute('data-size')).toBe('large');
     // Hover/press ride the ONE shared interactive grammar, not a local one.
     expect(cta!.hasAttribute('data-interactive')).toBe(true);
     // SwiftUI Label semantics — the icon LEADS the title text, in the

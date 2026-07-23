@@ -6,7 +6,7 @@ import { UiScrollRow } from './scroll-row';
   imports: [UiScrollRow],
   template: `<ui-scroll-row
     [uiSnap]="snap()"
-    [uiGap]="'compact'"
+    [uiSpacing]="'compact'"
     [uiFullBleed]="fullBleed()"
     data-testid="scroll-row"
     >content</ui-scroll-row
@@ -34,7 +34,7 @@ describe('UiScrollRow', () => {
     );
     expect(el.classList.contains('ui-scroll-row')).toBe(true);
     expect(el.getAttribute('data-snap')).toBe('start');
-    expect(el.getAttribute('data-gap')).toBe('compact');
+    expect(el.getAttribute('data-spacing')).toBe('compact');
     expect(el.getAttribute('data-full-bleed')).toBeNull();
   });
 

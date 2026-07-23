@@ -15,8 +15,8 @@ import { ThemeService } from './theme.service';
  *   toolbar — track chips on solid surfaces (menu, footer), toolbar-tinted
  *             ink (accent in light / foreground in dark) like v2's
  *             `toolbarControl({ surface: 'track' })`.
- * Chips ride uiButton whole: base typography (callout 600), the tinted /
- * overlay hover tiers, and the exact 44px regular size — the theme chip is
+ * Chips ride uiButton whole: base typography (callout 600), the bordered /
+ * glass hover tiers, and the exact 44px regular size — the theme chip is
  * a square `uiIconOnly` member of the header chip group.
  */
 @Component({
@@ -29,9 +29,9 @@ import { ThemeService } from './theme.service';
       <button
         type="button"
         uiButton
-        [uiVariant]="variant() === 'overlay' ? 'overlay' : 'tinted'"
-        uiShape="capsule"
-        uiSize="regular"
+        [uiButtonStyle]="variant() === 'overlay' ? 'glass' : 'bordered'"
+        uiButtonBorderShape="capsule"
+        uiControlSize="regular"
         data-testid="landing-locale-toggle"
         [attr.aria-label]="t('landing.nav.locale')"
         (click)="toggleLocale()"
@@ -49,9 +49,9 @@ import { ThemeService } from './theme.service';
       <button
         type="button"
         uiButton
-        [uiVariant]="variant() === 'overlay' ? 'overlay' : 'tinted'"
-        uiShape="capsule"
-        uiSize="regular"
+        [uiButtonStyle]="variant() === 'overlay' ? 'glass' : 'bordered'"
+        uiButtonBorderShape="capsule"
+        uiControlSize="regular"
         [uiIconOnly]="true"
         data-testid="landing-theme-toggle"
         [attr.aria-label]="

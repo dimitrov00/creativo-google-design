@@ -1,107 +1,83 @@
-<a
-  routerLink="/controls"
-  uiText
-  [uiFont]="'callout'"
-  [uiWeight]="'regular'"
-  [uiForeground]="'accent'"
-  class="page__back"
->
-  ← All controls
-</a>
+<sc-page scTitle="Stack">
+  <ng-container scLede>
+    <code>ui-stack</code> ≙ SwiftUI <code>HStack</code> / <code>VStack</code> /
+    <code>ZStack</code> — the workhorse flex primitive. Three inputs
+    (<code>uiAxis</code>, <code>uiSpacing</code>, <code>uiAlignment</code>)
+    demonstrated one at a time, the other two held at a sensible default.
+  </ng-container>
 
-<h1 uiText [uiFont]="'largeTitle'" [uiWeight]="'bold'">Stack</h1>
-<p
-  uiText
-  [uiFont]="'body'"
-  [uiWeight]="'regular'"
-  [uiForeground]="'secondary'"
-  class="page__intro"
->
-  <code>ui-stack</code> — three inputs (uiAxis, uiGap, uiAlign) demonstrated one
-  at a time, each with the other two held at a sensible default, to keep the
-  full cross-product of all three legible.
-</p>
-
-<section class="page__section">
-  <h2 uiText [uiFont]="'title2'" [uiWeight]="'bold'">Axis</h2>
-  <ui-stack uiAxis="vertical" uiGap="comfortable">
-    @for (axis of axes; track axis) {
-    <ui-stack uiAxis="vertical" uiGap="tight" uiAlign="start">
-      <ui-stack
-        [uiAxis]="axis"
-        uiGap="compact"
-        uiAlign="center"
-        class="stack-demo"
-      >
-        <span class="stack-box">A</span>
-        <span class="stack-box">B</span>
-        <span class="stack-box">C</span>
+  <sc-demo scTitle="Axis">
+    <ng-container scAbout>
+      <code>vertical</code> is a VStack, <code>horizontal</code> an HStack, and
+      <code>z</code> layers its children on a single grid cell like a ZStack —
+      the translucent boxes below overlap back-to-front.
+    </ng-container>
+    <ui-flow uiSpacing="spacious" uiAlignment="trailing">
+      @for (axis of axes; track axis) {
+      <ui-stack uiSpacing="tight" uiAlignment="leading">
+        <ui-stack [uiAxis]="axis" uiSpacing="compact" uiAlignment="center">
+          @if (axis === 'z') {
+          <span class="stack__box stack__box--z-back"></span>
+          <span class="stack__box stack__box--z-mid"></span>
+          <span class="stack__box stack__box--z-front"></span>
+          } @else {
+          <span class="stack__box">A</span>
+          <span class="stack__box">B</span>
+          <span class="stack__box">C</span>
+          }
+        </ui-stack>
+        <p uiText [uiFont]="'caption'" class="stack__mono">uiAxis={{ axis }}</p>
       </ui-stack>
-      <p
-        uiText
-        [uiFont]="'caption'"
-        [uiWeight]="'medium'"
-        [uiForeground]="'secondary'"
-      >
-        uiAxis={{ axis }}
-      </p>
-    </ui-stack>
-    }
-  </ui-stack>
-</section>
+      }
+    </ui-flow>
+  </sc-demo>
 
-<section class="page__section">
-  <h2 uiText [uiFont]="'title2'" [uiWeight]="'bold'">Gap</h2>
-  <ui-stack uiAxis="vertical" uiGap="comfortable">
-    @for (gap of gaps; track gap) {
-    <ui-stack uiAxis="vertical" uiGap="tight" uiAlign="start">
-      <ui-stack
-        uiAxis="horizontal"
-        [uiGap]="gap"
-        uiAlign="center"
-        class="stack-demo"
-      >
-        <span class="stack-box">A</span>
-        <span class="stack-box">B</span>
-        <span class="stack-box">C</span>
+  <sc-demo scTitle="Spacing">
+    <ng-container scAbout>
+      The full <code>--sys-space-*</code> rung ladder as the stack gap — the dot
+      grid showing through between boxes IS the gap. Rungs respond live to the
+      density toggle.
+    </ng-container>
+    <ui-flow uiSpacing="spacious" uiAlignment="trailing">
+      @for (gap of gaps; track gap) {
+      <ui-stack uiSpacing="tight" uiAlignment="leading">
+        <ui-stack uiAxis="horizontal" [uiSpacing]="gap" uiAlignment="center">
+          <span class="stack__box">A</span>
+          <span class="stack__box">B</span>
+          <span class="stack__box">C</span>
+        </ui-stack>
+        <p uiText [uiFont]="'caption'" class="stack__mono">
+          uiSpacing={{ gap }}
+        </p>
       </ui-stack>
-      <p
-        uiText
-        [uiFont]="'caption'"
-        [uiWeight]="'medium'"
-        [uiForeground]="'secondary'"
-      >
-        uiGap={{ gap }}
-      </p>
-    </ui-stack>
-    }
-  </ui-stack>
-</section>
+      }
+    </ui-flow>
+  </sc-demo>
 
-<section class="page__section">
-  <h2 uiText [uiFont]="'title2'" [uiWeight]="'bold'">Align</h2>
-  <ui-stack uiAxis="vertical" uiGap="comfortable">
-    @for (align of aligns; track align) {
-    <ui-stack uiAxis="vertical" uiGap="tight" uiAlign="start">
-      <ui-stack
-        uiAxis="horizontal"
-        uiGap="compact"
-        [uiAlign]="align"
-        class="stack-demo stack-demo--align"
-      >
-        <span class="stack-box stack-box--short">A</span>
-        <span class="stack-box stack-box--tall">B</span>
-        <span class="stack-box stack-box--medium">C</span>
+  <sc-demo scTitle="Alignment">
+    <ng-container scAbout>
+      Cross-axis alignment on a fixed-height frame — <code>stretch</code>
+      grows every child to fill the frame (children carry only a
+      <code>min-block-size</code>, so they are free to stretch).
+    </ng-container>
+    <ui-flow uiSpacing="spacious" uiAlignment="trailing">
+      @for (align of aligns; track align) {
+      <ui-stack uiSpacing="tight" uiAlignment="leading">
+        <ui-stack
+          uiAxis="horizontal"
+          uiSpacing="compact"
+          [uiAlignment]="align"
+          class="stack__frame"
+        >
+          <span class="stack__box stack__box--short"></span>
+          <span class="stack__box stack__box--tall"></span>
+          <span class="stack__box stack__box--medium"></span>
+        </ui-stack>
+        <p uiText [uiFont]="'caption'" class="stack__mono">
+          uiAlignment={{ align }}
+        </p>
       </ui-stack>
-      <p
-        uiText
-        [uiFont]="'caption'"
-        [uiWeight]="'medium'"
-        [uiForeground]="'secondary'"
-      >
-        uiAlign={{ align }}
-      </p>
-    </ui-stack>
-    }
-  </ui-stack>
-</section>
+      }
+    </ui-flow>
+  </sc-demo>
+</sc-page>

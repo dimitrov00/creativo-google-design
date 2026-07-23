@@ -11,22 +11,22 @@
     font-weight: 700;
   }
 
-  .ui-avatar[data-size='compact'] {
-    inline-size: var(--control-size-compact);
-    block-size: var(--control-size-compact);
+  .ui-avatar[data-control-size='small'] {
+    inline-size: var(--control-size-small);
+    block-size: var(--control-size-small);
     font: var(--sys-font-footnote);
   }
-  .ui-avatar[data-size='regular'] {
+  .ui-avatar[data-control-size='regular'] {
     inline-size: var(--control-size-regular);
     block-size: var(--control-size-regular);
     font: var(--sys-font-callout);
   }
-  .ui-avatar[data-size='prominent'] {
-    inline-size: var(--control-size-prominent);
-    block-size: var(--control-size-prominent);
+  .ui-avatar[data-control-size='large'] {
+    inline-size: var(--control-size-large);
+    block-size: var(--control-size-large);
     font: var(--sys-font-title3);
   }
-  .ui-avatar[data-size='display'] {
+  .ui-avatar[data-control-size='extraLarge'] {
     /* Profile-portrait tier (avatar-only, see UiAvatarSize): 28 units =
        112px at density 1 — no shared --control-size token since no other
        control renders at portrait scale. */
@@ -35,9 +35,17 @@
     font: var(--sys-font-largeTitle);
   }
 
-  .ui-avatar__image {
+  /* The internal AsyncImage fills the capsule; its placeholder slot
+     centers the monogram (the async-image placeholder box is absolute, so
+     the host's own flex centering can't reach inside it). */
+  .ui-avatar__media {
     inline-size: 100%;
     block-size: 100%;
-    object-fit: cover;
+    border-radius: inherit;
+  }
+  .ui-avatar .ui-async-image__placeholder {
+    display: flex;
+    align-items: center;
+    justify-content: center;
   }
 }

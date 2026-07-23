@@ -16,38 +16,38 @@
     grid-area: 1 / 1;
   }
 
-  .ui-stack[data-align='start'] {
+  .ui-stack[data-alignment='leading'] {
     align-items: flex-start;
   }
-  .ui-stack[data-align='center'] {
+  .ui-stack[data-alignment='center'] {
     align-items: center;
   }
-  .ui-stack[data-align='end'] {
+  .ui-stack[data-alignment='trailing'] {
     align-items: flex-end;
   }
-  .ui-stack[data-align='stretch'] {
+  .ui-stack[data-alignment='stretch'] {
     align-items: stretch;
   }
 
-  .ui-stack[data-gap='none'] {
+  .ui-stack[data-spacing='none'] {
     gap: var(--sys-space-none);
   }
-  .ui-stack[data-gap='tight'] {
+  .ui-stack[data-spacing='tight'] {
     gap: var(--sys-space-tight);
   }
-  .ui-stack[data-gap='compact'] {
+  .ui-stack[data-spacing='compact'] {
     gap: var(--sys-space-compact);
   }
-  .ui-stack[data-gap='regular'] {
+  .ui-stack[data-spacing='regular'] {
     gap: var(--sys-space-regular);
   }
-  .ui-stack[data-gap='comfortable'] {
+  .ui-stack[data-spacing='comfortable'] {
     gap: var(--sys-space-comfortable);
   }
-  .ui-stack[data-gap='loose'] {
+  .ui-stack[data-spacing='loose'] {
     gap: var(--sys-space-loose);
   }
-  .ui-stack[data-gap='spacious'] {
+  .ui-stack[data-spacing='spacious'] {
     gap: var(--sys-space-spacious);
   }
 }

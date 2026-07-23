@@ -1,46 +1,54 @@
 <ng-container *transloco="let t">
-  <div class="appointments-shell">
-    <header class="appointments-header">
+  <ui-stack
+    uiSpacing="comfortable"
+    uiFrame
+    [uiFrameMaxWidth]="'var(--sys-container-content)'"
+    uiPaddingHorizontal="regular"
+    uiPaddingVertical="spacious"
+  >
+    <ui-stack uiAxis="horizontal" uiAlignment="center" uiSpacing="compact">
       <a
         uiButton
-        uiVariant="plain"
-        uiSize="compact"
+        uiButtonStyle="plain"
+        uiControlSize="small"
         routerLink="/account"
         data-testid="appointments-back"
       >
         {{ t('appointments.header.back') }}
       </a>
+      <ui-spacer />
       <h1 uiText uiFont="title">{{ t('appointments.header.title') }}</h1>
+      <ui-spacer />
       <a
         uiButton
-        uiVariant="tinted"
-        uiSize="compact"
+        uiButtonStyle="bordered"
+        uiControlSize="small"
         routerLink="/book"
         data-testid="appointments-book-cta"
       >
         {{ t('appointments.bookCta') }}
       </a>
-    </header>
+    </ui-stack>
 
     @switch (store.upcoming().kind) { @case ('loading') {
-    <ui-stack uiGap="comfortable" data-testid="appointments-skeleton">
-      <ui-skeleton style="block-size: 3rem" />
-      <ui-skeleton style="block-size: 8rem" />
-      <ui-skeleton style="block-size: 8rem" />
+    <ui-stack uiSpacing="comfortable" data-testid="appointments-skeleton">
+      <ui-skeleton uiFrame uiFrameHeight="3rem" />
+      <ui-skeleton uiFrame uiFrameHeight="8rem" />
+      <ui-skeleton uiFrame uiFrameHeight="8rem" />
     </ui-stack>
     } @case ('error') {
     <p
       uiText
       uiFont="footnote"
-      uiForeground="destructive"
+      uiForegroundStyle="destructive"
       role="alert"
       data-testid="appointments-error"
     >
       {{ translateListError() }}
     </p>
     } @default {
-    <ui-stack uiGap="comfortable">
-      <div class="appointments-view-toggle" role="tablist">
+    <ui-stack uiSpacing="comfortable">
+      <ui-stack uiAxis="horizontal" uiSpacing="compact" role="tablist">
         <button
           type="button"
           uiChip
@@ -59,22 +67,23 @@
         >
           {{ t('appointments.view.calendar') }}
         </button>
-      </div>
+      </ui-stack>
 
       @if (view() === 'calendar') {
       <ui-card uiPadding="comfortable" data-testid="appointments-calendar">
-        <div class="appointments-calendar-nav">
+        <ui-stack uiAxis="horizontal" uiAlignment="center" uiSpacing="compact">
           <button
             type="button"
             uiButton
-            uiVariant="plain"
-            uiSize="compact"
+            uiButtonStyle="plain"
+            uiControlSize="small"
             data-testid="appointments-calendar-prev"
             [attr.aria-label]="t('appointments.calendar.prev')"
             (click)="store.previousMonth()"
           >
             ‹
           </button>
+          <ui-spacer />
           <p
             uiText
             uiFont="headline"
@@ -82,31 +91,31 @@
           >
             {{ formatMonthLabel() }}
           </p>
+          <ui-spacer />
           <button
             type="button"
             uiButton
-            uiVariant="plain"
-            uiSize="compact"
+            uiButtonStyle="plain"
+            uiControlSize="small"
             data-testid="appointments-calendar-next"
             [attr.aria-label]="t('appointments.calendar.next')"
             (click)="store.nextMonth()"
           >
             ›
           </button>
-        </div>
-        <div class="appointments-weekday-header">
+        </ui-stack>
+        <ui-calendar-grid>
           @for (label of weekdayLabels(); track $index) {
-          <span uiText uiFont="caption" uiForeground="secondary"
+          <span uiWeekday uiText uiFont="caption" uiForegroundStyle="secondary"
             >{{ label }}</span
           >
-          }
-        </div>
-        <ui-calendar-grid>
-          @for (week of calendarMonth().weeks; track $index) { @for (cell of
+          } @for (week of calendarMonth().weeks; track $index) { @for (cell of
           week; track cell.dayKey) {
           <button
             type="button"
-            class="appointments-calendar-day"
+            uiDay
+            uiInteractive
+            uiRadius="capsule"
             data-testid="appointments-calendar-day"
             [attr.data-day-key]="cell.dayKey"
             [attr.data-selected]="selectedDayKey() === cell.dayKey ? '' : null"
@@ -137,13 +146,13 @@
       >
         @if (groups().length === 0) {
         <ui-card uiPadding="comfortable" data-testid="appointments-empty">
-          <p uiText uiFont="body" uiForeground="secondary">
+          <p uiText uiFont="body" uiForegroundStyle="secondary">
             {{ t('appointments.empty.title') }}
           </p>
           <a
             uiButton
-            uiVariant="tinted"
-            uiSize="compact"
+            uiButtonStyle="bordered"
+            uiControlSize="small"
             routerLink="/book"
             data-testid="appointments-empty-cta"
           >
@@ -151,23 +160,23 @@
           </a>
         </ui-card>
         } @else {
-        <ui-stack uiGap="comfortable">
+        <ui-stack uiSpacing="comfortable">
           @for (group of groups(); track group.dayKey) {
-          <section>
-            <p uiText uiFont="footnote" uiForeground="secondary">
+          <ui-stack uiSpacing="compact">
+            <p uiText uiFont="footnote" uiForegroundStyle="secondary">
               {{ formatDayLabel(group.date) }}
             </p>
             <ui-card uiPadding="none">
-              <ui-stack uiGap="none">
+              <ui-stack uiSpacing="none">
                 @for (appointment of group.appointments; track
-                appointment.id.value) {
-                <div
-                  class="appointment-row"
+                appointment.id.value; let last = $last) {
+                <ui-list-row
+                  uiSize="regular"
                   data-testid="appointment-row"
                   [attr.data-appointment-id]="appointment.id.value"
                   [attr.data-status]="appointment.status.kind"
                 >
-                  <ui-stack uiGap="tight">
+                  <ui-stack uiSpacing="tight" uiPaddingVertical="compact">
                     <p uiText uiFont="body">
                       {{ formatTime(appointment.timeSlot.start) }}
                     </p>
@@ -180,10 +189,12 @@
                   </ui-stack>
                   @if (canCancel(appointment)) {
                   <button
+                    uiTrailing
                     type="button"
                     uiButton
-                    uiVariant="destructive"
-                    uiSize="compact"
+                    uiButtonStyle="borderedProminent"
+                    uiRole="destructive"
+                    uiControlSize="small"
                     data-testid="appointment-cancel-trigger"
                     [attr.data-appointment-id]="appointment.id.value"
                     (click)="requestCancel(appointment.id)"
@@ -191,11 +202,13 @@
                     {{ t('appointments.cancel.trigger') }}
                   </button>
                   }
-                </div>
-                }
+                </ui-list-row>
+                @if (!last) {
+                <ui-divider />
+                } }
               </ui-stack>
             </ui-card>
-          </section>
+          </ui-stack>
           }
         </ui-stack>
         }
@@ -204,40 +217,43 @@
     } }
 
     <ui-sheet
-      [uiOpen]="confirmingId() !== null"
-      (uiDismissed)="dismissCancel()"
+      [uiIsPresented]="confirmingId() !== null"
+      (uiOnDismiss)="dismissCancel()"
       data-testid="appointment-cancel-sheet"
     >
-      <ui-stack uiGap="comfortable">
+      <ui-stack uiSpacing="comfortable">
         <p uiText uiFont="headline">
           {{ t('appointments.cancel.sheetTitle') }}
         </p>
-        <label class="appointments-cancel-reason-label">
-          <span uiText uiFont="footnote" uiForeground="secondary">
-            {{ t('appointments.cancel.reasonLabel') }}
-          </span>
-          <textarea
-            data-testid="appointment-cancel-reason"
-            [value]="cancelReason()"
-            (input)="cancelReason.set($any($event.target).value)"
-          ></textarea>
+        <label>
+          <ui-stack uiSpacing="tight">
+            <span uiText uiFont="footnote" uiForegroundStyle="secondary">
+              {{ t('appointments.cancel.reasonLabel') }}
+            </span>
+            <textarea
+              uiTextField
+              data-testid="appointment-cancel-reason"
+              [value]="cancelReason()"
+              (input)="cancelReason.set($any($event.target).value)"
+            ></textarea>
+          </ui-stack>
         </label>
         @if (translateCancelError(); as error) {
         <p
           uiText
           uiFont="footnote"
-          uiForeground="destructive"
+          uiForegroundStyle="destructive"
           role="alert"
           data-testid="appointment-cancel-error"
         >
           {{ error }}
         </p>
         }
-        <ui-stack uiAxis="horizontal" uiGap="compact">
+        <ui-stack uiAxis="horizontal" uiSpacing="compact">
           <button
             type="button"
             uiButton
-            uiVariant="plain"
+            uiButtonStyle="plain"
             data-testid="appointment-cancel-dismiss"
             (click)="dismissCancel()"
           >
@@ -246,7 +262,8 @@
           <button
             type="button"
             uiButton
-            uiVariant="destructive"
+            uiButtonStyle="borderedProminent"
+            uiRole="destructive"
             [uiLoading]="store.cancellingId() !== null"
             data-testid="appointment-cancel-confirm"
             (click)="confirmCancel()"
@@ -256,5 +273,5 @@
         </ui-stack>
       </ui-stack>
     </ui-sheet>
-  </div>
+  </ui-stack>
 </ng-container>

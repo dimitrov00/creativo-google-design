@@ -8,8 +8,18 @@ import {
   ServiceId,
 } from '@creativo/application/catalog';
 import { RedirectPath } from '@creativo/application/identity';
-import { UiButton, UiChip, UiInput, UiSpinner } from '@creativo/ui/controls';
-import { UiTextDirective } from '@creativo/ui/modifiers';
+import {
+  UiButton,
+  UiChip,
+  UiTextField,
+  UiProgressView,
+} from '@creativo/ui/controls';
+import { UiFlow, UiSpacer, UiStack } from '@creativo/ui/layout';
+import {
+  UiFrameDirective,
+  UiPaddingDirective,
+  UiTextDirective,
+} from '@creativo/ui/modifiers';
 import { translateDomainError } from '@creativo/infrastructure/i18n';
 import { OnboardingFlowStore } from '../onboarding-flow.store';
 
@@ -28,8 +38,13 @@ import { OnboardingFlowStore } from '../onboarding-flow.store';
     TranslocoDirective,
     UiButton,
     UiChip,
-    UiInput,
-    UiSpinner,
+    UiFlow,
+    UiFrameDirective,
+    UiTextField,
+    UiPaddingDirective,
+    UiSpacer,
+    UiProgressView,
+    UiStack,
     UiTextDirective,
   ],
   providers: [OnboardingFlowStore],

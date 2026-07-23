@@ -1,0 +1,13 @@
+:host {
+  display: block;
+}
+
+.text-field__mono {
+  font-family: var(--sys-font-family-mono);
+}
+
+/* Demo prop only — fields hug 100% of their wrapper, so samples need a
+   consistent rail width to compare tiers against. */
+.text-field__control {
+  inline-size: 15rem;
+}

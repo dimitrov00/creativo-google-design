@@ -29,10 +29,10 @@ describe('ShowcaseGalleryComponent', () => {
     expect(host.querySelectorAll('ui-async-image').length).toBe(3);
     expect(host.querySelectorAll('img[alt="Example result"]').length).toBe(3);
 
-    // The layout toggle is a DS tinted icon button, not hand-rolled chrome.
+    // The layout toggle is a DS bordered icon button, not hand-rolled chrome.
     const toggle = host.querySelector<HTMLButtonElement>('button');
     expect(toggle?.classList.contains('ui-button')).toBe(true);
-    expect(toggle?.getAttribute('data-variant')).toBe('tinted');
+    expect(toggle?.getAttribute('data-button-style')).toBe('bordered');
     expect(toggle?.hasAttribute('data-icon-only')).toBe(true);
 
     toggle?.click();

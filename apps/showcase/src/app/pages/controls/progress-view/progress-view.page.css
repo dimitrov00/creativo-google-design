@@ -1,0 +1,7 @@
+:host {
+  display: block;
+}
+
+.progress-view__mono {
+  font-family: var(--sys-font-family-mono);
+}

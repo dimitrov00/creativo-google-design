@@ -67,8 +67,8 @@
     data-on-media
     uiPlacement="center"
     uiMaterial="thin"
-    [uiOpen]="lightboxShot() !== null"
-    (uiDismissed)="closeLightbox()"
+    [uiIsPresented]="lightboxShot() !== null"
+    (uiOnDismiss)="closeLightbox()"
     [attr.aria-label]="lightboxAlt()"
   >
     @if (lightboxShot(); as shot) {
@@ -81,8 +81,8 @@
       <button
         type="button"
         uiButton
-        uiVariant="overlay"
-        uiShape="capsule"
+        uiButtonStyle="glass"
+        uiButtonBorderShape="capsule"
         [uiIconOnly]="true"
         class="cr-gallery__lightbox-close"
         data-testid="work-gallery-lightbox-close"

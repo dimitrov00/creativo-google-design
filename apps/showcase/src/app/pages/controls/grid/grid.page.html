@@ -1,0 +1,80 @@
+<sc-page scTitle="Grid">
+  <ng-container scLede>
+    <code>ui-grid</code> — the equal-column grid. ≙ SwiftUI
+    <code>LazyVGrid(columns: [GridItem(.flexible())], spacing:)</code>;
+    <code>uiAdaptiveMinimum</code> ≙ <code>GridItem(.adaptive(minimum:))</code>.
+    Every track is an equal <code>minmax(0, 1fr)</code> share — content shrinks
+    instead of blowing the column out.
+  </ng-container>
+
+  <sc-demo scTitle="uiColumns">
+    <ng-container scAbout>
+      Fixed track count. The count is also published as
+      <code>--ui-grid-columns</code>, so consumers may override it inside their
+      own media queries for responsive column steps.
+    </ng-container>
+    <ui-stack uiSpacing="comfortable">
+      @for (count of columnCounts; track count) {
+      <ui-stack uiSpacing="tight" uiAlignment="stretch">
+        <ui-grid [uiColumns]="count" uiSpacing="regular">
+          @for (cell of cells; track cell) {
+          <div class="grid__cell"></div>
+          }
+        </ui-grid>
+        <p uiText [uiFont]="'caption'" class="grid__mono">
+          uiColumns={{ count }} · uiSpacing=regular
+        </p>
+      </ui-stack>
+      }
+    </ui-stack>
+  </sc-demo>
+
+  <sc-demo scTitle="Adaptive columns">
+    <ng-container scAbout>
+      As many equal tracks as fit, each at least the given length — resize the
+      window and watch columns join and leave. When set,
+      <code>uiAdaptiveMinimum</code> takes over the template and
+      <code>uiColumns</code> is ignored.
+    </ng-container>
+    <ui-stack uiSpacing="tight" uiAlignment="stretch">
+      <ui-grid [uiAdaptiveMinimum]="'9rem'" uiSpacing="regular">
+        @for (cell of adaptiveCells; track cell) {
+        <div class="grid__cell"></div>
+        }
+      </ui-grid>
+      <p uiText [uiFont]="'caption'" class="grid__mono">
+        uiAdaptiveMinimum=9rem · uiSpacing=regular
+      </p>
+    </ui-stack>
+  </sc-demo>
+
+  <sc-demo scTitle="uiSpacing × uiRowSpacing">
+    <ng-container scAbout>
+      <code>uiSpacing</code> alone gaps both axes;
+      <code>uiRowSpacing</code> overrides the row gap only — the loose vertical
+      rhythm of a card rail without widening the columns.
+    </ng-container>
+    <ui-stack uiSpacing="comfortable">
+      <ui-stack uiSpacing="tight" uiAlignment="stretch">
+        <ui-grid [uiColumns]="3" uiSpacing="tight">
+          @for (cell of cells; track cell) {
+          <div class="grid__cell"></div>
+          }
+        </ui-grid>
+        <p uiText [uiFont]="'caption'" class="grid__mono">
+          uiColumns=3 · uiSpacing=tight
+        </p>
+      </ui-stack>
+      <ui-stack uiSpacing="tight" uiAlignment="stretch">
+        <ui-grid [uiColumns]="3" uiSpacing="tight" uiRowSpacing="loose">
+          @for (cell of cells; track cell) {
+          <div class="grid__cell"></div>
+          }
+        </ui-grid>
+        <p uiText [uiFont]="'caption'" class="grid__mono">
+          uiColumns=3 · uiSpacing=tight · uiRowSpacing=loose
+        </p>
+      </ui-stack>
+    </ui-stack>
+  </sc-demo>
+</sc-page>

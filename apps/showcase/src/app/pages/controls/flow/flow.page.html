@@ -1,0 +1,94 @@
+<sc-page scTitle="Flow">
+  <ng-container scLede>
+    <code>ui-flow</code> — the wrapping row. ≙ SwiftUI's custom
+    <code>FlowLayout</code> (WWDC22 "Compose custom layouts" — the wrapping
+    HStack). An <code>HStack</code> never wraps; a chip/tag cluster that must
+    break onto new lines is its own layout, so it gets its own primitive.
+  </ng-container>
+
+  <sc-demo scTitle="Wrap vs non-wrapping stack">
+    <ng-container scAbout>
+      The same chip cluster inside the same 28rem bound (dashed). The flow
+      breaks onto new lines; the horizontal stack marches straight past the edge
+      — exactly why a wrapping cluster is never a
+      <code>ui-stack uiAxis="horizontal"</code>.
+    </ng-container>
+    <ui-stack uiSpacing="comfortable" uiAlignment="leading">
+      <ui-stack uiSpacing="tight" uiAlignment="leading">
+        <div class="flow__bound" uiFrame [uiFrameWidth]="'28rem'">
+          <ui-flow uiSpacing="compact" uiAlignment="center">
+            @for (tag of tags; track tag) {
+            <button uiChip uiControlSize="small">{{ tag }}</button>
+            }
+          </ui-flow>
+        </div>
+        <p uiText [uiFont]="'caption'" class="flow__mono">
+          ui-flow uiSpacing=compact · wraps
+        </p>
+      </ui-stack>
+      <ui-stack uiSpacing="tight" uiAlignment="leading">
+        <div class="flow__bound" uiFrame [uiFrameWidth]="'28rem'">
+          <ui-stack
+            uiAxis="horizontal"
+            uiSpacing="compact"
+            uiAlignment="center"
+          >
+            @for (tag of tags; track tag) {
+            <button uiChip uiControlSize="small">{{ tag }}</button>
+            }
+          </ui-stack>
+        </div>
+        <p uiText [uiFont]="'caption'" class="flow__mono">
+          ui-stack uiAxis=horizontal uiSpacing=compact · never wraps
+        </p>
+      </ui-stack>
+    </ui-stack>
+  </sc-demo>
+
+  <sc-demo scTitle="uiSpacing">
+    <ng-container scAbout>
+      One gap token on both axes — the wrap gap and the line gap ride the same
+      rung.
+    </ng-container>
+    <ui-stack uiSpacing="comfortable" uiAlignment="leading">
+      @for (spacing of spacings; track spacing) {
+      <ui-stack uiSpacing="tight" uiAlignment="leading">
+        <div class="flow__bound" uiFrame [uiFrameWidth]="'24rem'">
+          <ui-flow [uiSpacing]="spacing" uiAlignment="center">
+            @for (tag of tags; track tag) {
+            <button uiChip uiControlSize="small">{{ tag }}</button>
+            }
+          </ui-flow>
+        </div>
+        <p uiText [uiFont]="'caption'" class="flow__mono">
+          uiSpacing={{ spacing }}
+        </p>
+      </ui-stack>
+      }
+    </ui-stack>
+  </sc-demo>
+
+  <sc-demo scTitle="uiAlignment">
+    <ng-container scAbout>
+      Cross-axis alignment within each wrapped line — visible once items in a
+      line differ in height.
+    </ng-container>
+    <ui-stack uiSpacing="comfortable" uiAlignment="leading">
+      @for (align of aligns; track align) {
+      <ui-stack uiSpacing="tight" uiAlignment="leading">
+        <ui-flow uiSpacing="compact" [uiAlignment]="align">
+          <span class="flow__tag"></span>
+          <span class="flow__tag flow__tag--tall"></span>
+          <span class="flow__tag"></span>
+          <span class="flow__tag flow__tag--medium"></span>
+          <span class="flow__tag flow__tag--tall"></span>
+          <span class="flow__tag"></span>
+        </ui-flow>
+        <p uiText [uiFont]="'caption'" class="flow__mono">
+          uiAlignment={{ align }}
+        </p>
+      </ui-stack>
+      }
+    </ui-stack>
+  </sc-demo>
+</sc-page>

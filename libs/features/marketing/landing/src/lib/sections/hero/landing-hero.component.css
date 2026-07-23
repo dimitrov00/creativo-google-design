@@ -3,10 +3,11 @@
    mid-card over a center vignette; the locale/theme toggles ride a bottom
    overlay row inside the media (SwiftUI bottomBar placement).
 
-   Layering, typography, scrim, media loading, and entrance motion all come
-   from DS primitives (ui-stack z-axis, ui-section-header[uiOnMedia],
-   uiOverlay="vignette", ui-ambient-video, uiReveal) — only the card's
-   art-directed geometry and the scroll-exit parallax live here. */
+   Layering, typography, scrim, media loading, entrance motion, spacers and
+   insets all come from DS primitives (ui-stack z-axis, ui-spacer,
+   uiPaddingHorizontal, ui-section-header[uiOnMedia], uiOverlay="vignette",
+   ui-ambient-video, uiReveal) — only the host's viewport-column geometry,
+   the safe-area toolbar inset, and the scroll-exit parallax live here. */
 
 :host {
   display: flex;
@@ -14,7 +15,13 @@
   min-block-size: 100svh;
   inline-size: 100%;
   max-inline-size: var(--landing-max-width);
+  /* Kept margin: uiFrame's set-maxWidth centering recipe rendered on the
+     host box itself — a modifier directive cannot self-apply to :host. */
   margin-inline: auto;
+  /* Parent owns the card's edge insets (margin-policy) — landing gutter and
+     safe-pad tokens sit outside the uiPadding scale, so they stay as CSS. */
+  padding-block: var(--landing-safe-pad-top) var(--landing-safe-pad-bottom);
+  padding-inline: var(--landing-gutter);
   background: var(--sys-color-background);
 }
 
@@ -25,11 +32,6 @@
   position: relative;
   flex: 1;
   overflow: hidden;
-  margin-inline: var(--landing-gutter);
-  margin-block-start: var(--landing-safe-pad-top);
-  /* The card reclaims the old CTA strip's height; only the safe-area floor
-     stays below it. */
-  margin-block-end: var(--landing-safe-pad-bottom);
   background: var(--sys-color-media-canvas);
 }
 
@@ -39,19 +41,14 @@
   opacity: 0.5;
 }
 
-/* ── Centered copy layer ── */
-
-.cr-hero__content {
-  justify-content: center;
-  padding-inline: var(--sys-space-comfortable);
-}
-
-/* ── Bottom overlay row (prefs) — bottom-left inside the media ── */
+/* ── Bottom overlay row (prefs) — bottom-left inside the media. The layer
+   box owns its inset as padding; the block-end value is a safe-area max()
+   that no uiPadding token can express. ── */
 
 .cr-hero__toolbar {
   place-self: end start;
-  margin-inline-start: var(--sys-space-comfortable);
-  margin-block-end: max(
+  padding-inline-start: var(--sys-space-comfortable);
+  padding-block-end: max(
     var(--sys-space-comfortable),
     var(--landing-safe-bottom)
   );

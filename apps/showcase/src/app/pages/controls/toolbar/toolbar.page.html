@@ -1,61 +1,126 @@
-<a
-  routerLink="/controls"
-  uiText
-  [uiFont]="'callout'"
-  [uiWeight]="'regular'"
-  [uiForeground]="'accent'"
-  class="page__back"
->
-  ← All controls
-</a>
+<sc-page scTitle="Toolbar">
+  <ng-container scLede>
+    <code>ui-toolbar</code> ≙ SwiftUI <code>.toolbar</code> with
+    <code>ToolbarItemPlacement</code> — a top app bar or bottom action bar, with
+    <code>uiSticky</code> pinning and <code>uiToolbarBackground</code> chrome
+    control.
+  </ng-container>
 
-<h1 uiText [uiFont]="'largeTitle'" [uiWeight]="'bold'">Toolbar</h1>
-<p
-  uiText
-  [uiFont]="'body'"
-  [uiWeight]="'regular'"
-  [uiForeground]="'secondary'"
-  class="page__intro"
->
-  <code>ui-toolbar</code> — uiSticky.
-</p>
-
-<section class="page__section">
-  <h2 uiText [uiFont]="'title2'" [uiWeight]="'bold'">uiSticky = false</h2>
-  <ui-toolbar>
-    <span uiText [uiFont]="'headline'" [uiWeight]="'semibold'"
-      >Toolbar title</span
-    >
-    <ui-stack uiAxis="horizontal" uiGap="compact">
-      <button uiButton uiVariant="bordered" uiSize="compact">Action</button>
-      <button uiButton uiVariant="prominent" uiSize="compact">Primary</button>
+  <sc-demo scTitle="Top bar">
+    <ng-container scAbout>
+      Default placement — hairline on the bottom edge.
+      <code>[uiSticky]="true"</code> pins the bar with
+      <code>position: sticky</code> inside the nearest scroll container: scroll
+      the framed box below.
+    </ng-container>
+    <ui-stack uiSpacing="comfortable" uiAlignment="stretch">
+      <ui-stack uiSpacing="tight" uiAlignment="stretch">
+        <ui-toolbar class="toolbar__bar">
+          <span uiText uiFont="headline">Toolbar title</span>
+          <ui-stack uiAxis="horizontal" uiSpacing="compact">
+            <button
+              uiButton
+              uiButtonStyle="strokedBorder"
+              uiControlSize="small"
+            >
+              Action
+            </button>
+            <button
+              uiButton
+              uiButtonStyle="borderedProminent"
+              uiControlSize="small"
+            >
+              Primary
+            </button>
+          </ui-stack>
+        </ui-toolbar>
+        <p uiText [uiFont]="'caption'" class="toolbar__mono">
+          uiPlacement=top · uiToolbarBackground=automatic
+        </p>
+      </ui-stack>
+      <ui-stack uiSpacing="tight" uiAlignment="stretch">
+        <div class="toolbar__scroll">
+          <ui-toolbar [uiSticky]="true">
+            <span uiText uiFont="headline">Sticky toolbar</span>
+            <button
+              uiButton
+              uiButtonStyle="strokedBorder"
+              uiControlSize="small"
+            >
+              Action
+            </button>
+          </ui-toolbar>
+          <div class="toolbar__scroll-content">
+            @for (line of scrollLines; track line) {
+            <p uiText uiFont="body" uiForegroundStyle="secondary">
+              Scrollable content line {{ line }} — the toolbar above stays
+              pinned to the top of this box while you scroll.
+            </p>
+            }
+          </div>
+        </div>
+        <p uiText [uiFont]="'caption'" class="toolbar__mono">uiSticky=true</p>
+      </ui-stack>
     </ui-stack>
-  </ui-toolbar>
-</section>
+  </sc-demo>
 
-<section class="page__section">
-  <h2 uiText [uiFont]="'title2'" [uiWeight]="'bold'">
-    uiSticky = true (scroll the box)
-  </h2>
-  <div class="toolbar-scroll">
-    <ui-toolbar [uiSticky]="true">
-      <span uiText [uiFont]="'headline'" [uiWeight]="'semibold'"
-        >Sticky toolbar</span
-      >
-      <button uiButton uiVariant="bordered" uiSize="compact">Action</button>
-    </ui-toolbar>
-    <div class="toolbar-scroll__content">
-      @for (line of scrollLines; track line) {
-      <p
-        uiText
-        [uiFont]="'body'"
-        [uiWeight]="'regular'"
-        [uiForeground]="'secondary'"
-      >
-        Scrollable content line {{ line }} — the toolbar above stays pinned to
-        the top of this box while you scroll.
+  <sc-demo scTitle="Bottom bar">
+    <ng-container scAbout>
+      ≙ SwiftUI <code>.bottomBar</code> — the hairline flips to the top edge and
+      the bar carries the screen's committing actions.
+    </ng-container>
+    <ui-stack uiSpacing="tight" uiAlignment="stretch">
+      <ui-toolbar uiPlacement="bottom" class="toolbar__bar">
+        <span uiText uiFont="footnote" uiForegroundStyle="secondary">
+          3 selected
+        </span>
+        <ui-stack uiAxis="horizontal" uiSpacing="compact">
+          <button
+            uiButton
+            uiButtonStyle="plain"
+            uiRole="destructive"
+            uiControlSize="small"
+          >
+            Delete
+          </button>
+          <button
+            uiButton
+            uiButtonStyle="borderedProminent"
+            uiControlSize="small"
+          >
+            Save
+          </button>
+        </ui-stack>
+      </ui-toolbar>
+      <p uiText [uiFont]="'caption'" class="toolbar__mono">
+        uiPlacement=bottom
       </p>
-      }
-    </div>
-  </div>
-</section>
+    </ui-stack>
+  </sc-demo>
+
+  <sc-demo scTitle="Hidden background" scTone="media">
+    <ng-container scAbout>
+      ≙ SwiftUI <code>.toolbarBackground(.hidden)</code> — transparent chrome
+      for bars floating over media; the contents carry their own fills (glass
+      buttons, on-media ink).
+    </ng-container>
+    <ui-stack uiSpacing="tight" uiAlignment="stretch">
+      <ui-toolbar uiToolbarBackground="hidden">
+        <span uiText uiFont="headline" class="toolbar__on-media">
+          Now playing
+        </span>
+        <ui-stack uiAxis="horizontal" uiSpacing="compact">
+          <button uiButton uiButtonStyle="glass" uiControlSize="small">
+            Share
+          </button>
+          <button uiButton uiButtonStyle="glass" uiControlSize="small">
+            Save
+          </button>
+        </ui-stack>
+      </ui-toolbar>
+      <p uiText [uiFont]="'caption'" class="toolbar__mono toolbar__mono--media">
+        uiToolbarBackground=hidden
+      </p>
+    </ui-stack>
+  </sc-demo>
+</sc-page>

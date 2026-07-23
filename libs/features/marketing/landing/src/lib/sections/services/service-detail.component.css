@@ -2,13 +2,12 @@
    then the fine print (variants / includes / performers), with the book
    CTA docked in the always-visible ui-sheet-action-bar at the bottom.
    `--modal-sheet-safe` cascades from the sheet shell. Text roles ride
-   uiText in the template — this file keeps only scroll-collapse, layout
-   glue and the documented local exceptions. */
+   uiText and rhythm rides ui-stack gaps in the template — this file keeps
+   only scroll-collapse, layout glue and the documented local exceptions. */
 
 /* The caption role's automatic secondary ink is for captions — the
    condensed toolbar title is primary chrome. */
 .service-sheet__compact-title {
-  margin: 0;
   color: var(--sys-color-foreground);
 }
 
@@ -16,11 +15,12 @@
   min-inline-size: 0;
 }
 
-/* Story blocks own the safe gutters; the gallery between them runs
-   full-bleed and pads itself. */
+/* Story blocks own the safe gutters (as padding — `--modal-sheet-safe` is
+   sheet-shell geometry, not a scale token, so uiPadding can't carry it);
+   the gallery between them runs full-bleed and pads itself. */
 .service-sheet__story {
   min-inline-size: 0;
-  margin-inline: var(--modal-sheet-safe);
+  padding-inline: var(--modal-sheet-safe);
 }
 
 /* Bottom clearance derives from the action-bar contract instead of a
@@ -35,16 +35,11 @@
   padding-block-start: var(--sys-space-comfortable);
 }
 
-.service-sheet__lede > p {
-  margin: 0;
-}
-
 /* Title scroll-collapse: as the largeTitle scrolls under the toolbar it
    scales down and fades — scroll-driven, zero JS in supporting browsers
    (the rect-based [titleVisible] flip stays as the fallback, see the
    @supports block below). Type role comes from uiFont="largeTitle". */
 .service-sheet__intro h2 {
-  margin: 0;
   transform-origin: left top;
 }
 
@@ -70,24 +65,9 @@
   }
 }
 
-/* Look comes from ui-badge (accent tone); only the flow margin is local. */
-.service-sheet__bundle-badge {
-  margin-block-start: var(--sys-space-regular);
-}
-
+/* Art-directed measure cap on the lede paragraph. */
 .service-sheet__summary > p {
   max-inline-size: 34rem;
-  margin: 0;
-}
-
-.service-sheet__summary-meta {
-  margin-block-start: var(--sys-space-comfortable);
-}
-
-.service-sheet__summary-duration {
-  display: inline-flex;
-  gap: var(--sys-space-tight);
-  align-items: center;
 }
 
 /* Price reads at full ink (the caption role's secondary is for captions). */
@@ -102,37 +82,9 @@
   flex: 0 0 auto;
 }
 
-/* ── Gallery — full-bleed between the story blocks ─────────────────── */
-
-.service-sheet__gallery {
-  margin-block-start: var(--sys-space-spacious);
-}
-
-/* ── Variants / includes — cr-capsule-list sections ────────────────── */
-
-.service-sheet__variants {
-  margin-block-start: var(--sys-space-spacious);
-}
-
 /* ── Performers — avatar rows, with a 2-up grid alternative ────────── */
 
-.service-performers {
-  margin-block-start: var(--sys-space-spacious);
-}
-
-.service-performers > header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--sys-space-regular);
-  margin-block-end: var(--sys-space-comfortable);
-}
-
-.service-performers h3 {
-  margin: 0;
-}
-
-/* Layout toggle is uiButton tinted/capsule/iconOnly — glyph size comes
+/* Layout toggle is uiButton bordered/capsule/iconOnly — glyph size comes
    from the DS icon-only tier in button.css (1.25rem at the 44px box). */
 
 /* Row shell comes from ui-list-row (min-height, padding, slots); the
@@ -147,29 +99,24 @@
 }
 
 .service-performer__identity {
-  display: block;
   min-inline-size: 0;
 }
 
 .service-performer__identity h4 {
-  margin: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .service-performer__identity > span {
-  display: block;
-  margin-block-start: var(--sys-space-tight);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+/* Stack layout (column, tight gap, end/start alignment) rides ui-stack in
+   the template; only the text direction stays local. */
 .service-performer__terms {
-  display: grid;
-  justify-items: end;
-  gap: var(--sys-space-tight);
   text-align: end;
 }
 
@@ -181,13 +128,12 @@
 }
 
 .service-performer__duration {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--sys-space-tight);
   font-variant-numeric: tabular-nums;
 }
 
-/* Grid alternative — 2-up tiles, avatar-led, same quiet fill. */
+/* Grid alternative — 2-up tiles, avatar-led, same quiet fill. Overrides
+   ui-list-row's own row axis, so it stays CSS (the row shape is the DS
+   recipe; the tile shape is this sheet's alternative reading of it). */
 .service-performers__list[data-grid] .service-performer {
   flex-direction: column;
   align-items: flex-start;
@@ -196,7 +142,6 @@
 }
 
 .service-performers__list[data-grid] .service-performer__terms {
-  justify-items: start;
   text-align: start;
 }
 
@@ -217,7 +162,7 @@
 
 cr-modal-sheet[data-state='open'] .service-sheet__intro > *,
 cr-modal-sheet[data-state='open'] .service-sheet__variants,
-cr-modal-sheet[data-state='open'] .service-performers > header {
+cr-modal-sheet[data-state='open'] .service-performers header {
   animation: sheet-content-in var(--sys-motion-duration-slowest)
     var(--sys-motion-ease-emphasized) both;
 }
@@ -233,8 +178,12 @@ cr-modal-sheet[data-state='open'] .service-sheet__variants {
 /* ── Mobile ────────────────────────────────────────────────────────── */
 
 @media (max-width: 760px) {
-  .service-sheet__summary-meta {
-    margin-block-start: var(--sys-space-regular);
+  /* The narrow sheet tightens the summary rhythm one step. ui-stack's gap
+     attribute can't respond to breakpoints, so this is a consumer gap
+     override on the stack (unlayered component CSS outranks the
+     @layer sys-components rule). */
+  .service-sheet__summary {
+    gap: var(--sys-space-regular);
   }
 
   /* Single column on the narrow sheet — !important outranks the inline
@@ -248,7 +197,7 @@ cr-modal-sheet[data-state='open'] .service-sheet__variants {
 @media (prefers-reduced-motion: reduce) {
   cr-modal-sheet[data-state='open'] .service-sheet__intro > *,
   cr-modal-sheet[data-state='open'] .service-sheet__variants,
-  cr-modal-sheet[data-state='open'] .service-performers > header {
+  cr-modal-sheet[data-state='open'] .service-performers header {
     animation: none;
   }
 }

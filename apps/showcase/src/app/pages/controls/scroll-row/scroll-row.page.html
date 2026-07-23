@@ -1,0 +1,83 @@
+<sc-page scTitle="Scroll Row">
+  <ng-container scLede>
+    <code>ui-scroll-row</code> — the horizontal carousel/strip container. ≙
+    SwiftUI <code>ScrollView(.horizontal)</code> +
+    <code>.scrollIndicators(.hidden)</code>; <code>uiSnap</code> ≙
+    <code>.scrollTargetBehavior(.viewAligned)</code>. Indicators are ALWAYS
+    hidden. <code>uiFullBleed</code> breaks the strip out to the full viewport
+    width (gutter-aligned via <code>--ui-scroll-row-gutter</code>) — a
+    consumer-page feature that cannot be shown inside this bounded canvas.
+  </ng-container>
+
+  <sc-demo scTitle="uiSnap">
+    <ng-container scAbout>
+      Drag each strip: <code>start</code> parks cards on the leading edge,
+      <code>center</code> parks them mid-viewport, <code>none</code> scrolls
+      freely. The strip scrolls inside itself — the page never overflows.
+    </ng-container>
+    <ui-stack uiSpacing="comfortable" uiAlignment="stretch">
+      @for (snap of snaps; track snap) {
+      <ui-stack uiSpacing="tight" uiAlignment="stretch">
+        <ui-scroll-row [uiSnap]="snap" uiSpacing="regular">
+          @for (card of cards; track card.title) {
+          <ui-card
+            uiTone="elevated"
+            uiPadding="regular"
+            uiFrame
+            [uiFrameWidth]="'11rem'"
+          >
+            <ui-stack uiSpacing="tight" uiAlignment="leading">
+              <div class="scroll-row__thumb"></div>
+              <p uiText [uiFont]="'headline'">{{ card.title }}</p>
+              <p uiText [uiFont]="'footnote'" uiForegroundStyle="secondary">
+                {{ card.detail }}
+              </p>
+            </ui-stack>
+          </ui-card>
+          }
+        </ui-scroll-row>
+        <p uiText [uiFont]="'caption'" class="scroll-row__mono">
+          uiSnap={{ snap }} · uiSpacing=regular
+        </p>
+      </ui-stack>
+      }
+    </ui-stack>
+  </sc-demo>
+
+  <sc-demo scTitle="uiSpacing">
+    <ng-container scAbout>
+      The gap between strip items rides the spacing scale — tight for dense
+      thumbnails, comfortable for feature cards.
+    </ng-container>
+    <ui-stack uiSpacing="comfortable" uiAlignment="stretch">
+      <ui-stack uiSpacing="tight" uiAlignment="stretch">
+        <ui-scroll-row uiSnap="start" uiSpacing="tight">
+          @for (card of cards; track card.title) {
+          <div
+            class="scroll-row__thumb scroll-row__thumb--strip"
+            uiFrame
+            [uiFrameWidth]="'7rem'"
+          ></div>
+          }
+        </ui-scroll-row>
+        <p uiText [uiFont]="'caption'" class="scroll-row__mono">
+          uiSnap=start · uiSpacing=tight
+        </p>
+      </ui-stack>
+      <ui-stack uiSpacing="tight" uiAlignment="stretch">
+        <ui-scroll-row uiSnap="start" uiSpacing="comfortable">
+          @for (card of cards; track card.title) {
+          <div
+            class="scroll-row__thumb scroll-row__thumb--strip"
+            uiFrame
+            [uiFrameWidth]="'7rem'"
+          ></div>
+          }
+        </ui-scroll-row>
+        <p uiText [uiFont]="'caption'" class="scroll-row__mono">
+          uiSnap=start · uiSpacing=comfortable
+        </p>
+      </ui-stack>
+    </ui-stack>
+  </sc-demo>
+</sc-page>

@@ -7,9 +7,9 @@
     gap: var(--sys-space-compact);
     min-block-size: var(--control-size-regular);
     /* Height comes from the size token ALONE. The UiPadding host directive
-       defaults to data-padding="regular", whose `padding` shorthand was
-       adding 16px block padding — every button then rendered content+32px
-       tall (46/50/52.3px…) instead of the exact 36/44/52 scale. */
+       stamps no attribute when unset (a caller can still opt in via
+       uiPadding); the explicit zero keeps any stamped block padding from
+       breaking the exact 36/44/52 scale. */
     padding-block: 0;
     padding-inline: var(--sys-space-regular);
     border: 0;
@@ -27,13 +27,16 @@
         var(--sys-motion-ease-standard);
   }
 
-  /* Variants — SwiftUI button-style vocabulary */
-  .ui-button[data-variant='prominent'] {
+  /* Styles — ≙ .buttonStyle(_:), the exact SwiftUI names:
+     borderedProminent / bordered (the soft tinted fill iOS renders) /
+     plain / glass (iOS 26) — plus strokedBorder, the one house extension
+     (SwiftUI has no outline style; named from Shape.strokeBorder). */
+  .ui-button[data-button-style='borderedProminent'] {
     /* v2 "default" */
     background: var(--sys-color-primary);
     color: var(--sys-color-on-primary);
   }
-  .ui-button[data-variant='bordered'] {
+  .ui-button[data-button-style='strokedBorder'] {
     /* v2 "outline". The outline rides currentColor, not the separator
        token: separator (~8-12% ink) reads too faint for a control edge,
        and a currentColor mix is theme-proof for free — white-ish over
@@ -44,27 +47,40 @@
     box-shadow: inset 0 0 0 1px
       color-mix(in srgb, currentColor 28%, transparent);
   }
-  .ui-button[data-variant='tinted'] {
+  .ui-button[data-button-style='bordered'] {
     /* v2 "soft" */
     background: color-mix(in srgb, var(--sys-color-accent) 12%, transparent);
     color: var(--sys-color-accent);
   }
-  .ui-button[data-variant='plain'] {
+  .ui-button[data-button-style='plain'] {
     color: var(--sys-color-secondary-label);
   } /* v2 ghost */
-  .ui-button[data-variant='destructive'] {
+  /* Role — ≙ Button(role: .destructive): recolors ANY style, exactly like
+     SwiftUI. Filled style swaps its fill; quiet styles swap their ink;
+     bordered swaps its tint. */
+  .ui-button[data-role='destructive'] {
+    color: var(--sys-color-destructive);
+  }
+  .ui-button[data-button-style='bordered'][data-role='destructive'] {
+    background: color-mix(
+      in srgb,
+      var(--sys-color-destructive) 12%,
+      transparent
+    );
+  }
+  .ui-button[data-button-style='borderedProminent'][data-role='destructive'] {
     background: var(--sys-color-destructive);
     color: var(--sys-color-on-primary);
   }
   /* On media (video/photography) the prominent pill is white-on-media in
      BOTH themes — the light theme's near-black primary would sink into
      dark footage. Theme-independent by design, like the overlay variant. */
-  .ui-button[data-variant='prominent'][data-on-media] {
+  .ui-button[data-button-style='borderedProminent'][data-on-media] {
     background: #ffffff;
     color: #0d0d0d;
   }
 
-  .ui-button[data-variant='overlay'] {
+  .ui-button[data-button-style='glass'] {
     /* Glass chrome over media (video cards, photo overlays) — white-alpha
        fill + blur, theme-independent by design: it always sits on dark
        imagery, never on the page surface. */
@@ -80,55 +96,68 @@
      deepens its accent fill 12% → 18%, the recipe the landing toolbar
      controls already proved out). Pointer-hover devices only. */
   @media (hover: hover) {
-    .ui-button[data-variant='prominent']:hover:not(:disabled) {
+    .ui-button[data-button-style='borderedProminent']:hover:not(:disabled) {
       background: color-mix(
         in srgb,
         var(--sys-color-primary) 85%,
         var(--sys-color-background)
       );
     }
-    .ui-button[data-variant='bordered']:hover:not(:disabled),
-    .ui-button[data-variant='plain']:hover:not(:disabled) {
+    .ui-button[data-button-style='strokedBorder']:hover:not(:disabled),
+    .ui-button[data-button-style='plain']:hover:not(:disabled) {
       background: color-mix(
         in srgb,
         currentColor var(--sys-alpha-fill-hover),
         transparent
       );
     }
-    .ui-button[data-variant='tinted']:hover:not(:disabled) {
+    .ui-button[data-button-style='bordered']:hover:not(:disabled) {
       background: color-mix(in srgb, var(--sys-color-accent) 18%, transparent);
     }
-    .ui-button[data-variant='destructive']:hover:not(:disabled) {
+    .ui-button[data-button-style='bordered'][data-role='destructive']:hover:not(
+        :disabled
+      ) {
+      background: color-mix(
+        in srgb,
+        var(--sys-color-destructive) 18%,
+        transparent
+      );
+    }
+    .ui-button[data-button-style='borderedProminent'][data-role='destructive']:hover:not(
+        :disabled
+      ) {
       background: color-mix(
         in srgb,
         var(--sys-color-destructive) 85%,
         var(--sys-color-background)
       );
     }
-    .ui-button[data-variant='overlay']:hover:not(:disabled) {
+    .ui-button[data-button-style='glass']:hover:not(:disabled) {
       background: rgb(255 255 255 / 0.2);
     }
-    .ui-button[data-variant='prominent'][data-on-media]:hover:not(:disabled) {
+    .ui-button[data-button-style='borderedProminent'][data-on-media]:hover:not(
+        :disabled
+      ) {
       background: rgb(255 255 255 / 0.88);
     }
   }
-  .ui-button[data-variant='overlay']:active:not(:disabled) {
+  .ui-button[data-button-style='glass']:active:not(:disabled) {
     background: rgb(255 255 255 / 0.28);
   }
 
   /* Sizes — semantic, not t-shirt */
-  .ui-button[data-size='compact'] {
-    min-block-size: var(--control-size-compact);
+  .ui-button[data-control-size='small'] {
+    min-block-size: var(--control-size-small);
     padding-inline: var(--sys-space-compact);
     font: var(--sys-font-subheadline);
     font-weight: 600;
   }
-  .ui-button[data-size='prominent'] {
-    min-block-size: var(--control-size-prominent);
+  .ui-button[data-control-size='large'] {
+    min-block-size: var(--control-size-large);
     padding-inline: var(--sys-space-comfortable);
     border-radius: var(--control-radius-prominent);
   }
-  .ui-button[data-shape='capsule'] {
+  .ui-button[data-border-shape='capsule'] {
     border-radius: var(--control-radius-capsule);
   }
 
@@ -151,13 +180,16 @@
     /* The chunky box IS the prominent size tier — no ad-hoc heights; the
        min-block-size centers the content, block padding would only push
        the box off the scale. */
-    min-block-size: var(--control-size-prominent);
+    min-block-size: var(--control-size-large);
     gap: var(--sys-space-regular);
     padding-inline: 1.2rem 1.05rem;
   }
   /* Trailing affordance (arrow_outward etc.): a glyph that closes the
      spread row sits at the far edge — but a LEADING glyph (first element,
-     SwiftUI Label icon) is exempt even when it is the only element child. */
+     SwiftUI Label icon) is exempt even when it is the only element child.
+     Sanctioned internal contract: this auto margin is the primitive's own
+     Spacer — consumers project raw label content and cannot compose
+     ui-spacer inside a button. */
   .ui-button[data-spread] > .ui-icon:last-child:not(:first-child),
   .ui-button[data-spread] > [uiTrailing] {
     margin-inline-start: auto;
@@ -173,11 +205,11 @@
     padding-inline: 0;
     aspect-ratio: 1;
   }
-  .ui-button[data-icon-only][data-size='compact'] {
-    inline-size: var(--control-size-compact);
+  .ui-button[data-icon-only][data-control-size='small'] {
+    inline-size: var(--control-size-small);
   }
-  .ui-button[data-icon-only][data-size='prominent'] {
-    inline-size: var(--control-size-prominent);
+  .ui-button[data-icon-only][data-control-size='large'] {
+    inline-size: var(--control-size-large);
   }
 
   /* Control-glyph tier — ONE optical glyph size per button tier, labeled
@@ -206,7 +238,7 @@
   .ui-button .ui-icon {
     font-size: var(--ui-icon-medium);
   }
-  .ui-button[data-size='prominent'] .ui-icon,
+  .ui-button[data-control-size='large'] .ui-icon,
   .ui-button[data-spread] .ui-icon {
     font-size: var(--ui-icon-large);
   }
@@ -215,11 +247,11 @@
      and layout toggles. Each quiet variant deepens along its OWN hover
      grammar: tinted to its press-tier 18% accent fill, bordered/plain to
      the segment-selected rung of the alpha ladder. */
-  .ui-button[data-variant='tinted'][data-selected] {
+  .ui-button[data-button-style='bordered'][data-selected] {
     background: color-mix(in srgb, var(--sys-color-accent) 18%, transparent);
   }
-  .ui-button[data-variant='bordered'][data-selected],
-  .ui-button[data-variant='plain'][data-selected] {
+  .ui-button[data-button-style='strokedBorder'][data-selected],
+  .ui-button[data-button-style='plain'][data-selected] {
     background: color-mix(
       in srgb,
       currentColor var(--sys-alpha-segment-selected),

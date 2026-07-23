@@ -6,9 +6,9 @@
  *
  * The old parallel recipe systems are gone (final DS sweep, 2026-07-23):
  * media-overlay ink → `--sys-color-on-media*` (libs/ui tokens) +
- * `ui-section-header uiOnMedia`; chrome-media glass → `ui-button` overlay /
- * `uiMaterial`; toolbar tint → `ui-button` tinted / `uiSelected`; the
- * oversized CTA → `uiSize="prominent"` + `uiMultiline`; hidden scrollbars →
+ * `ui-section-header uiOnMedia`; chrome-media glass → `ui-button` glass /
+ * `uiMaterial`; toolbar tint → `ui-button` bordered / `uiSelected`; the
+ * oversized CTA → `uiControlSize="large"` + `uiMultiline`; hidden scrollbars →
  * `ui-scroll-row`; the icon em box → `ui-icon` (`.ui-icon`).
  *
  * Loaded globally from apps/web/src/styles.css (feature sections style

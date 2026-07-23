@@ -8,7 +8,7 @@
   :root {
     --ui-sheet-action-bar-clearance: calc(
       max(var(--sys-space-compact), env(safe-area-inset-bottom)) +
-        var(--control-size-prominent) + var(--sys-space-compact) +
+        var(--control-size-large) + var(--sys-space-compact) +
         var(--sys-space-spacious)
     );
   }
@@ -33,7 +33,7 @@
     justify-content: flex-start;
     gap: var(--sys-space-compact);
     min-block-size: calc(
-      var(--control-size-prominent) + var(--sys-space-compact) * 2
+      var(--control-size-large) + var(--sys-space-compact) * 2
     );
     padding-block: var(--sys-space-compact)
       max(var(--sys-space-compact), env(safe-area-inset-bottom));
@@ -67,15 +67,22 @@
      (.frame(maxWidth: .infinity)) — in this flex row the 100% basis
      shrinks back to the leftover space next to the leading icons. */
   .ui-sheet-action-bar > [data-spread],
-  .ui-sheet-action-bar > [data-variant='prominent'],
+  .ui-sheet-action-bar > [data-button-style='borderedProminent'],
   .ui-sheet-action-bar > [uiprimary] {
+    /* Sanctioned internal contract: this auto margin is the bar's own
+       Spacer, docking the primary trailing over PROJECTED children — the
+       slot contract cannot ask consumers to interleave ui-spacer. */
     margin-inline-start: auto;
   }
 
   /* Secondaries hold their intrinsic box — the primary is the flexible /
      ellipsizing one when a long localized label competes for the row. */
   .ui-sheet-action-bar
-    > :not([data-spread], [data-variant='prominent'], [uiprimary]) {
+    > :not(
+      [data-spread],
+      [data-button-style='borderedProminent'],
+      [uiprimary]
+    ) {
     flex: 0 0 auto;
   }
 }

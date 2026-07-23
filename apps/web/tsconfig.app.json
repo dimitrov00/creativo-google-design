@@ -16,6 +16,12 @@
       "path": "../../libs/ui/tokens/tsconfig.lib.json"
     },
     {
+      "path": "../../libs/ui/modifiers/tsconfig.lib.json"
+    },
+    {
+      "path": "../../libs/ui/layout/tsconfig.lib.json"
+    },
+    {
       "path": "../../libs/domain/identity/tsconfig.lib.json"
     },
     {

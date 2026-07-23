@@ -23,12 +23,11 @@
   }
 }
 
-/* Column header — a nav label, not a section eyebrow; the eyebrow role
-   carries font/tracking/uppercase, only the pitch stays here. */
-.cr-footer__col-header {
-  margin-block-end: var(--sys-space-compact);
-}
+/* The column header's pitch above its rows is the compact stack gap in the
+   template; the eyebrow role carries font/tracking/uppercase. */
 
+/* Stays a real <ul> for list semantics (a ui-stack would drop them), so the
+   flex column lives here; margin: 0 is only the UA list-margin reset. */
 .cr-footer__list {
   margin: 0;
   padding: 0;
@@ -54,7 +53,7 @@
 /* The sanctioned text-link hover exception: color shift to the primary
    foreground only — no state layer, no pill, no underline. Unlayered on
    purpose so it out-cascades modifiers.css's layered
-   [data-foreground='secondary'] color. */
+   [data-foreground-style='secondary'] color. */
 @media (hover: hover) {
   .cr-footer__link:hover {
     color: var(--sys-color-foreground);

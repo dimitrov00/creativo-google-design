@@ -223,7 +223,7 @@ describe('ClientAppointments', () => {
     expect(
       host
         .querySelector('[data-testid="appointment-cancel-sheet"]')
-        ?.getAttribute('data-open'),
+        ?.getAttribute('data-presented'),
     ).toBe('');
 
     (

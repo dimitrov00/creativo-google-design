@@ -22,7 +22,10 @@ export default [
         'error',
         {
           type: 'element',
-          prefix: 'cr',
+          // `sc-` is the showcase's own spec-scaffold namespace (sc-page,
+          // sc-demo, sc-gap-viz) — visually distinct from both app (`cr-`)
+          // and design-system (`ui-`) components.
+          prefix: ['cr', 'sc'],
           style: 'kebab-case',
         },
       ],

@@ -1,40 +1,24 @@
-<a
-  routerLink="/controls"
-  uiText
-  [uiFont]="'callout'"
-  [uiWeight]="'regular'"
-  [uiForeground]="'accent'"
-  class="page__back"
->
-  ← All controls
-</a>
+<sc-page scTitle="Badge">
+  <ng-container scLede>
+    ≙ SwiftUI <code>.badge(_:)</code> — a static status token on a plain
+    <code>span[uiBadge]</code>. Non-interactive by design: anything clickable is
+    a chip or a button.
+  </ng-container>
 
-<h1 uiText [uiFont]="'largeTitle'" [uiWeight]="'bold'">Badge</h1>
-<p
-  uiText
-  [uiFont]="'body'"
-  [uiWeight]="'regular'"
-  [uiForeground]="'secondary'"
-  class="page__intro"
->
-  <code>span[uiBadge]</code> — uiTone.
-</p>
-
-<section class="page__section">
-  <h2 uiText [uiFont]="'title2'" [uiWeight]="'bold'">Tone</h2>
-  <ui-stack uiAxis="horizontal" uiGap="regular" uiAlign="center">
-    @for (tone of tones; track tone) {
-    <ui-stack uiAxis="vertical" uiGap="tight" uiAlign="start">
-      <span uiBadge [uiTone]="tone">Badge</span>
-      <p
-        uiText
-        [uiFont]="'caption'"
-        [uiWeight]="'medium'"
-        [uiForeground]="'secondary'"
-      >
-        tone={{ tone }}
-      </p>
-    </ui-stack>
-    }
-  </ui-stack>
-</section>
+  <sc-demo scTitle="Tones">
+    <ng-container scAbout>
+      Every <code>uiTone</code> — semantic status roles resolved by the active
+      theme, never raw values.
+    </ng-container>
+    <ui-flow uiSpacing="comfortable" uiAlignment="trailing">
+      @for (sample of samples; track sample.tone) {
+      <ui-stack uiSpacing="tight" uiAlignment="leading">
+        <span uiBadge [uiTone]="sample.tone">{{ sample.label }}</span>
+        <p uiText [uiFont]="'caption'" class="badge__mono">
+          tone={{ sample.tone }}
+        </p>
+      </ui-stack>
+      }
+    </ui-flow>
+  </sc-demo>
+</sc-page>

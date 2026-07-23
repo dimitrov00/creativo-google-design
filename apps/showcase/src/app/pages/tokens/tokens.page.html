@@ -1,107 +1,103 @@
-<h1 uiText [uiFont]="'largeTitle'" [uiWeight]="'bold'">Design Tokens</h1>
-<p
-  uiText
-  [uiFont]="'body'"
-  [uiWeight]="'regular'"
-  [uiForeground]="'secondary'"
-  class="page__intro"
->
-  The <code>sys-*</code> token system — every custom property consumed by
-  <code>@creativo/ui/*</code>. Live values follow the shell's theme/density
-  toggles.
-</p>
+<sc-page scTitle="Design Tokens" [scBack]="null">
+  <ng-container scLede>
+    The <code>sys-*</code> token system — every custom property consumed by
+    <code>&#64;creativo/ui/*</code>. Live values follow the shell's
+    theme/density toggles.
+  </ng-container>
 
-<section class="tokens__section">
-  <h2 uiText [uiFont]="'title2'" [uiWeight]="'bold'">Colors</h2>
-  <div class="tokens__row">
-    @for (color of colors; track color) {
-    <div class="tokens__swatch">
-      <div
-        class="tokens__swatch-color"
-        [style.background]="'var(--sys-color-' + color + ')'"
-      ></div>
-      <p
-        uiText
-        [uiFont]="'caption'"
-        [uiWeight]="'medium'"
-        [uiForeground]="'secondary'"
-      >
-        --sys-color-{{ color }}
-      </p>
-    </div>
-    }
-  </div>
-</section>
+  <sc-demo scTitle="Colors">
+    <ng-container scAbout>
+      Semantic roles, never raw values — each swatch is a
+      <code>--sys-color-*</code> custom property resolved by the active theme.
+    </ng-container>
+    <ui-flow uiSpacing="comfortable" uiAlignment="stretch">
+      @for (color of colors; track color) {
+      <ui-stack uiAxis="vertical" uiSpacing="compact" uiAlignment="leading">
+        <div
+          class="tokens__swatch-color"
+          uiRadius="subtle"
+          [style.background]="'var(--sys-color-' + color + ')'"
+        ></div>
+        <p uiText [uiFont]="'caption'" class="tokens__mono">
+          --sys-color-{{ color }}
+        </p>
+      </ui-stack>
+      }
+    </ui-flow>
+  </sc-demo>
 
-<section class="tokens__section">
-  <h2 uiText [uiFont]="'title2'" [uiWeight]="'bold'">Typography</h2>
-  <div class="tokens__type-scale">
-    @for (role of textRoles; track role) {
-    <p uiText [uiFont]="role" [uiWeight]="weightFor(role)">
-      {{ role }} — The quick brown fox jumps
-    </p>
-    }
-  </div>
-</section>
+  <sc-demo scTitle="Typography">
+    <ng-container scAbout>
+      The SwiftUI text-role ladder (<code>uiFont</code>) — smallest to largest,
+      each with its baked-in weight.
+    </ng-container>
+    <ui-stack uiSpacing="compact" uiAlignment="leading">
+      @for (role of textRoles; track role) {
+      <ui-stack uiAxis="horizontal" uiSpacing="regular" uiAlignment="center">
+        <span
+          uiText
+          [uiFont]="'caption'"
+          uiForegroundStyle="secondary"
+          class="tokens__mono tokens__role-label"
+          >{{ role }}</span
+        >
+        <p uiText [uiFont]="role" [uiWeight]="weightFor(role)">
+          The quick brown fox jumps
+        </p>
+      </ui-stack>
+      }
+    </ui-stack>
+  </sc-demo>
 
-<section class="tokens__section">
-  <h2 uiText [uiFont]="'title2'" [uiWeight]="'bold'">Spacing</h2>
-  <div class="tokens__row">
-    @for (step of spacing; track step) {
-    <div class="tokens__spacing-sample">
-      <div class="tokens__spacing-track">
-        <div class="tokens__spacing-bar" [uiPadding]="step"></div>
-      </div>
-      <p
-        uiText
-        [uiFont]="'caption'"
-        [uiWeight]="'medium'"
-        [uiForeground]="'secondary'"
-      >
-        --sys-space-{{ step }}
-      </p>
-    </div>
-    }
-  </div>
-</section>
+  <sc-demo scTitle="Spacing">
+    <ng-container scAbout>
+      The hatched band IS the gap — <code>--sys-space-*</code> rendered
+      devtools-style between two placeholder boxes, with the live pixel value
+      (watch it respond to the density toggle above).
+    </ng-container>
+    <ui-flow uiSpacing="loose" uiAlignment="trailing">
+      @for (step of spacing; track step) {
+      <sc-gap-viz [scSpacing]="step" />
+      }
+    </ui-flow>
+  </sc-demo>
 
-<section class="tokens__section">
-  <h2 uiText [uiFont]="'title2'" [uiWeight]="'bold'">Radii</h2>
-  <div class="tokens__row">
-    @for (radius of radii; track radius) {
-    <div class="tokens__radius-sample">
-      <div class="tokens__radius-box" [uiRadius]="radius"></div>
-      <p
-        uiText
-        [uiFont]="'caption'"
-        [uiWeight]="'medium'"
-        [uiForeground]="'secondary'"
-      >
-        --control-radius-{{ radius }}
-      </p>
-    </div>
-    }
-  </div>
-</section>
+  <sc-demo scTitle="Radii">
+    <ng-container scAbout>
+      The house radius ladder plus SwiftUI's own <code>capsule</code>. SwiftUI
+      publishes no radius tokens — <code>RoundedRectangle(cornerRadius:)</code>
+      takes raw numbers — so the rungs are semantic by design-system policy.
+    </ng-container>
+    <ui-flow uiSpacing="comfortable" uiAlignment="stretch">
+      @for (radius of radii; track radius) {
+      <ui-stack uiAxis="vertical" uiSpacing="compact" uiAlignment="leading">
+        <div class="tokens__radius-box" [uiRadius]="radius"></div>
+        <p uiText [uiFont]="'caption'" class="tokens__mono">
+          --control-radius-{{ radius }}
+        </p>
+      </ui-stack>
+      }
+    </ui-flow>
+  </sc-demo>
 
-<section class="tokens__section">
-  <h2 uiText [uiFont]="'title2'" [uiWeight]="'bold'">Control sizes</h2>
-  <div class="tokens__row">
-    @for (size of controlSizes; track size.name) {
-    <div class="tokens__control-size-sample">
-      <div
-        class="tokens__control-size-box"
-        [style.block-size]="'var(--control-size-' + size.name + ')'"
-      ></div>
-      <p
-        uiText
-        [uiFont]="'caption'"
-        [uiWeight]="'medium'"
-        [uiForeground]="'secondary'"
-      >
-        --control-size-{{ size.name }} ({{ size.px }}px @ regular density)
-      </p>
-    </div>
-    }
-  </div>
-</section>
+  <sc-demo scTitle="Control sizes">
+    <ng-container scAbout>
+      ≙ SwiftUI <code>.controlSize(.small / .regular / .large)</code> — the 36 /
+      44 / 52 ladder (44 is the HIG minimum tap target).
+    </ng-container>
+    <ui-flow uiSpacing="comfortable" uiAlignment="trailing">
+      @for (size of controlSizes; track size.name) {
+      <ui-stack uiAxis="vertical" uiSpacing="compact" uiAlignment="leading">
+        <div
+          class="tokens__control-size-box"
+          uiRadius="regular"
+          [style.block-size]="'var(--control-size-' + size.name + ')'"
+        ></div>
+        <p uiText [uiFont]="'caption'" class="tokens__mono">
+          --control-size-{{ size.name }} · {{ size.px }}px &#64; regular
+        </p>
+      </ui-stack>
+      }
+    </ui-flow>
+  </sc-demo>
+</sc-page>

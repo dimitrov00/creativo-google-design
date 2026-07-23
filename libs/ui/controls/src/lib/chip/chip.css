@@ -18,11 +18,11 @@
       color var(--sys-motion-duration-regular) var(--sys-motion-ease-standard);
   }
 
-  .ui-chip[data-size='compact'] {
+  .ui-chip[data-control-size='small'] {
     padding-inline: var(--sys-space-compact);
     font: var(--sys-font-footnote);
   }
-  .ui-chip[data-size='prominent'] {
+  .ui-chip[data-control-size='large'] {
     padding-inline: var(--sys-space-comfortable);
     font: var(--sys-font-callout);
   }
