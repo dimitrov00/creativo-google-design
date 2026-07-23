@@ -1,225 +1,73 @@
+/* Inline gallery for sheet bodies — a ui-scroll-row snap strip by default,
+   a 3-up ui-grid when expanded. The gallery owns its own inline gutters
+   (--modal-sheet-safe) in BOTH modes so consumers never wrap it in their
+   own padding (the old split — component pads on mobile, consumer pads on
+   desktop — produced doubled gutters in the barber sheet and edge-to-edge
+   tiles in the locations sheet). Sits full-bleed inside the sheet scroller.
+
+   Chrome (toggle button, snap/overflow recipe, grid columns, image
+   placeholder/fade) comes from the design system; only the sheet-local
+   gutters and tile geometry stay here. */
+
 :host {
-  position: sticky;
-  inset-block-start: 5.1rem;
   display: block;
   min-inline-size: 0;
-  block-size: calc(min(90svh, 58rem) - 6.4rem);
-}
-
-:host([data-expanded]) {
-  block-size: auto;
 }
 
 .showcase-gallery {
-  position: relative;
+  display: flex;
+  flex-direction: column;
   min-inline-size: 0;
-  block-size: 100%;
 }
 
-.showcase-gallery__track {
-  position: relative;
-  min-block-size: 0;
-  overflow: hidden;
-  block-size: 100%;
-  border-radius: 1.5rem;
-  background: transparent;
+/* uiButton (tinted/capsule/icon-only + uiSelected) owns the toggle chrome —
+   only the sheet-local alignment stays here. */
+.showcase-gallery__layout-toggle {
+  align-self: flex-end;
+  margin: 0 var(--modal-sheet-safe, 1rem) var(--sys-space-compact) 0;
 }
+
+/* Glyph size comes from the DS icon-only tier in button.css (1.25rem at
+   the 44px box) — no local re-declaration. */
+
+/* Sheet gutter in both modes — a LENGTH so padding and scroll-padding
+   resolve identically (keeps snap points aligned to the gutter). */
+.showcase-gallery__track {
+  min-inline-size: 0;
+  padding-inline: var(--modal-sheet-safe, 1rem);
+  scroll-padding-inline: var(--modal-sheet-safe, 1rem);
+}
+
+/* ── Strip (default) — big portrait story tiles (App-Store-story feel):
+   one dominant tile plus peeking neighbors. Width is a fraction of the
+   track's available inline size (~1.3 tiles per viewport — no hardcoded
+   px), height follows from the portrait aspect. Overflow/snap/hidden
+   scrollbars come from ui-scroll-row, the tile radius tier from uiRadius. ── */
 
 figure {
-  position: absolute;
-  inset: 0;
+  flex: 0 0 76%;
   margin: 0;
-  opacity: 0;
-  clip-path: inset(7% round 2.4rem);
-  transform: scale(1.035);
-  transition:
-    opacity var(--sys-motion-duration-slowest) var(--sys-motion-ease-standard),
-    clip-path var(--sys-motion-duration-cinematic)
-      var(--sys-motion-ease-emphasized),
-    transform var(--sys-motion-duration-cinematic)
-      var(--sys-motion-ease-emphasized);
-  pointer-events: none;
+  overflow: hidden;
+  aspect-ratio: 3 / 4;
 }
 
-figure[data-active] {
-  z-index: 1;
-  opacity: 1;
-  clip-path: inset(0 round 1.5rem);
-  transform: scale(1);
-}
-
-img {
+ui-async-image {
   inline-size: 100%;
   block-size: 100%;
-  object-fit: cover;
-  filter: saturate(0.86) contrast(1.03);
 }
 
-.showcase-gallery__layout-toggle {
-  position: absolute;
-  z-index: 4;
-  inset: 0.8rem 0.8rem auto auto;
-  /* HIG 44px floor. */
-  inline-size: var(--control-size-regular);
-  block-size: var(--control-size-regular);
-  display: grid;
-  place-items: center;
-  padding: 0;
-  border: 0;
-  border-radius: 50%;
-  /* Theme-aware glass — surface-alpha instead of the hardcoded warm
-     off-white, so the chip reads in dark mode (case-study §2.7). */
-  background: color-mix(in srgb, var(--sys-color-surface) 78%, transparent);
-  color: color-mix(
-    in srgb,
-    var(--sys-color-foreground) calc(0.74 * 100%),
-    transparent
-  );
-  box-shadow: 0 0.4rem 1.4rem rgb(0 0 0 / 0.08);
-  backdrop-filter: blur(14px) saturate(0.8);
-  cursor: pointer;
-  opacity: 0.86;
-  transition:
-    opacity var(--sys-motion-duration-regular) var(--sys-motion-ease-standard),
-    color var(--sys-motion-duration-regular) var(--sys-motion-ease-standard),
-    transform var(--sys-motion-duration-deliberate)
-      var(--sys-motion-ease-emphasized);
-}
+/* ── Grid (expanded) — columns/gap from ui-grid. ── */
 
-.showcase-gallery__layout-toggle:hover,
-.showcase-gallery__layout-toggle:focus-visible {
-  color: var(--sys-color-foreground);
-  opacity: 1;
-}
-
-.showcase-gallery__layout-toggle:focus-visible {
-  outline: 2px solid var(--sys-color-ring);
-  outline-offset: 2px;
-}
-
-.showcase-gallery__layout-toggle:active {
-  transform: scale(var(--sys-press-scale-control));
-}
-
-.showcase-gallery__layout-toggle .material-symbols-rounded {
-  font-size: 1.2rem;
-}
-
-:host([data-expanded]) .showcase-gallery__track {
-  block-size: auto;
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  grid-auto-rows: max-content;
-  gap: 0.5rem;
-  align-content: start;
-  overflow: visible;
-  border-radius: 0;
-  scrollbar-width: none;
-}
-
-:host([data-expanded]) .showcase-gallery__track::-webkit-scrollbar {
-  display: none;
-}
-
-:host([data-expanded]) figure,
-:host([data-expanded]) figure:first-child {
-  position: relative;
-  inset: auto;
-  grid-column: auto;
-  grid-row: auto;
+:host([data-expanded]) figure {
+  flex: none;
   aspect-ratio: 1;
-  align-self: start;
-  opacity: 1;
-  clip-path: inset(0 round 0.85rem);
-  transform: none;
-  pointer-events: auto;
+  /* Grid tiles step down one tier on the landing radius ladder from the
+     strip's prominent tier (denser packing, tighter corners). */
+  border-radius: var(--landing-radius-xl);
 }
 
 @media (max-width: 760px) {
-  :host {
-    position: relative;
-    inset-block-start: auto;
-    order: 2;
-    block-size: min(68svh, 32rem);
-    display: flex;
-    flex-direction: column;
-  }
-
-  .showcase-gallery {
-    min-block-size: 0;
-    display: flex;
-    flex: 1 1 auto;
-    flex-direction: column;
-  }
-
-  .showcase-gallery__layout-toggle {
-    position: relative;
-    inset: auto;
-    flex: 0 0 auto;
-    align-self: flex-end;
-    margin: 0 var(--modal-sheet-safe) 0.65rem 0;
-    /* Keep the chip surface on mobile — a bare glyph reads as decoration,
-       not a control (HIG affordance + the 44px box needs a visible bound). */
-    opacity: 1;
-  }
-
-  .showcase-gallery__track {
-    flex: 1 1 auto;
-    block-size: auto;
-    display: flex;
-    gap: 0.55rem;
-    overflow-x: auto;
-    padding-inline-start: var(--modal-sheet-safe);
-    border-radius: 0;
-    scroll-padding-inline-start: var(--modal-sheet-safe);
-    scroll-snap-type: x mandatory;
-    scrollbar-width: none;
-  }
-
-  .showcase-gallery__track::-webkit-scrollbar {
-    display: none;
-  }
-
-  figure,
-  figure[data-active] {
-    position: relative;
-    inset: auto;
-    flex: 0 0 87%;
-    opacity: 1;
-    clip-path: inset(0 round 1.15rem);
-    transform: none;
-    scroll-snap-align: center;
-    pointer-events: auto;
-  }
-
-  figure:last-child {
-    margin-inline-end: var(--modal-sheet-safe);
-  }
-
-  :host([data-expanded]) {
-    block-size: auto;
-  }
-
   :host([data-expanded]) .showcase-gallery__track {
-    box-sizing: border-box;
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    grid-auto-rows: max-content;
-    gap: 0.35rem;
-    align-content: start;
-    overflow-x: hidden;
-    overflow-y: visible;
-    padding-inline: var(--modal-sheet-safe);
-    scroll-snap-type: none;
-  }
-
-  :host([data-expanded]) figure,
-  :host([data-expanded]) figure:first-child {
-    grid-column: auto;
-    grid-row: auto;
-    aspect-ratio: 1;
-    flex: none;
-    margin-inline-end: 0;
-    scroll-snap-align: none;
+    gap: var(--sys-space-tight);
   }
 }

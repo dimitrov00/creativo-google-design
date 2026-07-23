@@ -22,19 +22,30 @@ describe('LandingHeroComponent', () => {
     const host: HTMLElement = fixture.nativeElement;
     expect(host.getAttribute('data-testid')).toBe('landing-hero');
 
-    // The film card: autoplaying, muted, looping (poster path is the v2 one).
-    const video = host.querySelector<HTMLVideoElement>('video.cr-hero__video');
+    // The film card is the DS ambient-video primitive (poster/crossfade/
+    // reduced-motion contract lives there, not in the hero).
+    const media = host.querySelector('ui-ambient-video');
+    expect(media).not.toBeNull();
+    const poster = media?.querySelector<HTMLImageElement>(
+      'img.ui-ambient-video__poster',
+    );
+    expect(poster?.getAttribute('src')).toBe('/work/landing-poster.jpg');
+    const video = media?.querySelector<HTMLVideoElement>(
+      'video.ui-ambient-video__video',
+    );
     expect(video).not.toBeNull();
-    expect(video?.hasAttribute('autoplay')).toBe(true);
     expect(video?.hasAttribute('muted')).toBe(true);
     expect(video?.hasAttribute('loop')).toBe(true);
-    expect(video?.getAttribute('poster')).toBe('/work/landing-poster.jpg');
+    expect(video?.getAttribute('src')).toBe('/hero.mp4');
 
-    // Overlay copy + prefs chips render inside the card.
-    expect(host.querySelector('.cr-hero__heading')).not.toBeNull();
+    // Copy trio rides the sanctioned section-header pattern on the white
+    // on-media ramp; prefs chips render inside the card.
+    const header = host.querySelector('ui-section-header');
+    expect(header?.hasAttribute('data-on-media')).toBe(true);
+    expect(header?.querySelector('h1[uiTitle]')).not.toBeNull();
     expect(host.querySelector('cr-locale-theme-toggle')).not.toBeNull();
 
-    // The primary CTA under the card routes into auth → /book.
+    // The primary CTA (shared booking chord) routes into auth → /book.
     const cta = host.querySelector<HTMLAnchorElement>(
       '[data-testid="landing-hero-cta"]',
     );
@@ -43,5 +54,8 @@ describe('LandingHeroComponent', () => {
     // The anchor IS the button (a[uiButton]) — no pointer-events:none
     // wrapper, so hover/press/focus land on the real interactive element.
     expect(cta?.classList.contains('ui-button')).toBe(true);
+    // Prominent tier (52px) — the matched opening/closing chord size.
+    expect(cta?.getAttribute('data-size')).toBe('prominent');
+    expect(cta?.hasAttribute('data-on-media')).toBe(true);
   });
 });

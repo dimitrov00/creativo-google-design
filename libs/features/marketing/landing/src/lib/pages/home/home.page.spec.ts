@@ -1,4 +1,4 @@
-import { CUSTOM_ELEMENTS_SCHEMA } from '@angular/core';
+import { NO_ERRORS_SCHEMA } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { provideTestI18n } from '../../test-i18n.providers';
@@ -17,7 +17,10 @@ describe('HomePage', () => {
       providers: [...provideTestI18n(), provideRouter([])],
     })
       .overrideComponent(HomePage, {
-        set: { imports: [], schemas: [CUSTOM_ELEMENTS_SCHEMA] },
+        // NO_ERRORS_SCHEMA (not CUSTOM_ELEMENTS_SCHEMA): with imports
+        // stripped, the shell's DS modifier bindings ([uiFrameMaxWidth] on
+        // <main>) would otherwise fail on a non-dashed element.
+        set: { imports: [], schemas: [NO_ERRORS_SCHEMA] },
       })
       .compileComponents();
 
@@ -32,9 +35,10 @@ describe('HomePage', () => {
     const anchors = [...host.querySelectorAll('.cr-landing__anchor')].map(
       (anchor) => anchor.id,
     );
-    // Conversion-ordered funnel (case study §2.9): offer → proof →
-    // logistics, recruiting demoted below locations.
-    expect(anchors).toEqual(['services', 'work', 'team', 'visit', 'hiring']);
+    // Funnel order (owner call, 2026-07-23): proof leads (work gallery
+    // right under the hero) → offer → team → logistics, recruiting
+    // demoted below locations.
+    expect(anchors).toEqual(['work', 'services', 'team', 'visit', 'hiring']);
 
     const main = host.querySelector('main');
     expect(main?.querySelector('#work cr-work-gallery')).not.toBeNull();

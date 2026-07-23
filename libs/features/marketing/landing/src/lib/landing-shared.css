@@ -1,9 +1,15 @@
 /**
  * Landing-wide rhythm + the v2 vocabulary the sys token set doesn't carry.
  * Every value here is transcribed from v2's theme (`packages/styles/styles.css`)
- * so the port stays pixel-true: the media-overlay ink ramp, the chrome-media
- * control fills, the exact radius ladder (base 0.75rem × scale 0.85 + step),
- * safe-area floors and the squircle/grain/scrollbar utilities.
+ * so the port stays pixel-true: the exact radius ladder remnants, safe-area
+ * floors and the squircle/grain utilities.
+ *
+ * The old parallel recipe systems are gone (final DS sweep, 2026-07-23):
+ * media-overlay ink → `--sys-color-on-media*` (libs/ui tokens) +
+ * `ui-section-header uiOnMedia`; chrome-media glass → `ui-button` overlay /
+ * `uiMaterial`; toolbar tint → `ui-button` tinted / `uiSelected`; the
+ * oversized CTA → `uiSize="prominent"` + `uiMultiline`; hidden scrollbars →
+ * `ui-scroll-row`; the icon em box → `ui-icon` (`.ui-icon`).
  *
  * Loaded globally from apps/web/src/styles.css (feature sections style
  * themselves against these custom properties + the --sys-* tokens).
@@ -11,35 +17,21 @@
 
 @layer sys-base {
   :root {
-    /* ── Media overlay ink (text over the hero / hiring videos) ── */
-    --landing-media-fg: #ffffff;
-    --landing-media-fg-muted: rgb(255 255 255 / 0.78);
-    --landing-media-fg-subtle: rgb(255 255 255 / 0.6);
-
-    /* ── Chrome-media controls (pills/toggles over dark video) ── */
-    --landing-chrome-fill: rgb(255 255 255 / 0.13);
-    --landing-chrome-fill-hover: rgb(255 255 255 / 0.2);
-    --landing-chrome-fill-press: rgb(255 255 255 / 0.28);
-    --landing-chrome-border: rgb(255 255 255 / 0.2);
-    --landing-chrome-blur: blur(20px);
-
-    /* ── Radius ladder — derived from the sys tokens (base 0.75rem ± step,
-       × 0.85 scale); identical computed values to v2's literals. ── */
-    --landing-radius-lg: calc(
-      var(--sys-radius-base) * var(--sys-radius-scale)
-    ); /* 10.2px — rounded-lg */
+    /* ── Radius ladder remnants — derived from the sys tokens (base 0.75rem
+       ± step, × 0.85 scale). The sanctioned scale is subtle/regular/
+       prominent/hero/capsule (--control-radius-*): -lg (≡ regular) and
+       -sheet (≡ hero) are deleted; -2xl now aliases the prominent tier.
+       Only the two genuinely distinct marketing tiers remain — fold them
+       into the sys ladder if they earn a third consumer. ── */
     --landing-radius-xl: calc(
       (var(--sys-radius-base) + 4px) * var(--sys-radius-scale)
-    ); /* 13.6px — rounded-xl / controls */
-    --landing-radius-2xl: calc(
-      (var(--sys-radius-base) + 8px) * var(--sys-radius-scale)
-    ); /* 17px — cards, tiles */
+    ); /* 13.6px — between regular (10.2px) and prominent; grid figures */
+    --landing-radius-2xl: var(
+      --control-radius-prominent
+    ); /* cards, tiles — the prominent tier (was 17px, now 17.85px) */
     --landing-radius-3xl: calc(
       (var(--sys-radius-base) + 16px) * var(--sys-radius-scale)
-    ); /* 23.8px — location card */
-    --landing-radius-sheet: calc(
-      (var(--sys-radius-base) + 20px) * var(--sys-radius-scale)
-    ); /* 27.2px — hero card, sheets */
+    ); /* 23.8px — between prominent and hero (27.2px); location card/map */
 
     /* ── Safe-area floors (v2 --safe-top/--safe-pad-top) ── */
     --landing-safe-top: env(safe-area-inset-top);
@@ -50,8 +42,12 @@
     /* ── Layout knobs (v2 --app-max-width / --container-padding) ── */
     --landing-max-width: var(--sys-container-content);
     --landing-gutter: 1rem;
-    /* Shared section block rhythm (breakpoint exceptions stay local). */
-    --landing-section-gap: 7rem;
+    /* Fixed-header clearance — one source of truth: .cr-landing__anchor's
+       scroll-margin AND the deep-link TS (via getComputedStyle) read it. */
+    --landing-header-offset: 5rem;
+    /* Shared section block rhythm — the density-aware sys token
+       (breakpoint exceptions stay local). */
+    --landing-section-gap: var(--sys-space-section);
     /* Viewport-edge → content-edge distance — a LENGTH (not %), so it means
        the same thing in padding and scroll-padding (percentages resolve
        against different boxes there, which desynchronizes snap points). */
@@ -68,35 +64,7 @@
       var(--sys-color-success) 12%,
       var(--sys-color-background)
     );
-
-    /* ── Toolbar-control contract — the design system's `tinted` treatment
-       (ui-button[data-variant='tinted']: accent 12% fill + accent ink),
-       lifted here so every landing chip/pill/trigger reads one recipe. ── */
-    --landing-toolbar-fg: var(--sys-color-accent);
-    --landing-toolbar-fill: color-mix(
-      in srgb,
-      var(--sys-color-accent) 12%,
-      transparent
-    );
-    --landing-toolbar-fill-hover: color-mix(
-      in srgb,
-      var(--sys-color-accent) 18%,
-      transparent
-    );
-    --landing-toolbar-fill-press: color-mix(
-      in srgb,
-      var(--sys-color-accent) 24%,
-      transparent
-    );
-    --landing-control-fill: color-mix(
-      in srgb,
-      var(--sys-color-accent) 12%,
-      transparent
-    );
   }
-
-  /* The tinted recipe is theme-stable — accent ink + accent fill read the
-     same in dark (the ui-button tinted variant does not flip either). */
 
   /* v2 regular-width size class: the page gutter steps to 20px from 640px up. */
   @media (width >= 40rem) {
@@ -116,51 +84,15 @@
     background-size: 160px 160px;
   }
 
-  .cr-scrollbar-hide {
-    -ms-overflow-style: none;
-    scrollbar-width: none;
-  }
-  .cr-scrollbar-hide::-webkit-scrollbar {
-    display: none;
-  }
-
-  /* Icons scale with font-size (Material Symbols ligatures); consumers set
-     `font-size` on their glyph class. The inline SVG marks (Instagram) ride
-     the same em box. */
-  .cr-icon {
-    font-size: 1rem;
-    flex-shrink: 0;
-  }
-  svg.cr-icon {
-    display: inline-block;
-    inline-size: 1em;
-    block-size: 1em;
-  }
-
   /* Section headers live in <ui-section-header> (libs/ui/patterns) — the
      old .cr-section-* trio was deleted with its last consumer. */
-
-  /* ── Oversized landing CTA (v2 landing-recipes `landingCta`) ──
-     Composes onto [uiButton]: min-height 54px, wraps long localized labels. */
-  .cr-landing-cta {
-    block-size: auto;
-    /* Oversized CTA = the prominent size tier exactly (no 54px one-off). */
-    min-block-size: var(--control-size-prominent);
-    max-inline-size: 100%;
-    padding-block: 0.625rem;
-    white-space: normal;
-    text-wrap: balance;
-    text-align: center;
-    border-radius: var(--landing-radius-xl);
-  }
-  /* Overlay/glass chrome now lives in the design system:
-     ui-button[data-variant='overlay'] (see libs/ui/controls button.css). */
 
   /* ── Media morph (barber portraits & interactive media) ──
      Circle at rest → rounded panel on hover: person imagery reads as an
      avatar until the card invites exploration. Consumers configure the
      endpoints via --media-morph-clip-rest/-hover/-rotate on the media box;
-     .morph-card is the hover scope (card root). ── */
+     .morph-card is the hover scope (card root). Stays landing-local until a
+     second consumer cluster earns a uiClipShape promotion (plan ruling). ── */
   .media-morph {
     position: relative;
     overflow: hidden;
@@ -197,42 +129,19 @@
     }
   }
 
-  /* ── Sheet floating action bar (shared by service-detail + locations
-     sheets). Skeleton + [data-visible] reveal; each sheet keeps only its
-     own row layout local. ── */
-  .sheet-bar-reveal {
-    position: absolute;
-    z-index: var(--sys-layer-popover);
-    inset: auto auto max(1rem, env(safe-area-inset-bottom)) 50%;
-    max-inline-size: calc(100% - 2.5rem);
-    opacity: 0;
-    transform: translate(-50%, calc(100% + 2rem)) scale(0.96);
-    transition:
-      opacity var(--sys-motion-duration-regular) var(--sys-motion-ease-standard),
-      transform var(--sys-motion-duration-slow)
-        var(--sys-motion-ease-emphasized);
-    pointer-events: none;
-  }
-
-  .sheet-bar-reveal[data-visible] {
-    opacity: 1;
-    transform: translate(-50%, 0) scale(1);
-    pointer-events: auto;
-  }
+  /* The sheet floating action bar is a component now
+     (cr-sheet-action-bar, shared/modal-sheet) — the old global
+     .sheet-bar-reveal class was deleted with its last consumer. */
 }
 
-/* Sheet-content entrance choreography — shared keyframes, referenced from
-   the service-detail and locations sheet component styles. Keyframes must
-   live outside component CSS: Angular's emulated encapsulation scopes
-   locally-defined @keyframes names, which is exactly the bug that left the
-   locations sheet without its entrance animation. */
 /* ── Explore affordance (capsule label + circular glyph pair) ──
    The 'Разгледай →' action on morph cards, drawn in the design system's
    button vocabulary: capsule border, 44px tap-height boxes, state-layer
    fill on card hover. Consumers set border-color/color + margins.
-   Unlayered on purpose: the icon box must out-cascade the vendor
-   `.material-symbols-rounded` display/inline-block rule (also unlayered,
-   imported earlier in styles.css). ── */
+   Landing-local by ruling (single consumer cluster — promote only if a
+   second surface adopts it). Unlayered on purpose: the icon box must
+   out-cascade the vendor `.material-symbols-rounded` display/inline-block
+   rule (also unlayered, imported earlier in styles.css). ── */
 .explore-affordance {
   display: inline-flex;
   align-items: center;
@@ -242,7 +151,9 @@
   display: inline-flex;
   align-items: center;
   min-block-size: var(--control-size-regular);
-  padding-inline: 1.1rem;
+  padding-inline: var(--sys-space-regular);
+  /* 1.5px is a deliberate signature weight — reads heavier than the 1px
+     control rings against photography without becoming a border. */
   border: 1.5px solid;
   border-radius: var(--control-radius-capsule);
   transition: background-color var(--sys-motion-duration-regular)
@@ -262,13 +173,14 @@
 .morph-card:focus-within .explore-affordance__label,
 .morph-card:hover .explore-affordance__icon,
 .morph-card:focus-within .explore-affordance__icon {
-  background-color: color-mix(
-    in srgb,
-    currentColor var(--sys-alpha-fill-hover),
-    transparent
-  );
+  background-color: var(--sys-state-layer-hover);
 }
 
+/* Sheet-content entrance choreography — shared keyframes, referenced from
+   the service-detail and locations sheet component styles. Keyframes must
+   live outside component CSS: Angular's emulated encapsulation scopes
+   locally-defined @keyframes names, which is exactly the bug that left the
+   locations sheet without its entrance animation. */
 @keyframes sheet-content-in {
   from {
     opacity: 0;

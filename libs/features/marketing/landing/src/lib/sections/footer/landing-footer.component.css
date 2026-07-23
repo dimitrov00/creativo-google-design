@@ -1,44 +1,32 @@
-/* v2 landing-footer.tsx — compact sitemap footer in the e-commerce register. */
+/* v2 landing-footer.tsx — compact sitemap footer in the e-commerce register.
+   Structure and typography ride the DS primitives (ui-divider hairlines,
+   ui-grid columns, ui-stack rhythm, plain uiText anchor rows); only the page
+   gutters, the narrow grid override, the text-link hover exception and the
+   arrow embellishment stay local. */
 
 :host {
   display: block;
-  /* Separated from the closing CTA by the hairline alone. */
-  margin-block-start: 0;
-  border-block-start: 1px solid var(--landing-border);
   background: var(--sys-color-surface);
   padding-block-end: var(--landing-safe-pad-bottom);
 }
 
+/* Gutters only — width/centering come from uiFrame's max-width column. */
 .cr-footer__inner {
-  inline-size: 100%;
-  max-inline-size: var(--landing-max-width);
-  margin-inline: auto;
   padding-inline: var(--landing-gutter);
-  padding-block-start: 3rem;
+  padding-block-start: var(--sys-space-spacious);
 }
 
-.cr-footer__grid {
-  margin-block-start: 3rem;
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  column-gap: 1.5rem;
-  row-gap: 2.5rem;
-}
-@media (min-width: 640px) {
+/* 3-up sitemap collapses to 2-up under the v2 sm breakpoint (40rem). */
+@media (width < 40rem) {
   .cr-footer__grid {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    --ui-grid-columns: 2;
   }
 }
 
-/* Column header — a nav label, not a section eyebrow: caption + secondary
-   ink, tokenized tracking (case-study §2.4). */
+/* Column header — a nav label, not a section eyebrow; the eyebrow role
+   carries font/tracking/uppercase, only the pitch stays here. */
 .cr-footer__col-header {
-  margin-block-end: 0.875rem;
-  font: var(--sys-font-caption);
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: var(--sys-tracking-caption);
-  color: var(--sys-color-secondary-label);
+  margin-block-end: var(--sys-space-compact);
 }
 
 .cr-footer__list {
@@ -47,30 +35,42 @@
   list-style: none;
   display: flex;
   flex-direction: column;
-  /* Row pitch stays ~30px visually: 44px tap boxes overlap the old gap. */
-  gap: 0;
+  gap: var(--sys-space-compact);
 }
 
-/* Sitemap link — muted 14px, lifts to foreground on hover.
-   44px tap height per HIG; the visual rhythm is unchanged. */
+/* Sitemap rows are plain text Links (SwiftUI parity), not buttons.
+   Typography/ink come from the stamped uiText modifiers (subheadline +
+   secondary); only link plumbing lives here. */
 .cr-footer__link {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  min-block-size: var(--control-size-regular);
-  font: var(--sys-font-callout);
-  color: var(--landing-muted-foreground);
+  gap: var(--sys-space-tight);
+  inline-size: fit-content;
   text-decoration: none;
-  transition: color var(--sys-motion-duration-regular)
+  transition: color var(--sys-motion-duration-instant)
     var(--sys-motion-ease-standard);
 }
-.cr-footer__link:hover {
-  color: var(--sys-color-foreground);
+
+/* The sanctioned text-link hover exception: color shift to the primary
+   foreground only — no state layer, no pill, no underline. Unlayered on
+   purpose so it out-cascades modifiers.css's layered
+   [data-foreground='secondary'] color. */
+@media (hover: hover) {
+  .cr-footer__link:hover {
+    color: var(--sys-color-foreground);
+  }
 }
 
-/* Trailing ↗ on external links — nudges on hover. */
+/* Same visible ring recipe the DS controls use. */
+.cr-footer__link:focus-visible {
+  outline: 2px solid var(--sys-color-ring);
+  outline-offset: 2px;
+  border-radius: var(--control-radius-subtle);
+}
+
+/* Trailing ↗ on external links — the single signature embellishment:
+   rides its rotation into a nudge on row hover. */
 .cr-footer__external {
-  font-size: 12px;
   transform: rotate(-45deg);
   opacity: 0.5;
   transition: transform var(--sys-motion-duration-regular)
@@ -78,20 +78,4 @@
 }
 .cr-footer__link:hover .cr-footer__external {
   transform: rotate(-45deg) translate(1px, -1px);
-}
-
-.cr-footer__social {
-  font-size: 14px;
-}
-
-.cr-footer__legal {
-  margin-block-start: 3.5rem;
-  border-block-start: 1px solid var(--landing-border);
-  padding-block-start: 1.5rem;
-}
-
-.cr-footer__legal-text {
-  font: var(--sys-font-caption);
-  letter-spacing: var(--sys-tracking-caption);
-  color: var(--landing-muted-foreground);
 }

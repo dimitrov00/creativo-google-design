@@ -1,33 +1,18 @@
 /* v2 toggleButton — ui-button chips (tinted on toolbar surfaces / overlay
-   chrome over the hero video); only the uppercase micro-label typography
-   and the square theme-glyph box stay local. */
+   chrome over the hero video). Typography, geometry and states all come
+   from button.css (base callout 600, capsule, 44px regular, uiIconOnly
+   square theme chip). Glyph sizes sit on the fixed icon ladder, NOT on
+   local font-size overrides: the locale accessory takes uiScale="small"
+   (16px) in the template, the theme glyph takes the button tier's medium
+   (20px) with no local sizing at all. */
 
 :host {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--sys-space-tight);
 }
 
-.cr-prefs__chip {
-  gap: 6px;
-  min-inline-size: var(--control-size-regular);
-  font: var(--sys-font-caption);
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.025em; /* v2 tracking-wide */
-}
-
-.cr-prefs__chip--theme {
-  aspect-ratio: 1;
-  padding-inline: 0;
-}
-
+/* De-emphasis only — sizing comes from the ladder (see above). */
 .cr-prefs__glyph {
-  font-size: 15px;
   opacity: 0.8;
-}
-
-.cr-prefs__glyph--theme {
-  font-size: 18px;
-  opacity: 1;
 }

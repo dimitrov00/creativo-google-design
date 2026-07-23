@@ -1,4 +1,6 @@
-/* v2 services-section.tsx — section frame, dealt-in carousel, portrait tiles. */
+/* v2 services-section.tsx — section frame + shelf rhythm. The carousel is
+   ui-scroll-row, the tile is cr-service-tile: geometry, snap, hidden
+   scrollbars, image frame and copy roles all live in those components. */
 
 /* No overflow-x clip here — the full-bleed carousel below must escape the
    host box; the page shell (.cr-landing) owns horizontal clipping. */
@@ -10,192 +12,21 @@
 
 /* Full-bleed scroller (design call): the scroll AREA spans the whole
    viewport so tiles glide to the screen edges un-clipped, while the
-   leading padding re-inserts exactly the viewport→content-edge distance so
-   the first tile aligns with the section title above. Percentages resolve
-   against the host's content box (the 640px column minus the gutter). */
+   gutter override re-inserts exactly the viewport→content-edge distance so
+   the first tile aligns with the section title above. */
 .cr-services__carousel {
-  display: flex;
-  gap: 1rem;
-  inline-size: 100vw;
-  margin-inline: calc(50% - 50vw);
-  padding-block: 0.75rem;
-  padding-inline: var(--landing-content-inset);
-  overflow-x: auto;
-  scroll-snap-type: x mandatory;
-  scroll-padding-inline: var(--landing-content-inset);
+  --ui-scroll-row-gutter: var(--landing-content-inset);
+  padding-block: var(--sys-space-compact);
 }
 
 .cr-services__carousel--singles {
-  margin-block-start: 2rem;
+  margin-block-start: var(--sys-space-loose);
 }
 
 .cr-services__bundles {
-  margin-block-start: 3.5rem;
+  margin-block-start: var(--sys-space-spacious);
 }
 
 .cr-services__bundles-title {
   margin: 0;
-  color: var(--sys-color-foreground);
-}
-
-.cr-services__carousel--bundles {
-  margin-block-start: 1rem;
-}
-
-.cr-services__item {
-  inline-size: 9.375rem;
-  flex-shrink: 0;
-  scroll-snap-align: start;
-}
-
-/* ── Tile ── */
-
-/* Hover/press feedback = the shared [data-interactive] state layer
-   (uiInteractive); the image zoom is this tile's one signature
-   embellishment. */
-.cr-services__tile {
-  display: flex;
-  inline-size: 100%;
-  flex-direction: column;
-  text-align: start;
-  padding: 0;
-  border: 0;
-  border-radius: var(--landing-radius-2xl);
-  background: none;
-  color: var(--sys-color-foreground);
-}
-
-.cr-services__tile:focus-visible {
-  outline: 2px solid var(--sys-color-ring);
-  outline-offset: 2px;
-}
-
-.cr-services__image-wrap {
-  position: relative;
-  display: block;
-  inline-size: 100%;
-  aspect-ratio: 4 / 5;
-}
-
-.cr-services__image-frame {
-  position: absolute;
-  inset: 0;
-  z-index: 10;
-  display: block;
-  overflow: hidden;
-  border-radius: var(--landing-radius-2xl);
-  background: var(--landing-muted);
-}
-
-.cr-services__image {
-  inline-size: 100%;
-  block-size: 100%;
-  object-fit: cover;
-  transition: transform var(--sys-motion-duration-slow)
-    var(--sys-motion-ease-standard);
-}
-.cr-services__tile:hover .cr-services__image {
-  transform: scale(1.04);
-}
-
-.cr-services__fallback {
-  display: flex;
-  inline-size: 100%;
-  block-size: 100%;
-  align-items: center;
-  justify-content: center;
-  background: linear-gradient(
-    to bottom right,
-    var(--landing-muted),
-    var(--sys-color-surface-secondary)
-  );
-  color: var(--landing-muted-foreground);
-}
-
-.cr-services__fallback-glyph {
-  font-size: 2.25rem;
-}
-
-/* Hairline inset ring keeps the tile crisp against the page. */
-.cr-services__ring {
-  pointer-events: none;
-  position: absolute;
-  inset: 0;
-  border-radius: var(--landing-radius-2xl);
-  /* Separator token instead of black-alpha — scales 4%→12% per theme, so
-     the crispness ring survives dark mode (case-study §2.7). */
-  box-shadow: inset 0 0 0 1px var(--sys-color-separator);
-}
-
-/* Bundle tell — floating brand chip on the photo corner.
-   Deliberately NOT ui-badge/ui-chip: an icon-only 28px elevated disc
-   floating over a photo (solid surface + shadow), not a tinted text
-   capsule and not interactive — only the DS tokens are shared. */
-.cr-services__bundle-chip {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  z-index: 20;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  inline-size: 28px;
-  block-size: 28px;
-  border-radius: var(--control-radius-capsule);
-  background: var(--sys-color-surface);
-  box-shadow: var(--sys-elevation-raised);
-  color: var(--sys-color-accent);
-}
-
-.cr-services__bundle-glyph {
-  font-size: 12px;
-}
-
-/* ── Copy under the photo ── */
-
-.cr-services__copy {
-  display: block;
-  margin-block-start: 0.625rem;
-  padding-inline: 2px;
-}
-
-.cr-services__name {
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  line-clamp: 2;
-  overflow: hidden;
-  font: var(--sys-font-callout);
-  font-weight: 700;
-  letter-spacing: -0.2px;
-  line-height: 1.375;
-  transition: color var(--sys-motion-duration-regular)
-    var(--sys-motion-ease-standard);
-}
-
-.cr-services__meta {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-block-start: 0.25rem;
-  font: var(--sys-font-footnote);
-  color: var(--landing-muted-foreground);
-}
-
-.cr-services__price {
-  font-variant-numeric: tabular-nums;
-  font-weight: 500;
-}
-
-.cr-services__variants {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  font: var(--sys-font-caption);
-  font-weight: 500;
-  color: var(--landing-muted-foreground);
-}
-
-.cr-services__variants-glyph {
-  font-size: 10px;
 }

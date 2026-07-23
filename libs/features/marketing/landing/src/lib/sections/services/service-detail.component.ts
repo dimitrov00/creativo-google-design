@@ -13,7 +13,10 @@ import {
 } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { TranslocoDirective } from '@jsverse/transloco';
-import { UiBadge, UiButton } from '@creativo/ui/controls';
+import { UiAvatar, UiBadge, UiButton, UiIcon } from '@creativo/ui/controls';
+import { UiGrid, UiStack } from '@creativo/ui/layout';
+import { UiRadiusDirective, UiTextDirective } from '@creativo/ui/modifiers';
+import { UiListRow, UiSheetActionBar } from '@creativo/ui/patterns';
 import { LandingContentService } from '../../content/landing-content.service';
 import {
   type BarberVm,
@@ -21,12 +24,9 @@ import {
   serviceDurationRange,
   servicePriceFrom,
 } from '../../content/landing-content';
-import { CrIcon } from '../../shared/icons/icons';
-import {
-  ModalSheetComponent,
-  type ModalSheetScrollEvent,
-} from '../../shared/modal-sheet/modal-sheet.component';
+import { ModalSheetComponent } from '../../shared/modal-sheet/modal-sheet.component';
 import { ShowcaseGalleryComponent } from '../../shared/showcase-gallery/showcase-gallery.component';
+import { CapsuleListComponent } from './capsule-list.component';
 
 /** One performer card — a barber with their own terms for this service. */
 interface PerformerVm {
@@ -42,26 +42,34 @@ interface PerformerVm {
 const CLOSE_ANIMATION_MS = 300;
 
 /**
- * The service-detail bottom sheet in the pre-migration landing's design
- * (kept by design call over v2's shell): showcase gallery on top, the
- * editorial story (eyebrow + title + summary with duration/price and an
- * inline book CTA), capsule variant chips, the bundle "includes" list in the
- * same chip language, and the performer cards — here ENRICHED with each
- * barber's own price/duration for this service — plus the old page's
- * scroll-revealed bottom booking bar. Title sizes are adapted to the sys
- * type ramp (title/title3) instead of the old oversized display cuts.
+ * The service-detail bottom sheet: the editorial story leads (title +
+ * summary with duration/price), then the showcase gallery, then capsule
+ * variant chips, the bundle "includes" list in the same chip language, and
+ * the performer rows (circular avatars + each barber's own price/duration
+ * for this service, with a grid layout alternative). The book CTA lives in
+ * the bottom action bar, docked and visible for the sheet's whole life.
+ * Title sizes are adapted to the sys type ramp (title/title3) instead of
+ * the old oversized display cuts.
  */
 @Component({
   selector: 'cr-service-detail',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
-    CrIcon,
+    CapsuleListComponent,
     ModalSheetComponent,
     RouterLink,
     ShowcaseGalleryComponent,
     TranslocoDirective,
+    UiAvatar,
     UiBadge,
     UiButton,
+    UiGrid,
+    UiIcon,
+    UiListRow,
+    UiRadiusDirective,
+    UiSheetActionBar,
+    UiStack,
+    UiTextDirective,
   ],
   templateUrl: './service-detail.component.html',
   styleUrl: './service-detail.component.css',
@@ -79,12 +87,11 @@ export class ServiceDetailComponent {
   protected readonly sheetOpen = signal(false);
   protected readonly sheetClosing = signal(false);
 
-  /** Old-page sheet chrome state — condensed toolbar title, scroll-revealed
-   *  booking bar, gallery scroll progress + expansion. */
-  protected readonly sheetHeaderCondensed = signal(false);
-  protected readonly sheetBookingBarVisible = signal(false);
-  protected readonly sheetScrollProgress = signal(0);
+  /** Sheet chrome state — gallery + performer layout modes. (The condensed
+   *  toolbar title is ui-sheet-header's own sentinel-observed behavior, and
+   *  the booking bar is always visible — zero scroll wiring here.) */
   protected readonly galleryExpanded = signal(false);
+  protected readonly performersGrid = signal(false);
 
   protected readonly duration = computed(() => {
     const range = serviceDurationRange(this.service());
@@ -121,43 +128,18 @@ export class ServiceDetailComponent {
       .filter((s): s is ServiceVm => Boolean(s));
   });
 
+  /** Display strings for the capsule lists (locale-reactive). */
+  protected readonly variantNames = computed<readonly string[]>(() =>
+    this.service().variants.map((variant) => this.content.text(variant.name)),
+  );
+
+  protected readonly includedNames = computed<readonly string[]>(() =>
+    this.includedServices().map((included) => this.content.text(included.name)),
+  );
+
   constructor() {
     afterNextRender(() => this.sheetOpen.set(true));
     this.destroyRef.onDestroy(() => window.clearTimeout(this.closeTimer));
-  }
-
-  /** Old services.page scroll wiring: the toolbar title condenses in once
-   *  the intro heading scrolls under the toolbar; the booking bar reveals
-   *  once the inline summary CTA scrolls out of view. */
-  protected onSheetScroll({ scroller, progress }: ModalSheetScrollEvent): void {
-    this.sheetScrollProgress.set(progress);
-    const sheet = scroller.closest<HTMLElement>('.modal-sheet');
-    const toolbar = sheet?.querySelector<HTMLElement>('.modal-sheet__toolbar');
-    if (!toolbar) return;
-
-    const title = scroller.querySelector<HTMLElement>(
-      '.service-sheet__intro h2',
-    );
-    if (title) {
-      const condensed =
-        title.getBoundingClientRect().bottom <=
-        toolbar.getBoundingClientRect().bottom + 4;
-      if (condensed !== this.sheetHeaderCondensed()) {
-        this.sheetHeaderCondensed.set(condensed);
-      }
-    }
-
-    const bookingCta = scroller.querySelector<HTMLElement>(
-      '.service-sheet__summary > a',
-    );
-    if (bookingCta) {
-      const visible =
-        bookingCta.getBoundingClientRect().bottom <=
-        toolbar.getBoundingClientRect().bottom;
-      if (visible !== this.sheetBookingBarVisible()) {
-        this.sheetBookingBarVisible.set(visible);
-      }
-    }
   }
 
   protected close(): void {

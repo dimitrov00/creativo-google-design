@@ -8,6 +8,8 @@ import {
   effect,
   inject,
 } from '@angular/core';
+import { UiSkeleton } from '@creativo/ui/controls';
+import { UiFrameDirective } from '@creativo/ui/modifiers';
 import { LandingHeaderComponent } from '../../header/landing-header.component';
 import { ClosingCtaComponent } from '../../sections/closing-cta/closing-cta.component';
 import { LandingFooterComponent } from '../../sections/footer/landing-footer.component';
@@ -39,6 +41,8 @@ import { ThemeService } from '../../shared/prefs/theme.service';
     LandingHeroComponent,
     LocationsComponent,
     ServicesSectionComponent,
+    UiFrameDirective,
+    UiSkeleton,
     WorkGalleryComponent,
   ],
   templateUrl: './home.page.html',
@@ -77,7 +81,18 @@ export class HomePage {
       const align = () => {
         const target = this.document.getElementById(targetId);
         if (!target) return;
-        const top = target.getBoundingClientRect().top + window.scrollY - 80;
+        // The header clearance lives once in CSS (--landing-header-offset,
+        // via .cr-landing__anchor's scroll-margin) — read the anchor's
+        // resolved value instead of re-hardcoding the offset here.
+        const offset = Number.parseFloat(
+          window
+            .getComputedStyle(target)
+            .getPropertyValue('scroll-margin-block-start') || '0',
+        );
+        const top =
+          target.getBoundingClientRect().top +
+          window.scrollY -
+          (Number.isNaN(offset) ? 0 : offset);
         window.scrollTo({ top: Math.max(0, top) });
       };
       requestAnimationFrame(() => requestAnimationFrame(align));

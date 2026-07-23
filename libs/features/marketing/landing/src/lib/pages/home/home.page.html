@@ -11,15 +11,22 @@
   <cr-landing-header />
   <cr-landing-hero />
 
-  <!-- Conversion-ordered funnel (UI/UX case study §2.9): offer first
-       (services), then proof (work, team), then logistics (locations),
-       with the recruiting pitch demoted below locations. -->
-  <main class="cr-landing__main">
-    <div id="services" class="cr-landing__anchor">
-      <cr-services-section />
-    </div>
+  <!-- Funnel order (owner call, 2026-07-23): proof leads — the work
+       gallery sits directly under the hero — then the offer (services),
+       then team, then logistics (locations), with the recruiting pitch
+       demoted below locations. -->
+  <!-- .cr-landing__main is a structural hook only (the nav menu's
+       inertSelectors target it); the centered column rides uiFrame. -->
+  <main
+    class="cr-landing__main"
+    uiFrame
+    [uiFrameMaxWidth]="'var(--landing-max-width)'"
+  >
     <div id="work" class="cr-landing__anchor">
       <cr-work-gallery />
+    </div>
+    <div id="services" class="cr-landing__anchor">
+      <cr-services-section />
     </div>
     <div id="team" class="cr-landing__anchor">
       <cr-team-showcase />
@@ -30,7 +37,14 @@
       @defer (on viewport) {
       <cr-locations />
       } @placeholder {
-      <div class="cr-landing__locations-placeholder" aria-hidden="true"></div>
+      <!-- Reserves room so the section doesn't jump on hydrate. -->
+      <ui-skeleton
+        uiAnimation="none"
+        uiRadius="regular"
+        uiFrame
+        [uiFrameHeight]="'40rem'"
+        aria-hidden="true"
+      />
       }
     </div>
     <div id="hiring" class="cr-landing__anchor">

@@ -1,53 +1,63 @@
-<div
+<!-- DS sheet primitives own the modal contract: ui-sheet is scrim +
+     placement + entrance (UiSheetBehavior handles scroll lock, focus
+     trap/restore, Escape/backdrop/drag dismissal); ui-sheet-header owns the
+     grabber / collapsing-title / close geometry. This shell only keeps the
+     landing-facing `cr-modal-sheet` API and the wide set-piece scroller. -->
+<ui-sheet
+  #sheetBehavior="uiSheetBehavior"
   class="modal-sheet"
-  [attr.data-open]="open() ? '' : null"
-  [attr.data-closing]="closing() ? '' : null"
-  [attr.data-dragging]="dragging() ? '' : null"
+  uiSize="wide"
+  uiMaterial="thin"
   [attr.id]="sheetId()"
-  role="dialog"
+  [uiOpen]="open()"
+  [uiClosing]="closing()"
+  [attr.data-closing]="closing() ? '' : null"
+  [attr.data-dragging]="sheetBehavior.dragging() ? '' : null"
   [attr.aria-labelledby]="labelledBy()"
-  [attr.aria-modal]="open() || closing() ? 'true' : null"
   [attr.aria-hidden]="open() || closing() ? null : 'true'"
-  (pointerdown)="onBackdropPointerDown($event)"
-  (pointerup)="onBackdropPointerUp($event)"
-  (keydown)="onKeydown($event)"
+  (uiDismissed)="dismissed.emit()"
 >
-  <div class="modal-sheet__surface">
-    <div class="modal-sheet__scroll" (scroll)="onScroll($event)">
-      <header
-        class="modal-sheet__toolbar"
-        (pointerdown)="onDragStart($event)"
-        (pointermove)="onDragMove($event)"
-        (pointerup)="onDragEnd($event)"
-        (pointercancel)="onDragEnd($event)"
+  <div
+    #scroller
+    class="modal-sheet__scroll"
+    (scroll)="sheetBehavior.onScroll($event)"
+  >
+    <!-- The header bar doubles as the mobile drag-to-dismiss handle —
+         pointer events are delegated to the shared UiSheetBehavior (which
+         gates the gesture to its drag media and ignores presses on the
+         close control). The `modal-sheet__toolbar` class is the legacy
+         query hook remaining consumers still measure against. -->
+    <ui-sheet-header
+      class="modal-sheet__toolbar"
+      (pointerdown)="sheetBehavior.onDragStart($event)"
+      (pointermove)="sheetBehavior.onDragMove($event)"
+      (pointerup)="sheetBehavior.onDragEnd($event)"
+      (pointercancel)="sheetBehavior.onDragEnd($event)"
+    >
+      <!-- Compact-title reveal is ui-sheet-header's own behavior now:
+           consumers label their in-content large title `uiSheetLargeTitle`
+           and the header collapses when it scrolls under the bar (no
+           per-consumer scroll math, no [titleVisible] plumbing). -->
+      <div uiTitle aria-hidden="true">
+        <ng-content select="[sheet-title]" />
+      </div>
+      <button
+        uiTrailing
+        type="button"
+        uiButton
+        uiVariant="tinted"
+        uiShape="capsule"
+        uiSize="regular"
+        [uiIconOnly]="true"
+        [attr.aria-label]="closeLabel()"
+        (click)="sheetBehavior.requestDismiss()"
       >
-        <!-- Grabber — signals the bottom sheet's drag-to-dismiss gesture
-             (mobile presentation only, see CSS). -->
-        <span class="modal-sheet__grabber" aria-hidden="true"></span>
-        <div
-          class="modal-sheet__title"
-          [attr.data-visible]="titleVisible() ? '' : null"
-          aria-hidden="true"
-        >
-          <ng-content select="[sheet-title]" />
-        </div>
-        <button
-          type="button"
-          class="modal-sheet__close"
-          [attr.aria-label]="closeLabel()"
-          (click)="requestDismiss()"
-        >
-          <span
-            class="material-symbols-rounded modal-sheet__close-glyph"
-            aria-hidden="true"
-            >close</span
-          >
-        </button>
-      </header>
+        <ui-icon uiName="sheet.close" />
+      </button>
+    </ui-sheet-header>
 
-      <ng-content />
-    </div>
-
-    <ng-content select="[sheet-overlay]" />
+    <ng-content />
   </div>
-</div>
+
+  <ng-content select="[sheet-overlay]" />
+</ui-sheet>

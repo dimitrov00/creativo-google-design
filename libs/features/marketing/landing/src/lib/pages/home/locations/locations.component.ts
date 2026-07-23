@@ -9,19 +9,31 @@ import {
   effect,
   inject,
   signal,
+  viewChild,
 } from '@angular/core';
 import { TranslocoDirective, TranslocoService } from '@jsverse/transloco';
-import { UiButton } from '@creativo/ui/controls';
+import {
+  UI_ICON_OVERRIDES,
+  UiButton,
+  UiIcon,
+  resolveUiIcon,
+} from '@creativo/ui/controls';
+import { UiDivider, UiSheet, UiStack } from '@creativo/ui/layout';
 import {
   UiInteractiveDirective,
+  UiMaterialDirective,
+  UiRadiusDirective,
   UiTextDirective,
+  UiVisuallyHiddenDirective,
 } from '@creativo/ui/modifiers';
-import { UiSectionHeader } from '@creativo/ui/patterns';
-import type { Map as MapLibreMap, Marker as MapLibreMarker } from 'maplibre-gl';
 import {
-  ModalSheetComponent,
-  type ModalSheetScrollEvent,
-} from '../../../shared/modal-sheet/modal-sheet.component';
+  UiCard,
+  UiSectionHeader,
+  UiSheetActionBar,
+  UiSheetHeader,
+  UiStatusIndicator,
+} from '@creativo/ui/patterns';
+import type { Map as MapLibreMap, Marker as MapLibreMarker } from 'maplibre-gl';
 import { ThemeService } from '../../../shared/prefs/theme.service';
 import { ShowcaseGalleryComponent } from '../../../shared/showcase-gallery/showcase-gallery.component';
 
@@ -95,13 +107,23 @@ const MLADOST_SCHEDULE: WeekSchedule = [
 @Component({
   selector: 'cr-locations',
   imports: [
-    ModalSheetComponent,
     ShowcaseGalleryComponent,
     TranslocoDirective,
     UiButton,
+    UiCard,
+    UiDivider,
+    UiIcon,
     UiInteractiveDirective,
+    UiMaterialDirective,
+    UiRadiusDirective,
     UiSectionHeader,
+    UiSheet,
+    UiSheetActionBar,
+    UiSheetHeader,
+    UiStack,
+    UiStatusIndicator,
     UiTextDirective,
+    UiVisuallyHiddenDirective,
   ],
   templateUrl: './locations.component.html',
   styleUrl: './locations.component.css',
@@ -115,12 +137,18 @@ export class LocationsComponent implements AfterViewInit {
   private readonly destroyRef = inject(DestroyRef);
   private readonly transloco = inject(TranslocoService);
   private readonly theme = inject(ThemeService);
+  // The imperative MapLibre DOM below can't host <ui-icon>, but its glyphs
+  // still resolve through the SAME semantic registry (plus any
+  // provideUiIcons overrides), so a future remap of 'location.pin' /
+  // 'location.recenter' reaches the map without touching this file.
+  private readonly iconOverrides = inject(UI_ICON_OVERRIDES, {
+    optional: true,
+  });
 
   private map: MapLibreMap | undefined;
   private markerElements: HTMLElement[] = [];
   private sheetMap: MapLibreMap | undefined;
   private sheetMarker: MapLibreMarker | undefined;
-  private closeTimer: number | undefined;
   private indicatorElements: HTMLElement[] = [];
   // `ngAfterViewInit` is async (it awaits maplibre-gl's dynamic import, then
   // waits on the map's own async 'load' event) — on a slow connection, or if
@@ -132,6 +160,17 @@ export class LocationsComponent implements AfterViewInit {
   // continuation so they bail out instead of touching an already-torn-down
   // DestroyRef.
   private destroyed = false;
+
+  // Sheet-internal landmarks — all owned by THIS template (the old
+  // implementation reached into cr-modal-sheet's private structure via
+  // `.modal-sheet` / `.modal-sheet__toolbar` querySelectors).
+  private readonly sheetScroller =
+    viewChild<ElementRef<HTMLElement>>('sheetScroller');
+  private readonly sheetTitle =
+    viewChild<ElementRef<HTMLElement>>('sheetTitle');
+  private readonly sheetHeaderBar = viewChild(UiSheetHeader, {
+    read: ElementRef,
+  });
 
   protected readonly weekdayKeys = WEEKDAY_KEYS;
   protected readonly weekOrder = WEEK_DISPLAY_ORDER;
@@ -169,7 +208,6 @@ export class LocationsComponent implements AfterViewInit {
   protected readonly sheetOpen = signal(false);
   protected readonly sheetClosing = signal(false);
   protected readonly sheetHeaderCondensed = signal(false);
-  protected readonly sheetToolbarVisible = signal(false);
   protected readonly now = signal(new Date());
   protected readonly todayIndex = computed(() => this.now().getDay());
   protected readonly activeLocation = computed(
@@ -179,9 +217,6 @@ export class LocationsComponent implements AfterViewInit {
   constructor() {
     this.destroyRef.onDestroy(() => {
       this.destroyed = true;
-      if (isPlatformBrowser(this.platformId) && this.closeTimer !== undefined) {
-        window.clearTimeout(this.closeTimer);
-      }
     });
 
     // Basemap follows the app theme — setStyle swaps tiles in place (DOM
@@ -206,6 +241,9 @@ export class LocationsComponent implements AfterViewInit {
     if (!isPlatformBrowser(this.platformId)) return;
 
     const host = this.elementRef.nativeElement;
+    // Synchronous — must run before the first await so DestroyRef
+    // registration is safe (see the `destroyed` flag note above).
+    this.setupSheetObservers();
 
     // maplibre-gl ships a UMD bundle, not a real ESM module (it builds its
     // exports object dynamically inside a factory function, so esbuild can't
@@ -265,8 +303,8 @@ export class LocationsComponent implements AfterViewInit {
       }
     }
 
-    // The sheet's own small map. Its container sits inside <cr-modal-sheet>,
-    // which hides its content via `visibility: hidden` (not `display: none`)
+    // The sheet's own small map. Its container sits inside <ui-sheet>, which
+    // this component hides via `visibility: hidden` (not `display: none`)
     // while closed, so the container already has real, stable layout
     // dimensions here regardless of whether the sheet is currently open —
     // no need to defer this until the sheet's first open.
@@ -324,7 +362,11 @@ export class LocationsComponent implements AfterViewInit {
     this.sheetOpen.set(true);
     this.sheetClosing.set(false);
     this.sheetHeaderCondensed.set(false);
-    this.sheetToolbarVisible.set(false);
+
+    // ui-sheet's behavior doesn't manage the scroller (it has none of its
+    // own) — reset OUR scroller so each open starts at the top.
+    const scroller = this.sheetScroller()?.nativeElement;
+    if (scroller) scroller.scrollTop = 0;
 
     const location = this.locations[index];
     if (!location) return;
@@ -376,16 +418,23 @@ export class LocationsComponent implements AfterViewInit {
   protected closeLocation(): void {
     if (!isPlatformBrowser(this.platformId)) return;
     if (!this.sheetOpen() || this.sheetClosing()) return;
-
+    // No timer: close completion is driven by the sheet's own exit
+    // transition (see onSheetTransitionEnd) so the CSS motion tokens stay
+    // the single source of truth for the exit duration.
     this.sheetClosing.set(true);
-    if (this.closeTimer !== undefined) window.clearTimeout(this.closeTimer);
-    const reducedMotion = window.matchMedia(
-      '(prefers-reduced-motion: reduce)',
-    ).matches;
-    this.closeTimer = window.setTimeout(
-      () => this.finishClosing(),
-      reducedMotion ? 0 : 300, // sheet exit = opacity track (deliberate, 300ms)
-    );
+  }
+
+  /**
+   * Completes the close when the ui-sheet host's scrim fade — the exit's
+   * final track on the element itself (descendant transitions bubble but
+   * are filtered out) — ends or is cancelled. Replaces the old TS-side
+   * 300ms literal that silently duplicated `--sys-motion-duration-*`.
+   */
+  protected onSheetTransitionEnd(event: TransitionEvent): void {
+    if (!this.sheetClosing()) return;
+    if (event.target !== event.currentTarget) return;
+    if (event.propertyName !== 'opacity') return;
+    this.finishClosing();
   }
 
   /**
@@ -438,45 +487,57 @@ export class LocationsComponent implements AfterViewInit {
     return `tel:${phone.replace(/[^+\d]/g, '')}`;
   }
 
-  protected onSheetScroll({ scroller }: ModalSheetScrollEvent): void {
-    const sheet = scroller.closest<HTMLElement>('.modal-sheet');
-    const title = scroller.querySelector<HTMLElement>(
-      '.location-sheet__profile h2',
-    );
-    const toolbar = sheet?.querySelector<HTMLElement>('.modal-sheet__toolbar');
-    if (title && toolbar) {
-      const condensed =
-        title.getBoundingClientRect().bottom <=
-        toolbar.getBoundingClientRect().bottom + 4;
-      if (condensed !== this.sheetHeaderCondensed()) {
-        this.sheetHeaderCondensed.set(condensed);
-      }
-    }
-
-    const heroCta = scroller.querySelector<HTMLElement>(
-      '.location-sheet__book',
-    );
-    if (heroCta && toolbar) {
-      const toolbarVisible =
-        heroCta.getBoundingClientRect().bottom <=
-        toolbar.getBoundingClientRect().bottom;
-      if (toolbarVisible !== this.sheetToolbarVisible()) {
-        this.sheetToolbarVisible.set(toolbarVisible);
-      }
-    }
-  }
-
   private toMinutes(time: string): number {
     const [hours, minutes] = time.split(':').map(Number);
     return (hours ?? 0) * 60 + (minutes ?? 0);
   }
 
   private finishClosing(): void {
-    this.closeTimer = undefined;
     this.sheetOpen.set(false);
     this.sheetClosing.set(false);
     this.sheetHeaderCondensed.set(false);
-    this.sheetToolbarVisible.set(false);
+  }
+
+  /**
+   * Drives the condensed-header state from an IntersectionObserver over
+   * this template's own headline h2 inside our scroller. The sticky header
+   * band is dead viewing area at the top of the scroller, so it's
+   * subtracted via rootMargin — "slid under the bar", not "left the
+   * scroller box", is the crossing that flips the state (same geometry the
+   * old scroll-math computed against cr-modal-sheet's toolbar). The bottom
+   * action bar needs no wiring here: it's visible for the sheet's whole
+   * open lifetime.
+   */
+  private setupSheetObservers(): void {
+    // Same availability guard as uiReveal: jsdom/older engines have no
+    // IntersectionObserver — the sheet then simply keeps its resting
+    // header state.
+    if (typeof IntersectionObserver === 'undefined') return;
+    const scroller = this.sheetScroller()?.nativeElement;
+    const title = this.sheetTitle()?.nativeElement;
+    const header = this.sheetHeaderBar()?.nativeElement as
+      HTMLElement | undefined;
+    if (!scroller || !title || !header) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          const exitedAbove =
+            !entry.isIntersecting &&
+            entry.boundingClientRect.bottom <= (entry.rootBounds?.top ?? 0);
+          if (entry.target === title) {
+            this.sheetHeaderCondensed.set(exitedAbove);
+          }
+        }
+      },
+      {
+        root: scroller,
+        rootMargin: `-${header.offsetHeight}px 0px 0px 0px`,
+        threshold: 0,
+      },
+    );
+    observer.observe(title);
+    this.destroyRef.onDestroy(() => observer.disconnect());
   }
 
   private updateActiveMarker(): void {
@@ -512,11 +573,18 @@ export class LocationsComponent implements AfterViewInit {
 
     const head = document.createElement('span');
     head.className = 'locations-map__pin-head';
+    // The sanctioned hover/press grammar (modifiers.css is global, so the
+    // attribute alone suffices on MapLibre-created DOM). Stamped on the
+    // HEAD, not the button: the ::after state layer inherits the head's
+    // 50% radius (on the button it would be an unclipped square over
+    // head + tail), and the press scale must not fight the inline
+    // `transform` MapLibre rewrites on the button every `move` event.
+    head.setAttribute('data-interactive', '');
 
     const icon = document.createElement('span');
     icon.className = 'locations-map__pin-icon material-symbols-rounded';
     icon.setAttribute('aria-hidden', 'true');
-    icon.textContent = 'storefront';
+    icon.textContent = resolveUiIcon('location.pin', this.iconOverrides);
     head.appendChild(icon);
 
     const tail = document.createElement('span');
@@ -549,6 +617,12 @@ export class LocationsComponent implements AfterViewInit {
       const indicator = document.createElement('button');
       indicator.type = 'button';
       indicator.className = 'locations-map__indicator';
+      // Shared state-layer grammar; the ::after clips to the chip's 50%
+      // radius. The grammar's :active press scale never applies here —
+      // the inline `transform` MapLibre positioning writes wins — which
+      // is the desired outcome (see locations-map.css on why transforms
+      // must not be animated on these elements).
+      indicator.setAttribute('data-interactive', '');
       indicator.setAttribute(
         'aria-label',
         this.transloco.translate('landing.location.showOnMap', {
@@ -560,7 +634,10 @@ export class LocationsComponent implements AfterViewInit {
       arrow.className =
         'locations-map__indicator-arrow material-symbols-rounded';
       arrow.setAttribute('aria-hidden', 'true');
-      arrow.textContent = 'arrow_upward';
+      arrow.textContent = resolveUiIcon(
+        'location.recenter',
+        this.iconOverrides,
+      );
       indicator.appendChild(arrow);
 
       indicator.addEventListener('click', () => this.centerOnLocation(index));

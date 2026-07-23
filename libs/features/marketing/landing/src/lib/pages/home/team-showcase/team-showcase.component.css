@@ -1,10 +1,5 @@
 :host {
   display: contents;
-  /* Legacy rhythm vars this restored (old-app) component reads — the
-     rewritten landing-shared.css no longer defines them, so they live here
-     as a local compat block (old values, verbatim). */
-  --radius-media: clamp(1.25rem, 2.2vw, 2.25rem);
-  --surface-film: #0a0a0a;
 }
 
 /* Single-column flow inside the 640px app column — header on top, then the
@@ -20,7 +15,7 @@
 
 .team__heading {
   display: block;
-  margin-block-end: 4.5rem;
+  margin-block-end: var(--sys-space-spacious);
 }
 
 /* Type metrics come from ui-section-header — only layout stays here. */
@@ -28,101 +23,63 @@
   max-inline-size: 22rem;
 }
 
-.team-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 3.5rem 1rem;
-}
-
-/* Hover/press feedback = the shared [data-interactive] state layer
-   (uiInteractive) — same grammar as the menu rows/toolbar. The morph is
-   this card's one signature embellishment. */
+/* Native <button> card — Enter/Space + focus semantics come free; the
+   chrome is entirely card-authored, so the UA button box is reset here.
+   Hover/press/focus feedback = the shared [data-interactive] grammar
+   (uiInteractive); radius = uiRadius="prominent". The media morph is this
+   card's one signature embellishment. */
 .team-card {
-  position: relative;
+  display: flex;
+  flex-direction: column;
   min-inline-size: 0;
-  border-radius: var(--landing-radius-2xl);
-}
-
-.team-card:focus-visible {
-  outline: 2px solid var(--sys-color-ring);
-  outline-offset: 2px;
+  appearance: none;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: start;
 }
 
 /* Base morph recipe lives in landing-shared.css (.media-morph /
-   .morph-card) — only this card's clip endpoints (circle at rest → rounded
-   on hover), film grade and backing surface remain here. */
+   .morph-card) — only this card's clip endpoints (circle at rest → the
+   DS prominent radius on hover, the .media-morph fallback) and backing
+   surface remain here. */
 .team-card__media {
   --media-morph-clip-rest: 50%;
-  --media-morph-clip-hover: var(--radius-media);
   --media-morph-rotate: -0.7deg;
-  --media-morph-filter-duration: var(--sys-motion-duration-slowest);
-  background: var(--surface-film);
+  background: var(--sys-color-media-canvas);
 }
 
+/* Static film grade — the hover filter shift was a second hover treatment
+   on a data-interactive surface (one-embellishment rule); the morph alone
+   carries the invitation. */
 .team-card__media img {
   filter: saturate(1.02) contrast(1.02);
 }
 
-.team-card:hover .team-card__media img,
-.team-card:focus-within .team-card__media img {
-  filter: saturate(1.08) contrast(1.02);
-}
-
 /* Cards run ~290px wide inside the column, so the stacked (former mobile)
-   copy layout is the only layout now. */
+   copy layout is the only layout now. The copy column is a ui-stack; the
+   ui-spacer before the explore affordance pins it to the row's bottom edge
+   — cards in the same grid row stay aligned WITHOUT reserving empty title
+   lines (the old h3 min-block-size hack punched a hole under one-line
+   names). */
 .team-card__copy {
-  position: relative;
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 0.55rem;
-  padding-block-start: 0.85rem;
+  flex: 1 1 auto;
+  padding-block-start: var(--sys-space-compact);
 }
 
-.team-card__copy > p {
+.team-card__copy p,
+.team-card h3 {
   margin: 0;
-  color: color-mix(
-    in srgb,
-    var(--sys-color-foreground) calc(0.52 * 100%),
-    transparent
-  );
 }
 
 .team-card h3 {
   max-inline-size: 11ch;
-  min-block-size: 2.45em;
-  margin: 0;
-}
-
-.team-card__facts {
-  display: flex;
-  justify-content: space-between;
-  gap: 0.35rem;
-  color: color-mix(
-    in srgb,
-    var(--sys-color-foreground) calc(0.55 * 100%),
-    transparent
-  );
-}
-
-.team-card__facts strong {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.25rem;
-  color: var(--sys-color-foreground);
-  font-weight: 700;
-}
-
-.team-card__facts .material-symbols-rounded {
-  font-size: 0.9em;
 }
 
 /* Base affordance recipe lives in landing-shared.css (.explore-affordance)
-   — only this card's spacing, border ink and icon glyph metrics remain
-   here. */
-.team-card__action {
-  margin-block-start: 0.2rem;
-}
-
+   — only this card's border ink and glyph size remain here. */
 .team-card__explore-label,
 .team-card__explore-icon {
   border-color: color-mix(
@@ -134,93 +91,53 @@
 }
 
 .team-card__explore-icon {
-  /* Glyph box math, not copy — subheadline supplies the size, but the icon
-     family and 1:1 box must be restated after the `font` shorthand's reset
-     (this selector out-specifies the Material Symbols class). */
+  /* Glyph SIZE only — subheadline supplies it via the shorthand; the icon
+     family, fill and 1:1 box math are ui-icon's job now. */
   font: var(--sys-font-subheadline);
-  font-family: 'Material Symbols Rounded';
-  line-height: 1;
 }
 
+/* The gallery pads its own inline gutters (cr-showcase-gallery owns
+   --modal-sheet-safe in both modes) — padding here too doubled them.
+   Bottom clearance derives from the action-bar contract instead of a
+   hardcoded gap: content must scroll clear of the docked booking bar. */
 .barber-sheet {
-  padding: 1.25rem var(--modal-sheet-safe) 6rem;
+  padding-block: var(--sys-space-comfortable)
+    var(--ui-sheet-action-bar-clearance);
 }
 
+/* Vertical rhythm inside the profile = the stack gap; the old per-element
+   margin ladder (2rem/0.7rem/1.4rem/1rem/0.9rem) is gone. */
 .barber-sheet__profile {
   max-inline-size: 34rem;
-  padding-block-start: 0.5rem;
+  margin-inline: var(--modal-sheet-safe);
+  padding-block-start: var(--sys-space-compact);
+}
+
+.barber-sheet__profile > * {
+  margin: 0;
 }
 
 .barber-sheet__gallery {
   display: block;
-  margin-block-start: clamp(2.5rem, 4.5vw, 4rem);
-}
-
-.barber-sheet__role {
-  margin: 2rem 0 0;
+  margin-block-start: var(--sys-space-spacious);
 }
 
 .barber-sheet__profile h2 {
   max-inline-size: 8ch;
-  margin: 0.7rem 0 0;
 }
 
 .barber-sheet__specialty,
 .barber-sheet__about {
   max-inline-size: 30rem;
-  color: color-mix(
-    in srgb,
-    var(--sys-color-foreground) calc(0.58 * 100%),
-    transparent
-  );
-}
-
-.barber-sheet__specialty {
-  margin: 1.8rem 0 0;
-}
-
-.barber-sheet__about {
-  margin: 1rem 0 0;
-}
-
-.barber-sheet__rating {
-  display: inline-flex;
-  gap: 0.4rem;
-  align-items: center;
-  margin-block-start: 1.5rem;
-  color: color-mix(
-    in srgb,
-    var(--sys-color-foreground) calc(0.52 * 100%),
-    transparent
-  );
-}
-
-.barber-sheet__rating .material-symbols-rounded {
-  color: var(--sys-color-foreground);
-  /* Glyph box math, not copy — subheadline supplies the size, but the icon
-     family and 1:1 box must be restated after the `font` shorthand's reset
-     (this selector out-specifies the Material Symbols class). */
-  font: var(--sys-font-subheadline);
-  font-family: 'Material Symbols Rounded';
-  line-height: 1;
-}
-
-.barber-sheet__rating strong {
-  color: var(--sys-color-foreground);
-}
-
-/* Geometry comes from ui-button[data-spread]; only the margin is local. */
-.barber-sheet__profile > a {
-  margin-block-start: 2rem;
 }
 
 @media (max-width: 760px) {
   .barber-sheet {
-    padding: 0 var(--modal-sheet-safe) 6rem;
+    padding-block: 0 var(--ui-sheet-action-bar-clearance);
   }
 
   .barber-sheet__profile {
-    padding-block-start: 1rem;
+    padding-block-start: var(--sys-space-regular);
   }
 }
 

@@ -5,15 +5,30 @@ import {
   Injector,
   PLATFORM_ID,
   afterNextRender,
-  computed,
   inject,
   input,
   model,
 } from '@angular/core';
+import { UiAsyncImage, UiButton, UiIcon } from '@creativo/ui/controls';
+import { UiGrid, UiScrollRow } from '@creativo/ui/layout';
+import { UiRadiusDirective } from '@creativo/ui/modifiers';
+
+/** Mirrors --sys-motion-duration-cinematic / --sys-motion-ease-entrance —
+ *  WAAPI options cannot read CSS custom properties, so both are restated
+ *  here (same provenance pattern as work-gallery's EASE const). */
+const MORPH_DURATION = 900;
+const MORPH_EASE = 'cubic-bezier(0.16, 1, 0.3, 1)';
 
 @Component({
   selector: 'cr-showcase-gallery',
-  imports: [],
+  imports: [
+    UiAsyncImage,
+    UiButton,
+    UiGrid,
+    UiIcon,
+    UiRadiusDirective,
+    UiScrollRow,
+  ],
   templateUrl: './showcase-gallery.component.html',
   styleUrl: './showcase-gallery.component.css',
   host: {
@@ -30,18 +45,10 @@ export class ShowcaseGalleryComponent {
   readonly ariaLabel = input.required<string>();
   readonly gridViewLabel = input.required<string>();
   readonly carouselViewLabel = input.required<string>();
-  readonly scrollProgress = input(0);
   readonly showToggle = input(true);
   readonly expanded = model(false);
 
-  protected readonly activeIndex = computed(() => {
-    const imageCount = this.images().length;
-    if (imageCount === 0) return -1;
-
-    const progress = Math.min(1, Math.max(0, this.scrollProgress()));
-    return Math.min(imageCount - 1, Math.floor(progress * imageCount));
-  });
-
+  /** FLIP morph between the strip and the grid layouts. */
   protected toggleLayout(): void {
     const expanding = !this.expanded();
     if (!isPlatformBrowser(this.platformId)) {
@@ -64,24 +71,21 @@ export class ShowcaseGalleryComponent {
           const last = figure.getBoundingClientRect();
           if (!first || last.width === 0 || last.height === 0) return;
 
-          const active = index === this.activeIndex();
           figure.animate(
             [
               {
-                opacity: expanding ? (active ? 1 : 0) : 1,
                 transform: `translate(${first.left - last.left}px, ${first.top - last.top}px) scale(${first.width / last.width}, ${first.height / last.height})`,
                 transformOrigin: 'top left',
               },
               {
-                opacity: expanding || active ? 1 : 0,
                 transform: 'translate(0, 0) scale(1)',
                 transformOrigin: 'top left',
               },
             ],
             {
-              duration: 820,
+              duration: MORPH_DURATION,
               delay: index * 55,
-              easing: 'cubic-bezier(0.16, 1, 0.3, 1)',
+              easing: MORPH_EASE,
             },
           );
         });

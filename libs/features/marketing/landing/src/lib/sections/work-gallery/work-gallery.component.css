@@ -1,4 +1,7 @@
-/* v2 work-gallery.tsx — sticky stage + translated strip. */
+/* v2 work-gallery.tsx — sticky stage + translated strip. Chrome (buttons,
+   modal contract, state layers, SR utilities) lives in the design system;
+   only the scroll-stage geometry and the section's signature image zoom
+   stay local. */
 
 :host {
   display: block;
@@ -6,17 +9,6 @@
 
 .cr-gallery {
   position: relative;
-}
-
-/* Screen-reader-only section heading — the section otherwise exposes no
-   accessible name in the document outline. */
-.cr-visually-hidden {
-  position: absolute;
-  inline-size: 1px;
-  block-size: 1px;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
 }
 
 .cr-gallery__stage {
@@ -33,111 +25,74 @@
   left: 0;
   display: flex;
   align-items: center;
-  gap: 1rem;
+  gap: var(--sys-space-regular);
   padding-inline-start: var(--landing-gutter);
   will-change: transform;
 }
 
-/* Card — per-shot aspect box at 52vh, resting at its drift offset. */
+/* Card — native button, per-shot aspect box at 52vh, resting at its drift
+   offset. Hover/press/focus come from the shared data-interactive grammar
+   (uiInteractive); the image zoom below is the section's ONE signature
+   embellishment. Drift rides the `translate` property so the state layer's
+   :active press scale (a `transform`) composes instead of clobbering it. */
 .cr-gallery__card {
   flex-shrink: 0;
+  display: block;
+  padding: 0;
+  border: 0;
+  background: none;
   block-size: 52vh;
-  cursor: pointer;
-  perspective: 900px;
-  transform: translateY(var(--drift, 0px));
-  transition: scale var(--sys-motion-duration-deliberate)
-    var(--sys-motion-ease-emphasized);
-}
-.cr-gallery__card--motion:hover {
-  scale: 1.03;
-}
-.cr-gallery__card:focus-visible {
-  outline: 2px solid var(--sys-color-ring);
-  outline-offset: 2px;
-}
-
-.cr-gallery__figure {
-  position: relative;
-  margin: 0;
-  block-size: 100%;
-  overflow: hidden;
   border-radius: var(--landing-radius-2xl);
-  background: var(--landing-muted);
-  box-shadow: var(--sys-elevation-overlay);
-  transform: rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg));
-  transform-style: preserve-3d;
-  transition: transform var(--sys-motion-duration-regular)
-    var(--sys-motion-ease-standard);
+  translate: 0 var(--drift, 0px);
 }
 
-.cr-gallery__image {
-  block-size: 100%;
+/* Media frame — ui-async-image owns the placeholder surface, load fade and
+   inset hairline ring; local rules keep only the tile radius tier and
+   elevation. */
+.cr-gallery__figure {
   inline-size: 100%;
-  object-fit: cover;
-  transition: transform var(--sys-motion-duration-slowest) ease-out;
+  block-size: 100%;
+  border-radius: var(--landing-radius-2xl);
+  box-shadow: var(--sys-elevation-overlay);
 }
-.cr-gallery__card--motion:hover .cr-gallery__image {
+
+/* Signature embellishment: slow image zoom on hover. The transition list
+   restates the DS opacity fade so it keeps working alongside the local
+   transform zoom. */
+.cr-gallery__figure .ui-async-image__image {
+  transition:
+    transform var(--sys-motion-duration-slowest) var(--sys-motion-ease-standard),
+    opacity var(--sys-motion-duration-regular) var(--sys-motion-ease-standard);
+}
+.cr-gallery__card--motion:hover .ui-async-image__image {
   transform: scale(1.06);
 }
 
-/* Shimmer gloss — radial highlight tracking --gx/--gy. */
-.cr-gallery__gloss {
-  pointer-events: none;
-  position: absolute;
-  inset: 0;
-  border-radius: var(--landing-radius-2xl);
-  opacity: 0;
-  transition: opacity var(--sys-motion-duration-regular)
-    var(--sys-motion-ease-standard);
-  background: radial-gradient(
-    circle at var(--gx, 50%) var(--gy, 50%),
-    rgb(255 255 255 / 0.13) 0%,
-    transparent 55%
-  );
-}
-.cr-gallery__card--motion:hover .cr-gallery__gloss {
-  opacity: 1;
-}
-
-/* Hairline inset ring keeps the frame crisp against the page. */
-.cr-gallery__ring {
-  pointer-events: none;
-  position: absolute;
-  inset: 0;
-  border-radius: var(--landing-radius-2xl);
-  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.07);
-}
-
-/* Gradient grounding the caption + progress bar. */
+/* Gradient grounding the caption + progress bar. This zone carries
+   FOREGROUND ink over the page surface (not media), so the grade is built
+   from --sys-color-background — the uiOverlay scaffold supplies the
+   positioning/hit-transparency, the token-mixed stops stay local. */
 .cr-gallery__fade {
-  pointer-events: none;
-  position: absolute;
-  inset-inline: 0;
-  bottom: 0;
-  block-size: 8rem;
   background: linear-gradient(
     to top,
     color-mix(in srgb, var(--sys-color-background) 85%, transparent),
-    transparent
+    transparent 8rem
   );
 }
 
+/* Stage layers stack by source order (strip → fade → caption → progress) —
+   no z-index ladder needed inside this local stacking context. */
 .cr-gallery__caption-slot {
   pointer-events: none;
   position: absolute;
-  bottom: 52px;
+  bottom: calc(var(--sys-space-comfortable) + var(--sys-space-loose));
   left: var(--landing-gutter);
-  z-index: 10;
   max-inline-size: 75%;
 }
 
+/* Title tier rides the uiText/uiFont markup — only the entrance stays. */
 .cr-gallery__caption {
   margin: 0;
-  /* Title tier — captions are wayfinding labels, not section headlines
-     (case-study item 25). */
-  font: var(--sys-font-title);
-  letter-spacing: var(--sys-tracking-title);
-  color: var(--sys-color-foreground);
   animation: cr-caption-in var(--sys-motion-duration-slow)
     var(--sys-motion-ease-emphasized) both;
 }
@@ -158,133 +113,64 @@
 /* Progress bar — h-[3px] accent fill on a border track. */
 .cr-gallery__progress {
   position: absolute;
-  bottom: 1.5rem;
+  bottom: var(--sys-space-comfortable);
   left: 50%;
-  z-index: 10;
   block-size: 3px;
   inline-size: 6rem;
   transform: translateX(-50%);
-  border-radius: 9999px;
+  border-radius: var(--control-radius-capsule);
   background: var(--landing-border);
 }
 
 .cr-gallery__progress-fill {
   block-size: 100%;
   inline-size: 100%;
-  border-radius: 9999px;
+  border-radius: var(--control-radius-capsule);
   background: var(--sys-color-accent);
   transform: scaleX(0);
   transform-origin: left;
 }
 
-/* ── Lightbox ── */
-.cr-gallery__lightbox {
-  position: fixed;
-  inset: 0;
-  z-index: calc(var(--sys-layer-header) - 10); /* below the fixed header */
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  animation: cr-lightbox-fade var(--sys-motion-duration-regular)
-    var(--sys-motion-ease-standard) both;
-}
+/* ── Lightbox — ui-sheet owns scrim/entrance/layering/modal behavior ── */
 
-.cr-gallery__lightbox-backdrop {
-  position: absolute;
-  inset: 0;
-  border: 0;
+/* Chromeless set-piece surface: the photo IS the floating card
+   (elevation-floating + on-media ring), so the sheet surface sheds its
+   dialog chrome and shrink-wraps the image. */
+.cr-gallery__lightbox .ui-sheet__surface {
+  position: relative;
+  inline-size: fit-content;
+  max-inline-size: none;
   padding: 0;
-  cursor: pointer;
-  /* Standard media scrim (#000 @ 70%) — the blur carries the remaining
-     separation the old 85% black provided (case-study §2.7). */
-  background: var(--sys-color-media-scrim);
-  -webkit-backdrop-filter: blur(12px);
-  backdrop-filter: blur(12px);
-}
-
-/* Visible close control — the invisible full-screen backdrop button is not
-   a discoverable affordance on its own (case-study item 25). Modal-sheet
-   close idiom, translated to the media-ink ramp because the scrim below is
-   black in both themes. */
-.cr-gallery__lightbox-close {
-  position: absolute;
-  top: max(1rem, env(safe-area-inset-top));
-  right: 1rem;
-  z-index: 20;
-  inline-size: var(--control-size-regular);
-  block-size: var(--control-size-regular);
-  display: grid;
-  place-items: center;
-  padding: 0;
-  border: 0;
-  border-radius: 50%;
-  background: var(--landing-chrome-fill);
-  color: var(--landing-media-fg);
-  cursor: pointer;
-  transition: transform var(--sys-motion-duration-deliberate)
-    var(--sys-motion-ease-emphasized);
-}
-
-.cr-gallery__lightbox-close:hover {
-  background: var(--landing-chrome-fill-hover);
-}
-
-.cr-gallery__lightbox-close:active {
-  transform: scale(var(--sys-press-scale-control));
-}
-
-.cr-gallery__lightbox-close:focus-visible {
-  outline: 2px solid var(--landing-media-fg);
-  outline-offset: 2px;
-}
-
-.cr-gallery__lightbox-close-glyph {
-  font-size: 1.25rem;
+  background: transparent;
+  box-shadow: none;
+  border-radius: var(--landing-radius-3xl);
 }
 
 .cr-gallery__lightbox-image {
-  position: relative;
-  z-index: 10;
+  display: block;
   inline-size: 88vw;
   max-inline-size: 24rem;
   border-radius: var(--landing-radius-3xl);
   object-fit: cover;
-  box-shadow:
-    0 32px 80px rgb(0 0 0 / 0.7),
-    0 0 0 1px rgb(255 255 255 / 0.1);
-  animation: cr-lightbox-pop var(--sys-motion-duration-deliberate)
-    var(--sys-motion-ease-emphasized) both;
+  box-shadow: var(--sys-elevation-floating);
 }
 
-@keyframes cr-lightbox-fade {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
+/* Overlay glass close button — chrome comes from uiButton; only the
+   set-piece placement stays local. */
+.cr-gallery__lightbox-close {
+  position: absolute;
+  inset-block-start: var(--sys-space-regular);
+  inset-inline-end: var(--sys-space-regular);
 }
 
-@keyframes cr-lightbox-pop {
-  from {
-    opacity: 0;
-    transform: translateY(28px) scale(0.86);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
-}
+/* Glyph size comes from the DS icon-only tier in button.css (1.25rem at
+   the 44px box) — no local re-declaration. */
 
 @media (prefers-reduced-motion: reduce) {
-  .cr-gallery__caption,
-  .cr-gallery__lightbox,
-  .cr-gallery__lightbox-image {
+  .cr-gallery__caption {
     animation: none;
   }
-  .cr-gallery__image,
-  .cr-gallery__figure,
-  .cr-gallery__card {
+  .cr-gallery__figure .ui-async-image__image {
     transition: none;
   }
 }

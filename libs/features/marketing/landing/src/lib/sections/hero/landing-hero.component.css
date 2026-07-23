@@ -1,7 +1,12 @@
 /* Hero — closing-CTA register (case study §3): the inset video card fills
    the viewport column; a centered title/paragraph/capsule-CTA trio sits
    mid-card over a center vignette; the locale/theme toggles ride a bottom
-   overlay toolbar inside the media (SwiftUI bottomBar placement). */
+   overlay row inside the media (SwiftUI bottomBar placement).
+
+   Layering, typography, scrim, media loading, and entrance motion all come
+   from DS primitives (ui-stack z-axis, ui-section-header[uiOnMedia],
+   uiOverlay="vignette", ui-ambient-video, uiReveal) — only the card's
+   art-directed geometry and the scroll-exit parallax live here. */
 
 :host {
   display: flex;
@@ -13,9 +18,10 @@
   background: var(--sys-color-background);
 }
 
-/* ── The video card ── */
+/* ── The film card (z-stack: media → vignette → copy → toolbar) ── */
 
 .cr-hero__card {
+  /* Anchors the uiOverlay vignette (absolute-inset scaffold). */
   position: relative;
   flex: 1;
   overflow: hidden;
@@ -24,109 +30,39 @@
   /* The card reclaims the old CTA strip's height; only the safe-area floor
      stays below it. */
   margin-block-end: var(--landing-safe-pad-bottom);
-  border-radius: var(--landing-radius-sheet);
-  background: #0a0a0a;
+  background: var(--sys-color-media-canvas);
 }
 
-.cr-hero__video {
-  position: absolute;
-  inset: 0;
-  block-size: 100%;
-  inline-size: 100%;
-  object-fit: cover;
-  opacity: 0;
-  /* Settle: the film eases from a slight zoom to rest as it fades in. */
-  transform: scale(1.04);
-  transition:
-    opacity 1s var(--sys-motion-ease-standard),
-    transform var(--sys-motion-duration-cinematic)
-      var(--sys-motion-ease-entrance);
-}
-.cr-hero__video[data-loaded] {
+/* Art-directed film grade: the ambient footage rides at half strength over
+   the media-canvas letterbox so the on-media copy keeps contrast. */
+.cr-hero__media {
   opacity: 0.5;
-  transform: scale(1);
 }
 
-.cr-hero__poster {
-  position: absolute;
-  inset: 0;
-  block-size: 100%;
-  inline-size: 100%;
-  object-fit: cover;
-  opacity: 0.6;
-}
-
-/* Center vignette — text sits mid-card now, so weight lives in the middle
-   instead of the old bottom-heavy ramp. */
-.cr-hero__scrim {
-  position: absolute;
-  inset: 0;
-  background: radial-gradient(
-    ellipse 120% 90% at 50% 55%,
-    rgb(0 0 0 / 0.55) 0%,
-    rgb(0 0 0 / 0.45) 45%,
-    rgb(0 0 0 / 0.2) 100%
-  );
-}
+/* ── Centered copy layer ── */
 
 .cr-hero__content {
-  position: absolute;
-  inset: 0;
-  z-index: 10;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
   justify-content: center;
+  padding-inline: var(--sys-space-comfortable);
 }
 
-/* ── Centered trio (mirrors .cr-closing measures) ── */
-
-.cr-hero__copy {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0;
-  max-inline-size: 25rem;
-  padding-inline: 1.75rem;
-  text-align: center;
-  color: var(--landing-media-fg);
-}
-
-.cr-hero__heading {
-  margin: 0;
-  font: var(--sys-font-extraLargeTitle);
-  letter-spacing: var(--sys-tracking-largeTitle);
-  color: var(--landing-media-fg);
-}
-
-.cr-hero__subtitle {
-  margin: 1rem 0 0;
-  max-inline-size: 24rem;
-  font: var(--sys-font-body);
-  color: var(--landing-media-fg-muted);
-}
-
-.cr-hero__button {
-  margin-block-start: 2rem;
-  padding-inline: 2rem;
-}
-
-/* ── Bottom overlay toolbar (prefs) — bottom-left inside the media ── */
+/* ── Bottom overlay row (prefs) — bottom-left inside the media ── */
 
 .cr-hero__toolbar {
-  position: absolute;
-  inset-inline-start: 1.75rem;
-  inset-block-end: max(1.75rem, var(--landing-safe-bottom));
-  justify-content: flex-start;
-  padding-inline: 0;
-  min-block-size: 0;
+  place-self: end start;
+  margin-inline-start: var(--sys-space-comfortable);
+  margin-block-end: max(
+    var(--sys-space-comfortable),
+    var(--landing-safe-bottom)
+  );
 }
 
 /* ── Scroll exit — compositor-only depth parallax (zero JS; the video is
    deliberately NOT parallaxed: object-fit cover repaints). ── */
 @supports (animation-timeline: view()) {
   @media (prefers-reduced-motion: no-preference) {
-    .cr-hero__content {
+    .cr-hero__content,
+    .cr-hero__toolbar {
       animation: cr-hero-exit linear both;
       animation-timeline: view();
       animation-range: exit 0% exit 60%;

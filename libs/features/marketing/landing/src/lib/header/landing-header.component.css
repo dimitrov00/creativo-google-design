@@ -1,4 +1,8 @@
-/* v2 appHeader recipe — hero float ⟷ hero solid. */
+/* v2 appHeader recipe — hero float ⟷ hero solid. The bar itself is a
+   ui-toolbar (layout, 52px prominent height, tone overlay ⟷ default); the
+   outer host keeps only what a design-system toolbar cannot know: fixed
+   positioning, the translateY float geometry, and the full-bleed solid
+   chrome (the toolbar column is narrower than the viewport). */
 
 .cr-header {
   position: fixed;
@@ -20,38 +24,40 @@
       var(--sys-motion-ease-standard);
 }
 
-/* Float — transparent bar inset over the hero card; the 44px gutters are
-   art-directed to line up with the hero card's own padding (v2 px-11). */
+/* Float — transparent bar inset over the hero card (float geometry). */
 .cr-header[data-view='float'] {
   padding-block: 1.25rem 0;
   border-bottom: 1px solid transparent;
   background: transparent;
 }
 
-/* Solid — toolbar surface with a hairline + soft shadow. */
+/* Solid — full-bleed toolbar surface with a hairline + soft shadow. */
 .cr-header[data-view='solid'] {
-  padding-block: 0.75rem;
+  padding-block: var(--sys-space-compact);
   border-bottom: 1px solid var(--landing-border);
   background: var(--sys-color-background);
   box-shadow: var(--sys-elevation-raised);
 }
 
+/* The inner ui-toolbar rides the centered app column in BOTH views (v2
+   `width: lg`); height (52px prominent), row layout and tone chrome come
+   from toolbar.css. */
 .cr-header__inner {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  block-size: 3.5rem;
   inline-size: 100%;
+  max-inline-size: var(--landing-max-width);
   margin-inline: auto;
-  transition: padding var(--sys-motion-duration-deliberate)
-    var(--sys-motion-ease-standard);
+  /* The tone flip (overlay ⟷ default) would snap the toolbar surface while
+     the outer shell cross-fades — ease both in lockstep. */
+  transition:
+    padding var(--sys-motion-duration-deliberate)
+      var(--sys-motion-ease-standard),
+    background-color var(--sys-motion-duration-deliberate)
+      var(--sys-motion-ease-standard);
 }
 
-/* Float keeps the app column too (v2 `width: lg` → inner max-w-app in BOTH
-   views) — the art-directed 44/60px gutters line up with the hero card's own
-   padding inside that column, not with the viewport edge. */
+/* Float — the art-directed 44/60px gutters line up with the hero card's
+   own padding inside the column, not with the viewport edge. */
 .cr-header[data-view='float'] .cr-header__inner {
-  max-inline-size: var(--landing-max-width);
   padding-inline: 2.75rem;
 }
 @media (min-width: 640px) {
@@ -61,47 +67,13 @@
 }
 
 .cr-header[data-view='solid'] .cr-header__inner {
-  max-inline-size: var(--landing-max-width);
   padding-inline: var(--landing-gutter);
+  /* The outer host paints the full-bleed solid chrome (background,
+     hairline, shadow); the toolbar's own column-width hairline would
+     double it 8px up, so it defers to the shell's. */
+  border-block-end: 0;
 }
 
 .cr-header__brand {
   display: inline-flex;
-}
-
-.cr-header__logo {
-  block-size: 1.5rem;
-}
-
-.cr-header__cluster {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-/* Login pill — ui-button (tinted on the solid bar / overlay glass over the
-   hero); only the uppercase micro-label typography stays local. */
-.cr-header__login {
-  gap: 6px;
-  font: var(--sys-font-caption);
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.025em; /* v2 tracking-wide */
-}
-
-.cr-header__login-glyph {
-  font-size: 14px;
-  opacity: 0.8;
-}
-
-/* Menu trigger — icon-only ui-button; only the square box stays local. */
-.cr-header__trigger {
-  inline-size: var(--control-size-regular);
-  padding-inline: 0;
-  overflow: hidden;
-}
-
-/* While the menu is open — pressed-tier tinted fill. */
-.cr-header__trigger[data-open] {
-  background: var(--landing-toolbar-fill-press);
 }

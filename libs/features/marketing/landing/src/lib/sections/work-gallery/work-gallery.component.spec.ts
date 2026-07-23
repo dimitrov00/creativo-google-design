@@ -19,37 +19,50 @@ describe('WorkGalleryComponent', () => {
     const fixture = await render();
     const host: HTMLElement = fixture.nativeElement;
 
-    const cards = host.querySelectorAll('.cr-gallery__card');
+    const cards = host.querySelectorAll('button.cr-gallery__card');
     expect(cards.length).toBe(6);
-    expect(host.querySelectorAll('.cr-gallery__image').length).toBe(6);
+    // Cards ride the shared interactive-surface grammar.
+    expect(cards[0]?.hasAttribute('data-interactive')).toBe(true);
+    expect(
+      host.querySelectorAll('ui-async-image.cr-gallery__figure').length,
+    ).toBe(6);
     // Art direction rides each card (aspect box per shot).
     expect((cards[0] as HTMLElement).style.aspectRatio).toBe('4/5');
     expect(
-      host.querySelector('[data-testid="work-gallery-caption"]'),
-    ).not.toBeNull();
+      host
+        .querySelector('[data-testid="work-gallery-caption"]')
+        ?.getAttribute('data-font'),
+    ).toBe('title');
     expect(host.querySelector('.cr-gallery__progress')).not.toBeNull();
   });
 
-  it('opens the lightbox when a card is clicked and closes on backdrop click', async () => {
+  it('opens the ui-sheet lightbox when a card is clicked and closes from the close control', async () => {
     const fixture = await render();
     const host: HTMLElement = fixture.nativeElement;
 
-    (host.querySelector('.cr-gallery__card') as HTMLElement).click();
-    fixture.detectChanges();
     const lightbox = host.querySelector(
       '[data-testid="work-gallery-lightbox"]',
     );
     expect(lightbox).not.toBeNull();
+    expect(lightbox?.hasAttribute('data-open')).toBe(false);
+
+    (host.querySelector('.cr-gallery__card') as HTMLElement).click();
+    fixture.detectChanges();
+    expect(lightbox?.hasAttribute('data-open')).toBe(true);
     expect(
       lightbox?.querySelector('.cr-gallery__lightbox-image'),
     ).not.toBeNull();
 
-    lightbox
-      ?.querySelector<HTMLButtonElement>('.cr-gallery__lightbox-backdrop')
-      ?.click();
+    const close = lightbox?.querySelector<HTMLButtonElement>(
+      '[data-testid="work-gallery-lightbox-close"]',
+    );
+    // The close control is a DS overlay icon button, not hand-rolled chrome.
+    expect(close?.classList.contains('ui-button')).toBe(true);
+    expect(close?.getAttribute('data-variant')).toBe('overlay');
+    expect(close?.hasAttribute('data-icon-only')).toBe(true);
+    close?.click();
     fixture.detectChanges();
-    expect(
-      host.querySelector('[data-testid="work-gallery-lightbox"]'),
-    ).toBeNull();
+    expect(lightbox?.hasAttribute('data-open')).toBe(false);
+    expect(lightbox?.querySelector('.cr-gallery__lightbox-image')).toBeNull();
   });
 });

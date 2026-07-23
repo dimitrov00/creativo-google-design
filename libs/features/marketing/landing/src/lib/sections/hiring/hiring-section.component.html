@@ -1,45 +1,51 @@
 <ng-container *transloco="let t">
   <section class="cr-hiring__section">
-    <div crFadeUp>
-      <div
-        #card
-        class="cr-hiring__card cr-squircle"
-        (mousemove)="onMouseMove($event)"
-        (mouseleave)="onMouseLeave()"
-      >
-        <!-- ── Video ── -->
-        <video
-          class="cr-hiring__video"
-          [attr.autoplay]="reducedMotion() ? null : ''"
-          muted
-          loop
-          playsinline
+    <ui-stack
+      #card
+      uiAxis="z"
+      uiReveal="fade-up"
+      class="cr-hiring__card cr-squircle"
+      (mousemove)="onMouseMove($event)"
+      (mouseleave)="onMouseLeave()"
+    >
+      <!-- ── Ambient film (poster fallback, reduced-motion, crossfade all
+           owned by ui-ambient-video) ── -->
+      <ui-ambient-video
+        class="cr-hiring__video"
+        uiSrc="/welcome.mp4"
+        uiPoster="/work/landing-poster.jpg"
+      />
+
+      <!-- ── Static overlays ── -->
+      <div uiOverlay="scrim-media" aria-hidden="true"></div>
+      <div class="cr-hiring__warmth" uiOverlay="plain" aria-hidden="true"></div>
+
+      <!-- ── Cursor spotlight ── -->
+      @if (!reducedMotion()) {
+        <div
+          class="cr-hiring__spotlight"
+          uiOverlay="plain"
           aria-hidden="true"
-          poster="/work/landing-poster.jpg"
-        >
-          <source src="/welcome.mp4" type="video/mp4" />
-        </video>
+        ></div>
+      }
 
-        <!-- ── Static overlays ── -->
-        <div class="cr-hiring__shade" aria-hidden="true"></div>
-        <div class="cr-hiring__warmth" aria-hidden="true"></div>
+      <!-- Film grain -->
+      <div
+        class="cr-hiring__grain cr-grain"
+        uiOverlay="plain"
+        aria-hidden="true"
+      ></div>
 
-        <!-- ── Cursor spotlight ── -->
-        @if (!reducedMotion()) {
-          <div class="cr-hiring__spotlight" aria-hidden="true"></div>
-        }
-
-        <!-- Film grain -->
-        <div class="cr-hiring__grain cr-grain" aria-hidden="true"></div>
-
-        <!-- ── Content ── -->
-        <div class="cr-hiring__content">
-          <div crFadeUp [crFadeUpDelay]="0.05">
-            <p class="cr-hiring__eyebrow">{{ t('landing.hiring.eyebrow') }}</p>
-          </div>
+      <!-- ── Content ── -->
+      <div class="cr-hiring__content">
+        <ui-section-header uiAlign="center" [uiOnMedia]="true">
+          <p uiEyebrow uiReveal="fade-up" [uiRevealDelay]="50">
+            {{ t('landing.hiring.eyebrow') }}
+          </p>
 
           <h2
             #title
+            uiTitle
             class="cr-hiring__title"
             [attr.data-motion]="motionReady() ? '' : null"
             [attr.data-revealed]="revealed() ? '' : null"
@@ -51,30 +57,31 @@
             }
           </h2>
 
-          <div crFadeUp [crFadeUpDelay]="0.42">
-            <p class="cr-hiring__subtitle">
-              {{ t('landing.hiring.subtitle') }}
-            </p>
-          </div>
+          <p uiLede uiReveal="fade-up" [uiRevealDelay]="420">
+            {{ t('landing.hiring.subtitle') }}
+          </p>
+        </ui-section-header>
 
-          <div crFadeUp [crFadeUpDelay]="0.58">
-            <div class="cr-hiring__actions">
-              <a
-                uiButton
-                uiVariant="overlay"
-                uiSize="regular"
-                class="cr-landing-cta cr-hiring__cta"
-                href="https://instagram.com/creativo.barbershop"
-                target="_blank"
-                rel="noopener"
-              >
-                {{ t('landing.hiring.cta') }}
-                <cr-icon name="arrow_right_alt" class="cr-hiring__cta-glyph" />
-              </a>
-            </div>
-          </div>
+        <div
+          class="cr-hiring__actions"
+          uiReveal="fade-up"
+          [uiRevealDelay]="580"
+        >
+          <a
+            uiButton
+            uiVariant="overlay"
+            uiSize="prominent"
+            uiShape="capsule"
+            class="cr-hiring__cta"
+            href="https://instagram.com/creativo.barbershop"
+            target="_blank"
+            rel="noopener"
+          >
+            {{ t('landing.hiring.cta') }}
+            <ui-icon uiName="hiring.apply" />
+          </a>
         </div>
       </div>
-    </div>
+    </ui-stack>
   </section>
 </ng-container>

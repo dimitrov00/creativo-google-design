@@ -13,7 +13,9 @@
     position: absolute;
     inset: 0;
     overflow: hidden;
-    border-radius: clamp(1.4rem, 2.4vw, 2.4rem);
+    /* ONE landing-ladder value for every map surface in this section —
+       matches .locations__map / .location-sheet__map-pane. */
+    border-radius: var(--landing-radius-3xl);
     pointer-events: none;
   }
 
@@ -30,6 +32,11 @@
     border: 2px solid var(--sys-color-foreground);
     background: var(--sys-color-background);
     color: var(--sys-color-foreground);
+    /* Deliberate font context for the arrow glyph — the unlayered glyph
+       rule at the bottom of this file makes the icon ride THIS size
+       (ui-icon's "glyph inherits the current font" contract, restated for
+       MapLibre-created DOM). */
+    font: var(--sys-font-body);
     opacity: 0;
     pointer-events: none;
     /* `transform` is deliberately excluded — its position is recomputed on
@@ -58,21 +65,20 @@
     color: var(--sys-color-background);
   }
 
+  /* Typography (size/fill) lives in the UNLAYERED glyph block at the
+     bottom of this file — the vendor Material Symbols class is unlayered
+     and would beat any layered size rule here. */
   .locations-map__indicator-arrow {
     display: block;
-    /* Glyph box math, not copy — body supplies the size, but the icon family
-       and 1:1 box must be restated after the `font` shorthand's reset (this
-       selector out-specifies the Material Symbols class). */
-    font: var(--sys-font-body);
-    font-family: 'Material Symbols Rounded';
-    line-height: 1;
   }
 
   .locations-map__pin {
     display: flex;
     flex-direction: column;
     align-items: center;
-    inline-size: 2.9rem;
+    /* HIG 44px control token — matches the indicator chip so both map
+       controls sit on the sanctioned 36/44/52 scale. */
+    inline-size: var(--control-size-regular);
     padding: 0;
     border: 0;
     background: transparent;
@@ -86,16 +92,23 @@
        effect isn't attempted here. */
   }
 
+  /* Hover/press feedback = the shared [data-interactive] state layer —
+     locations.component.ts stamps the attribute on the HEAD (not the
+     button) so the ::after overlay inherits this 50% radius and the press
+     scale never fights MapLibre's inline transform on the button. */
   .locations-map__pin-head {
     position: relative;
     z-index: 1;
     display: grid;
     place-items: center;
-    inline-size: 2.9rem;
+    inline-size: var(--control-size-regular);
     aspect-ratio: 1;
     border-radius: 50%;
     border: 2px solid var(--sys-color-foreground);
     background: var(--sys-color-background);
+    /* Deliberate font context for the pin glyph — see the unlayered glyph
+       block at the bottom of this file. */
+    font: var(--sys-font-callout);
     transition:
       background-color var(--sys-motion-duration-deliberate)
         var(--sys-motion-ease-standard),
@@ -105,14 +118,10 @@
         var(--sys-motion-ease-standard);
   }
 
+  /* Typography (size/fill) lives in the UNLAYERED glyph block at the
+     bottom of this file — see .locations-map__indicator-arrow above. */
   .locations-map__pin-icon {
     color: var(--sys-color-foreground);
-    /* Glyph box math, not copy — callout supplies the size, but the icon
-       family and 1:1 box must be restated after the `font` shorthand's reset
-       (this selector out-specifies the Material Symbols class). */
-    font: var(--sys-font-callout);
-    font-family: 'Material Symbols Rounded';
-    line-height: 1;
     transition: color var(--sys-motion-duration-deliberate)
       var(--sys-motion-ease-standard);
   }
@@ -150,4 +159,28 @@
   .maplibregl-ctrl-attrib a {
     color: var(--sys-color-secondary-label);
   }
+}
+
+/* UNLAYERED on purpose — the icon.css precedent, restated for MapLibre-created
+   glyph spans (which can't be <ui-icon>: MapLibre owns this DOM). The vendor
+   `material-symbols/rounded.css` is imported UNLAYERED in each app's
+   styles.css and hard-codes `.material-symbols-rounded { font-size: 24px }`;
+   unlayered author CSS beats ALL layered CSS, so any size rule inside
+   @layer sys-components above silently loses to that 24px. These rules live
+   outside the layer and out-specify the vendor's single class (0,2,0 > 0,1,0):
+
+   - `font-size: 1em` — the glyph rides the deliberate font context its
+     chrome parent sets in the layered block above (callout on the pin head,
+     body on the indicator chip), same contract as ui-icon.
+   - full `font-variation-settings` — the house look is FILLED Material
+     Symbols Rounded; the vendor sheet leaves FILL at 0 (outlined), which is
+     exactly how the raw spans rendered before this block existed. */
+.locations-map__pin-head .locations-map__pin-icon,
+.locations-map__indicator .locations-map__indicator-arrow {
+  font-size: 1em;
+  line-height: 1;
+  font-variation-settings:
+    'FILL' 1,
+    'wght' 400,
+    'opsz' 24;
 }

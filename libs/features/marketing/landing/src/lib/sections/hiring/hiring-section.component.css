@@ -9,39 +9,24 @@
   padding-block-start: var(--landing-section-gap);
 }
 
+/* The card is a ui-stack z-axis (ZStack) — layers ride grid-area 1/1 and
+   the [uiOverlay] scaffolds; only the clip, radius and film backing are
+   local. */
 .cr-hiring__card {
   position: relative;
   overflow: hidden;
-  border-radius: 32px;
-  background: #050505;
+  border-radius: var(--control-radius-hero);
+  background: var(--sys-color-media-canvas);
   -webkit-tap-highlight-color: transparent;
 }
 
+/* Art direction: the film sits dimmed under the scrim/warmth grades. */
 .cr-hiring__video {
-  position: absolute;
-  inset: 0;
-  block-size: 100%;
-  inline-size: 100%;
-  object-fit: cover;
   opacity: 0.38;
-}
-
-/* Dark diagonal shade — heavier toward the lower right. */
-.cr-hiring__shade {
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(
-    145deg,
-    rgb(0 0 0 / 0.68) 0%,
-    rgb(5 2 0 / 0.82) 55%,
-    rgb(0 0 0 / 0.93) 100%
-  );
 }
 
 /* Warm amber breath in the top-left corner. */
 .cr-hiring__warmth {
-  position: absolute;
-  inset: 0;
   background: radial-gradient(
     ellipse 70% 55% at 5% 20%,
     color-mix(in srgb, var(--sys-color-accent) 10%, transparent) 0%,
@@ -52,9 +37,6 @@
 /* Cursor spotlight — follows --spot-x/--spot-y set from mousemove; the
    spring-animated opacity of v2 approximated by a CSS transition. */
 .cr-hiring__spotlight {
-  pointer-events: none;
-  position: absolute;
-  inset: 0;
   opacity: 0;
   transition: opacity var(--sys-motion-duration-deliberate)
     var(--sys-motion-ease-standard);
@@ -69,46 +51,36 @@
 }
 
 .cr-hiring__grain {
-  pointer-events: none;
-  position: absolute;
-  inset: 0;
   opacity: 0.14;
   mix-blend-mode: overlay;
 }
 
 .cr-hiring__content {
   position: relative;
-  padding: 5rem 2rem;
+  padding: calc(var(--sys-space-spacious) + var(--sys-space-loose))
+    var(--sys-space-loose);
   text-align: center;
 }
 @media (min-width: 640px) {
   .cr-hiring__content {
-    padding: 6rem 3.5rem;
+    padding: calc(2 * var(--sys-space-spacious))
+      calc(var(--sys-space-comfortable) + var(--sys-space-loose));
   }
 }
 
-/* Overline eyebrow — the sanctioned recipe (--sys-font-eyebrow), accent
-   ink like every other section eyebrow. */
-.cr-hiring__eyebrow {
-  margin: 0;
-  font: var(--sys-font-eyebrow);
-  letter-spacing: var(--sys-tracking-eyebrow);
-  text-transform: uppercase;
-  color: var(--sys-color-accent);
-}
-
-/* Headline — flex + column-gap so word spacing is layout, not collapsed
-   whitespace (v2 WordReveal). Line-height comes from the token (0.98). */
+/* Type metrics and on-media ink come from ui-section-header — only the
+   word flex layout (v2 WordReveal: word spacing is layout, not collapsed
+   whitespace) and the art-directed measures stay local. */
 .cr-hiring__title {
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
   column-gap: 0.28em;
-  margin: 1rem auto 0;
-  max-inline-size: 340px;
-  font: var(--sys-font-extraLargeTitle);
-  letter-spacing: var(--sys-tracking-largeTitle);
-  color: var(--landing-media-fg);
+  max-inline-size: 21.25rem;
+}
+
+.cr-hiring__content [uilede] {
+  max-inline-size: 18.75rem;
 }
 
 .cr-hiring__word {
@@ -116,7 +88,9 @@
 }
 
 /* Per-word blur + lift reveal — hidden only once the JS gate confirms the
-   observer will fire; latched [data-revealed] plays the stagger. */
+   observer will fire; latched [data-revealed] plays the stagger. The
+   section's documented signature set-piece (kept local by design); the
+   run rides the --sys-motion ladder. */
 .cr-hiring__title[data-motion] .cr-hiring__word {
   opacity: 0;
 }
@@ -139,24 +113,8 @@
   }
 }
 
-.cr-hiring__subtitle {
-  margin: 1rem auto 0;
-  max-inline-size: 300px;
-  font: var(--sys-font-body);
-  color: var(--landing-media-fg-muted);
-}
-
 .cr-hiring__actions {
-  margin-block-start: 2.5rem;
-}
-
-.cr-hiring__cta {
-  inline-size: fit-content;
-}
-
-.cr-hiring__cta-glyph {
-  font-size: 16px;
-  margin-inline-start: 8px;
+  margin-block-start: var(--sys-space-loose);
 }
 
 @media (prefers-reduced-motion: reduce) {

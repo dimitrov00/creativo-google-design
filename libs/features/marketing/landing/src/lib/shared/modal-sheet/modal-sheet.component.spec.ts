@@ -18,7 +18,7 @@ describe('ModalSheetComponent', () => {
 
     expect(host.querySelector('#test-sheet[role="dialog"]')).not.toBeNull();
     expect(host.querySelector('[aria-labelledby="test-title"]')).not.toBeNull();
-    expect(host.querySelector('.modal-sheet__surface')).not.toBeNull();
+    expect(host.querySelector('.ui-sheet__surface')).not.toBeNull();
     expect(host.querySelector('.modal-sheet__scroll')).not.toBeNull();
     expect(
       host.querySelector('button[aria-label="Close details"]'),

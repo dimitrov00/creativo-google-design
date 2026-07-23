@@ -91,11 +91,13 @@
       color var(--sys-motion-duration-regular) var(--sys-motion-ease-standard);
   }
 
-  /* Anchor default — never for anchors acting as design-system controls:
-     sys-base is layer-registered AFTER sys-components (landing-shared.css
-     import order), so a bare `a` rule here would beat every a[uiButton]
-     variant's ink. */
-  a:not(.ui-button) {
+  /* Anchor default — only for bare content links, never for anchors acting
+     as design-system controls (uiButton, uiListRow, anything uiInteractive)
+     or carrying an explicit uiForeground stamp: sys-base is layer-registered
+     AFTER sys-components (landing-shared.css import order), so a bare `a`
+     rule here would beat every DS control's ink and every [data-foreground]
+     modifier. */
+  a:not(.ui-button):not([data-foreground]):not([data-interactive]) {
     color: var(--sys-color-accent);
   }
 }

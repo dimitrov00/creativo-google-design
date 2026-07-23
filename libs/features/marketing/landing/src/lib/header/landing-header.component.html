@@ -5,27 +5,31 @@
     [attr.data-view]="isSolid() ? 'solid' : 'float'"
     [style.transform]="headerTransform()"
   >
-    <div class="cr-header__inner">
+    <ui-toolbar
+      class="cr-header__inner"
+      [uiTone]="isSolid() ? 'default' : 'overlay'"
+    >
       <a routerLink="/" class="cr-header__brand" aria-label="Creativo">
         <img
           [src]="logoWhite() ? '/logo-white.svg' : '/logo-black.svg'"
           alt="Creativo"
-          class="cr-header__logo"
+          uiFrame
+          [uiFrameHeight]="'1.5rem'"
         />
       </a>
 
-      <div class="cr-header__cluster">
+      <ui-stack uiAxis="horizontal" uiAlign="center" uiGap="tight">
         @if (!isAuthed()) {
           <a
             routerLink="/auth"
             [queryParams]="{ redirect: '/account' }"
             uiButton
             [uiVariant]="isSolid() ? 'tinted' : 'overlay'"
+            uiSize="regular"
             uiShape="capsule"
-            class="cr-header__login"
             data-testid="landing-login-pill"
           >
-            <cr-icon name="lock" class="cr-header__login-glyph" />
+            <ui-icon uiName="auth.locked" />
             {{ t('landing.nav.login') }}
           </a>
         }
@@ -33,11 +37,12 @@
         <button
           type="button"
           uiButton
-          [uiVariant]="isSolid() || menuOpen() ? 'tinted' : 'overlay'"
+          [uiVariant]="isSolid() ? 'tinted' : 'overlay'"
+          uiSize="regular"
           uiShape="capsule"
-          class="cr-header__trigger"
+          [uiIconOnly]="true"
+          [uiSelected]="menuOpen()"
           data-testid="nav-menu-trigger"
-          [attr.data-open]="menuOpen() ? '' : null"
           [attr.aria-label]="
             menuOpen() ? t('landing.nav.close') : t('landing.nav.menu')
           "
@@ -46,8 +51,8 @@
         >
           <cr-menu-icon [open]="menuOpen()" />
         </button>
-      </div>
-    </div>
+      </ui-stack>
+    </ui-toolbar>
   </header>
 
   <cr-landing-menu

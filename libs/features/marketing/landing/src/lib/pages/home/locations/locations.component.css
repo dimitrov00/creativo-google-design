@@ -44,53 +44,45 @@
   display: grid;
   align-content: start;
   gap: 0;
-  margin: 0;
+  /* Cards carry symmetric block padding (see .location-card); the negative
+     start margin swallows the first card's padding so the list still sits
+     flush under the map without a one-off first-child exception. */
+  margin: calc(-1 * var(--sys-space-comfortable)) 0 0;
   padding: 0;
   list-style: none;
 }
 
 /* Hover/press feedback = the shared [data-interactive] state layer
-   (uiInteractive) — same grammar as the menu rows/toolbar. */
+   (uiInteractive) — same grammar as the menu rows/toolbar; the focus ring
+   comes from the same grammar. Row layout + radius live on the template
+   (ui-stack + uiRadius). */
 .location-card {
-  display: flex;
-  align-items: flex-start;
-  gap: 1rem;
-  position: relative;
   min-inline-size: 0;
-  padding-block: 1.5rem;
-  border-radius: var(--landing-radius-2xl);
+  /* Symmetric on every card — an asymmetric first-child exception made the
+     first card's uiInteractive hover layer visibly shorter than its
+     siblings' (one hover grammar, one geometry). */
+  padding-block: var(--sys-space-comfortable);
   /* No divider rule — this was the only section using borders between
      items; the padding rhythm alone separates cards, matching how every
      other section breathes (owner call, 2026-07-21). */
-}
-
-.locations__list > li:first-child .location-card {
-  padding-block-start: 0;
 }
 
 .location-card__icon {
   display: grid;
   flex: 0 0 auto;
   place-items: center;
-  inline-size: 2.75rem;
+  inline-size: var(--control-size-regular);
   aspect-ratio: 1;
   border-radius: 50%;
   background: color-mix(
     in srgb,
-    var(--sys-color-foreground) calc(0.06 * 100%),
+    var(--sys-color-foreground) var(--sys-alpha-fill),
     transparent
   );
   color: var(--sys-color-secondary-label);
-  /* Glyph box math, not copy — body supplies the size, but the icon family
-     and 1:1 box must be restated after the `font` shorthand's reset (this
-     selector out-specifies the Material Symbols class). */
-  font: var(--sys-font-body);
-  font-family: 'Material Symbols Rounded';
-  line-height: 1;
-  transition:
-    background-color var(--sys-motion-duration-deliberate)
-      var(--sys-motion-ease-standard),
-    color var(--sys-motion-duration-deliberate) var(--sys-motion-ease-standard);
+  /* Glyph size comes from uiScale="small" in the template (fixed icon
+     ladder — the card is interactive, so its glyph must sit on a rung);
+     only the badge box geometry is local. */
 }
 
 .location-card__copy {
@@ -98,92 +90,53 @@
   min-inline-size: 0;
 }
 
-/* Explicit ring for keyboard focus — the hover/:focus-within accent color
-   stays consistent across input modalities (case-study §2.5). */
-.location-card:focus-visible {
-  outline: 2px solid var(--sys-color-ring);
-  outline-offset: 2px;
-}
-
-.location-card__copy h3 {
-  margin: 0;
-  transition: color var(--sys-motion-duration-deliberate)
-    var(--sys-motion-ease-standard);
-}
-
+.location-card__copy h3,
 .location-card__copy p {
-  margin: 0.35rem 0 0;
-  color: var(--sys-color-secondary-label);
+  margin: 0;
 }
 
-.location-card__status {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  margin: 0.55rem 0 0;
-  color: var(--sys-color-destructive);
-}
-
-.location-card__status[data-open] {
-  color: var(--sys-color-success);
-}
-
-.location-card__status-dot {
-  inline-size: 0.4rem;
-  aspect-ratio: 1;
-  border-radius: 50%;
-  background: currentColor;
-}
-
+/* Muted inline link — resting ink comes from the caption font role
+   (secondary label); the ONE shared hover treatment lifts it to full
+   foreground (shared with the sheet's phone line below). */
 .location-card__phone {
   display: inline-flex;
   align-items: center;
-  gap: 0.35rem;
-  /* HIG 44px tap height (block margin compensates the visual rhythm). */
+  gap: var(--sys-space-tight);
+  /* HIG 44px tap height (the stack gap compensates the visual rhythm). */
   min-block-size: var(--control-size-regular);
   margin: 0;
-  color: color-mix(in srgb, var(--sys-color-foreground) 55%, transparent);
   text-decoration: none;
   transition: color var(--sys-motion-duration-deliberate)
     var(--sys-motion-ease-standard);
 }
 
-.location-card__phone .material-symbols-rounded {
-  font-size: 0.95em;
-}
+/* Phone glyph is inline-text mode — unscaled, it rides the caption font
+   (icon README size policy: no local em-fraction micro-sizes). */
 
 .location-card__phone:hover,
-.location-card__phone:focus-visible {
+.location-card__phone:focus-visible,
+.location-sheet__phone-line:hover,
+.location-sheet__phone-line:focus-visible {
   color: var(--sys-color-foreground);
-}
-
-.location-card__phone:focus-visible {
-  outline: 2px solid var(--sys-color-ring);
-  outline-offset: 2px;
 }
 
 .location-card__action {
   display: flex;
-  margin-block-start: 0.9rem;
+  margin-block-start: var(--sys-space-compact);
 }
 
+/* Non-interactive affordance label (the CARD is the control — no nested
+   control, so this stays aria-hidden), drawn with sanctioned control
+   geometry: compact 36px box, regular radius, separator hairline. */
 .location-card__explore-label {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-block-size: 2.4rem;
-  min-inline-size: 5.6rem;
-  padding-inline: 0.9rem;
-  border: 1px solid
-    color-mix(
-      in srgb,
-      var(--sys-color-foreground) calc(0.22 * 100%),
-      transparent
-    );
-  border-radius: 0.75rem;
+  min-block-size: var(--control-size-compact);
+  padding-inline: var(--sys-space-regular);
+  border: 1px solid var(--sys-color-separator);
+  border-radius: var(--control-radius-regular);
   color: var(--sys-color-foreground);
-  transition: border-color var(--sys-motion-duration-deliberate)
-    var(--sys-motion-ease-standard);
 }
 
 /* The explore affordance is a hover-era desktop flourish — on touch (and
@@ -195,14 +148,14 @@
   }
 }
 
-/* ui-button (bordered capsule) supplies the chrome + hover/press — only
-   the icon-only square box stays local. */
+/* ui-button (bordered capsule, icon-only) supplies chrome + geometry +
+   hover/press — only the flex share stays local. */
 .location-card__maps {
   flex: 0 0 auto;
-  inline-size: var(--control-size-regular);
-  aspect-ratio: 1;
-  padding-inline: 0;
 }
+
+/* Glyph size comes from the DS icon-only tier in button.css (1.25rem at
+   the 44px box) — no local re-declaration. */
 
 .locations__map {
   /* A definite `block-size` (not `min-block-size`) is load-bearing, not a
@@ -216,17 +169,75 @@
   position: relative;
   overflow: hidden;
   block-size: clamp(18rem, 52svh, 28rem);
-  border-radius: clamp(1.4rem, 2.4vw, 2.4rem);
+  /* ONE landing-ladder value for every map surface in this section —
+     shared with the sheet map pane and locations-map.css's indicator
+     container. */
+  border-radius: var(--landing-radius-3xl);
   background: var(--sys-color-surface);
 }
 
+/* ── Sheet shell ──────────────────────────────────────────────────────
+   ui-sheet owns scrim/entrance/modal behavior (UiSheetBehavior); the two
+   host rules below are the set-piece's only shell overrides. */
+
+/* The DS bottom placement pins the surface inline-start once the viewport
+   outgrows the wide container — the host is the flex container we own, so
+   centering is one line here. */
+ui-sheet.location-detail-sheet {
+  justify-content: center;
+}
+
+/* Restates cr-modal-sheet's closed-state contract: ui-sheet only fades
+   (opacity/pointer-events), which would leave the closed sheet's controls
+   in the tab order and its content exposed to AT. `visibility` (not
+   `display: none`) also keeps real layout dimensions for the sheet map
+   (see locations.component.ts). data-closing is stamped by this template
+   so the exit transition isn't cut short. */
+ui-sheet.location-detail-sheet:not([data-open]):not([data-closing]) {
+  visibility: hidden;
+}
+
+/* Full-bleed set-piece: the DS surface carries comfortable padding meant
+   for simple drawer content; this sheet is edge-to-edge (fluid gutters +
+   full-width gallery), so the scroller cancels that padding and owns the
+   box. Height is viewport-capped so the sticky header and the floating
+   action bar always stay reachable. */
+.location-sheet__scroller {
+  /* Fluid sheet gutter carried over from cr-modal-sheet so the gallery
+     (which pads itself with --modal-sheet-safe in both modes) and the
+     sheet headings stay on one gutter; the sheets-misc convergence owns
+     its future consolidation. */
+  --modal-sheet-safe: clamp(1.25rem, 4vw, 4rem);
+  margin: calc(-1 * var(--sys-space-comfortable));
+  block-size: min(90svh, 58rem);
+  /* Vertical only — wide content (galleries, long unbroken strings) must
+     clip rather than turn the whole sheet into a horizontal scroller. */
+  overflow-x: clip;
+  overflow-y: auto;
+  overflow-anchor: none;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  /* Matches the surface's top rounding so the sticky header and scrolled
+     content clip inside the corner. */
+  border-start-start-radius: var(--control-radius-prominent);
+  border-start-end-radius: var(--control-radius-prominent);
+}
+
+/* Compact title rides ui-sheet-header's [uiTitle] slot; the caption font
+   role's secondary ink is lifted back to full foreground here. */
 .location-sheet__compact-title {
   margin: 0;
   color: var(--sys-color-foreground);
 }
 
+/* Inline gutters live on the layout/heading blocks, not the sheet root —
+   the gallery pads itself (cr-showcase-gallery owns --modal-sheet-safe),
+   so a root gutter would double where the gallery already has one (and
+   previously indented the gallery heading twice on desktop). Bottom
+   clearance comes from the action bar's published contract instead of
+   hand-encoding the bar's height. */
 .location-sheet {
-  padding: 1.25rem var(--modal-sheet-safe) 8rem;
+  padding: var(--sys-space-regular) 0 var(--ui-sheet-action-bar-clearance);
 }
 
 .location-sheet__layout {
@@ -234,17 +245,21 @@
   grid-template-columns: minmax(0, 1.05fr) minmax(20rem, 0.78fr);
   gap: clamp(2.5rem, 4.5vw, 5rem);
   align-items: start;
+  margin-inline: var(--modal-sheet-safe);
 }
 
 .location-sheet__map-pane {
   /* Fixed `block-size`, not `min-block-size` — see .locations__map above for
      why: a floor lets a MapLibre-observed container grow via feedback with
-     its own ResizeObserver instead of staying put. */
+     its own ResizeObserver instead of staying put. Sticky offset = the
+     52px sheet-header bar plus one comfortable step. */
   position: sticky;
-  inset-block-start: 5.6rem;
+  inset-block-start: calc(
+    var(--control-size-prominent) + var(--sys-space-comfortable)
+  );
   overflow: hidden;
   block-size: min(70svh, 40rem);
-  border-radius: clamp(1.4rem, 2.4vw, 2rem);
+  border-radius: var(--landing-radius-3xl);
   background: var(--sys-color-surface);
 }
 
@@ -255,194 +270,97 @@
 }
 
 .location-sheet__profile {
-  padding-block-start: 0.5rem;
+  padding-block-start: var(--sys-space-compact);
 }
 
 .location-sheet__intro h2 {
   max-inline-size: 10ch;
   margin: 0;
+  /* Names the headline for ui-sheet-header's scroll-linked compact-title
+     reveal (the timeline scope comes from the DS's
+     `.ui-sheet__surface:has(.ui-sheet-header)` rule); the [data-visible]
+     flip driven from the IntersectionObserver stays as the fallback. */
+  view-timeline-name: --ui-sheet-headline;
 }
 
 .location-sheet__address {
   display: flex;
   align-items: flex-start;
-  gap: 0.5rem;
+  gap: var(--sys-space-compact);
   max-inline-size: 24rem;
-  margin: 1rem 0 0;
-  color: var(--sys-color-secondary-label);
+  margin: var(--sys-space-regular) 0 0;
 }
 
-.location-sheet__address .material-symbols-rounded {
+/* Glyph is inline-text mode — unscaled, it rides the footnote font (icon
+   README size policy); only the no-shrink guard is local. */
+.location-sheet__address .ui-icon {
   flex: 0 0 auto;
-  color: color-mix(in srgb, var(--sys-color-foreground) 55%, transparent);
-  font-size: 1.05em;
 }
 
+/* Muted inline link — resting ink from the caption font role; hover
+   shares the one muted-link rule with the card phone above. */
 .location-sheet__phone-line {
   display: inline-flex;
   align-items: center;
-  gap: 0.5rem;
-  margin: 0.6rem 0 0;
-  color: color-mix(in srgb, var(--sys-color-foreground) 55%, transparent);
+  gap: var(--sys-space-compact);
+  margin: var(--sys-space-compact) 0 0;
   font-variant-numeric: tabular-nums;
   text-decoration: none;
   transition: color var(--sys-motion-duration-deliberate)
     var(--sys-motion-ease-standard);
 }
 
-.location-sheet__phone-line .material-symbols-rounded {
-  font-size: 0.95em;
-}
+/* Phone glyph is inline-text mode — unscaled, it rides the caption font
+   (icon README size policy: no local em-fraction micro-sizes). */
 
-.location-sheet__phone-line:hover,
-.location-sheet__phone-line:focus-visible {
-  color: var(--sys-color-foreground);
-}
+/* The intro carries NO action cluster — all three sheet actions (call,
+   directions, book) live solely in the bottom ui-sheet-action-bar. */
 
-.location-sheet__hero-actions {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  margin-block-start: 1.75rem;
-}
-
-/* Geometry comes from ui-button[data-spread]; only the flex share is
-   local. */
-.location-sheet__book {
-  flex: 1 1 auto;
-}
-
-.location-sheet__book .material-symbols-rounded {
-  font-size: 1.3em;
-}
-
-.location-sheet__icon-action {
-  display: grid;
-  flex: 0 0 auto;
-  place-items: center;
-  inline-size: 3.25rem;
-  aspect-ratio: 1;
-  border-radius: 50%;
-  border: 1.5px solid
-    color-mix(
-      in srgb,
-      var(--sys-color-foreground) calc(0.16 * 100%),
-      transparent
-    );
-  color: var(--sys-color-foreground);
-  text-decoration: none;
-  transition: border-color var(--sys-motion-duration-deliberate)
-    var(--sys-motion-ease-standard);
-}
-
-.location-sheet__icon-action .material-symbols-rounded {
-  font-size: 1.3em;
-}
-
-.location-sheet__icon-action:hover,
-.location-sheet__icon-action:focus-visible {
-  border-color: var(--sys-color-foreground);
-}
-
+/* Surface chrome (fill, raised elevation, prominent radius, regular
+   padding, column gap) comes from ui-card; the status/week hairline is the
+   ui-divider in the template (spaced by the card's own gap) — only the
+   block rhythm stays local. */
 .location-sheet__status-card {
-  margin-block-start: 2.25rem;
-  padding: 1.4rem 1.5rem;
-  border: 1px solid
-    color-mix(
-      in srgb,
-      var(--sys-color-foreground) calc(0.06 * 100%),
-      transparent
-    );
-  border-radius: 1.25rem;
-  background: var(--sys-color-surface);
-  box-shadow:
-    0 1.5rem 3rem rgb(0 0 0 / 0.05),
-    0 0.25rem 0.6rem rgb(0 0 0 / 0.04);
-}
-
-/* Deliberately NOT ui-badge: this is a flat status line (leading dot +
-   text + muted detail), not a tinted capsule — the badge control has no
-   leading-dot slot and its tinted fill would add a pill where the design
-   wants plain text inside the status card. */
-.location-sheet__status {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.55rem;
-  color: var(--sys-color-destructive);
-}
-
-.location-sheet__status[data-open] {
-  color: var(--sys-color-success);
-}
-
-.location-sheet__status[data-soon] {
-  color: var(--sys-color-warning);
-}
-
-.location-sheet__status-dot {
-  inline-size: 0.55rem;
-  aspect-ratio: 1;
-  border-radius: 50%;
-  background: currentColor;
-}
-
-.location-sheet__status-detail {
-  color: color-mix(in srgb, var(--sys-color-foreground) 55%, transparent);
-}
-
-.location-sheet__status[data-soon] .location-sheet__status-detail {
-  color: var(--sys-color-warning);
-  font-weight: 600;
+  margin-block-start: var(--sys-space-loose);
 }
 
 .location-sheet__week {
   display: grid;
-  gap: 0.15rem;
-  margin: 1.1rem 0 0;
-  padding: 1.1rem 0 0;
+  margin: 0;
+  padding: 0;
   list-style: none;
-  border-block-start: 1px solid
-    color-mix(
-      in srgb,
-      var(--sys-color-foreground) calc(0.07 * 100%),
-      transparent
-    );
 }
 
 .location-sheet__day {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: 1rem;
-  min-block-size: 2.75rem;
-  padding: 0.4rem 0.65rem;
-  border-radius: 0.75rem;
-  color: var(--sys-color-secondary-label);
+  gap: var(--sys-space-regular);
+  min-block-size: var(--control-size-regular);
+  padding: var(--sys-space-tight) var(--sys-space-compact);
+  border-radius: var(--control-radius-regular);
 }
 
+/* Today's row: segment-selected rung of the alpha ladder over accent; the
+   bold weight rides the row's [uiWeight] binding, not CSS. */
 .location-sheet__day[data-today] {
-  background: color-mix(in srgb, var(--sys-color-accent) 18%, transparent);
+  background: color-mix(
+    in srgb,
+    var(--sys-color-accent) var(--sys-alpha-segment-selected),
+    transparent
+  );
   color: var(--sys-color-foreground);
-  font-weight: 700;
 }
 
 .location-sheet__day-name {
   display: inline-flex;
   align-items: center;
-  gap: 0.55rem;
+  gap: var(--sys-space-compact);
 }
 
-/* Deliberately NOT ui-badge: the row behind it is already an 18% accent
-   tint, so the badge's accent tone (14% accent fill) would disappear —
-   this tag needs the inverted solid-foreground fill for contrast. Capsule
-   radius still comes from the DS token. */
-.location-sheet__today-tag {
-  padding: 0.15rem 0.45rem;
-  border-radius: var(--control-radius-capsule);
-  background: var(--sys-color-foreground);
-  color: var(--sys-color-accent);
-}
+/* No visual "today" tag — the tinted row + bold weight already carry the
+   emphasis (HIG: don't restate it); the fact reaches AT via an SR-only
+   uiVisuallyHidden span in the template instead. */
 
 .location-sheet__day-hours {
   font-variant-numeric: tabular-nums;
@@ -462,88 +380,46 @@
   margin: 0;
 }
 
-/* Bar skeleton + [data-visible] reveal live in landing-shared.css
-   (.sheet-bar-reveal); only this toolbar's row layout stays local. */
-.location-sheet__toolbar {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-}
-
-.location-sheet__toolbar-icon {
-  display: grid;
-  flex: 0 0 auto;
-  place-items: center;
-  inline-size: 3rem;
-  aspect-ratio: 1;
-  border-radius: 50%;
-  /* Theme-aware glass — surface-alpha over the sheet, foreground ink (the
-     old white-alpha fill + foreground ink failed contrast in dark). Same
-     recipe family as .location-sheet__icon-action below. */
-  border: 1.5px solid
-    color-mix(in srgb, var(--sys-color-foreground) 16%, transparent);
-  background: color-mix(in srgb, var(--sys-color-surface) 78%, transparent);
-  color: var(--sys-color-foreground);
-  text-decoration: none;
-  box-shadow: 0 0.6rem 1.6rem rgb(0 0 0 / 0.16);
-  backdrop-filter: blur(40px) saturate(200%);
-  -webkit-backdrop-filter: blur(40px) saturate(200%);
-  transition:
-    background-color var(--sys-motion-duration-deliberate)
-      var(--sys-motion-ease-standard),
-    border-color var(--sys-motion-duration-deliberate)
-      var(--sys-motion-ease-standard);
-}
-
-.location-sheet__toolbar-icon .material-symbols-rounded {
-  font-size: 1.3em;
-}
-
-.location-sheet__toolbar-icon:hover,
-.location-sheet__toolbar-icon:focus-visible {
-  border-color: var(--sys-color-foreground);
-  background: color-mix(in srgb, var(--sys-color-surface) 92%, transparent);
-}
-
-.location-sheet__toolbar-icon:focus-visible {
-  outline: 2px solid var(--sys-color-ring);
-  outline-offset: 2px;
-}
-
-/* Geometry comes from ui-button[data-spread]; the shadow + narrow-screen
-   shrink behavior stay local. */
+/* Bar skeleton + row layout live in ui-sheet-action-bar (SwiftUI
+   `.safeAreaInset(edge: .bottom)` — the bar is CHROMELESS, no material or
+   hairline; the projected controls carry their own surfaces and float
+   over the scrolling content). The bar is visible for the sheet's whole
+   open lifetime — it rides the sheet's own entrance, no scroll-triggered
+   reveal — so only this CTA's narrow-screen shrink behavior stays local.
+   Glyph size rides the DS button tier (1.5rem on the spread box). */
 .location-sheet__toolbar-book {
   white-space: nowrap;
-  box-shadow: 0 0.6rem 1.6rem rgb(0 0 0 / 0.22);
-  /* Long localized labels (location name in the CTA) must shrink inside
-     the floating bar on narrow screens instead of pushing past the edge. */
+  /* The bar copy is the short "Запази час" register now, but localized
+     labels must still shrink inside the bar on narrow screens instead of
+     pushing past the edge. */
   min-inline-size: 0;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.location-sheet__toolbar-book .material-symbols-rounded {
-  font-size: 1.2em;
-}
-
 /* `sheet-content-in` is the shared global keyframe in landing-shared.css —
    the scoped animation-name resolves to it since no local @keyframes
    shadows the name. */
-cr-modal-sheet[data-open] .location-sheet__intro > *,
-cr-modal-sheet[data-open] .location-sheet__status-card {
+ui-sheet[data-open] .location-sheet__intro > *,
+ui-sheet[data-open] .location-sheet__status-card {
   animation: sheet-content-in var(--sys-motion-duration-slowest)
     var(--sys-motion-ease-emphasized) both;
 }
 
-cr-modal-sheet[data-open] .location-sheet__status-card {
+ui-sheet[data-open] .location-sheet__status-card {
   animation-delay: var(--sys-motion-duration-instant);
 }
 
 @media (max-width: 760px) {
+  .location-sheet__scroller {
+    --modal-sheet-safe: 1.1rem;
+    block-size: min(96svh, 60rem);
+  }
+
   .location-sheet {
     display: flex;
     flex-direction: column;
-    padding: 0 0 8rem;
+    padding: 0 0 var(--ui-sheet-action-bar-clearance);
   }
 
   .location-sheet__layout {
@@ -553,7 +429,7 @@ cr-modal-sheet[data-open] .location-sheet__status-card {
   .location-sheet__profile {
     order: 1;
     margin-inline: var(--modal-sheet-safe);
-    padding-block-start: 1rem;
+    padding-block-start: var(--sys-space-regular);
   }
 
   .location-sheet__gallery {
@@ -568,19 +444,5 @@ cr-modal-sheet[data-open] .location-sheet__status-card {
     max-block-size: 24rem;
     margin-block-start: clamp(3.5rem, 7vw, 6rem);
     margin-inline: var(--modal-sheet-safe);
-    border-radius: 1.25rem;
-  }
-
-  .location-sheet__hero-actions {
-    flex-wrap: wrap;
-    gap: 0.75rem;
-  }
-
-  .location-sheet__book {
-    flex: 1 1 100%;
-  }
-
-  .location-sheet__toolbar {
-    max-inline-size: calc(100% - 1.6rem);
   }
 }

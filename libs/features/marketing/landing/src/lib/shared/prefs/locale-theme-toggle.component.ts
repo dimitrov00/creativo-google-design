@@ -5,9 +5,8 @@ import {
   input,
 } from '@angular/core';
 import { TranslocoDirective } from '@jsverse/transloco';
-import { UiButton } from '@creativo/ui/controls';
+import { UiButton, UiIcon } from '@creativo/ui/controls';
 import { LanguageService } from '../../language.service';
-import { CrIcon } from '../icons/icons';
 import { ThemeService } from './theme.service';
 
 /**
@@ -16,11 +15,14 @@ import { ThemeService } from './theme.service';
  *   toolbar — track chips on solid surfaces (menu, footer), toolbar-tinted
  *             ink (accent in light / foreground in dark) like v2's
  *             `toolbarControl({ surface: 'track' })`.
+ * Chips ride uiButton whole: base typography (callout 600), the tinted /
+ * overlay hover tiers, and the exact 44px regular size — the theme chip is
+ * a square `uiIconOnly` member of the header chip group.
  */
 @Component({
   selector: 'cr-locale-theme-toggle',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [CrIcon, TranslocoDirective, UiButton],
+  imports: [TranslocoDirective, UiButton, UiIcon],
   host: { class: 'cr-prefs', '[attr.data-variant]': 'variant()' },
   template: `
     <ng-container *transloco="let t">
@@ -29,12 +31,19 @@ import { ThemeService } from './theme.service';
         uiButton
         [uiVariant]="variant() === 'overlay' ? 'overlay' : 'tinted'"
         uiShape="capsule"
-        class="cr-prefs__chip cr-prefs__chip--locale"
+        uiSize="regular"
         data-testid="landing-locale-toggle"
         [attr.aria-label]="t('landing.nav.locale')"
         (click)="toggleLocale()"
       >
-        <cr-icon name="language" class="cr-prefs__glyph" />
+        <!-- Locale glyph is a compact accessory beside the code label:
+             uiScale="small" (16px, fixed icon ladder) — the old local
+             15px override, snapped to the nearest rung. -->
+        <ui-icon
+          uiName="prefs.language"
+          uiScale="small"
+          class="cr-prefs__glyph"
+        />
         {{ t('landing.prefs.localeCode') }}
       </button>
       <button
@@ -42,7 +51,8 @@ import { ThemeService } from './theme.service';
         uiButton
         [uiVariant]="variant() === 'overlay' ? 'overlay' : 'tinted'"
         uiShape="capsule"
-        class="cr-prefs__chip cr-prefs__chip--theme"
+        uiSize="regular"
+        [uiIconOnly]="true"
         data-testid="landing-theme-toggle"
         [attr.aria-label]="
           theme.theme() === 'dark'
@@ -51,16 +61,13 @@ import { ThemeService } from './theme.service';
         "
         (click)="theme.toggle()"
       >
+        <!-- Theme glyph: no local sizing — the button's regular-tier
+             control-glyph rule supplies medium (20px) from the same fixed
+             ladder (was an 18px off-ladder local override). -->
         @if (theme.theme() === 'dark') {
-          <cr-icon
-            name="light_mode"
-            class="cr-prefs__glyph cr-prefs__glyph--theme"
-          />
+          <ui-icon uiName="prefs.theme.light" />
         } @else {
-          <cr-icon
-            name="dark_mode"
-            class="cr-prefs__glyph cr-prefs__glyph--theme"
-          />
+          <ui-icon uiName="prefs.theme.dark" />
         }
       </button>
     </ng-container>

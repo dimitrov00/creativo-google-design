@@ -1,6 +1,7 @@
 /* v2 LandingPage shell — `relative min-h-viewport overflow-x-clip
-   bg-background font-body text-foreground` + the safe strips + the centred
-   app column for the section run. */
+   bg-background font-body text-foreground` + the safe strips. The centred
+   app column for the section run rides uiFrame's max-width recipe in the
+   template; the deferred-locations placeholder is a ui-skeleton. */
 
 .cr-landing {
   position: relative;
@@ -15,7 +16,8 @@
   pointer-events: none;
   position: fixed;
   inset-inline: 0;
-  z-index: calc(var(--sys-layer-header) - 20); /* below the fixed header */
+  /* Below the fixed header, above page content — the named shell rung. */
+  z-index: var(--sys-layer-shell);
   background: var(--sys-color-background);
 }
 .cr-landing__safe--top {
@@ -27,18 +29,9 @@
   block-size: var(--landing-safe-bottom);
 }
 
-.cr-landing__main {
-  inline-size: 100%;
-  max-inline-size: var(--landing-max-width);
-  margin-inline: auto;
-}
-
-/* scroll-mt-20 — deep links land clear of the fixed header. */
+/* scroll-mt-20 — deep links land clear of the fixed header. The TS deep-link
+   alignment reads this same resolved value off the anchor (one source of
+   truth: --landing-header-offset in landing-shared.css). */
 .cr-landing__anchor {
-  scroll-margin-block-start: 5rem;
-}
-
-/* Reserves room so the deferred locations section doesn't jump on hydrate. */
-.cr-landing__locations-placeholder {
-  min-block-size: 40rem;
+  scroll-margin-block-start: var(--landing-header-offset);
 }

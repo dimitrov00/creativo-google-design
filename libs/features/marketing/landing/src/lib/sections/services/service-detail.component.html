@@ -6,174 +6,216 @@
     [closeLabel]="t('landing.nav.close')"
     [open]="sheetOpen()"
     [closing]="sheetClosing()"
-    [titleVisible]="sheetHeaderCondensed()"
     (dismissed)="close()"
-    (sheetScrolled)="onSheetScroll($event)"
   >
-    <!-- Condensed toolbar title — appears once the intro heading scrolls
-         under the sheet toolbar (old services.page behavior). -->
-    <p sheet-title class="service-sheet__compact-title">
+    <!-- Condensed toolbar title — ui-sheet-header reveals it (plus the
+         bar's fill/hairline) only once the uiSheetLargeTitle-labelled
+         intro heading scrolls under the bar, exactly like locations. -->
+    <p
+      sheet-title
+      uiText
+      uiFont="caption"
+      uiWeight="bold"
+      class="service-sheet__compact-title"
+    >
       {{ content.text(service().name) }}
     </p>
 
     <div class="service-sheet__body" data-testid="service-detail">
+      <!-- ── Intro leads (title · summary — the user reads *what and for
+           how much* before browsing photos; the book CTA lives in the
+           docked action bar below) ── -->
+      <ui-stack uiGap="loose" class="service-sheet__story service-sheet__intro">
+        <!-- Title leads (Apple large-title order). `uiSheetLargeTitle` is
+             the DS sentinel: ui-sheet-header watches it to reveal the
+             compact title/chrome, and it names the view-timeline the
+             scroll-driven collapse binds to (see CSS). -->
+        <div class="service-sheet__lede">
+          <h2
+            id="service-detail-title"
+            uiSheetLargeTitle
+            uiText
+            uiFont="largeTitle"
+          >
+            {{ content.text(service().name) }}
+          </h2>
+          @if (service().kind === 'bundle') {
+            <span uiBadge uiTone="accent" class="service-sheet__bundle-badge">
+              <ui-icon uiName="service.bundle" />
+              {{ t('landing.services.bundle') }}
+            </span>
+          }
+        </div>
+
+        <div class="service-sheet__summary">
+          <p uiText uiFont="body" uiForeground="secondary">
+            {{ content.text(service().description) }}
+          </p>
+          <ui-stack
+            uiAxis="horizontal"
+            uiGap="loose"
+            uiAlign="center"
+            class="service-sheet__summary-meta"
+          >
+            <span
+              uiText
+              uiFont="caption"
+              uiForeground="secondary"
+              class="service-sheet__summary-duration"
+            >
+              <ui-icon uiName="service.duration" />
+              {{ duration() }}
+            </span>
+            <strong uiText uiFont="caption" class="service-sheet__summary-price"
+              >{{ t('landing.services.from') }} {{ fromPrice() }}</strong
+            >
+          </ui-stack>
+        </div>
+      </ui-stack>
+
+      <!-- ── Gallery — after the pitch, before the fine print ── -->
       @if (service().gallery.length > 0) {
         <cr-showcase-gallery
+          class="service-sheet__gallery"
           [images]="service().gallery"
           [imageAlt]="content.text(service().name)"
           [ariaLabel]="t('marketing.servicesPage.galleryLabel')"
           [gridViewLabel]="t('marketing.gallery.gridView')"
           [carouselViewLabel]="t('marketing.gallery.carouselView')"
-          [scrollProgress]="sheetScrollProgress()"
           [expanded]="galleryExpanded()"
           (expandedChange)="galleryExpanded.set($event)"
         />
       }
 
-      <div class="service-sheet__story">
-        <!-- ── Intro: eyebrow · title · summary ── -->
-        <section class="service-sheet__intro">
-          <!-- Title leads (Apple large-title order); the section eyebrow
-               reads as a caption line under it. As the title scrolls under
-               the toolbar it scales/fades into the compact toolbar title
-               (scroll-driven, see CSS). -->
-          <div class="service-sheet__lede">
-            <h2 id="service-detail-title">
-              {{ content.text(service().name) }}
-            </h2>
-            <p class="service-sheet__eyebrow">
-              {{ t('landing.services.eyebrow') }}
-            </p>
-            @if (service().kind === 'bundle') {
-              <span uiBadge uiTone="accent" class="service-sheet__bundle-badge">
-                <cr-icon name="layers" class="service-sheet__bundle-glyph" />
-                {{ t('landing.services.bundle') }}
-              </span>
-            }
-          </div>
-
-          <div class="service-sheet__summary">
-            <p>{{ content.text(service().description) }}</p>
-            <div>
-              <span>
-                <cr-icon name="schedule" class="service-sheet__meta-glyph" />
-                {{ duration() }}
-              </span>
-              <strong
-                >{{ t('landing.services.from') }} {{ fromPrice() }}</strong
-              >
-            </div>
-            <a
-              routerLink="/auth"
-              [queryParams]="{ redirect: '/book' }"
-              uiButton
-              uiVariant="prominent"
-              uiSize="compact"
-              [uiSpread]="true"
-              data-testid="service-detail-book"
-            >
-              <span>{{ t('landing.services.book') }}</span>
-              <cr-icon name="arrow_outward" class="service-sheet__cta-glyph" />
-            </a>
-          </div>
-        </section>
-
+      <div class="service-sheet__story service-sheet__details">
         <!-- ── Variants — capsule chips in the old sheet's language ── -->
         @if (service().variants.length > 0) {
-          <section class="service-sheet__variants">
-            <header>
-              <h3>{{ t('landing.services.variantsLabel') }}</h3>
-            </header>
-            <ul>
-              @for (variant of service().variants; track variant.id) {
-                <li>{{ content.text(variant.name) }}</li>
-              }
-            </ul>
-          </section>
+          <cr-capsule-list
+            class="service-sheet__variants"
+            [heading]="t('landing.services.variantsLabel')"
+            [items]="variantNames()"
+          />
         }
 
         <!-- ── Bundle includes — same chip language ── -->
         @if (service().kind === 'bundle' && includedServices().length > 0) {
-          <section class="service-sheet__variants">
-            <header>
-              <h3>{{ t('landing.services.includesLabel') }}</h3>
-            </header>
-            <ul>
-              @for (included of includedServices(); track included.id) {
-                <li>{{ content.text(included.name) }}</li>
-              }
-            </ul>
-          </section>
+          <cr-capsule-list
+            class="service-sheet__variants"
+            [heading]="t('landing.services.includesLabel')"
+            [items]="includedNames()"
+          />
         }
 
-        <!-- ── Performers — old card look + each barber's own terms ── -->
+        <!-- ── Performers — circular avatars (person = avatar, instant
+             recognition), rows by default with a grid alternative ── -->
         <section
           class="service-performers"
           aria-labelledby="service-performers-title"
         >
           <header>
-            <h3 id="service-performers-title">
+            <h3 id="service-performers-title" uiText uiFont="title3">
               {{ t('landing.services.whoLabel') }}
             </h3>
+            <button
+              type="button"
+              uiButton
+              uiVariant="tinted"
+              uiSize="regular"
+              uiShape="capsule"
+              [uiIconOnly]="true"
+              [uiSelected]="performersGrid()"
+              [attr.aria-label]="
+                performersGrid()
+                  ? t('landing.services.whoListView')
+                  : t('landing.services.whoGridView')
+              "
+              (click)="performersGrid.set(!performersGrid())"
+            >
+              <ui-icon
+                [uiName]="performersGrid() ? 'layout.list' : 'layout.grid'"
+              />
+            </button>
           </header>
 
-          <ul>
+          <ui-grid
+            role="list"
+            class="service-performers__list"
+            [uiColumns]="performersGrid() ? 2 : 1"
+            uiGap="compact"
+            [attr.data-grid]="performersGrid() ? '' : null"
+          >
             @for (performer of performers(); track performer.barber.id) {
-              <li>
-                <article class="service-performer">
-                  <div class="service-performer__media">
-                    <img
-                      [src]="performer.barber.avatarSrc"
-                      [alt]="content.text(performer.barber.name)"
-                      [style.object-position]="performer.barber.objectPosition"
-                      loading="lazy"
-                    />
-                  </div>
-                  <div class="service-performer__identity">
-                    <h4>{{ content.text(performer.barber.name) }}</h4>
-                    <span>{{ content.text(performer.barber.title) }}</span>
-                  </div>
-                  <div class="service-performer__terms">
-                    <span class="service-performer__price">{{
-                      content.price(performer.price)
-                    }}</span>
-                    <span class="service-performer__duration">
-                      <cr-icon
-                        name="schedule"
-                        class="service-performer__duration-glyph"
-                      />
-                      {{ performer.minutes }}
-                      {{ t('landing.services.durationLabel') }}
-                    </span>
-                  </div>
-                </article>
-              </li>
+              <!-- Not interactive (no click target) — so no hover affordance
+                   either: hover feedback on a dead surface is a fake promise
+                   (case-study §2.5). -->
+              <ui-list-row
+                role="listitem"
+                uiRadius="prominent"
+                class="service-performer"
+              >
+                <ui-avatar
+                  uiLeading
+                  class="service-performer__avatar"
+                  [uiSrc]="performer.barber.avatarSrc"
+                  [uiName]="content.text(performer.barber.name)"
+                  uiSize="prominent"
+                />
+                <span class="service-performer__identity">
+                  <h4 uiText uiFont="headline">
+                    {{ content.text(performer.barber.name) }}
+                  </h4>
+                  <span uiText uiFont="caption">{{
+                    content.text(performer.barber.title)
+                  }}</span>
+                </span>
+                <span uiTrailing class="service-performer__terms">
+                  <span
+                    uiText
+                    uiFont="headline"
+                    class="service-performer__price"
+                    >{{ content.price(performer.price) }}</span
+                  >
+                  <span
+                    uiText
+                    uiFont="caption"
+                    class="service-performer__duration"
+                  >
+                    <ui-icon uiName="service.duration" />
+                    {{ performer.minutes }}
+                    {{ t('landing.services.durationLabel') }}
+                  </span>
+                </span>
+              </ui-list-row>
             }
-          </ul>
+          </ui-grid>
         </section>
       </div>
     </div>
 
-    <!-- ── Bottom booking bar — reveals once the inline CTA scrolls away ── -->
-    <div
+    <!-- ── Bottom booking bar — docked and visible for the sheet's whole
+         life (it rides the sheet's own entrance; no scroll reveal). -->
+    <ui-sheet-action-bar
       sheet-overlay
-      class="service-sheet__booking-bar sheet-bar-reveal"
-      [attr.data-visible]="sheetBookingBarVisible() ? '' : null"
-      [attr.aria-hidden]="sheetBookingBarVisible() ? null : 'true'"
+      class="service-sheet__booking-bar"
+      [uiVisible]="true"
     >
       <a
         routerLink="/auth"
         [queryParams]="{ redirect: '/book' }"
-        [attr.tabindex]="sheetBookingBarVisible() ? null : -1"
         uiButton
         uiVariant="prominent"
-        uiSize="compact"
         uiShape="capsule"
         [uiSpread]="true"
+        data-testid="service-detail-book"
+        [attr.aria-label]="
+          t('landing.services.bookService', {
+            service: content.text(service().name),
+          })
+        "
       >
         <span>{{ t('landing.services.book') }}</span>
-        <cr-icon name="arrow_outward" class="service-sheet__cta-glyph" />
+        <ui-icon uiName="appointment.launch" class="service-sheet__cta-glyph" />
       </a>
-    </div>
+    </ui-sheet-action-bar>
   </cr-modal-sheet>
 </ng-container>

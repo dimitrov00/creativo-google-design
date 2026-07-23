@@ -8,12 +8,18 @@ import {
   signal,
 } from '@angular/core';
 import { TranslocoDirective } from '@jsverse/transloco';
-import { UiAvatar, UiButton } from '@creativo/ui/controls';
+import { UiAvatar, UiButton, UiIcon } from '@creativo/ui/controls';
+import { UiGrid, UiSpacer, UiStack } from '@creativo/ui/layout';
 import {
   UiInteractiveDirective,
+  UiRadiusDirective,
   UiTextDirective,
 } from '@creativo/ui/modifiers';
-import { UiSectionHeader } from '@creativo/ui/patterns';
+import {
+  UiRating,
+  UiSectionHeader,
+  UiSheetActionBar,
+} from '@creativo/ui/patterns';
 import { ModalSheetComponent } from '../../../shared/modal-sheet/modal-sheet.component';
 import { ShowcaseGalleryComponent } from '../../../shared/showcase-gallery/showcase-gallery.component';
 
@@ -35,8 +41,15 @@ interface BarberItem {
     TranslocoDirective,
     UiAvatar,
     UiButton,
+    UiGrid,
+    UiIcon,
     UiInteractiveDirective,
+    UiRadiusDirective,
+    UiRating,
     UiSectionHeader,
+    UiSheetActionBar,
+    UiSpacer,
+    UiStack,
     UiTextDirective,
   ],
   templateUrl: './team-showcase.component.html',
@@ -107,12 +120,6 @@ export class TeamShowcaseComponent {
         window.clearTimeout(this.closeTimer);
       }
     });
-  }
-
-  protected onCardKeydown(index: number, event: KeyboardEvent): void {
-    if (event.key !== 'Enter' && event.key !== ' ') return;
-    event.preventDefault();
-    this.openBarber(index);
   }
 
   protected openBarber(index: number): void {

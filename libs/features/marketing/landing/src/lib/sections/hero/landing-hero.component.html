@@ -1,88 +1,68 @@
 <ng-container *transloco="let t">
-  <!-- The inset video card (v2 VideoHero: squircle, sheet radius, #0a0a0a). -->
-  <div class="cr-hero__card cr-squircle">
-    @if (reducedMotion()) {
-      <img
-        src="/work/landing-poster.jpg"
-        alt=""
-        aria-hidden="true"
-        class="cr-hero__poster"
-      />
-    } @else {
-      <video
-        #heroVideo
-        class="cr-hero__video"
-        [attr.data-loaded]="videoLoaded() ? '' : null"
-        src="/hero.mp4"
-        poster="/work/landing-poster.jpg"
-        autoplay
-        muted
-        loop
-        playsinline
-        preload="auto"
-        (loadeddata)="onVideoLoaded()"
-      ></video>
-    }
+  <!-- The inset film card (v2 VideoHero) — a ZStack: ambient video, center
+       vignette, centered copy, prefs toolbar. Source order stacks the
+       layers; no z-index needed. -->
+  <ui-stack uiAxis="z" uiRadius="hero" class="cr-hero__card cr-squircle">
+    <ui-ambient-video
+      class="cr-hero__media"
+      uiSrc="/hero.mp4"
+      uiPoster="/work/landing-poster.jpg"
+    />
 
-    <!-- Center vignette — copy now sits mid-card (closing-CTA register). -->
-    <div class="cr-hero__scrim" aria-hidden="true"></div>
+    <!-- Center vignette — copy sits mid-card (closing-CTA register). -->
+    <div class="cr-hero__scrim" uiOverlay="vignette" aria-hidden="true"></div>
 
-    <div class="cr-hero__content">
+    <ui-stack uiAlign="center" uiGap="loose" class="cr-hero__content">
       <!-- Centered trio — title, paragraph, one capsule CTA (no icon),
            mirroring the closing CTA so the page opens and closes on the
-           same chord. -->
-      <div class="cr-hero__copy">
+           same chord (one shared cr-booking-cta). -->
+      <ui-section-header uiAlign="center" [uiOnMedia]="true">
         <h1
-          class="cr-hero__heading"
-          data-hero-enter
-          data-enter-y="18"
-          data-enter-delay="150"
-          data-enter-duration="800"
+          uiTitle
+          uiReveal
+          uiRevealTrigger="mount"
+          [uiRevealDelay]="150"
+          uiRevealRise="18px"
         >
           {{ t('landing.hero.heading') }}
         </h1>
         <p
-          class="cr-hero__subtitle"
-          data-hero-enter
-          data-enter-y="12"
-          data-enter-delay="320"
-          data-enter-duration="700"
+          uiLede
+          uiReveal
+          uiRevealTrigger="mount"
+          [uiRevealDelay]="320"
+          uiRevealRise="12px"
         >
           {{ t('landing.hero.subtitle') }}
         </p>
-        <a
-          routerLink="/auth"
-          [queryParams]="{ redirect: '/book' }"
-          uiButton
-          uiVariant="prominent"
-          uiSize="regular"
-          uiShape="capsule"
-          [uiOnMedia]="true"
-          class="cr-hero__button"
-          data-testid="landing-hero-cta"
-          data-hero-enter
-          data-enter-y="14"
-          data-enter-delay="480"
-          data-enter-duration="700"
-          data-enter-scale="0.96"
-        >
-          {{ t('landing.hero.cta') }}
-        </a>
-      </div>
+      </ui-section-header>
+      <cr-booking-cta
+        labelKey="landing.hero.cta"
+        [onMedia]="true"
+        testId="landing-hero-cta"
+        uiReveal
+        uiRevealTrigger="mount"
+        [uiRevealDelay]="480"
+        uiRevealRise="14px"
+      />
+    </ui-stack>
 
-      <!-- Bottom toolbar inside the media (SwiftUI bottomBar placement) —
-           chrome appears, it doesn't perform: opacity-only entrance. -->
-      <ui-toolbar
-        uiPlacement="bottom"
-        uiTone="overlay"
-        class="cr-hero__toolbar"
-        data-hero-enter
-        data-enter-y="0"
-        data-enter-delay="650"
-        data-enter-duration="500"
+    <!-- Bottom toolbar inside the media (SwiftUI bottomBar placement) —
+         chrome appears, it doesn't perform: opacity-only entrance. The
+         outer layer carries the scroll-exit parallax; the inner stack
+         carries the reveal (WAAPI fill would out-prioritize the CSS exit
+         animation on the same element). -->
+    <div class="cr-hero__toolbar">
+      <ui-stack
+        uiAxis="horizontal"
+        uiGap="regular"
+        uiAlign="center"
+        uiReveal="fade"
+        uiRevealTrigger="mount"
+        [uiRevealDelay]="650"
       >
         <cr-locale-theme-toggle variant="overlay" />
-      </ui-toolbar>
+      </ui-stack>
     </div>
-  </div>
+  </ui-stack>
 </ng-container>

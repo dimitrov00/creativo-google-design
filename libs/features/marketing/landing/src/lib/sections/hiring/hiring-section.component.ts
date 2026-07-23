@@ -14,9 +14,10 @@ import {
 } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { TranslocoDirective, TranslocoService } from '@jsverse/transloco';
-import { UiButton } from '@creativo/ui/controls';
-import { CrIcon } from '../../shared/icons/icons';
-import { FadeUpDirective } from '../../shared/motion/fade-up.directive';
+import { UiAmbientVideo, UiButton, UiIcon } from '@creativo/ui/controls';
+import { UiStack } from '@creativo/ui/layout';
+import { UiOverlayDirective, UiRevealDirective } from '@creativo/ui/modifiers';
+import { UiSectionHeader } from '@creativo/ui/patterns';
 
 /**
  * Careers — v2 `hiring-section.tsx`: a dark video card whose only
@@ -28,7 +29,16 @@ import { FadeUpDirective } from '../../shared/motion/fade-up.directive';
 @Component({
   selector: 'cr-hiring-section',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [CrIcon, FadeUpDirective, TranslocoDirective, UiButton],
+  imports: [
+    TranslocoDirective,
+    UiAmbientVideo,
+    UiButton,
+    UiIcon,
+    UiOverlayDirective,
+    UiRevealDirective,
+    UiSectionHeader,
+    UiStack,
+  ],
   templateUrl: './hiring-section.component.html',
   styleUrl: './hiring-section.component.css',
   host: { class: 'cr-hiring', 'data-testid': 'landing-hiring' },
@@ -41,7 +51,8 @@ export class HiringSectionComponent {
   // NOT `.required`: the refs sit inside `*transloco`, whose embedded view
   // renders only after the async translation load — a required read before
   // that throws NG0951 and aborts the whole render-hook flush.
-  private readonly card = viewChild<ElementRef<HTMLElement>>('card');
+  // `read: ElementRef` because #card now sits on the ui-stack component.
+  private readonly card = viewChild('card', { read: ElementRef });
   private readonly title = viewChild<ElementRef<HTMLElement>>('title');
 
   /** Localized headline, split per word — recomputes on language switch
@@ -104,7 +115,7 @@ export class HiringSectionComponent {
    *  transition on the layer's opacity). */
   protected onMouseMove(event: MouseEvent): void {
     if (this.reducedMotion()) return;
-    const card = this.card()?.nativeElement;
+    const card = this.card()?.nativeElement as HTMLElement | undefined;
     if (!card) return;
     const rect = card.getBoundingClientRect();
     card.style.setProperty('--spot-x', `${event.clientX - rect.left}px`);
@@ -113,6 +124,8 @@ export class HiringSectionComponent {
   }
 
   protected onMouseLeave(): void {
-    this.card()?.nativeElement.removeAttribute('data-spot');
+    (this.card()?.nativeElement as HTMLElement | undefined)?.removeAttribute(
+      'data-spot',
+    );
   }
 }

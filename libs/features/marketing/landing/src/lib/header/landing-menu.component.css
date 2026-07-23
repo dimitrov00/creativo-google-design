@@ -1,25 +1,28 @@
-/* v2 NavOverlay + nav-recipes (menuCard / menuRow / menuRowItem). */
+/* v2 NavOverlay + nav-recipes. Cards, rows, dividers, the Book-now CTA and
+   the staggered entrance are all design-system primitives now (ui-card,
+   ui-list-row — the CTA is a ui-list-row uiVariant="prominent" —
+   ui-divider, uiReveal); only the overlay shell geometry stays local. */
 
+/* Both overlay layers sit on the shell rung — below the fixed header
+   (--sys-layer-header), whose trigger is the menu's ✕ and must stay live.
+   The panel paints above the backdrop by source order. */
 .cr-menu__backdrop {
   position: fixed;
   inset: 0;
-  z-index: calc(var(--sys-layer-header) - 30); /* below the fixed header */
+  z-index: var(--sys-layer-shell);
   background: var(--sys-color-scrim);
-  animation: cr-menu-fade var(--sys-motion-duration-regular)
-    var(--sys-motion-ease-standard) both;
 }
 
 .cr-menu {
   position: fixed;
   inset: 0;
-  z-index: calc(var(--sys-layer-header) - 20); /* below the fixed header */
+  z-index: var(--sys-layer-shell);
   display: flex;
   flex-direction: column;
   background: var(--sys-color-background);
-  animation: cr-menu-drop var(--sys-motion-duration-deliberate)
-    var(--sys-motion-ease-entrance) both;
 }
 
+/* The scroller — centered app column via uiFrame (max-width/margin). */
 .cr-menu__body {
   min-block-size: 0;
   flex: 1;
@@ -27,154 +30,33 @@
   -ms-overflow-style: none;
   scrollbar-width: none;
   padding-inline: var(--landing-gutter);
-  padding-block-start: calc(var(--landing-safe-pad-top) + 5rem + 1.5rem);
-  padding-block-end: 1.5rem;
-  inline-size: 100%;
-  max-inline-size: var(--landing-max-width);
-  margin-inline: auto;
+  /* 5rem clears the fixed header bar below the safe-area floor. */
+  padding-block-start: calc(
+    var(--landing-safe-pad-top) + 5rem + var(--sys-space-comfortable)
+  );
+  padding-block-end: var(--sys-space-comfortable);
 }
 .cr-menu__body::-webkit-scrollbar {
   display: none;
 }
 
-/* Staggered section entrance (v2 MenuSection). */
-.cr-menu__section {
-  animation: cr-menu-section var(--sys-motion-duration-deliberate)
-    var(--sys-motion-ease-entrance) both;
-  animation-delay: var(--menu-delay, 0s);
-}
+/* Stack gap (regular) carries the section rhythm; the CTA leads with a
+   compact extra so its clearance lands on the comfortable step. */
 .cr-menu__section--first {
-  margin-block-start: 1.5rem;
-}
-.cr-menu__section + .cr-menu__section:not(.cr-menu__section--first) {
-  margin-block-start: 1rem;
+  margin-block-start: var(--sys-space-compact);
 }
 .cr-menu__section--last {
-  padding-block-end: 1.5rem;
+  padding-block-end: var(--sys-space-comfortable);
 }
 
-.cr-menu__toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-/* Rounded card wrapping each group of rows. */
-.cr-menu__card {
+/* Edge-to-edge list rows inside the cards: zero the card's own content
+   gap and clip the rows' square hover state layer to the card radius. */
+.cr-menu .ui-card {
+  gap: 0;
   overflow: hidden;
-  border: 1px solid var(--landing-border);
-  border-radius: var(--landing-radius-2xl);
-  background: var(--sys-color-surface);
-  /* v2 menuCard = surface panel — carries the soft raised shadow. */
-  box-shadow: var(--sys-elevation-raised);
 }
 
-/* Tappable row — min-h-14, glyph 20 · label · trailing glyph. */
-.cr-menu__row {
-  display: flex;
-  min-block-size: 3.5rem;
-  align-items: center;
-  gap: 12px;
-  padding: 0.5rem 1rem;
-  text-decoration: none;
-  color: var(--sys-color-foreground);
-  transition: background-color var(--sys-motion-duration-regular)
-    var(--sys-motion-ease-standard);
-}
-.cr-menu__row:hover {
-  background: color-mix(
-    in srgb,
-    var(--sys-color-foreground) var(--sys-alpha-fill),
-    transparent
-  );
-}
-.cr-menu__row:active {
-  background: color-mix(
-    in srgb,
-    var(--sys-color-foreground) var(--sys-alpha-press),
-    transparent
-  );
-}
-
-/* The standalone inverted primary (Book now) — ui-button `prominent`
-   supplies the inversion + hover/press; only the menu-row layout and the
-   raised → overlay shadow signature stay local. */
-.cr-menu__row--inverted {
-  inline-size: 100%;
-  justify-content: flex-start;
-  gap: 12px;
-  min-block-size: 3.5rem;
-  padding: 0.5rem 1rem;
-  border-radius: var(--landing-radius-2xl);
-  box-shadow: var(--sys-elevation-raised);
-  transition:
-    background-color var(--sys-motion-duration-regular)
-      var(--sys-motion-ease-standard),
-    box-shadow var(--sys-motion-duration-regular)
-      var(--sys-motion-ease-standard),
-    transform var(--sys-motion-duration-instant) var(--sys-motion-ease-standard);
-}
-.cr-menu__row--inverted:hover {
-  box-shadow: var(--sys-elevation-overlay);
-}
-
-.cr-menu__glyph {
-  font-size: 20px;
-}
-
-.cr-menu__label {
-  min-inline-size: 0;
-  flex: 1;
-  font: var(--sys-font-callout);
-  font-weight: 500;
-}
-
-.cr-menu__trail {
-  font-size: 16px;
-  opacity: 0.5;
-}
-
-/* Hairline between rows, indented past the glyph column (16+20+12=48px). */
-.cr-menu__divider {
-  margin-inline-start: 3rem;
-  block-size: 1px;
-  background: var(--landing-border);
-}
-
-@keyframes cr-menu-fade {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-@keyframes cr-menu-drop {
-  from {
-    opacity: 0;
-    transform: translateY(-10px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-@keyframes cr-menu-section {
-  from {
-    opacity: 0;
-    transform: translateY(-5px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .cr-menu__backdrop,
-  .cr-menu,
-  .cr-menu__section {
-    animation: none;
-  }
-}
+/* No local icon sizing: exactly two rungs of the fixed icon ladder —
+   leading glyphs (rows + CTA) uiScale="medium" (20px), trailing lock
+   accessories uiScale="small" (16px) + secondary ink from the [uiTrailing]
+   slot contract; the scheme is documented in the template. */

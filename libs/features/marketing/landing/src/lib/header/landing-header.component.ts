@@ -13,8 +13,10 @@ import { toSignal } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
 import { TranslocoDirective } from '@jsverse/transloco';
 import { AUTH_GATEWAY } from '@creativo/application/identity';
-import { UiButton } from '@creativo/ui/controls';
-import { CrIcon, MenuIconComponent } from '../shared/icons/icons';
+import { UiButton, UiIcon } from '@creativo/ui/controls';
+import { UiStack, UiToolbar } from '@creativo/ui/layout';
+import { UiFrameDirective } from '@creativo/ui/modifiers';
+import { MenuIconComponent } from '../shared/icons/icons';
 import { ThemeService } from '../shared/prefs/theme.service';
 import { LandingMenuComponent } from './landing-menu.component';
 
@@ -31,12 +33,15 @@ import { LandingMenuComponent } from './landing-menu.component';
   selector: 'cr-landing-header',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
-    CrIcon,
     LandingMenuComponent,
     MenuIconComponent,
     RouterLink,
     TranslocoDirective,
     UiButton,
+    UiFrameDirective,
+    UiIcon,
+    UiStack,
+    UiToolbar,
   ],
   templateUrl: './landing-header.component.html',
   styleUrl: './landing-header.component.css',

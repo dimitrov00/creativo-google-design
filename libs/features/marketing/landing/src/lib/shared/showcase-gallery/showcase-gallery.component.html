@@ -2,22 +2,39 @@
   @if (showToggle()) {
     <button
       type="button"
+      uiButton
+      uiVariant="tinted"
+      uiShape="capsule"
+      uiSize="regular"
+      [uiIconOnly]="true"
+      [uiSelected]="expanded()"
       class="showcase-gallery__layout-toggle"
       [attr.aria-label]="expanded() ? carouselViewLabel() : gridViewLabel()"
-      [attr.aria-pressed]="expanded()"
       (click)="toggleLayout()"
     >
-      <span class="material-symbols-rounded" aria-hidden="true">
-        {{ expanded() ? 'view_carousel' : 'grid_view' }}
-      </span>
+      <ui-icon [uiName]="expanded() ? 'gallery.strip' : 'gallery.grid'" />
     </button>
   }
 
-  <div class="showcase-gallery__track">
-    @for (image of images(); track $index; let imageIndex = $index) {
-      <figure [attr.data-active]="activeIndex() === imageIndex ? '' : null">
-        <img [src]="image" [alt]="imageAlt()" loading="lazy" />
-      </figure>
-    }
-  </div>
+  @if (expanded()) {
+    <ui-grid class="showcase-gallery__track" [uiColumns]="3" uiGap="compact">
+      @for (image of images(); track $index) {
+        <figure uiRadius="prominent">
+          <ui-async-image [uiSrc]="image" [uiAlt]="imageAlt()" />
+        </figure>
+      }
+    </ui-grid>
+  } @else {
+    <ui-scroll-row
+      class="showcase-gallery__track"
+      uiSnap="center"
+      uiGap="compact"
+    >
+      @for (image of images(); track $index) {
+        <figure uiRadius="prominent">
+          <ui-async-image [uiSrc]="image" [uiAlt]="imageAlt()" />
+        </figure>
+      }
+    </ui-scroll-row>
+  }
 </section>

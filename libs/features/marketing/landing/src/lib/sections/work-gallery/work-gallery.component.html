@@ -6,49 +6,45 @@
   >
     <!-- Accessible section heading (visually hidden) — reuses the sitemap's
          section name key. -->
-    <h2 class="cr-visually-hidden">{{ t('landing.footer.nav.work') }}</h2>
+    <h2 uiVisuallyHidden>{{ t('landing.footer.nav.work') }}</h2>
 
     <div class="cr-gallery__stage">
       <!-- Scroll-driven image strip -->
       <div #strip class="cr-gallery__strip">
         @for (shot of shots; track shot.id) {
-          <div
+          <button
             #card
+            type="button"
             class="cr-gallery__card"
+            uiInteractive
             [class.cr-gallery__card--motion]="motionEnabled()"
             [style.aspect-ratio]="shot.aspectRatio"
             [style.--drift]="motionEnabled() ? shot.driftY + 'px' : '0px'"
-            [attr.data-drift]="shot.driftY"
-            (mousemove)="onCardMove($event, card)"
-            (mouseleave)="onCardLeave(card)"
             (click)="openLightbox(shot)"
-            (keydown)="onCardKeydown(shot, $event)"
-            tabindex="0"
-            role="button"
             [attr.aria-label]="content.text(shot.alt)"
           >
-            <figure class="cr-gallery__figure">
-              <img
-                [src]="shot.src"
-                [alt]="content.text(shot.alt)"
-                loading="lazy"
-                class="cr-gallery__image"
-              />
-              <!-- Shimmer gloss — follows the cursor via --gx/--gy -->
-              <div class="cr-gallery__gloss" aria-hidden="true"></div>
-              <div class="cr-gallery__ring" aria-hidden="true"></div>
-            </figure>
-          </div>
+            <ui-async-image
+              class="cr-gallery__figure"
+              [uiSrc]="shot.src"
+              [uiRing]="true"
+            />
+          </button>
         }
       </div>
 
-      <!-- Gradient grounds the caption and progress bar -->
-      <div class="cr-gallery__fade" aria-hidden="true"></div>
+      <!-- Gradient grounds the caption and progress bar (overlay scaffold
+           from the DS; the background-ink grade stays local) -->
+      <div class="cr-gallery__fade" uiOverlay aria-hidden="true"></div>
 
       <!-- Per-image caption — recreated per index so the entrance replays -->
       <div class="cr-gallery__caption-slot">
         @for (index of [activeIndex()]; track index) {
-          <p class="cr-gallery__caption" data-testid="work-gallery-caption">
+          <p
+            class="cr-gallery__caption"
+            uiText
+            uiFont="title"
+            data-testid="work-gallery-caption"
+          >
             {{ t(shots[index]?.captionKey ?? '') }}
           </p>
         }
@@ -61,38 +57,40 @@
     </div>
   </div>
 
-  <!-- Lightbox -->
-  @if (lightboxShot(); as shot) {
-    <div
-      class="cr-gallery__lightbox"
-      data-testid="work-gallery-lightbox"
-      role="dialog"
-      aria-modal="true"
-      [attr.aria-label]="content.text(shot.alt)"
-    >
-      <button
-        type="button"
-        class="cr-gallery__lightbox-backdrop"
-        tabindex="-1"
-        aria-hidden="true"
-        (click)="closeLightbox()"
-      ></button>
+  <!-- Lightbox — ui-sheet owns scrim, layering, Escape/backdrop dismissal,
+       focus trap/restore and body scroll lock. `data-on-media` flips the
+       ring hairline to the white on-media ramp (the scrim below is black in
+       both themes). -->
+  <ui-sheet
+    class="cr-gallery__lightbox"
+    data-testid="work-gallery-lightbox"
+    data-on-media
+    uiPlacement="center"
+    uiMaterial="thin"
+    [uiOpen]="lightboxShot() !== null"
+    (uiDismissed)="closeLightbox()"
+    [attr.aria-label]="lightboxAlt()"
+  >
+    @if (lightboxShot(); as shot) {
       <img
         class="cr-gallery__lightbox-image"
         [src]="shot.src"
         [alt]="content.text(shot.alt)"
       />
+      <div uiOverlay="ring" aria-hidden="true"></div>
       <button
         type="button"
+        uiButton
+        uiVariant="overlay"
+        uiShape="capsule"
+        [uiIconOnly]="true"
         class="cr-gallery__lightbox-close"
         data-testid="work-gallery-lightbox-close"
         [attr.aria-label]="t('landing.nav.close')"
         (click)="closeLightbox()"
       >
-        <span class="material-symbols-rounded cr-gallery__lightbox-close-glyph"
-          >close</span
-        >
+        <ui-icon uiName="sheet.close" />
       </button>
-    </div>
-  }
+    }
+  </ui-sheet>
 </ng-container>

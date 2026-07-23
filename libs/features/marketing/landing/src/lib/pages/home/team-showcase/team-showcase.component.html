@@ -10,13 +10,13 @@
       <p uiLede>{{ t('landing.barbers.subtitle') }}</p>
     </ui-section-header>
 
-    <div class="team-grid">
+    <ui-grid [uiColumns]="2" uiGap="regular" uiRowGap="spacious">
       @for (barber of barbers; track barber.nameKey; let index = $index) {
-        <article
+        <button
+          type="button"
           class="team-card morph-card"
           uiInteractive
-          role="button"
-          tabindex="0"
+          uiRadius="prominent"
           [attr.aria-label]="
             t('landing.barbers.exploreBarber', { barber: t(barber.nameKey) })
           "
@@ -24,7 +24,6 @@
           aria-controls="barber-detail-sheet"
           [attr.aria-expanded]="sheetOpen() && activeBarberIndex() === index"
           (click)="openBarber(index)"
-          (keydown)="onCardKeydown(index, $event)"
         >
           <div class="team-card__media media-morph">
             <img
@@ -34,20 +33,29 @@
             />
           </div>
 
-          <div class="team-card__copy">
-            <p uiText uiFont="eyebrow">{{ t(barber.roleKey) }}</p>
-            <h3 uiText uiFont="title">{{ t(barber.nameKey) }}</h3>
-            <div class="team-card__facts" uiText uiFont="caption">
-              <span>{{ t(barber.specialtyKey) }}</span>
+          <ui-stack class="team-card__copy" uiGap="tight">
+            <p uiText uiFont="eyebrow" uiForeground="secondary">
+              {{ t(barber.roleKey) }}
+            </p>
+            <!-- Rating rides the name line (HIG: the identifying facts
+                 cluster with the title, not with secondary metadata). -->
+            <ui-stack uiAxis="horizontal" uiAlign="end" uiGap="compact">
+              <h3 uiText uiFont="title">{{ t(barber.nameKey) }}</h3>
               @if (barber.rating !== undefined) {
-                <strong>
-                  <span class="material-symbols-rounded" aria-hidden="true"
-                    >star</span
-                  >
-                  {{ barber.rating }}
-                </strong>
+                <ui-spacer />
+                <ui-rating [uiValue]="barber.rating" />
               }
-            </div>
+            </ui-stack>
+            <ui-stack
+              class="team-card__facts"
+              uiAxis="horizontal"
+              uiGap="tight"
+              uiText
+              uiFont="caption"
+            >
+              <span>{{ t(barber.specialtyKey) }}</span>
+            </ui-stack>
+            <ui-spacer />
             <span
               class="team-card__action explore-affordance"
               aria-hidden="true"
@@ -60,15 +68,15 @@
               >
                 {{ t('landing.barbers.explore') }}
               </span>
-              <span
-                class="team-card__explore-icon explore-affordance__icon material-symbols-rounded"
-                >arrow_forward</span
-              >
+              <ui-icon
+                class="team-card__explore-icon explore-affordance__icon"
+                uiName="nav.explore"
+              />
             </span>
-          </div>
-        </article>
+          </ui-stack>
+        </button>
       }
-    </div>
+    </ui-grid>
   </section>
 
   <cr-modal-sheet
@@ -81,7 +89,7 @@
   >
     @if (activeBarber(); as barber) {
       <div class="barber-sheet">
-        <article class="barber-sheet__profile">
+        <ui-stack class="barber-sheet__profile" uiGap="regular">
           <ui-avatar
             [uiSrc]="barber.image"
             [uiName]="t(barber.nameKey)"
@@ -93,6 +101,15 @@
           <h2 id="barber-sheet-title" uiText uiFont="display">
             {{ t(barber.nameKey) }}
           </h2>
+          @if (barber.rating !== undefined) {
+            <!-- Rating clusters with the name (HIG) — it's an identity
+                 fact, not body copy. -->
+            <ui-rating class="barber-sheet__rating" [uiValue]="barber.rating">
+              <span uiText uiFont="caption">
+                {{ t('landing.barbers.ratingLabel') }}
+              </span>
+            </ui-rating>
+          }
           <p
             class="barber-sheet__specialty"
             uiText
@@ -102,38 +119,16 @@
             {{ t(barber.specialtyKey) }}
           </p>
           @if (barber.aboutKey) {
-            <p class="barber-sheet__about" uiText uiFont="footnote">
+            <p
+              class="barber-sheet__about"
+              uiText
+              uiFont="footnote"
+              uiForeground="secondary"
+            >
               {{ t(barber.aboutKey) }}
             </p>
           }
-          @if (barber.rating !== undefined) {
-            <div class="barber-sheet__rating" uiText uiFont="caption">
-              <span class="material-symbols-rounded" aria-hidden="true"
-                >star</span
-              >
-              <strong>{{ barber.rating }}</strong>
-              <span>{{ t('landing.barbers.ratingLabel') }}</span>
-            </div>
-          }
-          <a
-            href="/client"
-            uiButton
-            uiVariant="prominent"
-            uiSize="compact"
-            [uiSpread]="true"
-          >
-            <span>
-              {{
-                t('landing.barbers.bookWith', {
-                  barber: t(barber.nameKey),
-                })
-              }}
-            </span>
-            <span class="material-symbols-rounded" aria-hidden="true"
-              >arrow_outward</span
-            >
-          </a>
-        </article>
+        </ui-stack>
 
         <cr-showcase-gallery
           class="barber-sheet__gallery"
@@ -153,5 +148,34 @@
         />
       </div>
     }
+
+    <!-- ── Bottom booking bar — docked and visible for the sheet's whole
+         life (it rides the sheet's own entrance; no scroll reveal). The
+         closed sheet is `visibility: hidden` (cr-modal-sheet's closed-state
+         contract), so no tabindex gating is needed while it's down. Bar
+         register is short and direct ("Запази час") — the full barber
+         context stays on the aria-label so AT users still hear WHO the
+         booking goes to. ── -->
+    <ui-sheet-action-bar
+      sheet-overlay
+      class="barber-sheet__booking-bar"
+      [uiVisible]="true"
+    >
+      @if (activeBarber(); as barber) {
+        <a
+          href="/client"
+          [attr.aria-label]="
+            t('landing.barbers.bookWith', { barber: t(barber.nameKey) })
+          "
+          uiButton
+          uiVariant="prominent"
+          uiShape="capsule"
+          [uiSpread]="true"
+        >
+          <span>{{ t('landing.barbers.book') }}</span>
+          <ui-icon uiName="appointment.launch" />
+        </a>
+      }
+    </ui-sheet-action-bar>
   </cr-modal-sheet>
 </ng-container>

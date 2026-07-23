@@ -3,6 +3,7 @@ import {
   ChangeDetectionStrategy,
   Component,
   DestroyRef,
+  computed,
   effect,
   ElementRef,
   PLATFORM_ID,
@@ -12,6 +13,15 @@ import {
   viewChildren,
 } from '@angular/core';
 import { TranslocoDirective } from '@jsverse/transloco';
+import { UiAsyncImage, UiButton, UiIcon } from '@creativo/ui/controls';
+import { UiSheet } from '@creativo/ui/layout';
+import {
+  UiInteractiveDirective,
+  UiMaterialDirective,
+  UiOverlayDirective,
+  UiTextDirective,
+  UiVisuallyHiddenDirective,
+} from '@creativo/ui/modifiers';
 import { LandingContentService } from '../../content/landing-content.service';
 import type { WorkShotVm } from '../../content/landing-content';
 
@@ -27,20 +37,32 @@ const EASE = 'cubic-bezier(0.22, 1, 0.36, 1)';
  * drift, caption) comes from the content fixture; the caption swaps to
  * whichever card's center is nearest the viewport midpoint.
  *
- * Interactive flourishes (3D tilt ±8°, cursor shimmer, reveal drift) are
- * pointer/motion-gated exactly like v2 — reduced-motion visitors get the
- * static strip.
+ * Cards are native buttons on the shared `data-interactive` grammar; the
+ * hover image zoom is the section's one signature embellishment. The
+ * lightbox is a `ui-sheet` — Escape, backdrop press, focus capture/trap/
+ * restore, body scroll lock and overlay layering all come from
+ * `UiSheetBehavior`. Reduced-motion visitors get the static strip.
  */
 @Component({
   selector: 'cr-work-gallery',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [TranslocoDirective],
+  imports: [
+    TranslocoDirective,
+    UiAsyncImage,
+    UiButton,
+    UiIcon,
+    UiSheet,
+    UiInteractiveDirective,
+    UiMaterialDirective,
+    UiOverlayDirective,
+    UiTextDirective,
+    UiVisuallyHiddenDirective,
+  ],
   templateUrl: './work-gallery.component.html',
   styleUrl: './work-gallery.component.css',
   host: {
     class: 'cr-work-gallery',
     'data-testid': 'landing-work-gallery',
-    '(document:keydown.escape)': 'closeLightbox()',
   },
 })
 export class WorkGalleryComponent {
@@ -54,8 +76,14 @@ export class WorkGalleryComponent {
   protected readonly scrollDistance = signal(1400);
   protected readonly activeIndex = signal(0);
   protected readonly lightboxShot = signal<WorkShotVm | null>(null);
-  /** Gates drift/tilt/shimmer — false under prefers-reduced-motion. */
+  /** Gates drift/zoom — false under prefers-reduced-motion. */
   protected readonly motionEnabled = signal(false);
+
+  /** Accessible name for the lightbox dialog — the open shot's alt text. */
+  protected readonly lightboxAlt = computed(() => {
+    const shot = this.lightboxShot();
+    return shot ? this.content.text(shot.alt) : null;
+  });
 
   // NOT `.required`: the refs sit inside `*transloco`, whose embedded view
   // renders only after the async translation load — a required read before
@@ -67,13 +95,10 @@ export class WorkGalleryComponent {
     viewChild<ElementRef<HTMLElement>>('progressFill');
   private readonly cardRefs = viewChildren<ElementRef<HTMLElement>>('card');
 
-  private readonly hostRef = inject<ElementRef<HTMLElement>>(ElementRef);
   private cardCenters: number[] = [];
   private containerWidth = 390;
   private frame = 0;
   private bootstrapped = false;
-  /** The card that opened the lightbox — focus returns here on close. */
-  private previousFocus: HTMLElement | null = null;
 
   constructor() {
     // Runs when BOTH the browser render and the transloco view (the template
@@ -173,7 +198,9 @@ export class WorkGalleryComponent {
     }
   }
 
-  /** Once-in-view entrance: opacity 0 / driftY+22 → 1 / driftY (v2 reveal). */
+  /** Once-in-view entrance: opacity 0 / +22px → 1 / rest (v2 reveal). The
+   *  keyframes are RELATIVE offsets — each card's drift rides the CSS
+   *  `translate` property, which WAAPI `transform` composes with. */
   private revealOnIntersect(reducedMotion: boolean): void {
     if (reducedMotion || typeof IntersectionObserver !== 'function') return;
     const cards = this.cardRefs().map((ref) => ref.nativeElement);
@@ -184,13 +211,14 @@ export class WorkGalleryComponent {
           if (!entry.isIntersecting) continue;
           const card = entry.target as HTMLElement;
           observer.unobserve(card);
-          const drift = Number.parseFloat(card.dataset['drift'] ?? '0');
           if (typeof card.animate === 'function') {
             card.animate(
               [
-                { opacity: 0, transform: `translateY(${drift + 22}px)` },
-                { opacity: 1, transform: `translateY(${drift}px)` },
+                { opacity: 0, transform: 'translateY(22px)' },
+                { opacity: 1, transform: 'translateY(0)' },
               ],
+              // 650ms mirrors --sys-motion-duration-slowest (WAAPI cannot
+              // read custom properties — same provenance note as EASE).
               { duration: 650, easing: EASE, fill: 'backwards' },
             );
           }
@@ -203,50 +231,14 @@ export class WorkGalleryComponent {
     this.destroyRef.onDestroy(() => observer.disconnect());
   }
 
-  /** Cursor tilt + shimmer — writes CSS vars the stylesheet reads. */
-  protected onCardMove(event: MouseEvent, card: HTMLElement): void {
-    if (!this.motionEnabled()) return;
-    const rect = card.getBoundingClientRect();
-    const relativeX = (event.clientX - rect.left) / rect.width - 0.5;
-    const relativeY = (event.clientY - rect.top) / rect.height - 0.5;
-    card.style.setProperty('--rx', `${relativeY * -16}deg`);
-    card.style.setProperty('--ry', `${relativeX * 16}deg`);
-    card.style.setProperty('--gx', `${(relativeX + 0.5) * 100}%`);
-    card.style.setProperty('--gy', `${(relativeY + 0.5) * 100}%`);
-  }
-
-  protected onCardLeave(card: HTMLElement): void {
-    card.style.setProperty('--rx', '0deg');
-    card.style.setProperty('--ry', '0deg');
-  }
-
-  /** role="button" cards must activate on Enter AND Space (same contract
-   *  as team-showcase's onCardKeydown). */
-  protected onCardKeydown(shot: WorkShotVm, event: KeyboardEvent): void {
-    if (event.key !== 'Enter' && event.key !== ' ') return;
-    event.preventDefault();
-    this.openLightbox(shot);
-  }
-
   protected openLightbox(shot: WorkShotVm): void {
+    // Focus capture, initial focus and restore-on-close are owned by
+    // UiSheetBehavior (via ui-sheet) — no local bookkeeping.
     this.lightboxShot.set(shot);
-    if (!isPlatformBrowser(this.platformId)) return;
-    // Move focus into the dialog (mirrors modal-sheet's focus handling);
-    // remember the triggering card so close can hand focus back.
-    this.previousFocus = document.activeElement as HTMLElement | null;
-    requestAnimationFrame(() => {
-      this.hostRef.nativeElement
-        .querySelector<HTMLElement>('.cr-gallery__lightbox-close')
-        ?.focus();
-    });
   }
 
   protected closeLightbox(): void {
     if (this.lightboxShot() === null) return;
     this.lightboxShot.set(null);
-    if (!isPlatformBrowser(this.platformId)) return;
-    const previous = this.previousFocus;
-    this.previousFocus = null;
-    requestAnimationFrame(() => previous?.focus());
   }
 }

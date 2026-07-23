@@ -1,264 +1,98 @@
-:host {
+/* cr-modal-sheet — landing shell over the DS sheet primitives.
+   Scrim, placement, entrance/exit and the modal environment live in
+   ui-sheet (+ UiSheetBehavior); grabber, collapsing title and the 44px
+   close chip live in ui-sheet-header / uiButton. What remains here is the
+   wide set-piece's shell overrides plus the back-compat hooks the
+   remaining consumers (service-detail, team-showcase) still lean on. */
+
+/* Element selector, not :host — this stylesheet is unscoped
+   (ViewEncapsulation.None, see the component note) and bare `:host`
+   never matches outside a shadow/emulated context. */
+cr-modal-sheet {
   display: contents;
 }
 
-.modal-sheet {
-  --modal-sheet-safe: clamp(1.25rem, 4vw, 4rem);
-  --modal-sheet-drag-y: 0px;
-  position: fixed;
-  z-index: var(--sys-layer-overlay);
-  inset: 0;
-  display: grid;
-  place-items: center;
-  padding: 1rem;
+/* The DS bottom placement pins the surface inline-start once the viewport
+   outgrows the wide container — the host is the flex container we own, so
+   centering is one line here (same override as the locations sheet). */
+ui-sheet.modal-sheet {
+  justify-content: center;
+}
+
+/* Restates the old closed-state contract: ui-sheet only fades
+   (opacity/pointer-events), which would leave the closed sheet's controls
+   in the tab order and its content exposed to AT. data-closing is stamped
+   by this template so the exit transition isn't cut short. */
+ui-sheet.modal-sheet:not([data-open]):not([data-closing]) {
   visibility: hidden;
-  pointer-events: none;
-  background: transparent;
+}
+
+.modal-sheet {
+  /* Fluid sheet gutter contract — consumers (intro blocks, galleries) pad
+     themselves with this instead of a root gutter that would double up
+     where the gallery already carries one. */
+  --modal-sheet-safe: clamp(1.25rem, 4vw, 4rem);
+  /* The sheet can sit inside on-media sections (team-showcase) whose ink
+     is the white overlay ramp — the surface resets to app foreground. */
   color: var(--sys-color-foreground);
-  /* visibility interpolates discretely (visible for the whole transition
-     while either endpoint is visible), so a plain duration here replaces the
-     old `visibility 0s linear <delay>` idiom: the sheet stays visible until
-     the background fade completes, then flips hidden. */
-  transition:
-    visibility var(--sys-motion-duration-deliberate) linear,
-    background var(--sys-motion-duration-deliberate)
-      var(--sys-motion-ease-standard),
-    backdrop-filter var(--sys-motion-duration-deliberate)
-      var(--sys-motion-ease-standard);
 }
 
-.modal-sheet[data-open] {
-  visibility: visible;
-  pointer-events: auto;
-  /* Standard media scrim (#000 @ 70%, ≈ the old 0.72 black) — one scrim
-     weight across menu/modal/lightbox (case-study §2.7). */
-  background: var(--sys-color-media-scrim);
-  backdrop-filter: blur(14px) saturate(0.7);
-  /* No visibility entry: on open it flips instantly (the old
-     `visibility 0s`), since untransitioned properties change immediately. */
-  transition:
-    background var(--sys-motion-duration-deliberate)
-      var(--sys-motion-ease-standard),
-    backdrop-filter var(--sys-motion-duration-deliberate)
-      var(--sys-motion-ease-standard);
+/* The DS surface's shared inline inset (`--ui-sheet-inset`, consumed by
+   both the surface padding and ui-sheet-header) IS the fluid safe gutter
+   inside this shell — header controls and content blocks sit on one
+   gutter. Targeted at the surface because that's where the DS declares
+   its token-backed default. */
+.modal-sheet .ui-sheet__surface {
+  --ui-sheet-inset: var(--modal-sheet-safe);
 }
 
-.modal-sheet[data-closing] {
-  visibility: visible;
-  background: transparent;
-  backdrop-filter: blur(0) saturate(1);
+/* Drag-follow: UiSheetBehavior writes the drag offset onto the surface as
+   `--ui-sheet-drag-y`; the DS surface transform doesn't consume it (yet),
+   so the mobile drag-to-dismiss gesture tracks the finger via this
+   override, exactly as the old local sheet did. */
+.modal-sheet[data-open] .ui-sheet__surface {
+  transform: translateY(var(--ui-sheet-drag-y, 0px));
 }
 
-.modal-sheet__surface {
-  position: relative;
-  inline-size: min(72rem, calc(100vw - 2rem));
-  block-size: min(90svh, 58rem);
-  overflow: hidden;
-  /* Landing sheet-radius token (≈27.2px, replaces hardcoded 2rem/32px) —
-     same corner as the hero card, per the shared radius ladder. */
-  border-radius: var(--landing-radius-sheet);
-  background: var(--sys-color-surface);
-  box-shadow: var(--sys-elevation-floating); /* was the same literal cut */
-  opacity: 0;
-  transform: translateY(calc(2rem + var(--modal-sheet-drag-y))) scale(0.985);
-  transition:
-    opacity var(--sys-motion-duration-deliberate)
-      var(--sys-motion-ease-standard),
-    transform var(--sys-motion-duration-slow) var(--sys-motion-ease-emphasized);
-}
-
-.modal-sheet[data-open] .modal-sheet__surface {
-  opacity: 1;
-  transform: translateY(var(--modal-sheet-drag-y)) scale(1);
-}
-
-.modal-sheet[data-dragging] .modal-sheet__surface {
+.modal-sheet[data-dragging] .ui-sheet__surface {
   transition: none;
 }
 
-.modal-sheet[data-closing] .modal-sheet__surface {
-  opacity: 0;
-  transform: translateY(calc(2.5rem + var(--modal-sheet-drag-y))) scale(0.985);
-}
-
+/* Full-bleed set-piece: the DS surface carries comfortable padding meant
+   for simple drawer content; this sheet is edge-to-edge, so the scroller
+   cancels that padding and owns the box. Height is viewport-capped so the
+   sticky header and any floating action bar stay reachable. */
 .modal-sheet__scroll {
-  block-size: 100%;
-  min-block-size: 0;
+  /* Cancel exactly what the surface pads: comfortable block padding,
+     `--ui-sheet-inset` (= the safe gutter here) inline padding. */
+  margin-block: calc(-1 * var(--sys-space-comfortable));
+  margin-inline: calc(-1 * var(--ui-sheet-inset));
+  block-size: min(90svh, 58rem);
   /* Vertical only — wide content (galleries, long unbroken strings) must
      clip rather than turn the whole sheet into a horizontal scroller. */
   overflow-x: clip;
   overflow-y: auto;
   overflow-anchor: none;
   overscroll-behavior: contain;
-  padding-block-end: var(--modal-sheet-scroll-padding-bottom, 0px);
   scrollbar-width: thin;
+  /* Matches the surface's top rounding so the sticky header and scrolled
+     content clip inside the corner. */
+  border-start-start-radius: var(--control-radius-prominent);
+  border-start-end-radius: var(--control-radius-prominent);
 }
 
-.modal-sheet__toolbar {
-  position: sticky;
-  z-index: var(--sys-layer-popover);
-  inset-block-start: 0;
-  display: grid;
-  grid-template-columns: 1fr auto 1fr;
-  align-items: center;
-  min-block-size: 4.1rem;
-  padding: 0.65rem 0.8rem;
-  background: var(--sys-color-surface);
-  touch-action: none;
-}
-
-/* Grabber pill — hidden on the centered desktop dialog (no drag gesture
-   there); shown on the mobile bottom sheet where drag-to-dismiss lives. */
-.modal-sheet__grabber {
-  display: none;
-  position: absolute;
-  inset-block-start: 0.4rem;
-  inset-inline-start: 50%;
-  transform: translateX(-50%);
-  inline-size: 2.25rem;
-  block-size: 0.3rem;
-  border-radius: var(--control-radius-capsule);
-  background: color-mix(in srgb, var(--sys-color-foreground) 18%, transparent);
-}
-
-.modal-sheet__title {
-  grid-column: 2;
-  max-inline-size: calc(100vw - 10rem);
-  overflow: hidden;
-  opacity: 0;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  transform: translateY(0.55rem);
-  transition:
-    opacity var(--sys-motion-duration-deliberate)
-      var(--sys-motion-ease-standard),
-    transform var(--sys-motion-duration-slow) var(--sys-motion-ease-emphasized);
-  pointer-events: none;
-}
-
-.modal-sheet__title[data-visible] {
-  opacity: 1;
-  transform: translateY(0);
-}
-
-/* Scroll-linked compact-title reveal (Apple large-title collapse): when a
-   consumer names its headline `--modal-sheet-headline` (view-timeline),
-   the compact title fades/rises in EXACTLY as the headline slides under
-   the toolbar — the [data-visible] boolean flip above stays as the
-   fallback for browsers without scroll-driven animations (an unattached
-   timeline leaves this animation inert there). */
-.modal-sheet {
-  timeline-scope: --modal-sheet-headline;
-}
-
-@supports (animation-timeline: view()) {
-  @media (prefers-reduced-motion: no-preference) {
-    .modal-sheet__title {
-      animation: modal-sheet-title-in linear both;
-      animation-timeline: --modal-sheet-headline;
-      animation-range: exit 20% exit 100%;
-    }
-
-    /* The toolbar 'lands' with a hairline as the headline tucks under it
-       (UINavigationBar behavior). */
-    .modal-sheet__toolbar {
-      border-block-end: 1px solid transparent;
-      animation: modal-sheet-hairline-in linear both;
-      animation-timeline: --modal-sheet-headline;
-      animation-range: exit 20% exit 100%;
-    }
-  }
-}
-
-@keyframes modal-sheet-hairline-in {
-  to {
-    border-block-end-color: var(--sys-color-separator);
-  }
-}
-
-@keyframes modal-sheet-title-in {
-  from {
-    opacity: 0;
-    transform: translateY(0.55rem);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-.modal-sheet__close {
-  grid-column: 3;
-  justify-self: end;
-  inline-size: 2.8rem;
-  block-size: 2.8rem;
-  display: grid;
-  place-items: center;
-  padding: 0;
-  border: 0;
-  border-radius: 50%;
-  background: color-mix(
-    in srgb,
-    var(--sys-color-foreground) var(--sys-alpha-interactive),
-    transparent
-  );
-  color: var(--sys-color-foreground);
-  cursor: pointer;
-  transition: transform var(--sys-motion-duration-deliberate)
-    var(--sys-motion-ease-emphasized);
-}
-
-.modal-sheet__close:active {
-  transform: scale(var(--sys-press-scale-control));
-}
-
-.modal-sheet__close-glyph {
-  font-size: 1.25rem;
-}
-
-@starting-style {
-  .modal-sheet[data-open] .modal-sheet__surface {
-    opacity: 0;
-    transform: translateY(2rem) scale(0.985);
-  }
-}
+/* No timeline plumbing here: consumers label their large title
+   `uiSheetLargeTitle`, which both names the `--ui-sheet-headline`
+   view-timeline (scoped by the DS's own `.ui-sheet__surface:has(...)`
+   rule) and feeds ui-sheet-header's sentinel observation. The legacy
+   `--modal-sheet-headline` re-point died with its last consumer. */
 
 @media (max-width: 760px) {
-  .modal-sheet__grabber {
-    display: block;
-  }
-
   .modal-sheet {
     --modal-sheet-safe: 1.1rem;
-    place-items: end center;
-    padding: 0;
   }
 
-  .modal-sheet__surface {
-    inline-size: 100%;
+  .modal-sheet__scroll {
     block-size: min(96svh, 60rem);
-    /* Sheet-radius token (≈27.2px, replaces hardcoded 1.5rem/24px) — one
-       corner value for the sheet at every breakpoint. */
-    border-radius: var(--landing-radius-sheet) var(--landing-radius-sheet) 0 0;
-  }
-
-  .modal-sheet[data-closing] .modal-sheet__surface {
-    transform: translateY(100%);
-  }
-
-  .modal-sheet__toolbar {
-    min-block-size: 3.75rem;
-    padding: 0.55rem 0.65rem;
-    cursor: grab;
-  }
-
-  .modal-sheet[data-dragging] .modal-sheet__toolbar {
-    cursor: grabbing;
-  }
-
-  @starting-style {
-    .modal-sheet[data-open] .modal-sheet__surface {
-      transform: translateY(100%);
-    }
   }
 }

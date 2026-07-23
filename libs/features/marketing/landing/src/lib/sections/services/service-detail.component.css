@@ -1,14 +1,14 @@
-/* The pre-migration service sheet (`services.page.css` .service-sheet__* /
-   .service-performer*), ported with title sizes adapted to the sys ramp
-   (title/title3 instead of the old display cuts) and the performer cards
-   enriched with per-barber terms. `--modal-sheet-safe` cascades from the
-   sheet shell; the shared .sheet-bar-reveal recipe + sheet-content-in
-   keyframes live in landing-shared.css (global). */
+/* Service sheet — intro story first (title · summary), gallery after it,
+   then the fine print (variants / includes / performers), with the book
+   CTA docked in the always-visible ui-sheet-action-bar at the bottom.
+   `--modal-sheet-safe` cascades from the sheet shell. Text roles ride
+   uiText in the template — this file keeps only scroll-collapse, layout
+   glue and the documented local exceptions. */
 
+/* The caption role's automatic secondary ink is for captions — the
+   condensed toolbar title is primary chrome. */
 .service-sheet__compact-title {
   margin: 0;
-  font: var(--sys-font-caption);
-  font-weight: 700;
   color: var(--sys-color-foreground);
 }
 
@@ -16,56 +16,46 @@
   min-inline-size: 0;
 }
 
+/* Story blocks own the safe gutters; the gallery between them runs
+   full-bleed and pads itself. */
 .service-sheet__story {
   min-inline-size: 0;
   margin-inline: var(--modal-sheet-safe);
-  padding-block-end: 3rem;
+}
+
+/* Bottom clearance derives from the action-bar contract instead of a
+   hardcoded rem so content always scrolls clear of the docked CTA. */
+.service-sheet__details {
+  padding-block-end: var(--ui-sheet-action-bar-clearance);
 }
 
 /* ── Intro ─────────────────────────────────────────────────────────── */
 
 .service-sheet__intro {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 2rem;
-  align-items: start;
-  padding-block-start: clamp(1.25rem, 2.5vw, 2rem);
+  padding-block-start: var(--sys-space-comfortable);
 }
 
 .service-sheet__lede > p {
   margin: 0;
 }
 
-/* Title leads at largeTitle (Apple large-title register); as it scrolls
-   under the toolbar it scales down and fades — scroll-driven, zero JS in
-   supporting browsers (the rect-based [titleVisible] flip stays as the
-   fallback, see the @supports block below). */
+/* Title scroll-collapse: as the largeTitle scrolls under the toolbar it
+   scales down and fades — scroll-driven, zero JS in supporting browsers
+   (the rect-based [titleVisible] flip stays as the fallback, see the
+   @supports block below). Type role comes from uiFont="largeTitle". */
 .service-sheet__intro h2 {
   margin: 0;
-  font: var(--sys-font-largeTitle);
-  letter-spacing: var(--sys-tracking-largeTitle);
-  color: var(--sys-color-foreground);
   transform-origin: left top;
-}
-
-/* The section eyebrow reads as a caption line under the title. */
-.service-sheet__eyebrow {
-  margin-block-start: 0.5rem;
-  font: var(--sys-font-eyebrow);
-  letter-spacing: var(--sys-tracking-eyebrow);
-  text-transform: uppercase;
-  color: var(--sys-color-accent);
 }
 
 @supports (animation-timeline: view()) {
   @media (prefers-reduced-motion: no-preference) {
     .service-sheet__intro h2 {
-      /* Named timeline consumed by the sheet toolbar's compact title
-         (cr-modal-sheet declares the matching timeline-scope); the inset
-         mirrors the sticky toolbar height so 'exit' means 'sliding under
-         the toolbar', not 'leaving the scrollport'. */
-      view-timeline-name: --modal-sheet-headline;
-      view-timeline-inset: 4.1rem 0;
+      /* The compact-title/chrome reveal rides the `--ui-sheet-headline`
+         view-timeline the h2's `uiSheetLargeTitle` label names (DS-owned;
+         cr-modal-sheet adds no timeline plumbing of its own). This local
+         animation is only the large title's own scale/fade embellishment,
+         on its anonymous view() timeline as before. */
       animation: service-sheet-title-collapse linear both;
       animation-timeline: view();
       animation-range: exit 0% exit 100%;
@@ -82,234 +72,142 @@
 
 /* Look comes from ui-badge (accent tone); only the flow margin is local. */
 .service-sheet__bundle-badge {
-  margin-block-start: 0.8rem;
-}
-
-.service-sheet__bundle-glyph {
-  font-size: 14px;
+  margin-block-start: var(--sys-space-regular);
 }
 
 .service-sheet__summary > p {
   max-inline-size: 34rem;
   margin: 0;
-  font: var(--sys-font-body);
-  color: color-mix(
-    in srgb,
-    var(--sys-color-foreground) calc(0.64 * 100%),
-    transparent
-  );
 }
 
-.service-sheet__summary > div {
-  display: flex;
-  justify-content: space-between;
-  gap: 2rem;
-  margin-block-start: 1.4rem;
-  font: var(--sys-font-caption);
+.service-sheet__summary-meta {
+  margin-block-start: var(--sys-space-comfortable);
 }
 
-.service-sheet__summary > div span {
+.service-sheet__summary-duration {
   display: inline-flex;
-  gap: 0.4rem;
+  gap: var(--sys-space-tight);
   align-items: center;
-  color: color-mix(
-    in srgb,
-    var(--sys-color-foreground) calc(0.55 * 100%),
-    transparent
-  );
 }
 
-.service-sheet__summary > div strong {
+/* Price reads at full ink (the caption role's secondary is for captions). */
+.service-sheet__summary-price {
   color: var(--sys-color-foreground);
   font-variant-numeric: tabular-nums;
 }
 
-.service-sheet__meta-glyph {
-  font-size: 14px;
-}
-
-/* Geometry comes from ui-button[data-spread]; only the margin is local. */
-.service-sheet__summary > a {
-  margin-block-start: 1.6rem;
-}
-
+/* Size comes from the DS button tier (1.5rem on the spread box in
+   button.css); only the no-shrink guard is local. */
 .service-sheet__cta-glyph {
   flex: 0 0 auto;
-  font-size: 1.2rem;
 }
 
-/* ── Variants / includes — capsule chips ───────────────────────────── */
+/* ── Gallery — full-bleed between the story blocks ─────────────────── */
+
+.service-sheet__gallery {
+  margin-block-start: var(--sys-space-spacious);
+}
+
+/* ── Variants / includes — cr-capsule-list sections ────────────────── */
 
 .service-sheet__variants {
-  margin-block-start: clamp(3rem, 6vw, 4.5rem);
+  margin-block-start: var(--sys-space-spacious);
 }
 
-.service-sheet__variants > header {
-  margin-block-end: 1.2rem;
-}
-
-.service-sheet__variants h3 {
-  margin: 0;
-  font: var(--sys-font-title3);
-  color: var(--sys-color-foreground);
-}
-
-.service-sheet__variants ul {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.55rem;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-/* Deliberately NOT ui-badge/ui-chip: non-interactive display capsules in
-   the old sheet's chunky rhythm (tap-target-scale padding, quiet 5.5%
-   foreground fill) — badge's caption-tight padding and 14% tone tints
-   would break the sheet's visual weight. Built on the DS capsule-radius
-   and type tokens instead. */
-.service-sheet__variants li {
-  padding: 0.9rem 1.05rem;
-  border-radius: var(--control-radius-capsule);
-  background: color-mix(
-    in srgb,
-    var(--sys-color-foreground) calc(0.055 * 100%),
-    transparent
-  );
-  color: var(--sys-color-foreground);
-  font: var(--sys-font-caption);
-  font-weight: 600;
-}
-
-/* ── Performers — old card look + per-barber terms ─────────────────── */
+/* ── Performers — avatar rows, with a 2-up grid alternative ────────── */
 
 .service-performers {
-  margin-block-start: clamp(3rem, 6vw, 4.5rem);
+  margin-block-start: var(--sys-space-spacious);
 }
 
 .service-performers > header {
-  margin-block-end: 1.4rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sys-space-regular);
+  margin-block-end: var(--sys-space-comfortable);
 }
 
 .service-performers h3 {
   margin: 0;
-  font: var(--sys-font-title3);
-  color: var(--sys-color-foreground);
 }
 
-.service-performers > ul {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.7rem;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
+/* Layout toggle is uiButton tinted/capsule/iconOnly — glyph size comes
+   from the DS icon-only tier in button.css (1.25rem at the 44px box). */
 
-.service-performers li {
-  min-inline-size: 0;
-}
-
-/* Not interactive (no click target) — so no hover affordance either:
-   hover feedback on a dead surface is a fake promise (case-study §2.5). */
+/* Row shell comes from ui-list-row (min-height, padding, slots); the
+   quiet fill rides the theme-aware alpha ladder (the old hand-mixed 5.5%
+   read too faint in dark mode). */
 .service-performer {
-  position: relative;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: end;
-  min-block-size: 100%;
-  inline-size: 100%;
-  padding: 0.7rem;
-  border-radius: 1.5rem;
   background: color-mix(
     in srgb,
-    var(--sys-color-foreground) calc(0.055 * 100%),
+    currentColor var(--sys-alpha-fill),
     transparent
   );
-  color: var(--sys-color-foreground);
-}
-
-.service-performer__media {
-  grid-column: 1 / -1;
-  overflow: hidden;
-  aspect-ratio: 1.45;
-  border-radius: 1.05rem;
-  background: color-mix(
-    in srgb,
-    var(--sys-color-foreground) calc(0.08 * 100%),
-    transparent
-  );
-}
-
-.service-performer__media img {
-  inline-size: 100%;
-  block-size: 100%;
-  object-fit: cover;
-  filter: saturate(0.78) contrast(1.03);
-  transform: scale(1.01);
-  transition:
-    filter var(--sys-motion-duration-slowest) var(--sys-motion-ease-standard),
-    transform var(--sys-motion-duration-cinematic)
-      var(--sys-motion-ease-emphasized);
 }
 
 .service-performer__identity {
+  display: block;
   min-inline-size: 0;
-  padding: 1rem 0.35rem 0.5rem;
 }
 
 .service-performer__identity h4 {
   margin: 0;
-  font: var(--sys-font-headline);
-  color: var(--sys-color-foreground);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .service-performer__identity > span {
   display: block;
-  margin-block-start: 0.25rem;
-  font: var(--sys-font-caption);
-  color: color-mix(
-    in srgb,
-    var(--sys-color-foreground) calc(0.48 * 100%),
-    transparent
-  );
+  margin-block-start: var(--sys-space-tight);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .service-performer__terms {
   display: grid;
   justify-items: end;
-  gap: 0.25rem;
-  padding: 0 0.35rem 0.5rem;
+  gap: var(--sys-space-tight);
   text-align: end;
 }
 
+/* Full ink + tabular figures on the price (trailing slot ink defaults to
+   secondary — right for the duration line, not the price). */
 .service-performer__price {
-  font: var(--sys-font-title3);
-  font-weight: 800;
-  font-variant-numeric: tabular-nums;
   color: var(--sys-color-foreground);
+  font-variant-numeric: tabular-nums;
 }
 
 .service-performer__duration {
   display: inline-flex;
   align-items: center;
-  gap: 0.25rem;
-  font: var(--sys-font-caption);
+  gap: var(--sys-space-tight);
   font-variant-numeric: tabular-nums;
-  color: var(--landing-muted-foreground);
 }
 
-.service-performer__duration-glyph {
-  font-size: 12px;
+/* Grid alternative — 2-up tiles, avatar-led, same quiet fill. */
+.service-performers__list[data-grid] .service-performer {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--sys-space-regular);
+  block-size: 100%;
 }
 
-/* ── Bottom booking bar — skeleton/reveal is the shared .sheet-bar-reveal
-   recipe in landing-shared.css; only this bar's row layout stays local. ── */
+.service-performers__list[data-grid] .service-performer__terms {
+  justify-items: start;
+  text-align: start;
+}
 
-/* Geometry comes from ui-button[data-spread]; the float shadow stays
-   local. */
+/* ── Bottom booking bar — always visible while the sheet is open; the
+   skeleton is ui-sheet-action-bar, only this bar's control chrome stays
+   local. ── */
+
+/* Geometry comes from ui-button[data-spread]; the bar is CHROMELESS
+   (SwiftUI `.safeAreaInset(edge: .bottom)`), so the filled prominent CTA
+   is the only surface — it floats directly over the scrolling copy. */
 .service-sheet__booking-bar a {
-  box-shadow: 0 0.8rem 2.8rem rgb(0 0 0 / 0.22);
   white-space: nowrap;
 }
 
@@ -335,23 +233,15 @@ cr-modal-sheet[data-state='open'] .service-sheet__variants {
 /* ── Mobile ────────────────────────────────────────────────────────── */
 
 @media (max-width: 760px) {
-  .service-sheet__summary > div {
-    margin-block-start: 1.2rem;
+  .service-sheet__summary-meta {
+    margin-block-start: var(--sys-space-regular);
   }
 
-  .service-sheet__summary > a {
-    inline-size: 100%;
-    margin-block-start: 1.25rem;
-  }
-
-  .service-sheet__variants ul {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 0.4rem;
-  }
-
-  .service-performers > ul {
-    grid-template-columns: 1fr;
+  /* Single column on the narrow sheet — !important outranks the inline
+     --ui-grid-columns custom property ui-grid stamps (the documented
+     consumer override path). */
+  .service-performers__list[data-grid] {
+    --ui-grid-columns: 1 !important;
   }
 }
 
