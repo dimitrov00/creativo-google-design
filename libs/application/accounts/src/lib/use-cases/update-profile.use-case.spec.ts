@@ -4,7 +4,10 @@ import { FirstName, LastName, User, UserId } from '@creativo/domain/accounts';
 import { RepositoryError } from '@creativo/application/shared';
 import { ProfilePort } from '../ports/profile.port';
 import { UpdateProfileUseCase } from './update-profile.use-case';
-import { ProfileNotFoundError } from './update-profile.errors';
+import {
+  ProfileNotFoundError,
+  UpdateProfileValidationFailure,
+} from './update-profile.errors';
 
 function requiredValue<T, E>(result: Result<T, E>): T {
   if (result.isFailure()) throw new Error('unexpected failure in test fixture');
@@ -65,6 +68,83 @@ describe('UpdateProfileUseCase', () => {
       expect(result.value.lastName.value).toBe('Doeson');
     }
     expect(profiles.saved).toHaveLength(1);
+  });
+
+  it('saves an optional ISO birthDate through the domain door (birthday-only update, names preserved)', async () => {
+    const profiles = fakeProfiles(user());
+    const useCase = new UpdateProfileUseCase(profiles);
+
+    const result = await useCase.execute({
+      userId: requiredValue(UserId.create('user_1')),
+      birthDate: '1990-07-03',
+      today: TODAY,
+    });
+
+    expect(result.isSuccess()).toBe(true);
+    if (result.isSuccess()) {
+      expect(result.value.birthDate?.toISODate()).toBe('1990-07-03');
+      // Omitted names fall back to the stored profile's own.
+      expect(result.value.firstName.value).toBe('Jane');
+      expect(result.value.lastName.value).toBe('Doe');
+    }
+    expect(profiles.saved).toHaveLength(1);
+  });
+
+  it('preserves a stored birthDate across a name-only update', async () => {
+    const profiles = fakeProfiles(user());
+    const useCase = new UpdateProfileUseCase(profiles);
+
+    await useCase.execute({
+      userId: requiredValue(UserId.create('user_1')),
+      birthDate: '1990-07-03',
+      today: TODAY,
+    });
+    const result = await useCase.execute({
+      userId: requiredValue(UserId.create('user_1')),
+      firstName: requiredValue(FirstName.create('Janet')),
+      lastName: requiredValue(LastName.create('Doeson')),
+      today: TODAY,
+    });
+
+    expect(result.isSuccess()).toBe(true);
+    if (result.isSuccess()) {
+      expect(result.value.birthDate?.toISODate()).toBe('1990-07-03');
+      expect(result.value.firstName.value).toBe('Janet');
+    }
+  });
+
+  it('rejects an invalid birthDate without touching the port', async () => {
+    const profiles = fakeProfiles(user());
+    const useCase = new UpdateProfileUseCase(profiles);
+
+    const result = await useCase.execute({
+      userId: requiredValue(UserId.create('user_1')),
+      birthDate: '1990-02-30',
+      today: TODAY,
+    });
+
+    expect(result.isFailure()).toBe(true);
+    if (result.isFailure()) {
+      expect(result.error).toBeInstanceOf(UpdateProfileValidationFailure);
+    }
+    expect(profiles.saved).toHaveLength(0);
+  });
+
+  it('rejects a birthDate outside the accounts age window (too young)', async () => {
+    const profiles = fakeProfiles(user());
+    const useCase = new UpdateProfileUseCase(profiles);
+
+    const result = await useCase.execute({
+      userId: requiredValue(UserId.create('user_1')),
+      birthDate: '2020-01-01',
+      today: TODAY,
+    });
+
+    expect(result.isFailure()).toBe(true);
+    if (result.isFailure()) {
+      expect(result.error).toBeInstanceOf(UpdateProfileValidationFailure);
+    }
+    expect(profiles.saved).toHaveLength(0);
   });
 
   it('reports not-found for an unknown user', async () => {

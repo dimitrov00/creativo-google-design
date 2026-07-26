@@ -1,15 +1,20 @@
-import { PhoneNumber, Result, fail, ok } from '@creativo/domain/kernel';
+import {
+  CountryIso2,
+  PhoneNumber,
+  Result,
+  fail,
+  ok,
+} from '@creativo/domain/kernel';
 import { Email } from './email';
 import { IdentifierInvalidError } from './identifier.errors';
 
 /**
- * Derives the `defaultCountry` parameter type straight off the kernel's own
- * `PhoneNumber.create` signature instead of importing `libphonenumber-js`'s
- * `CountryCode` directly — ESLint blocks that import outside
- * `domain/kernel`, and the kernel's public index doesn't re-export the type
- * on its own.
+ * The `defaultCountry` parameter type of `PhoneNumber.create` — the
+ * kernel's branded `CountryIso2` (obtained via `toCountryIso2`), kept
+ * under this context-local name so identity callers don't couple to the
+ * kernel's spelling.
  */
-export type IdentifierDefaultCountry = Parameters<typeof PhoneNumber.create>[1];
+export type IdentifierDefaultCountry = CountryIso2;
 
 export interface PhoneIdentifier {
   readonly kind: 'phone';

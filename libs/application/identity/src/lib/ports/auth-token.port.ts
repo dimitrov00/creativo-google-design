@@ -47,4 +47,15 @@ export interface AuthTokenPort {
   provisionAuthUser(
     destination: OtpDestination,
   ): Promise<Result<UserId, AuthTokenError>>;
+
+  /**
+   * Stamps the display name onto the Auth USER RECORD (not the claims) at
+   * registration — the session-cached identity chrome (the header's
+   * account monogram) reads it via `AuthGateway.currentDisplayName()`
+   * without ever touching Firestore.
+   */
+  setDisplayName(
+    uid: UserId,
+    displayName: string,
+  ): Promise<Result<void, AuthTokenError>>;
 }

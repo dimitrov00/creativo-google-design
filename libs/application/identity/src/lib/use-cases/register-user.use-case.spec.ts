@@ -77,6 +77,41 @@ describe('RegisterUserUseCase', () => {
     expect(client.registered).toHaveLength(0);
   });
 
+  it('forwards an optional birthDate the strategy does not require', async () => {
+    const client = fakeOtpClient();
+    const useCase = new RegisterUserUseCase(client);
+
+    const result = await useCase.execute(IDENTIFIER, STRATEGY, {
+      phone: '+359881234567',
+      firstName: 'Jane',
+      lastName: 'Doe',
+      birthDate: '1990-07-03',
+    });
+
+    expect(result.isSuccess()).toBe(true);
+    const [{ fields }] = client.registered as [
+      { fields: Record<string, string> },
+    ];
+    expect(fields['birthDate']).toBe('1990-07-03');
+  });
+
+  it('still succeeds without birthDate — it is never a required field of the default strategy', async () => {
+    const client = fakeOtpClient();
+    const useCase = new RegisterUserUseCase(client);
+
+    const result = await useCase.execute(IDENTIFIER, STRATEGY, {
+      phone: '+359881234567',
+      firstName: 'Jane',
+      lastName: 'Doe',
+    });
+
+    expect(result.isSuccess()).toBe(true);
+    const [{ fields }] = client.registered as [
+      { fields: Record<string, string> },
+    ];
+    expect(fields['birthDate']).toBeUndefined();
+  });
+
   it('treats the identifier itself as satisfying its own required field, even when the caller never resupplies it', async () => {
     const client = fakeOtpClient();
     const phoneStrategy: AuthStrategy = {

@@ -21,7 +21,7 @@ function advance(
 }
 
 describe('advanceOnboardingFlow', () => {
-  it('walks about -> reward -> services -> avatar -> entering, personalizing along the way', () => {
+  it('walks about -> reward -> services -> birthday -> avatar -> entering, personalizing along the way', () => {
     let state = advance(ONBOARDING_FLOW_INITIAL_STATE, { type: 'registered' });
     expect(state.kind).toBe('reward');
 
@@ -30,6 +30,12 @@ describe('advanceOnboardingFlow', () => {
 
     const serviceId = requiredValue(ServiceId.create('service_1'));
     state = advance(state, { type: 'submit_services', services: [serviceId] });
+    expect(state.kind).toBe('birthday');
+    if (state.kind === 'birthday') {
+      expect(state.selected).toEqual([serviceId]);
+    }
+
+    state = advance(state, { type: 'submit_birthday' });
     expect(state.kind).toBe('avatar');
     if (state.kind === 'avatar') {
       expect(state.selected).toEqual([serviceId]);
@@ -45,13 +51,39 @@ describe('advanceOnboardingFlow', () => {
     expect(state.kind).toBe('entering');
   });
 
-  it('skipping services still reaches avatar with nothing selected', () => {
+  it('skipping services still reaches the birthday step with nothing selected', () => {
     let state = advance(ONBOARDING_FLOW_INITIAL_STATE, { type: 'registered' });
     state = advance(state, { type: 'personalize' });
     state = advance(state, { type: 'skip_services' });
+    expect(state.kind).toBe('birthday');
+    if (state.kind === 'birthday') {
+      expect(state.selected).toEqual([]);
+    }
+  });
+
+  it('skipping the birthday reaches avatar, preserving the service selection', () => {
+    let state = advance(ONBOARDING_FLOW_INITIAL_STATE, { type: 'registered' });
+    state = advance(state, { type: 'personalize' });
+    const serviceId = requiredValue(ServiceId.create('service_1'));
+    state = advance(state, { type: 'submit_services', services: [serviceId] });
+    state = advance(state, { type: 'skip_birthday' });
     expect(state.kind).toBe('avatar');
     if (state.kind === 'avatar') {
-      expect(state.selected).toEqual([]);
+      expect(state.selected).toEqual([serviceId]);
+    }
+  });
+
+  it('keeps a failed birthday save on the birthday step, carrying the error', () => {
+    let state = advance(ONBOARDING_FLOW_INITIAL_STATE, { type: 'registered' });
+    state = advance(state, { type: 'personalize' });
+    state = advance(state, { type: 'skip_services' });
+    state = advance(state, {
+      type: 'birthday_failed',
+      message: 'accounts.update_profile.repository_failure',
+    });
+    expect(state.kind).toBe('birthday');
+    if (state.kind === 'birthday') {
+      expect(state.error).toBe('accounts.update_profile.repository_failure');
     }
   });
 
@@ -66,14 +98,25 @@ describe('advanceOnboardingFlow', () => {
     }
   });
 
-  it('back from avatar returns to services, preserving the selection', () => {
+  it('back walks avatar -> birthday -> services, preserving the selection', () => {
     let state = advance(ONBOARDING_FLOW_INITIAL_STATE, { type: 'registered' });
     state = advance(state, { type: 'personalize' });
     const serviceId = requiredValue(ServiceId.create('service_1'));
     state = advance(state, { type: 'submit_services', services: [serviceId] });
+    state = advance(state, { type: 'skip_birthday' });
+    expect(state.kind).toBe('avatar');
+
+    state = advance(state, { type: 'back' });
+    expect(state.kind).toBe('birthday');
+    if (state.kind === 'birthday') {
+      expect(state.selected).toEqual([serviceId]);
+    }
 
     state = advance(state, { type: 'back' });
     expect(state.kind).toBe('services');
+    if (state.kind === 'services') {
+      expect(state.selected).toEqual([serviceId]);
+    }
   });
 
   it('rejects an illegal transition from a terminal state', () => {

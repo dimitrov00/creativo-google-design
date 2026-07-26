@@ -42,6 +42,7 @@ function fakeGateway(principals: readonly Principal[]): AuthGateway & {
     async signOut(): Promise<Result<void, AuthGatewayError>> {
       return ok(undefined);
     },
+    currentIdentifier: () => null,
   };
 }
 

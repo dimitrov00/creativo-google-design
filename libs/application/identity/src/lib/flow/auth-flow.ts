@@ -5,14 +5,20 @@ import { InvalidAuthFlowTransitionError } from './auth-flow.errors';
 /**
  * Pure port of v2's `auth.machine.ts` (`docs/migration-blueprint.md` §5.3)
  * — identity only: prove who the user is via a code challenge
- * (`welcome → identify → otp → authenticated | done`). Unlike the XState
- * original, this machine never invokes the network itself: the async
+ * (`identify → otp → authenticated | done`). Unlike the XState original,
+ * this machine never invokes the network itself: the async
  * `sendingOtp`/`verifyingOtp` steps collapse into events the wrapping
  * feature store dispatches once `RequestOtpUseCase`/`VerifyOtpUseCase`
  * settle — `advance` stays a synchronous, side-effect-free reducer.
+ *
+ * The v2 `welcome` interstitial (a lone "Get started" tap for nothing) is
+ * retired — with a single sign-in method the flow OPENS on `identify`
+ * (auth-flow design §1.5); the identify screen carries the brand moment
+ * itself. Resend cooldowns and auto-verify delays are presentational store
+ * state, never machine states — the machine stays synchronous and
+ * channel-agnostic.
  */
 export type AuthFlowState =
-  | { readonly kind: 'welcome' }
   | { readonly kind: 'identify'; readonly error?: string }
   | {
       readonly kind: 'otp';
@@ -28,7 +34,6 @@ export type AuthFlowState =
   | { readonly kind: 'authenticated' };
 
 export type AuthFlowEvent =
-  | { readonly type: 'get_started' }
   | { readonly type: 'submit_identifier'; readonly identifier: Identifier }
   | {
       readonly type: 'request_failed';
@@ -46,23 +51,16 @@ export type AuthFlowEvent =
   | { readonly type: 'change_identifier' }
   | { readonly type: 'back' };
 
-export const AUTH_FLOW_INITIAL_STATE: AuthFlowState = { kind: 'welcome' };
+export const AUTH_FLOW_INITIAL_STATE: AuthFlowState = { kind: 'identify' };
 
 export function advanceAuthFlow(
   state: AuthFlowState,
   event: AuthFlowEvent,
 ): Result<AuthFlowState, InvalidAuthFlowTransitionError> {
   switch (state.kind) {
-    case 'welcome':
-      if (event.type === 'get_started') return ok({ kind: 'identify' });
-      break;
-
     case 'identify':
       if (event.type === 'submit_identifier') {
         return ok({ kind: 'otp', identifier: event.identifier });
-      }
-      if (event.type === 'back') {
-        return ok({ kind: 'welcome' });
       }
       break;
 
@@ -95,6 +93,10 @@ export function advanceAuthFlow(
           );
         case 'change_identifier':
         case 'back':
+          // Both the "Edit" affordance and the in-page Back control return
+          // to identify — the identifier field stays pre-filled (feature
+          // state, not machine state) and the outstanding challenge id is
+          // invalidated by the store.
           return ok({ kind: 'identify' });
         case 'resend_otp':
         case 'submit_otp':

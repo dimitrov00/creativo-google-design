@@ -218,11 +218,14 @@ export function createAuthStrategy(
  * identify step, `RegisterUserUseCase` caller) and `apps/functions`
  * (`completeRegistration`'s server-side validation) import this ONE
  * instance rather than each hardcoding their own copy of the same policy.
- * Phone-OTP, matching the booking app's phone-contact requirement
- * (`validateRequired`'s `AuthStrategyPhoneMissingError` invariant above).
+ * Email-OTP (the adopted auth-flow design's deployment): sign-in happens
+ * over email, and the phone-contact requirement — `validateRequired`'s
+ * `AuthStrategyPhoneMissingError` invariant above — is satisfied by the
+ * onboarding profile step collecting a phone instead of the login channel
+ * supplying it.
  */
 const DEFAULT_AUTH_STRATEGY_RESULT = createAuthStrategy({
-  kind: 'phone_otp',
+  kind: 'email_otp',
   required: ['phone', 'firstName', 'lastName'],
   policy: { ttlMinutes: 5, maxAttempts: 5, sessionDays: 30 },
 });

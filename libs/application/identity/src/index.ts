@@ -7,6 +7,7 @@ export * from './lib/ports/otp-sender.port';
 export * from './lib/ports/user-repository.port';
 export * from './lib/ports/auth-gateway.port';
 export * from './lib/ports/otp-client.port';
+export * from './lib/auth-deployment.token';
 export * from './lib/use-cases/request-otp.use-case';
 export * from './lib/use-cases/verify-otp.use-case';
 export * from './lib/use-cases/register-user.use-case';
@@ -30,3 +31,23 @@ export * from '@creativo/domain/identity';
 // `Result`s without an illegal `type:domain` import of their own.
 export type { Result } from '@creativo/domain/kernel';
 export { ok, fail } from '@creativo/domain/kernel';
+// The kernel's caged phone vocabulary, re-exported for the same reason:
+// feature steps that COLLECT a phone (onboarding's about step, a phone-OTP
+// identify screen) validate the field text through `PhoneNumber.create`
+// and reason-map `PhoneNumberInvalidError.reason` to example-bearing error
+// copy (`examplePhoneNumber`) — without an illegal `type:domain` import of
+// their own. `libphonenumber-js` itself stays caged in `domain/kernel`.
+export {
+  PhoneNumber,
+  PhoneNumberInvalidError,
+  examplePhoneNumber,
+} from '@creativo/domain/kernel';
+export type {
+  CountryIso2,
+  PhoneNumberInvalidReason,
+} from '@creativo/domain/kernel';
+// `BirthDate.create`'s explicit `today` parameter (§7.1 — no raw `Date` in
+// domain code) is a kernel `ZonedDateTime`; re-exported so the onboarding
+// about step (and its test doubles) can source `today` from the `Clock`
+// port and hand it to the VO without an illegal `type:domain` import.
+export { ZonedDateTime } from '@creativo/domain/kernel';

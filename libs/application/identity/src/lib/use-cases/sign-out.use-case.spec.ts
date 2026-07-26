@@ -15,6 +15,9 @@ function fakeAuthGateway(): AuthGateway & { signedOut: boolean } {
     refreshToken: () => {
       throw new Error('not used in this spec');
     },
+    currentIdentifier: () => {
+      throw new Error('not used in this spec');
+    },
     async signOut(): Promise<Result<void, AuthGatewayError>> {
       signedOut = true;
       return ok(undefined);

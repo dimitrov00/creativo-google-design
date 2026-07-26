@@ -10,12 +10,22 @@ import {
 
 export interface UpdateProfileInput {
   readonly userId: UserId;
-  readonly firstName: FirstName;
-  readonly lastName: LastName;
+  /** Omitted fields keep their current profile value — a birthday-only save (onboarding's personalization step) never has to re-supply the names. */
+  readonly firstName?: FirstName;
+  readonly lastName?: LastName;
+  /**
+   * OPTIONAL birthday as ISO `YYYY-MM-DD` (the wire/persistence format the
+   * onboarding birthday step derives from its own `BirthDate` VO).
+   * Validated here through `User.create`'s domain door — the accounts
+   * `BirthDate.create` re-checks calendar reality and the 16–120 age
+   * window before anything reaches the port. Omitted → the stored value
+   * (if any) is preserved untouched.
+   */
+  readonly birthDate?: string;
   readonly today: ZonedDateTime;
 }
 
-/** Loads the current profile and rebuilds it through `User.create` with the new name — the domain's own validating door, not a partial patch. */
+/** Loads the current profile and rebuilds it through `User.create` with the changed fields — the domain's own validating door, not a partial patch. */
 export class UpdateProfileUseCase {
   constructor(private readonly profiles: ProfilePort) {}
 
@@ -31,16 +41,17 @@ export class UpdateProfileUseCase {
       return fail(new ProfileNotFoundError());
     }
 
+    const birthDate = input.birthDate ?? current.birthDate?.toISODate();
     const rebuiltResult = User.create(
       {
         id: current.id.value,
         phone: current.phone.value,
-        firstName: input.firstName.value,
-        lastName: input.lastName.value,
+        firstName: (input.firstName ?? current.firstName).value,
+        lastName: (input.lastName ?? current.lastName).value,
         roles: [...current.roles],
         status: current.status,
         ...(current.email && { email: current.email.value }),
-        ...(current.birthDate && { birthDate: current.birthDate.toISODate() }),
+        ...(birthDate !== undefined && { birthDate }),
       },
       input.today,
     );

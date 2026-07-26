@@ -17,7 +17,14 @@ export type RegisterUserError =
   | MissingRegistrationFieldError
   | { readonly kind: 'client_error'; readonly error: OtpClientError };
 
-/** Checks every field the deployment's `AuthStrategy` requires is present before spending the call — the strategy is the single source of truth, not a hardcoded field list. */
+/**
+ * Checks every field the deployment's `AuthStrategy` requires is present
+ * before spending the call — the strategy is the single source of truth,
+ * not a hardcoded field list. Optional extras the strategy does NOT
+ * require (e.g. `birthDate`, ISO `YYYY-MM-DD` validated by the about step
+ * through `BirthDate`) are forwarded untouched — the server re-validates
+ * them at its own boundary.
+ */
 export class RegisterUserUseCase {
   constructor(private readonly otpClient: OtpClient) {}
 
@@ -37,7 +44,7 @@ export class RegisterUserUseCase {
 
     for (const field of strategy.required) {
       if (!authStrategyRequires(strategy, field)) continue;
-      // `field` is always one of the four `RegistrationField` literals
+      // `field` is always one of the `RegistrationField` literals
       // (`strategy.required`'s own element type), never external input.
       // eslint-disable-next-line security/detect-object-injection
       const value = effectiveFields[field];

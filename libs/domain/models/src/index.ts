@@ -11,10 +11,11 @@ export * from './lib/working-hours.errors';
 export * from './lib/appointment-status';
 
 // Entities / aggregates
+// (the legacy foundation-pass `User` lived here until the greenfield
+// schema unification — `domain/accounts`' `User` is THE user aggregate
+// now, persisted identically by `apps/functions` and the web adapter)
 export * from './lib/tenant';
 export * from './lib/tenant.errors';
-export * from './lib/user';
-export * from './lib/user.errors';
 export * from './lib/staff';
 export * from './lib/staff.errors';
 export * from './lib/service';

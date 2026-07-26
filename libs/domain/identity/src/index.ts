@@ -22,8 +22,13 @@ export * from './lib/principal';
 
 export * from './lib/registration-field';
 
+export * from './lib/birth-date';
+export * from './lib/birth-date.errors';
+
 export * from './lib/auth-strategy';
 export * from './lib/auth-strategy.errors';
+
+export * from './lib/auth-deployment';
 
 export * from './lib/session-kind';
 

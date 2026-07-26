@@ -9,3 +9,5 @@ export * from './lib/zoned-date-time';
 export * from './lib/zoned-date-time.errors';
 export * from './lib/phone-number';
 export * from './lib/phone-number.errors';
+export * from './lib/phone-country';
+export * from './lib/phone-country.errors';

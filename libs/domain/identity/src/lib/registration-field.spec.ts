@@ -7,6 +7,7 @@ describe('isRegistrationField', () => {
     expect(isRegistrationField('email')).toBe(true);
     expect(isRegistrationField('firstName')).toBe(true);
     expect(isRegistrationField('lastName')).toBe(true);
+    expect(isRegistrationField('birthDate')).toBe(true);
   });
 
   it('rejects an unknown value', () => {
