@@ -28,6 +28,9 @@
       "path": "../../libs/domain/kernel/tsconfig.lib.json"
     },
     {
+      "path": "../../libs/features/admin/programs/tsconfig.lib.json"
+    },
+    {
       "path": "../../libs/features/admin/impersonation/tsconfig.lib.json"
     },
     {
@@ -38,6 +41,15 @@
     },
     {
       "path": "../../libs/features/client/account/tsconfig.lib.json"
+    },
+    {
+      "path": "../../libs/features/marketing/events/tsconfig.lib.json"
+    },
+    {
+      "path": "../../libs/features/marketing/courses/tsconfig.lib.json"
+    },
+    {
+      "path": "../../libs/features/marketing/careers/tsconfig.lib.json"
     },
     {
       "path": "../../libs/features/client/booking/tsconfig.lib.json"
@@ -65,6 +77,9 @@
     },
     {
       "path": "../../libs/application/shared/tsconfig.lib.json"
+    },
+    {
+      "path": "../../libs/application/programs/tsconfig.lib.json"
     },
     {
       "path": "../../libs/application/governance/tsconfig.lib.json"

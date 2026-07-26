@@ -23,6 +23,11 @@
             "glob": "*.json",
             "input": "libs/infrastructure/i18n/src/assets/i18n",
             "output": "assets/i18n"
+          },
+          {
+            "glob": "*.svg",
+            "input": "node_modules/flag-icons/flags/1x1",
+            "output": "assets/flags/1x1"
           }
         ],
         "styles": ["apps/web/src/styles.css"]

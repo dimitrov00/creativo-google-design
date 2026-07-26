@@ -333,17 +333,16 @@ predated the bounded-context domain model.
   detection) dropped entirely — no `IdentityRepository` port exists in
   `libs/application/identity` (Goal 03 didn't build one), so there is nothing
   to adapt against; nothing schema-level to design either.
-- **`users/{uid}` schema seam with `apps/functions`**: the pre-Phase-7 OTP
-  scaffold's `FirestoreUserRepository`/`FirestoreOtpRepository`
-  (`apps/functions/src/adapters/*`) still read/write the legacy
-  `@creativo/domain/models` `User` shape (`displayName`/`referralCode`/
-  `tenantMemberships`) at the same `users/{uid}` path this phase's
-  `FirestoreProfileAdapter` writes the new `@creativo/domain/accounts` `User`
-  shape to (`firstName`/`lastName`/`roles`/`status`/`searchName`/
-  `searchPrefixes`). Phase 7 ("port v2's use-cases onto the new domain inside
-  `apps/functions`") must reconcile this before both write paths are live
-  simultaneously — flagged here, not fixed; out of Goal 04's scope
-  (`libs/infrastructure` only, `apps/functions` untouched).
+- **`users/{uid}` schema seam with `apps/functions` — RESOLVED**: the OTP
+  scaffold's `FirestoreUserRepository` (`apps/functions/src/adapters`) now
+  persists the same `@creativo/domain/accounts` `User` document
+  `FirestoreProfileAdapter` writes (`firstName`/`lastName`/`roles`/`status`/
+  `searchName`/`searchPrefixes`) — `completeRegistration` builds the real
+  accounts aggregate and the legacy `@creativo/domain/models` `User`
+  (`displayName`/`referralCode`/`tenantMemberships`) was deleted outright.
+  Pre-registration, `verifyOtpChallenge` provisions only a contact-channel
+  stub (`{email, phone}`); activation claims are keyed off the registered
+  profile's `firstName` presence (formerly `displayName`).
 - **`ContactChangePort`/`OtpClient` are thin `httpsCallable` wrappers** even
   though their backing Cloud Functions callables don't exist yet
   (`apps/functions` Phase 7 work) — the adapters are correct and fully typed

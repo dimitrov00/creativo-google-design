@@ -28,13 +28,13 @@
   ],
   "references": [
     {
+      "path": "../../../ui/patterns/tsconfig.lib.json"
+    },
+    {
       "path": "../../../infrastructure/i18n/tsconfig.lib.json"
     },
     {
       "path": "../../../ui/modifiers/tsconfig.lib.json"
-    },
-    {
-      "path": "../../../ui/patterns/tsconfig.lib.json"
     },
     {
       "path": "../../../ui/layout/tsconfig.lib.json"

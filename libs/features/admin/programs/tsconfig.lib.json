@@ -28,9 +28,6 @@
   ],
   "references": [
     {
-      "path": "../../../infrastructure/i18n/tsconfig.lib.json"
-    },
-    {
       "path": "../../../ui/modifiers/tsconfig.lib.json"
     },
     {
@@ -43,7 +40,10 @@
       "path": "../../../ui/controls/tsconfig.lib.json"
     },
     {
-      "path": "../../../application/identity/tsconfig.lib.json"
+      "path": "../../../application/shared/tsconfig.lib.json"
+    },
+    {
+      "path": "../../../application/programs/tsconfig.lib.json"
     }
   ]
 }

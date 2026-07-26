@@ -55,7 +55,7 @@ still cannot reach into `libs/features/staff/*` directly.
 type:app            ──▶ feature, application, ui, infrastructure, domain, util, tokens
 type:feature         ─▶ feature, application, ui, infrastructure, util
 type:application     ─▶ application, domain, util
-type:ui              ──▶ ui, tokens, util                    (never application or infrastructure)
+type:ui              ──▶ ui, tokens, util, domain            (never application or infrastructure)
 type:infrastructure  ─▶ application, domain, util             (never ui or feature)
 type:domain          ─▶ domain                                (never depends on application/infrastructure/ui)
 type:util            ──▶ util, tokens
@@ -64,7 +64,12 @@ type:tokens          ─▶ tokens                                (never depends
 
 The critical arrow is **`ui` never sees `application` or `infrastructure`** —
 that's the one that keeps the design system reusable across every product
-surface without dragging in app-specific ports or Firebase. `type:feature`
+surface without dragging in app-specific ports or Firebase. `type:ui` IS
+allowed to depend on `type:domain` (added 2026-07-25 for `UiPhoneField`):
+the domain kernel is pure TypeScript — Result types, value objects and the
+caged `libphonenumber-js` wrapper — with zero Angular and zero IO, so
+consuming it from a DS composite drags in no app wiring; the constraint
+that matters (no ports, no Firebase, no use-cases in the DS) is untouched. `type:feature`
 is allowed a direct `type:infrastructure` dependency (e.g.
 `libs/features/marketing/landing`'s `language.service.ts` reads
 `SupportedLang` from `@creativo/infrastructure/i18n`) — narrow,

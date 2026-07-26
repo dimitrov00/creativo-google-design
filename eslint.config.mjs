@@ -112,8 +112,20 @@ export default [
               ],
             },
             {
+              // `type:domain` added 2026-07-25 (auth-flow design, slice
+              // "UiPhoneField"): DS composites may consume the PURE domain
+              // kernel (Result/value objects/branded types, zero Angular,
+              // zero IO — and the caged libphonenumber wrapper UiPhoneField
+              // needs for as-you-type formatting). The hexagon's critical
+              // arrow is unchanged: ui still never sees `application` or
+              // `infrastructure` — see docs/architecture/module-boundaries.md.
               sourceTag: 'type:ui',
-              onlyDependOnLibsWithTags: ['type:ui', 'type:tokens', 'type:util'],
+              onlyDependOnLibsWithTags: [
+                'type:ui',
+                'type:tokens',
+                'type:util',
+                'type:domain',
+              ],
             },
             {
               // `type:infrastructure` may also depend on itself (added
@@ -179,6 +191,11 @@ export default [
               message:
                 'firebase/* and firebase-admin may only be imported from libs/infrastructure/** or apps/functions/** — go through a port instead.',
             },
+            {
+              group: ['libphonenumber-js', 'libphonenumber-js/*'],
+              message:
+                'libphonenumber-js may only be imported from libs/domain/kernel/** — use PhoneNumber instead.',
+            },
           ],
           paths: [
             {
@@ -190,11 +207,6 @@ export default [
               name: 'luxon',
               message:
                 'luxon may only be imported from libs/domain/kernel/** — use ZonedDateTime instead.',
-            },
-            {
-              name: 'libphonenumber-js',
-              message:
-                'libphonenumber-js may only be imported from libs/domain/kernel/** — use PhoneNumber instead.',
             },
           ],
         },

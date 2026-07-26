@@ -107,6 +107,25 @@
       ],
       "@creativo/features/client/appointments": [
         "./libs/features/client/appointments/src/index.ts"
+      ],
+      "@creativo/domain/programs": ["./libs/domain/programs/src/index.ts"],
+      "@creativo/application/programs": [
+        "./libs/application/programs/src/index.ts"
+      ],
+      "@creativo/features/marketing/careers": [
+        "./libs/features/marketing/careers/src/index.ts"
+      ],
+      "@creativo/features/marketing/courses": [
+        "./libs/features/marketing/courses/src/index.ts"
+      ],
+      "@creativo/features/marketing/events": [
+        "./libs/features/marketing/events/src/index.ts"
+      ],
+      "@creativo/features/admin/programs": [
+        "./libs/features/admin/programs/src/index.ts"
+      ],
+      "@creativo/features/marketing/shell": [
+        "./libs/features/marketing/shell/src/index.ts"
       ]
     }
   }
