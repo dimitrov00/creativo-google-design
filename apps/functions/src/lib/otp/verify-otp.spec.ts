@@ -1,4 +1,3 @@
-import { EmptyReferralCodeError } from '@creativo/domain/models';
 import { AuthTokenError } from '@creativo/application/identity';
 import { describe, expect, it } from 'vitest';
 import {
@@ -9,7 +8,6 @@ import {
   OtpLockedOutError,
   OtpNotFoundError,
   TokenMintingFailure,
-  UserValidationFailure,
 } from '../../use-cases/verify-otp.errors';
 import { toHttpsError } from './verify-otp';
 
@@ -53,15 +51,5 @@ describe('verify-otp toHttpsError', () => {
     expect(
       toHttpsError(new TokenMintingFailure(new AuthTokenError('boom'))).code,
     ).toBe('internal');
-  });
-
-  it('maps UserValidationFailure to invalid-argument with aggregated error codes', () => {
-    const httpsError = toHttpsError(
-      new UserValidationFailure([new EmptyReferralCodeError()]),
-    );
-    expect(httpsError.code).toBe('invalid-argument');
-    expect(httpsError.details).toEqual({
-      errors: [{ code: 'referral_code_empty', params: {} }],
-    });
   });
 });

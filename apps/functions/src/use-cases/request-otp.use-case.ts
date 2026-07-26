@@ -1,6 +1,10 @@
 import { Email, Otp, OtpId, OtpPurpose } from '@creativo/domain/models';
 import { PhoneNumber, Result, fail, ok } from '@creativo/domain/kernel';
 import {
+  AuthDeployment,
+  identifierKindForStrategy,
+} from '@creativo/domain/identity';
+import {
   OtpCodeGenerator,
   OtpCodeHasher,
   OtpDestination,
@@ -11,6 +15,7 @@ import {
 import { ClockPort } from '@creativo/application/shared';
 import {
   InvalidInputError,
+  OtpChannelMismatchError,
   RateLimitedError,
   RepositoryFailure,
   RequestOtpError,
@@ -18,8 +23,9 @@ import {
   ValidationFailure,
 } from './request-otp.errors';
 
-const OTP_TTL_MINUTES = 5;
-const MAX_ATTEMPTS = 5;
+// NOT part of `OtpPolicy` (which owns ttl/attempts/session): the resend
+// window is server-side abuse throttling, deliberately outside deployment
+// config so a config edit can never widen it by accident.
 const RATE_LIMIT_WINDOW_MINUTES = 1;
 const OTP_ZONE = 'UTC';
 
@@ -80,6 +86,7 @@ export class RequestOtpUseCase {
     private readonly sender: OtpSenderPort,
     private readonly clock: ClockPort,
     private readonly otpCrypto: OtpCodeGenerator & OtpCodeHasher,
+    private readonly deployment: AuthDeployment,
   ) {}
 
   async execute(
@@ -90,6 +97,20 @@ export class RequestOtpUseCase {
       return fail(inputResult.error);
     }
     const input = inputResult.value;
+
+    // The deployment decides the ONE challenge channel — a phone-OTP
+    // deployment must not be drivable over email (and vice versa), or the
+    // strategy's policy/anti-enumeration posture stops meaning anything.
+    // Magic-link deployments issue no code challenges at all, so any OTP
+    // request against one is a mismatch by definition.
+    const strategy = this.deployment.strategy;
+    const requestedKind = input.destinationType === 'sms' ? 'phone' : 'email';
+    if (
+      strategy.kind === 'email_link' ||
+      requestedKind !== identifierKindForStrategy(strategy)
+    ) {
+      return fail(new OtpChannelMismatchError(requestedKind, strategy.kind));
+    }
 
     const destinationResult = parseDestination(input);
     if (destinationResult.isFailure()) {
@@ -123,8 +144,10 @@ export class RequestOtpUseCase {
         destination: input.destination,
         destinationType: input.destinationType,
         purpose: input.purpose,
-        maxAttempts: MAX_ATTEMPTS,
-        ttlMinutes: OTP_TTL_MINUTES,
+        // The narrowed OTP strategy's own policy — the same numbers the
+        // client reads off the shared deployment, never a local copy.
+        maxAttempts: strategy.policy.maxAttempts,
+        ttlMinutes: strategy.policy.ttlMinutes,
       },
       this.otpCrypto,
       this.otpCrypto,

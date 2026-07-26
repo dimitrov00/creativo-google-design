@@ -1,6 +1,7 @@
-import { Otp, User, UserId } from '@creativo/domain/models';
+import { Otp, UserId } from '@creativo/domain/models';
 import {
   OtpRepositoryPort,
+  UserRecordSnapshot,
   UserRepositoryPort,
   otpDestinationValue,
 } from '@creativo/application/identity';
@@ -62,22 +63,50 @@ function fakeOtpRepository(): OtpRepositoryPort & { store: Map<string, Otp> } {
   };
 }
 
+/** Raw doc mirror of the adapter's `users/{uid}` shape — `registered` derives from `firstName` presence exactly as `FirestoreUserRepository` does. */
+interface StoredUserDoc {
+  email: string | null;
+  phone: string | null;
+  firstName?: string;
+  birthDate?: string | null;
+}
+
 function fakeUserRepository(): UserRepositoryPort & {
-  store: Map<string, User>;
+  store: Map<string, StoredUserDoc>;
 } {
-  const store = new Map<string, User>();
+  const store = new Map<string, StoredUserDoc>();
   return {
     store,
-    async save(user): Promise<Result<void, RepositoryError>> {
-      store.set(user.id.value, user);
+    async provision(user): Promise<Result<void, RepositoryError>> {
+      store.set(user.id.value, { email: user.email, phone: user.phone });
+      return ok(undefined);
+    },
+    async saveRegistered(user): Promise<Result<void, RepositoryError>> {
+      store.set(user.id.value, {
+        email: user.email?.value ?? null,
+        phone: user.phone.value,
+        firstName: user.firstName.value,
+        birthDate: user.birthDate?.toISODate() ?? null,
+      });
       return ok(undefined);
     },
     async findByDestination(
       destination,
-    ): Promise<Result<User | null, RepositoryError>> {
+    ): Promise<Result<UserRecordSnapshot | null, RepositoryError>> {
       const raw = otpDestinationValue(destination);
-      for (const user of store.values()) {
-        if (user.email?.value === raw || user.phone === raw) return ok(user);
+      for (const [id, doc] of store.entries()) {
+        if (doc.email === raw || doc.phone === raw) {
+          const idResult = UserId.create(id);
+          if (idResult.isFailure())
+            throw new Error('unexpected failure in test fixture');
+          return ok({
+            id: idResult.value,
+            email: doc.email,
+            phone: doc.phone,
+            birthDate: doc.birthDate ?? null,
+            registered: !!doc.firstName,
+          });
+        }
       }
       return ok(null);
     },
@@ -161,10 +190,14 @@ describe('VerifyOtpUseCase', () => {
     }
     const minted = authToken.mintedTokens[0];
     expect((minted.tenantId as { value: string }).value).toBe('creativo');
-    // A freshly provisioned user has no `displayName` yet — claims stay
-    // `onboarding` until `completeRegistration` sets one.
+    // A freshly provisioned user has no registered profile yet — claims
+    // stay `onboarding` until `completeRegistration` writes one.
     expect(minted.claims).toEqual({ stage: 'onboarding' });
     expect(users.store.size).toBe(1);
+    expect(users.store.get('uid_1')).toEqual({
+      email: 'client@example.com',
+      phone: null,
+    });
   });
 
   it('reuses an existing user on a second OTP flow for the same destination', async () => {
@@ -344,17 +377,13 @@ describe('VerifyOtpUseCase', () => {
     const otp = issueOtp(clock);
     await otps.save(otp);
 
-    const registeredUser = User.create({
-      id: 'uid_existing',
-      displayName: 'Existing Client',
+    // Seed a completed registration (accounts-shape doc — `firstName`
+    // present is what flips the adapter's `registered` flag).
+    users.store.set('uid_existing', {
       email: 'client@example.com',
-      referralCode: 'REF12345',
-      gamificationPoints: 0,
-      tenantMemberships: [],
+      phone: '+14155552671',
+      firstName: 'Existing',
     });
-    if (registeredUser.isFailure())
-      throw new Error('unexpected failure in test fixture');
-    await users.save(registeredUser.value);
 
     const useCase = new VerifyOtpUseCase(
       otps,

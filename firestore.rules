@@ -167,6 +167,24 @@ service cloud.firestore {
       allow write: if isCatalogManager();
     }
 
+    // ── programs (public browse, staff/content-manager write) ─────────────
+    // Open positions, courses, and shop events — same posture as catalog:
+    // public read, `content_manager`/`admin`/`sysadmin` write.
+    match /positions/{positionId} {
+      allow read: if true;
+      allow write: if isCatalogManager();
+    }
+
+    match /courses/{courseId} {
+      allow read: if true;
+      allow write: if isCatalogManager();
+    }
+
+    match /events/{eventId} {
+      allow read: if true;
+      allow write: if isCatalogManager();
+    }
+
     // ── engagement ──────────────────────────────────────────────────────
     // Deviation from v2 (which left `coupons` closed entirely): a
     // `CouponGrant` here only embeds its own `CouponValue` snapshot, not the

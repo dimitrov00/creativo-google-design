@@ -1,5 +1,4 @@
-import { randomBytes } from 'node:crypto';
-import { OtpId, User } from '@creativo/domain/models';
+import { OtpId } from '@creativo/domain/models';
 import { Result, fail, ok } from '@creativo/domain/kernel';
 import {
   ONBOARDING_CLAIMS,
@@ -12,6 +11,7 @@ import {
   OtpCodeHasher,
   OtpDestination,
   OtpRepositoryPort,
+  UserRecordSnapshot,
   UserRepositoryPort,
   otpDestinationFromRaw,
   otpDestinationValue,
@@ -27,7 +27,6 @@ import {
   OtpNotFoundError,
   RepositoryFailure,
   TokenMintingFailure,
-  UserValidationFailure,
   VerifyOtpError,
 } from './verify-otp.errors';
 
@@ -52,10 +51,6 @@ function parseInput(raw: unknown): Result<VerifyOtpInput, InvalidInputError> {
   }
 
   return ok({ otpId, code });
-}
-
-function generateReferralCode(): string {
-  return randomBytes(6).toString('base64url').toUpperCase().slice(0, 8);
 }
 
 export class VerifyOtpUseCase {
@@ -153,12 +148,13 @@ export class VerifyOtpUseCase {
     // out-of-band via the Admin SDK, closing the obvious privilege-
     // escalation hole a self-service role parameter would open.
     //
-    // Activation is keyed off `displayName` (set by `completeRegistration`,
-    // never at provisioning time): a user found on a *second* login who
-    // never finished onboarding (abandoned mid-flow) must still land back
-    // in `onboarding`, not be waved through as `active` just because a
-    // Firestore record already exists for them.
-    const claims = user.displayName
+    // Activation is keyed off `registered` (the accounts-shape profile
+    // `completeRegistration` writes — never present at provisioning time):
+    // a user found on a *second* login who never finished onboarding
+    // (abandoned mid-flow) must still land back in `onboarding`, not be
+    // waved through as `active` just because a Firestore record already
+    // exists for them.
+    const claims = user.registered
       ? activeClaims([roleFromPrimitive('client')])
       : ok(ONBOARDING_CLAIMS);
     if (claims.isFailure()) {
@@ -180,37 +176,28 @@ export class VerifyOtpUseCase {
 
   private async provisionNewUser(
     destination: OtpDestination,
-  ): Promise<Result<User, VerifyOtpError>> {
+  ): Promise<Result<UserRecordSnapshot, VerifyOtpError>> {
     const provisionResult = await this.authToken.provisionAuthUser(destination);
     if (provisionResult.isFailure()) {
       return fail(new TokenMintingFailure(provisionResult.error));
     }
     const uid = provisionResult.value;
 
-    const newUserResult = User.create({
-      id: uid.value,
-      referralCode: generateReferralCode(),
-      gamificationPoints: 0,
-      tenantMemberships: [],
+    // Nothing but the login channel exists yet — the accounts-shape
+    // profile (names/roles/status) arrives with `completeRegistration`.
+    const stub = {
+      id: uid,
       email:
-        destination.kind === 'email'
-          ? otpDestinationValue(destination)
-          : undefined,
+        destination.kind === 'email' ? otpDestinationValue(destination) : null,
       phone:
-        destination.kind === 'sms'
-          ? otpDestinationValue(destination)
-          : undefined,
-    });
-    if (newUserResult.isFailure()) {
-      return fail(new UserValidationFailure(newUserResult.error));
-    }
-    const user = newUserResult.value;
+        destination.kind === 'sms' ? otpDestinationValue(destination) : null,
+    };
 
-    const saveUserResult = await this.userRepository.save(user);
+    const saveUserResult = await this.userRepository.provision(stub);
     if (saveUserResult.isFailure()) {
       return fail(new RepositoryFailure(saveUserResult.error));
     }
 
-    return ok(user);
+    return ok({ ...stub, birthDate: null, registered: false });
   }
 }

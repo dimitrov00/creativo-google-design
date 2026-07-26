@@ -9,6 +9,19 @@ export class InvalidInputError extends DomainError {
   }
 }
 
+export class OtpChannelMismatchError extends DomainError {
+  readonly code = 'otp_channel_mismatch' as const;
+  constructor(
+    public readonly requested: 'phone' | 'email',
+    public readonly strategyKind: string,
+  ) {
+    super(
+      `OTP challenge over '${requested}' is not allowed for the '${strategyKind}' deployment.`,
+      { requested, strategyKind },
+    );
+  }
+}
+
 export class RateLimitedError extends DomainError {
   readonly code = 'otp_rate_limited' as const;
   constructor() {
@@ -41,6 +54,7 @@ export class ValidationFailure extends DomainError {
 
 export type RequestOtpError =
   | InvalidInputError
+  | OtpChannelMismatchError
   | RateLimitedError
   | RepositoryFailure
   | SendFailure

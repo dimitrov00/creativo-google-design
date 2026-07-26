@@ -1,4 +1,3 @@
-import { UserValidationError } from '@creativo/domain/models';
 import { DomainError, InvalidTimeZoneError } from '@creativo/domain/kernel';
 import { AuthTokenError } from '@creativo/application/identity';
 import { RepositoryError } from '@creativo/application/shared';
@@ -52,13 +51,6 @@ export class IncorrectCodeError extends DomainError {
   }
 }
 
-export class UserValidationFailure extends DomainError {
-  readonly code = 'user_validation_failed' as const;
-  constructor(public readonly errors: UserValidationError[]) {
-    super('New user validation failed');
-  }
-}
-
 /** The persisted `Otp.destination` no longer parses as a valid `Email`/`PhoneNumber` — a storage-corruption signal, not a user input error. */
 export class CorruptedOtpDestinationError extends DomainError {
   readonly code = 'otp_destination_corrupted' as const;
@@ -82,7 +74,6 @@ export type VerifyOtpError =
   | OtpExpiredError
   | OtpLockedOutError
   | IncorrectCodeError
-  | UserValidationFailure
   | TokenMintingFailure
   | CorruptedOtpDestinationError
   // Only reachable if OTP_ZONE ('UTC', hardcoded) were ever invalid —

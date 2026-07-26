@@ -7,10 +7,33 @@ import {
 } from '@creativo/application/identity';
 import { RepositoryError } from '@creativo/application/shared';
 import { Result, ZonedDateTime, ok } from '@creativo/domain/kernel';
+import {
+  AuthDeployment,
+  DEFAULT_AUTH_DEPLOYMENT,
+  createAuthStrategy,
+} from '@creativo/domain/identity';
 import { describe, expect, it } from 'vitest';
 import { SystemClock } from '../adapters/system-clock';
 import { RequestOtpUseCase } from './request-otp.use-case';
-import { InvalidInputError, RateLimitedError } from './request-otp.errors';
+import {
+  InvalidInputError,
+  OtpChannelMismatchError,
+  RateLimitedError,
+} from './request-otp.errors';
+
+/** A deployment fixture with an explicit challenge kind/policy — the specs must not silently ride whatever the workspace default happens to be. */
+function deployment(
+  kind: 'phone_otp' | 'email_otp',
+  policy = { ttlMinutes: 5, maxAttempts: 5, sessionDays: 30 },
+): AuthDeployment {
+  const strategy = createAuthStrategy({
+    kind,
+    required: ['phone', 'firstName', 'lastName'],
+    policy,
+  });
+  if (strategy.isFailure()) throw new Error('fixture strategy invalid');
+  return { ...DEFAULT_AUTH_DEPLOYMENT, strategy: strategy.value };
+}
 
 function fakeCrypto() {
   return {
@@ -77,7 +100,13 @@ describe('RequestOtpUseCase', () => {
     const repo = fakeRepository();
     const sender = new FakeSender();
     const clock = new FixedClock('2026-01-01T00:00:00.000Z');
-    const useCase = new RequestOtpUseCase(repo, sender, clock, fakeCrypto());
+    const useCase = new RequestOtpUseCase(
+      repo,
+      sender,
+      clock,
+      fakeCrypto(),
+      deployment('email_otp'),
+    );
 
     const result = await useCase.execute(validInput);
 
@@ -97,6 +126,7 @@ describe('RequestOtpUseCase', () => {
       new FakeSender(),
       new FixedClock('2026-01-01T00:00:00.000Z'),
       fakeCrypto(),
+      deployment('email_otp'),
     );
 
     const result = await useCase.execute({ tenantId: '' });
@@ -110,7 +140,13 @@ describe('RequestOtpUseCase', () => {
     const repo = fakeRepository();
     const sender = new FakeSender();
     const clock = new FixedClock('2026-01-01T00:00:00.000Z');
-    const useCase = new RequestOtpUseCase(repo, sender, clock, fakeCrypto());
+    const useCase = new RequestOtpUseCase(
+      repo,
+      sender,
+      clock,
+      fakeCrypto(),
+      deployment('email_otp'),
+    );
 
     await useCase.execute(validInput);
     clock.advance('2026-01-01T00:00:30.000Z');
@@ -127,7 +163,13 @@ describe('RequestOtpUseCase', () => {
     const repo = fakeRepository();
     const sender = new FakeSender();
     const clock = new FixedClock('2026-01-01T00:00:00.000Z');
-    const useCase = new RequestOtpUseCase(repo, sender, clock, fakeCrypto());
+    const useCase = new RequestOtpUseCase(
+      repo,
+      sender,
+      clock,
+      fakeCrypto(),
+      deployment('email_otp'),
+    );
 
     await useCase.execute(validInput);
     clock.advance('2026-01-01T00:02:00.000Z');
@@ -135,6 +177,79 @@ describe('RequestOtpUseCase', () => {
 
     expect(result.isSuccess()).toBe(true);
     expect(sender.sent).toHaveLength(2);
+  });
+
+  it('rejects an email request under a phone_otp deployment (channel mismatch)', async () => {
+    const sender = new FakeSender();
+    const useCase = new RequestOtpUseCase(
+      fakeRepository(),
+      sender,
+      new FixedClock('2026-01-01T00:00:00.000Z'),
+      fakeCrypto(),
+      deployment('phone_otp'),
+    );
+
+    const result = await useCase.execute(validInput);
+
+    expect(result.isFailure()).toBe(true);
+    if (result.isFailure()) {
+      expect(result.error).toBeInstanceOf(OtpChannelMismatchError);
+      expect(result.error.code).toBe('otp_channel_mismatch');
+      expect(result.error.params).toEqual({
+        requested: 'email',
+        strategyKind: 'phone_otp',
+      });
+    }
+    expect(sender.sent).toHaveLength(0);
+  });
+
+  it('rejects an sms request under an email_otp deployment (channel mismatch)', async () => {
+    const sender = new FakeSender();
+    const useCase = new RequestOtpUseCase(
+      fakeRepository(),
+      sender,
+      new FixedClock('2026-01-01T00:00:00.000Z'),
+      fakeCrypto(),
+      deployment('email_otp'),
+    );
+
+    const result = await useCase.execute({
+      ...validInput,
+      destination: '+359888123456',
+      destinationType: 'sms' as const,
+    });
+
+    expect(result.isFailure()).toBe(true);
+    if (result.isFailure()) {
+      expect(result.error).toBeInstanceOf(OtpChannelMismatchError);
+    }
+    expect(sender.sent).toHaveLength(0);
+  });
+
+  it("issues the OTP with the deployment strategy's own ttl/maxAttempts, not local constants", async () => {
+    const repo = fakeRepository();
+    const useCase = new RequestOtpUseCase(
+      repo,
+      new FakeSender(),
+      new FixedClock('2026-01-01T00:00:00.000Z'),
+      fakeCrypto(),
+      deployment('email_otp', {
+        ttlMinutes: 7,
+        maxAttempts: 2,
+        sessionDays: 30,
+      }),
+    );
+
+    const result = await useCase.execute(validInput);
+
+    expect(result.isSuccess()).toBe(true);
+    expect(repo.saved).toHaveLength(1);
+    expect(repo.saved[0].maxAttempts).toBe(2);
+    const issuedAt = ZonedDateTime.fromISO('2026-01-01T00:00:00.000Z', 'UTC');
+    if (issuedAt.isFailure()) throw new Error('fixture instant invalid');
+    expect(repo.saved[0].expiresAt.toISO()).toBe(
+      issuedAt.value.plusMinutes(7).toISO(),
+    );
   });
 });
 
@@ -145,6 +260,7 @@ describe('RequestOtpUseCase with the real SystemClock', () => {
       new FakeSender(),
       new SystemClock(),
       fakeCrypto(),
+      deployment('email_otp'),
     );
     const result = await useCase.execute(validInput);
     expect(result.isSuccess()).toBe(true);

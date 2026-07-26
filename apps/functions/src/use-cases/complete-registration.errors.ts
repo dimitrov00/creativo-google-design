@@ -1,8 +1,8 @@
-import { UserValidationError } from '@creativo/domain/models';
+import { UserValidationError } from '@creativo/domain/accounts';
 import { DomainError } from '@creativo/domain/kernel';
 import { AuthTokenError } from '@creativo/application/identity';
 import { RepositoryError } from '@creativo/application/shared';
-import { RegistrationField } from '@creativo/domain/identity';
+import { BirthDateError, RegistrationField } from '@creativo/domain/identity';
 
 export class InvalidInputError extends DomainError {
   readonly code = 'invalid_input' as const;
@@ -11,10 +11,38 @@ export class InvalidInputError extends DomainError {
   }
 }
 
+export class UnauthenticatedError extends DomainError {
+  readonly code = 'registration_unauthenticated' as const;
+  constructor() {
+    super('Registration requires a signed-in (OTP-verified) session.');
+  }
+}
+
+export class RegistrationForbiddenError extends DomainError {
+  readonly code = 'registration_forbidden' as const;
+  constructor() {
+    super('This registration does not belong to the signed-in session.');
+  }
+}
+
 export class MissingRegistrationFieldError extends DomainError {
   readonly code = 'registration_field_missing' as const;
   constructor(public readonly field: RegistrationField) {
     super(`Missing required registration field: ${field}`, { field });
+  }
+}
+
+/**
+ * The OPTIONAL `birthDate` field was submitted but failed the `BirthDate`
+ * VO's invariants (not a real ISO calendar date / in the future / age
+ * outside 16–120). Wraps the domain error so the callable can forward its
+ * reason-specific stable code (`identity.birth_date.*`) for localization,
+ * mirroring `UserValidationFailure`'s `errors` forwarding.
+ */
+export class InvalidBirthDateError extends DomainError {
+  readonly code = 'registration_birth_date_invalid' as const;
+  constructor(public override readonly cause: BirthDateError) {
+    super('Submitted birth date failed validation', { reason: cause.code });
   }
 }
 
@@ -50,7 +78,10 @@ export class ClaimsPromotionFailure extends DomainError {
 
 export type CompleteRegistrationError =
   | InvalidInputError
+  | UnauthenticatedError
+  | RegistrationForbiddenError
   | MissingRegistrationFieldError
+  | InvalidBirthDateError
   | UserNotFoundError
   | RepositoryFailure
   | UserValidationFailure

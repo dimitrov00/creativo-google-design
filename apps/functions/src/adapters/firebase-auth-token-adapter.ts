@@ -73,4 +73,16 @@ export class FirebaseAuthTokenAdapter implements AuthTokenPort {
       );
     }
   }
+
+  async setDisplayName(
+    uid: UserId,
+    displayName: string,
+  ): Promise<Result<void, AuthTokenError>> {
+    try {
+      await this.auth.updateUser(uid.value, { displayName });
+      return ok(undefined);
+    } catch (error) {
+      return fail(new AuthTokenError('Failed to set display name', error));
+    }
+  }
 }

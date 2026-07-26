@@ -6,19 +6,10 @@ import { FirestoreUserRepository } from '../../adapters/firestore-user-repositor
 import { NodeOtpCrypto } from '../../adapters/node-otp-crypto';
 import { SystemClock } from '../../adapters/system-clock';
 import { adminAuth, adminFirestore } from '../firebase-admin';
-import {
-  UserValidationFailure,
-  VerifyOtpError,
-} from '../../use-cases/verify-otp.errors';
+import { VerifyOtpError } from '../../use-cases/verify-otp.errors';
 import { VerifyOtpUseCase } from '../../use-cases/verify-otp.use-case';
 
 export function toHttpsError(error: VerifyOtpError): HttpsError {
-  if (error instanceof UserValidationFailure) {
-    return new HttpsError('invalid-argument', error.message, {
-      errors: error.errors.map((e) => ({ code: e.code, params: e.params })),
-    });
-  }
-
   const details = { code: error.code, params: error.params };
   switch (error.code) {
     case 'invalid_input':

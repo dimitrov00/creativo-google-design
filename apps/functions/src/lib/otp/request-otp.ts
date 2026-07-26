@@ -1,6 +1,8 @@
 import { HttpsError, onCall } from 'firebase-functions/v2/https';
 import { match } from '@creativo/domain/kernel';
+import { DEFAULT_AUTH_DEPLOYMENT } from '@creativo/domain/identity';
 import { ConsoleLogOtpSender } from '../../adapters/console-otp-sender';
+import { FixedCodeOtpCrypto } from '../../adapters/fixed-code-otp-crypto';
 import { FirestoreOtpRepository } from '../../adapters/firestore-otp-repository';
 import { NodeOtpCrypto } from '../../adapters/node-otp-crypto';
 import { SystemClock } from '../../adapters/system-clock';
@@ -23,6 +25,8 @@ export function toHttpsError(error: RequestOtpError): HttpsError {
   switch (error.code) {
     case 'invalid_input':
       return new HttpsError('invalid-argument', error.message, details);
+    case 'otp_channel_mismatch':
+      return new HttpsError('failed-precondition', error.message, details);
     case 'otp_rate_limited':
       return new HttpsError('resource-exhausted', error.message, details);
     default:
@@ -47,12 +51,22 @@ interface RequestOtpChallengeInput {
 }
 
 export const requestOtpChallenge = onCall(async (request) => {
-  const crypto = new NodeOtpCrypto();
+  // Same gate as `devCode` below: under the emulator every code is the
+  // fixed `123456` (manual QA never fishes logs); deployed environments
+  // can only ever construct the real generator.
+  const crypto =
+    process.env['FUNCTIONS_EMULATOR'] === 'true'
+      ? new FixedCodeOtpCrypto()
+      : new NodeOtpCrypto();
   const useCase = new RequestOtpUseCase(
     new FirestoreOtpRepository(adminFirestore()),
     new ConsoleLogOtpSender(),
     new SystemClock(),
     crypto,
+    // The SAME deployment const the web app provides through
+    // `AUTH_DEPLOYMENT` — channel validation and OTP policy stay in
+    // lockstep with the client by construction.
+    DEFAULT_AUTH_DEPLOYMENT,
   );
 
   const input = request.data as RequestOtpChallengeInput;

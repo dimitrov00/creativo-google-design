@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   InvalidInputError,
+  OtpChannelMismatchError,
   RateLimitedError,
   SendFailure,
   ValidationFailure,
@@ -15,6 +16,17 @@ describe('request-otp toHttpsError', () => {
     expect(httpsError.details).toEqual({
       code: 'invalid_input',
       params: { reason: 'bad' },
+    });
+  });
+
+  it('maps OtpChannelMismatchError to failed-precondition with its stable code', () => {
+    const httpsError = toHttpsError(
+      new OtpChannelMismatchError('phone', 'email_otp'),
+    );
+    expect(httpsError.code).toBe('failed-precondition');
+    expect(httpsError.details).toEqual({
+      code: 'otp_channel_mismatch',
+      params: { requested: 'phone', strategyKind: 'email_otp' },
     });
   });
 
