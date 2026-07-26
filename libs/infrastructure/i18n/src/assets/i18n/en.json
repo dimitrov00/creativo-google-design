@@ -26,14 +26,15 @@
     "invalid_time_zone": "\"{{rawZone}}\" is not a valid time zone.",
     "invalid_input": "The information provided is invalid.",
     "otp_rate_limited": "A code was already sent recently — please wait before requesting another.",
+    "otp_channel_mismatch": "Sign-in over this channel isn't available — please use the sign-in form.",
     "repository_failure": "Something went wrong on our end — please try again.",
     "otp_send_failure": "We couldn't send your verification code — please try again.",
     "otp_validation_failed": "The information provided is invalid.",
     "otp_not_found": "This verification code request no longer exists.",
     "otp_already_consumed": "This code has already been used.",
-    "otp_expired": "This code has expired — please request a new one.",
+    "otp_expired": "That code expired. We can send you a new one.",
     "otp_locked_out": "Too many incorrect attempts — please request a new code.",
-    "otp_incorrect_code": "That code is incorrect.",
+    "otp_incorrect_code": "That code isn't right — check and try again.",
     "user_validation_failed": "The information provided is invalid.",
     "token_minting_failure": "We couldn't sign you in — please try again.",
     "unknown": "Something went wrong — please try again.",
@@ -43,10 +44,34 @@
       },
       "otp_code": {
         "invalid": "Enter the 6-digit code."
+      },
+      "phone": {
+        "not_a_number": "Enter a phone number, like {{example}}.",
+        "too_short": "This number looks too short — for example, {{example}}.",
+        "too_long": "This number looks too long — for example, {{example}}.",
+        "invalid_country": "We don't recognize that country code — for example, {{example}}.",
+        "invalid": "This doesn't look like a valid phone number — for example, {{example}}."
+      },
+      "birth_date": {
+        "invalid": "This doesn't look like a real date — check the day, month and year.",
+        "in_future": "A birthday can't be in the future.",
+        "too_young": "You need to be at least {{minAge}} to register.",
+        "too_old": "Please check the year — that's more than {{maxAge}} years ago."
+      }
+    },
+    "accounts": {
+      "update_profile": {
+        "not_found": "We couldn't find your profile — please sign in again.",
+        "validation_failed": "The information provided is invalid — please check it.",
+        "repository_failure": "We couldn't save that right now — please try again."
       }
     },
     "identifier_missing": "We couldn't find your phone number or email — please sign in again.",
-    "registration_field_missing": "Please fill in all required fields."
+    "identifier_invalid": "Enter a valid phone number or email address.",
+    "registration_field_missing": "Please fill in all required fields.",
+    "registration_birth_date_invalid": "The birthday provided is not valid.",
+    "registration_unauthenticated": "Your session has expired — please sign in again.",
+    "registration_forbidden": "This registration doesn't belong to your session — please sign in again."
   },
   "shell": {
     "forbidden": {
@@ -55,44 +80,67 @@
     }
   },
   "auth": {
-    "back": "Back",
-    "settling": "One moment…",
-    "welcome": {
-      "title": "Welcome to Creativo",
-      "body": "Sign in with your phone number to book and manage your appointments.",
-      "getStarted": "Get started"
+    "settling": "Signing you in…",
+    "steps": {
+      "label": "Step {{current}} of {{total}}"
     },
     "identify": {
-      "title": "What's your phone number?",
-      "body": "We'll text you a 6-digit code to sign in.",
+      "eyebrow": "Creativo",
+      "title": "Log in or sign up",
+      "lede": "Book and manage your salon appointments.",
+      "ledeBooking": "Sign in to hold your slot.",
+      "emailLabel": "Email",
       "phoneLabel": "Phone number",
-      "continue": "Continue"
+      "emailHint": "We'll email you a 6-digit code to sign in.",
+      "phoneHint": "We'll text you a 6-digit code to sign in.",
+      "back": "Back",
+      "continue": "Continue",
+      "legal": "By continuing you agree to the {terms} and {privacy}.",
+      "terms": "Terms",
+      "privacy": "Privacy Policy",
+      "countryPicker": "Country code",
+      "countrySearch": "Search countries",
+      "countryClose": "Close",
+      "countryNoResults": "No matches"
     },
-    "otp": {
+    "code": {
       "title": "Enter the code",
-      "body": "We sent a 6-digit code to your phone.",
-      "verify": "Verify",
+      "back": "Back",
+      "sentTo": "We sent a 6-digit code to",
+      "edit": "Edit",
+      "checking": "Checking…",
       "resend": "Resend code",
-      "changeIdentifier": "Use a different number"
+      "resendIn": "Resend code in {{seconds}}s",
+      "resendReady": "You can request a new code now.",
+      "escalation": {
+        "email": "Still nothing? Check spam, or try a different email.",
+        "phone": "Still nothing? Check your messages, or try a different number."
+      }
     },
     "blocked": {
-      "title": "You've been temporarily blocked",
-      "body": "Too many attempts — please try again later."
+      "title": "Too many attempts",
+      "body": "To protect your account, sign-in is paused for a while. Please try again later.",
+      "home": "Back to home"
     }
   },
   "onboarding": {
+    "optional": "Optional",
     "about": {
-      "title": "Tell us about yourself",
-      "body": "We'll use this to personalize your bookings.",
+      "title": "About you",
+      "lede": "Takes about 30 seconds.",
       "firstName": "First name",
       "lastName": "Last name",
-      "continue": "Continue"
+      "phoneLabel": "Phone number",
+      "phoneHint": "Your salon may call you about your appointment — running late, confirming, or rescheduling. Never for marketing.",
+      "continue": "Continue",
+      "signedInAs": "Signed in as {{identifier}}",
+      "signOut": "Sign out"
     },
     "reward": {
-      "title": "You've earned a welcome reward",
-      "body": "Personalize your profile to unlock more, or jump straight in.",
-      "personalize": "Personalize my profile",
-      "skip": "Skip for now"
+      "title": "You're in",
+      "body": "Your account is ready — personalize it, or head straight in.",
+      "personalize": "Personalize",
+      "enterApp": "Not now"
     },
     "services": {
       "title": "What are you interested in?",
@@ -100,10 +148,24 @@
       "continue": "Continue",
       "skip": "Skip"
     },
+    "birthday": {
+      "title": "When is your birthday?",
+      "lede": "For birthday surprises.",
+      "label": "Birthday",
+      "day": "Day",
+      "month": "Month",
+      "year": "Year",
+      "dayPlaceholder": "DD",
+      "monthPlaceholder": "MM",
+      "yearPlaceholder": "YYYY",
+      "save": "Save",
+      "skip": "Skip"
+    },
     "avatar": {
       "title": "Add a profile photo",
       "body": "Help your barber recognize you (optional).",
-      "skip": "Skip for now"
+      "enterApp": "Enter app",
+      "skip": "Skip"
     },
     "entering": {
       "title": "Setting up your account…",
@@ -158,7 +220,8 @@
       "account": "Account",
       "bookings": "My bookings",
       "rewards": "My rewards",
-      "openPositions": "Open positions"
+      "openPositions": "Open positions",
+      "signOut": "Sign out"
     },
     "prefs": {
       "language": "Language",
@@ -184,7 +247,7 @@
       "title": "Hands you can trust.",
       "subtitle": "Each barber, their own craft — and their own chair.",
       "years": "yrs",
-      "viewAll": "Show {{count}} more",
+      "viewAll": "See {{count}} more",
       "explore": "Explore",
       "exploreBarber": "Explore {{barber}}'s profile",
       "closeDetails": "Close barber profile",
@@ -232,7 +295,7 @@
     },
     "location": {
       "eyebrow": "Find us",
-      "title": "One address.",
+      "title": "Easy to find.",
       "titleMulti": "Our locations.",
       "intro": "Both Creativo locations keep the same rhythm — precise work, considered pace, and a chair worth the trip.",
       "open": "Open",
@@ -279,16 +342,17 @@
         "phone": "+359 88 765 4321"
       }
     },
-    "closing": {
-      "heading": "There's always a chair waiting.",
-      "subtitle": "Book in seconds. No queue, no phone calls.",
-      "cta": "Reserve your spot"
+    "courses": {
+      "eyebrow": "Courses",
+      "title": "Learn the craft.",
+      "subtitle": "We run barbering courses from time to time, for beginners and working barbers alike — message us to see what's currently open.",
+      "cta": "See courses"
     },
     "hiring": {
       "eyebrow": "Careers",
       "title": "Work with us.",
       "subtitle": "A few seats open for people who take their craft seriously.",
-      "cta": "Apply — DM us"
+      "cta": "See open positions"
     },
     "footer": {
       "rights": "All rights reserved.",
@@ -302,6 +366,8 @@
         "team": "Team",
         "services": "Services",
         "careers": "Careers",
+        "courses": "Courses",
+        "events": "Events",
         "visit": "Visit"
       },
       "links": {
@@ -312,6 +378,49 @@
         "book": "Book now",
         "login": "Log in",
         "account": "My account"
+      }
+    }
+  },
+  "programs": {
+    "careers": {
+      "back": "Creativo",
+      "eyebrow": "Careers",
+      "title": "Open positions.",
+      "subtitle": "A few seats open for people who take their craft seriously.",
+      "empty": {
+        "title": "Nothing open right now.",
+        "body": "New roles post here the moment a chair opens up.",
+        "cta": "Ask on Instagram"
+      }
+    },
+    "courses": {
+      "back": "Creativo",
+      "eyebrow": "Courses",
+      "title": "Learn the craft.",
+      "subtitle": "Barbering courses for beginners and working barbers alike.",
+      "tabOpen": "Open",
+      "tabUpcoming": "Upcoming",
+      "empty": {
+        "title": "Nothing scheduled right now.",
+        "body": "New courses post here as soon as a seat opens up.",
+        "cta": "Ask on Instagram"
+      }
+    },
+    "events": {
+      "back": "Creativo",
+      "eyebrow": "Events",
+      "title": "What's on.",
+      "subtitle": "Open studio days and community events at Creativo.",
+      "tabUpcoming": "Upcoming",
+      "tabPast": "Past",
+      "empty": {
+        "title": "Nothing on the calendar yet.",
+        "body": "New events post here as soon as they're set.",
+        "cta": "Ask on Instagram"
+      },
+      "emptyPast": {
+        "title": "No past events yet.",
+        "body": "This is where the recap lives once the first one wraps."
       }
     }
   },

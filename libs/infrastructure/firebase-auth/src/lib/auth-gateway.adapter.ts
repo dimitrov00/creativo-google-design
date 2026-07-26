@@ -9,10 +9,12 @@ import { Result, fail, ok } from '@creativo/domain/kernel';
 import { AuthGateway, AuthGatewayError } from '@creativo/application/identity';
 import {
   ANONYMOUS_PRINCIPAL,
+  Identifier,
   Principal,
   PrincipalId,
   parseAuthClaims,
   principalFrom,
+  reconstituteIdentifier,
 } from '@creativo/domain/identity';
 import { FIREBASE_AUTH } from '@creativo/infrastructure/firebase-app';
 
@@ -62,6 +64,11 @@ export class FirebaseAuthGateway implements AuthGateway {
       );
     }
     try {
+      // Reload the Auth RECORD alongside the token: registration just
+      // stamped `displayName` server-side, and without a reload the
+      // session-cached record (the header monogram's source) would stay
+      // blank until the next full sign-in.
+      await user.reload();
       await getIdToken(user, /* forceRefresh */ true);
       return ok(undefined);
     } catch (error) {
@@ -76,5 +83,26 @@ export class FirebaseAuthGateway implements AuthGateway {
     } catch (error) {
       return fail(new AuthGatewayError('Failed to sign out', error));
     }
+  }
+
+  currentIdentifier(): Identifier | null {
+    const user = this.auth.currentUser;
+    if (!user) return null;
+    // The Auth record's phoneNumber (E.164) / email were set by the
+    // provisioning use-case from an already-validated Identifier, so
+    // `reconstituteIdentifier` (trusted rebuild, no re-validation) is the
+    // right factory here — phone wins when both are somehow present,
+    // matching provisioning's either/or write.
+    if (user.phoneNumber) {
+      return reconstituteIdentifier({ kind: 'phone', value: user.phoneNumber });
+    }
+    if (user.email) {
+      return reconstituteIdentifier({ kind: 'email', value: user.email });
+    }
+    return null;
+  }
+
+  currentDisplayName(): string | null {
+    return this.auth.currentUser?.displayName || null;
   }
 }

@@ -9,3 +9,6 @@ export * from './lib/invitation.adapter';
 export * from './lib/profile.adapter';
 export * from './lib/reward-progress-reader.adapter';
 export * from './lib/user-search.adapter';
+export * from './lib/position-repository.adapter';
+export * from './lib/course-repository.adapter';
+export * from './lib/event-repository.adapter';

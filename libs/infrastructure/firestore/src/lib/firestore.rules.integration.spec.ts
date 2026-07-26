@@ -117,6 +117,51 @@ describe('firestore.rules', () => {
     });
   });
 
+  describe('programs (positions/courses/events) — public read, content-manager write', () => {
+    it.each(['positions', 'courses', 'events'])(
+      'lets an anonymous, unauthenticated visitor read %s',
+      async (collectionName) => {
+        await testEnv.withSecurityRulesDisabled(async (ctx) => {
+          await setDoc(doc(ctx.firestore(), collectionName, 'doc-1'), {
+            title: { en: 'Title', bg: 'Заглавие' },
+          });
+        });
+        const anon = testEnv.unauthenticatedContext();
+        await assertSucceeds(
+          getDoc(doc(anon.firestore(), collectionName, 'doc-1')),
+        );
+      },
+    );
+
+    it.each(['positions', 'courses', 'events'])(
+      'denies a plain client from writing %s',
+      async (collectionName) => {
+        const client = testEnv.authenticatedContext('client-1', {
+          roles: ['client'],
+        });
+        await assertFails(
+          setDoc(doc(client.firestore(), collectionName, 'doc-2'), {
+            title: { en: 'Title', bg: 'Заглавие' },
+          }),
+        );
+      },
+    );
+
+    it.each(['positions', 'courses', 'events'])(
+      'lets a content_manager write %s',
+      async (collectionName) => {
+        const manager = testEnv.authenticatedContext('manager-1', {
+          roles: ['content_manager'],
+        });
+        await assertSucceeds(
+          setDoc(doc(manager.firestore(), collectionName, 'doc-3'), {
+            title: { en: 'Title', bg: 'Заглавие' },
+          }),
+        );
+      },
+    );
+  });
+
   describe('server-only collections', () => {
     it.each(['otps', 'rateLimits', 'blocklist'])(
       'denies every client read/write on %s',

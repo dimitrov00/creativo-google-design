@@ -23,6 +23,7 @@ import {
   RewardProgramId,
 } from '@creativo/domain/engagement';
 import { ImpersonationSessionId } from '@creativo/domain/governance';
+import { CourseId, PositionId, ShopEventId } from '@creativo/domain/programs';
 
 /**
  * Fresh, greenfield Firestore schema (migration-blueprint.md §0.4) — the
@@ -49,6 +50,9 @@ export const Collections = {
   Invitations: 'invitations',
   ImpersonationSessions: 'impersonationSessions',
   AuditLog: 'auditLog',
+  Positions: 'positions',
+  Courses: 'courses',
+  Events: 'events',
   /** Server-only (Admin SDK, `apps/functions`) — closed to every client SDK by rule. */
   Otps: 'otps',
   /** Server-only. */
@@ -211,6 +215,45 @@ export function auditLogDocRef(
   entryId: string,
 ): DocumentReference<DocumentData> {
   return doc(db, Collections.AuditLog, entryId);
+}
+
+export function positionsCollection(
+  db: Firestore,
+): CollectionReference<DocumentData> {
+  return collection(db, Collections.Positions);
+}
+
+export function positionDocRef(
+  db: Firestore,
+  id: PositionId,
+): DocumentReference<DocumentData> {
+  return doc(db, Collections.Positions, id.value);
+}
+
+export function coursesCollection(
+  db: Firestore,
+): CollectionReference<DocumentData> {
+  return collection(db, Collections.Courses);
+}
+
+export function courseDocRef(
+  db: Firestore,
+  id: CourseId,
+): DocumentReference<DocumentData> {
+  return doc(db, Collections.Courses, id.value);
+}
+
+export function eventsCollection(
+  db: Firestore,
+): CollectionReference<DocumentData> {
+  return collection(db, Collections.Events);
+}
+
+export function eventDocRef(
+  db: Firestore,
+  id: ShopEventId,
+): DocumentReference<DocumentData> {
+  return doc(db, Collections.Events, id.value);
 }
 
 // ── Subcollections ──────────────────────────────────────────────────────

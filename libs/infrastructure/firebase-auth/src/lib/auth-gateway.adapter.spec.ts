@@ -22,6 +22,9 @@ function fakeUser(uid: string, claims: Record<string, unknown>): User {
   return {
     uid,
     getIdTokenResult: vi.fn().mockResolvedValue({ claims }),
+    // refreshToken reloads the record before refreshing the token (the
+    // displayName stamp must land session-side).
+    reload: vi.fn().mockResolvedValue(undefined),
   } as unknown as User;
 }
 
@@ -125,6 +128,46 @@ describe('FirebaseAuthGateway', () => {
       const result = await gateway.refreshToken();
 
       expect(result.isFailure()).toBe(true);
+    });
+  });
+
+  describe('currentIdentifier', () => {
+    it('returns null when no user is signed in', () => {
+      const gateway = createGateway(auth);
+      expect(gateway.currentIdentifier()).toBeNull();
+    });
+
+    it('derives a phone identifier from the Auth record phone number', () => {
+      auth = {
+        currentUser: { phoneNumber: '+359885550100', email: null },
+      } as unknown as Auth;
+      const gateway = createGateway(auth);
+
+      const identifier = gateway.currentIdentifier();
+
+      expect(identifier?.kind).toBe('phone');
+      expect(identifier?.value.toString()).toBe('+359885550100');
+    });
+
+    it('derives an email identifier when only an email is set', () => {
+      auth = {
+        currentUser: { phoneNumber: null, email: 'ana@example.com' },
+      } as unknown as Auth;
+      const gateway = createGateway(auth);
+
+      const identifier = gateway.currentIdentifier();
+
+      expect(identifier?.kind).toBe('email');
+      expect(identifier?.value.toString()).toBe('ana@example.com');
+    });
+
+    it('returns null for a user record carrying neither channel', () => {
+      auth = {
+        currentUser: { phoneNumber: null, email: null },
+      } as unknown as Auth;
+      const gateway = createGateway(auth);
+
+      expect(gateway.currentIdentifier()).toBeNull();
     });
   });
 
