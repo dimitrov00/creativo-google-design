@@ -110,6 +110,9 @@ export interface BarberVm {
   readonly avatarSrc: string;
   /** v2 seeds every avatar with FocalPoint(0.5, 0.25) → object-position. */
   readonly objectPosition: string;
+  /** Client rating (★ 0–5, one decimal) — omitted for barbers without
+   *  enough reviews yet. */
+  readonly rating?: number;
 }
 
 export const BARBERS: readonly BarberVm[] = [
@@ -123,6 +126,7 @@ export const BARBERS: readonly BarberVm[] = [
     ),
     avatarSrc: '/barbers/ivan.jpg',
     objectPosition: '50% 25%',
+    rating: 4.9,
   },
   {
     id: 'niko',
@@ -134,6 +138,7 @@ export const BARBERS: readonly BarberVm[] = [
     ),
     avatarSrc: '/barbers/niko.jpg',
     objectPosition: '50% 25%',
+    rating: 4.8,
   },
   {
     id: 'stefan',

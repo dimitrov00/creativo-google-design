@@ -1,7 +1,6 @@
 import { isPlatformBrowser } from '@angular/common';
 import {
   Component,
-  DestroyRef,
   PLATFORM_ID,
   computed,
   inject,
@@ -20,7 +19,7 @@ import {
   UiSectionHeader,
   UiSheetActionBar,
 } from '@creativo/ui/patterns';
-import { ModalSheetComponent } from '../../../shared/modal-sheet/modal-sheet.component';
+import { UiModalSheet } from '@creativo/ui/controls';
 import { ShowcaseGalleryComponent } from '../../../shared/showcase-gallery/showcase-gallery.component';
 
 interface BarberItem {
@@ -36,7 +35,7 @@ interface BarberItem {
 @Component({
   selector: 'cr-team-showcase',
   imports: [
-    ModalSheetComponent,
+    UiModalSheet,
     ShowcaseGalleryComponent,
     TranslocoDirective,
     UiAvatar,
@@ -61,8 +60,6 @@ interface BarberItem {
 })
 export class TeamShowcaseComponent {
   private readonly platformId = inject(PLATFORM_ID);
-  private readonly destroyRef = inject(DestroyRef);
-  private closeTimer: number | undefined;
 
   protected readonly barbers: readonly BarberItem[] = [
     {
@@ -114,14 +111,6 @@ export class TeamShowcaseComponent {
     () => this.barbers[this.activeBarberIndex()] ?? this.barbers[0],
   );
 
-  constructor() {
-    this.destroyRef.onDestroy(() => {
-      if (isPlatformBrowser(this.platformId) && this.closeTimer !== undefined) {
-        window.clearTimeout(this.closeTimer);
-      }
-    });
-  }
-
   protected openBarber(index: number): void {
     this.activeBarberIndex.set(index);
     this.sheetOpen.set(true);
@@ -131,20 +120,14 @@ export class TeamShowcaseComponent {
   protected closeBarber(): void {
     if (!isPlatformBrowser(this.platformId)) return;
     if (!this.sheetOpen() || this.sheetClosing()) return;
-
+    // No timer: close completion is driven by the sheet's own exit
+    // transition (ui-modal-sheet's closeFinished) so the CSS motion tokens
+    // stay the single source of truth for the exit duration.
     this.sheetClosing.set(true);
-    if (this.closeTimer !== undefined) window.clearTimeout(this.closeTimer);
-    const reducedMotion = window.matchMedia(
-      '(prefers-reduced-motion: reduce)',
-    ).matches;
-    this.closeTimer = window.setTimeout(
-      () => this.finishClosing(),
-      reducedMotion ? 0 : 300, // sheet exit = opacity track (deliberate, 300ms)
-    );
   }
 
-  private finishClosing(): void {
-    this.closeTimer = undefined;
+  protected finishClosing(): void {
+    if (!this.sheetClosing()) return;
     this.sheetOpen.set(false);
     this.sheetClosing.set(false);
   }

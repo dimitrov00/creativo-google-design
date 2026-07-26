@@ -8,6 +8,7 @@ import {
 } from '@angular/core';
 import { TranslocoDirective } from '@jsverse/transloco';
 import { UiAsyncImage, UiIcon } from '@creativo/ui/controls';
+import { UiStack } from '@creativo/ui/layout';
 import {
   UiInteractiveDirective,
   UiRadiusDirective,
@@ -36,6 +37,7 @@ import {
     UiIcon,
     UiInteractiveDirective,
     UiRadiusDirective,
+    UiStack,
     UiTextDirective,
   ],
   template: `
@@ -48,66 +50,75 @@ import {
         [attr.data-testid]="'service-tile-' + service().id"
         (click)="pressed.emit()"
       >
-        <span class="cr-services__media">
-          <ui-async-image
-            class="cr-services__image"
-            [uiSrc]="service().coverSrc ?? null"
-            uiRatio="4 / 5"
-            [uiRing]="true"
-            uiRadius="prominent"
-          >
-            <!-- Graceful degradation — a styled scissors motif reads as
-                 intentional, never broken (v2 imageFallback). -->
-            <span uiPlaceholder class="cr-services__fallback">
-              <ui-icon
-                uiName="service.placeholder"
-                class="cr-services__fallback-glyph"
-              />
-            </span>
-          </ui-async-image>
-
-          @if (service().kind === 'bundle') {
-            <span
-              class="cr-services__bundle-chip"
-              role="img"
-              [attr.aria-label]="t('landing.services.bundle')"
+        <!-- VStack: media → copy; the compact gap IS the old copy margin. -->
+        <ui-stack uiSpacing="compact">
+          <!-- ZStack: cover art + the corner bundle chip (place-self in
+               CSS, hero-toolbar precedent). -->
+          <ui-stack uiAxis="z">
+            <ui-async-image
+              class="cr-services__image"
+              [uiSrc]="service().coverSrc ?? null"
+              uiRatio="4 / 5"
+              [uiRing]="true"
+              uiRadius="prominent"
             >
-              <ui-icon
-                uiName="service.bundle"
-                class="cr-services__bundle-glyph"
-              />
-            </span>
-          }
-        </span>
+              <!-- Graceful degradation — a styled scissors motif reads as
+                   intentional, never broken (v2 imageFallback). -->
+              <span uiPlaceholder class="cr-services__fallback">
+                <ui-icon
+                  uiName="service.placeholder"
+                  class="cr-services__fallback-glyph"
+                />
+              </span>
+            </ui-async-image>
 
-        <span class="cr-services__copy">
-          <span
-            uiText
-            uiFont="callout"
-            uiWeight="bold"
-            class="cr-services__name"
-            >{{ content.text(service().name) }}</span
-          >
-          <span class="cr-services__meta">
-            <span uiText uiFont="footnote" uiForegroundStyle="secondary">
-              {{ t('landing.services.from') }}
-              <span class="cr-services__price">{{
-                content.price(servicePriceFrom(service()))
-              }}</span>
-            </span>
-            @if (service().variants.length > 0) {
+            @if (service().kind === 'bundle') {
               <span
-                uiText
-                uiFont="caption"
-                uiForegroundStyle="secondary"
-                class="cr-services__variants"
+                class="cr-services__bundle-chip"
+                role="img"
+                [attr.aria-label]="t('landing.services.bundle')"
               >
-                <ui-icon uiName="service.variants" />
-                {{ service().variants.length }}
+                <ui-icon
+                  uiName="service.bundle"
+                  class="cr-services__bundle-glyph"
+                />
               </span>
             }
-          </span>
-        </span>
+          </ui-stack>
+
+          <ui-stack uiSpacing="tight" class="cr-services__copy">
+            <span
+              uiText
+              uiFont="callout"
+              uiWeight="bold"
+              class="cr-services__name"
+              >{{ content.text(service().name) }}</span
+            >
+            <ui-stack
+              uiAxis="horizontal"
+              uiAlignment="center"
+              uiSpacing="compact"
+            >
+              <span uiText uiFont="footnote" uiForegroundStyle="secondary">
+                {{ t('landing.services.from') }}
+                <span class="cr-services__price">{{
+                  content.price(servicePriceFrom(service()))
+                }}</span>
+              </span>
+              @if (service().variants.length > 0) {
+                <span
+                  uiText
+                  uiFont="caption"
+                  uiForegroundStyle="secondary"
+                  class="cr-services__variants"
+                >
+                  <ui-icon uiName="service.variants" />
+                  {{ service().variants.length }}
+                </span>
+              }
+            </ui-stack>
+          </ui-stack>
+        </ui-stack>
       </button>
     </ng-container>
   `,
@@ -122,21 +133,16 @@ import {
       inline-size: 9.375rem;
     }
 
+    /* Button reset only — layout is the inner ui-stack composition
+       (VStack: ZStack media → copy stack). */
     .cr-services__tile {
-      display: flex;
+      display: block;
       inline-size: 100%;
-      flex-direction: column;
       text-align: start;
       padding: 0;
       border: 0;
       background: none;
       color: var(--sys-color-foreground);
-    }
-
-    .cr-services__media {
-      position: relative;
-      display: block;
-      inline-size: 100%;
     }
 
     .cr-services__image {
@@ -176,23 +182,34 @@ import {
     }
 
     .cr-services__fallback-glyph {
+      /* KEPT: placeholder ART, not a control glyph — the oversized mark
+         fills the empty media box; the 16/20/24 control ladder doesn't
+         apply to media-canvas illustration. */
       font-size: 2.25rem;
     }
 
     /* Bundle tell — floating brand chip on the photo corner.
-       Deliberately NOT ui-badge/ui-chip: an icon-only 28px elevated disc
+       Deliberately NOT ui-badge/ui-chip: an icon-only elevated disc
        floating over a photo (solid surface + shadow), not a tinted text
-       capsule and not interactive — only the DS tokens are shared. */
+       capsule and not interactive — only the DS tokens are shared. The
+       disc paints above the in-flow image by positioning + source order
+       alone (hero-card precedent: no z-index inside a component's own
+       stacking context); size is a space-unit multiple, one step under
+       the 36px control tier. */
     .cr-services__bundle-chip {
-      position: absolute;
-      inset-block-start: var(--sys-space-compact);
-      inset-inline-end: var(--sys-space-compact);
-      z-index: 20;
+      /* Corner layer of the media ZStack (hero-toolbar precedent:
+         place-self positions a z-stack layer; margin is its inset).
+         position: relative (no z-index) lifts the chip into the positioned
+         paint order — ui-async-image's placeholder/img layers are absolute
+         and would otherwise cover a static sibling. */
+      position: relative;
+      place-self: start end;
+      margin: var(--sys-space-compact);
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      inline-size: 28px;
-      block-size: 28px;
+      inline-size: calc(var(--sys-space-unit) * 7);
+      block-size: calc(var(--sys-space-unit) * 7);
       border-radius: var(--control-radius-capsule);
       background: var(--sys-color-surface);
       box-shadow: var(--sys-elevation-raised);
@@ -200,12 +217,14 @@ import {
     }
 
     .cr-services__bundle-glyph {
-      font-size: 12px;
+      /* Small rung of the fixed icon ladder — the disc is one step under
+         the 36px control tier, so its glyph takes the step under 20. */
+      font-size: var(--ui-icon-small);
     }
 
     .cr-services__copy {
-      display: block;
-      margin-block-start: var(--sys-space-compact);
+      /* KEPT: 2px optical alignment of the copy against the cover's
+         hairline ring — sub-rung by design; rhythm is the stack gaps. */
       padding-inline: 2px;
     }
 
@@ -217,13 +236,6 @@ import {
       overflow: hidden;
     }
 
-    .cr-services__meta {
-      display: flex;
-      align-items: center;
-      gap: var(--sys-space-compact);
-      margin-block-start: var(--sys-space-tight);
-    }
-
     .cr-services__price {
       font-variant-numeric: tabular-nums;
     }
@@ -231,6 +243,8 @@ import {
     .cr-services__variants {
       display: inline-flex;
       align-items: center;
+      /* KEPT: glyph-to-count KERNING (typographic, sub-rung) — not a
+         layout gap. */
       gap: 2px;
     }
   `,

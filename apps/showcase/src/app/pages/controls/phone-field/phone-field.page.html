@@ -1,0 +1,146 @@
+<sc-page scTitle="Phone Field">
+  <ng-container scLede>
+    <code>ui-phone-field</code> — the one genuinely composite field: country
+    trigger (emoji flag + dial code) + tel input inside a single bordered frame,
+    with as-you-type national formatting (kernel <code>formatPhoneDraft</code>,
+    snap-to-canonical on blur), a searchable country picker — anchored popover
+    on regular widths, bottom sheet on compact — and an E.164-only
+    <code>value</code> model that is non-null only while the draft is valid.
+  </ng-container>
+
+  <sc-demo scTitle="Sizes">
+    <ng-container scAbout>
+      ≙ <code>.controlSize(_:)</code> — the same 36 / 44 / 52 ladder as every
+      other control; label, hint and error ride the footnote convention.
+      Placeholder is the selected country's real example number.
+    </ng-container>
+    <ui-flow uiSpacing="comfortable" uiAlignment="trailing">
+      @for (entry of ladder; track entry.size) {
+      <ui-stack uiSpacing="tight" uiAlignment="leading">
+        <ui-phone-field
+          class="phone-field__control"
+          [uiControlSize]="entry.size"
+          [defaultCountry]="defaultCountry"
+          [(country)]="entry.country"
+          [(value)]="entry.value"
+          label="Phone number"
+        />
+        <p uiText [uiFont]="'caption'" class="phone-field__mono">
+          controlSize={{ entry.size }} · value={{ entry.value() ?? 'null' }}
+        </p>
+      </ui-stack>
+      }
+    </ui-flow>
+  </sc-demo>
+
+  <sc-demo scTitle="Invalid & disabled">
+    <ng-container scAbout>
+      Validation belongs to the CONSUMER — <code>error</code> is an input
+      (validate on blur/submit via <code>PhoneNumber.create</code>, clear once
+      <code>value</code> goes non-null). Disabled dims the whole frame.
+    </ng-container>
+    <ui-flow uiSpacing="comfortable" uiAlignment="trailing">
+      <ui-stack uiSpacing="tight" uiAlignment="leading">
+        <ui-phone-field
+          class="phone-field__control"
+          [defaultCountry]="defaultCountry"
+          [(country)]="invalidCountry"
+          [(value)]="invalidValue"
+          label="Phone number"
+          error="This number looks too short — for example, 048 812 3456."
+        />
+        <p uiText [uiFont]="'caption'" class="phone-field__mono">
+          error=… · aria-invalid + role=alert
+        </p>
+      </ui-stack>
+      <ui-stack uiSpacing="tight" uiAlignment="leading">
+        <ui-phone-field
+          class="phone-field__control"
+          [defaultCountry]="defaultCountry"
+          [(country)]="disabledCountry"
+          [(value)]="disabledValue"
+          label="Phone number"
+          [disabled]="true"
+        />
+        <p uiText [uiFont]="'caption'" class="phone-field__mono">
+          disabled=true
+        </p>
+      </ui-stack>
+    </ui-flow>
+  </sc-demo>
+
+  <sc-demo scTitle="Prefilled E.164">
+    <ng-container scAbout>
+      An external <code>value</code> write (prefill, browser autofill via
+      <code>autocomplete="tel"</code>) is treated like a pasted international
+      number: the country re-detects from the dial code and the text formats —
+      never rejected.
+    </ng-container>
+    <ui-stack uiSpacing="tight" uiAlignment="leading">
+      <ui-phone-field
+        class="phone-field__control"
+        [defaultCountry]="defaultCountry"
+        [(country)]="prefilledCountry"
+        [(value)]="prefilledValue"
+        label="Phone number"
+        hint="Prefilled from value='+359888123456'."
+      />
+      <p uiText [uiFont]="'caption'" class="phone-field__mono">
+        country={{ prefilledCountry() ?? 'auto' }} · value={{ prefilledValue()
+        ?? 'null' }}
+      </p>
+    </ui-stack>
+  </sc-demo>
+
+  <sc-demo scTitle="Country picker — popover & sheet">
+    <ng-container scAbout>
+      The trigger is an APG <code>combobox</code> showing the emoji flag
+      (regional-indicator pairs, <code>aria-hidden</code> — Windows falls back
+      to the ISO letters) before the dial code. The picker body — search box + a
+      genuine <code>listbox</code> of flag-bearing
+      <code>role="option"</code> rows traversed with
+      <code>aria-activedescendant</code> (Down / Up / Home / End, type-ahead,
+      Enter) — presents per viewport, resolved at open time: on regular widths
+      (&gt;760px) an anchored popover dropdown under the trigger (Escape closes
+      and returns focus to the trigger; outside press and Tab-away close too),
+      on compact widths the DS bottom sheet. Resize and reopen to see both — no
+      reload needed. Changing country keeps the entered digits.
+    </ng-container>
+    <ui-stack uiSpacing="tight" uiAlignment="leading">
+      <ui-phone-field
+        class="phone-field__control"
+        [defaultCountry]="defaultCountry"
+        [(country)]="pickerCountry"
+        [(value)]="pickerValue"
+        label="Phone number"
+        hint="Open the 🇧🇬 +359 trigger, search, pick — digits survive."
+      />
+      <p uiText [uiFont]="'caption'" class="phone-field__mono">
+        country={{ pickerCountry() ?? defaultCountry }} · value={{ pickerValue()
+        ?? 'null' }}
+      </p>
+    </ui-stack>
+  </sc-demo>
+
+  <sc-demo scTitle="Normalized display">
+    <ng-container scAbout>
+      Paste something messy — <code>08 88-12 34 56</code> — and the text
+      re-renders as the canonical national grouping (<code>088 812 3456</code>),
+      live and again on blur. The <code>value</code> model stays pure E.164: no
+      spaces, no punctuation, ever.
+    </ng-container>
+    <ui-stack uiSpacing="tight" uiAlignment="leading">
+      <ui-phone-field
+        class="phone-field__control"
+        [defaultCountry]="defaultCountry"
+        [(country)]="normalizedCountry"
+        [(value)]="normalizedValue"
+        label="Phone number"
+        hint="Try pasting: 08 88-12 34 56"
+      />
+      <p uiText [uiFont]="'caption'" class="phone-field__mono">
+        value={{ normalizedValue() ?? 'null' }}
+      </p>
+    </ui-stack>
+  </sc-demo>
+</sc-page>

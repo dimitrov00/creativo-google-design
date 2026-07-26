@@ -21,9 +21,8 @@
       <!-- Symmetric spacers center the trio vertically in the card
            (Spacer() pair = justify-content: center). -->
       <ui-spacer />
-      <!-- Centered trio — title, paragraph, one capsule CTA (no icon),
-           mirroring the closing CTA so the page opens and closes on the
-           same chord (one shared cr-booking-cta). -->
+      <!-- Centered pair — title and paragraph mid-card; the capsule CTA
+           sits under the film card on the page background. -->
       <ui-section-header uiAlignment="center" [uiOnMedia]="true">
         <h1
           uiTitle
@@ -44,15 +43,6 @@
           {{ t('landing.hero.subtitle') }}
         </p>
       </ui-section-header>
-      <cr-booking-cta
-        labelKey="landing.hero.cta"
-        [onMedia]="true"
-        testId="landing-hero-cta"
-        uiReveal
-        uiRevealTrigger="mount"
-        [uiRevealDelay]="480"
-        uiRevealRise="14px"
-      />
       <ui-spacer />
     </ui-stack>
 
@@ -73,5 +63,18 @@
         <cr-locale-theme-toggle variant="overlay" />
       </ui-stack>
     </div>
+  </ui-stack>
+
+  <!-- The booking chord, under the film card — off-media it takes the
+       accent capsule instead of the white pill. -->
+  <ui-stack uiAlignment="center" class="cr-hero__cta-row">
+    <cr-booking-cta
+      labelKey="landing.hero.cta"
+      testId="landing-hero-cta"
+      uiReveal
+      uiRevealTrigger="mount"
+      [uiRevealDelay]="480"
+      uiRevealRise="14px"
+    />
   </ui-stack>
 </ng-container>

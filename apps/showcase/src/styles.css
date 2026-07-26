@@ -76,10 +76,13 @@
   }
 
   /* Bare content links only — never anchors acting as DS controls
-     (uiButton, uiCard, uiListRow, anything uiInteractive) or carrying an
-     explicit uiForegroundStyle stamp (owner ruling: DS-control anchors
-     never take the global link color; mirrors apps/web styles.css). */
-  a:not(.ui-button):not([data-foreground-style]):not([data-interactive]) {
+     (uiButton, uiCard, uiListRow, anything uiInteractive), carrying an
+     explicit uiForegroundStyle stamp, or riding the uiLink inline-link
+     recipe (owner ruling: DS-control anchors never take the global link
+     color; mirrors apps/web styles.css). */
+  a:not(.ui-button):not([data-foreground-style]):not([data-interactive]):not(
+      [data-link]
+    ) {
     color: var(--sys-color-accent);
   }
 }

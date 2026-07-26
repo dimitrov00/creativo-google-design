@@ -1,4 +1,7 @@
-:host {
+/* Element selector, not :host — this stylesheet is unscoped
+   (ViewEncapsulation.None, see the component note) and bare `:host`
+   never matches outside a shadow/emulated context. */
+cr-locations {
   display: contents;
 }
 
@@ -65,24 +68,6 @@
      other section breathes (owner call, 2026-07-21). */
 }
 
-.location-card__icon {
-  display: grid;
-  flex: 0 0 auto;
-  place-items: center;
-  inline-size: var(--control-size-regular);
-  aspect-ratio: 1;
-  border-radius: 50%;
-  background: color-mix(
-    in srgb,
-    var(--sys-color-foreground) var(--sys-alpha-fill),
-    transparent
-  );
-  color: var(--sys-color-secondary-label);
-  /* Glyph size comes from uiScale="small" in the template (fixed icon
-     ladder — the card is interactive, so its glyph must sit on a rung);
-     only the badge box geometry is local. */
-}
-
 .location-card__copy {
   flex: 1 1 auto;
   min-inline-size: 0;
@@ -94,69 +79,26 @@
   margin: 0;
 }
 
-/* Muted inline link — resting ink comes from the caption font role
-   (secondary label); the ONE shared hover treatment lifts it to full
-   foreground (shared with the sheet's phone line below). */
-.location-card__phone {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--sys-space-tight);
-  /* HIG 44px tap height (the stack gap compensates the visual rhythm). */
-  min-block-size: var(--control-size-regular);
-  text-decoration: none;
-  transition: color var(--sys-motion-duration-deliberate)
-    var(--sys-motion-ease-standard);
+/* Sheet phone line — sanctioned text-link exception (footer-links
+   ruling): quiet type role + color-shift hover only, not a uiInteractive
+   surface. (The CARD's phone is a circular call button now.) Hover is
+   pointer-gated (no touch equivalent to reset to); focus-visible stays
+   ungated for keyboard use. */
+@media (hover: hover) {
+  .location-sheet__phone-line:hover {
+    color: var(--sys-color-foreground);
+  }
 }
-
-/* Phone glyph is inline-text mode — unscaled, it rides the caption font
-   (icon README size policy: no local em-fraction micro-sizes). */
-
-.location-card__phone:hover,
-.location-card__phone:focus-visible,
-.location-sheet__phone-line:hover,
 .location-sheet__phone-line:focus-visible {
   color: var(--sys-color-foreground);
 }
 
-.location-card__action {
-  display: flex;
-  /* KEPT: one extra rhythm step (compact) on top of the copy stack's tight
-     gap before the affordance label — per-pair gap variation inside one
-     stack has no DS equivalent. */
-  margin-block-start: var(--sys-space-compact);
-}
-
-/* Non-interactive affordance label (the CARD is the control — no nested
-   control, so this stays aria-hidden), drawn with sanctioned control
-   geometry: compact 36px box, regular radius, separator hairline. */
-.location-card__explore-label {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-block-size: var(--control-size-small);
-  padding-inline: var(--sys-space-regular);
-  border: 1px solid var(--sys-color-separator);
-  border-radius: var(--control-radius-regular);
-  color: var(--sys-color-foreground);
-}
-
-/* The explore affordance is a hover-era desktop flourish — on touch (and
-   narrow) screens the whole card is the tap target (owner call,
-   2026-07-22). */
-@media (hover: none), (max-width: 760px) {
-  .location-card__action {
-    display: none;
-  }
-}
-
-/* ui-button (bordered capsule, icon-only) supplies chrome + geometry +
-   hover/press — only the flex share stays local. */
-.location-card__maps {
+/* Trailing action cluster (call / directions) never shrinks — the copy
+   column is the flexible one. Chrome, geometry and hover/press all come
+   from uiButton. */
+.location-card .ui-button {
   flex: 0 0 auto;
 }
-
-/* Glyph size comes from the DS icon-only tier in button.css (1.25rem at
-   the 44px box) — no local re-declaration. */
 
 .locations__map {
   /* A definite `block-size` (not `min-block-size`) is load-bearing, not a
@@ -170,10 +112,10 @@
   position: relative;
   overflow: hidden;
   block-size: clamp(18rem, 52svh, 28rem);
-  /* ONE landing-ladder value for every map surface in this section —
-     shared with the sheet map pane and locations-map.css's indicator
-     container. */
-  border-radius: var(--landing-radius-3xl);
+  /* ONE sys rung (hero — the set-piece tier) for every map surface in this
+     section — shared with the sheet map pane and locations-map.css's
+     indicator container. */
+  border-radius: var(--control-radius-hero);
   background: var(--sys-color-surface);
 }
 
@@ -188,7 +130,15 @@ ui-sheet.location-detail-sheet {
   justify-content: center;
 }
 
-/* Restates cr-modal-sheet's closed-state contract: ui-sheet only fades
+/* ONE shared gutter for the whole sheet: the surface's `--ui-sheet-inset`
+   IS the fluid set-piece gutter, so sheet chrome (ui-sheet-header,
+   ui-sheet-action-bar) and the content blocks (which read it back through
+   the `--modal-sheet-safe` alias below) all sit on the same edge. */
+ui-sheet.location-detail-sheet .ui-sheet__surface {
+  --ui-sheet-inset: clamp(1.25rem, 4vw, 4rem);
+}
+
+/* Restates ui-modal-sheet's closed-state contract: ui-sheet only fades
    (opacity/pointer-events), which would leave the closed sheet's controls
    in the tab order and its content exposed to AT. `visibility` (not
    `display: none`) also keeps real layout dimensions for the sheet map
@@ -204,14 +154,16 @@ ui-sheet.location-detail-sheet:not([data-presented]):not([data-closing]) {
    box. Height is viewport-capped so the sticky header and the floating
    action bar always stay reachable. */
 .location-sheet__scroller {
-  /* Fluid sheet gutter carried over from cr-modal-sheet so the gallery
-     (which pads itself with --modal-sheet-safe in both modes) and the
-     sheet headings stay on one gutter; the sheets-misc convergence owns
-     its future consolidation. */
-  --modal-sheet-safe: clamp(1.25rem, 4vw, 4rem);
+  /* Fluid sheet gutter = the surface's shared inset (aliased for the
+     legacy consumers — the gallery pads itself with --modal-sheet-safe in
+     both modes); the sheets-misc convergence owns its future
+     consolidation. */
+  --modal-sheet-safe: var(--ui-sheet-inset);
   /* KEPT: negative-margin full-bleed cancellation of ui-sheet's surface
-     padding (no DS equivalent) — the scroller owns the box instead. */
-  margin: calc(-1 * var(--sys-space-comfortable));
+     padding (comfortable block, --ui-sheet-inset inline — no DS
+     equivalent) — the scroller owns the box instead. */
+  margin-block: calc(-1 * var(--sys-space-comfortable));
+  margin-inline: calc(-1 * var(--ui-sheet-inset));
   block-size: min(90svh, 58rem);
   /* Vertical only — wide content (galleries, long unbroken strings) must
      clip rather than turn the whole sheet into a horizontal scroller. */
@@ -226,12 +178,8 @@ ui-sheet.location-detail-sheet:not([data-presented]):not([data-closing]) {
   border-start-end-radius: var(--control-radius-prominent);
 }
 
-/* Compact title rides ui-sheet-header's [uiTitle] slot (the slot already
-   resets the UA margin); the caption font role's secondary ink is lifted
-   back to full foreground here. */
-.location-sheet__compact-title {
-  color: var(--sys-color-foreground);
-}
+/* Compact title rides ui-sheet-header's [uiTitle] slot — typography and
+   ink are the bar's HIG nav-title recipe now, nothing local. */
 
 /* Inline gutters live on the layout/heading blocks, not the sheet root —
    the gallery pads itself (cr-showcase-gallery owns --modal-sheet-safe),
@@ -264,7 +212,7 @@ ui-sheet.location-detail-sheet:not([data-presented]):not([data-closing]) {
   );
   overflow: hidden;
   block-size: min(70svh, 40rem);
-  border-radius: var(--landing-radius-3xl);
+  border-radius: var(--control-radius-hero);
   background: var(--sys-color-surface);
 }
 
@@ -305,8 +253,8 @@ ui-sheet.location-detail-sheet:not([data-presented]):not([data-closing]) {
   flex: 0 0 auto;
 }
 
-/* Muted inline link — resting ink from the caption font role; hover
-   shares the one muted-link rule with the card phone above. */
+/* Muted inline link — resting ink from the caption font role; the hover
+   color lift lives with the text-link exception rule above. */
 .location-sheet__phone-line {
   display: inline-flex;
   align-items: center;
@@ -336,40 +284,17 @@ ui-sheet.location-detail-sheet:not([data-presented]):not([data-closing]) {
   list-style: none;
 }
 
-/* The trailing push is the ui-spacer in the template (Spacer() replaces
-   justify-content: space-between); the li stays the flex context because a
-   list item can't BE a ui-stack. */
-.location-sheet__day {
-  display: flex;
-  align-items: center;
-  gap: var(--sys-space-regular);
-  min-block-size: var(--control-size-regular);
-  padding: var(--sys-space-tight) var(--sys-space-compact);
-  border-radius: var(--control-radius-regular);
-}
-
-/* Today's row: segment-selected rung of the alpha ladder over accent; the
-   bold weight rides the row's [uiWeight] binding, not CSS. */
-.location-sheet__day[data-today] {
-  background: color-mix(
-    in srgb,
-    var(--sys-color-accent) var(--sys-alpha-segment-selected),
-    transparent
-  );
-  color: var(--sys-color-foreground);
-}
-
-.location-sheet__day-name {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--sys-space-compact);
-}
+/* The day rows ARE ui-list-row (li[uiListRow] form): recipe, trailing
+   detail ink and the today tint (uiSelected) all come from the DS — the
+   old hand-rolled row/today/name rules are gone. */
 
 /* No visual "today" tag — the tinted row + bold weight already carry the
    emphasis (HIG: don't restate it); the fact reaches AT via an SR-only
    uiVisuallyHidden span in the template instead. */
 
-.location-sheet__day-hours {
+/* Hours columns align across rows — digits keep a fixed width (the one
+   trait ui-list-row's trailing slot doesn't carry). */
+.location-sheet__week [uitrailing] {
   font-variant-numeric: tabular-nums;
 }
 
@@ -426,8 +351,11 @@ ui-sheet[data-presented] .location-sheet__status-card {
 }
 
 @media (max-width: 760px) {
+  ui-sheet.location-detail-sheet .ui-sheet__surface {
+    --ui-sheet-inset: 1.1rem;
+  }
+
   .location-sheet__scroller {
-    --modal-sheet-safe: 1.1rem;
     block-size: min(96svh, 60rem);
   }
 

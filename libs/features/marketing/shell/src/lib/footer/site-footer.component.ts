@@ -3,6 +3,7 @@ import {
   Component,
   computed,
   inject,
+  input,
 } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
@@ -11,9 +12,8 @@ import { AUTH_GATEWAY } from '@creativo/application/identity';
 import { UiIcon } from '@creativo/ui/controls';
 import { UiDivider, UiGrid, UiStack } from '@creativo/ui/layout';
 import { UiFrameDirective, UiTextDirective } from '@creativo/ui/modifiers';
-import { LandingContentService } from '../../content/landing-content.service';
-import { IconInstagram } from '../../shared/icons/icons';
-import { LocaleThemeToggleComponent } from '../../shared/prefs/locale-theme-toggle.component';
+import { IconInstagram } from '../icons/icons';
+import { LocaleThemeToggleComponent } from '../prefs/locale-theme-toggle.component';
 
 /** One sitemap row — the four destination shapes the footer links out to. */
 interface FooterLink {
@@ -32,6 +32,15 @@ interface FooterColumn {
   readonly links: readonly FooterLink[];
 }
 
+/** The bit of flagship-location data the Visit column needs — kept minimal
+ *  and caller-supplied rather than this component reaching into a content
+ *  service itself, so any page can use the footer regardless of whether
+ *  it has location data at hand. */
+export interface FooterFlagshipLocation {
+  readonly mapUrl: string;
+  readonly phoneE164: string;
+}
+
 /**
  * The page's ground floor — v2 `landing-footer.tsx`: preferences lead, three
  * sitemap columns (Explore · Visit · Connect) wired to real destinations,
@@ -41,7 +50,7 @@ interface FooterColumn {
  * plain uiText anchor rows — SwiftUI Link parity, not buttons).
  */
 @Component({
-  selector: 'cr-landing-footer',
+  selector: 'cr-site-footer',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     IconInstagram,
@@ -55,13 +64,17 @@ interface FooterColumn {
     UiStack,
     UiTextDirective,
   ],
-  templateUrl: './landing-footer.component.html',
-  styleUrl: './landing-footer.component.css',
-  host: { class: 'cr-footer', 'data-testid': 'landing-footer' },
+  templateUrl: './site-footer.component.html',
+  styleUrl: './site-footer.component.css',
+  host: { class: 'cr-footer', 'data-testid': 'site-footer' },
 })
-export class LandingFooterComponent {
-  private readonly content = inject(LandingContentService);
+export class SiteFooterComponent {
   private readonly authGateway = inject(AUTH_GATEWAY);
+
+  /** The flagship shop anchors the Visit column's directions/call rows
+   *  (v2 `locations[0]`) — `null` on pages with no location data, in
+   *  which case those two rows just don't render. */
+  readonly flagshipLocation = input<FooterFlagshipLocation | null>(null);
 
   private readonly principal = toSignal(this.authGateway.observePrincipal(), {
     initialValue: null,
@@ -70,11 +83,8 @@ export class LandingFooterComponent {
     () => this.principal()?.kind === 'active',
   );
 
-  /** The flagship shop anchors the Visit column (v2 `locations[0]`). */
-  private readonly location = this.content.locations.at(0) ?? null;
-
   protected readonly columns = computed<readonly FooterColumn[]>(() => {
-    const flagship = this.location;
+    const flagship = this.flagshipLocation();
     const visitLinks: FooterLink[] = flagship
       ? [
           {
@@ -105,8 +115,18 @@ export class LandingFooterComponent {
           },
           {
             labelKey: 'landing.footer.nav.careers',
-            kind: 'hash',
-            target: '/#hiring',
+            kind: 'router',
+            target: '/careers',
+          },
+          {
+            labelKey: 'landing.footer.nav.courses',
+            kind: 'router',
+            target: '/courses',
+          },
+          {
+            labelKey: 'landing.footer.nav.events',
+            kind: 'router',
+            target: '/events',
           },
         ],
       },

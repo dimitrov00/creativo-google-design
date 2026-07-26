@@ -43,7 +43,6 @@ test.describe('marketing landing', () => {
     await expect(page.getByTestId('landing-services')).toBeVisible();
     await expect(page.getByTestId('landing-hiring')).toBeVisible();
     await expect(page.getByTestId('landing-locations')).toBeVisible();
-    await expect(page.getByTestId('landing-closing-cta')).toBeVisible();
     await expect(page.getByTestId('landing-footer')).toBeVisible();
   });
 

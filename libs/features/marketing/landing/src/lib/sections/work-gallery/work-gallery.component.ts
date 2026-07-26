@@ -13,7 +13,12 @@ import {
   viewChildren,
 } from '@angular/core';
 import { TranslocoDirective } from '@jsverse/transloco';
-import { UiAsyncImage, UiButton, UiIcon } from '@creativo/ui/controls';
+import {
+  UiAsyncImage,
+  UiButton,
+  UiIcon,
+  UiProgressView,
+} from '@creativo/ui/controls';
 import { UiSheet } from '@creativo/ui/layout';
 import {
   UiInteractiveDirective,
@@ -51,6 +56,7 @@ const EASE = 'cubic-bezier(0.22, 1, 0.36, 1)';
     UiAsyncImage,
     UiButton,
     UiIcon,
+    UiProgressView,
     UiSheet,
     UiInteractiveDirective,
     UiMaterialDirective,
@@ -91,9 +97,11 @@ export class WorkGalleryComponent {
   private readonly containerRef =
     viewChild<ElementRef<HTMLElement>>('container');
   private readonly stripRef = viewChild<ElementRef<HTMLElement>>('strip');
-  private readonly progressFillRef =
-    viewChild<ElementRef<HTMLElement>>('progressFill');
   private readonly cardRefs = viewChildren<ElementRef<HTMLElement>>('card');
+
+  /** Scroll progress (0…1) — feeds the DS determinate ui-progress-view.
+   *  Quantized so the signal only flips when the bar could visibly move. */
+  protected readonly scrollProgress = signal(0);
 
   private cardCenters: number[] = [];
   private containerWidth = 390;
@@ -170,8 +178,7 @@ export class WorkGalleryComponent {
   private update(): void {
     const container = this.containerRef()?.nativeElement;
     const strip = this.stripRef()?.nativeElement;
-    const progressFill = this.progressFillRef()?.nativeElement;
-    if (!container || !strip || !progressFill) return;
+    if (!container || !strip) return;
     const distance = this.scrollDistance();
     const top = container.getBoundingClientRect().top;
     const progress =
@@ -179,7 +186,7 @@ export class WorkGalleryComponent {
     const x = -progress * distance;
 
     strip.style.transform = `translate3d(${x}px, 0, 0)`;
-    progressFill.style.transform = `scaleX(${progress})`;
+    this.scrollProgress.set(Math.round(progress * 500) / 500);
 
     if (this.cardCenters.length) {
       const midpoint = this.containerWidth / 2;

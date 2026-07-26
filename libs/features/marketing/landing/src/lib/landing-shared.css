@@ -17,21 +17,10 @@
 
 @layer sys-base {
   :root {
-    /* ── Radius ladder remnants — derived from the sys tokens (base 0.75rem
-       ± step, × 0.85 scale). The sanctioned scale is subtle/regular/
-       prominent/hero/capsule (--control-radius-*): -lg (≡ regular) and
-       -sheet (≡ hero) are deleted; -2xl now aliases the prominent tier.
-       Only the two genuinely distinct marketing tiers remain — fold them
-       into the sys ladder if they earn a third consumer. ── */
-    --landing-radius-xl: calc(
-      (var(--sys-radius-base) + 4px) * var(--sys-radius-scale)
-    ); /* 13.6px — between regular (10.2px) and prominent; grid figures */
-    --landing-radius-2xl: var(
-      --control-radius-prominent
-    ); /* cards, tiles — the prominent tier (was 17px, now 17.85px) */
-    --landing-radius-3xl: calc(
-      (var(--sys-radius-base) + 16px) * var(--sys-radius-scale)
-    ); /* 23.8px — between prominent and hero (27.2px); location card/map */
+    /* (The landing radius ladder is GONE — owner ruling 2026-07-23: every
+       surface sits on the sys rungs (--control-radius-*): gallery grid
+       tiles → regular, cards/tiles → prominent, lightbox/map set-pieces →
+       hero. Never reintroduce -xl/-2xl/-3xl tiers.) */
 
     /* ── Safe-area floors (v2 --safe-top/--safe-pad-top) ── */
     --landing-safe-top: env(safe-area-inset-top);
@@ -115,7 +104,12 @@
       var(--sys-motion-ease-standard);
   }
   .morph-card:hover .media-morph,
-  .morph-card:focus-within .media-morph {
+  .morph-card:focus-within .media-morph,
+  /* Touch parity — a tap presses the morph open for as long as the
+     finger is down (mirrors the work-gallery zoom's press-not-hover
+     grammar); the hover:none override below still cancels the bare
+     :hover a touchscreen can leave stuck after release. */
+  .morph-card:active .media-morph {
     border-radius: var(
       --media-morph-clip-hover,
       var(--control-radius-prominent)
@@ -134,47 +128,10 @@
      .sheet-bar-reveal class was deleted with its last consumer. */
 }
 
-/* ── Explore affordance (capsule label + circular glyph pair) ──
-   The 'Разгледай →' action on morph cards, drawn in the design system's
-   button vocabulary: capsule border, 44px tap-height boxes, state-layer
-   fill on card hover. Consumers set border-color/color + margins.
-   Landing-local by ruling (single consumer cluster — promote only if a
-   second surface adopts it). Unlayered on purpose: the icon box must
-   out-cascade the vendor `.material-symbols-rounded` display/inline-block
-   rule (also unlayered, imported earlier in styles.css). ── */
-.explore-affordance {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-.explore-affordance__label {
-  display: inline-flex;
-  align-items: center;
-  min-block-size: var(--control-size-regular);
-  padding-inline: var(--sys-space-regular);
-  /* 1.5px is a deliberate signature weight — reads heavier than the 1px
-     control rings against photography without becoming a border. */
-  border: 1.5px solid;
-  border-radius: var(--control-radius-capsule);
-  transition: background-color var(--sys-motion-duration-regular)
-    var(--sys-motion-ease-standard);
-}
-.explore-affordance__icon {
-  display: grid;
-  place-items: center;
-  inline-size: var(--control-size-regular);
-  aspect-ratio: 1;
-  border: 1.5px solid;
-  border-radius: 50%;
-  transition: background-color var(--sys-motion-duration-regular)
-    var(--sys-motion-ease-standard);
-}
-.morph-card:hover .explore-affordance__label,
-.morph-card:focus-within .explore-affordance__label,
-.morph-card:hover .explore-affordance__icon,
-.morph-card:focus-within .explore-affordance__icon {
-  background-color: var(--sys-state-layer-hover);
-}
+/* (The old .explore-affordance recipe is gone — the 'Разгледай →' morph-
+   card affordance is real DS button chrome now: span[uiButton]
+   strokedBorder capsule + iconOnly chip, with the card-hover state layer
+   as a one-line consumer rule in team-showcase.) */
 
 /* Sheet-content entrance choreography — shared keyframes, referenced from
    the service-detail and locations sheet component styles. Keyframes must

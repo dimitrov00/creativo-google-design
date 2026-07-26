@@ -135,8 +135,12 @@
             [attr.data-done]="item.done"
             [attr.data-testid]="'account-completion-' + item.key"
           >
-            {{ item.done ? '✓' : '○' }} {{ t('account.completion.items.' +
-            item.key) }}
+            <!-- Registry glyphs, not string glyphs — the icon rides the
+                 footnote font size. -->
+            <ui-icon
+              [uiName]="item.done ? 'checklist.done' : 'checklist.pending'"
+            />
+            {{ t('account.completion.items.' + item.key) }}
           </p>
           }
         </ui-stack>

@@ -5,27 +5,32 @@ import {
   DestroyRef,
   PLATFORM_ID,
   afterNextRender,
+  computed,
   effect,
   inject,
 } from '@angular/core';
+import {
+  FooterFlagshipLocation,
+  SiteFooterComponent,
+  SiteHeaderComponent,
+  ThemeService,
+} from '@creativo/features/marketing/shell';
 import { UiSkeleton } from '@creativo/ui/controls';
 import { UiFrameDirective } from '@creativo/ui/modifiers';
-import { LandingHeaderComponent } from '../../header/landing-header.component';
-import { ClosingCtaComponent } from '../../sections/closing-cta/closing-cta.component';
-import { LandingFooterComponent } from '../../sections/footer/landing-footer.component';
+import { CoursesSectionComponent } from '../../sections/courses/courses-section.component';
 import { LandingHeroComponent } from '../../sections/hero/landing-hero.component';
 import { HiringSectionComponent } from '../../sections/hiring/hiring-section.component';
 import { LocationsComponent } from './locations/locations.component';
 import { TeamShowcaseComponent } from './team-showcase/team-showcase.component';
 import { ServicesSectionComponent } from '../../sections/services/services-section.component';
 import { WorkGalleryComponent } from '../../sections/work-gallery/work-gallery.component';
-import { ThemeService } from '../../shared/prefs/theme.service';
+import { LandingContentService } from '../../content/landing-content.service';
 
 /**
  * The marketing landing — a 1:1 port of v2's `routes/index.tsx` composition:
  * fixed AppHeader (hero treatment) → inset video hero → the anchored section
  * run (work · team · services · hiring · visit) inside the centred app
- * column → closing CTA → sitemap footer. The installed-PWA active-user
+ * column → sitemap footer. The installed-PWA active-user
  * redirect lives in `apps/web` `homeGuard` (v2's `isStandalone && settled
  * === 'active'` check).
  */
@@ -34,10 +39,10 @@ import { ThemeService } from '../../shared/prefs/theme.service';
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     TeamShowcaseComponent,
-    ClosingCtaComponent,
+    CoursesSectionComponent,
     HiringSectionComponent,
-    LandingFooterComponent,
-    LandingHeaderComponent,
+    SiteFooterComponent,
+    SiteHeaderComponent,
     LandingHeroComponent,
     LocationsComponent,
     ServicesSectionComponent,
@@ -54,6 +59,17 @@ export class HomePage {
   private readonly platformId = inject(PLATFORM_ID);
   private readonly destroyRef = inject(DestroyRef);
   private readonly theme = inject(ThemeService);
+  private readonly content = inject(LandingContentService);
+
+  /** The flagship shop for the footer's Visit column (directions/call rows) — the site-wide `cr-site-footer` takes this as an input rather than reaching into landing's own content service itself. */
+  protected readonly flagshipLocation = computed<FooterFlagshipLocation | null>(
+    () => {
+      const location = this.content.locations.at(0);
+      return location
+        ? { mapUrl: location.mapUrl, phoneE164: location.phoneE164 }
+        : null;
+    },
+  );
 
   constructor() {
     // v2 `useLandingThemeColor`: the inset hero leaves plain background above

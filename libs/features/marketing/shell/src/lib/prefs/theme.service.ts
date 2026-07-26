@@ -27,7 +27,40 @@ export class ThemeService {
     this.set(this.theme() === 'dark' ? 'light' : 'dark');
   }
 
+  /**
+   * A same-document View Transition crossfades the WHOLE page (root
+   * snapshot old → new) as one smooth pass — the same browser primitive
+   * `withViewTransitions` already uses for route changes (app.config.ts),
+   * styled by the SAME global `::view-transition-old(root)` /
+   * `::view-transition-new(root)` rule in apps/web/src/styles.css (so route
+   * changes and theme switches share one consistent crossfade feel, no
+   * separate duration to invent). Without this, per-element CSS
+   * transitions — e.g. the header's scroll-driven background-color ease in
+   * landing-header.component.css vs body's in styles.css — fire
+   * independently at different speeds, so only some surfaces visibly
+   * animate and others snap: reads as the header "lagging" behind an
+   * otherwise-instant switch. `skipTransition()` on reduced-motion mirrors
+   * app.config.ts's `onViewTransitionCreated` check exactly.
+   */
   set(theme: UiTheme): void {
+    if (
+      !isPlatformBrowser(this.platformId) ||
+      typeof this.document.startViewTransition !== 'function'
+    ) {
+      this.applyTheme(theme);
+      return;
+    }
+
+    const transition = this.document.startViewTransition(() =>
+      this.applyTheme(theme),
+    );
+    const reducedMotion = this.document.defaultView?.matchMedia(
+      '(prefers-reduced-motion: reduce)',
+    ).matches;
+    if (reducedMotion) transition.skipTransition();
+  }
+
+  private applyTheme(theme: UiTheme): void {
     this.theme.set(theme);
     const root = this.document.documentElement;
     root.setAttribute('data-theme', theme);

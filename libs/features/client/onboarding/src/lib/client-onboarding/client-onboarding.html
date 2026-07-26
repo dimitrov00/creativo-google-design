@@ -1,93 +1,266 @@
 <ng-container *transloco="let t">
+  @switch (store.state().kind) { @case ('about') {
+  <!-- Journey step 3 of 3 — quiet navigation-stack chrome (owner ruling
+       2026-07-25): no back (identity is proven), Sign out rides the
+       toolbar's trailing slot as the explicit escape hatch, the toolbar
+       reads as plain page surface (no hairline) and the stepper shows
+       segments only, centered like the auth screens; the hugged Continue
+       CTA docks trailing in the chromeless bottom bar. -->
+  <ui-stack uiSpacing="none" uiFrame uiFrameMinHeight="100svh">
+    <ui-toolbar uiSticky uiToolbarBackground="hidden">
+      <ui-stack
+        uiAxis="horizontal"
+        uiSpacing="none"
+        uiAlignment="center"
+        uiFrame
+        uiFrameMaxWidth="infinity"
+      >
+        <ui-spacer />
+      </ui-stack>
+      <ui-stepper
+        [uiSteps]="3"
+        [uiCurrent]="3"
+        [uiLabel]="t('auth.steps.label', { current: 3, total: 3 })"
+        uiLabelsHidden
+        uiFrame
+        uiFrameWidth="min(34vw, 10rem)"
+      />
+      <ui-stack
+        uiAxis="horizontal"
+        uiSpacing="none"
+        uiAlignment="center"
+        uiFrame
+        uiFrameMaxWidth="infinity"
+      >
+        <ui-spacer />
+        <!-- Sheet-chrome pill grammar (owner ruling) — icon-only circle,
+             the EXACT ui-modal-sheet close-chip recipe (bordered neutral
+             capsule, regular 44px tier); the accessible name carries the
+             "Sign out" meaning. -->
+        <button
+          type="button"
+          uiButton
+          uiButtonStyle="bordered"
+          uiTint="neutral"
+          uiButtonBorderShape="capsule"
+          uiControlSize="regular"
+          [uiIconOnly]="true"
+          data-testid="onboarding-sign-out"
+          [attr.aria-label]="t('onboarding.about.signOut')"
+          (click)="signOutNow()"
+        >
+          <ui-icon uiName="auth.signOut" uiScale="small" />
+        </button>
+      </ui-stack>
+    </ui-toolbar>
+
+    <!-- Top-anchored under the toolbar (nav-stack grammar) — the lone
+         bottom spacer keeps the action bar pinned on tall screens. -->
+    <ui-stack
+      uiAlignment="center"
+      uiPaddingHorizontal="regular"
+      uiPaddingVertical="spacious"
+    >
+      <ui-stack
+        uiSpacing="comfortable"
+        uiFrame
+        uiFrameMaxWidth="28rem"
+        data-testid="onboarding-about"
+      >
+        <ui-section-header
+          uiAlignment="leading"
+          uiReveal
+          uiRevealTrigger="mount"
+        >
+          <h1 uiTitle>{{ t('onboarding.about.title') }}</h1>
+          <p uiLede>{{ t('onboarding.about.lede') }}</p>
+        </ui-section-header>
+
+        <ui-stack
+          uiSpacing="regular"
+          uiReveal
+          uiRevealTrigger="mount"
+          [uiRevealDelay]="150"
+        >
+          @if (needsFirstName) {
+          <label>
+            <ui-stack uiSpacing="tight">
+              <span uiText uiFont="footnote"
+                >{{ t('onboarding.about.firstName') }}</span
+              >
+              <input
+                type="text"
+                uiTextField
+                uiControlSize="large"
+                autocomplete="given-name"
+                data-testid="onboarding-first-name"
+                [readonly]="store.pending()"
+                [value]="firstName()"
+                (input)="firstName.set($any($event.target).value)"
+              />
+            </ui-stack>
+          </label>
+          } @if (needsLastName) {
+          <label>
+            <ui-stack uiSpacing="tight">
+              <span uiText uiFont="footnote"
+                >{{ t('onboarding.about.lastName') }}</span
+              >
+              <input
+                type="text"
+                uiTextField
+                uiControlSize="large"
+                autocomplete="family-name"
+                data-testid="onboarding-last-name"
+                [readonly]="store.pending()"
+                [value]="lastName()"
+                (input)="lastName.set($any($event.target).value)"
+              />
+            </ui-stack>
+          </label>
+          } @if (needsPhone) {
+          <!-- Only under email-OTP deployments — a phone login already
+               satisfies the requirement via the identifier fallback. The
+               permission-priming hint is the honest "why" (design §2.5);
+               field errors render inside the composite itself. -->
+          <ui-phone-field
+            uiControlSize="large"
+            [label]="t('onboarding.about.phoneLabel')"
+            [hint]="t('onboarding.about.phoneHint')"
+            [locale]="activeLang()"
+            [defaultCountry]="defaultCountry"
+            [disabled]="store.pending()"
+            [error]="phoneError()"
+            [pickerTitle]="t('auth.identify.countryPicker')"
+            [searchLabel]="t('auth.identify.countrySearch')"
+            [closeLabel]="t('auth.identify.countryClose')"
+            [noResultsLabel]="t('auth.identify.countryNoResults')"
+            [(country)]="phoneCountry"
+            [(value)]="phoneValue"
+            (uiBlurred)="onPhoneBlur($event)"
+            data-testid="onboarding-phone"
+          />
+          } @if (translateError(currentError()); as error) {
+          <p
+            uiText
+            uiFont="footnote"
+            uiWeight="regular"
+            uiForegroundStyle="destructive"
+            data-testid="onboarding-about-error"
+            role="alert"
+          >
+            {{ error }}
+          </p>
+          }
+        </ui-stack>
+
+        <!-- No "signed in as" line (owner ruling): the toolbar's Sign out
+             chip is the only session affordance — repeating session state
+             under a form is noise (HIG: chrome states things once). -->
+      </ui-stack>
+    </ui-stack>
+    <ui-spacer />
+
+    <ui-page-action-bar
+      uiReveal="fade"
+      uiRevealTrigger="mount"
+      [uiRevealDelay]="300"
+    >
+      <button
+        type="button"
+        uiButton
+        uiButtonStyle="borderedProminent"
+        uiButtonBorderShape="capsule"
+        uiControlSize="large"
+        data-testid="onboarding-submit-about"
+        [uiLoading]="store.pending()"
+        [disabled]="!canSubmitAbout()"
+        (click)="submitAbout()"
+      >
+        {{ t('onboarding.about.continue') }}
+      </button>
+    </ui-page-action-bar>
+  </ui-stack>
+  } @case ('reward') {
+  <!-- Expressive finale (owner ruling 2026-07-25): CENTERED celebratory
+       hero — big accent check badge with springy pop + ring pulse, the
+       confetti erupting from its center — and the CTAs ride the page
+       action-bar grammar like every other step (plain secondary leading,
+       hugged capsule primary trailing, thumb side). -->
   <ui-stack
     uiAlignment="center"
     uiSpacing="none"
     uiFrame
     uiFrameMinHeight="100svh"
-    uiPaddingHorizontal="regular"
-    uiPaddingVertical="spacious"
   >
     <ui-spacer />
-    @switch (store.state().kind) { @case ('about') {
     <ui-stack
+      uiAlignment="center"
       uiSpacing="comfortable"
+      uiPaddingHorizontal="regular"
       uiFrame
       uiFrameMaxWidth="28rem"
-      data-testid="onboarding-about"
-    >
-      <h1 uiText uiFont="title">{{ t('onboarding.about.title') }}</h1>
-      <p uiText uiFont="body">{{ t('onboarding.about.body') }}</p>
-
-      <label>
-        <ui-stack uiSpacing="tight">
-          <span uiText uiFont="footnote"
-            >{{ t('onboarding.about.firstName') }}</span
-          >
-          <input
-            type="text"
-            uiTextField
-            autocomplete="given-name"
-            data-testid="onboarding-first-name"
-            [value]="firstName()"
-            (input)="firstName.set($any($event.target).value)"
-          />
-        </ui-stack>
-      </label>
-      <label>
-        <ui-stack uiSpacing="tight">
-          <span uiText uiFont="footnote"
-            >{{ t('onboarding.about.lastName') }}</span
-          >
-          <input
-            type="text"
-            uiTextField
-            autocomplete="family-name"
-            data-testid="onboarding-last-name"
-            [value]="lastName()"
-            (input)="lastName.set($any($event.target).value)"
-          />
-        </ui-stack>
-      </label>
-
-      @if (translateError(currentError()); as error) {
-      <p
-        uiText
-        uiFont="footnote"
-        uiForegroundStyle="destructive"
-        data-testid="onboarding-about-error"
-        role="alert"
-      >
-        {{ error }}
-      </p>
-      }
-
-      <button
-        type="button"
-        uiButton
-        uiButtonStyle="borderedProminent"
-        uiControlSize="large"
-        data-testid="onboarding-submit-about"
-        [uiLoading]="store.pending()"
-        [disabled]="!firstName().trim() || !lastName().trim()"
-        (click)="submitAbout()"
-      >
-        {{ t('onboarding.about.continue') }}
-      </button>
-    </ui-stack>
-    } @case ('reward') {
-    <ui-stack
-      uiSpacing="comfortable"
-      uiFrame
-      uiFrameMaxWidth="28rem"
+      uiReveal
+      uiRevealTrigger="mount"
+      class="onboarding-reward"
       data-testid="onboarding-reward"
     >
-      <h1 uiText uiFont="title">{{ t('onboarding.reward.title') }}</h1>
-      <p uiText uiFont="body">{{ t('onboarding.reward.body') }}</p>
+      <!-- The reward moment: the badge pops in with a springy overshoot +
+           expanding ring pulse (CSS, feature-scoped), then the confetti
+           erupts from its center — token tints only, fully self-cleaning,
+           silent under prefers-reduced-motion (the calm fade takes over).
+           Decorative overlay only: pointer-transparent, CTAs usable at
+           once. -->
+      <span class="onboarding-reward__badge">
+        <!-- Apple-style stroke draw-on: the check PATH draws itself once
+             the badge pop peaks (pathLength-normalized dashoffset, CSS
+             below). Reduced motion renders it already drawn. -->
+        <svg
+          class="onboarding-reward__check"
+          viewBox="0 0 24 24"
+          aria-hidden="true"
+        >
+          <path
+            d="M5 12.5l4.6 4.6L19 7.5"
+            pathLength="1"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2.5"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          />
+        </svg>
+        <ui-confetti
+          [uiCount]="160"
+          [uiDelay]="300"
+          data-testid="onboarding-confetti"
+        />
+      </span>
+      <h1 uiText uiFont="largeTitle">{{ t('onboarding.reward.title') }}</h1>
+      <p uiText uiFont="body" uiForegroundStyle="secondary">
+        {{ t('onboarding.reward.body') }}
+      </p>
+    </ui-stack>
+    <ui-spacer />
 
+    <!-- Completion-screen CTA anatomy (Apple Setup Assistant / HIG): ONE
+         filled primary verb with the quiet "not now" text link STACKED
+         beneath it, both centered — never two side-by-side text buttons
+         fighting for the bar (they overflowed compact widths). -->
+    <ui-stack
+      uiAlignment="center"
+      uiSpacing="compact"
+      uiPaddingHorizontal="regular"
+      class="onboarding-reward__actions"
+      uiReveal="fade"
+      uiRevealTrigger="mount"
+      [uiRevealDelay]="450"
+    >
       <button
         type="button"
         uiButton
         uiButtonStyle="borderedProminent"
+        uiButtonBorderShape="capsule"
         uiControlSize="large"
         data-testid="onboarding-personalize"
         (click)="store.personalize()"
@@ -98,21 +271,38 @@
         type="button"
         uiButton
         uiButtonStyle="plain"
+        uiButtonBorderShape="capsule"
+        uiControlSize="small"
         data-testid="onboarding-enter-app"
         (click)="enterAppNow()"
       >
-        {{ t('onboarding.reward.skip') }}
+        {{ t('onboarding.reward.enterApp') }}
       </button>
     </ui-stack>
-    } @case ('services') {
+  </ui-stack>
+  } @case ('services') {
+  <ui-stack
+    uiAlignment="center"
+    uiSpacing="none"
+    uiFrame
+    uiFrameMinHeight="100svh"
+    uiPaddingHorizontal="regular"
+    uiPaddingVertical="spacious"
+  >
+    <ui-spacer />
     <ui-stack
       uiSpacing="comfortable"
       uiFrame
       uiFrameMaxWidth="28rem"
       data-testid="onboarding-services"
     >
-      <h1 uiText uiFont="title">{{ t('onboarding.services.title') }}</h1>
-      <p uiText uiFont="body">{{ t('onboarding.services.body') }}</p>
+      <ui-stack uiSpacing="tight">
+        <p uiText uiFont="caption" uiForegroundStyle="secondary">
+          {{ t('onboarding.optional') }}
+        </p>
+        <h1 uiText uiFont="title">{{ t('onboarding.services.title') }}</h1>
+        <p uiText uiFont="body">{{ t('onboarding.services.body') }}</p>
+      </ui-stack>
 
       <ui-flow uiSpacing="compact" data-testid="onboarding-services-list">
         @for (service of services(); track service.id.value) {
@@ -148,28 +338,154 @@
         {{ t('onboarding.services.skip') }}
       </button>
     </ui-stack>
-    } @case ('avatar') {
+    <ui-spacer />
+  </ui-stack>
+  } @case ('birthday') {
+  <!-- OPTIONAL birthday, its own skippable personalization step (moved off
+       the required About form — progressive disclosure; rewards may offer
+       birthday presents, admin-configurable later). Same quiet chrome as
+       services/avatar: caption-tier Optional marker, no toolbar, no
+       hairlines. Validated through the BirthDate VO on blur/submit only;
+       segment order, labels and placeholders ride i18n so locales can
+       differ. The hugged capsule Save docks trailing in the chromeless
+       bottom bar with the plain Skip beside it (leading slot). -->
+  <ui-stack
+    uiAlignment="center"
+    uiSpacing="none"
+    uiFrame
+    uiFrameMinHeight="100svh"
+    uiPaddingHorizontal="regular"
+    uiPaddingVertical="spacious"
+  >
+    <ui-spacer />
+    <ui-stack
+      uiSpacing="comfortable"
+      uiFrame
+      uiFrameMaxWidth="28rem"
+      data-testid="onboarding-birthday-step"
+    >
+      <ui-stack uiSpacing="tight">
+        <p uiText uiFont="caption" uiForegroundStyle="secondary">
+          {{ t('onboarding.optional') }}
+        </p>
+        <h1 uiText uiFont="title">{{ t('onboarding.birthday.title') }}</h1>
+        <p uiText uiFont="body">{{ t('onboarding.birthday.lede') }}</p>
+      </ui-stack>
+
+      <ui-date-field
+        uiControlSize="large"
+        [label]="t('onboarding.birthday.label')"
+        [dayLabel]="t('onboarding.birthday.day')"
+        [monthLabel]="t('onboarding.birthday.month')"
+        [yearLabel]="t('onboarding.birthday.year')"
+        [dayPlaceholder]="t('onboarding.birthday.dayPlaceholder')"
+        [monthPlaceholder]="t('onboarding.birthday.monthPlaceholder')"
+        [yearPlaceholder]="t('onboarding.birthday.yearPlaceholder')"
+        [disabled]="store.pending()"
+        [error]="birthError()"
+        [(value)]="birthValue"
+        (uiBlurred)="onBirthBlur($event)"
+        data-testid="onboarding-birthday"
+      />
+      @if (translateError(birthdaySaveError()); as error) {
+      <p
+        uiText
+        uiFont="footnote"
+        uiWeight="regular"
+        uiForegroundStyle="destructive"
+        data-testid="onboarding-birthday-error"
+        role="alert"
+      >
+        {{ error }}
+      </p>
+      }
+    </ui-stack>
+    <ui-spacer />
+
+    <ui-page-action-bar>
+      <button
+        type="button"
+        uiButton
+        uiButtonStyle="plain"
+        uiButtonBorderShape="capsule"
+        data-testid="onboarding-skip-birthday"
+        (click)="skipBirthdayNow()"
+      >
+        {{ t('onboarding.birthday.skip') }}
+      </button>
+      <button
+        type="button"
+        uiButton
+        uiButtonStyle="borderedProminent"
+        uiButtonBorderShape="capsule"
+        uiControlSize="large"
+        data-testid="onboarding-submit-birthday"
+        [uiLoading]="store.pending()"
+        [disabled]="!canSubmitBirthday()"
+        (click)="submitBirthdayNow()"
+      >
+        {{ t('onboarding.birthday.save') }}
+      </button>
+    </ui-page-action-bar>
+  </ui-stack>
+  } @case ('avatar') {
+  <ui-stack
+    uiAlignment="center"
+    uiSpacing="none"
+    uiFrame
+    uiFrameMinHeight="100svh"
+    uiPaddingHorizontal="regular"
+    uiPaddingVertical="spacious"
+  >
+    <ui-spacer />
     <ui-stack
       uiSpacing="comfortable"
       uiFrame
       uiFrameMaxWidth="28rem"
       data-testid="onboarding-avatar"
     >
-      <h1 uiText uiFont="title">{{ t('onboarding.avatar.title') }}</h1>
-      <p uiText uiFont="body">{{ t('onboarding.avatar.body') }}</p>
+      <ui-stack uiSpacing="tight">
+        <p uiText uiFont="caption" uiForegroundStyle="secondary">
+          {{ t('onboarding.optional') }}
+        </p>
+        <h1 uiText uiFont="title">{{ t('onboarding.avatar.title') }}</h1>
+        <p uiText uiFont="body">{{ t('onboarding.avatar.body') }}</p>
+      </ui-stack>
 
+      <!-- No uploader yet (DS gap, deferred) — one clear primary exit plus
+           the plain skip (design §2.6). -->
       <button
         type="button"
         uiButton
         uiButtonStyle="borderedProminent"
         uiControlSize="large"
+        data-testid="onboarding-avatar-enter-app"
+        (click)="enterAppNow()"
+      >
+        {{ t('onboarding.avatar.enterApp') }}
+      </button>
+      <button
+        type="button"
+        uiButton
+        uiButtonStyle="plain"
         data-testid="onboarding-skip-avatar"
         (click)="skipAvatarNow()"
       >
         {{ t('onboarding.avatar.skip') }}
       </button>
     </ui-stack>
-    } @case ('entering') {
+    <ui-spacer />
+  </ui-stack>
+  } @case ('entering') {
+  <ui-stack
+    uiAlignment="center"
+    uiSpacing="none"
+    uiFrame
+    uiFrameMinHeight="100svh"
+    uiPaddingHorizontal="regular"
+    uiPaddingVertical="spacious"
+  >
+    <ui-spacer />
     <ui-stack
       uiSpacing="comfortable"
       uiFrame
@@ -194,7 +510,7 @@
       <ui-progress-view data-testid="onboarding-entering-spinner" />
       }
     </ui-stack>
-    } }
     <ui-spacer />
   </ui-stack>
+  } }
 </ng-container>

@@ -1,7 +1,8 @@
 /* Hero — closing-CTA register (case study §3): the inset video card fills
-   the viewport column; a centered title/paragraph/capsule-CTA trio sits
-   mid-card over a center vignette; the locale/theme toggles ride a bottom
-   overlay row inside the media (SwiftUI bottomBar placement).
+   the viewport column; a centered title/paragraph pair sits mid-card over a
+   center vignette; the capsule booking CTA sits under the card on the page
+   background; the locale/theme toggles ride a bottom overlay row inside the
+   media (SwiftUI bottomBar placement).
 
    Layering, typography, scrim, media loading, entrance motion, spacers and
    insets all come from DS primitives (ui-stack z-axis, ui-spacer,
@@ -39,6 +40,12 @@
    the media-canvas letterbox so the on-media copy keeps contrast. */
 .cr-hero__media {
   opacity: 0.5;
+}
+
+/* ── Booking CTA — under the film card, centered on the page background. ── */
+
+.cr-hero__cta-row {
+  padding-block-start: var(--sys-space-comfortable);
 }
 
 /* ── Bottom overlay row (prefs) — bottom-left inside the media. The layer

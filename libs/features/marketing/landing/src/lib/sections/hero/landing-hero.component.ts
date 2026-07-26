@@ -10,14 +10,15 @@ import {
 } from '@creativo/ui/modifiers';
 import { UiSectionHeader } from '@creativo/ui/patterns';
 import { BookingCtaComponent } from '../../shared/cta/booking-cta.component';
-import { LocaleThemeToggleComponent } from '../../shared/prefs/locale-theme-toggle.component';
+import { LocaleThemeToggleComponent } from '@creativo/features/marketing/shell';
 
 /**
  * Inset hero — closing-CTA register (case study §3): a rounded B&W video
  * card (squircle, hero radius) filling the viewport column, a centered
- * title/paragraph/capsule-CTA trio mid-card, and the locale/theme toggles
- * on a bottom overlay row inside the media. The fixed LandingHeader owns
- * the wordmark; the hero carries no top bar of its own.
+ * title/paragraph pair mid-card, the capsule booking CTA under the card on
+ * the page background, and the locale/theme toggles on a bottom overlay row
+ * inside the media. The fixed LandingHeader owns the wordmark; the hero
+ * carries no top bar of its own.
  *
  * All behavior lives in the DS primitives: ui-ambient-video owns the
  * poster/reduced-motion/crossfade contract, uiReveal owns the staged mount

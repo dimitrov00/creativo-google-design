@@ -1,0 +1,15 @@
+:host {
+  display: block;
+}
+
+.lib-admin-programs__main {
+  padding-block: var(--sys-space-loose) var(--sys-space-spacious);
+}
+
+label {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sys-space-tight);
+  font: var(--sys-font-subheadline);
+  color: var(--sys-color-secondary-label);
+}

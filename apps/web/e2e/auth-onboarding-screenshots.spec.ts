@@ -24,15 +24,10 @@ async function gotoWithTheme(
 
 test.describe('auth — screenshot baseline', () => {
   for (const theme of THEMES) {
-    test(`welcome step — ${theme}`, async ({ page }) => {
-      await gotoWithTheme(page, '/auth', theme);
-      await expect(page.getByTestId('auth-welcome')).toBeVisible();
-      await expect(page).toHaveScreenshot(`auth-welcome-${theme}.png`);
-    });
-
+    // The welcome interstitial is retired (auth-flow design §1.5) — the
+    // flow opens directly on identify, which now carries the brand trio.
     test(`identify step — ${theme}`, async ({ page }) => {
       await gotoWithTheme(page, '/auth', theme);
-      await page.getByTestId('auth-get-started').click();
       await expect(page.getByTestId('auth-identify')).toBeVisible();
       await expect(page).toHaveScreenshot(`auth-identify-${theme}.png`);
     });

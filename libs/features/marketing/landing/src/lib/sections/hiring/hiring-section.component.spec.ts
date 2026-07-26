@@ -1,5 +1,6 @@
 import { EnvironmentProviders, Injectable } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
+import { provideRouter } from '@angular/router';
 import {
   Translation,
   TranslocoLoader,
@@ -50,7 +51,7 @@ describe('HiringSectionComponent', () => {
   it('renders the careers card: eyebrow, word-split headline, subtitle, CTA, video', async () => {
     await TestBed.configureTestingModule({
       imports: [HiringSectionComponent],
-      providers: [...provideHiringI18n()],
+      providers: [provideRouter([]), ...provideHiringI18n()],
     }).compileComponents();
 
     const fixture = TestBed.createComponent(HiringSectionComponent);

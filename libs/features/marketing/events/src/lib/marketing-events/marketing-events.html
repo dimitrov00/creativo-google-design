@@ -1,0 +1,102 @@
+<ng-container *transloco="let t">
+  <div data-page-shell>
+    <cr-site-header [uiOverHero]="false" />
+
+    <main
+      uiFrame
+      [uiFrameMaxWidth]="'var(--sys-container-content)'"
+      class="cr-programs-page__main"
+    >
+      <ui-stack uiSpacing="loose">
+        <ui-section-header uiAlignment="leading">
+          <p uiEyebrow>{{ t('programs.events.eyebrow') }}</p>
+          <h1 uiTitle>{{ t('programs.events.title') }}</h1>
+          <p uiLede>{{ t('programs.events.subtitle') }}</p>
+        </ui-section-header>
+
+        <ui-stack uiAxis="horizontal" uiSpacing="compact" role="tablist">
+          <button
+            type="button"
+            uiChip
+            [uiSelected]="tab() === 'upcoming'"
+            data-testid="events-tab-upcoming"
+            (click)="setTab('upcoming')"
+          >
+            {{ t('programs.events.tabUpcoming') }}
+          </button>
+          <button
+            type="button"
+            uiChip
+            [uiSelected]="tab() === 'past'"
+            data-testid="events-tab-past"
+            (click)="setTab('past')"
+          >
+            {{ t('programs.events.tabPast') }}
+          </button>
+        </ui-stack>
+
+        @if (state(); as current) { @switch (current.kind) { @case ('loading') {
+        <ui-stack uiSpacing="tight">
+          <ui-skeleton uiRadius="regular" [uiFrameHeight]="'4rem'" uiFrame />
+          <ui-skeleton uiRadius="regular" [uiFrameHeight]="'4rem'" uiFrame />
+          <ui-skeleton uiRadius="regular" [uiFrameHeight]="'4rem'" uiFrame />
+        </ui-stack>
+        } @case ('error') {
+        <ui-card data-testid="events-error">
+          {{ t('programs.events.empty.title') }}
+        </ui-card>
+        } @case ('ready') { @if (current.events.length === 0) {
+        <ui-card data-testid="events-empty">
+          <ui-stack uiSpacing="tight">
+            @if (tab() === 'upcoming') {
+            <p uiText uiFont="headline">
+              {{ t('programs.events.empty.title') }}
+            </p>
+            <p>{{ t('programs.events.empty.body') }}</p>
+            <a
+              [href]="instagramUrl"
+              target="_blank"
+              rel="noopener"
+              uiButton
+              uiButtonStyle="bordered"
+              uiControlSize="regular"
+              uiButtonBorderShape="capsule"
+            >
+              {{ t('programs.events.empty.cta') }}
+              <ui-icon uiName="link.external" />
+            </a>
+            } @else {
+            <p uiText uiFont="headline">
+              {{ t('programs.events.emptyPast.title') }}
+            </p>
+            <p>{{ t('programs.events.emptyPast.body') }}</p>
+            }
+          </ui-stack>
+        </ui-card>
+        } @else {
+        <ui-list-group data-testid="events-list">
+          @for (event of current.events; track event.id.value) {
+          <a
+            uiListRow
+            [uiInteractive]="true"
+            [href]="applyHref(event)"
+            target="_blank"
+            rel="noopener"
+          >
+            <ui-stack uiSpacing="none">
+              <span>{{ text(event.title) }}</span>
+              <span class="cr-programs-page__secondary"
+                >{{ formatDate(event) }}</span
+              >
+            </ui-stack>
+            <ui-icon uiTrailing uiName="link.external" />
+          </a>
+          }
+        </ui-list-group>
+        } } } }
+      </ui-stack>
+    </main>
+
+    <cr-site-footer />
+  </div>
+</ng-container>

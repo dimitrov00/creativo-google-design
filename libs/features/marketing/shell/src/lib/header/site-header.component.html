@@ -1,7 +1,7 @@
 <ng-container *transloco="let t">
   <header
     class="cr-header"
-    data-testid="landing-header"
+    data-testid="site-header"
     [attr.data-view]="isSolid() ? 'solid' : 'float'"
     [style.transform]="headerTransform()"
   >
@@ -29,7 +29,7 @@
             [uiButtonStyle]="isSolid() ? 'bordered' : 'glass'"
             uiControlSize="regular"
             uiButtonBorderShape="capsule"
-            data-testid="landing-login-pill"
+            data-testid="site-login-pill"
           >
             <ui-icon uiName="auth.locked" />
             {{ t('landing.nav.login') }}
@@ -51,13 +51,24 @@
           [attr.aria-expanded]="menuOpen()"
           (click)="toggleMenu()"
         >
-          <cr-menu-icon [open]="menuOpen()" />
+          @if (isAuthed() && !menuOpen()) {
+            <!-- Signed-in trigger = the account monogram (Apple HIG:
+                 App-Store-style profile circle, initials fallback) —
+                 morphs back to the ✕ while the menu is open. -->
+            <ui-avatar
+              class="cr-header__monogram"
+              [uiName]="monogramName()"
+              uiControlSize="regular"
+            />
+          } @else {
+            <cr-menu-icon [open]="menuOpen()" />
+          }
         </button>
       </ui-stack>
     </ui-toolbar>
   </header>
 
-  <cr-landing-menu
+  <cr-site-menu
     [open]="menuOpen()"
     [isAuthed]="isAuthed()"
     (closed)="menuOpen.set(false)"

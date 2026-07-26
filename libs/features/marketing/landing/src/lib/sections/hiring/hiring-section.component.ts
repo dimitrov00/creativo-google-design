@@ -13,6 +13,7 @@ import {
   viewChild,
 } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
+import { RouterLink } from '@angular/router';
 import { TranslocoDirective, TranslocoService } from '@jsverse/transloco';
 import { UiAmbientVideo, UiButton, UiIcon } from '@creativo/ui/controls';
 import { UiStack } from '@creativo/ui/layout';
@@ -30,6 +31,7 @@ import { UiSectionHeader } from '@creativo/ui/patterns';
   selector: 'cr-hiring-section',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
+    RouterLink,
     TranslocoDirective,
     UiAmbientVideo,
     UiButton,

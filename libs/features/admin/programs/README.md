@@ -1,0 +1,7 @@
+# admin-programs
+
+This library was generated with [Nx](https://nx.dev).
+
+## Running unit tests
+
+Run `nx test admin-programs` to execute the unit tests.

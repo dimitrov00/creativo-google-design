@@ -7,18 +7,19 @@ declare global {
 }
 
 /**
- * Goal 06.2 exit gate (docs/migration/goals/06-feature-slices.md) — phone-OTP
- * sign-in and onboarding end-to-end against Firebase emulators and the
- * ported `requestOtpChallenge`/`verifyOtpChallenge`/`completeRegistration`
- * callables (`pnpm run e2e:web` builds+serves `apps/functions` into the
- * functions emulator first). `+141555501XX` is NANP's reserved fictional
- * "directory assistance" block — a real, format-valid number
- * `libphonenumber-js` accepts, unique per test to dodge the 1-minute
- * resend rate limit between runs.
+ * Goal 06.2 exit gate (docs/migration/goals/06-feature-slices.md), on the
+ * adopted email-OTP deployment — email sign-in and onboarding (which now
+ * COLLECTS the phone via `ui-phone-field`) end-to-end against Firebase
+ * emulators and the ported `requestOtpChallenge`/`verifyOtpChallenge`/
+ * `completeRegistration` callables (`pnpm run e2e:web` builds+serves
+ * `apps/functions` into the functions emulator first). Emails are unique
+ * per test to dodge the 1-minute resend rate limit between tests; each
+ * `emulators:exec` run starts from an empty store, so a deterministic
+ * per-test address never collides with a previous run's registration.
  */
-function fakePhone(testId: string): string {
-  const suffix = Math.abs(hashCode(testId)) % 100;
-  return `+141555501${String(suffix).padStart(2, '0')}`;
+function fakeEmail(testId: string): string {
+  const suffix = Math.abs(hashCode(testId)) % 10_000;
+  return `e2e-client-${suffix}@example.com`;
 }
 
 function hashCode(input: string): number {
@@ -43,22 +44,40 @@ async function enterOtpCode(page: Page, code: string): Promise<void> {
   await page.keyboard.type(code);
 }
 
-test.describe('auth + onboarding', () => {
-  test('a new phone number walks welcome → identify → otp → onboarding → /account', async ({
+async function identifyWithEmail(page: Page, email: string): Promise<void> {
+  await expect(page.getByTestId('auth-identify')).toBeVisible();
+  await page.getByTestId('auth-identifier-input').fill(email);
+  await page.getByTestId('auth-submit-identifier').click();
+  await expect(page.getByTestId('auth-otp')).toBeVisible();
+}
+
+/**
+ * Drives the composite phone field the way a Bulgarian user would: opens
+ * the country picker, confirms Bulgaria (the deployment default, so this
+ * also proves the listbox actually opens/selects/closes), then types the
+ * national number — `formatPhoneDraft` turns it into E.164 under BG.
+ */
+async function fillOnboardingPhone(page: Page): Promise<void> {
+  await page.getByTestId('phone-field-trigger').click();
+  await page.getByTestId('phone-field-option-BG').click();
+  const input = page.getByTestId('phone-field-input');
+  await input.click();
+  await input.fill('0888123456');
+  await input.blur();
+}
+
+test.describe('auth + onboarding (email OTP)', () => {
+  test('a new email walks identify → otp → onboarding (names + phone) → /account', async ({
     page,
   }) => {
-    const phone = fakePhone(test.info().testId);
+    const email = fakeEmail(test.info().testId);
 
     await page.emulateMedia({ reducedMotion: 'reduce' });
     await page.goto('/auth');
-    await expect(page.getByTestId('auth-welcome')).toBeVisible();
-    await page.getByTestId('auth-get-started').click();
 
-    await expect(page.getByTestId('auth-identify')).toBeVisible();
-    await page.getByTestId('auth-identifier-input').fill(phone);
-    await page.getByTestId('auth-submit-identifier').click();
-
-    await expect(page.getByTestId('auth-otp')).toBeVisible();
+    // The flow opens directly on identify — the welcome step is retired
+    // (auth-flow design §1.5). Email deployment → plain email input.
+    await identifyWithEmail(page, email);
     const code = await readDevOtpCode(page);
     await enterOtpCode(page, code);
 
@@ -72,6 +91,12 @@ test.describe('auth + onboarding', () => {
 
     await page.getByTestId('onboarding-first-name').fill('Ada');
     await page.getByTestId('onboarding-last-name').fill('Lovelace');
+
+    // The email identifier can't satisfy the strategy's phone requirement —
+    // Continue stays disabled until the collected phone draft is valid.
+    await expect(page.getByTestId('onboarding-submit-about')).toBeDisabled();
+    await fillOnboardingPhone(page);
+    await expect(page.getByTestId('onboarding-submit-about')).toBeEnabled();
     await page.getByTestId('onboarding-submit-about').click();
 
     await expect(page.getByTestId('onboarding-reward')).toBeVisible();
@@ -80,17 +105,15 @@ test.describe('auth + onboarding', () => {
     await expect(page).toHaveURL(/\/account$/, { timeout: 15_000 });
   });
 
-  test('a returning (already-registered) phone number skips onboarding entirely', async ({
+  test('a returning (already-registered) email skips onboarding entirely', async ({
     page,
     browser,
   }) => {
-    const phone = fakePhone(`${test.info().testId}-returning`);
+    const email = fakeEmail(`${test.info().testId}-returning`);
 
     // First pass: register.
     await page.goto('/auth');
-    await page.getByTestId('auth-get-started').click();
-    await page.getByTestId('auth-identifier-input').fill(phone);
-    await page.getByTestId('auth-submit-identifier').click();
+    await identifyWithEmail(page, email);
     const firstCode = await readDevOtpCode(page);
     await enterOtpCode(page, firstCode);
     await expect(page.getByTestId('onboarding-about')).toBeVisible({
@@ -98,11 +121,12 @@ test.describe('auth + onboarding', () => {
     });
     await page.getByTestId('onboarding-first-name').fill('Grace');
     await page.getByTestId('onboarding-last-name').fill('Hopper');
+    await fillOnboardingPhone(page);
     await page.getByTestId('onboarding-submit-about').click();
     await page.getByTestId('onboarding-enter-app').click();
     await expect(page).toHaveURL(/\/account$/, { timeout: 15_000 });
 
-    // Second pass, fresh session: same phone number should now be a
+    // Second pass, fresh session: the same email should now be a
     // "returning" session and skip onboarding entirely. A genuinely fresh
     // browser context (not just cleared cookies/localStorage) — Firebase
     // Auth persists its session in IndexedDB, which clearing cookies never
@@ -111,9 +135,7 @@ test.describe('auth + onboarding', () => {
     const freshPage = await freshContext.newPage();
     try {
       await freshPage.goto('/auth');
-      await freshPage.getByTestId('auth-get-started').click();
-      await freshPage.getByTestId('auth-identifier-input').fill(phone);
-      await freshPage.getByTestId('auth-submit-identifier').click();
+      await identifyWithEmail(freshPage, email);
       const secondCode = await readDevOtpCode(freshPage);
       await enterOtpCode(freshPage, secondCode);
 
@@ -123,12 +145,15 @@ test.describe('auth + onboarding', () => {
     }
   });
 
-  test('an invalid phone number shows an inline domain error', async ({
+  test('an invalid email shows an inline domain error on blur', async ({
     page,
   }) => {
     await page.goto('/auth');
-    await page.getByTestId('auth-get-started').click();
-    await page.getByTestId('auth-identifier-input').fill('not-a-phone');
+    await expect(page.getByTestId('auth-identify')).toBeVisible();
+    // Errors surface on blur, never per keystroke (design §2.1) — a field
+    // punished while typing reads as hostile.
+    await page.getByTestId('auth-identifier-input').fill('not-an-email');
+    await page.getByTestId('auth-identifier-input').blur();
     await expect(page.getByTestId('auth-identifier-error')).toBeVisible();
     await expect(page.getByTestId('auth-submit-identifier')).toBeDisabled();
   });
@@ -136,13 +161,10 @@ test.describe('auth + onboarding', () => {
   test('an incorrect OTP code shows an inline domain error', async ({
     page,
   }) => {
-    const phone = fakePhone(`${test.info().testId}-wrong-code`);
+    const email = fakeEmail(`${test.info().testId}-wrong-code`);
 
     await page.goto('/auth');
-    await page.getByTestId('auth-get-started').click();
-    await page.getByTestId('auth-identifier-input').fill(phone);
-    await page.getByTestId('auth-submit-identifier').click();
-    await expect(page.getByTestId('auth-otp')).toBeVisible();
+    await identifyWithEmail(page, email);
     // Ensure the real code is issued (and thus never accidentally matches)
     // before trying a wrong one.
     await readDevOtpCode(page);

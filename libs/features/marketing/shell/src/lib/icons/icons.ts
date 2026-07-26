@@ -35,6 +35,9 @@ export class IconInstagram {}
   template: `<span class="cr-menu-icon__bar" data-bar="top"></span
     ><span class="cr-menu-icon__bar" data-bar="bottom"></span>`,
   styles: `
+    /* KEPT: fully hand-drawn SIGNATURE glyph geometry (the two-bar
+       hamburger→X morph has no Material Symbol / registry equivalent) —
+       the px values are the mark's own design, not layout tokens. */
     :host {
       position: relative;
       display: inline-block;

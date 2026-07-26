@@ -27,6 +27,15 @@
     /* Stop iOS Safari inflating text after an orientation change. */
     -webkit-text-size-adjust: 100%;
     text-size-adjust: 100%;
+    /* Stop the OS's own gray tap-flash from painting over every button/
+       row/card's authored :active state — without this, mobile taps show
+       a generic system highlight ON TOP of (and inconsistent with) the
+       app's tuned press feedback, which is why the same control can look
+       "right" on desktop hover and "wrong" on a phone tap. Every
+       interactive surface owns its own press treatment now (state layer,
+       fill tint, elevation, scale) — the UA highlight has nothing left
+       to add. */
+    -webkit-tap-highlight-color: transparent;
   }
 
   body {

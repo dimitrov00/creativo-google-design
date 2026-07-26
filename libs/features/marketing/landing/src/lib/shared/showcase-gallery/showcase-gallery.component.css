@@ -58,12 +58,41 @@ ui-async-image {
 
 /* ── Grid (expanded) — columns/gap from ui-grid. ── */
 
+/* Segmented mosaic — the ui-list-group grammar turned 2D: every tile is a
+   segment at the subtle inner radius; only the GRID's four outer corners
+   take the prominent rung, so the mosaic reads as one shape exploded into
+   tiles (these unlayered rules override the strip's uiRadius stamp).
+   Corner math is keyed to the template's fixed [uiColumns]="3". */
 :host([data-expanded]) figure {
   flex: none;
   aspect-ratio: 1;
-  /* Grid tiles step down one tier on the landing radius ladder from the
-     strip's prominent tier (denser packing, tighter corners). */
-  border-radius: var(--landing-radius-xl);
+  border-radius: var(--control-radius-subtle);
+}
+
+/* Top-left of the mosaic. */
+:host([data-expanded]) figure:first-child {
+  border-start-start-radius: var(--control-radius-prominent);
+}
+/* Top-right: the 3rd tile — or the last tile while the first row is
+   still filling (fewer than 3 images). */
+:host([data-expanded]) figure:nth-child(3),
+:host([data-expanded]) figure:last-child:nth-child(-n + 3) {
+  border-start-end-radius: var(--control-radius-prominent);
+}
+/* Bottom-left: the first tile of the last row (column 1, within the
+   last 3 items) — always exists, whatever the last row's length. */
+:host([data-expanded]) figure:nth-child(3n + 1):nth-last-child(-n + 3) {
+  border-end-start-radius: var(--control-radius-prominent);
+}
+/* Bottom-right: ONLY when the last tile actually lands in column 3 (a
+   full last row), or the whole gallery is a single row (mirrors the
+   top-right rule) — an incomplete last row (e.g. 4 images) leaves a
+   lone tile in column 1 with empty grid cells beside it, so it must NOT
+   claim the trailing corner too (that read as a stray rounded square
+   floating off the mosaic's right edge). */
+:host([data-expanded]) figure:last-child:nth-child(3n),
+:host([data-expanded]) figure:last-child:nth-child(-n + 3) {
+  border-end-end-radius: var(--control-radius-prominent);
 }
 
 @media (max-width: 760px) {

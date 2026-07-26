@@ -75,6 +75,10 @@
   transition: transform var(--sys-motion-duration-regular)
     var(--sys-motion-ease-standard);
 }
-.cr-footer__link:hover .cr-footer__external {
-  transform: rotate(-45deg) translate(1px, -1px);
+@media (hover: hover) {
+  /* Companion to the color-shift above — same gate, so the two fire (or
+     don't) together instead of the nudge alone surviving on touch. */
+  .cr-footer__link:hover .cr-footer__external {
+    transform: rotate(-45deg) translate(1px, -1px);
+  }
 }

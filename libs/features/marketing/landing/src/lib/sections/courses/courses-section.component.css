@@ -1,0 +1,62 @@
+/* Barber courses teaser — a still-photo sibling of cr-hiring-section's
+   video card: same z-stack/overlay/CTA recipe, a slow continuous zoom
+   ("breathing") standing in for the ambient loop since there's no course
+   footage yet. */
+
+:host {
+  display: block;
+}
+
+.cr-courses__section {
+  padding: var(--landing-section-gap) var(--landing-gutter);
+}
+
+.cr-courses__card {
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--control-radius-hero);
+  background: var(--sys-color-media-canvas);
+}
+
+.cr-courses__image {
+  position: absolute;
+  inset: 0;
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+  /* Ken Burns breathe — very slow, alternating, so it never resolves to a
+     jarring reset; reduced-motion.css's global kill-switch already stops
+     this (not marked [data-motion-essential] — purely decorative). */
+  animation: cr-courses-breathe 16s var(--sys-motion-ease-standard) infinite
+    alternate;
+}
+
+@keyframes cr-courses-breathe {
+  from {
+    transform: scale(1);
+  }
+  to {
+    transform: scale(1.06);
+  }
+}
+
+.cr-courses__content {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sys-space-loose);
+  padding: calc(var(--sys-space-spacious) + var(--sys-space-loose))
+    var(--sys-space-loose);
+  text-align: center;
+}
+@media (min-width: 640px) {
+  .cr-courses__content {
+    padding: calc(2 * var(--sys-space-spacious))
+      calc(var(--sys-space-comfortable) + var(--sys-space-loose));
+  }
+}
+
+.cr-courses__content [uilede] {
+  max-inline-size: 26rem;
+}

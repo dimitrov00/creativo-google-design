@@ -19,8 +19,17 @@ describe('TeamShowcaseComponent', () => {
     expect(
       host.querySelectorAll('button.team-card[aria-haspopup="dialog"]').length,
     ).toBe(3);
-    expect(host.querySelectorAll('.team-card__explore-label').length).toBe(3);
-    expect(host.querySelectorAll('.team-card__explore-icon').length).toBe(3);
+    // The explore affordance is DS button chrome (decorative span form):
+    // stroked capsule label + icon-only chip per card.
+    expect(
+      host.querySelectorAll(
+        '.team-card__action span.ui-button[data-button-style="strokedBorder"]',
+      ).length,
+    ).toBe(6);
+    expect(
+      host.querySelectorAll('.team-card__action span.ui-button[data-icon-only]')
+        .length,
+    ).toBe(3);
     expect(host.querySelectorAll('.showcase-gallery figure').length).toBe(4);
     expect(host.querySelector('.barber-sheet__about')).not.toBeNull();
     expect(host.querySelector('ui-rating.barber-sheet__rating')).not.toBeNull();

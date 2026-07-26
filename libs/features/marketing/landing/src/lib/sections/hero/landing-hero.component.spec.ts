@@ -54,8 +54,11 @@ describe('LandingHeroComponent', () => {
     // The anchor IS the button (a[uiButton]) — no pointer-events:none
     // wrapper, so hover/press/focus land on the real interactive element.
     expect(cta?.classList.contains('ui-button')).toBe(true);
-    // Large tier (52px) — the matched opening/closing chord size.
+    // Large tier (52px) — the booking chord size.
     expect(cta?.getAttribute('data-control-size')).toBe('large');
-    expect(cta?.hasAttribute('data-on-media')).toBe(true);
+    // The CTA sits UNDER the film card on the page background — standard
+    // accent capsule, not the white on-media pill.
+    expect(cta?.hasAttribute('data-on-media')).toBe(false);
+    expect(cta?.closest('.ui-stack.cr-hero__cta-row')).not.toBeNull();
   });
 });

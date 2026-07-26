@@ -13,6 +13,7 @@ import {
   UiBadgeTone,
   UiButton,
   UiChip,
+  UiIcon,
   UiTextField,
   UiSkeleton,
 } from '@creativo/ui/controls';
@@ -78,6 +79,7 @@ const DEFAULT_CANCEL_REASON = 'Cancelled by client.';
     UiButton,
     UiCalendarGrid,
     UiCard,
+    UiIcon,
     UiChip,
     UiDateBadge,
     UiDivider,

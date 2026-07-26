@@ -36,6 +36,20 @@ export const appRoutes: Route[] = [
       ),
   },
   {
+    path: 'controls/phone-field',
+    loadComponent: () =>
+      import('./pages/controls/phone-field/phone-field.page').then(
+        (m) => m.PhoneFieldPage,
+      ),
+  },
+  {
+    path: 'controls/date-field',
+    loadComponent: () =>
+      import('./pages/controls/date-field/date-field.page').then(
+        (m) => m.DateFieldPage,
+      ),
+  },
+  {
     path: 'controls/chip',
     loadComponent: () =>
       import('./pages/controls/chip/chip.page').then((m) => m.ChipPage),
@@ -134,6 +148,13 @@ export const appRoutes: Route[] = [
     loadComponent: () =>
       import('./pages/controls/section-header/section-header.page').then(
         (m) => m.SectionHeaderPage,
+      ),
+  },
+  {
+    path: 'controls/stepper',
+    loadComponent: () =>
+      import('./pages/controls/stepper/stepper.page').then(
+        (m) => m.StepperPage,
       ),
   },
 ];

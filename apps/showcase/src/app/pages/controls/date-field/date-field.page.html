@@ -1,0 +1,80 @@
+<sc-page scTitle="Date Field">
+  <ng-container scLede>
+    <code>ui-date-field</code> — segmented calendar-date entry: the GOV.UK
+    date-input skeleton (fieldset + legend, three individually labeled numeric
+    inputs, <code>autocomplete="bday-*"</code>) wearing
+    <code>ui-otp-field</code>'s slot language. Auto-advance fires only on a
+    complete segment, Backspace in an empty one moves back, and a pasted
+    <code>DD.MM.YYYY</code>/<code>DDMMYYYY</code> distributes.
+  </ng-container>
+
+  <sc-demo scTitle="States">
+    <ng-container scAbout>
+      Live fields — type or paste into them. <code>value</code> is
+      <code>{{ '{' }}day, month, year{{ '}' }} | null</code>, non-null only
+      while all three segments are complete; whether they form a REAL date is
+      the consumer's domain VO, reported back through <code>error</code>.
+    </ng-container>
+    <ui-flow uiSpacing="comfortable" uiAlignment="trailing">
+      <ui-stack uiAxis="vertical" uiSpacing="compact" uiAlignment="leading">
+        <ui-date-field
+          label="Birthday"
+          hint="For birthday surprises."
+          [value]="defaultValue()"
+          (valueChange)="defaultValue.set($event)"
+        />
+        <p uiText [uiFont]="'caption'" class="date-field__mono">
+          value={{ format(defaultValue()) }}
+        </p>
+      </ui-stack>
+      <ui-stack uiAxis="vertical" uiSpacing="compact" uiAlignment="leading">
+        <ui-date-field
+          label="Prefilled"
+          [value]="filledValue()"
+          (valueChange)="filledValue.set($event)"
+        />
+        <p uiText [uiFont]="'caption'" class="date-field__mono">
+          value={{ format(filledValue()) }}
+        </p>
+      </ui-stack>
+      <ui-stack uiAxis="vertical" uiSpacing="compact" uiAlignment="leading">
+        <ui-date-field
+          label="Rejected"
+          error="This is not a real calendar date."
+          [value]="invalidValue()"
+          (valueChange)="invalidValue.set($event)"
+        />
+        <p uiText [uiFont]="'caption'" class="date-field__mono">
+          error="…" (consumer-decided)
+        </p>
+      </ui-stack>
+    </ui-flow>
+  </sc-demo>
+
+  <sc-demo scTitle="Localized chrome">
+    <ng-container scAbout>
+      Segment order, labels and placeholders are inputs — locales differ, so the
+      DS hardcodes nothing (English defaults only, same policy as the phone
+      picker chrome).
+    </ng-container>
+    <ui-flow uiSpacing="comfortable" uiAlignment="trailing">
+      <ui-stack uiAxis="vertical" uiSpacing="compact" uiAlignment="leading">
+        <ui-date-field
+          label="Дата на раждане (по избор)"
+          hint="За изненади за рождения ви ден."
+          dayLabel="Ден"
+          monthLabel="Месец"
+          yearLabel="Година"
+          dayPlaceholder="ДД"
+          monthPlaceholder="ММ"
+          yearPlaceholder="ГГГГ"
+          [value]="bgValue()"
+          (valueChange)="bgValue.set($event)"
+        />
+        <p uiText [uiFont]="'caption'" class="date-field__mono">
+          dayLabel="Ден" · placeholders ДД/ММ/ГГГГ
+        </p>
+      </ui-stack>
+    </ui-flow>
+  </sc-demo>
+</sc-page>

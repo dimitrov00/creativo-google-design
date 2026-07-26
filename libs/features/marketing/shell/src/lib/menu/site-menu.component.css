@@ -1,7 +1,7 @@
-/* v2 NavOverlay + nav-recipes. Cards, rows, dividers, the Book-now CTA and
-   the staggered entrance are all design-system primitives now (ui-card,
+/* v2 NavOverlay + nav-recipes. Groups, rows, the Book-now CTA and the
+   staggered entrance are all design-system primitives now (ui-list-group,
    ui-list-row — the CTA is a ui-list-row uiVariant="prominent" —
-   ui-divider, uiReveal); only the overlay shell geometry stays local. */
+   uiReveal); only the overlay shell geometry stays local. */
 
 /* Both overlay layers sit on the shell rung — below the fixed header
    (--sys-layer-header), whose trigger is the menu's ✕ and must stay live.
@@ -11,6 +11,13 @@
   inset: 0;
   z-index: var(--sys-layer-shell);
   background: var(--sys-color-scrim);
+}
+
+.cr-menu:focus,
+.cr-menu:focus-visible {
+  /* The container takes the overlay's initial focus (tabindex="-1") — no
+     visible ring on a non-interactive surface. */
+  outline: none;
 }
 
 .cr-menu {
@@ -32,7 +39,8 @@
   padding-inline: var(--landing-gutter);
   /* 5rem clears the fixed header bar below the safe-area floor. */
   padding-block-start: calc(
-    var(--landing-safe-pad-top) + 5rem + var(--sys-space-comfortable)
+    var(--landing-safe-pad-top) + var(--landing-header-offset) +
+      var(--sys-space-comfortable)
   );
   /* Spacious = the old comfortable body inset + the last section's own
      comfortable scroll clearance, folded into the one box that owns the
@@ -44,14 +52,9 @@
 }
 
 /* Section rhythm is nested stack gaps in the template: comfortable between
-   the preferences lead and the action run, regular between action cards. */
-
-/* Edge-to-edge list rows inside the cards: zero the card's own content
-   gap and clip the rows' square hover state layer to the card radius. */
-.cr-menu .ui-card {
-  gap: 0;
-  overflow: hidden;
-}
+   the preferences lead and the action run, regular between action groups.
+   The groups themselves are ui-list-group — the chromeless segmented run
+   (rows own the fill and radii); no card, no dividers, nothing local. */
 
 /* No local icon sizing: exactly two rungs of the fixed icon ladder —
    leading glyphs (rows + CTA) uiScale="medium" (20px), trailing lock

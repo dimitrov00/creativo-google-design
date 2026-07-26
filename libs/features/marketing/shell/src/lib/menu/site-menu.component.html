@@ -11,7 +11,8 @@
       class="cr-menu"
       role="dialog"
       aria-modal="true"
-      data-testid="landing-menu"
+      tabindex="-1"
+      data-testid="site-menu"
       [attr.aria-label]="t('landing.nav.primary')"
       (keydown)="behavior.onKeydown($event)"
     >
@@ -84,7 +85,7 @@
               uiRevealTrigger="mount"
               [uiRevealDelay]="140"
             >
-              <ui-card uiTone="plain" uiPadding="none">
+              <ui-list-group>
                 <a
                   [routerLink]="isAuthed() ? '/account' : '/auth'"
                   [queryParams]="isAuthed() ? null : { redirect: '/account' }"
@@ -109,7 +110,6 @@
                     }
                   </ng-container>
                 </a>
-                <ui-divider [uiInset]="true" />
                 <a
                   [routerLink]="isAuthed() ? '/account' : '/auth'"
                   [queryParams]="isAuthed() ? null : { redirect: '/account' }"
@@ -134,7 +134,7 @@
                     }
                   </ng-container>
                 </a>
-              </ui-card>
+              </ui-list-group>
             </div>
 
             <!-- Site — in-page anchors. -->
@@ -144,7 +144,7 @@
               uiRevealTrigger="mount"
               [uiRevealDelay]="180"
             >
-              <ui-card uiTone="plain" uiPadding="none">
+              <ui-list-group>
                 <a
                   href="/#work"
                   uiListRow
@@ -155,7 +155,6 @@
                   <ui-icon uiLeading uiName="nav.work" uiScale="medium" />
                   {{ t('landing.footer.nav.work') }}
                 </a>
-                <ui-divider [uiInset]="true" />
                 <a
                   href="/#team"
                   uiListRow
@@ -166,7 +165,6 @@
                   <ui-icon uiLeading uiName="nav.team" uiScale="medium" />
                   {{ t('landing.footer.nav.team') }}
                 </a>
-                <ui-divider [uiInset]="true" />
                 <a
                   href="/#services"
                   uiListRow
@@ -177,7 +175,6 @@
                   <ui-icon uiLeading uiName="nav.services" uiScale="medium" />
                   {{ t('landing.footer.nav.services') }}
                 </a>
-                <ui-divider [uiInset]="true" />
                 <a
                   href="/#visit"
                   uiListRow
@@ -188,9 +185,8 @@
                   <ui-icon uiLeading uiName="nav.visit" uiScale="medium" />
                   {{ t('landing.footer.nav.visit') }}
                 </a>
-                <ui-divider [uiInset]="true" />
                 <a
-                  href="/#hiring"
+                  routerLink="/careers"
                   uiListRow
                   uiSize="large"
                   [uiInteractive]="true"
@@ -199,8 +195,35 @@
                   <ui-icon uiLeading uiName="nav.careers" uiScale="medium" />
                   {{ t('landing.menu.openPositions') }}
                 </a>
-              </ui-card>
+              </ui-list-group>
             </div>
+
+            @if (isAuthed()) {
+              <!-- Session exit — its OWN separated section at the very end
+                   (iOS Settings grammar: the destructive sign-out row
+                   never mingles with navigation). -->
+              <div
+                class="cr-menu__section"
+                [uiReveal]="'fade-up'"
+                uiRevealTrigger="mount"
+                [uiRevealDelay]="240"
+              >
+                <ui-list-group>
+                  <button
+                    type="button"
+                    uiListRow
+                    uiSize="large"
+                    [uiInteractive]="true"
+                    uiForegroundStyle="destructive"
+                    data-testid="menu-sign-out"
+                    (click)="signOut()"
+                  >
+                    <ui-icon uiLeading uiName="auth.signOut" uiScale="medium" />
+                    {{ t('landing.menu.signOut') }}
+                  </button>
+                </ui-list-group>
+              </div>
+            }
           </ui-stack>
         </ui-stack>
       </div>

@@ -1,5 +1,12 @@
-import { Injectable, inject, signal } from '@angular/core';
 import {
+  DestroyRef,
+  Injectable,
+  computed,
+  inject,
+  signal,
+} from '@angular/core';
+import {
+  AUTH_DEPLOYMENT,
   AUTH_FLOW_INITIAL_STATE,
   AuthFlowEvent,
   AuthFlowState,
@@ -12,11 +19,19 @@ import {
   advanceAuthFlow,
 } from '@creativo/application/identity';
 
+/** Seconds a fresh code must age before "Resend code" re-enables (industry default; uxResearch §resend). */
+export const RESEND_COOLDOWN_SECONDS = 30;
+
 /**
  * Wraps `advanceAuthFlow` (pure, blueprint §5.3) with the async OTP
  * round-trip and the challenge-id side channel the pure state doesn't
  * model. One instance per `/auth` visit — provided component-scoped on
  * `ClientAuth`, not root, so re-navigating to `/auth` always starts fresh.
+ *
+ * Also owns the PRESENTATIONAL trust mechanics the machine deliberately
+ * doesn't (design §3.3): the 30 s resend cooldown ticker and the per-flow
+ * send counter (escalation copy appears after the 3rd send). Both reset
+ * when the user changes identifier — a new destination is a new attempt.
  *
  * Translation-free by design: `state().error` carries an `errors.<code>`
  * key (`OtpClientError.code`, extracted from the callable's `HttpsError`
@@ -26,6 +41,7 @@ import {
  */
 @Injectable()
 export class AuthFlowStore {
+  private readonly deployment = inject(AUTH_DEPLOYMENT);
   private readonly requestOtpUseCase = new RequestOtpUseCase(
     inject(OTP_CLIENT),
   );
@@ -38,18 +54,27 @@ export class AuthFlowStore {
   /** True while a request/verify round-trip is in flight — presentational only, not modeled in `AuthFlowState`. */
   readonly pending = this._pending.asReadonly();
 
+  private readonly _resendSecondsLeft = signal(0);
+  /** Countdown until "Resend code" re-enables — 0 means resend is available. */
+  readonly resendSecondsLeft = this._resendSecondsLeft.asReadonly();
+  readonly canResend = computed(() => this._resendSecondsLeft() === 0);
+
+  private readonly _sendCount = signal(0);
+  /** Codes sent for the CURRENT identifier (initial send included) — drives the escalation footnote after the 3rd. */
+  readonly sendCount = this._sendCount.asReadonly();
+
   private challengeId: OtpChallengeId | null = null;
+  private cooldownTimer: ReturnType<typeof setInterval> | null = null;
 
-  getStarted(): void {
-    this.dispatch({ type: 'get_started' });
-  }
-
-  back(): void {
-    this.dispatch({ type: 'back' });
+  constructor() {
+    inject(DestroyRef).onDestroy(() => this.stopCooldown());
   }
 
   changeIdentifier(): void {
     this.challengeId = null;
+    this.stopCooldown();
+    this._resendSecondsLeft.set(0);
+    this._sendCount.set(0);
     this.dispatch({ type: 'change_identifier' });
   }
 
@@ -61,7 +86,7 @@ export class AuthFlowStore {
 
   async resend(): Promise<void> {
     const state = this._state();
-    if (state.kind !== 'otp') return;
+    if (state.kind !== 'otp' || !this.canResend() || this._pending()) return;
     this.dispatch({ type: 'resend_otp' });
     await this.requestChallenge(state.identifier);
   }
@@ -99,10 +124,13 @@ export class AuthFlowStore {
 
   private async requestChallenge(identifier: Identifier): Promise<void> {
     this._pending.set(true);
-    const result = await this.requestOtpUseCase.execute({
-      kind: identifier.kind,
-      value: identifier.value.toString(),
-    });
+    const result = await this.requestOtpUseCase.execute(
+      {
+        kind: identifier.kind,
+        value: identifier.value.toString(),
+      },
+      this.deployment.defaultCountry,
+    );
     this._pending.set(false);
 
     if (result.isFailure()) {
@@ -120,6 +148,25 @@ export class AuthFlowStore {
       return;
     }
     this.challengeId = result.value;
+    this._sendCount.update((count) => count + 1);
+    this.startCooldown();
+  }
+
+  private startCooldown(): void {
+    this.stopCooldown();
+    this._resendSecondsLeft.set(RESEND_COOLDOWN_SECONDS);
+    this.cooldownTimer = setInterval(() => {
+      const next = this._resendSecondsLeft() - 1;
+      this._resendSecondsLeft.set(Math.max(0, next));
+      if (next <= 0) this.stopCooldown();
+    }, 1000);
+  }
+
+  private stopCooldown(): void {
+    if (this.cooldownTimer !== null) {
+      clearInterval(this.cooldownTimer);
+      this.cooldownTimer = null;
+    }
   }
 
   private dispatch(event: AuthFlowEvent): void {

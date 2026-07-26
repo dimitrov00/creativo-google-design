@@ -1,0 +1,15 @@
+:host {
+  display: block;
+}
+
+.cr-programs-page__main {
+  /* Clears the fixed, always-solid site header (--landing-header-offset is
+     the same app-wide clearance value landing's own anchors scroll-margin
+     to). */
+  padding-block: var(--landing-header-offset) var(--sys-space-spacious);
+}
+
+.cr-programs-page__secondary {
+  color: var(--sys-color-secondary-label);
+  font: var(--sys-font-footnote);
+}

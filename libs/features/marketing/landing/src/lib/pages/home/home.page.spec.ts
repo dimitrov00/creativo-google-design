@@ -29,25 +29,32 @@ describe('HomePage', () => {
     const host: HTMLElement = fixture.nativeElement;
 
     expect(host.querySelector('[data-page-shell]')).not.toBeNull();
-    expect(host.querySelector('cr-landing-header')).not.toBeNull();
+    expect(host.querySelector('cr-site-header')).not.toBeNull();
     expect(host.querySelector('cr-landing-hero')).not.toBeNull();
 
     const anchors = [...host.querySelectorAll('.cr-landing__anchor')].map(
       (anchor) => anchor.id,
     );
     // Funnel order (owner call, 2026-07-23): proof leads (work gallery
-    // right under the hero) → offer → team → logistics, recruiting
-    // demoted below locations.
-    expect(anchors).toEqual(['work', 'services', 'team', 'visit', 'hiring']);
+    // right under the hero) → offer → team → logistics, with the two
+    // "join us" pitches (courses, then hiring) demoted to the very end.
+    expect(anchors).toEqual([
+      'work',
+      'services',
+      'team',
+      'visit',
+      'courses',
+      'hiring',
+    ]);
 
     const main = host.querySelector('main');
     expect(main?.querySelector('#work cr-work-gallery')).not.toBeNull();
     expect(main?.querySelector('#team cr-team-showcase')).not.toBeNull();
     expect(main?.querySelector('#services cr-services-section')).not.toBeNull();
+    expect(main?.querySelector('#courses cr-courses-section')).not.toBeNull();
     expect(main?.querySelector('#hiring cr-hiring-section')).not.toBeNull();
     expect(main?.querySelector('#visit')).not.toBeNull();
-    expect(main?.querySelector('cr-closing-cta')).not.toBeNull();
 
-    expect(host.querySelector('cr-landing-footer')).not.toBeNull();
+    expect(host.querySelector('cr-site-footer')).not.toBeNull();
   });
 });

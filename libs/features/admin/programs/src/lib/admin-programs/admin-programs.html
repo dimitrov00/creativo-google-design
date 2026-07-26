@@ -1,0 +1,377 @@
+<ng-container *transloco="let t">
+  <main
+    uiFrame
+    [uiFrameMaxWidth]="'var(--sys-container-content)'"
+    class="lib-admin-programs__main"
+  >
+    <ui-stack uiSpacing="loose">
+      <ui-section-header uiAlignment="leading">
+        <h1 uiTitle>Programs</h1>
+        <p uiLede>Manage open positions, courses, and events.</p>
+      </ui-section-header>
+
+      <ui-stack uiAxis="horizontal" uiSpacing="compact" role="tablist">
+        <button
+          type="button"
+          uiChip
+          [uiSelected]="tab() === 'positions'"
+          data-testid="admin-tab-positions"
+          (click)="setTab('positions')"
+        >
+          Positions
+        </button>
+        <button
+          type="button"
+          uiChip
+          [uiSelected]="tab() === 'courses'"
+          data-testid="admin-tab-courses"
+          (click)="setTab('courses')"
+        >
+          Courses
+        </button>
+        <button
+          type="button"
+          uiChip
+          [uiSelected]="tab() === 'events'"
+          data-testid="admin-tab-events"
+          (click)="setTab('events')"
+        >
+          Events
+        </button>
+      </ui-stack>
+
+      @if (editing(); as current) {
+      <ui-card data-testid="admin-form">
+        <ui-stack uiSpacing="comfortable">
+          @switch (current.kind) { @case ('position') {
+          <ui-stack uiSpacing="tight">
+            <label>
+              Title (EN)
+              <input
+                uiTextField
+                data-testid="admin-position-title-en"
+                [value]="positionTitleEn()"
+                (input)="positionTitleEn.set(inputValue($event))"
+              />
+            </label>
+            <label>
+              Title (BG)
+              <input
+                uiTextField
+                data-testid="admin-position-title-bg"
+                [value]="positionTitleBg()"
+                (input)="positionTitleBg.set(inputValue($event))"
+              />
+            </label>
+            <label>
+              Summary (EN)
+              <textarea
+                uiTextField
+                data-testid="admin-position-summary-en"
+                [value]="positionSummaryEn()"
+                (input)="positionSummaryEn.set(inputValue($event))"
+              ></textarea>
+            </label>
+            <label>
+              Summary (BG)
+              <textarea
+                uiTextField
+                data-testid="admin-position-summary-bg"
+                [value]="positionSummaryBg()"
+                (input)="positionSummaryBg.set(inputValue($event))"
+              ></textarea>
+            </label>
+            <ui-stack uiAxis="horizontal" uiSpacing="compact">
+              <button
+                type="button"
+                uiChip
+                [uiSelected]="positionStatus() === 'open'"
+                (click)="positionStatus.set('open')"
+              >
+                Open
+              </button>
+              <button
+                type="button"
+                uiChip
+                [uiSelected]="positionStatus() === 'closed'"
+                (click)="positionStatus.set('closed')"
+              >
+                Closed
+              </button>
+            </ui-stack>
+            <label>
+              Apply URL (optional — falls back to Instagram)
+              <input
+                uiTextField
+                [value]="positionApplyUrl()"
+                (input)="positionApplyUrl.set(inputValue($event))"
+              />
+            </label>
+            <label>
+              Sort order
+              <input
+                uiTextField
+                type="number"
+                [value]="positionSortOrder()"
+                (input)="positionSortOrder.set(numberValue($event))"
+              />
+            </label>
+          </ui-stack>
+          } @case ('course') {
+          <ui-stack uiSpacing="tight">
+            <label>
+              Title (EN)
+              <input
+                uiTextField
+                [value]="courseTitleEn()"
+                (input)="courseTitleEn.set(inputValue($event))"
+              />
+            </label>
+            <label>
+              Title (BG)
+              <input
+                uiTextField
+                [value]="courseTitleBg()"
+                (input)="courseTitleBg.set(inputValue($event))"
+              />
+            </label>
+            <label>
+              Description (EN)
+              <textarea
+                uiTextField
+                [value]="courseDescriptionEn()"
+                (input)="courseDescriptionEn.set(inputValue($event))"
+              ></textarea>
+            </label>
+            <label>
+              Description (BG)
+              <textarea
+                uiTextField
+                [value]="courseDescriptionBg()"
+                (input)="courseDescriptionBg.set(inputValue($event))"
+              ></textarea>
+            </label>
+            <ui-stack uiAxis="horizontal" uiSpacing="compact">
+              <button
+                type="button"
+                uiChip
+                [uiSelected]="courseEnrollmentStatus() === 'open'"
+                (click)="courseEnrollmentStatus.set('open')"
+              >
+                Open
+              </button>
+              <button
+                type="button"
+                uiChip
+                [uiSelected]="courseEnrollmentStatus() === 'upcoming'"
+                (click)="courseEnrollmentStatus.set('upcoming')"
+              >
+                Upcoming
+              </button>
+              <button
+                type="button"
+                uiChip
+                [uiSelected]="courseEnrollmentStatus() === 'closed'"
+                (click)="courseEnrollmentStatus.set('closed')"
+              >
+                Closed
+              </button>
+            </ui-stack>
+            <label>
+              Starts label (EN) — e.g. "Spring 2026"
+              <input
+                uiTextField
+                [value]="courseStartsLabelEn()"
+                (input)="courseStartsLabelEn.set(inputValue($event))"
+              />
+            </label>
+            <label>
+              Starts label (BG)
+              <input
+                uiTextField
+                [value]="courseStartsLabelBg()"
+                (input)="courseStartsLabelBg.set(inputValue($event))"
+              />
+            </label>
+            <label>
+              Apply URL (optional — falls back to Instagram)
+              <input
+                uiTextField
+                [value]="courseApplyUrl()"
+                (input)="courseApplyUrl.set(inputValue($event))"
+              />
+            </label>
+            <label>
+              Sort order
+              <input
+                uiTextField
+                type="number"
+                [value]="courseSortOrder()"
+                (input)="courseSortOrder.set(numberValue($event))"
+              />
+            </label>
+          </ui-stack>
+          } @case ('event') {
+          <ui-stack uiSpacing="tight">
+            <label>
+              Title (EN)
+              <input
+                uiTextField
+                [value]="eventTitleEn()"
+                (input)="eventTitleEn.set(inputValue($event))"
+              />
+            </label>
+            <label>
+              Title (BG)
+              <input
+                uiTextField
+                [value]="eventTitleBg()"
+                (input)="eventTitleBg.set(inputValue($event))"
+              />
+            </label>
+            <label>
+              Description (EN)
+              <textarea
+                uiTextField
+                [value]="eventDescriptionEn()"
+                (input)="eventDescriptionEn.set(inputValue($event))"
+              ></textarea>
+            </label>
+            <label>
+              Description (BG)
+              <textarea
+                uiTextField
+                [value]="eventDescriptionBg()"
+                (input)="eventDescriptionBg.set(inputValue($event))"
+              ></textarea>
+            </label>
+            <label>
+              Starts at (Europe/Sofia)
+              <input
+                uiTextField
+                type="datetime-local"
+                [value]="eventStartDateIso()"
+                (input)="eventStartDateIso.set(inputValue($event))"
+              />
+            </label>
+            <label>
+              Location id (optional)
+              <input
+                uiTextField
+                [value]="eventLocationId()"
+                (input)="eventLocationId.set(inputValue($event))"
+              />
+            </label>
+            <label>
+              RSVP URL (optional — falls back to Instagram)
+              <input
+                uiTextField
+                [value]="eventApplyUrl()"
+                (input)="eventApplyUrl.set(inputValue($event))"
+              />
+            </label>
+            <label>
+              Sort order
+              <input
+                uiTextField
+                type="number"
+                [value]="eventSortOrder()"
+                (input)="eventSortOrder.set(numberValue($event))"
+              />
+            </label>
+          </ui-stack>
+          } } @if (saveFailed()) {
+          <p data-testid="admin-save-error">
+            Couldn't save — check the required fields and try again.
+          </p>
+          }
+
+          <ui-stack uiAxis="horizontal" uiSpacing="compact">
+            <button
+              type="button"
+              uiButton
+              uiButtonStyle="borderedProminent"
+              uiControlSize="regular"
+              uiButtonBorderShape="capsule"
+              [disabled]="saving()"
+              data-testid="admin-save"
+              (click)="save()"
+            >
+              Save
+            </button>
+            <button
+              type="button"
+              uiButton
+              uiButtonStyle="bordered"
+              uiControlSize="regular"
+              uiButtonBorderShape="capsule"
+              (click)="cancelEdit()"
+            >
+              Cancel
+            </button>
+          </ui-stack>
+        </ui-stack>
+      </ui-card>
+      } @else {
+      <div>
+        <ui-stack uiSpacing="comfortable">
+          <button
+            type="button"
+            uiButton
+            uiButtonStyle="borderedProminent"
+            uiControlSize="regular"
+            uiButtonBorderShape="capsule"
+            data-testid="admin-new"
+            (click)="startCreate()"
+          >
+            + New
+          </button>
+
+          @switch (tab()) { @case ('positions') {
+          <ui-list-group data-testid="admin-positions-list">
+            @for (position of store.positions(); track position.id.value) {
+            <button
+              type="button"
+              uiListRow
+              [uiInteractive]="true"
+              (click)="startEditPosition(position)"
+            >
+              <span>{{ position.title.en }}</span>
+              <span uiTrailing>{{ position.status }}</span>
+            </button>
+            }
+          </ui-list-group>
+          } @case ('courses') {
+          <ui-list-group data-testid="admin-courses-list">
+            @for (course of store.courses(); track course.id.value) {
+            <button
+              type="button"
+              uiListRow
+              [uiInteractive]="true"
+              (click)="startEditCourse(course)"
+            >
+              <span>{{ course.title.en }}</span>
+              <span uiTrailing>{{ course.enrollmentStatus }}</span>
+            </button>
+            }
+          </ui-list-group>
+          } @case ('events') {
+          <ui-list-group data-testid="admin-events-list">
+            @for (event of store.events(); track event.id.value) {
+            <button
+              type="button"
+              uiListRow
+              [uiInteractive]="true"
+              (click)="startEditEvent(event)"
+            >
+              <span>{{ event.title.en }}</span>
+            </button>
+            }
+          </ui-list-group>
+          } }
+        </ui-stack>
+      </div>
+      }
+    </ui-stack>
+  </main>
+</ng-container>

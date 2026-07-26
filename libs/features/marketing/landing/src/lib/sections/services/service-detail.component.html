@@ -1,23 +1,19 @@
 <ng-container *transloco="let t">
-  <cr-modal-sheet
+  <ui-modal-sheet
     data-testid="landing-service-detail"
     sheetId="service-detail-sheet"
     labelledBy="service-detail-title"
     [closeLabel]="t('landing.nav.close')"
     [open]="sheetOpen()"
     [closing]="sheetClosing()"
+    (closeFinished)="finishClosing()"
     (dismissed)="close()"
   >
     <!-- Condensed toolbar title — ui-sheet-header reveals it (plus the
          bar's fill/hairline) only once the uiSheetLargeTitle-labelled
          intro heading scrolls under the bar, exactly like locations. -->
-    <p
-      sheet-title
-      uiText
-      uiFont="caption"
-      uiWeight="bold"
-      class="service-sheet__compact-title"
-    >
+    <!-- Bare text — the bar owns the HIG nav-title typography. -->
+    <p sheet-title>
       {{ content.text(service().name) }}
     </p>
 
@@ -60,19 +56,26 @@
           <p uiText uiFont="body" uiForegroundStyle="secondary">
             {{ content.text(service().description) }}
           </p>
+          <!-- Quick facts read one HIG step under the lede (subheadline,
+               not caption) — the same facts the performer rows repeat at
+               body weight, so the two ends of the sheet stay on adjacent
+               rungs instead of caption-vs-headline extremes. -->
           <ui-stack uiAxis="horizontal" uiSpacing="loose" uiAlignment="center">
             <ui-stack
               uiAxis="horizontal"
               uiSpacing="tight"
               uiAlignment="center"
               uiText
-              uiFont="caption"
+              uiFont="subheadline"
               uiForegroundStyle="secondary"
             >
               <ui-icon uiName="service.duration" />
               {{ duration() }}
             </ui-stack>
-            <strong uiText uiFont="caption" class="service-sheet__summary-price"
+            <strong
+              uiText
+              uiFont="subheadline"
+              class="service-sheet__summary-price"
               >{{ t('landing.services.from') }} {{ fromPrice() }}</strong
             >
           </ui-stack>
@@ -135,6 +138,7 @@
                   type="button"
                   uiButton
                   uiButtonStyle="bordered"
+                  uiTint="neutral"
                   uiControlSize="regular"
                   uiButtonBorderShape="capsule"
                   [uiIconOnly]="true"
@@ -153,68 +157,154 @@
               </ui-stack>
             </header>
 
-            <ui-grid
-              role="list"
-              class="service-performers__list"
-              [uiColumns]="performersGrid() ? 2 : 1"
-              uiSpacing="compact"
-              [attr.data-grid]="performersGrid() ? '' : null"
-            >
-              @for (performer of performers(); track performer.barber.id) {
-                <!-- Not interactive (no click target) — so no hover
-                     affordance either: hover feedback on a dead surface is
-                     a fake promise (case-study §2.5). -->
-                <ui-list-row
-                  role="listitem"
-                  uiRadius="prominent"
-                  class="service-performer"
-                >
-                  <ui-avatar
-                    uiLeading
-                    class="service-performer__avatar"
-                    [uiSrc]="performer.barber.avatarSrc"
-                    [uiName]="content.text(performer.barber.name)"
-                    uiControlSize="large"
-                  />
-                  <ui-stack
-                    uiSpacing="tight"
-                    class="service-performer__identity"
+            @if (performersGrid()) {
+              <!-- Grid reading — HIG card grid (App Store / Contacts
+                   register): centered identity cards on elevated surfaces,
+                   NOT re-axed rows. Not interactive (no click target) — no
+                   hover affordance (case-study §2.5). -->
+              <ui-grid
+                role="list"
+                class="service-performers__list"
+                [uiColumns]="2"
+                uiSpacing="regular"
+              >
+                @for (performer of performers(); track performer.barber.id) {
+                  <ui-card
+                    role="listitem"
+                    uiTone="elevated"
+                    uiPadding="regular"
+                    class="service-performer-card"
                   >
-                    <h4 uiText uiFont="headline">
-                      {{ content.text(performer.barber.name) }}
-                    </h4>
-                    <span uiText uiFont="caption">{{
-                      content.text(performer.barber.title)
-                    }}</span>
-                  </ui-stack>
-                  <ui-stack
-                    uiTrailing
-                    uiSpacing="tight"
-                    [uiAlignment]="performersGrid() ? 'leading' : 'trailing'"
-                    class="service-performer__terms"
-                  >
-                    <span
-                      uiText
-                      uiFont="headline"
-                      class="service-performer__price"
-                      >{{ content.price(performer.price) }}</span
-                    >
-                    <ui-stack
-                      uiAxis="horizontal"
-                      uiSpacing="tight"
-                      uiAlignment="center"
-                      uiText
-                      uiFont="caption"
-                      class="service-performer__duration"
-                    >
-                      <ui-icon uiName="service.duration" />
-                      {{ performer.minutes }}
-                      {{ t('landing.services.durationLabel') }}
+                    <ui-stack uiSpacing="compact" uiAlignment="center">
+                      <!-- Large (52px), not extraLarge (112px) — the 2-up
+                           card is a compact contact card, not a profile
+                           hero. -->
+                      <ui-avatar
+                        [uiSrc]="performer.barber.avatarSrc"
+                        [uiName]="content.text(performer.barber.name)"
+                        uiControlSize="large"
+                      />
+                      <ui-stack
+                        uiSpacing="tight"
+                        uiAlignment="center"
+                        class="service-performer__identity"
+                      >
+                        <h4 uiText uiFont="headline">
+                          {{ content.text(performer.barber.name) }}
+                        </h4>
+                        <span
+                          uiText
+                          uiFont="caption"
+                          uiForegroundStyle="secondary"
+                          >{{ content.text(performer.barber.title) }}</span
+                        >
+                      </ui-stack>
+                      @if (performer.barber.rating !== undefined) {
+                        <ui-rating
+                          uiText
+                          uiFont="caption"
+                          uiForegroundStyle="secondary"
+                          [uiValue]="performer.barber.rating"
+                        />
+                      }
+                      <span
+                        uiText
+                        uiFont="body"
+                        class="service-performer__price"
+                        >{{ content.price(performer.price) }}</span
+                      >
+                      <ui-stack
+                        uiAxis="horizontal"
+                        uiSpacing="tight"
+                        uiAlignment="center"
+                        uiText
+                        uiFont="footnote"
+                        uiForegroundStyle="secondary"
+                        class="service-performer__duration"
+                      >
+                        <ui-icon uiName="service.duration" />
+                        {{ performer.minutes }}
+                        {{ t('landing.services.durationLabel') }}
+                      </ui-stack>
                     </ui-stack>
-                  </ui-stack>
-                </ui-list-row>
-              }
-            </ui-grid>
+                  </ui-card>
+                }
+              </ui-grid>
+            } @else {
+              <!-- List reading — the segmented grouped list (ui-list-group,
+                   menu precedent): chromeless run, every row its own
+                   segment surface, prominent outer corners, seams instead
+                   of dividers. Rating clusters with the name (team-card
+                   ruling); price is the emphasized decision fact on the
+                   trailing edge; role and duration stay secondary. -->
+              <ui-list-group role="list" class="service-performers__group">
+                @for (performer of performers(); track performer.barber.id) {
+                  <!-- Not interactive (no click target) — so no hover
+                       affordance either: hover feedback on a dead surface is
+                       a fake promise (case-study §2.5). -->
+                  <ui-list-row role="listitem" class="service-performer">
+                    <ui-avatar
+                      uiLeading
+                      class="service-performer__avatar"
+                      [uiSrc]="performer.barber.avatarSrc"
+                      [uiName]="content.text(performer.barber.name)"
+                      uiControlSize="large"
+                    />
+                    <ui-stack
+                      uiSpacing="tight"
+                      class="service-performer__identity"
+                    >
+                      <ui-stack
+                        uiAxis="horizontal"
+                        uiSpacing="compact"
+                        uiAlignment="center"
+                        class="service-performer__name-line"
+                      >
+                        <h4 uiText uiFont="headline">
+                          {{ content.text(performer.barber.name) }}
+                        </h4>
+                        @if (performer.barber.rating !== undefined) {
+                          <ui-rating
+                            uiText
+                            uiFont="caption"
+                            uiForegroundStyle="secondary"
+                            [uiValue]="performer.barber.rating"
+                          />
+                        }
+                      </ui-stack>
+                      <span uiText uiFont="caption">{{
+                        content.text(performer.barber.title)
+                      }}</span>
+                    </ui-stack>
+                    <ui-stack
+                      uiTrailing
+                      uiSpacing="tight"
+                      uiAlignment="trailing"
+                      class="service-performer__terms"
+                    >
+                      <span
+                        uiText
+                        uiFont="body"
+                        class="service-performer__price"
+                        >{{ content.price(performer.price) }}</span
+                      >
+                      <ui-stack
+                        uiAxis="horizontal"
+                        uiSpacing="tight"
+                        uiAlignment="center"
+                        uiText
+                        uiFont="footnote"
+                        class="service-performer__duration"
+                      >
+                        <ui-icon uiName="service.duration" />
+                        {{ performer.minutes }}
+                        {{ t('landing.services.durationLabel') }}
+                      </ui-stack>
+                    </ui-stack>
+                  </ui-list-row>
+                }
+              </ui-list-group>
+            }
           </ui-stack>
         </section>
       </ui-stack>
@@ -245,5 +335,5 @@
         <ui-icon uiName="appointment.launch" class="service-sheet__cta-glyph" />
       </a>
     </ui-sheet-action-bar>
-  </cr-modal-sheet>
+  </ui-modal-sheet>
 </ng-container>

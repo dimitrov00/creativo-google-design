@@ -1,9 +1,6 @@
-import { isPlatformBrowser } from '@angular/common';
 import {
   ChangeDetectionStrategy,
   Component,
-  DestroyRef,
-  PLATFORM_ID,
   afterNextRender,
   computed,
   inject,
@@ -15,8 +12,14 @@ import { RouterLink } from '@angular/router';
 import { TranslocoDirective } from '@jsverse/transloco';
 import { UiAvatar, UiBadge, UiButton, UiIcon } from '@creativo/ui/controls';
 import { UiGrid, UiSpacer, UiStack } from '@creativo/ui/layout';
-import { UiRadiusDirective, UiTextDirective } from '@creativo/ui/modifiers';
-import { UiListRow, UiSheetActionBar } from '@creativo/ui/patterns';
+import { UiTextDirective } from '@creativo/ui/modifiers';
+import {
+  UiCard,
+  UiListGroup,
+  UiListRow,
+  UiRating,
+  UiSheetActionBar,
+} from '@creativo/ui/patterns';
 import { LandingContentService } from '../../content/landing-content.service';
 import {
   type BarberVm,
@@ -24,7 +27,7 @@ import {
   serviceDurationRange,
   servicePriceFrom,
 } from '../../content/landing-content';
-import { ModalSheetComponent } from '../../shared/modal-sheet/modal-sheet.component';
+import { UiModalSheet } from '@creativo/ui/controls';
 import { ShowcaseGalleryComponent } from '../../shared/showcase-gallery/showcase-gallery.component';
 import { CapsuleListComponent } from './capsule-list.component';
 
@@ -34,12 +37,6 @@ interface PerformerVm {
   readonly price: number;
   readonly minutes: number;
 }
-
-/* The sheet exit is visually done when its opacity transition completes —
-   --sys-motion-duration-deliberate (300ms). The old 380ms matched neither
-   the 300ms opacity nor the 480ms transform track (drift risk flagged in
-   the case study §2.8). */
-const CLOSE_ANIMATION_MS = 300;
 
 /**
  * The service-detail bottom sheet: the editorial story leads (title +
@@ -56,17 +53,19 @@ const CLOSE_ANIMATION_MS = 300;
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     CapsuleListComponent,
-    ModalSheetComponent,
+    UiModalSheet,
     RouterLink,
     ShowcaseGalleryComponent,
     TranslocoDirective,
     UiAvatar,
     UiBadge,
     UiButton,
+    UiCard,
     UiGrid,
     UiIcon,
+    UiListGroup,
     UiListRow,
-    UiRadiusDirective,
+    UiRating,
     UiSheetActionBar,
     UiSpacer,
     UiStack,
@@ -80,9 +79,6 @@ export class ServiceDetailComponent {
   readonly closed = output();
 
   protected readonly content = inject(LandingContentService);
-  private readonly platformId = inject(PLATFORM_ID);
-  private readonly destroyRef = inject(DestroyRef);
-  private closeTimer: number | undefined;
 
   /** Mounts shut, opens next frame so the sheet animates in. */
   protected readonly sheetOpen = signal(false);
@@ -92,7 +88,10 @@ export class ServiceDetailComponent {
    *  toolbar title is ui-sheet-header's own sentinel-observed behavior, and
    *  the booking bar is always visible — zero scroll wiring here.) */
   protected readonly galleryExpanded = signal(false);
-  protected readonly performersGrid = signal(false);
+  /** Grid is the default performer reading — the 2-up contact-card layout
+   *  reads faster at a glance than a name-by-name list (owner ruling
+   *  2026-07-24); the toggle still offers the list for a denser scan. */
+  protected readonly performersGrid = signal(true);
 
   protected readonly duration = computed(() => {
     const range = serviceDurationRange(this.service());
@@ -140,22 +139,20 @@ export class ServiceDetailComponent {
 
   constructor() {
     afterNextRender(() => this.sheetOpen.set(true));
-    this.destroyRef.onDestroy(() => window.clearTimeout(this.closeTimer));
   }
 
   protected close(): void {
     if (!this.sheetOpen() || this.sheetClosing()) return;
+    // No timer: close completion is driven by the sheet's own exit
+    // transition (ui-modal-sheet's closeFinished) so the CSS motion tokens
+    // stay the single source of truth for the exit duration.
     this.sheetOpen.set(false);
     this.sheetClosing.set(true);
-    const reducedMotion =
-      isPlatformBrowser(this.platformId) &&
-      window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    this.closeTimer = window.setTimeout(
-      () => {
-        this.sheetClosing.set(false);
-        this.closed.emit();
-      },
-      reducedMotion ? 0 : CLOSE_ANIMATION_MS,
-    );
+  }
+
+  protected finishClosing(): void {
+    if (!this.sheetClosing()) return;
+    this.sheetClosing.set(false);
+    this.closed.emit();
   }
 }

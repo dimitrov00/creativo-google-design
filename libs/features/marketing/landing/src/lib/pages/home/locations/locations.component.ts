@@ -5,6 +5,7 @@ import {
   DestroyRef,
   ElementRef,
   PLATFORM_ID,
+  ViewEncapsulation,
   computed,
   effect,
   inject,
@@ -25,16 +26,18 @@ import {
   UiRadiusDirective,
   UiTextDirective,
   UiVisuallyHiddenDirective,
+  UiWeightDirective,
 } from '@creativo/ui/modifiers';
 import {
   UiCard,
+  UiListRow,
   UiSectionHeader,
   UiSheetActionBar,
   UiSheetHeader,
   UiStatusIndicator,
 } from '@creativo/ui/patterns';
 import type { Map as MapLibreMap, Marker as MapLibreMarker } from 'maplibre-gl';
-import { ThemeService } from '../../../shared/prefs/theme.service';
+import { ThemeService } from '@creativo/features/marketing/shell';
 import { ShowcaseGalleryComponent } from '../../../shared/showcase-gallery/showcase-gallery.component';
 
 /** Theme-matched basemap styles (OpenFreeMap hosts both). */
@@ -113,6 +116,7 @@ const MLADOST_SCHEDULE: WeekSchedule = [
     UiCard,
     UiDivider,
     UiIcon,
+    UiListRow,
     UiInteractiveDirective,
     UiMaterialDirective,
     UiRadiusDirective,
@@ -125,9 +129,17 @@ const MLADOST_SCHEDULE: WeekSchedule = [
     UiStatusIndicator,
     UiTextDirective,
     UiVisuallyHiddenDirective,
+    UiWeightDirective,
   ],
   templateUrl: './locations.component.html',
   styleUrl: './locations.component.css',
+  // Unscoped like ui-modal-sheet (see its component note): the sheet's
+  // shared-inset override must reach INTO ui-sheet's (None-encapsulated)
+  // surface, and emulated scoping stamps `_ngcontent` on every selector
+  // part — the surface never carries it, so the piercing rule would
+  // silently match nothing. All selectors in the stylesheet stay
+  // `locations`/`location-`-prefixed.
+  encapsulation: ViewEncapsulation.None,
   host: {
     'data-testid': 'landing-locations',
   },
@@ -163,7 +175,7 @@ export class LocationsComponent implements AfterViewInit {
   private destroyed = false;
 
   // Sheet-internal landmarks — all owned by THIS template (the old
-  // implementation reached into cr-modal-sheet's private structure via
+  // implementation reached into ui-modal-sheet's private structure via
   // `.modal-sheet` / `.modal-sheet__toolbar` querySelectors).
   private readonly sheetScroller =
     viewChild<ElementRef<HTMLElement>>('sheetScroller');
@@ -505,7 +517,7 @@ export class LocationsComponent implements AfterViewInit {
    * band is dead viewing area at the top of the scroller, so it's
    * subtracted via rootMargin — "slid under the bar", not "left the
    * scroller box", is the crossing that flips the state (same geometry the
-   * old scroll-math computed against cr-modal-sheet's toolbar). The bottom
+   * old scroll-math computed against ui-modal-sheet's toolbar). The bottom
    * action bar needs no wiring here: it's visible for the sheet's whole
    * open lifetime.
    */

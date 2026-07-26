@@ -77,11 +77,12 @@
             uiButton
             uiButtonStyle="plain"
             uiControlSize="small"
+            [uiIconOnly]="true"
             data-testid="appointments-calendar-prev"
             [attr.aria-label]="t('appointments.calendar.prev')"
             (click)="store.previousMonth()"
           >
-            ‹
+            <ui-icon uiName="calendar.previous" />
           </button>
           <ui-spacer />
           <p
@@ -97,11 +98,12 @@
             uiButton
             uiButtonStyle="plain"
             uiControlSize="small"
+            [uiIconOnly]="true"
             data-testid="appointments-calendar-next"
             [attr.aria-label]="t('appointments.calendar.next')"
             (click)="store.nextMonth()"
           >
-            ›
+            <ui-icon uiName="calendar.next" />
           </button>
         </ui-stack>
         <ui-calendar-grid>

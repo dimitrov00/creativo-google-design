@@ -52,6 +52,9 @@
    on a data-interactive surface (one-embellishment rule); the morph alone
    carries the invitation. */
 .team-card__media img {
+  /* KEPT: art-directed film grade (the section's signature embellishment,
+     like the work gallery's hover zoom) — no DS token expresses a media
+     color grade. */
   filter: saturate(1.02) contrast(1.02);
 }
 
@@ -76,22 +79,13 @@
   max-inline-size: 11ch;
 }
 
-/* Base affordance recipe lives in landing-shared.css (.explore-affordance)
-   — only this card's border ink and glyph size remain here. */
-.team-card__explore-label,
-.team-card__explore-icon {
-  border-color: color-mix(
-    in srgb,
-    var(--sys-color-foreground) 34%,
-    transparent
-  );
-  color: var(--sys-color-foreground);
-}
-
-.team-card__explore-icon {
-  /* Glyph SIZE only — subheadline supplies it via the shorthand; the icon
-     family, fill and 1:1 box math are ui-icon's job now. */
-  font: var(--sys-font-subheadline);
+/* Explore affordance chrome is DS button vocabulary now (span[uiButton]
+   strokedBorder capsule + iconOnly chip). The one local rule: the CARD is
+   the hover surface, so its hover/focus lights the affordance's state
+   layer — a span cannot hear the card's state on its own. */
+.team-card:hover .team-card__action .ui-button,
+.team-card:focus-within .team-card__action .ui-button {
+  background: var(--sys-state-layer-hover);
 }
 
 /* The gallery pads its own inline gutters (cr-showcase-gallery owns

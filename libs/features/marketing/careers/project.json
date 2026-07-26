@@ -1,0 +1,13 @@
+{
+  "name": "marketing-careers",
+  "$schema": "../../../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "libs/features/marketing/careers/src",
+  "prefix": "cr",
+  "projectType": "library",
+  "tags": ["scope:marketing", "type:feature"],
+  "targets": {
+    "lint": {
+      "executor": "@nx/eslint:lint"
+    }
+  }
+}

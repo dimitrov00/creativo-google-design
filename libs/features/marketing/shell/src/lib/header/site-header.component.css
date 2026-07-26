@@ -24,9 +24,18 @@
       var(--sys-motion-ease-standard);
 }
 
-/* Float — transparent bar inset over the hero card (float geometry). */
+/* Float — transparent bar inset over the hero card (float geometry).
+   The named vars ARE the art direction: the float view's top inset and
+   gutters align with the hero card's inner padding, not the viewport edge
+   or the --sys-space ladder (44/60px, deliberate). */
+.cr-header {
+  --cr-header-float-pad-top: 1.25rem;
+  --cr-header-float-gutter: 2.75rem;
+  --cr-header-float-gutter-wide: 3.75rem;
+}
+
 .cr-header[data-view='float'] {
-  padding-block: 1.25rem 0;
+  padding-block: var(--cr-header-float-pad-top) 0;
   border-bottom: 1px solid transparent;
   background: transparent;
 }
@@ -52,14 +61,13 @@
       var(--sys-motion-ease-standard);
 }
 
-/* Float — the art-directed 44/60px gutters line up with the hero card's
-   own padding inside the column, not with the viewport edge. */
+/* Float — the art-directed gutters (see the var block up top). */
 .cr-header[data-view='float'] .cr-header__inner {
-  padding-inline: 2.75rem;
+  padding-inline: var(--cr-header-float-gutter);
 }
 @media (min-width: 640px) {
   .cr-header[data-view='float'] .cr-header__inner {
-    padding-inline: 3.75rem;
+    padding-inline: var(--cr-header-float-gutter-wide);
   }
 }
 
@@ -73,4 +81,26 @@
 
 .cr-header__brand {
   display: inline-flex;
+}
+
+/* Signed-in trigger: the monogram IS the button (owner ruling — no glass
+   ring around a smaller circle). The button's own chrome drops and the
+   avatar fills the full 44px capsule; the ungated :active scale keeps the
+   press feedback the stripped state layer used to give (press parity). */
+.cr-header [data-testid='nav-menu-trigger']:has(.cr-header__monogram) {
+  padding: 0;
+  border: 0;
+  background: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  box-shadow: none;
+}
+
+.cr-header__monogram {
+  inline-size: 100%;
+  block-size: 100%;
+}
+
+.cr-header [data-testid='nav-menu-trigger']:active .cr-header__monogram {
+  transform: scale(var(--sys-press-scale-surface, 0.97));
 }

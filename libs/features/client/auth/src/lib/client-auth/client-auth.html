@@ -1,4 +1,420 @@
 <ng-container *transloco="let t">
+  @switch (store.state().kind) { @case ('identify') {
+  <!-- Quiet navigation-stack chrome (owner ruling 2026-07-25): sticky top
+       toolbar reading as plain page surface (no hairline), icon-only back
+       chevron (iOS 26 glass-back convention — text labels are the
+       exception), caption-less stepper (segments only; the screen titles
+       carry orientation, per Apple's Setup Assistant). The side slots share
+       equal flexible frames so the stepper stays truly centered. -->
+  <ui-stack uiSpacing="none" uiFrame uiFrameMinHeight="100svh">
+    <ui-toolbar uiSticky uiToolbarBackground="hidden">
+      <ui-stack
+        uiAxis="horizontal"
+        uiSpacing="none"
+        uiAlignment="center"
+        uiFrame
+        uiFrameMaxWidth="infinity"
+      >
+        <!-- Sheet-chrome pill grammar (owner ruling): toolbar controls use
+             the same bordered-neutral capsule recipe as sheet close/action
+             buttons — the iOS glass-circle back affordance. -->
+        <button
+          type="button"
+          uiButton
+          uiButtonStyle="bordered"
+          uiTint="neutral"
+          uiButtonBorderShape="capsule"
+          uiControlSize="regular"
+          [uiIconOnly]="true"
+          data-testid="auth-back-home"
+          [attr.aria-label]="t('auth.identify.back')"
+          (click)="goHome()"
+        >
+          <ui-icon uiName="nav.back" />
+        </button>
+      </ui-stack>
+      <ui-stepper
+        [uiSteps]="3"
+        [uiCurrent]="1"
+        [uiLabel]="t('auth.steps.label', { current: 1, total: 3 })"
+        uiLabelsHidden
+        uiFrame
+        uiFrameWidth="min(34vw, 10rem)"
+      />
+      <ui-stack
+        uiAxis="horizontal"
+        uiSpacing="none"
+        uiAlignment="center"
+        uiFrame
+        uiFrameMaxWidth="infinity"
+      >
+        <ui-spacer />
+      </ui-stack>
+    </ui-toolbar>
+
+    <!-- Top-anchored under the toolbar (nav-stack grammar) — the lone
+         bottom spacer keeps the action bar pinned on tall screens. -->
+    <ui-stack
+      uiAlignment="center"
+      uiPaddingHorizontal="regular"
+      uiPaddingVertical="spacious"
+    >
+      <ui-stack
+        uiSpacing="comfortable"
+        uiFrame
+        uiFrameMaxWidth="28rem"
+        data-testid="auth-identify"
+      >
+        <!-- Brand trio absorbs the retired welcome step's job (design §1.5);
+             the lede turns contextual when a booking hand-off is present. -->
+        <ui-section-header
+          uiAlignment="leading"
+          uiReveal
+          uiRevealTrigger="mount"
+        >
+          <!-- No brand eyebrow (owner ruling) — the large title stands
+               alone; the brand lives in the surrounding product chrome. -->
+          <h1 uiTitle>{{ t('auth.identify.title') }}</h1>
+          <p uiLede>
+            {{ t(hasRedirect() ? 'auth.identify.ledeBooking' :
+            'auth.identify.lede') }}
+          </p>
+        </ui-section-header>
+
+        <ui-stack
+          uiSpacing="regular"
+          uiReveal
+          uiRevealTrigger="mount"
+          [uiRevealDelay]="150"
+        >
+          @if (identifierKind === 'phone') {
+          <ui-phone-field
+            uiControlSize="large"
+            [label]="t('auth.identify.phoneLabel')"
+            [hint]="t('auth.identify.phoneHint')"
+            [locale]="activeLang()"
+            [defaultCountry]="defaultCountry"
+            [disabled]="store.pending()"
+            [error]="translateError(identifierErrorCode())"
+            [pickerTitle]="t('auth.identify.countryPicker')"
+            [searchLabel]="t('auth.identify.countrySearch')"
+            [closeLabel]="t('auth.identify.countryClose')"
+            [noResultsLabel]="t('auth.identify.countryNoResults')"
+            [(value)]="phoneValue"
+            (uiBlurred)="onPhoneBlur($event)"
+            data-testid="auth-identifier-field"
+          />
+          } @else {
+          <ui-stack uiSpacing="tight">
+            <label>
+              <ui-stack uiSpacing="tight">
+                <span uiText uiFont="footnote"
+                  >{{ t('auth.identify.emailLabel') }}</span
+                >
+                <input
+                  type="email"
+                  uiTextField
+                  uiControlSize="large"
+                  autocomplete="email"
+                  inputmode="email"
+                  data-testid="auth-identifier-input"
+                  aria-describedby="auth-identifier-hint"
+                  [readonly]="store.pending()"
+                  [attr.aria-invalid]="identifierErrorCode() ? true : null"
+                  [uiInvalid]="!!identifierErrorCode()"
+                  [value]="rawIdentifier()"
+                  (input)="onEmailInput($any($event.target).value)"
+                  (blur)="onEmailBlur()"
+                />
+              </ui-stack>
+            </label>
+            <!-- The honest "what happens next" hint (design §2.1) — quiet
+                 caption tier (owner ruling 2026-07-25). -->
+            <p
+              uiText
+              uiFont="caption"
+              uiWeight="regular"
+              id="auth-identifier-hint"
+              data-testid="auth-identifier-hint"
+            >
+              {{ t('auth.identify.emailHint') }}
+            </p>
+          </ui-stack>
+          @if (translateError(identifierErrorCode()); as error) {
+          <p
+            uiText
+            uiFont="footnote"
+            uiWeight="regular"
+            uiForegroundStyle="destructive"
+            data-testid="auth-identifier-error"
+            role="alert"
+          >
+            {{ error }}
+          </p>
+          } }
+          <!-- Phone-kind field errors render inside ui-phone-field itself. -->
+          @if (translateError(currentError()); as error) {
+          <p
+            uiText
+            uiFont="footnote"
+            uiWeight="regular"
+            uiForegroundStyle="destructive"
+            data-testid="auth-request-error"
+            role="alert"
+          >
+            {{ error }}
+          </p>
+          }
+        </ui-stack>
+
+        <!-- Legal sentence with real inline links — the {terms}/{privacy}
+             slots in the copy become underlined uiLink anchors. -->
+        <p
+          uiText
+          uiFont="footnote"
+          uiForegroundStyle="secondary"
+          uiReveal
+          uiRevealTrigger="mount"
+          [uiRevealDelay]="300"
+        >
+          @for (part of legalParts(t('auth.identify.legal')); track $index) {
+          @switch (part.kind) { @case ('terms') {<a
+            uiLink
+            href="/terms"
+            data-testid="auth-terms-link"
+            >{{ t('auth.identify.terms') }}</a
+          >} @case ('privacy') {<a
+            uiLink
+            href="/privacy"
+            data-testid="auth-privacy-link"
+            >{{ t('auth.identify.privacy') }}</a
+          >} @default {{{ part.text }}} } }
+        </p>
+      </ui-stack>
+    </ui-stack>
+    <ui-spacer />
+
+    <ui-page-action-bar
+      uiReveal="fade"
+      uiRevealTrigger="mount"
+      [uiRevealDelay]="300"
+    >
+      <button
+        type="button"
+        uiButton
+        uiButtonStyle="borderedProminent"
+        uiButtonBorderShape="capsule"
+        uiControlSize="large"
+        data-testid="auth-submit-identifier"
+        [uiLoading]="store.pending()"
+        [disabled]="!identifierResult() || identifierResult()?.isFailure()"
+        (click)="submitIdentifier()"
+      >
+        {{ t('auth.identify.continue') }}
+      </button>
+    </ui-page-action-bar>
+  </ui-stack>
+  } @case ('otp') {
+  <ui-stack uiSpacing="none" uiFrame uiFrameMinHeight="100svh">
+    <ui-toolbar uiSticky uiToolbarBackground="hidden">
+      <ui-stack
+        uiAxis="horizontal"
+        uiSpacing="none"
+        uiAlignment="center"
+        uiFrame
+        uiFrameMaxWidth="infinity"
+      >
+        <button
+          type="button"
+          uiButton
+          uiButtonStyle="bordered"
+          uiTint="neutral"
+          uiButtonBorderShape="capsule"
+          uiControlSize="regular"
+          [uiIconOnly]="true"
+          data-testid="auth-back"
+          [attr.aria-label]="t('auth.code.back')"
+          (click)="changeIdentifier()"
+        >
+          <ui-icon uiName="nav.back" />
+        </button>
+      </ui-stack>
+      <ui-stepper
+        [uiSteps]="3"
+        [uiCurrent]="2"
+        [uiLabel]="t('auth.steps.label', { current: 2, total: 3 })"
+        uiLabelsHidden
+        uiFrame
+        uiFrameWidth="min(34vw, 10rem)"
+      />
+      <ui-stack
+        uiAxis="horizontal"
+        uiSpacing="none"
+        uiAlignment="center"
+        uiFrame
+        uiFrameMaxWidth="infinity"
+      >
+        <ui-spacer />
+      </ui-stack>
+    </ui-toolbar>
+
+    <!-- Top-anchored under the toolbar (nav-stack grammar). No bottom
+         action bar on this screen — verification is automatic (or Enter);
+         the trailing spacer just keeps the column filling the viewport. -->
+    <ui-stack
+      uiAlignment="center"
+      uiPaddingHorizontal="regular"
+      uiPaddingVertical="spacious"
+    >
+      <ui-stack
+        uiSpacing="comfortable"
+        uiFrame
+        uiFrameMaxWidth="28rem"
+        data-testid="auth-otp"
+      >
+        <ui-section-header
+          uiAlignment="leading"
+          uiReveal
+          uiRevealTrigger="mount"
+        >
+          <h1 uiTitle>{{ t('auth.code.title') }}</h1>
+          <!-- One clean sentence row: destination semibold, Edit as an
+               inline link-styled button riding the same line. -->
+          <p uiLede>
+            {{ t('auth.code.sentTo') }}
+            <span
+              uiText
+              uiFont="body"
+              uiWeight="semibold"
+              data-testid="auth-otp-destination"
+              >{{ otpDestination() }}</span
+            >.
+            <button
+              type="button"
+              uiLink
+              data-testid="auth-change-identifier"
+              (click)="changeIdentifier()"
+            >
+              {{ t('auth.code.edit') }}
+            </button>
+          </p>
+        </ui-section-header>
+
+        <ui-stack
+          uiSpacing="regular"
+          uiReveal
+          uiRevealTrigger="mount"
+          [uiRevealDelay]="150"
+        >
+          <!-- Verification is AUTOMATIC on the 6th digit (delayed ~250ms,
+               suppressed while an error is displayed) — there is no Verify
+               button and no bottom action bar on this screen. The
+               accessible EXPLICIT path is Enter: pressing Enter inside any
+               slot submits the current code immediately (also what a
+               keyboard user expects from a single-field form). -->
+          <ui-otp-field
+            [uiLength]="otpLength"
+            [uiInvalid]="!!codeErrorMessage() || !!translateError(otpError())"
+            [uiDisabled]="verifying()"
+            [value]="rawCode()"
+            (valueChange)="onCodeChange($event)"
+            (keydown.enter)="submitCode()"
+            data-testid="auth-otp-input"
+          />
+          <!-- The visible "checking" state rides the field itself (slots
+               locked) plus this subtle inline progress row — the loading
+               CTA it replaces is gone. -->
+          @if (verifying()) {
+          <ui-stack
+            uiAxis="horizontal"
+            uiSpacing="tight"
+            uiAlignment="center"
+            data-testid="auth-otp-checking"
+          >
+            <ui-progress-view uiControlSize="small" />
+            <span uiText uiFont="caption" uiWeight="regular">
+              {{ t('auth.code.checking') }}
+            </span>
+          </ui-stack>
+          } @if (codeErrorMessage(); as error) {
+          <p
+            uiText
+            uiFont="footnote"
+            uiWeight="regular"
+            uiForegroundStyle="destructive"
+            data-testid="auth-otp-format-error"
+            role="alert"
+          >
+            {{ error }}
+          </p>
+          } @if (translateError(otpError()); as error) {
+          <p
+            uiText
+            uiFont="footnote"
+            uiWeight="regular"
+            uiForegroundStyle="destructive"
+            data-testid="auth-verify-error"
+            role="alert"
+          >
+            {{ error }}
+          </p>
+          }
+        </ui-stack>
+
+        <!-- Resend row — cooldown countdown, then the enabled affordance.
+             The ticking label is NOT live; sparse announcements ride the
+             visually-hidden polite region below (design §2.2). -->
+        <ui-stack
+          uiSpacing="tight"
+          uiReveal
+          uiRevealTrigger="mount"
+          [uiRevealDelay]="300"
+        >
+          <ui-stack uiAxis="horizontal" uiSpacing="tight" uiAlignment="center">
+            @if (store.canResend()) {
+            <button
+              type="button"
+              uiButton
+              uiButtonStyle="plain"
+              data-testid="auth-resend"
+              (click)="resend()"
+            >
+              <ui-icon uiName="auth.resend" />
+              {{ t('auth.code.resend') }}
+            </button>
+            } @else {
+            <!-- The ticking countdown is quiet informational text, not a
+                 dead control — caption tier, secondary ink (owner ruling
+                 2026-07-25). -->
+            <p
+              uiText
+              uiFont="caption"
+              uiWeight="regular"
+              data-testid="auth-resend-cooldown"
+            >
+              {{ t('auth.code.resendIn', { seconds: store.resendSecondsLeft() })
+              }}
+            </p>
+            }
+          </ui-stack>
+          <p uiVisuallyHidden aria-live="polite">{{ resendAnnouncement() }}</p>
+
+          @if (store.sendCount() >= 3) {
+          <p
+            uiText
+            uiFont="caption"
+            uiWeight="regular"
+            data-testid="auth-resend-escalation"
+          >
+            {{ t('auth.code.escalation.' + identifierKind) }}
+          </p>
+          }
+        </ui-stack>
+      </ui-stack>
+    </ui-stack>
+    <ui-spacer />
+  </ui-stack>
+  } @case ('blocked') {
   <ui-stack
     uiAlignment="center"
     uiSpacing="none"
@@ -8,187 +424,57 @@
     uiPaddingVertical="spacious"
   >
     <ui-spacer />
-    @switch (store.state().kind) { @case ('welcome') {
     <ui-stack
       uiSpacing="comfortable"
+      uiAlignment="center"
       uiFrame
       uiFrameMaxWidth="28rem"
-      data-testid="auth-welcome"
-    >
-      <h1 uiText uiFont="largeTitle">{{ t('auth.welcome.title') }}</h1>
-      <p uiText uiFont="body">{{ t('auth.welcome.body') }}</p>
-      <button
-        type="button"
-        uiButton
-        uiButtonStyle="borderedProminent"
-        uiControlSize="large"
-        data-testid="auth-get-started"
-        (click)="store.getStarted()"
-      >
-        {{ t('auth.welcome.getStarted') }}
-      </button>
-    </ui-stack>
-    } @case ('identify') {
-    <ui-stack
-      uiSpacing="comfortable"
-      uiFrame
-      uiFrameMaxWidth="28rem"
-      data-testid="auth-identify"
-    >
-      <h1 uiText uiFont="title">{{ t('auth.identify.title') }}</h1>
-      <p uiText uiFont="body">{{ t('auth.identify.body') }}</p>
-
-      <label>
-        <ui-stack uiSpacing="tight">
-          <span uiText uiFont="footnote"
-            >{{ t('auth.identify.phoneLabel') }}</span
-          >
-          <input
-            type="tel"
-            uiTextField
-            autocomplete="tel"
-            inputmode="tel"
-            data-testid="auth-identifier-input"
-            [attr.aria-invalid]="!!identifierErrorMessage()"
-            [uiInvalid]="!!identifierErrorMessage()"
-            [value]="rawIdentifier()"
-            (input)="rawIdentifier.set($any($event.target).value)"
-          />
-        </ui-stack>
-      </label>
-      @if (identifierErrorMessage(); as error) {
-      <p
-        uiText
-        uiFont="footnote"
-        uiForegroundStyle="destructive"
-        data-testid="auth-identifier-error"
-        role="alert"
-      >
-        {{ error }}
-      </p>
-      } @if (translateError(currentError()); as error) {
-      <p
-        uiText
-        uiFont="footnote"
-        uiForegroundStyle="destructive"
-        data-testid="auth-request-error"
-        role="alert"
-      >
-        {{ error }}
-      </p>
-      }
-
-      <button
-        type="button"
-        uiButton
-        uiButtonStyle="borderedProminent"
-        uiControlSize="large"
-        data-testid="auth-submit-identifier"
-        [uiLoading]="store.pending()"
-        [disabled]="!identifierResult() || identifierResult()?.isFailure()"
-        (click)="submitIdentifier()"
-      >
-        {{ t('auth.identify.continue') }}
-      </button>
-      <button
-        type="button"
-        uiButton
-        uiButtonStyle="plain"
-        data-testid="auth-back"
-        (click)="store.back()"
-      >
-        {{ t('auth.back') }}
-      </button>
-    </ui-stack>
-    } @case ('otp') {
-    <ui-stack
-      uiSpacing="comfortable"
-      uiFrame
-      uiFrameMaxWidth="28rem"
-      data-testid="auth-otp"
-    >
-      <h1 uiText uiFont="title">{{ t('auth.otp.title') }}</h1>
-      <p uiText uiFont="body">{{ t('auth.otp.body') }}</p>
-
-      <ui-otp-field
-        [uiLength]="6"
-        [uiInvalid]="!!codeErrorMessage() || !!translateError(currentError())"
-        [value]="rawCode()"
-        (valueChange)="rawCode.set($event); $event.length === 6 && submitCode()"
-        data-testid="auth-otp-input"
-      />
-      @if (codeErrorMessage(); as error) {
-      <p
-        uiText
-        uiFont="footnote"
-        uiForegroundStyle="destructive"
-        data-testid="auth-otp-format-error"
-        role="alert"
-      >
-        {{ error }}
-      </p>
-      } @if (translateError(currentError()); as error) {
-      <p
-        uiText
-        uiFont="footnote"
-        uiForegroundStyle="destructive"
-        data-testid="auth-verify-error"
-        role="alert"
-      >
-        {{ error }}
-      </p>
-      }
-
-      <button
-        type="button"
-        uiButton
-        uiButtonStyle="borderedProminent"
-        uiControlSize="large"
-        data-testid="auth-submit-code"
-        [uiLoading]="store.pending()"
-        (click)="submitCode()"
-      >
-        {{ t('auth.otp.verify') }}
-      </button>
-      <button
-        type="button"
-        uiButton
-        uiButtonStyle="plain"
-        data-testid="auth-resend"
-        (click)="store.resend()"
-      >
-        {{ t('auth.otp.resend') }}
-      </button>
-      <button
-        type="button"
-        uiButton
-        uiButtonStyle="plain"
-        data-testid="auth-change-identifier"
-        (click)="store.changeIdentifier()"
-      >
-        {{ t('auth.otp.changeIdentifier') }}
-      </button>
-    </ui-stack>
-    } @case ('blocked') {
-    <ui-stack
-      uiSpacing="comfortable"
-      uiFrame
-      uiFrameMaxWidth="28rem"
+      uiReveal
+      uiRevealTrigger="mount"
       data-testid="auth-blocked"
     >
+      <ui-icon uiName="auth.locked" uiScale="large" />
       <h1 uiText uiFont="title">{{ t('auth.blocked.title') }}</h1>
-      <p uiText uiFont="body">{{ t('auth.blocked.body') }}</p>
+      <p uiText uiFont="body" uiForegroundStyle="secondary">
+        {{ t('auth.blocked.body') }}
+      </p>
+      <button
+        type="button"
+        uiButton
+        uiButtonStyle="bordered"
+        uiTint="neutral"
+        uiControlSize="large"
+        data-testid="auth-blocked-home"
+        (click)="goHome()"
+      >
+        {{ t('auth.blocked.home') }}
+      </button>
     </ui-stack>
-    } @default {
+    <ui-spacer />
+  </ui-stack>
+  } @default {
+  <ui-stack
+    uiAlignment="center"
+    uiSpacing="none"
+    uiFrame
+    uiFrameMinHeight="100svh"
+    uiPaddingHorizontal="regular"
+    uiPaddingVertical="spacious"
+  >
+    <ui-spacer />
     <ui-stack
-      uiSpacing="comfortable"
+      uiSpacing="regular"
+      uiAlignment="center"
       uiFrame
       uiFrameMaxWidth="28rem"
       data-testid="auth-settling"
     >
-      <p uiText uiFont="body">{{ t('auth.settling') }}</p>
+      <ui-progress-view />
+      <p uiText uiFont="body" uiForegroundStyle="secondary">
+        {{ t('auth.settling') }}
+      </p>
     </ui-stack>
-    } }
     <ui-spacer />
   </ui-stack>
+  } }
 </ng-container>

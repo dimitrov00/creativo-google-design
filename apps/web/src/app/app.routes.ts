@@ -35,6 +35,29 @@ export const appRoutes: Route[] = [
       import('@creativo/features/client/booking').then((m) => m.ClientBooking),
   },
   {
+    // Public browse pages behind the landing page's careers/courses
+    // teaser CTAs — no guard, same posture as `book`.
+    path: 'careers',
+    loadComponent: () =>
+      import('@creativo/features/marketing/careers').then(
+        (m) => m.MarketingCareers,
+      ),
+  },
+  {
+    path: 'courses',
+    loadComponent: () =>
+      import('@creativo/features/marketing/courses').then(
+        (m) => m.MarketingCourses,
+      ),
+  },
+  {
+    path: 'events',
+    loadComponent: () =>
+      import('@creativo/features/marketing/events').then(
+        (m) => m.MarketingEvents,
+      ),
+  },
+  {
     path: 'account',
     canActivate: [activeGuard],
     loadComponent: () =>
@@ -63,6 +86,14 @@ export const appRoutes: Route[] = [
       import('@creativo/features/admin/impersonation').then(
         (m) => m.AdminImpersonation,
       ),
+  },
+  {
+    // `content_manager` (not `admin`) — matches `isCatalogManager()` in
+    // firestore.rules, the existing role tier for catalog-shaped content.
+    path: 'admin/programs',
+    canActivate: [activeGuard, rolesGuard('content_manager')],
+    loadComponent: () =>
+      import('@creativo/features/admin/programs').then((m) => m.AdminPrograms),
   },
   {
     path: 'forbidden',

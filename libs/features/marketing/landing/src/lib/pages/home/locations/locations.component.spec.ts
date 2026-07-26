@@ -20,21 +20,23 @@ describe('LocationsComponent', () => {
         '.location-card[role="button"][aria-haspopup="dialog"]',
       ).length,
     ).toBe(2);
-    expect(host.querySelectorAll('.location-card__explore-label').length).toBe(
-      2,
-    );
+    // Maps place-card register: a trailing circular action cluster — the
+    // quiet call button + the tinted directions button per card.
+    expect(
+      host.querySelectorAll(
+        '.location-card a.ui-button[href^="tel:"][data-icon-only]',
+      ).length,
+    ).toBe(2);
     expect(host.querySelectorAll('.location-card__maps').length).toBe(2);
     // Open/closed lines ride the shared ui-status-indicator pattern.
     expect(
       host.querySelectorAll('.location-card ui-status-indicator').length,
     ).toBe(2);
-    // Both shops carry a venue phone (synced to the v2 demo-seed content).
-    expect(host.querySelectorAll('.location-card__phone').length).toBe(2);
     // Icons are named by INTENT (semantic registry keys), and the registry
-    // resolves the place intent to its Material Symbols glyph.
+    // resolves the directions intent to its Material Symbols glyph.
     expect(
-      host.querySelector('.location-card__icon .ui-icon__glyph')?.textContent,
-    ).toBe('location_on');
+      host.querySelector('.location-card__maps .ui-icon__glyph')?.textContent,
+    ).toBe('near_me');
     expect(host.querySelector('[data-locations-map]')).not.toBeNull();
     expect(host.querySelector('.location-card__media')).toBeNull();
 
@@ -51,9 +53,12 @@ describe('LocationsComponent', () => {
 
     expect(sheet?.hasAttribute('data-presented')).toBe(true);
     expect(host.querySelector('[data-location-sheet-map]')).not.toBeNull();
-    expect(host.querySelectorAll('.location-sheet__day').length).toBe(7);
+    // The schedule rows are DS list rows (li form); today = uiSelected.
     expect(
-      host.querySelector('.location-sheet__day[data-today]'),
+      host.querySelectorAll('.location-sheet__week li.ui-list-row').length,
+    ).toBe(7);
+    expect(
+      host.querySelector('.location-sheet__week li.ui-list-row[data-selected]'),
     ).not.toBeNull();
     expect(
       host.querySelector('.location-sheet__status-card ui-status-indicator'),
@@ -97,7 +102,7 @@ describe('LocationsComponent', () => {
     expect(host.querySelector('.location-sheet__today-tag')).toBeNull();
     expect(
       host.querySelector(
-        '.location-sheet__day[data-today] .location-sheet__day-name [data-visually-hidden]',
+        '.location-sheet__week li.ui-list-row[data-selected] [data-visually-hidden]',
       ),
     ).not.toBeNull();
   });

@@ -11,7 +11,7 @@ import {
 } from '@creativo/application/booking';
 import { UserId } from '@creativo/application/accounts';
 import { AccountStateService } from '@creativo/features/client/account-state';
-import { UiBadge, UiButton, UiSkeleton } from '@creativo/ui/controls';
+import { UiBadge, UiButton, UiIcon, UiSkeleton } from '@creativo/ui/controls';
 import { UiGrid, UiSpacer, UiStack } from '@creativo/ui/layout';
 import { UiCard } from '@creativo/ui/patterns';
 import {
@@ -58,6 +58,7 @@ type UpcomingState =
     UiButton,
     UiCard,
     UiDisabledDirective,
+    UiIcon,
     UiFrameDirective,
     UiGrid,
     UiPaddingDirective,

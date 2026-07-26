@@ -5,8 +5,10 @@
 }
 
 .cr-hiring__section {
-  padding-inline: var(--landing-gutter);
-  padding-block-start: var(--landing-section-gap);
+  /* Symmetric section rhythm (same recipe as locations) — the missing
+     block-end used to be masked by the closing CTA's own top padding;
+     with that section gone the card sat flush on the footer. */
+  padding: var(--landing-section-gap) var(--landing-gutter);
 }
 
 /* The card is a ui-stack z-axis (ZStack) — layers ride grid-area 1/1 and
@@ -75,6 +77,8 @@
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
+  /* KEPT: em-relative WORD spacing (typography, scales with the display
+     face) — not a layout gap, so no --sys-space rung applies. */
   column-gap: 0.28em;
   max-inline-size: 21.25rem;
 }
@@ -97,6 +101,8 @@
 .cr-hiring__title[data-motion][data-revealed] .cr-hiring__word {
   animation: cr-hiring-word var(--sys-motion-duration-slowest)
     var(--sys-motion-ease-emphasized) both;
+  /* KEPT: art-directed stagger STEPS (base offset + per-word beat) — the
+     motion ladder tokenizes durations/eases, not choreography intervals. */
   animation-delay: calc(0.22s + var(--word-i) * 0.11s);
 }
 

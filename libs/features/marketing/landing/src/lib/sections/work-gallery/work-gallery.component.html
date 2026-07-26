@@ -50,10 +50,13 @@
         }
       </div>
 
-      <!-- Progress bar — 3px accent fill -->
-      <div class="cr-gallery__progress" aria-hidden="true">
-        <div #progressFill class="cr-gallery__progress-fill"></div>
-      </div>
+      <!-- Scroll progress — the DS determinate bar (ProgressView(value:));
+           decorative here, the scroll position IS the state. -->
+      <ui-progress-view
+        class="cr-gallery__progress"
+        [uiValue]="scrollProgress()"
+        aria-hidden="true"
+      />
     </div>
   </div>
 

@@ -15,7 +15,7 @@
     overflow: hidden;
     /* ONE landing-ladder value for every map surface in this section —
        matches .locations__map / .location-sheet__map-pane. */
-    border-radius: var(--landing-radius-3xl);
+    border-radius: var(--control-radius-hero);
     pointer-events: none;
   }
 

@@ -4,11 +4,8 @@
   gap: var(--sys-space-loose);
 }
 
-.sc-shell__nav {
-  display: flex;
-  gap: var(--sys-space-comfortable);
-}
-
+/* Row layout is a ui-stack in the template now — only the link affordance
+   below is local. */
 .sc-shell__nav a {
   text-decoration: none;
   padding-block-end: var(--sys-space-tight);

@@ -1,5 +1,5 @@
 import { Injectable, computed, inject } from '@angular/core';
-import { LanguageService } from '../language.service';
+import { LanguageService } from '@creativo/features/marketing/shell';
 import {
   BARBERS,
   type BarberVm,

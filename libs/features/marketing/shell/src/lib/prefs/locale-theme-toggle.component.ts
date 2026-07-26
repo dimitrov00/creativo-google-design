@@ -6,7 +6,7 @@ import {
 } from '@angular/core';
 import { TranslocoDirective } from '@jsverse/transloco';
 import { UiButton, UiIcon } from '@creativo/ui/controls';
-import { LanguageService } from '../../language.service';
+import { LanguageService } from '../language.service';
 import { ThemeService } from './theme.service';
 
 /**

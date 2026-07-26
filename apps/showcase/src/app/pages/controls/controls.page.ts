@@ -61,6 +61,8 @@ export class ControlsPage {
         { slug: 'progress-view', name: 'ProgressView' },
         { slug: 'skeleton', name: 'Skeleton' },
         { slug: 'otp-field', name: 'OTP Field' },
+        { slug: 'phone-field', name: 'Phone Field' },
+        { slug: 'date-field', name: 'Date Field' },
         { slug: 'icon', name: 'Icon' },
         { slug: 'async-image', name: 'AsyncImage' },
       ],
@@ -73,6 +75,7 @@ export class ControlsPage {
         { slug: 'card', name: 'Card' },
         { slug: 'list-row', name: 'ListRow' },
         { slug: 'section-header', name: 'SectionHeader' },
+        { slug: 'stepper', name: 'Stepper' },
       ],
     },
   ];

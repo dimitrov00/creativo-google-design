@@ -1,0 +1,105 @@
+<sc-page scTitle="Stepper">
+  <ng-container scLede>
+    <code>ui-stepper</code> — journey wayfinding for short, fixed flows (the
+    auth journey's identify → code → profile). Thin capsule segments: completed
+    + current fill accent, upcoming stays on the hairline fill, the current
+    segment carries a subtle width emphasis. A
+    <code>role="progressbar"</code> over the step ordinals; the optional
+    <code>uiLabel</code> caption doubles as the accessible name. Not a loading
+    indicator — that's <code>ui-progress-view</code>.
+  </ng-container>
+
+  <sc-demo scTitle="Anatomy">
+    <ng-container scAbout>
+      Caption above a full-width track — the stepper is sized by its
+      surroundings (a toolbar slot's frame, a form column) and never asserts its
+      own width.
+    </ng-container>
+    <ui-stack uiSpacing="loose" uiAlignment="center">
+      <ui-stepper
+        [uiSteps]="3"
+        [uiCurrent]="2"
+        uiLabel="Step 2 of 3"
+        uiFrame
+        uiFrameWidth="14rem"
+      />
+      <p uiText uiFont="caption" class="stepper__mono">
+        uiSteps=3 · uiCurrent=2 · uiLabel
+      </p>
+    </ui-stack>
+  </sc-demo>
+
+  <sc-demo scTitle="Progression">
+    <ng-container scAbout>
+      Step changes glide — the accent fill and the current segment's width
+      emphasis both animate. Without a <code>uiLabel</code> the caption
+      collapses and the accessible name falls back to the bare ordinals, so real
+      consumers should always pass a translated label.
+    </ng-container>
+    <ui-stack uiSpacing="comfortable" uiAlignment="center">
+      <ui-stepper
+        [uiSteps]="3"
+        [uiCurrent]="current()"
+        [uiLabel]="'Step ' + current() + ' of 3'"
+        uiFrame
+        uiFrameWidth="14rem"
+      />
+      <ui-stepper
+        [uiSteps]="3"
+        [uiCurrent]="current()"
+        uiFrame
+        uiFrameWidth="14rem"
+      />
+      <button
+        type="button"
+        uiButton
+        uiButtonStyle="bordered"
+        uiTint="neutral"
+        (click)="advance()"
+      >
+        Next step
+      </button>
+    </ui-stack>
+  </sc-demo>
+
+  <sc-demo scTitle="Journey lengths">
+    <ng-container scAbout>
+      Segments split the track evenly for any step count; an out-of-range
+      <code>uiCurrent</code> clamps into the journey.
+    </ng-container>
+    <ui-stack uiSpacing="loose" uiAlignment="center">
+      <ui-stack uiSpacing="tight" uiAlignment="center">
+        <ui-stepper
+          [uiSteps]="2"
+          [uiCurrent]="1"
+          uiLabel="Step 1 of 2"
+          uiFrame
+          uiFrameWidth="14rem"
+        />
+        <p uiText uiFont="caption" class="stepper__mono">uiSteps=2</p>
+      </ui-stack>
+      <ui-stack uiSpacing="tight" uiAlignment="center">
+        <ui-stepper
+          [uiSteps]="5"
+          [uiCurrent]="4"
+          uiLabel="Step 4 of 5"
+          uiFrame
+          uiFrameWidth="14rem"
+        />
+        <p uiText uiFont="caption" class="stepper__mono">uiSteps=5</p>
+      </ui-stack>
+      <ui-stack uiSpacing="tight" uiAlignment="center">
+        <ui-stepper
+          [uiSteps]="3"
+          [uiCurrent]="3"
+          uiLabel="Step 3 of 3"
+          uiFrame
+          uiFrameWidth="14rem"
+        />
+        <p uiText uiFont="caption" class="stepper__mono">
+          final step — every segment filled
+        </p>
+      </ui-stack>
+    </ui-stack>
+  </sc-demo>
+</sc-page>

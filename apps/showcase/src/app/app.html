@@ -1,22 +1,26 @@
 <ui-toolbar uiSticky class="sc-shell__header">
   <span uiText uiFont="headline">Creativo Design System</span>
   <nav class="sc-shell__nav">
-    <a
-      routerLink="/tokens"
-      routerLinkActive="sc-shell__nav-link--active"
-      uiText
-      uiFont="callout"
-      uiForegroundStyle="secondary"
-      >Tokens</a
-    >
-    <a
-      routerLink="/controls"
-      routerLinkActive="sc-shell__nav-link--active"
-      uiText
-      uiFont="callout"
-      uiForegroundStyle="secondary"
-      >Controls</a
-    >
+    <!-- Row layout is the DS HStack; only the active-link underline stays
+         local shell chrome. -->
+    <ui-stack uiAxis="horizontal" uiSpacing="comfortable" uiAlignment="center">
+      <a
+        routerLink="/tokens"
+        routerLinkActive="sc-shell__nav-link--active"
+        uiText
+        uiFont="callout"
+        uiForegroundStyle="secondary"
+        >Tokens</a
+      >
+      <a
+        routerLink="/controls"
+        routerLinkActive="sc-shell__nav-link--active"
+        uiText
+        uiFont="callout"
+        uiForegroundStyle="secondary"
+        >Controls</a
+      >
+    </ui-stack>
   </nav>
 
   <ui-spacer />

@@ -24,7 +24,12 @@ import { provideFirebaseStorage } from '@creativo/infrastructure/storage';
 import { provideI18n } from '@creativo/infrastructure/i18n';
 
 // Ports (application layer)
-import { AUTH_GATEWAY, OTP_CLIENT } from '@creativo/application/identity';
+import {
+  AUTH_DEPLOYMENT,
+  AUTH_GATEWAY,
+  DEFAULT_AUTH_DEPLOYMENT,
+  OTP_CLIENT,
+} from '@creativo/application/identity';
 import {
   APPOINTMENT_REPOSITORY,
   BOOKING_DRAFT_STORE,
@@ -44,7 +49,16 @@ import {
   IMPERSONATION_PORT,
   USER_SEARCH_PORT,
 } from '@creativo/application/governance';
-import { CLOCK, KEY_VALUE_STORE } from '@creativo/application/shared';
+import {
+  COURSE_REPOSITORY,
+  POSITION_REPOSITORY,
+  SHOP_EVENT_REPOSITORY,
+} from '@creativo/application/programs';
+import {
+  CLOCK,
+  ID_GENERATOR,
+  KEY_VALUE_STORE,
+} from '@creativo/application/shared';
 
 // Adapters (infrastructure layer) — named ONLY here (blueprint §1.3)
 import {
@@ -61,6 +75,9 @@ import {
   FirestoreInvitationAdapter,
   FirestoreImpersonationAdapter,
   FirestoreUserSearchAdapter,
+  FirestorePositionRepository,
+  FirestoreCourseRepository,
+  FirestoreEventRepository,
 } from '@creativo/infrastructure/firestore';
 import {
   FirebaseStorageAvatarUploader,
@@ -70,7 +87,7 @@ import {
   LocalStorageKeyValueStore,
   SessionStorageDraftStore,
 } from '@creativo/infrastructure/web-storage';
-import { SystemClock } from '@creativo/infrastructure/clock';
+import { CryptoIdGenerator, SystemClock } from '@creativo/infrastructure/clock';
 
 import { appRoutes } from './app.routes';
 import { environment } from '../environments/environment';
@@ -112,12 +129,15 @@ export const appConfig: ApplicationConfig = {
     provideFirebaseFunctions(emulators),
     provideFirebaseStorage(),
 
+    // ── Deployment config ──
+    // Explicit even though the token has a matching factory default: this
+    // is THE per-deployment override point (auth strategy, entry
+    // providers, default phone country) and it stays visible in the wiring.
+    { provide: AUTH_DEPLOYMENT, useValue: DEFAULT_AUTH_DEPLOYMENT },
+
     // ── Port → Adapter map (the hexagon's outer wiring, blueprint §1.3) ──
-    // ID_GENERATOR (@creativo/application/shared) still has no adapter —
-    // nothing implements `IdGenerator` yet. Flagged rather than invented
-    // (scope guard); nothing wired through the routes lands so far
-    // consumes it.
     { provide: CLOCK, useClass: SystemClock },
+    { provide: ID_GENERATOR, useClass: CryptoIdGenerator },
     { provide: AUTH_GATEWAY, useClass: FirebaseAuthGateway },
     { provide: OTP_CLIENT, useClass: CallableOtpClient },
     {
@@ -140,6 +160,9 @@ export const appConfig: ApplicationConfig = {
     { provide: AVATAR_UPLOADER, useClass: FirebaseStorageAvatarUploader },
     { provide: IMPERSONATION_PORT, useClass: FirestoreImpersonationAdapter },
     { provide: USER_SEARCH_PORT, useClass: FirestoreUserSearchAdapter },
+    { provide: POSITION_REPOSITORY, useClass: FirestorePositionRepository },
+    { provide: COURSE_REPOSITORY, useClass: FirestoreCourseRepository },
+    { provide: SHOP_EVENT_REPOSITORY, useClass: FirestoreEventRepository },
     { provide: BOOKING_DRAFT_STORE, useClass: SessionStorageDraftStore },
     { provide: KEY_VALUE_STORE, useClass: LocalStorageKeyValueStore },
   ],

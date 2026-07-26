@@ -42,7 +42,7 @@
   border: 0;
   background: none;
   block-size: 52vh;
-  border-radius: var(--landing-radius-2xl);
+  border-radius: var(--control-radius-prominent);
   translate: 0 var(--drift, 0px);
 }
 
@@ -52,7 +52,7 @@
 .cr-gallery__figure {
   inline-size: 100%;
   block-size: 100%;
-  border-radius: var(--landing-radius-2xl);
+  border-radius: var(--control-radius-prominent);
   box-shadow: var(--sys-elevation-overlay);
 }
 
@@ -64,7 +64,15 @@
     transform var(--sys-motion-duration-slowest) var(--sys-motion-ease-standard),
     opacity var(--sys-motion-duration-regular) var(--sys-motion-ease-standard);
 }
-.cr-gallery__card--motion:hover .ui-async-image__image {
+@media (hover: hover) {
+  .cr-gallery__card--motion:hover .ui-async-image__image {
+    transform: scale(1.06);
+  }
+}
+/* Touch parity — the zoom is a PRESS reveal on tap (fires while the
+   finger is down, clears on release with the transition above), not a
+   lingering :hover a touchscreen can't hold. */
+.cr-gallery__card--motion:active .ui-async-image__image {
   transform: scale(1.06);
 }
 
@@ -110,25 +118,15 @@
   }
 }
 
-/* Progress bar — h-[3px] accent fill on a border track. */
+/* Scroll progress is the DS determinate ui-progress-view — track/fill
+   visuals live in the DS; only this overlay's placement and the 6rem
+   art-directed rail length stay local. */
 .cr-gallery__progress {
   position: absolute;
   bottom: var(--sys-space-comfortable);
   left: 50%;
-  block-size: 3px;
   inline-size: 6rem;
   transform: translateX(-50%);
-  border-radius: var(--control-radius-capsule);
-  background: var(--landing-border);
-}
-
-.cr-gallery__progress-fill {
-  block-size: 100%;
-  inline-size: 100%;
-  border-radius: var(--control-radius-capsule);
-  background: var(--sys-color-accent);
-  transform: scaleX(0);
-  transform-origin: left;
 }
 
 /* ── Lightbox — ui-sheet owns scrim/entrance/layering/modal behavior ── */
@@ -143,14 +141,14 @@
   padding: 0;
   background: transparent;
   box-shadow: none;
-  border-radius: var(--landing-radius-3xl);
+  border-radius: var(--control-radius-hero);
 }
 
 .cr-gallery__lightbox-image {
   display: block;
   inline-size: 88vw;
   max-inline-size: 24rem;
-  border-radius: var(--landing-radius-3xl);
+  border-radius: var(--control-radius-hero);
   object-fit: cover;
   box-shadow: var(--sys-elevation-floating);
 }

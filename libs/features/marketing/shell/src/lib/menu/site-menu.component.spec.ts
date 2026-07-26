@@ -1,16 +1,72 @@
+import { EnvironmentProviders, Injectable } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
-import { provideTestI18n } from '../test-i18n.providers';
-import { LandingMenuComponent } from './landing-menu.component';
+import {
+  Translation,
+  TranslocoLoader,
+  provideTransloco,
+} from '@jsverse/transloco';
+import { Observable, of } from 'rxjs';
+import { AUTH_GATEWAY } from '@creativo/application/identity';
+import { SiteMenuComponent } from './site-menu.component';
 
-describe('LandingMenuComponent', () => {
+/** Local fixture — kept independent of `landing`'s shared test-i18n
+ *  provider so this spec (now in `shell`) never depends back on `landing`
+ *  (which itself depends on `shell` for this very component). */
+const bg: Translation = {
+  landing: {
+    nav: { primary: 'Навигация' },
+    menu: {
+      bookings: 'Моите резервации',
+      rewards: 'Моите награди',
+      openPositions: 'Отворени позиции',
+    },
+    hero: { cta: 'Запази час' },
+    footer: {
+      nav: {
+        work: 'Нашата работа',
+        team: 'Екип',
+        services: 'Услуги',
+        visit: 'Посети ни',
+      },
+    },
+  },
+};
+
+@Injectable()
+class TestTranslationLoader implements TranslocoLoader {
+  getTranslation(): Observable<Translation> {
+    return of(bg);
+  }
+}
+
+function provideTestI18n(): EnvironmentProviders[] {
+  return provideTransloco({
+    config: {
+      availableLangs: ['bg', 'en'],
+      defaultLang: 'bg',
+      fallbackLang: 'bg',
+      missingHandler: { logMissingKey: false },
+    },
+    loader: TestTranslationLoader,
+  });
+}
+
+describe('SiteMenuComponent', () => {
   async function render(inputs: { open: boolean; isAuthed?: boolean }) {
     await TestBed.configureTestingModule({
-      imports: [LandingMenuComponent],
-      providers: [provideRouter([]), ...provideTestI18n()],
+      imports: [SiteMenuComponent],
+      providers: [
+        provideRouter([]),
+        ...provideTestI18n(),
+        {
+          provide: AUTH_GATEWAY,
+          useValue: { signOut: async () => undefined },
+        },
+      ],
     }).compileComponents();
 
-    const fixture = TestBed.createComponent(LandingMenuComponent);
+    const fixture = TestBed.createComponent(SiteMenuComponent);
     fixture.componentRef.setInput('open', inputs.open);
     if (inputs.isAuthed !== undefined) {
       fixture.componentRef.setInput('isAuthed', inputs.isAuthed);

@@ -63,23 +63,32 @@
                 <span>{{ t(barber.specialtyKey) }}</span>
               </ui-stack>
               <ui-spacer />
-              <span
-                class="team-card__action explore-affordance"
+              <!-- Decorative affordance cluster (the CARD is the control):
+                   DS button chrome on span[uiButton] — stroked capsule
+                   label + circular icon chip, no hand-rolled recipe. -->
+              <ui-stack
+                class="team-card__action"
+                uiAxis="horizontal"
+                uiAlignment="center"
+                uiSpacing="compact"
                 aria-hidden="true"
               >
                 <span
-                  class="team-card__explore-label explore-affordance__label"
-                  uiText
-                  uiFont="caption"
-                  uiWeight="bold"
+                  uiButton
+                  uiButtonStyle="strokedBorder"
+                  uiButtonBorderShape="capsule"
                 >
                   {{ t('landing.barbers.explore') }}
                 </span>
-                <ui-icon
-                  class="team-card__explore-icon explore-affordance__icon"
-                  uiName="nav.explore"
-                />
-              </span>
+                <span
+                  uiButton
+                  uiButtonStyle="strokedBorder"
+                  uiButtonBorderShape="capsule"
+                  [uiIconOnly]="true"
+                >
+                  <ui-icon uiName="nav.explore" />
+                </span>
+              </ui-stack>
             </ui-stack>
           </button>
         }
@@ -87,13 +96,14 @@
     </ui-stack>
   </section>
 
-  <cr-modal-sheet
+  <ui-modal-sheet
     sheetId="barber-detail-sheet"
     labelledBy="barber-sheet-title"
     [closeLabel]="t('landing.barbers.closeDetails')"
     [open]="sheetOpen() && !sheetClosing()"
     [closing]="sheetClosing()"
     (dismissed)="closeBarber()"
+    (closeFinished)="finishClosing()"
   >
     @if (activeBarber(); as barber) {
       <!-- Profile → gallery rhythm = the sheet stack's gap (the old
@@ -190,5 +200,5 @@
         </a>
       }
     </ui-sheet-action-bar>
-  </cr-modal-sheet>
+  </ui-modal-sheet>
 </ng-container>

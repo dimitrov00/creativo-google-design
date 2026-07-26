@@ -5,11 +5,8 @@
    uiText and rhythm rides ui-stack gaps in the template — this file keeps
    only scroll-collapse, layout glue and the documented local exceptions. */
 
-/* The caption role's automatic secondary ink is for captions — the
-   condensed toolbar title is primary chrome. */
-.service-sheet__compact-title {
-  color: var(--sys-color-foreground);
-}
+/* Condensed toolbar title typography/ink comes from ui-sheet-header's
+   [uiTitle] slot now (HIG nav-title recipe) — nothing local. */
 
 .service-sheet__body {
   min-inline-size: 0;
@@ -48,7 +45,7 @@
     .service-sheet__intro h2 {
       /* The compact-title/chrome reveal rides the `--ui-sheet-headline`
          view-timeline the h2's `uiSheetLargeTitle` label names (DS-owned;
-         cr-modal-sheet adds no timeline plumbing of its own). This local
+         ui-modal-sheet adds no timeline plumbing of its own). This local
          animation is only the large title's own scale/fade embellishment,
          on its anonymous view() timeline as before. */
       animation: service-sheet-title-collapse linear both;
@@ -70,9 +67,11 @@
   max-inline-size: 34rem;
 }
 
-/* Price reads at full ink (the caption role's secondary is for captions). */
+/* Price reads at full ink and semibold — the subheadline role bakes 500,
+   and the price is the one emphasized fact on the line. */
 .service-sheet__summary-price {
   color: var(--sys-color-foreground);
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
 
@@ -87,15 +86,14 @@
 /* Layout toggle is uiButton bordered/capsule/iconOnly — glyph size comes
    from the DS icon-only tier in button.css (1.25rem at the 44px box). */
 
-/* Row shell comes from ui-list-row (min-height, padding, slots); the
-   quiet fill rides the theme-aware alpha ladder (the old hand-mixed 5.5%
-   read too faint in dark mode). */
-.service-performer {
-  background: color-mix(
-    in srgb,
-    currentColor var(--sys-alpha-fill),
-    transparent
-  );
+/* List reading is ui-list-group (segmented grouped list, menu precedent):
+   the wrapper is chromeless and the rows own their segment fill/radii —
+   nothing local. */
+
+/* The name line HStack must let a long name ellipsize before it pushes
+   the rating off the row. */
+.service-performer__name-line h4 {
+  min-inline-size: 0;
 }
 
 .service-performer__identity {
@@ -120,10 +118,13 @@
   text-align: end;
 }
 
-/* Full ink + tabular figures on the price (trailing slot ink defaults to
-   secondary — right for the duration line, not the price). */
+/* Full ink, semibold, tabular figures on the price (trailing slot ink
+   defaults to secondary — right for the duration line, not the price).
+   Body-size + 600 keeps the price an emphasized PEER of the headline
+   name, not a second headline shouting from the trailing edge. */
 .service-performer__price {
   color: var(--sys-color-foreground);
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
 
@@ -131,18 +132,11 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* Grid alternative — 2-up tiles, avatar-led, same quiet fill. Overrides
-   ui-list-row's own row axis, so it stays CSS (the row shape is the DS
-   recipe; the tile shape is this sheet's alternative reading of it). */
-.service-performers__list[data-grid] .service-performer {
-  flex-direction: column;
-  align-items: flex-start;
-  gap: var(--sys-space-regular);
-  block-size: 100%;
-}
-
-.service-performers__list[data-grid] .service-performer__terms {
-  text-align: start;
+/* Grid alternative is a REAL card grid now (ui-card elevated, centered
+   identity stack — HIG App Store/Contacts register), not a re-axed row.
+   Only centered multi-line text stays local. */
+.service-performer-card {
+  text-align: center;
 }
 
 /* ── Bottom booking bar — always visible while the sheet is open; the
@@ -160,18 +154,18 @@
    landing-shared.css (global; a local @keyframes would get encapsulation-
    scoped and shadow nothing for sibling sheets). ─── */
 
-cr-modal-sheet[data-state='open'] .service-sheet__intro > *,
-cr-modal-sheet[data-state='open'] .service-sheet__variants,
-cr-modal-sheet[data-state='open'] .service-performers header {
+ui-modal-sheet[data-state='open'] .service-sheet__intro > *,
+ui-modal-sheet[data-state='open'] .service-sheet__variants,
+ui-modal-sheet[data-state='open'] .service-performers header {
   animation: sheet-content-in var(--sys-motion-duration-slowest)
     var(--sys-motion-ease-emphasized) both;
 }
 
-cr-modal-sheet[data-state='open'] .service-sheet__intro > :nth-child(2) {
+ui-modal-sheet[data-state='open'] .service-sheet__intro > :nth-child(2) {
   animation-delay: var(--sys-motion-duration-instant);
 }
 
-cr-modal-sheet[data-state='open'] .service-sheet__variants {
+ui-modal-sheet[data-state='open'] .service-sheet__variants {
   animation-delay: var(--sys-motion-duration-instant);
 }
 
@@ -185,19 +179,12 @@ cr-modal-sheet[data-state='open'] .service-sheet__variants {
   .service-sheet__summary {
     gap: var(--sys-space-regular);
   }
-
-  /* Single column on the narrow sheet — !important outranks the inline
-     --ui-grid-columns custom property ui-grid stamps (the documented
-     consumer override path). */
-  .service-performers__list[data-grid] {
-    --ui-grid-columns: 1 !important;
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  cr-modal-sheet[data-state='open'] .service-sheet__intro > *,
-  cr-modal-sheet[data-state='open'] .service-sheet__variants,
-  cr-modal-sheet[data-state='open'] .service-performers header {
+  ui-modal-sheet[data-state='open'] .service-sheet__intro > *,
+  ui-modal-sheet[data-state='open'] .service-sheet__variants,
+  ui-modal-sheet[data-state='open'] .service-performers header {
     animation: none;
   }
 }

@@ -72,7 +72,8 @@ describe('ServicesSectionComponent', () => {
       host.querySelector('[data-testid="service-detail"]')?.textContent,
     ).toContain('Класическо подстригване');
     // One performer card per offering barber — haircut has 3 offerings.
-    expect(host.querySelectorAll('.service-performer').length).toBe(3);
+    // Grid is the default reading (owner ruling 2026-07-24).
+    expect(host.querySelectorAll('.service-performer-card').length).toBe(3);
     // Book CTA hands off to /auth with the /book redirect.
     expect(
       host.querySelector('[data-testid="service-detail-book"]'),
