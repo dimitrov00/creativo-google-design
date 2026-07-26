@@ -23,20 +23,36 @@
         var(--sys-motion-ease-standard);
   }
 
+  /* Focus glow rides the shared field recipe (--sys-focus-glow-*) — one
+     grammar with ui-text-field, not a per-control alpha. */
   .ui-otp-field__slot[data-state='active'] {
     border-color: var(--sys-color-accent);
-    box-shadow: 0 0 0 3px
-      color-mix(in srgb, var(--sys-color-accent) 20%, transparent);
+    box-shadow: 0 0 0 var(--sys-focus-glow-width)
+      color-mix(
+        in srgb,
+        var(--sys-color-accent) var(--sys-focus-glow-alpha),
+        transparent
+      );
   }
 
   .ui-otp-field[data-invalid] .ui-otp-field__slot {
     border-color: var(--sys-color-destructive);
   }
 
+  /* Locked (uiDisabled — e.g. auth's auto-verify "checking" state):
+     native attribute at the house disabled opacity, like ui-text-field. */
+  .ui-otp-field__slot:disabled {
+    opacity: var(--sys-opacity-disabled);
+  }
+
   .ui-otp-field__slot:focus-visible {
     outline: none;
     border-color: var(--sys-color-accent);
-    box-shadow: 0 0 0 3px
-      color-mix(in srgb, var(--sys-color-accent) 20%, transparent);
+    box-shadow: 0 0 0 var(--sys-focus-glow-width)
+      color-mix(
+        in srgb,
+        var(--sys-color-accent) var(--sys-focus-glow-alpha),
+        transparent
+      );
   }
 }

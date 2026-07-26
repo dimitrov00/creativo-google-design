@@ -18,14 +18,21 @@ export type UiButtonStyle =
   'borderedProminent' | 'bordered' | 'strokedBorder' | 'plain' | 'glass';
 /** ≙ SwiftUI `ButtonRole` — recolors any style, exactly like `Button(role:)`. */
 export type UiButtonRole = 'destructive';
+/** ≙ SwiftUI `.tint(_:)` — `neutral` renders the gray `.bordered` chip
+ *  (utility toggles, sheet chrome) instead of the accent-tinted fill. */
+export type UiButtonTint = 'neutral';
 /** ≙ SwiftUI `.controlSize(_:)` — small(36) · regular(44) · large(52); avatar adds extraLarge. */
 export type UiControlSize = 'small' | 'regular' | 'large';
 /** ≙ SwiftUI `.buttonBorderShape(_:)`. */
 export type UiButtonBorderShape = 'roundedRectangle' | 'capsule';
 
-/** Native `<button>`/`<a>` element — free a11y semantics, zero ARIA hand-rolling. */
+/** Native `<button>`/`<a>` element — free a11y semantics, zero ARIA
+ * hand-rolling. The `span[uiButton]` form is the DECORATIVE affordance:
+ * button chrome on a non-interactive element inside a larger tappable
+ * surface (a card that IS the button), where nesting a real control would
+ * be invalid HTML — pair it with `aria-hidden` on the cluster. */
 @Component({
-  selector: 'button[uiButton], a[uiButton]',
+  selector: 'button[uiButton], a[uiButton], span[uiButton]',
   template: `<ng-content />`,
   styleUrl: './button.css',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -37,6 +44,7 @@ export type UiButtonBorderShape = 'roundedRectangle' | 'capsule';
     class: 'ui-button',
     '[attr.data-button-style]': 'uiButtonStyle()',
     '[attr.data-role]': 'uiRole() ?? null',
+    '[attr.data-tint]': 'uiTint() ?? null',
     '[attr.data-control-size]': 'uiControlSize()',
     '[attr.data-border-shape]': 'uiButtonBorderShape()',
     '[attr.data-state]': 'uiLoading() ? "loading" : null',
@@ -54,6 +62,9 @@ export class UiButton {
   readonly uiButtonStyle = input<UiButtonStyle>('borderedProminent');
   /** `Button(role: .destructive)` — composes with any uiButtonStyle. */
   readonly uiRole = input<UiButtonRole | undefined>(undefined);
+  /** `.tint(_:)` — unset keeps the accent tint; `neutral` is the gray
+   *  utility chip (sheet closes, layout toggles). */
+  readonly uiTint = input<UiButtonTint | undefined>(undefined);
   readonly uiControlSize = input<UiControlSize>('regular');
   readonly uiButtonBorderShape = input<UiButtonBorderShape>('roundedRectangle');
   readonly uiLoading = input(false);

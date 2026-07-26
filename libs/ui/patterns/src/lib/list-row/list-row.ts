@@ -41,7 +41,9 @@ export type UiListRowVariant = 'plain' | 'prominent';
  * hovers).
  */
 @Component({
-  selector: 'ui-list-row, a[uiListRow], button[uiListRow]',
+  // `li[uiListRow]` — semantic-list rows (schedules, menus that must stay
+  // real <ul>/<li> for AT counts) take the same recipe without wrappers.
+  selector: 'ui-list-row, a[uiListRow], button[uiListRow], li[uiListRow]',
   template: `
     <ng-content select="[uiLeading]" />
     <span class="ui-list-row__label"><ng-content /></span>
@@ -58,10 +60,15 @@ export type UiListRowVariant = 'plain' | 'prominent';
     '[attr.data-size]': 'uiSize()',
     '[attr.data-variant]': 'uiVariant()',
     '[attr.data-interactive]': "uiInteractive() ? '' : null",
+    '[attr.data-selected]': "uiSelected() ? '' : null",
   },
 })
 export class UiListRow {
   readonly uiSize = input<UiListRowSize>('large');
   readonly uiVariant = input<UiListRowVariant>('plain');
   readonly uiInteractive = input(false);
+  /** SwiftUI List selection — the accent segment tint (a schedule's
+   *  "today" row, a picked option). Visual only: rows that need AT to hear
+   *  the state carry their own SR text or aria on the host element. */
+  readonly uiSelected = input(false);
 }

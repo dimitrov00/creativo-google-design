@@ -52,26 +52,34 @@
     color: var(--sys-color-secondary-label);
   }
 
-  [data-weight='regular'] {
+  /* uiWeight is an EXPLICIT override (≙ .fontWeight beating the font's
+     baked weight) — the doubled attribute lifts specificity above
+     single-class component recipes (e.g. .ui-list-row's baked 500), which
+     otherwise win on stylesheet order inside this shared layer. */
+  [data-weight='regular'][data-weight] {
     font-weight: 400;
   }
-  [data-weight='medium'] {
+  [data-weight='medium'][data-weight] {
     font-weight: 500;
   }
-  [data-weight='semibold'] {
+  [data-weight='semibold'][data-weight] {
     font-weight: 600;
   }
-  [data-weight='bold'] {
+  [data-weight='bold'][data-weight] {
     font-weight: 700;
   }
 
-  [data-foreground-style='secondary'] {
+  /* Doubled attribute (the data-weight precedence pattern above): an
+     EXPLICIT .foregroundStyle modifier must out-rank a component's own
+     single-class base ink (e.g. `.ui-list-row { color: … }`) — SwiftUI
+     modifier precedence. */
+  [data-foreground-style='secondary'][data-foreground-style] {
     color: var(--sys-color-secondary-label);
   }
-  [data-foreground-style='accent'] {
+  [data-foreground-style='accent'][data-foreground-style] {
     color: var(--sys-color-accent);
   }
-  [data-foreground-style='destructive'] {
+  [data-foreground-style='destructive'][data-foreground-style] {
     color: var(--sys-color-destructive);
   }
 
@@ -187,25 +195,77 @@
     }
   }
 
+  /* Press fades in on the fast tier (--sys-motion-duration-instant, 150ms)
+     rather than the base 200ms — quick enough that a real tap sees it,
+     without the harsh, flashy pop a 0ms snap produces (owner tested a
+     literal 0ms entry on a real iPhone: felt abrupt and, combined with
+     iOS's own touch-vs-scroll disambiguation, buggy). Release still rides
+     the base rule's 200ms fade for a smooth exit. */
   [data-interactive]:active::after {
     background: var(--sys-state-layer-press);
+    transition-duration: var(--sys-motion-duration-instant);
   }
 
   [data-interactive]:active {
     transform: scale(var(--sys-press-scale-surface));
   }
 
-  /* The shared focus ring — matches button.css so non-button interactive
-     surfaces (cards, rows, tiles, map pins) stop hand-copying the recipe. */
+  /* The shared focus ring — the ONE ring recipe, on tokens
+     (--sys-focus-ring-*) so button/chip/interactive surfaces all resolve
+     the same source instead of hand-copying the literals. */
   [data-interactive]:focus-visible {
-    outline: 2px solid var(--sys-color-ring);
-    outline-offset: 2px;
+    outline: var(--sys-focus-ring-width) solid var(--sys-color-ring);
+    outline-offset: var(--sys-focus-ring-offset);
   }
 
   @media (prefers-reduced-motion: reduce) {
     [data-interactive]:active {
       transform: none;
     }
+  }
+
+  /* ── Inline link (uiLink → data-link) ──
+     The classic underlined text link inside running copy (legal sentence's
+     Terms/Privacy, an inline Edit). Secondary ink at rest, primary on
+     hover with the ungated :active mirror (mobile press parity), shared
+     focus ring. Underline offset keeps the rule clear of descenders. */
+  [data-link] {
+    color: var(--sys-color-secondary-label);
+    text-decoration: underline;
+    text-decoration-thickness: 1px;
+    text-underline-offset: 0.2em;
+    border-radius: var(--control-radius-subtle);
+    cursor: pointer;
+    transition: color var(--sys-motion-duration-regular)
+      var(--sys-motion-ease-standard);
+  }
+
+  /* An inline button link reads as text — the reset keeps it riding the
+     surrounding sentence's font while staying a real button. */
+  button[data-link] {
+    background: none;
+    border: 0;
+    padding: 0;
+    margin: 0;
+    font: inherit;
+    letter-spacing: inherit;
+    text-align: inherit;
+  }
+
+  @media (hover: hover) {
+    [data-link]:hover {
+      color: var(--sys-color-primary);
+    }
+  }
+
+  [data-link]:active {
+    color: var(--sys-color-primary);
+    transition-duration: var(--sys-motion-duration-instant);
+  }
+
+  [data-link]:focus-visible {
+    outline: var(--sys-focus-ring-width) solid var(--sys-color-ring);
+    outline-offset: var(--sys-focus-ring-offset);
   }
 
   /* ── Disabled (uiDisabled → data-disabled) ──
@@ -301,6 +361,12 @@
     position: absolute;
     inset: 0;
     border-radius: inherit;
+    /* border-radius: inherit alone leaves a CURVATURE mismatch on squircle
+       surfaces (corner-shape is its own property and doesn't ride the
+       radius) — the overlay's circular corners peek against the parent's
+       squircle clip. Inherit the shape too; browsers without corner-shape
+       ignore this line. */
+    corner-shape: inherit;
     pointer-events: none;
   }
 

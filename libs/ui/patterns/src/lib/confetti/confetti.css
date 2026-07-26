@@ -1,0 +1,61 @@
+@layer sys-components {
+  /* A zero-footprint overlay pinned to its (position: relative) wrapper —
+     the burst origin is the wrapper's center. Never intercepts a pointer,
+     never clips its own particles, never affects layout. */
+  .ui-confetti {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    overflow: visible;
+  }
+
+  .ui-confetti__particle {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    border-radius: 1px;
+    will-change: transform, opacity;
+  }
+
+  .ui-confetti__particle[data-shape='dot'] {
+    border-radius: var(--control-radius-capsule);
+  }
+
+  /* Token colors ONLY — accent orange at three strengths plus two quiet
+     neutral inks, all via color-mix so both themes hold. */
+  .ui-confetti__particle[data-tint='accent'] {
+    background-color: var(--sys-color-accent);
+  }
+
+  .ui-confetti__particle[data-tint='accent-soft'] {
+    background-color: color-mix(
+      in srgb,
+      var(--sys-color-accent) 70%,
+      transparent
+    );
+  }
+
+  .ui-confetti__particle[data-tint='accent-faint'] {
+    background-color: color-mix(
+      in srgb,
+      var(--sys-color-accent) 45%,
+      transparent
+    );
+  }
+
+  .ui-confetti__particle[data-tint='ink'] {
+    background-color: color-mix(
+      in srgb,
+      var(--sys-color-foreground) 55%,
+      transparent
+    );
+  }
+
+  .ui-confetti__particle[data-tint='ink-soft'] {
+    background-color: color-mix(
+      in srgb,
+      var(--sys-color-foreground) 30%,
+      transparent
+    );
+  }
+}

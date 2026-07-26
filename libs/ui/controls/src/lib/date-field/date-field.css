@@ -1,0 +1,118 @@
+@layer sys-components {
+  .ui-date-field {
+    display: block;
+  }
+
+  /* A REAL fieldset (GOV.UK grouping semantics) wearing none of the
+     browser's fieldset chrome — the group reads as plain stacked content. */
+  .ui-date-field__group {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sys-space-tight);
+    margin: 0;
+    padding: 0;
+    border: none;
+    min-inline-size: 0;
+  }
+
+  /* Legend = the footnote label convention (`ui-phone-field__label`).
+     `float: left` is the standard un-specialing hack: a <legend> is
+     otherwise pulled out of the fieldset's flow entirely, so the group's
+     flex `gap` never applied between label and segments (the gap the
+     owner flagged as inconsistent with neighboring fields). Floated, it
+     becomes a normal flex item and the shared tight gap holds. */
+  .ui-date-field__legend {
+    float: left;
+    inline-size: 100%;
+    padding: 0;
+    font: var(--sys-font-footnote);
+    color: var(--sys-color-foreground);
+  }
+
+  .ui-date-field__segments {
+    display: inline-flex;
+    gap: var(--sys-space-compact);
+  }
+
+  /* Slots mirror ui-otp-field's visual language — same mono grammar, same
+     shared focus-glow recipe — and ride the 36/44/52 control ladder via
+     data-control-size so they match neighboring fields' tier. */
+  .ui-date-field {
+    --date-field-size: var(--control-size-regular);
+  }
+
+  .ui-date-field[data-control-size='small'] {
+    --date-field-size: var(--control-size-small);
+  }
+
+  .ui-date-field[data-control-size='large'] {
+    --date-field-size: var(--control-size-large);
+  }
+
+  /* First-class enabled inputs — the SAME surface/border tokens as the
+     sibling text fields (research ruling: gray `surface-secondary` fill is
+     the disabled encoding; mono+gray+boxed is the OTP costume). Width and
+     center alignment are the only differences from a normal field. */
+  .ui-date-field__slot {
+    box-sizing: border-box;
+    inline-size: calc(var(--date-field-size) * 1.25);
+    block-size: var(--date-field-size);
+    text-align: center;
+    border: 1px solid var(--sys-color-separator);
+    border-radius: var(--control-radius-regular);
+    background: var(--sys-color-background);
+    color: var(--sys-color-foreground);
+    font: var(--sys-font-body);
+    font-variant-numeric: tabular-nums;
+    transition:
+      border-color var(--sys-motion-duration-regular)
+        var(--sys-motion-ease-standard),
+      box-shadow var(--sys-motion-duration-regular)
+        var(--sys-motion-ease-standard);
+  }
+
+  .ui-date-field__slot--year {
+    inline-size: calc(var(--date-field-size) * 2);
+  }
+
+  .ui-date-field__slot::placeholder {
+    color: var(--sys-color-secondary-label);
+  }
+
+  .ui-date-field__slot[data-state='active'],
+  .ui-date-field__slot:focus-visible {
+    outline: none;
+    border-color: var(--sys-color-accent);
+    box-shadow: 0 0 0 var(--sys-focus-glow-width)
+      color-mix(
+        in srgb,
+        var(--sys-color-accent) var(--sys-focus-glow-alpha),
+        transparent
+      );
+  }
+
+  .ui-date-field[data-invalid] .ui-date-field__slot {
+    border-color: var(--sys-color-destructive);
+  }
+
+  .ui-date-field__slot:disabled {
+    opacity: var(--sys-opacity-disabled);
+  }
+
+  /* Quiet secondary text (owner ruling 2026-07-25): caption-tier hint in
+     secondary ink; errors footnote-SIZED, regular weight — the destructive
+     color alone carries the state, never boldness. */
+  .ui-date-field__hint {
+    margin: 0;
+    font: var(--sys-font-caption);
+    font-weight: 400;
+    letter-spacing: var(--sys-tracking-caption);
+    color: var(--sys-color-secondary-label);
+  }
+  .ui-date-field__error {
+    margin: 0;
+    font: var(--sys-font-footnote);
+    font-weight: 400;
+    color: var(--sys-color-destructive);
+  }
+}

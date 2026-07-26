@@ -18,10 +18,10 @@
      but is CHROMELESS — no material, no fill, no hairline. The projected
      controls carry their own surfaces and float directly over the
      scrolling content; the row lays them out as leading secondaries +
-     trailing primary. The inline gutter mirrors ui-sheet-header's tight
-     chrome padding (owner call 2026-07-23) — bar and header are the
-     sheet's two chrome rails and share one edge rhythm, deliberately
-     tighter than the content gutter — floored by the device safe areas. */
+     trailing primary. The inline gutter IS the sheet's shared content
+     inset (`--ui-sheet-inset`, owner call 2026-07-23) — the bar's controls
+     sit on the same gutter as the sheet body, not the header's tighter
+     chrome rail — floored by the device safe areas. */
   .ui-sheet-action-bar {
     position: absolute;
     /* Bar chrome tier — same semantic rung as ui-sheet-header; any value
@@ -37,8 +37,14 @@
     );
     padding-block: var(--sys-space-compact)
       max(var(--sys-space-compact), env(safe-area-inset-bottom));
-    padding-inline: max(var(--sys-space-tight), env(safe-area-inset-left))
-      max(var(--sys-space-tight), env(safe-area-inset-right));
+    padding-inline: max(
+        var(--ui-sheet-inset, var(--sys-space-comfortable)),
+        env(safe-area-inset-left)
+      )
+      max(
+        var(--ui-sheet-inset, var(--sys-space-comfortable)),
+        env(safe-area-inset-right)
+      );
     opacity: 0;
     /* Reveal: HIG toolbars slide on-axis — the bar rises from below the
        sheet edge; no settle scale (that grammar belongs to the floating
@@ -84,5 +90,20 @@
       [uiprimary]
     ) {
     flex: 0 0 auto;
+  }
+
+  /* Regular-width presentation (the centered desktop dialog): the docked
+     thumb-side geometry loses its meaning without a thumb, so the whole
+     action cluster centers and hugs its content instead of spanning the
+     row (owner call 2026-07-23). */
+  @media (min-width: 761px) {
+    .ui-sheet-action-bar {
+      justify-content: center;
+    }
+    .ui-sheet-action-bar > [data-spread],
+    .ui-sheet-action-bar > [data-button-style='borderedProminent'],
+    .ui-sheet-action-bar > [uiprimary] {
+      margin-inline-start: 0;
+    }
   }
 }

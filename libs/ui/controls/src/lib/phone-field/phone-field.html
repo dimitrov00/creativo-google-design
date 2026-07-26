@@ -1,0 +1,187 @@
+<div class="ui-phone-field__block">
+  @if (label(); as fieldLabel) {
+  <label class="ui-phone-field__label" [attr.for]="inputId">
+    {{ fieldLabel }}
+  </label>
+  }
+
+  <div class="ui-phone-field__frame">
+    <!-- APG combobox trigger: the collapsed picker. Accessible name reads
+         "Country code: България +359"; flag and caret are decoration. -->
+    <button
+      #triggerButton
+      type="button"
+      class="ui-phone-field__trigger"
+      role="combobox"
+      [disabled]="disabled()"
+      [attr.aria-expanded]="pickerOpen()"
+      aria-haspopup="listbox"
+      [attr.aria-controls]="listboxId"
+      [attr.aria-label]="triggerAriaLabel()"
+      data-testid="phone-field-trigger"
+      (click)="togglePicker()"
+      (keydown)="onTriggerKeydown($event)"
+    >
+      @if (triggerFlag(); as flag) {
+      <img
+        class="ui-phone-field__flag"
+        [src]="flag"
+        alt=""
+        aria-hidden="true"
+        loading="lazy"
+        decoding="async"
+      />
+      }
+      <span class="ui-phone-field__dial">{{ triggerDial() }}</span>
+      <ui-icon uiName="field.expand" uiScale="small" />
+    </button>
+
+    <input
+      #telInput
+      class="ui-phone-field__input"
+      type="tel"
+      inputmode="tel"
+      autocomplete="tel"
+      [id]="inputId"
+      [value]="inputText()"
+      [placeholder]="placeholder()"
+      [disabled]="disabled()"
+      [attr.required]="required() ? '' : null"
+      [attr.aria-invalid]="error() ? true : null"
+      [attr.aria-describedby]="describedBy()"
+      data-testid="phone-field-input"
+      (input)="onInput($event)"
+      (blur)="onInputBlur()"
+    />
+
+    <!-- Regular-width presentation: an anchored popover dropdown under the
+         trigger (HIG popover→sheet adaptation — wide/pointer viewports get
+         the anchored panel, compact gets the sheet below). Light-dismiss:
+         Esc (focus returns to the trigger), outside press, Tab-away. -->
+    @if (pickerOpen() && presentation() === 'popover') {
+    <div
+      class="ui-phone-field__popover"
+      data-testid="phone-field-popover"
+      (focusout)="onPopoverFocusOut($event)"
+    >
+      <ng-container [ngTemplateOutlet]="searchBox" />
+      <ng-container [ngTemplateOutlet]="optionsList" />
+    </div>
+    }
+  </div>
+
+  @if (hint(); as hintText) {
+  <p class="ui-phone-field__hint" [id]="hintId">{{ hintText }}</p>
+  } @if (error(); as errorText) {
+  <p class="ui-phone-field__error" [id]="errorId" role="alert">
+    {{ errorText }}
+  </p>
+  }
+</div>
+
+<!-- Compact-width presentation: THE modal sheet — the same ui-modal-sheet
+     the landing's service/barber/location details ride (owner ruling), so
+     grabber, collapsing large title, 44px capsule close chip, thin
+     material and drag-to-dismiss are all the shared shell's. No control
+     autofocus on open (owner ruling): focus lands on the surface, first
+     Tab reaches the search box. -->
+<ui-modal-sheet
+  [sheetId]="sheetId"
+  [labelledBy]="sheetTitleId"
+  [titleAlwaysVisible]="true"
+  [resetScrollOnOpen]="false"
+  [closeLabel]="closeLabel()"
+  [open]="pickerOpen() && presentation() === 'sheet'"
+  [closing]="pickerClosing()"
+  (dismissed)="closePicker(false)"
+  (closeFinished)="onPickerCloseFinished()"
+>
+  <!-- Inline-title utility-picker anatomy: the bar title is always
+       visible (titleAlwaysVisible) with the pinned search beneath it;
+       rows fade out under the chrome via the shell's gradient backdrop.
+       aria-labelledby resolves through the (aria-hidden) bar title. -->
+  <span sheet-title [id]="sheetTitleId">{{ pickerTitle() }}</span>
+  <!-- The search pins with the bar while the list scrolls (SwiftUI
+       `.searchable` grammar via the shell's sheet-accessory slot). The
+       slot attribute sits on an ALWAYS-PRESENT wrapper: content inside an
+       @if block never matches an ng-content selector. -->
+  <div sheet-accessory>
+    @if (pickerEverOpened() && presentation() === 'sheet') {
+    <ng-container [ngTemplateOutlet]="searchBox" />
+    }
+  </div>
+  @if (pickerEverOpened() && presentation() === 'sheet') {
+  <div class="ui-phone-field__picker">
+    <ng-container [ngTemplateOutlet]="optionsList" />
+  </div>
+  }
+</ui-modal-sheet>
+
+<!-- ONE search box + ONE listbox for both presentations (the sheet pins
+     the search in the shell's accessory slot; the popover keeps it
+     inline). GENUINE listbox semantics (intl-tel-input's documented
+     failure mode avoided): options are non-focusable role="option" rows,
+     keyboard focus travels via aria-activedescendant from the search box.
+     Only one presentation renders at a time, so the ids stay unique. -->
+<ng-template #searchBox>
+  <label uiVisuallyHidden [attr.for]="searchId">{{ searchLabel() }}</label>
+  <input
+    uiTextField
+    type="text"
+    autocomplete="off"
+    class="ui-phone-field__search"
+    [id]="searchId"
+    [placeholder]="searchLabel()"
+    [value]="searchQuery()"
+    [attr.aria-controls]="listboxId"
+    [attr.aria-activedescendant]="activeOptionId()"
+    data-testid="phone-field-search"
+    (input)="onSearchInput($event)"
+    (keydown)="onPickerKeydown($event)"
+  />
+</ng-template>
+
+<ng-template #optionsList>
+  <div
+    class="ui-phone-field__options"
+    role="listbox"
+    tabindex="-1"
+    [id]="listboxId"
+    [attr.aria-label]="pickerTitle()"
+    [attr.aria-activedescendant]="activeOptionId()"
+    (keydown)="onPickerKeydown($event)"
+  >
+    <ui-list-group>
+      @for (option of filteredCountries(); track option.code) {
+      <ui-list-row
+        role="option"
+        [id]="optionId(option.code)"
+        [uiInteractive]="true"
+        [uiSelected]="option.code === effectiveCountry()"
+        [attr.aria-selected]="option.code === effectiveCountry()"
+        [attr.data-active]="$index === activeIndex() ? '' : null"
+        [attr.data-testid]="'phone-field-option-' + option.code"
+        (click)="selectCountry(option.code)"
+      >
+        <img
+          uiLeading
+          class="ui-phone-field__option-flag"
+          [src]="flagFor(option.code)"
+          alt=""
+          aria-hidden="true"
+          loading="lazy"
+          decoding="async"
+        />
+        {{ option.name }}
+        <span uiTrailing class="ui-phone-field__option-dial">
+          @if (option.code === effectiveCountry()) {
+          <ui-icon uiName="checklist.done" uiScale="small" />
+          } +{{ option.dialCode }}
+        </span>
+      </ui-list-row>
+      } @empty {
+      <p class="ui-phone-field__empty">{{ noResultsLabel() }}</p>
+      }
+    </ui-list-group>
+  </div>
+</ng-template>

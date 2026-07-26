@@ -1,4 +1,4 @@
-/* cr-modal-sheet — landing shell over the DS sheet primitives.
+/* ui-modal-sheet — the DS modal sheet shell over the sheet primitives (promoted from landing's cr-modal-sheet).
    Scrim, placement, entrance/exit and the modal environment live in
    ui-sheet (+ UiSheetBehavior); grabber, collapsing title and the 44px
    close chip live in ui-sheet-header / uiButton. What remains here is the
@@ -8,7 +8,7 @@
 /* Element selector, not :host — this stylesheet is unscoped
    (ViewEncapsulation.None, see the component note) and bare `:host`
    never matches outside a shadow/emulated context. */
-cr-modal-sheet {
+ui-modal-sheet {
   display: contents;
 }
 
@@ -44,6 +44,66 @@ ui-sheet.modal-sheet:not([data-presented]):not([data-closing]) {
    its token-backed default. */
 .modal-sheet .ui-sheet__surface {
   --ui-sheet-inset: var(--modal-sheet-safe);
+}
+
+/* One sticky chrome group — bar + optional pinned accessory (SwiftUI
+   `.searchable` grammar). The wrapper owns stickiness so accessories need
+   no bar-height math; the inner ui-sheet-header's own sticky is inert
+   inside it (the wrapper is exactly its content height).
+
+   The chrome is SOLID surface through the bar and accessory, and the
+   surface→transparent fade hangs just BELOW the accessory's bottom edge
+   (owner ruling: the fading starts close to the input bottom) — rows
+   dissolve there instead of ghosting behind the pinned controls. The fade
+   IS the separation, so the header's landed fill + hairline are
+   suppressed inside this shell (below). At rest everything sits over the
+   sheet's identical surface and is invisible. */
+.modal-sheet__chrome {
+  position: sticky;
+  inset-block-start: 0;
+  z-index: var(--sys-layer-header);
+  background: var(--sys-color-surface);
+}
+
+.modal-sheet__chrome::after {
+  content: '';
+  position: absolute;
+  inset-block-start: 100%;
+  inset-inline: 0;
+  block-size: var(--sys-space-comfortable);
+  background: linear-gradient(to bottom, var(--sys-color-surface), transparent);
+  pointer-events: none;
+}
+
+/* Inline-title mode (data-title-always from the shell input): the compact
+   bar title shows from the start — same specificity tier as the header's
+   own visible states. */
+.modal-sheet__toolbar[data-title-always] > [uititle] {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* The gradient replaces the header's landed bar chrome inside this shell —
+   no hairline, no separate fill (they'd double up against the fade). */
+.modal-sheet__toolbar[data-collapsed],
+.modal-sheet__toolbar:has(> [uititle][data-visible]) {
+  background-color: transparent;
+  border-block-end-color: transparent;
+}
+
+/* The pinned accessory floats TRANSPARENT over the scrolling content
+   (owner ruling: no solid slab under the bar) — the projected control
+   carries its own glass material and masks only its own pill. Breathing
+   room from the bar via the top padding. */
+.modal-sheet__accessory {
+  background: transparent;
+  padding-block-start: var(--sys-space-compact);
+  padding-block-end: var(--sys-space-compact);
+  padding-inline: var(--ui-sheet-inset);
+}
+
+.modal-sheet__accessory:empty {
+  display: none;
 }
 
 /* Drag-follow: UiSheetBehavior writes the drag offset onto the surface as
@@ -87,6 +147,15 @@ ui-sheet.modal-sheet:not([data-presented]):not([data-closing]) {
    view-timeline (scoped by the DS's own `.ui-sheet__surface:has(...)`
    rule) and feeds ui-sheet-header's sentinel observation. The legacy
    `--modal-sheet-headline` re-point died with its last consumer. */
+
+/* Regular widths present the DS bottom sheet as a centered dialog (full
+   rounding) — the full-bleed scroller must clip inside the bottom corners
+   too, not just the top pair. */
+@media (min-width: 761px) {
+  .modal-sheet__scroll {
+    border-radius: var(--control-radius-prominent);
+  }
+}
 
 @media (max-width: 760px) {
   .modal-sheet {

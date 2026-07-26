@@ -35,12 +35,46 @@
     --ui-sheet-inset: var(--sys-space-comfortable);
     padding: var(--sys-space-comfortable) var(--ui-sheet-inset);
     transform: translateY(100%);
-    transition: transform var(--sys-motion-duration-deliberate)
-      var(--sys-motion-ease-emphasized);
+    transition:
+      transform var(--sys-motion-duration-deliberate)
+        var(--sys-motion-ease-emphasized),
+      opacity var(--sys-motion-duration-regular) var(--sys-motion-ease-standard);
+  }
+
+  /* The surface takes initial focus itself (tabindex="-1") so the modal
+     environment activates without visibly ringing a control; a container
+     focused programmatically never shows the focus affordance. */
+  .ui-sheet__surface:focus,
+  .ui-sheet__surface:focus-visible {
+    outline: none;
   }
 
   .ui-sheet[data-presented] .ui-sheet__surface {
     transform: translateY(0);
+  }
+
+  /* Adaptive placement — ≙ SwiftUI `.sheet`: the bottom card is a
+     compact-width presentation; on regular widths the same sheet presents
+     as a centered dialog (scale/fade entrance, full rounding). Matches the
+     behavior's drag gate (drag-to-dismiss is compact-only, same 760px
+     boundary). */
+  @media (min-width: 761px) {
+    .ui-sheet[data-placement='bottom'] {
+      align-items: center;
+      justify-content: center;
+    }
+    .ui-sheet[data-placement='bottom'] .ui-sheet__surface {
+      /* Sanctioned internal contract: auto margins center the dialog
+         surface in the scrim — placement geometry owned by this primitive. */
+      margin: auto;
+      border-radius: var(--control-radius-prominent);
+      transform: scale(0.95);
+      opacity: 0;
+    }
+    .ui-sheet[data-placement='bottom'][data-presented] .ui-sheet__surface {
+      transform: scale(1);
+      opacity: 1;
+    }
   }
 
   /* Placement: center */

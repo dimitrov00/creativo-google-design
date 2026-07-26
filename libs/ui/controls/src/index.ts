@@ -10,6 +10,9 @@ export * from './lib/avatar/avatar';
 export * from './lib/progress-view/progress-view';
 export * from './lib/skeleton/skeleton';
 export * from './lib/otp-field/otp-field';
+export * from './lib/modal-sheet/modal-sheet';
+export * from './lib/phone-field/phone-field';
+export * from './lib/date-field/date-field';
 
 // UiStack/UiSheet live in @creativo/ui/layout and UiCard in @creativo/ui/patterns
 // (blueprint §1.1's true home for layout/pattern primitives) — re-exported here

@@ -1,0 +1,53 @@
+@layer sys-components {
+  /* Segmented grouped list — the wrapper is CHROMELESS (no fill, no
+     elevation, no border): a vertical run separated by a half-unit seam.
+     Rows own the surface; the seam is the separator, never a divider. */
+  .ui-list-group {
+    display: flex;
+    flex-direction: column;
+    gap: calc(var(--sys-space-unit) / 2);
+  }
+
+  /* Semantic-list form (ul[uiListGroup] > li[uiListRow]) — strip UA list
+     chrome; the recipe is identical. */
+  ul.ui-list-group {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  /* Each direct row is a segment: container-on-surface fill (the role
+     that stays visible where surface == background), subtle inner
+     corners. The radius morph transition serves the press rule below. */
+  .ui-list-group > .ui-list-row {
+    background: var(--sys-color-surface-secondary);
+    border-radius: var(--control-radius-subtle);
+    transition: border-radius var(--sys-motion-duration-regular)
+      var(--sys-motion-ease-standard);
+  }
+
+  /* Outer corners of the group ride the prominent rung — the card tier —
+     so the group reads as a card exploded into segments. */
+  .ui-list-group > .ui-list-row:first-child {
+    border-start-start-radius: var(--control-radius-prominent);
+    border-start-end-radius: var(--control-radius-prominent);
+  }
+  .ui-list-group > .ui-list-row:last-child {
+    border-end-start-radius: var(--control-radius-prominent);
+    border-end-end-radius: var(--control-radius-prominent);
+  }
+
+  /* Shape morph (M3 expressive): a pressed segment rounds to the full
+     prominent radius. The shared state layer and press scale compose from
+     the [data-interactive] grammar — its overlay inherits border-radius,
+     so the morph clips hover/press ink automatically. */
+  .ui-list-group > .ui-list-row[data-interactive]:active {
+    border-radius: var(--control-radius-prominent);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .ui-list-group > .ui-list-row {
+      transition: none;
+    }
+  }
+}

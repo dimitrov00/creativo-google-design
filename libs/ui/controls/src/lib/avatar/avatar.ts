@@ -56,7 +56,14 @@ export class UiAvatar {
   readonly uiName = input('');
   readonly uiControlSize = input<UiAvatarSize>('regular');
 
-  protected readonly initial = computed(() =>
-    (this.uiName() || '?').slice(0, 1).toUpperCase(),
-  );
+  /** Apple-monogram initials: first letters of the first two words ("Ана Чек" → "АЧ"), single letter for one word, '?' when nameless. */
+  protected readonly initial = computed(() => {
+    const words = this.uiName().trim().split(/\s+/).filter(Boolean);
+    if (words.length === 0) return '?';
+    return words
+      .slice(0, 2)
+      .map((word) => word.charAt(0))
+      .join('')
+      .toUpperCase();
+  });
 }

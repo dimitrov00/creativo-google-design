@@ -57,9 +57,12 @@
      — selectors use the DOM form. Compact title: hidden until the body
      large title collapses under the bar (data-collapsed from the
      component's sentinel observation, scroll-linked animation below, or
-     the owner's [data-visible] flip). Typography belongs to the consumer's
-     title element. */
+     the owner's [data-visible] flip). The BAR owns the collapsed-title
+     typography — HIG navigation-bar title (17pt semibold = the headline
+     role), exactly like UINavigationBar; consumers project bare text. */
   .ui-sheet-header > [uititle] {
+    font: var(--sys-font-headline);
+    color: var(--sys-color-foreground);
     grid-column: 2;
     /* UA-margin reset only (the slot accepts any heading element) — the
        grid + its padding own all spacing here. */

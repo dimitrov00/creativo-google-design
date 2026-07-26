@@ -33,12 +33,12 @@
   }
 
   .ui-chip:focus-visible {
-    outline: 2px solid var(--sys-color-ring);
-    outline-offset: 2px;
+    outline: var(--sys-focus-ring-width) solid var(--sys-color-ring);
+    outline-offset: var(--sys-focus-ring-offset);
   }
 
   .ui-chip:disabled {
-    opacity: 0.4;
+    opacity: var(--sys-opacity-disabled);
     pointer-events: none;
   }
 }

@@ -11,9 +11,10 @@
     color: var(--sys-color-foreground);
   }
 
+  /* De-emphasis through the foreground role alone (list-row precedent:
+     "never opacity") — the stacked 0.5 dim is gone. */
   .ui-date-badge[data-state='outside'] {
     color: var(--sys-color-secondary-label);
-    opacity: 0.5;
   }
 
   .ui-date-badge[data-state='today'] {

@@ -43,27 +43,43 @@
     resize: vertical;
   }
 
-  .ui-text-field:hover:not(:disabled):not(:focus-visible):not([data-invalid]) {
-    border-color: var(--sys-color-foreground);
+  /* Pointer-hover devices only — a pre-focus "this is clickable" cue with
+     no touch equivalent (tapping focuses the field almost immediately,
+     so an ungated rule would only flash before the focus ring replaces
+     it; gating resets the field to its plain border on tap instead). */
+  @media (hover: hover) {
+    .ui-text-field:hover:not(:disabled):not(:focus-visible):not(
+        [data-invalid]
+      ) {
+      border-color: var(--sys-color-foreground);
+    }
   }
 
   .ui-text-field:focus-visible {
     outline: none;
     border-color: var(--sys-color-accent);
-    box-shadow: 0 0 0 3px
-      color-mix(in srgb, var(--sys-color-accent) 25%, transparent);
+    box-shadow: 0 0 0 var(--sys-focus-glow-width)
+      color-mix(
+        in srgb,
+        var(--sys-color-accent) var(--sys-focus-glow-alpha),
+        transparent
+      );
   }
 
   .ui-text-field[data-invalid] {
     border-color: var(--sys-color-destructive);
   }
   .ui-text-field[data-invalid]:focus-visible {
-    box-shadow: 0 0 0 3px
-      color-mix(in srgb, var(--sys-color-destructive) 25%, transparent);
+    box-shadow: 0 0 0 var(--sys-focus-glow-width)
+      color-mix(
+        in srgb,
+        var(--sys-color-destructive) var(--sys-focus-glow-alpha),
+        transparent
+      );
   }
 
   .ui-text-field:disabled {
-    opacity: 0.4;
+    opacity: var(--sys-opacity-disabled);
     cursor: not-allowed;
   }
 

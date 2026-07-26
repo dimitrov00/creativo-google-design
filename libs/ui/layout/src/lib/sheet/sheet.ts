@@ -21,7 +21,7 @@ export type UiSheetPresentationSizing = 'automatic' | 'page';
  */
 @Component({
   selector: 'ui-sheet',
-  template: `<div class="ui-sheet__surface"><ng-content /></div>`,
+  template: `<div class="ui-sheet__surface" tabindex="-1"><ng-content /></div>`,
   styleUrl: './sheet.css',
   changeDetection: ChangeDetectionStrategy.OnPush,
   // Unscoped: bare `.ui-*`/`[data-*]` selectors never match a component's
@@ -63,12 +63,11 @@ export class UiSheet {
       open: this.uiIsPresented,
       closing: this.uiClosing,
       dialogSelector: '.ui-sheet__surface',
-      // Standard dialog a11y: move focus to the first focusable control so
-      // keyboard users land inside the sheet (and Escape reaches it).
-      initialFocusSelector:
-        'a[href], button:not([disabled]), input:not([disabled]), ' +
-        'select:not([disabled]), textarea:not([disabled]), ' +
-        '[tabindex]:not([tabindex="-1"])',
+      // Focus lands on the surface itself (tabindex="-1"), not the first
+      // control — keyboard users are inside the dialog (Escape and the Tab
+      // trap work) without a visible ring on the close button at every
+      // open (owner call 2026-07-23: no control autofocus).
+      initialFocusSelector: '.ui-sheet__surface',
     });
   }
 }

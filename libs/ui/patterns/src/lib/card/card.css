@@ -15,27 +15,9 @@
     text-decoration: none;
   }
 
-  .ui-card[data-padding='none'] {
-    padding: var(--sys-space-none);
-  }
-  .ui-card[data-padding='tight'] {
-    padding: var(--sys-space-tight);
-  }
-  .ui-card[data-padding='compact'] {
-    padding: var(--sys-space-compact);
-  }
-  .ui-card[data-padding='regular'] {
-    padding: var(--sys-space-regular);
-  }
-  .ui-card[data-padding='comfortable'] {
-    padding: var(--sys-space-comfortable);
-  }
-  .ui-card[data-padding='loose'] {
-    padding: var(--sys-space-loose);
-  }
-  .ui-card[data-padding='spacious'] {
-    padding: var(--sys-space-spacious);
-  }
+  /* Padding rides the shared [data-padding] ladder (modifiers.css) — the
+     card stamps the attribute from its own uiPadding input and the one
+     modifier grammar pads it; no per-component restatement. */
 
   .ui-card[data-tone='accent'] {
     background: color-mix(
@@ -73,5 +55,11 @@
     .ui-card[data-interactive]:hover {
       box-shadow: var(--sys-elevation-overlay);
     }
+  }
+  /* Same lift on :active, ungated — touch devices never hover, so a tap
+     must show the raise itself, not just the shared press-scale/state-
+     layer from modifiers.css. */
+  .ui-card[data-interactive]:active {
+    box-shadow: var(--sys-elevation-overlay);
   }
 }

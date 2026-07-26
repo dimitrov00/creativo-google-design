@@ -3,6 +3,13 @@
     position: relative;
     display: block;
     overflow: hidden;
+    /* Round like the sibling [data-overlay] layers: inherit the host
+       surface's radius AND corner-shape. The GPU-composited video ignores
+       the parent's squircle overflow clip (it clips circular), so without
+       its own matching rounding the film's corners peek past the
+       squircle-shaped scrim layers — the "two radii" artifact. */
+    border-radius: inherit;
+    corner-shape: inherit;
   }
 
   /* Poster and film both cover-fill the host; consumers size the host
@@ -14,6 +21,10 @@
     inline-size: 100%;
     block-size: 100%;
     object-fit: cover;
+    /* Same reason as the host: composited media clips its OWN rounding
+       reliably; the ancestor overflow clip alone does not. */
+    border-radius: inherit;
+    corner-shape: inherit;
   }
 
   /* The film fades in over the poster once its first frame is decodable —

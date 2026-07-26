@@ -6,10 +6,17 @@ import {
 } from '@angular/core';
 import type { UiControlSize } from '../button/button';
 
-/** ≙ SwiftUI `ProgressView()` (indeterminate) — pure CSS spinner ring, no content. */
+/**
+ * ≙ SwiftUI `ProgressView()` / `ProgressView(value:)` — the indeterminate
+ * spinner ring by default; binding `uiValue` (0…1) switches to the linear
+ * determinate bar, exactly like SwiftUI's value-initialized form. The bar
+ * fills its container's inline size — consumers own placement/measure.
+ */
 @Component({
   selector: 'ui-progress-view',
-  template: '',
+  template: `@if (uiValue() !== undefined) {
+    <div class="ui-progress-view__fill"></div>
+  }`,
   styleUrl: './progress-view.css',
   changeDetection: ChangeDetectionStrategy.OnPush,
   // Unscoped: bare `.ui-*`/`[data-*]` selectors never match a component's
@@ -19,10 +26,17 @@ import type { UiControlSize } from '../button/button';
   host: {
     class: 'ui-progress-view',
     '[attr.data-control-size]': 'uiControlSize()',
-    role: 'status',
-    '[attr.aria-label]': '"Loading"',
+    '[attr.data-determinate]': "uiValue() !== undefined ? '' : null",
+    '[style.--ui-progress-value]': 'uiValue() ?? null',
+    '[attr.role]': "uiValue() !== undefined ? 'progressbar' : 'status'",
+    '[attr.aria-label]': "uiValue() !== undefined ? null : 'Loading'",
+    '[attr.aria-valuemin]': 'uiValue() !== undefined ? 0 : null',
+    '[attr.aria-valuemax]': 'uiValue() !== undefined ? 1 : null',
+    '[attr.aria-valuenow]': 'uiValue() ?? null',
   },
 })
 export class UiProgressView {
   readonly uiControlSize = input<UiControlSize>('regular');
+  /** 0…1 — bound value flips the spinner into the determinate bar. */
+  readonly uiValue = input<number | undefined>(undefined);
 }

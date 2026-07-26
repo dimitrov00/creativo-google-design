@@ -118,11 +118,15 @@ export class UiRevealDirective {
         duration,
         delay: this.uiRevealDelay(),
         easing,
-        fill: 'both',
+        // `backwards`, not `both`: the first keyframe must hold through the
+        // delay (so the CSS start state can hand off immediately), but the
+        // final keyframe must NOT persist — a forward-filled identity
+        // `transform` creates a permanent stacking context on every revealed
+        // block, trapping any nested `position: fixed` overlay (e.g. a
+        // ui-sheet inside a revealed field group) beneath later siblings.
+        fill: 'backwards',
       },
     );
-    // `fill: 'both'` holds the first keyframe through the delay, so the CSS
-    // start state can hand off immediately.
     element.removeAttribute('data-reveal-state');
   }
 }

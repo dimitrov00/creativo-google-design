@@ -10,6 +10,12 @@
     letter-spacing: var(--sys-tracking-caption);
   }
 
+  /* Large — the chunky display capsule (service-sheet variant/bundle
+     lists): tap-target-scale padding on the same caption type. */
+  .ui-badge[data-size='large'] {
+    padding: var(--sys-space-regular);
+  }
+
   .ui-badge[data-tone='neutral'] {
     background: var(--sys-color-surface-secondary);
     color: var(--sys-color-foreground);

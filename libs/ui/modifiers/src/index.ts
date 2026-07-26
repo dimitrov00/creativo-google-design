@@ -1,6 +1,7 @@
 export * from './lib/disabled.directive';
 export * from './lib/font.directive';
 export * from './lib/interactive.directive';
+export * from './lib/link.directive';
 export * from './lib/material.directive';
 export * from './lib/overlay.directive';
 export * from './lib/reveal.directive';

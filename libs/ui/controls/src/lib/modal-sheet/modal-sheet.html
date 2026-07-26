@@ -16,6 +16,8 @@
   [attr.aria-labelledby]="labelledBy()"
   [attr.aria-hidden]="open() || closing() ? null : 'true'"
   (uiOnDismiss)="dismissed.emit()"
+  (transitionend)="onExitTransitionEnd($event)"
+  (transitioncancel)="onExitTransitionEnd($event)"
 >
   <div
     #scroller
@@ -27,34 +29,45 @@
          gates the gesture to its drag media and ignores presses on the
          close control). The `modal-sheet__toolbar` class is the legacy
          query hook remaining consumers still measure against. -->
-    <ui-sheet-header
-      class="modal-sheet__toolbar"
-      (pointerdown)="sheetBehavior.onDragStart($event)"
-      (pointermove)="sheetBehavior.onDragMove($event)"
-      (pointerup)="sheetBehavior.onDragEnd($event)"
-      (pointercancel)="sheetBehavior.onDragEnd($event)"
-    >
-      <!-- Compact-title reveal is ui-sheet-header's own behavior now:
-           consumers label their in-content large title `uiSheetLargeTitle`
-           and the header collapses when it scrolls under the bar (no
-           per-consumer scroll math, no [titleVisible] plumbing). -->
-      <div uiTitle aria-hidden="true">
-        <ng-content select="[sheet-title]" />
-      </div>
-      <button
-        uiTrailing
-        type="button"
-        uiButton
-        uiButtonStyle="bordered"
-        uiButtonBorderShape="capsule"
-        uiControlSize="regular"
-        [uiIconOnly]="true"
-        [attr.aria-label]="closeLabel()"
-        (click)="sheetBehavior.requestDismiss()"
+    <!-- ONE sticky chrome group: header bar + optional pinned accessory
+         (≙ SwiftUI `.searchable` under a navigation bar — the country
+         picker pins its search field here). Sticking the WRAPPER keeps the
+         pair together with zero bar-height math in consumers. -->
+    <div class="modal-sheet__chrome">
+      <ui-sheet-header
+        class="modal-sheet__toolbar"
+        [attr.data-title-always]="titleAlwaysVisible() ? '' : null"
+        (pointerdown)="sheetBehavior.onDragStart($event)"
+        (pointermove)="sheetBehavior.onDragMove($event)"
+        (pointerup)="sheetBehavior.onDragEnd($event)"
+        (pointercancel)="sheetBehavior.onDragEnd($event)"
       >
-        <ui-icon uiName="sheet.close" />
-      </button>
-    </ui-sheet-header>
+        <!-- Compact-title reveal is ui-sheet-header's own behavior now:
+             consumers label their in-content large title `uiSheetLargeTitle`
+             and the header collapses when it scrolls under the bar (no
+             per-consumer scroll math, no [titleVisible] plumbing). -->
+        <div uiTitle aria-hidden="true">
+          <ng-content select="[sheet-title]" />
+        </div>
+        <button
+          uiTrailing
+          type="button"
+          uiButton
+          uiButtonStyle="bordered"
+          uiTint="neutral"
+          uiButtonBorderShape="capsule"
+          uiControlSize="regular"
+          [uiIconOnly]="true"
+          [attr.aria-label]="closeLabel()"
+          (click)="sheetBehavior.requestDismiss()"
+        >
+          <ui-icon uiName="sheet.close" />
+        </button>
+      </ui-sheet-header>
+      <div class="modal-sheet__accessory">
+        <ng-content select="[sheet-accessory]" />
+      </div>
+    </div>
 
     <ng-content />
   </div>

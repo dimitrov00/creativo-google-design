@@ -7,6 +7,10 @@ import {
 
 export type UiBadgeTone =
   'neutral' | 'accent' | 'success' | 'warning' | 'destructive';
+/** House size axis (list-row precedent): `regular` is the caption-tight
+ *  status token; `large` is the chunky display capsule (sheet variant /
+ *  bundle lists). */
+export type UiBadgeSize = 'regular' | 'large';
 
 /** Native `<span>` element — a static status token, non-interactive. */
 @Component({
@@ -21,8 +25,10 @@ export type UiBadgeTone =
   host: {
     class: 'ui-badge',
     '[attr.data-tone]': 'uiTone()',
+    '[attr.data-size]': 'uiSize()',
   },
 })
 export class UiBadge {
   readonly uiTone = input<UiBadgeTone>('neutral');
+  readonly uiSize = input<UiBadgeSize>('regular');
 }

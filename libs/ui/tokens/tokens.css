@@ -92,6 +92,13 @@
     );
     --control-radius-capsule: 9999px;
 
+    /* Spread (sheet-CTA) row insets — the chunky pill's asymmetric leading/
+       trailing gutters, promoted from button.css's raw 1.2rem/1.05rem
+       (deliberate off-scale geometry: the trailing glyph reads optically
+       heavier, so its gutter is a step tighter). */
+    --control-spread-inset-start: 1.2rem;
+    --control-spread-inset-end: 1.05rem;
+
     /* ── Containment (v2 parity) ── */
     --sys-container-content: 40rem; /* v2 --app-max-width */
     --sys-container-console: 48rem;
@@ -121,6 +128,17 @@
        0.4 the controls' :disabled rules already use, promoted to a token
        so uiDisabled and future controls share a single value). */
     --sys-opacity-disabled: 0.4;
+    /* Loading dim — quieter than disabled (the control is busy, not inert);
+       promoted from button.css's raw 0.65. */
+    --sys-opacity-loading: 0.65;
+
+    /* ── Focus affordances — ONE ring recipe (buttons, chips, uiInteractive
+       surfaces) and ONE field-glow recipe (text-field, otp-field), promoted
+       from the literals the control sheets had each hand-copied. ── */
+    --sys-focus-ring-width: 2px;
+    --sys-focus-ring-offset: 2px;
+    --sys-focus-glow-width: 3px;
+    --sys-focus-glow-alpha: 25%;
 
     /* ── Materials (SwiftUI parity: .ultraThinMaterial / .regularMaterial /
        .thickMaterial) — one glass grammar. Blur tiers consolidate the

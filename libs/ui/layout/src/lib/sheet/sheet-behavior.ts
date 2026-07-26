@@ -36,6 +36,13 @@ export interface UiSheetBehaviorOptions {
   readonly initialFocusSelector?: string;
   /** Document-level background chrome made `inert` while the sheet is up. */
   readonly inertSelectors?: readonly string[];
+  /**
+   * Chrome that stays LIVE inside an inert target — e.g. a header whose
+   * trigger doubles as the sheet's ✕ close. Exempt subtrees are never
+   * inerted; targets containing them are frozen child-by-child around
+   * them (same walk as around the sheet itself).
+   */
+  readonly inertExemptSelectors?: readonly string[];
   /** Name of the CSS custom property carrying the drag offset (px). */
   readonly dragVar?: string;
   /** Media query gating drag-to-dismiss (default: the mobile bottom
@@ -267,11 +274,37 @@ export class UiSheetBehavior {
       this.document.body.style.paddingRight = `${scrollbarWidth}px`;
     }
     this.document.body.style.overflow = 'hidden';
-    this.inertedElements = (options.inertSelectors ?? [])
-      .map((selector) => this.document.querySelector<HTMLElement>(selector))
-      .filter((element): element is HTMLElement => element !== null);
-    for (const element of this.inertedElements) {
-      element.setAttribute('inert', '');
+    // Inert each target — but NEVER a subtree that contains the sheet
+    // itself (a sheet rendered INSIDE the targeted shell would otherwise
+    // freeze its own controls — the landing menu's exact failure mode) or
+    // an exempt subtree (chrome that must stay live, e.g. the header
+    // whose trigger doubles as the sheet's ✕). Around either, the walk
+    // descends and freezes the other children instead — the standard
+    // modal-inert algorithm.
+    const host = this.elementRef.nativeElement;
+    const exempt = (options.inertExemptSelectors ?? []).flatMap((selector) =>
+      Array.from(this.document.querySelectorAll<HTMLElement>(selector)),
+    );
+    this.inertedElements = [];
+    const applyInert = (element: HTMLElement): void => {
+      const isOrInsideExempt = exempt.some(
+        (live) => live === element || live.contains(element),
+      );
+      if (isOrInsideExempt) return;
+      const containsLiveBranch =
+        element.contains(host) || exempt.some((live) => element.contains(live));
+      if (!containsLiveBranch) {
+        element.setAttribute('inert', '');
+        this.inertedElements.push(element);
+        return;
+      }
+      for (const child of Array.from(element.children)) {
+        if (child instanceof HTMLElement) applyInert(child);
+      }
+    };
+    for (const selector of options.inertSelectors ?? []) {
+      const element = this.document.querySelector<HTMLElement>(selector);
+      if (element) applyInert(element);
     }
   }
 

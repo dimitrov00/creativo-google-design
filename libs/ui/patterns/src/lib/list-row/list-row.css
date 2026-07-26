@@ -43,6 +43,21 @@
     color: var(--sys-color-on-primary);
   }
 
+  /* Selected (SwiftUI List selection) — the segment-selected rung of the
+     alpha ladder over accent; trailing detail lifts back to foreground so
+     the emphasized row doesn't carry de-emphasized metadata. */
+  .ui-list-row[data-selected] {
+    background: color-mix(
+      in srgb,
+      var(--sys-color-accent) var(--sys-alpha-segment-selected),
+      transparent
+    );
+    border-radius: var(--control-radius-regular);
+  }
+  .ui-list-row[data-selected] > [uitrailing] {
+    color: var(--sys-color-foreground);
+  }
+
   /* Native-element forms (a/button rows) — strip the UA chrome; row
      typography comes from the host rule above, interaction feedback from
      the shared [data-interactive] grammar (libs/ui/modifiers). */

@@ -67,7 +67,10 @@ describe('UiRevealDirective', () => {
     // falls back to the values mirroring the token ladder.
     expect(options.duration).toBe(650);
     expect(options.delay).toBe(120);
-    expect(options.fill).toBe('both');
+    // `backwards`, never `both`: a forward-filled identity transform would
+    // leave a permanent stacking context on every revealed block (traps
+    // nested fixed overlays like ui-sheet beneath later siblings).
+    expect(options.fill).toBe('backwards');
     expect(element().hasAttribute('data-reveal-state')).toBe(false);
   });
 

@@ -1,0 +1,39 @@
+<fieldset class="ui-date-field__group" [disabled]="disabled()">
+  @if (label(); as groupLabel) {
+  <legend class="ui-date-field__legend">{{ groupLabel }}</legend>
+  }
+
+  <div class="ui-date-field__segments">
+    @for (segment of uiOrder(); track segment) {
+    <input
+      class="ui-date-field__slot"
+      [class.ui-date-field__slot--year]="segment === 'year'"
+      type="text"
+      inputmode="numeric"
+      pattern="[0-9]*"
+      [disabled]="disabled()"
+      [attr.autocomplete]="autocompleteFor(segment)"
+      [attr.data-segment]="segment"
+      [attr.data-state]="stateFor(segment)"
+      [attr.aria-label]="labelFor(segment)"
+      [attr.aria-invalid]="error() ? true : null"
+      [attr.aria-describedby]="describedBy()"
+      [placeholder]="placeholderFor(segment)"
+      [value]="textFor(segment)"
+      (input)="onInput($index, $event)"
+      (paste)="onPaste($index, $event)"
+      (keydown)="onKeydown($index, $event)"
+      (focus)="onSegmentFocus(segment)"
+      (blur)="onSegmentBlur(segment, $event)"
+    />
+    }
+  </div>
+
+  @if (hint(); as hintText) {
+  <p class="ui-date-field__hint" [id]="hintId">{{ hintText }}</p>
+  } @if (error(); as errorText) {
+  <p class="ui-date-field__error" [id]="errorId" role="alert">
+    {{ errorText }}
+  </p>
+  }
+</fieldset>

@@ -32,12 +32,13 @@ describe('UiAvatar', () => {
     expect(el.getAttribute('data-control-size')).toBe('large');
   });
 
-  it('renders the uppercased first initial when there is no src', () => {
+  it('renders the uppercased two-word monogram when there is no src', () => {
+    // Apple-monogram grammar: first letters of the first two words.
     fixture.detectChanges();
     const fallback: HTMLElement = fixture.nativeElement.querySelector(
       '.ui-avatar__fallback',
     );
-    expect(fallback.textContent?.trim()).toBe('A');
+    expect(fallback.textContent?.trim()).toBe('AL');
   });
 
   it('renders the AsyncImage img when a src is provided', async () => {

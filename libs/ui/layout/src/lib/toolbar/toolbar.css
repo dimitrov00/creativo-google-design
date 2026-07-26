@@ -23,6 +23,15 @@
     border: 0;
   }
 
+  /* Quiet page chrome (owner ruling 2026-07-25): a STICKY hidden-background
+     bar keeps the page's own surface so scrolled content never slides
+     through its controls — no hairline, no material; the bar reads as plain
+     page, not chrome. Over-media overlay bars are never sticky, so the
+     transparent recipe above is untouched for them. */
+  .ui-toolbar[data-toolbar-background='hidden'][data-sticky] {
+    background: var(--sys-color-background);
+  }
+
   .ui-toolbar[data-sticky] {
     position: sticky;
     inset-block-start: 0;

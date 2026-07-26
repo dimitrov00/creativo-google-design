@@ -19,6 +19,29 @@
     block-size: 2.5rem;
   }
 
+  /* Determinate (ProgressView(value:)) — the linear bar: capsule track on
+     the separator ink, accent fill scaled by the bound value. Fills the
+     container's inline size; the 3px rail is the bar's own signature
+     thickness (no space-scale rung at hairline scale). */
+  .ui-progress-view[data-determinate] {
+    display: block;
+    inline-size: 100%;
+    block-size: 3px;
+    border: 0;
+    border-radius: var(--control-radius-capsule);
+    background: var(--sys-color-separator);
+    overflow: hidden;
+    animation: none;
+  }
+
+  .ui-progress-view__fill {
+    block-size: 100%;
+    border-radius: inherit;
+    background: var(--sys-color-accent);
+    transform: scaleX(var(--ui-progress-value, 0));
+    transform-origin: 0 50%;
+  }
+
   @keyframes ui-progress-view-spin {
     to {
       transform: rotate(360deg);

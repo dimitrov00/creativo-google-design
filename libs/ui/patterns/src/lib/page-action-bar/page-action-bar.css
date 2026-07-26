@@ -1,0 +1,42 @@
+@layer sys-components {
+  /* Sticky at the page's bottom edge — inside a min-height column the bar
+     pins to the viewport floor on short pages and rides the scroll on tall
+     ones. CHROMELESS (owner ruling 2026-07-25, mirroring
+     ui-sheet-action-bar): no material, no fill, no hairline — the projected
+     controls carry their own surfaces (prominent fill, bordered ring) and
+     float directly over the page. */
+  .ui-page-action-bar {
+    position: sticky;
+    inset-block-end: 0;
+    z-index: var(--sys-layer-header);
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: var(--sys-space-compact);
+    padding-block: var(--sys-space-compact)
+      max(var(--sys-space-compact), env(safe-area-inset-bottom));
+    padding-inline: max(var(--sys-space-regular), env(safe-area-inset-left))
+      max(var(--sys-space-regular), env(safe-area-inset-right));
+  }
+
+  /* Slot contract — shared with ui-sheet-action-bar: the PRIMARY child
+     (spread geometry, prominent variant, or explicit `uiPrimary` marker —
+     DOM lowercases slot attributes) docks trailing via the bar's own
+     Spacer; secondaries cluster leading at their intrinsic box. The primary
+     HUGS its label at EVERY viewport (SwiftUI bottom-bar trailing
+     placement; owner ruling 2026-07-25 — no full-width spread anywhere). */
+  .ui-page-action-bar > [data-spread],
+  .ui-page-action-bar > [data-button-style='borderedProminent'],
+  .ui-page-action-bar > [uiprimary] {
+    margin-inline-start: auto;
+  }
+
+  .ui-page-action-bar
+    > :not(
+      [data-spread],
+      [data-button-style='borderedProminent'],
+      [uiprimary]
+    ) {
+    flex: 0 0 auto;
+  }
+}

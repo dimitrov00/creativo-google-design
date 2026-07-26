@@ -28,6 +28,9 @@
   ],
   "references": [
     {
+      "path": "../../domain/kernel/tsconfig.lib.json"
+    },
+    {
       "path": "../modifiers/tsconfig.lib.json"
     },
     {

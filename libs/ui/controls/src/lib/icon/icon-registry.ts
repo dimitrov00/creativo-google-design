@@ -31,8 +31,22 @@ export const UI_ICON_REGISTRY = {
   /* ── Account ────────────────────────────────────────────────────── */
   'account.reservations': 'event_available',
   'account.rewards': 'redeem',
+  /** Profile-completion checklist: item done / still pending. */
+  'checklist.done': 'check',
+  'checklist.pending': 'radio_button_unchecked',
   /** Guest-locked affordance — login pill, locked menu rows. */
   'auth.locked': 'lock',
+
+  /* ── Auth flow (/auth + /onboarding) ────────────────────────────── */
+  /** Email OTP channel identity glyph (identify screen, code lede). */
+  'auth.email': 'mail',
+  /** Phone OTP channel identity glyph (phone deployments, phone field). */
+  'auth.phone': 'call',
+  /** "Resend code" affordance on the OTP screen. */
+  'auth.resend': 'refresh',
+  /** "Edit" affordance next to the sent-to identifier on the OTP screen. */
+  'auth.editIdentifier': 'edit',
+  'auth.signOut': 'logout',
 
   /* ── Site navigation (menu rows / anchors) ──────────────────────── */
   'nav.work': 'photo_library',
@@ -42,6 +56,8 @@ export const UI_ICON_REGISTRY = {
   'nav.careers': 'work',
   /** In-page "explore / open detail" affordance (team cards). */
   'nav.explore': 'arrow_forward',
+  /** In-flow back affordance (auth code screen → identify). */
+  'nav.back': 'chevron_left',
   /** Marker on links that leave the site (footer external links). */
   'link.external': 'arrow_forward',
   /** Apply-via-Instagram CTA on the hiring section. */
@@ -49,6 +65,15 @@ export const UI_ICON_REGISTRY = {
 
   /* ── Sheets / overlays ──────────────────────────────────────────── */
   'sheet.close': 'close',
+
+  /* ── Composite fields ───────────────────────────────────────────── */
+  /** Disclosure caret on a field-embedded picker trigger (the "▾" on
+   *  ui-phone-field's country trigger). */
+  'field.expand': 'arrow_drop_down',
+
+  /* ── Calendars / paging ─────────────────────────────────────────── */
+  'calendar.previous': 'chevron_left',
+  'calendar.next': 'chevron_right',
 
   /* ── Locations ──────────────────────────────────────────────────── */
   /** Place/address identity glyph on location cards and sheet rows. */

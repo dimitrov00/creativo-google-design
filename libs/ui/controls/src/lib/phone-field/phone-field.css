@@ -1,0 +1,277 @@
+@layer sys-components {
+  .ui-phone-field {
+    /* One tier variable set drives the whole composite so the 36/44/52
+       ladder lands on frame height, font role and inline padding at once
+       (same scheme as .ui-text-field). */
+    --ui-phone-field-size: var(--control-size-regular);
+    --ui-phone-field-pad: var(--sys-space-regular);
+    --ui-phone-field-font: var(--sys-font-body);
+    display: block;
+  }
+
+  .ui-phone-field[data-control-size='small'] {
+    --ui-phone-field-size: var(--control-size-small);
+    --ui-phone-field-pad: var(--sys-space-compact);
+    --ui-phone-field-font: var(--sys-font-footnote);
+  }
+  .ui-phone-field[data-control-size='large'] {
+    --ui-phone-field-size: var(--control-size-large);
+    --ui-phone-field-pad: var(--sys-space-comfortable);
+    --ui-phone-field-font: var(--sys-font-callout);
+  }
+
+  /* The footnote label / caption hint / footnote-regular error convention,
+     baked in (the one composite that owns it — see the design doc §4.4).
+     Quiet secondary text (owner ruling 2026-07-25, per HIG "inform without
+     shouting"): helpers drop to the caption tier in secondary ink at
+     regular weight; errors stay footnote-SIZED but regular weight — the
+     destructive color alone carries the state, never boldness. */
+  .ui-phone-field__block {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sys-space-tight);
+  }
+  .ui-phone-field__label {
+    font: var(--sys-font-footnote);
+    color: var(--sys-color-foreground);
+  }
+  .ui-phone-field__hint,
+  .ui-phone-field__error {
+    margin: 0;
+    font: var(--sys-font-caption);
+    font-weight: 400;
+    letter-spacing: var(--sys-tracking-caption);
+    color: var(--sys-color-secondary-label);
+  }
+  .ui-phone-field__error {
+    font: var(--sys-font-footnote);
+    font-weight: 400;
+    letter-spacing: normal;
+    color: var(--sys-color-destructive);
+  }
+
+  /* ── The single control frame ─────────────────────────────────────
+     Trigger and input live INSIDE one border; the shared field focus-glow
+     recipe rides :focus-within so the composite reads as ONE field. */
+  .ui-phone-field__frame {
+    /* The anchoring box for the regular-width popover panel. */
+    position: relative;
+    display: flex;
+    align-items: stretch;
+    box-sizing: border-box;
+    inline-size: 100%;
+    min-block-size: var(--ui-phone-field-size);
+    border: 1px solid var(--sys-color-separator);
+    border-radius: var(--control-radius-regular);
+    background: var(--sys-color-background);
+    transition:
+      border-color var(--sys-motion-duration-regular)
+        var(--sys-motion-ease-standard),
+      box-shadow var(--sys-motion-duration-regular)
+        var(--sys-motion-ease-standard);
+  }
+
+  /* Pointer-hover only pre-focus cue — same gating rationale as
+     .ui-text-field:hover; the trigger's ungated :active below is the
+     press-parity mirror. */
+  @media (hover: hover) {
+    .ui-phone-field:not([data-invalid], [data-disabled])
+      .ui-phone-field__frame:hover:not(:focus-within) {
+      border-color: var(--sys-color-foreground);
+    }
+  }
+
+  .ui-phone-field__frame:focus-within {
+    border-color: var(--sys-color-accent);
+    box-shadow: 0 0 0 var(--sys-focus-glow-width)
+      color-mix(
+        in srgb,
+        var(--sys-color-accent) var(--sys-focus-glow-alpha),
+        transparent
+      );
+  }
+
+  .ui-phone-field[data-invalid] .ui-phone-field__frame {
+    border-color: var(--sys-color-destructive);
+  }
+  .ui-phone-field[data-invalid] .ui-phone-field__frame:focus-within {
+    box-shadow: 0 0 0 var(--sys-focus-glow-width)
+      color-mix(
+        in srgb,
+        var(--sys-color-destructive) var(--sys-focus-glow-alpha),
+        transparent
+      );
+  }
+
+  .ui-phone-field[data-disabled] .ui-phone-field__frame {
+    opacity: var(--sys-opacity-disabled);
+  }
+
+  /* ── Country trigger ────────────────────────────────────────────── */
+  .ui-phone-field__trigger {
+    appearance: none;
+    display: inline-flex;
+    align-items: center;
+    gap: var(--sys-space-tight);
+    margin: 0;
+    border: none;
+    border-inline-end: 1px solid var(--sys-color-separator);
+    /* Inner corners square, outer corners follow the frame. */
+    border-radius: 0;
+    border-start-start-radius: inherit;
+    border-end-start-radius: inherit;
+    padding-inline: var(--ui-phone-field-pad);
+    background: transparent;
+    color: var(--sys-color-foreground);
+    font: var(--ui-phone-field-font);
+    cursor: pointer;
+    transition: background-color var(--sys-motion-duration-instant)
+      var(--sys-motion-ease-standard);
+  }
+  /* The frame owns the focus affordance (focus-within glow). */
+  .ui-phone-field__trigger:focus {
+    outline: none;
+  }
+  @media (hover: hover) {
+    .ui-phone-field__trigger:hover:not(:disabled) {
+      background-color: var(--sys-state-layer-hover);
+    }
+  }
+  /* Ungated :active mirror — taps see the press on phones. */
+  .ui-phone-field__trigger:active:not(:disabled) {
+    background-color: var(--sys-state-layer-press);
+  }
+  .ui-phone-field__trigger:disabled {
+    cursor: not-allowed;
+  }
+  .ui-phone-field__dial {
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  /* Flag (decorative) — squared SVG rendered as a rounded square (owner
+     ruling: crisp geometry, not emoji glyphs). The faint inset ring keeps
+     mostly-white flags (Japan…) from dissolving into the surface — content
+     affordance, not chrome. */
+  .ui-phone-field__flag,
+  .ui-phone-field__option-flag {
+    inline-size: 1.25em;
+    block-size: 1.25em;
+    object-fit: cover;
+    border-radius: 28%;
+    /* Inset outline, not box-shadow — an inset shadow paints UNDER an
+       img's own pixels and would never show. */
+    outline: 1px solid
+      color-mix(in srgb, var(--sys-color-foreground) 12%, transparent);
+    outline-offset: -1px;
+    flex: none;
+  }
+
+  /* ── Tel input ──────────────────────────────────────────────────── */
+  .ui-phone-field__input {
+    flex: 1;
+    min-inline-size: 0;
+    border: none;
+    background: transparent;
+    padding-inline: var(--ui-phone-field-pad);
+    color: var(--sys-color-foreground);
+    font: var(--ui-phone-field-font);
+  }
+  .ui-phone-field__input:focus {
+    outline: none;
+  }
+  .ui-phone-field__input::placeholder {
+    color: var(--sys-color-secondary-label);
+  }
+  .ui-phone-field__input:disabled {
+    cursor: not-allowed;
+  }
+
+  /* ── Anchored popover (regular widths) ──────────────────────────────
+     The HIG popover→sheet adaptation: wide/pointer viewports get a
+     dropdown panel anchored under the trigger edge of the frame; compact
+     viewports keep the bottom sheet below. Same picker body, listbox
+     scrolls internally. */
+  .ui-phone-field__popover {
+    position: absolute;
+    inset-block-start: calc(100% + var(--sys-space-tight));
+    inset-inline-start: 0;
+    z-index: var(--sys-layer-popover);
+    display: flex;
+    flex-direction: column;
+    gap: var(--sys-space-compact);
+    box-sizing: border-box;
+    inline-size: 100%;
+    max-block-size: min(24rem, 60vh);
+    padding: var(--sys-space-compact);
+    border: 1px solid var(--sys-color-separator);
+    border-radius: var(--control-radius-regular);
+    background: var(--sys-color-surface);
+    box-shadow: var(--sys-elevation-overlay);
+  }
+
+  /* Pinned search as THICK GLASS (owner ruling): inside the modal sheet's
+     transparent accessory the pill carries the DS material recipe itself —
+     rows scrolling beneath blur through it, iOS-search-in-bar style. The
+     border drops (the material edge IS the affordance); focus keeps the
+     shared glow. */
+  .modal-sheet__accessory .ui-phone-field__search {
+    /* Regular-tier glass on the SYSTEM material fill (owner ruling:
+       lighter than thick, white/system background). The field keeps its
+       standard border so the pill reads at rest on the identical surface;
+       rows blur through it while scrolling. */
+    --ui-material-blur: var(--sys-material-regular-blur);
+    background-color: var(--sys-material-fill);
+    -webkit-backdrop-filter: blur(var(--ui-material-blur))
+      saturate(var(--sys-material-saturation));
+    backdrop-filter: blur(var(--ui-material-blur))
+      saturate(var(--sys-material-saturation));
+  }
+
+  /* ── Country picker (ui-modal-sheet body) ───────────────────────────
+     Lives inside the modal sheet's full-bleed scroller — the body pads
+     itself with the shell's fluid gutter (`--modal-sheet-safe`), the
+     in-content large title is the collapsing-header sentinel, and the
+     SHELL's scroller owns scrolling (no nested scroll region). */
+  .ui-phone-field__picker {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sys-space-regular);
+    padding-inline: var(--modal-sheet-safe, var(--sys-space-comfortable));
+    /* Breathing room between the pinned search and the first row (owner
+       ruling) — the chrome's fade band lives in this gap. */
+    padding-block-start: var(--sys-space-regular);
+    padding-block-end: var(--sys-space-comfortable);
+  }
+  /* A selected row keeps its siblings' segment radius (owner ruling): the
+     generic data-selected rule swaps to the regular rung, which reads as a
+     different shape next to the run's subtle-radius rows. */
+  .ui-phone-field__options .ui-list-group > .ui-list-row[data-selected] {
+    border-radius: var(--control-radius-subtle);
+  }
+  .ui-phone-field__options {
+    flex: 1;
+    min-block-size: 0;
+  }
+  /* The desktop POPOVER keeps its own internal scroll (it is not inside
+     the modal shell). */
+  .ui-phone-field__popover .ui-phone-field__options {
+    overflow-y: auto;
+  }
+  /* Keyboard "focus" travels via aria-activedescendant — mark the active
+     option with the shared ring recipe (focus stays in the search box). */
+  .ui-phone-field__options .ui-list-row[data-active] {
+    outline: var(--sys-focus-ring-width) solid var(--sys-color-accent);
+    outline-offset: calc(var(--sys-focus-ring-width) * -1);
+  }
+  .ui-phone-field__option-dial {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--sys-space-tight);
+  }
+  .ui-phone-field__empty {
+    margin: 0;
+    padding: var(--sys-space-regular);
+    font: var(--sys-font-footnote);
+    color: var(--sys-color-secondary-label);
+  }
+}
