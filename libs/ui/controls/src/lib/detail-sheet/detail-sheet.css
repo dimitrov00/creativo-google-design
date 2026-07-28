@@ -1,0 +1,53 @@
+@layer sys-components {
+  .ui-detail-sheet__body {
+    min-inline-size: 0;
+  }
+
+  /* Story blocks own the safe gutters (as padding — `--modal-sheet-safe`
+     is sheet-shell geometry, not a scale token, so uiPadding can't carry
+     it); media between them may run full-bleed and pad itself. Consumers
+     stamp this class on their own gutter-padded projected blocks. */
+  .ui-detail-sheet__story {
+    min-inline-size: 0;
+    padding-inline: var(--modal-sheet-safe);
+  }
+
+  /* Bottom clearance derives from the action-bar contract instead of a
+     hardcoded rem so content always scrolls clear of the docked actions. */
+  .ui-detail-sheet__body {
+    padding-block-end: var(--ui-sheet-action-bar-clearance);
+  }
+
+  .ui-detail-sheet__intro {
+    padding-block-start: var(--sys-space-comfortable);
+  }
+
+  /* Title scroll-collapse: as the largeTitle scrolls under the toolbar it
+     scales down and fades — scroll-driven, zero JS in supporting browsers
+     (ui-sheet-header's rect-based flip stays as the fallback). */
+  .ui-detail-sheet__intro h2 {
+    transform-origin: left top;
+  }
+
+  @supports (animation-timeline: view()) {
+    @media (prefers-reduced-motion: no-preference) {
+      .ui-detail-sheet__intro h2 {
+        animation: ui-detail-sheet-title-collapse linear both;
+        animation-timeline: view();
+        animation-range: exit 0% exit 100%;
+      }
+    }
+  }
+
+  /* Art-directed measure cap on the lede paragraph. */
+  .ui-detail-sheet__summary > p {
+    max-inline-size: 34rem;
+  }
+}
+
+@keyframes ui-detail-sheet-title-collapse {
+  to {
+    opacity: 0;
+    transform: scale(0.62);
+  }
+}

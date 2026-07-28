@@ -144,6 +144,11 @@ export const appRoutes: Route[] = [
       ),
   },
   {
+    path: 'controls/menu',
+    loadComponent: () =>
+      import('./pages/controls/menu/menu.page').then((m) => m.MenuPage),
+  },
+  {
     path: 'controls/section-header',
     loadComponent: () =>
       import('./pages/controls/section-header/section-header.page').then(

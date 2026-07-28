@@ -14,6 +14,13 @@
     color: var(--sys-color-accent);
   }
 
+  /* Status-qualifier eyebrows (uiEyebrowTone="secondary") — quiet
+     secondary ink, never tint: color signals importance, and a status
+     marker ("Optional") is the least important word on its screen. */
+  .ui-section-header[data-eyebrow-tone='secondary'] > [uieyebrow] {
+    color: var(--sys-color-secondary-label);
+  }
+
   .ui-section-header > [uititle] {
     /* Sanctioned internal contract: the eyebrow→title rhythm (10px) is
        this pattern's art-directed typographic geometry — off the space

@@ -8,7 +8,12 @@ import {
 } from '@jsverse/transloco';
 import { Observable, of } from 'rxjs';
 import { ServiceId } from '@creativo/application/catalog';
-import { User, UserId, ZonedDateTime } from '@creativo/application/accounts';
+import {
+  AVATAR_UPLOADER,
+  User,
+  UserId,
+  ZonedDateTime,
+} from '@creativo/application/accounts';
 import {
   AUTH_GATEWAY,
   PrincipalId,
@@ -108,6 +113,7 @@ function accountStateStub(options: {
     claims: signal(PRINCIPAL.kind === 'active' ? PRINCIPAL.roles : null),
     account: signal(options.account),
     accountLoading: signal(options.accountLoading),
+    refresh: () => undefined,
   } as unknown as AccountStateService;
 }
 
@@ -127,12 +133,25 @@ async function configure(
           observePrincipal: () => of(PRINCIPAL),
           refreshToken: () => Promise.resolve(ok(undefined)),
           signOut: () => Promise.resolve(ok(undefined)),
+          // The shared site header (rendered by this page now) reads the
+          // monogram identity off the gateway.
+          currentDisplayName: () => 'Ада Тестова',
+          currentIdentifier: () => null,
         },
       },
       {
         provide: APPOINTMENT_REPOSITORY,
         useValue: {
           observeUpcomingFor: () => of(ok(upcoming)),
+        },
+      },
+      {
+        provide: AVATAR_UPLOADER,
+        useValue: {
+          upload: () =>
+            Promise.resolve(ok({ url: 'http://avatar', path: 'avatars/x' })),
+          // No photo yet — keeps the completion card visible for the specs.
+          find: () => Promise.resolve(ok(null)),
         },
       },
     ],
@@ -180,10 +199,21 @@ describe('ClientAccount', () => {
       host.querySelector('[data-testid="account-upcoming-book-cta"]'),
     ).not.toBeNull();
 
+    // The completion card waits for the avatar existence answer (a
+    // microtask off the stubbed AVATAR_UPLOADER.find) before rendering.
+    await Promise.resolve();
+    fixture.detectChanges();
+
     const birthday = host.querySelector(
       '[data-testid="account-completion-birthday"]',
     );
     expect(birthday?.getAttribute('data-done')).toBe('false');
+    // Photo joins the checklist as an open, deep-linking row.
+    const photo = host.querySelector(
+      '[data-testid="account-completion-photo"]',
+    );
+    expect(photo?.getAttribute('data-done')).toBe('false');
+    expect(photo?.getAttribute('href')).toContain('step=avatar');
   });
 
   it('renders the upcoming appointment once one is live', async () => {

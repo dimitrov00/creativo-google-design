@@ -1,4 +1,4 @@
-import { Injectable, inject, signal } from '@angular/core';
+import { Injectable, computed, inject, signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import {
   ANONYMOUS_PRINCIPAL,
@@ -22,13 +22,35 @@ import {
   classify,
 } from '@creativo/application/identity';
 import {
+  AVATAR_UPLOADER,
   PROFILE_PORT,
   UpdateProfileUseCase,
+  UploadAvatarUseCase,
   UserId,
 } from '@creativo/application/accounts';
 import { CLOCK } from '@creativo/application/shared';
 import { Observable, map } from 'rxjs';
 import { ServiceId } from '@creativo/application/catalog';
+
+/** The optional phase's steps, in the order the flow machine walks them. */
+export type PersonalizeStep = 'services' | 'birthday' | 'avatar';
+
+export const PERSONALIZE_STEPS: readonly PersonalizeStep[] = [
+  'services',
+  'birthday',
+  'avatar',
+];
+
+/** The event that leaves each step untouched — how a step outside the plan is stepped over. */
+const SKIP_EVENT = {
+  services: 'skip_services',
+  birthday: 'skip_birthday',
+  avatar: 'skip_avatar',
+} as const satisfies Record<PersonalizeStep, OnboardingFlowEvent['type']>;
+
+function isPersonalizeStep(kind: string): kind is PersonalizeStep {
+  return (PERSONALIZE_STEPS as readonly string[]).includes(kind);
+}
 
 /**
  * Wraps `advanceOnboardingFlow` (pure, blueprint §5.3). One instance per
@@ -56,6 +78,9 @@ export class OnboardingFlowStore {
   private readonly updateProfileUseCase = new UpdateProfileUseCase(
     inject(PROFILE_PORT),
   );
+  private readonly uploadAvatarUseCase = new UploadAvatarUseCase(
+    inject(AVATAR_UPLOADER),
+  );
   private readonly clock = inject(CLOCK);
 
   /**
@@ -77,6 +102,26 @@ export class OnboardingFlowStore {
 
   private readonly _pending = signal(false);
   readonly pending = this._pending.asReadonly();
+
+  /**
+   * Which personalization steps THIS visit will show. A first run gets all
+   * three; a resume from the menu's finish-your-profile row gets only what
+   * the profile is still missing, so someone who already set a birthday is
+   * never asked for it again.
+   */
+  private readonly _plan =
+    signal<readonly PersonalizeStep[]>(PERSONALIZE_STEPS);
+  readonly plan = this._plan.asReadonly();
+
+  /** 1-based position of the current step within the plan; 0 outside the personalization phase. */
+  readonly planPosition = computed(() => {
+    const kind = this._state().kind;
+    if (!isPersonalizeStep(kind)) return 0;
+    return this._plan().indexOf(kind) + 1;
+  });
+
+  /** A single remaining step is one task, not a journey — the screen drops its stepper and its back control. */
+  readonly isSingleStep = computed(() => this._plan().length === 1);
 
   /** The channel this session signed in with — `null` only if the Auth record carries neither phone nor email (a provisioning bug). */
   currentIdentifier(): Identifier | null {
@@ -141,6 +186,27 @@ export class OnboardingFlowStore {
   }
 
   personalize(): void {
+    this.dispatch({ type: 'personalize' });
+  }
+
+  /**
+   * Entry for an ALREADY-ACTIVE account returning to finish the optional
+   * personalization (the account checklist's open rows) — the machine has
+   * no direct about→services edge, and it doesn't need one: for a
+   * registered user, walking the real transitions (`registered` →
+   * `personalize`, then `skip_services` when the caller deep-links past
+   * them) is the honest path, skipping the About form their registration
+   * already satisfied. Back from a deep-linked birthday still returns to
+   * services — the earlier steps stay reachable, just not forced.
+   */
+  beginPersonalization(
+    steps: readonly PersonalizeStep[] = PERSONALIZE_STEPS,
+  ): void {
+    // An empty plan would leave the flow parked on `services` forever;
+    // there is nothing to personalize, so go straight to the app.
+    const plan = steps.length > 0 ? steps : PERSONALIZE_STEPS;
+    this._plan.set(plan);
+    this.dispatch({ type: 'registered' });
     this.dispatch({ type: 'personalize' });
   }
 
@@ -213,8 +279,42 @@ export class OnboardingFlowStore {
     this.dispatch({ type: 'skip_avatar' });
   }
 
+  /**
+   * The avatar step's optional upload — persistence IS the Storage object
+   * at the well-known `avatars/{uid}/original` path (the `User` aggregate
+   * deliberately carries no photo URL; readers resolve the path). Returns
+   * the stable error code for the step's inline line, or null on success —
+   * no flow event: the machine's `enter_app` fires only after the caller
+   * decides what a failure means.
+   */
+  async uploadAvatar(data: Blob): Promise<string | null> {
+    const principal = this.principal();
+    if (principal.kind === 'anonymous') return 'identifier_missing';
+    const userIdResult = UserId.create(principal.uid.value);
+    if (userIdResult.isFailure()) return 'identifier_missing';
+
+    this._pending.set(true);
+    const result = await this.uploadAvatarUseCase.execute(
+      userIdResult.value,
+      data,
+    );
+    this._pending.set(false);
+    return result.isFailure() ? result.error.code : null;
+  }
+
+  /**
+   * Back walks BACKWARDS through the plan — stepping over anything this
+   * resume already satisfied. Without that it would land on a step the
+   * forward normalization immediately skips again, and the screen would
+   * appear frozen.
+   */
   back(): void {
-    this.dispatch({ type: 'back' });
+    if (!this.applyEvent({ type: 'back' })) return;
+    for (let guard = 0; guard < PERSONALIZE_STEPS.length; guard++) {
+      const kind = this._state().kind;
+      if (!isPersonalizeStep(kind) || this._plan().includes(kind)) return;
+      if (!this.applyEvent({ type: 'back' })) return;
+    }
   }
 
   /** Transitions to the terminal `entering` state — dispatch-only, no async work (the component's own effect watching `state().kind === 'entering'` is the one place that then calls `pollActivation`, so this never double-polls). Valid from `reward` (skip-all) or `avatar` (finished personalizing). */
@@ -238,9 +338,31 @@ export class OnboardingFlowStore {
   }
 
   private dispatch(event: OnboardingFlowEvent): void {
+    if (!this.applyEvent(event)) return;
+    this.skipStepsOutsidePlan();
+  }
+
+  /** One transition. Returns whether the machine actually moved (invalid edges are ignored, as they always have been). */
+  private applyEvent(event: OnboardingFlowEvent): boolean {
     const result = advanceOnboardingFlow(this._state(), event);
-    if (result.isSuccess()) {
-      this._state.set(result.value);
+    if (result.isFailure()) return false;
+    this._state.set(result.value);
+    return true;
+  }
+
+  /**
+   * The heart of the resume: after every transition, step over any
+   * personalization the profile already satisfies. The machine keeps its
+   * fixed services → birthday → avatar order (it is a pure function and
+   * knows nothing about profiles); the plan decides which of those the
+   * user is actually shown, so finishing the birthday when the photo is
+   * already there lands on `entering`, not on a redundant avatar step.
+   */
+  private skipStepsOutsidePlan(): void {
+    for (let guard = 0; guard < PERSONALIZE_STEPS.length; guard++) {
+      const kind = this._state().kind;
+      if (!isPersonalizeStep(kind) || this._plan().includes(kind)) return;
+      if (!this.applyEvent({ type: SKIP_EVENT[kind] })) return;
     }
   }
 }

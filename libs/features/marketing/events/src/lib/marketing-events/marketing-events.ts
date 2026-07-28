@@ -18,7 +18,7 @@ import {
 import {
   SiteFooterComponent,
   SiteHeaderComponent,
-} from '@creativo/features/marketing/shell';
+} from '@creativo/features/shared/shell';
 import { UiButton, UiChip, UiIcon, UiSkeleton } from '@creativo/ui/controls';
 import { UiStack } from '@creativo/ui/layout';
 import {

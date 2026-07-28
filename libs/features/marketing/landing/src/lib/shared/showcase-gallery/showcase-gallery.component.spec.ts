@@ -29,18 +29,23 @@ describe('ShowcaseGalleryComponent', () => {
     expect(host.querySelectorAll('ui-async-image').length).toBe(3);
     expect(host.querySelectorAll('img[alt="Example result"]').length).toBe(3);
 
-    // The layout toggle is a DS bordered icon button, not hand-rolled chrome.
+    // The layout toggle is a DS PLAIN icon button (HIG: presentation-only
+    // controls stay borderless — owner ruling 2026-07-27), never
+    // hand-rolled chrome.
     const toggle = host.querySelector<HTMLButtonElement>('button');
     expect(toggle?.classList.contains('ui-button')).toBe(true);
-    expect(toggle?.getAttribute('data-button-style')).toBe('bordered');
+    expect(toggle?.getAttribute('data-button-style')).toBe('plain');
     expect(toggle?.hasAttribute('data-icon-only')).toBe(true);
 
     toggle?.click();
     fixture.detectChanges();
 
     expect(host.hasAttribute('data-expanded')).toBe(true);
-    expect(host.querySelector('button')?.getAttribute('aria-pressed')).toBe(
-      'true',
+    // The toggle stays a MOMENTARY plain button (no pressed/selected state
+    // — the glyph names the view it switches to; owner ruling 2026-07-27),
+    // so no aria-pressed; its accessible name flips with the state instead.
+    expect(host.querySelector('button')?.hasAttribute('aria-pressed')).toBe(
+      false,
     );
     // Expanded mode swaps the strip for the DS 3-up grid.
     expect(

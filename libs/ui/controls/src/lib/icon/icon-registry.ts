@@ -31,6 +31,13 @@ export const UI_ICON_REGISTRY = {
   /* ── Account ────────────────────────────────────────────────────── */
   'account.reservations': 'event_available',
   'account.rewards': 'redeem',
+  /** Personal-information surface — the menu's profile chip, the row that
+   *  opens it. Distinct from `prefs.*` on purpose: this is WHO you are, not
+   *  how the app behaves. */
+  'account.profile': 'manage_accounts',
+  /** Profile photo affordances — pick/replace, and drop back to the monogram. */
+  'account.photo': 'photo_camera',
+  'account.photoRemove': 'delete',
   /** Profile-completion checklist: item done / still pending. */
   'checklist.done': 'check',
   'checklist.pending': 'radio_button_unchecked',
@@ -58,6 +65,8 @@ export const UI_ICON_REGISTRY = {
   'nav.explore': 'arrow_forward',
   /** In-flow back affordance (auth code screen → identify). */
   'nav.back': 'chevron_left',
+  /** Trailing disclosure on interactive list rows (iOS chevron). */
+  'nav.disclosure': 'chevron_right',
   /** Marker on links that leave the site (footer external links). */
   'link.external': 'arrow_forward',
   /** Apply-via-Instagram CTA on the hiring section. */
@@ -105,6 +114,8 @@ export const UI_ICON_REGISTRY = {
   'service.duration': 'schedule',
   /** Variant-count meta on service tiles. */
   'service.variants': 'tune',
+  /** Quiet details affordance on selectable service cards (onboarding). */
+  'service.details': 'info',
 
   /* ── Preferences ────────────────────────────────────────────────── */
   'prefs.language': 'language',

@@ -3,6 +3,7 @@ import {
   Component,
   ElementRef,
   ViewEncapsulation,
+  booleanAttribute,
   computed,
   effect,
   inject,
@@ -108,6 +109,14 @@ export class UiDateField {
   ]);
   /** Visible group label, rendered as the fieldset's legend. */
   readonly label = input('');
+  /**
+   * ≙ SwiftUI `.labelsHidden()` — suppresses the VISIBLE legend while it
+   * keeps naming the fieldset for assistive tech. For when the surrounding
+   * chrome already says it out loud (a sheet whose large title is
+   * "Date of birth" shouldn't repeat itself one line down), which is the
+   * same reasoning behind `ui-stepper`'s `uiLabelsHidden`.
+   */
+  readonly uiLabelHidden = input(false, { transform: booleanAttribute });
   /** Secondary helper line under the segments (caption tier). */
   readonly hint = input<string | null>(null);
   /** Consumer-decided error copy — renders destructive + `role="alert"`. */

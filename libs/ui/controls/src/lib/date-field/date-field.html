@@ -1,6 +1,11 @@
 <fieldset class="ui-date-field__group" [disabled]="disabled()">
   @if (label(); as groupLabel) {
-  <legend class="ui-date-field__legend">{{ groupLabel }}</legend>
+  <legend
+    class="ui-date-field__legend"
+    [attr.data-visually-hidden]="uiLabelHidden() ? '' : null"
+  >
+    {{ groupLabel }}
+  </legend>
   }
 
   <div class="ui-date-field__segments">

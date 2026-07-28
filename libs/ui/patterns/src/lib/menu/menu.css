@@ -1,0 +1,146 @@
+@layer sys-components {
+  /* The anchor box. `inline-flex` so the menu wraps its trigger exactly —
+     the surface positions against THIS, not the viewport, which is why no
+     portal or floating-element library is needed. */
+  .ui-menu {
+    position: relative;
+    display: inline-flex;
+  }
+
+  /* HIG menu surface: a small vibrant card that grows out of the control
+     that summoned it. Kept mounted and hidden (rather than unmounted) so
+     entrance and exit share one transition — and `visibility: hidden`
+     takes the items out of the tab order while closed, so no `inert` or
+     tabindex gating is needed. */
+  .ui-menu__surface {
+    position: absolute;
+    z-index: var(--sys-layer-popover);
+    display: flex;
+    flex-direction: column;
+    box-sizing: border-box;
+    /* Sizes to its longest command, like a real menu — never narrower than
+       the trigger it hangs off, never wider than the viewport allows. */
+    inline-size: max-content;
+    min-inline-size: max(12rem, 100%);
+    max-inline-size: min(20rem, calc(100vw - var(--sys-space-comfortable) * 2));
+    padding: var(--sys-space-tight);
+    border: 1px solid var(--sys-color-separator);
+    border-radius: var(--control-radius-regular);
+    background: var(--sys-color-surface);
+    box-shadow: var(--sys-elevation-overlay);
+    visibility: hidden;
+    opacity: 0;
+    /* Grows from the trigger edge — the origin flips with the placement
+       below, so a menu that opens upward also grows upward. */
+    transform: scale(0.92);
+    transition:
+      opacity var(--sys-motion-duration-instant) var(--sys-motion-ease-standard),
+      transform var(--sys-motion-duration-instant)
+        var(--sys-motion-ease-standard),
+      visibility var(--sys-motion-duration-instant);
+  }
+
+  .ui-menu__surface[data-open] {
+    visibility: visible;
+    opacity: 1;
+    transform: scale(1);
+  }
+
+  .ui-menu__surface[data-placement='bottom'] {
+    inset-block-start: calc(100% + var(--sys-space-tight));
+    transform-origin: top center;
+  }
+  .ui-menu__surface[data-placement='top'] {
+    inset-block-end: calc(100% + var(--sys-space-tight));
+    transform-origin: bottom center;
+  }
+
+  .ui-menu__surface[data-alignment='leading'] {
+    inset-inline-start: 0;
+  }
+  .ui-menu__surface[data-alignment='trailing'] {
+    inset-inline-end: 0;
+  }
+  .ui-menu__surface[data-alignment='center'] {
+    inset-inline-start: 50%;
+    translate: -50% 0;
+  }
+
+  /* Items ride the list-row register (callout at medium) rather than the
+     button vocabulary — a menu is a list of commands, not a row of
+     controls. */
+  .ui-menu__item {
+    display: flex;
+    align-items: center;
+    gap: var(--sys-space-regular);
+    box-sizing: border-box;
+    inline-size: 100%;
+    min-block-size: var(--control-size-regular);
+    padding: var(--sys-space-compact) var(--sys-space-regular);
+    border: 0;
+    border-radius: var(--control-radius-subtle);
+    background: none;
+    font: var(--sys-font-callout);
+    font-weight: 500;
+    color: var(--sys-color-foreground);
+    text-align: start;
+    text-decoration: none;
+    cursor: pointer;
+    /* Commands read as one line; the surface grew to fit them above. Only
+       a label past the max width ellipsizes rather than reflowing the
+       whole menu. */
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* Destructive items are red and, by HIG convention, sit LAST in a menu
+     (an action sheet is the opposite — destructive first). */
+  .ui-menu__item[data-role='destructive'] {
+    color: var(--sys-color-destructive);
+  }
+
+  /* Hover is pointer-gated; press is NOT — a tap has to show the same
+     feedback (mobile press parity). Both fill with currentColor so the
+     destructive item highlights red. */
+  @media (hover: hover) and (pointer: fine) {
+    .ui-menu__item:hover {
+      background: var(--sys-state-layer-hover);
+    }
+  }
+  .ui-menu__item:active {
+    background: var(--sys-state-layer-press);
+  }
+
+  .ui-menu__item:focus-visible {
+    outline: var(--sys-focus-ring-width) solid var(--sys-color-accent);
+    outline-offset: -2px;
+  }
+
+  .ui-menu__item[disabled] {
+    color: var(--sys-color-secondary-label);
+    opacity: var(--sys-opacity-disabled);
+    cursor: default;
+  }
+
+  /* The file-picker item form: a label wrapping a hidden input is the only
+     way to reach <input type="file"> without scripting a click. */
+  .ui-menu__item input[type='file'] {
+    position: absolute;
+    inline-size: 1px;
+    block-size: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .ui-menu__surface {
+      transition-duration: 1ms;
+      transform: none;
+    }
+    .ui-menu__surface[data-open] {
+      transform: none;
+    }
+  }
+}

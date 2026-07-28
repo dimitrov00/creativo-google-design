@@ -10,61 +10,65 @@
   text-align: center;
 }
 
-/* Reward badge — a LARGE filled accent circle with the check reversed out
-   (the celebratory centerpiece), relative so the ui-confetti overlay
-   erupts from ITS center. `align-self: center` under the centered hero. */
-.onboarding-reward__badge {
+/* Reward badge — two quiet beats, nothing else: the accent disc settles
+   in (slight scale + fade, decelerating entrance ease — no spring), then
+   the check draws itself once; the confetti (template uiDelay) is the
+   whole flourish. */
+
+/* The burst wrapper anchors the confetti overlay AND isolates a stacking
+   context so the overlay's z-index -1 puts every particle behind the
+   disc: they erupt from its center and fly out from UNDER the circle,
+   never across the check. */
+.onboarding-reward__burst {
   position: relative;
+  isolation: isolate;
+  display: inline-flex;
+  align-self: center;
+}
+
+.onboarding-reward__burst > .ui-confetti {
+  z-index: -1;
+}
+
+.onboarding-reward__badge {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  align-self: center;
   inline-size: 5.5rem;
   block-size: 5.5rem;
   border-radius: var(--control-radius-capsule);
   background: var(--sys-color-accent);
-  color: var(--sys-color-background);
-  animation: onboarding-reward-pop var(--sys-motion-duration-slow)
-    var(--sys-motion-ease-emphasized) backwards;
+  animation: onboarding-reward-enter var(--sys-motion-duration-slow)
+    var(--sys-motion-ease-entrance) backwards;
 }
 
-/* Expanding ring pulse behind the badge — fires with the pop, one shot. */
-.onboarding-reward__badge::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  border: 2px solid var(--sys-color-accent);
-  animation: onboarding-reward-ring var(--sys-motion-duration-deliberate)
-    var(--sys-motion-ease-standard) var(--sys-motion-duration-slow) both;
-  pointer-events: none;
-}
-
-@keyframes onboarding-reward-ring {
+@keyframes onboarding-reward-enter {
   from {
-    opacity: 0.55;
-    transform: scale(1);
+    opacity: 0;
+    transform: scale(0.9);
   }
   to {
-    opacity: 0;
-    transform: scale(1.9);
+    opacity: 1;
+    transform: scale(1);
   }
 }
 
-/* Apple-style check draw-on: the path is pathLength-normalized (dasharray
-   1) and its dashoffset animates 1 → 0, so the stroke draws itself just as
-   the badge pop peaks — the confetti fires right after (uiDelay 300). */
-.onboarding-reward__check {
-  inline-size: 2.4rem;
-  block-size: 2.4rem;
+.onboarding-reward__mark {
+  inline-size: 100%;
+  block-size: 100%;
 }
 
-.onboarding-reward__check path {
+/* The check draws itself as the disc lands (pathLength-normalized
+   dashoffset 1 → 0), reversed out in on-accent ink (theme-proof: NEVER
+   --sys-color-background, which is near-black in dark mode and vanished
+   the check entirely). */
+.onboarding-reward__check {
+  stroke: var(--sys-color-on-accent);
   stroke-dasharray: 1;
   stroke-dashoffset: 1;
   animation: onboarding-reward-draw var(--sys-motion-duration-slow)
-    var(--sys-motion-ease-emphasized)
-    calc(var(--sys-motion-duration-slow) * 0.5) forwards;
+    var(--sys-motion-ease-emphasized) var(--sys-motion-duration-regular)
+    forwards;
 }
 
 @keyframes onboarding-reward-draw {
@@ -73,41 +77,48 @@
   }
 }
 
-/* Completion CTA stack — clear of the home indicator on notched phones. */
-.onboarding-reward__actions {
-  padding-block-end: calc(
-    var(--sys-space-comfortable) + env(safe-area-inset-bottom, 0px)
-  );
+/* Avatar picker — the label binds portrait + pill to ONE visually-hidden
+   file input (tap either to pick). Keyboard: the input itself keeps focus,
+   so its ring is redrawn onto the pill. */
+.onboarding-avatar__picker {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sys-space-regular);
+  cursor: pointer;
 }
 
-@keyframes onboarding-reward-pop {
-  0% {
-    opacity: 0;
-    transform: scale(0.4);
-  }
-  62% {
-    opacity: 1;
-    transform: scale(1.12);
-  }
-  100% {
-    opacity: 1;
-    transform: scale(1);
-  }
+.onboarding-avatar__input {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
-/* Reduced motion: no particles (ui-confetti spawns none), no spring, no
-   ring, no stroke draw — one gentle, opacity-led settle on the badge with
-   the check already drawn is the whole moment. */
+.onboarding-avatar__input:focus-visible ~ .ui-button {
+  outline: var(--sys-focus-ring-width, 2px) solid var(--sys-color-accent);
+  outline-offset: 2px;
+}
+
+.onboarding-avatar__input:disabled ~ * {
+  opacity: var(--sys-opacity-disabled);
+  pointer-events: none;
+}
+
+/* Completion CTAs ride ui-page-action-bar's stacked variant — the ONE
+   sticky bottom-bar pattern app-wide; no feature-local anatomy here. */
+
+/* Reduced motion: no particles (ui-confetti spawns none), no scale, no
+   stroke draw — one gentle, opacity-led settle on the finished badge
+   (check already painted) is the whole moment. */
 @media (prefers-reduced-motion: reduce) {
   .onboarding-reward__badge {
     animation: onboarding-reward-settle var(--sys-motion-duration-deliberate)
       var(--sys-motion-ease-standard) backwards;
   }
-  .onboarding-reward__badge::before {
-    animation: none;
-    opacity: 0;
-  }
-  .onboarding-reward__check path {
+  .onboarding-reward__check {
     animation: none;
     stroke-dashoffset: 0;
   }

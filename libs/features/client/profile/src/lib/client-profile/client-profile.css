@@ -1,0 +1,57 @@
+/* Everything with a DS primitive uses it — rows, groups, gaps, the
+   portrait tier, typography and ink all ride ui-list-*, ui-stack, uiText.
+   What is left is the three things the vocabulary genuinely doesn't cover:
+   the fixed-header clearance, the sheet body's gutter, and the file-picker
+   label. */
+
+:host {
+  display: block;
+}
+
+/* Clears the fixed header, same token pair as the dashboard. */
+.profile-main {
+  padding-block: var(--landing-header-offset) var(--sys-space-spacious);
+}
+
+/* The modal-sheet scroller is full-bleed (it cancels the surface padding),
+   so sheet content owns its gutter; the bottom inset comes from the action
+   bar's published clearance, never a hardcoded rem. */
+@layer sys-components {
+  .profile-edit__body {
+    min-inline-size: 0;
+    padding-inline: var(--modal-sheet-safe);
+    padding-block: var(--sys-space-comfortable)
+      var(--ui-sheet-action-bar-clearance);
+  }
+}
+
+/* File-picker label — the only way to reach a hidden <input type="file">
+   without scripting a click. It wraps the input and the button span, and
+   contributes no layout of its own: the span IS the control. */
+.profile-photo__picker {
+  display: inline-flex;
+  cursor: pointer;
+}
+
+.profile-photo__input {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* The hidden input still owns focus — the pill has to show the ring. */
+/* The hidden input is what actually takes focus, so the ring has to be
+   drawn on its sibling — the span the user can see. */
+.profile-photo__input:focus-visible ~ .ui-button {
+  outline: var(--sys-focus-ring-width) solid var(--sys-color-accent);
+  outline-offset: var(--sys-focus-ring-offset);
+}
+
+/* An unset value reads as an invitation, not data. */
+.ui-list-row[data-empty='true'] [uitrailing] span,
+.ui-list-row[data-empty='true'] > [uitrailing] {
+  color: var(--sys-color-secondary-label);
+}

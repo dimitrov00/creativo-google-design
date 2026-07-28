@@ -4,3 +4,29 @@
 :host {
   display: block;
 }
+
+/* Content clears the FIXED shared site header via the same app-wide
+   clearance token every header-bearing content page uses (careers &co). */
+.account-main {
+  padding-block: var(--landing-header-offset) var(--sys-space-spacious);
+}
+
+/* ── Completion gauge card ─────────────────────────────────────────── */
+
+/* Ring center fraction — tabular so 2/3 → 3/3 never jiggles. */
+.account-completion__fraction {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Checklist rows — HIG color budget (owner ruling 2026-07-27): the ring
+   is the ONE accent on this card; every row glyph (check, pending
+   circle, disclosure chevron) is informational gray, exactly like iOS
+   list glyphs. Settled rows recede fully to secondary ink; the open row
+   keeps full-ink text so the eye lands on what's LEFT. */
+.account-completion__item[data-done='true'] {
+  color: var(--sys-color-secondary-label);
+}
+
+.account-completion__item .ui-icon {
+  color: var(--sys-color-secondary-label);
+}

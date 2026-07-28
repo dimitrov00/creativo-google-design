@@ -60,7 +60,7 @@
     text-align: center;
     border: 1px solid var(--sys-color-separator);
     border-radius: var(--control-radius-regular);
-    background: var(--sys-color-background);
+    background: var(--sys-color-fill);
     color: var(--sys-color-foreground);
     font: var(--sys-font-body);
     font-variant-numeric: tabular-nums;
@@ -73,6 +73,15 @@
 
   .ui-date-field__slot--year {
     inline-size: calc(var(--date-field-size) * 2);
+  }
+
+  /* Touch-device 1rem floor against iOS Safari's focus auto-zoom (computed
+     sizes under 16px re-zoom the whole layout) — see text-field.css for
+     the full rationale. */
+  @media (hover: none) and (pointer: coarse) {
+    .ui-date-field__slot {
+      font-size: 1rem;
+    }
   }
 
   .ui-date-field__slot::placeholder {

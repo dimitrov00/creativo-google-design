@@ -11,7 +11,7 @@
     text-align: center;
     border: 1px solid var(--sys-color-separator);
     border-radius: var(--control-radius-regular);
-    background: var(--sys-color-surface-secondary);
+    background: var(--sys-color-fill);
     color: var(--sys-color-foreground);
     font: var(--sys-font-title2);
     font-family: var(--sys-font-family-mono);

@@ -1,25 +1,19 @@
 <ng-container *transloco="let t">
+  <!-- THE shared site header (owner ruling 2026-07-27: one nav component
+       app-wide, never per-page chrome) — brand → home, and for this
+       signed-in page the monogram menu trigger, whose menu carries the
+       account rows, prefs and sign-out. `uiOverHero=false` = permanently
+       solid content-page bar. -->
+  <cr-site-header [uiOverHero]="false" />
+
   <ui-stack
     uiSpacing="comfortable"
     uiFrame
     [uiFrameMaxWidth]="'var(--sys-container-content)'"
     uiPaddingHorizontal="regular"
-    uiPaddingVertical="spacious"
+    class="account-main"
   >
-    <ui-stack uiAxis="horizontal" uiAlignment="center" uiSpacing="compact">
-      <h1 uiText uiFont="title">{{ t('account.header.title') }}</h1>
-      <ui-spacer />
-      <button
-        type="button"
-        uiButton
-        uiButtonStyle="plain"
-        uiControlSize="small"
-        data-testid="account-sign-out"
-        (click)="signOut()"
-      >
-        {{ t('account.header.signOut') }}
-      </button>
-    </ui-stack>
+    <h1 uiText uiFont="title">{{ t('account.header.title') }}</h1>
 
     @if (accountState.accountLoading()) {
     <ui-stack uiSpacing="comfortable" data-testid="account-skeleton">
@@ -59,19 +53,20 @@
             >{{ t('account.tiles.comingSoon') }}</span
           >
         </ui-card>
-        <ui-card
+        <!-- Was an inert "Settings — coming soon" placeholder; now the
+             live personal-information screen it was standing in for. -->
+        <a
+          uiCard
           uiPadding="comfortable"
-          uiDisabled
-          data-testid="account-tile-settings"
-          data-state="soon"
+          [uiInteractive]="true"
+          routerLink="/account/profile"
+          data-testid="account-tile-profile"
         >
-          <p uiText uiFont="headline">
-            {{ t('account.tiles.settings.title') }}
+          <p uiText uiFont="headline">{{ t('account.tiles.profile.title') }}</p>
+          <p uiText uiFont="footnote" uiForegroundStyle="secondary">
+            {{ t('account.tiles.profile.subtitle') }}
           </p>
-          <span uiBadge uiTone="neutral"
-            >{{ t('account.tiles.comingSoon') }}</span
-          >
-        </ui-card>
+        </a>
       </ui-grid>
 
       <ui-card
@@ -122,28 +117,75 @@
         data-testid="account-completion"
         [attr.data-state]="progress.complete ? 'complete' : 'open'"
       >
-        <p uiText uiFont="headline">{{ t('account.completion.title') }}</p>
-        <p uiText uiFont="footnote" uiForegroundStyle="secondary">
-          {{ t('account.completion.progress', { done: progress.done, total:
-          progress.total }) }}
-        </p>
-        <ui-stack uiSpacing="tight">
-          @for (item of progress.items; track item.key) {
-          <p
-            uiText
-            uiFont="footnote"
-            [attr.data-done]="item.done"
+        <!-- Gauge-first reading (Apple ring grammar): the ring carries
+             the "how far along" answer at a glance — fraction center
+             while open, accent check when the profile completes. As
+             generous as the dashboard tiles above (owner ruling
+             2026-07-27): a bigger ring, comfortable spacing. -->
+        <ui-stack
+          uiAxis="horizontal"
+          uiSpacing="comfortable"
+          uiAlignment="center"
+          uiPaddingVertical="compact"
+        >
+          <!-- The card only renders while INCOMPLETE (a finished profile
+               shows no nudge at all), so the center is always the
+               fraction. -->
+          <ui-progress-ring
+            [uiValue]="progress.done / progress.total"
+            uiFrame
+            uiFrameWidth="4.5rem"
+            data-testid="account-completion-ring"
+          >
+            <span uiText uiFont="headline" class="account-completion__fraction"
+              >{{ progress.done }}/{{ progress.total }}</span
+            >
+          </ui-progress-ring>
+          <ui-stack uiSpacing="tight">
+            <p uiText uiFont="headline">{{ t('account.completion.title') }}</p>
+            <p uiText uiFont="footnote" uiForegroundStyle="secondary">
+              {{ t('account.completion.progress', { done: progress.done, total:
+              progress.total }) }}
+            </p>
+          </ui-stack>
+        </ui-stack>
+
+        <!-- The items as REAL rows — the segmented grouped list (menu
+             precedent). An OPEN item's row IS the way back in (owner
+             ruling 2026-07-27, replacing the separate continue CTA): it
+             deep-links into the onboarding personalization phase at its
+             own step, with the iOS disclosure chevron as the affordance.
+             Settled rows stay inert — no hover promise on a dead surface
+             (case-study §2.5). -->
+        <ui-list-group role="list" data-testid="account-completion-items">
+          @for (item of progress.items; track item.key) { @if (item.done) {
+          <ui-list-row
+            role="listitem"
+            class="account-completion__item"
+            data-done="true"
             [attr.data-testid]="'account-completion-' + item.key"
           >
-            <!-- Registry glyphs, not string glyphs — the icon rides the
-                 footnote font size. -->
-            <ui-icon
-              [uiName]="item.done ? 'checklist.done' : 'checklist.pending'"
-            />
+            <ui-icon uiLeading uiScale="medium" uiName="checklist.done" />
             {{ t('account.completion.items.' + item.key) }}
-          </p>
-          }
-        </ui-stack>
+          </ui-list-row>
+          } @else {
+          <a
+            uiListRow
+            role="listitem"
+            class="account-completion__item"
+            data-done="false"
+            routerLink="/onboarding"
+            [queryParams]="{ phase: 'personalize', step: personalizeStep(item.key) }"
+            [attr.data-testid]="'account-completion-' + item.key"
+          >
+            <ui-icon uiLeading uiScale="medium" uiName="checklist.pending" />
+            {{ t('account.completion.items.' + item.key) }}
+            <ng-container ngProjectAs="[uiTrailing]">
+              <ui-icon uiTrailing uiName="nav.disclosure" />
+            </ng-container>
+          </a>
+          } }
+        </ui-list-group>
       </ui-card>
       }
     </ui-stack>

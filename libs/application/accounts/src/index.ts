@@ -12,6 +12,9 @@ export * from './lib/use-cases/confirm-contact-change.errors';
 export * from './lib/use-cases/confirm-contact-change.use-case';
 export * from './lib/use-cases/upload-avatar.errors';
 export * from './lib/use-cases/upload-avatar.use-case';
+export * from './lib/use-cases/remove-avatar.errors';
+export * from './lib/use-cases/remove-avatar.use-case';
+export * from './lib/read-models/profile-completion';
 
 // Facade re-export (blueprint §1.2 layering) — see
 // `libs/application/identity`'s identical re-export for the full rationale;

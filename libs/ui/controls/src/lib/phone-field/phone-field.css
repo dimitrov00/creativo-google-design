@@ -63,7 +63,7 @@
     min-block-size: var(--ui-phone-field-size);
     border: 1px solid var(--sys-color-separator);
     border-radius: var(--control-radius-regular);
-    background: var(--sys-color-background);
+    background: var(--sys-color-fill);
     transition:
       border-color var(--sys-motion-duration-regular)
         var(--sys-motion-ease-standard),
@@ -184,6 +184,16 @@
   }
   .ui-phone-field__input:disabled {
     cursor: not-allowed;
+  }
+
+  /* Touch-device 1rem floor against iOS Safari's focus auto-zoom (computed
+     sizes under 16px re-zoom the whole layout) — see text-field.css for
+     the full rationale; the picker's search box rides `.ui-text-field`
+     and is already covered there. */
+  @media (hover: none) and (pointer: coarse) {
+    .ui-phone-field__input {
+      font-size: 1rem;
+    }
   }
 
   /* ── Anchored popover (regular widths) ──────────────────────────────

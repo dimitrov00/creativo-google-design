@@ -51,28 +51,53 @@ ui-sheet.modal-sheet:not([data-presented]):not([data-closing]) {
    no bar-height math; the inner ui-sheet-header's own sticky is inert
    inside it (the wrapper is exactly its content height).
 
-   The chrome is SOLID surface through the bar and accessory, and the
-   surface→transparent fade hangs just BELOW the accessory's bottom edge
-   (owner ruling: the fading starts close to the input bottom) — rows
-   dissolve there instead of ghosting behind the pinned controls. The fade
-   IS the separation, so the header's landed fill + hairline are
-   suppressed inside this shell (below). At rest everything sits over the
-   sheet's identical surface and is invisible. */
+   The chrome carries NO solid slab and NO blur (owner rulings
+   2026-07-27): its whole surface is the ::before GRADIENT below — the
+   EXACT mirror of ui-sheet-action-bar's bottom scrim (same smootherstep
+   ramp, same surface color, flipped direction, same 3rem overhang), so
+   the sheet's top and bottom chrome are one system. GATED: hidden at
+   rest (nothing has scrolled under the bar — an always-on scrim ghosted
+   the large title) and fades in once the header lands, or from the start
+   on always-titled sheets (country picker). The header's own landed
+   fill + hairline stay suppressed inside this shell (sheet-header.css). */
 .modal-sheet__chrome {
   position: sticky;
   inset-block-start: 0;
   z-index: var(--sys-layer-header);
-  background: var(--sys-color-surface);
 }
 
-.modal-sheet__chrome::after {
+.modal-sheet__chrome::before {
   content: '';
   position: absolute;
-  inset-block-start: 100%;
-  inset-inline: 0;
-  block-size: var(--sys-space-comfortable);
-  background: linear-gradient(to bottom, var(--sys-color-surface), transparent);
+  inset: 0 0 -3rem;
+  z-index: -1;
+  /* THE house chrome fade — quintic smootherstep alpha (6t⁵−15t⁴+10t³
+     sampled every 12.5%), identical ramp to ui-sheet-action-bar /
+     ui-page-action-bar. */
+  background: linear-gradient(
+    to bottom,
+    var(--sys-color-surface) 0%,
+    color-mix(in srgb, var(--sys-color-surface) 98%, transparent) 12.5%,
+    color-mix(in srgb, var(--sys-color-surface) 90%, transparent) 25%,
+    color-mix(in srgb, var(--sys-color-surface) 73%, transparent) 37.5%,
+    color-mix(in srgb, var(--sys-color-surface) 50%, transparent) 50%,
+    color-mix(in srgb, var(--sys-color-surface) 27%, transparent) 62.5%,
+    color-mix(in srgb, var(--sys-color-surface) 10%, transparent) 75%,
+    color-mix(in srgb, var(--sys-color-surface) 2%, transparent) 87.5%,
+    transparent 100%
+  );
   pointer-events: none;
+  opacity: 0;
+  transition: opacity var(--sys-motion-duration-regular)
+    var(--sys-motion-ease-standard);
+}
+
+/* The scrim lands with the bar: sentinel collapse, the owner-driven title
+   flip, or an always-titled shell (country picker) from the start. */
+.modal-sheet__chrome:has(.ui-sheet-header[data-collapsed])::before,
+.modal-sheet__chrome:has(.ui-sheet-header [uititle][data-visible])::before,
+.modal-sheet__chrome:has(.modal-sheet__toolbar[data-title-always])::before {
+  opacity: 1;
 }
 
 /* Inline-title mode (data-title-always from the shell input): the compact

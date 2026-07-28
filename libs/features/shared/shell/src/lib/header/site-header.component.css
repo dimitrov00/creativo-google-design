@@ -1,0 +1,105 @@
+/* v2 appHeader recipe — hero float ⟷ hero solid. The bar itself is a
+   ui-toolbar (layout, 52px prominent height, tone overlay ⟷ default); the
+   outer host keeps only what a design-system toolbar cannot know: fixed
+   positioning, the translateY float geometry, and the full-bleed solid
+   chrome (the toolbar column is narrower than the viewport). */
+
+.cr-header {
+  position: fixed;
+  inset-inline: 0;
+  top: 0;
+  z-index: var(--sys-layer-header);
+  /* Enumerated properties — `all` on a fixed header transitions layout
+     properties it never animates (case-study §2.5). */
+  transition:
+    padding var(--sys-motion-duration-deliberate)
+      var(--sys-motion-ease-standard),
+    background-color var(--sys-motion-duration-deliberate)
+      var(--sys-motion-ease-standard),
+    border-color var(--sys-motion-duration-deliberate)
+      var(--sys-motion-ease-standard),
+    transform var(--sys-motion-duration-deliberate)
+      var(--sys-motion-ease-standard);
+}
+
+/* Float — transparent bar inset over the hero card (float geometry).
+   The named vars ARE the art direction: the float view's top inset and
+   gutters align with the hero card's inner padding, not the viewport edge
+   or the --sys-space ladder (44/60px, deliberate). */
+.cr-header {
+  --cr-header-float-pad-top: 1.25rem;
+  --cr-header-float-gutter: 2.75rem;
+  --cr-header-float-gutter-wide: 3.75rem;
+}
+
+.cr-header[data-view='float'] {
+  padding-block: var(--cr-header-float-pad-top) 0;
+  border-bottom: 1px solid transparent;
+  background: transparent;
+}
+
+/* Solid — full-bleed toolbar surface with a hairline ONLY (owner ruling
+   2026-07-27: the soft shadow doubled up with the border and read as a
+   smudge in light mode — the hairline alone is the separation). */
+.cr-header[data-view='solid'] {
+  padding-block: var(--sys-space-compact);
+  border-bottom: 1px solid var(--landing-border);
+  background: var(--sys-color-background);
+}
+
+/* The inner ui-toolbar rides the centered app column in BOTH views (v2
+   `width: lg`) via uiFrame's max-width recipe in the template; height (52px
+   prominent), row layout and tone chrome come from toolbar.css. */
+.cr-header__inner {
+  /* The tone flip (overlay ⟷ default) would snap the toolbar surface while
+     the outer shell cross-fades — ease both in lockstep. */
+  transition:
+    padding var(--sys-motion-duration-deliberate)
+      var(--sys-motion-ease-standard),
+    background-color var(--sys-motion-duration-deliberate)
+      var(--sys-motion-ease-standard);
+}
+
+/* Float — the art-directed gutters (see the var block up top). */
+.cr-header[data-view='float'] .cr-header__inner {
+  padding-inline: var(--cr-header-float-gutter);
+}
+@media (min-width: 640px) {
+  .cr-header[data-view='float'] .cr-header__inner {
+    padding-inline: var(--cr-header-float-gutter-wide);
+  }
+}
+
+.cr-header[data-view='solid'] .cr-header__inner {
+  padding-inline: var(--landing-gutter);
+  /* The outer host paints the full-bleed solid chrome (background,
+     hairline, shadow); the toolbar's own column-width hairline would
+     double it 8px up, so it defers to the shell's. */
+  border-block-end: 0;
+}
+
+.cr-header__brand {
+  display: inline-flex;
+}
+
+/* Signed-in trigger: the monogram IS the button (owner ruling — no glass
+   ring around a smaller circle). The button's own chrome drops and the
+   avatar fills the full 44px capsule; the ungated :active scale keeps the
+   press feedback the stripped state layer used to give (press parity). */
+.cr-header [data-testid='nav-menu-trigger']:has(.cr-header__monogram) {
+  padding: 0;
+  border: 0;
+  background: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  box-shadow: none;
+}
+
+.cr-header__monogram {
+  inline-size: 100%;
+  block-size: 100%;
+}
+
+.cr-header [data-testid='nav-menu-trigger']:active .cr-header__monogram {
+  transform: scale(var(--sys-press-scale-surface, 0.97));
+}

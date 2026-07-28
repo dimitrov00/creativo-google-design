@@ -1,19 +1,29 @@
 import { Component, computed, inject } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { Router, RouterLink } from '@angular/router';
+import { RouterLink } from '@angular/router';
 import { of, switchMap } from 'rxjs';
 import { TranslocoDirective, TranslocoService } from '@jsverse/transloco';
-import { AUTH_GATEWAY } from '@creativo/application/identity';
 import {
   APPOINTMENT_REPOSITORY,
   Appointment,
   ObserveUpcomingUseCase,
 } from '@creativo/application/booking';
-import { UserId } from '@creativo/application/accounts';
+import {
+  AVATAR_UPLOADER,
+  UserId,
+  profileCompletion,
+} from '@creativo/application/accounts';
 import { AccountStateService } from '@creativo/features/client/account-state';
-import { UiBadge, UiButton, UiIcon, UiSkeleton } from '@creativo/ui/controls';
-import { UiGrid, UiSpacer, UiStack } from '@creativo/ui/layout';
-import { UiCard } from '@creativo/ui/patterns';
+import { SiteHeaderComponent } from '@creativo/features/shared/shell';
+import {
+  UiBadge,
+  UiButton,
+  UiIcon,
+  UiProgressRing,
+  UiSkeleton,
+} from '@creativo/ui/controls';
+import { UiGrid, UiStack } from '@creativo/ui/layout';
+import { UiCard, UiListGroup, UiListRow } from '@creativo/ui/patterns';
 import {
   UiDisabledDirective,
   UiFrameDirective,
@@ -21,7 +31,6 @@ import {
   UiTextDirective,
 } from '@creativo/ui/modifiers';
 import { translateDomainError } from '@creativo/infrastructure/i18n';
-import { profileCompletion } from '../profile-completion';
 
 type UpcomingState =
   | { readonly kind: 'loading' }
@@ -53,6 +62,7 @@ type UpcomingState =
   selector: 'lib-client-account',
   imports: [
     RouterLink,
+    SiteHeaderComponent,
     TranslocoDirective,
     UiBadge,
     UiButton,
@@ -61,9 +71,11 @@ type UpcomingState =
     UiIcon,
     UiFrameDirective,
     UiGrid,
+    UiListGroup,
+    UiListRow,
     UiPaddingDirective,
+    UiProgressRing,
     UiSkeleton,
-    UiSpacer,
     UiStack,
     UiTextDirective,
   ],
@@ -75,20 +87,41 @@ type UpcomingState =
   },
 })
 export class ClientAccount {
-  private readonly authGateway = inject(AUTH_GATEWAY);
   private readonly appointmentRepository = inject(APPOINTMENT_REPOSITORY);
   private readonly observeUpcomingUseCase = new ObserveUpcomingUseCase(
     this.appointmentRepository,
   );
-  private readonly router = inject(Router);
   private readonly transloco = inject(TranslocoService);
 
   protected readonly accountState = inject(AccountStateService);
   protected readonly account = this.accountState.account;
 
+  private readonly avatarUploader = inject(AVATAR_UPLOADER);
+
+  /** Whether a profile photo exists in storage — `undefined` while the lookup is in flight (the nudge card waits for a real answer rather than flashing). */
+  private readonly hasPhoto = toSignal(
+    toObservable(this.accountState.principal).pipe(
+      switchMap((principal) => {
+        if (principal.kind !== 'active') return of(false);
+        const userIdResult = UserId.create(principal.uid.value);
+        if (userIdResult.isFailure()) return of(false);
+        return this.avatarUploader
+          .find(userIdResult.value)
+          .then((result) => result.isSuccess() && result.value !== null);
+      }),
+    ),
+    { initialValue: undefined },
+  );
+
+  /** The nudge card's model — null while loading AND once complete: a
+   *  finished profile shows no completion card at all (Apple's suggestion
+   *  cards disappear when done; owner ruling 2026-07-27). */
   protected readonly completion = computed(() => {
     const user = this.account();
-    return user ? profileCompletion(user) : null;
+    const hasPhoto = this.hasPhoto();
+    if (!user || hasPhoto === undefined) return null;
+    const progress = profileCompletion(user, hasPhoto);
+    return progress.complete ? null : progress;
   });
 
   private readonly upcomingResult = toSignal(
@@ -120,6 +153,20 @@ export class ClientAccount {
     return state.kind === 'populated' ? state.appointment : null;
   });
 
+  constructor() {
+    // The shared account snapshot is a one-shot fetch and goes stale after
+    // profile writes elsewhere (onboarding's birthday save) — the
+    // dashboard must show current truth on every entry, so re-fetch here.
+    this.accountState.refresh();
+  }
+
+  /** Which onboarding personalization step an open checklist item deep-links into. Name/phone are registration facts (always done for an active account) — the fallback entry covers any future key honestly. */
+  protected personalizeStep(key: string): string {
+    if (key === 'birthday') return 'birthday';
+    if (key === 'photo') return 'avatar';
+    return 'services';
+  }
+
   protected translateRepositoryError(): string {
     return translateDomainError(this.transloco, { code: 'repository_failure' });
   }
@@ -137,10 +184,5 @@ export class ClientAccount {
       hour: '2-digit',
       minute: '2-digit',
     }).format(new Date(appointment.timeSlot.start.toISO()));
-  }
-
-  protected async signOut(): Promise<void> {
-    await this.authGateway.signOut();
-    await this.router.navigateByUrl('/');
   }
 }

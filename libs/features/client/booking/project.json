@@ -4,7 +4,7 @@
   "sourceRoot": "libs/features/client/booking/src",
   "prefix": "lib",
   "projectType": "library",
-  "tags": ["scope:client", "type:feature"],
+  "tags": ["scope:app", "type:feature"],
   "targets": {
     "lint": {
       "executor": "@nx/eslint:lint"

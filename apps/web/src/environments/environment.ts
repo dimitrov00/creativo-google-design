@@ -8,7 +8,9 @@ export const environment = {
     apiKey: 'REPLACE_ME',
     authDomain: 'REPLACE_ME',
     projectId: 'demo-creativo-test',
-    storageBucket: 'REPLACE_ME',
+    // A real-looking bucket name is required for `getStorage()` to build
+    // object URLs; under the demo project everything stays in the emulator.
+    storageBucket: 'demo-creativo-test.appspot.com',
     messagingSenderId: 'REPLACE_ME',
     appId: 'REPLACE_ME',
   },
@@ -21,5 +23,7 @@ export const environment = {
     firestorePort: 8080,
     functionsHost: '127.0.0.1',
     functionsPort: 5001,
+    storageHost: '127.0.0.1',
+    storagePort: 9199,
   },
 };

@@ -14,7 +14,7 @@ import {
   SiteFooterComponent,
   SiteHeaderComponent,
   ThemeService,
-} from '@creativo/features/marketing/shell';
+} from '@creativo/features/shared/shell';
 import { UiSkeleton } from '@creativo/ui/controls';
 import { UiFrameDirective } from '@creativo/ui/modifiers';
 import { CoursesSectionComponent } from '../../sections/courses/courses-section.component';

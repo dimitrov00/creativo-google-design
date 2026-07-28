@@ -5,67 +5,9 @@
    uiText and rhythm rides ui-stack gaps in the template — this file keeps
    only scroll-collapse, layout glue and the documented local exceptions. */
 
-/* Condensed toolbar title typography/ink comes from ui-sheet-header's
-   [uiTitle] slot now (HIG nav-title recipe) — nothing local. */
-
-.service-sheet__body {
-  min-inline-size: 0;
-}
-
-/* Story blocks own the safe gutters (as padding — `--modal-sheet-safe` is
-   sheet-shell geometry, not a scale token, so uiPadding can't carry it);
-   the gallery between them runs full-bleed and pads itself. */
-.service-sheet__story {
-  min-inline-size: 0;
-  padding-inline: var(--modal-sheet-safe);
-}
-
-/* Bottom clearance derives from the action-bar contract instead of a
-   hardcoded rem so content always scrolls clear of the docked CTA. */
-.service-sheet__details {
-  padding-block-end: var(--ui-sheet-action-bar-clearance);
-}
-
-/* ── Intro ─────────────────────────────────────────────────────────── */
-
-.service-sheet__intro {
-  padding-block-start: var(--sys-space-comfortable);
-}
-
-/* Title scroll-collapse: as the largeTitle scrolls under the toolbar it
-   scales down and fades — scroll-driven, zero JS in supporting browsers
-   (the rect-based [titleVisible] flip stays as the fallback, see the
-   @supports block below). Type role comes from uiFont="largeTitle". */
-.service-sheet__intro h2 {
-  transform-origin: left top;
-}
-
-@supports (animation-timeline: view()) {
-  @media (prefers-reduced-motion: no-preference) {
-    .service-sheet__intro h2 {
-      /* The compact-title/chrome reveal rides the `--ui-sheet-headline`
-         view-timeline the h2's `uiSheetLargeTitle` label names (DS-owned;
-         ui-modal-sheet adds no timeline plumbing of its own). This local
-         animation is only the large title's own scale/fade embellishment,
-         on its anonymous view() timeline as before. */
-      animation: service-sheet-title-collapse linear both;
-      animation-timeline: view();
-      animation-range: exit 0% exit 100%;
-    }
-  }
-}
-
-@keyframes service-sheet-title-collapse {
-  to {
-    opacity: 0;
-    transform: scale(0.62);
-  }
-}
-
-/* Art-directed measure cap on the lede paragraph. */
-.service-sheet__summary > p {
-  max-inline-size: 34rem;
-}
+/* Shell anatomy (body/story gutters, intro padding, large-title collapse,
+   summary measure, action-bar clearance) lives in the shared
+   ui-detail-sheet pattern now — only landing-specific chrome stays here. */
 
 /* Price reads at full ink and semibold — the subheadline role bakes 500,
    and the price is the one emphasized fact on the line. */
@@ -139,29 +81,25 @@
   text-align: center;
 }
 
-/* ── Bottom booking bar — always visible while the sheet is open; the
-   skeleton is ui-sheet-action-bar, only this bar's control chrome stays
-   local. ── */
-
-/* Geometry comes from ui-button[data-spread]; the bar is CHROMELESS
-   (SwiftUI `.safeAreaInset(edge: .bottom)`), so the filled prominent CTA
-   is the only surface — it floats directly over the scrolling copy. */
-.service-sheet__booking-bar a {
+/* ── Book CTA — projected as the shared sheet's toolbar action; the bar
+   skeleton is the pattern's, only this control's chrome stays local. ── */
+.service-sheet__cta {
   white-space: nowrap;
 }
 
 /* ── Entrance choreography — `sheet-content-in` keyframes are shared in
    landing-shared.css (global; a local @keyframes would get encapsulation-
-   scoped and shadow nothing for sibling sheets). ─── */
+   scoped and shadow nothing for sibling sheets). Intro/summary classes are
+   the shared pattern's. ─── */
 
-ui-modal-sheet[data-state='open'] .service-sheet__intro > *,
+ui-modal-sheet[data-state='open'] .ui-detail-sheet__intro > *,
 ui-modal-sheet[data-state='open'] .service-sheet__variants,
 ui-modal-sheet[data-state='open'] .service-performers header {
   animation: sheet-content-in var(--sys-motion-duration-slowest)
     var(--sys-motion-ease-emphasized) both;
 }
 
-ui-modal-sheet[data-state='open'] .service-sheet__intro > :nth-child(2) {
+ui-modal-sheet[data-state='open'] .ui-detail-sheet__intro > :nth-child(2) {
   animation-delay: var(--sys-motion-duration-instant);
 }
 
@@ -176,13 +114,13 @@ ui-modal-sheet[data-state='open'] .service-sheet__variants {
      attribute can't respond to breakpoints, so this is a consumer gap
      override on the stack (unlayered component CSS outranks the
      @layer sys-components rule). */
-  .service-sheet__summary {
+  .ui-detail-sheet__summary {
     gap: var(--sys-space-regular);
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  ui-modal-sheet[data-state='open'] .service-sheet__intro > *,
+  ui-modal-sheet[data-state='open'] .ui-detail-sheet__intro > *,
   ui-modal-sheet[data-state='open'] .service-sheet__variants,
   ui-modal-sheet[data-state='open'] .service-performers header {
     animation: none;

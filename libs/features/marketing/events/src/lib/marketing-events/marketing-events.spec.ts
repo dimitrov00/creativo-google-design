@@ -7,6 +7,8 @@ import {
   provideTransloco,
 } from '@jsverse/transloco';
 import { Observable, of } from 'rxjs';
+import { AVATAR_UPLOADER, PROFILE_PORT } from '@creativo/application/accounts';
+import { APPOINTMENT_REPOSITORY } from '@creativo/application/booking';
 import { AUTH_GATEWAY } from '@creativo/application/identity';
 import {
   Result,
@@ -85,6 +87,22 @@ async function configure(
       {
         provide: AUTH_GATEWAY,
         useValue: { observePrincipal: () => of({ kind: 'anonymous' }) },
+      },
+      // The shared header's account circle reads its photo off the
+      // session identity — no avatar for an anonymous visitor.
+      {
+        provide: AVATAR_UPLOADER,
+        useValue: { find: () => Promise.resolve(ok(null)) },
+      },
+      // The shared session model behind that chrome reads the profile.
+      {
+        provide: PROFILE_PORT,
+        useValue: { getProfile: () => Promise.resolve(ok(null)) },
+      },
+      // …and its menu counts upcoming visits.
+      {
+        provide: APPOINTMENT_REPOSITORY,
+        useValue: { observeUpcomingFor: () => of(ok([])) },
       },
     ],
   }).compileComponents();

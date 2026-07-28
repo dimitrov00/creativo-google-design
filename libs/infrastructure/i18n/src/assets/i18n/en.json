@@ -60,10 +60,24 @@
       }
     },
     "accounts": {
+      "first_name": {
+        "too_short": "First name needs at least 2 characters."
+      },
+      "upload_avatar": {
+        "not_an_image": "That file isn't an image — pick a photo.",
+        "too_large": "That photo is too large — up to 5 MB.",
+        "upload_failed": "We couldn't upload the photo — please try again."
+      },
+      "last_name": {
+        "too_short": "Last name needs at least 2 characters."
+      },
       "update_profile": {
         "not_found": "We couldn't find your profile — please sign in again.",
         "validation_failed": "The information provided is invalid — please check it.",
         "repository_failure": "We couldn't save that right now — please try again."
+      },
+      "remove_avatar": {
+        "remove_failed": "We couldn't remove the photo — please try again."
       }
     },
     "identifier_missing": "We couldn't find your phone number or email — please sign in again.",
@@ -144,7 +158,13 @@
     },
     "services": {
       "title": "What are you interested in?",
-      "body": "Pick a few services — you can always change this later.",
+      "body": "Pick up to {{max}} services — you can always change this later.",
+      "counter": "{{selected}} of {{max}} selected",
+      "minutes": "{{minutes}} min",
+      "details": "More about {{name}}",
+      "close": "Close",
+      "select": "Select",
+      "remove": "Remove",
       "continue": "Continue",
       "skip": "Skip"
     },
@@ -163,8 +183,10 @@
     },
     "avatar": {
       "title": "Add a profile photo",
-      "body": "Help your barber recognize you (optional).",
-      "enterApp": "Enter app",
+      "body": "Help your barber recognize you.",
+      "changePhoto": "Change photo",
+      "addPhoto": "Add photo",
+      "save": "Save",
       "skip": "Skip"
     },
     "entering": {
@@ -187,8 +209,9 @@
       "appointments": {
         "title": "Appointments"
       },
-      "settings": {
-        "title": "Settings"
+      "profile": {
+        "title": "Personal information",
+        "subtitle": "Name, birthday, photo"
       },
       "comingSoon": "Coming soon"
     },
@@ -203,7 +226,49 @@
       "items": {
         "name": "Name",
         "phone": "Phone",
-        "birthday": "Birthday"
+        "birthday": "Birthday",
+        "photo": "Profile photo"
+      }
+    },
+    "profile": {
+      "title": "Personal information",
+      "empty": "We couldn't find your profile. Try signing in again.",
+      "photo": {
+        "add": "Add photo",
+        "change": "Change photo",
+        "choose": "Choose photo",
+        "remove": "Remove photo",
+        "menuLabel": "Photo actions"
+      },
+      "sections": {
+        "personal": "Personal details",
+        "contact": "Contact"
+      },
+      "rows": {
+        "name": "Name",
+        "birthday": "Date of birth",
+        "birthdayEmpty": "Add",
+        "phone": "Phone",
+        "email": "Email",
+        "emailEmpty": "Not added"
+      },
+      "contactLocked": "Changing your phone or email isn't available yet.",
+      "edit": {
+        "close": "Close",
+        "save": "Save",
+        "nameTitle": "Name",
+        "nameLede": "This is how we greet you, and how your barber recognizes you.",
+        "firstName": "First name",
+        "lastName": "Last name",
+        "birthdayTitle": "Date of birth",
+        "birthdayLede": "For birthday surprises.",
+        "birthdayLabel": "Date of birth",
+        "day": "Day",
+        "month": "Month",
+        "year": "Year",
+        "dayPlaceholder": "DD",
+        "monthPlaceholder": "MM",
+        "yearPlaceholder": "YYYY"
       }
     }
   },
@@ -218,6 +283,8 @@
     },
     "menu": {
       "account": "Account",
+      "profile": "Personal information",
+      "completeProfile": "Finish your profile",
       "bookings": "My bookings",
       "rewards": "My rewards",
       "openPositions": "Open positions",

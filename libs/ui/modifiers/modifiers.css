@@ -382,12 +382,22 @@
       color-mix(in srgb, var(--sys-color-on-media) 12%, transparent);
   }
 
-  /* Bottom-anchored legibility grade for captions/CTAs over media. */
+  /* Bottom-anchored legibility grade for captions/CTAs over media.
+     Smoothstep alpha ramp (3t²−2t³ sampled across the 0–78% extent) — the
+     house fade curve (owner ruling 2026-07-27, see ui-sheet-action-bar):
+     eased stops dissolve without the banding a two/three-stop linear
+     fade shows over photography. */
   [data-overlay='scrim-media'] {
     background: linear-gradient(
       to top,
       var(--sys-color-media-scrim) 0%,
-      color-mix(in srgb, var(--sys-color-media-scrim) 55%, transparent) 40%,
+      color-mix(in srgb, var(--sys-color-media-scrim) 96%, transparent) 9.75%,
+      color-mix(in srgb, var(--sys-color-media-scrim) 84%, transparent) 19.5%,
+      color-mix(in srgb, var(--sys-color-media-scrim) 68%, transparent) 29.25%,
+      color-mix(in srgb, var(--sys-color-media-scrim) 50%, transparent) 39%,
+      color-mix(in srgb, var(--sys-color-media-scrim) 32%, transparent) 48.75%,
+      color-mix(in srgb, var(--sys-color-media-scrim) 16%, transparent) 58.5%,
+      color-mix(in srgb, var(--sys-color-media-scrim) 4%, transparent) 68.25%,
       transparent 78%
     );
   }

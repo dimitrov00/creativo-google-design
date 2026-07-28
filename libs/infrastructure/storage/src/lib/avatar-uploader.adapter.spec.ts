@@ -3,16 +3,19 @@ import { TestBed } from '@angular/core/testing';
 import { UserId } from '@creativo/domain/accounts';
 import { FIREBASE_STORAGE } from './storage.provider';
 
-const { refMock, uploadBytesMock, getDownloadURLMock } = vi.hoisted(() => ({
-  refMock: vi.fn(),
-  uploadBytesMock: vi.fn(),
-  getDownloadURLMock: vi.fn(),
-}));
+const { refMock, uploadBytesMock, getDownloadURLMock, deleteObjectMock } =
+  vi.hoisted(() => ({
+    refMock: vi.fn(),
+    uploadBytesMock: vi.fn(),
+    getDownloadURLMock: vi.fn(),
+    deleteObjectMock: vi.fn(),
+  }));
 
 vi.mock('firebase/storage', () => ({
   ref: refMock,
   uploadBytes: uploadBytesMock,
   getDownloadURL: getDownloadURLMock,
+  deleteObject: deleteObjectMock,
 }));
 
 import { FirebaseStorageAvatarUploader } from './avatar-uploader.adapter';
@@ -97,6 +100,34 @@ describe('FirebaseStorageAvatarUploader', () => {
       makeUserId(),
       makeBlob('image/png', 1024),
     );
+
+    expect(result.isFailure()).toBe(true);
+  });
+
+  it('removes the avatar object', async () => {
+    refMock.mockReturnValue({ path: 'avatars/user-1/original' });
+    deleteObjectMock.mockResolvedValue(undefined);
+
+    const result = await createUploader().remove(makeUserId());
+
+    expect(result.isSuccess()).toBe(true);
+    expect(deleteObjectMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('treats removing a non-existent avatar as success — the end state is what the caller wanted', async () => {
+    refMock.mockReturnValue({ path: 'avatars/user-1/original' });
+    deleteObjectMock.mockRejectedValue({ code: 'storage/object-not-found' });
+
+    const result = await createUploader().remove(makeUserId());
+
+    expect(result.isSuccess()).toBe(true);
+  });
+
+  it('surfaces a real storage failure on remove', async () => {
+    refMock.mockReturnValue({ path: 'avatars/user-1/original' });
+    deleteObjectMock.mockRejectedValue({ code: 'storage/unauthorized' });
+
+    const result = await createUploader().remove(makeUserId());
 
     expect(result.isFailure()).toBe(true);
   });

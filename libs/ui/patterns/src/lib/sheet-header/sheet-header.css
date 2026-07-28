@@ -12,13 +12,12 @@
     /* Toolbar norm — same 52px bar as ui-toolbar (replaces the off-scale
        65.6/60px sheet toolbars this pattern consolidates). */
     min-block-size: var(--control-size-large);
-    /* The header keeps its OWN tight inline padding — deliberately NOT the
-       sheet's shared `--ui-sheet-inset` (owner revert, 2026-07-23: the bar
-       chrome hugging the sheet edge looked better than chrome pushed onto
-       the content gutter; the content/surface inset system is untouched).
-       iOS parity: UINavigationBar controls sit tighter to the edge than
-       the content's readable margin. */
-    padding: var(--sys-space-compact) var(--sys-space-tight);
+    /* iOS-parity inline padding (owner ruling 2026-07-27, superseding the
+       tighter 2026-07-23 revert): sheet/nav bar controls sit on the 16pt
+       system layout margin — the close chip and title breathe like a
+       UISheetPresentationController bar, still independent of the sheet's
+       fluid content gutter (`--ui-sheet-inset`). */
+    padding: var(--sys-space-compact) var(--sys-space-regular);
     /* At rest the bar is TRANSPARENT chrome (SwiftUI large-title collapse:
        the in-content large title carries the identity; the bar only
        "lands" — fill + hairline — once that title tucks under it). */
@@ -41,16 +40,23 @@
      the same state-layer recipe as every other surface. Pill geometry
      (36×4.8px) is the bespoke signature dimension carried over from
      cr-modal-sheet. */
+  /* iOS system drag-indicator metrics (UISheetPresentationController's
+     grabber): 36×5pt, 5pt off the sheet's top edge, tertiary-gray ink —
+     matched exactly (owner ruling 2026-07-27). */
   .ui-sheet-header__grabber {
     display: none;
     position: absolute;
-    inset-block-start: var(--sys-space-tight);
+    inset-block-start: 0.3125rem;
     inset-inline-start: 50%;
     transform: translateX(-50%);
     inline-size: 2.25rem;
-    block-size: 0.3rem;
+    block-size: 0.3125rem;
     border-radius: var(--control-radius-capsule);
-    background: var(--sys-state-layer-press);
+    background: color-mix(
+      in srgb,
+      var(--sys-color-foreground) 28%,
+      transparent
+    );
   }
 
   /* Slot attributes are lowercased by the HTML parser (uiTitle → uititle)
@@ -100,6 +106,23 @@
   .ui-sheet-header:has(> [uititle][data-visible]) {
     background-color: var(--sys-color-surface);
     border-block-end-color: var(--sys-color-separator);
+  }
+
+  /* Inside the modal shell the solid chrome slab + its bottom fade OWN the
+     separation — the landed fill/hairline must never appear there (they'd
+     draw a divider against the fade; owner report 2026-07-27). Two things
+     must be silenced: the data-collapsed cascade flip above, AND the
+     scroll-driven `ui-sheet-header-chrome-in` animation below — animation
+     values outrank every normal author declaration, so without
+     `animation: none` the hairline repaints straight over this rule. The
+     TITLE's own reveal animation lives on the [uititle] child and is
+     deliberately untouched. */
+  .modal-sheet__chrome .ui-sheet-header,
+  .modal-sheet__chrome .ui-sheet-header[data-collapsed],
+  .modal-sheet__chrome .ui-sheet-header:has(> [uititle][data-visible]) {
+    background-color: transparent;
+    border-block-end-color: transparent;
+    animation: none;
   }
 
   .ui-sheet-header > [uitrailing] {

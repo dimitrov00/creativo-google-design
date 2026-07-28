@@ -74,6 +74,7 @@ export class ControlsPage {
       links: [
         { slug: 'card', name: 'Card' },
         { slug: 'list-row', name: 'ListRow' },
+        { slug: 'menu', name: 'Menu' },
         { slug: 'section-header', name: 'SectionHeader' },
         { slug: 'stepper', name: 'Stepper' },
       ],

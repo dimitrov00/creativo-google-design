@@ -141,7 +141,7 @@ creativo-google-design/
 Two axes, enforced by `@nx/enforce-module-boundaries`:
 
 - `type:app → *` · `type:feature → feature|application|ui|util` · `type:application → application|domain|util` · `type:ui → ui|tokens|util` · `type:infrastructure → application|domain|util` · `type:domain → domain` (kernel only) · `type:tokens` leaf.
-- `scope:marketing|client|staff|admin` may each depend only on themselves + `scope:shared`. All of `domain/application/infrastructure/ui` are `scope:shared`.
+- `scope:app` (every `type:feature` lib) may depend on `scope:app` + `scope:shared`. All of `domain/application/infrastructure/ui` are `scope:shared` and may depend only on `scope:shared`. (Superseded the four `scope:marketing|client|staff|admin` surfaces on 2026-07-28 — see `docs/architecture/module-boundaries.md`.)
 
 The critical arrows: **`ui` never sees `application` or `infrastructure`. `application` never sees Angular templates or Firebase. `infrastructure` is the only place `firebase/*` resolves** (add a `no-restricted-imports` rule for `firebase/*` everywhere else, mirroring the existing "only kernel imports dinero/luxon" rule).
 

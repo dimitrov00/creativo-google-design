@@ -10,7 +10,7 @@ import {
 } from '@creativo/ui/modifiers';
 import { UiSectionHeader } from '@creativo/ui/patterns';
 import { BookingCtaComponent } from '../../shared/cta/booking-cta.component';
-import { LocaleThemeToggleComponent } from '@creativo/features/marketing/shell';
+import { LocaleThemeToggleComponent } from '@creativo/features/shared/shell';
 
 /**
  * Inset hero — closing-CTA register (case study §3): a rounded B&W video

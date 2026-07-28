@@ -47,6 +47,9 @@
     },
     {
       "path": "../../../application/identity/tsconfig.lib.json"
+    },
+    {
+      "path": "../../shared/shell/tsconfig.lib.json"
     }
   ]
 }

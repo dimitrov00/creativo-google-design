@@ -10,7 +10,9 @@ export * from './lib/avatar/avatar';
 export * from './lib/progress-view/progress-view';
 export * from './lib/skeleton/skeleton';
 export * from './lib/otp-field/otp-field';
+export * from './lib/detail-sheet/detail-sheet';
 export * from './lib/modal-sheet/modal-sheet';
+export * from './lib/progress-ring/progress-ring';
 export * from './lib/phone-field/phone-field';
 export * from './lib/date-field/date-field';
 

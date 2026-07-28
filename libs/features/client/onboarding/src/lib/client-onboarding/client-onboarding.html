@@ -83,41 +83,75 @@
           [uiRevealDelay]="150"
         >
           @if (needsFirstName) {
-          <label>
-            <ui-stack uiSpacing="tight">
-              <span uiText uiFont="footnote"
-                >{{ t('onboarding.about.firstName') }}</span
-              >
-              <input
-                type="text"
-                uiTextField
-                uiControlSize="large"
-                autocomplete="given-name"
-                data-testid="onboarding-first-name"
-                [readonly]="store.pending()"
-                [value]="firstName()"
-                (input)="firstName.set($any($event.target).value)"
-              />
-            </ui-stack>
-          </label>
+          <ui-stack uiSpacing="tight">
+            <label>
+              <ui-stack uiSpacing="tight">
+                <span uiText uiFont="footnote"
+                  >{{ t('onboarding.about.firstName') }}</span
+                >
+                <input
+                  type="text"
+                  uiTextField
+                  uiControlSize="large"
+                  autocomplete="given-name"
+                  data-testid="onboarding-first-name"
+                  [readonly]="store.pending()"
+                  [attr.aria-invalid]="firstNameErrorCode() ? true : null"
+                  [uiInvalid]="!!firstNameErrorCode()"
+                  [value]="firstName()"
+                  (input)="firstName.set($any($event.target).value)"
+                  (blur)="onFirstNameBlur()"
+                />
+              </ui-stack>
+            </label>
+            @if (translateError(firstNameErrorCode()); as error) {
+            <p
+              uiText
+              uiFont="footnote"
+              uiWeight="regular"
+              uiForegroundStyle="destructive"
+              data-testid="onboarding-first-name-error"
+              role="alert"
+            >
+              {{ error }}
+            </p>
+            }
+          </ui-stack>
           } @if (needsLastName) {
-          <label>
-            <ui-stack uiSpacing="tight">
-              <span uiText uiFont="footnote"
-                >{{ t('onboarding.about.lastName') }}</span
-              >
-              <input
-                type="text"
-                uiTextField
-                uiControlSize="large"
-                autocomplete="family-name"
-                data-testid="onboarding-last-name"
-                [readonly]="store.pending()"
-                [value]="lastName()"
-                (input)="lastName.set($any($event.target).value)"
-              />
-            </ui-stack>
-          </label>
+          <ui-stack uiSpacing="tight">
+            <label>
+              <ui-stack uiSpacing="tight">
+                <span uiText uiFont="footnote"
+                  >{{ t('onboarding.about.lastName') }}</span
+                >
+                <input
+                  type="text"
+                  uiTextField
+                  uiControlSize="large"
+                  autocomplete="family-name"
+                  data-testid="onboarding-last-name"
+                  [readonly]="store.pending()"
+                  [attr.aria-invalid]="lastNameErrorCode() ? true : null"
+                  [uiInvalid]="!!lastNameErrorCode()"
+                  [value]="lastName()"
+                  (input)="lastName.set($any($event.target).value)"
+                  (blur)="onLastNameBlur()"
+                />
+              </ui-stack>
+            </label>
+            @if (translateError(lastNameErrorCode()); as error) {
+            <p
+              uiText
+              uiFont="footnote"
+              uiWeight="regular"
+              uiForegroundStyle="destructive"
+              data-testid="onboarding-last-name-error"
+              role="alert"
+            >
+              {{ error }}
+            </p>
+            }
+          </ui-stack>
           } @if (needsPhone) {
           <!-- Only under email-OTP deployments — a phone login already
                satisfies the requirement via the identifier fallback. The
@@ -205,36 +239,40 @@
       class="onboarding-reward"
       data-testid="onboarding-reward"
     >
-      <!-- The reward moment: the badge pops in with a springy overshoot +
-           expanding ring pulse (CSS, feature-scoped), then the confetti
-           erupts from its center — token tints only, fully self-cleaning,
-           silent under prefers-reduced-motion (the calm fade takes over).
-           Decorative overlay only: pointer-transparent, CTAs usable at
-           once. -->
-      <span class="onboarding-reward__badge">
-        <!-- Apple-style stroke draw-on: the check PATH draws itself once
-             the badge pop peaks (pathLength-normalized dashoffset, CSS
-             below). Reduced motion renders it already drawn. -->
-        <svg
-          class="onboarding-reward__check"
-          viewBox="0 0 24 24"
-          aria-hidden="true"
-        >
-          <path
-            d="M5 12.5l4.6 4.6L19 7.5"
-            pathLength="1"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2.5"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-          />
-        </svg>
+      <!-- The reward moment, kept deliberately minimal: the accent disc
+           settles in once (no spring, no ring theatrics), the check draws
+           itself, the confetti erupts. Token tints only, self-cleaning,
+           silent under prefers-reduced-motion (everything pre-drawn, one
+           calm fade). Decorative overlay only: pointer-transparent, CTAs
+           usable at once. -->
+      <!-- The confetti rides a WRAPPER around the badge, not the badge
+           itself: an isolated stacking context lets the overlay sit at
+           z-index -1, so particles erupt from the disc's center but fly
+           BEHIND the circle — never across the check. -->
+      <span class="onboarding-reward__burst">
         <ui-confetti
           [uiCount]="160"
-          [uiDelay]="300"
+          [uiDelay]="650"
           data-testid="onboarding-confetti"
         />
+        <span class="onboarding-reward__badge">
+          <svg
+            class="onboarding-reward__mark"
+            viewBox="0 0 48 48"
+            aria-hidden="true"
+          >
+            <!-- pathLength-normalized so the stroke draw animates 1 → 0. -->
+            <path
+              class="onboarding-reward__check"
+              d="M15 24.5l6.2 6.2L33 18"
+              pathLength="1"
+              fill="none"
+              stroke-width="3.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
+          </svg>
+        </span>
       </span>
       <h1 uiText uiFont="largeTitle">{{ t('onboarding.reward.title') }}</h1>
       <p uiText uiFont="body" uiForegroundStyle="secondary">
@@ -243,15 +281,12 @@
     </ui-stack>
     <ui-spacer />
 
-    <!-- Completion-screen CTA anatomy (Apple Setup Assistant / HIG): ONE
-         filled primary verb with the quiet "not now" text link STACKED
-         beneath it, both centered — never two side-by-side text buttons
-         fighting for the bar (they overflowed compact widths). -->
-    <ui-stack
-      uiAlignment="center"
-      uiSpacing="compact"
-      uiPaddingHorizontal="regular"
-      class="onboarding-reward__actions"
+    <!-- Completion-screen CTA anatomy (Apple Setup Assistant / HIG): the
+         page-action-bar's STACKED variant — one filled primary with the
+         quiet "not now" link beneath, both centered, sticky in the thumb
+         zone like every bottom bar in the app. -->
+    <ui-page-action-bar
+      [uiStacked]="true"
       uiReveal="fade"
       uiRevealTrigger="mount"
       [uiRevealDelay]="450"
@@ -278,50 +313,223 @@
       >
         {{ t('onboarding.reward.enterApp') }}
       </button>
-    </ui-stack>
+    </ui-page-action-bar>
   </ui-stack>
   } @case ('services') {
-  <ui-stack
-    uiAlignment="center"
-    uiSpacing="none"
-    uiFrame
-    uiFrameMinHeight="100svh"
-    uiPaddingHorizontal="regular"
-    uiPaddingVertical="spacious"
-  >
-    <ui-spacer />
-    <ui-stack
-      uiSpacing="comfortable"
-      uiFrame
-      uiFrameMaxWidth="28rem"
-      data-testid="onboarding-services"
-    >
-      <ui-stack uiSpacing="tight">
-        <p uiText uiFont="caption" uiForegroundStyle="secondary">
-          {{ t('onboarding.optional') }}
-        </p>
-        <h1 uiText uiFont="title">{{ t('onboarding.services.title') }}</h1>
-        <p uiText uiFont="body">{{ t('onboarding.services.body') }}</p>
-      </ui-stack>
-
-      <ui-flow uiSpacing="compact" data-testid="onboarding-services-list">
-        @for (service of services(); track service.id.value) {
+  <!-- Personalization phase, step 1 of 3 — the SAME quiet nav-stack
+       chrome as the auth journey (owner ruling 2026-07-25): icon-only
+       glass-back chevron (returns to the reward screen via the flow's own
+       `back` event), caption-less stepper centered between equal flexible
+       side slots, top-anchored content, and the chromeless bottom action
+       bar (plain Skip leading, hugged capsule Continue trailing). The old
+       "Optional" eyebrow is retired — the ever-present Skip states
+       optionality once (HIG: chrome states things once); no dead caption
+       above the title. -->
+  <ui-stack uiSpacing="none" uiFrame uiFrameMinHeight="100svh">
+    <ui-toolbar uiSticky uiToolbarBackground="hidden">
+      <ui-stack
+        uiAxis="horizontal"
+        uiSpacing="none"
+        uiAlignment="center"
+        uiFrame
+        uiFrameMaxWidth="infinity"
+      >
+        <!-- Back only when the PLAN has an earlier step. The first step
+             has nothing before it: on a resume that would re-show the
+             one-time "you're in" celebration, and on a first run it would
+             reopen a screen the user already dismissed. -->
+        @if (store.planPosition() > 1) {
         <button
           type="button"
-          uiChip
-          [uiSelected]="isServiceSelected(service.id)"
-          [attr.data-testid]="'onboarding-service-' + service.id.value"
-          (click)="toggleService(service.id)"
+          uiButton
+          uiButtonStyle="bordered"
+          uiTint="neutral"
+          uiButtonBorderShape="capsule"
+          uiControlSize="regular"
+          [uiIconOnly]="true"
+          data-testid="onboarding-back"
+          [attr.aria-label]="t('auth.identify.back')"
+          (click)="goBack()"
         >
-          {{ serviceName(service) }}
+          <ui-icon uiName="nav.back" />
         </button>
         }
-      </ui-flow>
+      </ui-stack>
+      <!-- The stepper counts the steps THIS visit will show: a full first
+           run is 3, a resume that only needs a photo is 1 (and then it
+           isn't wayfinding at all, so it's gone entirely). -->
+      @if (!store.isSingleStep()) {
+      <ui-stepper
+        [uiSteps]="store.plan().length"
+        [uiCurrent]="store.planPosition()"
+        [uiLabel]="
+          t('auth.steps.label', {
+            current: store.planPosition(),
+            total: store.plan().length
+          })
+        "
+        uiLabelsHidden
+        uiFrame
+        uiFrameWidth="min(34vw, 10rem)"
+      />
+      }
+      <ui-stack
+        uiAxis="horizontal"
+        uiSpacing="none"
+        uiAlignment="center"
+        uiFrame
+        uiFrameMaxWidth="infinity"
+      >
+        <ui-spacer />
+      </ui-stack>
+    </ui-toolbar>
 
+    <ui-stack
+      uiAlignment="center"
+      uiPaddingHorizontal="regular"
+      uiPaddingVertical="spacious"
+    >
+      <ui-stack
+        uiSpacing="comfortable"
+        uiFrame
+        uiFrameMaxWidth="28rem"
+        data-testid="onboarding-services"
+      >
+        <ui-section-header
+          uiAlignment="leading"
+          uiEyebrowTone="secondary"
+          uiReveal
+          uiRevealTrigger="mount"
+        >
+          <p uiEyebrow>{{ t('onboarding.optional') }}</p>
+          <h1 uiTitle>{{ t('onboarding.services.title') }}</h1>
+          <p uiLede>
+            {{ t('onboarding.services.body', { max: servicesCap }) }}
+          </p>
+        </ui-section-header>
+
+        <ui-stack
+          uiSpacing="compact"
+          uiReveal
+          uiRevealTrigger="mount"
+          [uiRevealDelay]="150"
+          data-testid="onboarding-services-list"
+        >
+          <!-- Quiet running counter, trailing-aligned over the grid —
+               states the cap without a paragraph of rules. -->
+          <ui-stack uiAxis="horizontal" uiSpacing="none">
+            <ui-spacer />
+            <p
+              uiText
+              uiFont="caption"
+              uiWeight="regular"
+              data-testid="onboarding-services-counter"
+              aria-live="polite"
+            >
+              {{ t('onboarding.services.counter', { selected: selectionCount(),
+              max: servicesCap }) }}
+            </p>
+          </ui-stack>
+
+          <!-- Image-forward 2-up selection grid (Revolut-card language):
+               tap a card to toggle, the tiny info pill opens the read-more
+               sheet; at the cap the unselected remainder dims until a slot
+               frees up. -->
+          <ui-grid [uiColumns]="2" uiSpacing="compact">
+            @for (service of services(); track service.id.value) {
+            <lib-onboarding-service-card
+              [serviceId]="service.id.value"
+              [name]="serviceName(service)"
+              [meta]="serviceMeta(service)"
+              [coverUrl]="serviceCoverUrl(service)"
+              [selected]="isServiceSelected(service.id)"
+              [capBlocked]="capReached() && !isServiceSelected(service.id)"
+              [detailsLabel]="t('onboarding.services.details', { name:
+              serviceName(service) })"
+              (toggled)="toggleService(service.id)"
+              (details)="openDetails(service)"
+            />
+            }
+          </ui-grid>
+        </ui-stack>
+      </ui-stack>
+    </ui-stack>
+    <ui-spacer />
+
+    @if (detailsService(); as details) {
+    <!-- The SAME ui-detail-sheet anatomy as the landing service sheet —
+         only the toolbar action differs: select/remove instead of book. -->
+    <ui-detail-sheet
+      #serviceSheet
+      data-testid="onboarding-service-sheet"
+      uiSheetId="onboarding-service-sheet"
+      [uiTitle]="serviceName(details)"
+      [uiDescription]="serviceDescription(details)"
+      [uiCloseLabel]="t('onboarding.services.close')"
+      (uiClosed)="closeDetails()"
+    >
+      <ui-stack
+        sheet-facts
+        uiAxis="horizontal"
+        uiSpacing="tight"
+        uiAlignment="center"
+        uiText
+        uiFont="subheadline"
+        uiForegroundStyle="secondary"
+      >
+        <ui-icon uiName="service.duration" />
+        {{ serviceMeta(details) }}
+      </ui-stack>
+
+      <div sheet-media class="ui-detail-sheet__story">
+        <ui-async-image
+          [uiSrc]="serviceCoverUrl(details)"
+          [uiAlt]="''"
+          uiRatio="16 / 10"
+          [uiRing]="true"
+          uiRadius="prominent"
+        >
+          <span uiPlaceholder class="onboarding-service-card__fallback">
+            <ui-icon uiName="service.placeholder" />
+          </span>
+        </ui-async-image>
+      </div>
+
+      <button
+        sheet-actions
+        type="button"
+        uiButton
+        [uiButtonStyle]="
+          isServiceSelected(details.id) ? 'bordered' : 'borderedProminent'
+        "
+        [uiTint]="isServiceSelected(details.id) ? 'neutral' : undefined"
+        uiButtonBorderShape="capsule"
+        [uiSpread]="true"
+        uiControlSize="large"
+        data-testid="onboarding-service-sheet-toggle"
+        [disabled]="capReached() && !isServiceSelected(details.id)"
+        (click)="toggleDetailsService(); serviceSheet.close()"
+      >
+        {{ t(isServiceSelected(details.id) ? 'onboarding.services.remove' :
+        'onboarding.services.select') }}
+      </button>
+    </ui-detail-sheet>
+    }
+
+    <!-- Setup-Assistant CTA anatomy (same as the reward finale): the
+         page-action-bar's stacked variant — sticky, so Continue/Skip stay
+         in the thumb zone while the grid scrolls beneath. -->
+    <ui-page-action-bar
+      [uiStacked]="true"
+      uiReveal="fade"
+      uiRevealTrigger="mount"
+      [uiRevealDelay]="300"
+    >
       <button
         type="button"
         uiButton
         uiButtonStyle="borderedProminent"
+        uiButtonBorderShape="capsule"
         uiControlSize="large"
         data-testid="onboarding-submit-services"
         (click)="submitServices()"
@@ -332,87 +540,150 @@
         type="button"
         uiButton
         uiButtonStyle="plain"
+        uiButtonBorderShape="capsule"
+        uiControlSize="small"
         data-testid="onboarding-skip-services"
         (click)="store.skipServices()"
       >
         {{ t('onboarding.services.skip') }}
       </button>
-    </ui-stack>
-    <ui-spacer />
+    </ui-page-action-bar>
   </ui-stack>
   } @case ('birthday') {
   <!-- OPTIONAL birthday, its own skippable personalization step (moved off
        the required About form — progressive disclosure; rewards may offer
-       birthday presents, admin-configurable later). Same quiet chrome as
-       services/avatar: caption-tier Optional marker, no toolbar, no
-       hairlines. Validated through the BirthDate VO on blur/submit only;
-       segment order, labels and placeholders ride i18n so locales can
-       differ. The hugged capsule Save docks trailing in the chromeless
-       bottom bar with the plain Skip beside it (leading slot). -->
-  <ui-stack
-    uiAlignment="center"
-    uiSpacing="none"
-    uiFrame
-    uiFrameMinHeight="100svh"
-    uiPaddingHorizontal="regular"
-    uiPaddingVertical="spacious"
-  >
-    <ui-spacer />
-    <ui-stack
-      uiSpacing="comfortable"
-      uiFrame
-      uiFrameMaxWidth="28rem"
-      data-testid="onboarding-birthday-step"
-    >
-      <ui-stack uiSpacing="tight">
-        <p uiText uiFont="caption" uiForegroundStyle="secondary">
-          {{ t('onboarding.optional') }}
-        </p>
-        <h1 uiText uiFont="title">{{ t('onboarding.birthday.title') }}</h1>
-        <p uiText uiFont="body">{{ t('onboarding.birthday.lede') }}</p>
-      </ui-stack>
-
-      <ui-date-field
-        uiControlSize="large"
-        [label]="t('onboarding.birthday.label')"
-        [dayLabel]="t('onboarding.birthday.day')"
-        [monthLabel]="t('onboarding.birthday.month')"
-        [yearLabel]="t('onboarding.birthday.year')"
-        [dayPlaceholder]="t('onboarding.birthday.dayPlaceholder')"
-        [monthPlaceholder]="t('onboarding.birthday.monthPlaceholder')"
-        [yearPlaceholder]="t('onboarding.birthday.yearPlaceholder')"
-        [disabled]="store.pending()"
-        [error]="birthError()"
-        [(value)]="birthValue"
-        (uiBlurred)="onBirthBlur($event)"
-        data-testid="onboarding-birthday"
-      />
-      @if (translateError(birthdaySaveError()); as error) {
-      <p
-        uiText
-        uiFont="footnote"
-        uiWeight="regular"
-        uiForegroundStyle="destructive"
-        data-testid="onboarding-birthday-error"
-        role="alert"
+       birthday presents, admin-configurable later). Personalization step 2
+       of 3, same quiet nav-stack chrome as services: icon-only glass-back
+       (returns to services), caption-less stepper, top-anchored content.
+       Validated through the BirthDate VO on blur/submit only; segment
+       order, labels and placeholders ride i18n so locales can differ. The
+       hugged capsule Save docks trailing in the chromeless bottom bar with
+       the plain Skip beside it (leading slot). -->
+  <ui-stack uiSpacing="none" uiFrame uiFrameMinHeight="100svh">
+    <ui-toolbar uiSticky uiToolbarBackground="hidden">
+      <ui-stack
+        uiAxis="horizontal"
+        uiSpacing="none"
+        uiAlignment="center"
+        uiFrame
+        uiFrameMaxWidth="infinity"
       >
-        {{ error }}
-      </p>
+        <!-- Back only when the PLAN has an earlier step. The first step
+             has nothing before it: on a resume that would re-show the
+             one-time "you're in" celebration, and on a first run it would
+             reopen a screen the user already dismissed. -->
+        @if (store.planPosition() > 1) {
+        <button
+          type="button"
+          uiButton
+          uiButtonStyle="bordered"
+          uiTint="neutral"
+          uiButtonBorderShape="capsule"
+          uiControlSize="regular"
+          [uiIconOnly]="true"
+          data-testid="onboarding-back"
+          [attr.aria-label]="t('auth.identify.back')"
+          (click)="goBack()"
+        >
+          <ui-icon uiName="nav.back" />
+        </button>
+        }
+      </ui-stack>
+      <!-- The stepper counts the steps THIS visit will show: a full first
+           run is 3, a resume that only needs a photo is 1 (and then it
+           isn't wayfinding at all, so it's gone entirely). -->
+      @if (!store.isSingleStep()) {
+      <ui-stepper
+        [uiSteps]="store.plan().length"
+        [uiCurrent]="store.planPosition()"
+        [uiLabel]="
+          t('auth.steps.label', {
+            current: store.planPosition(),
+            total: store.plan().length
+          })
+        "
+        uiLabelsHidden
+        uiFrame
+        uiFrameWidth="min(34vw, 10rem)"
+      />
       }
+      <ui-stack
+        uiAxis="horizontal"
+        uiSpacing="none"
+        uiAlignment="center"
+        uiFrame
+        uiFrameMaxWidth="infinity"
+      >
+        <ui-spacer />
+      </ui-stack>
+    </ui-toolbar>
+
+    <ui-stack
+      uiAlignment="center"
+      uiPaddingHorizontal="regular"
+      uiPaddingVertical="spacious"
+    >
+      <ui-stack
+        uiSpacing="comfortable"
+        uiFrame
+        uiFrameMaxWidth="28rem"
+        data-testid="onboarding-birthday-step"
+      >
+        <ui-section-header
+          uiAlignment="leading"
+          uiEyebrowTone="secondary"
+          uiReveal
+          uiRevealTrigger="mount"
+        >
+          <p uiEyebrow>{{ t('onboarding.optional') }}</p>
+          <h1 uiTitle>{{ t('onboarding.birthday.title') }}</h1>
+          <p uiLede>{{ t('onboarding.birthday.lede') }}</p>
+        </ui-section-header>
+
+        <ui-stack
+          uiSpacing="regular"
+          uiReveal
+          uiRevealTrigger="mount"
+          [uiRevealDelay]="150"
+        >
+          <ui-date-field
+            uiControlSize="large"
+            [label]="t('onboarding.birthday.label')"
+            [dayLabel]="t('onboarding.birthday.day')"
+            [monthLabel]="t('onboarding.birthday.month')"
+            [yearLabel]="t('onboarding.birthday.year')"
+            [dayPlaceholder]="t('onboarding.birthday.dayPlaceholder')"
+            [monthPlaceholder]="t('onboarding.birthday.monthPlaceholder')"
+            [yearPlaceholder]="t('onboarding.birthday.yearPlaceholder')"
+            [disabled]="store.pending()"
+            [error]="birthError()"
+            [(value)]="birthValue"
+            (uiBlurred)="onBirthBlur($event)"
+            data-testid="onboarding-birthday"
+          />
+          @if (translateError(birthdaySaveError()); as error) {
+          <p
+            uiText
+            uiFont="footnote"
+            uiWeight="regular"
+            uiForegroundStyle="destructive"
+            data-testid="onboarding-birthday-error"
+            role="alert"
+          >
+            {{ error }}
+          </p>
+          }
+        </ui-stack>
+      </ui-stack>
     </ui-stack>
     <ui-spacer />
 
-    <ui-page-action-bar>
-      <button
-        type="button"
-        uiButton
-        uiButtonStyle="plain"
-        uiButtonBorderShape="capsule"
-        data-testid="onboarding-skip-birthday"
-        (click)="skipBirthdayNow()"
-      >
-        {{ t('onboarding.birthday.skip') }}
-      </button>
+    <ui-page-action-bar
+      [uiStacked]="true"
+      uiReveal="fade"
+      uiRevealTrigger="mount"
+      [uiRevealDelay]="300"
+    >
       <button
         type="button"
         uiButton
@@ -426,55 +697,194 @@
       >
         {{ t('onboarding.birthday.save') }}
       </button>
+      <button
+        type="button"
+        uiButton
+        uiButtonStyle="plain"
+        uiButtonBorderShape="capsule"
+        uiControlSize="small"
+        data-testid="onboarding-skip-birthday"
+        (click)="skipBirthdayNow()"
+      >
+        {{ t('onboarding.birthday.skip') }}
+      </button>
     </ui-page-action-bar>
   </ui-stack>
   } @case ('avatar') {
-  <ui-stack
-    uiAlignment="center"
-    uiSpacing="none"
-    uiFrame
-    uiFrameMinHeight="100svh"
-    uiPaddingHorizontal="regular"
-    uiPaddingVertical="spacious"
-  >
-    <ui-spacer />
-    <ui-stack
-      uiSpacing="comfortable"
-      uiFrame
-      uiFrameMaxWidth="28rem"
-      data-testid="onboarding-avatar"
-    >
-      <ui-stack uiSpacing="tight">
-        <p uiText uiFont="caption" uiForegroundStyle="secondary">
-          {{ t('onboarding.optional') }}
-        </p>
-        <h1 uiText uiFont="title">{{ t('onboarding.avatar.title') }}</h1>
-        <p uiText uiFont="body">{{ t('onboarding.avatar.body') }}</p>
+  <!-- Personalization step 3 of 3 — same quiet nav-stack chrome. The big
+       monogram avatar IS the step: initials until an image is picked (the
+       instant local preview swaps in), the pick affordance is the quiet
+       bordered pill beneath it, and the ONE primary exit uploads the
+       staged image (if any) on its way into the app — no separate Skip:
+       with nothing picked the primary already skips, and the retired pair
+       did the identical thing twice. -->
+  <ui-stack uiSpacing="none" uiFrame uiFrameMinHeight="100svh">
+    <ui-toolbar uiSticky uiToolbarBackground="hidden">
+      <ui-stack
+        uiAxis="horizontal"
+        uiSpacing="none"
+        uiAlignment="center"
+        uiFrame
+        uiFrameMaxWidth="infinity"
+      >
+        <!-- Back only when the PLAN has an earlier step. The first step
+             has nothing before it: on a resume that would re-show the
+             one-time "you're in" celebration, and on a first run it would
+             reopen a screen the user already dismissed. -->
+        @if (store.planPosition() > 1) {
+        <button
+          type="button"
+          uiButton
+          uiButtonStyle="bordered"
+          uiTint="neutral"
+          uiButtonBorderShape="capsule"
+          uiControlSize="regular"
+          [uiIconOnly]="true"
+          data-testid="onboarding-back"
+          [attr.aria-label]="t('auth.identify.back')"
+          (click)="goBack()"
+        >
+          <ui-icon uiName="nav.back" />
+        </button>
+        }
       </ui-stack>
+      <!-- The stepper counts the steps THIS visit will show: a full first
+           run is 3, a resume that only needs a photo is 1 (and then it
+           isn't wayfinding at all, so it's gone entirely). -->
+      @if (!store.isSingleStep()) {
+      <ui-stepper
+        [uiSteps]="store.plan().length"
+        [uiCurrent]="store.planPosition()"
+        [uiLabel]="
+          t('auth.steps.label', {
+            current: store.planPosition(),
+            total: store.plan().length
+          })
+        "
+        uiLabelsHidden
+        uiFrame
+        uiFrameWidth="min(34vw, 10rem)"
+      />
+      }
+      <ui-stack
+        uiAxis="horizontal"
+        uiSpacing="none"
+        uiAlignment="center"
+        uiFrame
+        uiFrameMaxWidth="infinity"
+      >
+        <ui-spacer />
+      </ui-stack>
+    </ui-toolbar>
 
-      <!-- No uploader yet (DS gap, deferred) — one clear primary exit plus
-           the plain skip (design §2.6). -->
+    <ui-stack
+      uiAlignment="center"
+      uiPaddingHorizontal="regular"
+      uiPaddingVertical="spacious"
+    >
+      <ui-stack
+        uiSpacing="comfortable"
+        uiFrame
+        uiFrameMaxWidth="28rem"
+        data-testid="onboarding-avatar"
+      >
+        <ui-section-header
+          uiAlignment="leading"
+          uiEyebrowTone="secondary"
+          uiReveal
+          uiRevealTrigger="mount"
+        >
+          <p uiEyebrow>{{ t('onboarding.optional') }}</p>
+          <h1 uiTitle>{{ t('onboarding.avatar.title') }}</h1>
+          <p uiLede>{{ t('onboarding.avatar.body') }}</p>
+        </ui-section-header>
+
+        <ui-stack
+          uiAlignment="center"
+          uiSpacing="regular"
+          uiReveal
+          uiRevealTrigger="mount"
+          [uiRevealDelay]="150"
+        >
+          <!-- Tapping the portrait itself also opens the picker — the
+             label wraps both, so the pill and the avatar share the one
+             visually-hidden file input for free. -->
+          <label class="onboarding-avatar__picker">
+            <input
+              type="file"
+              accept="image/*"
+              class="onboarding-avatar__input"
+              data-testid="onboarding-avatar-input"
+              [disabled]="store.pending()"
+              (change)="onAvatarPicked($event)"
+            />
+            <ui-avatar
+              uiControlSize="extraLarge"
+              [uiSrc]="avatarPreviewUrl()"
+              [uiName]="fullName()"
+              data-testid="onboarding-avatar-preview"
+            />
+            <!-- Same quiet control, same words as /account/profile: one
+                 affordance for "set your photo" wherever it appears. -->
+            <span
+              uiButton
+              uiButtonStyle="plain"
+              uiControlSize="small"
+              data-testid="onboarding-avatar-pick"
+            >
+              {{ t(avatarFile() ? 'onboarding.avatar.changePhoto' :
+              'onboarding.avatar.addPhoto') }}
+            </span>
+          </label>
+
+          @if (translateError(avatarErrorCode()); as error) {
+          <p
+            uiText
+            uiFont="footnote"
+            uiWeight="regular"
+            uiForegroundStyle="destructive"
+            data-testid="onboarding-avatar-error"
+            role="alert"
+          >
+            {{ error }}
+          </p>
+          }
+        </ui-stack>
+      </ui-stack>
+    </ui-stack>
+    <ui-spacer />
+
+    <ui-page-action-bar
+      [uiStacked]="true"
+      uiReveal="fade"
+      uiRevealTrigger="mount"
+      [uiRevealDelay]="300"
+    >
       <button
         type="button"
         uiButton
         uiButtonStyle="borderedProminent"
+        uiButtonBorderShape="capsule"
         uiControlSize="large"
         data-testid="onboarding-avatar-enter-app"
+        [uiLoading]="store.pending()"
+        [disabled]="!avatarFile()"
         (click)="enterAppNow()"
       >
-        {{ t('onboarding.avatar.enterApp') }}
+        {{ t('onboarding.avatar.save') }}
       </button>
       <button
         type="button"
         uiButton
         uiButtonStyle="plain"
+        uiButtonBorderShape="capsule"
+        uiControlSize="small"
         data-testid="onboarding-skip-avatar"
-        (click)="skipAvatarNow()"
+        (click)="enterAppNow()"
       >
         {{ t('onboarding.avatar.skip') }}
       </button>
-    </ui-stack>
-    <ui-spacer />
+    </ui-page-action-bar>
   </ui-stack>
   } @case ('entering') {
   <ui-stack
@@ -486,19 +896,28 @@
     uiPaddingVertical="spacious"
   >
     <ui-spacer />
+    <!-- Terminal wait — the same centered quiet-progress anatomy as the
+         auth page's settling state; the failure variant mirrors the
+         blocked-screen layout with one capsule primary retry. -->
     <ui-stack
       uiSpacing="comfortable"
+      uiAlignment="center"
       uiFrame
       uiFrameMaxWidth="28rem"
+      uiReveal
+      uiRevealTrigger="mount"
       data-testid="onboarding-entering"
     >
       @if (enteringFailed()) {
       <h1 uiText uiFont="title">{{ t('onboarding.entering.failedTitle') }}</h1>
-      <p uiText uiFont="body">{{ t('onboarding.entering.failedBody') }}</p>
+      <p uiText uiFont="body" uiForegroundStyle="secondary">
+        {{ t('onboarding.entering.failedBody') }}
+      </p>
       <button
         type="button"
         uiButton
         uiButtonStyle="borderedProminent"
+        uiButtonBorderShape="capsule"
         uiControlSize="large"
         data-testid="onboarding-retry-entering"
         (click)="retryEntering()"
@@ -506,8 +925,10 @@
         {{ t('onboarding.entering.retry') }}
       </button>
       } @else {
-      <h1 uiText uiFont="title">{{ t('onboarding.entering.title') }}</h1>
       <ui-progress-view data-testid="onboarding-entering-spinner" />
+      <p uiText uiFont="body" uiForegroundStyle="secondary">
+        {{ t('onboarding.entering.title') }}
+      </p>
       }
     </ui-stack>
     <ui-spacer />

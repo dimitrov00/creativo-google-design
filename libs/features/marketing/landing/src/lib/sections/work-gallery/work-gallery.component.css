@@ -81,9 +81,19 @@
    from --sys-color-background — the uiOverlay scaffold supplies the
    positioning/hit-transparency, the token-mixed stops stay local. */
 .cr-gallery__fade {
+  /* Smoothstep alpha ramp (3t²−2t³, 85% peak, sampled every 1rem of the
+     8rem rise) — the house fade curve (owner ruling 2026-07-27): eased
+     stops dissolve without the edge a two-stop linear fade shows. */
   background: linear-gradient(
     to top,
-    color-mix(in srgb, var(--sys-color-background) 85%, transparent),
+    color-mix(in srgb, var(--sys-color-background) 85%, transparent) 0,
+    color-mix(in srgb, var(--sys-color-background) 82%, transparent) 1rem,
+    color-mix(in srgb, var(--sys-color-background) 71%, transparent) 2rem,
+    color-mix(in srgb, var(--sys-color-background) 58%, transparent) 3rem,
+    color-mix(in srgb, var(--sys-color-background) 43%, transparent) 4rem,
+    color-mix(in srgb, var(--sys-color-background) 27%, transparent) 5rem,
+    color-mix(in srgb, var(--sys-color-background) 14%, transparent) 6rem,
+    color-mix(in srgb, var(--sys-color-background) 3%, transparent) 7rem,
     transparent 8rem
   );
 }

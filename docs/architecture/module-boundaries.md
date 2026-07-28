@@ -12,36 +12,41 @@ The pre-Phase-0 tag matrix (scope:owner/performer, type:data-access,
 
 ## `scope:*` — which product surface a project belongs to
 
-| Tag               | Meaning                                                                               | Exists today?                        |
-| ----------------- | ------------------------------------------------------------------------------------- | ------------------------------------ |
-| `scope:shared`    | Design system + hexagon core: tokens, ui, domain, application, infrastructure, cursor | Yes                                  |
-| `scope:showcase`  | The design-system/token showcase app                                                  | Yes                                  |
-| `scope:marketing` | Marketing feature slice(s)                                                            | Yes (`features/marketing/landing`)   |
-| `scope:client`    | Client booking/account feature slices                                                 | Yes (`features/client/*`)            |
-| `scope:staff`     | Staff/performer dashboard feature slice                                               | Yes (`features/staff/dashboard`)     |
-| `scope:admin`     | Admin back-office feature slice                                                       | Yes (`features/admin/impersonation`) |
-| `scope:backend`   | Cloud Functions / server-side logic                                                   | Yes                                  |
-| `scope:web`       | The single consolidated SPA shell (`apps/web`)                                        | Yes                                  |
+| Tag              | Meaning                                                                               | Exists today?               |
+| ---------------- | ------------------------------------------------------------------------------------- | --------------------------- |
+| `scope:shared`   | Design system + hexagon core: tokens, ui, domain, application, infrastructure, cursor | Yes                         |
+| `scope:showcase` | The design-system/token showcase app                                                  | Yes                         |
+| `scope:app`      | Every `type:feature` slice — marketing, client, staff, admin, shell                   | `scope:app`, `type:feature` |
+| `scope:backend`  | Cloud Functions / server-side logic                                                   | Yes                         |
+| `scope:web`      | The single consolidated SPA shell (`apps/web`)                                        | Yes                         |
 
 **Rule:** a project can only depend on projects in its own scope, plus
-`scope:shared`. A `scope:client` feature can never import a `scope:staff`
-feature directly — both would go through `scope:shared` (i.e. `application`/
-`domain`/`ui`) if they need to share logic.
+`scope:shared`. So a feature may import any other feature, but `scope:shared`
+— the whole hexagon core and design system — can never import a feature.
 
-**`scope:web` is the one exception**, by design: `apps/web` is the single app
-that composes every product surface (marketing at `/`, client at `/auth`
+**`scope:web`** additionally depends on `scope:app`: `apps/web` is the single
+app that composes every surface (marketing at `/`, client at `/auth`
 `/onboarding` `/book` `/account`, staff at `/staff`, admin at `/admin` — see
-blueprint §1.4), so it's allowed to depend on `scope:marketing`, `scope:client`,
-`scope:staff`, `scope:admin`, and `scope:shared` all at once. The isolation
-rule still does real work at the _feature_ level: `libs/features/client/*`
-still cannot reach into `libs/features/staff/*` directly.
+blueprint §1.4).
+
+**Amendment 2026-07-28 — `scope:app` replaced `scope:marketing|client|staff|admin`.**
+Owner ruling: this is one app, and the four product surfaces were legacy
+structure inherited from the pre-migration multi-app layout. In practice the
+split never prevented a bad edge; it only blocked legitimate ones — the shared
+shell's account chrome could not read the client session model, which would
+have forced either a duplicate profile fetch or a lib move to work around a
+boundary that was not protecting anything. Cross-surface isolation is not the
+constraint that matters in a single deployed SPA. The constraint that does —
+**layering** — is untouched: `type:*` still keeps domain/application/ui from
+ever seeing a feature, and infrastructure remains the only place `firebase/*`
+resolves.
 
 ## `type:*` — architectural layer
 
 | Tag                   | Meaning                                                                                                    |
 | --------------------- | ---------------------------------------------------------------------------------------------------------- |
 | `type:app`            | A deployable application                                                                                   |
-| `type:feature`        | Routed, business-logic presentation slice (`libs/features/*`)                                              |
+| `type:feature`        | Routed, business-logic presentation slice (`libs/features/*`)                                              | `scope:app`, `type:feature` |
 | `type:application`    | Ports (interfaces + `InjectionToken`s) + use-cases (`libs/application/*`)                                  |
 | `type:ui`             | Presentational components/modifiers only, no business logic or data access (`libs/ui/*`, `libs/shared/ui`) |
 | `type:infrastructure` | Adapters — the only libs allowed to import `firebase/*` (`libs/infrastructure/*`)                          |
@@ -179,13 +184,13 @@ three at the time — see `docs/architecture/domain-model.md`'s "Why
 | `controls`             | `libs/ui/controls`                  | `scope:shared`, `type:ui`             |
 | `layout`               | `libs/ui/layout`                    | `scope:shared`, `type:ui`             |
 | `patterns`             | `libs/ui/patterns`                  | `scope:shared`, `type:ui`             |
-| `marketing-landing`    | `libs/features/marketing/landing`   | `scope:marketing`, `type:feature`     |
-| `client-auth`          | `libs/features/client/auth`         | `scope:client`, `type:feature`        |
-| `client-onboarding`    | `libs/features/client/onboarding`   | `scope:client`, `type:feature`        |
-| `client-booking`       | `libs/features/client/booking`      | `scope:client`, `type:feature`        |
-| `client-account`       | `libs/features/client/account`      | `scope:client`, `type:feature`        |
-| `staff-dashboard`      | `libs/features/staff/dashboard`     | `scope:staff`, `type:feature`         |
-| `admin-impersonation`  | `libs/features/admin/impersonation` | `scope:admin`, `type:feature`         |
+| `marketing-landing`    | `libs/features/marketing/landing`   | `scope:app`, `type:feature`           |
+| `client-auth`          | `libs/features/client/auth`         | `scope:app`, `type:feature`           |
+| `client-onboarding`    | `libs/features/client/onboarding`   | `scope:app`, `type:feature`           |
+| `client-booking`       | `libs/features/client/booking`      | `scope:app`, `type:feature`           |
+| `client-account`       | `libs/features/client/account`      | `scope:app`, `type:feature`           |
+| `staff-dashboard`      | `libs/features/staff/dashboard`     | `scope:app`, `type:feature`           |
+| `admin-impersonation`  | `libs/features/admin/impersonation` | `scope:app`, `type:feature`           |
 | `firebase-app`         | `libs/infrastructure/firebase-app`  | `scope:shared`, `type:infrastructure` |
 | `i18n`                 | `libs/infrastructure/i18n`          | `scope:shared`, `type:infrastructure` |
 | `kernel`               | `libs/domain/kernel`                | `scope:shared`, `type:domain`         |
@@ -214,13 +219,15 @@ Verify the graph matches this table at any time with `nx graph`.
 
 ## Worked example
 
-`apps/web` depends on `libs/features/marketing/landing` (`scope:marketing`),
-`libs/features/client/*` (`scope:client`), `libs/features/staff/dashboard`
-(`scope:staff`), `libs/features/admin/impersonation` (`scope:admin`), and any
-`scope:shared` lib it needs directly (e.g. `libs/infrastructure/firebase-app`
-and `libs/infrastructure/i18n` for its composition root) — all legal because
-`apps/web` is tagged `scope:web`. A `libs/features/client/booking` import of
-`libs/features/staff/dashboard` would still be rejected: `scope:client` may
-only depend on `scope:client` + `scope:shared`, and `scope:staff` is neither.
-That's the boundary doing its job — client and staff feature slices share
-logic through `application`/`domain`/`ui` (`scope:shared`), never directly.
+`apps/web` depends on every feature lib (`scope:app`) plus any `scope:shared`
+lib it needs directly (e.g. `libs/infrastructure/firebase-app` and
+`libs/infrastructure/i18n` for its composition root) — all legal because
+`apps/web` is tagged `scope:web`. `libs/features/shared/shell` importing
+`libs/features/client/account-state` is likewise legal (`scope:app` →
+`scope:app`): the app-wide header and menu read the same session model the
+account screens do.
+
+The edge that is still rejected is the one that matters: any `scope:shared`
+project — `libs/application/accounts`, `libs/ui/patterns`, `libs/domain/*` —
+importing a feature. The hexagon core and the design system never learn what
+screens exist; features depend on them, never the reverse.

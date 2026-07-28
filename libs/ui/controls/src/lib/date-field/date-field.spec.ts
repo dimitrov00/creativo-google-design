@@ -10,6 +10,7 @@ import {
   imports: [UiDateField],
   template: `<ui-date-field
     label="Birthday"
+    [uiLabelHidden]="labelHidden()"
     [hint]="hint()"
     [error]="error()"
     [disabled]="disabled()"
@@ -22,6 +23,7 @@ class HostComponent {
   readonly hint = signal<string | null>('For birthday surprises.');
   readonly error = signal<string | null>(null);
   readonly disabled = signal(false);
+  readonly labelHidden = signal(false);
   readonly blurs: UiDateFieldBlurEvent[] = [];
 }
 
@@ -229,5 +231,20 @@ describe('UiDateField', () => {
     // Disabled rides the FIELDSET (GOV.UK grouping) — every segment locks.
     expect(slot('day').disabled).toBe(true);
     expect(slot('year').disabled).toBe(true);
+  });
+
+  it('uiLabelHidden keeps the legend naming the fieldset while removing it visually', () => {
+    const legend = () =>
+      fixture.nativeElement.querySelector('.ui-date-field__legend');
+    expect(legend()?.hasAttribute('data-visually-hidden')).toBe(false);
+
+    fixture.componentInstance.labelHidden.set(true);
+    fixture.detectChanges();
+
+    // Still in the DOM (and so still the fieldset's accessible name) —
+    // just clipped, so a sheet whose title already says it doesn't repeat.
+    expect(legend()).not.toBeNull();
+    expect(legend()?.textContent).toContain('Birthday');
+    expect(legend()?.hasAttribute('data-visually-hidden')).toBe(true);
   });
 });

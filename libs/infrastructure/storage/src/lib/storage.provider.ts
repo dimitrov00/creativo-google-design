@@ -3,8 +3,15 @@ import {
   inject,
   makeEnvironmentProviders,
 } from '@angular/core';
-import { FirebaseStorage, getStorage } from 'firebase/storage';
-import { FIREBASE_APP } from '@creativo/infrastructure/firebase-app';
+import {
+  FirebaseStorage,
+  connectStorageEmulator,
+  getStorage,
+} from 'firebase/storage';
+import {
+  FIREBASE_APP,
+  FirebaseEmulatorConfig,
+} from '@creativo/infrastructure/firebase-app';
 
 /**
  * `libs/infrastructure/firebase-app` only provides the App/Auth/Firestore/
@@ -17,11 +24,21 @@ export const FIREBASE_STORAGE = new InjectionToken<FirebaseStorage>(
   'FIREBASE_STORAGE',
 );
 
-export function provideFirebaseStorage() {
+export function provideFirebaseStorage(emulator?: FirebaseEmulatorConfig) {
   return makeEnvironmentProviders([
     {
       provide: FIREBASE_STORAGE,
-      useFactory: () => getStorage(inject(FIREBASE_APP)),
+      useFactory: () => {
+        const storage = getStorage(inject(FIREBASE_APP));
+        if (emulator?.storageHost && emulator?.storagePort !== undefined) {
+          connectStorageEmulator(
+            storage,
+            emulator.storageHost,
+            emulator.storagePort,
+          );
+        }
+        return storage;
+      },
     },
   ]);
 }

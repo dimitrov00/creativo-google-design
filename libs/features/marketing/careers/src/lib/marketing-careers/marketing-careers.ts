@@ -16,7 +16,7 @@ import {
 import {
   SiteFooterComponent,
   SiteHeaderComponent,
-} from '@creativo/features/marketing/shell';
+} from '@creativo/features/shared/shell';
 import {
   UiBadge,
   UiBadgeTone,
@@ -52,7 +52,7 @@ const STATUS_TONES: Record<PositionStatus, UiBadgeTone> = {
  *  `ui-list-group` for the list body (no `ui-divider`s — the seam is the
  *  separator), a hand-composed empty state falling back to the shop's
  *  Instagram link. Chrome is the real site header/footer
- *  (`@creativo/features/marketing/shell`), solid (`uiOverHero=false`) since
+ *  (`@creativo/features/shared/shell`), solid (`uiOverHero=false`) since
  *  there's no hero underneath. */
 @Component({
   selector: 'cr-marketing-careers',

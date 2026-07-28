@@ -18,13 +18,31 @@ service firebase.storage {
 
     // One object per user, overwritten on re-upload. Publicly readable
     // (avatars are shown across staff dashboards and to other booking
-    // parties, and carry no sensitive data) — write restricted to the
+    // parties, and carry no sensitive data) — writes restricted to the
     // owner, capped at 5 MiB, image content-types only.
+    //
+    // `create`/`update` and `delete` are split deliberately: `write` covers
+    // all three, but on a DELETE `request.resource` is null, so the size and
+    // content-type checks below can never pass — a single `allow write` rule
+    // silently makes deletion impossible. Owners may drop their own avatar
+    // (the profile screen's "Remove photo"); the size/type guards only make
+    // sense where there IS an incoming object.
     match /avatars/{userId}/{fileName} {
       allow read: if true;
-      allow write: if isOwner(userId)
+      allow create, update: if isOwner(userId)
         && request.resource.size < 5 * 1024 * 1024
         && request.resource.contentType.matches('image/.*');
+      allow delete: if isOwner(userId);
+    }
+
+    // Catalog media library (service covers, location photos — the assets
+    // `MediaRef.path` points at, resolved client-side by
+    // `StorageMediaReader`): public marketing/catalog content, readable by
+    // anyone; written only by staff tooling with admin credentials (which
+    // bypass rules), never by clients.
+    match /media/{allPaths=**} {
+      allow read: if true;
+      allow write: if false;
     }
 
     match /{allPaths=**} {

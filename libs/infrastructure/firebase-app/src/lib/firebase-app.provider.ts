@@ -51,6 +51,9 @@ export interface FirebaseEmulatorConfig {
   readonly firestorePort?: number;
   readonly functionsHost?: string;
   readonly functionsPort?: number;
+  /** Consumed by `libs/infrastructure/storage`'s own provider — declared here so every emulated service reads one config shape. */
+  readonly storageHost?: string;
+  readonly storagePort?: number;
 }
 
 export function provideFirebaseAuth(emulator?: FirebaseEmulatorConfig) {

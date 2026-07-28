@@ -22,8 +22,12 @@ import {
   reconstituteIdentifier,
 } from '@creativo/application/identity';
 import { CLOCK, RepositoryError } from '@creativo/application/shared';
-import { CATALOG_READER } from '@creativo/application/catalog';
-import { PROFILE_PORT, User } from '@creativo/application/accounts';
+import { CATALOG_READER, MEDIA_READER } from '@creativo/application/catalog';
+import {
+  AVATAR_UPLOADER,
+  PROFILE_PORT,
+  User,
+} from '@creativo/application/accounts';
 import { fail } from '@creativo/application/identity';
 import { ClientOnboarding } from './client-onboarding';
 
@@ -141,6 +145,13 @@ describe('ClientOnboarding', () => {
           useValue: { getProfile, saveProfile },
         },
         {
+          provide: AVATAR_UPLOADER,
+          useValue: {
+            upload: () =>
+              Promise.resolve(ok({ url: 'http://avatar', path: 'avatars/x' })),
+          },
+        },
+        {
           provide: CATALOG_READER,
           useValue: {
             listActiveServices: () => of(ok([])),
@@ -151,6 +162,10 @@ describe('ClientOnboarding', () => {
             listActiveLocations: () => of(ok([])),
             findLocationById: () => Promise.resolve(ok(null)),
           },
+        },
+        {
+          provide: MEDIA_READER,
+          useValue: { resolve: () => Promise.resolve(ok([])) },
         },
       ],
     }).compileComponents();
@@ -377,13 +392,30 @@ describe('ClientOnboarding', () => {
       expect(query('onboarding-avatar')).not.toBeNull();
     });
 
+    it('offers Save (gated on a staged photo) and an always-live Skip on the avatar step', async () => {
+      await walkToBirthday();
+      query<HTMLButtonElement>('onboarding-skip-birthday')?.click();
+      await settle();
+
+      // Nothing picked yet — "save this photo" would be a lie, so the
+      // primary is dim and Skip is the honest way out.
+      expect(
+        query<HTMLButtonElement>('onboarding-avatar-enter-app')?.disabled,
+      ).toBe(true);
+      expect(query('onboarding-skip-avatar')).not.toBeNull();
+    });
+
     it('skips straight to avatar without touching the profile port', async () => {
       await walkToBirthday();
+      // The shared session model reads the profile on its own (it backs
+      // the app-wide chrome), so the invariant is that SKIPPING adds no
+      // reads and no writes of its own — not that nothing ever read.
+      const readsBefore = getProfile.mock.calls.length;
 
       query<HTMLButtonElement>('onboarding-skip-birthday')?.click();
       await settle();
 
-      expect(getProfile).not.toHaveBeenCalled();
+      expect(getProfile.mock.calls.length).toBe(readsBefore);
       expect(saveProfile).not.toHaveBeenCalled();
       expect(query('onboarding-avatar')).not.toBeNull();
     });

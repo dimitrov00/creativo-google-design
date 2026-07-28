@@ -1,7 +1,6 @@
 import {
   ChangeDetectionStrategy,
   Component,
-  afterNextRender,
   computed,
   inject,
   input,
@@ -10,7 +9,13 @@ import {
 } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { TranslocoDirective } from '@jsverse/transloco';
-import { UiAvatar, UiBadge, UiButton, UiIcon } from '@creativo/ui/controls';
+import {
+  UiAvatar,
+  UiBadge,
+  UiButton,
+  UiDetailSheet,
+  UiIcon,
+} from '@creativo/ui/controls';
 import { UiGrid, UiSpacer, UiStack } from '@creativo/ui/layout';
 import { UiTextDirective } from '@creativo/ui/modifiers';
 import {
@@ -18,7 +23,6 @@ import {
   UiListGroup,
   UiListRow,
   UiRating,
-  UiSheetActionBar,
 } from '@creativo/ui/patterns';
 import { LandingContentService } from '../../content/landing-content.service';
 import {
@@ -27,7 +31,6 @@ import {
   serviceDurationRange,
   servicePriceFrom,
 } from '../../content/landing-content';
-import { UiModalSheet } from '@creativo/ui/controls';
 import { ShowcaseGalleryComponent } from '../../shared/showcase-gallery/showcase-gallery.component';
 import { CapsuleListComponent } from './capsule-list.component';
 
@@ -53,7 +56,6 @@ interface PerformerVm {
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     CapsuleListComponent,
-    UiModalSheet,
     RouterLink,
     ShowcaseGalleryComponent,
     TranslocoDirective,
@@ -61,12 +63,12 @@ interface PerformerVm {
     UiBadge,
     UiButton,
     UiCard,
+    UiDetailSheet,
     UiGrid,
     UiIcon,
     UiListGroup,
     UiListRow,
     UiRating,
-    UiSheetActionBar,
     UiSpacer,
     UiStack,
     UiTextDirective,
@@ -80,13 +82,9 @@ export class ServiceDetailComponent {
 
   protected readonly content = inject(LandingContentService);
 
-  /** Mounts shut, opens next frame so the sheet animates in. */
-  protected readonly sheetOpen = signal(false);
-  protected readonly sheetClosing = signal(false);
-
-  /** Sheet chrome state — gallery + performer layout modes. (The condensed
-   *  toolbar title is ui-sheet-header's own sentinel-observed behavior, and
-   *  the booking bar is always visible — zero scroll wiring here.) */
+  /** Sheet chrome state — gallery + performer layout modes. (Shell
+   *  mechanics — entrance, close dance, condensed title, docked bar — all
+   *  live in the shared ui-detail-sheet pattern now.) */
   protected readonly galleryExpanded = signal(false);
   /** Grid is the default performer reading — the 2-up contact-card layout
    *  reads faster at a glance than a name-by-name list (owner ruling
@@ -136,23 +134,4 @@ export class ServiceDetailComponent {
   protected readonly includedNames = computed<readonly string[]>(() =>
     this.includedServices().map((included) => this.content.text(included.name)),
   );
-
-  constructor() {
-    afterNextRender(() => this.sheetOpen.set(true));
-  }
-
-  protected close(): void {
-    if (!this.sheetOpen() || this.sheetClosing()) return;
-    // No timer: close completion is driven by the sheet's own exit
-    // transition (ui-modal-sheet's closeFinished) so the CSS motion tokens
-    // stay the single source of truth for the exit duration.
-    this.sheetOpen.set(false);
-    this.sheetClosing.set(true);
-  }
-
-  protected finishClosing(): void {
-    if (!this.sheetClosing()) return;
-    this.sheetClosing.set(false);
-    this.closed.emit();
-  }
 }

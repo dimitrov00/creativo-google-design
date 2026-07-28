@@ -11,7 +11,11 @@ import {
   reconstituteIdentifier,
 } from '@creativo/application/identity';
 import { CLOCK, RepositoryError } from '@creativo/application/shared';
-import { PROFILE_PORT, User } from '@creativo/application/accounts';
+import {
+  AVATAR_UPLOADER,
+  PROFILE_PORT,
+  User,
+} from '@creativo/application/accounts';
 import { OnboardingFlowStore } from './onboarding-flow.store';
 
 function requiredValue<T, E>(result: Result<T, E>): T {
@@ -86,6 +90,13 @@ describe('OnboardingFlowStore — birthday step', () => {
           },
         },
         { provide: PROFILE_PORT, useValue: { getProfile, saveProfile } },
+        {
+          provide: AVATAR_UPLOADER,
+          useValue: {
+            upload: () =>
+              Promise.resolve(ok({ url: 'http://avatar', path: 'avatars/x' })),
+          },
+        },
       ],
     });
     store = TestBed.inject(OnboardingFlowStore);
@@ -102,6 +113,58 @@ describe('OnboardingFlowStore — birthday step', () => {
     store.skipServices();
     expect(store.state().kind).toBe('birthday');
   }
+
+  it('beginPersonalization enters the services step directly — the returning-active-account path (no About form, no network)', () => {
+    store.beginPersonalization();
+
+    expect(store.state().kind).toBe('services');
+    expect(completeRegistration).not.toHaveBeenCalled();
+  });
+
+  it('a plan opens on its first step, with the earlier plan step still reachable via back', () => {
+    store.beginPersonalization(['services', 'birthday']);
+
+    expect(store.state().kind).toBe('services');
+    store.skipServices();
+    expect(store.state().kind).toBe('birthday');
+
+    store.back();
+    expect(store.state().kind).toBe('services');
+  });
+
+  it('steps OVER anything the profile already satisfies, forwards and backwards', () => {
+    // Birthday already set elsewhere — this resume is services → avatar.
+    store.beginPersonalization(['services', 'avatar']);
+    expect(store.state().kind).toBe('services');
+
+    store.skipServices();
+    // The machine's next state is `birthday`; the plan skips it.
+    expect(store.state().kind).toBe('avatar');
+
+    store.back();
+    // …and back doesn't land on it either, which would freeze the screen.
+    expect(store.state().kind).toBe('services');
+  });
+
+  it('a single remaining step opens directly on it and reports itself as one screen', () => {
+    store.beginPersonalization(['avatar']);
+
+    expect(store.state().kind).toBe('avatar');
+    expect(store.isSingleStep()).toBe(true);
+    expect(store.plan()).toEqual(['avatar']);
+    expect(store.planPosition()).toBe(1);
+  });
+
+  it('finishing the last planned step goes straight to entering, not to a redundant one', () => {
+    store.beginPersonalization(['birthday']);
+    expect(store.state().kind).toBe('birthday');
+
+    store.skipBirthday();
+
+    // Avatar is NOT in the plan (the photo is already there), so the flow
+    // is done rather than asking for it again.
+    expect(store.state().kind).toBe('entering');
+  });
 
   it('submitBirthday persists the ISO date through UpdateProfileUseCase, then advances to avatar', async () => {
     await walkToBirthday();

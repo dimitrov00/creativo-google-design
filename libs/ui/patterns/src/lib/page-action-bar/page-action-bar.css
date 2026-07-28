@@ -1,14 +1,15 @@
 @layer sys-components {
   /* Sticky at the page's bottom edge — inside a min-height column the bar
      pins to the viewport floor on short pages and rides the scroll on tall
-     ones. CHROMELESS (owner ruling 2026-07-25, mirroring
-     ui-sheet-action-bar): no material, no fill, no hairline — the projected
-     controls carry their own surfaces (prominent fill, bordered ring) and
-     float directly over the page. */
+     ones. FULL WIDTH always (owner ruling 2026-07-27) — a centered parent
+     stack must never shrink-wrap the bar; only its CONTROLS hug. No fill
+     or hairline, but the bar carries the Apple-light bottom scrim below —
+     content dissolves as it scrolls under the controls. */
   .ui-page-action-bar {
     position: sticky;
     inset-block-end: 0;
     z-index: var(--sys-layer-header);
+    inline-size: 100%;
     display: flex;
     align-items: center;
     justify-content: flex-start;
@@ -17,6 +18,40 @@
       max(var(--sys-space-compact), env(safe-area-inset-bottom));
     padding-inline: max(var(--sys-space-regular), env(safe-area-inset-left))
       max(var(--sys-space-regular), env(safe-area-inset-right));
+  }
+
+  /* SwiftUI-grade bottom scrim (owner ruling 2026-07-27, replacing the
+     fully chromeless 2026-07-25 call): the page background rising through
+     an eased ramp to transparent, cresting a beat above the bar. Very
+     light by design. Self-correcting: over the page's own bottom
+     clearance it is background-on-background — invisible — so it only
+     reads while real content sits under the bar and dissolves away at
+     scroll end on its own. Sticky+z-index make the bar a stacking
+     context, so z-index -1 paints under the projected controls. */
+  .ui-page-action-bar::before {
+    content: '';
+    position: absolute;
+    inset-inline: 0;
+    inset-block-end: 0;
+    block-size: calc(100% + 3rem);
+    /* THE house chrome fade — quintic smootherstep alpha (6t⁵−15t⁴+10t³
+       sampled every 12.5%; owner ruling 2026-07-27). IDENTICAL ramp to
+       the sheet chrome fade and ui-sheet-action-bar, keyed to the PAGE
+       background (this bar's own surface). */
+    background: linear-gradient(
+      to top,
+      var(--sys-color-background) 0%,
+      color-mix(in srgb, var(--sys-color-background) 98%, transparent) 12.5%,
+      color-mix(in srgb, var(--sys-color-background) 90%, transparent) 25%,
+      color-mix(in srgb, var(--sys-color-background) 73%, transparent) 37.5%,
+      color-mix(in srgb, var(--sys-color-background) 50%, transparent) 50%,
+      color-mix(in srgb, var(--sys-color-background) 27%, transparent) 62.5%,
+      color-mix(in srgb, var(--sys-color-background) 10%, transparent) 75%,
+      color-mix(in srgb, var(--sys-color-background) 2%, transparent) 87.5%,
+      transparent 100%
+    );
+    pointer-events: none;
+    z-index: -1;
   }
 
   /* Slot contract — shared with ui-sheet-action-bar: the PRIMARY child
@@ -38,5 +73,21 @@
       [uiprimary]
     ) {
     flex: 0 0 auto;
+  }
+
+  /* ── Stacked variant — the Setup-Assistant completion anatomy: primary
+     on top, quiet link beneath, both centered (project the primary
+     first). The horizontal slot contract's trailing-dock margin must not
+     leak into the column. */
+  .ui-page-action-bar[data-layout='stacked'] {
+    flex-direction: column;
+    justify-content: center;
+  }
+
+  .ui-page-action-bar[data-layout='stacked'] > [data-spread],
+  .ui-page-action-bar[data-layout='stacked']
+    > [data-button-style='borderedProminent'],
+  .ui-page-action-bar[data-layout='stacked'] > [uiprimary] {
+    margin-inline-start: 0;
   }
 }

@@ -27,9 +27,17 @@ export default [
           depConstraints: [
             // Scope isolation: a project can only depend on its own scope
             // plus scope:shared. `domain`/`application`/`infrastructure`/`ui`
-            // libs are all scope:shared (blueprint §1.2) — the frontend
-            // product-surface scopes below (marketing/client/staff/admin)
-            // are for `type:feature` libs only.
+            // libs are all scope:shared (blueprint §1.2); every `type:feature`
+            // lib is `scope:app`.
+            //
+            // `scope:app` replaced the four product-surface scopes
+            // (marketing/client/staff/admin) on 2026-07-28 — owner ruling:
+            // this is ONE app, and the split was legacy structure whose only
+            // practical effect was blocking legitimate edges (the shell's
+            // account chrome reading the client session model). Cross-surface
+            // isolation was never the boundary that mattered here; the
+            // LAYERING rules below — which keep domain/application/ui from
+            // ever seeing a feature — are, and they are untouched.
             {
               sourceTag: 'scope:shared',
               onlyDependOnLibsWithTags: ['scope:shared'],
@@ -39,20 +47,8 @@ export default [
               onlyDependOnLibsWithTags: ['scope:showcase', 'scope:shared'],
             },
             {
-              sourceTag: 'scope:marketing',
-              onlyDependOnLibsWithTags: ['scope:marketing', 'scope:shared'],
-            },
-            {
-              sourceTag: 'scope:client',
-              onlyDependOnLibsWithTags: ['scope:client', 'scope:shared'],
-            },
-            {
-              sourceTag: 'scope:staff',
-              onlyDependOnLibsWithTags: ['scope:staff', 'scope:shared'],
-            },
-            {
-              sourceTag: 'scope:admin',
-              onlyDependOnLibsWithTags: ['scope:admin', 'scope:shared'],
+              sourceTag: 'scope:app',
+              onlyDependOnLibsWithTags: ['scope:app', 'scope:shared'],
             },
             // scope:backend (Cloud Functions) doesn't fit any of the
             // frontend-app-shaped scopes above — see the "Amendments" note
@@ -63,18 +59,11 @@ export default [
               onlyDependOnLibsWithTags: ['scope:backend', 'scope:shared'],
             },
             // scope:web is the single consolidated SPA shell (apps/web) —
-            // it composes every product surface, so unlike the scopes above
-            // it may depend on all of them plus itself and scope:shared.
+            // it composes the feature libs, so unlike scope:shared it may
+            // depend on scope:app as well as itself.
             {
               sourceTag: 'scope:web',
-              onlyDependOnLibsWithTags: [
-                'scope:web',
-                'scope:marketing',
-                'scope:client',
-                'scope:staff',
-                'scope:admin',
-                'scope:shared',
-              ],
+              onlyDependOnLibsWithTags: ['scope:web', 'scope:app', 'scope:shared'],
             },
             // Layering (blueprint §1.2): keeps the hexagon's arrows one-way —
             // ui never sees application/infrastructure, application never

@@ -63,6 +63,44 @@
     pointer-events: auto;
   }
 
+  /* SwiftUI-grade bottom scrim (owner ruling 2026-07-27, replacing the
+     fully chromeless 2026-07-25 call): the SHEET SURFACE color rising
+     through an eased ramp to transparent, cresting a beat above the bar —
+     scrolling content dissolves under the actions instead of colliding
+     with them. Very light by design, and self-correcting: over the body's
+     own `--ui-sheet-action-bar-clearance` padding it is
+     surface-on-surface — invisible — so it only reads while content sits
+     under the bar and disappears at scroll end on its own. The bar's
+     z-index makes it a stacking context; -1 paints under the projected
+     controls, and the scrim rides the bar's own reveal transition. */
+  .ui-sheet-action-bar::before {
+    content: '';
+    position: absolute;
+    inset-inline: 0;
+    inset-block-end: 0;
+    block-size: calc(100% + 3rem);
+    /* THE house chrome fade — quintic smootherstep alpha (6t⁵−15t⁴+10t³
+       sampled every 12.5%; owner ruling 2026-07-27). IDENTICAL ramp and
+       color family as the sheet chrome's top fade (modal-sheet.css) —
+       both ends of the sheet dissolve as one system, in the SHEET
+       SURFACE color. Self-correcting over the body's own clearance
+       padding: surface-on-surface at scroll end, invisible. */
+    background: linear-gradient(
+      to top,
+      var(--sys-color-surface) 0%,
+      color-mix(in srgb, var(--sys-color-surface) 98%, transparent) 12.5%,
+      color-mix(in srgb, var(--sys-color-surface) 90%, transparent) 25%,
+      color-mix(in srgb, var(--sys-color-surface) 73%, transparent) 37.5%,
+      color-mix(in srgb, var(--sys-color-surface) 50%, transparent) 50%,
+      color-mix(in srgb, var(--sys-color-surface) 27%, transparent) 62.5%,
+      color-mix(in srgb, var(--sys-color-surface) 10%, transparent) 75%,
+      color-mix(in srgb, var(--sys-color-surface) 2%, transparent) 87.5%,
+      transparent 100%
+    );
+    pointer-events: none;
+    z-index: -1;
+  }
+
   /* Slot contract — the PRIMARY child docks trailing (thumb side); every
      other child clusters leading in projection order. Primary is content-
      driven: the sheet-CTA geometry (`[data-spread]`), the prominent

@@ -127,7 +127,7 @@ export const appConfig: ApplicationConfig = {
     provideFirebaseAuth(emulators),
     provideFirestoreDb(emulators),
     provideFirebaseFunctions(emulators),
-    provideFirebaseStorage(),
+    provideFirebaseStorage(emulators),
 
     // ── Deployment config ──
     // Explicit even though the token has a matching factory default: this

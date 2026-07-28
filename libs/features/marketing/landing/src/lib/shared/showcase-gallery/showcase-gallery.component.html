@@ -11,15 +11,17 @@
         class="showcase-gallery__toolbar"
       >
         <ui-spacer />
+        <!-- View toggle — PLAIN per HIG (presentation-only controls stay
+             borderless), and NO selected state: the glyph names the view
+             you'd switch TO, so a persistent fill read as stuck-active
+             (owner ruling 2026-07-27, same as the performers toggle). -->
         <button
           type="button"
           uiButton
-          uiButtonStyle="bordered"
-          uiTint="neutral"
+          uiButtonStyle="plain"
           uiButtonBorderShape="capsule"
           uiControlSize="regular"
           [uiIconOnly]="true"
-          [uiSelected]="expanded()"
           [attr.aria-label]="expanded() ? carouselViewLabel() : gridViewLabel()"
           (click)="toggleLayout()"
         >

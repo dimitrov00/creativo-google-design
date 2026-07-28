@@ -1,0 +1,388 @@
+<ng-container *transloco="let t">
+  <!-- THE shared site header (owner ruling 2026-07-27: one nav component
+       app-wide) — its menu is where this screen is reached from. -->
+  <cr-site-header [uiOverHero]="false" />
+
+  <ui-stack
+    uiSpacing="comfortable"
+    uiFrame
+    [uiFrameMaxWidth]="'var(--sys-container-content)'"
+    uiPaddingHorizontal="regular"
+    class="profile-main"
+  >
+    <!-- No back control and no visible title: the header is the app's one
+         nav surface, and the portrait below already says whose screen this
+         is (Apple's Contacts-card grammar — photo, then the fields; the
+         group captions name the content). The heading survives for
+         document structure and screen readers only. -->
+    <h1 uiVisuallyHidden>{{ t('account.profile.title') }}</h1>
+
+    @if (pageState() === 'loading') {
+    <ui-stack uiSpacing="comfortable" data-testid="profile-skeleton">
+      <ui-skeleton uiFrame uiFrameHeight="7rem" />
+      <ui-skeleton uiFrame uiFrameHeight="9rem" />
+    </ui-stack>
+    } @else if (account(); as user) {
+    <!-- Portrait — NOT a row: picking a photo IS the commit (Apple's
+           grammar for a profile picture), so it needs no sheet and no
+           Save. The control under it is a QUIET plain button, not a filled
+           capsule: Apple Account and Contacts both put a plain "Edit"
+           beneath the photo, because a supporting control must not
+           out-shout the content it supports.
+
+           With no photo there is exactly ONE action, so the button IS the
+           file picker (a label over the hidden input) — burying a lone
+           primary action behind a menu is the thing HIG names as "not an
+           approach we encourage". Once a photo exists there are two, and
+           only then does the menu appear. -->
+    <ui-stack uiAlignment="center" uiSpacing="regular">
+      @if (portraitUrl(); as photo) {
+      <ui-avatar
+        uiControlSize="extraLarge"
+        [uiSrc]="photo"
+        [uiName]="fullName()"
+        data-testid="profile-photo-preview"
+      />
+      <ui-menu
+        [uiPresented]="photoMenuOpen()"
+        uiAlignment="center"
+        [uiLabel]="t('account.profile.photo.menuLabel')"
+        (uiDismissed)="photoMenuOpen.set(false)"
+      >
+        <button
+          uiMenuTrigger
+          type="button"
+          uiButton
+          uiButtonStyle="plain"
+          uiControlSize="small"
+          data-testid="profile-photo-pick"
+          [disabled]="store.pending()"
+          (click)="photoMenuOpen.set(!photoMenuOpen())"
+        >
+          {{ t('account.profile.photo.change') }}
+        </button>
+
+        <label uiMenuItem data-testid="profile-photo-replace">
+          <input
+            type="file"
+            accept="image/*"
+            data-testid="profile-photo-input"
+            [disabled]="store.pending()"
+            (change)="onPhotoPicked($event)"
+          />
+          <ui-icon uiName="account.photo" uiScale="small" />
+          {{ t('account.profile.photo.choose') }}
+        </label>
+        <!-- Destructive LAST and red — the menu convention (an action
+                 sheet is the opposite, destructive first). No confirmation
+                 step: HIG reserves that friction for losing entered
+                 information, and a photo is one tap to put back. -->
+        <button
+          uiMenuItem
+          uiMenuItemRole="destructive"
+          type="button"
+          data-testid="profile-photo-remove"
+          (click)="removePhoto()"
+        >
+          <ui-icon uiName="account.photoRemove" uiScale="small" />
+          {{ t('account.profile.photo.remove') }}
+        </button>
+      </ui-menu>
+      } @else {
+      <ui-avatar
+        uiControlSize="extraLarge"
+        [uiSrc]="null"
+        [uiName]="fullName()"
+        data-testid="profile-photo-preview"
+      />
+      <!-- The label is the picker; the SPAN carries the button look.
+               `uiButton` has no `label[uiButton]` selector — a bare label
+               would silently render as unstyled text — and this is the
+               house pattern (onboarding's avatar step) besides. -->
+      <label class="profile-photo__picker">
+        <input
+          type="file"
+          accept="image/*"
+          class="profile-photo__input"
+          data-testid="profile-photo-input"
+          [disabled]="store.pending()"
+          (change)="onPhotoPicked($event)"
+        />
+        <span
+          uiButton
+          uiButtonStyle="plain"
+          uiControlSize="small"
+          data-testid="profile-photo-pick"
+        >
+          {{ t('account.profile.photo.add') }}
+        </span>
+      </label>
+      } @if (translateError(photoErrorCode()); as error) {
+      <p
+        uiText
+        uiFont="footnote"
+        uiForegroundStyle="destructive"
+        role="alert"
+        data-testid="profile-photo-error"
+      >
+        {{ error }}
+      </p>
+      }
+    </ui-stack>
+
+    <!-- Personal details — the two values this app can actually write.
+           Row anatomy is the iOS grouped-list one: label, current value at
+           secondary ink, disclosure chevron. No leading glyphs (iOS
+           Personal Information has none). -->
+    <ui-stack uiSpacing="compact">
+      <p uiText uiFont="footnote" uiForegroundStyle="secondary">
+        {{ t('account.profile.sections.personal') }}
+      </p>
+      <ui-list-group data-testid="profile-rows-personal">
+        <button
+          type="button"
+          uiListRow
+          uiSize="large"
+          [uiInteractive]="true"
+          data-testid="profile-row-name"
+          (click)="openEditor({ kind: 'name' })"
+        >
+          {{ t('account.profile.rows.name') }}
+          <ng-container ngProjectAs="[uiTrailing]">
+            <ui-stack
+              uiTrailing
+              uiAxis="horizontal"
+              uiSpacing="tight"
+              uiAlignment="center"
+            >
+              <span data-testid="profile-row-name-value"
+                >{{ user.fullName() }}</span
+              >
+              <ui-icon uiName="nav.disclosure" />
+            </ui-stack>
+          </ng-container>
+        </button>
+        <button
+          type="button"
+          uiListRow
+          uiSize="large"
+          [uiInteractive]="true"
+          data-testid="profile-row-birthday"
+          [attr.data-empty]="birthDateLabel() ? 'false' : 'true'"
+          (click)="openEditor({ kind: 'birthday' })"
+        >
+          {{ t('account.profile.rows.birthday') }}
+          <ng-container ngProjectAs="[uiTrailing]">
+            <ui-stack
+              uiTrailing
+              uiAxis="horizontal"
+              uiSpacing="tight"
+              uiAlignment="center"
+            >
+              <span data-testid="profile-row-birthday-value"
+                >{{ birthDateLabel() ?? t('account.profile.rows.birthdayEmpty')
+                }}</span
+              >
+              <ui-icon uiName="nav.disclosure" />
+            </ui-stack>
+          </ng-container>
+        </button>
+      </ui-list-group>
+    </ui-stack>
+
+    <!-- Contact — the ELEMENT row form, no uiInteractive and no
+           chevron: changing either channel needs the OTP contact-change
+           flow, which has no request use case yet. A row that can't be
+           tapped must not look like one; the footnote says why once,
+           instead of a badge per row shouting over the actual value. -->
+    <ui-stack uiSpacing="compact">
+      <p uiText uiFont="footnote" uiForegroundStyle="secondary">
+        {{ t('account.profile.sections.contact') }}
+      </p>
+      <ui-list-group data-testid="profile-rows-contact">
+        <ui-list-row uiSize="large" data-testid="profile-row-phone">
+          {{ t('account.profile.rows.phone') }}
+          <span uiTrailing data-testid="profile-row-phone-value"
+            >{{ phoneLabel() }}</span
+          >
+        </ui-list-row>
+        <ui-list-row
+          uiSize="large"
+          data-testid="profile-row-email"
+          [attr.data-empty]="emailLabel() ? 'false' : 'true'"
+        >
+          {{ t('account.profile.rows.email') }}
+          <span uiTrailing data-testid="profile-row-email-value"
+            >{{ emailLabel() ?? t('account.profile.rows.emailEmpty') }}</span
+          >
+        </ui-list-row>
+      </ui-list-group>
+      <p
+        uiText
+        uiFont="footnote"
+        uiForegroundStyle="secondary"
+        data-testid="profile-contact-locked"
+      >
+        {{ t('account.profile.contactLocked') }}
+      </p>
+    </ui-stack>
+    } @else {
+    <p uiText uiFont="body" data-testid="profile-empty" role="status">
+      {{ t('account.profile.empty') }}
+    </p>
+    }
+  </ui-stack>
+
+  <!-- ONE sheet for every editor. It is modal, so only one value can be
+       under edit at a time — the union makes any other state
+       unrepresentable, and the focus trap / scroll lock / exit transition
+       exist once instead of per field. The body is guarded on `editing()`,
+       NOT `sheetOpen()`, so it stays mounted through the exit animation. -->
+  <ui-modal-sheet
+    sheetId="profile-edit-sheet"
+    labelledBy="profile-edit-sheet-title"
+    [closeLabel]="t('account.profile.edit.close')"
+    [open]="sheetOpen()"
+    [closing]="sheetClosing()"
+    (dismissed)="requestClose()"
+    (closeFinished)="finishClose()"
+  >
+    @if (sheetTitleKey(); as titleKey) {
+    <span sheet-title>{{ t(titleKey) }}</span>
+    } @if (editing(); as edit) {
+    <ui-stack uiSpacing="comfortable" class="profile-edit__body">
+      <ui-stack uiSpacing="tight">
+        <h2
+          id="profile-edit-sheet-title"
+          uiSheetLargeTitle
+          uiText
+          uiFont="largeTitle"
+        >
+          {{ t(sheetTitleKey() ?? '') }}
+        </h2>
+        <p uiText uiFont="body" uiForegroundStyle="secondary">
+          {{ t(sheetLedeKey() ?? '') }}
+        </p>
+      </ui-stack>
+
+      @switch (edit.kind) { @case ('name') {
+      <ui-stack uiSpacing="regular" data-testid="profile-edit-name">
+        <ui-stack uiSpacing="tight">
+          <label>
+            <ui-stack uiSpacing="tight">
+              <span uiText uiFont="footnote"
+                >{{ t('account.profile.edit.firstName') }}</span
+              >
+              <input
+                type="text"
+                uiTextField
+                uiControlSize="large"
+                autocomplete="given-name"
+                data-testid="profile-first-name"
+                [readonly]="store.pending()"
+                [attr.aria-invalid]="firstNameErrorCode() ? true : null"
+                [uiInvalid]="!!firstNameErrorCode()"
+                [value]="firstNameDraft()"
+                (input)="onFirstNameInput($any($event.target).value)"
+                (blur)="onFirstNameBlur()"
+              />
+            </ui-stack>
+          </label>
+          @if (translateError(firstNameErrorCode()); as error) {
+          <p
+            uiText
+            uiFont="footnote"
+            uiForegroundStyle="destructive"
+            role="alert"
+            data-testid="profile-first-name-error"
+          >
+            {{ error }}
+          </p>
+          }
+        </ui-stack>
+
+        <ui-stack uiSpacing="tight">
+          <label>
+            <ui-stack uiSpacing="tight">
+              <span uiText uiFont="footnote"
+                >{{ t('account.profile.edit.lastName') }}</span
+              >
+              <input
+                type="text"
+                uiTextField
+                uiControlSize="large"
+                autocomplete="family-name"
+                data-testid="profile-last-name"
+                [readonly]="store.pending()"
+                [attr.aria-invalid]="lastNameErrorCode() ? true : null"
+                [uiInvalid]="!!lastNameErrorCode()"
+                [value]="lastNameDraft()"
+                (input)="onLastNameInput($any($event.target).value)"
+                (blur)="onLastNameBlur()"
+              />
+            </ui-stack>
+          </label>
+          @if (translateError(lastNameErrorCode()); as error) {
+          <p
+            uiText
+            uiFont="footnote"
+            uiForegroundStyle="destructive"
+            role="alert"
+            data-testid="profile-last-name-error"
+          >
+            {{ error }}
+          </p>
+          }
+        </ui-stack>
+      </ui-stack>
+      } @case ('birthday') {
+      <ui-date-field
+        uiControlSize="large"
+        data-testid="profile-edit-birthday"
+        [label]="t('account.profile.edit.birthdayLabel')"
+        [uiLabelHidden]="true"
+        [dayLabel]="t('account.profile.edit.day')"
+        [monthLabel]="t('account.profile.edit.month')"
+        [yearLabel]="t('account.profile.edit.year')"
+        [dayPlaceholder]="t('account.profile.edit.dayPlaceholder')"
+        [monthPlaceholder]="t('account.profile.edit.monthPlaceholder')"
+        [yearPlaceholder]="t('account.profile.edit.yearPlaceholder')"
+        [disabled]="store.pending()"
+        [error]="translateError(birthErrorCode())"
+        [(value)]="birthDraft"
+        (uiBlurred)="onBirthBlur($event)"
+      />
+      } } @if (translateError(saveErrorCode()); as error) {
+      <p
+        uiText
+        uiFont="footnote"
+        uiForegroundStyle="destructive"
+        role="alert"
+        data-testid="profile-sheet-error"
+      >
+        {{ error }}
+      </p>
+      }
+    </ui-stack>
+    }
+
+    <!-- The close chip IS cancel (the sheet header owns exactly one
+         control); Save is the docked primary, dim until the draft is both
+         valid and actually changed. -->
+    <ui-sheet-action-bar sheet-overlay [uiVisible]="true">
+      <button
+        type="button"
+        uiButton
+        uiButtonStyle="borderedProminent"
+        uiButtonBorderShape="capsule"
+        [uiSpread]="true"
+        [uiLoading]="store.pending()"
+        [disabled]="!canSave() || store.pending()"
+        data-testid="profile-sheet-save"
+        (click)="save()"
+      >
+        {{ t('account.profile.edit.save') }}
+      </button>
+    </ui-sheet-action-bar>
+  </ui-modal-sheet>
+</ng-container>

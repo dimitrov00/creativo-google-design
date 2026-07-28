@@ -1,0 +1,132 @@
+<sc-page scTitle="Menu">
+  <ng-container scLede>
+    <code>ui-menu</code> ≙ SwiftUI <code>Menu</code> / UIKit
+    <code>UIMenu</code> — the anchored action list HIG reaches for by default.
+    It opens next to the control that summoned it, doesn't dim the background,
+    and light-dismisses on any outside press. The other tool is the action
+    sheet, reserved for destructive confirmations where the finger travel is the
+    point; a menu is not that. Trigger and items are both projected, so the menu
+    owns anchoring, keyboard and dismissal while the consumer keeps its own
+    control.
+  </ng-container>
+
+  <sc-demo scTitle="Anatomy">
+    <ng-container scAbout>
+      A trigger in the <code>[uiMenuTrigger]</code> slot and any number of
+      <code>[uiMenuItem]</code> commands. The trigger keeps whatever look the
+      consumer gives it; the menu only stamps the APG
+      <code>aria-haspopup</code>/<code>aria-expanded</code> relationship.
+      Choosing any item runs it and closes the menu.
+    </ng-container>
+    <ui-stack uiSpacing="comfortable" uiAlignment="center">
+      <ui-menu
+        [uiPresented]="plainOpen()"
+        uiLabel="Document actions"
+        (uiDismissed)="plainOpen.set(false)"
+      >
+        <button
+          uiMenuTrigger
+          type="button"
+          uiButton
+          uiButtonStyle="bordered"
+          uiButtonBorderShape="capsule"
+          (click)="plainOpen.set(!plainOpen())"
+        >
+          Actions
+        </button>
+        <button uiMenuItem type="button" (click)="run('Duplicate')">
+          Duplicate
+        </button>
+        <button uiMenuItem type="button" (click)="run('Rename')">Rename</button>
+        <button uiMenuItem type="button" (click)="run('Export')">Export</button>
+      </ui-menu>
+      <p uiText uiFont="caption" class="menu__mono">last: {{ lastAction() }}</p>
+    </ui-stack>
+  </sc-demo>
+
+  <sc-demo scTitle="Destructive item">
+    <ng-container scAbout>
+      A destructive command is red and goes <strong>last</strong> — the menu
+      convention. (An action sheet is the mirror image: destructive first.)
+      Reserve a confirmation step for actions that lose work the user typed;
+      something one tap can undo should just happen.
+    </ng-container>
+    <ui-stack uiSpacing="comfortable" uiAlignment="center">
+      <ui-menu
+        [uiPresented]="destructiveOpen()"
+        uiAlignment="center"
+        uiLabel="Photo actions"
+        (uiDismissed)="destructiveOpen.set(false)"
+      >
+        <button
+          uiMenuTrigger
+          type="button"
+          uiButton
+          uiButtonStyle="plain"
+          uiControlSize="small"
+          (click)="destructiveOpen.set(!destructiveOpen())"
+        >
+          Change photo
+        </button>
+        <button uiMenuItem type="button" (click)="run('Choose photo')">
+          <ui-icon uiName="account.photo" uiScale="small" />
+          Choose photo
+        </button>
+        <button
+          uiMenuItem
+          uiMenuItemRole="destructive"
+          type="button"
+          (click)="run('Remove photo')"
+        >
+          <ui-icon uiName="account.photoRemove" uiScale="small" />
+          Remove photo
+        </button>
+      </ui-menu>
+      <p uiText uiFont="caption" class="menu__mono">last: {{ lastAction() }}</p>
+    </ui-stack>
+  </sc-demo>
+
+  <sc-demo scTitle="Placement and alignment">
+    <ng-container scAbout>
+      <code>uiPlacement="automatic"</code> (the default) flips the surface above
+      the trigger when it wouldn't fit below, and the growth origin follows.
+      <code>uiAlignment</code> pins the surface's leading edge, trailing edge or
+      centre to the trigger — trailing is the right choice for a control sitting
+      near the end of a row.
+    </ng-container>
+    <ui-stack uiAxis="horizontal" uiSpacing="comfortable" uiAlignment="center">
+      <ui-menu
+        [uiPresented]="alignedOpen()"
+        uiAlignment="trailing"
+        uiLabel="Sort"
+        (uiDismissed)="alignedOpen.set(false)"
+      >
+        <button
+          uiMenuTrigger
+          type="button"
+          uiButton
+          uiButtonStyle="bordered"
+          uiButtonBorderShape="capsule"
+          uiControlSize="small"
+          (click)="alignedOpen.set(!alignedOpen())"
+        >
+          Sort by
+        </button>
+        <button uiMenuItem type="button" (click)="run('Newest')">Newest</button>
+        <button uiMenuItem type="button" (click)="run('Oldest')">Oldest</button>
+        <button uiMenuItem type="button" disabled>Most visited</button>
+      </ui-menu>
+    </ui-stack>
+  </sc-demo>
+
+  <sc-demo scTitle="Keyboard">
+    <ng-container scAbout>
+      The APG menu-button model: focus moves into the menu on open (no visible
+      ring for pointer users — items style <code>:focus-visible</code> only),
+      ↑/↓ cycle with wraparound, Home/End jump to the ends, Escape closes and
+      returns focus to the trigger, and tabbing out light-dismisses. While
+      closed the surface is <code>visibility: hidden</code>, which keeps every
+      item out of the tab order without any <code>inert</code> bookkeeping.
+    </ng-container>
+  </sc-demo>
+</sc-page>

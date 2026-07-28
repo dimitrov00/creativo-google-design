@@ -108,6 +108,9 @@
       "@creativo/features/client/appointments": [
         "./libs/features/client/appointments/src/index.ts"
       ],
+      "@creativo/features/client/profile": [
+        "./libs/features/client/profile/src/index.ts"
+      ],
       "@creativo/domain/programs": ["./libs/domain/programs/src/index.ts"],
       "@creativo/application/programs": [
         "./libs/application/programs/src/index.ts"
@@ -124,8 +127,8 @@
       "@creativo/features/admin/programs": [
         "./libs/features/admin/programs/src/index.ts"
       ],
-      "@creativo/features/marketing/shell": [
-        "./libs/features/marketing/shell/src/index.ts"
+      "@creativo/features/shared/shell": [
+        "./libs/features/shared/shell/src/index.ts"
       ]
     }
   }

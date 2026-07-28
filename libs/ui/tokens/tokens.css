@@ -108,6 +108,30 @@
        sheet's 72rem editorial width, promoted from a per-sheet literal. */
     --sys-container-sheet-wide: 72rem;
 
+    /* ── Control fill (SwiftUI parity: .systemFill) ──────────────────
+       The wash inside a text/date/OTP/phone field. TRANSLUCENT on
+       purpose — the same reason Apple's system fill colors are
+       semi-transparent: a control has no idea what it landed on, and the
+       same field has to read correctly on the page, inside a card, on a
+       sheet and inside a menu.
+
+       An opaque colour cannot do that. Fields used to paint
+       `--sys-color-background` (pure black in dark), so on any raised
+       surface they rendered DARKER than their own container — dark-mode
+       elevation inverted, a black hole punched in a sheet. This mixes the
+       foreground at the theme's existing fill alpha instead, so the field
+       is always a step lifted from whatever is behind it.
+
+       Not a material: `uiMaterial` is chrome (sheets, toolbars, the map
+       bar), where a blur samples a whole page behind it. Behind a 44px
+       input there is nothing to sample and the blur only buys a
+       compositing layer. */
+    --sys-color-fill: color-mix(
+      in srgb,
+      var(--sys-color-foreground) var(--sys-alpha-fill),
+      transparent
+    );
+
     /* ── Interaction states (SwiftUI parity: .hoverEffect(.highlight)) ──
        One state-layer grammar for every interactive surface: hover/press
        fills mix currentColor at the theme's alpha ladder; press scales are

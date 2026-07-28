@@ -72,6 +72,12 @@ export const appRoutes: Route[] = [
       ),
   },
   {
+    path: 'account/profile',
+    canActivate: [activeGuard],
+    loadComponent: () =>
+      import('@creativo/features/client/profile').then((m) => m.ClientProfile),
+  },
+  {
     path: 'staff',
     canActivate: [activeGuard, rolesGuard('staff')],
     loadComponent: () =>

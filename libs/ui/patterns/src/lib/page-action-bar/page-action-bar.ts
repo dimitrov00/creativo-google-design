@@ -2,6 +2,7 @@ import {
   ChangeDetectionStrategy,
   Component,
   ViewEncapsulation,
+  input,
 } from '@angular/core';
 
 /**
@@ -27,6 +28,13 @@ import {
  * separation deliberately gets no cue. Safe-area floors on all three
  * anchored edges.
  *
+ * ### Stacked variant (`uiStacked`)
+ * The Setup-Assistant completion anatomy (owner ruling 2026-07-27): ONE
+ * centered filled primary with the quiet plain link stacked BENEATH it —
+ * for skippable/completion steps where side-by-side skip/continue would
+ * read as a dialog. Same sticky anchoring, same chromeless philosophy;
+ * project the primary FIRST (DOM order is visual order).
+ *
  * ```html
  * <ui-page-action-bar>
  *   <button uiButton uiButtonStyle="borderedProminent" uiControlSize="large">
@@ -46,6 +54,9 @@ import {
   encapsulation: ViewEncapsulation.None,
   host: {
     class: 'ui-page-action-bar',
+    '[attr.data-layout]': "uiStacked() ? 'stacked' : null",
   },
 })
-export class UiPageActionBar {}
+export class UiPageActionBar {
+  readonly uiStacked = input(false);
+}

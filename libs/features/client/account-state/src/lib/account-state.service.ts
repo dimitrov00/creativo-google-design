@@ -59,25 +59,45 @@ export class AccountStateService {
   private readonly _accountLoading = signal(false);
   readonly accountLoading = this._accountLoading.asReadonly();
 
+  /** Monotonic fetch token — a stale fetch resolving late must never clobber a newer one. */
+  private fetchSequence = 0;
+
   constructor() {
     effect(() => {
-      const principal = this.principal();
-      if (principal.kind === 'anonymous') {
-        this._account.set(null);
-        this._accountLoading.set(false);
-        return;
-      }
-      const userIdResult = UserId.create(principal.uid.value);
-      if (userIdResult.isFailure()) {
-        this._account.set(null);
-        this._accountLoading.set(false);
-        return;
-      }
-      this._accountLoading.set(true);
-      void this.profilePort.getProfile(userIdResult.value).then((result) => {
-        this._account.set(result.isSuccess() ? result.value : null);
-        this._accountLoading.set(false);
-      });
+      this.loadProfileFor(this.principal());
+    });
+  }
+
+  /**
+   * Re-fetches the current principal's profile on demand — the one-shot
+   * `getProfile` port means the cached `account` goes stale after any
+   * profile write elsewhere (e.g. the onboarding birthday save; owner
+   * report 2026-07-27). Screens that must show current truth on entry
+   * (the dashboard) call this on init; a live `observeProfile` port would
+   * retire it.
+   */
+  refresh(): void {
+    this.loadProfileFor(this.principal());
+  }
+
+  private loadProfileFor(principal: Principal): void {
+    const sequence = ++this.fetchSequence;
+    if (principal.kind === 'anonymous') {
+      this._account.set(null);
+      this._accountLoading.set(false);
+      return;
+    }
+    const userIdResult = UserId.create(principal.uid.value);
+    if (userIdResult.isFailure()) {
+      this._account.set(null);
+      this._accountLoading.set(false);
+      return;
+    }
+    this._accountLoading.set(true);
+    void this.profilePort.getProfile(userIdResult.value).then((result) => {
+      if (sequence !== this.fetchSequence) return;
+      this._account.set(result.isSuccess() ? result.value : null);
+      this._accountLoading.set(false);
     });
   }
 }

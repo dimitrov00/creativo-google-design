@@ -1,11 +1,25 @@
-import { Component, computed, effect, inject, signal } from '@angular/core';
-import { toSignal } from '@angular/core/rxjs-interop';
+import {
+  Component,
+  DestroyRef,
+  Injector,
+  computed,
+  effect,
+  inject,
+  signal,
+} from '@angular/core';
+import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { firstValueFrom } from 'rxjs';
 import { filter } from 'rxjs/operators';
 import { ActivatedRoute, Router } from '@angular/router';
 import { TranslocoService, TranslocoDirective } from '@jsverse/transloco';
 import {
+  FirstName,
+  LastName,
+  MAX_AVATAR_BYTES,
+} from '@creativo/application/accounts';
+import {
   CATALOG_READER,
+  MEDIA_READER,
   Service,
   ServiceId,
 } from '@creativo/application/catalog';
@@ -24,17 +38,19 @@ import {
 } from '@creativo/application/identity';
 import { CLOCK } from '@creativo/application/shared';
 import {
+  UiAsyncImage,
+  UiAvatar,
   UiButton,
-  UiChip,
   UiDateField,
   UiDateFieldBlurEvent,
   UiDateFieldParts,
+  UiDetailSheet,
   UiIcon,
   UiPhoneField,
   UiTextField,
   UiProgressView,
 } from '@creativo/ui/controls';
-import { UiFlow, UiSpacer, UiStack, UiToolbar } from '@creativo/ui/layout';
+import { UiGrid, UiSpacer, UiStack, UiToolbar } from '@creativo/ui/layout';
 import {
   UiConfetti,
   UiPageActionBar,
@@ -47,8 +63,15 @@ import {
   UiRevealDirective,
   UiTextDirective,
 } from '@creativo/ui/modifiers';
+import { SessionIdentityService } from '@creativo/features/shared/shell';
 import { translateDomainError } from '@creativo/infrastructure/i18n';
-import { OnboardingFlowStore } from '../onboarding-flow.store';
+import {
+  OnboardingFlowStore,
+  PERSONALIZE_STEPS,
+  PersonalizeStep,
+} from '../onboarding-flow.store';
+import { ONBOARDING_SERVICES_CAP } from '../services-cap';
+import { OnboardingServiceCard } from '../service-card/onboarding-service-card';
 
 /**
  * `/onboarding` — about → reward → services → birthday → avatar →
@@ -76,12 +99,15 @@ import { OnboardingFlowStore } from '../onboarding-flow.store';
   selector: 'lib-client-onboarding',
   imports: [
     TranslocoDirective,
+    OnboardingServiceCard,
+    UiAsyncImage,
+    UiAvatar,
     UiButton,
-    UiChip,
     UiConfetti,
     UiDateField,
-    UiFlow,
+    UiDetailSheet,
     UiFrameDirective,
+    UiGrid,
     UiIcon,
     UiPageActionBar,
     UiPhoneField,
@@ -109,6 +135,9 @@ export class ClientOnboarding {
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly transloco = inject(TranslocoService);
+  private readonly injector = inject(Injector);
+  /** The profile snapshot the resume computes its remaining steps from. */
+  private readonly identity = inject(SessionIdentityService);
 
   protected readonly store = inject(OnboardingFlowStore);
 
@@ -144,6 +173,9 @@ export class ClientOnboarding {
 
   protected readonly firstName = signal('');
   protected readonly lastName = signal('');
+  /** VO error codes from `FirstName`/`LastName` — set on blur/submit, cleared live once the draft turns valid (reward early, punish late; the SAME validators `RegisterUserUseCase` and the server apply, so a submit can never be rejected for a reason the form didn't already show). */
+  protected readonly firstNameErrorCode = signal<string | null>(null);
+  protected readonly lastNameErrorCode = signal<string | null>(null);
   /** Selected picker country (two-way with `ui-phone-field`). */
   protected readonly phoneCountry = signal<CountryIso2 | undefined>(undefined);
   /** Canonical E.164 from `ui-phone-field` — null while the draft is invalid. */
@@ -181,8 +213,9 @@ export class ClientOnboarding {
 
   protected readonly canSubmitAbout = computed(
     () =>
-      (!this.needsFirstName || this.firstName().trim() !== '') &&
-      (!this.needsLastName || this.lastName().trim() !== '') &&
+      (!this.needsFirstName ||
+        FirstName.create(this.firstName()).isSuccess()) &&
+      (!this.needsLastName || LastName.create(this.lastName()).isSuccess()) &&
       (!this.needsPhone || this.phoneValue() !== null),
   );
 
@@ -196,7 +229,46 @@ export class ClientOnboarding {
   });
   protected readonly selectedServiceIds = signal<readonly ServiceId[]>([]);
 
+  /* ── Services grid (capped multi-select, design: image-forward cards) ── */
+
+  private readonly mediaReader = inject(MEDIA_READER);
+
+  /** Deployment-configurable selection ceiling (default 3). */
+  protected readonly servicesCap = inject(ONBOARDING_SERVICES_CAP);
+  protected readonly selectionCount = computed(
+    () => this.selectedServiceIds().length,
+  );
+  protected readonly capReached = computed(
+    () => this.selectionCount() >= this.servicesCap,
+  );
+
+  /** Resolved cover URLs by service id — filled as `MEDIA_READER` answers. */
+  protected readonly coverUrls = signal<Readonly<Record<string, string>>>({});
+  /** Ids with a resolve already in flight — a snapshot re-emit must not re-fetch. */
+  private readonly coverRequests = new Set<string>();
+
+  /** The service whose details sheet is open (null = shut). */
+  protected readonly detailsService = signal<Service | null>(null);
+
   protected readonly enteringFailed = signal(false);
+
+  /* ── Optional avatar step ───────────────────────────────────────────
+     The big monogram avatar is the entire step: initials from the names
+     the About form just collected, a picked image previews INSTANTLY via
+     an object URL (no network), and the actual Storage upload happens
+     inside the ONE primary exit. No separate Skip — with nothing picked
+     the primary IS the skip (the old pair did the identical thing). */
+
+  /** Staged image — chosen locally, uploaded only when entering the app. */
+  protected readonly avatarFile = signal<File | null>(null);
+  /** Local preview object URL for the staged file (revoked on replace/destroy). */
+  protected readonly avatarPreviewUrl = signal<string | null>(null);
+  /** Stable error code under the avatar — picker rejections and upload failures share the line. */
+  protected readonly avatarErrorCode = signal<string | null>(null);
+  /** Monogram source — the names collected two steps ago (same component instance). */
+  protected readonly fullName = computed(() =>
+    `${this.firstName()} ${this.lastName()}`.trim(),
+  );
 
   constructor() {
     // Reward early: the punishing copy goes away the moment the phone
@@ -204,6 +276,17 @@ export class ClientOnboarding {
     effect(() => {
       if (this.phoneValue() !== null) {
         this.phoneErrorReason.set(null);
+      }
+    });
+    // Same grammar for the names — one effect per field, keyed on its VO.
+    effect(() => {
+      if (FirstName.create(this.firstName()).isSuccess()) {
+        this.firstNameErrorCode.set(null);
+      }
+    });
+    effect(() => {
+      if (LastName.create(this.lastName()).isSuccess()) {
+        this.lastNameErrorCode.set(null);
       }
     });
     // Same grammar for the birthday: the moment the completed segments form
@@ -216,6 +299,25 @@ export class ClientOnboarding {
         BirthDate.create(parts, this.today).isSuccess()
       ) {
         this.birthErrorState.set(null);
+      }
+    });
+
+    inject(DestroyRef).onDestroy(() => this.revokeAvatarPreview());
+
+    // Resolve each service's cover exactly once as the catalog streams in
+    // (MediaRef → servable URL is the media reader port's job; failures
+    // stay silent — the card's scissors fallback IS the degraded state).
+    effect(() => {
+      for (const service of this.services()) {
+        const id = service.id.value;
+        if (!service.cover || this.coverRequests.has(id)) continue;
+        this.coverRequests.add(id);
+        void this.mediaReader.resolve(service.cover).then((result) => {
+          if (result.isFailure()) return;
+          const [variant] = result.value;
+          if (!variant) return;
+          this.coverUrls.update((urls) => ({ ...urls, [id]: variant.url }));
+        });
       }
     });
 
@@ -234,9 +336,57 @@ export class ClientOnboarding {
     const settled = await firstValueFrom(
       this.store.observeSettled().pipe(filter((s) => s !== 'loading')),
     );
-    if (settled === 'active' && this.store.state().kind === 'about') {
-      await this.router.navigateByUrl(this.redirect().authDestination().value);
+    if (settled !== 'active' || this.store.state().kind !== 'about') return;
+
+    // `?phase=personalize` (the menu's finish-your-profile row): an ACTIVE
+    // account re-enters the flow at the personalization phase instead of
+    // being bounced — the About form is already satisfied. Which steps it
+    // shows is COMPUTED from the profile, not taken from the URL: someone
+    // who set their birthday from the profile screen must never be asked
+    // for it again just because a link said so.
+    if (this.route.snapshot.queryParamMap.get('phase') === 'personalize') {
+      const remaining = await this.remainingPersonalizeSteps();
+      if (remaining.length === 0) {
+        // Nothing left — the profile was finished elsewhere (or between
+        // the tap and the arrival). Don't present an empty flow.
+        await this.router.navigateByUrl(
+          this.redirect().authDestination().value,
+        );
+        return;
+      }
+      this.store.beginPersonalization(remaining);
+      return;
     }
+    await this.router.navigateByUrl(this.redirect().authDestination().value);
+  }
+
+  /**
+   * The open personalization steps for THIS profile, in flow order.
+   * Waits for the profile snapshot and the avatar lookup to actually
+   * settle — `profileProgress` is null only while in flight, which is the
+   * whole reason it exists alongside `completion`.
+   *
+   * `services` is deliberately never included: nothing about a service
+   * selection is persisted yet, so it can never be "done" and would nag on
+   * every single resume. The steps offered are exactly the open items the
+   * menu row counted.
+   */
+  private async remainingPersonalizeSteps(): Promise<
+    readonly PersonalizeStep[]
+  > {
+    const progress = await firstValueFrom(
+      toObservable(this.identity.profileProgress, {
+        injector: this.injector,
+      }).pipe(filter((value) => value !== null)),
+    );
+    const open = new Set(
+      progress.items.filter((item) => !item.done).map((item) => item.key),
+    );
+    return PERSONALIZE_STEPS.filter(
+      (step) =>
+        (step === 'birthday' && open.has('birthday')) ||
+        (step === 'avatar' && open.has('photo')),
+    );
   }
 
   /**
@@ -260,7 +410,7 @@ export class ClientOnboarding {
     this.enteringFailed.set(true);
   }
 
-  protected translateError(code: string | undefined): string | null {
+  protected translateError(code: string | undefined | null): string | null {
     if (!code) return null;
     return translateDomainError(this.transloco, { code });
   }
@@ -285,6 +435,19 @@ export class ClientOnboarding {
       code: `identity.phone.${reason.replace(/-/g, '_')}`,
       params: { example },
     });
+  }
+
+  /** Name validate-on-blur — an untouched (empty) field stays silent; the disabled CTA already says "not done", a red line would say "wrong" (punish late). */
+  protected onFirstNameBlur(): void {
+    if (this.firstName().trim() === '') return;
+    const result = FirstName.create(this.firstName());
+    this.firstNameErrorCode.set(result.isFailure() ? result.error.code : null);
+  }
+
+  protected onLastNameBlur(): void {
+    if (this.lastName().trim() === '') return;
+    const result = LastName.create(this.lastName());
+    this.lastNameErrorCode.set(result.isFailure() ? result.error.code : null);
   }
 
   /** `ui-phone-field` validate-on-blur — never on keystroke (design §2.5). */
@@ -370,23 +533,34 @@ export class ClientOnboarding {
     this.store.skipBirthday();
   }
 
+  /** Toolbar glass-back on the personalization steps — the flow machine's own `back` event (services → reward, birthday → services, avatar → birthday), never the browser's history. */
+  protected goBack(): void {
+    this.store.back();
+  }
+
   /** Footer escape hatch — sign out, then land on neutral ground. */
   protected async signOutNow(): Promise<void> {
     await this.store.signOut();
     await this.router.navigateByUrl('/');
   }
 
+  /** Value-compared (snapshot re-emits rebuild `ServiceId` instances — reference identity would silently break toggling). Adding past the cap is a no-op: the card is disabled, this is the honest backstop. */
   protected toggleService(id: ServiceId): void {
     const current = this.selectedServiceIds();
-    this.selectedServiceIds.set(
-      current.includes(id)
-        ? current.filter((existing) => existing !== id)
-        : [...current, id],
-    );
+    if (this.isServiceSelected(id)) {
+      this.selectedServiceIds.set(
+        current.filter((existing) => existing.value !== id.value),
+      );
+      return;
+    }
+    if (this.capReached()) return;
+    this.selectedServiceIds.set([...current, id]);
   }
 
   protected isServiceSelected(id: ServiceId): boolean {
-    return this.selectedServiceIds().includes(id);
+    return this.selectedServiceIds().some(
+      (existing) => existing.value === id.value,
+    );
   }
 
   protected submitServices(): void {
@@ -399,17 +573,97 @@ export class ClientOnboarding {
       : service.name.bg;
   }
 
+  protected serviceDescription(service: Service): string {
+    return this.transloco.getActiveLang() === 'en'
+      ? service.description.en
+      : service.description.bg;
+  }
+
+  /** "45 мин · 30 лв." — one pre-formatted line shared by card and sheet. */
+  protected serviceMeta(service: Service): string {
+    const minutes = this.transloco.translate('onboarding.services.minutes', {
+      minutes: service.durationMinutes,
+    });
+    const lang = this.transloco.getActiveLang();
+    const price = new Intl.NumberFormat(lang === 'en' ? 'en-GB' : 'bg-BG', {
+      style: 'currency',
+      currency: service.price.currencyCode(),
+      maximumFractionDigits: 0,
+    }).format(service.price.toMinorUnits() / 100);
+    return `${minutes} · ${price}`;
+  }
+
+  protected serviceCoverUrl(service: Service): string | null {
+    return this.coverUrls()[service.id.value] ?? null;
+  }
+
+  protected openDetails(service: Service): void {
+    this.detailsService.set(service);
+  }
+
+  protected closeDetails(): void {
+    this.detailsService.set(null);
+  }
+
+  protected toggleDetailsService(): void {
+    const service = this.detailsService();
+    if (service) this.toggleService(service.id);
+  }
+
   protected retryEntering(): void {
     void this.finishEntering();
   }
 
-  protected enterAppNow(): void {
-    this.store.enterApp();
-    void this.finishEntering();
+  /**
+   * Stages a picked image locally (instant object-URL preview, no network)
+   * — the same client-side pre-checks the Storage rule enforces (image/*,
+   * 5 MiB) run here so a doomed pick fails at pick time, quietly, instead
+   * of at the final CTA.
+   */
+  protected onAvatarPicked(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0] ?? null;
+    // Same-file re-picks should still fire `change` next time.
+    input.value = '';
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      this.avatarErrorCode.set('accounts.upload_avatar.not_an_image');
+      return;
+    }
+    if (file.size > MAX_AVATAR_BYTES) {
+      this.avatarErrorCode.set('accounts.upload_avatar.too_large');
+      return;
+    }
+
+    this.revokeAvatarPreview();
+    this.avatarErrorCode.set(null);
+    this.avatarFile.set(file);
+    this.avatarPreviewUrl.set(URL.createObjectURL(file));
   }
 
-  protected skipAvatarNow(): void {
-    this.store.skipAvatar();
-    void this.finishEntering();
+  private revokeAvatarPreview(): void {
+    const url = this.avatarPreviewUrl();
+    if (url) URL.revokeObjectURL(url);
+    this.avatarPreviewUrl.set(null);
+  }
+
+  /**
+   * The avatar step's ONE exit — uploads the staged image first when there
+   * is one (a failure keeps the user on the step with the reason inline;
+   * their picked photo must never silently vanish), then enters the app.
+   * With nothing staged this IS the skip.
+   */
+  protected async enterAppNow(): Promise<void> {
+    const file = this.avatarFile();
+    if (file) {
+      const errorCode = await this.store.uploadAvatar(file);
+      if (errorCode) {
+        this.avatarErrorCode.set(errorCode);
+        return;
+      }
+    }
+    this.store.enterApp();
+    await this.finishEntering();
   }
 }

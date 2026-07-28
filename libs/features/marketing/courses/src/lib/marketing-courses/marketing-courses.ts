@@ -17,7 +17,7 @@ import {
 import {
   SiteFooterComponent,
   SiteHeaderComponent,
-} from '@creativo/features/marketing/shell';
+} from '@creativo/features/shared/shell';
 import {
   UiBadge,
   UiBadgeTone,

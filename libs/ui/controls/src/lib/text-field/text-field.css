@@ -12,7 +12,7 @@
     padding-inline: var(--sys-space-regular);
     border: 1px solid var(--sys-color-separator);
     border-radius: var(--control-radius-regular);
-    background: var(--sys-color-background);
+    background: var(--sys-color-fill);
     color: var(--sys-color-foreground);
     font: var(--sys-font-body);
     transition:
@@ -31,6 +31,24 @@
     --ui-text-field-size: var(--control-size-large);
     padding-inline: var(--sys-space-comfortable);
     font: var(--sys-font-callout);
+  }
+
+  /* iOS Safari zooms the whole page when a focused text control's COMPUTED
+     font-size is under 16px (its legibility heuristic — the canonical fix
+     is the size itself, never viewport maximum-scale, which Android honors
+     and which kills pinch-zoom, a WCAG 1.4.4 violation). Touch devices
+     floor every tier at 1rem — the user-respecting spelling of 16px — so
+     focusing never re-zooms the layout; pointer devices keep the designed
+     ladder (no zoom behavior exists there). The [data-control-size]
+     variant is required, not belt-and-braces: the tier rules above are
+     0-2-0 and a media query adds no specificity, so a bare 0-1-0 floor
+     loses to them. Same rule rides every text-entry control (phone/date
+     fields co-locate their own copy). */
+  @media (hover: none) and (pointer: coarse) {
+    .ui-text-field,
+    .ui-text-field[data-control-size] {
+      font-size: 1rem;
+    }
   }
 
   /* Multiline form (≙ SwiftUI TextField(axis: .vertical)) — the single-line

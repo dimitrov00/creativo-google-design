@@ -4,6 +4,7 @@ export * from './lib/confetti/confetti';
 export * from './lib/date-badge/date-badge';
 export * from './lib/list-group/list-group';
 export * from './lib/list-row/list-row';
+export * from './lib/menu/menu';
 export * from './lib/page-action-bar/page-action-bar';
 export * from './lib/rating/rating';
 export * from './lib/section-header/section-header';

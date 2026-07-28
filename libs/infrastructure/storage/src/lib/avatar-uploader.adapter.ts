@@ -1,5 +1,10 @@
 import { Injectable, inject } from '@angular/core';
-import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
+import {
+  deleteObject,
+  getDownloadURL,
+  ref,
+  uploadBytes,
+} from 'firebase/storage';
 import { Result, fail, ok } from '@creativo/domain/kernel';
 import { UserId } from '@creativo/domain/accounts';
 import {
@@ -47,6 +52,47 @@ export class FirebaseStorageAvatarUploader implements AvatarUploader {
       return ok({ url, path });
     } catch (error) {
       return fail(new AvatarUploadError('Failed to upload avatar', error));
+    }
+  }
+
+  async find(
+    userId: UserId,
+  ): Promise<Result<AvatarRef | null, AvatarUploadError>> {
+    const path = `avatars/${userId.value}/original`;
+    try {
+      const url = await getDownloadURL(ref(this.storage, path));
+      return ok({ url, path });
+    } catch (error) {
+      // Absence is an ANSWER, not a failure — the single-object convention
+      // means "no such object" simply reads as "no avatar yet".
+      if (
+        typeof error === 'object' &&
+        error !== null &&
+        (error as { code?: string }).code === 'storage/object-not-found'
+      ) {
+        return ok(null);
+      }
+      return fail(new AvatarUploadError('Failed to look up avatar', error));
+    }
+  }
+
+  async remove(userId: UserId): Promise<Result<void, AvatarUploadError>> {
+    const path = `avatars/${userId.value}/original`;
+    try {
+      await deleteObject(ref(this.storage, path));
+      return ok(undefined);
+    } catch (error) {
+      // Idempotent by the port's contract: deleting an avatar that isn't
+      // there already achieved what the caller wanted. Only a REAL storage
+      // failure (permissions, network) is an error.
+      if (
+        typeof error === 'object' &&
+        error !== null &&
+        (error as { code?: string }).code === 'storage/object-not-found'
+      ) {
+        return ok(undefined);
+      }
+      return fail(new AvatarUploadError('Failed to remove avatar', error));
     }
   }
 }

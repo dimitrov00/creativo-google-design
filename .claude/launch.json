@@ -2,61 +2,17 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "web",
+      "name": "dev",
       "runtimeExecutable": "pnpm",
-      "runtimeArgs": [
-        "nx",
-        "serve",
-        "web",
-        "--host",
-        "0.0.0.0",
-        "--allowedHosts"
-      ],
+      "runtimeArgs": ["run", "dev"],
       "port": 4200,
       "autoPort": true
     },
     {
-      "name": "web-prod",
+      "name": "showcase",
       "runtimeExecutable": "pnpm",
-      "runtimeArgs": [
-        "nx",
-        "serve",
-        "web",
-        "--configuration",
-        "production",
-        "--port",
-        "4310",
-        "--host",
-        "0.0.0.0",
-        "--allowedHosts"
-      ],
-      "port": 4310,
-      "autoPort": true
-    },
-    {
-      "name": "showcase-static",
-      "runtimeExecutable": "python3",
-      "runtimeArgs": [
-        "-m",
-        "http.server",
-        "4478",
-        "-d",
-        "dist/apps/showcase/browser"
-      ],
-      "port": 4478,
-      "autoPort": true
-    },
-    {
-      "name": "web-static",
-      "runtimeExecutable": "python3",
-      "runtimeArgs": [
-        "-m",
-        "http.server",
-        "4477",
-        "-d",
-        "dist/apps/web/browser"
-      ],
-      "port": 4477,
+      "runtimeArgs": ["nx", "serve", "showcase", "--port", "4300"],
+      "port": 4300,
       "autoPort": true
     }
   ]

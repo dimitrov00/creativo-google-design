@@ -15,6 +15,18 @@ export interface AvatarUploader {
     userId: UserId,
     data: Blob,
   ): Promise<Result<AvatarRef, AvatarUploadError>>;
+
+  /** Whether (and where) this user's avatar exists — `null` when none was ever uploaded. The single-object convention makes existence a storage lookup, not a profile field. */
+  find(userId: UserId): Promise<Result<AvatarRef | null, AvatarUploadError>>;
+
+  /**
+   * Drops this user's avatar, returning them to the monogram. Idempotent
+   * by contract — removing an avatar that isn't there SUCCEEDS, because
+   * "there is no avatar" is the caller's desired end state either way
+   * (same reasoning as `find` treating absence as an answer, not a
+   * failure).
+   */
+  remove(userId: UserId): Promise<Result<void, AvatarUploadError>>;
 }
 
 export const AVATAR_UPLOADER = new InjectionToken<AvatarUploader>(
