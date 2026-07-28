@@ -94,15 +94,62 @@ describe('AuthFlowStore', () => {
     expect(store.resendSecondsLeft()).toBe(RESEND_COOLDOWN_SECONDS);
   });
 
-  it('resets cooldown and send count on change_identifier — a new destination is a new attempt', async () => {
+  it('keeps the outstanding challenge alive across change_identifier — an accidental back must not burn the sent code', async () => {
     await store.submitIdentifier(requiredIdentifier());
+    await vi.advanceTimersByTimeAsync(5000);
 
     store.changeIdentifier();
 
     expect(store.state().kind).toBe('identify');
-    expect(store.sendCount()).toBe(0);
-    expect(store.resendSecondsLeft()).toBe(0);
-    expect(store.canResend()).toBe(true);
+    // Cooldown and send count survive — the code is still in the inbox.
+    expect(store.sendCount()).toBe(1);
+    expect(store.resendSecondsLeft()).toBe(RESEND_COOLDOWN_SECONDS - 5);
+  });
+
+  it('rejoins the otp step without a second send when the SAME identifier is resubmitted', async () => {
+    await store.submitIdentifier(requiredIdentifier());
+    store.changeIdentifier();
+    await vi.advanceTimersByTimeAsync(3000);
+
+    await store.submitIdentifier(requiredIdentifier());
+
+    expect(store.state().kind).toBe('otp');
+    expect(requestChallenge).toHaveBeenCalledTimes(1);
+    expect(store.sendCount()).toBe(1);
+    expect(store.resendSecondsLeft()).toBe(RESEND_COOLDOWN_SECONDS - 3);
+  });
+
+  it('still verifies against the original challenge after a back-and-rejoin', async () => {
+    await store.submitIdentifier(requiredIdentifier());
+    store.changeIdentifier();
+    await store.submitIdentifier(requiredIdentifier());
+
+    await store.submitCode('123456');
+
+    expect(verifyChallenge).toHaveBeenCalledTimes(1);
+    expect(verifyChallenge.mock.calls[0][0]).toBe('challenge_1');
+  });
+
+  it('resets cooldown and send count for a DIFFERENT identifier — a new destination is a new attempt', async () => {
+    await store.submitIdentifier(requiredIdentifier());
+    await vi.advanceTimersByTimeAsync(5000);
+    store.changeIdentifier();
+
+    requestChallenge.mockResolvedValue(ok('challenge_2'));
+    const other = createIdentifier({
+      kind: 'email',
+      value: 'other@example.com',
+    });
+    if (other.isFailure()) throw new Error('unexpected failure in fixture');
+    await store.submitIdentifier(other.value);
+
+    expect(store.state().kind).toBe('otp');
+    expect(requestChallenge).toHaveBeenCalledTimes(2);
+    expect(store.sendCount()).toBe(1);
+    expect(store.resendSecondsLeft()).toBe(RESEND_COOLDOWN_SECONDS);
+
+    await store.submitCode('123456');
+    expect(verifyChallenge.mock.calls[0][0]).toBe('challenge_2');
   });
 
   it('never verifies outside the otp step', async () => {

@@ -38,11 +38,23 @@ function functionsErrorCode(error: unknown): string {
     return 'unknown';
   }
   const details = (error as { details?: unknown }).details;
-  if (typeof details !== 'object' || details === null || !('code' in details)) {
+  if (typeof details !== 'object' || details === null) {
     return 'unknown';
   }
   const code = (details as { code?: unknown }).code;
-  return typeof code === 'string' ? code : 'unknown';
+  if (typeof code === 'string') return code;
+  // `ValidationFailure` aggregates VO failures as `details.errors[]` with
+  // no top-level `code` — surface the FIRST one so the inline error names
+  // the actual reason (e.g. `accounts.first_name.too_short`) instead of
+  // collapsing every validation failure to "unknown". One code is enough
+  // for the flow states' single string; client-side VO parity validation
+  // should keep this a backstop, not the primary path.
+  const errors = (details as { errors?: unknown }).errors;
+  if (Array.isArray(errors) && errors.length > 0) {
+    const first = (errors as { code?: unknown }[])[0];
+    if (typeof first?.code === 'string') return first.code;
+  }
+  return 'unknown';
 }
 
 interface RequestChallengeResponse {

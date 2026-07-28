@@ -17,6 +17,7 @@ import {
   SessionKind,
   VerifyOtpUseCase,
   advanceAuthFlow,
+  identifierEquals,
 } from '@creativo/application/identity';
 
 /** Seconds a fresh code must age before "Resend code" re-enables (industry default; uxResearch §resend). */
@@ -31,7 +32,10 @@ export const RESEND_COOLDOWN_SECONDS = 30;
  * Also owns the PRESENTATIONAL trust mechanics the machine deliberately
  * doesn't (design §3.3): the 30 s resend cooldown ticker and the per-flow
  * send counter (escalation copy appears after the 3rd send). Both reset
- * when the user changes identifier — a new destination is a new attempt.
+ * only when a DIFFERENT identifier is submitted — a new destination is a
+ * new attempt. Merely stepping back to identify keeps the outstanding
+ * challenge (and its ticking cooldown) alive, so resubmitting the same
+ * destination rejoins the otp step without burning a second code.
  *
  * Translation-free by design: `state().error` carries an `errors.<code>`
  * key (`OtpClientError.code`, extracted from the callable's `HttpsError`
@@ -64,6 +68,8 @@ export class AuthFlowStore {
   readonly sendCount = this._sendCount.asReadonly();
 
   private challengeId: OtpChallengeId | null = null;
+  /** The destination the outstanding challenge was issued for — the rejoin key `submitIdentifier` matches against. */
+  private challengeIdentifier: Identifier | null = null;
   private cooldownTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor() {
@@ -71,15 +77,33 @@ export class AuthFlowStore {
   }
 
   changeIdentifier(): void {
-    this.challengeId = null;
-    this.stopCooldown();
-    this._resendSecondsLeft.set(0);
-    this._sendCount.set(0);
+    // Deliberately does NOT discard the challenge or the cooldown/send
+    // counters: an accidental back must not strand the code already in the
+    // user's inbox (the server would throttle an immediate re-request
+    // anyway). Reset happens in `submitIdentifier`, only for a genuinely
+    // new destination.
     this.dispatch({ type: 'change_identifier' });
   }
 
   /** `identifier` must already be a validated domain VO — the identify step's own template binds raw input straight through `createIdentifier` (blueprint §5.1), never through this store. */
   async submitIdentifier(identifier: Identifier): Promise<void> {
+    if (
+      this.challengeId !== null &&
+      this.challengeIdentifier !== null &&
+      identifierEquals(identifier, this.challengeIdentifier)
+    ) {
+      // Same destination, live challenge — rejoin the otp step exactly
+      // where it left off (cooldown still ticking, send count intact);
+      // the code already delivered still verifies.
+      this.dispatch({ type: 'submit_identifier', identifier });
+      return;
+    }
+
+    this.challengeId = null;
+    this.challengeIdentifier = null;
+    this.stopCooldown();
+    this._resendSecondsLeft.set(0);
+    this._sendCount.set(0);
     this.dispatch({ type: 'submit_identifier', identifier });
     await this.requestChallenge(identifier);
   }
@@ -148,6 +172,7 @@ export class AuthFlowStore {
       return;
     }
     this.challengeId = result.value;
+    this.challengeIdentifier = identifier;
     this._sendCount.update((count) => count + 1);
     this.startCooldown();
   }

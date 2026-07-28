@@ -95,8 +95,9 @@ export function advanceAuthFlow(
         case 'back':
           // Both the "Edit" affordance and the in-page Back control return
           // to identify — the identifier field stays pre-filled (feature
-          // state, not machine state) and the outstanding challenge id is
-          // invalidated by the store.
+          // state, not machine state) and the outstanding challenge stays
+          // alive in the store: resubmitting the SAME destination rejoins
+          // otp without a fresh code; only a new destination re-requests.
           return ok({ kind: 'identify' });
         case 'resend_otp':
         case 'submit_otp':
