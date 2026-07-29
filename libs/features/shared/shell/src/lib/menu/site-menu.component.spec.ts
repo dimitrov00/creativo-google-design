@@ -18,6 +18,10 @@ import {
   Appointment,
 } from '@creativo/application/booking';
 import {
+  NOTIFICATION_READER,
+  Notification,
+} from '@creativo/application/notifications';
+import {
   ANONYMOUS_PRINCIPAL,
   AUTH_GATEWAY,
   Principal,
@@ -107,6 +111,8 @@ describe('SiteMenuComponent', () => {
     isAuthed?: boolean;
     /** How many upcoming visits the bookings row should report. */
     upcoming?: number;
+    /** How many UNREAD notifications the inbox should report. */
+    unread?: number;
     displayName?: string | null;
     avatarUrl?: string | null;
     /** Omit for "no profile row yet"; pass a birth date to close that item. */
@@ -164,6 +170,24 @@ describe('SiteMenuComponent', () => {
                   ),
                 ),
               ),
+          },
+        },
+        {
+          provide: NOTIFICATION_READER,
+          useValue: {
+            // The badge counts UNREAD, so the placeholders have to answer
+            // `isUnread()` — that is the only thing `unreadCount` asks.
+            list: () =>
+              of(
+                ok(
+                  Array.from(
+                    { length: inputs.unread ?? 0 },
+                    () => ({ isUnread: () => true }) as Notification,
+                  ),
+                ),
+              ),
+            markRead: async () => ok(undefined),
+            markAllRead: async () => ok(undefined),
           },
         },
       ],
@@ -232,7 +256,9 @@ describe('SiteMenuComponent', () => {
     // Guest trailing locks are status accessories: uiScale="small" → 16px;
     // secondary ink comes from the list-row [uiTrailing] slot contract.
     const trails = host.querySelectorAll('.ui-list-row ui-icon[uitrailing]');
-    expect(trails.length).toBe(2);
+    // Bookings, rewards, notifications — every account row is
+    // guest-locked, so a signed-out menu shows three locks.
+    expect(trails.length).toBe(3);
     for (const icon of Array.from(trails)) {
       expect(icon.getAttribute('data-scale')).toBe('small');
     }
@@ -394,6 +420,45 @@ describe('SiteMenuComponent', () => {
       fixture.nativeElement.querySelector(
         '[data-testid="menu-bookings-count"]',
       ),
+    ).toBeNull();
+  });
+
+  it('counts unread notifications on the notifications row', async () => {
+    const fixture = await render({ open: true, isAuthed: true, unread: 4 });
+    const host: HTMLElement = fixture.nativeElement;
+
+    const row = host.querySelector<HTMLAnchorElement>(
+      '[data-testid="menu-notifications"]',
+    );
+    expect(row).not.toBeNull();
+    expect(row!.getAttribute('href')).toBe('/account');
+    expect(
+      host.querySelector('[data-testid="menu-notifications-count"]')
+        ?.textContent,
+    ).toContain('4');
+  });
+
+  it('shows no notifications badge at zero — same rule as the bookings count', async () => {
+    const fixture = await render({ open: true, isAuthed: true, unread: 0 });
+    const host: HTMLElement = fixture.nativeElement;
+    expect(
+      host.querySelector('[data-testid="menu-notifications"]'),
+    ).not.toBeNull();
+    expect(
+      host.querySelector('[data-testid="menu-notifications-count"]'),
+    ).toBeNull();
+  });
+
+  it('guest-locks the notifications row like its siblings', async () => {
+    const fixture = await render({ open: true, isAuthed: false, unread: 9 });
+    const host: HTMLElement = fixture.nativeElement;
+    const row = host.querySelector<HTMLAnchorElement>(
+      '[data-testid="menu-notifications"]',
+    );
+    expect(row!.getAttribute('href')).toBe('/auth?redirect=%2Faccount');
+    // A count is never leaked to a signed-out visitor.
+    expect(
+      host.querySelector('[data-testid="menu-notifications-count"]'),
     ).toBeNull();
   });
 

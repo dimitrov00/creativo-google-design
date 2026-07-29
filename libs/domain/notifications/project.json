@@ -1,0 +1,8 @@
+{
+  "name": "domain-notifications",
+  "$schema": "../../../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "libs/domain/notifications/src",
+  "projectType": "library",
+  "tags": ["scope:shared", "type:domain"],
+  "targets": {}
+}

@@ -30,6 +30,7 @@ import {
   SeatSubject,
   TimeSlot,
 } from '@creativo/application/booking';
+import { NOTIFICATION_READER } from '@creativo/application/notifications';
 import { AccountStateService } from '@creativo/features/client/account-state';
 import { ClientAccount } from './client-account';
 
@@ -137,6 +138,15 @@ async function configure(
           // monogram identity off the gateway.
           currentDisplayName: () => 'Ада Тестова',
           currentIdentifier: () => null,
+        },
+      },
+      {
+        // The shell menu's notifications row reads the inbox.
+        provide: NOTIFICATION_READER,
+        useValue: {
+          list: () => of(ok([])),
+          markRead: async () => ok(undefined),
+          markAllRead: async () => ok(undefined),
         },
       },
       {

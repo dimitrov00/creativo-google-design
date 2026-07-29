@@ -9,6 +9,7 @@ import {
 import { Observable, of } from 'rxjs';
 import { AVATAR_UPLOADER, PROFILE_PORT } from '@creativo/application/accounts';
 import { APPOINTMENT_REPOSITORY } from '@creativo/application/booking';
+import { NOTIFICATION_READER } from '@creativo/application/notifications';
 import { AUTH_GATEWAY } from '@creativo/application/identity';
 import {
   COURSE_REPOSITORY,
@@ -90,6 +91,15 @@ async function configure(
         useValue: { getProfile: () => Promise.resolve(ok(null)) },
       },
       // …and its menu counts upcoming visits.
+      {
+        // The shell menu's notifications row reads the inbox.
+        provide: NOTIFICATION_READER,
+        useValue: {
+          list: () => of(ok([])),
+          markRead: async () => ok(undefined),
+          markAllRead: async () => ok(undefined),
+        },
+      },
       {
         provide: APPOINTMENT_REPOSITORY,
         useValue: { observeUpcomingFor: () => of(ok([])) },

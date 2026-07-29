@@ -27,6 +27,7 @@ import {
   fail,
   ok,
 } from '@creativo/application/booking';
+import { NOTIFICATION_READER } from '@creativo/application/notifications';
 import { AccountStateService } from '@creativo/features/client/account-state';
 import { ClientAppointments } from './client-appointments';
 
@@ -116,6 +117,15 @@ async function configure(
       provideRouter([]),
       ...provideTestI18n(),
       { provide: AccountStateService, useValue: accountStateStub() },
+      {
+        // The shell menu's notifications row reads the inbox.
+        provide: NOTIFICATION_READER,
+        useValue: {
+          list: () => of(ok([])),
+          markRead: async () => ok(undefined),
+          markAllRead: async () => ok(undefined),
+        },
+      },
       {
         provide: APPOINTMENT_REPOSITORY,
         useValue: repositoryStub(upcoming, cancelBehavior),

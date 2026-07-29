@@ -259,6 +259,53 @@
                     }
                   </ng-container>
                 </a>
+                <!-- Notifications — the inbox, on the same guest-lock rule
+                     as its siblings. The trailing unread count follows the
+                     bookings grammar exactly: a row states what is waiting
+                     behind it, and NOTHING is shown at zero, because "0"
+                     is noise and an empty trailing edge already says the
+                     inbox is clear.
+
+                     Routes to /account like Bookings and Rewards do — its
+                     own `/account/notifications` destination arrives with
+                     the feature; a row pointing at a route that does not
+                     exist yet would just bounce off the ** redirect. The
+                     COUNT is already real: it comes from
+                     `NOTIFICATION_READER`, today an in-memory stub. -->
+
+                <a
+                  [routerLink]="isAuthed() ? '/account' : '/auth'"
+                  [queryParams]="isAuthed() ? null : { redirect: '/account' }"
+                  uiListRow
+                  uiSize="large"
+                  [uiInteractive]="true"
+                  data-testid="menu-notifications"
+                  (click)="close()"
+                >
+                  <ui-icon
+                    uiLeading
+                    uiName="account.notifications"
+                    uiScale="medium"
+                  />
+                  {{ t('landing.menu.notifications') }}
+                  <ng-container ngProjectAs="[uiTrailing]">
+                    @if (!isAuthed()) {
+                      <ui-icon
+                        uiTrailing
+                        uiName="auth.locked"
+                        uiScale="small"
+                      />
+                    } @else if (unreadNotifications(); as unread) {
+                      <span
+                        uiTrailing
+                        uiText
+                        uiFont="footnote"
+                        data-testid="menu-notifications-count"
+                        >{{ unread }}</span
+                      >
+                    }
+                  </ng-container>
+                </a>
               </ui-list-group>
             </div>
 

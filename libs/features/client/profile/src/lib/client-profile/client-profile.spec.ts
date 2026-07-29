@@ -23,6 +23,7 @@ import {
   roleFromPrimitive,
 } from '@creativo/application/identity';
 import { APPOINTMENT_REPOSITORY } from '@creativo/application/booking';
+import { NOTIFICATION_READER } from '@creativo/application/notifications';
 import { CLOCK } from '@creativo/application/shared';
 import { ClientProfile } from './client-profile';
 
@@ -147,6 +148,15 @@ async function render(options?: {
       { provide: CLOCK, useValue: { now: () => ok(TODAY) } },
       // The shared header renders the menu, whose bookings row counts
       // upcoming visits.
+      {
+        // The shell menu's notifications row reads the inbox.
+        provide: NOTIFICATION_READER,
+        useValue: {
+          list: () => of(ok([])),
+          markRead: async () => ok(undefined),
+          markAllRead: async () => ok(undefined),
+        },
+      },
       {
         provide: APPOINTMENT_REPOSITORY,
         useValue: { observeUpcomingFor: () => of(ok([])) },

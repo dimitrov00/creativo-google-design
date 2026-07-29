@@ -9,6 +9,7 @@ import {
 import { Observable, of } from 'rxjs';
 import { AVATAR_UPLOADER, PROFILE_PORT } from '@creativo/application/accounts';
 import { APPOINTMENT_REPOSITORY } from '@creativo/application/booking';
+import { NOTIFICATION_READER } from '@creativo/application/notifications';
 import { AUTH_GATEWAY, ok } from '@creativo/application/identity';
 import { SiteHeaderComponent } from './site-header.component';
 
@@ -80,7 +81,16 @@ async function configure(): Promise<ComponentFixture<SiteHeaderComponent>> {
         provide: PROFILE_PORT,
         useValue: { getProfile: () => Promise.resolve(ok(null)) },
       },
-      // The menu's bookings row counts upcoming visits.
+      // The menu's bookings row counts upcoming visits, and its
+      // notifications row counts unread ones.
+      {
+        provide: NOTIFICATION_READER,
+        useValue: {
+          list: () => of(ok([])),
+          markRead: async () => ok(undefined),
+          markAllRead: async () => ok(undefined),
+        },
+      },
       {
         provide: APPOINTMENT_REPOSITORY,
         useValue: { observeUpcomingFor: () => of(ok([])) },

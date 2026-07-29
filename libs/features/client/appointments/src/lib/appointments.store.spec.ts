@@ -15,6 +15,7 @@ import {
   fail,
   ok,
 } from '@creativo/application/booking';
+import { NOTIFICATION_READER } from '@creativo/application/notifications';
 import { ServiceId } from '@creativo/application/catalog';
 import { AppointmentsStore } from './appointments.store';
 
@@ -53,6 +54,15 @@ function configure(repository: AppointmentRepository): AppointmentsStore {
   TestBed.configureTestingModule({
     providers: [
       AppointmentsStore,
+      {
+        // The shell menu's notifications row reads the inbox.
+        provide: NOTIFICATION_READER,
+        useValue: {
+          list: () => of(ok([])),
+          markRead: async () => ok(undefined),
+          markAllRead: async () => ok(undefined),
+        },
+      },
       { provide: APPOINTMENT_REPOSITORY, useValue: repository },
       {
         provide: CLOCK,

@@ -13,6 +13,10 @@ import { map, of, switchMap } from 'rxjs';
 import { TranslocoDirective } from '@jsverse/transloco';
 import { UserId } from '@creativo/application/accounts';
 import {
+  NOTIFICATION_READER,
+  unreadCount,
+} from '@creativo/application/notifications';
+import {
   APPOINTMENT_REPOSITORY,
   ObserveUpcomingUseCase,
 } from '@creativo/application/booking';
@@ -107,6 +111,35 @@ export class SiteMenuComponent {
           .execute(userId.value)
           .pipe(
             map((result) => (result.isSuccess() ? result.value.length : 0)),
+          );
+      }),
+    ),
+    { initialValue: 0 },
+  );
+
+  /**
+   * Unread notifications — the row's indicator, on the SAME rule as the
+   * bookings count: absent at zero, because a "0" badge is noise and its
+   * absence already says the inbox is clear.
+   *
+   * Derived from the inbox stream via the domain's own `unreadCount`, not
+   * a second count query — one source, so the badge can never disagree
+   * with the list it stands for.
+   */
+  private readonly notifications = inject(NOTIFICATION_READER);
+
+  protected readonly unreadNotifications = toSignal(
+    toObservable(this.identity.principal).pipe(
+      switchMap((principal) => {
+        if (principal.kind !== 'active') return of(0);
+        const userId = UserId.create(principal.uid.value);
+        if (userId.isFailure()) return of(0);
+        return this.notifications
+          .list(userId.value)
+          .pipe(
+            map((result) =>
+              result.isSuccess() ? unreadCount(result.value) : 0,
+            ),
           );
       }),
     ),

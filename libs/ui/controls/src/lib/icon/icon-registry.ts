@@ -38,6 +38,11 @@ export const UI_ICON_REGISTRY = {
   /** Profile photo affordances — pick/replace, and drop back to the monogram. */
   'account.photo': 'photo_camera',
   'account.photoRemove': 'delete',
+  /** The notification inbox — what has been delivered TO you, as opposed
+   *  to `account.reservations` (what you booked) or `account.rewards`
+   *  (what you earned). Its own key so an unread/read mark can diverge
+   *  later without touching a call site. */
+  'account.notifications': 'notifications',
   /** Profile-completion checklist: item done / still pending. */
   'checklist.done': 'check',
   'checklist.pending': 'radio_button_unchecked',

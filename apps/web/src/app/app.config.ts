@@ -36,6 +36,10 @@ import {
 } from '@creativo/application/booking';
 import { CATALOG_READER, MEDIA_READER } from '@creativo/application/catalog';
 import {
+  InMemoryNotificationReader,
+  NOTIFICATION_READER,
+} from '@creativo/application/notifications';
+import {
   COUPON_GRANT_REPOSITORY,
   REWARD_PROGRESS_READER,
   INVITATION_PORT,
@@ -145,6 +149,9 @@ export const appConfig: ApplicationConfig = {
       useClass: FirestoreAppointmentRepository,
     },
     { provide: CATALOG_READER, useClass: FirestoreCatalogReader },
+    // STUB until the notifications feature lands — the port is real, so
+    // swapping this for the Firestore adapter is this one line.
+    { provide: NOTIFICATION_READER, useClass: InMemoryNotificationReader },
     { provide: MEDIA_READER, useClass: StorageMediaReader },
     {
       provide: COUPON_GRANT_REPOSITORY,

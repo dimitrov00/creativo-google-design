@@ -111,7 +111,13 @@
       "@creativo/features/client/profile": [
         "./libs/features/client/profile/src/index.ts"
       ],
+      "@creativo/domain/notifications": [
+        "./libs/domain/notifications/src/index.ts"
+      ],
       "@creativo/domain/programs": ["./libs/domain/programs/src/index.ts"],
+      "@creativo/application/notifications": [
+        "./libs/application/notifications/src/index.ts"
+      ],
       "@creativo/application/programs": [
         "./libs/application/programs/src/index.ts"
       ],
