@@ -56,15 +56,12 @@
    every gap are stack primitives in the template. Padding-block gives the
    112px circle the breathing room a portrait wants without inventing a
    section token. */
-.cr-menu__identity {
-  text-align: center;
-  padding-block: var(--sys-space-compact);
-}
-
-/* Finish-your-profile row: the label slot is a single ellipsized line by
-   default (`.ui-list-row__label`), and its own comment sanctions exactly
-   this — "multi-line identity stacks reset white-space in their own
-   content". The stack holds the title over the 3px linear bar. */
+/* The identity and finish-your-profile rows both stack two lines in the
+   label slot, which is a single ellipsized line by default
+   (`.ui-list-row__label`) — its own comment sanctions exactly this:
+   "multi-line identity stacks reset white-space in their own content".
+   Identity holds name over channel; setup holds title over the 3px bar. */
+.cr-menu__identity-label,
 .cr-menu__setup {
   white-space: normal;
 }

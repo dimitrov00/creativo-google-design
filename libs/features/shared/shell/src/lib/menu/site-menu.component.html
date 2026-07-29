@@ -33,125 +33,115 @@
             uiRevealTrigger="mount"
             [uiRevealDelay]="20"
           >
-            <!-- Preferences lead, now a two-ended toolbar row: how the app
-                 behaves on the leading edge (locale · theme), who you are
-                 on the trailing edge. `ui-spacer` end-pins the profile chip
-                 — the house idiom for a trailing member (showcase-gallery,
-                 onboarding's stepper bar); the toggle is inline-flex and
-                 never stretches, so the two ends stay put. -->
+            <!-- Preferences lead: how the app behaves (locale · theme).
+                 The identity chip that used to end-pin this row is gone —
+                 an icon-only person-glyph in a corner states no
+                 destination, and the account row below now carries that
+                 job with a name on it (HIG: interactive elements should
+                 read as interactive, and one entry point beats two). -->
             <ui-stack uiAxis="horizontal" uiAlignment="center" uiSpacing="none">
               <cr-locale-theme-toggle variant="toolbar" />
-              <ui-spacer />
-              @if (isAuthed()) {
-                <a
-                  routerLink="/account/profile"
-                  uiButton
-                  uiButtonStyle="bordered"
-                  uiControlSize="regular"
-                  uiButtonBorderShape="capsule"
-                  [uiIconOnly]="true"
-                  data-testid="menu-profile"
-                  [attr.aria-label]="t('landing.menu.profile')"
-                  (click)="close()"
-                >
-                  <ui-icon uiName="account.profile" />
-                </a>
-              }
             </ui-stack>
           </div>
 
           @if (isAuthed()) {
-            <!-- Identity portrait — the signed-in menu opens on WHO you
-                 are (Revolut/Wallet grammar): a big centered profile
-                 circle above the row run, name under it, the channel this
-                 session authenticated with as the quiet second line. The
-                 photo comes from storage; `ui-avatar` falls back to the
-                 monogram on its own while it loads or when none exists,
-                 so there's no skeleton to flash. Display only — the rows
-                 below own every destination (no second path to
-                 /account). -->
-            <div
-              class="cr-menu__identity"
-              data-testid="menu-identity"
-              [uiReveal]="'fade-up'"
-              uiRevealTrigger="mount"
-              [uiRevealDelay]="60"
-            >
-              <ui-stack uiSpacing="regular" uiAlignment="center">
-                <ui-avatar
-                  uiControlSize="extraLarge"
-                  [uiSrc]="identity.avatarUrl()"
-                  [uiName]="identity.displayName()"
-                  data-testid="menu-identity-avatar"
-                />
-                <ui-stack uiSpacing="tight" uiAlignment="center">
-                  @if (identityTitle(); as title) {
-                    <p uiText uiFont="title3" data-testid="menu-identity-name">
-                      {{ title }}
-                    </p>
-                  }
-                  @if (identitySubtitle(); as subtitle) {
-                    <p
-                      uiText
-                      uiFont="footnote"
-                      uiForegroundStyle="secondary"
-                      data-testid="menu-identity-detail"
-                    >
-                      {{ subtitle }}
-                    </p>
-                  }
-                </ui-stack>
-              </ui-stack>
-            </div>
-          }
+            <!-- Who you are, as a ROW — Settings.app's Apple ID grammar,
+                 not the centred portrait this used to be. The portrait
+                 read as a header, which made it a lie the moment it
+                 wanted to be tappable: HIG asks that interactive things
+                 look interactive, and a name with no affordance under a
+                 big circle does not. As a row it states its destination,
+                 gets a real target, and replaces the mystery-meat
+                 person-glyph that used to sit in the toolbar — one entry
+                 point to /account instead of two.
 
-          @if (identity.completion(); as progress) {
-            <!-- Finish setting up — iOS's own "Complete Setup" grammar: a
-                 row that states what is left and resumes the flow that
-                 collects it. LINEAR progress (owner ruling): the ring is
-                 the dashboard card's gauge, a menu row gets a 3px bar
-                 under its title. Vanishes entirely once the profile is
-                 complete — `completion()` is null then, same rule as the
-                 card. The deep link replays real onboarding transitions
-                 (`beginPersonalization`), so `back()` still works from the
-                 step it lands on. -->
+                 "Finish setting up" rides the SAME segmented run when
+                 it's live (`completion()` is null once the profile is
+                 complete, and never set for a guest): both rows are
+                 "your profile", so they read as one group rather than two
+                 single-row islands. -->
             <div
               class="cr-menu__section"
               [uiReveal]="'fade-up'"
               uiRevealTrigger="mount"
-              [uiRevealDelay]="80"
+              [uiRevealDelay]="60"
             >
               <ui-list-group>
                 <a
-                  routerLink="/onboarding"
-                  [queryParams]="{
-                    phase: 'personalize',
-                    step: identity.nextOpenStep(),
-                  }"
+                  routerLink="/account"
                   uiListRow
                   uiSize="large"
                   [uiInteractive]="true"
-                  data-testid="menu-complete-profile"
+                  data-testid="menu-identity"
+                  [attr.aria-label]="t('landing.menu.account')"
                   (click)="close()"
                 >
-                  <ui-icon
+                  <!-- The photo comes from storage; `ui-avatar` falls back
+                       to the monogram on its own while it loads or when
+                       none exists, so there's no skeleton to flash. -->
+                  <ui-avatar
                     uiLeading
-                    uiName="account.profile"
-                    uiScale="medium"
+                    uiControlSize="large"
+                    [uiSrc]="identity.avatarUrl()"
+                    [uiName]="identity.displayName()"
+                    data-testid="menu-identity-avatar"
                   />
-                  <ui-stack uiSpacing="tight" class="cr-menu__setup">
-                    <span>{{ t('landing.menu.completeProfile') }}</span>
-                    <ui-progress-view
-                      [uiValue]="progress.done / progress.total"
-                      data-testid="menu-complete-profile-bar"
-                    />
+                  <ui-stack uiSpacing="tight" class="cr-menu__identity-label">
+                    @if (identityTitle(); as title) {
+                      <span data-testid="menu-identity-name">{{ title }}</span>
+                    }
+                    @if (identitySubtitle(); as subtitle) {
+                      <span
+                        uiText
+                        uiFont="footnote"
+                        uiForegroundStyle="secondary"
+                        data-testid="menu-identity-detail"
+                        >{{ subtitle }}</span
+                      >
+                    }
                   </ui-stack>
-                  <ng-container ngProjectAs="[uiTrailing]">
-                    <span uiTrailing uiText uiFont="footnote"
-                      >{{ progress.done }}/{{ progress.total }}</span
-                    >
-                  </ng-container>
                 </a>
+
+                @if (identity.completion(); as progress) {
+                  <!-- Finish setting up — iOS's own "Complete Setup"
+                       grammar: a row that states what is left and resumes
+                       the flow that collects it. LINEAR progress (owner
+                       ruling): the ring is the dashboard card's gauge, a
+                       menu row gets a 3px bar under its title. The deep
+                       link replays real onboarding transitions
+                       (`beginPersonalization`), so `back()` still works
+                       from the step it lands on. -->
+                  <a
+                    routerLink="/onboarding"
+                    [queryParams]="{
+                      phase: 'personalize',
+                      step: identity.nextOpenStep(),
+                    }"
+                    uiListRow
+                    uiSize="large"
+                    [uiInteractive]="true"
+                    data-testid="menu-complete-profile"
+                    (click)="close()"
+                  >
+                    <ui-icon
+                      uiLeading
+                      uiName="account.profile"
+                      uiScale="medium"
+                    />
+                    <ui-stack uiSpacing="tight" class="cr-menu__setup">
+                      <span>{{ t('landing.menu.completeProfile') }}</span>
+                      <ui-progress-view
+                        [uiValue]="progress.done / progress.total"
+                        data-testid="menu-complete-profile-bar"
+                      />
+                    </ui-stack>
+                    <ng-container ngProjectAs="[uiTrailing]">
+                      <span uiTrailing uiText uiFont="footnote"
+                        >{{ progress.done }}/{{ progress.total }}</span
+                      >
+                    </ng-container>
+                  </a>
+                }
               </ui-list-group>
             </div>
           }
