@@ -1,12 +1,13 @@
 import { TestBed } from '@angular/core/testing';
 import { provideTestI18n } from '../../test-i18n.providers';
+import { provideTestCatalog } from '../../test-catalog.providers';
 import { WorkGalleryComponent } from './work-gallery.component';
 
 describe('WorkGalleryComponent', () => {
   async function render() {
     await TestBed.configureTestingModule({
       imports: [WorkGalleryComponent],
-      providers: [...provideTestI18n()],
+      providers: [...provideTestI18n(), ...provideTestCatalog()],
     }).compileComponents();
 
     const fixture = TestBed.createComponent(WorkGalleryComponent);

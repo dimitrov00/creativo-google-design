@@ -1,12 +1,13 @@
 import { TestBed } from '@angular/core/testing';
 import { provideTestI18n } from '../../../test-i18n.providers';
+import { provideTestCatalog } from '../../../test-catalog.providers';
 import { TeamShowcaseComponent } from './team-showcase.component';
 
 describe('TeamShowcaseComponent', () => {
   it('renders a scalable team catalog and its barber detail sheet', async () => {
     await TestBed.configureTestingModule({
       imports: [TeamShowcaseComponent],
-      providers: [...provideTestI18n()],
+      providers: [...provideTestI18n(), ...provideTestCatalog()],
     }).compileComponents();
 
     const fixture = TestBed.createComponent(TeamShowcaseComponent);

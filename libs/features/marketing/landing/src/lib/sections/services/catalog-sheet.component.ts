@@ -143,7 +143,7 @@ export class CatalogSheetComponent {
   /** One card per offering barber, cheapest first. */
   protected readonly performers = computed<readonly PerformerVm[]>(() => {
     const service = this.service();
-    const byId = new Map(this.content.barbers.map((b) => [b.id, b]));
+    const byId = new Map(this.content.barbers().map((b) => [b.id, b]));
     return service.offerings
       .flatMap((offering) => {
         const barber = byId.get(offering.barberId);
@@ -163,7 +163,7 @@ export class CatalogSheetComponent {
   protected readonly includedServices = computed<readonly ServiceVm[]>(() => {
     const includes = this.service().includes ?? [];
     return includes
-      .map((id) => this.content.allServices.find((s) => s.id === id))
+      .map((id) => this.content.allServices().find((s) => s.id === id))
       .filter((s): s is ServiceVm => Boolean(s));
   });
 

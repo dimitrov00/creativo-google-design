@@ -19,7 +19,7 @@
         [uiFullBleed]="true"
         class="cr-services__carousel cr-services__carousel--singles"
       >
-        @for (service of content.singleServices; track service.id) {
+        @for (service of content.singleServices(); track service.id) {
           <cr-service-tile
             [service]="service"
             uiReveal
@@ -33,7 +33,7 @@
 
     <!-- Bundles — their own titled shelf below (a real subsection heading,
          not a paragraph in eyebrow dress — case-study §2.4). -->
-    @if (content.bundleServices.length > 0) {
+    @if (content.bundleServices().length > 0) {
       <ui-stack uiSpacing="regular">
         <h3 uiReveal uiText uiFont="title3">
           {{ t('landing.services.bundlesTitle') }}
@@ -44,7 +44,7 @@
           [uiFullBleed]="true"
           class="cr-services__carousel cr-services__carousel--bundles"
         >
-          @for (service of content.bundleServices; track service.id) {
+          @for (service of content.bundleServices(); track service.id) {
             <cr-service-tile
               [service]="service"
               uiReveal

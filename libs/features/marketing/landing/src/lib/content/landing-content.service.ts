@@ -1,52 +1,129 @@
-import { Injectable, computed, inject } from '@angular/core';
+import { Injectable, computed, effect, inject, signal } from '@angular/core';
+import { toSignal } from '@angular/core/rxjs-interop';
+import { map } from 'rxjs/operators';
+import {
+  CATALOG_READER,
+  MEDIA_READER,
+  type Barber,
+  type MediaRef,
+  type Service,
+} from '@creativo/application/catalog';
 import { LanguageService } from '@creativo/features/shared/shell';
 import {
-  BARBERS,
+  BARBER_ART,
+  SERVICE_ART,
   type BarberVm,
   type DayHoursVm,
   LOCATIONS,
   type Localized,
   type LocationVm,
-  SERVICES,
   type ServiceVm,
   WORK_SHOTS,
   type WorkShotVm,
   formatDurationRange,
   formatPrice,
 } from './landing-content';
+import { barberToVm, serviceToVm } from './catalog-to-vm';
 
 /**
- * The landing's single content source. Serves the bundled demo seed — the SAME
- * data v2's landing renders through its in-memory catalog port — so the page
- * is pixel- and content-identical to the reference out of the box.
+ * The landing's single content source — now the REAL catalog.
  *
- * Live-catalog overlay (`CATALOG_READER`/`MEDIA_READER`) is the follow-up seam
- * tracked on the parity checklist: when Firestore carries tenant content, this
- * service is where the fixture yields to `listActiveServices()` & co. — the
- * "demo seed today, Firestore tomorrow" posture v2 itself ships with.
+ * `CATALOG_READER` feeds services and barbers, `MEDIA_READER` resolves
+ * their cover/avatar `MediaRef`s to URLs, and `catalog-to-vm` maps both
+ * onto the `ServiceVm`/`BarberVm` shapes the sections already bind. The
+ * page and the onboarding grid finally read ONE source, which is what
+ * stopped them disagreeing about which services exist and what they cost.
+ *
+ * Still hand-authored: locations and work shots (no seeded counterpart
+ * yet), and the editorial art direction merged in by `catalog-to-vm`.
+ *
+ * Collections are SIGNALS now, not plain arrays — Firestore answers
+ * asynchronously, and templates re-read them as the catalog arrives.
  */
 @Injectable({ providedIn: 'root' })
 export class LandingContentService {
   private readonly language = inject(LanguageService);
+  private readonly catalog = inject(CATALOG_READER);
+  private readonly media = inject(MEDIA_READER);
 
   /** Intl locale for money/durations — tracks the active language. */
   readonly locale = computed(() => this.language.activeLang());
 
   readonly workShots: readonly WorkShotVm[] = WORK_SHOTS;
-  readonly barbers: readonly BarberVm[] = BARBERS;
   readonly locations: readonly LocationVm[] = LOCATIONS;
 
+  /** Resolved media URLs by `MediaRef` id — filled as `MEDIA_READER` answers. */
+  private readonly mediaUrls = signal<Readonly<Record<string, string>>>({});
+  private readonly mediaRequests = new Set<string>();
+
+  private readonly domainServices = toSignal(
+    this.catalog
+      .listActiveServices()
+      .pipe(map((result) => (result.isSuccess() ? result.value : []))),
+    { initialValue: [] as readonly Service[] },
+  );
+
+  private readonly domainBarbers = toSignal(
+    this.catalog
+      .listActiveBarbers()
+      .pipe(map((result) => (result.isSuccess() ? result.value : []))),
+    { initialValue: [] as readonly Barber[] },
+  );
+
+  readonly barbers = computed<readonly BarberVm[]>(() =>
+    this.domainBarbers().map((barber) =>
+      barberToVm(
+        barber,
+        barber.avatar ? this.mediaUrls()[barber.avatar.id.value] : undefined,
+        BARBER_ART[barber.id.value],
+      ),
+    ),
+  );
+
+  readonly allServices = computed<readonly ServiceVm[]>(() =>
+    this.domainServices().map((service) =>
+      serviceToVm(
+        service,
+        service.cover ? this.mediaUrls()[service.cover.id.value] : undefined,
+        SERVICE_ART[service.id.value],
+      ),
+    ),
+  );
+
   /** Marketing shelf — upsell-only add-ons belong to /book, not here (v2). */
-  readonly shelfServices: readonly ServiceVm[] = SERVICES.filter(
-    (service) => !service.upsellOnly,
+  readonly shelfServices = computed<readonly ServiceVm[]>(() =>
+    this.allServices().filter((service) => !service.upsellOnly),
   );
-  readonly singleServices: readonly ServiceVm[] = this.shelfServices.filter(
-    (service) => service.kind === 'single',
+  readonly singleServices = computed<readonly ServiceVm[]>(() =>
+    this.shelfServices().filter((service) => service.kind === 'single'),
   );
-  readonly bundleServices: readonly ServiceVm[] = this.shelfServices.filter(
-    (service) => service.kind === 'bundle',
+  readonly bundleServices = computed<readonly ServiceVm[]>(() =>
+    this.shelfServices().filter((service) => service.kind === 'bundle'),
   );
-  readonly allServices: readonly ServiceVm[] = SERVICES;
+
+  constructor() {
+    // Resolve every cover/avatar exactly once. A live-query re-emit hands
+    // back the same refs, so `mediaRequests` keeps a snapshot from
+    // re-fetching what is already in flight.
+    effect(() => {
+      const refs: MediaRef[] = [
+        ...this.domainServices().map((service) => service.cover),
+        ...this.domainBarbers().map((barber) => barber.avatar),
+      ].filter((ref): ref is MediaRef => ref !== null);
+
+      for (const ref of refs) {
+        const id = ref.id.value;
+        if (this.mediaRequests.has(id)) continue;
+        this.mediaRequests.add(id);
+        void this.media.resolve(ref).then((result) => {
+          if (result.isFailure()) return;
+          const [variant] = result.value;
+          if (!variant) return;
+          this.mediaUrls.update((urls) => ({ ...urls, [id]: variant.url }));
+        });
+      }
+    });
+  }
 
   /** Resolve a localized pair against the active language. */
   text(localized: Localized): string {

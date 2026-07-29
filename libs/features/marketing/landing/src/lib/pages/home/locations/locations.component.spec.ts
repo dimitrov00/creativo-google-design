@@ -1,12 +1,13 @@
 import { TestBed } from '@angular/core/testing';
 import { provideTestI18n } from '../../../test-i18n.providers';
+import { provideTestCatalog } from '../../../test-catalog.providers';
 import { LocationsComponent } from './locations.component';
 
 describe('LocationsComponent', () => {
   it('renders every location as an explorable card and opens its detail sheet', async () => {
     await TestBed.configureTestingModule({
       imports: [LocationsComponent],
-      providers: [...provideTestI18n()],
+      providers: [...provideTestI18n(), ...provideTestCatalog()],
     }).compileComponents();
 
     const fixture = TestBed.createComponent(LocationsComponent);

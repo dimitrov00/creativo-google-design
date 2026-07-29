@@ -146,7 +146,7 @@ export class TeamShowcaseComponent {
   protected readonly activeBarberPrices = computed(() => {
     const barber = this.activeBarber();
     if (!barber) return [];
-    return servicesByBarber(this.content.shelfServices, barber.id);
+    return servicesByBarber(this.content.shelfServices(), barber.id);
   });
 
   protected openBarber(barber: BarberItem): void {

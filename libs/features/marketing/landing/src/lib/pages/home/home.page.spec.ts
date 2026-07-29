@@ -2,6 +2,7 @@ import { NO_ERRORS_SCHEMA } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { provideTestI18n } from '../../test-i18n.providers';
+import { provideTestCatalog } from '../../test-catalog.providers';
 import { HomePage } from './home.page';
 
 /**
@@ -14,7 +15,11 @@ describe('HomePage', () => {
   it('composes the v2 landing shell in order', async () => {
     await TestBed.configureTestingModule({
       imports: [HomePage],
-      providers: [...provideTestI18n(), provideRouter([])],
+      providers: [
+        ...provideTestI18n(),
+        ...provideTestCatalog(),
+        provideRouter([]),
+      ],
     })
       .overrideComponent(HomePage, {
         // NO_ERRORS_SCHEMA (not CUSTOM_ELEMENTS_SCHEMA): with imports

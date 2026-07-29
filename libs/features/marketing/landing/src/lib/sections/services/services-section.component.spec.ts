@@ -1,6 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { provideTestI18n } from '../../test-i18n.providers';
+import { provideTestCatalog } from '../../test-catalog.providers';
 import { ServicesSectionComponent } from './services-section.component';
 import { CatalogNavigationService } from '../../shared/catalog-navigation.service';
 
@@ -8,7 +9,11 @@ describe('ServicesSectionComponent', () => {
   async function render() {
     await TestBed.configureTestingModule({
       imports: [ServicesSectionComponent],
-      providers: [...provideTestI18n(), provideRouter([])],
+      providers: [
+        ...provideTestI18n(),
+        ...provideTestCatalog(),
+        provideRouter([]),
+      ],
     }).compileComponents();
 
     const fixture = TestBed.createComponent(ServicesSectionComponent);

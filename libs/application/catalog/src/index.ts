@@ -15,3 +15,9 @@ export * from '@creativo/domain/catalog';
 // drifted to a hardcoded `/ 100` and dropped fraction digits) out of
 // components.
 export { formatMoney } from '@creativo/domain/kernel';
+// `Result`/`ok`/`fail` for the same reason `application/identity` re-exports
+// them: every port signature above is built from them, and feature-layer
+// test doubles (the landing's fixture `CatalogReader`) have to construct
+// port-shaped `Result`s without an illegal `type:domain` import of their own.
+export type { Result } from '@creativo/domain/kernel';
+export { ok, fail } from '@creativo/domain/kernel';
