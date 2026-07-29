@@ -2,8 +2,13 @@ import { ChangeDetectionStrategy, Component } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { UiIcon } from '@creativo/ui/controls';
 import { UiDivider, UiStack } from '@creativo/ui/layout';
+import type { UiListRowAlignment } from '@creativo/ui/patterns';
 import { UiCard, UiListRow } from '@creativo/ui/patterns';
-import { UiFrameDirective, UiTextDirective } from '@creativo/ui/modifiers';
+import {
+  UiForegroundStyleDirective,
+  UiFrameDirective,
+  UiTextDirective,
+} from '@creativo/ui/modifiers';
 import { ScDemo } from '../../../shared/demo';
 import { ScPage } from '../../../shared/page';
 
@@ -18,6 +23,7 @@ import { ScPage } from '../../../shared/page';
     UiDivider,
     UiFrameDirective,
     UiIcon,
+    UiForegroundStyleDirective,
     UiListRow,
     UiStack,
     UiTextDirective,
@@ -25,4 +31,10 @@ import { ScPage } from '../../../shared/page';
   templateUrl: './list-row.page.html',
   styleUrl: './list-row.page.css',
 })
-export class ListRowPage {}
+export class ListRowPage {
+  /** Both cross-axis placements, shown on a row whose label stacks. */
+  protected readonly alignments: readonly UiListRowAlignment[] = [
+    'center',
+    'leading',
+  ];
+}

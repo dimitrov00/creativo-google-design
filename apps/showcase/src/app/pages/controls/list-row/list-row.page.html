@@ -199,4 +199,48 @@
       </ui-stack>
     </ui-stack>
   </sc-demo>
+
+  <sc-demo scTitle="uiAlignment">
+    <ng-container scAbout>
+      ≙ SwiftUI <code>HStack(alignment:)</code> on a row. <code>center</code>
+      is right for the one-line rows that are most of a list. Reach for
+      <code>leading</code> when the label STACKS — a centred glyph then floats
+      between the two lines instead of sitting with the title it belongs to.
+      <code>min-block-size</code> is a floor, not a height, so the leading row
+      also takes real block padding: a two-line label that merely fits inside
+      the one-line floor is cramped, not correct.
+    </ng-container>
+    <ui-stack uiSpacing="comfortable" uiAlignment="leading">
+      @for (alignment of alignments; track alignment) {
+      <ui-stack uiSpacing="tight" uiAlignment="leading">
+        <ui-card
+          uiPadding="none"
+          uiTone="elevated"
+          uiFrame
+          [uiFrameWidth]="'24rem'"
+        >
+          <button
+            uiListRow
+            type="button"
+            [uiAlignment]="alignment"
+            [uiInteractive]="true"
+          >
+            <ui-icon uiLeading uiName="account.profile" uiScale="medium" />
+            <ui-stack uiSpacing="tight" class="list-row__stacked">
+              <span>Finish setup</span>
+              <span uiText [uiFont]="'footnote'" uiForegroundStyle="secondary"
+                >2 items left</span
+              >
+            </ui-stack>
+            <span uiTrailing uiText [uiFont]="'footnote'">2/4</span>
+          </button>
+        </ui-card>
+        <p uiText [uiFont]="'caption'" class="list-row__mono">
+          uiAlignment={{ alignment }}{{ alignment === 'center' ? ' (default)' :
+          '' }}
+        </p>
+      </ui-stack>
+      }
+    </ui-stack>
+  </sc-demo>
 </sc-page>

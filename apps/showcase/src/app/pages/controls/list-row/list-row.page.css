@@ -5,3 +5,10 @@
 .list-row__mono {
   font-family: var(--sys-font-family-mono);
 }
+
+/* The label slot is a single ellipsized line by default
+   (`.ui-list-row__label`) — a stacked label resets that in its own
+   content, exactly as the shell menu's setup row does. */
+.list-row__stacked {
+  white-space: normal;
+}

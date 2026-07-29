@@ -20,6 +20,29 @@
     min-block-size: var(--control-size-large);
   }
 
+  /* ≙ HStack(alignment: .top) — for a row whose label STACKS (a title over
+     a progress bar, a name over a detail line). Centred accessories float
+     between the two lines instead of sitting with the title they belong
+     to; `leading` puts them back on it.
+
+     The block padding grows with it on purpose: `min-block-size` is a
+     floor, not a height, and a two-line label that merely fits inside the
+     one-line floor is cramped rather than correct. */
+  .ui-list-row[data-alignment='leading'] {
+    align-items: flex-start;
+    padding-block: var(--sys-space-regular);
+  }
+
+  /* …except the trailing detail, which stays CENTRED. The leading glyph
+     belongs to the title — it names the row, so it rides the first line.
+     The trailing value summarises the whole thing (2/4 is about the bar as
+     much as the title), so pinning it to the first line makes it look
+     dropped rather than deliberate. Slot attribute is lowercased by the
+     HTML parser — see the note further down. */
+  .ui-list-row[data-alignment='leading'] > [uitrailing] {
+    align-self: center;
+  }
+
   /* Variant — DS button vocabulary (SwiftUI: a tinted/prominent list row).
      `prominent` = primary fill + on-primary ink for the label AND every
      glyph (leading and trailing alike — the trailing secondary-ink rule

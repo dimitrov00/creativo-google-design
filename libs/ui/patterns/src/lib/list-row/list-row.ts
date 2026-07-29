@@ -10,6 +10,19 @@ export type UiListRowSize = 'regular' | 'large';
 export type UiListRowVariant = 'plain' | 'prominent';
 
 /**
+ * Cross-axis placement of the accessories ≙ SwiftUI
+ * `HStack(alignment:)` on a row — same `leading`/`center` vocabulary
+ * `ui-stack` uses, read against the row's cross axis.
+ *
+ * `center` (default) is right for the one-line rows that are most of a
+ * list. Reach for `leading` when the label stacks — a title over a
+ * progress bar, a name over a detail line — because a centred glyph then
+ * floats between the two lines instead of sitting with the title it
+ * belongs to.
+ */
+export type UiListRowAlignment = 'leading' | 'center';
+
+/**
  * List row — the leading-glyph / label / trailing-detail shape of a
  * SwiftUI `List` row (HStack with a LabeledContent-style trailing detail).
  * One recipe for navigation menus, performer/person rows and the booking
@@ -58,6 +71,7 @@ export type UiListRowVariant = 'plain' | 'prominent';
   host: {
     class: 'ui-list-row',
     '[attr.data-size]': 'uiSize()',
+    '[attr.data-alignment]': 'uiAlignment()',
     '[attr.data-variant]': 'uiVariant()',
     '[attr.data-interactive]': "uiInteractive() ? '' : null",
     '[attr.data-selected]': "uiSelected() ? '' : null",
@@ -65,6 +79,7 @@ export type UiListRowVariant = 'plain' | 'prominent';
 })
 export class UiListRow {
   readonly uiSize = input<UiListRowSize>('large');
+  readonly uiAlignment = input<UiListRowAlignment>('center');
   readonly uiVariant = input<UiListRowVariant>('plain');
   readonly uiInteractive = input(false);
   /** SwiftUI List selection — the accent segment tint (a schedule's
