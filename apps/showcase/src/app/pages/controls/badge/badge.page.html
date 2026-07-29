@@ -28,14 +28,23 @@
       <code>uiTone</code>: tone says what the badge MEANS, prominence says how
       loudly it asks. Reach for <code>increased</code> only when the count is
       something to act on — unread messages, not a library size. It is the only
-      tier that fills, and a single digit rounds to a circle.
+      tier that fills.
     </ng-container>
     <ui-flow uiSpacing="comfortable" uiAlignment="trailing">
       @for (sample of prominences; track sample.prominence) {
       <ui-stack uiSpacing="tight" uiAlignment="leading">
-        <span uiBadge uiTone="accent" [uiProminence]="sample.prominence"
-          >3</span
-        >
+        <!-- One digit and three: the radius is a capsule at every tier, so
+             the SILHOUETTE is content-dependent — short rounds to a
+             circle, longer stretches to a pill. Showing only "3" made
+             `standard` look like a circle by coincidence. -->
+        <ui-flow uiSpacing="compact" uiAlignment="center">
+          <span uiBadge uiTone="accent" [uiProminence]="sample.prominence"
+            >3</span
+          >
+          <span uiBadge uiTone="accent" [uiProminence]="sample.prominence"
+            >128</span
+          >
+        </ui-flow>
         <p uiText [uiFont]="'caption'" class="badge__mono">
           prominence={{ sample.prominence }}
         </p>

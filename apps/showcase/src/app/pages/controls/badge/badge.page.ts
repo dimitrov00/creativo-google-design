@@ -44,8 +44,11 @@ export class BadgePage {
     readonly prominence: UiBadgeProminence;
     readonly note: string;
   }[] = [
-    { prominence: 'decreased', note: 'informational — “1,234 photos”' },
-    { prominence: 'standard', note: 'the tinted capsule (default)' },
-    { prominence: 'increased', note: 'act on it — the iOS badge' },
+    {
+      prominence: 'decreased',
+      note: 'no fill — informational, “1,234 photos”',
+    },
+    { prominence: 'standard', note: 'tinted fill (default)' },
+    { prominence: 'increased', note: 'solid fill — act on it, the iOS badge' },
   ];
 }

@@ -75,16 +75,25 @@
   }
 
   /* ≙ .badgeProminence(.increased) — the iOS notification badge: saturated
-     fill, ink that survives it, and a min inline size so a single digit
-     reads as a CIRCLE rather than a squashed pill (the shape is half the
-     recognition). Tighter block padding than the tinted capsule: a mark
-     this loud does not also need to be tall. Tabular figures so a count
-     ticking 9 → 10 doesn't jump. */
+     fill, ink that survives it, and a SQUARE minimum box so one digit
+     reads as a true circle (the shape is half the recognition) while two
+     or more grow it into a pill.
+
+     BOTH minimums have to match. Setting only `min-inline-size` and then
+     trimming block padding yields a 24×18 lozenge — round-ish, wrong, and
+     the exact bug this replaced. `line-height: 1` is what lets the box
+     obey the minimums at all: the caption ramp's own leading is taller
+     than 1.25rem and would otherwise set the height by itself.
+
+     Tabular figures so a count ticking 9 → 10 doesn't jump. */
   .ui-badge[data-prominence='increased'] {
     background: var(--ui-badge-solid);
     color: var(--ui-badge-on-solid);
-    min-inline-size: 1.5rem;
-    padding-block: 0.125rem;
+    min-inline-size: 1.25rem;
+    min-block-size: 1.25rem;
+    padding-block: 0;
+    padding-inline: var(--sys-space-tight);
+    line-height: 1;
     font-variant-numeric: tabular-nums;
   }
 
