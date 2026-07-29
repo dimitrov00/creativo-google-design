@@ -83,6 +83,24 @@
     color: var(--sys-color-destructive);
   }
 
+  /* ── Multiline text alignment (uiMultilineTextAlignment →
+     data-text-alignment) ──
+     ≙ SwiftUI .multilineTextAlignment(_:): where the ragged edge of a
+     WRAPPED run of text falls. Distinct from ui-stack's uiAlignment
+     (≙ VStack(alignment:)), which positions sibling boxes — see the
+     directive's docs. Logical values, so RTL flips with the writing mode.
+     Doubled attribute for the same reason as data-weight above: an
+     explicit modifier out-ranks a component's own single-class default. */
+  [data-text-alignment='leading'][data-text-alignment] {
+    text-align: start;
+  }
+  [data-text-alignment='center'][data-text-alignment] {
+    text-align: center;
+  }
+  [data-text-alignment='trailing'][data-text-alignment] {
+    text-align: end;
+  }
+
   [data-padding='none'] {
     padding: var(--sys-space-none);
   }

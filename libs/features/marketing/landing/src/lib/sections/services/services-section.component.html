@@ -58,11 +58,6 @@
     }
   </ui-stack>
 
-  <!-- Read-only detail sheet — renders inline, portals itself (modal-sheet). -->
-  @if (selectedService(); as service) {
-    <cr-service-detail
-      [service]="service"
-      (closed)="selectedService.set(null)"
-    />
-  }
+  <!-- No sheet here: the catalog sheet is ONE instance on the page,
+       shared with the team grid, driven by CatalogNavigationService. -->
 </ng-container>

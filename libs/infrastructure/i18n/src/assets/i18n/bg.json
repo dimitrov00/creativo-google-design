@@ -279,7 +279,8 @@
       "primary": "Навигация",
       "locale": "Смени език",
       "theme": "Смени тема",
-      "close": "Затвори"
+      "close": "Затвори",
+      "back": "Назад"
     },
     "menu": {
       "account": "Акаунт",
@@ -353,6 +354,12 @@
       "bookService": "Запази {{service}}",
       "variantsLabel": "Опции",
       "includesLabel": "Включва",
+      "openService": "Отвори {{service}}",
+      "savings": "Спестяваш {{amount}}",
+      "offeredBy": "Услуги при {{barber}}",
+      "priceList": "Ценоразпис",
+      "bookWithBarber": "Запази при {{barber}}",
+      "bookServiceWith": "Запази {{service}} при {{barber}}",
       "whoLabel": "Кой и цена",
       "whoListView": "Барберите като списък",
       "whoGridView": "Барберите като мрежа",

@@ -4,9 +4,9 @@
     display: block;
   }
 
-  /* The full-bleed toggle — the cover IS the button. Reset to a bare
-     surface; radius/press feedback ride the shared uiInteractive +
-     uiRadius grammar. */
+  /* The full-bleed toggle — the ui-media-card IS the button's surface.
+     Reset to a bare box; radius/press feedback ride the shared
+     uiInteractive + uiRadius grammar. */
   .onboarding-service-card__select {
     position: relative;
     display: block;
@@ -20,55 +20,14 @@
     -webkit-tap-highlight-color: transparent;
   }
 
-  .onboarding-service-card__media {
-    display: block;
-  }
-
-  /* Bottom scrim — inset copy must read over ANY cover art (media-overlay
-     grammar: theme-independent, like white pills over media). Smoothstep
-     alpha ramp (3t²−2t³, 72% peak, sampled across the 0–60% extent) — the
-     house fade curve (owner ruling 2026-07-27); token-tinted like the
-     [data-overlay='scrim-media'] modifier it locally mirrors. */
-  .onboarding-service-card__scrim {
-    position: absolute;
-    inset: 0;
-    border-radius: var(--control-radius-prominent);
-    background: linear-gradient(
-      to top,
-      var(--sys-color-media-scrim) 0%,
-      color-mix(in srgb, var(--sys-color-media-scrim) 96%, transparent) 7.5%,
-      color-mix(in srgb, var(--sys-color-media-scrim) 84%, transparent) 15%,
-      color-mix(in srgb, var(--sys-color-media-scrim) 68%, transparent) 22.5%,
-      color-mix(in srgb, var(--sys-color-media-scrim) 50%, transparent) 30%,
-      color-mix(in srgb, var(--sys-color-media-scrim) 32%, transparent) 37.5%,
-      color-mix(in srgb, var(--sys-color-media-scrim) 16%, transparent) 45%,
-      color-mix(in srgb, var(--sys-color-media-scrim) 4%, transparent) 52.5%,
-      transparent 60%
-    );
-    pointer-events: none;
-  }
-
-  .onboarding-service-card__copy {
-    position: absolute;
-    inset-inline: var(--sys-space-compact);
-    inset-block-end: var(--sys-space-compact);
-    display: flex;
-    flex-direction: column;
-    gap: 0.125rem;
-    color: #fff;
-    pointer-events: none;
-  }
-
-  .onboarding-service-card__meta {
-    color: rgb(255 255 255 / 78%);
-  }
+  /* Cover art, the media scrim and the inset name/meta caption all live in
+     ui-media-card now (the landing catalog reads the same surface) — only
+     onboarding's two accessories and its selection/cap states stay here. */
 
   /* Selection chip — empty glass ring at rest, accent-filled check when
-     selected; the ONE state signal (the ring border below seconds it). */
+     selected; the ONE state signal (the ring border below seconds it).
+     The card's trailing corner slot owns its position. */
   .onboarding-service-card__check {
-    position: absolute;
-    inset-block-start: var(--sys-space-compact);
-    inset-inline-end: var(--sys-space-compact);
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -121,7 +80,9 @@
     cursor: not-allowed;
   }
 
-  /* Quiet details affordance — small white-on-media pill, top-left. */
+  /* Quiet details affordance — small white-on-media pill, top-left. It is
+     a SIBLING of the select button (never nested), so it can't ride the
+     card's leading corner slot; the inset restates that slot's geometry. */
   .onboarding-service-card__info {
     position: absolute;
     inset-block-start: var(--sys-space-compact);

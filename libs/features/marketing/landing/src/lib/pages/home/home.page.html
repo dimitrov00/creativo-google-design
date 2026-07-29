@@ -57,4 +57,16 @@
   </main>
 
   <cr-site-footer [flagshipLocation]="flagshipLocation()" />
+
+  <!-- The ONE service detail sheet. Sections open it through
+       CatalogNavigationService; following a reference inside it REOPENS it
+       on the new subject — one surface, one subject, no stack. -->
+  @if (catalog.current(); as service) {
+  <cr-catalog-sheet
+    [service]="service"
+    (serviceSelected)="catalog.open($event)"
+    (barberSelected)="catalog.openBarber($event.id)"
+    (closed)="catalog.close()"
+  />
+  }
 </div>

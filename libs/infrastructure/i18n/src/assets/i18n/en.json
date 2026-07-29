@@ -279,7 +279,8 @@
       "primary": "Navigation",
       "locale": "Switch language",
       "theme": "Switch theme",
-      "close": "Close"
+      "close": "Close",
+      "back": "Back"
     },
     "menu": {
       "account": "Account",
@@ -353,6 +354,12 @@
       "bookService": "Book {{service}}",
       "variantsLabel": "Options",
       "includesLabel": "What's included",
+      "openService": "Open {{service}}",
+      "savings": "Save {{amount}}",
+      "offeredBy": "Services by {{barber}}",
+      "priceList": "Price list",
+      "bookWithBarber": "Book with {{barber}}",
+      "bookServiceWith": "Book {{service}} with {{barber}}",
       "whoLabel": "Who & price",
       "whoListView": "Barbers as list",
       "whoGridView": "Barbers as grid",

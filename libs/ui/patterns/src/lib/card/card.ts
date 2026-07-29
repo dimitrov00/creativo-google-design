@@ -30,14 +30,20 @@ export type UiCardTone = 'plain' | 'accent' | 'muted' | 'elevated';
 /**
  * Elevated content surface — the base card pattern.
  *
- * The `a[uiCard]` form (≙ a `NavigationLink` whose label is the card,
- * same precedent as `a[uiListRow]`) makes the whole card the navigable
- * element — free native semantics, zero ARIA hand-rolling. Pair it with
- * `[uiInteractive]="true"` so the shared state-layer grammar carries the
- * hover/press feedback.
+ * The `a[uiCard]` / `button[uiCard]` forms (≙ a `NavigationLink` or
+ * `Button` whose label IS the card, same precedent as `a[uiListRow]` /
+ * `button[uiListRow]`) make the whole card the actionable element — free
+ * native semantics, zero ARIA hand-rolling. Use the button form when the
+ * card opens something in place (a sheet destination) rather than
+ * navigating to a URL. Pair either with `[uiInteractive]="true"` so the
+ * shared state-layer grammar carries the hover/press feedback.
+ *
+ * Neither form may contain further interactive content — nesting a control
+ * inside a button is invalid HTML; reach for `ui-card` plus your own
+ * control in that case.
  */
 @Component({
-  selector: 'ui-card, a[uiCard]',
+  selector: 'ui-card, a[uiCard], button[uiCard]',
   template: `<ng-content />`,
   styleUrl: './card.css',
   changeDetection: ChangeDetectionStrategy.OnPush,

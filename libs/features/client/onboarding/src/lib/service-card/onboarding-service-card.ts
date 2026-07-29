@@ -5,7 +5,7 @@ import {
   input,
   output,
 } from '@angular/core';
-import { UiAsyncImage, UiButton, UiIcon } from '@creativo/ui/controls';
+import { UiButton, UiIcon, UiMediaCard } from '@creativo/ui/controls';
 import {
   UiInteractiveDirective,
   UiRadiusDirective,
@@ -13,12 +13,13 @@ import {
 } from '@creativo/ui/modifiers';
 
 /**
- * One selectable cover-art service card for the onboarding grid —
- * image-forward (Revolut-card language): the 4/5 cover IS the surface, a
- * bottom scrim carries the inset name + duration·price meta, a circular
- * chip top-right states selection (empty ring → accent check), and the
- * quiet white info pill top-left opens the details sheet without stealing
- * the card's main job (tap anywhere = toggle).
+ * One selectable cover-art service card for the onboarding grid — the
+ * SAME `ui-media-card` surface the landing catalog reads in (one service
+ * card, one register): the cover IS the card, the DS scrim carries the
+ * inset name + duration·price caption. What onboarding adds are the two
+ * corner accessories: a circular chip stating selection (empty ring →
+ * accent check) and the quiet white info pill that opens the details
+ * sheet without stealing the card's main job (tap anywhere = toggle).
  *
  * Two sibling buttons, never nested (invalid HTML): the full-bleed select
  * button and the small info pill floated above it. At the cap, unselected
@@ -28,10 +29,10 @@ import {
 @Component({
   selector: 'lib-onboarding-service-card',
   imports: [
-    UiAsyncImage,
     UiButton,
     UiIcon,
     UiInteractiveDirective,
+    UiMediaCard,
     UiRadiusDirective,
     UiTextDirective,
   ],
@@ -46,38 +47,32 @@ import {
       [attr.data-testid]="'onboarding-service-' + serviceId()"
       (click)="toggled.emit()"
     >
-      <ui-async-image
-        class="onboarding-service-card__media"
-        [uiSrc]="coverUrl()"
-        [uiAlt]="''"
-        uiRatio="1 / 1"
-        [uiRing]="true"
-        uiRadius="prominent"
-      >
+      <ui-media-card uiRadius="prominent" uiRatio="1 / 1" [uiSrc]="coverUrl()">
         <span uiPlaceholder class="onboarding-service-card__fallback">
           <ui-icon
             uiName="service.placeholder"
             class="onboarding-service-card__fallback-glyph"
           />
         </span>
-      </ui-async-image>
 
-      <span class="onboarding-service-card__scrim" aria-hidden="true"></span>
-
-      <span class="onboarding-service-card__copy">
-        <span uiText uiFont="callout" uiWeight="bold">{{ name() }}</span>
-        <span uiText uiFont="caption" class="onboarding-service-card__meta">{{
+        <!-- Caption rhythm is the media card's own — both lines project
+             into its inset stack. -->
+        <span uiCaption uiText uiFont="callout" uiWeight="bold">{{
+          name()
+        }}</span>
+        <span uiCaption uiText uiFont="caption" uiForegroundStyle="secondary">{{
           meta()
         }}</span>
-      </span>
 
-      <span
-        class="onboarding-service-card__check"
-        [attr.data-selected]="selected() ? '' : null"
-        aria-hidden="true"
-      >
-        <ui-icon uiName="checklist.done" />
-      </span>
+        <span
+          uiOverlayTrailing
+          class="onboarding-service-card__check"
+          [attr.data-selected]="selected() ? '' : null"
+          aria-hidden="true"
+        >
+          <ui-icon uiName="checklist.done" />
+        </span>
+      </ui-media-card>
     </button>
 
     <button

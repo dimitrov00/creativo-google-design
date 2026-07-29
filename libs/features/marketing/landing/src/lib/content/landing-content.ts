@@ -113,6 +113,10 @@ export interface BarberVm {
   /** Client rating (★ 0–5, one decimal) — omitted for barbers without
    *  enough reviews yet. */
   readonly rating?: number;
+  /** The one-line craft summary the team cards read. */
+  readonly specialty: Localized;
+  /** Selected work, for the barber destination's gallery. */
+  readonly gallery: readonly string[];
 }
 
 export const BARBERS: readonly BarberVm[] = [
@@ -124,6 +128,16 @@ export const BARBERS: readonly BarberVm[] = [
       'Twelve years on the floor. Classic scissor work and a clean skin fade are his signature.',
       'Дванадесет години на пода. Класическа ножична работа и чист skin фейд са неговата запазена марка.',
     ),
+    specialty: lt(
+      'Scissors · shape · natural movement',
+      'Ножица · форма · естествено движение',
+    ),
+    gallery: [
+      '/work/scissors-trim.jpg',
+      '/work/modern-cut.jpg',
+      '/work/finishing-touch.jpg',
+      '/work/classic-clippers.jpg',
+    ],
     avatarSrc: '/barbers/ivan.jpg',
     objectPosition: '50% 25%',
     rating: 4.9,
@@ -136,6 +150,16 @@ export const BARBERS: readonly BarberVm[] = [
       "The fade man — gradients so clean you'll rebook on the spot.",
       'Човекът на фейда — градиенти толкова чисти, че ще се върнеш на момента.',
     ),
+    specialty: lt(
+      'Modern fade · clean geometry',
+      'Модерен фейд · чиста геометрия',
+    ),
+    gallery: [
+      '/work/fade-styling.jpg',
+      '/work/classic-clippers.jpg',
+      '/work/modern-cut.jpg',
+      '/work/finishing-touch.jpg',
+    ],
     avatarSrc: '/barbers/niko.jpg',
     objectPosition: '50% 25%',
     rating: 4.8,
@@ -148,6 +172,16 @@ export const BARBERS: readonly BarberVm[] = [
       'Old-school straight-razor shaves and beard sculpting, hot towel and all.',
       'Стари правила за бръснене с право острие и скулптуриране на брада, с топла кърпа.',
     ),
+    specialty: lt(
+      'Razor · ritual · beard contour',
+      'Бръснач · ритуал · контур на брада',
+    ),
+    gallery: [
+      '/work/beard-shave.jpg',
+      '/work/classic-clippers.jpg',
+      '/work/scissors-trim.jpg',
+      '/work/fade-styling.jpg',
+    ],
     avatarSrc: '/barbers/stefan.jpg',
     objectPosition: '50% 25%',
   },
@@ -494,13 +528,22 @@ export const LOCATIONS: readonly LocationVm[] = [
 // ─── Formatting (v2 lib/format-money + format-duration semantics) ────────
 
 /** Whole amounts drop the zeros (5 €), fractional keep two (14,50 €). */
+/**
+ * Money strings come out of `Intl.NumberFormat` with the CURRENCY's own
+ * fraction digits — two for EUR — rather than a hand-tuned digit count.
+ *
+ * The old rule dropped decimals on whole amounts, which read fine in
+ * isolation but broke the one thing every price in this app is styled for:
+ * `font-variant-numeric: tabular-nums` only aligns a COLUMN when the
+ * strings share a shape, and `28 €` next to `25,50 €` puts the separators
+ * at different offsets. Letting the formatter decide restores the
+ * alignment we were already paying for, and matches the platform
+ * convention (NumberFormatter.currency never drops a currency's decimals).
+ */
 export function formatPrice(major: number, locale: string): string {
-  const fractionDigits = Number.isInteger(major) ? 0 : 2;
   return new Intl.NumberFormat(locale, {
     style: 'currency',
     currency: 'EUR',
-    minimumFractionDigits: fractionDigits,
-    maximumFractionDigits: fractionDigits,
   }).format(major);
 }
 
@@ -528,6 +571,26 @@ export function formatDurationRange(
 /** Cheapest base offering — the "from" price on a marketing tile. */
 export function servicePriceFrom(service: ServiceVm): number {
   return Math.min(...service.offerings.map((offering) => offering.base.price));
+}
+
+/**
+ * Every service a barber performs, with THEIR terms for it — the inverse
+ * of `ServiceVm.offerings`, which is the only direction the seed stores.
+ *
+ * The caller passes the service set, so the marketing surface can hand in
+ * the shelf (upsell-only add-ons stay out of it, exactly as they do from
+ * the shelf itself) while a booking surface could pass everything.
+ */
+export function servicesByBarber(
+  services: readonly ServiceVm[],
+  barberId: string,
+): readonly { readonly service: ServiceVm; readonly terms: ServiceTermsVm }[] {
+  return services.flatMap((service) => {
+    const offering = service.offerings.find(
+      (candidate) => candidate.barberId === barberId,
+    );
+    return offering ? [{ service, terms: offering.base }] : [];
+  });
 }
 
 /** Global duration range across offerings × variants (v2 Service.durationRange). */

@@ -1,0 +1,75 @@
+@layer sys-components {
+  /* The card IS the picture: a positioned box the scrim, caption and
+     corner accessories layer into. Radius comes from the composed
+     uiRadius modifier; every inner layer inherits it. */
+  .ui-media-card {
+    position: relative;
+    display: block;
+  }
+
+  .ui-media-card__media {
+    display: block;
+    inline-size: 100%;
+    border-radius: inherit;
+    corner-shape: inherit;
+  }
+
+  /* Slot-forwarding wrapper for the placeholder art — it fills the media
+     box so projected motifs can centre themselves in it, and reads as a
+     quiet empty frame (never a broken one) when nothing is projected. */
+  .ui-media-card__placeholder {
+    display: block;
+    inline-size: 100%;
+    block-size: 100%;
+  }
+
+  .ui-media-card__placeholder:empty {
+    background: var(--sys-color-media-canvas);
+  }
+
+  /* Inset copy — bottom-anchored inside the media, riding the scrim.
+     A grid (not flex) so it collapses to zero when nothing is projected:
+     an empty caption must not reserve a strip over the picture. */
+  .ui-media-card__caption {
+    position: absolute;
+    inset-inline: var(--sys-space-compact);
+    inset-block-end: var(--sys-space-compact);
+    display: grid;
+    gap: var(--sys-space-tight);
+    /* The card surface is the control (or sits inside one) — the caption
+       is copy, never a hit target. */
+    pointer-events: none;
+    color: var(--sys-color-on-media);
+  }
+
+  .ui-media-card__caption:empty {
+    display: none;
+  }
+
+  /* De-emphasis over media is the WHITE ramp, not the page's grey label
+     (which disappears against photography). Consumers keep writing the
+     ordinary `uiForegroundStyle="secondary"`; the media context
+     re-points it. Specificity must clear the modifier's own doubled
+     attribute selector (0,2,0). */
+  .ui-media-card__caption
+    [data-foreground-style='secondary'][data-foreground-style] {
+    color: var(--sys-color-on-media-muted);
+  }
+
+  /* Top-corner accessories — the selection chip, the bundle tell, the
+     quiet info pill. Positioned by SLOT, so consumers project chrome and
+     never geometry. */
+  .ui-media-card > [uioverlayleading],
+  .ui-media-card > [uioverlaytrailing] {
+    position: absolute;
+    inset-block-start: var(--sys-space-compact);
+  }
+
+  .ui-media-card > [uioverlayleading] {
+    inset-inline-start: var(--sys-space-compact);
+  }
+
+  .ui-media-card > [uioverlaytrailing] {
+    inset-inline-end: var(--sys-space-compact);
+  }
+}

@@ -25,6 +25,8 @@ import { TeamShowcaseComponent } from './team-showcase/team-showcase.component';
 import { ServicesSectionComponent } from '../../sections/services/services-section.component';
 import { WorkGalleryComponent } from '../../sections/work-gallery/work-gallery.component';
 import { LandingContentService } from '../../content/landing-content.service';
+import { CatalogNavigationService } from '../../shared/catalog-navigation.service';
+import { CatalogSheetComponent } from '../../sections/services/catalog-sheet.component';
 
 /**
  * The marketing landing — a 1:1 port of v2's `routes/index.tsx` composition:
@@ -38,6 +40,7 @@ import { LandingContentService } from '../../content/landing-content.service';
   selector: 'cr-home-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
+    CatalogSheetComponent,
     TeamShowcaseComponent,
     CoursesSectionComponent,
     HiringSectionComponent,
@@ -55,6 +58,9 @@ import { LandingContentService } from '../../content/landing-content.service';
   host: { class: 'cr-landing-page', 'data-testid': 'landing-page' },
 })
 export class HomePage {
+  /** The page hosts the single catalog sheet every section navigates in. */
+  protected readonly catalog = inject(CatalogNavigationService);
+
   private readonly document = inject(DOCUMENT);
   private readonly platformId = inject(PLATFORM_ID);
   private readonly destroyRef = inject(DestroyRef);

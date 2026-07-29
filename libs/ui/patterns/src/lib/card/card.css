@@ -9,10 +9,18 @@
     color: var(--sys-color-foreground);
   }
 
-  /* Navigable card (a[uiCard]) — strip the UA link chrome; ink and
-     surface come from the host rule above. */
+  /* Actionable card (a[uiCard] / button[uiCard]) — strip the UA link and
+     button chrome; ink, surface and layout come from the host rule above. */
   a.ui-card {
     text-decoration: none;
+  }
+
+  button.ui-card {
+    inline-size: 100%;
+    appearance: none;
+    border: 0;
+    font: inherit;
+    text-align: inherit;
   }
 
   /* Padding rides the shared [data-padding] ladder (modifiers.css) — the
@@ -51,15 +59,30 @@
         var(--sys-motion-ease-standard);
   }
 
+  /* The lift is an ELEVATION change, so it belongs only to tones that
+     actually sit on elevation. `muted` is a flat fill with no shadow at
+     rest — raising it invents an elevation the card never had, and makes
+     the same content hover differently depending on which container it
+     landed in (the services performer reads as a card in the grid and a
+     list row in the list; they must feel identical). `accent` carries its
+     ring in `box-shadow` too, so a lift would erase the ring rather than
+     add to it. Both keep the shared state layer and press scale — the
+     feedback is the hover grammar's, just without the raise. */
   @media (hover: hover) {
-    .ui-card[data-interactive]:hover {
+    .ui-card[data-interactive]:not(
+        [data-tone='muted'],
+        [data-tone='accent']
+      ):hover {
       box-shadow: var(--sys-elevation-overlay);
     }
   }
   /* Same lift on :active, ungated — touch devices never hover, so a tap
      must show the raise itself, not just the shared press-scale/state-
      layer from modifiers.css. */
-  .ui-card[data-interactive]:active {
+  .ui-card[data-interactive]:not(
+      [data-tone='muted'],
+      [data-tone='accent']
+    ):active {
     box-shadow: var(--sys-elevation-overlay);
   }
 }

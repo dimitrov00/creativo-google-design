@@ -1,0 +1,378 @@
+<ng-container *transloco="let t">
+  <!-- The shared ui-detail-sheet pattern owns the shell (open/close dance,
+       condensed toolbar title, large-title collapse, summary, docked
+       action bar) — this wrapper only projects the landing-specific
+       content: bundle badge, quick facts, gallery, variants/includes/
+       performers, and the book CTA as the toolbar action. -->
+  <ui-detail-sheet
+    data-testid="catalog-sheet"
+    uiSheetId="catalog-sheet"
+    [uiTitle]="content.text(service().name)"
+    [uiDescription]="content.text(service().description)"
+    [uiCloseLabel]="t('landing.nav.close')"
+    (uiClosed)="onClosed()"
+  >
+    <ng-container ngProjectAs="[sheet-badge]">
+      @if (service().kind === 'bundle') {
+        <span uiBadge uiTone="accent">
+          <ui-icon uiName="service.bundle" />
+          {{ t('landing.services.bundle') }}
+        </span>
+      }
+    </ng-container>
+
+    <!-- Quick facts read one HIG step under the lede (subheadline, not
+         caption) — the same facts the performer rows repeat, so the two
+         ends of the sheet stay on adjacent rungs. No clock glyph: "мин"
+         already names the unit, so the symbol only repeated its label
+         (HIG — symbols aid recognition or replace text, never duplicate
+         it). The Maps-place-card exception, where a leading symbol says
+         WHICH fact a row is, doesn't apply to two self-describing values
+         sitting side by side. -->
+    <ui-stack
+      sheet-facts
+      uiAxis="horizontal"
+      uiSpacing="loose"
+      uiAlignment="center"
+    >
+      <span uiText uiFont="subheadline" uiForegroundStyle="secondary">{{
+        duration()
+      }}</span>
+      <strong uiText uiFont="subheadline" class="service-sheet__summary-price"
+        >{{ t('landing.services.from') }} {{ fromPrice() }}</strong
+      >
+      <!-- A bundle's whole point, stated instead of left to be worked out:
+           the members priced separately cost more. Accent ink because it's
+           the persuasive fact, not another neutral stat. -->
+      @if (savings(); as saved) {
+        <strong
+          uiText
+          uiFont="subheadline"
+          uiForegroundStyle="accent"
+          class="service-sheet__summary-savings"
+          >{{ t('landing.services.savings', { amount: saved.price }) }}</strong
+        >
+      }
+    </ui-stack>
+
+    <!-- ── Media — the service's gallery, or the barber's portrait: both
+         are "what this destination looks like", after the pitch and
+         before the fine print. ── -->
+    <ng-container ngProjectAs="[sheet-media]">
+      @if (service().gallery.length > 0) {
+        <cr-showcase-gallery
+          [images]="service().gallery"
+          [imageAlt]="content.text(service().name)"
+          [ariaLabel]="t('marketing.servicesPage.galleryLabel')"
+          [gridViewLabel]="t('marketing.gallery.gridView')"
+          [carouselViewLabel]="t('marketing.gallery.carouselView')"
+          [expanded]="galleryExpanded()"
+          (expandedChange)="galleryExpanded.set($event)"
+        />
+      }
+    </ng-container>
+
+    <ui-stack
+      sheet-sections
+      uiSpacing="spacious"
+      class="ui-detail-sheet__story service-sheet__details"
+    >
+      <!-- ── Options — descriptive, mutually-exclusive choices that
+           re-price THIS service. Chips are the right shape for that, and
+           each carries the variant's own semantic mark. ── -->
+      @if (variantCapsules().length > 0) {
+        <cr-capsule-list
+          class="service-sheet__variants"
+          [heading]="t('landing.services.variantsLabel')"
+          [items]="variantCapsules()"
+        />
+      }
+
+      <!-- ── Bundle members — a MANIFEST of services that exist in their
+           own right, so this is a navigable list with a disclosure
+           chevron (HIG, App Store bundle pages), NOT the chip language
+           options use. Following a row swaps the sheet's subject; it
+           never stacks a second sheet over this one. ── -->
+      @if (includedServices().length > 0) {
+        <section
+          class="service-sheet__includes"
+          aria-labelledby="service-includes-title"
+        >
+          <ui-stack uiSpacing="regular">
+            <h3 id="service-includes-title" uiText uiFont="title3">
+              {{ t('landing.services.includesLabel') }}
+            </h3>
+            <ui-list-group role="list">
+              @for (member of includedServices(); track member.id) {
+                <cr-service-row
+                  [service]="member"
+                  [price]="
+                    t('landing.services.from') + ' ' + memberFrom(member)
+                  "
+                  (pressed)="serviceSelected.emit(member)"
+                />
+              }
+            </ui-list-group>
+          </ui-stack>
+        </section>
+      }
+
+      <!-- ── Performers — circular avatars (person = avatar, instant
+           recognition), rows by default with a grid alternative. Each is
+           a REFERENCE to that barber's own sheet — the team section's, the
+           only barber presentation there is. ── -->
+      <section
+        class="service-performers"
+        aria-labelledby="service-performers-title"
+      >
+        <ui-stack uiSpacing="comfortable">
+          <header>
+            <ui-stack
+              uiAxis="horizontal"
+              uiSpacing="regular"
+              uiAlignment="center"
+            >
+              <h3 id="service-performers-title" uiText uiFont="title3">
+                {{ t('landing.services.whoLabel') }}
+              </h3>
+              <ui-spacer />
+              <!-- View toggle — PLAIN per HIG (toolbar/inline controls
+                   that only change presentation stay borderless), and NO
+                   selected state: the glyph already names the view you'd
+                   switch TO, so a persistent fill read as a stuck-active
+                   button (owner ruling 2026-07-27). -->
+              <button
+                type="button"
+                uiButton
+                uiButtonStyle="plain"
+                uiControlSize="regular"
+                uiButtonBorderShape="capsule"
+                [uiIconOnly]="true"
+                [attr.aria-label]="
+                  performersGrid()
+                    ? t('landing.services.whoListView')
+                    : t('landing.services.whoGridView')
+                "
+                (click)="performersGrid.set(!performersGrid())"
+              >
+                <ui-icon
+                  [uiName]="performersGrid() ? 'layout.list' : 'layout.grid'"
+                />
+              </button>
+            </ui-stack>
+          </header>
+
+          @if (performersGrid()) {
+            <!-- Grid reading — HIG card grid (App Store / Contacts
+                 register): centered identity cards on elevated surfaces,
+                 NOT re-axed rows. Not interactive (no click target) — no
+                 hover affordance (case-study §2.5). -->
+            <ui-grid
+              role="list"
+              class="service-performers__list"
+              [uiColumns]="2"
+              uiSpacing="regular"
+            >
+              @for (performer of performers(); track performer.barber.id) {
+                <button
+                  uiCard
+                  type="button"
+                  role="listitem"
+                  uiTone="muted"
+                  uiPadding="regular"
+                  [uiInteractive]="true"
+                  uiMultilineTextAlignment="center"
+                  class="service-performer-card"
+                  [attr.aria-label]="
+                    t('landing.barbers.exploreBarber', {
+                      barber: content.text(performer.barber.name),
+                    })
+                  "
+                  (click)="selectBarber(performer.barber)"
+                >
+                  <!-- HIG contact-card rhythm: three GROUPS (portrait →
+                       identity → value) at the regular step, lines inside
+                       a group at the tight step. The old flat compact gap
+                       spaced five unrelated lines identically, so nothing
+                       read as belonging together. -->
+                  <ui-stack uiSpacing="regular" uiAlignment="center">
+                    <!-- Large (52px), not extraLarge (112px) — the 2-up
+                         card is a compact contact card, not a profile
+                         hero. -->
+                    <ui-avatar
+                      [uiSrc]="performer.barber.avatarSrc"
+                      [uiName]="content.text(performer.barber.name)"
+                      uiControlSize="large"
+                    />
+                    <!-- Identity: the NAME is the primary label and leads
+                         (HIG — a list/card identifies its subject first;
+                         Contacts, Music and Maps all put the name above
+                         its classification), then the qualifying metadata
+                         beneath it at ONE type role and ONE ink. The role
+                         keeps its own line — at ~135px of card width it
+                         can't share one with the stats — while rating and
+                         duration run together, dot-separated. -->
+                    <ui-stack
+                      uiSpacing="tight"
+                      uiAlignment="center"
+                      class="service-performer__identity"
+                    >
+                      <h4 uiText uiFont="headline">
+                        {{ content.text(performer.barber.name) }}
+                      </h4>
+                      <p uiText uiFont="footnote" uiForegroundStyle="secondary">
+                        {{ content.text(performer.barber.title) }}
+                      </p>
+                      <ui-stack
+                        uiAxis="horizontal"
+                        uiSpacing="tight"
+                        uiAlignment="center"
+                        uiText
+                        uiFont="footnote"
+                        uiForegroundStyle="secondary"
+                        class="service-performer__meta"
+                      >
+                        @if (performer.barber.rating !== undefined) {
+                          <ui-rating [uiValue]="performer.barber.rating" />
+                          <span
+                            aria-hidden="true"
+                            class="service-performer__sep"
+                            >·</span
+                          >
+                        }
+                        <span class="service-performer__duration">
+                          {{ performer.minutes }}
+                          {{ t('landing.services.durationLabel') }}
+                        </span>
+                      </ui-stack>
+                    </ui-stack>
+                    <!-- The value: price alone. HIG gives a row/card ONE
+                         value and states it at the primary label's text
+                         style — position and ink carry the distinction,
+                         not a smaller size. -->
+                    <span
+                      uiText
+                      uiFont="headline"
+                      class="service-performer__price"
+                      >{{ content.price(performer.price) }}</span
+                    >
+                  </ui-stack>
+                </button>
+              }
+            </ui-grid>
+          } @else {
+            <!-- List reading — the segmented grouped list (ui-list-group,
+                 menu precedent) in the HIG "subtitle + right detail" row
+                 shape: leading portrait, the NAME as the primary label,
+                 one metadata subtitle under it, and the value on the
+                 trailing edge. -->
+            <ui-list-group role="list" class="service-performers__group">
+              @for (performer of performers(); track performer.barber.id) {
+                <button
+                  uiListRow
+                  type="button"
+                  role="listitem"
+                  [uiInteractive]="true"
+                  class="service-performer"
+                  [attr.aria-label]="
+                    t('landing.barbers.exploreBarber', {
+                      barber: content.text(performer.barber.name),
+                    })
+                  "
+                  (click)="selectBarber(performer.barber)"
+                >
+                  <ui-avatar
+                    uiLeading
+                    class="service-performer__avatar"
+                    [uiSrc]="performer.barber.avatarSrc"
+                    [uiName]="content.text(performer.barber.name)"
+                    uiControlSize="large"
+                  />
+                  <ui-stack
+                    uiSpacing="tight"
+                    class="service-performer__identity"
+                  >
+                    <!-- Primary label: the person. HIG rows identify their
+                         subject first — the classification is a subtitle,
+                         never a kicker above the name. -->
+                    <h4 uiText uiFont="headline">
+                      {{ content.text(performer.barber.name) }}
+                    </h4>
+                    <!-- ONE metadata subtitle, App Store-style: every fact
+                         that qualifies the name — role, rating, duration —
+                         runs together on a single secondary line,
+                         dot-separated, rather than each claiming a line or
+                         a second trailing column of its own. Footnote, not
+                         caption: HIG row subtitles sit at Subheadline /
+                         Footnote; Caption is for ancillary chrome. -->
+                    <ui-stack
+                      uiAxis="horizontal"
+                      uiSpacing="tight"
+                      uiAlignment="center"
+                      uiText
+                      uiFont="footnote"
+                      uiForegroundStyle="secondary"
+                      class="service-performer__meta"
+                    >
+                      <span class="service-performer__role">{{
+                        content.text(performer.barber.title)
+                      }}</span>
+                      @if (performer.barber.rating !== undefined) {
+                        <span aria-hidden="true" class="service-performer__sep"
+                          >·</span
+                        >
+                        <ui-rating [uiValue]="performer.barber.rating" />
+                      }
+                      <span aria-hidden="true" class="service-performer__sep"
+                        >·</span
+                      >
+                      <!-- No clock glyph: "мин" already names the unit, and
+                           a symbol that only repeats its label is
+                           decoration (HIG — symbols aid recognition or
+                           replace text, they don't duplicate it). -->
+                      <span class="service-performer__duration">
+                        {{ performer.minutes }}
+                        {{ t('landing.services.durationLabel') }}
+                      </span>
+                    </ui-stack>
+                  </ui-stack>
+                  <!-- The row's ONE trailing value, at the primary label's
+                       text style (HIG: label and value share a style; ink
+                       and position carry the distinction, not size). -->
+                  <span
+                    uiTrailing
+                    uiText
+                    uiFont="headline"
+                    class="service-performer__price"
+                    >{{ content.price(performer.price) }}</span
+                  >
+                </button>
+              }
+            </ui-list-group>
+          }
+        </ui-stack>
+      </section>
+    </ui-stack>
+
+    <!-- Book CTA — the sheet's toolbar action, docked by the pattern. -->
+    <a
+      sheet-actions
+      routerLink="/auth"
+      [queryParams]="{ redirect: '/book' }"
+      uiButton
+      uiButtonStyle="borderedProminent"
+      uiButtonBorderShape="capsule"
+      [uiSpread]="true"
+      class="service-sheet__cta"
+      data-testid="catalog-sheet-book"
+      [attr.aria-label]="
+        t('landing.services.bookService', {
+          service: content.text(service().name),
+        })
+      "
+    >
+      <span>{{ t('landing.services.book') }}</span>
+      <ui-icon uiName="appointment.launch" class="service-sheet__cta-glyph" />
+    </a>
+  </ui-detail-sheet>
+</ng-container>

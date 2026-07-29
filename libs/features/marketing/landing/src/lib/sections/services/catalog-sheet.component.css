@@ -23,6 +23,20 @@
   flex: 0 0 auto;
 }
 
+/* Manifest rows (a bundle's members, a barber's price list) are
+   cr-service-row — one component for both directions of the same fact, so
+   nothing here. */
+
+/* The barber destination's portrait sits in the sheet's media slot, above
+   their gallery — the gallery pads its own gutters, so only the portrait
+   needs the sheet inset. */
+.barber-sheet__portrait {
+  display: flex;
+  justify-content: center;
+  padding-inline: var(--modal-sheet-safe);
+  padding-block-end: var(--sys-space-comfortable);
+}
+
 /* ── Performers — avatar rows, with a 2-up grid alternative ────────── */
 
 /* Layout toggle is uiButton bordered/capsule/iconOnly — glyph size comes
@@ -32,54 +46,71 @@
    the wrapper is chromeless and the rows own their segment fill/radii —
    nothing local. */
 
-/* The name line HStack must let a long name ellipsize before it pushes
-   the rating off the row. */
-.service-performer__name-line h4 {
-  min-inline-size: 0;
-}
-
 .service-performer__identity {
   min-inline-size: 0;
 }
 
+/* UA-margin zeroing only — the identity stack's gap owns the rhythm
+   between the name and its metadata subtitle. */
+.service-performer__identity p,
+.service-performer__identity h4 {
+  margin: 0;
+}
+
+/* The name is the primary label: it ellipsizes rather than wrapping, so a
+   long one gives way to the trailing value column instead of growing the
+   row (HIG rows keep a fixed two-line rhythm). */
 .service-performer__identity h4 {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.service-performer__identity > span {
+/* Metadata subtitle — role · rating · duration on one secondary line.
+   The role is the only flexible part (it ellipsizes rather than pushing
+   the stats off the row); separators, rating and duration never shrink. */
+.service-performer__meta {
+  min-inline-size: 0;
+}
+
+.service-performer__role {
+  min-inline-size: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-/* Stack layout (column, tight gap, end/start alignment) rides ui-stack in
-   the template; only the text direction stays local. */
-.service-performer__terms {
-  text-align: end;
+.service-performer__meta > .service-performer__sep,
+.service-performer__meta > .service-performer__duration,
+.service-performer__meta .ui-rating {
+  flex: 0 0 auto;
 }
 
-/* Full ink, semibold, tabular figures on the price (trailing slot ink
-   defaults to secondary — right for the duration line, not the price).
-   Body-size + 600 keeps the price an emphasized PEER of the headline
-   name, not a second headline shouting from the trailing edge. */
-.service-performer__price {
-  color: var(--sys-color-foreground);
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
+/* The rating is metadata here, not a stat callout: it drops the pattern's
+   bold so the whole subtitle reads at one weight and one ink. */
+.service-performer__meta .ui-rating {
+  font-weight: inherit;
 }
 
 .service-performer__duration {
+  white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
 
-/* Grid alternative is a REAL card grid now (ui-card elevated, centered
-   identity stack — HIG App Store/Contacts register), not a re-axed row.
-   Only centered multi-line text stays local. */
-.service-performer-card {
-  text-align: center;
+/* The ONE value. Ink only: the price rides the headline role in the
+   template, so it matches the primary label's text style exactly (HIG) —
+   no size step down, and no local weight override on a role that already
+   bakes 600. The trailing slot's default secondary ink is the only thing
+   that has to be overridden, since the value is the decision fact. */
+.service-performer__price {
+  color: var(--sys-color-foreground);
+  font-variant-numeric: tabular-nums;
 }
+
+/* Grid alternative is a REAL card grid (ui-card elevated, centred
+   identity stack — HIG App Store/Contacts register), not a re-axed row.
+   Its centred wrapped lines ride uiMultilineTextAlignment in the template
+   — nothing local. */
 
 /* ── Book CTA — projected as the shared sheet's toolbar action; the bar
    skeleton is the pattern's, only this control's chrome stays local. ── */

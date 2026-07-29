@@ -1,17 +1,13 @@
-import {
-  ChangeDetectionStrategy,
-  Component,
-  inject,
-  signal,
-} from '@angular/core';
+import { ChangeDetectionStrategy, Component, inject } from '@angular/core';
 import { TranslocoDirective } from '@jsverse/transloco';
 import { UiRevealDirective, UiTextDirective } from '@creativo/ui/modifiers';
 import { UiScrollRow, UiStack } from '@creativo/ui/layout';
 import { UiSectionHeader } from '@creativo/ui/patterns';
 import { LandingContentService } from '../../content/landing-content.service';
 import { type ServiceVm } from '../../content/landing-content';
-import { ServiceDetailComponent } from './service-detail.component';
+
 import { ServiceTileComponent } from './service-tile.component';
+import { CatalogNavigationService } from '../../shared/catalog-navigation.service';
 
 /**
  * The services shelf — v2 `services-section.tsx`: header trio, a swipeable
@@ -24,7 +20,6 @@ import { ServiceTileComponent } from './service-tile.component';
   selector: 'cr-services-section',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
-    ServiceDetailComponent,
     ServiceTileComponent,
     TranslocoDirective,
     UiRevealDirective,
@@ -39,10 +34,10 @@ import { ServiceTileComponent } from './service-tile.component';
 })
 export class ServicesSectionComponent {
   protected readonly content = inject(LandingContentService);
+  private readonly catalog = inject(CatalogNavigationService);
 
-  protected readonly selectedService = signal<ServiceVm | null>(null);
-
+  /** A tile opens the page's shared detail sheet on that service. */
   protected open(service: ServiceVm): void {
-    this.selectedService.set(service);
+    this.catalog.open(service);
   }
 }

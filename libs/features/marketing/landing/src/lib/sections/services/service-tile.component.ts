@@ -7,7 +7,7 @@ import {
   output,
 } from '@angular/core';
 import { TranslocoDirective } from '@jsverse/transloco';
-import { UiAsyncImage, UiIcon } from '@creativo/ui/controls';
+import { UiIcon, UiMediaCard } from '@creativo/ui/controls';
 import { UiStack } from '@creativo/ui/layout';
 import {
   UiInteractiveDirective,
@@ -22,20 +22,23 @@ import {
 
 /**
  * One portrait service tile — the carousel card shared by the singles and
- * bundles shelves (previously ~65 lines copy-pasted per shelf). Cover art
- * is `ui-async-image` (4/5, hairline ring, prominent radius) with the
- * scissors-motif gradient projected as the permanent placeholder for
- * services without a photo; copy roles ride uiText. Hover/press feedback is
- * the shared `[data-interactive]` grammar — the image zoom is this tile's
- * one signature embellishment.
+ * bundles shelves. The card IS `ui-media-card` (the same cover-art surface
+ * the onboarding picker reads in — owner ruling 2026-07-28: one service
+ * card, one register): cover art with the sanctioned media scrim and the
+ * name/price caption inset over the picture, plus the bundle tell in the
+ * trailing corner slot. The landing card carries no selection chip and no
+ * info pill — the whole tile IS the details affordance here.
+ *
+ * Hover/press feedback is the shared `[data-interactive]` grammar; the
+ * image zoom is this tile's one signature embellishment.
  */
 @Component({
   selector: 'cr-service-tile',
   imports: [
     TranslocoDirective,
-    UiAsyncImage,
     UiIcon,
     UiInteractiveDirective,
+    UiMediaCard,
     UiRadiusDirective,
     UiStack,
     UiTextDirective,
@@ -50,75 +53,70 @@ import {
         [attr.data-testid]="'service-tile-' + service().id"
         (click)="pressed.emit()"
       >
-        <!-- VStack: media → copy; the compact gap IS the old copy margin. -->
-        <ui-stack uiSpacing="compact">
-          <!-- ZStack: cover art + the corner bundle chip (place-self in
-               CSS, hero-toolbar precedent). -->
-          <ui-stack uiAxis="z">
-            <ui-async-image
-              class="cr-services__image"
-              [uiSrc]="service().coverSrc ?? null"
-              uiRatio="4 / 5"
-              [uiRing]="true"
-              uiRadius="prominent"
-            >
-              <!-- Graceful degradation — a styled scissors motif reads as
-                   intentional, never broken (v2 imageFallback). -->
-              <span uiPlaceholder class="cr-services__fallback">
-                <ui-icon
-                  uiName="service.placeholder"
-                  class="cr-services__fallback-glyph"
-                />
-              </span>
-            </ui-async-image>
+        <ui-media-card
+          class="cr-services__card"
+          uiRadius="prominent"
+          uiRatio="4 / 5"
+          [uiSrc]="service().coverSrc ?? null"
+        >
+          <!-- Graceful degradation — a styled scissors motif reads as
+               intentional, never broken (v2 imageFallback). -->
+          <span uiPlaceholder class="cr-services__fallback">
+            <ui-icon
+              uiName="service.placeholder"
+              class="cr-services__fallback-glyph"
+            />
+          </span>
 
-            @if (service().kind === 'bundle') {
+          <!-- Caption rhythm is the media card's own (both lines project
+               into its inset stack) — no local copy wrapper. -->
+          <span
+            uiCaption
+            uiText
+            uiFont="callout"
+            uiWeight="bold"
+            class="cr-services__name"
+            >{{ content.text(service().name) }}</span
+          >
+          <ui-stack
+            uiCaption
+            uiAxis="horizontal"
+            uiAlignment="center"
+            uiSpacing="compact"
+          >
+            <span uiText uiFont="footnote" uiForegroundStyle="secondary">
+              {{ t('landing.services.from') }}
+              <span class="cr-services__price">{{
+                content.price(servicePriceFrom(service()))
+              }}</span>
+            </span>
+            @if (service().variants.length > 0) {
               <span
-                class="cr-services__bundle-chip"
-                role="img"
-                [attr.aria-label]="t('landing.services.bundle')"
+                uiText
+                uiFont="caption"
+                uiForegroundStyle="secondary"
+                class="cr-services__variants"
               >
-                <ui-icon
-                  uiName="service.bundle"
-                  class="cr-services__bundle-glyph"
-                />
+                <ui-icon uiName="service.variants" />
+                {{ service().variants.length }}
               </span>
             }
           </ui-stack>
 
-          <ui-stack uiSpacing="tight" class="cr-services__copy">
+          @if (service().kind === 'bundle') {
             <span
-              uiText
-              uiFont="callout"
-              uiWeight="bold"
-              class="cr-services__name"
-              >{{ content.text(service().name) }}</span
+              uiOverlayTrailing
+              class="cr-services__bundle-chip"
+              role="img"
+              [attr.aria-label]="t('landing.services.bundle')"
             >
-            <ui-stack
-              uiAxis="horizontal"
-              uiAlignment="center"
-              uiSpacing="compact"
-            >
-              <span uiText uiFont="footnote" uiForegroundStyle="secondary">
-                {{ t('landing.services.from') }}
-                <span class="cr-services__price">{{
-                  content.price(servicePriceFrom(service()))
-                }}</span>
-              </span>
-              @if (service().variants.length > 0) {
-                <span
-                  uiText
-                  uiFont="caption"
-                  uiForegroundStyle="secondary"
-                  class="cr-services__variants"
-                >
-                  <ui-icon uiName="service.variants" />
-                  {{ service().variants.length }}
-                </span>
-              }
-            </ui-stack>
-          </ui-stack>
-        </ui-stack>
+              <ui-icon
+                uiName="service.bundle"
+                class="cr-services__bundle-glyph"
+              />
+            </span>
+          }
+        </ui-media-card>
       </button>
     </ng-container>
   `,
@@ -133,8 +131,7 @@ import {
       inline-size: 9.375rem;
     }
 
-    /* Button reset only — layout is the inner ui-stack composition
-       (VStack: ZStack media → copy stack). */
+    /* Button reset only — the card surface is ui-media-card. */
     .cr-services__tile {
       display: block;
       inline-size: 100%;
@@ -145,8 +142,7 @@ import {
       color: var(--sys-color-foreground);
     }
 
-    .cr-services__image {
-      inline-size: 100%;
+    .cr-services__card {
       background: var(--landing-muted);
     }
 
@@ -154,7 +150,7 @@ import {
        the cover zooms inside its clipped frame. The opacity track mirrors
        ui-async-image's own load fade so both transitions survive the
        shorthand. */
-    .cr-services__image .ui-async-image__image {
+    .cr-services__card .ui-async-image__image {
       transition:
         opacity var(--sys-motion-duration-regular)
           var(--sys-motion-ease-standard),
@@ -165,6 +161,11 @@ import {
       .cr-services__tile:hover .ui-async-image__image {
         transform: scale(1.04);
       }
+    }
+    /* Ungated press mirror — a hover-only embellishment is invisible on
+       phones (owner ruling: every hover effect needs its :active twin). */
+    .cr-services__tile:active .ui-async-image__image {
+      transform: scale(1.04);
     }
 
     .cr-services__fallback {
@@ -188,23 +189,13 @@ import {
       font-size: 2.25rem;
     }
 
-    /* Bundle tell — floating brand chip on the photo corner.
+    /* Bundle tell — floating brand chip in the card's trailing corner
+       slot (ui-media-card positions it; only the chrome is local).
        Deliberately NOT ui-badge/ui-chip: an icon-only elevated disc
        floating over a photo (solid surface + shadow), not a tinted text
-       capsule and not interactive — only the DS tokens are shared. The
-       disc paints above the in-flow image by positioning + source order
-       alone (hero-card precedent: no z-index inside a component's own
-       stacking context); size is a space-unit multiple, one step under
-       the 36px control tier. */
+       capsule and not interactive — only the DS tokens are shared. Size
+       is a space-unit multiple, one step under the 36px control tier. */
     .cr-services__bundle-chip {
-      /* Corner layer of the media ZStack (hero-toolbar precedent:
-         place-self positions a z-stack layer; margin is its inset).
-         position: relative (no z-index) lifts the chip into the positioned
-         paint order — ui-async-image's placeholder/img layers are absolute
-         and would otherwise cover a static sibling. */
-      position: relative;
-      place-self: start end;
-      margin: var(--sys-space-compact);
       display: inline-flex;
       align-items: center;
       justify-content: center;
@@ -220,12 +211,6 @@ import {
       /* Small rung of the fixed icon ladder — the disc is one step under
          the 36px control tier, so its glyph takes the step under 20. */
       font-size: var(--ui-icon-small);
-    }
-
-    .cr-services__copy {
-      /* KEPT: 2px optical alignment of the copy against the cover's
-         hairline ring — sub-rung by design; rhythm is the stack gaps. */
-      padding-inline: 2px;
     }
 
     .cr-services__name {

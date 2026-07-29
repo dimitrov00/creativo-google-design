@@ -15,14 +15,24 @@ import {
   UiTextDirective,
 } from '@creativo/ui/modifiers';
 import {
+  UiListGroup,
   UiRating,
   UiSectionHeader,
   UiSheetActionBar,
 } from '@creativo/ui/patterns';
 import { UiModalSheet } from '@creativo/ui/controls';
 import { ShowcaseGalleryComponent } from '../../../shared/showcase-gallery/showcase-gallery.component';
+import { LandingContentService } from '../../../content/landing-content.service';
+import {
+  type ServiceVm,
+  servicesByBarber,
+} from '../../../content/landing-content';
+import { CatalogNavigationService } from '../../../shared/catalog-navigation.service';
+import { ServiceRowComponent } from '../../../sections/services/service-row.component';
 
 interface BarberItem {
+  /** Matches the catalog's barber id — the key the price list derives from. */
+  readonly id: string;
   readonly nameKey: string;
   readonly image: string;
   readonly roleKey: string;
@@ -43,6 +53,8 @@ interface BarberItem {
     UiGrid,
     UiIcon,
     UiInteractiveDirective,
+    ServiceRowComponent,
+    UiListGroup,
     UiRadiusDirective,
     UiRating,
     UiSectionHeader,
@@ -60,9 +72,15 @@ interface BarberItem {
 })
 export class TeamShowcaseComponent {
   private readonly platformId = inject(PLATFORM_ID);
+  protected readonly content = inject(LandingContentService);
+  private readonly catalog = inject(CatalogNavigationService);
+
+  /** Held across the exit — see `openService`. */
+  private handoff: ServiceVm | null = null;
 
   protected readonly barbers: readonly BarberItem[] = [
     {
+      id: 'ivan',
       nameKey: 'landing.barbers.ivan.name',
       image: '/barbers/ivan.jpg',
       roleKey: 'landing.barbers.ivan.role',
@@ -77,6 +95,7 @@ export class TeamShowcaseComponent {
       ],
     },
     {
+      id: 'niko',
       nameKey: 'landing.barbers.niko.name',
       image: '/barbers/niko.jpg',
       roleKey: 'landing.barbers.niko.role',
@@ -91,6 +110,7 @@ export class TeamShowcaseComponent {
       ],
     },
     {
+      id: 'stefan',
       nameKey: 'landing.barbers.stefan.name',
       image: '/barbers/stefan.jpg',
       roleKey: 'landing.barbers.stefan.role',
@@ -104,17 +124,34 @@ export class TeamShowcaseComponent {
     },
   ];
 
-  protected readonly activeBarberIndex = signal(0);
-  protected readonly sheetOpen = signal(false);
-  protected readonly sheetClosing = signal(false);
+  /**
+   * WHICH barber the sheet shows is shared state, because a performer in
+   * the service sheet opens this same sheet — one barber presentation for
+   * the whole page. Only the exit dance stays local.
+   */
   protected readonly activeBarber = computed(
-    () => this.barbers[this.activeBarberIndex()] ?? this.barbers[0],
+    () =>
+      this.barbers.find((barber) => barber.id === this.catalog.barberId()) ??
+      null,
   );
+  protected readonly sheetOpen = computed(() => this.activeBarber() !== null);
+  protected readonly sheetClosing = signal(false);
 
-  protected openBarber(index: number): void {
-    this.activeBarberIndex.set(index);
-    this.sheetOpen.set(true);
+  /**
+   * What this barber charges, per service — derived by inverting
+   * `ServiceVm.offerings`, the only direction the catalog stores. Fed the
+   * marketing shelf, so upsell-only add-ons stay out of it exactly as they
+   * do everywhere else on this page.
+   */
+  protected readonly activeBarberPrices = computed(() => {
+    const barber = this.activeBarber();
+    if (!barber) return [];
+    return servicesByBarber(this.content.shelfServices, barber.id);
+  });
+
+  protected openBarber(barber: BarberItem): void {
     this.sheetClosing.set(false);
+    this.catalog.openBarber(barber.id);
   }
 
   protected closeBarber(): void {
@@ -126,9 +163,24 @@ export class TeamShowcaseComponent {
     this.sheetClosing.set(true);
   }
 
+  /**
+   * A price-list row is a reference to the service's own sheet. Rather
+   * than opening one over this one — a sheet on top of a sheet, the thing
+   * HIG is firmest about — this sheet leaves FIRST and the catalog sheet
+   * takes the screen once its exit finishes. One surface at a time, and
+   * the handoff reads as a replace rather than a stack.
+   */
+  protected openService(service: ServiceVm): void {
+    this.handoff = service;
+    this.closeBarber();
+  }
+
   protected finishClosing(): void {
     if (!this.sheetClosing()) return;
-    this.sheetOpen.set(false);
     this.sheetClosing.set(false);
+    this.catalog.closeBarber();
+    const handoff = this.handoff;
+    this.handoff = null;
+    if (handoff) this.catalog.open(handoff);
   }
 }

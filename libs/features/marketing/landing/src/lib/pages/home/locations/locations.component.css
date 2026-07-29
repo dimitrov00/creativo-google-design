@@ -40,37 +40,34 @@ cr-locations {
    elements are MapLibre-created and never carry Angular's scope attribute,
    so component-scoped rules can't reach them. */
 
-.locations__list {
-  display: grid;
-  align-content: start;
-  gap: 0;
-  /* KEPT: sanctioned negative-margin cancellation — swallows the first
-     card's own symmetric block padding (see .location-card) so the list
-     sits flush under the map without a first-child exception; no DS
-     equivalent. */
-  margin: calc(-1 * var(--sys-space-comfortable)) 0 0;
-  padding: 0;
-  list-style: none;
+/* The venue list IS ui-list-group (segmented run, seam separators, card
+   corners on the outer pair) — geometry, surfaces and the press shape
+   morph all come from the DS. Nothing local remains but the row's
+   three-line copy, which is the one shape a list row doesn't assume. */
+
+/* A list row's label is a single ellipsized line by default; identity
+   stacks reset that in their own content (the DS's documented escape). */
+.location-card .ui-list-row__label {
+  white-space: normal;
+  overflow: visible;
 }
 
-/* Hover/press feedback = the shared [data-interactive] state layer
-   (uiInteractive) — same grammar as the menu rows/toolbar; the focus ring
-   comes from the same grammar. Row layout + radius live on the template
-   (ui-stack + uiRadius). */
+/* Three stacked lines need more air than the row's compact block padding
+   (sized for a single 52px line). */
 .location-card {
-  min-inline-size: 0;
-  /* Symmetric on every card — an asymmetric first-child exception made the
-     first card's uiInteractive hover layer visibly shorter than its
-     siblings' (one hover grammar, one geometry). */
-  padding-block: var(--sys-space-comfortable);
-  /* No divider rule — this was the only section using borders between
-     items; the padding rhythm alone separates cards, matching how every
-     other section breathes (owner call, 2026-07-21). */
+  padding-block: var(--sys-space-regular);
 }
 
 .location-card__copy {
-  flex: 1 1 auto;
   min-inline-size: 0;
+}
+
+/* Trailing action cluster — the row slot owns its position, this owns the
+   gap between the two circular controls. */
+.location-card__actions {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sys-space-compact);
 }
 
 .location-card__copy h3,
@@ -120,66 +117,14 @@ cr-locations {
 }
 
 /* ── Sheet shell ──────────────────────────────────────────────────────
-   ui-sheet owns scrim/entrance/modal behavior (UiSheetBehavior); the two
-   host rules below are the set-piece's only shell overrides. */
-
-/* The DS bottom placement pins the surface inline-start once the viewport
-   outgrows the wide container — the host is the flex container we own, so
-   centering is one line here. */
-ui-sheet.location-detail-sheet {
-  justify-content: center;
-}
-
-/* ONE shared gutter for the whole sheet: the surface's `--ui-sheet-inset`
-   IS the fluid set-piece gutter, so sheet chrome (ui-sheet-header,
-   ui-sheet-action-bar) and the content blocks (which read it back through
-   the `--modal-sheet-safe` alias below) all sit on the same edge. */
-ui-sheet.location-detail-sheet .ui-sheet__surface {
-  --ui-sheet-inset: clamp(1.25rem, 4vw, 4rem);
-}
-
-/* Restates ui-modal-sheet's closed-state contract: ui-sheet only fades
-   (opacity/pointer-events), which would leave the closed sheet's controls
-   in the tab order and its content exposed to AT. `visibility` (not
-   `display: none`) also keeps real layout dimensions for the sheet map
-   (see locations.component.ts). data-closing is stamped by this template
-   so the exit transition isn't cut short. */
-ui-sheet.location-detail-sheet:not([data-presented]):not([data-closing]) {
-  visibility: hidden;
-}
-
-/* Full-bleed set-piece: the DS surface carries comfortable padding meant
-   for simple drawer content; this sheet is edge-to-edge (fluid gutters +
-   full-width gallery), so the scroller cancels that padding and owns the
-   box. Height is viewport-capped so the sticky header and the floating
-   action bar always stay reachable. */
-.location-sheet__scroller {
-  /* Fluid sheet gutter = the surface's shared inset (aliased for the
-     legacy consumers — the gallery pads itself with --modal-sheet-safe in
-     both modes); the sheets-misc convergence owns its future
-     consolidation. */
-  --modal-sheet-safe: var(--ui-sheet-inset);
-  /* KEPT: negative-margin full-bleed cancellation of ui-sheet's surface
-     padding (comfortable block, --ui-sheet-inset inline — no DS
-     equivalent) — the scroller owns the box instead. */
-  margin-block: calc(-1 * var(--sys-space-comfortable));
-  margin-inline: calc(-1 * var(--ui-sheet-inset));
-  block-size: min(90svh, 58rem);
-  /* Vertical only — wide content (galleries, long unbroken strings) must
-     clip rather than turn the whole sheet into a horizontal scroller. */
-  overflow-x: clip;
-  overflow-y: auto;
-  overflow-anchor: none;
-  overscroll-behavior: contain;
-  scrollbar-width: thin;
-  /* Matches the surface's top rounding so the sticky header and scrolled
-     content clip inside the corner. */
-  border-start-start-radius: var(--control-radius-prominent);
-  border-start-end-radius: var(--control-radius-prominent);
-}
-
-/* Compact title rides ui-sheet-header's [uiTitle] slot — typography and
-   ink are the bar's HIG nav-title recipe now, nothing local. */
+   The set piece presents through ui-modal-sheet now (the same shell as the
+   barber and service sheets), so EVERYTHING this block used to restate —
+   centering at wide widths, the closed-state `visibility` contract, the
+   fluid `--modal-sheet-safe` gutter, the full-bleed viewport-capped
+   scroller, the collapsing compact title — comes from the shell. That
+   convergence is the point: this sheet's header wore the DS's solid
+   fill + hairline while every other sheet wore the house gradient scrim.
+   Only the set piece's own CONTENT geometry stays below. */
 
 /* Inline gutters live on the layout/heading blocks, not the sheet root —
    the gallery pads itself (cr-showcase-gallery owns --modal-sheet-safe),
@@ -226,15 +171,13 @@ ui-sheet.location-detail-sheet:not([data-presented]):not([data-closing]) {
   padding-block-start: var(--sys-space-compact);
 }
 
+/* The headline is the shell's collapse sentinel — `uiSheetLargeTitle` in
+   the template both names the view-timeline and feeds the header's
+   observer, so no local timeline plumbing remains. */
 .location-sheet__intro h2 {
   max-inline-size: 10ch;
   /* UA-margin reset only — the intro stack's gap owns all spacing. */
   margin: 0;
-  /* Names the headline for ui-sheet-header's scroll-linked compact-title
-     reveal (the timeline scope comes from the DS's
-     `.ui-sheet__surface:has(.ui-sheet-header)` rule); the [data-visible]
-     flip driven from the IntersectionObserver stays as the fallback. */
-  view-timeline-name: --ui-sheet-headline;
 }
 
 .location-sheet__address {
@@ -271,22 +214,20 @@ ui-sheet.location-detail-sheet:not([data-presented]):not([data-closing]) {
 /* The intro carries NO action cluster — all three sheet actions (call,
    directions, book) live solely in the bottom ui-sheet-action-bar. */
 
-/* Surface chrome (fill, raised elevation, prominent radius, regular
-   padding, column gap) comes from ui-card; the status/week hairline is the
-   ui-divider in the template (spaced by the card's own gap); the
-   intro→card rhythm is the profile stack's `loose` gap — nothing local. */
+/* The hours block is the status label over a ui-list-group segmented run.
+   Everything is DS: the label→run step is the wrapper stack's `compact`
+   gap; segment fills, seams, card-tier outer corners and the UA-list reset
+   come from the group; row recipe, trailing-detail ink and the today tint
+   (uiSelected) from ui-list-row. The intro→hours rhythm is the profile
+   stack's `loose` gap. */
 
-.location-sheet__week {
-  display: grid;
-  /* UA-margin reset only (list element). */
-  margin: 0;
-  padding: 0;
-  list-style: none;
+/* The label sits flush with the group's outer edge — the same column as
+   the headline and address above it, so the whole profile reads on one
+   left margin (owner call: no section-header inset here). `align-self`
+   keeps the inline-flex cluster from stretching across the stack. */
+.location-sheet__hours-label {
+  align-self: start;
 }
-
-/* The day rows ARE ui-list-row (li[uiListRow] form): recipe, trailing
-   detail ink and the today tint (uiSelected) all come from the DS — the
-   old hand-rolled row/today/name rules are gone. */
 
 /* No visual "today" tag — the tinted row + bold weight already carry the
    emphasis (HIG: don't restate it); the fact reaches AT via an SR-only
@@ -341,24 +282,18 @@ ui-sheet.location-detail-sheet:not([data-presented]):not([data-closing]) {
    the scoped animation-name resolves to it since no local @keyframes
    shadows the name. */
 ui-sheet[data-presented] .location-sheet__intro,
-ui-sheet[data-presented] .location-sheet__status-card {
+ui-sheet[data-presented] .location-sheet__hours {
   animation: sheet-content-in var(--sys-motion-duration-slowest)
     var(--sys-motion-ease-emphasized) both;
 }
 
-ui-sheet[data-presented] .location-sheet__status-card {
+ui-sheet[data-presented] .location-sheet__hours {
   animation-delay: var(--sys-motion-duration-instant);
 }
 
 @media (max-width: 760px) {
-  ui-sheet.location-detail-sheet .ui-sheet__surface {
-    --ui-sheet-inset: 1.1rem;
-  }
-
-  .location-sheet__scroller {
-    block-size: min(96svh, 60rem);
-  }
-
+  /* Narrow-width gutter + scroller height are the shell's own responsive
+     contract now (ui-modal-sheet), not restated here. */
   .location-sheet {
     display: flex;
     flex-direction: column;

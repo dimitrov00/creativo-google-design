@@ -53,15 +53,20 @@ describe('LocationsComponent', () => {
 
     expect(sheet?.hasAttribute('data-presented')).toBe(true);
     expect(host.querySelector('[data-location-sheet-map]')).not.toBeNull();
-    // The schedule rows are DS list rows (li form); today = uiSelected.
+    // Opening hours: the status is the segmented run's LABEL — chrome
+    // above the group, neither a container around it nor an eighth day
+    // segment. Today = uiSelected.
+    const hours = host.querySelector('.location-sheet__hours');
+    expect(hours?.tagName).toBe('UI-STACK');
     expect(
-      host.querySelectorAll('.location-sheet__week li.ui-list-row').length,
-    ).toBe(7);
+      hours?.querySelector(
+        ':scope > ui-status-indicator.location-sheet__hours-label',
+      ),
+    ).not.toBeNull();
+    const week = hours?.querySelector('ul.ui-list-group.location-sheet__week');
+    expect(week?.querySelectorAll(':scope > li.ui-list-row').length).toBe(7);
     expect(
       host.querySelector('.location-sheet__week li.ui-list-row[data-selected]'),
-    ).not.toBeNull();
-    expect(
-      host.querySelector('.location-sheet__status-card ui-status-indicator'),
     ).not.toBeNull();
 
     // The sheet's ONE action row is the bottom ui-sheet-action-bar —
@@ -88,17 +93,12 @@ describe('LocationsComponent', () => {
         ?.getAttribute('aria-label'),
     ).toBeTruthy();
 
-    // The status card rides the DS elevated tone at the stepped-down
-    // regular padding, separates the status row from the week list with
-    // the sanctioned ui-divider (no local border hairline), and "today" is
-    // conveyed to AT via SR-only text instead of a redundant visual tag on
-    // the already-emphasized row.
-    const statusCard = host.querySelector('.location-sheet__status-card');
-    expect(statusCard?.getAttribute('data-tone')).toBe('elevated');
-    expect(statusCard?.getAttribute('data-padding')).toBe('regular');
-    expect(
-      statusCard?.querySelector('ui-divider.ui-divider[role="separator"]'),
-    ).not.toBeNull();
+    // No card surface and no hairline around the hours: the stack gap
+    // separates the label from the run, and between days the seam IS the
+    // separator. "Today" is conveyed to AT via SR-only text instead of a
+    // redundant visual tag on the already-emphasized row.
+    expect(hours?.querySelector('ui-card')).toBeNull();
+    expect(hours?.querySelector('ui-divider')).toBeNull();
     expect(host.querySelector('.location-sheet__today-tag')).toBeNull();
     expect(
       host.querySelector(

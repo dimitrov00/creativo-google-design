@@ -10,30 +10,27 @@ import {
   effect,
   inject,
   signal,
-  viewChild,
 } from '@angular/core';
 import { TranslocoDirective, TranslocoService } from '@jsverse/transloco';
 import {
   UI_ICON_OVERRIDES,
   UiButton,
   UiIcon,
+  UiModalSheet,
   resolveUiIcon,
 } from '@creativo/ui/controls';
-import { UiDivider, UiSheet, UiSpacer, UiStack } from '@creativo/ui/layout';
+import { UiStack } from '@creativo/ui/layout';
 import {
-  UiInteractiveDirective,
   UiMaterialDirective,
-  UiRadiusDirective,
   UiTextDirective,
   UiVisuallyHiddenDirective,
   UiWeightDirective,
 } from '@creativo/ui/modifiers';
 import {
-  UiCard,
+  UiListGroup,
   UiListRow,
   UiSectionHeader,
   UiSheetActionBar,
-  UiSheetHeader,
   UiStatusIndicator,
 } from '@creativo/ui/patterns';
 import type { Map as MapLibreMap, Marker as MapLibreMarker } from 'maplibre-gl';
@@ -113,18 +110,13 @@ const MLADOST_SCHEDULE: WeekSchedule = [
     ShowcaseGalleryComponent,
     TranslocoDirective,
     UiButton,
-    UiCard,
-    UiDivider,
     UiIcon,
+    UiListGroup,
     UiListRow,
-    UiInteractiveDirective,
     UiMaterialDirective,
-    UiRadiusDirective,
+    UiModalSheet,
     UiSectionHeader,
-    UiSheet,
     UiSheetActionBar,
-    UiSheetHeader,
-    UiSpacer,
     UiStack,
     UiStatusIndicator,
     UiTextDirective,
@@ -174,17 +166,6 @@ export class LocationsComponent implements AfterViewInit {
   // DestroyRef.
   private destroyed = false;
 
-  // Sheet-internal landmarks — all owned by THIS template (the old
-  // implementation reached into ui-modal-sheet's private structure via
-  // `.modal-sheet` / `.modal-sheet__toolbar` querySelectors).
-  private readonly sheetScroller =
-    viewChild<ElementRef<HTMLElement>>('sheetScroller');
-  private readonly sheetTitle =
-    viewChild<ElementRef<HTMLElement>>('sheetTitle');
-  private readonly sheetHeaderBar = viewChild(UiSheetHeader, {
-    read: ElementRef,
-  });
-
   protected readonly weekdayKeys = WEEKDAY_KEYS;
   protected readonly weekOrder = WEEK_DISPLAY_ORDER;
 
@@ -220,7 +201,6 @@ export class LocationsComponent implements AfterViewInit {
   protected readonly activeIndex = signal(0);
   protected readonly sheetOpen = signal(false);
   protected readonly sheetClosing = signal(false);
-  protected readonly sheetHeaderCondensed = signal(false);
   protected readonly now = signal(new Date());
   protected readonly todayIndex = computed(() => this.now().getDay());
   protected readonly activeLocation = computed(
@@ -254,9 +234,6 @@ export class LocationsComponent implements AfterViewInit {
     if (!isPlatformBrowser(this.platformId)) return;
 
     const host = this.elementRef.nativeElement;
-    // Synchronous — must run before the first await so DestroyRef
-    // registration is safe (see the `destroyed` flag note above).
-    this.setupSheetObservers();
 
     // maplibre-gl ships a UMD bundle, not a real ESM module (it builds its
     // exports object dynamically inside a factory function, so esbuild can't
@@ -281,6 +258,7 @@ export class LocationsComponent implements AfterViewInit {
           cooperativeGestures: true,
         });
         this.map = map;
+        this.collapseAttribution(map, mapContainer);
         map.on('error', (event) =>
           console.error('[cr-locations] map error:', event.error),
         );
@@ -337,6 +315,7 @@ export class LocationsComponent implements AfterViewInit {
           cooperativeGestures: true,
         });
         this.sheetMap = sheetMap;
+        this.collapseAttribution(sheetMap, sheetMapContainer);
         sheetMap.on('error', (event) =>
           console.error('[cr-locations] sheet map error:', event.error),
         );
@@ -359,6 +338,36 @@ export class LocationsComponent implements AfterViewInit {
     }
   }
 
+  /**
+   * MapLibre's compact attribution control mounts EXPANDED, so every map
+   * opened with the full "OpenFreeMap © OpenMapTiles · Data from
+   * OpenStreetMap" strip lying across its bottom edge. Collapsing it to
+   * the (i) puck is exactly what MapLibre itself does on drag
+   * (`_updateCompactMinimize`): drop the `maplibregl-compact-show` class.
+   *
+   * It can't be done at construction time: the control mounts EMPTY
+   * (`maplibregl-attrib-empty`, no style loaded yet) and only stamps the
+   * expanded classes once the first `styledata` fills the credits in — so
+   * this waits for the class to appear, collapses once, and then detaches.
+   * Detaching matters: a theme swap re-runs `setStyle`, and re-collapsing
+   * behind a user who deliberately opened the credits would be rude.
+   * Nothing is lost either way — the puck still expands on tap.
+   */
+  private collapseAttribution(map: MapLibreMap, container: HTMLElement): void {
+    const collapse = (): void => {
+      const attribution = container.querySelector(
+        '.maplibregl-ctrl-attrib.maplibregl-compact-show',
+      );
+      if (!attribution) return;
+      attribution.classList.remove('maplibregl-compact-show');
+      map.off('styledata', collapse);
+    };
+    // Listener teardown rides `map.remove()` (already registered by the
+    // caller) for the case where the style never resolves.
+    map.on('styledata', collapse);
+    collapse();
+  }
+
   protected directionsUrl(location: LocationItem): string {
     return `https://www.google.com/maps/search/?api=1&query=${location.lat},${location.lng}`;
   }
@@ -374,12 +383,7 @@ export class LocationsComponent implements AfterViewInit {
     this.updateActiveMarker();
     this.sheetOpen.set(true);
     this.sheetClosing.set(false);
-    this.sheetHeaderCondensed.set(false);
-
-    // ui-sheet's behavior doesn't manage the scroller (it has none of its
-    // own) — reset OUR scroller so each open starts at the top.
-    const scroller = this.sheetScroller()?.nativeElement;
-    if (scroller) scroller.scrollTop = 0;
+    // Scroller reset on open is ui-modal-sheet's own contract now.
 
     const location = this.locations[index];
     if (!location) return;
@@ -431,23 +435,10 @@ export class LocationsComponent implements AfterViewInit {
   protected closeLocation(): void {
     if (!isPlatformBrowser(this.platformId)) return;
     if (!this.sheetOpen() || this.sheetClosing()) return;
-    // No timer: close completion is driven by the sheet's own exit
-    // transition (see onSheetTransitionEnd) so the CSS motion tokens stay
+    // No timer: close completion arrives as the shell's `closeFinished`
+    // (its own exit-transition listener), so the CSS motion tokens stay
     // the single source of truth for the exit duration.
     this.sheetClosing.set(true);
-  }
-
-  /**
-   * Completes the close when the ui-sheet host's scrim fade — the exit's
-   * final track on the element itself (descendant transitions bubble but
-   * are filtered out) — ends or is cancelled. Replaces the old TS-side
-   * 300ms literal that silently duplicated `--sys-motion-duration-*`.
-   */
-  protected onSheetTransitionEnd(event: TransitionEvent): void {
-    if (!this.sheetClosing()) return;
-    if (event.target !== event.currentTarget) return;
-    if (event.propertyName !== 'opacity') return;
-    this.finishClosing();
   }
 
   /**
@@ -505,52 +496,10 @@ export class LocationsComponent implements AfterViewInit {
     return (hours ?? 0) * 60 + (minutes ?? 0);
   }
 
-  private finishClosing(): void {
+  /** Completes the close on the shell's exit-transition callback. */
+  protected finishClosing(): void {
     this.sheetOpen.set(false);
     this.sheetClosing.set(false);
-    this.sheetHeaderCondensed.set(false);
-  }
-
-  /**
-   * Drives the condensed-header state from an IntersectionObserver over
-   * this template's own headline h2 inside our scroller. The sticky header
-   * band is dead viewing area at the top of the scroller, so it's
-   * subtracted via rootMargin — "slid under the bar", not "left the
-   * scroller box", is the crossing that flips the state (same geometry the
-   * old scroll-math computed against ui-modal-sheet's toolbar). The bottom
-   * action bar needs no wiring here: it's visible for the sheet's whole
-   * open lifetime.
-   */
-  private setupSheetObservers(): void {
-    // Same availability guard as uiReveal: jsdom/older engines have no
-    // IntersectionObserver — the sheet then simply keeps its resting
-    // header state.
-    if (typeof IntersectionObserver === 'undefined') return;
-    const scroller = this.sheetScroller()?.nativeElement;
-    const title = this.sheetTitle()?.nativeElement;
-    const header = this.sheetHeaderBar()?.nativeElement as
-      HTMLElement | undefined;
-    if (!scroller || !title || !header) return;
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        for (const entry of entries) {
-          const exitedAbove =
-            !entry.isIntersecting &&
-            entry.boundingClientRect.bottom <= (entry.rootBounds?.top ?? 0);
-          if (entry.target === title) {
-            this.sheetHeaderCondensed.set(exitedAbove);
-          }
-        }
-      },
-      {
-        root: scroller,
-        rootMargin: `-${header.offsetHeight}px 0px 0px 0px`,
-        threshold: 0,
-      },
-    );
-    observer.observe(title);
-    this.destroyRef.onDestroy(() => observer.disconnect());
   }
 
   private updateActiveMarker(): void {

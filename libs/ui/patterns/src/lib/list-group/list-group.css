@@ -16,10 +16,22 @@
     list-style: none;
   }
 
-  /* Each direct row is a segment: container-on-surface fill (the role
-     that stays visible where surface == background), subtle inner
-     corners. The radius morph transition serves the press rule below. */
-  .ui-list-group > .ui-list-row {
+  /* A row may arrive wrapped in ONE transparent element — an Angular
+     component that emits a row renders its own host around it, and a
+     `display: contents` host disappears from LAYOUT but not from the DOM,
+     so a plain child combinator would skip every rule below and the run
+     would lose its surfaces entirely. The wrapper is treated as
+     transparent here (`--ui-list-group-wrapper` marks it as flat too), so
+     a `<cr-service-row>`-style component is a first-class segment. */
+  .ui-list-group > :not(.ui-list-row) {
+    display: contents;
+  }
+
+  /* Each segment: container-on-surface fill (the role that stays visible
+     where surface == background), subtle inner corners. The radius morph
+     transition serves the press rule below. */
+  .ui-list-group > .ui-list-row,
+  .ui-list-group > :not(.ui-list-row) > .ui-list-row {
     background: var(--sys-color-surface-secondary);
     border-radius: var(--control-radius-subtle);
     transition: border-radius var(--sys-motion-duration-regular)
@@ -27,12 +39,16 @@
   }
 
   /* Outer corners of the group ride the prominent rung — the card tier —
-     so the group reads as a card exploded into segments. */
-  .ui-list-group > .ui-list-row:first-child {
+     so the group reads as a card exploded into segments. `:first-child` is
+     evaluated on the WRAPPER when there is one, which is exactly right:
+     the first wrapper holds the first row. */
+  .ui-list-group > .ui-list-row:first-child,
+  .ui-list-group > :not(.ui-list-row):first-child > .ui-list-row {
     border-start-start-radius: var(--control-radius-prominent);
     border-start-end-radius: var(--control-radius-prominent);
   }
-  .ui-list-group > .ui-list-row:last-child {
+  .ui-list-group > .ui-list-row:last-child,
+  .ui-list-group > :not(.ui-list-row):last-child > .ui-list-row {
     border-end-start-radius: var(--control-radius-prominent);
     border-end-end-radius: var(--control-radius-prominent);
   }
@@ -41,12 +57,14 @@
      prominent radius. The shared state layer and press scale compose from
      the [data-interactive] grammar — its overlay inherits border-radius,
      so the morph clips hover/press ink automatically. */
-  .ui-list-group > .ui-list-row[data-interactive]:active {
+  .ui-list-group > .ui-list-row[data-interactive]:active,
+  .ui-list-group > :not(.ui-list-row) > .ui-list-row[data-interactive]:active {
     border-radius: var(--control-radius-prominent);
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .ui-list-group > .ui-list-row {
+    .ui-list-group > .ui-list-row,
+    .ui-list-group > :not(.ui-list-row) > .ui-list-row {
       transition: none;
     }
   }

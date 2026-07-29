@@ -74,7 +74,6 @@ export class UiModalSheet {
   readonly titleAlwaysVisible = input(false);
   /** Opt out of the open-time scroll-to-top when the consumer positions the scroller itself. */
   readonly resetScrollOnOpen = input(true);
-
   /** Dismissal *request* (Escape / backdrop / drag / close control) —
    *  forwarded from the behavior; the owner flips `open` itself. */
   readonly dismissed = output<void>();
@@ -114,6 +113,25 @@ export class UiModalSheet {
       requestAnimationFrame(() => {
         scroller.scrollTop = 0;
       });
+    });
+  }
+
+  /**
+   * Returns the scroller to the top — the same reset `open` performs,
+   * exposed for owners that swap the sheet's SUBJECT while it stays open
+   * (following a reference inside the sheet). A new subject has to start
+   * at its own top; inheriting the previous one's scroll drops you into
+   * the middle of content you have not seen.
+   */
+  scrollToTop(): void {
+    const scroller = this.scroller()?.nativeElement;
+    if (!scroller || !isPlatformBrowser(this.platformId)) return;
+    // Next frame, for the same reason the open-time reset defers: a caller
+    // swapping the subject writes the new content in the SAME change
+    // detection pass, and a scrollTop set before that content lands is
+    // undone as the box is re-laid out.
+    requestAnimationFrame(() => {
+      scroller.scrollTop = 0;
     });
   }
 

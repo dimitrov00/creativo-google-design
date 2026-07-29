@@ -114,6 +114,10 @@ export const UI_ICON_REGISTRY = {
   'service.duration': 'schedule',
   /** Variant-count meta on service tiles. */
   'service.variants': 'tune',
+  /** Per-variant marks on the options chips — a hair-length choice reads
+   *  as a measure, a skin/fade choice as the face it's cut against. */
+  'service.variant.length': 'straighten',
+  'service.variant.skin': 'face',
   /** Quiet details affordance on selectable service cards (onboarding). */
   'service.details': 'info',
 

@@ -7,6 +7,7 @@ import {
   input,
   output,
   signal,
+  viewChild,
 } from '@angular/core';
 import { UiSheetActionBar } from '@creativo/ui/patterns';
 import { UiStack } from '@creativo/ui/layout';
@@ -61,6 +62,7 @@ import { UiModalSheet } from '../modal-sheet/modal-sheet';
   imports: [UiModalSheet, UiSheetActionBar, UiStack, UiTextDirective],
   template: `
     <ui-modal-sheet
+      #modalSheet
       [sheetId]="uiSheetId()"
       [labelledBy]="titleId()"
       [closeLabel]="uiCloseLabel()"
@@ -135,6 +137,18 @@ export class UiDetailSheet {
 
   constructor() {
     afterNextRender(() => this.sheetOpen.set(true));
+  }
+
+  private readonly modalSheet = viewChild.required<UiModalSheet>('modalSheet');
+
+  /**
+   * Returns the sheet's scroller to the top. For owners that swap the
+   * sheet's SUBJECT while it stays open (following a reference inside it)
+   * — the new subject starts at its own top rather than inheriting the
+   * previous one's scroll.
+   */
+  scrollToTop(): void {
+    this.modalSheet().scrollToTop();
   }
 
   /** Begins the exit — `open` outranks `closing` in the shell's state expression, so BOTH flip. Public: projected actions close via a template ref. */

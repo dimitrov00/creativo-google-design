@@ -468,18 +468,17 @@
       [uiCloseLabel]="t('onboarding.services.close')"
       (uiClosed)="closeDetails()"
     >
-      <ui-stack
+      <!-- No clock glyph: the meta line already spells the unit out, so
+           the symbol only repeated its label (HIG — symbols aid
+           recognition or replace text, never duplicate it). Matches the
+           landing service sheet's facts strip. -->
+      <span
         sheet-facts
-        uiAxis="horizontal"
-        uiSpacing="tight"
-        uiAlignment="center"
         uiText
         uiFont="subheadline"
         uiForegroundStyle="secondary"
+        >{{ serviceMeta(details) }}</span
       >
-        <ui-icon uiName="service.duration" />
-        {{ serviceMeta(details) }}
-      </ui-stack>
 
       <div sheet-media class="ui-detail-sheet__story">
         <ui-async-image

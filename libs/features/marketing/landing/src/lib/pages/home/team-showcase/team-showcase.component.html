@@ -14,7 +14,7 @@
       </ui-section-header>
 
       <ui-grid [uiColumns]="2" uiSpacing="regular" uiRowSpacing="spacious">
-        @for (barber of barbers; track barber.nameKey; let index = $index) {
+        @for (barber of barbers; track barber.id) {
           <button
             type="button"
             class="team-card morph-card"
@@ -25,8 +25,8 @@
             "
             aria-haspopup="dialog"
             aria-controls="barber-detail-sheet"
-            [attr.aria-expanded]="sheetOpen() && activeBarberIndex() === index"
-            (click)="openBarber(index)"
+            [attr.aria-expanded]="activeBarber()?.id === barber.id"
+            (click)="openBarber(barber)"
           >
             <div class="team-card__media media-morph">
               <img
@@ -37,22 +37,31 @@
             </div>
 
             <ui-stack class="team-card__copy" uiSpacing="tight">
-              <p uiText uiFont="eyebrow" uiForegroundStyle="secondary">
-                {{ t(barber.roleKey) }}
-              </p>
-              <!-- Rating rides the name line (HIG: the identifying facts
-                   cluster with the title, not with secondary metadata). -->
+              <!-- Rating rides the ROLE line, not the name line: at the
+                   2-column mobile grid a title-size name plus a stat
+                   cluster on one row leaves the name a few characters
+                   before it overflows its box. Both facts are short,
+                   caption-scale metadata — they share a row cleanly, and
+                   the name gets the full column width below. -->
               <ui-stack
                 uiAxis="horizontal"
-                uiAlignment="trailing"
+                uiAlignment="center"
                 uiSpacing="compact"
               >
-                <h3 uiText uiFont="title">{{ t(barber.nameKey) }}</h3>
+                <p
+                  class="team-card__role"
+                  uiText
+                  uiFont="eyebrow"
+                  uiForegroundStyle="secondary"
+                >
+                  {{ t(barber.roleKey) }}
+                </p>
                 @if (barber.rating !== undefined) {
                   <ui-spacer />
                   <ui-rating [uiValue]="barber.rating" />
                 }
               </ui-stack>
+              <h3 uiText uiFont="title">{{ t(barber.nameKey) }}</h3>
               <ui-stack
                 class="team-card__facts"
                 uiAxis="horizontal"
@@ -169,6 +178,34 @@
           [expanded]="true"
           [showToggle]="false"
         />
+
+        <!-- ── The barber's price list. Derived by inverting
+             `ServiceVm.offerings` — the seed stores service → barbers, so
+             barber → services is a filter, not a second dataset. Every row
+             is a REFERENCE: it hands off to the service's own sheet. ── -->
+        @if (activeBarberPrices().length > 0) {
+          <section
+            class="barber-sheet__prices"
+            aria-labelledby="barber-prices-title"
+          >
+            <h3 id="barber-prices-title" uiText uiFont="title3">
+              {{ t('landing.services.priceList') }}
+            </h3>
+            <ui-list-group role="list">
+              @for (
+                offering of activeBarberPrices();
+                track offering.service.id
+              ) {
+                <cr-service-row
+                  [service]="offering.service"
+                  [price]="content.price(offering.terms.price)"
+                  [minutes]="offering.terms.minutes"
+                  (pressed)="openService(offering.service)"
+                />
+              }
+            </ui-list-group>
+          </section>
+        }
       </ui-stack>
     }
 

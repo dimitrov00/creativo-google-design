@@ -75,8 +75,29 @@
   margin: 0;
 }
 
+/* The name owns the full column width (the rating moved up to the role
+   line). No `max-inline-size` clamp: at the 2-column mobile grid a card is
+   ~9rem of usable width, so an 11ch cap only forced ragged early wraps —
+   and a single name longer than the cap (Bulgarian surnames routinely are)
+   punched straight out of the card. Long tokens break instead of
+   overflowing. */
 .team-card h3 {
-  max-inline-size: 11ch;
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
+}
+
+/* Role + rating share one row: the role is the flexible half (it
+   ellipsizes rather than pushing the stat out of the box), the stat
+   cluster never shrinks. */
+.team-card__role {
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.team-card .ui-rating {
+  flex: 0 0 auto;
 }
 
 /* Explore affordance chrome is DS button vocabulary now (span[uiButton]
@@ -126,6 +147,36 @@
 .barber-sheet__specialty,
 .barber-sheet__about {
   max-inline-size: 30rem;
+}
+
+/* The price list pads its own gutter — the gallery above it is full-bleed,
+   so the sheet stack stays gutterless. Heading→list step is the section's
+   own margin, matching the gallery heading's register. */
+.barber-sheet__prices {
+  padding-inline: var(--modal-sheet-safe);
+}
+
+.barber-sheet__prices h3 {
+  /* UA-margin zeroing plus the heading→list step. */
+  margin: 0 0 var(--sys-space-regular);
+}
+
+/* The row label's own single-line ellipsis can't reach INTO this stack,
+   so the name carries it — long service names truncate cleanly instead of
+   running under the price column. */
+.barber-price__identity {
+  min-inline-size: 0;
+}
+
+.barber-price__identity > :first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.barber-price {
+  color: var(--sys-color-foreground);
+  font-variant-numeric: tabular-nums;
 }
 
 @media (max-width: 760px) {

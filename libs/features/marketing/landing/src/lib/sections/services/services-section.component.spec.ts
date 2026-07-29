@@ -2,6 +2,7 @@ import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { provideTestI18n } from '../../test-i18n.providers';
 import { ServicesSectionComponent } from './services-section.component';
+import { CatalogNavigationService } from '../../shared/catalog-navigation.service';
 
 describe('ServicesSectionComponent', () => {
   async function render() {
@@ -55,28 +56,21 @@ describe('ServicesSectionComponent', () => {
     expect(beardTile?.querySelector('img')).toBeNull();
   });
 
-  it('opens the read-only detail sheet when a tile is tapped', async () => {
+  it('opens the tapped service on the page-level detail sheet', async () => {
     const fixture = await render();
     const host: HTMLElement = fixture.nativeElement;
+    const catalog = TestBed.inject(CatalogNavigationService);
 
-    expect(host.querySelector('cr-service-detail')).toBeNull();
+    // The sheet is NOT this section's — one instance lives on the page and
+    // the team section hands off to it too.
+    expect(host.querySelector('cr-catalog-sheet')).toBeNull();
+    expect(catalog.current()).toBeNull();
 
     host
       .querySelector<HTMLButtonElement>('[data-testid="service-tile-haircut"]')
       ?.click();
     fixture.detectChanges();
-    await fixture.whenStable();
 
-    expect(host.querySelector('cr-service-detail')).not.toBeNull();
-    expect(
-      host.querySelector('[data-testid="service-detail"]')?.textContent,
-    ).toContain('Класическо подстригване');
-    // One performer card per offering barber — haircut has 3 offerings.
-    // Grid is the default reading (owner ruling 2026-07-24).
-    expect(host.querySelectorAll('.service-performer-card').length).toBe(3);
-    // Book CTA hands off to /auth with the /book redirect.
-    expect(
-      host.querySelector('[data-testid="service-detail-book"]'),
-    ).not.toBeNull();
+    expect(catalog.current()?.id).toBe('haircut');
   });
 });

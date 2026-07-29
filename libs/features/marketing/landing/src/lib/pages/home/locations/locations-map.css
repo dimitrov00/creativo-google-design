@@ -187,3 +187,27 @@
     'wght' 400,
     'opsz' 24;
 }
+
+/* ── MapLibre stacking containment ──────────────────────────────────────
+   Also UNLAYERED, and for the same reason as the glyph block above:
+   `maplibre-gl/dist/maplibre-gl.css` is imported unlayered in each app's
+   styles.css, so a rule inside @layer sys-components can never outrank it.
+
+   MapLibre's cooperative-gesture veil (the "use two fingers to move the
+   map" panel) ships at `z-index: 99999`, and its container is only
+   `position: relative` — no stacking context — so that value competes with
+   the whole PAGE's chrome: the veil painted over the app header and over
+   the location sheet instead of staying inside its own map.
+
+   `isolation` gives every map its own stacking context (the veil, pins,
+   controls and popups all live inside it), and the veil itself drops to a
+   local rung that still clears the canvas and MapLibre's own control
+   corners (which sit at z-index: 2). The descendant form out-specifies the
+   vendor's single class, so this holds regardless of import order. */
+.maplibregl-map {
+  isolation: isolate;
+}
+
+.maplibregl-map .maplibregl-cooperative-gesture-screen {
+  z-index: 3;
+}
