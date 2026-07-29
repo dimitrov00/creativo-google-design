@@ -46,6 +46,17 @@
     display: none;
   }
 
+  /* A wrapped overlay title has to cohere as ONE block. The text scale's
+     reading leading (callout is 1.45 → 20.3px) puts MORE air between a
+     title's own two lines than the 4px separating the title from its meta,
+     so a name that wraps reads as three loosely-related lines instead of a
+     title with a caption beneath it. Display leading here, deliberately:
+     these are two-to-four word labels over a picture, not running text —
+     the page-level scale is untouched. */
+  .ui-media-card__caption > [data-font='callout'] {
+    line-height: 1.2;
+  }
+
   /* De-emphasis over media is the WHITE ramp, not the page's grey label
      (which disappears against photography). Consumers keep writing the
      ordinary `uiForegroundStyle="secondary"`; the media context

@@ -93,7 +93,7 @@ import {
             @if (service().variants.length > 0) {
               <span
                 uiText
-                uiFont="caption"
+                uiFont="footnote"
                 uiForegroundStyle="secondary"
                 class="cr-services__variants"
               >

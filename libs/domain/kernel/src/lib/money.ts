@@ -92,6 +92,22 @@ export class Money {
     return toSnapshot(this.inner).currency.code;
   }
 
+  /**
+   * The currency's own minor-unit exponent (2 for EUR, 0 for JPY, 3 for
+   * KWD) — the only piece of dinero's snapshot a formatter needs to place
+   * the decimal separator. Exposed rather than letting callers assume the
+   * near-universal `/ 100`, which silently misprices every currency whose
+   * exponent isn't 2.
+   */
+  exponent(): number {
+    return toSnapshot(this.inner).currency.exponent;
+  }
+
+  /** Major units as a plain number (`2800` minor EUR → `28`) — for formatters and display only, never for arithmetic (use `add`/`subtract`, which stay integer-safe). */
+  toMajorUnits(): number {
+    return this.toMinorUnits() / 10 ** this.exponent();
+  }
+
   private checkSameCurrency(other: Money): CurrencyMismatchError | null {
     const left = this.currencyCode();
     const right = other.currencyCode();

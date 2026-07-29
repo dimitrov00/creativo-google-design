@@ -533,12 +533,12 @@
         "care": {
           "title": "Scalp care ritual",
           "body": "Wash, massage, and personalized care.",
-          "price": "+ BGN 12"
+          "price": "+ 12,00 €"
         },
         "finish": {
           "title": "Premium finish",
           "body": "Styling with guidance for maintaining it at home.",
-          "price": "+ BGN 8"
+          "price": "+ 8,00 €"
         }
       },
       "variantsLabel": "Variants",

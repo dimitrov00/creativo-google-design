@@ -5,6 +5,7 @@ export * from './lib/brand';
 export * from './lib/clock';
 export * from './lib/money';
 export * from './lib/money.errors';
+export * from './lib/format-money';
 export * from './lib/zoned-date-time';
 export * from './lib/zoned-date-time.errors';
 export * from './lib/phone-number';

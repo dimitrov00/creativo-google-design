@@ -22,6 +22,7 @@ import {
   MEDIA_READER,
   Service,
   ServiceId,
+  formatMoney,
 } from '@creativo/application/catalog';
 import {
   BirthDate,
@@ -579,17 +580,17 @@ export class ClientOnboarding {
       : service.description.bg;
   }
 
-  /** "45 мин · 30 лв." — one pre-formatted line shared by card and sheet. */
+  /** "45 мин · 28,00 €" — one pre-formatted line shared by card and sheet. */
   protected serviceMeta(service: Service): string {
     const minutes = this.transloco.translate('onboarding.services.minutes', {
       minutes: service.durationMinutes,
     });
     const lang = this.transloco.getActiveLang();
-    const price = new Intl.NumberFormat(lang === 'en' ? 'en-GB' : 'bg-BG', {
-      style: 'currency',
-      currency: service.price.currencyCode(),
-      maximumFractionDigits: 0,
-    }).format(service.price.toMinorUnits() / 100);
+    // `formatMoney` takes the VO and reads the currency's own exponent and
+    // fraction digits — the old inline formatter divided by a hardcoded 100
+    // and forced `maximumFractionDigits: 0`, which printed `28 лв.` for a
+    // price the rest of the app renders as `28,00 €`.
+    const price = formatMoney(service.price, lang === 'en' ? 'en-GB' : 'bg-BG');
     return `${minutes} · ${price}`;
   }
 

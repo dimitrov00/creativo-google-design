@@ -21,6 +21,12 @@ import {
  * accent check) and the quiet white info pill that opens the details
  * sheet without stealing the card's main job (tap anywhere = toggle).
  *
+ * The pill is `borderedProminent` + `uiOnMedia` despite reading as quiet
+ * chrome: that pair IS the white-on-media recipe (button.css), and it is
+ * the ONLY style carrying an on-media rule. `bordered` leaves `uiOnMedia`
+ * a silent no-op and falls back to `--sys-color-foreground`, which in the
+ * light theme paints a near-black pill onto the cover art.
+ *
  * Two sibling buttons, never nested (invalid HTML): the full-bleed select
  * button and the small info pill floated above it. At the cap, unselected
  * cards dim + disable (`capBlocked`) — deselecting elsewhere re-arms them;
@@ -60,9 +66,13 @@ import {
         <span uiCaption uiText uiFont="callout" uiWeight="bold">{{
           name()
         }}</span>
-        <span uiCaption uiText uiFont="caption" uiForegroundStyle="secondary">{{
-          meta()
-        }}</span>
+        <span
+          uiCaption
+          uiText
+          uiFont="footnote"
+          uiForegroundStyle="secondary"
+          >{{ meta() }}</span
+        >
 
         <span
           uiOverlayTrailing
@@ -78,7 +88,7 @@ import {
     <button
       type="button"
       uiButton
-      uiButtonStyle="bordered"
+      uiButtonStyle="borderedProminent"
       uiTint="neutral"
       [uiOnMedia]="true"
       uiButtonBorderShape="capsule"
@@ -107,7 +117,7 @@ import {
 export class OnboardingServiceCard {
   readonly serviceId = input.required<string>();
   readonly name = input.required<string>();
-  /** Pre-formatted "45 мин · 30 лв." line — locale work stays with the parent. */
+  /** Pre-formatted "45 мин · 15,00 €" line — locale work stays with the parent. */
   readonly meta = input.required<string>();
   readonly coverUrl = input<string | null>(null);
   readonly selected = input(false);
