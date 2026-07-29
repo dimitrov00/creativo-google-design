@@ -296,10 +296,17 @@
                         uiScale="small"
                       />
                     } @else if (unreadNotifications(); as unread) {
+                      <!-- A CAPSULE here, plain text on bookings — the
+                           difference is deliberate. iOS badges a count
+                           that wants acting on and leaves an informational
+                           one quiet: unread mail is a badge, "1,234
+                           photos" is grey text. Accent, not destructive
+                           red: unread is attention, not danger, and red is
+                           already spoken for by Изход one group down. -->
                       <span
                         uiTrailing
-                        uiText
-                        uiFont="footnote"
+                        uiBadge
+                        uiTone="accent"
                         data-testid="menu-notifications-count"
                         >{{ unread }}</span
                       >

@@ -23,6 +23,7 @@ import {
 import { AUTH_GATEWAY, SignOutUseCase } from '@creativo/application/identity';
 import {
   UiAvatar,
+  UiBadge,
   UiButton,
   UiIcon,
   UiProgressView,
@@ -59,6 +60,7 @@ import { LocaleThemeToggleComponent } from '../prefs/locale-theme-toggle.compone
     RouterLink,
     TranslocoDirective,
     UiAvatar,
+    UiBadge,
     UiButton,
     UiForegroundStyleDirective,
     UiFrameDirective,
