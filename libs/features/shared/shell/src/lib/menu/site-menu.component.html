@@ -67,15 +67,27 @@
                  session authenticated with as the quiet second line. The
                  photo comes from storage; `ui-avatar` falls back to the
                  monogram on its own while it loads or when none exists,
-                 so there's no skeleton to flash. Display only — the rows
-                 below own every destination (no second path to
-                 /account). -->
-            <div
+                 so there's no skeleton to flash.
+
+                 The whole block is the target (→ /account), which is what
+                 Revolut and Wallet do too. It is an `<a>` carrying
+                 `uiInteractive`, NOT a div with a click handler: the
+                 press/hover state layer IS the affordance a portrait
+                 otherwise lacks, and the anchor gets keyboard, focus ring
+                 and middle-click for free. A tappable header that looks
+                 inert would be the worst of both — this is the version
+                 that earns the shape. -->
+
+            <a
               class="cr-menu__identity"
+              routerLink="/account"
+              uiInteractive
+              uiRadius="prominent"
               data-testid="menu-identity"
               [uiReveal]="'fade-up'"
               uiRevealTrigger="mount"
               [uiRevealDelay]="60"
+              (click)="close()"
             >
               <ui-stack uiSpacing="regular" uiAlignment="center">
                 <ui-avatar
@@ -102,7 +114,7 @@
                   }
                 </ui-stack>
               </ui-stack>
-            </div>
+            </a>
           }
 
           @if (identity.completion(); as progress) {

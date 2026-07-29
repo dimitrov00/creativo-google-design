@@ -56,9 +56,27 @@
    every gap are stack primitives in the template. Padding-block gives the
    112px circle the breathing room a portrait wants without inventing a
    section token. */
+/* The portrait is an anchor now, so it needs the two things an anchor
+   brings that a header doesn't want: `display: block` (an inline <a> would
+   not take the block padding or size the state layer), and the page's own
+   ink instead of the global link colour — the name reads as a name, not as
+   a link. `uiRadius` shapes the interactive layer, which fills by
+   `border-radius: inherit`. */
 .cr-menu__identity {
+  display: block;
   text-align: center;
   padding-block: var(--sys-space-compact);
+  color: inherit;
+  /* The UA underline has to go explicitly. The rows nearby never showed it
+     because `.ui-list-row` clears it in the DS; this block is a bare
+     anchor, so it inherits the browser default and the name renders as a
+     hyperlink. The press layer is the affordance here — an underline on a
+     portrait just looks like a mistake. */
+  text-decoration: none;
+}
+
+.cr-menu__identity:hover {
+  color: inherit;
 }
 
 /* Finish-your-profile row: the label slot is a single ellipsized line by

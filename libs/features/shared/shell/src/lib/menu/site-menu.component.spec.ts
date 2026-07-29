@@ -310,6 +310,22 @@ describe('SiteMenuComponent', () => {
     ).toBeTruthy();
   });
 
+  it('makes the whole portrait a target for /account, with a real affordance', async () => {
+    const fixture = await render({ open: true, isAuthed: true });
+    const identity = fixture.nativeElement.querySelector<HTMLAnchorElement>(
+      '[data-testid="menu-identity"]',
+    );
+
+    // An anchor, not a div with a click handler: keyboard, focus ring and
+    // middle-click come free, and the state layer is the affordance a
+    // portrait otherwise lacks.
+    expect(identity!.tagName).toBe('A');
+    expect(identity!.getAttribute('href')).toBe('/account');
+    expect(identity!.getAttribute('data-interactive')).not.toBeNull();
+    // The layer fills by `border-radius: inherit`, so the block needs one.
+    expect(identity!.getAttribute('data-radius')).toBe('prominent');
+  });
+
   it('shows no identity portrait to a guest', async () => {
     const fixture = await render({ open: true, isAuthed: false });
     expect(

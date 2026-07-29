@@ -32,6 +32,8 @@ import { UiSheetBehavior, UiSpacer, UiStack } from '@creativo/ui/layout';
 import {
   UiForegroundStyleDirective,
   UiFrameDirective,
+  UiInteractiveDirective,
+  UiRadiusDirective,
   UiRevealDirective,
   UiTextDirective,
 } from '@creativo/ui/modifiers';
@@ -65,9 +67,11 @@ import { LocaleThemeToggleComponent } from '../prefs/locale-theme-toggle.compone
     UiForegroundStyleDirective,
     UiFrameDirective,
     UiIcon,
+    UiInteractiveDirective,
     UiListGroup,
     UiListRow,
     UiProgressView,
+    UiRadiusDirective,
     UiRevealDirective,
     UiSpacer,
     UiStack,
