@@ -56,7 +56,7 @@ function validServiceDoc() {
     durationMinutes: 30,
     locationIds: [],
     conflictsWith: [],
-    offering: { kind: 'single' },
+    composition: { kind: 'single' },
     upsellOnly: false,
     popular: true,
     status: 'active',
@@ -83,7 +83,7 @@ describe('FirestoreCatalogReader', () => {
     expect(result.isSuccess()).toBe(true);
     if (result.isSuccess()) {
       expect(result.value?.name.en).toBe('Haircut');
-      expect(result.value?.price.toMinorUnits()).toBe(2500);
+      expect(result.value?.baseTerms.price.toMinorUnits()).toBe(2500);
     }
   });
 

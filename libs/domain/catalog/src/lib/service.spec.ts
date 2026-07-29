@@ -1,6 +1,38 @@
 import { describe, expect, it } from 'vitest';
-import { LocationId, ServiceId } from './ids';
+import { BarberId, LocationId, ServiceId, ServiceVariantId } from './ids';
 import { Service } from './service';
+
+const LENGTH_VARIANTS = [
+  { id: 'short', name: { en: 'Short hair', bg: 'Къса коса' } },
+  { id: 'long', name: { en: 'Long hair', bg: 'Дълга коса' } },
+];
+
+const terms = (priceMinorUnits: number, durationMinutes: number) => ({
+  priceMinorUnits,
+  currencyCode: 'EUR',
+  durationMinutes,
+});
+
+/** Ivan prices long hair higher; Niko charges one rate for both. */
+function withMatrix() {
+  return {
+    ...validProps(),
+    variants: LENGTH_VARIANTS,
+    offerings: [
+      {
+        barberId: 'ivan',
+        base: terms(1450, 35),
+        byVariant: { short: terms(1450, 35), long: terms(1850, 50) },
+      },
+      { barberId: 'niko', base: terms(1300, 30) },
+    ],
+  };
+}
+
+const unwrap = <T>(r: { isSuccess(): boolean; value?: T }): T => {
+  if (!r.isSuccess()) throw new Error('unexpected failure in test fixture');
+  return r.value as T;
+};
 
 function validProps() {
   return {
@@ -13,7 +45,7 @@ function validProps() {
     durationMinutes: 30,
     locationIds: ['loc_center'],
     conflictsWith: [],
-    offering: { kind: 'single' as const },
+    composition: { kind: 'single' as const },
     upsellOnly: false,
     popular: true,
     status: 'active' as const,
@@ -27,8 +59,8 @@ describe('Service.create', () => {
     expect(result.isSuccess()).toBe(true);
     if (result.isSuccess()) {
       expect(result.value.name.en).toBe('Haircut');
-      expect(result.value.price.toMinorUnits()).toBe(1500);
-      expect(result.value.durationMinutes).toBe(30);
+      expect(result.value.baseTerms.price.toMinorUnits()).toBe(1500);
+      expect(result.value.baseTerms.durationMinutes).toBe(30);
       expect(result.value.isBundle()).toBe(false);
     }
   });
@@ -36,7 +68,7 @@ describe('Service.create', () => {
   it('accepts a valid bundle service', () => {
     const result = Service.create({
       ...validProps(),
-      offering: {
+      composition: {
         kind: 'bundle',
         includes: ['service_haircut', 'service_beard'],
       },
@@ -45,8 +77,8 @@ describe('Service.create', () => {
     if (result.isSuccess()) {
       expect(result.value.isBundle()).toBe(true);
       expect(
-        result.value.offering.kind === 'bundle' &&
-          result.value.offering.includes,
+        result.value.composition.kind === 'bundle' &&
+          result.value.composition.includes,
       ).toHaveLength(2);
     }
   });
@@ -54,7 +86,7 @@ describe('Service.create', () => {
   it('rejects a bundle with no includes', () => {
     const result = Service.create({
       ...validProps(),
-      offering: { kind: 'bundle', includes: [] },
+      composition: { kind: 'bundle', includes: [] },
     });
     expect(result.isFailure()).toBe(true);
     if (result.isFailure()) {
@@ -146,6 +178,126 @@ describe('Service.create', () => {
 describe('Service.reconstitute', () => {
   it('validates identically to create()', () => {
     expect(Service.reconstitute(validProps()).isSuccess()).toBe(true);
+  });
+});
+
+describe('Service terms matrix', () => {
+  it('resolves a barber + variant to that barber’s override', () => {
+    const service = unwrap(Service.create(withMatrix()));
+    const ivan = unwrap(BarberId.create('ivan'));
+    const long = unwrap(ServiceVariantId.create('long'));
+    const resolved = service.termsFor(ivan, long);
+    expect(resolved.price.toMinorUnits()).toBe(1850);
+    expect(resolved.durationMinutes).toBe(50);
+  });
+
+  it('falls back to the barber’s base when they don’t price that variant', () => {
+    const service = unwrap(Service.create(withMatrix()));
+    const niko = unwrap(BarberId.create('niko'));
+    const long = unwrap(ServiceVariantId.create('long'));
+    // Niko stores no overrides at all — sparse by design, not backfilled.
+    expect(service.termsFor(niko, long).price.toMinorUnits()).toBe(1300);
+  });
+
+  it('falls back to the service’s base terms for an unknown or absent barber', () => {
+    const service = unwrap(Service.create(withMatrix()));
+    const stranger = unwrap(BarberId.create('not-a-performer'));
+    expect(service.termsFor(stranger).price.toMinorUnits()).toBe(1500);
+    expect(service.termsFor().price.toMinorUnits()).toBe(1500);
+    expect(service.termsFor(null, null).price.toMinorUnits()).toBe(1500);
+  });
+
+  it('folds the whole matrix into a price and duration range', () => {
+    const service = unwrap(Service.create(withMatrix()));
+    // base 15,00 · ivan 14,50/18,50 · niko 13,00
+    expect(service.priceRange().min.toMinorUnits()).toBe(1300);
+    expect(service.priceRange().max.toMinorUnits()).toBe(1850);
+    expect(service.durationRange()).toEqual({ min: 30, max: 50 });
+  });
+
+  it('reports who performs it', () => {
+    const service = unwrap(Service.create(withMatrix()));
+    const ivan = unwrap(BarberId.create('ivan'));
+    const stranger = unwrap(BarberId.create('nobody'));
+    expect(service.performerIds().map((id) => id.value)).toEqual([
+      'ivan',
+      'niko',
+    ]);
+    expect(service.isPerformedBy(ivan)).toBe(true);
+    expect(service.isPerformedBy(stranger)).toBe(false);
+  });
+
+  it('still ranges over a service nobody is priced for yet', () => {
+    const service = unwrap(Service.create(validProps()));
+    expect(service.offerings).toHaveLength(0);
+    expect(service.priceRange().min.toMinorUnits()).toBe(1500);
+    expect(service.durationRange()).toEqual({ min: 30, max: 30 });
+  });
+
+  it('rejects an override naming a variant the service does not offer', () => {
+    const result = Service.create({
+      ...withMatrix(),
+      offerings: [
+        {
+          barberId: 'ivan',
+          base: terms(1450, 35),
+          byVariant: { curly: terms(1600, 40) },
+        },
+      ],
+    });
+    expect(result.isFailure()).toBe(true);
+    if (result.isFailure()) {
+      expect(result.error[0]?.code).toBe(
+        'catalog.service.unknown_variant_terms',
+      );
+    }
+  });
+
+  it('rejects a duplicate variant declaration', () => {
+    const result = Service.create({
+      ...validProps(),
+      variants: [LENGTH_VARIANTS[0], LENGTH_VARIANTS[0]],
+    });
+    expect(result.isFailure()).toBe(true);
+    if (result.isFailure()) {
+      expect(result.error[0]?.code).toBe('catalog.service.duplicate_variant');
+    }
+  });
+
+  it('rejects the same barber offering twice', () => {
+    const result = Service.create({
+      ...validProps(),
+      offerings: [
+        { barberId: 'ivan', base: terms(1450, 35) },
+        { barberId: 'ivan', base: terms(1500, 40) },
+      ],
+    });
+    expect(result.isFailure()).toBe(true);
+    if (result.isFailure()) {
+      expect(result.error[0]?.code).toBe('catalog.service.duplicate_offering');
+    }
+  });
+
+  it('rejects a matrix quoted in more than one currency', () => {
+    const result = Service.create({
+      ...validProps(),
+      offerings: [
+        {
+          barberId: 'ivan',
+          base: {
+            priceMinorUnits: 1450,
+            currencyCode: 'USD',
+            durationMinutes: 35,
+          },
+        },
+      ],
+    });
+    expect(result.isFailure()).toBe(true);
+    if (result.isFailure()) {
+      expect(result.error[0]?.code).toBe(
+        'catalog.service.mixed_currency_terms',
+      );
+    }
   });
 });
 

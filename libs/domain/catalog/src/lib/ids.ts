@@ -48,6 +48,21 @@ export class BarberId extends Id<'Barber'> {
   }
 }
 
+/**
+ * A selectable axis on a service (short vs long hair, skin type) — ids are
+ * author-chosen slugs (`short`, `long`), not generated, because they are
+ * the key a barber's per-variant terms are stored under and have to stay
+ * stable across edits. Hence no `generate()`.
+ */
+export class ServiceVariantId extends Id<'ServiceVariant'> {
+  private constructor(value: string) {
+    super(value);
+  }
+  static create(raw: string): Result<ServiceVariantId, EmptyIdError> {
+    return createId('ServiceVariantId', raw, (v) => new ServiceVariantId(v));
+  }
+}
+
 export class LocationId extends Id<'Location'> {
   private constructor(value: string) {
     super(value);

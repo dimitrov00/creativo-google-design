@@ -580,18 +580,38 @@ export class ClientOnboarding {
       : service.description.bg;
   }
 
-  /** "45 мин · 28,00 €" — one pre-formatted line shared by card and sheet. */
+  /**
+   * "45 мин · 15,00 €", or "35–50 мин · от 13,00 €" once barbers price the
+   * service differently — one pre-formatted line shared by card and sheet.
+   *
+   * Reads the aggregate's folded RANGES, not one canonical price: with a
+   * barber × variant matrix there is no single number to show before the
+   * customer has picked either, so the grid quotes the cheapest and says
+   * so. `priceRange().min === max` collapses back to a bare price, which
+   * is what a service nobody prices differently should look like.
+   */
   protected serviceMeta(service: Service): string {
-    const minutes = this.transloco.translate('onboarding.services.minutes', {
-      minutes: service.durationMinutes,
-    });
     const lang = this.transloco.getActiveLang();
+    const locale = lang === 'en' ? 'en-GB' : 'bg-BG';
+
+    const duration = service.durationRange();
+    const minutes = this.transloco.translate('onboarding.services.minutes', {
+      minutes:
+        duration.min === duration.max
+          ? duration.min
+          : `${duration.min}–${duration.max}`,
+    });
+
     // `formatMoney` takes the VO and reads the currency's own exponent and
     // fraction digits — the old inline formatter divided by a hardcoded 100
-    // and forced `maximumFractionDigits: 0`, which printed `28 лв.` for a
-    // price the rest of the app renders as `28,00 €`.
-    const price = formatMoney(service.price, lang === 'en' ? 'en-GB' : 'bg-BG');
-    return `${minutes} · ${price}`;
+    // and forced `maximumFractionDigits: 0`, printing `28 лв.` for a price
+    // the rest of the app renders as `28,00 €`.
+    const { min, max } = service.priceRange();
+    const price = formatMoney(min, locale);
+    const from = min.equals(max)
+      ? ''
+      : `${this.transloco.translate('onboarding.services.from')} `;
+    return `${minutes} · ${from}${price}`;
   }
 
   protected serviceCoverUrl(service: Service): string | null {

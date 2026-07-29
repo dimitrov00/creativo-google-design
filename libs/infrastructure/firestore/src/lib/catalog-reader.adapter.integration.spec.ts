@@ -34,7 +34,7 @@ function serviceDoc(overrides: Record<string, unknown> = {}) {
     durationMinutes: 30,
     locationIds: [],
     conflictsWith: [],
-    offering: { kind: 'single' },
+    composition: { kind: 'single' },
     upsellOnly: false,
     popular: true,
     status: 'active',

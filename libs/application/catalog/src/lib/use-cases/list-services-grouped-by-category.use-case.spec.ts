@@ -29,7 +29,7 @@ function service(id: string, categoryId: string, sortOrder: number): Service {
       durationMinutes: 30,
       locationIds: [],
       conflictsWith: [],
-      offering: { kind: 'single' },
+      composition: { kind: 'single' },
       upsellOnly: false,
       popular: false,
       status: 'active',

@@ -112,7 +112,12 @@ function serviceFromDoc(
     cover: coverResult.value,
     locationIds: data['locationIds'] ?? [],
     conflictsWith: data['conflictsWith'] ?? [],
-    offering: data['offering'],
+    // Both default to empty: a service with no declared variants and
+    // nobody priced for it yet is legitimate (`baseTerms` carries it), so
+    // absence must reconstitute rather than fail the document.
+    variants: data['variants'] ?? [],
+    offerings: data['offerings'] ?? [],
+    composition: data['composition'],
     upsellOnly: data['upsellOnly'],
     popular: data['popular'],
     status: data['status'],

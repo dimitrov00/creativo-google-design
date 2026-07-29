@@ -161,6 +161,7 @@
       "body": "Pick up to {{max}} services — you can always change this later.",
       "counter": "{{selected}} of {{max}} selected",
       "minutes": "{{minutes}} min",
+      "from": "from",
       "details": "More about {{name}}",
       "close": "Close",
       "select": "Select",

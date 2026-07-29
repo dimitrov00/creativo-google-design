@@ -31,11 +31,13 @@ admin.initializeApp({ projectId: PROJECT_ID, storageBucket: BUCKET });
 const db = admin.firestore();
 const bucket = admin.storage().bucket();
 
-const workDir = join(
+const publicDir = join(
   dirname(fileURLToPath(import.meta.url)),
   '..',
-  'apps/web/public/work',
+  'apps/web/public',
 );
+const workDir = join(publicDir, 'work');
+const barbersDir = join(publicDir, 'barbers');
 
 /** Uploads one local jpg into the Storage emulator, returns its MediaRef doc shape. */
 async function uploadCover(file, id) {
@@ -47,6 +49,78 @@ async function uploadCover(file, id) {
   // forwards width as the variant width, exactness is not required.
   return { id: `media-${id}`, path, width: 1200, height: 1500 };
 }
+
+async function uploadAvatar(file, id) {
+  const path = `media/barbers/${id}.jpg`;
+  await bucket.file(path).save(readFileSync(join(barbersDir, file)), {
+    contentType: 'image/jpeg',
+  });
+  return { id: `media-barber-${id}`, path, width: 1200, height: 1500 };
+}
+
+/**
+ * The roster the landing has been rendering from hand-authored content.
+ * Seeded so both surfaces read one catalog — note `Barber` carries no
+ * `rating` on purpose ("fabricated ratings read as a scam"), so the stars
+ * the static content showed have no counterpart here.
+ */
+const BARBERS = [
+  {
+    id: 'ivan',
+    file: 'ivan.jpg',
+    handle: 'ivan',
+    name: { bg: 'Иван Колев', en: 'Ivan Kolev' },
+    title: { bg: 'Главен бръснар', en: 'Chief barber' },
+    bio: {
+      bg: 'Дванадесет години на пода. Класическа ножична работа и чист skin фейд са неговата запазена марка.',
+      en: 'Twelve years on the floor. Classic scissor work and a clean skin fade are his signature.',
+    },
+    yearsExperience: 12,
+    instagramHandle: 'ivan.cuts',
+    sortOrder: 1,
+  },
+  {
+    id: 'niko',
+    file: 'niko.jpg',
+    handle: 'niko',
+    name: { bg: 'Нико Димов', en: 'Niko Dimov' },
+    title: { bg: 'Бръснар', en: 'Barber' },
+    bio: {
+      bg: 'Човекът на фейда — градиенти толкова чисти, че ще се върнеш на момента.',
+      en: "The fade man — gradients so clean you'll rebook on the spot.",
+    },
+    yearsExperience: 6,
+    instagramHandle: 'niko.fades',
+    sortOrder: 2,
+  },
+  {
+    id: 'stefan',
+    file: 'stefan.jpg',
+    handle: 'stefan',
+    name: { bg: 'Стефан Петров', en: 'Stefan Petrov' },
+    title: { bg: 'Бръснар', en: 'Barber' },
+    bio: {
+      bg: 'Бръсненето с права бръсначка и оформянето на брада са неговата територия.',
+      en: 'Straight-razor shaves and beard shaping are his territory.',
+    },
+    yearsExperience: 8,
+    instagramHandle: 'stefan.razor',
+    sortOrder: 3,
+  },
+];
+
+/** Short vs long hair — the axis that actually moves a cut's price. */
+const LENGTH_VARIANTS = [
+  { id: 'short', name: { bg: 'Къса коса', en: 'Short hair' } },
+  { id: 'long', name: { bg: 'Дълга коса', en: 'Long hair' } },
+];
+
+/** EUR minor units + minutes, the shape `BarberOffering` reconstitutes from. */
+const terms = (major, minutes) => ({
+  priceMinorUnits: Math.round(major * 100),
+  currencyCode: 'EUR',
+  durationMinutes: minutes,
+});
 
 const CATEGORY = {
   id: 'cat-hair',
@@ -66,6 +140,12 @@ const SERVICES = [
     priceMinorUnits: 1500,
     durationMinutes: 45,
     popular: true,
+    variants: LENGTH_VARIANTS,
+    offerings: [
+      { barberId: 'ivan', base: terms(14.5, 35), byVariant: { short: terms(14.5, 35), long: terms(18.5, 50) } },
+      { barberId: 'niko', base: terms(13, 30), byVariant: { short: terms(13, 30), long: terms(16.5, 45) } },
+      { barberId: 'stefan', base: terms(15, 45) },
+    ],
     sortOrder: 1,
   },
   {
@@ -79,6 +159,12 @@ const SERVICES = [
     priceMinorUnits: 1750,
     durationMinutes: 50,
     popular: true,
+    variants: [],
+    offerings: [
+      { barberId: 'niko', base: terms(15.5, 45) },
+      { barberId: 'ivan', base: terms(17.5, 50) },
+      { barberId: 'stefan', base: terms(18, 55) },
+    ],
     sortOrder: 2,
   },
   {
@@ -92,6 +178,11 @@ const SERVICES = [
     priceMinorUnits: 1000,
     durationMinutes: 30,
     popular: false,
+    variants: [],
+    offerings: [
+      { barberId: 'stefan', base: terms(9, 25) },
+      { barberId: 'ivan', base: terms(10, 30) },
+    ],
     sortOrder: 3,
   },
   {
@@ -105,6 +196,11 @@ const SERVICES = [
     priceMinorUnits: 2050,
     durationMinutes: 60,
     popular: false,
+    variants: LENGTH_VARIANTS,
+    offerings: [
+      { barberId: 'ivan', base: terms(19, 55), byVariant: { long: terms(23, 70) } },
+      { barberId: 'stefan', base: terms(20.5, 60) },
+    ],
     sortOrder: 4,
   },
   {
@@ -118,6 +214,11 @@ const SERVICES = [
     priceMinorUnits: 2300,
     durationMinutes: 60,
     popular: true,
+    variants: [],
+    offerings: [
+      { barberId: 'ivan', base: terms(23, 60) },
+      { barberId: 'niko', base: terms(21.5, 55) },
+    ],
     sortOrder: 5,
   },
   {
@@ -131,6 +232,12 @@ const SERVICES = [
     priceMinorUnits: 750,
     durationMinutes: 20,
     popular: false,
+    variants: [],
+    offerings: [
+      { barberId: 'ivan', base: terms(7.5, 20) },
+      { barberId: 'niko', base: terms(7.5, 20) },
+      { barberId: 'stefan', base: terms(9, 25) },
+    ],
     sortOrder: 6,
   },
 ];
@@ -140,28 +247,54 @@ await db
   .doc(CATEGORY.id)
   .set({ name: CATEGORY.name, sortOrder: CATEGORY.sortOrder });
 
+for (const barber of BARBERS) {
+  const avatar = await uploadAvatar(barber.file, barber.id);
+  await db.collection('barbers').doc(barber.id).set({
+    name: barber.name,
+    handle: barber.handle,
+    title: barber.title,
+    bio: barber.bio,
+    avatar,
+    yearsExperience: barber.yearsExperience,
+    locationIds: [],
+    instagramHandle: barber.instagramHandle,
+    status: 'active',
+    sortOrder: barber.sortOrder,
+  });
+  console.log(`seeded barber ${barber.id}`);
+}
+
 for (const service of SERVICES) {
   const cover = await uploadCover(service.file, service.id);
-  await db.collection('services').doc(service.id).set({
-    name: service.name,
-    description: service.description,
-    categoryId: CATEGORY.id,
-    priceMinorUnits: service.priceMinorUnits,
-    currencyCode: 'EUR',
-    durationMinutes: service.durationMinutes,
-    cover,
-    locationIds: [],
-    conflictsWith: [],
-    offering: { kind: 'single' },
-    upsellOnly: false,
-    popular: service.popular,
-    status: 'active',
-    sortOrder: service.sortOrder,
-  });
-  console.log(`seeded ${service.id}`);
+  await db
+    .collection('services')
+    .doc(service.id)
+    .set({
+      name: service.name,
+      description: service.description,
+      categoryId: CATEGORY.id,
+      // Base terms — the catalog price before a barber or variant narrows
+      // it. `offerings` below never replace this, they refine it.
+      priceMinorUnits: service.priceMinorUnits,
+      currencyCode: 'EUR',
+      durationMinutes: service.durationMinutes,
+      variants: service.variants,
+      offerings: service.offerings,
+      cover,
+      locationIds: [],
+      conflictsWith: [],
+      composition: { kind: 'single' },
+      upsellOnly: false,
+      popular: service.popular,
+      status: 'active',
+      sortOrder: service.sortOrder,
+    });
+  console.log(
+    `seeded ${service.id} (${service.offerings.length} offerings, ${service.variants.length} variants)`,
+  );
 }
 
 console.log(
-  `Done: ${SERVICES.length} services + 1 category in the ${PROJECT_ID} emulators.`,
+  `Done: ${SERVICES.length} services + ${BARBERS.length} barbers + 1 category in the ${PROJECT_ID} emulators.`,
 );
 process.exit(0);
