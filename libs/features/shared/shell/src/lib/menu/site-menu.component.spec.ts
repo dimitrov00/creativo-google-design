@@ -254,7 +254,7 @@ describe('SiteMenuComponent', () => {
     }
   });
 
-  it('opens the signed-in menu on an identity ROW that leads to /account', async () => {
+  it('opens the signed-in menu on a big centered identity portrait above the rows', async () => {
     const fixture = await render({
       open: true,
       isAuthed: true,
@@ -263,21 +263,12 @@ describe('SiteMenuComponent', () => {
     });
     const host: HTMLElement = fixture.nativeElement;
 
-    const identity = host.querySelector<HTMLAnchorElement>(
-      '[data-testid="menu-identity"]',
-    );
+    const identity = host.querySelector('[data-testid="menu-identity"]');
     expect(identity).not.toBeNull();
 
-    // Settings.app's Apple ID grammar: a real row with a destination, not
-    // a decorative header that happens to be clickable.
-    expect(identity!.tagName).toBe('A');
-    expect(identity!.getAttribute('href')).toBe('/account');
-    expect(identity!.classList.contains('ui-list-row')).toBe(true);
-    expect(identity!.getAttribute('data-interactive')).not.toBeNull();
-
-    // Avatar rides the row's LEADING slot at a row tier, not the 112px portrait.
+    // The portrait tier (112px), carrying the uploaded photo.
     const avatar = host.querySelector('[data-testid="menu-identity-avatar"]');
-    expect(avatar?.getAttribute('data-control-size')).toBe('large');
+    expect(avatar?.getAttribute('data-control-size')).toBe('extraLarge');
     expect(avatar?.querySelector('img')?.getAttribute('src')).toBe(
       'http://avatar/user_1.jpg',
     );
@@ -293,45 +284,33 @@ describe('SiteMenuComponent', () => {
     ).toBeTruthy();
   });
 
-  it('shares one segmented run with the finish-your-profile row', async () => {
-    const fixture = await render({
-      open: true,
-      isAuthed: true,
-      profile: user(),
-    });
-    const host: HTMLElement = fixture.nativeElement;
-    const identity = host.querySelector('[data-testid="menu-identity"]');
-    const setup = host.querySelector('[data-testid="menu-complete-profile"]');
-    expect(identity).not.toBeNull();
-    expect(setup).not.toBeNull();
-    // Both are "your profile" — one group, not two single-row islands.
-    expect(identity!.closest('ui-list-group')).toBe(
-      setup!.closest('ui-list-group'),
-    );
-  });
-
-  it('shows no identity row to a guest', async () => {
+  it('shows no identity portrait to a guest', async () => {
     const fixture = await render({ open: true, isAuthed: false });
     expect(
       fixture.nativeElement.querySelector('[data-testid="menu-identity"]'),
     ).toBeNull();
   });
 
-  it('shows no identity row to a guest either', async () => {
+  it('shows no profile chip to a guest', async () => {
     const fixture = await render({ open: true, isAuthed: false });
     expect(
       fixture.nativeElement.querySelector('[data-testid="menu-profile"]'),
     ).toBeNull();
   });
 
-  it('has no profile chip at all — the identity row replaced it', async () => {
+  it('end-pins a profile chip on the trailing edge of the preferences row', async () => {
     const fixture = await render({ open: true, isAuthed: true });
-    const host: HTMLElement = fixture.nativeElement;
-    // An icon-only person glyph in a corner states no destination; the
-    // named row below carries the job, and two paths to /account was the
-    // ambiguity worth removing.
-    expect(host.querySelector('[data-testid="menu-profile"]')).toBeNull();
-    expect(host.querySelectorAll('a[href="/account/profile"]').length).toBe(0);
+    const chip = fixture.nativeElement.querySelector<HTMLAnchorElement>(
+      '[data-testid="menu-profile"]',
+    );
+    expect(chip).not.toBeNull();
+    expect(chip!.getAttribute('href')).toBe('/account/profile');
+    // Same chip recipe as the locale/theme pair it sits opposite.
+    expect(chip!.classList.contains('ui-button')).toBe(true);
+    expect(chip!.getAttribute('data-icon-only')).not.toBeNull();
+    // A spacer between the two ends is what pins it to the trailing edge.
+    const row = chip!.closest('ui-stack');
+    expect(row?.querySelector('ui-spacer')).not.toBeNull();
   });
 
   it('offers a LINEAR finish-your-profile row that resumes onboarding at the first open step', async () => {

@@ -17,8 +17,13 @@ import {
   ObserveUpcomingUseCase,
 } from '@creativo/application/booking';
 import { AUTH_GATEWAY, SignOutUseCase } from '@creativo/application/identity';
-import { UiAvatar, UiIcon, UiProgressView } from '@creativo/ui/controls';
-import { UiSheetBehavior, UiStack } from '@creativo/ui/layout';
+import {
+  UiAvatar,
+  UiButton,
+  UiIcon,
+  UiProgressView,
+} from '@creativo/ui/controls';
+import { UiSheetBehavior, UiSpacer, UiStack } from '@creativo/ui/layout';
 import {
   UiForegroundStyleDirective,
   UiFrameDirective,
@@ -50,6 +55,7 @@ import { LocaleThemeToggleComponent } from '../prefs/locale-theme-toggle.compone
     RouterLink,
     TranslocoDirective,
     UiAvatar,
+    UiButton,
     UiForegroundStyleDirective,
     UiFrameDirective,
     UiIcon,
@@ -57,6 +63,7 @@ import { LocaleThemeToggleComponent } from '../prefs/locale-theme-toggle.compone
     UiListRow,
     UiProgressView,
     UiRevealDirective,
+    UiSpacer,
     UiStack,
     UiTextDirective,
   ],
