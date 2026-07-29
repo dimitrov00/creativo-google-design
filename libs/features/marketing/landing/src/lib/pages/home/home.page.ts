@@ -26,7 +26,7 @@ import { ServicesSectionComponent } from '../../sections/services/services-secti
 import { WorkGalleryComponent } from '../../sections/work-gallery/work-gallery.component';
 import { LandingContentService } from '../../content/landing-content.service';
 import { CatalogNavigationService } from '../../shared/catalog-navigation.service';
-import { CatalogSheetComponent } from '../../sections/services/catalog-sheet.component';
+import { ServiceDetailSheetComponent } from '@creativo/features/shared/catalog';
 
 /**
  * The marketing landing — a 1:1 port of v2's `routes/index.tsx` composition:
@@ -40,7 +40,7 @@ import { CatalogSheetComponent } from '../../sections/services/catalog-sheet.com
   selector: 'cr-home-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
-    CatalogSheetComponent,
+    ServiceDetailSheetComponent,
     TeamShowcaseComponent,
     CoursesSectionComponent,
     HiringSectionComponent,
@@ -65,7 +65,10 @@ export class HomePage {
   private readonly platformId = inject(PLATFORM_ID);
   private readonly destroyRef = inject(DestroyRef);
   private readonly theme = inject(ThemeService);
-  private readonly content = inject(LandingContentService);
+  // Template-visible: the shared service sheet takes the roster and the
+  // sibling catalog as inputs rather than reaching for a content source of
+  // its own — that decoupling is what lets onboarding reuse it.
+  protected readonly content = inject(LandingContentService);
 
   /** The flagship shop for the footer's Visit column (directions/call rows) — the site-wide `cr-site-footer` takes this as an input rather than reaching into landing's own content service itself. */
   protected readonly flagshipLocation = computed<FooterFlagshipLocation | null>(

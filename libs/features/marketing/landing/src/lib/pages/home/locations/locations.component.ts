@@ -35,7 +35,7 @@ import {
 } from '@creativo/ui/patterns';
 import type { Map as MapLibreMap, Marker as MapLibreMarker } from 'maplibre-gl';
 import { ThemeService } from '@creativo/features/shared/shell';
-import { ShowcaseGalleryComponent } from '../../../shared/showcase-gallery/showcase-gallery.component';
+import { ShowcaseGalleryComponent } from '@creativo/features/shared/catalog';
 
 /** Theme-matched basemap styles (OpenFreeMap hosts both). */
 const MAP_STYLE_URLS = {

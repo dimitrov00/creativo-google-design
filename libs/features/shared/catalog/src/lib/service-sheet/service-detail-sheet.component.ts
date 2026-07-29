@@ -30,15 +30,15 @@ import {
   UiListRow,
   UiRating,
 } from '@creativo/ui/patterns';
-import { LandingContentService } from '../../content/landing-content.service';
+import { CatalogPresenter } from '../content/catalog-presenter.service';
 import {
   type BarberVm,
   type ServiceOfferingVm,
   type ServiceVm,
   serviceDurationRange,
   servicePriceFrom,
-} from '../../content/landing-content';
-import { ShowcaseGalleryComponent } from '../../shared/showcase-gallery/showcase-gallery.component';
+} from '../content/catalog-vm';
+import { ShowcaseGalleryComponent } from '../gallery/showcase-gallery.component';
 import { type CapsuleVm, CapsuleListComponent } from './capsule-list.component';
 import { ServiceRowComponent } from './service-row.component';
 
@@ -60,7 +60,7 @@ interface PerformerVm {
  * the old oversized display cuts.
  */
 @Component({
-  selector: 'cr-catalog-sheet',
+  selector: 'cr-service-detail-sheet',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     CapsuleListComponent,
@@ -83,13 +83,17 @@ interface PerformerVm {
     UiStack,
     UiTextDirective,
   ],
-  templateUrl: './catalog-sheet.component.html',
-  styleUrl: './catalog-sheet.component.css',
+  templateUrl: './service-detail-sheet.component.html',
+  styleUrl: './service-detail-sheet.component.css',
 })
-export class CatalogSheetComponent {
+export class ServiceDetailSheetComponent {
   /** The service on show. Following a reference REOPENS this sheet on the
    *  new subject — one surface, one subject, no stack (owner ruling). */
   readonly service = input.required<ServiceVm>();
+  /** Everyone who performs anything — the sheet picks out this service's performers. */
+  readonly barbers = input.required<readonly BarberVm[]>();
+  /** The catalog this service's bundle members are looked up in. Empty is fine for a single. */
+  readonly catalogServices = input<readonly ServiceVm[]>([]);
 
   readonly closed = output();
   /** A reference inside the sheet was followed — the owner swaps the
@@ -99,9 +103,19 @@ export class CatalogSheetComponent {
    *  leaving, so the barber's own sheet takes an empty screen. */
   readonly barberSelected = output<BarberVm>();
 
-  protected readonly content = inject(LandingContentService);
+  protected readonly content = inject(CatalogPresenter);
 
   private readonly sheet = viewChild.required(UiDetailSheet);
+
+  /**
+   * Dismiss with the pattern's own close animation. Part of the composite's
+   * public API on purpose: a host that projects `[sheet-actions]` acts and
+   * then closes ("select this service" → gone), and it must not have to
+   * reach through to the inner `ui-detail-sheet` to do it.
+   */
+  close(): void {
+    this.sheet().close();
+  }
 
   constructor() {
     // Following a reference REOPENS this sheet on the new subject, and the
@@ -143,7 +157,7 @@ export class CatalogSheetComponent {
   /** One card per offering barber, cheapest first. */
   protected readonly performers = computed<readonly PerformerVm[]>(() => {
     const service = this.service();
-    const byId = new Map(this.content.barbers().map((b) => [b.id, b]));
+    const byId = new Map(this.barbers().map((b) => [b.id, b]));
     return service.offerings
       .flatMap((offering) => {
         const barber = byId.get(offering.barberId);
@@ -163,7 +177,7 @@ export class CatalogSheetComponent {
   protected readonly includedServices = computed<readonly ServiceVm[]>(() => {
     const includes = this.service().includes ?? [];
     return includes
-      .map((id) => this.content.allServices().find((s) => s.id === id))
+      .map((id) => this.catalogServices().find((s) => s.id === id))
       .filter((s): s is ServiceVm => Boolean(s));
   });
 

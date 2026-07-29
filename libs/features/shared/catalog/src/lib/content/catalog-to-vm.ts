@@ -6,7 +6,7 @@ import type {
   ServiceTermsVm,
   ServiceVm,
   ServiceVariantVm,
-} from './landing-content';
+} from './catalog-vm';
 
 /**
  * Domain → view model, so the landing renders the REAL catalog while its

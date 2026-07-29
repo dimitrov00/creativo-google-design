@@ -68,7 +68,7 @@ describe('ServicesSectionComponent', () => {
 
     // The sheet is NOT this section's — one instance lives on the page and
     // the team section hands off to it too.
-    expect(host.querySelector('cr-catalog-sheet')).toBeNull();
+    expect(host.querySelector('cr-service-detail-sheet')).toBeNull();
     expect(catalog.current()).toBeNull();
 
     host

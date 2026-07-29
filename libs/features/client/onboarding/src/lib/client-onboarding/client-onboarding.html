@@ -456,63 +456,38 @@
     </ui-stack>
     <ui-spacer />
 
-    @if (detailsService(); as details) {
-    <!-- The SAME ui-detail-sheet anatomy as the landing service sheet —
-         only the toolbar action differs: select/remove instead of book. -->
-    <ui-detail-sheet
+    @if (detailsVm(); as details) {
+    <!-- The SHARED service sheet — identical body to the landing's (story,
+         gallery, variant capsules, bundle members, performer cards). Only
+         the docked action is ours: select/remove instead of book. Anything
+         else would be a second design of the same screen. -->
+    <cr-service-detail-sheet
       #serviceSheet
-      data-testid="onboarding-service-sheet"
-      uiSheetId="onboarding-service-sheet"
-      [uiTitle]="serviceName(details)"
-      [uiDescription]="serviceDescription(details)"
-      [uiCloseLabel]="t('onboarding.services.close')"
-      (uiClosed)="closeDetails()"
+      [service]="details"
+      [barbers]="barberVms()"
+      [catalogServices]="serviceVms()"
+      (serviceSelected)="openDetailsById($event.id)"
+      (closed)="closeDetails()"
     >
-      <!-- No clock glyph: the meta line already spells the unit out, so
-           the symbol only repeated its label (HIG — symbols aid
-           recognition or replace text, never duplicate it). Matches the
-           landing service sheet's facts strip. -->
-      <span
-        sheet-facts
-        uiText
-        uiFont="subheadline"
-        uiForegroundStyle="secondary"
-        >{{ serviceMeta(details) }}</span
-      >
-
-      <div sheet-media class="ui-detail-sheet__story">
-        <ui-async-image
-          [uiSrc]="serviceCoverUrl(details)"
-          [uiAlt]="''"
-          uiRatio="16 / 10"
-          [uiRing]="true"
-          uiRadius="prominent"
-        >
-          <span uiPlaceholder class="onboarding-service-card__fallback">
-            <ui-icon uiName="service.placeholder" />
-          </span>
-        </ui-async-image>
-      </div>
-
       <button
         sheet-actions
         type="button"
         uiButton
         [uiButtonStyle]="
-          isServiceSelected(details.id) ? 'bordered' : 'borderedProminent'
+          isServiceSelectedById(details.id) ? 'bordered' : 'borderedProminent'
         "
-        [uiTint]="isServiceSelected(details.id) ? 'neutral' : undefined"
+        [uiTint]="isServiceSelectedById(details.id) ? 'neutral' : undefined"
         uiButtonBorderShape="capsule"
         [uiSpread]="true"
         uiControlSize="large"
         data-testid="onboarding-service-sheet-toggle"
-        [disabled]="capReached() && !isServiceSelected(details.id)"
+        [disabled]="capReached() && !isServiceSelectedById(details.id)"
         (click)="toggleDetailsService(); serviceSheet.close()"
       >
-        {{ t(isServiceSelected(details.id) ? 'onboarding.services.remove' :
+        {{ t(isServiceSelectedById(details.id) ? 'onboarding.services.remove' :
         'onboarding.services.select') }}
       </button>
-    </ui-detail-sheet>
+    </cr-service-detail-sheet>
     }
 
     <!-- Setup-Assistant CTA anatomy (same as the reward finale): the

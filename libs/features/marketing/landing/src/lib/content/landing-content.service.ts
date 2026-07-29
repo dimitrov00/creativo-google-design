@@ -23,7 +23,7 @@ import {
   formatDurationRange,
   formatPrice,
 } from './landing-content';
-import { barberToVm, serviceToVm } from './catalog-to-vm';
+import { barberToVm, serviceToVm } from '@creativo/features/shared/catalog';
 
 /**
  * The landing's single content source — now the REAL catalog.

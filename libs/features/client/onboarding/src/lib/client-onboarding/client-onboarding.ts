@@ -18,12 +18,21 @@ import {
   MAX_AVATAR_BYTES,
 } from '@creativo/application/accounts';
 import {
+  Barber,
   CATALOG_READER,
   MEDIA_READER,
+  MediaRef,
   Service,
   ServiceId,
   formatMoney,
 } from '@creativo/application/catalog';
+import {
+  type BarberVm,
+  ServiceDetailSheetComponent,
+  type ServiceVm,
+  barberToVm,
+  serviceToVm,
+} from '@creativo/features/shared/catalog';
 import {
   BirthDate,
   BirthDateError,
@@ -39,13 +48,11 @@ import {
 } from '@creativo/application/identity';
 import { CLOCK } from '@creativo/application/shared';
 import {
-  UiAsyncImage,
   UiAvatar,
   UiButton,
   UiDateField,
   UiDateFieldBlurEvent,
   UiDateFieldParts,
-  UiDetailSheet,
   UiIcon,
   UiPhoneField,
   UiTextField,
@@ -101,12 +108,11 @@ import { OnboardingServiceCard } from '../service-card/onboarding-service-card';
   imports: [
     TranslocoDirective,
     OnboardingServiceCard,
-    UiAsyncImage,
+    ServiceDetailSheetComponent,
     UiAvatar,
     UiButton,
     UiConfetti,
     UiDateField,
-    UiDetailSheet,
     UiFrameDirective,
     UiGrid,
     UiIcon,
@@ -251,6 +257,58 @@ export class ClientOnboarding {
   /** The service whose details sheet is open (null = shut). */
   protected readonly detailsService = signal<Service | null>(null);
 
+  /* ── Shared service-detail sheet ──────────────────────────────────────
+     The SAME `cr-service-detail-sheet` the landing renders — gallery,
+     variant capsules, bundle members, performer cards and all. Onboarding
+     projects its own `[sheet-actions]` (select/remove instead of book) and
+     changes nothing else, which is the whole point: a second hand-rolled
+     body is how two surfaces drift apart. */
+
+  private readonly barbersResult = toSignal(
+    this.catalogReader.listActiveBarbers(),
+    { initialValue: null },
+  );
+  private readonly barbersFromCatalog = computed<readonly Barber[]>(() => {
+    const result = this.barbersResult();
+    return result?.isSuccess() ? result.value : [];
+  });
+  /** Performers, mapped for the sheet. Avatars resolve through the same media cache as covers. */
+  protected readonly barberVms = computed<readonly BarberVm[]>(() =>
+    this.barbersFromCatalog().map((barber) =>
+      barberToVm(
+        barber,
+        barber.avatar ? this.coverUrls()[barber.avatar.id.value] : undefined,
+        undefined,
+      ),
+    ),
+  );
+
+  /** Every service as a view model — the sheet resolves bundle members against it. */
+  protected readonly serviceVms = computed<readonly ServiceVm[]>(() =>
+    this.services().map((service) => this.toVm(service)),
+  );
+
+  /** The open service as a view model, or null when the sheet is shut. */
+  protected readonly detailsVm = computed<ServiceVm | null>(() => {
+    const service = this.detailsService();
+    return service ? this.toVm(service) : null;
+  });
+
+  /** Id-keyed twins of the domain helpers — the sheet hands back view models, not aggregates. */
+  protected isServiceSelectedById(id: string): boolean {
+    return this.selectedServiceIds().some((existing) => existing.value === id);
+  }
+
+  /** Following a reference inside the sheet reopens it on that service (one surface, one subject). */
+  protected openDetailsById(id: string): void {
+    const service = this.services().find((s) => s.id.value === id);
+    if (service) this.detailsService.set(service);
+  }
+
+  private toVm(service: Service): ServiceVm {
+    return serviceToVm(service, this.coverUrls()[service.id.value], undefined);
+  }
+
   protected readonly enteringFailed = signal(false);
 
   /* ── Optional avatar step ───────────────────────────────────────────
@@ -309,15 +367,29 @@ export class ClientOnboarding {
     // (MediaRef → servable URL is the media reader port's job; failures
     // stay silent — the card's scissors fallback IS the degraded state).
     effect(() => {
-      for (const service of this.services()) {
-        const id = service.id.value;
-        if (!service.cover || this.coverRequests.has(id)) continue;
-        this.coverRequests.add(id);
-        void this.mediaReader.resolve(service.cover).then((result) => {
+      // Barber avatars ride the same cache — the shared sheet shows
+      // performer cards, so their `MediaRef`s need resolving too. Keyed by
+      // MediaRef id for barbers and service id for covers; both are unique
+      // within their own namespace and never collide.
+      const refs: { readonly key: string; readonly ref: MediaRef }[] = [
+        ...this.services().flatMap((service) =>
+          service.cover ? [{ key: service.id.value, ref: service.cover }] : [],
+        ),
+        ...this.barbersFromCatalog().flatMap((barber) =>
+          barber.avatar
+            ? [{ key: barber.avatar.id.value, ref: barber.avatar }]
+            : [],
+        ),
+      ];
+
+      for (const { key, ref } of refs) {
+        if (this.coverRequests.has(key)) continue;
+        this.coverRequests.add(key);
+        void this.mediaReader.resolve(ref).then((result) => {
           if (result.isFailure()) return;
           const [variant] = result.value;
           if (!variant) return;
-          this.coverUrls.update((urls) => ({ ...urls, [id]: variant.url }));
+          this.coverUrls.update((urls) => ({ ...urls, [key]: variant.url }));
         });
       }
     });

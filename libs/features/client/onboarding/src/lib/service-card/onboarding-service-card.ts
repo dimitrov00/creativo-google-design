@@ -8,6 +8,7 @@ import {
 import { UiButton, UiIcon, UiMediaCard } from '@creativo/ui/controls';
 import {
   UiInteractiveDirective,
+  UiMaterialDirective,
   UiRadiusDirective,
   UiTextDirective,
 } from '@creativo/ui/modifiers';
@@ -21,11 +22,13 @@ import {
  * accent check) and the quiet white info pill that opens the details
  * sheet without stealing the card's main job (tap anywhere = toggle).
  *
- * The pill is `borderedProminent` + `uiOnMedia` despite reading as quiet
- * chrome: that pair IS the white-on-media recipe (button.css), and it is
- * the ONLY style carrying an on-media rule. `bordered` leaves `uiOnMedia`
- * a silent no-op and falls back to `--sys-color-foreground`, which in the
- * light theme paints a near-black pill onto the cover art.
+ * The pill is `strokedBorder` + `uiMaterial="thin"` — glass, not a solid chip.
+ * `--sys-material-fill` is the theme's own surface at 78%, so the pill
+ * lightens over light imagery and darkens over dark, and the ink it pairs
+ * with stays legible in both themes without an on-media override.
+ * `strokedBorder` over `plain`: material composes with either, but plain's
+ * secondary-label ink goes soft against busy cover art, and the stroke's
+ * currentColor edge gives the pill a defined rim over any photo.
  *
  * Two sibling buttons, never nested (invalid HTML): the full-bleed select
  * button and the small info pill floated above it. At the cap, unselected
@@ -38,6 +41,7 @@ import {
     UiButton,
     UiIcon,
     UiInteractiveDirective,
+    UiMaterialDirective,
     UiMediaCard,
     UiRadiusDirective,
     UiTextDirective,
@@ -88,9 +92,8 @@ import {
     <button
       type="button"
       uiButton
-      uiButtonStyle="borderedProminent"
-      uiTint="neutral"
-      [uiOnMedia]="true"
+      uiButtonStyle="strokedBorder"
+      uiMaterial="thin"
       uiButtonBorderShape="capsule"
       uiControlSize="small"
       [uiIconOnly]="true"

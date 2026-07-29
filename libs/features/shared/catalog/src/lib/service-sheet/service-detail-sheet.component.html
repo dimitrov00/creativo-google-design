@@ -354,25 +354,41 @@
       </section>
     </ui-stack>
 
-    <!-- Book CTA — the sheet's toolbar action, docked by the pattern. -->
-    <a
-      sheet-actions
-      routerLink="/auth"
-      [queryParams]="{ redirect: '/book' }"
-      uiButton
-      uiButtonStyle="borderedProminent"
-      uiButtonBorderShape="capsule"
-      [uiSpread]="true"
-      class="service-sheet__cta"
-      data-testid="catalog-sheet-book"
-      [attr.aria-label]="
-        t('landing.services.bookService', {
-          service: content.text(service().name),
-        })
-      "
-    >
-      <span>{{ t('landing.services.book') }}</span>
-      <ui-icon uiName="appointment.launch" class="service-sheet__cta-glyph" />
-    </a>
+    <!-- The docked toolbar action, and the ONE thing a host overrides.
+         Project `[sheet-actions]` to replace it (onboarding selects the
+         service instead of booking it, the booking flow will add it to a
+         draft); project nothing and the marketing Book CTA below stands in,
+         so the landing needs no ceremony for the common case.
+
+         `ngProjectAs` is load-bearing here: this is CHAINED projection
+         (host → this composite → ui-detail-sheet), and the inner sheet
+         matches `[sheet-actions]` against its own content children. Without
+         the wrapper neither the host's node nor the fallback ever reaches
+         the docked bar. Same shape as the media slot above. -->
+    <ng-container ngProjectAs="[sheet-actions]">
+      <ng-content select="[sheet-actions]">
+        <a
+          routerLink="/auth"
+          [queryParams]="{ redirect: '/book' }"
+          uiButton
+          uiButtonStyle="borderedProminent"
+          uiButtonBorderShape="capsule"
+          [uiSpread]="true"
+          class="service-sheet__cta"
+          data-testid="catalog-sheet-book"
+          [attr.aria-label]="
+            t('landing.services.bookService', {
+              service: content.text(service().name),
+            })
+          "
+        >
+          <span>{{ t('landing.services.book') }}</span>
+          <ui-icon
+            uiName="appointment.launch"
+            class="service-sheet__cta-glyph"
+          />
+        </a>
+      </ng-content>
+    </ng-container>
   </ui-detail-sheet>
 </ng-container>

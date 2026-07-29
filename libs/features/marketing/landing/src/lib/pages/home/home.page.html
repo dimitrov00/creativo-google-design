@@ -62,8 +62,10 @@
        CatalogNavigationService; following a reference inside it REOPENS it
        on the new subject — one surface, one subject, no stack. -->
   @if (catalog.current(); as service) {
-  <cr-catalog-sheet
+  <cr-service-detail-sheet
     [service]="service"
+    [barbers]="content.barbers()"
+    [catalogServices]="content.allServices()"
     (serviceSelected)="catalog.open($event)"
     (barberSelected)="catalog.openBarber($event.id)"
     (closed)="catalog.close()"

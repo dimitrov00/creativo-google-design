@@ -127,6 +127,9 @@
       "@creativo/features/admin/programs": [
         "./libs/features/admin/programs/src/index.ts"
       ],
+      "@creativo/features/shared/catalog": [
+        "./libs/features/shared/catalog/src/index.ts"
+      ],
       "@creativo/features/shared/shell": [
         "./libs/features/shared/shell/src/index.ts"
       ]

@@ -240,6 +240,50 @@ const SERVICES = [
     ],
     sortOrder: 6,
   },
+  // ── Bundles ──────────────────────────────────────────────────────────
+  // `includes` names the member services; the shelf renders these in their
+  // own carousel with the layers chip, and the detail sheet lists members
+  // with each one's own price.
+  {
+    id: 'svc-full-care',
+    file: 'classic-clippers.jpg',
+    name: { bg: 'Пълна грижа', en: 'Full care' },
+    description: {
+      bg: 'Подстрижка и оформяне на брада в един час — цялата визия, завършена наведнъж.',
+      en: 'A cut and a beard shape in one sitting — the whole look, finished at once.',
+    },
+    priceMinorUnits: 2300,
+    durationMinutes: 70,
+    popular: true,
+    kind: 'bundle',
+    includes: ['svc-classic-cut', 'svc-beard'],
+    variants: [],
+    offerings: [
+      { barberId: 'ivan', base: terms(23, 70) },
+      { barberId: 'stefan', base: terms(24.5, 75) },
+    ],
+    sortOrder: 7,
+  },
+  {
+    id: 'svc-father-son',
+    file: 'modern-cut.jpg',
+    name: { bg: 'Баща и син', en: 'Father & son' },
+    description: {
+      bg: 'Два стола, един час — подстрижка за вас и за детето, без второ идване.',
+      en: 'Two chairs, one appointment — a cut for you and one for your kid, no second trip.',
+    },
+    priceMinorUnits: 2100,
+    durationMinutes: 65,
+    popular: false,
+    kind: 'bundle',
+    includes: ['svc-classic-cut', 'svc-finish'],
+    variants: [],
+    offerings: [
+      { barberId: 'niko', base: terms(21, 65) },
+      { barberId: 'ivan', base: terms(22.5, 70) },
+    ],
+    sortOrder: 8,
+  },
 ];
 
 await db
@@ -283,7 +327,10 @@ for (const service of SERVICES) {
       cover,
       locationIds: [],
       conflictsWith: [],
-      composition: { kind: 'single' },
+      composition:
+        service.kind === 'bundle'
+          ? { kind: 'bundle', includes: service.includes }
+          : { kind: 'single' },
       upsellOnly: false,
       popular: service.popular,
       status: 'active',

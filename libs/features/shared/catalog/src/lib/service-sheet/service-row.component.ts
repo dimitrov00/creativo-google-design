@@ -16,8 +16,8 @@ import {
   UiTextDirective,
 } from '@creativo/ui/modifiers';
 import { UiListRow } from '@creativo/ui/patterns';
-import { LandingContentService } from '../../content/landing-content.service';
-import type { ServiceVm } from '../../content/landing-content';
+import { CatalogPresenter } from '../content/catalog-presenter.service';
+import type { ServiceVm } from '../content/catalog-vm';
 
 /**
  * One navigable service row — the shape both catalog manifests read in:
@@ -196,5 +196,5 @@ export class ServiceRowComponent {
 
   readonly pressed = output<void>();
 
-  protected readonly content = inject(LandingContentService);
+  protected readonly content = inject(CatalogPresenter);
 }
