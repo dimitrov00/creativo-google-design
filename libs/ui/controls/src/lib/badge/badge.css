@@ -1,13 +1,26 @@
 @layer sys-components {
+  /* Each tone declares BOTH of its faces up front — the tinted pair the
+     standard capsule wears, and the saturated pair the prominent one
+     does. Prominence then only chooses between them, so a new tone gets
+     every prominence for free and the two axes never have to be spelled
+     out as a matrix. */
   .ui-badge {
+    --ui-badge-tint: var(--sys-color-surface-secondary);
+    --ui-badge-ink: var(--sys-color-foreground);
+    --ui-badge-solid: var(--sys-color-surface-secondary);
+    --ui-badge-on-solid: var(--sys-color-foreground);
+
     display: inline-flex;
     align-items: center;
+    justify-content: center;
     gap: var(--sys-space-tight);
     padding: var(--sys-space-tight) var(--sys-space-compact);
     border-radius: var(--control-radius-capsule);
     font: var(--sys-font-caption);
     font-weight: 600;
     letter-spacing: var(--sys-tracking-caption);
+    background: var(--ui-badge-tint);
+    color: var(--ui-badge-ink);
   }
 
   /* Large — the chunky display capsule (service-sheet variant/bundle
@@ -16,28 +29,73 @@
     padding: var(--sys-space-regular);
   }
 
-  .ui-badge[data-tone='neutral'] {
-    background: var(--sys-color-surface-secondary);
-    color: var(--sys-color-foreground);
-  }
+  /* `--sys-color-on-accent` is the ink for a SATURATED fill — white in
+     both themes, unlike `on-primary`, which flips and would go near-black
+     on a solid accent in dark. Every saturated tone shares it for that
+     reason; neutral keeps foreground, being the one unsaturated tone. */
   .ui-badge[data-tone='accent'] {
-    background: color-mix(in srgb, var(--sys-color-accent) 14%, transparent);
-    color: var(--sys-color-accent);
+    --ui-badge-tint: color-mix(
+      in srgb,
+      var(--sys-color-accent) 14%,
+      transparent
+    );
+    --ui-badge-ink: var(--sys-color-accent);
+    --ui-badge-solid: var(--sys-color-accent);
+    --ui-badge-on-solid: var(--sys-color-on-accent);
   }
   .ui-badge[data-tone='success'] {
-    background: color-mix(in srgb, var(--sys-color-success) 14%, transparent);
-    color: var(--sys-color-success);
+    --ui-badge-tint: color-mix(
+      in srgb,
+      var(--sys-color-success) 14%,
+      transparent
+    );
+    --ui-badge-ink: var(--sys-color-success);
+    --ui-badge-solid: var(--sys-color-success);
+    --ui-badge-on-solid: var(--sys-color-on-accent);
   }
   .ui-badge[data-tone='warning'] {
-    background: color-mix(in srgb, var(--sys-color-warning) 14%, transparent);
-    color: var(--sys-color-warning);
+    --ui-badge-tint: color-mix(
+      in srgb,
+      var(--sys-color-warning) 14%,
+      transparent
+    );
+    --ui-badge-ink: var(--sys-color-warning);
+    --ui-badge-solid: var(--sys-color-warning);
+    --ui-badge-on-solid: var(--sys-color-on-accent);
   }
   .ui-badge[data-tone='destructive'] {
-    background: color-mix(
+    --ui-badge-tint: color-mix(
       in srgb,
       var(--sys-color-destructive) 14%,
       transparent
     );
-    color: var(--sys-color-destructive);
+    --ui-badge-ink: var(--sys-color-destructive);
+    --ui-badge-solid: var(--sys-color-destructive);
+    --ui-badge-on-solid: var(--sys-color-on-accent);
+  }
+
+  /* ≙ .badgeProminence(.increased) — the iOS notification badge: saturated
+     fill, ink that survives it, and a min inline size so a single digit
+     reads as a CIRCLE rather than a squashed pill (the shape is half the
+     recognition). Tighter block padding than the tinted capsule: a mark
+     this loud does not also need to be tall. Tabular figures so a count
+     ticking 9 → 10 doesn't jump. */
+  .ui-badge[data-prominence='increased'] {
+    background: var(--ui-badge-solid);
+    color: var(--ui-badge-on-solid);
+    min-inline-size: 1.5rem;
+    padding-block: 0.125rem;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* ≙ .badgeProminence(.decreased) — no capsule at all, just quiet
+     trailing text. This is what an INFORMATIONAL count looks like on iOS
+     ("1,234 photos"), and why a plain number can still be a badge in the
+     markup: the vocabulary survives even when the chrome doesn't. */
+  .ui-badge[data-prominence='decreased'] {
+    background: none;
+    color: var(--sys-color-secondary-label);
+    padding-inline: 0;
+    font-weight: 500;
   }
 }

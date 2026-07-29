@@ -224,11 +224,19 @@
                     } @else if (upcomingCount(); as upcoming) {
                       <!-- What's waiting behind the row. Absent at zero —
                            a "0" badge is noise, and nothing there already
-                           says nothing upcoming. -->
+                           says nothing upcoming.
+
+                           A badge at `decreased` prominence, not loose
+                           text: this IS a count, so it speaks the badge
+                           vocabulary — it just renders as quiet trailing
+                           text, the way iOS shows an informational one.
+                           The difference from Известия below is one
+                           attribute, which is exactly how visible the
+                           difference in urgency should be in the code. -->
                       <span
                         uiTrailing
-                        uiText
-                        uiFont="footnote"
+                        uiBadge
+                        uiProminence="decreased"
                         data-testid="menu-bookings-count"
                         >{{ upcoming }}</span
                       >
@@ -296,17 +304,22 @@
                         uiScale="small"
                       />
                     } @else if (unreadNotifications(); as unread) {
-                      <!-- A CAPSULE here, plain text on bookings — the
-                           difference is deliberate. iOS badges a count
-                           that wants acting on and leaves an informational
-                           one quiet: unread mail is a badge, "1,234
-                           photos" is grey text. Accent, not destructive
-                           red: unread is attention, not danger, and red is
-                           already spoken for by Изход one group down. -->
+                      <!-- ≙ .badgeProminence(.increased) — the solid iOS
+                           badge, because unread is a count you ACT on.
+                           Bookings deliberately stays `decreased` (quiet
+                           text): iOS reserves the fill for what wants
+                           attention and leaves an informational count
+                           plain, and spending that distinction here would
+                           make both rows shout equally.
+
+                           Accent, not destructive: unread is attention,
+                           not danger, and red is already spoken for by
+                           Изход one group down. -->
                       <span
                         uiTrailing
                         uiBadge
                         uiTone="accent"
+                        uiProminence="increased"
                         data-testid="menu-notifications-count"
                         >{{ unread }}</span
                       >

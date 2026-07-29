@@ -12,6 +12,21 @@ export type UiBadgeTone =
  *  bundle lists). */
 export type UiBadgeSize = 'regular' | 'large';
 
+/**
+ * ≙ SwiftUI `.badgeProminence(_:)` — how loudly the badge asks to be
+ * noticed. Orthogonal to `uiTone`, which says what it MEANS: tone picks
+ * the colour, prominence picks how much of it you get.
+ *
+ * - `decreased` — quiet secondary text, no capsule. SwiftUI's own
+ *   `.decreased`, and what a plain informational count looks like
+ *   ("1,234 photos").
+ * - `standard` — the tinted capsule (14% fill, tone ink). The default.
+ * - `increased` — the SOLID badge: saturated fill, white ink, circular at
+ *   one digit. This is the iOS notification badge, and it is the tier for
+ *   a count someone is meant to ACT on.
+ */
+export type UiBadgeProminence = 'decreased' | 'standard' | 'increased';
+
 /** Native `<span>` element — a static status token, non-interactive. */
 @Component({
   selector: 'span[uiBadge]',
@@ -26,9 +41,11 @@ export type UiBadgeSize = 'regular' | 'large';
     class: 'ui-badge',
     '[attr.data-tone]': 'uiTone()',
     '[attr.data-size]': 'uiSize()',
+    '[attr.data-prominence]': 'uiProminence()',
   },
 })
 export class UiBadge {
   readonly uiTone = input<UiBadgeTone>('neutral');
   readonly uiSize = input<UiBadgeSize>('regular');
+  readonly uiProminence = input<UiBadgeProminence>('standard');
 }

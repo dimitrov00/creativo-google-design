@@ -1,8 +1,11 @@
 import { ChangeDetectionStrategy, Component } from '@angular/core';
-import type { UiBadgeTone } from '@creativo/ui/controls';
+import type { UiBadgeProminence, UiBadgeTone } from '@creativo/ui/controls';
 import { UiBadge } from '@creativo/ui/controls';
 import { UiFlow, UiStack } from '@creativo/ui/layout';
-import { UiTextDirective } from '@creativo/ui/modifiers';
+import {
+  UiForegroundStyleDirective,
+  UiTextDirective,
+} from '@creativo/ui/modifiers';
 import { ScDemo } from '../../../shared/demo';
 import { ScPage } from '../../../shared/page';
 
@@ -14,7 +17,15 @@ interface BadgeSample {
 @Component({
   selector: 'cr-badge-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [ScDemo, ScPage, UiBadge, UiFlow, UiStack, UiTextDirective],
+  imports: [
+    ScDemo,
+    ScPage,
+    UiBadge,
+    UiFlow,
+    UiForegroundStyleDirective,
+    UiStack,
+    UiTextDirective,
+  ],
   templateUrl: './badge.page.html',
   styleUrl: './badge.page.css',
 })
@@ -26,5 +37,15 @@ export class BadgePage {
     { tone: 'success', label: 'Confirmed' },
     { tone: 'warning', label: 'Pending' },
     { tone: 'destructive', label: 'Cancelled' },
+  ];
+
+  /** The prominence ladder, shown on a COUNT — the case the axis exists for. */
+  protected readonly prominences: readonly {
+    readonly prominence: UiBadgeProminence;
+    readonly note: string;
+  }[] = [
+    { prominence: 'decreased', note: 'informational — “1,234 photos”' },
+    { prominence: 'standard', note: 'the tinted capsule (default)' },
+    { prominence: 'increased', note: 'act on it — the iOS badge' },
   ];
 }

@@ -21,4 +21,46 @@
       }
     </ui-flow>
   </sc-demo>
+
+  <sc-demo scTitle="Prominence">
+    <ng-container scAbout>
+      ≙ SwiftUI <code>.badgeProminence(_:)</code>, orthogonal to
+      <code>uiTone</code>: tone says what the badge MEANS, prominence says how
+      loudly it asks. Reach for <code>increased</code> only when the count is
+      something to act on — unread messages, not a library size. It is the only
+      tier that fills, and a single digit rounds to a circle.
+    </ng-container>
+    <ui-flow uiSpacing="comfortable" uiAlignment="trailing">
+      @for (sample of prominences; track sample.prominence) {
+      <ui-stack uiSpacing="tight" uiAlignment="leading">
+        <span uiBadge uiTone="accent" [uiProminence]="sample.prominence"
+          >3</span
+        >
+        <p uiText [uiFont]="'caption'" class="badge__mono">
+          prominence={{ sample.prominence }}
+        </p>
+        <p uiText [uiFont]="'caption'" uiForegroundStyle="secondary">
+          {{ sample.note }}
+        </p>
+      </ui-stack>
+      }
+    </ui-flow>
+  </sc-demo>
+
+  <sc-demo scTitle="Prominent, every tone">
+    <ng-container scAbout>
+      Each tone declares both faces, so prominence only chooses between them — a
+      new tone gets every prominence for free. Ink on a saturated fill is
+      <code>--sys-color-on-accent</code> (white in both themes), never
+      <code>on-primary</code>, which flips.
+    </ng-container>
+    <ui-flow uiSpacing="comfortable" uiAlignment="trailing">
+      @for (sample of samples; track sample.tone) {
+      <ui-stack uiSpacing="tight" uiAlignment="leading">
+        <span uiBadge [uiTone]="sample.tone" uiProminence="increased">9</span>
+        <p uiText [uiFont]="'caption'" class="badge__mono">{{ sample.tone }}</p>
+      </ui-stack>
+      }
+    </ui-flow>
+  </sc-demo>
 </sc-page>
