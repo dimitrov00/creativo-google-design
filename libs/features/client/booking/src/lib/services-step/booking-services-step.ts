@@ -34,7 +34,6 @@ import {
   UiButton,
   UiChip,
   UiIcon,
-  UiModalSheet,
   UiTextField,
 } from '@creativo/ui/controls';
 import { UiGrid, UiScrollRow, UiStack } from '@creativo/ui/layout';
@@ -51,8 +50,10 @@ import {
   UiSectionHeader,
 } from '@creativo/ui/patterns';
 import { SessionIdentityService } from '@creativo/features/shared/shell';
+import { BookingBagSheet } from '../bag-sheet/booking-bag-sheet';
 import { BookingFlowStore } from '../booking-flow.store';
 import { BookingStepTitle } from '../chrome/booking-chrome.service';
+import type { SeatScopeVm } from '../seat-scope-vm';
 import { BookingStepLayout } from '../step-layout/booking-step-layout';
 
 /**
@@ -66,21 +67,6 @@ import { BookingStepLayout } from '../step-layout/booking-step-layout';
  */
 const SEAT_MENU_WIDTH = 192;
 const SEAT_MENU_GUTTER = 16;
-
-/** One member of the party, as the scope row renders them. */
-interface SeatScopeVm {
-  readonly key: string;
-  readonly seatKey: SeatKey;
-  readonly label: string;
-  readonly lineCount: number;
-  /**
-   * The booker's own portrait when they have one. A guest has none — they are
-   * a label until they have an account of their own — so `ui-avatar` falls
-   * back to their initials, which is still a face-shaped anchor rather than a
-   * word in a row of words.
-   */
-  readonly avatarSrc: string | null;
-}
 
 /**
  * Step 2 — what each person is having.
@@ -113,6 +99,7 @@ interface SeatScopeVm {
 @Component({
   selector: 'lib-booking-services-step',
   imports: [
+    BookingBagSheet,
     BookingStepLayout,
     BookingStepTitle,
     ServiceCardComponent,
@@ -130,7 +117,6 @@ interface SeatScopeVm {
     UiMenu,
     UiMenuItem,
     UiMenuTrigger,
-    UiModalSheet,
     UiScrollRow,
     UiSectionHeader,
     UiStack,
@@ -138,7 +124,10 @@ interface SeatScopeVm {
     UiTextField,
   ],
   templateUrl: './booking-services-step.html',
-  styleUrl: './booking-services-step.css',
+  // The select recipe is SHARED with the bag (see booking-select.css) — two
+  // surfaces rendering the same control from two stylesheets is two controls
+  // that agree today and drift on the next change.
+  styleUrls: ['./booking-services-step.css', '../chrome/booking-select.css'],
   host: { 'data-testid': 'booking-services-step' },
 })
 export class BookingServicesStep {
@@ -156,12 +145,15 @@ export class BookingServicesStep {
 
   protected readonly seats = computed<readonly SeatScopeVm[]>(() => {
     const cart = this.store.cart();
+    // A real name when we have one; "You" only as the LABEL. It is
+    // deliberately not passed to the avatar — deriving initials from the word
+    // "You" produced a "Т" that stands for nothing (owner ruling 2026-07-31).
+    const known = this.identity.displayName();
     const self: SeatScopeVm = {
       key: 'self',
       seatKey: SeatKey.self(),
-      label:
-        this.identity.displayName() ||
-        this.transloco.translate('booking.party.you'),
+      label: known || this.transloco.translate('booking.party.you'),
+      monogramName: known,
       lineCount: cart?.lineCountFor(SeatKey.self()) ?? 0,
       avatarSrc: this.identity.avatarUrl(),
     };
@@ -173,6 +165,7 @@ export class BookingServicesStep {
           key: seatKeyValue(seatKey),
           seatKey,
           label: guest.label.value,
+          monogramName: guest.label.value,
           lineCount: cart?.lineCountFor(seatKey) ?? 0,
           avatarSrc: null,
         };
@@ -276,6 +269,17 @@ export class BookingServicesStep {
     return this.seats().find((seat) => seat.key === key) ?? null;
   });
   protected readonly renamingKey = signal<string | null>(null);
+
+  /**
+   * What is CURRENTLY typed in the rename field.
+   *
+   * The stored label only moves on commit, so an avatar bound to it sat on
+   * the old initial until blur — you renamed someone and their monogram
+   * argued with the field above it for as long as you were typing. The draft
+   * is what the editor shows, and it empties to the silhouette if the field
+   * is cleared, which is exactly what an unnamed person looks like.
+   */
+  protected readonly renameDraft = signal('');
 
   /**
    * First press selects; a second press on the person you are already on
@@ -397,12 +401,14 @@ export class BookingServicesStep {
 
   protected startRename(seat: SeatScopeVm): void {
     this.seatMenuKey.set(null);
+    this.renameDraft.set(seat.label);
     this.renamingKey.set(seat.key);
     this.focusIn(`[data-testid="booking-seat-rename-${seat.key}"]`);
   }
 
   protected commitRename(seat: SeatScopeVm, label: string): void {
     this.renamingKey.set(null);
+    this.renameDraft.set('');
     if (seat.seatKey.kind !== 'guest') return;
     const trimmed = label.trim();
     if (trimmed.length === 0 || trimmed === seat.label) return;
@@ -725,9 +731,14 @@ export class BookingServicesStep {
   protected readonly priceRangeLabel = computed(() => {
     const prices = this.performerOptions().map((option) => option.price);
     if (prices.length === 0) return this.content.price(this.livePrice());
+
+    // A NAMED barber pins one number. "Anyone" does not — whoever is free
+    // decides, and the price moves with them — so the span is the honest
+    // answer even once the choice is made and the CTA is live. Quoting the
+    // cheapest there would name a price the booking may not cost.
     const low = Math.min(...prices);
     const high = Math.max(...prices);
-    if (!this.canAdd() && low !== high) {
+    if (this.draftBarberId() === null && low !== high) {
       return `${this.content.price(low)} – ${this.content.price(high)}`;
     }
     return this.content.price(this.livePrice());
@@ -887,49 +898,24 @@ export class BookingServicesStep {
 
   protected readonly bagOpen = signal(false);
 
-  /** Every seat that holds something, with its lines described for reading. */
-  protected readonly bagGroups = computed(() => {
-    const cart = this.store.cart();
-    if (!cart) return [];
-    return this.seats()
-      .map((seat) => ({
-        seat,
-        lines: cart.linesFor(seat.seatKey).map((line) => {
-          const service = this.catalog.findService(line.serviceId.value);
-          const vm = service ? this.catalog.toServiceVm(service) : null;
-          const variant = vm?.variants.find(
-            (candidate) => candidate.id === line.variantId?.value,
-          );
-          const barber =
-            line.barberPref.kind === 'specific'
-              ? this.catalog
-                  .barberVms()
-                  .find(
-                    (candidate) =>
-                      candidate.id ===
-                      (line.barberPref.kind === 'specific'
-                        ? line.barberPref.barberId.value
-                        : ''),
-                  )
-              : undefined;
-          return {
-            id: line.id,
-            name: vm ? this.content.text(vm.name) : line.serviceId.value,
-            detail: [
-              variant ? this.content.text(variant.name) : null,
-              barber
-                ? this.content.text(barber.name)
-                : this.transloco.translate('booking.configure.anyBarber'),
-            ]
-              .filter((part): part is string => part !== null)
-              .join(' · '),
-          };
-        }),
-      }))
-      .filter((group) => group.lines.length > 0);
-  });
+  /**
+   * Reopen a bag line in the full sheet.
+   *
+   * The seat is scoped FIRST: `editLine` writes through the active seat, so
+   * committing a guest's line while the scope still pointed at the booker
+   * would move it between people. Closing the bag is part of the same move —
+   * two sheets on top of each other is not an edit, it is a stack.
+   */
+  protected editFromBag(request: {
+    seatKey: string;
+    lineId: CartLineId;
+  }): void {
+    this.setActiveSeat(request.seatKey);
+    this.editLine(request.lineId);
+    this.bagOpen.set(false);
+  }
 
-  protected removeLine(seatKey: SeatKey, lineId: CartLineId): void {
-    this.store.removeLine(seatKey, lineId);
+  protected leaveBag(): void {
+    this.bagOpen.set(false);
   }
 }

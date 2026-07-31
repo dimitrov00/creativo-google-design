@@ -1,0 +1,362 @@
+<ng-container *transloco="let t">
+  <!--
+    ONE pull-down, rendered twice — and it is the SAME control the service
+    sheet docks on its bar, down to the class names: a glass pill at the
+    LARGE tier, a face-shaped mark, the value, the caret. The look lives in
+    `booking-select.css`, which both components list, so the bag and the
+    sheet cannot drift apart on the next change to either.
+
+    Variant and performer differ only in which cart write a pick ends in,
+    which `pick()` resolves from the select's own `kind`. A second copy of
+    this block to express that would be a copy.
+  -->
+  <ng-template #pulldown let-select let-line="line" let-seat="seat">
+    <ui-menu
+      uiAlignment="leading"
+      [uiPresented]="openMenu() === select.key"
+      [uiLabel]="select.ariaLabel"
+      (uiDismissed)="openMenu.set(null)"
+    >
+      <button
+        uiMenuTrigger
+        type="button"
+        uiButton
+        uiButtonStyle="glass"
+        uiControlSize="large"
+        class="booking-pick"
+        [attr.aria-label]="select.ariaLabel + ': ' + select.label"
+        [attr.data-testid]="'booking-bag-' + select.kind + '-' + line.key"
+        (click)="toggleMenu(select.key)"
+      >
+        @if (select.showsFace) {
+        <ui-avatar
+          [uiSrc]="select.avatarSrc"
+          [uiName]="select.label"
+          uiControlSize="small"
+        />
+        } @else if (select.kind === 'barber') {
+        <!-- "Anyone" is an answer like any other, so it gets a face-shaped
+               mark like any other — the same disc the menu row uses, at the
+               trigger's small rung. Without it the trigger changed shape
+               depending on WHICH answer was given. -->
+        <span class="booking-any__glyph booking-any__glyph--compact">
+          <ui-icon uiName="booking.anyBarber" uiScale="small" />
+        </span>
+        }
+        <span class="booking-pick__value">{{ select.label }}</span>
+        <ui-icon uiName="field.expand" uiScale="small" />
+      </button>
+
+      <!-- The same segmented run the sheet's menus use: `uiMenuItem` supplies
+           the semantics and the keyboard model, `uiListRow` owns the look. -->
+      <ui-list-group>
+        @for (option of select.options; track option.key) {
+        <button
+          uiMenuItem
+          uiListRow
+          type="button"
+          [uiInteractive]="true"
+          [uiSelected]="option.selected"
+          [attr.data-testid]="
+              'booking-bag-' +
+              select.kind +
+              '-option-' +
+              line.key +
+              '-' +
+              option.key
+            "
+          (click)="pick(seat, line, select, option)"
+        >
+          <!--
+            The slot wrappers are STATIC on purpose.
+
+            `ng-content select="[uiLeading]"` is resolved against the template's
+            own structure, so an element that only exists inside an `@if` is
+            projected as part of that block into the DEFAULT slot instead —
+            which is exactly how the portraits ended up stacked above the names
+            rather than beside them. The wrapper is always here; what goes in it
+            is what varies.
+          -->
+          <span
+            uiLeading
+            class="bag-option__lead"
+            [attr.data-empty]="select.kind === 'barber' ? null : ''"
+          >
+            @if (option.id) {
+            <ui-avatar
+              [uiSrc]="option.avatarSrc"
+              [uiName]="option.name"
+              uiControlSize="regular"
+            />
+            } @else {
+            <!-- A row without a portrait in a run that has them still owes
+                   the same leading column, or every name below it steps
+                   sideways (HIG — list rows keep one leading rail). -->
+            <span class="booking-any__glyph">
+              <ui-icon
+                uiName="booking.anyBarber"
+                [uiForegroundStyle]="option.selected ? 'accent' : 'secondary'"
+              />
+            </span>
+            }
+          </span>
+          <ui-stack uiSpacing="none" class="booking-option">
+            <span uiText uiFont="body">{{ option.name }}</span>
+            <!-- What this option costs, so the choice is priced before it
+                   is made. -->
+            <span
+              uiText
+              uiFont="footnote"
+              uiForegroundStyle="secondary"
+              class="booking-option__terms"
+            >
+              {{ option.terms }}
+            </span>
+          </ui-stack>
+          <span uiTrailing class="bag-option__check">
+            @if (option.selected) {
+            <ui-icon uiName="checklist.done" uiForegroundStyle="accent" />
+            }
+          </span>
+        </button>
+        }
+      </ui-list-group>
+    </ui-menu>
+  </ng-template>
+
+  <!-- The large title COLLAPSES into the bar on scroll (the sheet default) —
+       a bag is a content-rich set piece, not a utility picker, and pinning
+       the compact title from the first pixel spends bar height on a word the
+       screen below it is already saying. -->
+  <ui-modal-sheet
+    sheetId="booking-bag-sheet"
+    labelledBy="booking-bag-title"
+    [closeLabel]="t('booking.bag.close')"
+    [open]="true"
+    data-testid="booking-bag-sheet"
+    (dismissed)="dismissed.emit()"
+  >
+    <p sheet-title>{{ t('booking.bag.title') }}</p>
+
+    <ui-stack uiSpacing="loose" class="bag__body">
+      <ui-stack uiSpacing="tight" class="bag__intro">
+        <h2 id="booking-bag-title" uiSheetLargeTitle uiText uiFont="largeTitle">
+          {{ t('booking.bag.title') }}
+        </h2>
+        <!-- The row carries one affordance that is not self-evident — the
+             name opens the full sheet — so one line teaches it, once,
+             instead of a hint per row. The pull-downs say what they are. -->
+        <p uiText uiFont="subheadline" uiForegroundStyle="secondary">
+          {{ t('booking.bag.lede') }}
+        </p>
+      </ui-stack>
+
+      @for (group of groups(); track group.seat.key) {
+      <ui-stack
+        uiSpacing="compact"
+        [attr.data-testid]="'booking-bag-group-' + group.seat.key"
+      >
+        <!--
+            One shelf per person, headed by their face and THEIR total — never
+            a flat list with a name repeated down the side, which is how a
+            beard trim ends up on the wrong guest.
+
+            The heading disappears entirely for a party of one: naming the
+            only person present labels something that was never ambiguous.
+          -->
+        @if (multiPerson()) {
+        <ui-stack
+          uiAxis="horizontal"
+          uiAlignment="center"
+          uiSpacing="compact"
+          class="bag-person"
+        >
+          <ui-avatar
+            [uiSrc]="group.seat.avatarSrc"
+            [uiName]="group.seat.monogramName"
+            uiControlSize="small"
+          />
+          <span uiText uiFont="headline" class="bag-person__name">
+            {{ group.seat.label }}
+          </span>
+          @if (group.subtotalLabel; as subtotal) {
+          <span
+            uiText
+            uiFont="callout"
+            uiForegroundStyle="secondary"
+            class="bag-person__sum"
+            [attr.data-testid]="'booking-bag-subtotal-' + group.seat.key"
+          >
+            {{ subtotal }}
+          </span>
+          }
+        </ui-stack>
+        }
+
+        <ul uiListGroup>
+          @for (line of group.lines; track line.key) {
+          <li
+            uiListRow
+            uiSize="large"
+            class="bag-line"
+            [attr.data-testid]="'booking-bag-line-' + line.key"
+          >
+            <!--
+                  The service's own photo, as a THUMBNAIL — a square that
+                  crops well, not a full-height strip. Run to the row's height
+                  it became a tall sliver of somebody's shoulder: a 3:7 crop
+                  of a photograph composed for a card shows none of what the
+                  photograph is of.
+
+                  It sits INSIDE the grid rather than in the DS leading slot
+                  so the pull-downs below can span the row's whole width; a
+                  leading slot would hold that column open for all three
+                  bands and leave the two controls fighting over what's left.
+                -->
+            <span class="bag-line__art">
+              @if (line.coverSrc) {
+              <ui-async-image [uiSrc]="line.coverSrc" uiAlt="" />
+              } @else {
+              <ui-icon uiName="service.placeholder" uiScale="medium" />
+              }
+            </span>
+
+            <!-- The name IS the way back into the full sheet — a real
+                     <button> stripped to label ink, because a control-shaped
+                     name inside a row would read as a fourth control. -->
+            <button
+              type="button"
+              class="bag-line__name"
+              [attr.aria-label]="line.editLabel"
+              [attr.data-testid]="'booking-bag-edit-' + line.key"
+              (click)="edit(group.seat, line)"
+            >
+              <span uiText uiFont="body" uiWeight="semibold">
+                {{ line.name }}
+              </span>
+            </button>
+
+            <!-- Quiet on purpose: a red glyph repeated down every row
+                     turns a bag into a list of things to delete. -->
+            <button
+              type="button"
+              uiButton
+              uiButtonStyle="plain"
+              uiControlSize="regular"
+              [uiIconOnly]="true"
+              class="bag-line__remove"
+              [attr.aria-label]="line.removeLabel"
+              [attr.data-testid]="'booking-bag-remove-' + line.key"
+              (click)="remove(group.seat, line)"
+            >
+              <ui-icon uiName="booking.removeLine" uiScale="small" />
+            </button>
+
+            <!--
+                  How long, and what it costs — one band, opposite ends.
+
+                  The price sits HERE rather than beside the name because an
+                  open barber makes it a span ("13,00 € – 15,00 €"), and a
+                  span on the title line left the service called "Класич
+                  еска…". The name is the row's most important string; the
+                  number that qualifies it belongs on the line below, where
+                  it has the width to be a range.
+                -->
+            <span class="bag-line__facts">
+              <span
+                uiText
+                uiFont="footnote"
+                uiForegroundStyle="secondary"
+                [attr.data-testid]="'booking-bag-duration-' + line.key"
+              >
+                {{ line.durationLabel }}
+              </span>
+              <span
+                uiText
+                uiFont="body"
+                class="bag-line__price"
+                [attr.data-testid]="'booking-bag-price-' + line.key"
+              >
+                {{ line.priceLabel }}
+              </span>
+            </span>
+
+            <!--
+                  Stacked and HUGGING — the arrangement the service sheet's
+                  own decision bar uses for these same two selects. Side by
+                  side they had to ellipsize to "Къса к…" / "Иван Ко…", which
+                  is a select that no longer says what it is set to; a pill
+                  at the large tier carrying a 36pt portrait simply does not
+                  share a phone row with another one.
+                -->
+            <ui-stack
+              uiSpacing="compact"
+              uiAlignment="leading"
+              class="bag-line__opts"
+            >
+              @if (line.variant; as variant) {
+              <ng-container
+                [ngTemplateOutlet]="pulldown"
+                [ngTemplateOutletContext]="{
+                        $implicit: variant,
+                        line: line,
+                        seat: group.seat,
+                      }"
+              />
+              }
+              <ng-container
+                [ngTemplateOutlet]="pulldown"
+                [ngTemplateOutletContext]="{
+                      $implicit: line.performer,
+                      line: line,
+                      seat: group.seat,
+                    }"
+              />
+            </ui-stack>
+          </li>
+          }
+        </ul>
+      </ui-stack>
+      }
+    </ui-stack>
+
+    <!--
+      The bar: what it comes to, then the way forward. Direct children, so the
+      bar's own slot contract does the layout — the total is a plain block and
+      clusters leading, the prominent CTA docks trailing with no local flex.
+
+      Money in a bag bar is not the same object the add-to-bag ruling was about
+      (2026-07-31 folded ONE line's price into ITS button, so the pill wasn't
+      read as two controls). This is the sum of everything on the screen above
+      it, and a sum has nowhere else to live.
+    -->
+    <ui-sheet-action-bar sheet-overlay class="bag__actions" [uiVisible]="true">
+      <ui-stack uiSpacing="none" class="bag__total">
+        <span uiText uiFont="footnote" uiForegroundStyle="secondary">
+          {{ summaryLabel() }}
+        </span>
+        @if (totalLabel(); as total) {
+        <span
+          uiText
+          uiFont="title3"
+          class="bag__amount"
+          data-testid="booking-bag-total"
+        >
+          {{ total }}
+        </span>
+        }
+      </ui-stack>
+
+      <button
+        type="button"
+        uiButton
+        uiButtonStyle="borderedProminent"
+        uiControlSize="large"
+        data-testid="booking-bag-continue"
+        (click)="proceed.emit()"
+      >
+        {{ forwardLabel() }}
+      </button>
+    </ui-sheet-action-bar>
+  </ui-modal-sheet>
+</ng-container>

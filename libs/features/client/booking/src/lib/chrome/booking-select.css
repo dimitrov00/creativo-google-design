@@ -1,0 +1,93 @@
+/* ════════════════════════════════════════════════════════════════
+   The booking SELECT — one look for "pick one of these", wherever it is.
+
+   Extracted from the services step the day the bag grew pull-downs of its
+   own: two surfaces rendering the same control from two stylesheets is two
+   controls that agree today and drift on the next change. Both components
+   list this file in `styleUrls`, so there is one definition of what a
+   select looks like in this flow.
+
+   Class vocabulary (the markup is the consumer's, the look is this file's):
+   - `.booking-pick`        the trigger — a glass pill at the LARGE tier
+   - `.booking-pick__value` its current value, ellipsizing
+   - `.booking-any__glyph`  the silhouette standing in for an unchosen face
+     (`--compact` drops it to the trigger's small rung)
+   - `.booking-option`      a menu row's name-over-terms column
+   - `.booking-option__terms` what that option costs
+   ════════════════════════════════════════════════════════════════ */
+
+/*
+ * A select, in the shape this DS has for one: a glass pill that states its
+ * current value with the pull-down caret on the trailing edge.
+ */
+.booking-pick {
+  max-inline-size: 100%;
+  min-inline-size: 0;
+}
+
+/* A leading disc wants the tighter inset a round shape always wants — the
+   same asymmetric padding the person pills use, so a trigger showing a face
+   and a pill showing a face are bedded the same way. */
+.booking-pick:has(.ui-avatar, .booking-any__glyph) {
+  padding-inline-start: var(--sys-space-compact);
+}
+
+/* The trigger's mark rides the SMALL rung, matching the avatar it stands in
+   for — the two states of one control must be the same size. Written as a
+   compound selector because the base `.booking-any__glyph` below is the same
+   specificity and declared later, so a lone modifier class silently lost and
+   the glyph rendered a rung too big. */
+.booking-any__glyph.booking-any__glyph--compact {
+  inline-size: var(--control-size-small);
+  block-size: var(--control-size-small);
+}
+
+.booking-pick__value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Unset reads as a PLACEHOLDER — the secondary label, the way an empty field
+   reads anywhere else. Accent is the colour of things you have chosen and
+   things you can act on; spending it on "not answered yet" made two
+   unanswered questions the loudest thing on the bar (owner ruling
+   2026-07-31). A theme token rather than dimmed `currentColor` now that glass
+   is theme-aware — it composites against a known surface, not a photograph. */
+.booking-pick[data-unset] .booking-pick__value {
+  color: var(--sys-color-secondary-label);
+}
+
+/* "Anyone" has no face, so it takes the avatar's silhouette rather than the
+   avatar's absence — the leading rail stays one column wide either way. */
+.booking-any__glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  inline-size: var(--control-size-regular);
+  block-size: var(--control-size-regular);
+  border-radius: var(--control-radius-capsule);
+  background: var(--sys-color-fill);
+}
+
+/* An option that carries its own terms: the name leads, what it costs sits
+   under it, so the choice is priced before it is made. */
+.booking-option {
+  display: flex;
+  flex-direction: column;
+  min-inline-size: 0;
+}
+
+.booking-option__terms {
+  color: var(--sys-color-secondary-label);
+  font: var(--sys-font-caption);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The current value's checkmark, pinned to the menu item's trailing edge —
+   HIG's state marker for a menu that expresses a selection. */
+.booking-pick__check {
+  margin-inline-start: auto;
+  color: var(--sys-color-accent);
+}

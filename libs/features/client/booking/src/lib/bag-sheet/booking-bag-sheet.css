@@ -1,0 +1,302 @@
+/* Element selector, not `:host` — this stylesheet is unscoped
+   (ViewEncapsulation.None, see the component note) and bare `:host` never
+   matches outside a shadow/emulated context. */
+lib-booking-bag-sheet {
+  display: contents;
+}
+
+/*
+ * The sheet body.
+ *
+ * `.modal-sheet__scroll` cancels the surface's padding on BOTH axes (a
+ * sanctioned negative margin, so galleries can go full-bleed), which means
+ * projected content that wants the gutter has to restate it. The old bag
+ * didn't, and its large title ran off the leading edge — the sheet's shared
+ * `--ui-sheet-inset` is the one gutter the header controls already sit on, so
+ * the body sits on it too rather than inventing a second.
+ */
+.bag__body {
+  padding-inline: var(--ui-sheet-inset, var(--sys-space-comfortable));
+  padding-block-end: var(--ui-sheet-action-bar-clearance, 0);
+}
+
+/* ── One person's shelf ──────────────────────────────────────────────
+   Chromeless: a face, a name and their own total, sitting ABOVE the run
+   rather than inside it. No divider — the segmented run below is already
+   the separation (the list-group ruling).
+
+   It sits on the same inset the rows below it use, so the person's face lines
+   up with their services' thumbnails and their subtotal with the prices — one
+   vertical rail down the whole shelf rather than a heading that floats a
+   gutter off from what it heads. */
+.bag-person {
+  padding-inline: var(--sys-space-regular);
+  padding-block-start: var(--sys-space-tight);
+}
+
+.bag-person__name {
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bag-person__sum {
+  margin-inline-start: auto;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── A line ──────────────────────────────────────────────────────────
+   A thumbnail, what it is and what it costs beside it, and the two answers
+   you can change spanning the full width underneath. */
+.bag-line {
+  padding: var(--sys-space-regular);
+}
+
+/*
+ * The picture, as a square.
+ *
+ * It ran the row's full height and hard to its leading edge for one revision
+ * and looked wrong for a reason worth writing down: the covers are composed
+ * for a 4:5 card, so a 72×155 slot crops them to a vertical band of
+ * somebody's shoulder. A square shows the subject, takes the same corner
+ * rounding as everything else in the row, and sits on the card's own inset
+ * like the text does.
+ */
+.bag-line__art {
+  grid-area: art;
+  align-self: start;
+  inline-size: 4.5rem;
+  block-size: 4.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border-radius: var(--control-radius-regular);
+  background: var(--sys-color-fill);
+  color: var(--sys-color-tertiary-label);
+}
+
+.bag-line__art > ui-async-image {
+  inline-size: 100%;
+  block-size: 100%;
+}
+
+/*
+ * The row's own three-band grid, declared on the DS label span.
+ *
+ * The label is a single ellipsizing line by default — right for a row whose
+ * label is a string, wrong for one that holds a thumbnail, a name, its terms
+ * and two pull-downs. The grid gives each band an explicit line: what it is,
+ * what it costs, what you can change — everything on one baseline rail
+ * instead of each part finding its own vertical centre.
+ *
+ * The picture is a grid cell rather than the DS leading slot on purpose: a
+ * leading slot holds its column open for the WHOLE row, which would keep the
+ * two large-tier pull-downs squeezed into what's left of one line. Here it
+ * spans the two text bands and the controls run the row's full width.
+ */
+.bag-line > .ui-list-row__label {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-areas:
+    'art  title remove'
+    'art  facts facts'
+    'opts opts  opts';
+  align-items: center;
+  column-gap: var(--sys-space-regular);
+  row-gap: var(--sys-space-tight);
+  overflow: visible;
+  white-space: normal;
+}
+
+/* Duration at one end, price at the other — the band the title hands off to. */
+.bag-line__facts {
+  grid-area: facts;
+  display: flex;
+  align-items: baseline;
+  gap: var(--sys-space-compact);
+  min-inline-size: 0;
+}
+
+.bag-line__facts > .bag-line__price {
+  margin-inline-start: auto;
+}
+
+/* The name doubles as the edit affordance: a real <button> (free semantics,
+   free focus handling) stripped back to plain label ink — NOT a uiButton,
+   because a control-shaped name inside a list row would read as a fourth
+   control competing with the three that are already there. */
+.bag-line__name {
+  grid-area: title;
+  min-inline-size: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+/*
+ * The name WRAPS to two lines before it ellipsizes.
+ *
+ * Bulgarian service names are long ("Класическа подстрижка") and a single
+ * clamped line spent the row's most important string on "Класическа под…" —
+ * which names nothing. Two lines is what a shop's bag gives a product title
+ * everywhere; the clamp is still there for the third.
+ */
+.bag-line__name > [uitext] {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+
+.bag-line__name:focus-visible {
+  outline: var(--sys-focus-ring-width) solid var(--sys-color-ring);
+  outline-offset: var(--sys-focus-ring-offset);
+  border-radius: var(--control-radius-subtle);
+}
+
+.bag-line__price {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  /* The DS paints an uncontrolled trailing detail at secondary ink. A price is
+     not de-emphasised metadata — it is half of what the row says. */
+  color: var(--sys-color-foreground);
+}
+
+/* Quiet, not loud. Destructive scarlet repeated down every row turns a bag
+   into a list of things to delete; the trash glyph and the aria-label carry
+   the meaning without shouting it. Tertiary at rest, destructive on the
+   press/hover. */
+.bag-line__remove {
+  grid-area: remove;
+  color: var(--sys-color-secondary-label);
+  /* The icon button's box is wider than its glyph, so cancel the overhang —
+     otherwise the trash sits proud of the row's trailing gutter. */
+  margin-inline-end: calc(var(--sys-space-compact) * -1);
+}
+
+@media (hover: hover) {
+  .bag-line__remove:hover {
+    color: var(--sys-color-destructive);
+  }
+}
+
+/* The ungated mirror — a touch device never satisfies `(hover: hover)`, so
+   without this a tap on the remove shows nothing until the row disappears. */
+.bag-line__remove:active {
+  color: var(--sys-color-destructive);
+}
+
+/* ── The pull-downs ──────────────────────────────────────────────────
+   The look is `booking-select.css`, shared with the service sheet. All the
+   bag adds is the band they sit in: full row width, so two large-tier pills
+   fit side by side instead of stacking. */
+.bag-line__opts {
+  grid-area: opts;
+  /* One notch more air above the controls than between the two text lines —
+     the pull-downs are a different kind of thing from the description. */
+  margin-block-start: var(--sys-space-tight);
+}
+
+/*
+ * Each trigger HUGS its value — it never stretches to the band.
+ *
+ * `ui-stack` defaults to `stretch`, and a select stretched across the row
+ * centres its label in a wall of glass and stops reading as a thing you
+ * press. Hugging is also what the sheet's own decision bar does with these
+ * two, which is the whole point of sharing their stylesheet.
+ */
+.bag-line__opts ui-menu {
+  max-inline-size: 100%;
+  min-inline-size: 0;
+  /* The SURFACE is not bound by the trigger's own width, and it has to hold
+     the widest thing an option can say: an unpinned barber's full span,
+     "30 – 45 мин · 13,00 € – 15,00 €". A rung narrower and the row's label
+     clipped it mid-price. */
+  --ui-menu-min-width: 20rem;
+}
+
+/* The menu row's leading rail — an avatar-sized box that holds a portrait or
+   the "anyone" disc. Collapsed entirely for the variant menu, whose options
+   have no face to show and would otherwise all start one rail in. */
+.bag-option__lead {
+  flex: 0 0 auto;
+  inline-size: var(--control-size-regular);
+  block-size: var(--control-size-regular);
+}
+
+.bag-option__lead[data-empty] {
+  display: none;
+}
+
+.bag-option__lead .booking-any__glyph {
+  inline-size: 100%;
+  block-size: 100%;
+}
+
+/* Holds the checkmark's column open whether or not this row is the chosen
+   one, so picking a different option doesn't shift every name in the menu. */
+.bag-option__check {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: var(--ui-icon-medium, 1.25rem);
+}
+
+/* ── The bar ─────────────────────────────────────────────────────────── */
+.bag__total {
+  min-inline-size: 0;
+}
+
+.bag__amount {
+  font-variant-numeric: tabular-nums;
+}
+
+/*
+ * The wide presentation.
+ *
+ * The modal shell is sized for SET PIECES — a gallery wants every pixel — and
+ * the bag is a short list of short rows. Left at the set-piece width its price
+ * column ends up half a screen from the name it belongs to, which is not a
+ * price column, it is two unrelated things at opposite edges. So the body caps
+ * to a reading measure and centres, and the bar's controls ride the SAME
+ * measure via padding rather than a max-width, which would take the scrim's
+ * full-bleed fade with it.
+ *
+ * The bar also centres its cluster and cancels the primary's trailing dock at
+ * this width — right for a row of buttons, wrong for a total, which stops
+ * reading as the bag's bottom line the moment it drifts inward. Unlayered
+ * feature CSS, so it outranks the DS layer without a specificity fight.
+ */
+@media (min-width: 761px) {
+  .bag__body {
+    max-inline-size: var(--sys-container-content);
+    margin-inline: auto;
+  }
+
+  .bag__actions {
+    justify-content: flex-start;
+    /* The centring offset PLUS the body's own gutter — the bar has to land on
+       the row boxes, not on the capped column's outer edge, or the total sits
+       a gutter to the left of every price it is the sum of. */
+    padding-inline: max(
+      var(--ui-sheet-inset, var(--sys-space-comfortable)),
+      calc(
+        (100% - var(--sys-container-content)) / 2 +
+          var(--ui-sheet-inset, var(--sys-space-comfortable))
+      )
+    );
+  }
+
+  .bag__actions > [data-button-style='borderedProminent'] {
+    margin-inline-start: auto;
+  }
+}

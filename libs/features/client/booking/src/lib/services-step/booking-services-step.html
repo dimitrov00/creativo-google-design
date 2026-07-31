@@ -39,10 +39,12 @@
                    gave the press to the button instead of the field, so the
                    name could never actually be typed. -->
           <span class="booking-seat-pill booking-seat-pill--editing">
+            <!-- The editor's monogram follows what is being TYPED, not what is
+                 stored — the stored label only moves on commit. -->
             <ui-avatar
               class="booking-seat-pill__avatar"
               [uiSrc]="seat.avatarSrc"
-              [uiName]="seat.label"
+              [uiName]="renameDraft()"
               uiControlSize="small"
             />
             <input
@@ -54,6 +56,7 @@
                     t('booking.party.rename', { name: seat.label })
                   "
               [attr.data-testid]="'booking-seat-rename-' + seat.key"
+              (input)="renameDraft.set($any($event.target).value)"
               (blur)="commitRename(seat, $any($event.target).value)"
               (keydown.enter)="$any($event.target).blur()"
             />
@@ -77,7 +80,7 @@
             <ui-avatar
               class="booking-seat-pill__avatar"
               [uiSrc]="seat.avatarSrc"
-              [uiName]="seat.label"
+              [uiName]="seat.monogramName"
               uiControlSize="small"
             />
             <span class="booking-seat-pill__name">{{ seat.label }}</span>
@@ -173,6 +176,7 @@
         [uiBlocked]="isBlocked(service.id)"
         [uiBlockedLabel]="t('booking.services.blockedBadge')"
         [uiShowDetails]="false"
+        uiSelectionIndicator="whenSet"
         (uiPressed)="openDetails(service.id)"
       />
       }
@@ -191,8 +195,7 @@
       stepActions
       type="button"
       uiButton
-      uiButtonStyle="bordered"
-      uiTint="neutral"
+      uiButtonStyle="glass"
       uiControlSize="large"
       [uiIconOnly]="true"
       data-testid="booking-add-guest"
@@ -207,8 +210,7 @@
       <button
         type="button"
         uiButton
-        uiButtonStyle="bordered"
-        uiTint="neutral"
+        uiButtonStyle="glass"
         uiControlSize="large"
         [uiIconOnly]="true"
         [disabled]="store.lineCount() === 0"
@@ -383,12 +385,20 @@
           data-testid="booking-barber-menu"
           (click)="barberMenuOpen.set(!barberMenuOpen())"
         >
+          <!-- "Anyone" is an answer like any other, so it gets a face-shaped
+               mark like any other — the same disc the menu row uses. Without
+               it the trigger changed shape depending on WHICH answer was
+               given. -->
           @if (draftBarber(); as barber) {
           <ui-avatar
             [uiSrc]="barber.avatarSrc"
             [uiName]="content.text(barber.name)"
             uiControlSize="small"
           />
+          } @else if (barberAnswered()) {
+          <span class="booking-any__glyph booking-any__glyph--compact">
+            <ui-icon uiName="booking.anyBarber" uiScale="small" />
+          </span>
           }
           <span class="booking-pick__value">{{ barberLabel() }}</span>
           <ui-icon uiName="field.expand" uiScale="small" />
@@ -531,80 +541,17 @@
   }
 
   <!-- ── The bag ────────────────────────────────────────────────────────
-       One list group PER PERSON, with a quiet footnote heading between
-       groups rather than a divider (the segmented-run ruling). Tapping a
-       row reopens the sheet on that line with its choices restored, so
-       editing is in place rather than remove-and-re-add. -->
+       Its own component now: what is being bought, for whom, by whom, and
+       what it comes to. It owns the removes and the inline performer
+       changes (pure cart writes); the step keeps the two moves that belong
+       to the FLOW — opening a line in the full sheet, and going forward. -->
   @if (bagOpen()) {
-  <ui-modal-sheet
-    sheetId="booking-bag-sheet"
-    labelledBy="booking-bag-title"
-    [closeLabel]="t('booking.bag.close')"
-    [open]="true"
-    [titleAlwaysVisible]="true"
-    data-testid="booking-bag-sheet"
+  <lib-booking-bag-sheet
+    [seats]="seats()"
+    [forwardLabel]="forwardLabel()"
+    (editLine)="editFromBag($event)"
+    (proceed)="leaveBag(); advance()"
     (dismissed)="bagOpen.set(false)"
-  >
-    <p sheet-title>{{ t('booking.bag.title') }}</p>
-
-    <ui-stack uiSpacing="spacious" class="booking-bag__body">
-      <h2 id="booking-bag-title" uiSheetLargeTitle uiText uiFont="largeTitle">
-        {{ t('booking.bag.title') }}
-      </h2>
-
-      @for (group of bagGroups(); track group.seat.key) {
-      <ui-stack uiSpacing="compact">
-        @if (seats().length > 1) {
-        <p uiText uiFont="footnote" uiForegroundStyle="secondary">
-          {{ group.seat.label }}
-        </p>
-        }
-        <ul uiListGroup>
-          @for (line of group.lines; track line.id.value) {
-          <li
-            uiListRow
-            uiSize="large"
-            uiAlignment="leading"
-            [attr.data-testid]="'booking-bag-line-' + line.id.value"
-          >
-            <ui-stack uiSpacing="tight">
-              <button
-                type="button"
-                class="booking-bag__edit"
-                (click)="
-                        setActiveSeat(group.seat.key);
-                        editLine(line.id);
-                        bagOpen.set(false)
-                      "
-              >
-                {{ line.name }}
-              </button>
-              <span uiText uiFont="footnote" uiForegroundStyle="secondary">
-                {{ line.detail }}
-              </span>
-            </ui-stack>
-            <button
-              uiTrailing
-              type="button"
-              uiButton
-              uiButtonStyle="plain"
-              uiRole="destructive"
-              uiControlSize="regular"
-              [uiIconOnly]="true"
-              [attr.aria-label]="
-                      t('booking.bag.remove', { service: line.name })
-                    "
-              [attr.data-testid]="'booking-bag-remove-' + line.id.value"
-              (click)="removeLine(group.seat.seatKey, line.id)"
-            >
-              <ui-icon uiName="party.removeGuest" />
-            </button>
-          </li>
-          }
-        </ul>
-      </ui-stack>
-      }
-    </ui-stack>
-  </ui-modal-sheet>
+  />
   }
 </ng-container>

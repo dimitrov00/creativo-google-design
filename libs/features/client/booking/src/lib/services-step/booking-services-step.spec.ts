@@ -14,6 +14,7 @@ import {
 } from '@creativo/application/identity';
 import { AVATAR_UPLOADER, PROFILE_PORT } from '@creativo/application/accounts';
 import {
+  BarberId,
   CATALOG_READER,
   MEDIA_READER,
   Service,
@@ -21,9 +22,12 @@ import {
 import {
   BOOKING_DRAFT_STORE,
   BOOKING_GATEWAY,
+  BarberPref,
+  SeatKey,
   ok,
 } from '@creativo/application/booking';
 import { SessionStorageDraftStore } from '@creativo/infrastructure/web-storage';
+import { BookingFlowStore } from '../booking-flow.store';
 import { ClientBooking } from '../client-booking/client-booking';
 
 @Injectable()
@@ -51,6 +55,12 @@ function service(props: {
   conflictsWith?: readonly string[];
   includes?: readonly string[];
   variants?: readonly string[];
+  /**
+   * Who performs it and on what terms. Defaults to ONE performer, so most
+   * fixtures resolve to a single price; pass two with different rates to
+   * exercise the span an unpinned barber leaves open.
+   */
+  performers?: readonly { id: string; minor: number; minutes: number }[];
 }): Service {
   const result = Service.create({
     id: props.id,
@@ -64,16 +74,16 @@ function service(props: {
       id,
       name: { en: id, bg: id },
     })),
-    offerings: [
-      {
-        barberId: 'ivan',
-        base: {
-          priceMinorUnits: 1450,
-          currencyCode: 'EUR',
-          durationMinutes: 35,
-        },
+    offerings: (
+      props.performers ?? [{ id: 'ivan', minor: 1450, minutes: 35 }]
+    ).map((performer) => ({
+      barberId: performer.id,
+      base: {
+        priceMinorUnits: performer.minor,
+        currencyCode: 'EUR',
+        durationMinutes: performer.minutes,
       },
-    ],
+    })),
     locationIds: [],
     conflictsWith: [...(props.conflictsWith ?? [])],
     composition: props.includes
@@ -91,7 +101,15 @@ function service(props: {
 const CATALOG = [
   service({ id: 'cut', conflictsWith: ['fade'], variants: ['short', 'long'] }),
   service({ id: 'fade', conflictsWith: ['cut'] }),
-  service({ id: 'beard' }),
+  // TWO performers on different terms — the only service in the fixture whose
+  // price is a span while nobody is pinned.
+  service({
+    id: 'beard',
+    performers: [
+      { id: 'ivan', minor: 1450, minutes: 35 },
+      { id: 'niko', minor: 1300, minutes: 30 },
+    ],
+  }),
   service({ id: 'full-care', includes: ['cut', 'beard'] }),
 ];
 
@@ -227,6 +245,68 @@ function blockedIds(fixture: ComponentFixture<ClientBooking>): string[] {
           ?.replace('service-card-', '') ?? '',
     )
     .sort();
+}
+
+/** The four steps between a card on the shelf and a line in the bag. */
+async function addLine(
+  fixture: ComponentFixture<ClientBooking>,
+  cardTestId: string,
+  variantTestId?: string,
+): Promise<void> {
+  click(fixture, cardTestId);
+  await fixture.whenStable();
+  fixture.detectChanges();
+  answer(fixture, variantTestId);
+  click(fixture, 'booking-add-to-bag');
+  await fixture.whenStable();
+  fixture.detectChanges();
+}
+
+/**
+ * The bag's rows, as one whitespace-collapsed string each.
+ *
+ * Queried by PREFIX, never by `booking-bag-line-line-0`: a line id is minted
+ * from a monotonic counter, not a position, so the first row after a removal
+ * is not `line-0`.
+ */
+function bagLines(fixture: ComponentFixture<ClientBooking>): string[] {
+  return [
+    ...host(fixture).querySelectorAll('[data-testid^="booking-bag-line-"]'),
+  ].map((row) => row.textContent?.replace(/\s+/g, ' ').trim() ?? '');
+}
+
+/**
+ * The rows' prices and durations, each read from its OWN element.
+ *
+ * Never off the row's full `textContent`: the pull-down surfaces stay mounted
+ * while closed, so every performer's terms are in there too — an assertion
+ * that a line does NOT say 14,50 € would trip over the option offering it.
+ */
+function bagPrices(fixture: ComponentFixture<ClientBooking>): string[] {
+  return bagText(fixture, 'booking-bag-price-');
+}
+
+function bagDurations(fixture: ComponentFixture<ClientBooking>): string[] {
+  return bagText(fixture, 'booking-bag-duration-');
+}
+
+function bagText(
+  fixture: ComponentFixture<ClientBooking>,
+  prefix: string,
+): string[] {
+  return [...host(fixture).querySelectorAll(`[data-testid^="${prefix}"]`)].map(
+    (node) => node.textContent?.replace(/\s+/g, ' ').trim() ?? '',
+  );
+}
+
+function bagRemoves(
+  fixture: ComponentFixture<ClientBooking>,
+): HTMLButtonElement[] {
+  return [
+    ...host(fixture).querySelectorAll<HTMLButtonElement>(
+      '[data-testid^="booking-bag-remove-"]',
+    ),
+  ];
 }
 
 describe('BookingServicesStep', () => {
@@ -578,5 +658,182 @@ describe('BookingServicesStep', () => {
     await fixture.whenStable();
     fixture.detectChanges();
     expect(blockedIds(fixture)).toEqual([]);
+  });
+
+  // ── The bag ───────────────────────────────────────────────────────────
+  //
+  // The bag went untested through its whole first life, which is how it kept
+  // a sheet body with no inline gutter (its own title ran off the leading
+  // edge) and a row that named a service without saying what it cost. These
+  // pin the four things the redesign actually promises: the money, the
+  // grouping, the closing, and the way back into a line.
+  describe('the bag', () => {
+    it('states each line with its price and duration, and sums them on the bar', async () => {
+      const fixture = await toServices();
+      await addLine(fixture, 'service-card-cut', 'booking-variant-short');
+      await addLine(fixture, 'service-card-beard');
+      click(fixture, 'booking-bag-trigger');
+
+      expect(bagLines(fixture)).toHaveLength(2);
+      const prices = bagPrices(fixture);
+      // `cut` has one performer, so "anyone" still resolves to a point — and
+      // it is IVAN's 14,50 € for 35 minutes, not the catalog's 15,00 € base.
+      // Nobody charges the base; quoting it would be quoting a price this
+      // booking cannot cost.
+      expect(prices[0]).toContain('14,50');
+      expect(prices[0]).not.toContain('–');
+      expect(bagDurations(fixture)[0]).toContain('35');
+      // `beard` has two, on different terms — so it spans, both ends shown.
+      expect(prices[1]).toContain('13,00');
+      expect(prices[1]).toContain('14,50');
+      expect(bagDurations(fixture)[1]).toContain('30');
+
+      // Floors add to the floor and ceilings to the ceiling: 14,50 + [13,00 …
+      // 14,50] is 27,50 – 29,00 €, not a single number at either end.
+      const total = host(fixture).querySelector(
+        '[data-testid="booking-bag-total"]',
+      )?.textContent;
+      expect(total).toContain('27,50');
+      expect(total).toContain('29,00');
+    });
+
+    it('collapses the span the moment a performer is pinned', async () => {
+      const fixture = await toServices();
+      await addLine(fixture, 'service-card-beard');
+      click(fixture, 'booking-bag-trigger');
+
+      // Open while nobody is pinned…
+      expect(bagPrices(fixture)[0]).toContain('13,00');
+      expect(bagPrices(fixture)[0]).toContain('14,50');
+
+      // …and one number once somebody is. (Driven through the store rather
+      // than the menu: the fixture publishes no barber VMs, so the pull-down
+      // renders "anyone" alone — the span logic is what is under test.)
+      // Component-scoped, not root — one store per `/book` visit, so it comes
+      // from the shell's own injector rather than the TestBed's.
+      const store = fixture.debugElement.injector.get(BookingFlowStore);
+      const cart = store.cart();
+      const line = cart?.linesFor(SeatKey.self())[0];
+      const barberId = BarberId.create('niko');
+      if (!line || barberId.isFailure()) throw new Error('bad fixture');
+      store.setLineBarber(
+        SeatKey.self(),
+        line.id,
+        BarberPref.specific(barberId.value),
+      );
+      fixture.detectChanges();
+
+      expect(bagPrices(fixture)[0]).toContain('13,00');
+      expect(bagPrices(fixture)[0]).not.toContain('14,50');
+      expect(bagDurations(fixture)[0]).toContain('30');
+      expect(
+        host(fixture).querySelector('[data-testid="booking-bag-total"]')
+          ?.textContent,
+      ).not.toContain('–');
+    });
+
+    it('gives every person their own shelf and their own subtotal', async () => {
+      const fixture = await toServices();
+      await addLine(fixture, 'service-card-cut', 'booking-variant-short');
+      // A guest joins and takes something of their own — adding one switches
+      // the scope to them, so this lands on the guest.
+      click(fixture, 'booking-add-guest');
+      await fixture.whenStable();
+      fixture.detectChanges();
+      await addLine(fixture, 'service-card-beard');
+      click(fixture, 'booking-bag-trigger');
+
+      expect(
+        [
+          ...host(fixture).querySelectorAll(
+            '[data-testid^="booking-bag-group-"]',
+          ),
+        ].map((group) => group.getAttribute('data-testid')),
+      ).toEqual(['booking-bag-group-self', 'booking-bag-group-guest-0']);
+
+      const subtotals = [
+        ...host(fixture).querySelectorAll(
+          '[data-testid^="booking-bag-subtotal-"]',
+        ),
+      ].map((sum) => sum.textContent?.trim());
+      expect(subtotals).toHaveLength(2);
+      // The booker's pinned-by-arithmetic `cut`, then the guest's spanning
+      // `beard` — each person's own bottom line, not a share of one total.
+      expect(subtotals[0]).toContain('14,50');
+      expect(subtotals[1]).toContain('13,00');
+      expect(subtotals[1]).toContain('14,50');
+    });
+
+    it('re-sums when a line goes, and stays open while anything is left', async () => {
+      const fixture = await toServices();
+      await addLine(fixture, 'service-card-cut', 'booking-variant-short');
+      await addLine(fixture, 'service-card-beard');
+      click(fixture, 'booking-bag-trigger');
+
+      bagRemoves(fixture)[0]?.click();
+      fixture.detectChanges();
+
+      expect(bagLines(fixture)).toHaveLength(1);
+      expect(
+        host(fixture).querySelector('[data-testid="booking-bag-sheet"]'),
+      ).not.toBeNull();
+      expect(
+        host(fixture).querySelector('[data-testid="booking-bag-total"]')
+          ?.textContent,
+      ).toContain('13,00');
+    });
+
+    it('closes itself when the last line is removed — an empty bag is not a screen', async () => {
+      const fixture = await toServices();
+      await addLine(fixture, 'service-card-cut', 'booking-variant-short');
+      click(fixture, 'booking-bag-trigger');
+      expect(
+        host(fixture).querySelector('[data-testid="booking-bag-sheet"]'),
+      ).not.toBeNull();
+
+      bagRemoves(fixture)[0]?.click();
+      fixture.detectChanges();
+
+      expect(
+        host(fixture).querySelector('[data-testid="booking-bag-sheet"]'),
+      ).toBeNull();
+      // …and there is no way back in to be stranded behind.
+      expect(
+        host(fixture).querySelector<HTMLButtonElement>(
+          '[data-testid="booking-bag-trigger"]',
+        )?.disabled,
+      ).toBe(true);
+    });
+
+    it('reopens a line in the full sheet, scoped to the person who holds it', async () => {
+      const fixture = await toServices();
+      click(fixture, 'booking-add-guest');
+      await fixture.whenStable();
+      fixture.detectChanges();
+      await addLine(fixture, 'service-card-beard');
+      click(fixture, 'booking-bag-trigger');
+
+      host(fixture)
+        .querySelector<HTMLButtonElement>('[data-testid^="booking-bag-edit-"]')
+        ?.click();
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      // The bag gets out of the way, the line's own sheet opens, and the
+      // scope points at the guest — committing through the booker's scope
+      // would move the line between people.
+      expect(
+        host(fixture).querySelector('[data-testid="booking-bag-sheet"]'),
+      ).toBeNull();
+      expect(
+        host(fixture).querySelector('[data-testid="booking-remove-line"]'),
+      ).not.toBeNull();
+      expect(
+        host(fixture)
+          .querySelector('[data-testid="booking-seat-guest-0"]')
+          ?.hasAttribute('data-selected'),
+      ).toBe(true);
+    });
   });
 });

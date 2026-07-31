@@ -7,26 +7,6 @@
   display: contents;
 }
 
-/* The bag line's name doubles as the edit affordance. A real <button>
-   (free semantics, free focus handling) stripped back to plain label ink —
-   NOT a uiButton, because a control-shaped name inside a list row would
-   read as an action competing with the row's own trailing remove. */
-.booking-bag__edit {
-  padding: 0;
-  border: 0;
-  background: none;
-  color: inherit;
-  font: inherit;
-  text-align: start;
-  cursor: pointer;
-}
-
-/* Clear the docked action bar so the last line is never trapped under it —
-   the bar publishes its own clearance for exactly this. */
-.booking-bag__body {
-  padding-block-end: var(--ui-sheet-action-bar-clearance, 0);
-}
-
 /*
  * Person pill — a portrait, a name, and a count only once there is one.
  *
@@ -242,63 +222,4 @@ cr-service-detail-sheet {
       var(--control-size-large) * 2 + var(--sys-space-compact) * 2 +
       var(--sys-space-spacious)
   );
-}
-
-/*
- * A select, in the shape this DS has for one: a glass pill that states its
- * current value with the pull-down caret on the trailing edge.
- */
-.booking-pick {
-  max-inline-size: 100%;
-  min-inline-size: 0;
-}
-
-.booking-pick__value {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* Unset reads as a PLACEHOLDER — the button's own ink, dimmed, the way an
-   empty field reads anywhere else. Accent is the colour of things you have
-   chosen and things you can act on; spending it on "not answered yet" made
-   two unanswered questions the loudest thing on the bar (owner ruling
-   2026-07-31). `currentColor` rather than a secondary token because these sit
-   on glass over photography, where a theme grey has no fixed contrast. */
-.booking-pick[data-unset] .booking-pick__value {
-  color: color-mix(in srgb, currentColor 62%, transparent);
-}
-
-/* "Anyone" has no face, so it takes the avatar's silhouette rather than the
-   avatar's absence — the leading rail stays one column wide either way. */
-.booking-any__glyph {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex: 0 0 auto;
-  inline-size: var(--control-size-regular);
-  block-size: var(--control-size-regular);
-  border-radius: var(--control-radius-capsule);
-  background: var(--sys-color-fill);
-}
-
-/* An option that carries its own terms: the name leads, what it costs sits
-   under it, so the choice is priced before it is made. */
-.booking-option {
-  display: flex;
-  flex-direction: column;
-  min-inline-size: 0;
-}
-
-.booking-option__terms {
-  color: var(--sys-color-secondary-label);
-  font: var(--sys-font-caption);
-  font-variant-numeric: tabular-nums;
-}
-
-/* The current value's checkmark, pinned to the menu item's trailing edge —
-   HIG's state marker for a menu that expresses a selection. */
-.booking-pick__check {
-  margin-inline-start: auto;
-  color: var(--sys-color-accent);
 }

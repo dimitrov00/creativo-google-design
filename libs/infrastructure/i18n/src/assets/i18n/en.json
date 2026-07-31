@@ -306,7 +306,11 @@
       "title": "Your bag",
       "open": "Open bag, {{count}} services",
       "close": "Close bag",
-      "remove": "Remove {{service}}"
+      "remove": "Remove {{service}}",
+      "lede": "Tap a service to change it.",
+      "total": "Total",
+      "edit": "Change {{service}}",
+      "changeBarber": "Change who does {{service}}"
     },
     "confirmed": {
       "title": "You're booked!",

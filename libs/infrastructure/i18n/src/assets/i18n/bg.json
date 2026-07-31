@@ -306,7 +306,11 @@
       "title": "Твоята чанта",
       "open": "Отвори чантата, {{count}} услуги",
       "close": "Затвори чантата",
-      "remove": "Премахни {{service}}"
+      "remove": "Премахни {{service}}",
+      "lede": "Докосни услуга, за да я промениш.",
+      "total": "Общо",
+      "edit": "Промени {{service}}",
+      "changeBarber": "Смени кой прави {{service}}"
     },
     "confirmed": {
       "title": "Готово!",
