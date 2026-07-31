@@ -1,5 +1,8 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { BookingDraft } from '@creativo/application/booking';
+import {
+  BOOKING_FLOW_STEPS,
+  BookingDraft,
+} from '@creativo/application/booking';
 import { SessionStorageDraftStore } from './session-storage-draft-store.adapter';
 
 const KEY = 'creativo.booking-draft';
@@ -26,7 +29,7 @@ function unwrap<T, E>(result: {
 const SCHEMA_VERSION = 3;
 
 const EMPTY_DRAFT: BookingDraft = {
-  step: 'guests',
+  step: 'services',
   party: { ownerId: null, guests: [], nextSequence: 0 },
   cart: { seats: [], nextSequence: 0 },
   locationId: null,
@@ -40,6 +43,22 @@ describe('SessionStorageDraftStore', () => {
   beforeEach(() => {
     sessionStorage.clear();
     store = new SessionStorageDraftStore();
+  });
+
+  it('accepts every step the FLOW can be on — including the first', () => {
+    // The whitelist was a hand-written copy and drifted twice: it kept a step
+    // that had been removed, and never listed `location` at all, so a draft
+    // saved on step one was discarded on reload — the exact loss the guard
+    // exists to prevent. It reads the spine now; this is the proof.
+    for (const step of BOOKING_FLOW_STEPS) {
+      sessionStorage.clear();
+      const saved = store.save({ ...EMPTY_DRAFT, step });
+      expect(saved.isSuccess()).toBe(true);
+
+      const loaded = store.load();
+      expect(loaded.isSuccess()).toBe(true);
+      if (loaded.isSuccess()) expect(loaded.value?.step).toBe(step);
+    }
   });
 
   it('returns null when nothing has been saved yet', () => {
@@ -113,7 +132,7 @@ describe('SessionStorageDraftStore', () => {
     store.save(EMPTY_DRAFT);
     const loaded = unwrap(store.load());
     expect(loaded?.party.ownerId).toBeNull();
-    expect(loaded?.step).toBe('guests');
+    expect(loaded?.step).toBe('services');
   });
 
   it('clears the stored draft', () => {
@@ -130,7 +149,7 @@ describe('SessionStorageDraftStore', () => {
   it('surfaces a malformed stored shape as a failed Result', () => {
     sessionStorage.setItem(
       KEY,
-      JSON.stringify({ version: SCHEMA_VERSION, draft: { step: 'guests' } }),
+      JSON.stringify({ version: SCHEMA_VERSION, draft: { step: 'services' } }),
     );
     expect(store.load().isFailure()).toBe(true);
   });

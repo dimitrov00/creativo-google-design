@@ -1,6 +1,7 @@
 import { Injectable } from '@angular/core';
 import { Result, fail, ok } from '@creativo/domain/kernel';
 import {
+  BOOKING_FLOW_STEPS,
   BookingDraft,
   BookingDraftStore,
   BookingDraftStoreError,
@@ -17,7 +18,16 @@ const SESSION_STORAGE_KEY = 'creativo.booking-draft';
  */
 const DRAFT_SCHEMA_VERSION = 3;
 
-const STEPS = ['guests', 'services', 'schedule', 'review', 'confirmed'];
+/**
+ * The steps a draft may name — the flow's OWN spine, plus the terminal state
+ * the spine does not carry.
+ *
+ * It used to be a hand-written copy, and it drifted twice over: it still
+ * listed `guests` after that step was removed, and it never listed `location`
+ * at all — so a draft saved on step one failed this guard and was thrown away
+ * on reload, which is the exact failure the guard exists to prevent.
+ */
+const STEPS: readonly string[] = [...BOOKING_FLOW_STEPS, 'confirmed'];
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
