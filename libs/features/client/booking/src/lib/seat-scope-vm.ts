@@ -12,7 +12,20 @@ import { SeatKey } from '@creativo/application/booking';
 export interface SeatScopeVm {
   readonly key: string;
   readonly seatKey: SeatKey;
+  /** How this person is NAMED — a subject. "Ти", "Гост 1", "Мария". */
   readonly label: string;
+  /**
+   * How this person is REFERRED TO inside a sentence — an object.
+   *
+   * Bulgarian declines its pronouns and English does not capitalise mid-
+   * sentence, so the booker's own label cannot be dropped into "за {{person}}"
+   * as-is: it produced "Сега за Ти", which is the wrong case, and "Now for
+   * You", which is the wrong shape. Every other seat reads the same in both
+   * positions — a guest's label and a real name don't decline here — so this
+   * differs from `label` for exactly one person, which is why it is a second
+   * field rather than a second key at every call site.
+   */
+  readonly objectLabel: string;
   /**
    * What the AVATAR derives its monogram from — empty when nobody has told us
    * a name, which is not the same thing as the label.

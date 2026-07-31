@@ -153,6 +153,9 @@ export class BookingServicesStep {
       key: 'self',
       seatKey: SeatKey.self(),
       label: known || this.transloco.translate('booking.party.you'),
+      // A real name reads the same in either position; only the pronoun we
+      // fall back to has a case to get wrong.
+      objectLabel: known || this.transloco.translate('booking.party.youObject'),
       monogramName: known,
       lineCount: cart?.lineCountFor(SeatKey.self()) ?? 0,
       avatarSrc: this.identity.avatarUrl(),
@@ -165,6 +168,7 @@ export class BookingServicesStep {
           key: seatKeyValue(seatKey),
           seatKey,
           label: guest.label.value,
+          objectLabel: guest.label.value,
           monogramName: guest.label.value,
           lineCount: cart?.lineCountFor(seatKey) ?? 0,
           avatarSrc: null,
@@ -488,7 +492,8 @@ export class BookingServicesStep {
     const pending = this.nextEmptySeat();
     return pending
       ? this.transloco.translate('booking.services.nextPerson', {
-          person: pending.label,
+          // "Сега за …" puts them in the object position — see `objectLabel`.
+          person: pending.objectLabel,
         })
       : this.transloco.translate('booking.continue');
   });
@@ -647,7 +652,8 @@ export class BookingServicesStep {
     if (!vm) return '';
     const params = {
       service: this.content.text(vm.name),
-      person: this.activeSeat().label,
+      // All three of these read "… за {{person}}" — object position.
+      person: this.activeSeat().objectLabel,
     };
     const id = this.detailsId();
     if (id && this.isBlocked(id)) {

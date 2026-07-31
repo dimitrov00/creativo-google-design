@@ -231,6 +231,7 @@
       "title": "Who's coming?",
       "lede": "Add friends or family — each person picks their own services.",
       "you": "You",
+      "youObject": "you",
       "guest": "Guest {{number}}",
       "add": "Add someone",
       "nameLabel": "Name",
