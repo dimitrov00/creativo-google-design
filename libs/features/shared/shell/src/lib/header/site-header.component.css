@@ -100,6 +100,21 @@
   block-size: 100%;
 }
 
+/*
+ * The monogram is an identity, not the button's label.
+ *
+ * `bordered` inks its label with the ACCENT, and the avatar derives both its
+ * disc and its initials from the ink it inherits — so a signed-in user with
+ * no photo got orange initials on a near-white disc (~3:1). The glass variant
+ * is left alone: its white ink is exactly right over a hero image, in both
+ * themes.
+ */
+.cr-header
+  [data-testid='nav-menu-trigger'][data-button-style='bordered']
+  .cr-header__monogram {
+  --ui-avatar-ink: var(--sys-color-foreground);
+}
+
 .cr-header [data-testid='nav-menu-trigger']:active .cr-header__monogram {
   transform: scale(var(--sys-press-scale-surface, 0.97));
 }

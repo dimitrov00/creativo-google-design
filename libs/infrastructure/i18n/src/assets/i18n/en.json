@@ -85,7 +85,30 @@
     "registration_field_missing": "Please fill in all required fields.",
     "registration_birth_date_invalid": "The birthday provided is not valid.",
     "registration_unauthenticated": "Your session has expired — please sign in again.",
-    "registration_forbidden": "This registration doesn't belong to your session — please sign in again."
+    "registration_forbidden": "This registration doesn't belong to your session — please sign in again.",
+    "booking": {
+      "flow": {
+        "invalid_transition": "That action isn't available right now.",
+        "invalid_guest": "Enter a name for this person.",
+        "guest_not_found": "That person is no longer in the booking.",
+        "empty_cart": "Pick at least one service to continue.",
+        "invalid_cart_operation": "That item is no longer in your bag.",
+        "party_full": "That's the most people we can seat in one booking."
+      }
+    },
+    "booking.gateway.failed": "Something went wrong. Please try again.",
+    "booking.commit.unauthenticated": "Sign in to finish your booking.",
+    "booking.commit.invalid_input": "Something about this booking is off. Please try again.",
+    "booking.commit.unknown_service": "That service is no longer available.",
+    "booking.commit.service_not_at_location": "That service is not offered at this shop.",
+    "booking.commit.conflicting_services": "Those services cannot be combined.",
+    "booking.commit.barber_not_rostered": "That barber does not work then.",
+    "booking.commit.slot_unavailable": "That time is already taken.",
+    "booking.commit.too_soon": "Bookings need at least {{minLeadMinutes}} minutes' notice.",
+    "booking.commit.beyond_horizon": "We are not taking bookings that far ahead yet.",
+    "booking.commit.party_too_large": "A booking seats at most {{maxPartySize}} people.",
+    "booking.commit.invariant_violated": "That combination is not possible. Try another time.",
+    "booking.commit.store_failed": "We could not save the booking. Please try again."
   },
   "shell": {
     "forbidden": {
@@ -195,6 +218,111 @@
       "failedTitle": "This is taking longer than expected",
       "failedBody": "We couldn't confirm your account just yet — please try again.",
       "retry": "Try again"
+    }
+  },
+  "booking": {
+    "back": "Back",
+    "cancel": "Cancel booking",
+    "continue": "Continue",
+    "steps": {
+      "label": "Step {{current}} of {{total}}"
+    },
+    "party": {
+      "title": "Who's coming?",
+      "lede": "Add friends or family — each person picks their own services.",
+      "you": "You",
+      "guest": "Guest {{number}}",
+      "add": "Add someone",
+      "nameLabel": "Name",
+      "rename": "Rename {{name}}",
+      "remove": "Remove {{name}}",
+      "counter": "{{count}} of {{max}} people",
+      "full": "That's the most we can seat in one booking.",
+      "selfDetail": "This booking is yours",
+      "renameAction": "Rename",
+      "removeAction": "Remove"
+    },
+    "services": {
+      "title": "What are we doing?",
+      "lede": "Pick services for each person — tap a name above to switch.",
+      "loading": "Loading the menu…",
+      "blockedBadge": "Conflicts",
+      "blockedBy": "Already covered by {{names}}.",
+      "replace": "Replace it",
+      "add": "Add to bag",
+      "save": "Save changes",
+      "addAria": "Add {{service}} for {{person}}",
+      "nextPerson": "Now for {{person}}",
+      "seatAria": "{{person}} — {{count}} services",
+      "replaceAria": "Replace and add {{service}} for {{person}}",
+      "saveAria": "Save changes to {{service}} for {{person}}",
+      "dismissNotice": "Dismiss note",
+      "blockedTitle": "Doesn't combine"
+    },
+    "schedule": {
+      "title": "When suits you?",
+      "lede": "Pick a day, then a time — we only show what is genuinely free.",
+      "locationLabel": "Shop",
+      "previousMonth": "Previous month",
+      "nextMonth": "Next month",
+      "dayFree": "{{day}} — times available",
+      "dayFull": "{{day}} — fully booked",
+      "loading": "Finding times…",
+      "daypart": {
+        "morning": "Morning",
+        "afternoon": "Afternoon",
+        "evening": "Evening"
+      },
+      "noTimes": {
+        "title": "This day is full.",
+        "body": "Try another day — or tell us when you are free and we will call you."
+      },
+      "arrangement": {
+        "parallel": "You go in together:",
+        "sequential": "You go in one after another:"
+      },
+      "slotTaken": {
+        "title": "That time just went.",
+        "body": "Pick another — this is what is free right now."
+      }
+    },
+    "review": {
+      "title": "Does this look right?",
+      "lede": "Check it over and confirm — you pay at the shop.",
+      "payAtShop": "At the shop:",
+      "confirm": "Confirm booking",
+      "signInAndConfirm": "Sign in and confirm",
+      "confirming": "Confirming…",
+      "signInWhy": "Signing in is what lets you cancel or move it later."
+    },
+    "configure": {
+      "variant": "Option",
+      "variantPick": "Choose option",
+      "barber": "Barber",
+      "anyBarber": "Anyone",
+      "barberPick": "Choose barber"
+    },
+    "bag": {
+      "title": "Your bag",
+      "open": "Open bag, {{count}} services",
+      "close": "Close bag",
+      "remove": "Remove {{service}}"
+    },
+    "confirmed": {
+      "title": "You're booked!",
+      "body": "Your chair is saved. We'll remind you before it's time.",
+      "viewAppointments": "See your appointments",
+      "done": "Back to home"
+    },
+    "location": {
+      "title": "Which shop?",
+      "lede": "Pick from the map or the list — or let us find the soonest.",
+      "resizeSheet": "Resize the list",
+      "continueAny": "Continue with any shop",
+      "any": {
+        "title": "Any shop",
+        "detail": "Wherever is soonest"
+      }
     }
   },
   "account": {
@@ -367,7 +495,9 @@
       "whoGridView": "Barbers as grid",
       "allBarbers": "All barbers",
       "nBarbers": "{{count}} barbers",
-      "goToPhoto": "Go to photo {{index}}"
+      "goToPhoto": "Go to photo {{index}}",
+      "anyPerformer": "Anyone",
+      "anyPerformerDetail": "Whoever is free first"
     },
     "location": {
       "eyebrow": "Find us",

@@ -1,6 +1,12 @@
 import { Injectable, computed, inject } from '@angular/core';
 import { LanguageService } from '@creativo/features/shared/shell';
-import { type Localized, formatDurationRange, formatPrice } from './catalog-vm';
+import {
+  type Localized,
+  type ServiceVm,
+  formatDurationRange,
+  formatPrice,
+  formatServiceMeta,
+} from './catalog-vm';
 
 /**
  * The three locale-bound reads every catalog surface needs: resolve a
@@ -29,5 +35,29 @@ export class CatalogPresenter {
 
   durationRange(from: number, to: number): string {
     return formatDurationRange(from, to, this.locale());
+  }
+
+  /**
+   * The service card's second line — `от 13,00 €`.
+   *
+   * PRICE ONLY: the card is a price tag, and the sheet it opens states the
+   * duration in its own facts row a tap later (owner ruling 2026-07-31).
+   * `fromLabel` comes from the caller's own `t` — this service has no
+   * transloco of its own, and every call site is already inside one.
+   */
+  serviceMeta(service: ServiceVm, fromLabel: string): string {
+    // EVERY bookable term, not just the base ones — a card that folded only
+    // `offering.base` quoted a cheapest price the sheet it opens could
+    // contradict one tap later.
+    const prices = service.offerings.flatMap((offering) => [
+      offering.base.price,
+      ...Object.values(offering.byVariant ?? {}).map((term) => term.price),
+    ]);
+    const cheapest = prices.length > 0 ? Math.min(...prices) : 0;
+    return formatServiceMeta({
+      price: this.price(cheapest),
+      fromLabel,
+      spread: prices.length > 0 && Math.max(...prices) > cheapest,
+    });
   }
 }

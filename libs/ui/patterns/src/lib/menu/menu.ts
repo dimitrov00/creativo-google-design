@@ -50,7 +50,8 @@ export class UiMenuTrigger {
     'button[uiMenuItem], a[uiMenuItem], label[uiMenuItem], [uiMenuItem]',
   host: {
     class: 'ui-menu__item',
-    role: 'menuitem',
+    '[attr.role]': "uiSelected() === undefined ? 'menuitem' : 'menuitemradio'",
+    '[attr.aria-checked]': 'uiSelected() ?? null',
     '[attr.data-role]': 'uiMenuItemRole()',
     '[attr.tabindex]': '-1',
   },
@@ -58,6 +59,17 @@ export class UiMenuTrigger {
 export class UiMenuItem {
   /** `destructive` paints the item red and, by HIG convention, belongs LAST in the menu. */
   readonly uiMenuItemRole = input<UiMenuItemRole>('default');
+
+  /**
+   * Present ⇒ this item is one OPTION in a single-select menu rather than a
+   * command, and the role changes with it (`menuitemradio` + `aria-checked`,
+   * which is what a menu expressing a choice owes assistive tech).
+   *
+   * The visual selection is not this directive's job: a picker puts
+   * `uiListRow` on its items and gets the app's one selected-row treatment,
+   * the same one the location step uses.
+   */
+  readonly uiSelected = input<boolean | undefined>(undefined);
   readonly element = inject<ElementRef<HTMLElement>>(ElementRef);
 }
 

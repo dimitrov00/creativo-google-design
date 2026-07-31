@@ -1,0 +1,148 @@
+@layer sys-components {
+  .cr-service-card {
+    position: relative;
+    display: block;
+  }
+
+  /* The full-bleed press target — the ui-media-card IS its surface. Reset
+     to a bare box; radius and press feedback ride the shared uiInteractive
+     + uiRadius grammar rather than a local hover treatment. */
+  .cr-service-card__select {
+    position: relative;
+    display: block;
+    inline-size: 100%;
+    padding: 0;
+    border: none;
+    background: none;
+    color: inherit;
+    text-align: start;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* Selection ring — empty glass at rest, accent-filled when chosen; the ONE
+     state signal (the card's ring seconds it).
+
+     A true CIRCLE, not a capsule: it used to size itself to hold a multi-digit
+     count, which made it visibly wider than tall for the glyph it actually
+     holds. One person cannot hold the same service twice any more, so the
+     count is never above one and the pill shape had nothing left to justify
+     it. */
+  .cr-service-card__check {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    inline-size: 1.75rem;
+    block-size: 1.75rem;
+    padding: 0;
+    font-size: 0.875rem;
+    font-variant-numeric: tabular-nums;
+    border-radius: var(--control-radius-capsule);
+    border: 2px solid rgb(255 255 255 / 85%);
+    background: rgb(0 0 0 / 25%);
+    color: transparent;
+    pointer-events: none;
+    transition:
+      background-color var(--sys-motion-duration-regular)
+        var(--sys-motion-ease-standard),
+      border-color var(--sys-motion-duration-regular)
+        var(--sys-motion-ease-standard),
+      color var(--sys-motion-duration-regular) var(--sys-motion-ease-standard);
+  }
+
+  .cr-service-card__check[data-selected] {
+    border-color: var(--sys-color-accent);
+    background: var(--sys-color-accent);
+    color: var(--sys-color-on-accent);
+  }
+
+  /* Selected card — accent ring drawn INSIDE the cover as an overlay (never
+     outside the bounds: an outset outline collided with the neighbour's
+     across the grid gap). Layout-inert, radius-matched. */
+  .cr-service-card__select::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: var(--control-radius-prominent);
+    border: 2px solid transparent;
+    pointer-events: none;
+    transition: border-color var(--sys-motion-duration-regular)
+      var(--sys-motion-ease-standard);
+  }
+
+  .cr-service-card[data-selected] .cr-service-card__select::after {
+    border-color: var(--sys-color-accent);
+  }
+
+  /* BLOCKED — the WHOLE card mutes, and that is the entire signal.
+     Previously a warning capsule sat across the leading corner shouting the
+     word while the art stayed at full strength; the badge competed with the
+     selection ring it was qualifying and drew more attention than the
+     services that were actually available. Muting reads as "not now" at a
+     glance, and the reason still arrives on press — the card stays live, so
+     it is a scrim plus desaturation, never `opacity` (which would promise a
+     dead control). */
+  .cr-service-card[data-blocked] .cr-service-card__select::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    border-radius: var(--control-radius-prominent);
+    background: var(--sys-color-scrim);
+    pointer-events: none;
+  }
+
+  .cr-service-card[data-blocked] .cr-service-card__select {
+    filter: saturate(0.25);
+  }
+
+  /* The card's own captions quiet down with it — a full-strength title over
+     a muted photo reads as a rendering bug. */
+  .cr-service-card[data-blocked] [uicaption] {
+    color: var(--sys-color-secondary-label);
+  }
+
+  /* The ring keeps its geometry and swaps its glyph, so the corner means one
+     thing in three states rather than three things in two places. */
+  .cr-service-card__check[data-blocked] {
+    z-index: 2;
+    border-color: rgb(255 255 255 / 55%);
+    background: rgb(0 0 0 / 45%);
+    color: rgb(255 255 255 / 85%);
+  }
+
+  /* At the cap, unselected cards read plainly unavailable — the counter on
+     the page already explains why, so this one IS inert. */
+  .cr-service-card[data-cap-blocked] .cr-service-card__select {
+    opacity: var(--sys-opacity-disabled);
+    cursor: not-allowed;
+  }
+
+  /* Quiet details affordance — small glass pill, leading corner. It is a
+     SIBLING of the select button (never nested), so it cannot ride the
+     card's own corner slot; the inset restates that slot's geometry. */
+  .cr-service-card__info {
+    position: absolute;
+    inset-block-start: var(--sys-space-compact);
+    inset-inline-start: var(--sys-space-compact);
+    z-index: 2;
+  }
+
+  /* Cover fallback — the scissors motif on quiet fill (landing grammar). */
+  .cr-service-card__fallback {
+    display: grid;
+    place-items: center;
+    inline-size: 100%;
+    block-size: 100%;
+    background: color-mix(
+      in srgb,
+      var(--sys-color-foreground) 8%,
+      var(--sys-color-background)
+    );
+  }
+
+  .cr-service-card__fallback-glyph {
+    font-size: 2rem;
+    color: var(--sys-color-secondary-label);
+  }
+}

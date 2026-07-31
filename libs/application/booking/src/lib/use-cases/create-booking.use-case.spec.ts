@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   InvalidTimeZoneError,
+  Money,
   Result,
   ZonedDateTime,
   fail,
@@ -12,11 +13,24 @@ import {
   SeatSubject,
   TimeSlot,
 } from '@creativo/domain/scheduling';
-import { BarberId, LocationId, ServiceId } from '@creativo/domain/catalog';
+import {
+  BarberId,
+  LocationId,
+  ServiceId,
+  ServiceTerms,
+} from '@creativo/domain/catalog';
 import { ClockPort, RepositoryError } from '@creativo/application/shared';
 import { AppointmentRepository } from '../ports/appointment-repository.port';
 import { CreateBookingUseCase } from './create-booking.use-case';
 import { CreateBookingValidationFailure } from './create-booking.errors';
+
+function seatTerms(durationMinutes = 30, priceMinorUnits = 1500): ServiceTerms {
+  const price = Money.fromMinorUnitsAndCode(priceMinorUnits, 'EUR');
+  if (price.isFailure()) throw new Error('bad fixture');
+  const result = ServiceTerms.create(price.value, durationMinutes);
+  if (result.isFailure()) throw new Error('bad fixture');
+  return result.value;
+}
 
 function fakeRepository(): AppointmentRepository & {
   saved: Appointment[];
@@ -83,10 +97,18 @@ describe('CreateBookingUseCase', () => {
     const label = requiredValue(SeatLabel.create('Walk-in 10:00'));
 
     const result = await useCase.execute({
-      barberId,
       locationId,
-      timeSlot: timeSlot(),
-      seats: [{ subject: SeatSubject.anonymous(label), serviceId }],
+      schedulingZone: 'Europe/Sofia',
+      seats: [
+        {
+          subject: SeatSubject.anonymous(label),
+          serviceId,
+          variantId: null,
+          barberId,
+          terms: seatTerms(),
+          slot: timeSlot(),
+        },
+      ],
     });
 
     expect(result.isSuccess()).toBe(true);
@@ -106,9 +128,8 @@ describe('CreateBookingUseCase', () => {
     );
 
     const result = await useCase.execute({
-      barberId: requiredValue(BarberId.create('barber_1')),
       locationId: requiredValue(LocationId.create('location_1')),
-      timeSlot: timeSlot(),
+      schedulingZone: 'Europe/Sofia',
       seats: [],
     });
 

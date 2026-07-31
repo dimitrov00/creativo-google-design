@@ -6,8 +6,23 @@
     overflow: hidden;
     flex-shrink: 0;
     border-radius: var(--control-radius-capsule);
-    background: var(--sys-color-surface-secondary);
-    color: var(--sys-color-secondary-label);
+    /* A film of the HOST's own ink, not a fixed grey.
+     *
+     * An avatar sits ON something, so the one thing it must never do is match
+     * what it sits on. An opaque `surface-secondary` vanished inside an
+     * unselected chip (same colour); a fixed light `systemFill` then vanished
+     * on a SELECTED one, whose fill inverts to near-white. Deriving it from
+     * `currentColor` makes it flip with the environment for free: a light film
+     * under light ink, a dark film under dark ink (owner ruling 2026-07-31).
+     *
+     * `color` is deliberately NOT set here — that would pin `currentColor` and
+     * defeat the whole point. The monogram sets its own, relative to the same
+     * inherited ink. */
+    background: color-mix(
+      in srgb,
+      var(--ui-avatar-ink, currentColor) var(--sys-alpha-fill),
+      transparent
+    );
     font-weight: 700;
   }
 
@@ -47,5 +62,18 @@
     display: flex;
     align-items: center;
     justify-content: center;
+  }
+
+  /*
+   * The monogram is TEXT, at the host's own ink.
+   *
+   * Not a washed-out fraction of it: the disc behind it is only an 8% film of
+   * that same colour, so anything less than full strength lands a pale mark on
+   * a pale disc and reads as broken rather than quiet (owner-reported
+   * 2026-07-31). It is already quieter than the label beside it by being
+   * smaller; alpha was doing a job that size and the tier ladder already do.
+   */
+  .ui-avatar__fallback {
+    color: var(--ui-avatar-ink, currentColor);
   }
 }

@@ -1,0 +1,27 @@
+/*
+ * The growing flex child of the shell's 100svh column. `flex: 1` is what
+ * makes the inner `ui-spacer` able to push the action bar to the viewport
+ * floor: without it the host would hug its content and the bar would sit
+ * directly under the last row, wherever that happened to land.
+ */
+.booking-step-layout {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-block-size: 0;
+}
+
+/*
+ * Clears the overlaying toolbar. The scrim bar does not reserve a strip, so
+ * without this every step's title would start underneath the back chevron.
+ * The location step deliberately does NOT use this layout — its map is
+ * supposed to run behind the chrome.
+ */
+.booking-step-layout {
+  /* The bar's own height plus a gutter — measured: the bar height alone left
+     each step's title 10px under the back chevron, which reads as a collision
+     rather than as clearance. */
+  padding-block-start: calc(
+    var(--control-size-large) + var(--sys-space-regular)
+  );
+}

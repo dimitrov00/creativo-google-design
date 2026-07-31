@@ -151,3 +151,178 @@ describe('ZonedDateTime.weekdayLabels', () => {
     expect(labels[6]).toBe('Sun');
   });
 });
+
+/*
+ * ── DST ────────────────────────────────────────────────────────────────
+ * Europe/Sofia, the product's scheduling zone, moves the clock twice a year:
+ *   2026-03-29  02:00 → 03:00   the day is 23 hours; 03:00–03:59 never happens
+ *   2026-10-25  04:00 → 03:00   the day is 25 hours; 03:00–03:59 happens twice
+ * Every case below was verified against Luxon before being written down.
+ */
+describe('ZonedDateTime.fromParts — DST is an explicit decision', () => {
+  const zone = 'Europe/Sofia';
+
+  it('builds an ordinary wall-clock time', () => {
+    const result = ZonedDateTime.fromParts(
+      { year: 2026, month: 7, day: 29, hour: 9, minute: 30 },
+      zone,
+    );
+    expect(result.isSuccess()).toBe(true);
+    if (result.isSuccess()) {
+      expect(result.value.hour).toBe(9);
+      expect(result.value.minute).toBe(30);
+    }
+  });
+
+  it('REJECTS a time the spring-forward skipped, which Luxon accepts silently', () => {
+    // Luxon returns 04:30+03:00 with isValid true. Accepting that books a
+    // barber an hour after the roster said, once a year, with no error.
+    const result = ZonedDateTime.fromParts(
+      { year: 2026, month: 3, day: 29, hour: 3, minute: 30 },
+      zone,
+    );
+    expect(result.isFailure()).toBe(true);
+    if (result.isFailure()) {
+      expect(result.error.code).toBe('nonexistent_local_time');
+    }
+  });
+
+  it('shifts a skipped time forward only when asked', () => {
+    const result = ZonedDateTime.fromParts(
+      { year: 2026, month: 3, day: 29, hour: 3, minute: 30 },
+      zone,
+      'shiftForward',
+    );
+    expect(result.isSuccess()).toBe(true);
+    if (result.isSuccess()) {
+      expect(result.value.hour).toBe(4);
+    }
+  });
+
+  it('REJECTS a time the fall-back repeated, rather than silently picking one', () => {
+    const result = ZonedDateTime.fromParts(
+      { year: 2026, month: 10, day: 25, hour: 3, minute: 30 },
+      zone,
+    );
+    expect(result.isFailure()).toBe(true);
+    if (result.isFailure()) {
+      expect(result.error.code).toBe('ambiguous_local_time');
+    }
+  });
+
+  it('resolves a repeated time to either occurrence on request, an hour apart', () => {
+    const parts = { year: 2026, month: 10, day: 25, hour: 3, minute: 30 };
+    const earlier = ZonedDateTime.fromParts(parts, zone, 'earlier');
+    const later = ZonedDateTime.fromParts(parts, zone, 'later');
+    if (earlier.isFailure() || later.isFailure())
+      throw new Error('bad fixture');
+
+    // Same wall clock, different instants — which is what "ambiguous" means.
+    expect(earlier.value.hour).toBe(3);
+    expect(later.value.hour).toBe(3);
+    expect(earlier.value.minutesUntil(later.value)).toBe(60);
+  });
+
+  it('rejects an unknown zone and impossible parts', () => {
+    expect(
+      ZonedDateTime.fromParts(
+        { year: 2026, month: 7, day: 29, hour: 9, minute: 0 },
+        'Not/AZone',
+      ).isFailure(),
+    ).toBe(true);
+    expect(
+      ZonedDateTime.fromParts(
+        { year: 2026, month: 2, day: 30, hour: 9, minute: 0 },
+        zone,
+      ).isFailure(),
+    ).toBe(true);
+  });
+});
+
+describe('ZonedDateTime day boundaries across DST', () => {
+  const zone = 'Europe/Sofia';
+
+  function at(iso: string): ZonedDateTime {
+    const result = ZonedDateTime.fromISO(iso, zone);
+    if (result.isFailure()) throw new Error('bad fixture');
+    return result.value;
+  }
+
+  it('measures the spring day as 23 hours and the autumn day as 25', () => {
+    // The reason `startOfNextDay` is calendar arithmetic and not +24h.
+    const spring = at('2026-03-29T12:00:00');
+    expect(spring.startOfDay().minutesUntil(spring.startOfNextDay())).toBe(
+      23 * 60,
+    );
+
+    const autumn = at('2026-10-25T12:00:00');
+    expect(autumn.startOfDay().minutesUntil(autumn.startOfNextDay())).toBe(
+      25 * 60,
+    );
+  });
+
+  it('startOfDay lands on local midnight, not UTC midnight', () => {
+    const start = at('2026-07-29T23:45:00').startOfDay();
+    expect(start.hour).toBe(0);
+    expect(start.toISODate()).toBe('2026-07-29');
+  });
+
+  it('atTime places a roster window on a specific date', () => {
+    const nine = at('2026-07-29T00:00:00').atTime(9, 0);
+    expect(nine.isSuccess()).toBe(true);
+    if (nine.isSuccess()) {
+      expect(nine.value.hour).toBe(9);
+      expect(nine.value.toISODate()).toBe('2026-07-29');
+    }
+  });
+
+  it('atTime refuses a roster window the spring-forward erased', () => {
+    const result = at('2026-03-29T00:00:00').atTime(3, 30);
+    expect(result.isFailure()).toBe(true);
+  });
+});
+
+describe('ZonedDateTime instants', () => {
+  const zone = 'Europe/Sofia';
+
+  it('round-trips through epoch millis', () => {
+    const original = ZonedDateTime.fromISO('2026-07-29T10:15:00', zone);
+    if (original.isFailure()) throw new Error('bad fixture');
+    const restored = ZonedDateTime.fromMillis(original.value.toMillis(), zone);
+    if (restored.isFailure()) throw new Error('bad fixture');
+    expect(restored.value.equals(original.value)).toBe(true);
+  });
+
+  it('compares by INSTANT, not by the offset the local rendering carries', () => {
+    // The bug this guards: '…+03:00' sorts after '…+02:00' as a STRING while
+    // being the earlier instant — which inverts ordering during the autumn
+    // fall-back hour.
+    const earlier = ZonedDateTime.fromISO('2026-10-25T03:30:00+03:00', zone);
+    const later = ZonedDateTime.fromISO('2026-10-25T03:30:00+02:00', zone);
+    if (earlier.isFailure() || later.isFailure())
+      throw new Error('bad fixture');
+
+    expect(earlier.value.isBefore(later.value)).toBe(true);
+    expect(earlier.value.toMillis()).toBeLessThan(later.value.toMillis());
+  });
+
+  it('minutesUntil measures elapsed time across a DST boundary, not clock difference', () => {
+    // 01:30 → 04:30 reads as three hours on the wall clock but only two
+    // actually pass, because 03:00–03:59 does not exist.
+    const before = ZonedDateTime.fromISO('2026-03-29T01:30:00', zone);
+    const after = ZonedDateTime.fromISO('2026-03-29T04:30:00', zone);
+    if (before.isFailure() || after.isFailure()) throw new Error('bad fixture');
+    expect(before.value.minutesUntil(after.value)).toBe(120);
+  });
+
+  it('min/max pick by instant', () => {
+    const a = ZonedDateTime.fromISO('2026-07-29T09:00:00', zone);
+    const b = ZonedDateTime.fromISO('2026-07-29T11:00:00', zone);
+    const c = ZonedDateTime.fromISO('2026-07-29T10:00:00', zone);
+    if (a.isFailure() || b.isFailure() || c.isFailure()) {
+      throw new Error('bad fixture');
+    }
+    expect(ZonedDateTime.min(a.value, b.value, c.value).hour).toBe(9);
+    expect(ZonedDateTime.max(a.value, b.value, c.value).hour).toBe(11);
+  });
+});

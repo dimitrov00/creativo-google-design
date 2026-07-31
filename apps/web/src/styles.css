@@ -47,6 +47,13 @@
    imperatively) never receives Angular's `_ngcontent-*` scope attribute, so
    its styling can only ever live in a global stylesheet — same rationale as
    the import above. */
+/* `ui-map` — the DS map recipe (pins, off-screen indicators, MapLibre
+   containment). Global because that DOM is MapLibre-created and never gets
+   Angular's scope attribute. */
+@import '../../../libs/ui/controls/src/lib/map/map.css';
+/* The landing's locations section still runs its own copy of this recipe;
+   migrating it onto `ui-map` is a follow-up, and until then both namespaces
+   have to exist. */
 @import '../../../libs/features/marketing/landing/src/lib/pages/home/locations/locations-map.css';
 
 /* Fallback chrome for the not-yet-migrated marketing pages only —

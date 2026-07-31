@@ -20,6 +20,7 @@
     --sys-color-primary: #121212;
     --sys-color-on-primary: #ffffff;
     --sys-color-secondary-label: #666666; /* v2 muted-foreground */
+    --sys-color-tertiary-label: #999999; /* ≙ .tertiary — one step quieter than secondary */
     --sys-color-accent: #f26b22;
     --sys-color-on-accent: #ffffff;
     --sys-color-destructive: #c62828;

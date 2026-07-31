@@ -28,9 +28,11 @@ import {
 } from '@creativo/application/catalog';
 import {
   type BarberVm,
+  ServiceCardComponent,
   ServiceDetailSheetComponent,
   type ServiceVm,
   barberToVm,
+  formatServiceMeta,
   serviceToVm,
 } from '@creativo/features/shared/catalog';
 import {
@@ -60,7 +62,7 @@ import {
 } from '@creativo/ui/controls';
 import { UiGrid, UiSpacer, UiStack, UiToolbar } from '@creativo/ui/layout';
 import {
-  UiConfetti,
+  UiRewardMoment,
   UiPageActionBar,
   UiSectionHeader,
   UiStepper,
@@ -79,7 +81,6 @@ import {
   PersonalizeStep,
 } from '../onboarding-flow.store';
 import { ONBOARDING_SERVICES_CAP } from '../services-cap';
-import { OnboardingServiceCard } from '../service-card/onboarding-service-card';
 
 /**
  * `/onboarding` — about → reward → services → birthday → avatar →
@@ -107,11 +108,11 @@ import { OnboardingServiceCard } from '../service-card/onboarding-service-card';
   selector: 'lib-client-onboarding',
   imports: [
     TranslocoDirective,
-    OnboardingServiceCard,
+    ServiceCardComponent,
     ServiceDetailSheetComponent,
     UiAvatar,
     UiButton,
-    UiConfetti,
+    UiRewardMoment,
     UiDateField,
     UiFrameDirective,
     UiGrid,
@@ -661,6 +662,12 @@ export class ClientOnboarding {
    * customer has picked either, so the grid quotes the cheapest and says
    * so. `priceRange().min === max` collapses back to a bare price, which
    * is what a service nobody prices differently should look like.
+   *
+   * The SHAPE of the line — which fact leads, where the "from" goes — comes
+   * from `formatServiceMeta`, because booking's grid renders the same card
+   * and its own copy of this had already drifted away from it. Only the
+   * inputs are local: onboarding folds them off the domain aggregate, which
+   * is where the currency-aware `formatMoney` lives.
    */
   protected serviceMeta(service: Service): string {
     const lang = this.transloco.getActiveLang();
@@ -679,11 +686,12 @@ export class ClientOnboarding {
     // and forced `maximumFractionDigits: 0`, printing `28 лв.` for a price
     // the rest of the app renders as `28,00 €`.
     const { min, max } = service.priceRange();
-    const price = formatMoney(min, locale);
-    const from = min.equals(max)
-      ? ''
-      : `${this.transloco.translate('onboarding.services.from')} `;
-    return `${minutes} · ${from}${price}`;
+    return formatServiceMeta({
+      duration: minutes,
+      price: formatMoney(min, locale),
+      fromLabel: this.transloco.translate('onboarding.services.from'),
+      spread: !min.equals(max),
+    });
   }
 
   protected serviceCoverUrl(service: Service): string | null {

@@ -1,1 +1,135 @@
-<p>ClientBooking works!</p>
+<ng-container *transloco="let t">
+  <!-- Quiet navigation-stack chrome (owner ruling 2026-07-25), identical to
+       /auth and /onboarding: sticky toolbar reading as plain page surface
+       (no hairline), icon-only back chevron, caption-less stepper. The side
+       slots share equal flexible frames so the stepper stays truly centred
+       even when only one side holds a control. -->
+  <ui-stack
+    uiSpacing="none"
+    uiFrame
+    uiFrameMinHeight="100svh"
+    class="booking-shell"
+  >
+    <!-- Scrim rather than a solid bar: the location step puts a live map
+         directly under this, and a solid strip would slice the top off it.
+         The ramp is the same quintic dissolve the action bar and the sheets
+         use, pointing down instead of up. -->
+    <ui-toolbar uiSticky uiToolbarBackground="scrim">
+      <ui-stack uiSpacing="none" uiFrame uiFrameMaxWidth="infinity">
+        <!-- Row one is the navigation chrome, unchanged: back at the leading
+             edge, the caption-less stepper centred, dismiss trailing. -->
+        <ui-stack
+          uiAxis="horizontal"
+          uiSpacing="none"
+          uiAlignment="center"
+          uiFrame
+          uiFrameMaxWidth="infinity"
+        >
+          <ui-stack
+            uiAxis="horizontal"
+            uiSpacing="none"
+            uiAlignment="center"
+            uiFrame
+            uiFrameMaxWidth="infinity"
+          >
+            @if (store.canGoBack()) {
+            <button
+              type="button"
+              uiButton
+              uiButtonStyle="bordered"
+              uiTint="neutral"
+              uiMaterial="thick"
+              uiControlSize="regular"
+              [uiIconOnly]="true"
+              data-testid="booking-back"
+              [attr.aria-label]="t('booking.back')"
+              (click)="store.back()"
+            >
+              <ui-icon uiName="nav.back" />
+            </button>
+            }
+            <ui-spacer />
+          </ui-stack>
+
+          <ui-stepper
+            [uiSteps]="store.totalSteps"
+            [uiCurrent]="store.currentStep()"
+            [uiLabel]="
+              t('booking.steps.label', {
+                current: store.currentStep(),
+                total: store.totalSteps
+              })
+            "
+            uiLabelsHidden
+            uiFrame
+            uiFrameWidth="min(34vw, 10rem)"
+          />
+
+          <ui-stack
+            uiAxis="horizontal"
+            uiSpacing="none"
+            uiAlignment="center"
+            uiFrame
+            uiFrameMaxWidth="infinity"
+          >
+            <ui-spacer />
+            <button
+              type="button"
+              uiButton
+              uiButtonStyle="bordered"
+              uiTint="neutral"
+              uiMaterial="thick"
+              uiControlSize="regular"
+              [uiIconOnly]="true"
+              data-testid="booking-cancel"
+              [attr.aria-label]="t('booking.cancel')"
+              (click)="leave()"
+            >
+              <ui-icon uiName="sheet.close" />
+            </button>
+          </ui-stack>
+        </ui-stack>
+
+        <!-- Row two: the step's own large title, taking over ONLY once it has
+             scrolled under the bar (SwiftUI large-title collapse). It sits
+             BELOW the stepper rather than replacing it — the dots say where
+             you are in the flow, the title says what this screen is, and
+             those are different questions. The controls above keep their
+             leading/trailing anchoring. -->
+        @if (chrome.collapsed()) {
+        <p
+          uiText
+          uiFont="headline"
+          class="booking-shell__title"
+          data-testid="booking-collapsed-title"
+        >
+          {{ chrome.title() }}
+        </p>
+        }
+      </ui-stack>
+    </ui-toolbar>
+
+    <!-- Each step owns its measure column, spacer and action bar through
+         `lib-booking-step-layout`, which must be the growing flex child of
+         THIS column for the bar to pin to the viewport floor. -->
+    @switch (store.step()) { @case ('location') {
+    <lib-booking-location-step />
+    } @case ('services') {
+    <lib-booking-services-step />
+    } @case ('schedule') {
+    <lib-booking-schedule-step />
+    } @case ('review') {
+    <lib-booking-review-step />
+    } @case ('confirmed') {
+    <lib-booking-confirmed-step />
+    } @default {
+    <!-- The remaining steps land in their own phases; the shell, the
+             machine and the history contract are already real. -->
+    <lib-booking-step-layout>
+      <p class="booking-step-pending" data-testid="booking-step-pending">
+        {{ t('booking.' + store.step() + '.title') }}
+      </p>
+    </lib-booking-step-layout>
+    } }
+  </ui-stack>
+</ng-container>

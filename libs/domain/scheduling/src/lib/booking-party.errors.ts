@@ -27,6 +27,19 @@ export class InvalidGuestSequenceError extends DomainError {
   }
 }
 
+/**
+ * A party assembled anonymously reached the one operation that needs a real
+ * owner: committing the booking. Raised by `CreateBookingUseCase`, never by
+ * the party itself — being unclaimed is a legitimate state everywhere else
+ * in the flow (see `BookingParty.claim`).
+ */
+export class BookingPartyUnclaimedError extends DomainError {
+  override readonly code = 'scheduling.booking_party.unclaimed' as const;
+  constructor() {
+    super('This booking party has no owner yet — sign in to confirm');
+  }
+}
+
 /** Errors `BookingParty.create`/`reconstitute` can produce. */
 export type BookingPartyError =
   | AccountsEmptyIdError

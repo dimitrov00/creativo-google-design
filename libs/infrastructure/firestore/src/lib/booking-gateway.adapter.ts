@@ -1,0 +1,117 @@
+import { Injectable, inject } from '@angular/core';
+import { httpsCallable } from 'firebase/functions';
+import { Result, fail, ok } from '@creativo/domain/kernel';
+import {
+  type BookingGateway,
+  type BookingGatewayFailureCode,
+  BookingGatewayError,
+  type CommitBookingRequest,
+  type CommittedBooking,
+} from '@creativo/application/booking';
+import { FIREBASE_FUNCTIONS } from '@creativo/infrastructure/firebase-app';
+
+/**
+ * Server error `code` → the gateway's own vocabulary.
+ *
+ * Duck-typed off `details`, not `instanceof FunctionsError` — the same
+ * approach `CallableOtpClient` takes, and for the same reason: the SDK's error
+ * shape is stable across versions and importing the class for a type guard
+ * buys nothing.
+ */
+function toFailureCode(error: unknown): {
+  readonly failure: BookingGatewayFailureCode;
+  readonly params: Readonly<Record<string, string>>;
+} {
+  if (typeof error !== 'object' || error === null || !('details' in error)) {
+    return { failure: 'unknown', params: {} };
+  }
+  const details = (error as { details?: unknown }).details;
+  if (typeof details !== 'object' || details === null) {
+    return { failure: 'unknown', params: {} };
+  }
+  const code = (details as { code?: unknown }).code;
+  const rawParams = (details as { params?: unknown }).params;
+  const params =
+    typeof rawParams === 'object' && rawParams !== null
+      ? (rawParams as Record<string, string>)
+      : {};
+
+  switch (code) {
+    // A barber whose roster changed under a stale tab is the same situation as
+    // a lost race from the user's side: the time they were shown is not
+    // bookable, and re-picking from a fresh grid is the fix for both.
+    case 'booking.commit.slot_unavailable':
+    case 'booking.commit.barber_not_rostered':
+      return { failure: 'slot_unavailable', params };
+    case 'booking.commit.unauthenticated':
+      return { failure: 'unauthenticated', params };
+    case 'booking.commit.unknown_service':
+    case 'booking.commit.service_not_at_location':
+      return { failure: 'catalog_changed', params };
+    case 'booking.commit.invalid_input':
+    case 'booking.commit.invariant_violated':
+    case 'booking.commit.conflicting_services':
+    case 'booking.commit.party_too_large':
+    case 'booking.commit.too_soon':
+    case 'booking.commit.beyond_horizon':
+      return { failure: 'invalid_request', params };
+    case 'booking.commit.store_failed':
+      return { failure: 'unavailable', params };
+    default:
+      return { failure: 'unknown', params };
+  }
+}
+
+interface CommitBookingResponse {
+  readonly appointmentId?: unknown;
+}
+
+/**
+ * Calls the `commitBooking` function.
+ *
+ * Lives beside the appointment repository rather than in an auth lib because
+ * this is the WRITE half of the same aggregate the repository reads — even
+ * though the transport is a callable rather than a document write. That is the
+ * whole point: `firestore.rules` refuses `create` on `appointments` to
+ * everyone but staff, so a client's only door is a function that can re-derive
+ * the price, the roster and the collision set from server state.
+ */
+@Injectable()
+export class CallableBookingGateway implements BookingGateway {
+  private readonly functions = inject(FIREBASE_FUNCTIONS);
+
+  async commit(
+    request: CommitBookingRequest,
+  ): Promise<Result<CommittedBooking, BookingGatewayError>> {
+    const callable = httpsCallable<CommitBookingRequest, CommitBookingResponse>(
+      this.functions,
+      'commitBooking',
+    );
+
+    try {
+      const response = await callable(request);
+      const appointmentId = response.data?.appointmentId;
+      if (typeof appointmentId !== 'string' || appointmentId.length === 0) {
+        // A 200 with nothing usable in it. Treated as unknown rather than as
+        // success: reporting a booking that may not exist is the one failure
+        // mode worse than reporting none.
+        return fail(
+          new BookingGatewayError(
+            'unknown',
+            'commitBooking returned no appointment id',
+          ),
+        );
+      }
+      return ok({ appointmentId });
+    } catch (error) {
+      const { failure, params } = toFailureCode(error);
+      return fail(
+        new BookingGatewayError(
+          failure,
+          error instanceof Error ? error.message : 'commitBooking failed',
+          params,
+        ),
+      );
+    }
+  }
+}

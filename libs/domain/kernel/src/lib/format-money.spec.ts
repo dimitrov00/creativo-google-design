@@ -9,8 +9,14 @@ function money(minorUnits: number, code: string) {
   return result.value;
 }
 
-/** `Intl` emits U+00A0 (and U+202F) around the symbol — normalise so assertions stay readable. */
-const normalise = (s: string) => s.replace(/[  ]/g, ' ');
+/**
+ * `Intl` emits U+00A0 (and U+202F) around the symbol — normalise so
+ * assertions stay readable. Written as escapes, not the literal
+ * characters: an invisible non-breaking space in source is
+ * indistinguishable from a plain one on sight, and
+ * `no-irregular-whitespace` rejects it.
+ */
+const normalise = (s: string) => s.replace(/[\u00a0\u202f]/g, ' ');
 
 describe('formatMoney', () => {
   it('keeps the currency’s own fraction digits on a whole amount', () => {

@@ -22,6 +22,40 @@ export class AppointmentPastStartTimeError extends DomainError {
   }
 }
 
+/**
+ * Two seats want the same barber at overlapping times — physically
+ * impossible, and the ONE invariant that per-seat barbers make necessary.
+ *
+ * Note what it deliberately permits: the same barber on two seats that do
+ * NOT overlap. "Father and son, same barber, back to back" is a real
+ * booking the shop wants to take, so the rule is about collision, not about
+ * repetition (owner ruling 2026-07-29).
+ */
+export class AppointmentBarberDoubleBookedError extends DomainError {
+  override readonly code =
+    'scheduling.appointment.barber_double_booked' as const;
+  constructor(public readonly barberId: string) {
+    super(
+      `Barber "${barberId}" is booked for two overlapping seats in this appointment`,
+      { barberId },
+    );
+  }
+}
+
+/** Seats priced in two currencies — a data error, never a feature. */
+export class AppointmentMixedCurrencyError extends DomainError {
+  override readonly code = 'scheduling.appointment.mixed_currency' as const;
+  constructor(
+    public readonly expected: string,
+    public readonly found: string,
+  ) {
+    super(
+      `An appointment's seats must share one currency: expected ${expected}, found ${found}`,
+      { expected, found },
+    );
+  }
+}
+
 export class AppointmentInvalidTransitionError extends DomainError {
   override readonly code = 'scheduling.appointment.invalid_transition' as const;
   constructor(

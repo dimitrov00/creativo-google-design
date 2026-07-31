@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { Result, ZonedDateTime, ok } from '@creativo/domain/kernel';
+import { Money, Result, ZonedDateTime, ok } from '@creativo/domain/kernel';
 import {
   Appointment,
   AppointmentId,
@@ -9,7 +9,12 @@ import {
   SeatSubject,
   TimeSlot,
 } from '@creativo/domain/scheduling';
-import { BarberId, LocationId, ServiceId } from '@creativo/domain/catalog';
+import {
+  BarberId,
+  LocationId,
+  ServiceId,
+  ServiceTerms,
+} from '@creativo/domain/catalog';
 import { RepositoryError } from '@creativo/application/shared';
 import { AppointmentRepository } from '../ports/appointment-repository.port';
 import { CancelAppointmentUseCase } from './cancel-appointment.use-case';
@@ -32,19 +37,22 @@ function pendingAppointment(): Appointment {
       zone: 'Europe/Sofia',
     }),
   );
+  const price = requiredValue(Money.fromMinorUnitsAndCode(1500, 'EUR'));
   const seat = Seat.of({
     id: requiredValue(SeatId.create('seat_1')),
     subject: SeatSubject.anonymous(
       requiredValue(SeatLabel.create('Walk-in 10:00')),
     ),
     serviceId: requiredValue(ServiceId.create('service_1')),
+    variantId: null,
+    barberId: requiredValue(BarberId.create('barber_1')),
+    terms: requiredValue(ServiceTerms.create(price, 30)),
+    startsAt: timeSlot.start,
   });
   return requiredValue(
     Appointment.create({
       id: 'appt_1',
-      barberId: requiredValue(BarberId.create('barber_1')).value,
       locationId: requiredValue(LocationId.create('location_1')).value,
-      timeSlot,
       seats: [seat],
       now,
     }),

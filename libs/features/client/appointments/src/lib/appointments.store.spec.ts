@@ -16,7 +16,11 @@ import {
   ok,
 } from '@creativo/application/booking';
 import { NOTIFICATION_READER } from '@creativo/application/notifications';
-import { ServiceId } from '@creativo/application/catalog';
+import {
+  BarberId,
+  ServiceId,
+  ServiceTerms,
+} from '@creativo/application/catalog';
 import { AppointmentsStore } from './appointments.store';
 
 function unwrap<T, E>(result: Result<T, E>): T {
@@ -37,13 +41,15 @@ function appointmentAt(id: string, startIso: string): Appointment {
     id: unwrap(SeatId.create('seat_1')),
     subject: SeatSubject.account(unwrap(UserId.create('user_1')), 'self'),
     serviceId: unwrap(ServiceId.create('service_1')),
+    variantId: null,
+    barberId: unwrap(BarberId.create('barber_1')),
+    terms: unwrap(ServiceTerms.fromMinorUnits(1500, 'EUR', 30)),
+    startsAt: timeSlot.start,
   });
   return unwrap(
     Appointment.reconstitute({
       id,
-      barberId: 'barber_1',
       locationId: 'location_1',
-      timeSlot,
       seats: [seat],
       status: { kind: 'confirmed' },
     }),

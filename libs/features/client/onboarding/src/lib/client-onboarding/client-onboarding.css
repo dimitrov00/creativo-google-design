@@ -10,73 +10,6 @@
   text-align: center;
 }
 
-/* Reward badge — two quiet beats, nothing else: the accent disc settles
-   in (slight scale + fade, decelerating entrance ease — no spring), then
-   the check draws itself once; the confetti (template uiDelay) is the
-   whole flourish. */
-
-/* The burst wrapper anchors the confetti overlay AND isolates a stacking
-   context so the overlay's z-index -1 puts every particle behind the
-   disc: they erupt from its center and fly out from UNDER the circle,
-   never across the check. */
-.onboarding-reward__burst {
-  position: relative;
-  isolation: isolate;
-  display: inline-flex;
-  align-self: center;
-}
-
-.onboarding-reward__burst > .ui-confetti {
-  z-index: -1;
-}
-
-.onboarding-reward__badge {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  inline-size: 5.5rem;
-  block-size: 5.5rem;
-  border-radius: var(--control-radius-capsule);
-  background: var(--sys-color-accent);
-  animation: onboarding-reward-enter var(--sys-motion-duration-slow)
-    var(--sys-motion-ease-entrance) backwards;
-}
-
-@keyframes onboarding-reward-enter {
-  from {
-    opacity: 0;
-    transform: scale(0.9);
-  }
-  to {
-    opacity: 1;
-    transform: scale(1);
-  }
-}
-
-.onboarding-reward__mark {
-  inline-size: 100%;
-  block-size: 100%;
-}
-
-/* The check draws itself as the disc lands (pathLength-normalized
-   dashoffset 1 → 0), reversed out in on-accent ink (theme-proof: NEVER
-   --sys-color-background, which is near-black in dark mode and vanished
-   the check entirely). */
-.onboarding-reward__check {
-  stroke: var(--sys-color-on-accent);
-  stroke-dasharray: 1;
-  stroke-dashoffset: 1;
-  animation: onboarding-reward-draw var(--sys-motion-duration-slow)
-    var(--sys-motion-ease-emphasized) var(--sys-motion-duration-regular)
-    forwards;
-}
-
-@keyframes onboarding-reward-draw {
-  to {
-    stroke-dashoffset: 0;
-  }
-}
-
 /* Avatar picker — the label binds portrait + pill to ONE visually-hidden
    file input (tap either to pick). Keyboard: the input itself keeps focus,
    so its ring is redrawn onto the pill. */
@@ -109,28 +42,3 @@
 
 /* Completion CTAs ride ui-page-action-bar's stacked variant — the ONE
    sticky bottom-bar pattern app-wide; no feature-local anatomy here. */
-
-/* Reduced motion: no particles (ui-confetti spawns none), no scale, no
-   stroke draw — one gentle, opacity-led settle on the finished badge
-   (check already painted) is the whole moment. */
-@media (prefers-reduced-motion: reduce) {
-  .onboarding-reward__badge {
-    animation: onboarding-reward-settle var(--sys-motion-duration-deliberate)
-      var(--sys-motion-ease-standard) backwards;
-  }
-  .onboarding-reward__check {
-    animation: none;
-    stroke-dashoffset: 0;
-  }
-}
-
-@keyframes onboarding-reward-settle {
-  from {
-    opacity: 0;
-    transform: scale(0.96);
-  }
-  to {
-    opacity: 1;
-    transform: scale(1);
-  }
-}

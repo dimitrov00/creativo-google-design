@@ -1,8 +1,5 @@
 import { Injectable } from '@angular/core';
 import { Result, fail, ok } from '@creativo/domain/kernel';
-import { UserId } from '@creativo/domain/accounts';
-import { BarberId, LocationId, ServiceId } from '@creativo/domain/catalog';
-import { TimeSlot } from '@creativo/domain/scheduling';
 import {
   BookingDraft,
   BookingDraftStore,
@@ -12,124 +9,65 @@ import {
 /** Single fixed slot — only one booking wizard can be in progress per tab session. */
 const SESSION_STORAGE_KEY = 'creativo.booking-draft';
 
-interface PersistedBookingDraft {
-  readonly ownerId: string;
-  readonly barberId: string | null;
-  readonly locationId: string | null;
-  readonly serviceIds: readonly string[];
-  readonly timeSlot: { startIso: string; endIso: string; zone: string } | null;
+/**
+ * Bumped whenever `BookingDraft`'s shape changes. A draft written by an older
+ * build is DISCARDED rather than half-read: `sessionStorage` outlives a
+ * deploy inside one tab, and a stale shape restored into the flow is a much
+ * worse failure than starting over.
+ */
+const DRAFT_SCHEMA_VERSION = 3;
+
+const STEPS = ['guests', 'services', 'schedule', 'review', 'confirmed'];
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
 }
 
-function toPersistence(draft: BookingDraft): PersistedBookingDraft {
-  return {
-    ownerId: draft.ownerId.value,
-    barberId: draft.barberId?.value ?? null,
-    locationId: draft.locationId?.value ?? null,
-    serviceIds: draft.serviceIds.map((id) => id.value),
-    timeSlot: draft.timeSlot
-      ? {
-          startIso: draft.timeSlot.start.toISO(),
-          endIso: draft.timeSlot.end.toISO(),
-          zone: draft.timeSlot.start.zoneName,
-        }
-      : null,
-  };
-}
-
-function toDomain(raw: unknown): Result<BookingDraft, BookingDraftStoreError> {
-  if (typeof raw !== 'object' || raw === null) {
-    return fail(
-      new BookingDraftStoreError('Stored booking draft is not an object'),
-    );
-  }
-  const data = raw as Partial<PersistedBookingDraft>;
-
-  if (typeof data.ownerId !== 'string') {
-    return fail(
-      new BookingDraftStoreError('Stored booking draft is missing ownerId'),
-    );
-  }
-  const ownerIdResult = UserId.create(data.ownerId);
-  if (ownerIdResult.isFailure()) {
-    return fail(
-      new BookingDraftStoreError(
-        'Stored booking draft has an invalid ownerId',
-        ownerIdResult.error,
-      ),
-    );
+/**
+ * Shape guard only — NOT validation. Every id, label and counter inside is
+ * re-validated by `BookingParty.reconstitute` / `BookingCart.reconstitute`
+ * when the store rebuilds flow state, so duplicating those checks here
+ * would be a second, drifting copy of the domain's rules. This function's
+ * whole job is "is it the right shape to hand to them".
+ */
+function isDraftShaped(value: unknown): value is BookingDraft {
+  if (!isRecord(value)) return false;
+  if (typeof value['step'] !== 'string' || !STEPS.includes(value['step'])) {
+    return false;
   }
 
-  let barberId: BarberId | null = null;
-  if (data.barberId != null) {
-    const barberIdResult = BarberId.create(data.barberId);
-    if (barberIdResult.isFailure()) {
-      return fail(
-        new BookingDraftStoreError(
-          'Stored booking draft has an invalid barberId',
-          barberIdResult.error,
-        ),
-      );
-    }
-    barberId = barberIdResult.value;
+  const party = value['party'];
+  if (
+    !isRecord(party) ||
+    !Array.isArray(party['guests']) ||
+    typeof party['nextSequence'] !== 'number' ||
+    !(party['ownerId'] === null || typeof party['ownerId'] === 'string')
+  ) {
+    return false;
   }
 
-  let locationId: LocationId | null = null;
-  if (data.locationId != null) {
-    const locationIdResult = LocationId.create(data.locationId);
-    if (locationIdResult.isFailure()) {
-      return fail(
-        new BookingDraftStoreError(
-          'Stored booking draft has an invalid locationId',
-          locationIdResult.error,
-        ),
-      );
-    }
-    locationId = locationIdResult.value;
+  const cart = value['cart'];
+  if (
+    !isRecord(cart) ||
+    !Array.isArray(cart['seats']) ||
+    typeof cart['nextSequence'] !== 'number'
+  ) {
+    return false;
   }
 
-  const serviceIds: ServiceId[] = [];
-  for (const rawServiceId of data.serviceIds ?? []) {
-    const serviceIdResult = ServiceId.create(rawServiceId);
-    if (serviceIdResult.isFailure()) {
-      return fail(
-        new BookingDraftStoreError(
-          'Stored booking draft has an invalid serviceId',
-          serviceIdResult.error,
-        ),
-      );
-    }
-    serviceIds.push(serviceIdResult.value);
-  }
-
-  let timeSlot: TimeSlot | null = null;
-  if (data.timeSlot != null) {
-    const timeSlotResult = TimeSlot.create(data.timeSlot);
-    if (timeSlotResult.isFailure()) {
-      return fail(
-        new BookingDraftStoreError(
-          'Stored booking draft has an invalid timeSlot',
-          timeSlotResult.error,
-        ),
-      );
-    }
-    timeSlot = timeSlotResult.value;
-  }
-
-  return ok({
-    ownerId: ownerIdResult.value,
-    barberId,
-    locationId,
-    serviceIds,
-    timeSlot,
-  });
+  return (
+    value['locationId'] === null || typeof value['locationId'] === 'string'
+  );
 }
 
 /**
  * `BookingDraftStore` backed by `sessionStorage` — cleared when the tab
  * closes, matching v2's "don't persist an abandoned booking across
- * devices/sessions" behavior. A corrupted/stale entry (e.g. an id format
- * that predates a schema change) surfaces as a clean `Result.fail` from
- * `load()`, never a thrown exception.
+ * devices/sessions" behavior, and the reason an anonymous booker who signs
+ * in mid-flow gets their party back: the auth round-trip stays in the tab.
+ *
+ * A corrupted, stale-schema or unparseable entry surfaces as a clean
+ * `Result.fail` from `load()`, never a thrown exception.
  */
 @Injectable()
 export class SessionStorageDraftStore implements BookingDraftStore {
@@ -139,7 +77,19 @@ export class SessionStorageDraftStore implements BookingDraftStore {
       if (raw === null) {
         return ok(null);
       }
-      return toDomain(JSON.parse(raw));
+
+      const parsed: unknown = JSON.parse(raw);
+      if (!isRecord(parsed) || parsed['version'] !== DRAFT_SCHEMA_VERSION) {
+        // Written by an older build — treat as absent rather than an error:
+        // there is nothing the user did wrong and nothing to report.
+        return ok(null);
+      }
+      if (!isDraftShaped(parsed['draft'])) {
+        return fail(
+          new BookingDraftStoreError('Stored booking draft is malformed'),
+        );
+      }
+      return ok(parsed['draft']);
     } catch (error) {
       return fail(
         new BookingDraftStoreError('Failed to load booking draft', error),
@@ -151,7 +101,7 @@ export class SessionStorageDraftStore implements BookingDraftStore {
     try {
       sessionStorage.setItem(
         SESSION_STORAGE_KEY,
-        JSON.stringify(toPersistence(draft)),
+        JSON.stringify({ version: DRAFT_SCHEMA_VERSION, draft }),
       );
       return ok(undefined);
     } catch (error) {

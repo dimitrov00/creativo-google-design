@@ -40,13 +40,22 @@
       "path": "../../../ui/controls/tsconfig.lib.json"
     },
     {
-      "path": "../shell/tsconfig.lib.json"
+      "path": "../../shared/shell/tsconfig.lib.json"
     },
     {
       "path": "../../../application/programs/tsconfig.lib.json"
     },
     {
       "path": "../../../application/identity/tsconfig.lib.json"
+    },
+    {
+      "path": "../../../application/notifications/tsconfig.lib.json"
+    },
+    {
+      "path": "../../../application/booking/tsconfig.lib.json"
+    },
+    {
+      "path": "../../../application/accounts/tsconfig.lib.json"
     }
   ]
 }

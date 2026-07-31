@@ -6,12 +6,26 @@ import {
 } from '@angular/core';
 
 /**
+ * How the bar finds its bottom edge. `page` sticks to a scrolling column;
+ * `pane` pins to a fixed-size positioned box that never scrolls.
+ */
+export type UiPageActionBarAnchor = 'page' | 'pane';
+
+/**
  * Page action bar — the bottom action row pinned in the thumb zone of a
  * full-height PAGE (auth/onboarding step screens). The page-level sibling
  * of `ui-sheet-action-bar`: same slot contract, different anchoring — the
  * bar is `position: sticky` at the page's bottom edge (compose it as the
  * last child of a `uiFrameMinHeight="100svh"` column so a short page pins
  * it to the viewport floor and a tall page lets it ride the scroll).
+ *
+ * ### `uiAnchor`
+ * `page` (default) is the sticky behaviour above. `pane` anchors the bar to
+ * the bottom of the nearest POSITIONED ancestor instead — for a screen that
+ * does not scroll at all, such as a full-bleed map with a sheet over it,
+ * where sticky has no scroll to stick to. Same slot contract, same chrome,
+ * same thumb-zone geometry: a wizard whose CTA lives in one place on four
+ * steps and somewhere else on the fifth has no rhythm.
  *
  * ### Slot contract (identical to ui-sheet-action-bar)
  * Project plain controls — no wrapper elements:
@@ -55,8 +69,10 @@ import {
   host: {
     class: 'ui-page-action-bar',
     '[attr.data-layout]': "uiStacked() ? 'stacked' : null",
+    '[attr.data-anchor]': 'uiAnchor()',
   },
 })
 export class UiPageActionBar {
   readonly uiStacked = input(false);
+  readonly uiAnchor = input<UiPageActionBarAnchor>('page');
 }

@@ -127,7 +127,7 @@ describe('AuthFlowStore', () => {
     await store.submitCode('123456');
 
     expect(verifyChallenge).toHaveBeenCalledTimes(1);
-    expect(verifyChallenge.mock.calls[0][0]).toBe('challenge_1');
+    expect(verifyChallenge.mock.calls[0]![0]).toBe('challenge_1');
   });
 
   it('resets cooldown and send count for a DIFFERENT identifier — a new destination is a new attempt', async () => {
@@ -149,7 +149,7 @@ describe('AuthFlowStore', () => {
     expect(store.resendSecondsLeft()).toBe(RESEND_COOLDOWN_SECONDS);
 
     await store.submitCode('123456');
-    expect(verifyChallenge.mock.calls[0][0]).toBe('challenge_2');
+    expect(verifyChallenge.mock.calls[0]![0]).toBe('challenge_2');
   });
 
   it('never verifies outside the otp step', async () => {

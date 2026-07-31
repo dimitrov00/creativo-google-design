@@ -27,6 +27,26 @@ export const UI_ICON_REGISTRY = {
   /** Trailing departure affordance on booking CTAs (the flow leaves the
    *  landing surface for the client app). */
   'appointment.launch': 'arrow_outward',
+  /** Add someone to the booking party. Distinct from `account.profile`:
+   *  this is a companion being brought along, not the signed-in person. */
+  'party.addGuest': 'person_add',
+  /** Take a guest back out of the party. Shares the `close` glyph with
+   *  `sheet.close` today; the intents are unrelated and may diverge. */
+  'party.removeGuest': 'close',
+  /** Drop something already committed — a cart line, a saved choice. Distinct
+   *  from `party.removeGuest`: that dismisses a row being assembled, this
+   *  destroys a thing the user already has. */
+  'booking.removeLine': 'delete',
+  /** Rename a guest in place — the pencil, not `account.profile`'s dial. */
+  'party.renameGuest': 'edit',
+  /** The booking bag — the running selection across the whole party. */
+  'booking.bag': 'shopping_bag',
+  /** One bookable time. Distinct from `appointment.book` (the CTA mark). */
+  'booking.slot': 'schedule',
+  /** "Anyone available" — the barber preference that names no one. */
+  'booking.anyBarber': 'groups',
+  /** A service that cannot combine with what is already selected. */
+  'booking.blocked': 'block',
 
   /* ── Account ────────────────────────────────────────────────────── */
   'account.reservations': 'event_available',
@@ -99,6 +119,8 @@ export const UI_ICON_REGISTRY = {
   /** Offscreen-location edge indicator arrow (imperative MapLibre DOM;
    *  rotated in code to point at the location, clicking recenters). */
   'location.recenter': 'arrow_upward',
+  /** "Any location" — the booking flow's first-class "wherever is soonest". */
+  'location.any': 'travel_explore',
 
   /* ── Galleries & layout toggles ─────────────────────────────────── */
   /** Showcase gallery: switch to the expanded grid. */

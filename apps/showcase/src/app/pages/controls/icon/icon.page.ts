@@ -24,6 +24,12 @@ export class IconPage {
   protected readonly names: UiIconName[] = [
     'appointment.book',
     'appointment.launch',
+    'party.addGuest',
+    'party.removeGuest',
+    'booking.bag',
+    'booking.slot',
+    'booking.anyBarber',
+    'booking.blocked',
     'account.reservations',
     'account.rewards',
     'auth.locked',

@@ -127,8 +127,22 @@ service cloud.firestore {
       allow read: if isStaff()
         || (isSignedIn() && resource.data.ownerUserId == request.auth.uid);
 
-      allow create: if isStaff()
-        || (isSignedIn() && request.resource.data.ownerUserId == request.auth.uid);
+      // CLIENTS MAY NOT CREATE APPOINTMENTS. This previously allowed any
+      // signed-in user to write an appointment naming any barber, any time and
+      // any price, on top of anyone else's booking — the document carries
+      // `seats[].terms.priceMinorUnits` and `seats[].slot`, and rules cannot
+      // check availability. Double-booking was the default behaviour, not a
+      // race.
+      //
+      // A booking is now committed by the `commitBooking` callable, which runs
+      // a transaction that resolves terms server-side via
+      // `Service.termsFor(barberId, variantId)` and re-checks the barber-day
+      // projection before writing. The Admin SDK bypasses these rules, so no
+      // allowance for it is needed (or wanted) here.
+      //
+      // `isStaff()` keeps the in-shop path open for a receptionist booking at
+      // the counter until that too moves behind the callable.
+      allow create: if isStaff();
 
       // Staff manage the full lifecycle. A client may only cancel their own
       // appointment — nothing else, and never seats/barber/service/status
@@ -165,6 +179,28 @@ service cloud.firestore {
     match /locations/{locationId} {
       allow read: if true;
       allow write: if isCatalogManager();
+    }
+
+    // ── availability (public read, PII-free by construction) ─────────────
+    // `/book` is browsable ANONYMOUSLY, and rules cannot redact fields: a
+    // document is readable whole or not at all. So the two collections a
+    // visitor needs in order to see a free slot hold geometry and nothing
+    // else — no client identity, no service, no price, and above all no
+    // reason (a `sick` day is GDPR Art. 9 special-category data and must
+    // never reach this surface). Anything richer belongs in `appointments`,
+    // which stays closed.
+    match /barberSchedules/{barberId} {
+      allow read: if true;
+      // Rosters are staff-authored; utilisation history divides by them.
+      allow write: if isStaff();
+    }
+
+    match /barberBusy/{dayDocId} {
+      allow read: if true;
+      // Written ONLY by the `commitBooking` transaction (Admin SDK, which
+      // bypasses rules). A client that could widen its own busy projection
+      // could hide a barber's free time from everyone else.
+      allow write: if false;
     }
 
     // ── programs (public browse, staff/content-manager write) ─────────────

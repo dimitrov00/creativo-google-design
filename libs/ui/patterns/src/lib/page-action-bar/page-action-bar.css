@@ -6,6 +6,12 @@
      or hairline, but the bar carries the Apple-light bottom scrim below —
      content dissolves as it scrolls under the controls. */
   .ui-page-action-bar {
+    /* The colour the scrim ramps FROM — whatever surface the bar floats over.
+       Defaults to the page background, which is right for a page. A bar
+       anchored over a sheet must be told the sheet's surface, or the ramp
+       fades to the wrong colour and reads as a smudge instead of as content
+       dissolving. */
+    --ui-action-bar-scrim: var(--sys-color-background);
     position: sticky;
     inset-block-end: 0;
     z-index: var(--sys-layer-header);
@@ -28,6 +34,16 @@
      reads while real content sits under the bar and dissolves away at
      scroll end on its own. Sticky+z-index make the bar a stacking
      context, so z-index -1 paints under the projected controls. */
+  /* `pane` anchoring: a screen with no scroll has nothing for `sticky` to
+     stick to, so the bar pins to its positioned ancestor's bottom edge
+     instead. Everything else — geometry, safe areas, the scrim — is shared,
+     because the bar must read as the SAME control wherever it is used. */
+  .ui-page-action-bar[data-anchor='pane'] {
+    position: absolute;
+    inset-block-end: 0;
+    inset-inline: 0;
+  }
+
   .ui-page-action-bar::before {
     content: '';
     position: absolute;
@@ -40,14 +56,14 @@
        background (this bar's own surface). */
     background: linear-gradient(
       to top,
-      var(--sys-color-background) 0%,
-      color-mix(in srgb, var(--sys-color-background) 98%, transparent) 12.5%,
-      color-mix(in srgb, var(--sys-color-background) 90%, transparent) 25%,
-      color-mix(in srgb, var(--sys-color-background) 73%, transparent) 37.5%,
-      color-mix(in srgb, var(--sys-color-background) 50%, transparent) 50%,
-      color-mix(in srgb, var(--sys-color-background) 27%, transparent) 62.5%,
-      color-mix(in srgb, var(--sys-color-background) 10%, transparent) 75%,
-      color-mix(in srgb, var(--sys-color-background) 2%, transparent) 87.5%,
+      var(--ui-action-bar-scrim) 0%,
+      color-mix(in srgb, var(--ui-action-bar-scrim) 98%, transparent) 12.5%,
+      color-mix(in srgb, var(--ui-action-bar-scrim) 90%, transparent) 25%,
+      color-mix(in srgb, var(--ui-action-bar-scrim) 73%, transparent) 37.5%,
+      color-mix(in srgb, var(--ui-action-bar-scrim) 50%, transparent) 50%,
+      color-mix(in srgb, var(--ui-action-bar-scrim) 27%, transparent) 62.5%,
+      color-mix(in srgb, var(--ui-action-bar-scrim) 10%, transparent) 75%,
+      color-mix(in srgb, var(--ui-action-bar-scrim) 2%, transparent) 87.5%,
       transparent 100%
     );
     pointer-events: none;

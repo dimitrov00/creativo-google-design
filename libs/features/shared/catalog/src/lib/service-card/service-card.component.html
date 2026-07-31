@@ -1,0 +1,76 @@
+<button
+  type="button"
+  class="cr-service-card__select"
+  uiInteractive
+  uiRadius="prominent"
+  [disabled]="uiCapBlocked()"
+  [attr.aria-pressed]="uiShowDetails() ? uiSelectedCount() > 0 : null"
+  [attr.data-testid]="'service-card-' + uiServiceId()"
+  (click)="uiPressed.emit()"
+>
+  <ui-media-card uiRadius="prominent" uiRatio="1 / 1" [uiSrc]="uiCoverUrl()">
+    <span uiPlaceholder class="cr-service-card__fallback">
+      <ui-icon
+        uiName="service.placeholder"
+        class="cr-service-card__fallback-glyph"
+      />
+    </span>
+
+    <!-- Caption rhythm is the media card's own — both lines project into
+         its inset stack. -->
+    <span uiCaption uiText uiFont="callout" uiWeight="bold">{{
+      uiName()
+    }}</span>
+    <span uiCaption uiText uiFont="footnote" uiForegroundStyle="secondary">
+      {{ uiMeta() }}
+    </span>
+
+    <!--
+      ONE corner slot carries the whole state.
+
+      Selected → an accent-filled check. Blocked → the same ring holding a
+      "does not combine" glyph. Free → an empty glass ring. The blocked case
+      used to be a warning CAPSULE across the card's leading corner, which
+      shouted louder than the selection it was qualifying and fought the ring
+      for space; muting the whole card says "not now" quietly, and the reason
+      still arrives on press.
+    -->
+    <span
+      uiOverlayTrailing
+      class="cr-service-card__check"
+      [attr.data-selected]="uiSelectedCount() > 0 ? '' : null"
+      [attr.data-blocked]="uiBlocked() && uiSelectedCount() === 0 ? '' : null"
+      [attr.aria-label]="uiBlocked() ? uiBlockedLabel() : null"
+      [attr.role]="uiBlocked() ? 'img' : null"
+      [attr.aria-hidden]="uiBlocked() ? null : 'true'"
+    >
+      @if (uiBlocked() && uiSelectedCount() === 0) {
+        <ui-icon uiName="booking.blocked" />
+      } @else if (showCount()) {
+        {{ uiSelectedCount() }}
+      } @else {
+        <ui-icon uiName="checklist.done" />
+      }
+    </span>
+  </ui-media-card>
+</button>
+
+@if (uiShowDetails()) {
+  <!-- A SIBLING of the select button, never nested (invalid HTML). Stays
+       live even when the card itself is capped, so details remain
+       reachable. -->
+  <button
+    type="button"
+    uiButton
+    uiButtonStyle="strokedBorder"
+    uiMaterial="thin"
+    uiControlSize="small"
+    [uiIconOnly]="true"
+    class="cr-service-card__info"
+    [attr.aria-label]="uiDetailsLabel()"
+    [attr.data-testid]="'service-card-info-' + uiServiceId()"
+    (click)="uiDetailsPressed.emit()"
+  >
+    <ui-icon uiName="service.details" uiScale="small" />
+  </button>
+}

@@ -1,0 +1,94 @@
+@layer sys-components {
+  .ui-reward-moment {
+    display: inline-flex;
+    align-self: center;
+  }
+
+  /* Anchors the confetti overlay AND isolates a stacking context, so the
+     overlay's z-index -1 puts every particle behind the disc: they erupt
+     from its centre and fly out from UNDER the circle, never across the
+     check. */
+  .ui-reward-moment__burst {
+    position: relative;
+    isolation: isolate;
+    display: inline-flex;
+  }
+
+  .ui-reward-moment__burst > .ui-confetti {
+    z-index: -1;
+  }
+
+  /* Two quiet beats, nothing else: the accent disc settles in (slight scale
+     + fade on a decelerating entrance ease — no spring), then the check
+     draws itself once. The confetti is the whole flourish. */
+  .ui-reward-moment__badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    inline-size: 5.5rem;
+    block-size: 5.5rem;
+    border-radius: var(--control-radius-capsule);
+    background: var(--sys-color-accent);
+    animation: ui-reward-moment-enter var(--sys-motion-duration-slow)
+      var(--sys-motion-ease-entrance) backwards;
+  }
+
+  @keyframes ui-reward-moment-enter {
+    from {
+      opacity: 0;
+      transform: scale(0.9);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+
+  .ui-reward-moment__mark {
+    inline-size: 100%;
+    block-size: 100%;
+  }
+
+  /* Reversed out in on-accent ink — theme-proof. NEVER
+     --sys-color-background, which is near-black in dark mode and vanished
+     the check entirely. */
+  .ui-reward-moment__check {
+    stroke: var(--sys-color-on-accent);
+    stroke-dasharray: 1;
+    stroke-dashoffset: 1;
+    animation: ui-reward-moment-draw var(--sys-motion-duration-slow)
+      var(--sys-motion-ease-emphasized) var(--sys-motion-duration-regular)
+      forwards;
+  }
+
+  @keyframes ui-reward-moment-draw {
+    to {
+      stroke-dashoffset: 0;
+    }
+  }
+
+  /* No particles, no scale, no stroke draw — one gentle, opacity-led settle
+     on the finished mark (check already painted) is the whole moment. */
+  @media (prefers-reduced-motion: reduce) {
+    .ui-reward-moment__badge {
+      animation: ui-reward-moment-settle var(--sys-motion-duration-deliberate)
+        var(--sys-motion-ease-standard) backwards;
+    }
+
+    .ui-reward-moment__check {
+      animation: none;
+      stroke-dashoffset: 0;
+    }
+  }
+
+  @keyframes ui-reward-moment-settle {
+    from {
+      opacity: 0;
+      transform: scale(0.96);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+}

@@ -2,7 +2,13 @@
   .ui-chip {
     display: inline-flex;
     align-items: center;
+    justify-content: center;
     gap: var(--sys-space-tight);
+    /* The same 36/44/52 scale every other control is on. Chips used to be
+       sized purely by their padding, which put a `regular` one at ~28px —
+       under the 44pt HIG minimum — and forced every consumer that cared
+       (the seat pill, the option capsules) to restore the height by hand. */
+    min-block-size: var(--control-size-regular);
     border: 0;
     border-radius: var(--control-radius-capsule);
     padding-inline: var(--sys-space-regular);
@@ -19,10 +25,12 @@
   }
 
   .ui-chip[data-control-size='small'] {
+    min-block-size: var(--control-size-small);
     padding-inline: var(--sys-space-compact);
     font: var(--sys-font-footnote);
   }
   .ui-chip[data-control-size='large'] {
+    min-block-size: var(--control-size-large);
     padding-inline: var(--sys-space-comfortable);
     font: var(--sys-font-callout);
   }
@@ -30,6 +38,15 @@
   .ui-chip[data-selected] {
     background: var(--sys-color-primary);
     color: var(--sys-color-on-primary);
+  }
+
+  /* The tinted selection — a chip that carries an ANSWER rather than a
+     filter. `--sys-color-on-accent` (white in both themes), never
+     `--sys-color-on-primary`, which flips to near-black in dark and would
+     render dark text on orange. */
+  .ui-chip[data-tint='accent'][data-selected] {
+    background: var(--sys-color-accent);
+    color: var(--sys-color-on-accent);
   }
 
   .ui-chip:focus-visible {

@@ -1,0 +1,17 @@
+/*
+ * `contents`, not the house `block` default — see `booking-step-layout.ts`:
+ * without it this host becomes the flex item, hugs its content, and the
+ * action bar lands under the last row instead of the thumb zone.
+ */
+:host {
+  display: contents;
+}
+
+/*
+ * Under "any shop" a time chip carries the shop beneath the time. Stacking
+ * inside the chip rather than widening it keeps the grid's rhythm — a row of
+ * chips that changes height per item reads as broken.
+ */
+.booking-schedule__chip-shop {
+  display: block;
+}

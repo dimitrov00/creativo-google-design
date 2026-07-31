@@ -51,6 +51,7 @@ const bg: Translation = {
       subtitle: 'Всеки бръснар — своят занаят и свой стол.',
       years: 'год.',
       viewAll: 'Покажи още {{count}}',
+      exploreBarber: 'Виж {{barber}}',
     },
     services: {
       eyebrow: 'Услугите',
@@ -65,6 +66,10 @@ const bg: Translation = {
       variantsLabel: 'Опции',
       includesLabel: 'Включва',
       whoLabel: 'Кой и цена',
+      whoListView: 'Списък',
+      whoGridView: 'Решетка',
+      anyPerformer: 'Който и да е',
+      anyPerformerDetail: 'Първият свободен',
       priceList: 'Ценоразпис',
       offeredBy: 'Услуги при {{barber}}',
       openService: 'Отвори {{service}}',

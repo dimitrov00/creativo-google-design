@@ -113,10 +113,20 @@
     white-space: nowrap;
   }
 
-  /* Trailing detail reads at secondary ink automatically — the DS
-     expresses de-emphasis through the foreground role, never opacity. */
   .ui-list-row > [uitrailing] {
     flex-shrink: 0;
+  }
+
+  /* Trailing DETAIL reads at secondary ink automatically — the DS expresses
+     de-emphasis through the foreground role, never opacity.
+
+     The guard is the same one the global bare-anchor rule carries
+     (apps/web/styles.css): a DS control in this slot already owns its ink,
+     and this rule would otherwise outrank it on equal specificity by mere
+     import order — silently painting a `uiRole="destructive"` remove button
+     secondary grey, which is a control lying about what it does. Detail is
+     de-emphasised; controls are not. */
+  .ui-list-row > [uitrailing]:not(.ui-button):not([data-foreground-style]) {
     color: var(--sys-color-secondary-label);
   }
 }

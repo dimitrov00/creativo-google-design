@@ -8,37 +8,133 @@ import {
   UnknownVariantTermsError,
 } from './service.errors';
 
+/** Setup before / cleanup after. Both default to 0 — most services need none. */
+export interface ServicePadding {
+  readonly setupMinutes?: number;
+  readonly cleanupMinutes?: number;
+}
+
 /**
- * What one booking of a service actually costs and how long it takes —
- * the (price, duration) pair v2 called `Terms`.
+ * What one booking of a service actually costs, how long it takes, and how
+ * much unsold time surrounds it — the (price, duration) pair v2 called
+ * `Terms`, plus the padding ruling below.
  *
  * A value object, not an entity: two barbers charging 15,00 € for 45
  * minutes hold equal terms, and terms have no identity or lifecycle of
  * their own. Every price/duration on the aggregate is one of these, so
  * "which price?" always has a `Terms` to answer it.
+ *
+ * ### Why setup/cleanup live here (owner ruling, 2026-07-29)
+ * The owner asked the right question: if a colour needs cleanup, why not just
+ * declare a longer duration? For the availability grid alone the two are
+ * indistinguishable. Separating them earns its place elsewhere:
+ *
+ * - The client is quoted, and charged for, the SERVICE — not the mop-up. A
+ *   duration that swallows cleanup lies in the confirmation.
+ * - Utilisation would inflate: cleanup would count as productive time, and
+ *   `bufferMinutes` — the reported cost of the padding policy — becomes
+ *   uncomputable.
+ * - Two seats of one party can share the chair back-to-back, which is only
+ *   expressible when the pad is outside the sold duration.
+ *
+ * `ServiceTerms` is already resolved per (barber, variant), so padding
+ * declared here inherits BOTH axes for free: "Ivan's colour needs 15 minutes
+ * of cleanup" needs no new structure, which is exactly the per-barber and
+ * per-service accuracy the owner asked for.
  */
 export class ServiceTerms {
   private constructor(
     readonly price: Money,
     readonly durationMinutes: number,
+    /** Unsold time BEFORE the service — mixing, prep. Never charged for. */
+    readonly setupMinutes: number,
+    /** Unsold time AFTER the service — the mop-up. Never charged for. */
+    readonly cleanupMinutes: number,
   ) {}
 
   static create(
     price: Money,
     durationMinutes: number,
+    padding: ServicePadding = {},
   ): Result<ServiceTerms, InvalidServiceDurationError> {
     if (!Number.isInteger(durationMinutes) || durationMinutes <= 0) {
       return fail(new InvalidServiceDurationError(durationMinutes));
     }
-    return ok(new ServiceTerms(price, durationMinutes));
+    const setupMinutes = padding.setupMinutes ?? 0;
+    const cleanupMinutes = padding.cleanupMinutes ?? 0;
+    // A negative or fractional pad is the same class of authoring mistake as
+    // a negative duration, and reaches the same place — the grid's arithmetic.
+    for (const pad of [setupMinutes, cleanupMinutes]) {
+      if (!Number.isInteger(pad) || pad < 0) {
+        return fail(new InvalidServiceDurationError(pad));
+      }
+    }
+    return ok(
+      new ServiceTerms(price, durationMinutes, setupMinutes, cleanupMinutes),
+    );
+  }
+
+  /** Chair time this booking actually consumes, padding included. */
+  occupiedMinutes(): number {
+    return this.setupMinutes + this.durationMinutes + this.cleanupMinutes;
+  }
+
+  /**
+   * Build straight from persisted primitives — the shape every adapter and
+   * seed row actually holds.
+   *
+   * Exists so callers outside this context never have to construct a
+   * `Money` themselves: `Seat` snapshots terms, so feature code and
+   * infrastructure both need to build them, and neither should have to
+   * reach past the catalog facade for a kernel type to do it. Collects both
+   * failure modes rather than short-circuiting on the price.
+   */
+  static fromMinorUnits(
+    priceMinorUnits: number,
+    currencyCode: string,
+    durationMinutes: number,
+    padding: ServicePadding = {},
+  ): Result<ServiceTerms, ServiceTermsValidationError[]> {
+    const priceResult = Money.fromMinorUnitsAndCode(
+      priceMinorUnits,
+      currencyCode,
+    );
+    if (priceResult.isFailure()) {
+      return fail([priceResult.error]);
+    }
+    const termsResult = ServiceTerms.create(
+      priceResult.value,
+      durationMinutes,
+      padding,
+    );
+    if (termsResult.isFailure()) {
+      return fail([termsResult.error]);
+    }
+    return ok(termsResult.value);
   }
 
   equals(other: ServiceTerms): boolean {
     return (
       this.durationMinutes === other.durationMinutes &&
+      this.setupMinutes === other.setupMinutes &&
+      this.cleanupMinutes === other.cleanupMinutes &&
       this.price.equals(other.price)
     );
   }
+}
+
+/**
+ * Persisted terms — the shape a Firestore offering row actually holds.
+ *
+ * `setupMinutes`/`cleanupMinutes` are optional and default to 0, so the great
+ * majority of rows (a haircut needs no mop-up) stay exactly as they were.
+ */
+export interface BarberTermsProps {
+  readonly priceMinorUnits: number;
+  readonly currencyCode: string;
+  readonly durationMinutes: number;
+  readonly setupMinutes?: number;
+  readonly cleanupMinutes?: number;
 }
 
 export interface ServiceVariantProps {
@@ -75,18 +171,9 @@ export class ServiceVariant {
 
 export interface BarberOfferingProps {
   readonly barberId: string;
-  readonly base: {
-    priceMinorUnits: number;
-    currencyCode: string;
-    durationMinutes: number;
-  };
+  readonly base: BarberTermsProps;
   /** Per-variant overrides, keyed by `ServiceVariantId`. Absent keys fall back to `base`. */
-  readonly byVariant?: Readonly<
-    Record<
-      string,
-      { priceMinorUnits: number; currencyCode: string; durationMinutes: number }
-    >
-  >;
+  readonly byVariant?: Readonly<Record<string, BarberTermsProps>>;
 }
 
 /**
@@ -164,6 +251,8 @@ export class BarberOffering {
     priceMinorUnits: number;
     currencyCode: string;
     durationMinutes: number;
+    setupMinutes?: number;
+    cleanupMinutes?: number;
   }): Result<ServiceTerms, ServiceTermsValidationError[]> {
     const priceResult = Money.fromMinorUnitsAndCode(
       raw.priceMinorUnits,
@@ -173,6 +262,10 @@ export class BarberOffering {
     const termsResult = ServiceTerms.create(
       priceResult.value,
       raw.durationMinutes,
+      {
+        setupMinutes: raw.setupMinutes,
+        cleanupMinutes: raw.cleanupMinutes,
+      },
     );
     if (termsResult.isFailure()) return fail([termsResult.error]);
     return ok(termsResult.value);

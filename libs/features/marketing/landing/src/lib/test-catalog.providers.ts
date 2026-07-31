@@ -54,7 +54,7 @@ function serviceFromVm(vm: ServiceVm): Service {
   const cheapest = vm.offerings.reduce(
     (best, offering) =>
       offering.base.price < best.base.price ? offering : best,
-    vm.offerings[0],
+    vm.offerings[0]!,
   );
   return unwrap(
     Service.create({

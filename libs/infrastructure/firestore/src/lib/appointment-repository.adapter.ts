@@ -6,7 +6,6 @@ import {
   onSnapshot,
   orderBy,
   query,
-  setDoc,
   where,
 } from 'firebase/firestore';
 import { Result, fail, ok } from '@creativo/domain/kernel';
@@ -21,58 +20,21 @@ import {
   isTerminal,
 } from '@creativo/domain/scheduling';
 import { UserId } from '@creativo/domain/accounts';
-import { ServiceId } from '@creativo/domain/catalog';
-import { AppointmentRepository } from '@creativo/application/booking';
+import {
+  BarberId,
+  ServiceId,
+  ServiceTerms,
+  ServiceVariantId,
+} from '@creativo/domain/catalog';
+import { Money } from '@creativo/domain/kernel';
+import {
+  AppointmentRepository,
+  appointmentToDocument,
+} from '@creativo/application/booking';
 import { RepositoryError } from '@creativo/application/shared';
 import { FIREBASE_FIRESTORE } from '@creativo/infrastructure/firebase-app';
 import { appointmentDocRef, appointmentsCollection } from './firestore-paths';
 import { subscribeWithRetry } from './subscribe-with-retry';
-
-/**
- * `ownerUserId` is a DENORMALIZED field written only by this adapter's
- * `toPersistence` — it is not part of the `Appointment` domain aggregate.
- * It mirrors the `UserId` of the seat whose `subject.kind === 'account' &&
- * relationship === 'self'` (or `null` when the appointment has no such
- * seat — a fully staff-booked walk-in/companion-only party). `firestore.rules`
- * and `observeUpcomingFor` both key off this field; see
- * `docs/architecture/domain-deviations.md`.
- */
-function computeOwnerUserId(appointment: Appointment): string | null {
-  const selfSeat = appointment.seats.find(
-    (seat) =>
-      seat.subject.kind === 'account' && seat.subject.relationship === 'self',
-  );
-  if (selfSeat === undefined || selfSeat.subject.kind !== 'account') {
-    return null;
-  }
-  return selfSeat.subject.userId.value;
-}
-
-function toPersistence(appointment: Appointment): DocumentData {
-  return {
-    barberId: appointment.barberId.value,
-    locationId: appointment.locationId.value,
-    ownerUserId: computeOwnerUserId(appointment),
-    timeSlot: {
-      startIso: appointment.timeSlot.start.toISO(),
-      endIso: appointment.timeSlot.end.toISO(),
-      zone: appointment.timeSlot.start.zoneName,
-    },
-    seats: appointment.seats.map((seat) => ({
-      id: seat.id.value,
-      serviceId: seat.serviceId.value,
-      subject:
-        seat.subject.kind === 'account'
-          ? {
-              kind: 'account' as const,
-              userId: seat.subject.userId.value,
-              relationship: seat.subject.relationship,
-            }
-          : { kind: 'anonymous' as const, label: seat.subject.label.value },
-    })),
-    status: appointment.status,
-  };
-}
 
 function buildSeats(raw: unknown): Result<Seat[], RepositoryError> {
   if (!Array.isArray(raw)) {
@@ -132,11 +94,83 @@ function buildSeats(raw: unknown): Result<Seat[], RepositoryError> {
       subject = SeatSubject.anonymous(labelResult.value);
     }
 
+    const barberIdResult = BarberId.create(entry['barberId']);
+    if (barberIdResult.isFailure()) {
+      return fail(
+        new RepositoryError(
+          'Malformed appointment seat barberId',
+          barberIdResult.error,
+        ),
+      );
+    }
+
+    let variantId: ServiceVariantId | null = null;
+    if (entry['variantId'] != null) {
+      const variantIdResult = ServiceVariantId.create(entry['variantId']);
+      if (variantIdResult.isFailure()) {
+        return fail(
+          new RepositoryError(
+            'Malformed appointment seat variantId',
+            variantIdResult.error,
+          ),
+        );
+      }
+      variantId = variantIdResult.value;
+    }
+
+    const termsData = entry['terms'] as DocumentData | undefined;
+    const priceResult = Money.fromMinorUnitsAndCode(
+      termsData?.['priceMinorUnits'],
+      termsData?.['currencyCode'],
+    );
+    if (priceResult.isFailure()) {
+      return fail(
+        new RepositoryError(
+          'Malformed appointment seat price',
+          priceResult.error,
+        ),
+      );
+    }
+    const termsResult = ServiceTerms.create(
+      priceResult.value,
+      termsData?.['durationMinutes'],
+    );
+    if (termsResult.isFailure()) {
+      return fail(
+        new RepositoryError(
+          'Malformed appointment seat terms',
+          termsResult.error,
+        ),
+      );
+    }
+
+    const slotData = entry['slot'] as DocumentData | undefined;
+    const slotResult = TimeSlot.create({
+      startIso: slotData?.['startIso'],
+      endIso: slotData?.['endIso'],
+      zone: slotData?.['zone'],
+    });
+    if (slotResult.isFailure()) {
+      return fail(
+        new RepositoryError(
+          'Malformed appointment seat slot',
+          slotResult.error,
+        ),
+      );
+    }
+
     seats.push(
       Seat.of({
         id: seatIdResult.value,
         subject,
         serviceId: serviceIdResult.value,
+        variantId,
+        barberId: barberIdResult.value,
+        terms: termsResult.value,
+        // Only the START is read back: the seat derives its end from the
+        // snapshotted duration, so a persisted end that disagreed with the
+        // terms can never become the answer.
+        startsAt: slotResult.value.start,
       }),
     );
   }
@@ -147,21 +181,10 @@ function toDomain(
   id: string,
   data: DocumentData,
 ): Result<Appointment, RepositoryError> {
-  const timeSlotData = data['timeSlot'] as DocumentData;
-  const timeSlotResult = TimeSlot.create({
-    startIso: timeSlotData['startIso'],
-    endIso: timeSlotData['endIso'],
-    zone: timeSlotData['zone'],
-  });
-  if (timeSlotResult.isFailure()) {
-    return fail(
-      new RepositoryError(
-        'Malformed appointment timeSlot',
-        timeSlotResult.error,
-      ),
-    );
-  }
-
+  // The stored `timeSlot`/`barberIds` are deliberately NOT read back: they
+  // are write-time mirrors for querying, and `Appointment` derives both
+  // from the seats. Reading them would create a second, drift-prone answer
+  // to "when is this, and who is working it".
   const seatsResult = buildSeats(data['seats']);
   if (seatsResult.isFailure()) {
     return fail(seatsResult.error);
@@ -169,9 +192,7 @@ function toDomain(
 
   const reconstituted = Appointment.reconstitute({
     id,
-    barberId: data['barberId'],
     locationId: data['locationId'],
-    timeSlot: timeSlotResult.value,
     seats: seatsResult.value,
     status: data['status'],
   });
@@ -204,16 +225,27 @@ export class FirestoreAppointmentRepository implements AppointmentRepository {
     }
   }
 
-  async save(appointment: Appointment): Promise<Result<void, RepositoryError>> {
-    try {
-      await setDoc(
-        appointmentDocRef(this.db, appointment.id),
-        toPersistence(appointment),
-      );
-      return ok(undefined);
-    } catch (error) {
-      return fail(new RepositoryError('Failed to save appointment', error));
-    }
+  /**
+   * **Refused on the client, by design.**
+   *
+   * A booking cannot be committed from a browser: availability has to be
+   * re-checked and the write has to be transactional against the barber-day
+   * projection, and neither is expressible in security rules. This used to be
+   * a bare `setDoc`, which — together with a `create` rule that only checked
+   * `ownerUserId` — let any signed-in user write an appointment naming any
+   * barber, any time and any price over anyone else's booking.
+   *
+   * The port keeps `save` because the SAME `CreateBookingUseCase` runs inside
+   * the `commitBooking` Cloud Function against an Admin-SDK repository that
+   * does implement it. This adapter is the browser half, and the browser half
+   * has no business writing appointments.
+   */
+  async save(): Promise<Result<void, RepositoryError>> {
+    return fail(
+      new RepositoryError(
+        'Appointments are committed server-side — call the commitBooking gateway, not the repository',
+      ),
+    );
   }
 
   /**
@@ -255,3 +287,11 @@ export class FirestoreAppointmentRepository implements AppointmentRepository {
     );
   }
 }
+
+/**
+ * Re-exported so this adapter's own spec — and any staff surface that has to
+ * name the persisted shape — keeps one import site. The mapping itself lives
+ * in `@creativo/application/booking`, because `commitBooking` (Admin SDK)
+ * writes the same document and cannot import anything from this lib.
+ */
+export { appointmentToDocument };

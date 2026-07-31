@@ -1,0 +1,49 @@
+/*
+ * Block, not `contents`: unlike the other steps this one does NOT go through
+ * `lib-booking-step-layout` — the map wants the whole pane and the action lives
+ * inside the sheet. It is the growing flex child itself.
+ *
+ * `position: relative` on the HOST, with the pane absolutely filling it, is
+ * load-bearing. The shell's column is `min-height: 100svh` — a MINIMUM, not a
+ * definite height — so a percentage height on a descendant resolves against
+ * `auto` and collapses to zero. Verified: the host measured 762px while the
+ * pane inside it measured 0, taking the map and the sheet with it. Absolute
+ * insets need no definite parent height, only a positioned one.
+ */
+:host {
+  position: relative;
+  display: block;
+  flex: 1 1 auto;
+  min-block-size: 0;
+}
+
+/* The positioning context `ui-detent-sheet` measures itself against. */
+.booking-location {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+
+.booking-location__map {
+  position: absolute;
+  inset: 0;
+}
+
+/*
+ * The sheet's list must clear the action bar riding above it — at `large`,
+ * where the content scrolls, the last shop can then be scrolled fully clear of
+ * the CTA. One large control plus the bar's own padding.
+ */
+.booking-location ui-detent-sheet {
+  --ui-detent-sheet-bottom-inset: 5.5rem;
+}
+
+/*
+ * The bar floats over the SHEET here, not over the page, so its dissolve ramp
+ * has to start from the sheet's surface. Left at the page background it fades
+ * list rows into a colour that is not underneath them, which reads as a smudge
+ * rather than as content passing under a control.
+ */
+.booking-location ui-page-action-bar {
+  --ui-action-bar-scrim: var(--sys-color-surface);
+}

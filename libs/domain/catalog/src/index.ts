@@ -19,4 +19,5 @@ export * from './lib/location';
 export * from './lib/location.errors';
 export * from './lib/service';
 export * from './lib/service-terms';
+export * from './lib/service-conflicts';
 export * from './lib/service.errors';

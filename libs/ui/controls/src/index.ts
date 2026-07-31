@@ -2,6 +2,7 @@ export * from './lib/button/button';
 export * from './lib/icon/icon';
 export * from './lib/icon/icon-registry';
 export * from './lib/async-image/async-image';
+export * from './lib/map/map';
 export * from './lib/media-card/media-card';
 export * from './lib/ambient-video/ambient-video';
 export * from './lib/text-field/text-field';

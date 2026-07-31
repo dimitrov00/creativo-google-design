@@ -32,6 +32,71 @@
     background: var(--sys-color-background);
   }
 
+  /*
+   * Scrim tone — the mirror image of `ui-page-action-bar`'s bottom ramp,
+   * pointing the other way. The bar carries no fill of its own; the fade sits
+   * behind it and cascades DOWN from the top edge, so whatever is underneath
+   * (a map, a hero) stays visible while the controls keep their contrast.
+   *
+   * IDENTICAL quintic smootherstep alpha ramp (6t⁵−15t⁴+10t³ sampled every
+   * 12.5%, owner ruling 2026-07-27) as the action bar and the sheet chrome —
+   * three bars in one app must dissolve the same way or they read as three
+   * different systems.
+   */
+  .ui-toolbar[data-toolbar-background='scrim'] {
+    --ui-toolbar-scrim: var(--sys-color-background);
+    position: relative;
+    background: transparent;
+    border: 0;
+    isolation: isolate;
+  }
+
+  .ui-toolbar[data-toolbar-background='scrim']::before {
+    content: '';
+    position: absolute;
+    inset-inline: 0;
+    inset-block-start: 0;
+    /* Crests a beat below the bar, like the action bar crests above it.
+       The STRONG part of the ramp has to cover the bar's own height — with a
+       symmetric curve the second row (the collapsing title) sat where the
+       gradient was already nearly clear, and the title floated unreadable
+       over whatever art was behind it. */
+    block-size: calc(100% + 3rem);
+    z-index: -1;
+    pointer-events: none;
+    background: linear-gradient(
+      to bottom,
+      var(--ui-toolbar-scrim) 0%,
+      color-mix(in srgb, var(--ui-toolbar-scrim) 96%, transparent) 40%,
+      color-mix(in srgb, var(--ui-toolbar-scrim) 88%, transparent) 55%,
+      color-mix(in srgb, var(--ui-toolbar-scrim) 68%, transparent) 65%,
+      color-mix(in srgb, var(--ui-toolbar-scrim) 44%, transparent) 75%,
+      color-mix(in srgb, var(--ui-toolbar-scrim) 22%, transparent) 85%,
+      color-mix(in srgb, var(--ui-toolbar-scrim) 7%, transparent) 93%,
+      transparent 100%
+    );
+  }
+
+  /*
+   * A scrim bar OVERLAYS its content rather than sitting above it — that is
+   * the whole point: a bar that reserves its own strip has nothing passing
+   * underneath, so the ramp fades page background into page background and
+   * you see nothing.
+   *
+   * FIXED, not absolute. `sticky` reserves a strip, and `absolute` overlays
+   * but SCROLLS AWAY with the page — which is what happened: the bar left the
+   * screen on the first flick, taking the collapsing title with it. Fixed is
+   * the only one that both overlays and stays.
+   *
+   * The owner clears the bar's height on whatever must not start under it.
+   */
+  .ui-toolbar[data-toolbar-background='scrim'][data-sticky] {
+    position: fixed;
+    inset-block-start: 0;
+    inset-inline: 0;
+    background: transparent;
+  }
+
   .ui-toolbar[data-sticky] {
     position: sticky;
     inset-block-start: 0;

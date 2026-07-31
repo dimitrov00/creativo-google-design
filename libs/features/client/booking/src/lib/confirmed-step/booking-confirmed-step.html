@@ -1,0 +1,67 @@
+<ng-container *transloco="let t">
+  <!-- Terminal: no step layout and no action bar's "Continue" — the wizard is
+       over, so the chrome that implies a next step goes with it. -->
+  <ui-stack
+    uiSpacing="comfortable"
+    uiAlignment="center"
+    uiPaddingHorizontal="regular"
+    uiPaddingVertical="spacious"
+    class="booking-confirmed"
+    data-testid="booking-confirmed"
+  >
+    <ui-reward-moment data-testid="booking-confetti" />
+
+    <ui-stack uiSpacing="tight" uiAlignment="center">
+      <h1 uiText uiFont="largeTitle">{{ t('booking.confirmed.title') }}</h1>
+      <p uiText uiFont="body" uiForegroundStyle="secondary">
+        {{ t('booking.confirmed.body') }}
+      </p>
+    </ui-stack>
+
+    <ui-stack uiSpacing="none" uiAlignment="center">
+      <p uiText uiFont="title3" data-testid="booking-confirmed-when">
+        {{ whenLabel() }}
+      </p>
+      <p uiText uiFont="body" uiForegroundStyle="secondary">
+        {{ locationName() }}
+      </p>
+    </ui-stack>
+
+    <!-- Only for a party: one person with one barber is the line above. -->
+    @if (lines().length > 0) {
+    <ui-list-group data-testid="booking-confirmed-lines">
+      @for (line of lines(); track line.key) {
+      <ui-list-row>
+        {{ line.personLabel }}
+        <span uiTrailing uiText uiFont="body" uiForegroundStyle="secondary">
+          {{ line.barberName }} · {{ line.timeLabel }}
+        </span>
+      </ui-list-row>
+      }
+    </ui-list-group>
+    }
+
+    <ui-stack uiSpacing="compact" uiAlignment="center">
+      <a
+        uiButton
+        uiButtonStyle="borderedProminent"
+        uiControlSize="large"
+        routerLink="/account/appointments"
+        data-testid="booking-confirmed-appointments"
+      >
+        {{ t('booking.confirmed.viewAppointments') }}
+      </a>
+      <!-- A plain footer link, not a second button: two filled CTAs on a
+           completion screen make the user choose twice. -->
+      <a
+        uiText
+        uiFont="footnote"
+        uiForegroundStyle="secondary"
+        routerLink="/"
+        data-testid="booking-confirmed-home"
+      >
+        {{ t('booking.confirmed.done') }}
+      </a>
+    </ui-stack>
+  </ui-stack>
+</ng-container>

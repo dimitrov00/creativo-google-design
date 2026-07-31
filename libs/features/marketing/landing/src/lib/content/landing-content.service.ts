@@ -1,3 +1,4 @@
+import { BARBER_ART, SERVICE_ART } from '@creativo/features/shared/catalog';
 import { Injectable, computed, effect, inject, signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { map } from 'rxjs/operators';
@@ -10,8 +11,6 @@ import {
 } from '@creativo/application/catalog';
 import { LanguageService } from '@creativo/features/shared/shell';
 import {
-  BARBER_ART,
-  SERVICE_ART,
   type BarberVm,
   type DayHoursVm,
   LOCATIONS,

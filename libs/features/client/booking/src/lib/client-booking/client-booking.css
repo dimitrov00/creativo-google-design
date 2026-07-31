@@ -1,0 +1,33 @@
+:host {
+  display: block;
+}
+
+/*
+ * The positioning context the scrim toolbar overlays. The bar no longer
+ * reserves a strip of its own, so the step below it starts at the very top of
+ * the screen — which is what lets the location step's map run full-bleed
+ * behind the chrome, and what lets every other step's content dissolve under
+ * it on scroll instead of stopping at a hard edge.
+ */
+.booking-shell {
+  position: relative;
+}
+
+/* Placeholder copy for the steps that land in later phases — the secondary
+   label role, not a bespoke muted colour. */
+.booking-step-pending {
+  color: var(--sys-color-foreground-secondary);
+}
+
+/*
+ * The collapsed title, centred under the stepper. Truncates rather than
+ * wrapping: a navigation bar that grows a second line shifts the whole page
+ * under it, which is worse than an ellipsis.
+ */
+.booking-shell__title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding-block-end: var(--sys-space-compact);
+  text-align: center;
+}

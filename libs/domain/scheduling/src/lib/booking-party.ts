@@ -24,7 +24,8 @@ export interface ReconstituteBookingPartyGuestProps {
 }
 
 export interface ReconstituteBookingPartyProps {
-  ownerId: string;
+  /** `null` for a party assembled before sign-in — see `createAnonymous`. */
+  ownerId: string | null;
   guests: ReconstituteBookingPartyGuestProps[];
   /** The monotonic counter's next value — must be >= the highest guest sequence already in `guests`. */
   nextSequence: number;
@@ -43,10 +44,19 @@ export interface ReconstituteBookingPartyProps {
  * deletes the guest from the roster but never touches (let alone
  * decrements) the counter, so a freshly minted id can never collide with
  * one that existed before, regardless of how many guests were removed.
+ *
+ * `ownerId` is NULLABLE because `/book` is deliberately unguarded (owner
+ * ruling 2026-07-29): a visitor assembles a whole party and cart before
+ * ever seeing an auth prompt, which HIG asks us to pair with its benefit
+ * rather than put in front of window-shopping. An unclaimed party is a
+ * legitimate, fully-functional state — it simply cannot be committed. The
+ * one-way `claim()` transition is how it graduates once the booker signs
+ * in, and `CreateBookingUseCase` refuses an unclaimed party outright
+ * (`BookingPartyUnclaimedError`) rather than inventing an owner.
  */
 export class BookingParty {
   private constructor(
-    readonly ownerId: UserId,
+    readonly ownerId: UserId | null,
     private readonly guestsById: ReadonlyMap<string, BookingPartyGuest>,
     private readonly nextSequence: number,
   ) {}
@@ -61,10 +71,17 @@ export class BookingParty {
     return ok(new BookingParty(ownerIdResult.value, new Map(), 0));
   }
 
+  /**
+   * A party with no owner yet — the state `/book` opens in. Total, not a
+   * `Result`: there is no raw input to reject.
+   */
+  static createAnonymous(): BookingParty {
+    return new BookingParty(null, new Map(), 0);
+  }
+
   static reconstitute(
     props: ReconstituteBookingPartyProps,
   ): Result<BookingParty, BookingPartyError[]> {
-    const ownerIdResult = UserId.create(props.ownerId);
     const sequenceResult = BookingParty.validateSequence(props.nextSequence);
     const guestResults = props.guests.map((g) =>
       combineAll([GuestId.create(g.id), SeatLabel.create(g.label)] as const),
@@ -80,12 +97,18 @@ export class BookingParty {
         guests.push({ id, label });
       }
     }
-    if (
-      ownerIdResult.isFailure() ||
-      sequenceResult.isFailure() ||
-      errors.length > 0
-    ) {
-      if (ownerIdResult.isFailure()) errors.push(ownerIdResult.error);
+
+    let ownerId: UserId | null = null;
+    if (props.ownerId !== null) {
+      const ownerIdResult = UserId.create(props.ownerId);
+      if (ownerIdResult.isFailure()) {
+        errors.push(ownerIdResult.error);
+      } else {
+        ownerId = ownerIdResult.value;
+      }
+    }
+
+    if (sequenceResult.isFailure() || errors.length > 0) {
       if (sequenceResult.isFailure()) errors.push(sequenceResult.error);
       return fail(errors);
     }
@@ -93,13 +116,45 @@ export class BookingParty {
     const guestsById = new Map(
       guests.map((g) => [g.id.toString(), g] as const),
     );
-    return ok(
-      new BookingParty(ownerIdResult.value, guestsById, sequenceResult.value),
-    );
+    return ok(new BookingParty(ownerId, guestsById, sequenceResult.value));
   }
 
   get guests(): readonly BookingPartyGuest[] {
     return [...this.guestsById.values()];
+  }
+
+  /**
+   * The counter's next value. Exposed for ONE reason: a draft that persists
+   * the roster without it would restart minting at zero on reload and hand
+   * a fresh guest the id of one already removed — §7.7's bug, reintroduced
+   * through the storage layer. `reconstitute` takes it straight back.
+   */
+  get nextGuestSequence(): number {
+    return this.nextSequence;
+  }
+
+  isClaimed(): boolean {
+    return this.ownerId !== null;
+  }
+
+  /**
+   * Attach the signed-in booker to a party assembled anonymously. The
+   * roster and the monotonic counter carry over untouched — signing in
+   * mid-flow must not cost the user the party they just built, and must
+   * not reset the counter §7.7 depends on.
+   *
+   * Re-claiming an already-claimed party is a no-op rather than an error:
+   * the auth round-trip can legitimately replay (a restored draft, a
+   * double-resolved redirect), and the second call carries the same id.
+   */
+  claim(rawOwnerId: string): Result<BookingParty, BookingPartyError[]> {
+    const ownerIdResult = UserId.create(rawOwnerId);
+    if (ownerIdResult.isFailure()) {
+      return fail([ownerIdResult.error]);
+    }
+    return ok(
+      new BookingParty(ownerIdResult.value, this.guestsById, this.nextSequence),
+    );
   }
 
   /** Add a guest — mints a fresh `GuestId` from the monotonic counter, which always advances. */
@@ -126,6 +181,33 @@ export class BookingParty {
     }
     const guestsById = new Map(this.guestsById);
     guestsById.delete(guestId.toString());
+    return ok(new BookingParty(this.ownerId, guestsById, this.nextSequence));
+  }
+
+  /**
+   * Relabel a guest in place. The party step adds a guest immediately with a
+   * generated placeholder and lets the booker type over it, so renaming is a
+   * first-class edit rather than a correction — but it keeps the guest's
+   * IDENTITY, so anything already keyed to that `GuestId` (their cart lines)
+   * survives the rename untouched.
+   */
+  renameGuest(
+    guestId: GuestId,
+    labelRaw: string,
+  ): Result<BookingParty, BookingPartyError[] | BookingPartyRemoveGuestError> {
+    const existing = this.guestsById.get(guestId.toString());
+    if (!existing) {
+      return fail(new GuestNotFoundError(guestId.toString()));
+    }
+    const labelResult = SeatLabel.create(labelRaw);
+    if (labelResult.isFailure()) {
+      return fail([labelResult.error]);
+    }
+    const guestsById = new Map(this.guestsById);
+    guestsById.set(guestId.toString(), {
+      id: existing.id,
+      label: labelResult.value,
+    });
     return ok(new BookingParty(this.ownerId, guestsById, this.nextSequence));
   }
 

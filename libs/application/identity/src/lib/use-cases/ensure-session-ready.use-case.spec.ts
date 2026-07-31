@@ -43,6 +43,7 @@ function fakeGateway(principals: readonly Principal[]): AuthGateway & {
       return ok(undefined);
     },
     currentIdentifier: () => null,
+    currentDisplayName: () => null,
   };
 }
 

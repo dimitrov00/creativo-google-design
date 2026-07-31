@@ -109,6 +109,10 @@ function serviceFromDoc(
     priceMinorUnits: data['priceMinorUnits'],
     currencyCode: data['currencyCode'],
     durationMinutes: data['durationMinutes'],
+    // Padding is optional in the document and defaults to 0 — most services
+    // need none, and an absent field must not become a `NaN` duration.
+    setupMinutes: data['setupMinutes'],
+    cleanupMinutes: data['cleanupMinutes'],
     cover: coverResult.value,
     locationIds: data['locationIds'] ?? [],
     conflictsWith: data['conflictsWith'] ?? [],

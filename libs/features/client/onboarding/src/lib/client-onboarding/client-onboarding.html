@@ -42,7 +42,6 @@
           uiButton
           uiButtonStyle="bordered"
           uiTint="neutral"
-          uiButtonBorderShape="capsule"
           uiControlSize="regular"
           [uiIconOnly]="true"
           data-testid="onboarding-sign-out"
@@ -204,7 +203,6 @@
         type="button"
         uiButton
         uiButtonStyle="borderedProminent"
-        uiButtonBorderShape="capsule"
         uiControlSize="large"
         data-testid="onboarding-submit-about"
         [uiLoading]="store.pending()"
@@ -239,41 +237,12 @@
       class="onboarding-reward"
       data-testid="onboarding-reward"
     >
-      <!-- The reward moment, kept deliberately minimal: the accent disc
-           settles in once (no spring, no ring theatrics), the check draws
-           itself, the confetti erupts. Token tints only, self-cleaning,
-           silent under prefers-reduced-motion (everything pre-drawn, one
-           calm fade). Decorative overlay only: pointer-transparent, CTAs
-           usable at once. -->
-      <!-- The confetti rides a WRAPPER around the badge, not the badge
-           itself: an isolated stacking context lets the overlay sit at
-           z-index -1, so particles erupt from the disc's center but fly
-           BEHIND the circle — never across the check. -->
-      <span class="onboarding-reward__burst">
-        <ui-confetti
-          [uiCount]="160"
-          [uiDelay]="650"
-          data-testid="onboarding-confetti"
-        />
-        <span class="onboarding-reward__badge">
-          <svg
-            class="onboarding-reward__mark"
-            viewBox="0 0 48 48"
-            aria-hidden="true"
-          >
-            <!-- pathLength-normalized so the stroke draw animates 1 → 0. -->
-            <path
-              class="onboarding-reward__check"
-              d="M15 24.5l6.2 6.2L33 18"
-              pathLength="1"
-              fill="none"
-              stroke-width="3.5"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            />
-          </svg>
-        </span>
-      </span>
+      <!-- The reward moment is a DS pattern now (`ui-reward-moment`): the
+           accent disc settles, the check draws itself, the confetti erupts
+           from behind the disc. `/book`'s confirmation is the second surface
+           that needed it, and two copies of one animation recipe is how the
+           case study's six hand-rolled eyebrows happened. -->
+      <ui-reward-moment data-testid="onboarding-confetti" />
       <h1 uiText uiFont="largeTitle">{{ t('onboarding.reward.title') }}</h1>
       <p uiText uiFont="body" uiForegroundStyle="secondary">
         {{ t('onboarding.reward.body') }}
@@ -295,7 +264,6 @@
         type="button"
         uiButton
         uiButtonStyle="borderedProminent"
-        uiButtonBorderShape="capsule"
         uiControlSize="large"
         data-testid="onboarding-personalize"
         (click)="store.personalize()"
@@ -306,7 +274,6 @@
         type="button"
         uiButton
         uiButtonStyle="plain"
-        uiButtonBorderShape="capsule"
         uiControlSize="small"
         data-testid="onboarding-enter-app"
         (click)="enterAppNow()"
@@ -344,7 +311,6 @@
           uiButton
           uiButtonStyle="bordered"
           uiTint="neutral"
-          uiButtonBorderShape="capsule"
           uiControlSize="regular"
           [uiIconOnly]="true"
           data-testid="onboarding-back"
@@ -437,17 +403,17 @@
                frees up. -->
           <ui-grid [uiColumns]="2" uiSpacing="compact">
             @for (service of services(); track service.id.value) {
-            <lib-onboarding-service-card
-              [serviceId]="service.id.value"
-              [name]="serviceName(service)"
-              [meta]="serviceMeta(service)"
-              [coverUrl]="serviceCoverUrl(service)"
-              [selected]="isServiceSelected(service.id)"
-              [capBlocked]="capReached() && !isServiceSelected(service.id)"
-              [detailsLabel]="t('onboarding.services.details', { name:
+            <cr-service-card
+              [uiServiceId]="service.id.value"
+              [uiName]="serviceName(service)"
+              [uiMeta]="serviceMeta(service)"
+              [uiCoverUrl]="serviceCoverUrl(service)"
+              [uiSelectedCount]="isServiceSelected(service.id) ? 1 : 0"
+              [uiCapBlocked]="capReached() && !isServiceSelected(service.id)"
+              [uiDetailsLabel]="t('onboarding.services.details', { name:
               serviceName(service) })"
-              (toggled)="toggleService(service.id)"
-              (details)="openDetails(service)"
+              (uiPressed)="toggleService(service.id)"
+              (uiDetailsPressed)="openDetails(service)"
             />
             }
           </ui-grid>
@@ -477,7 +443,6 @@
           isServiceSelectedById(details.id) ? 'bordered' : 'borderedProminent'
         "
         [uiTint]="isServiceSelectedById(details.id) ? 'neutral' : undefined"
-        uiButtonBorderShape="capsule"
         [uiSpread]="true"
         uiControlSize="large"
         data-testid="onboarding-service-sheet-toggle"
@@ -503,7 +468,6 @@
         type="button"
         uiButton
         uiButtonStyle="borderedProminent"
-        uiButtonBorderShape="capsule"
         uiControlSize="large"
         data-testid="onboarding-submit-services"
         (click)="submitServices()"
@@ -514,7 +478,6 @@
         type="button"
         uiButton
         uiButtonStyle="plain"
-        uiButtonBorderShape="capsule"
         uiControlSize="small"
         data-testid="onboarding-skip-services"
         (click)="store.skipServices()"
@@ -552,7 +515,6 @@
           uiButton
           uiButtonStyle="bordered"
           uiTint="neutral"
-          uiButtonBorderShape="capsule"
           uiControlSize="regular"
           [uiIconOnly]="true"
           data-testid="onboarding-back"
@@ -662,7 +624,6 @@
         type="button"
         uiButton
         uiButtonStyle="borderedProminent"
-        uiButtonBorderShape="capsule"
         uiControlSize="large"
         data-testid="onboarding-submit-birthday"
         [uiLoading]="store.pending()"
@@ -675,7 +636,6 @@
         type="button"
         uiButton
         uiButtonStyle="plain"
-        uiButtonBorderShape="capsule"
         uiControlSize="small"
         data-testid="onboarding-skip-birthday"
         (click)="skipBirthdayNow()"
@@ -711,7 +671,6 @@
           uiButton
           uiButtonStyle="bordered"
           uiTint="neutral"
-          uiButtonBorderShape="capsule"
           uiControlSize="regular"
           [uiIconOnly]="true"
           data-testid="onboarding-back"
@@ -838,7 +797,6 @@
         type="button"
         uiButton
         uiButtonStyle="borderedProminent"
-        uiButtonBorderShape="capsule"
         uiControlSize="large"
         data-testid="onboarding-avatar-enter-app"
         [uiLoading]="store.pending()"
@@ -851,7 +809,6 @@
         type="button"
         uiButton
         uiButtonStyle="plain"
-        uiButtonBorderShape="capsule"
         uiControlSize="small"
         data-testid="onboarding-skip-avatar"
         (click)="enterAppNow()"
@@ -891,7 +848,6 @@
         type="button"
         uiButton
         uiButtonStyle="borderedProminent"
-        uiButtonBorderShape="capsule"
         uiControlSize="large"
         data-testid="onboarding-retry-entering"
         (click)="retryEntering()"

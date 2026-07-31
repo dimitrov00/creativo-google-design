@@ -62,6 +62,10 @@ export interface ServiceProps {
   priceMinorUnits: number;
   currencyCode: string;
   durationMinutes: number;
+  /** Unsold prep before the service. Optional, defaults to 0 — see `ServiceTerms`. */
+  setupMinutes?: number;
+  /** Unsold mop-up after the service. Optional, defaults to 0 — see `ServiceTerms`. */
+  cleanupMinutes?: number;
   /** Choices within the service that can move its terms. Empty ⇒ no variant step when booking. */
   variants?: readonly ServiceVariantProps[];
   /** Who performs it and on what terms. Empty ⇒ nobody is priced yet; `baseTerms` is all there is. */
@@ -192,7 +196,10 @@ export class Service {
 
     const baseTerms =
       priceResult.isSuccess() && durationResult.isSuccess()
-        ? ServiceTerms.create(priceResult.value, durationResult.value)
+        ? ServiceTerms.create(priceResult.value, durationResult.value, {
+            setupMinutes: props.setupMinutes,
+            cleanupMinutes: props.cleanupMinutes,
+          })
         : null;
     if (baseTerms?.isFailure()) {
       errors.push(baseTerms.error);

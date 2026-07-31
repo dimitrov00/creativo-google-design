@@ -1,0 +1,8 @@
+/*
+ * `contents`, not the house `block` default — see `booking-step-layout.ts`:
+ * without it this host becomes the flex item, hugs its content, and the
+ * action bar lands under the last row instead of the thumb zone.
+ */
+:host {
+  display: contents;
+}

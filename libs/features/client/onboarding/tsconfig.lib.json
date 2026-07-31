@@ -31,7 +31,13 @@
       "path": "../../../infrastructure/i18n/tsconfig.lib.json"
     },
     {
+      "path": "../../shared/shell/tsconfig.lib.json"
+    },
+    {
       "path": "../../../ui/modifiers/tsconfig.lib.json"
+    },
+    {
+      "path": "../../../ui/patterns/tsconfig.lib.json"
     },
     {
       "path": "../../../ui/layout/tsconfig.lib.json"
@@ -40,16 +46,19 @@
       "path": "../../../ui/controls/tsconfig.lib.json"
     },
     {
-      "path": "../../../infrastructure/firebase-app/tsconfig.lib.json"
+      "path": "../../shared/catalog/tsconfig.lib.json"
+    },
+    {
+      "path": "../../../application/accounts/tsconfig.lib.json"
     },
     {
       "path": "../../../application/catalog/tsconfig.lib.json"
     },
     {
-      "path": "../../../application/identity/tsconfig.lib.json"
+      "path": "../../../application/shared/tsconfig.lib.json"
     },
     {
-      "path": "../../shared/shell/tsconfig.lib.json"
+      "path": "../../../application/identity/tsconfig.lib.json"
     }
   ]
 }

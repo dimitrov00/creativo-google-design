@@ -76,6 +76,9 @@
   [data-foreground-style='secondary'][data-foreground-style] {
     color: var(--sys-color-secondary-label);
   }
+  [data-foreground-style='tertiary'][data-foreground-style] {
+    color: var(--sys-color-tertiary-label);
+  }
   [data-foreground-style='accent'][data-foreground-style] {
     color: var(--sys-color-accent);
   }

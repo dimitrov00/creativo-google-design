@@ -1,9 +1,8 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { UserId } from '@creativo/domain/accounts';
-import { BarberId, LocationId, ServiceId } from '@creativo/domain/catalog';
-import { TimeSlot } from '@creativo/domain/scheduling';
 import { BookingDraft } from '@creativo/application/booking';
 import { SessionStorageDraftStore } from './session-storage-draft-store.adapter';
+
+const KEY = 'creativo.booking-draft';
 
 function unwrap<T, E>(result: {
   isSuccess(): boolean;
@@ -17,6 +16,23 @@ function unwrap<T, E>(result: {
   }
   return result.value as T;
 }
+
+/**
+ * The CURRENT envelope version. The malformed-shape tests below need it
+ * explicitly: an older version is deliberately read as "absent, start fresh",
+ * so pinning shape validation against a stale number silently stops testing
+ * anything.
+ */
+const SCHEMA_VERSION = 3;
+
+const EMPTY_DRAFT: BookingDraft = {
+  step: 'guests',
+  party: { ownerId: null, guests: [], nextSequence: 0 },
+  cart: { seats: [], nextSequence: 0 },
+  locationId: null,
+  timeSlot: null,
+  dayKey: null,
+};
 
 describe('SessionStorageDraftStore', () => {
   let store: SessionStorageDraftStore;
@@ -33,89 +49,120 @@ describe('SessionStorageDraftStore', () => {
   });
 
   it('round-trips a full draft through save/load', () => {
-    const timeSlot = unwrap(
-      TimeSlot.create({
+    const draft: BookingDraft = {
+      step: 'schedule',
+      party: {
+        ownerId: 'user-1',
+        guests: [{ id: 'guest-0', label: 'Maria' }],
+        nextSequence: 1,
+      },
+      cart: {
+        seats: [
+          {
+            seatKey: 'self',
+            lines: [
+              {
+                id: 'line-0',
+                serviceId: 'service-1',
+                variantId: 'long',
+                barberId: 'barber-1',
+              },
+            ],
+          },
+          {
+            seatKey: 'guest-0',
+            lines: [
+              {
+                id: 'line-1',
+                serviceId: 'service-2',
+                variantId: null,
+                barberId: null,
+              },
+            ],
+          },
+        ],
+        nextSequence: 2,
+      },
+      locationId: 'location-1',
+      dayKey: '2026-08-03',
+      timeSlot: {
         startIso: '2026-08-01T10:00:00.000+03:00',
         endIso: '2026-08-01T10:30:00.000+03:00',
         zone: 'Europe/Sofia',
-      }),
-    );
-    const draft: BookingDraft = {
-      ownerId: unwrap(UserId.create('user-1')),
-      barberId: unwrap(BarberId.create('barber-1')),
-      locationId: unwrap(LocationId.create('location-1')),
-      serviceIds: [
-        unwrap(ServiceId.create('service-1')),
-        unwrap(ServiceId.create('service-2')),
-      ],
-      timeSlot,
+      },
     };
 
     expect(store.save(draft).isSuccess()).toBe(true);
-
-    const loaded = unwrap(store.load());
-    expect(loaded).not.toBeNull();
-    expect(loaded?.ownerId.value).toBe('user-1');
-    expect(loaded?.barberId?.value).toBe('barber-1');
-    expect(loaded?.locationId?.value).toBe('location-1');
-    expect(loaded?.serviceIds.map((s) => s.value)).toEqual([
-      'service-1',
-      'service-2',
-    ]);
-    expect(loaded?.timeSlot?.start.toISO()).toBe(timeSlot.start.toISO());
+    expect(unwrap(store.load())).toEqual(draft);
   });
 
-  it('round-trips a partial draft (nulls for not-yet-chosen fields)', () => {
+  it('preserves both monotonic counters — the §7.7 guarantee across a reload', () => {
     const draft: BookingDraft = {
-      ownerId: unwrap(UserId.create('user-1')),
-      barberId: null,
-      locationId: null,
-      serviceIds: [],
-      timeSlot: null,
+      ...EMPTY_DRAFT,
+      party: { ownerId: null, guests: [], nextSequence: 7 },
+      cart: { seats: [], nextSequence: 4 },
     };
-
     store.save(draft);
+
     const loaded = unwrap(store.load());
-    expect(loaded?.barberId).toBeNull();
-    expect(loaded?.locationId).toBeNull();
-    expect(loaded?.serviceIds).toEqual([]);
-    expect(loaded?.timeSlot).toBeNull();
+    expect(loaded?.party.nextSequence).toBe(7);
+    expect(loaded?.cart.nextSequence).toBe(4);
+  });
+
+  it('round-trips an ANONYMOUS draft — /book is browsable before sign-in', () => {
+    store.save(EMPTY_DRAFT);
+    const loaded = unwrap(store.load());
+    expect(loaded?.party.ownerId).toBeNull();
+    expect(loaded?.step).toBe('guests');
   });
 
   it('clears the stored draft', () => {
-    const draft: BookingDraft = {
-      ownerId: unwrap(UserId.create('user-1')),
-      barberId: null,
-      locationId: null,
-      serviceIds: [],
-      timeSlot: null,
-    };
-    store.save(draft);
-
+    store.save(EMPTY_DRAFT);
     expect(store.clear().isSuccess()).toBe(true);
     expect(unwrap(store.load())).toBeNull();
   });
 
   it('surfaces corrupted JSON as a failed Result instead of throwing', () => {
-    sessionStorage.setItem('creativo.booking-draft', '{not valid json');
-
-    const result = store.load();
-    expect(result.isFailure()).toBe(true);
+    sessionStorage.setItem(KEY, '{not valid json');
+    expect(store.load().isFailure()).toBe(true);
   });
 
-  it('surfaces a malformed stored shape (bad ownerId) as a failed Result', () => {
+  it('surfaces a malformed stored shape as a failed Result', () => {
     sessionStorage.setItem(
-      'creativo.booking-draft',
+      KEY,
+      JSON.stringify({ version: SCHEMA_VERSION, draft: { step: 'guests' } }),
+    );
+    expect(store.load().isFailure()).toBe(true);
+  });
+
+  it('rejects an unknown step rather than restoring the flow into nowhere', () => {
+    sessionStorage.setItem(
+      KEY,
       JSON.stringify({
-        ownerId: '',
+        version: SCHEMA_VERSION,
+        draft: { ...EMPTY_DRAFT, step: 'payment' },
+      }),
+    );
+    expect(store.load().isFailure()).toBe(true);
+  });
+
+  it('treats a draft from an older schema as absent, not as an error', () => {
+    // The pre-cart shape, still sitting in a tab that was open across a
+    // deploy. Nothing the user did wrong, so nothing to report — just start
+    // fresh rather than half-reading a shape the flow can no longer hold.
+    sessionStorage.setItem(
+      KEY,
+      JSON.stringify({
+        ownerId: 'user-1',
         barberId: null,
         locationId: null,
-        serviceIds: [],
+        serviceIds: ['service-1'],
         timeSlot: null,
       }),
     );
 
     const result = store.load();
-    expect(result.isFailure()).toBe(true);
+    expect(result.isSuccess()).toBe(true);
+    expect(unwrap(result)).toBeNull();
   });
 });

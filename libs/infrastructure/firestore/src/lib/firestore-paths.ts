@@ -44,6 +44,17 @@ export const Collections = {
   ServiceCategories: 'serviceCategories',
   Services: 'services',
   Barbers: 'barbers',
+  /** `barberSchedules/{barberId}` — the roster. Public-read, PII-free. */
+  BarberSchedules: 'barberSchedules',
+  /**
+   * `barberBusy/{barberId}__{YYYY-MM-DD}` — the public busy projection.
+   *
+   * Keyed by barber AND day, so the booking grid reads exactly the days it
+   * renders. Geometry only: no client, no service, no price, no reason. That
+   * is what makes it safe to leave open to anonymous visitors, who need it to
+   * see a single free slot.
+   */
+  BarberBusy: 'barberBusy',
   Locations: 'locations',
   Coupons: 'coupons',
   RewardPrograms: 'rewardPrograms',
@@ -137,6 +148,26 @@ export function barberDocRef(
   id: BarberId,
 ): DocumentReference<DocumentData> {
   return doc(db, Collections.Barbers, id.value);
+}
+
+export function barberScheduleDocRef(
+  db: Firestore,
+  id: BarberId,
+): DocumentReference<DocumentData> {
+  return doc(db, Collections.BarberSchedules, id.value);
+}
+
+/** The composite key is the barber and the day — see `Collections.BarberBusy`. */
+export function barberBusyDocId(id: BarberId, dayKey: string): string {
+  return `${id.value}__${dayKey}`;
+}
+
+export function barberBusyDocRef(
+  db: Firestore,
+  id: BarberId,
+  dayKey: string,
+): DocumentReference<DocumentData> {
+  return doc(db, Collections.BarberBusy, barberBusyDocId(id, dayKey));
 }
 
 export function locationsCollection(

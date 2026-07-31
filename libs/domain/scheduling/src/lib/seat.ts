@@ -1,7 +1,14 @@
+import { ZonedDateTime } from '@creativo/domain/kernel';
 import { UserId } from '@creativo/domain/accounts';
-import { ServiceId } from '@creativo/domain/catalog';
+import {
+  BarberId,
+  ServiceId,
+  ServiceTerms,
+  ServiceVariantId,
+} from '@creativo/domain/catalog';
 import { SeatId } from './ids';
 import { SeatLabel } from './seat-label';
+import { TimeSlot } from './time-slot';
 
 /**
  * How the seat's subject relates to the booking party's owner.
@@ -51,36 +58,114 @@ export interface SeatProps {
   readonly id: SeatId;
   readonly subject: SeatSubject;
   readonly serviceId: ServiceId;
+  /** The choice made within the service — `null` only when it declares none. */
+  readonly variantId: ServiceVariantId | null;
+  /** RESOLVED, never a preference: scheduling consumes `BarberPref` and emits this. */
+  readonly barberId: BarberId;
+  /** Price + duration SNAPSHOT taken at commit time. See the class doc. */
+  readonly terms: ServiceTerms;
+  /**
+   * WHEN this seat STARTS. The end is DERIVED from `terms.durationMinutes` —
+   * see the class doc on why the seat may not state its length twice.
+   */
+  readonly startsAt: ZonedDateTime;
 }
 
 /**
  * One person being served within an `Appointment` — a party of N people is
  * one `Appointment` with N seats (the appointment is the consistency
- * boundary; cancelling the whole party is one write). Each seat books
- * exactly one `ServiceId`; `Appointment` carries the shared `barberId`/
- * `locationId` for the whole slot (deviation from v2's per-seat
- * `BarberPref`/variant model — simplified for this pass, see deviation log).
+ * boundary; cancelling the whole party is one write).
  *
- * `Seat.of` is a trusted assembler, not a validating `create()`: every
- * argument (`SeatId`, `SeatSubject`'s `UserId`/`SeatLabel`, `ServiceId`) is
- * already a validated domain value by the time a `Seat` is built — there is
- * no raw primitive entering here, so there is nothing left for a `Seat`
- * itself to validate. Multi-seat invariants that span the whole appointment
- * (at most one `self` seat, etc.) are enforced by `Appointment.schedule`/
- * `reconstitute`, not here.
+ * ### Why a seat carries its own barber AND its own slot
+ * The product allows a party to be served in whatever arrangement the shop
+ * can actually offer (owner ruling 2026-07-29): two guests with different
+ * barbers go in PARALLEL, two guests who both want Ivan go SEQUENTIALLY.
+ * Neither is a mode the user picks — both are simply options the
+ * availability engine returns. That is unrepresentable while the appointment
+ * holds one barber and one time for everyone, which is the shape this
+ * replaces. `Appointment.timeSlot` becomes the ENVELOPE derived from these
+ * slots, so the two can never disagree.
+ *
+ * ### Why terms are snapshotted here
+ * Prices and durations are catalog data that changes; an appointment is a
+ * commitment, and a seat is a line on its invoice. Snapshotting at write
+ * time means the review screen and the persisted appointment can never
+ * disagree, `Appointment.subtotal()` needs no catalog round-trip, and the
+ * duration the schedule was computed from is the duration that was booked.
+ *
+ * ### Why the seat stores a START, not a slot
+ * It used to carry both a `slot` and a `terms.durationMinutes`, with nothing
+ * reconciling them — so a seat could say it ran 10:00–10:45 while claiming to
+ * be a 30-minute service, and conflict detection and utilisation would then
+ * disagree forever with no error anywhere. Storing only the start and
+ * DERIVING `slot` makes that disagreement unrepresentable: there is one
+ * answer to "how long is this seat", and it is the one that was sold.
+ *
+ * `Seat.of` stays a trusted assembler, not a validating `create()`: every
+ * argument is already a validated domain value by the time a `Seat` is
+ * built, so there is nothing left for a seat itself to validate. Invariants
+ * spanning the whole party (at most one `self` seat, no barber double-booked
+ * across overlapping seats) belong to `Appointment` — the only thing that
+ * can see every seat at once.
  */
 export class Seat {
   private constructor(
     readonly id: SeatId,
     readonly subject: SeatSubject,
     readonly serviceId: ServiceId,
+    readonly variantId: ServiceVariantId | null,
+    readonly barberId: BarberId,
+    readonly terms: ServiceTerms,
+    readonly startsAt: ZonedDateTime,
   ) {}
 
   static of(props: SeatProps): Seat {
-    return new Seat(props.id, props.subject, props.serviceId);
+    return new Seat(
+      props.id,
+      props.subject,
+      props.serviceId,
+      props.variantId,
+      props.barberId,
+      props.terms,
+      props.startsAt,
+    );
+  }
+
+  /**
+   * When this seat runs — DERIVED from the start plus the snapshotted
+   * duration, never stored alongside it.
+   *
+   * `plusMinutes` is exact elapsed time, so a seat straddling a DST
+   * transition still lasts the minutes it was sold for.
+   */
+  get slot(): TimeSlot {
+    const result = TimeSlot.fromDuration(
+      this.startsAt,
+      this.terms.durationMinutes,
+    );
+    // Unreachable: `ServiceTerms` rejects a non-positive duration at
+    // construction, so the end is always strictly after the start.
+    if (result.isFailure())
+      throw new Error('unreachable: non-positive duration');
+    return result.value;
   }
 
   isContactless(): boolean {
     return SeatSubject.isContactless(this.subject);
+  }
+
+  durationMinutes(): number {
+    return this.terms.durationMinutes;
+  }
+
+  endsAt(): ZonedDateTime {
+    return this.startsAt.plusMinutes(this.terms.durationMinutes);
+  }
+
+  /** Would these two seats need the same barber in two chairs at once? */
+  collidesWith(other: Seat): boolean {
+    return (
+      this.barberId.equals(other.barberId) && this.slot.overlaps(other.slot)
+    );
   }
 }

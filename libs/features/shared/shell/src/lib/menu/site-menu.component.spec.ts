@@ -312,9 +312,9 @@ describe('SiteMenuComponent', () => {
 
   it('makes the whole portrait a target for /account, with a real affordance', async () => {
     const fixture = await render({ open: true, isAuthed: true });
-    const identity = fixture.nativeElement.querySelector<HTMLAnchorElement>(
-      '[data-testid="menu-identity"]',
-    );
+    const identity = (
+      fixture.nativeElement as HTMLElement
+    ).querySelector<HTMLAnchorElement>('[data-testid="menu-identity"]');
 
     // An anchor, not a div with a click handler: keyboard, focus ring and
     // middle-click come free, and the state layer is the affordance a
@@ -342,9 +342,9 @@ describe('SiteMenuComponent', () => {
 
   it('end-pins a profile chip on the trailing edge of the preferences row', async () => {
     const fixture = await render({ open: true, isAuthed: true });
-    const chip = fixture.nativeElement.querySelector<HTMLAnchorElement>(
-      '[data-testid="menu-profile"]',
-    );
+    const chip = (
+      fixture.nativeElement as HTMLElement
+    ).querySelector<HTMLAnchorElement>('[data-testid="menu-profile"]');
     expect(chip).not.toBeNull();
     expect(chip!.getAttribute('href')).toBe('/account/profile');
     // Same chip recipe as the locale/theme pair it sits opposite.
@@ -388,9 +388,9 @@ describe('SiteMenuComponent', () => {
       profile: user('2000-05-05'),
     });
 
-    const row = fixture.nativeElement.querySelector<HTMLAnchorElement>(
-      '[data-testid="menu-complete-profile"]',
-    );
+    const row = (
+      fixture.nativeElement as HTMLElement
+    ).querySelector<HTMLAnchorElement>('[data-testid="menu-complete-profile"]');
     expect(row!.getAttribute('href')).toBe(
       '/onboarding?phase=personalize&step=avatar',
     );

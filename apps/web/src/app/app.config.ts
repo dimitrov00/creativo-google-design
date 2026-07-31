@@ -32,7 +32,9 @@ import {
 } from '@creativo/application/identity';
 import {
   APPOINTMENT_REPOSITORY,
+  AVAILABILITY_READER,
   BOOKING_DRAFT_STORE,
+  BOOKING_GATEWAY,
 } from '@creativo/application/booking';
 import { CATALOG_READER, MEDIA_READER } from '@creativo/application/catalog';
 import {
@@ -82,6 +84,8 @@ import {
   FirestorePositionRepository,
   FirestoreCourseRepository,
   FirestoreEventRepository,
+  FirestoreAvailabilityReader,
+  CallableBookingGateway,
 } from '@creativo/infrastructure/firestore';
 import {
   FirebaseStorageAvatarUploader,
@@ -149,6 +153,8 @@ export const appConfig: ApplicationConfig = {
       useClass: FirestoreAppointmentRepository,
     },
     { provide: CATALOG_READER, useClass: FirestoreCatalogReader },
+    { provide: AVAILABILITY_READER, useClass: FirestoreAvailabilityReader },
+    { provide: BOOKING_GATEWAY, useClass: CallableBookingGateway },
     // STUB until the notifications feature lands — the port is real, so
     // swapping this for the Firestore adapter is this one line.
     { provide: NOTIFICATION_READER, useClass: InMemoryNotificationReader },

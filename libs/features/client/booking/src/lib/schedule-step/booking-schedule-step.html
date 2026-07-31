@@ -1,0 +1,182 @@
+<ng-container *transloco="let t">
+  <lib-booking-step-layout>
+    <ui-stack uiSpacing="tight">
+      <h1 libStepTitle uiText uiFont="title2">
+        {{ t('booking.schedule.title') }}
+      </h1>
+      <p uiText uiFont="subheadline" uiForegroundStyle="secondary">
+        {{ t('booking.schedule.lede') }}
+      </p>
+    </ui-stack>
+
+    <!-- The bounce-back from a lost race. Stated plainly and at the TOP,
+         because it is the reason the user is looking at this screen again
+         rather than at a confirmation. -->
+    @if (store.slotTaken()) {
+    <ui-stack uiSpacing="tight" role="alert" data-testid="booking-slot-taken">
+      <p uiText uiFont="body">{{ t('booking.schedule.slotTaken.title') }}</p>
+      <p uiText uiFont="footnote" uiForegroundStyle="secondary">
+        {{ t('booking.schedule.slotTaken.body') }}
+      </p>
+    </ui-stack>
+    }
+
+    <!-- WHEN — the month. -->
+    @if (month(); as grid) {
+    <ui-stack uiSpacing="compact">
+      <ui-stack uiAxis="horizontal" uiAlignment="center" uiSpacing="tight">
+        <h2 uiText uiFont="headline" data-testid="booking-month-label">
+          {{ monthLabel() }}
+        </h2>
+        <ui-spacer />
+        <button
+          type="button"
+          uiButton
+          uiButtonStyle="bordered"
+          uiTint="neutral"
+          uiControlSize="small"
+          [uiIconOnly]="true"
+          [disabled]="!canGoToPreviousMonth()"
+          data-testid="booking-month-previous"
+          [attr.aria-label]="t('booking.schedule.previousMonth')"
+          (click)="shiftMonth(-1)"
+        >
+          <ui-icon uiName="calendar.previous" />
+        </button>
+        <button
+          type="button"
+          uiButton
+          uiButtonStyle="bordered"
+          uiTint="neutral"
+          uiControlSize="small"
+          [uiIconOnly]="true"
+          data-testid="booking-month-next"
+          [attr.aria-label]="t('booking.schedule.nextMonth')"
+          (click)="shiftMonth(1)"
+        >
+          <ui-icon uiName="calendar.next" />
+        </button>
+      </ui-stack>
+
+      <ui-calendar-grid>
+        @for (label of weekdayLabels(); track $index) {
+        <span uiWeekday uiText uiFont="caption" uiForegroundStyle="secondary">
+          {{ label }}
+        </span>
+        } @for (week of grid.weeks; track $index) { @for (cell of week; track
+        cell.dayKey) {
+        <button
+          type="button"
+          uiDay
+          uiInteractive
+          uiRadius="capsule"
+          data-testid="booking-day"
+          [attr.data-day-key]="cell.dayKey"
+          [attr.data-selected]="isSelectedDay(cell) ? '' : null"
+          [disabled]="cell.outOfRange || cell.freeMinutes === 0"
+          [attr.aria-label]="
+                  cell.freeMinutes === 0
+                    ? t('booking.schedule.dayFull', { day: cell.dayOfMonth })
+                    : t('booking.schedule.dayFree', { day: cell.dayOfMonth })
+                "
+          (click)="selectDay(cell)"
+        >
+          <ui-date-badge [uiDay]="cell.dayOfMonth" [uiState]="dayState(cell)" />
+        </button>
+        } }
+      </ui-calendar-grid>
+    </ui-stack>
+    }
+
+    <!-- WHEN — the times, grouped the way people say them. -->
+    @if (selectedDayKey()) { @if (loadingDay()) {
+    <p uiText uiFont="footnote" uiForegroundStyle="secondary">
+      {{ t('booking.schedule.loading') }}
+    </p>
+    } @else if (hasNoTimes()) {
+    <!-- Honest, not blank: this day genuinely cannot hold this party,
+             and the waitlist is the next thing to offer (Phase 5). -->
+    <ui-stack uiSpacing="tight" data-testid="booking-no-times">
+      <p uiText uiFont="body">{{ t('booking.schedule.noTimes.title') }}</p>
+      <p uiText uiFont="footnote" uiForegroundStyle="secondary">
+        {{ t('booking.schedule.noTimes.body') }}
+      </p>
+    </ui-stack>
+    } @else {
+    <ui-stack uiSpacing="comfortable" data-testid="booking-times">
+      @for (part of dayparts(); track part.key) {
+      <ui-stack uiSpacing="compact">
+        <!-- A plain caption, NOT `ui-section-header`: that pattern is
+                   the marketing eyebrow/title/lede trio and renders at
+                   display scale. This is a grouped-list header — the quietest
+                   thing on the screen, like an iOS section label. -->
+        <h3 uiText uiFont="footnote" uiForegroundStyle="secondary">
+          {{ t('booking.schedule.daypart.' + part.key) }}
+        </h3>
+        <ui-flow uiSpacing="tight">
+          @for (start of part.starts; track start.key) {
+          <button
+            type="button"
+            uiChip
+            [uiSelected]="isSelectedStart(start)"
+            data-testid="booking-time"
+            [attr.data-start]="start.startMs"
+            [attr.data-shop]="start.shopKey"
+            (click)="selectStart(start)"
+          >
+            {{ start.label }} @if (start.shopName) {
+            <!-- Only under "any shop": two shops can offer the same
+                           minute, and they are different appointments. -->
+            <span
+              uiText
+              uiFont="caption"
+              uiForegroundStyle="secondary"
+              class="booking-schedule__chip-shop"
+              >{{ start.shopName }}</span
+            >
+            }
+          </button>
+          }
+        </ui-flow>
+      </ui-stack>
+      }
+    </ui-stack>
+    } }
+
+    <!-- Which arrangement the user just picked. Only for a party: one person
+         served by one barber at the time they tapped explains itself. -->
+    @if (arrangement().length > 0) {
+    <ui-stack uiSpacing="tight" data-testid="booking-arrangement">
+      <p uiText uiFont="footnote" uiForegroundStyle="secondary">
+        {{ t('booking.schedule.arrangement.' + arrangementKind()) }}
+      </p>
+      <ui-list-group>
+        @for (line of arrangement(); track $index) {
+        <ui-list-row uiAlignment="leading">
+          <ui-stack uiSpacing="none">
+            <span uiText uiFont="body">{{ line.personLabel }}</span>
+            <span uiText uiFont="footnote" uiForegroundStyle="secondary">
+              {{ line.barberName }}
+            </span>
+          </ui-stack>
+          <span uiTrailing uiText uiFont="body">{{ line.timeLabel }}</span>
+        </ui-list-row>
+        }
+      </ui-list-group>
+    </ui-stack>
+    }
+
+    <button
+      stepActions
+      type="button"
+      uiButton
+      uiButtonStyle="borderedProminent"
+      uiControlSize="large"
+      [disabled]="!canContinue()"
+      data-testid="booking-schedule-continue"
+      (click)="continue()"
+    >
+      {{ t('booking.continue') }}
+    </button>
+  </lib-booking-step-layout>
+</ng-container>

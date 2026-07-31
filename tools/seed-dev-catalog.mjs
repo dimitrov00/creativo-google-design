@@ -1,8 +1,15 @@
 /**
  * Seeds the Firebase EMULATORS with a small barbershop catalog so the
  * onboarding services grid (and anything else reading `CatalogReader`) has
- * real data to render in dev: one category, six single services with cover
- * art uploaded to the Storage emulator from `apps/web/public/work/`.
+ * real data to render in dev: one category, six single services and two
+ * bundles with cover art uploaded to the Storage emulator from
+ * `apps/web/public/work/`, plus the two shop `locations` the booking flow
+ * schedules against.
+ *
+ * The haircut family carries REAL `conflictsWith` data (a seat cannot hold
+ * two haircuts) — `svc-finish` is deliberately left one-way so the booking
+ * flow's symmetric conflict normalization is exercised against seeded data
+ * rather than only in unit tests.
  *
  * Emulator-only by construction: refuses to run unless
  * FIRESTORE_EMULATOR_HOST is set, so it can never touch a real project.
@@ -58,11 +65,71 @@ async function uploadAvatar(file, id) {
   return { id: `media-barber-${id}`, path, width: 1200, height: 1500 };
 }
 
+/** `LocationDayHours`, Mon-first ISO order — a 7-tuple is a type invariant. */
+const open = (opens, closes) => ({ kind: 'open', opens, closes });
+const CLOSED = { kind: 'closed' };
+
+/**
+ * The two shops, matching the hours the landing's locations section has been
+ * rendering from hand-authored content. These exist so `/book` has something
+ * to schedule against: `Location.hours` is the outer envelope every barber's
+ * working hours are clamped to, and `timezone` replaces the `SCHEDULING_ZONE`
+ * constant the booking use-case used to hardcode.
+ */
+const LOCATIONS = [
+  {
+    id: 'loc-center',
+    name: { bg: 'Креативо · Център', en: 'Creativo · Center' },
+    address: {
+      bg: 'бул. „Цар Симеон Велики“ 120, Стара Загора',
+      en: '120 Tsar Simeon Veliki Blvd, Stara Zagora',
+    },
+    phone: { e164: '+359881234567', display: '+359 88 123 4567' },
+    geo: { lat: 42.4271, lng: 25.6366 },
+    hours: [
+      open('09:00', '20:00'),
+      open('09:00', '20:00'),
+      open('09:00', '20:00'),
+      open('09:00', '20:00'),
+      open('09:00', '21:00'),
+      open('10:00', '18:00'),
+      CLOSED,
+    ],
+    sortOrder: 1,
+  },
+  {
+    id: 'loc-mladost',
+    name: { bg: 'Креативо · Младост', en: 'Creativo · Mladost' },
+    address: {
+      bg: 'ул. „Армейска“ 14, Младост, Стара Загора',
+      en: '14 Armeyska St, Mladost, Stara Zagora',
+    },
+    phone: { e164: '+359887654321', display: '+359 88 765 4321' },
+    geo: { lat: 42.46, lng: 25.685 },
+    hours: [
+      CLOSED,
+      open('10:00', '19:00'),
+      open('10:00', '19:00'),
+      open('10:00', '19:00'),
+      open('10:00', '19:00'),
+      open('09:00', '16:00'),
+      CLOSED,
+    ],
+    sortOrder: 2,
+  },
+];
+
+const BOTH_LOCATIONS = LOCATIONS.map((location) => location.id);
+
 /**
  * The roster the landing has been rendering from hand-authored content.
  * Seeded so both surfaces read one catalog — note `Barber` carries no
  * `rating` on purpose ("fabricated ratings read as a scam"), so the stars
  * the static content showed have no counterpart here.
+ *
+ * `locationIds` is populated rather than left empty (which would mean "every
+ * location") so the booking flow's per-location barber filter has a real
+ * negative case: Stefan works the Center chair only.
  */
 const BARBERS = [
   {
@@ -77,6 +144,7 @@ const BARBERS = [
     },
     yearsExperience: 12,
     instagramHandle: 'ivan.cuts',
+    locationIds: BOTH_LOCATIONS,
     sortOrder: 1,
   },
   {
@@ -91,6 +159,7 @@ const BARBERS = [
     },
     yearsExperience: 6,
     instagramHandle: 'niko.fades',
+    locationIds: BOTH_LOCATIONS,
     sortOrder: 2,
   },
   {
@@ -105,6 +174,7 @@ const BARBERS = [
     },
     yearsExperience: 8,
     instagramHandle: 'stefan.razor',
+    locationIds: ['loc-center'],
     sortOrder: 3,
   },
 ];
@@ -122,6 +192,24 @@ const terms = (major, minutes) => ({
   durationMinutes: minutes,
 });
 
+/**
+ * The haircut family: one seat cannot hold two haircuts. Authored the way a
+ * catalog manager would — each cut names the others it replaces.
+ *
+ * `svc-finish` is named BY the cuts but declares nothing itself: it is the
+ * deliberate one-way case that proves the booking flow normalizes conflicts
+ * symmetrically rather than trusting both directions to be authored.
+ * Bundles declare nothing either — a bundle conflicts with everything it
+ * `includes` implicitly, derived from `composition`, never hand-authored.
+ */
+const HAIRCUTS = [
+  'svc-classic-cut',
+  'svc-fade',
+  'svc-scissor-trim',
+  'svc-modern-cut',
+];
+const excluding = (id) => [...HAIRCUTS.filter((other) => other !== id), 'svc-finish'];
+
 const CATEGORY = {
   id: 'cat-hair',
   name: { bg: 'Коса и брада', en: 'Hair & beard' },
@@ -131,6 +219,7 @@ const CATEGORY = {
 const SERVICES = [
   {
     id: 'svc-classic-cut',
+    conflictsWith: excluding('svc-classic-cut'),
     file: 'classic-clippers.jpg',
     name: { bg: 'Класическа подстрижка', en: 'Classic cut' },
     description: {
@@ -150,6 +239,7 @@ const SERVICES = [
   },
   {
     id: 'svc-fade',
+    conflictsWith: excluding('svc-fade'),
     file: 'fade-styling.jpg',
     name: { bg: 'Фейд', en: 'Skin fade' },
     description: {
@@ -187,6 +277,7 @@ const SERVICES = [
   },
   {
     id: 'svc-scissor-trim',
+    conflictsWith: excluding('svc-scissor-trim'),
     file: 'scissors-trim.jpg',
     name: { bg: 'Подстрижка с ножица', en: 'Scissor trim' },
     description: {
@@ -205,6 +296,7 @@ const SERVICES = [
   },
   {
     id: 'svc-modern-cut',
+    conflictsWith: excluding('svc-modern-cut'),
     file: 'modern-cut.jpg',
     name: { bg: 'Модерна визия', en: 'Modern restyle' },
     description: {
@@ -291,6 +383,237 @@ await db
   .doc(CATEGORY.id)
   .set({ name: CATEGORY.name, sortOrder: CATEGORY.sortOrder });
 
+/**
+ * Barber rosters.
+ *
+ * Every shift segment carries **its own location**, because a barber is not a
+ * fixture of one chair: Ivan covers Center most of the week and Mladost on
+ * Fridays, and Niko splits a single Wednesday between the two. That is ordinary
+ * in a two-shop business, and the first model — one `locationId` per barber —
+ * could not say it at all.
+ *
+ * Several segments per weekday also express a lunch break, which the original
+ * one-range-per-day model could not. `turnaroundMinutes` is the barber's
+ * baseline reset between UNRELATED clients — never applied between two seats of
+ * one party.
+ *
+ * `effectiveFrom` is what makes an hours change safe: amending a roster appends
+ * a new version rather than rewriting this one, so historical utilisation keeps
+ * dividing by the hours that were actually worked.
+ */
+const CENTER = 'loc-center';
+const MLADOST = 'loc-mladost';
+
+/** A split shift at one shop — mornings, lunch, afternoons. */
+const shiftAt = (locationId) => [
+  { start: '09:00', end: '13:00', locationId },
+  { start: '14:00', end: '18:00', locationId },
+];
+
+const LATE_SHIFT_CENTER = [
+  { start: '12:00', end: '20:00', locationId: CENTER },
+];
+
+const SCHEDULES = [
+  {
+    barberId: 'ivan',
+    turnaroundMinutes: 10,
+    weeklyPattern: {
+      monday: shiftAt(CENTER),
+      tuesday: shiftAt(CENTER),
+      wednesday: shiftAt(CENTER),
+      thursday: shiftAt(CENTER),
+      // Ivan covers the Mladost chair on Fridays. Mladost opens 10:00–19:00,
+      // so the morning segment starts with the shop rather than at 09:00 —
+      // otherwise the first hour clips away and the roster reads as a lie.
+      friday: [
+        { start: '10:00', end: '13:00', locationId: MLADOST },
+        { start: '14:00', end: '18:00', locationId: MLADOST },
+      ],
+      saturday: [{ start: '10:00', end: '16:00', locationId: CENTER }],
+    },
+  },
+  {
+    barberId: 'niko',
+    turnaroundMinutes: 0,
+    weeklyPattern: {
+      tuesday: LATE_SHIFT_CENTER,
+      // The headline case: ONE day, TWO shops. Center in the morning, Mladost
+      // in the afternoon, with two hours between them — comfortably more than
+      // anyone needs to cross Stara Zagora, so the pattern is workable.
+      wednesday: [
+        { start: '09:00', end: '13:00', locationId: CENTER },
+        { start: '15:00', end: '19:00', locationId: MLADOST },
+      ],
+      thursday: LATE_SHIFT_CENTER,
+      friday: LATE_SHIFT_CENTER,
+      saturday: [{ start: '10:00', end: '18:00', locationId: CENTER }],
+    },
+  },
+  {
+    // Stefan works the Center chair only, and takes Wednesdays off — so a
+    // Wednesday party asking for him has no options, which is a state the
+    // schedule step has to render honestly rather than as a blank grid.
+    barberId: 'stefan',
+    turnaroundMinutes: 15,
+    weeklyPattern: {
+      monday: shiftAt(CENTER),
+      tuesday: shiftAt(CENTER),
+      thursday: shiftAt(CENTER),
+      friday: shiftAt(CENTER),
+      saturday: [{ start: '09:00', end: '15:00', locationId: CENTER }],
+    },
+  },
+];
+
+/**
+ * Firestore forbids DIRECTLY-NESTED ARRAYS, so a weekday's segments are stored
+ * as an array of maps — which is also the only shape that can carry a location
+ * per segment. This and the two adapters' `toPatternProps` are the only places
+ * that know the persisted shape.
+ */
+function toStoredPattern(weeklyPattern) {
+  return Object.fromEntries(
+    Object.entries(weeklyPattern).map(([weekday, segments]) => [
+      weekday,
+      segments.map(({ start, end, locationId }) => ({
+        start,
+        end,
+        locationId,
+      })),
+    ]),
+  );
+}
+
+for (const schedule of SCHEDULES) {
+  await db.collection('barberSchedules').doc(schedule.barberId).set({
+    barberId: schedule.barberId,
+    // NO document-level `locationId`: the location lives on each segment, so
+    // one barber's week can span shops. Ask the pattern where they work.
+    turnaroundMinutes: schedule.turnaroundMinutes,
+    // One open-ended version. `amend` closes it and appends the next.
+    versions: [
+      {
+        seq: 0,
+        effectiveFrom: '2026-01-01',
+        effectiveTo: null,
+        weeklyPattern: toStoredPattern(schedule.weeklyPattern),
+      },
+    ],
+  });
+  console.log(`seeded schedule for ${schedule.barberId}`);
+}
+
+/**
+ * The PUBLIC busy projection — geometry only, no reason, no ids, no revenue.
+ *
+ * Firestore rules cannot redact fields, so anything an anonymous visitor may
+ * read has to live in a document that simply does not contain the secret.
+ * Intervals are merged, which leaks booking density (what anyone learns by
+ * looking through the window) but never how many clients were served.
+ *
+ * Seeded here so the schedule step has a realistically busy shop to render
+ * against; in production the `commitBooking` transaction writes it.
+ */
+const SCHEDULING_ZONE = 'Europe/Sofia';
+
+/**
+ * A wall-clock time on the shop's day, as an ISO string carrying Sofia's
+ * OFFSET — the same shape `commitBooking` writes.
+ *
+ * The first pass used `toISOString()`, which is a correct instant but reads
+ * as UTC: `10:00` Sofia came back as `07:00Z`, and every hand-check of the
+ * projection was three hours out. Both parse to the same instant, but one
+ * shape beats two, and the readable one wins.
+ */
+function isoAt(dayOffset, hour, minute) {
+  const base = new Date();
+  base.setHours(0, 0, 0, 0);
+  base.setDate(base.getDate() + dayOffset);
+  base.setHours(hour, minute, 0, 0);
+
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: SCHEDULING_ZONE,
+    timeZoneName: 'longOffset',
+  })
+    .formatToParts(base)
+    .find((part) => part.type === 'timeZoneName');
+  // `GMT+03:00` → `+03:00`; `GMT` (never in Sofia) → `Z`.
+  const offset = (parts?.value ?? 'GMT').replace('GMT', '') || 'Z';
+
+  const pad = (n) => String(n).padStart(2, '0');
+  const day = [
+    base.getFullYear(),
+    pad(base.getMonth() + 1),
+    pad(base.getDate()),
+  ].join('-');
+  return `${day}T${pad(hour)}:${pad(minute)}:00.000${offset}`;
+}
+
+const BUSY_PATTERN = {
+  ivan: [
+    [10, 0, 10, 45],
+    [15, 0, 16, 0],
+  ],
+  niko: [
+    [13, 0, 13, 45],
+    [17, 30, 18, 15],
+  ],
+  stefan: [[11, 0, 11, 45]],
+};
+
+const BUSY_HORIZON_DAYS = 21;
+
+for (const schedule of SCHEDULES) {
+  // eslint-disable-next-line security/detect-object-injection -- fixed keys.
+  const pattern = BUSY_PATTERN[schedule.barberId] ?? [];
+  for (let offset = 0; offset < BUSY_HORIZON_DAYS; offset++) {
+    const date = new Date();
+    date.setHours(0, 0, 0, 0);
+    date.setDate(date.getDate() + offset);
+    const dayKey = [
+      date.getFullYear(),
+      String(date.getMonth() + 1).padStart(2, '0'),
+      String(date.getDate()).padStart(2, '0'),
+    ].join('-');
+
+    // Vary the load so the calendar's per-day markers are not uniform — a
+    // grid where every day looks identical proves nothing.
+    const density = (offset * 7 + schedule.barberId.length) % 3;
+    const busy = pattern
+      .slice(0, density === 0 ? pattern.length : density)
+      .map(([fromH, fromM, toH, toM]) => ({
+        startIso: isoAt(offset, fromH, fromM),
+        endIso: isoAt(offset, toH, toM),
+      }));
+
+    await db
+      .collection('barberBusy')
+      .doc(`${schedule.barberId}__${dayKey}`)
+      .set({ barberId: schedule.barberId, dayKey, zone: SCHEDULING_ZONE, busy });
+  }
+  console.log(
+    `seeded ${BUSY_HORIZON_DAYS} busy days for ${schedule.barberId}`,
+  );
+}
+
+for (const location of LOCATIONS) {
+  await db.collection('locations').doc(location.id).set({
+    name: location.name,
+    address: location.address,
+    phone: location.phone,
+    geo: location.geo,
+    hours: location.hours,
+    // Every slot the booking flow computes is materialized against this
+    // zone, never the device's — the §7.1 rule that a UTC server or a
+    // travelling client must still land on the shop's own calendar day.
+    timezone: 'Europe/Sofia',
+    status: 'active',
+    sortOrder: location.sortOrder,
+  });
+  console.log(`seeded location ${location.id}`);
+}
+
 for (const barber of BARBERS) {
   const avatar = await uploadAvatar(barber.file, barber.id);
   await db.collection('barbers').doc(barber.id).set({
@@ -300,7 +623,7 @@ for (const barber of BARBERS) {
     bio: barber.bio,
     avatar,
     yearsExperience: barber.yearsExperience,
-    locationIds: [],
+    locationIds: barber.locationIds,
     instagramHandle: barber.instagramHandle,
     status: 'active',
     sortOrder: barber.sortOrder,
@@ -326,7 +649,7 @@ for (const service of SERVICES) {
       offerings: service.offerings,
       cover,
       locationIds: [],
-      conflictsWith: [],
+      conflictsWith: service.conflictsWith ?? [],
       composition:
         service.kind === 'bundle'
           ? { kind: 'bundle', includes: service.includes }
@@ -342,6 +665,6 @@ for (const service of SERVICES) {
 }
 
 console.log(
-  `Done: ${SERVICES.length} services + ${BARBERS.length} barbers + 1 category in the ${PROJECT_ID} emulators.`,
+  `Done: ${SERVICES.length} services + ${BARBERS.length} barbers + ${LOCATIONS.length} locations + ${SCHEDULES.length} rosters + 1 category in the ${PROJECT_ID} emulators.`,
 );
 process.exit(0);

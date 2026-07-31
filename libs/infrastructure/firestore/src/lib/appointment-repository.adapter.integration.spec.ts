@@ -4,6 +4,7 @@ import type {
   RulesTestEnvironment,
   RulesTestContext,
 } from '@firebase/rules-unit-testing';
+import { doc, setDoc, updateDoc } from 'firebase/firestore';
 import {
   Appointment,
   AppointmentId,
@@ -13,14 +14,17 @@ import {
   TimeSlot,
 } from '@creativo/domain/scheduling';
 import { UserId } from '@creativo/domain/accounts';
-import { ServiceId } from '@creativo/domain/catalog';
-import { Result } from '@creativo/domain/kernel';
+import { BarberId, ServiceId, ServiceTerms } from '@creativo/domain/catalog';
+import { Money, Result } from '@creativo/domain/kernel';
 import { FIREBASE_FIRESTORE } from '@creativo/infrastructure/firebase-app';
 import {
   createEmulatorTestEnv,
   modularFirestore,
 } from '../testing/emulator-test-env';
-import { FirestoreAppointmentRepository } from './appointment-repository.adapter';
+import {
+  FirestoreAppointmentRepository,
+  appointmentToDocument,
+} from './appointment-repository.adapter';
 
 function unwrap<T, E>(result: Result<T, E>): T {
   if (result.isFailure()) {
@@ -52,17 +56,20 @@ function buildAppointment(
       zone: 'Europe/Sofia',
     }),
   );
+  const price = unwrap(Money.fromMinorUnitsAndCode(1500, 'EUR'));
   const seat = Seat.of({
     id: unwrap(SeatId.create('seat-1')),
     subject: SeatSubject.account(unwrap(UserId.create(ownerUserId)), 'self'),
     serviceId: unwrap(ServiceId.create('service-1')),
+    variantId: null,
+    barberId: unwrap(BarberId.create('barber-1')),
+    terms: unwrap(ServiceTerms.create(price, 30)),
+    startsAt: timeSlot.start,
   });
   return unwrap(
     Appointment.reconstitute({
       id,
-      barberId: 'barber-1',
       locationId: 'location-1',
-      timeSlot,
       seats: [seat],
       status: { kind: status },
     }),
@@ -71,6 +78,23 @@ function buildAppointment(
 
 describe('FirestoreAppointmentRepository (emulator)', () => {
   let testEnv: RulesTestEnvironment;
+
+  /**
+   * Seeds appointments the way the server does. The browser adapter refuses to
+   * write (appointments are committed by the `commitBooking` callable), so
+   * tests write the canonical document shape directly with rules disabled.
+   */
+  async function seed(...appointments: readonly Appointment[]): Promise<void> {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      const db = modularFirestore(ctx);
+      for (const appointment of appointments) {
+        await setDoc(
+          doc(db, 'appointments', appointment.id.value),
+          appointmentToDocument(appointment),
+        );
+      }
+    });
+  }
 
   beforeAll(async () => {
     testEnv = await createEmulatorTestEnv('demo-firestore-appointment-repo');
@@ -84,15 +108,13 @@ describe('FirestoreAppointmentRepository (emulator)', () => {
     await testEnv.clearFirestore();
   });
 
-  it('round-trips save → findById for a client booking their own appointment', async () => {
+  it('a client reads back their own server-written appointment', async () => {
+    const appointment = buildAppointment('appt-own', 'user-1');
+    await seed(appointment);
+
     const repo = repoFor(
       testEnv.authenticatedContext('user-1', { roles: ['client'] }),
     );
-    const appointment = buildAppointment('appt-own', 'user-1');
-
-    const saveResult = await repo.save(appointment);
-    expect(saveResult.isSuccess()).toBe(true);
-
     const found = await repo.findById(appointment.id);
     expect(found.isSuccess()).toBe(true);
     if (found.isSuccess()) {
@@ -100,22 +122,49 @@ describe('FirestoreAppointmentRepository (emulator)', () => {
     }
   });
 
-  it('rejects a client creating an appointment owned by someone else', async () => {
-    const repo = repoFor(
+  it('RULES: a client cannot create an appointment at all — not even their own', async () => {
+    // The hole this closes: `create` used to allow any signed-in user whose
+    // `ownerUserId` matched, with no check on barber, time, price or overlap.
+    const db = modularFirestore(
       testEnv.authenticatedContext('user-1', { roles: ['client'] }),
     );
-    const appointment = buildAppointment('appt-other', 'user-2');
+    await expect(
+      setDoc(
+        doc(db, 'appointments', 'appt-forged'),
+        appointmentToDocument(buildAppointment('appt-forged', 'user-1')),
+      ),
+    ).rejects.toThrow();
+  });
 
-    const saveResult = await repo.save(appointment);
-    expect(saveResult.isFailure()).toBe(true);
+  it('RULES: a client cannot forge an appointment owned by someone else', async () => {
+    const db = modularFirestore(
+      testEnv.authenticatedContext('user-1', { roles: ['client'] }),
+    );
+    await expect(
+      setDoc(
+        doc(db, 'appointments', 'appt-other'),
+        appointmentToDocument(buildAppointment('appt-other', 'user-2')),
+      ),
+    ).rejects.toThrow();
+  });
+
+  it('RULES: staff may still create at the counter', async () => {
+    const db = modularFirestore(
+      testEnv.authenticatedContext('staff-1', { roles: ['barber'] }),
+    );
+    await expect(
+      setDoc(
+        doc(db, 'appointments', 'appt-counter'),
+        appointmentToDocument(buildAppointment('appt-counter', 'user-1')),
+      ),
+    ).resolves.toBeUndefined();
   });
 
   it('observeUpcomingFor emits only the requesting user’s own appointments', async () => {
-    await testEnv.withSecurityRulesDisabled(async (ctx) => {
-      const seedRepo = repoFor(ctx);
-      await seedRepo.save(buildAppointment('appt-mine', 'user-1'));
-      await seedRepo.save(buildAppointment('appt-someone-elses', 'user-2'));
-    });
+    await seed(
+      buildAppointment('appt-mine', 'user-1'),
+      buildAppointment('appt-someone-elses', 'user-2'),
+    );
 
     const repo = repoFor(
       testEnv.authenticatedContext('user-1', { roles: ['client'] }),
@@ -141,12 +190,7 @@ describe('FirestoreAppointmentRepository (emulator)', () => {
   });
 
   it('lets staff read and confirm any appointment’s lifecycle', async () => {
-    await testEnv.withSecurityRulesDisabled(async (ctx) => {
-      const seedRepo = repoFor(ctx);
-      await seedRepo.save(
-        buildAppointment('appt-for-staff', 'user-1', 'pending'),
-      );
-    });
+    await seed(buildAppointment('appt-for-staff', 'user-1', 'pending'));
 
     const staffRepo = repoFor(
       testEnv.authenticatedContext('barber-1', { roles: ['barber'] }),
@@ -160,8 +204,19 @@ describe('FirestoreAppointmentRepository (emulator)', () => {
       throw new Error('expected appointment to exist');
     }
 
+    // The transition itself is domain logic and stays testable here; the
+    // WRITE is a targeted status update, which is what the staff rule grants
+    // (a whole-document save is refused for everyone now).
     const confirmed = unwrap(found.value.confirm());
-    const saveResult = await staffRepo.save(confirmed);
-    expect(saveResult.isSuccess()).toBe(true);
+    expect(confirmed.status.kind).toBe('confirmed');
+
+    const staffDb = modularFirestore(
+      testEnv.authenticatedContext('barber-1', { roles: ['barber'] }),
+    );
+    await expect(
+      updateDoc(doc(staffDb, 'appointments', 'appt-for-staff'), {
+        status: confirmed.status,
+      }),
+    ).resolves.toBeUndefined();
   });
 });

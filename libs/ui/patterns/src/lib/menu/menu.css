@@ -21,12 +21,31 @@
     /* Sizes to its longest command, like a real menu — never narrower than
        the trigger it hangs off, never wider than the viewport allows. */
     inline-size: max-content;
-    min-inline-size: max(12rem, 100%);
-    max-inline-size: min(20rem, calc(100vw - var(--sys-space-comfortable) * 2));
+    /* `--ui-menu-min-width` lets a consumer that has to POSITION the menu
+       itself state the width it is positioning — a feature stylesheet cannot
+       reach this element (emulated encapsulation), so restating it there
+       silently matches nothing. */
+    min-inline-size: max(var(--ui-menu-min-width, 12rem), 100%);
+    max-inline-size: min(
+      var(--ui-menu-min-width, 20rem),
+      calc(100vw - var(--sys-space-comfortable) * 2)
+    );
     padding: var(--sys-space-tight);
     border: 1px solid var(--sys-color-separator);
     border-radius: var(--control-radius-regular);
-    background: var(--sys-color-surface);
+    /* ≙ .thickMaterial. A menu opens FROM a glass control and lands over the
+       same busy content, so it has to be at least as substantial as the
+       button that summoned it — a flat surface fill read thinner than its own
+       trigger, which is backwards for the thing on top. */
+    background-color: color-mix(
+      in srgb,
+      var(--sys-color-surface) 92%,
+      transparent
+    );
+    -webkit-backdrop-filter: blur(var(--sys-material-thick-blur))
+      saturate(var(--sys-material-saturation));
+    backdrop-filter: blur(var(--sys-material-thick-blur))
+      saturate(var(--sys-material-saturation));
     box-shadow: var(--sys-elevation-overlay);
     visibility: hidden;
     opacity: 0;
@@ -38,6 +57,44 @@
       transform var(--sys-motion-duration-instant)
         var(--sys-motion-ease-standard),
       visibility var(--sys-motion-duration-instant);
+  }
+
+  /*
+   * A picker's segmented run keeps the surface UNDER it — the selected row's
+   * fill is a translucent accent mix, and over a bare popover it would show
+   * the photograph the sheet sits on straight through the selection.
+   *
+   * The surface's corners are the group's outer corners PLUS the rim, so the
+   * two curves are concentric instead of two unrelated roundings, and the
+   * fill steps down to the REGULAR material — the same glass ladder the
+   * trigger that opened it is on (owner ruling 2026-07-31).
+   */
+  /*
+   * The segments go translucent in here. On a page a grouped list is opaque
+   * `surface-secondary` and that is right — it sits ON the background. Over a
+   * material popover it is not: the SELECTED row's fill is a translucent
+   * accent mix, so leaving its neighbours opaque made one row show the
+   * photograph through it and the rest read as solid blocks (owner ruling
+   * 2026-07-31). systemFill layers them all on the same glass.
+   */
+  .ui-menu__surface .ui-list-group > .ui-list-row:not([data-selected]),
+  .ui-menu__surface
+    .ui-list-group
+    > :not(.ui-list-row)
+    > .ui-list-row:not([data-selected]) {
+    background: var(--sys-color-fill);
+  }
+
+  .ui-menu__surface:has(> .ui-list-group) {
+    padding: var(--sys-space-tight);
+    border-radius: calc(
+      var(--control-radius-prominent) + var(--sys-space-tight)
+    );
+    background-color: var(--sys-material-fill);
+    -webkit-backdrop-filter: blur(var(--sys-material-regular-blur))
+      saturate(var(--sys-material-saturation));
+    backdrop-filter: blur(var(--sys-material-regular-blur))
+      saturate(var(--sys-material-saturation));
   }
 
   .ui-menu__surface[data-open] {
@@ -69,7 +126,16 @@
   /* Items ride the list-row register (callout at medium) rather than the
      button vocabulary — a menu is a list of commands, not a row of
      controls. */
-  .ui-menu__item {
+  /*
+   * A COMMAND row. A menu that PICKS rather than commands puts `uiListRow` on
+   * its items instead, and then the app's one row grammar owns the look —
+   * same segmented run, same accent-tinted selection as the location step, so
+   * "choose one of these" reads the same whether it is a screen or a popover
+   * (owner ruling 2026-07-31). These rules stand down for those, because
+   * `.ui-list-row` and `.ui-menu__item` are equal specificity and whichever
+   * stylesheet loaded last would otherwise decide.
+   */
+  .ui-menu__item:not(.ui-list-row) {
     display: flex;
     align-items: center;
     gap: var(--sys-space-regular);
@@ -96,7 +162,16 @@
 
   /* Destructive items are red and, by HIG convention, sit LAST in a menu
      (an action sheet is the opposite — destructive first). */
-  .ui-menu__item[data-role='destructive'] {
+  /* Destructive stays red in BOTH presentations. Scoping this out along with
+     the command-row look silently dropped the one thing HIG is unambiguous
+     about for menus: a destructive item is red, and belongs last. */
+  .ui-menu__item[data-role='destructive'],
+  .ui-menu__item[data-role='destructive'] > [uileading],
+  .ui-menu__item[data-role='destructive'] .ui-list-row__label {
+    color: var(--sys-color-destructive);
+  }
+
+  .ui-menu__item:not(.ui-list-row)[data-role='destructive'] {
     color: var(--sys-color-destructive);
   }
 
@@ -104,11 +179,11 @@
      feedback (mobile press parity). Both fill with currentColor so the
      destructive item highlights red. */
   @media (hover: hover) and (pointer: fine) {
-    .ui-menu__item:hover {
+    .ui-menu__item:not(.ui-list-row):hover {
       background: var(--sys-state-layer-hover);
     }
   }
-  .ui-menu__item:active {
+  .ui-menu__item:not(.ui-list-row):active {
     background: var(--sys-state-layer-press);
   }
 

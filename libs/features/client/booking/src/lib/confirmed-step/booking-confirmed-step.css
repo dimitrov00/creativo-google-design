@@ -1,0 +1,13 @@
+/*
+ * Block, not `contents`: unlike the wizard steps this one does NOT go through
+ * `lib-booking-step-layout` — there is no action bar to pin, because there is
+ * no next step. It is the growing flex child itself.
+ */
+:host {
+  display: block;
+}
+
+/* Expressive centred finale — hero text centred under the mark. */
+.booking-confirmed {
+  text-align: center;
+}

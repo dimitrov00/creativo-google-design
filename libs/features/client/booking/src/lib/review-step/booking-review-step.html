@@ -1,0 +1,88 @@
+<ng-container *transloco="let t">
+  <lib-booking-step-layout>
+    <ui-stack uiSpacing="tight">
+      <h1 libStepTitle uiText uiFont="title2">
+        {{ t('booking.review.title') }}
+      </h1>
+      <p uiText uiFont="subheadline" uiForegroundStyle="secondary">
+        {{ t('booking.review.lede') }}
+      </p>
+    </ui-stack>
+
+    <!-- WHEN and WHERE, stated once and large: the two facts a person
+         double-checks before agreeing to anything. -->
+    <ui-stack uiSpacing="none" data-testid="booking-review-when">
+      <p uiText uiFont="title3">{{ dayLabel() }}</p>
+      <p uiText uiFont="body" uiForegroundStyle="secondary">
+        {{ windowLabel() }} · {{ locationName() }}
+      </p>
+    </ui-stack>
+
+    <!-- Each line, in the shape it has had since the bag. -->
+    <ui-list-group data-testid="booking-review-lines">
+      @for (line of lines(); track line.key) {
+      <ui-list-row uiAlignment="leading">
+        <ui-stack uiSpacing="none">
+          <span uiText uiFont="body">
+            {{ line.serviceName }}@if (line.variantName) {
+            <span uiForegroundStyle="secondary"> · {{ line.variantName }}</span>
+            }
+          </span>
+          <span uiText uiFont="footnote" uiForegroundStyle="secondary">
+            {{ line.personLabel }} · {{ line.barberName }} · {{ line.timeLabel
+            }}
+          </span>
+        </ui-stack>
+        <span uiTrailing uiText uiFont="body">{{ line.priceLabel }}</span>
+      </ui-list-row>
+      }
+    </ui-list-group>
+
+    @if (totalLabel(); as total) {
+    <!-- Nothing is charged here — money is a later phase. This is what to
+           expect at the chair, which is the honest thing to promise. -->
+    <ui-stack uiAxis="horizontal" uiAlignment="center" uiSpacing="tight">
+      <span uiText uiFont="body" uiForegroundStyle="secondary">
+        {{ t('booking.review.payAtShop') }}
+      </span>
+      <span uiText uiFont="headline" data-testid="booking-review-total">
+        {{ total }}
+      </span>
+    </ui-stack>
+    } @if (errorMessage(); as message) {
+    <p
+      uiText
+      uiFont="footnote"
+      uiForegroundStyle="destructive"
+      role="alert"
+      data-testid="booking-review-error"
+    >
+      {{ message }}
+    </p>
+    }
+
+    <!-- The auth prompt appears at COMMITMENT, paired with what it buys —
+         never as a toll on the way in (owner ruling 2026-07-29). -->
+    @if (!isSignedIn()) {
+    <ui-stack uiSpacing="tight" data-testid="booking-review-signin">
+      <p uiText uiFont="footnote" uiForegroundStyle="secondary">
+        {{ t('booking.review.signInWhy') }}
+      </p>
+    </ui-stack>
+    }
+
+    <button
+      stepActions
+      type="button"
+      uiButton
+      uiButtonStyle="borderedProminent"
+      uiControlSize="large"
+      [disabled]="store.pending()"
+      data-testid="booking-review-confirm"
+      (click)="confirm()"
+    >
+      {{ store.pending() ? t('booking.review.confirming') : isSignedIn() ?
+      t('booking.review.confirm') : t('booking.review.signInAndConfirm') }}
+    </button>
+  </lib-booking-step-layout>
+</ng-container>

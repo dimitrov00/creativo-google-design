@@ -85,7 +85,30 @@
     "registration_field_missing": "Моля, попълнете всички задължителни полета.",
     "registration_birth_date_invalid": "Посочената дата на раждане е невалидна.",
     "registration_unauthenticated": "Сесията ви е изтекла — моля, влезте отново.",
-    "registration_forbidden": "Тази регистрация не принадлежи на вашата сесия — моля, влезте отново."
+    "registration_forbidden": "Тази регистрация не принадлежи на вашата сесия — моля, влезте отново.",
+    "booking": {
+      "flow": {
+        "invalid_transition": "Това действие не е достъпно в момента.",
+        "invalid_guest": "Въведи име за този човек.",
+        "guest_not_found": "Този човек вече не е в резервацията.",
+        "empty_cart": "Избери поне една услуга, за да продължиш.",
+        "invalid_cart_operation": "Тази услуга вече не е в чантата ти.",
+        "party_full": "Това е максималният брой хора за една резервация."
+      }
+    },
+    "booking.gateway.failed": "Нещо се обърка. Пробвай пак.",
+    "booking.commit.unauthenticated": "Влез, за да завършиш резервацията.",
+    "booking.commit.invalid_input": "Нещо в резервацията не е наред. Пробвай пак.",
+    "booking.commit.unknown_service": "Тази услуга вече не е налична.",
+    "booking.commit.service_not_at_location": "Тази услуга не се предлага в този салон.",
+    "booking.commit.conflicting_services": "Тези услуги не се комбинират.",
+    "booking.commit.barber_not_rostered": "Този бръснар не работи по това време.",
+    "booking.commit.slot_unavailable": "Този час вече е зает.",
+    "booking.commit.too_soon": "Резервациите са с поне {{minLeadMinutes}} минути предизвестие.",
+    "booking.commit.beyond_horizon": "Още не приемаме резервации толкова напред.",
+    "booking.commit.party_too_large": "Максимум {{maxPartySize}} души в една резервация.",
+    "booking.commit.invariant_violated": "Тази комбинация не е възможна. Пробвай друг час.",
+    "booking.commit.store_failed": "Не успяхме да запишем резервацията. Пробвай пак."
   },
   "shell": {
     "forbidden": {
@@ -195,6 +218,111 @@
       "failedTitle": "Това отнема повече от очакваното",
       "failedBody": "Все още не успяхме да потвърдим профила ви — моля, опитайте отново.",
       "retry": "Опитай отново"
+    }
+  },
+  "booking": {
+    "back": "Назад",
+    "cancel": "Откажи резервацията",
+    "continue": "Напред",
+    "steps": {
+      "label": "Стъпка {{current}} от {{total}}"
+    },
+    "party": {
+      "title": "Кой ще дойде?",
+      "lede": "Добави приятели или семейство — всеки избира своите услуги.",
+      "you": "Ти",
+      "guest": "Гост {{number}}",
+      "add": "Добави човек",
+      "nameLabel": "Име",
+      "rename": "Преименувай {{name}}",
+      "remove": "Премахни {{name}}",
+      "counter": "{{count}} от {{max}} души",
+      "full": "Това е максимумът за една резервация.",
+      "selfDetail": "Резервацията е твоя",
+      "renameAction": "Преименувай",
+      "removeAction": "Премахни"
+    },
+    "services": {
+      "title": "Какво ще правим?",
+      "lede": "Избери услуги за всеки — докосни име горе, за да смениш.",
+      "loading": "Зареждаме менюто…",
+      "blockedBadge": "Не се комбинира",
+      "blockedBy": "Вече е включено в {{names}}.",
+      "replace": "Замени",
+      "add": "Добави",
+      "save": "Запази",
+      "addAria": "Добави {{service}} за {{person}}",
+      "nextPerson": "Сега за {{person}}",
+      "seatAria": "{{person}} — {{count}} услуги",
+      "replaceAria": "Замени и добави {{service}} за {{person}}",
+      "saveAria": "Запази промените по {{service}} за {{person}}",
+      "dismissNotice": "Скрий бележката",
+      "blockedTitle": "Не се комбинира"
+    },
+    "schedule": {
+      "title": "Кога ти е удобно?",
+      "lede": "Избери ден, после час — показваме само това, което наистина е свободно.",
+      "locationLabel": "Салон",
+      "previousMonth": "Предишен месец",
+      "nextMonth": "Следващ месец",
+      "dayFree": "{{day}} — има свободни часове",
+      "dayFull": "{{day}} — няма свободни часове",
+      "loading": "Търсим свободни часове…",
+      "daypart": {
+        "morning": "Сутрин",
+        "afternoon": "Следобед",
+        "evening": "Вечер"
+      },
+      "noTimes": {
+        "title": "Този ден е зает.",
+        "body": "Пробвай друг ден — или ни кажи кога ти е удобно и ще те потърсим."
+      },
+      "arrangement": {
+        "parallel": "Ще влезете заедно:",
+        "sequential": "Ще влизате един след друг:"
+      },
+      "slotTaken": {
+        "title": "Този час току-що беше зает.",
+        "body": "Избери друг — показваме ти какво е свободно сега."
+      }
+    },
+    "review": {
+      "title": "Всичко наред ли е?",
+      "lede": "Провери и потвърди — плащаш в салона.",
+      "payAtShop": "В салона:",
+      "confirm": "Потвърди резервацията",
+      "signInAndConfirm": "Влез и потвърди",
+      "confirming": "Потвърждаваме…",
+      "signInWhy": "Влизаш, за да можеш да я откажеш или преместиш по-късно."
+    },
+    "configure": {
+      "variant": "Вариант",
+      "variantPick": "Избери вариант",
+      "barber": "Бръснар",
+      "anyBarber": "Който и да е",
+      "barberPick": "Избери бръснар"
+    },
+    "bag": {
+      "title": "Твоята чанта",
+      "open": "Отвори чантата, {{count}} услуги",
+      "close": "Затвори чантата",
+      "remove": "Премахни {{service}}"
+    },
+    "confirmed": {
+      "title": "Готово!",
+      "body": "Запазихме ти мястото. Ще ти пратим напомняне преди часа.",
+      "viewAppointments": "Виж резервациите си",
+      "done": "Към началото"
+    },
+    "location": {
+      "title": "Кой салон?",
+      "lede": "Избери от картата или от списъка — или ни остави да намерим най-скорошното.",
+      "resizeSheet": "Промени височината на списъка",
+      "continueAny": "Напред с всеки салон",
+      "any": {
+        "title": "Всеки салон",
+        "detail": "Където се освободи най-скоро"
+      }
     }
   },
   "account": {
@@ -367,7 +495,9 @@
       "whoGridView": "Барберите като мрежа",
       "allBarbers": "Всички бръснари",
       "nBarbers": "{{count}} бръснари",
-      "goToPhoto": "Снимка {{index}}"
+      "goToPhoto": "Снимка {{index}}",
+      "anyPerformer": "Който и да е",
+      "anyPerformerDetail": "Първият свободен"
     },
     "location": {
       "eyebrow": "Намери ни",

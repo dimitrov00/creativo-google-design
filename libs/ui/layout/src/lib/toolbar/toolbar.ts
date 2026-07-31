@@ -9,7 +9,18 @@ import {
 /** SwiftUI parity: `ToolbarItemPlacement` top bar vs `.bottomBar`. */
 export type UiToolbarPlacement = 'top' | 'bottom';
 /** ≙ SwiftUI `.toolbarBackground(_:)` visibility — `automatic` chrome or `hidden`. */
-export type UiToolbarBackground = 'automatic' | 'hidden';
+/**
+ * ≙ SwiftUI `.toolbarBackground(_:for:)`.
+ *
+ * `automatic` is the solid bar with a hairline. `hidden` is transparent chrome
+ * for bars over media (and, when sticky, plain page surface so scrolled
+ * content never slides through the controls). `scrim` is the third: the bar
+ * itself stays transparent and a fade ramps UP from its bottom edge, so
+ * content dissolves as it passes underneath — the mirror of
+ * `ui-page-action-bar`'s bottom ramp, and the right chrome for a bar floating
+ * over something that must stay visible behind it, like a map.
+ */
+export type UiToolbarBackground = 'automatic' | 'hidden' | 'scrim';
 
 /** Horizontal bar — app header / action bar (top), or a bottom action bar. */
 @Component({

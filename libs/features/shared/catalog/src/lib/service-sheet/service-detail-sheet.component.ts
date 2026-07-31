@@ -95,6 +95,19 @@ export class ServiceDetailSheetComponent {
   /** The catalog this service's bundle members are looked up in. Empty is fine for a single. */
   readonly catalogServices = input<readonly ServiceVm[]>([]);
 
+  /**
+   * How much of the fine print this reading needs.
+   *
+   * - `full` (default) — options and performers included. Marketing: they
+   *   are information about what the service can be and who does it.
+   * - `story` — the pitch, the gallery and the bundle manifest only. A
+   *   booking host asks for the variant and the barber on its own action
+   *   bar, and a second read-only telling of both, further from the button
+   *   that needs the answers, is two accounts of one question (owner ruling
+   *   2026-07-31).
+   */
+  readonly uiDetail = input<'full' | 'story'>('full');
+
   readonly closed = output();
   /** A reference inside the sheet was followed — the owner swaps the
    *  sheet's subject; it never opens a second sheet over this one. */

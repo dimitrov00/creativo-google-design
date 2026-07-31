@@ -2,16 +2,22 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { TestBed } from '@angular/core/testing';
 import type { Firestore } from 'firebase/firestore';
 import { FIREBASE_FIRESTORE } from '@creativo/infrastructure/firebase-app';
-import { Result } from '@creativo/domain/kernel';
+import { Money, Result } from '@creativo/domain/kernel';
 import {
   Appointment,
+  AppointmentId,
   Seat,
   SeatId,
   SeatSubject,
   TimeSlot,
 } from '@creativo/domain/scheduling';
 import { UserId } from '@creativo/domain/accounts';
-import { ServiceId } from '@creativo/domain/catalog';
+import {
+  BarberId,
+  ServiceId,
+  ServiceTerms,
+  ServiceVariantId,
+} from '@creativo/domain/catalog';
 
 function unwrap<T, E>(result: Result<T, E>): T {
   if (result.isFailure()) {
@@ -92,7 +98,7 @@ vi.mock('firebase/firestore', () => ({
 }));
 
 // Imported AFTER the mock so the adapter picks up the mocked module.
-const { FirestoreAppointmentRepository } =
+const { FirestoreAppointmentRepository, appointmentToDocument } =
   await import('./appointment-repository.adapter');
 
 function createRepo(db: Firestore = {} as Firestore) {
@@ -114,17 +120,20 @@ function buildAppointment(overrides?: { ownerUserId?: string }): Appointment {
   });
   if (timeSlot.isFailure()) throw new Error('bad fixture time slot');
 
+  const price = unwrap(Money.fromMinorUnitsAndCode(1500, 'EUR'));
   const seat = Seat.of({
     id: unwrap(SeatId.create('seat-1')),
     subject: SeatSubject.account(unwrap(UserId.create(ownerUserId)), 'self'),
     serviceId: unwrap(ServiceId.create('service-1')),
+    variantId: unwrap(ServiceVariantId.create('long')),
+    barberId: unwrap(BarberId.create('barber-1')),
+    terms: unwrap(ServiceTerms.create(price, 30)),
+    startsAt: timeSlot.value.start,
   });
 
   const result = Appointment.reconstitute({
     id: 'appt-1',
-    barberId: 'barber-1',
     locationId: 'location-1',
-    timeSlot: timeSlot.value,
     seats: [seat],
     status: { kind: 'confirmed' },
   });
@@ -138,18 +147,35 @@ describe('FirestoreAppointmentRepository', () => {
     lastOnSnapshotArgs = null;
   });
 
-  it('round-trips save → findById', async () => {
+  it('REFUSES to save from the browser — appointments are committed server-side', async () => {
+    // This used to be a bare setDoc. Together with a `create` rule that only
+    // checked ownerUserId, it let any signed-in user write an appointment
+    // naming any barber, any time and any price over anyone else's booking.
+    const repo = createRepo();
+    const result = await repo.save();
+
+    expect(result.isFailure()).toBe(true);
+    expect(store.get('appointments/appt-1')).toBeUndefined();
+  });
+
+  it('reads back a document written in the canonical persisted shape', async () => {
+    // Seeded through the exported mapper rather than through `save`, so this
+    // pins the CONTRACT the commitBooking function writes. A save→read
+    // round-trip could not: both halves would share any shape bug.
     const repo = createRepo();
     const appointment = buildAppointment();
-
-    const saveResult = await repo.save(appointment);
-    expect(saveResult.isSuccess()).toBe(true);
+    store.set('appointments/appt-1', appointmentToDocument(appointment));
 
     const found = await repo.findById(appointment.id);
     expect(found.isSuccess()).toBe(true);
     if (found.isSuccess()) {
       expect(found.value?.id.equals(appointment.id)).toBe(true);
       expect(found.value?.status).toEqual({ kind: 'confirmed' });
+      // The seats are the truth on read — the envelope is recomputed.
+      expect(found.value?.seats).toHaveLength(1);
+      expect(found.value?.barberIds().map((id) => id.value)).toEqual([
+        'barber-1',
+      ]);
     }
   });
 
@@ -163,12 +189,37 @@ describe('FirestoreAppointmentRepository', () => {
     }
   });
 
-  it('persists a denormalized ownerUserId derived from the self seat', async () => {
+  it('derives the denormalized ownerUserId from the self seat', async () => {
+    const stored = appointmentToDocument(
+      buildAppointment({ ownerUserId: 'user-42' }),
+    );
+    expect(stored['ownerUserId']).toBe('user-42');
+  });
+
+  it('mirrors barberIds and the envelope for querying, without reading them back', async () => {
     const repo = createRepo();
-    const appointment = buildAppointment({ ownerUserId: 'user-42' });
-    await repo.save(appointment);
-    const stored = store.get('appointments/appt-1');
-    expect(stored?.['ownerUserId']).toBe('user-42');
+    const doc = appointmentToDocument(buildAppointment());
+    expect(doc['barberIds']).toEqual(['barber-1']);
+    expect(doc['timeSlot']).toMatchObject({ zone: 'Europe/Sofia' });
+
+    // A CORRUPT mirror must not change what the appointment says: the seats
+    // are the truth and both fields are recomputed on read.
+    store.set('appointments/appt-1', {
+      ...doc,
+      barberIds: ['someone-else'],
+      timeSlot: {
+        startIso: '1999-01-01T00:00:00+02:00',
+        endIso: '1999-01-01T01:00:00+02:00',
+        zone: 'Europe/Sofia',
+      },
+    });
+
+    const found = await repo.findById(unwrap(AppointmentId.create('appt-1')));
+    if (found.isFailure()) throw new Error('unexpected');
+    expect(found.value?.barberIds().map((id) => id.value)).toEqual([
+      'barber-1',
+    ]);
+    expect(found.value?.timeSlot.start.toISO()).toContain('2030-01-01');
   });
 
   it('observeUpcomingFor filters out terminal-status appointments from the live snapshot', async () => {
@@ -182,19 +233,28 @@ describe('FirestoreAppointmentRepository', () => {
 
     expect(lastOnSnapshotArgs).not.toBeNull();
 
+    const seatSlot = {
+      startIso: '2030-01-01T10:00:00',
+      endIso: '2030-01-01T10:30:00',
+      zone: 'Europe/Sofia',
+    };
     const confirmedDoc = {
-      barberId: 'barber-1',
       locationId: 'location-1',
       ownerUserId: 'user-1',
-      timeSlot: {
-        startIso: '2030-01-01T10:00:00',
-        endIso: '2030-01-01T10:30:00',
-        zone: 'Europe/Sofia',
-      },
+      barberIds: ['barber-1'],
+      timeSlot: seatSlot,
       seats: [
         {
           id: 'seat-1',
           serviceId: 'service-1',
+          variantId: null,
+          barberId: 'barber-1',
+          terms: {
+            priceMinorUnits: 1500,
+            currencyCode: 'EUR',
+            durationMinutes: 30,
+          },
+          slot: seatSlot,
           subject: { kind: 'account', userId: 'user-1', relationship: 'self' },
         },
       ],

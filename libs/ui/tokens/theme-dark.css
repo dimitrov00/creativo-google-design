@@ -22,6 +22,7 @@
     --sys-color-primary: #ededed;
     --sys-color-on-primary: #0d0d0d;
     --sys-color-secondary-label: #8c8c8c;
+    --sys-color-tertiary-label: #6b6b6b; /* ≙ .tertiary — one step quieter than secondary */
     --sys-color-accent: #f26b22;
     --sys-color-on-accent: #ffffff;
     --sys-color-destructive: #d32f2f;

@@ -34,6 +34,18 @@
       "path": "../../../infrastructure/i18n/tsconfig.lib.json"
     },
     {
+      "path": "../../client/account-state/tsconfig.lib.json"
+    },
+    {
+      "path": "../../../application/notifications/tsconfig.lib.json"
+    },
+    {
+      "path": "../../../application/booking/tsconfig.lib.json"
+    },
+    {
+      "path": "../../../application/accounts/tsconfig.lib.json"
+    },
+    {
       "path": "../../../ui/modifiers/tsconfig.lib.json"
     },
     {
@@ -44,15 +56,6 @@
     },
     {
       "path": "../../../application/identity/tsconfig.lib.json"
-    },
-    {
-      "path": "../../../application/accounts/tsconfig.lib.json"
-    },
-    {
-      "path": "../../client/account-state/tsconfig.lib.json"
-    },
-    {
-      "path": "../../../application/booking/tsconfig.lib.json"
     }
   ]
 }

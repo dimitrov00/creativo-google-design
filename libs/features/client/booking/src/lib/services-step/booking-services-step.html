@@ -1,0 +1,610 @@
+<ng-container *transloco="let t">
+  <lib-booking-step-layout>
+    <ui-section-header>
+      <h1 uiTitle libStepTitle>{{ t('booking.services.title') }}</h1>
+      @if (seats().length > 1) {
+      <p uiLede>{{ t('booking.services.lede') }}</p>
+      }
+    </ui-section-header>
+
+    <!-- Person scope — only when there IS a party. A scope control with one
+         option asks a question that has one answer. -->
+    @if (seats().length > 1) {
+    <div class="booking-seat-scope-wrap">
+      <!-- Full bleed: a carousel that stops at the page gutter looks
+           trimmed, and hides that there is more to scroll to. The gutter
+           becomes padding INSIDE the scroller, so the first pill still lines
+           up with the grid under it. -->
+      <ui-scroll-row
+        uiSpacing="compact"
+        [uiFullBleed]="true"
+        class="booking-seat-scope"
+        data-testid="booking-seat-scope"
+        (scroll)="onSeatScopeScroll()"
+      >
+        @for (seat of seats(); track seat.key) {
+        <!--
+            A person, not a word: the avatar is who this is, the name confirms
+            it, and the count appears ONLY once they have something.
+
+            A "0" badge was pointless — HIG uses a badge for a count that
+            needs attention, and zero is the absence of one. "Nothing yet" is
+            already said by the pill being unselected and by the primary action
+            offering to take you there.
+          -->
+        <span class="booking-count-anchor">
+          @if (renamingKey() === seat.key) {
+          <!-- The editor REPLACES the pill rather than sitting inside it:
+                   an <input> inside a <button> is invalid, and the browser
+                   gave the press to the button instead of the field, so the
+                   name could never actually be typed. -->
+          <span class="booking-seat-pill booking-seat-pill--editing">
+            <ui-avatar
+              class="booking-seat-pill__avatar"
+              [uiSrc]="seat.avatarSrc"
+              [uiName]="seat.label"
+              uiControlSize="small"
+            />
+            <input
+              uiTextField
+              uiControlSize="small"
+              class="booking-seat-pill__rename"
+              [value]="seat.label"
+              [attr.aria-label]="
+                    t('booking.party.rename', { name: seat.label })
+                  "
+              [attr.data-testid]="'booking-seat-rename-' + seat.key"
+              (blur)="commitRename(seat, $any($event.target).value)"
+              (keydown.enter)="$any($event.target).blur()"
+            />
+          </span>
+          } @else {
+          <button
+            uiChip
+            type="button"
+            uiControlSize="large"
+            class="booking-seat-pill"
+            [uiSelected]="activeSeat().key === seat.key"
+            [attr.data-testid]="'booking-seat-' + seat.key"
+            [attr.aria-label]="
+                  t('booking.services.seatAria', {
+                    person: seat.label,
+                    count: seat.lineCount
+                  })
+                "
+            (click)="pressSeat(seat)"
+          >
+            <ui-avatar
+              class="booking-seat-pill__avatar"
+              [uiSrc]="seat.avatarSrc"
+              [uiName]="seat.label"
+              uiControlSize="small"
+            />
+            <span class="booking-seat-pill__name">{{ seat.label }}</span>
+            <!-- The caret is what says "there is more here than selecting
+                     me" — the second-press menu was a real iOS idiom with no
+                     affordance, which makes it a secret. -->
+            @if (seat.seatKey.kind === 'guest' && activeSeat().key === seat.key)
+            {
+            <ui-icon uiName="field.expand" uiScale="small" />
+            }
+          </button>
+          } @if (seat.lineCount > 0) {
+          <span
+            uiBadge
+            uiTone="accent"
+            uiProminence="increased"
+            class="booking-count-badge"
+            aria-hidden="true"
+            [attr.data-testid]="'booking-seat-count-' + seat.key"
+            >{{ seat.lineCount }}</span
+          >
+          }
+        </span>
+        }
+      </ui-scroll-row>
+
+      <!--
+        The person menu lives OUTSIDE the scroller.
+
+        `ui-scroll-row` is `overflow-x: auto`, which forces the used
+        `overflow-y` to `auto` as well — so a popover anchored to a pill
+        INSIDE it was opening correctly and then being clipped away to
+        nothing. Nothing can escape a scroll container; the menu has to be a
+        sibling of it, anchored under the run (owner-reported 2026-07-31).
+      -->
+      @if (menuSeat(); as seat) {
+      <ui-menu
+        class="booking-seat-menu"
+        [style.--booking-seat-menu-x.px]="seatMenuOffset()"
+        [style.--ui-menu-min-width.px]="seatMenuWidth"
+        [uiPresented]="true"
+        uiPlacement="bottom"
+        uiAlignment="leading"
+        [uiLabel]="seat.label"
+        (uiDismissed)="dismissSeatMenu()"
+      >
+        <span uiMenuTrigger class="booking-seat-menu__anchor"></span>
+        <ui-list-group>
+          <button
+            uiMenuItem
+            uiListRow
+            type="button"
+            [uiInteractive]="true"
+            [attr.data-testid]="'booking-seat-rename-open-' + seat.key"
+            (click)="startRename(seat)"
+          >
+            <ui-icon uiLeading uiName="party.renameGuest" />
+            <span uiText uiFont="body">
+              {{ t('booking.party.renameAction') }}
+            </span>
+          </button>
+          <button
+            uiMenuItem
+            uiListRow
+            type="button"
+            [uiInteractive]="true"
+            uiMenuItemRole="destructive"
+            [attr.data-testid]="'booking-seat-remove-' + seat.key"
+            (click)="removeSeat(seat)"
+          >
+            <ui-icon uiLeading uiName="booking.removeLine" />
+            <span uiText uiFont="body">
+              {{ t('booking.party.removeAction') }}
+            </span>
+          </button>
+        </ui-list-group>
+      </ui-menu>
+      }
+    </div>
+    } @if (catalog.loading()) {
+    <p uiText uiFont="footnote" uiForegroundStyle="secondary">
+      {{ t('booking.services.loading') }}
+    </p>
+    } @else {
+    <ui-grid [uiColumns]="2" uiSpacing="compact" data-testid="booking-catalog">
+      @for (service of catalog.serviceVms(); track service.id) {
+      <cr-service-card
+        [uiServiceId]="service.id"
+        [uiName]="content.text(service.name)"
+        [uiMeta]="metaFor(service)"
+        [uiCoverUrl]="catalog.coverUrl(service.id) ?? null"
+        [uiSelectedCount]="selectedCountFor(service.id)"
+        [uiBlocked]="isBlocked(service.id)"
+        [uiBlockedLabel]="t('booking.services.blockedBadge')"
+        [uiShowDetails]="false"
+        (uiPressed)="openDetails(service.id)"
+      />
+      }
+    </ui-grid>
+    }
+
+    <!-- ── Action bar: the bag, then the forward move ──────────────────
+         The bag is an icon-only CIRCLE with a count in its corner — the
+         convention every shop surface uses, and the reason the badge appears
+         only above zero: a "0" badge is a decoration that says nothing. -->
+    <!-- The party is assembled HERE now — a whole step whose only question
+         was "anyone else?" is a step most bookings walk past (owner ruling
+         2026-07-31). One icon on the bar asks it without costing a screen. -->
+    @if (store.canAddGuest()) {
+    <button
+      stepActions
+      type="button"
+      uiButton
+      uiButtonStyle="bordered"
+      uiTint="neutral"
+      uiControlSize="large"
+      [uiIconOnly]="true"
+      data-testid="booking-add-guest"
+      [attr.aria-label]="t('booking.party.add')"
+      (click)="addGuest()"
+    >
+      <ui-icon uiName="party.addGuest" uiScale="medium" />
+    </button>
+    }
+
+    <span stepActions class="booking-count-anchor">
+      <button
+        type="button"
+        uiButton
+        uiButtonStyle="bordered"
+        uiTint="neutral"
+        uiControlSize="large"
+        [uiIconOnly]="true"
+        [disabled]="store.lineCount() === 0"
+        data-testid="booking-bag-trigger"
+        [attr.aria-label]="t('booking.bag.open', { count: store.lineCount() })"
+        (click)="bagOpen.set(true)"
+      >
+        <ui-icon uiName="booking.bag" uiScale="medium" />
+      </button>
+      @if (store.lineCount() > 0) {
+      <span
+        uiBadge
+        uiTone="accent"
+        uiProminence="increased"
+        class="booking-count-badge"
+        aria-hidden="true"
+        data-testid="booking-bag-count"
+        >{{ store.lineCount() }}</span
+      >
+      }
+    </span>
+
+    <!--
+      The forward move depends on who still has nothing.
+
+      With a party, a person with an empty bag is almost always someone the
+      user simply has not got to yet — so the primary action hands them over
+      rather than letting them leave a guest behind and discover it at the
+      summary. Only once everyone has something does it become Continue.
+    -->
+    <button
+      stepActions
+      type="button"
+      uiButton
+      uiButtonStyle="borderedProminent"
+      uiControlSize="large"
+      [disabled]="store.lineCount() === 0"
+      data-testid="booking-services-continue"
+      (click)="advance()"
+    >
+      {{ forwardLabel() }}
+    </button>
+  </lib-booking-step-layout>
+
+  <!-- ── The SHARED service sheet, in add-to-bag mode ──────────────────
+       Same body the landing and onboarding render — story, gallery, bundle
+       members, performer cards — and now the same VARIANT capsules and the
+       same performer rows, in the sheet's own `selectable` mode rather than
+       a second set booking drew for itself. Booking owns the values; the
+       sheet only renders and reports them. -->
+  @if (detailsVm(); as details) {
+  <cr-service-detail-sheet
+    [service]="details"
+    [barbers]="catalog.barberVms()"
+    [catalogServices]="catalog.serviceVms()"
+    uiDetail="story"
+    (serviceSelected)="openDetails($event.id)"
+    (closed)="closeDetails()"
+  >
+    <!-- ── The docked decision ────────────────────────────────────────
+           Everything the answer needs, stacked in the thumb zone and hugged
+           to the trailing edge: what does not combine (dismissible — it
+           explains, it does not block), then the two selects, then the
+           action, with the way OUT on the far side.
+
+           The selects are HERE and not in the sheet body because the body is
+           the story; a variant list two screens up from the button that
+           needs it makes you scroll back to answer (owner ruling
+           2026-07-31). They read as questions until they are answered, and
+           the CTA stays shut until both are. -->
+    <ui-stack sheet-actions uiSpacing="compact" class="booking-decide">
+      @if (blockersFor(details.id); as blockers) { @if (blockers.length > 0) {
+      <!-- A notification, not a control: a glyph, a title and the
+                 reason, on a rounded card that is plainly not pressable.
+                 Sized like the buttons under it, it read as a fourth one
+                 (owner ruling 2026-07-31).
+
+                 Neutral ink, deliberately. HIG reserves amber for genuine
+                 caution and never tints a primary button by severity — the
+                 CTA saying "Замени" IS the signal, and colouring the
+                 explanation too would be relying on colour to say what the
+                 word already says. -->
+      <ui-stack
+        uiAxis="horizontal"
+        uiSpacing="regular"
+        uiAlignment="leading"
+        class="booking-notice"
+        role="status"
+        data-testid="booking-conflict-notice"
+      >
+        <ui-icon
+          uiName="booking.blocked"
+          uiScale="medium"
+          class="booking-notice__glyph"
+        />
+        <ui-stack uiSpacing="none" class="booking-notice__body">
+          <span uiText uiFont="footnote" uiWeight="semibold">
+            {{ t('booking.services.blockedTitle') }}
+          </span>
+          <span uiText uiFont="footnote" uiForegroundStyle="secondary">
+            {{ t('booking.services.blockedBy', { names: blockers.join(', ') })
+            }}
+          </span>
+        </ui-stack>
+      </ui-stack>
+      } } @if (details.variants.length > 0) {
+      <ui-menu
+        [uiPresented]="variantMenuOpen()"
+        uiAlignment="trailing"
+        [uiLabel]="t('booking.configure.variant')"
+        (uiDismissed)="variantMenuOpen.set(false)"
+      >
+        <button
+          uiMenuTrigger
+          type="button"
+          uiButton
+          uiButtonStyle="glass"
+          uiControlSize="large"
+          class="booking-pick"
+          [attr.data-unset]="draftVariantId() === null ? '' : null"
+          data-testid="booking-variant-menu"
+          (click)="variantMenuOpen.set(!variantMenuOpen())"
+        >
+          <span class="booking-pick__value">{{ variantLabel() }}</span>
+          <ui-icon uiName="field.expand" uiScale="small" />
+        </button>
+
+        <!-- The SAME segmented run the location step uses: one row
+                 grammar for "pick one of these", whether it is a screen or a
+                 popover. `uiMenuItem` only supplies the semantics and the
+                 keyboard model; `uiListRow` owns the look. -->
+        <ui-list-group>
+          @for (variant of details.variants; track variant.id) {
+          <button
+            uiMenuItem
+            uiListRow
+            type="button"
+            [uiInteractive]="true"
+            [uiSelected]="draftVariantId() === variant.id"
+            [attr.data-testid]="'booking-variant-' + variant.id"
+            (click)="pickVariant(variant.id)"
+          >
+            <span uiText uiFont="body">{{ content.text(variant.name) }}</span>
+            @if (draftVariantId() === variant.id) {
+            <ui-icon
+              uiTrailing
+              uiName="checklist.done"
+              uiForegroundStyle="accent"
+            />
+            }
+          </button>
+          }
+        </ui-list-group>
+      </ui-menu>
+      }
+
+      <ui-menu
+        [uiPresented]="barberMenuOpen()"
+        uiAlignment="trailing"
+        [uiLabel]="t('booking.configure.barber')"
+        (uiDismissed)="barberMenuOpen.set(false)"
+      >
+        <button
+          uiMenuTrigger
+          type="button"
+          uiButton
+          uiButtonStyle="glass"
+          uiControlSize="large"
+          class="booking-pick"
+          [attr.data-unset]="barberAnswered() ? null : ''"
+          [disabled]="!variantAnswered()"
+          data-testid="booking-barber-menu"
+          (click)="barberMenuOpen.set(!barberMenuOpen())"
+        >
+          @if (draftBarber(); as barber) {
+          <ui-avatar
+            [uiSrc]="barber.avatarSrc"
+            [uiName]="content.text(barber.name)"
+            uiControlSize="small"
+          />
+          }
+          <span class="booking-pick__value">{{ barberLabel() }}</span>
+          <ui-icon uiName="field.expand" uiScale="small" />
+        </button>
+
+        <ui-list-group>
+          <!-- "Anyone" leads — the widest answer, and the one that finds the
+                 soonest chair. It is still an answer you have to give. -->
+          <button
+            uiMenuItem
+            uiListRow
+            type="button"
+            [uiInteractive]="true"
+            [uiSelected]="barberAnswered() && draftBarberId() === null"
+            data-testid="booking-barber-any"
+            (click)="pickBarber(null)"
+          >
+            <!-- The glyph rides an avatar-sized disc rather than sitting
+                   bare: a row without a portrait in a run that has them still
+                   owes the same leading column, or every name below it steps
+                   sideways (HIG — list rows keep one leading rail). -->
+            <span uiLeading class="booking-any__glyph">
+              <ui-icon
+                uiName="booking.anyBarber"
+                [uiForegroundStyle]="
+                    barberAnswered() && draftBarberId() === null
+                      ? 'accent'
+                      : 'secondary'
+                  "
+              />
+            </span>
+            <ui-stack uiSpacing="none">
+              <span uiText uiFont="body">
+                {{ t('booking.configure.anyBarber') }}
+              </span>
+              <span uiText uiFont="footnote" uiForegroundStyle="secondary">
+                {{ t('landing.services.anyPerformerDetail') }}
+              </span>
+            </ui-stack>
+            @if (barberAnswered() && draftBarberId() === null) {
+            <ui-icon
+              uiTrailing
+              uiName="checklist.done"
+              uiForegroundStyle="accent"
+            />
+            }
+          </button>
+
+          @for (option of performerOptions(); track option.id) {
+          <button
+            uiMenuItem
+            uiListRow
+            type="button"
+            [uiInteractive]="true"
+            [uiSelected]="draftBarberId() === option.id"
+            [attr.data-testid]="'booking-barber-' + option.id"
+            (click)="pickBarber(option.id)"
+          >
+            <ui-avatar
+              uiLeading
+              [uiSrc]="option.avatarSrc"
+              [uiName]="content.text(option.name)"
+              uiControlSize="regular"
+            />
+            <ui-stack uiSpacing="none">
+              <span uiText uiFont="body">{{ content.text(option.name) }}</span>
+              <!-- What this barber charges for THIS variant, so the choice
+                       is priced before it is made. -->
+              <span
+                uiText
+                uiFont="footnote"
+                uiForegroundStyle="secondary"
+                class="booking-option__terms"
+              >
+                {{ optionTerms(option) }}
+              </span>
+            </ui-stack>
+            @if (draftBarberId() === option.id) {
+            <ui-icon
+              uiTrailing
+              uiName="checklist.done"
+              uiForegroundStyle="accent"
+            />
+            }
+          </button>
+          }
+        </ui-list-group>
+      </ui-menu>
+
+      <ui-stack
+        uiAxis="horizontal"
+        uiSpacing="compact"
+        uiAlignment="center"
+        class="booking-commit"
+      >
+        <!-- The way out, on the far side from the thumb's default target:
+               a destructive twin of the CTA is not something to put where the
+               CTA's muscle memory lands. -->
+        @if (editingLineId()) {
+        <button
+          type="button"
+          uiButton
+          uiButtonStyle="glass"
+          uiRole="destructive"
+          uiControlSize="large"
+          [uiIconOnly]="true"
+          class="booking-commit__remove"
+          data-testid="booking-remove-line"
+          [attr.aria-label]="
+                t('booking.bag.remove', { service: content.text(details.name) })
+              "
+          (click)="removeOpenLine()"
+        >
+          <ui-icon uiName="booking.removeLine" />
+        </button>
+        }
+
+        <button
+          type="button"
+          uiButton
+          uiButtonStyle="borderedProminent"
+          uiControlSize="large"
+          [disabled]="!canAdd()"
+          data-testid="booking-add-to-bag"
+          [attr.aria-label]="primaryAria()"
+          (click)="confirm()"
+        >
+          <!-- Action and price as ONE phrase — "Добави 15,00 €" — with no
+                 rule between them; the divider made the button read as two
+                 controls sharing a pill. Before the choices are in it states
+                 the whole span rather than hedging with a "from". -->
+          <span class="booking-add__label">{{ primaryLabel() }}</span>
+          <span class="booking-add__price" data-testid="booking-add-price">
+            {{ priceRangeLabel() }}
+          </span>
+        </button>
+      </ui-stack>
+    </ui-stack>
+  </cr-service-detail-sheet>
+  }
+
+  <!-- ── The bag ────────────────────────────────────────────────────────
+       One list group PER PERSON, with a quiet footnote heading between
+       groups rather than a divider (the segmented-run ruling). Tapping a
+       row reopens the sheet on that line with its choices restored, so
+       editing is in place rather than remove-and-re-add. -->
+  @if (bagOpen()) {
+  <ui-modal-sheet
+    sheetId="booking-bag-sheet"
+    labelledBy="booking-bag-title"
+    [closeLabel]="t('booking.bag.close')"
+    [open]="true"
+    [titleAlwaysVisible]="true"
+    data-testid="booking-bag-sheet"
+    (dismissed)="bagOpen.set(false)"
+  >
+    <p sheet-title>{{ t('booking.bag.title') }}</p>
+
+    <ui-stack uiSpacing="spacious" class="booking-bag__body">
+      <h2 id="booking-bag-title" uiSheetLargeTitle uiText uiFont="largeTitle">
+        {{ t('booking.bag.title') }}
+      </h2>
+
+      @for (group of bagGroups(); track group.seat.key) {
+      <ui-stack uiSpacing="compact">
+        @if (seats().length > 1) {
+        <p uiText uiFont="footnote" uiForegroundStyle="secondary">
+          {{ group.seat.label }}
+        </p>
+        }
+        <ul uiListGroup>
+          @for (line of group.lines; track line.id.value) {
+          <li
+            uiListRow
+            uiSize="large"
+            uiAlignment="leading"
+            [attr.data-testid]="'booking-bag-line-' + line.id.value"
+          >
+            <ui-stack uiSpacing="tight">
+              <button
+                type="button"
+                class="booking-bag__edit"
+                (click)="
+                        setActiveSeat(group.seat.key);
+                        editLine(line.id);
+                        bagOpen.set(false)
+                      "
+              >
+                {{ line.name }}
+              </button>
+              <span uiText uiFont="footnote" uiForegroundStyle="secondary">
+                {{ line.detail }}
+              </span>
+            </ui-stack>
+            <button
+              uiTrailing
+              type="button"
+              uiButton
+              uiButtonStyle="plain"
+              uiRole="destructive"
+              uiControlSize="regular"
+              [uiIconOnly]="true"
+              [attr.aria-label]="
+                      t('booking.bag.remove', { service: line.name })
+                    "
+              [attr.data-testid]="'booking-bag-remove-' + line.id.value"
+              (click)="removeLine(group.seat.seatKey, line.id)"
+            >
+              <ui-icon uiName="party.removeGuest" />
+            </button>
+          </li>
+          }
+        </ul>
+      </ui-stack>
+      }
+    </ui-stack>
+  </ui-modal-sheet>
+  }
+</ng-container>

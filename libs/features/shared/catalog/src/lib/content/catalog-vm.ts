@@ -118,6 +118,35 @@ export function servicePriceFrom(service: ServiceVm): number {
 }
 
 /**
+ * The service card's second line: `от 13,00 €`, or `30 – 45 мин · от 13,00 €`
+ * where the caller still wants the duration on it.
+ *
+ * ONE definition, because there were three. Onboarding built this string
+ * inline, the landing tile built a shorter one, and booking built a third
+ * that had quietly lost the "from" — so the same catalog read as a
+ * different product depending on which screen you were on.
+ *
+ * `fromLabel` is passed rather than translated here: this module is pure
+ * (no DI, no transloco), and every caller already holds a `t`.
+ *
+ * The prefix is CONDITIONAL. When every performer charges the same there is
+ * nothing to be "from" — a permanent "from" on a fixed price is a hedge the
+ * price does not need.
+ */
+export function formatServiceMeta(parts: {
+  /** Omitted where the card is a price tag and the sheet states the time. */
+  readonly duration?: string;
+  readonly price: string;
+  readonly fromLabel: string;
+  readonly spread: boolean;
+}): string {
+  const price = parts.spread
+    ? `${parts.fromLabel} ${parts.price}`
+    : parts.price;
+  return parts.duration ? `${parts.duration} · ${price}` : price;
+}
+
+/**
  * Every service a barber performs, with THEIR terms for it — the inverse
  * of `ServiceVm.offerings`, which is the only direction the seed stores.
  *

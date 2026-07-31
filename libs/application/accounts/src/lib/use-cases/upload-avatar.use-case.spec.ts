@@ -22,6 +22,12 @@ function fakeUploader(): AvatarUploader {
         path: 'avatars/user_1.jpg',
       });
     },
+    async find(): Promise<Result<AvatarRef | null, AvatarUploadError>> {
+      return ok(null);
+    },
+    async remove(): Promise<Result<void, AvatarUploadError>> {
+      return ok(undefined);
+    },
   };
 }
 

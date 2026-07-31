@@ -19,7 +19,76 @@ describe('BookingParty.create', () => {
   });
 });
 
+describe('BookingParty.createAnonymous / claim', () => {
+  it('opens unclaimed, with a usable empty roster', () => {
+    const party = BookingParty.createAnonymous();
+    expect(party.isClaimed()).toBe(false);
+    expect(party.ownerId).toBeNull();
+    expect(party.guests).toHaveLength(0);
+  });
+
+  it('lets an anonymous party add guests before anyone signs in', () => {
+    const withGuest = BookingParty.createAnonymous().addGuest('Friend 1');
+    expect(withGuest.isSuccess()).toBe(true);
+    if (withGuest.isSuccess()) {
+      expect(withGuest.value.isClaimed()).toBe(false);
+      expect(withGuest.value.guests).toHaveLength(1);
+    }
+  });
+
+  it('carries the roster AND the sequence counter across claim()', () => {
+    const withGuest = BookingParty.createAnonymous().addGuest('Friend 1');
+    if (withGuest.isFailure()) throw new Error('bad fixture');
+    const firstGuestId = withGuest.value.guests[0]!.id;
+
+    const ownerId = UserId.generate().toString();
+    const claimed = withGuest.value.claim(ownerId);
+    expect(claimed.isSuccess()).toBe(true);
+    if (claimed.isFailure()) throw new Error('bad fixture');
+
+    expect(claimed.value.isClaimed()).toBe(true);
+    expect(claimed.value.ownerId?.toString()).toBe(ownerId);
+    expect(claimed.value.guests).toHaveLength(1);
+
+    // Signing in must not reset the §7.7 counter: the next guest added
+    // after a claim still cannot collide with one added before it.
+    const afterRemove = claimed.value.removeGuest(firstGuestId);
+    if (afterRemove.isFailure()) throw new Error('bad fixture');
+    const afterSecondAdd = afterRemove.value.addGuest('Friend 2');
+    if (afterSecondAdd.isFailure()) throw new Error('bad fixture');
+    expect(afterSecondAdd.value.guests[0]!.id.equals(firstGuestId)).toBe(false);
+  });
+
+  it('rejects an empty owner id', () => {
+    expect(BookingParty.createAnonymous().claim('').isFailure()).toBe(true);
+  });
+
+  it('is idempotent-safe — re-claiming with the same id keeps the party intact', () => {
+    const ownerId = UserId.generate().toString();
+    const once = BookingParty.createAnonymous().claim(ownerId);
+    if (once.isFailure()) throw new Error('bad fixture');
+    const twice = once.value.claim(ownerId);
+    expect(twice.isSuccess()).toBe(true);
+    if (twice.isSuccess()) {
+      expect(twice.value.ownerId?.toString()).toBe(ownerId);
+    }
+  });
+});
+
 describe('BookingParty.reconstitute', () => {
+  it('rebuilds an unclaimed party from a null owner', () => {
+    const result = BookingParty.reconstitute({
+      ownerId: null,
+      guests: [{ id: 'guest-0', label: 'Friend 1' }],
+      nextSequence: 1,
+    });
+    expect(result.isSuccess()).toBe(true);
+    if (result.isSuccess()) {
+      expect(result.value.isClaimed()).toBe(false);
+      expect(result.value.guests).toHaveLength(1);
+    }
+  });
+
   it('rebuilds guests and the sequence counter from persistence', () => {
     const result = BookingParty.reconstitute({
       ownerId: UserId.generate().toString(),

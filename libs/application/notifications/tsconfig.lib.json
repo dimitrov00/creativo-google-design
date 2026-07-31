@@ -28,10 +28,13 @@
       "path": "../shared/tsconfig.lib.json"
     },
     {
+      "path": "../../domain/accounts/tsconfig.lib.json"
+    },
+    {
       "path": "../../domain/kernel/tsconfig.lib.json"
     },
     {
-      "path": "../../domain/catalog/tsconfig.lib.json"
+      "path": "../../domain/notifications/tsconfig.lib.json"
     }
   ]
 }

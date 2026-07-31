@@ -259,7 +259,7 @@ describe('ClientOnboarding', () => {
       // (the email identifier can't supply it) — registration reached the
       // client and the flow advanced past about.
       expect(completeRegistration).toHaveBeenCalledTimes(1);
-      const [identifier, fields] = completeRegistration.mock.calls[0];
+      const [identifier, fields] = completeRegistration.mock.calls[0]!;
       expect(identifier).toBe(EMAIL_IDENTIFIER);
       expect(fields.firstName).toBe('Ada');
       expect(fields.lastName).toBe('Lovelace');
@@ -353,7 +353,7 @@ describe('ClientOnboarding', () => {
       await settle();
 
       expect(completeRegistration).toHaveBeenCalledTimes(1);
-      const [, fields] = completeRegistration.mock.calls[0];
+      const [, fields] = completeRegistration.mock.calls[0]!;
       expect('birthDate' in fields).toBe(false);
       expect(query('onboarding-reward')).not.toBeNull();
     });
@@ -483,7 +483,7 @@ describe('ClientOnboarding', () => {
       await settle();
 
       expect(completeRegistration).toHaveBeenCalledTimes(1);
-      const [, fields] = completeRegistration.mock.calls[0];
+      const [, fields] = completeRegistration.mock.calls[0]!;
       // The USE CASE (not the form) fills the channel fallback.
       expect(fields.phone).toBe('+359888123456');
       expect(query('onboarding-about-error')).toBeNull();

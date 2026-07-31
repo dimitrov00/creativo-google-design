@@ -1,0 +1,145 @@
+@layer sys-components {
+  /*
+   * Positioned against its CONTAINER, not the viewport, so a map pane and a
+   * full page both work. The container must be `position: relative` with a
+   * real height — stated in the component doc.
+   *
+   * `--ui-detent-height` is the tallest allowed detent; `--ui-detent-offset`
+   * is how far it is pushed down, both written by the component as
+   * percentages of the sheet's own box.
+   */
+  .ui-detent-sheet {
+    position: absolute;
+    inset-block-end: 0;
+    inset-inline: 0;
+    z-index: 2;
+    display: flex;
+    flex-direction: column;
+    block-size: var(--ui-detent-height, 92%);
+    /* Near-opaque thick material: the sheet sits over live content, and a
+       translucent list over a moving map is unreadable (owner call
+       2026-07-23 — thick must actually read as solid). */
+    background: var(--sys-color-surface);
+    box-shadow: var(--sys-elevation-overlay);
+    border-start-start-radius: var(--control-radius-prominent);
+    border-start-end-radius: var(--control-radius-prominent);
+    transform: translateY(var(--ui-detent-offset, 50%));
+    transition: transform var(--sys-motion-duration-slow)
+      var(--sys-motion-ease-emphasized);
+    /* NON-modal: whatever is behind stays interactive. Only the sheet's own
+       box takes pointer events — there is no scrim, by design. */
+    touch-action: none;
+  }
+
+  /* A drag must track the finger 1:1. Easing a value the pointer is already
+     driving makes the sheet lag behind the gesture — the single most obvious
+     tell of a hand-rolled sheet. */
+  .ui-detent-sheet[data-dragging] {
+    transition: none;
+  }
+
+  .ui-detent-sheet__grabber {
+    position: relative;
+    flex: 0 0 auto;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    padding-inline: var(--sys-space-regular);
+    /* Clears the absolutely-positioned handle below, so projected header
+       content starts under the grabber rather than behind it. */
+    padding-block-start: var(--control-size-regular);
+    padding-block-end: var(--sys-space-compact);
+    cursor: grab;
+  }
+
+  .ui-detent-sheet[data-dragging] .ui-detent-sheet__grabber {
+    cursor: grabbing;
+  }
+
+  /* The whole strip is draggable, but the handle is the affordance AND a real
+     button — so the sheet is operable by keyboard and named to AT, not just
+     swipeable. Absolutely positioned across the sheet's top edge: the 44px
+     target is the box, while the visible pill sits where iOS puts it. */
+  .ui-detent-sheet__handle {
+    position: absolute;
+    inset-block-start: 0;
+    inset-inline: 0;
+    block-size: var(--control-size-regular);
+    display: block;
+    padding: 0;
+    border: 0;
+    background: none;
+    cursor: inherit;
+  }
+
+  /* iOS system drag-indicator metrics, IDENTICAL to `ui-sheet-header`'s
+     grabber (owner ruling 2026-07-27): 36×5pt, 5pt off the sheet's top edge,
+     tertiary-gray ink. Two sheets in one app whose handles sit at different
+     heights read as two different components — which is exactly how this was
+     spotted. */
+  .ui-detent-sheet__grip {
+    position: absolute;
+    inset-block-start: 0.3125rem;
+    inset-inline-start: 50%;
+    transform: translateX(-50%);
+    inline-size: 2.25rem;
+    block-size: 0.3125rem;
+    border-radius: var(--control-radius-capsule);
+    background: color-mix(
+      in srgb,
+      var(--sys-color-foreground) 28%,
+      transparent
+    );
+  }
+
+  .ui-detent-sheet__handle:focus-visible {
+    outline: none;
+  }
+
+  .ui-detent-sheet__handle:focus-visible .ui-detent-sheet__grip {
+    outline: var(--sys-focus-ring-width, 2px) solid var(--sys-color-ring);
+    outline-offset: 4px;
+  }
+
+  /* The list scrolls at EVERY detent, not just the tallest. A sheet whose
+     content is unreachable until it is dragged up is a sheet that hides its
+     own options — and with more shops than fit, the third one simply could
+     not be seen. Raising it on an upward drag (see the component) is the
+     other half of that fix. */
+  .ui-detent-sheet__content {
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /*
+   * Content scrolls only at the tallest detent. Below it the sheet is a peek,
+   * and a scrollbar inside a peek invites the user to scroll a box that is
+   * mostly off-screen instead of dragging the sheet up — which is the actual
+   * gesture.
+   */
+  .ui-detent-sheet__content {
+    flex: 1 1 auto;
+    min-block-size: 0;
+    padding-inline: var(--sys-space-regular);
+    /* `--ui-detent-sheet-bottom-inset` is what a consumer reserves for
+       something floating OVER the sheet — an action bar pinned to the pane's
+       bottom edge. Without it the last row sits under the bar and looks
+       tappable when it is not. */
+    padding-block-end: calc(
+      var(--sys-space-spacious) + var(--ui-detent-sheet-bottom-inset, 0px)
+    );
+    touch-action: none;
+  }
+
+  .ui-detent-sheet[data-detent='large'] .ui-detent-sheet__content {
+    touch-action: pan-y;
+  }
+
+  /* A sheet that slides on every detent change is charming once and tiring
+     after that. Reduced motion keeps the position, drops the travel. */
+  @media (prefers-reduced-motion: reduce) {
+    .ui-detent-sheet {
+      transition: none;
+    }
+  }
+}

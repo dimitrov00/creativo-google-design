@@ -1,0 +1,304 @@
+/*
+ * `contents`, not the house `block` default — see the comment in
+ * `booking-location-step.css`: this host must not become the flex item
+ * between `lib-booking-step-layout` and the shell's 100svh column.
+ */
+:host {
+  display: contents;
+}
+
+/* The bag line's name doubles as the edit affordance. A real <button>
+   (free semantics, free focus handling) stripped back to plain label ink —
+   NOT a uiButton, because a control-shaped name inside a list row would
+   read as an action competing with the row's own trailing remove. */
+.booking-bag__edit {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+/* Clear the docked action bar so the last line is never trapped under it —
+   the bar publishes its own clearance for exactly this. */
+.booking-bag__body {
+  padding-block-end: var(--ui-sheet-action-bar-clearance, 0);
+}
+
+/*
+ * Person pill — a portrait, a name, and a count only once there is one.
+ *
+ * The `.ui-chip` height tier now carries the LARGE rung, so all this adds is
+ * the asymmetric inline padding a leading round avatar wants.
+ */
+.booking-seat-pill {
+  gap: var(--sys-space-compact);
+  padding-inline: var(--sys-space-compact) var(--sys-space-regular);
+}
+
+/* The badge is a SIBLING of the pill, so the ring colour has to be declared
+   on their common ancestor — a custom property inherits down, not across. */
+.booking-count-anchor:has(.booking-seat-pill) {
+  --booking-count-ring: var(--sys-color-surface-secondary);
+}
+
+.booking-count-anchor:has(.booking-seat-pill[data-selected]) {
+  --booking-count-ring: var(--sys-color-primary);
+}
+
+/* The portrait hugs the pill's leading edge — the compact inline padding
+   above is exactly the optical inset a round avatar wants. */
+.booking-seat-pill__avatar {
+  flex: 0 0 auto;
+}
+
+/*
+ * The person menu hangs BELOW the scroll row, not inside it.
+ *
+ * A scroller clips on both axes (`overflow-x: auto` forces `overflow-y` to
+ * `auto`), so a popover anchored to a pill inside it opened and was clipped
+ * away to nothing. The wrapper is the positioning context; the menu itself
+ * takes no layout space, so the row's rhythm is unchanged.
+ */
+.booking-seat-scope-wrap {
+  position: relative;
+}
+
+.booking-seat-menu {
+  position: absolute;
+  inset-block-end: 0;
+  /* Measured per person — see `dockSeatMenu`. Outside the scroller the menu
+     has no anchor of its own, so the pill's offset is written in. */
+  inset-inline-start: var(--booking-seat-menu-x, var(--sys-space-regular));
+}
+
+.booking-seat-menu__anchor {
+  display: block;
+  block-size: 0;
+  pointer-events: none;
+}
+
+/*
+ * While renaming, the pill is a CONTAINER, not a control — an <input> inside a
+ * <button> is invalid, and the browser handed the press to the button, so the
+ * field could never be typed in. It borrows the chip's shape by hand for the
+ * few seconds it exists.
+ */
+.booking-seat-pill--editing {
+  display: inline-flex;
+  align-items: center;
+  min-block-size: var(--control-size-large);
+  border-radius: var(--control-radius-capsule);
+  background: var(--sys-color-surface-secondary);
+}
+
+.booking-seat-pill__rename {
+  inline-size: 7rem;
+}
+
+.booking-seat-pill__name {
+  /* Long guest names truncate rather than pushing the count off the pill. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-inline-size: 9rem;
+}
+
+/*
+ * ONE count indicator, used twice.
+ *
+ * The bag's badge and the person's badge answer the same question — "how many
+ * does this hold" — so they are the same object: `span[uiBadge]` at increased
+ * prominence (the DS's own notification-badge tier) pinned to its host's
+ * trailing-top corner. They were two hand-rolled boxes at different sizes with
+ * different anchoring, and only one of them looked like a badge.
+ *
+ * The ring is what makes a badge read as ATTACHED rather than floating, so its
+ * colour has to be whatever the host is actually painted on — a page-coloured
+ * ring on an opaque chip paints a visible sliver across it. Hosts declare it.
+ */
+.booking-count-anchor {
+  position: relative;
+  display: inline-flex;
+  /* Every host that does not override it sits directly on the page. */
+  --booking-count-ring: var(--sys-color-background);
+}
+
+.booking-count-badge {
+  position: absolute;
+  inset-block-start: -0.25rem;
+  inset-inline-end: -0.25rem;
+  min-inline-size: 1.25rem;
+  min-block-size: 1.25rem;
+  border: 2px solid var(--booking-count-ring);
+  font-variant-numeric: tabular-nums;
+  /* The badge overhangs its host, where a press would otherwise land on
+     nothing instead of on the control it is attached to. */
+  pointer-events: none;
+}
+
+/*
+ * The badge overhangs by 4px in both axes, and the seat row is a scroll
+ * container — `overflow-x: auto` forces `overflow-y` to `auto` too, which
+ * makes block-start overflow simply unreachable rather than scrollable. The
+ * padding gives that overhang somewhere legal to live.
+ *
+ * Block padding and `padding-inline-end` are snap-inert; `padding-inline-start`
+ * is NOT (it shifts every snap target), which is why only the end side is
+ * touched here.
+ */
+.booking-seat-scope {
+  /* The page's own gutter, restated INSIDE the scroller so the run starts
+     flush with the catalog grid while still scrolling edge to edge. */
+  --ui-scroll-row-gutter: var(--sys-space-regular);
+  padding-block: 0.25rem;
+}
+
+/*
+ * Add · price — ONE phrase, not two controls sharing a pill. The rule between
+ * them made the button read as a label welded to a separate price chip
+ * (owner ruling 2026-07-31); a single space is the whole separator now.
+ */
+.booking-add__label {
+  padding-inline-end: var(--sys-space-tight);
+}
+
+.booking-add__price {
+  font-variant-numeric: tabular-nums;
+}
+
+/*
+ * The docked decision — the notice, the two selects, and the action, stacked
+ * and HUGGED to the trailing edge because that is where the thumb already is.
+ * The notice is the exception: a message spans the column, it does not hug.
+ * Nothing here stretches: a full-width control on an otherwise empty bar
+ * reads as a page footer rather than as one thing you press.
+ */
+.booking-decide {
+  align-items: flex-end;
+  inline-size: 100%;
+  min-inline-size: 0;
+}
+
+/* The commit row spans the bar so the way OUT can sit at the FAR edge — a
+   destructive control one thumb-width from the CTA is a mis-tap waiting to
+   happen, and hugging it to the CTA put it exactly there. */
+.booking-commit {
+  inline-size: 100%;
+  justify-content: flex-end;
+}
+
+.booking-commit__remove {
+  margin-inline-end: auto;
+}
+
+/*
+ * The conflict, as a NOTIFICATION — a glyph, a title and the reason on a
+ * rounded card. At capsule radius and control height it read as a fourth
+ * button in the stack, which is the one thing it must not be: nothing here
+ * is pressable.
+ *
+ * Neutral ink on the thick material. HIG keeps amber for genuine caution and
+ * never tints a primary button by severity; the CTA reading "Замени" is the
+ * signal, and repeating it in colour would be leaning on colour to say what
+ * the word already says.
+ */
+.booking-notice {
+  box-sizing: border-box;
+  inline-size: 100%;
+  max-inline-size: min(24rem, 100%);
+  padding: var(--sys-space-regular);
+  /* Rounded rect, NOT capsule — the shape is half of what says "message". */
+  border-radius: var(--control-radius-prominent);
+  background: color-mix(in srgb, var(--sys-color-surface) 92%, transparent);
+  -webkit-backdrop-filter: blur(var(--sys-material-thick-blur))
+    saturate(var(--sys-material-saturation));
+  backdrop-filter: blur(var(--sys-material-thick-blur))
+    saturate(var(--sys-material-saturation));
+  box-shadow:
+    inset 0 0 0 1px var(--sys-color-separator),
+    var(--sys-elevation-floating);
+}
+
+.booking-notice__glyph {
+  flex: 0 0 auto;
+  color: var(--sys-color-secondary-label);
+}
+
+.booking-notice__body {
+  min-inline-size: 0;
+}
+
+/*
+ * The bar is a stack of hugging controls now, and the clearance contract is a
+ * static calc sized for one 52px row. Reserve the two rows a service with
+ * variants always shows; the notice is transient and rides over the story.
+ */
+cr-service-detail-sheet {
+  --ui-sheet-action-bar-clearance: calc(
+    max(var(--sys-space-compact), env(safe-area-inset-bottom)) +
+      var(--control-size-large) * 2 + var(--sys-space-compact) * 2 +
+      var(--sys-space-spacious)
+  );
+}
+
+/*
+ * A select, in the shape this DS has for one: a glass pill that states its
+ * current value with the pull-down caret on the trailing edge.
+ */
+.booking-pick {
+  max-inline-size: 100%;
+  min-inline-size: 0;
+}
+
+.booking-pick__value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Unset reads as a PLACEHOLDER — the button's own ink, dimmed, the way an
+   empty field reads anywhere else. Accent is the colour of things you have
+   chosen and things you can act on; spending it on "not answered yet" made
+   two unanswered questions the loudest thing on the bar (owner ruling
+   2026-07-31). `currentColor` rather than a secondary token because these sit
+   on glass over photography, where a theme grey has no fixed contrast. */
+.booking-pick[data-unset] .booking-pick__value {
+  color: color-mix(in srgb, currentColor 62%, transparent);
+}
+
+/* "Anyone" has no face, so it takes the avatar's silhouette rather than the
+   avatar's absence — the leading rail stays one column wide either way. */
+.booking-any__glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  inline-size: var(--control-size-regular);
+  block-size: var(--control-size-regular);
+  border-radius: var(--control-radius-capsule);
+  background: var(--sys-color-fill);
+}
+
+/* An option that carries its own terms: the name leads, what it costs sits
+   under it, so the choice is priced before it is made. */
+.booking-option {
+  display: flex;
+  flex-direction: column;
+  min-inline-size: 0;
+}
+
+.booking-option__terms {
+  color: var(--sys-color-secondary-label);
+  font: var(--sys-font-caption);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The current value's checkmark, pinned to the menu item's trailing edge —
+   HIG's state marker for a menu that expresses a selection. */
+.booking-pick__check {
+  margin-inline-start: auto;
+  color: var(--sys-color-accent);
+}

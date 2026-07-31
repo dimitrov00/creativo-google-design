@@ -5,13 +5,19 @@ import {
   input,
 } from '@angular/core';
 
-export type UiDateBadgeState = 'plain' | 'today' | 'selected' | 'outside';
+export type UiDateBadgeState =
+  'plain' | 'today' | 'selected' | 'outside' | 'unavailable';
 
 /**
  * Custom element — a single calendar day number, with a state ring
- * (today/selected/outside-month) and an optional marker dot (e.g. "has an
- * appointment"). Purely presentational and non-interactive; a consumer
- * that needs tap behavior wraps it in its own native `<button>`.
+ * (today/selected/outside-month/unavailable) and an optional marker dot
+ * (e.g. "has an appointment"). Purely presentational and non-interactive; a
+ * consumer that needs tap behavior wraps it in its own native `<button>`.
+ *
+ * `unavailable` is the booking grid's "nothing free that day": the number
+ * stays legible (a struck-through or invisible date is worse than a quiet
+ * one) but reads as untappable. The consumer still has to `disabled` its own
+ * button — this state describes the day, it does not gate the tap.
  */
 @Component({
   selector: 'ui-date-badge',

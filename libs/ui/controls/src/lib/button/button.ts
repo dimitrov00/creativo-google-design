@@ -16,14 +16,35 @@ import { UiPaddingDirective } from '@creativo/ui/modifiers';
  */
 export type UiButtonStyle =
   'borderedProminent' | 'bordered' | 'strokedBorder' | 'plain' | 'glass';
-/** ≙ SwiftUI `ButtonRole` — recolors any style, exactly like `Button(role:)`. */
+/**
+ * ≙ SwiftUI `ButtonRole` — recolors any style, exactly like `Button(role:)`.
+ *
+ * There is deliberately no `warning` tier. HIG does not tint primary buttons
+ * by severity — a filled prominent button is the tint colour, and even a
+ * genuinely destructive confirmation is red TEXT inside an alert, not an
+ * amber CTA. An action that trades one thing for another says so in its
+ * LABEL ("Replace"), which is the rule about never relying on colour alone.
+ */
 export type UiButtonRole = 'destructive';
 /** ≙ SwiftUI `.tint(_:)` — `neutral` renders the gray `.bordered` chip
  *  (utility toggles, sheet chrome) instead of the accent-tinted fill. */
 export type UiButtonTint = 'neutral';
 /** ≙ SwiftUI `.controlSize(_:)` — small(36) · regular(44) · large(52); avatar adds extraLarge. */
 export type UiControlSize = 'small' | 'regular' | 'large';
-/** ≙ SwiftUI `.buttonBorderShape(_:)`. */
+/**
+ * ≙ SwiftUI `.buttonBorderShape(_:)`.
+ *
+ * **`capsule` is the default (owner ruling, 2026-07-30): capsules and circles
+ * everywhere.** It was `roundedRectangle`, and the audit that prompted this
+ * found the split was never a decision — 57 call sites asked for `capsule`
+ * explicitly and NOT ONE ever asked for `roundedRectangle`. Every rounded
+ * rectangle in the app was somewhere a developer forgot the attribute, which
+ * is why the booking flow had capsule CTAs on three steps and rectangles on
+ * three others.
+ *
+ * `roundedRectangle` stays available for a button that genuinely wants to read
+ * as a panel rather than a control; it now has to be asked for.
+ */
 export type UiButtonBorderShape = 'roundedRectangle' | 'capsule';
 
 /** Native `<button>`/`<a>` element — free a11y semantics, zero ARIA
@@ -66,7 +87,7 @@ export class UiButton {
    *  utility chip (sheet closes, layout toggles). */
   readonly uiTint = input<UiButtonTint | undefined>(undefined);
   readonly uiControlSize = input<UiControlSize>('regular');
-  readonly uiButtonBorderShape = input<UiButtonBorderShape>('roundedRectangle');
+  readonly uiButtonBorderShape = input<UiButtonBorderShape>('capsule');
   readonly uiLoading = input(false);
   /** Sheet-CTA ROW GRAMMAR: tall pill, leading content clustered, trailing
    *  glyph at the far edge. Width is NOT part of the grammar — like every

@@ -256,7 +256,7 @@ describe('Service terms matrix', () => {
   it('rejects a duplicate variant declaration', () => {
     const result = Service.create({
       ...validProps(),
-      variants: [LENGTH_VARIANTS[0], LENGTH_VARIANTS[0]],
+      variants: [LENGTH_VARIANTS[0]!, LENGTH_VARIANTS[0]!],
     });
     expect(result.isFailure()).toBe(true);
     if (result.isFailure()) {

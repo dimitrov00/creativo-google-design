@@ -1,0 +1,94 @@
+<ng-container *transloco="let t">
+  <!-- The map fills the step; the sheet rides over it. NOT inside
+       `lib-booking-step-layout`: that wrapper is a centred measure column with
+       a pinned action bar, and this step's action lives in the sheet, above the
+       list it applies to (the Maps idiom). -->
+  <div class="booking-location" data-testid="booking-location-pane">
+    <ui-map
+      class="booking-location__map"
+      [uiPins]="pins()"
+      [uiSelectedPinId]="selectedPinId()"
+      [uiColorScheme]="colorScheme()"
+      [uiBottomInsetFraction]="mapInset()"
+      [uiTopInsetPx]="toolbarInset"
+      [uiSelectedZoom]="14.5"
+      [uiCooperativeGestures]="false"
+      (uiPinSelect)="selectPin($event)"
+      data-testid="booking-location-map"
+    />
+
+    <ui-detent-sheet
+      [(uiDetent)]="detent"
+      [uiDetents]="detents"
+      [uiHandleLabel]="t('booking.location.resizeSheet')"
+      data-testid="booking-location-sheet"
+    >
+      <ui-stack uiHeader uiSpacing="none">
+        <h1 uiText uiFont="title3">{{ t('booking.location.title') }}</h1>
+        <p uiText uiFont="footnote" uiForegroundStyle="secondary">
+          {{ t('booking.location.lede') }}
+        </p>
+      </ui-stack>
+
+      <ui-stack uiSpacing="comfortable">
+        <ui-list-group [attr.aria-label]="t('booking.location.title')">
+          @for (row of rows(); track row.key) {
+          <!-- `leading`: the glyph belongs to the shop's NAME, so it lines
+                 up with it rather than floating between the two lines
+                 (owner ruling 2026-07-31). -->
+          <button
+            type="button"
+            uiListRow
+            uiAlignment="leading"
+            [uiInteractive]="true"
+            [uiSelected]="row.selected"
+            data-testid="booking-location-row"
+            [attr.data-location]="row.key"
+            [attr.aria-pressed]="row.selected"
+            (click)="select(row)"
+          >
+            <ui-icon
+              uiLeading
+              [uiName]="row.id === null ? 'location.any' : 'location.pin'"
+              [uiForegroundStyle]="row.selected ? 'accent' : 'secondary'"
+            />
+            <ui-stack uiSpacing="none">
+              <span uiText uiFont="body">{{ row.name }}</span>
+              <span uiText uiFont="footnote" uiForegroundStyle="secondary">
+                {{ row.detail }}
+              </span>
+            </ui-stack>
+            @if (row.selected) {
+            <ui-icon
+              uiTrailing
+              uiName="checklist.done"
+              uiForegroundStyle="accent"
+            />
+            }
+          </button>
+          }
+        </ui-list-group>
+      </ui-stack>
+    </ui-detent-sheet>
+
+    <!-- The SAME bar, in the SAME place, as every other step. This screen does
+         not scroll, so it anchors to the pane rather than sticking to a
+         column; everything else about it is identical. A wizard whose primary
+         action lives in one place on four steps and somewhere else on the
+         fifth has no rhythm — and the bar riding above the sheet also means
+         the action is reachable at every detent, which is what put it in the
+         sheet's header in the first place. -->
+    <ui-page-action-bar uiAnchor="pane">
+      <button
+        type="button"
+        uiButton
+        uiButtonStyle="borderedProminent"
+        uiControlSize="large"
+        data-testid="booking-location-continue"
+        (click)="store.next()"
+      >
+        {{ continueLabel() }}
+      </button>
+    </ui-page-action-bar>
+  </div>
+</ng-container>
