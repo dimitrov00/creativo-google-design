@@ -13,6 +13,7 @@ import {
   UiTextDirective,
 } from '@creativo/ui/modifiers';
 import { UiListGroup, UiListRow, UiRewardMoment } from '@creativo/ui/patterns';
+import { SessionIdentityService } from '@creativo/features/shared/shell';
 import { BookingFlowStore } from '../booking-flow.store';
 
 interface ConfirmedLineVm {
@@ -57,6 +58,7 @@ interface ConfirmedLineVm {
 })
 export class BookingConfirmedStep {
   private readonly transloco = inject(TranslocoService);
+  private readonly identity = inject(SessionIdentityService);
 
   protected readonly catalog = inject(CatalogContentService);
   protected readonly content = inject(CatalogPresenter);
@@ -140,8 +142,14 @@ export class BookingConfirmedStep {
     seatKey: string,
     confirmation: NonNullable<ReturnType<BookingFlowStore['confirmation']>>,
   ): string {
+    // The booker by NAME once we know it — three steps said "You" to a
+    // signed-in user whose name was sitting in the session the whole time
+    // (owner ruling 2026-07-31). "You" is the fallback, not the rule.
     if (seatKey === 'self')
-      return this.transloco.translate('booking.party.you');
+      return (
+        this.identity.displayName() ||
+        this.transloco.translate('booking.party.you')
+      );
     const guest = confirmation.party.guests.find(
       (candidate) => candidate.id.value === seatKey,
     );

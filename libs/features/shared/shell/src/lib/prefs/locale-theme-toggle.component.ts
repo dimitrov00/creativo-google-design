@@ -30,6 +30,7 @@ import { ThemeService } from './theme.service';
         type="button"
         uiButton
         [uiButtonStyle]="variant() === 'overlay' ? 'glass' : 'bordered'"
+        [uiOnMedia]="variant() === 'overlay'"
         uiButtonBorderShape="capsule"
         uiControlSize="regular"
         data-testid="landing-locale-toggle"
@@ -50,6 +51,7 @@ import { ThemeService } from './theme.service';
         type="button"
         uiButton
         [uiButtonStyle]="variant() === 'overlay' ? 'glass' : 'bordered'"
+        [uiOnMedia]="variant() === 'overlay'"
         uiButtonBorderShape="capsule"
         uiControlSize="regular"
         [uiIconOnly]="true"

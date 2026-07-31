@@ -27,6 +27,7 @@
             [queryParams]="{ redirect: '/account' }"
             uiButton
             [uiButtonStyle]="isSolid() ? 'bordered' : 'glass'"
+            [uiOnMedia]="!isSolid()"
             uiControlSize="regular"
             data-testid="site-login-pill"
           >
@@ -39,6 +40,7 @@
           type="button"
           uiButton
           [uiButtonStyle]="isSolid() ? 'bordered' : 'glass'"
+          [uiOnMedia]="!isSolid()"
           uiControlSize="regular"
           [uiIconOnly]="true"
           [uiSelected]="menuOpen()"

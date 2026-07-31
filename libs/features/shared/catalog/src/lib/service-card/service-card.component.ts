@@ -90,6 +90,22 @@ export class ServiceCardComponent {
   readonly uiCapBlocked = input(false);
 
   /** Render the quiet info pill. Off when the card's own press opens details. */
+  /**
+   * When the corner indicator is drawn.
+   *
+   * - `always` (default) — an empty ring sits on every card, which is right
+   *   where the card press IS the toggle: the ring is the checkbox, and its
+   *   unselected state is what says "this can be picked" (onboarding).
+   * - `whenSet` — the corner appears only once it has something to say. A
+   *   card that opens a SHEET rather than toggling has no checkbox to
+   *   advertise, and eight empty rings over eight photographs is eight
+   *   promises the press does not keep (owner ruling 2026-07-31).
+   *
+   * The blocked and count states are unaffected: those always have something
+   * to say, so they always show.
+   */
+  readonly uiSelectionIndicator = input<'always' | 'whenSet'>('always');
+
   readonly uiShowDetails = input(true);
   readonly uiDetailsLabel = input('');
 
@@ -100,4 +116,12 @@ export class ServiceCardComponent {
 
   /** A "1" badge on a single selection is noise; two is information. */
   protected readonly showCount = computed(() => this.uiSelectedCount() > 1);
+
+  /** Whether the corner slot has anything to say at all. */
+  protected readonly showIndicator = computed(
+    () =>
+      this.uiSelectionIndicator() === 'always' ||
+      this.uiSelectedCount() > 0 ||
+      this.uiBlocked(),
+  );
 }

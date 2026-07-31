@@ -33,6 +33,7 @@ import {
   UiListGroup,
   UiListRow,
 } from '@creativo/ui/patterns';
+import { SessionIdentityService } from '@creativo/features/shared/shell';
 import { BookingFlowStore } from '../booking-flow.store';
 import { BookingStepTitle } from '../chrome/booking-chrome.service';
 import { BookingStepLayout } from '../step-layout/booking-step-layout';
@@ -126,6 +127,7 @@ const AFTERNOON_ENDS_AT = 17;
 })
 export class BookingScheduleStep {
   private readonly transloco = inject(TranslocoService);
+  private readonly identity = inject(SessionIdentityService);
   private readonly clock = inject(CLOCK);
   private readonly availability = inject(AVAILABILITY_READER);
 
@@ -605,8 +607,14 @@ export class BookingScheduleStep {
 
   /** `seatKeyValue` is `'self'` or the bare `GuestId` — never a prefixed form. */
   private personLabel(seatKey: string): string {
+    // The booker by NAME once we know it — three steps said "You" to a
+    // signed-in user whose name was sitting in the session the whole time
+    // (owner ruling 2026-07-31). "You" is the fallback, not the rule.
     if (seatKey === 'self')
-      return this.transloco.translate('booking.party.you');
+      return (
+        this.identity.displayName() ||
+        this.transloco.translate('booking.party.you')
+      );
     const guest = this.store
       .guests()
       .find((candidate) => candidate.id.value === seatKey);

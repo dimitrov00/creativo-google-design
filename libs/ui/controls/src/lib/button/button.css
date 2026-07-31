@@ -36,14 +36,22 @@
     background: var(--sys-color-primary);
     color: var(--sys-color-on-primary);
   }
-  .ui-button[data-button-style='strokedBorder'] {
-    /* v2 "outline". The outline rides currentColor, not the separator
-       token: separator (~8-12% ink) reads too faint for a control edge,
-       and a currentColor mix is theme-proof for free — white-ish over
-       dark media, near-black ink in light theme, no per-surface tuning.
-       28% is the optical match for the old hand-rolled glass borders
-       (rgb(255 255 255 / 0.2-0.3)) while staying quieter than the
-       hover fill it composes with. */
+  /* v2 "outline", and the edge glass keeps ONLY over media. The outline
+     rides currentColor, not the separator token: separator (~8-12% ink)
+     reads too faint for a control edge, and a currentColor mix is
+     theme-proof for free — white-ish over dark media, near-black ink in
+     light theme, no per-surface tuning. 28% is the optical match for the
+     old hand-rolled glass borders (rgb(255 255 255 / 0.2-0.3)) while
+     staying quieter than the hover fill it composes with.
+
+     On a page surface glass carries no edge at all (owner ruling
+     2026-07-31): the material and its interactive film already separate it,
+     and a rule around a frosted pill reads as a second, harder shape drawn
+     on top of it. Over MEDIA the edge stays — a control on moving footage
+     has nothing stable to sit against, and the hairline is what keeps its
+     silhouette when a bright frame passes under it. */
+  .ui-button[data-button-style='strokedBorder'],
+  .ui-button[data-button-style='glass'][data-on-media] {
     box-shadow: inset 0 0 0 1px
       color-mix(in srgb, currentColor 28%, transparent);
   }
@@ -91,13 +99,61 @@
     color: #0d0d0d;
   }
 
+  /*
+   * ≙ SwiftUI `.glass` — chrome that floats over CONTENT and adapts to it.
+   *
+   * The fill is the shared material recipe, so it follows the theme exactly
+   * like every other material in the app: a light frost in light mode, a dark
+   * one in dark. It used to be a hardcoded white film, which was right for
+   * the seven call sites that sit on `--sys-color-media-canvas` (#0a0a0a in
+   * BOTH themes) and silently wrong for anything on a page surface — three
+   * booking controls rendered white-on-white in light mode, invisible.
+   *
+   * The hairline is `--sys-color-separator`, the same edge every other piece
+   * of chrome uses, rather than a white rule that only reads on dark.
+   */
   .ui-button[data-button-style='glass'] {
-    /* Glass chrome over media (video cards, photo overlays) — white-alpha
-       fill + blur, theme-independent by design: it always sits on dark
-       imagery, never on the page surface. */
-    background: rgb(255 255 255 / 0.13);
-    box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.2);
-    color: #ffffff;
+    /* The material is the BACKDROP; a control still needs its own quiet film
+       on top, or it is nothing but an edge — a 78%-surface fill laid over a
+       surface is invisible by construction. That film is the same
+       `currentColor @ --sys-alpha-interactive` the neutral bordered chip
+       uses, composited into the material instead of into transparency, so
+       the rest / hover / press ladder is one grammar at three alphas. */
+    background: color-mix(
+      in srgb,
+      currentColor var(--sys-alpha-interactive),
+      var(--sys-material-fill)
+    );
+    color: var(--sys-color-foreground);
+    -webkit-backdrop-filter: blur(var(--sys-material-regular-blur))
+      saturate(var(--sys-material-saturation));
+    backdrop-filter: blur(var(--sys-material-regular-blur))
+      saturate(var(--sys-material-saturation));
+  }
+
+  /* A `destructive` glass control keeps its role's ink — the white fill used
+     to swallow it, so the remove button read as an ordinary one. */
+  .ui-button[data-button-style='glass'][data-role='destructive'] {
+    color: var(--sys-color-destructive);
+  }
+
+  /*
+   * ON MEDIA — the white film, theme-independent by design.
+   *
+   * A control over a photograph or video has no theme: the backdrop is dark
+   * in light mode too, so it takes white ink in both. This is what `glass`
+   * used to be unconditionally; it is now asked for, which is the difference
+   * between a style that suits its context and one that assumes it.
+   */
+  .ui-button[data-button-style='glass'][data-on-media] {
+    /* No material: media has no theme surface to frost, so the film is a
+       fixed fraction of the on-media ink. The alpha is a constant rather
+       than `--sys-alpha-interactive`, which is theme-scaled — the backdrop
+       here is dark in BOTH themes, so the light theme's quieter rung would
+       under-read. The edge comes from the shared stroked rule above, where
+       `currentColor 28%` already resolves to white over media. */
+    background: color-mix(in srgb, var(--sys-color-on-media) 13%, transparent);
+    color: var(--sys-color-on-media);
     -webkit-backdrop-filter: blur(var(--sys-material-regular-blur));
     backdrop-filter: blur(var(--sys-material-regular-blur));
   }
@@ -153,7 +209,18 @@
       );
     }
     .ui-button[data-button-style='glass']:hover:not(:disabled) {
-      background: rgb(255 255 255 / 0.2);
+      background: color-mix(
+        in srgb,
+        currentColor var(--sys-alpha-fill-hover),
+        var(--sys-material-fill)
+      );
+    }
+    .ui-button[data-button-style='glass'][data-on-media]:hover:not(:disabled) {
+      background: color-mix(
+        in srgb,
+        var(--sys-color-on-media) 20%,
+        transparent
+      );
     }
     .ui-button[data-button-style='borderedProminent'][data-on-media]:hover:not(
         :disabled
@@ -219,7 +286,14 @@
     background: rgb(255 255 255 / 0.88);
   }
   .ui-button[data-button-style='glass']:active:not(:disabled) {
-    background: rgb(255 255 255 / 0.28);
+    background: color-mix(
+      in srgb,
+      currentColor var(--sys-alpha-press),
+      var(--sys-material-fill)
+    );
+  }
+  .ui-button[data-button-style='glass'][data-on-media]:active:not(:disabled) {
+    background: color-mix(in srgb, var(--sys-color-on-media) 28%, transparent);
   }
 
   /* Sizes — semantic, not t-shirt */

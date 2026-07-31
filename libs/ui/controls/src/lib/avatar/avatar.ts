@@ -7,6 +7,7 @@ import {
 } from '@angular/core';
 import type { UiControlSize } from '../button/button';
 import { UiAsyncImage } from '../async-image/async-image';
+import { UiIcon } from '../icon/icon';
 
 /**
  * Avatar sizes extend the shared control vocabulary with a `display` tier —
@@ -24,16 +25,20 @@ export type UiAvatarSize = UiControlSize | 'extraLarge';
  */
 @Component({
   selector: 'ui-avatar',
-  imports: [UiAsyncImage],
+  imports: [UiAsyncImage, UiIcon],
   template: `
     <ui-async-image
       class="ui-avatar__media"
       [uiSrc]="uiSrc()"
       [uiAlt]="uiName()"
     >
-      <span uiPlaceholder class="ui-avatar__fallback" aria-hidden="true">{{
-        initial()
-      }}</span>
+      <span uiPlaceholder class="ui-avatar__fallback" aria-hidden="true">
+        @if (initial(); as monogram) {
+          {{ monogram }}
+        } @else {
+          <ui-icon uiName="account.anonymous" />
+        }
+      </span>
     </ui-async-image>
   `,
   styleUrl: './avatar.css',
@@ -56,10 +61,19 @@ export class UiAvatar {
   readonly uiName = input('');
   readonly uiControlSize = input<UiAvatarSize>('regular');
 
-  /** Apple-monogram initials: first letters of the first two words ("Ана Чек" → "АЧ"), single letter for one word, '?' when nameless. */
+  /**
+   * Apple-monogram initials: first letters of the first two words
+   * ("Ана Чек" → "АЧ"), a single letter for one word, and EMPTY when there is
+   * no name.
+   *
+   * Empty rather than "?": a question mark is a glyph that asks the viewer
+   * something, and nobody is being asked anything — we simply do not have the
+   * name yet. The template falls back to the person silhouette, which is what
+   * every system avatar shows for an unknown someone.
+   */
   protected readonly initial = computed(() => {
     const words = this.uiName().trim().split(/\s+/).filter(Boolean);
-    if (words.length === 0) return '?';
+    if (words.length === 0) return '';
     return words
       .slice(0, 2)
       .map((word) => word.charAt(0))

@@ -35,23 +35,25 @@
       for space; muting the whole card says "not now" quietly, and the reason
       still arrives on press.
     -->
-    <span
-      uiOverlayTrailing
-      class="cr-service-card__check"
-      [attr.data-selected]="uiSelectedCount() > 0 ? '' : null"
-      [attr.data-blocked]="uiBlocked() && uiSelectedCount() === 0 ? '' : null"
-      [attr.aria-label]="uiBlocked() ? uiBlockedLabel() : null"
-      [attr.role]="uiBlocked() ? 'img' : null"
-      [attr.aria-hidden]="uiBlocked() ? null : 'true'"
-    >
-      @if (uiBlocked() && uiSelectedCount() === 0) {
-        <ui-icon uiName="booking.blocked" />
-      } @else if (showCount()) {
-        {{ uiSelectedCount() }}
-      } @else {
-        <ui-icon uiName="checklist.done" />
-      }
-    </span>
+    @if (showIndicator()) {
+      <span
+        uiOverlayTrailing
+        class="cr-service-card__check"
+        [attr.data-selected]="uiSelectedCount() > 0 ? '' : null"
+        [attr.data-blocked]="uiBlocked() && uiSelectedCount() === 0 ? '' : null"
+        [attr.aria-label]="uiBlocked() ? uiBlockedLabel() : null"
+        [attr.role]="uiBlocked() ? 'img' : null"
+        [attr.aria-hidden]="uiBlocked() ? null : 'true'"
+      >
+        @if (uiBlocked() && uiSelectedCount() === 0) {
+          <ui-icon uiName="booking.blocked" />
+        } @else if (showCount()) {
+          {{ uiSelectedCount() }}
+        } @else {
+          <ui-icon uiName="checklist.done" />
+        }
+      </span>
+    }
   </ui-media-card>
 </button>
 

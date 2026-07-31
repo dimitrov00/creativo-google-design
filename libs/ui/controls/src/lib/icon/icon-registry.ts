@@ -55,6 +55,8 @@ export const UI_ICON_REGISTRY = {
    *  opens it. Distinct from `prefs.*` on purpose: this is WHO you are, not
    *  how the app behaves. */
   'account.profile': 'manage_accounts',
+  /** Someone whose name we do not have yet — the avatar's own fallback. */
+  'account.anonymous': 'person',
   /** Profile photo affordances — pick/replace, and drop back to the monogram. */
   'account.photo': 'photo_camera',
   'account.photoRemove': 'delete',
