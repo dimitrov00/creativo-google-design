@@ -14,6 +14,20 @@ export interface AppointmentRepository {
   observeUpcomingFor(
     userId: UserId,
   ): Observable<Result<readonly Appointment[], RepositoryError>>;
+
+  /**
+   * Live PAST visits, newest first — everything the upcoming query filters
+   * out: a start that has already been and gone, and anything terminal
+   * (cancelled, completed, no-show) whatever its start.
+   *
+   * BOUNDED by `limit`, and deliberately so: "my history" grows without end
+   * and a screen that reads all of it pays for every visit a loyal client
+   * ever made, on every mount. The newest N is what a person scrolls.
+   */
+  observeHistoryFor(
+    userId: UserId,
+    limit: number,
+  ): Observable<Result<readonly Appointment[], RepositoryError>>;
 }
 
 export const APPOINTMENT_REPOSITORY = new InjectionToken<AppointmentRepository>(

@@ -336,6 +336,97 @@ describe('BookingFlow', () => {
     }
   });
 
+  // A seat with no lines produces no assignment, so a guest left behind here
+  // would disappear from the schedule, the review and the commit payload
+  // without a single surface saying so. The bag being non-empty is not the
+  // rule — everyone coming has to be booking something.
+  it('refuses to leave services while a guest is booking nothing', () => {
+    const withGuest = advanceBookingFlow(servicesStateWithOneLine(), {
+      type: 'add_guest',
+      label: 'Maria',
+    });
+    if (withGuest.isFailure()) throw new Error('unexpected');
+
+    const result = advanceBookingFlow(withGuest.value, { type: 'next' });
+    expect(result.isFailure()).toBe(true);
+    if (result.isFailure()) {
+      expect(result.error.code).toBe('booking.flow.seat_without_service');
+      // It NAMES the seat: a button that has to say whose turn it is cannot
+      // work from "somebody is empty".
+      expect(result.error.params['seatKey']).toBe('guest-0');
+    }
+  });
+
+  it('refuses when the BOOKER is the empty one, guest or not', () => {
+    const withGuest = advanceBookingFlow(guestsState(), {
+      type: 'add_guest',
+      label: 'Maria',
+    });
+    if (withGuest.isFailure() || withGuest.value.kind !== 'services') {
+      throw new Error('unexpected');
+    }
+    // Only the guest is booking anything — the booker is along for the ride,
+    // which is not a thing a booking can express.
+    const guestOnly = advanceBookingFlow(withGuest.value, {
+      type: 'add_line',
+      seatKey: SeatKey.guest(withGuest.value.party.guests[0]!.id),
+      line: CUT,
+    });
+    if (guestOnly.isFailure()) throw new Error('unexpected');
+
+    const result = advanceBookingFlow(guestOnly.value, { type: 'next' });
+    expect(result.isFailure()).toBe(true);
+    if (result.isFailure()) {
+      expect(result.error.code).toBe('booking.flow.seat_without_service');
+      expect(result.error.params['seatKey']).toBe('self');
+    }
+  });
+
+  it('advances once every seat holds something', () => {
+    const withGuest = advanceBookingFlow(servicesStateWithOneLine(), {
+      type: 'add_guest',
+      label: 'Maria',
+    });
+    if (withGuest.isFailure() || withGuest.value.kind !== 'services') {
+      throw new Error('unexpected');
+    }
+    // The SAME service on another seat is legal — a second haircut is exactly
+    // what the party exists to express (`BookingCart.addLine`).
+    const both = advanceBookingFlow(withGuest.value, {
+      type: 'add_line',
+      seatKey: SeatKey.guest(withGuest.value.party.guests[0]!.id),
+      line: CUT,
+    });
+    if (both.isFailure()) throw new Error('unexpected');
+
+    const result = advanceBookingFlow(both.value, { type: 'next' });
+    expect(result.isSuccess()).toBe(true);
+    if (result.isSuccess()) expect(result.value.kind).toBe('schedule');
+  });
+
+  // Removing the guest removes the reason to block — the rule is about people
+  // in the party, so it has to answer to the party changing.
+  it('unblocks when the empty guest leaves the party', () => {
+    const withGuest = advanceBookingFlow(servicesStateWithOneLine(), {
+      type: 'add_guest',
+      label: 'Maria',
+    });
+    if (withGuest.isFailure() || withGuest.value.kind !== 'services') {
+      throw new Error('unexpected');
+    }
+    const guestId = withGuest.value.party.guests[0]!.id;
+
+    const removed = advanceBookingFlow(withGuest.value, {
+      type: 'remove_guest',
+      guestId,
+    });
+    if (removed.isFailure()) throw new Error('unexpected');
+
+    const result = advanceBookingFlow(removed.value, { type: 'next' });
+    expect(result.isSuccess()).toBe(true);
+    if (result.isSuccess()) expect(result.value.kind).toBe('schedule');
+  });
+
   it('walks location -> services -> schedule -> review, carrying the cart', () => {
     const locationId = requiredValue(LocationId.create('location_1'));
     const timeSlot = requiredValue(

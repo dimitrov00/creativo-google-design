@@ -1,43 +1,41 @@
 import { Result, fail, ok } from '@creativo/domain/kernel';
-import { Appointment, AppointmentId } from '@creativo/domain/scheduling';
-import { AppointmentRepository } from '../ports/appointment-repository.port';
+import { AppointmentId } from '@creativo/domain/scheduling';
 import {
-  AppointmentNotFoundError,
-  CancelAppointmentError,
-  CancelAppointmentRepositoryFailure,
-} from './cancel-appointment.errors';
+  BookingGateway,
+  BookingGatewayError,
+} from '../ports/booking-gateway.port';
 
 export interface CancelAppointmentInput {
   readonly appointmentId: AppointmentId;
   readonly reason: string;
 }
 
+/**
+ * Cancel through the GATEWAY, not the repository.
+ *
+ * The earlier shape — `findById`, `appointment.cancel(reason)`, `save()` —
+ * read as clean hexagonal domain work and could never run: the browser
+ * repository refuses `save()` by design (appointments are written only
+ * server-side), so every user cancel errored at the last step. And even had
+ * the write landed, a client-side status flip leaves the public `barberBusy`
+ * projection untouched — the slot stays blocked for everyone, forever.
+ *
+ * The `cancelAppointment` callable owns the transition (ownership and the
+ * domain lifecycle graph are checked server-side against fresh state), and
+ * the `rebuildBusy` trigger recomputes the projection the moment the status
+ * lands — which is also what lets the waitlist matcher notice the freed day.
+ */
 export class CancelAppointmentUseCase {
-  constructor(private readonly appointments: AppointmentRepository) {}
+  constructor(private readonly gateway: BookingGateway) {}
 
   async execute(
     input: CancelAppointmentInput,
-  ): Promise<Result<Appointment, CancelAppointmentError>> {
-    const foundResult = await this.appointments.findById(input.appointmentId);
-    if (foundResult.isFailure()) {
-      return fail(new CancelAppointmentRepositoryFailure(foundResult.error));
-    }
-    const appointment = foundResult.value;
-    if (!appointment) {
-      return fail(new AppointmentNotFoundError());
-    }
-
-    const cancelResult = appointment.cancel(input.reason);
-    if (cancelResult.isFailure()) {
-      return fail(cancelResult.error);
-    }
-    const cancelled = cancelResult.value;
-
-    const saveResult = await this.appointments.save(cancelled);
-    if (saveResult.isFailure()) {
-      return fail(new CancelAppointmentRepositoryFailure(saveResult.error));
-    }
-
-    return ok(cancelled);
+  ): Promise<Result<void, BookingGatewayError>> {
+    const result = await this.gateway.cancel({
+      appointmentId: input.appointmentId.value,
+      reason: input.reason,
+    });
+    if (result.isFailure()) return fail(result.error);
+    return ok(undefined);
   }
 }

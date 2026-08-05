@@ -59,6 +59,49 @@ export class EmptyCartError extends DomainError {
 }
 
 /**
+ * Someone in the party is booking nothing.
+ *
+ * A party is a list of people who are all coming, so a seat with no lines is
+ * not a smaller booking — it is a person the shop never hears about. Their
+ * seat produces no assignment on the schedule step, no row on the review, and
+ * no entry in the commit payload, so they vanish silently somewhere between
+ * the catalog and the receipt.
+ *
+ * The rule lives HERE rather than only in the CTA that names them, because
+ * the CTA is one of several ways off the step (the bag's own forward button,
+ * a restored draft) and a rule enforced by one button is a rule the others
+ * don't have.
+ */
+export class SeatWithoutServiceError extends DomainError {
+  override readonly code = 'booking.flow.seat_without_service' as const;
+  constructor(public readonly seatKey: string) {
+    super(`Seat "${seatKey}" is booking nothing`, { seatKey });
+  }
+}
+
+/**
+ * The flexible declaration already names as many days as it may.
+ *
+ * A real rejection rather than an untappable cell, same as `PartyFullError`:
+ * each declared day is its own availability search and its own slice of the
+ * matcher's work, so the cap is a rule about load, not a hint.
+ */
+export class FlexibleDaysFullError extends DomainError {
+  override readonly code = 'booking.flow.flexible_days_full' as const;
+  constructor(public readonly max: number) {
+    super(`A flexible request covers at most ${max} days`, { max });
+  }
+}
+
+/** Asking to be waitlisted without naming a day is asking for nothing. */
+export class NoFlexibleDaysError extends DomainError {
+  override readonly code = 'booking.flow.no_flexible_days' as const;
+  constructor() {
+    super('Pick at least one day to be told about');
+  }
+}
+
+/**
  * A cart operation named a line the seat does not hold. Wraps the domain's
  * own `CartLineNotFoundError` so the flow's error union stays one type and
  * the code the UI translates stays a `booking.flow.*` key.
@@ -86,4 +129,7 @@ export type BookingFlowError =
   | GuestNotFoundInFlowError
   | PartyFullError
   | EmptyCartError
+  | SeatWithoutServiceError
+  | FlexibleDaysFullError
+  | NoFlexibleDaysError
   | InvalidCartOperationError;

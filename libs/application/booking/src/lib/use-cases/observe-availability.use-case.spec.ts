@@ -175,7 +175,8 @@ describe('ObserveDayAvailabilityUseCase', () => {
       maxPartySize: 5,
       slotStepMinutes: 15,
       minLeadMinutes: 120,
-      horizonDays: 60,
+      horizonMonths: 2,
+      maxFlexibleDays: 7,
       cancellationWindowHours: 24,
     }),
   );

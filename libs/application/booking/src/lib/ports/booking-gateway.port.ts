@@ -1,5 +1,6 @@
 import { InjectionToken } from '@angular/core';
 import { DomainError, Result } from '@creativo/domain/kernel';
+import type { BookingContactProps } from '@creativo/domain/scheduling';
 
 /**
  * One seat, as the client asks for it.
@@ -33,6 +34,34 @@ export interface CommitBookingSeatRequest {
 }
 
 export interface CommitBookingRequest {
+  readonly locationId: string;
+  readonly seats: readonly CommitBookingSeatRequest[];
+  /**
+   * Client-minted idempotency key — one per ARMED selection, reused across
+   * retries of it. The server uses it as the appointment id, so a commit
+   * whose response was lost replays as success instead of bouncing
+   * `slot_unavailable` off its own busy write.
+   */
+  readonly attemptId: string;
+  /**
+   * Who the shop calls about this booking — the account's own details unless
+   * the booker overrode them for this one, plus anything the shop should
+   * know before the chair. Omitted by a client that has none.
+   *
+   * The server re-validates it and stores it as a SNAPSHOT on the
+   * appointment; it carries no authority (ownership is the token's job).
+   */
+  readonly contact?: BookingContactProps;
+}
+
+/**
+ * A move: the appointment being moved, plus the placement it is moving to.
+ *
+ * The seats are shaped exactly like a commit's — a reschedule IS the same
+ * cart at a different time, and the server re-decides it from scratch.
+ */
+export interface RescheduleBookingRequest {
+  readonly appointmentId: string;
   readonly locationId: string;
   readonly seats: readonly CommitBookingSeatRequest[];
 }
@@ -74,18 +103,40 @@ export class BookingGatewayError extends DomainError {
   }
 }
 
+export interface CancelAppointmentRequest {
+  readonly appointmentId: string;
+  /** Optional; the server substitutes its own default when empty. */
+  readonly reason: string;
+}
+
 /**
- * The only way a client creates an appointment.
+ * The only way a client creates — or cancels — an appointment.
  *
- * There is deliberately no browser write path: `firestore.rules` allows
- * `create` on `appointments` only for staff, and the repository's `save()`
- * refuses outright. Everything a booking needs to be correct — that the price
- * is the catalog's, that the barber is rostered, that nobody else took the
- * slot — can only be checked where the client cannot reach.
+ * There is deliberately no browser write path in either direction:
+ * `firestore.rules` refuses every direct write on `appointments`, and the
+ * repository's `save()` refuses outright. Everything a booking needs to be
+ * correct — that the price is the catalog's, that the barber is rostered,
+ * that nobody else took the slot — can only be checked where the client
+ * cannot reach. Cancellation is server-side for the projection's sake: the
+ * public `barberBusy` doc has to be recomputed when a slot frees, and a
+ * client status flip would leave it blocked forever.
  */
 export interface BookingGateway {
   commit(
     request: CommitBookingRequest,
+  ): Promise<Result<CommittedBooking, BookingGatewayError>>;
+
+  cancel(
+    request: CancelAppointmentRequest,
+  ): Promise<Result<void, BookingGatewayError>>;
+
+  /**
+   * Move an existing appointment to a new time — the same booking, not a new
+   * one. Atomic on the server: same id, same status, same contact, or
+   * nothing at all.
+   */
+  reschedule(
+    request: RescheduleBookingRequest,
   ): Promise<Result<CommittedBooking, BookingGatewayError>>;
 }
 

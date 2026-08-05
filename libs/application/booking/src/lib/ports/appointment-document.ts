@@ -1,5 +1,10 @@
 import { ZonedDateTime } from '@creativo/domain/kernel';
-import { Appointment, Interval } from '@creativo/domain/scheduling';
+import {
+  Appointment,
+  BookingContact,
+  CalendarDay,
+  Interval,
+} from '@creativo/domain/scheduling';
 
 /**
  * The persisted shape of an appointment, and of the public busy projection —
@@ -34,6 +39,11 @@ export function appointmentToDocument(
     locationId: appointment.locationId.value,
     ownerUserId: ownerUserIdOf(appointment),
     barberIds: appointment.barberIds().map((id) => id.value),
+    // The (barber, day) projection docs this appointment occupies — the
+    // rebuild trigger's reverse index. `array-contains` on this plus a
+    // status filter is what lets one cancelled booking recompute exactly
+    // the busy docs it touched, instead of scanning the collection.
+    busyKeys: busyKeysOf(appointment),
     timeSlot: {
       startIso: appointment.timeSlot.start.toISO(),
       endIso: appointment.timeSlot.end.toISO(),
@@ -66,7 +76,36 @@ export function appointmentToDocument(
           : { kind: 'anonymous' as const, label: seat.subject.label.value },
     })),
     status: appointment.status,
+    // A SNAPSHOT, deliberately denormalized: the number given for THIS
+    // booking is the number the shop dials for it, whatever the profile says
+    // two months later. `null` for appointments booked before contacts
+    // existed, and for a staff-entered walk-in with nobody to call.
+    contact: appointment.contact?.toProps() ?? null,
   };
+}
+
+/**
+ * Document → contact, for the readers that show it (the client's own
+ * appointments, the staff day view).
+ *
+ * A contact that does not parse reads as ABSENT rather than failing the
+ * appointment: the booking is still real, still cancellable, and still worth
+ * showing — losing the phone number is not worth losing the row.
+ */
+export function contactFromDocument(
+  data: PersistedDocument,
+): BookingContact | null {
+  const raw = data['contact'];
+  if (raw === null || typeof raw !== 'object') return null;
+  const contact = raw as Record<string, unknown>;
+
+  const result = BookingContact.create({
+    name: String(contact['name'] ?? ''),
+    phone: String(contact['phone'] ?? ''),
+    email: contact['email'] == null ? null : String(contact['email']),
+    note: contact['note'] == null ? null : String(contact['note']),
+  });
+  return result.isSuccess() ? result.value : null;
 }
 
 /**
@@ -111,6 +150,82 @@ export interface PersistedBusyDocument {
 /** Composite key — the barber AND the day, so the grid reads exactly what it renders. */
 export function busyDocumentId(barberId: string, dayKey: string): string {
   return `${barberId}__${dayKey}`;
+}
+
+/**
+ * Every busy-doc key this appointment's seats occupy.
+ *
+ * Keyed by the SOLD slot's start day — the same day `decideBooking` keys its
+ * busy writes by — so the mirror and the projection always name the same
+ * documents. Deduplicated because two seats with one barber on one day are
+ * one projection doc.
+ */
+export function busyKeysOf(appointment: Appointment): readonly string[] {
+  const keys = new Set<string>();
+  for (const seat of appointment.seats) {
+    keys.add(
+      busyDocumentId(
+        seat.barberId.value,
+        CalendarDay.fromZonedDateTime(seat.slot.start).key(),
+      ),
+    );
+  }
+  return [...keys].sort();
+}
+
+/** One (barber, day) projection doc's share of a stored appointment. */
+export interface BusyContribution {
+  readonly zone: string;
+  readonly intervals: readonly Interval[];
+}
+
+/**
+ * What a PERSISTED appointment occupies, per busy-doc key.
+ *
+ * The same envelope `decideBooking` writes — setup + service + cleanup
+ * around each seat's sold slot — re-derived from the stored seats, so the
+ * rebuild trigger reproduces the commit path's geometry byte-for-byte
+ * instead of keeping a second copy of the rule. A seat that does not parse
+ * contributes nothing: fail-closed FREES time rather than inventing a block
+ * nobody can explain, and the appointment itself remains the truth.
+ */
+export function busyContributionsOf(
+  data: PersistedDocument,
+): ReadonlyMap<string, BusyContribution> {
+  const byKey = new Map<string, { zone: string; intervals: Interval[] }>();
+  const seats = Array.isArray(data['seats'])
+    ? (data['seats'] as readonly Record<string, unknown>[])
+    : [];
+
+  for (const seat of seats) {
+    const slot = (seat['slot'] ?? {}) as Record<string, unknown>;
+    const terms = (seat['terms'] ?? {}) as Record<string, unknown>;
+    const zone = String(slot['zone'] ?? '');
+    const barberId = String(seat['barberId'] ?? '');
+    if (zone.length === 0 || barberId.length === 0) continue;
+
+    const start = ZonedDateTime.fromISO(String(slot['startIso'] ?? ''), zone);
+    const end = ZonedDateTime.fromISO(String(slot['endIso'] ?? ''), zone);
+    if (start.isFailure() || end.isFailure()) continue;
+
+    const setup = Number(terms['setupMinutes'] ?? 0);
+    const cleanup = Number(terms['cleanupMinutes'] ?? 0);
+
+    const key = busyDocumentId(
+      barberId,
+      CalendarDay.fromZonedDateTime(start.value).key(),
+    );
+    const entry = byKey.get(key) ?? { zone, intervals: [] };
+    entry.intervals.push(
+      Interval.of(
+        start.value.toMillis() - (Number.isFinite(setup) ? setup : 0) * 60_000,
+        end.value.toMillis() +
+          (Number.isFinite(cleanup) ? cleanup : 0) * 60_000,
+      ),
+    );
+    byKey.set(key, entry);
+  }
+  return byKey;
 }
 
 /** Stored slots → intervals. An unparseable entry is skipped, never guessed at. */

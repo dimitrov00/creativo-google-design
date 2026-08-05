@@ -1,4 +1,6 @@
 import type {
+  BookingContactProps,
+  FlexibleWhenProps,
   ReconstituteBookingCartProps,
   ReconstituteBookingPartyProps,
   TimeSlotProps,
@@ -43,4 +45,34 @@ export interface BookingDraft {
    * and being a punishment.
    */
   readonly dayKey: string | null;
+  /**
+   * The flexible declaration, if the client made one.
+   *
+   * Worth persisting where the per-seat assignments are not, and for the
+   * opposite reason: an offer goes stale the moment someone else books, but
+   * "I can come on the 25th or the 26th, mornings only" is a statement about
+   * the CLIENT, and it stays true across a reload and across the sign-in round
+   * trip a waitlist request has to make. Losing it would mean re-authoring
+   * several days of windows to get back to where they were.
+   *
+   * `null` for the ordinary single-day pick, which never touches it.
+   */
+  readonly when: FlexibleWhenProps | null;
+  /**
+   * The shop zone `when`'s bare `YYYY-MM-DD` day keys were authored in.
+   *
+   * Stored rather than re-derived because a day key alone is ambiguous: the
+   * 26th in Sofia and the 26th in Lisbon are different instants, and the
+   * windows inside it resolve against whichever zone the restore picks. Guessing
+   * a default would silently shift a declaration by an hour or more. `null`
+   * when there is no declaration to restore.
+   */
+  readonly zone: string | null;
+  /**
+   * Who the shop calls about this booking, if the booker captured or
+   * overrode it. Persisted like everything else the user typed: a reload
+   * mid-flow must not silently drop back to the profile's number after
+   * someone deliberately gave a different one.
+   */
+  readonly contact?: BookingContactProps | null;
 }

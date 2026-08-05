@@ -9,6 +9,7 @@ import {
   BookingPolicy,
   CalendarDay,
   DateRange,
+  Interval,
   type LineTerms,
   type RosterWindow,
   availableStarts,
@@ -30,6 +31,11 @@ export interface ObserveDayAvailabilityInput {
   /** "Now", as an instant. Injected so the grid is testable and so a stale tab re-floors on refresh. */
   readonly now: ZonedDateTime;
   readonly maxOptions?: number;
+  /**
+   * Restrict the search to these instants — the day's declared windows.
+   * Absent ⇒ the whole day, which is what the normal single-day grid asks for.
+   */
+  readonly withinMs?: readonly Interval[];
 }
 
 /**
@@ -154,6 +160,7 @@ export class ObserveDayAvailabilityUseCase {
             policy: input.policy,
             notBeforeMs,
             maxOptions: input.maxOptions,
+            withinMs: input.withinMs,
           });
           return ok<DayAvailability, RepositoryError>({
             day: input.day,
@@ -187,6 +194,8 @@ export function optionsForDay(query: {
   readonly policy: BookingPolicy;
   readonly notBeforeMs: number;
   readonly maxOptions?: number;
+  /** The client's declared windows for this day, if they narrowed it. */
+  readonly withinMs?: readonly Interval[];
 }): readonly LocatedOption[] {
   const byLocation = new Map<
     string,
@@ -234,6 +243,7 @@ export function optionsForDay(query: {
       policy: query.policy,
       notBeforeMs: query.notBeforeMs,
       maxOptions: query.maxOptions,
+      withinMs: query.withinMs,
     })) {
       located.push({ locationId: entry.locationId, option });
     }

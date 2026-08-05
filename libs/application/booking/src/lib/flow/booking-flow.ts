@@ -4,11 +4,15 @@ import {
   BookingCart,
   BookingCartError,
   BookingParty,
+  CalendarDay,
   CartLineId,
+  DayWindows,
+  FlexibleWhen,
   GuestId,
   NewCartLine,
   SeatKey,
   TimeSlot,
+  seatKeyValue,
 } from '@creativo/domain/scheduling';
 import {
   BarberId,
@@ -21,8 +25,11 @@ import {
   GuestNotFoundInFlowError,
   InvalidBookingFlowTransitionError,
   InvalidCartOperationError,
+  FlexibleDaysFullError,
   InvalidGuestError,
+  NoFlexibleDaysError,
   PartyFullError,
+  SeatWithoutServiceError,
 } from './booking-flow.errors';
 
 /**
@@ -36,6 +43,16 @@ import {
  * a signature, not a hunt.
  */
 export const MAX_PARTY_SIZE = 5;
+
+/**
+ * How many days one flexible declaration may name.
+ *
+ * Same story as {@link MAX_PARTY_SIZE}: a constant here rather than a magic
+ * number in a template, and it becomes `BookingPolicy.maxFlexibleDays` (which
+ * already carries it) once the machine takes a policy. Every consumer reads it
+ * from one place, so that change is a signature rather than a hunt.
+ */
+export const MAX_FLEXIBLE_DAYS = 7;
 
 /**
  * Pure port of v2's `booking.machine.ts` (`docs/migration-blueprint.md`
@@ -62,7 +79,18 @@ export const MAX_PARTY_SIZE = 5;
  * carries a {@link ScheduleSelection} that widens to hold them.
  */
 export type BookingFlowStep =
-  'location' | 'services' | 'schedule' | 'review' | 'confirmed';
+  | 'location'
+  | 'services'
+  | 'schedule'
+  | 'review'
+  | 'confirmed'
+  /**
+   * The schedule step's OTHER exit: nothing fitted, and the client asked to be
+   * told when something does. Terminal like `confirmed`, and deliberately its
+   * sibling rather than a sub-state of `schedule` — the flow is over either
+   * way, and the two ends are different promises.
+   */
+  | 'waitlisted';
 
 /**
  * One cart line, placed: who serves it and exactly when.
@@ -110,6 +138,22 @@ export interface BookingConfirmation {
   readonly selection: ScheduleSelection;
 }
 
+/**
+ * What the waitlisted screen renders.
+ *
+ * Mirrors {@link BookingConfirmation} on purpose: both are receipts for
+ * something the SERVER accepted, and both carry what the client agreed to
+ * rather than reconstructing it. The difference is what was promised —
+ * an appointment, versus a watch on a set of days.
+ */
+export interface WaitlistedSummary {
+  readonly requestId: string;
+  readonly party: BookingParty;
+  readonly cart: BookingCart;
+  readonly when: FlexibleWhen;
+  readonly locationId: LocationId | null;
+}
+
 export type BookingFlowState =
   | {
       /**
@@ -138,6 +182,17 @@ export type BookingFlowState =
       readonly party: BookingParty;
       readonly cart: BookingCart;
       readonly locationId: LocationId | null;
+      /**
+       * The days the client says they could come, and the spans within them.
+       *
+       * EMPTY is the ordinary case: someone picking one day and one time never
+       * touches this. It fills only when they choose to be flexible, and it is
+       * what both the multi-day search and a waitlist request are built from.
+       * It rides on the state rather than in the component so a step back from
+       * review does not cost the user a declaration they spent time on — the
+       * same reason `locationId` lives here.
+       */
+      readonly when: FlexibleWhen;
     }
   | {
       readonly kind: 'review';
@@ -148,6 +203,10 @@ export type BookingFlowState =
   | {
       readonly kind: 'confirmed';
       readonly confirmation: BookingConfirmation;
+    }
+  | {
+      readonly kind: 'waitlisted';
+      readonly summary: WaitlistedSummary;
     };
 
 export type BookingFlowEvent =
@@ -186,9 +245,20 @@ export type BookingFlowEvent =
       readonly locationId: LocationId | null;
     }
   | { readonly type: 'select_schedule'; readonly selection: ScheduleSelection }
+  /** Select or deselect a day in the flexible declaration — one tap, one event. */
+  | { readonly type: 'toggle_flexible_day'; readonly day: CalendarDay }
+  /** Replace one day's spans — what the per-day window sheet commits. */
+  | { readonly type: 'set_day_windows'; readonly dayWindows: DayWindows }
+  /** Back to a single-day pick — drops the whole declaration deliberately. */
+  | { readonly type: 'clear_flexible' }
   | {
       readonly type: 'confirmed';
       readonly appointmentId: string;
+    }
+  /** The server accepted a standing request. Terminal, like `confirmed`. */
+  | {
+      readonly type: 'waitlisted';
+      readonly requestId: string;
     }
   | { readonly type: 'next' }
   | { readonly type: 'back' };
@@ -267,6 +337,36 @@ function advanceParty(
   }
 
   return null;
+}
+
+/**
+ * Every seat in the party, booker first, then guests in roster order.
+ *
+ * The booker is never on the guest roster, so "everyone in the party" is not
+ * a list the domain hands over whole — each surface that needs it has to
+ * remember to prepend `self`, and one that forgets asks its question about
+ * the guests only. Exported for that reason rather than for this file's use.
+ */
+export function partySeats(party: BookingParty): readonly SeatKey[] {
+  return [
+    SeatKey.self(),
+    ...party.guests.map((guest) => SeatKey.guest(guest.id)),
+  ];
+}
+
+/**
+ * The first person holding nothing, or `null` when everyone has something.
+ *
+ * Ordered, not just existential: the caller wants to NAME them, and "someone
+ * is empty" is not a sentence a button can say.
+ */
+export function firstSeatWithoutService(
+  party: BookingParty,
+  cart: BookingCart,
+): SeatKey | null {
+  return (
+    partySeats(party).find((seat) => cart.lineCountFor(seat) === 0) ?? null
+  );
 }
 
 function mapCart(
@@ -349,11 +449,22 @@ export function advanceBookingFlow(
         if (state.cart.isEmpty()) {
           return fail(new EmptyCartError());
         }
+        // Everyone who is coming has to be booking something. A seat with no
+        // lines produces no assignment, so it would leave the step here and
+        // reappear nowhere — not on the schedule, not on the review, not in
+        // the commit. The empty-cart check above stays first: with nothing at
+        // all in the bag, "pick a service" is the truer message than naming
+        // the booker as the person who has none.
+        const bare = firstSeatWithoutService(state.party, state.cart);
+        if (bare) {
+          return fail(new SeatWithoutServiceError(seatKeyValue(bare)));
+        }
         return ok({
           kind: 'schedule',
           party: state.party,
           cart: state.cart,
           locationId: state.locationId,
+          when: FlexibleWhen.empty(),
         });
       }
       break;
@@ -369,6 +480,39 @@ export function advanceBookingFlow(
           party: state.party,
           cart: state.cart,
           selection: event.selection,
+        });
+      }
+      if (event.type === 'toggle_flexible_day') {
+        if (state.when.has(event.day)) {
+          return ok({ ...state, when: state.when.withoutDay(event.day) });
+        }
+        const added = state.when.withDay(event.day, MAX_FLEXIBLE_DAYS);
+        if (added.isFailure()) {
+          return fail(new FlexibleDaysFullError(MAX_FLEXIBLE_DAYS));
+        }
+        return ok({ ...state, when: added.value });
+      }
+      if (event.type === 'set_day_windows') {
+        // `withWindows` ignores a day that is not selected, so a sheet that
+        // outlives its day cannot resurrect it as a windows-only entry.
+        return ok({ ...state, when: state.when.withWindows(event.dayWindows) });
+      }
+      if (event.type === 'clear_flexible') {
+        return ok({ ...state, when: FlexibleWhen.empty() });
+      }
+      if (event.type === 'waitlisted') {
+        // A request naming no days is not a request — the aggregate refuses it
+        // server-side too, and this keeps the terminal state honest.
+        if (state.when.isEmpty()) return fail(new NoFlexibleDaysError());
+        return ok({
+          kind: 'waitlisted',
+          summary: {
+            requestId: event.requestId,
+            party: state.party,
+            cart: state.cart,
+            when: state.when,
+            locationId: state.locationId,
+          },
         });
       }
       if (event.type === 'back') {
@@ -403,12 +547,18 @@ export function advanceBookingFlow(
           party: state.party,
           cart: state.cart,
           locationId: state.selection.locationId,
+          // The declaration does NOT survive a trip through review: reaching
+          // review means something concrete was chosen, so coming back to
+          // re-choose starts from the day grid rather than from a flexible
+          // search whose results are now one accepted match out of date.
+          when: FlexibleWhen.empty(),
         });
       }
       break;
     }
 
     case 'confirmed':
+    case 'waitlisted':
       // Terminal — no outgoing transitions (mirrors v2's terminal states).
       break;
   }
