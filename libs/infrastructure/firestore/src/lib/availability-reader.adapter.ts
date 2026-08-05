@@ -4,6 +4,8 @@ import {
   DocumentData,
   DocumentReference,
   onSnapshot,
+  query,
+  where,
 } from 'firebase/firestore';
 import { Result, ZonedDateTime, fail, ok } from '@creativo/domain/kernel';
 import {
@@ -26,13 +28,21 @@ import {
   shopDayHours,
   windowsAt,
 } from '@creativo/domain/scheduling';
-import { AvailabilityReader } from '@creativo/application/booking';
+import {
+  AvailabilityReader,
+  type CapacityDayEntry,
+  capacityMonthKey,
+  exceptionFromDocument,
+  freeMinutesFor,
+} from '@creativo/application/booking';
 import { RepositoryError } from '@creativo/application/shared';
 import { FIREBASE_FIRESTORE } from '@creativo/infrastructure/firebase-app';
 import {
   barberBusyDocRef,
   barberScheduleDocRef,
+  capacityMonthDocRef,
   locationsCollection,
+  scheduleExceptionDocRef,
 } from './firestore-paths';
 import { subscribeWithRetry } from './subscribe-with-retry';
 
@@ -182,7 +192,9 @@ export class FirestoreAvailabilityReader implements AvailabilityReader {
     return subscribeWithRetry<ReadonlyMap<string, ShopDayHours | null>>(
       (onNext, onError) =>
         onSnapshot(
-          locationsCollection(this.db),
+          // Active shops only — an archived location's hours must not keep
+          // feeding windows into the grid.
+          query(locationsCollection(this.db), where('status', '==', 'active')),
           (snapshot) => {
             const byLocation = new Map<string, ShopDayHours | null>();
             for (const doc of snapshot.docs) {
@@ -224,6 +236,11 @@ export class FirestoreAvailabilityReader implements AvailabilityReader {
         combineLatest([
           this.observeDoc(barberScheduleDocRef(this.db, barberId)),
           this.observeDoc(barberBusyDocRef(this.db, barberId, day.key())),
+          // The sanitized public exception for this barber-day — a day off
+          // has to grey the sheet, not just the commit.
+          this.observeDoc(
+            scheduleExceptionDocRef(this.db, barberId, day.key()),
+          ),
         ]),
       ),
     );
@@ -239,7 +256,7 @@ export class FirestoreAvailabilityReader implements AvailabilityReader {
         const days: BarberDayAvailability[] = [];
         for (const [
           index,
-          [scheduleResult, busyResult],
+          [scheduleResult, busyResult, exceptionResult],
         ] of barberResults.entries()) {
           // One barber's read failing is the whole day failing: quietly
           // dropping them would render a grid that looks complete while
@@ -254,6 +271,11 @@ export class FirestoreAvailabilityReader implements AvailabilityReader {
               busyResult.error,
             );
           }
+          if (exceptionResult.isFailure()) {
+            return fail<readonly BarberDayAvailability[], RepositoryError>(
+              exceptionResult.error,
+            );
+          }
 
           const barberId = sorted.at(index) as BarberId;
           const scheduleDoc = scheduleResult.value;
@@ -262,12 +284,14 @@ export class FirestoreAvailabilityReader implements AvailabilityReader {
           const parsed = toSchedule(scheduleDoc, day.zone);
           if (!parsed) continue;
 
+          const exception = exceptionResult.value
+            ? exceptionFromDocument(exceptionResult.value)
+            : null;
+
           const allWindows = buildDayWindows({
             day,
             schedule: parsed.history,
-            // Per-day exceptions arrive with the staff editor; until then a
-            // barber with none works their pattern.
-            exceptions: [],
+            exceptions: exception ? [exception] : [],
             shopHours: hoursResult.value,
           });
 
@@ -298,6 +322,22 @@ export class FirestoreAvailabilityReader implements AvailabilityReader {
     );
   }
 
+  /**
+   * The whole horizon from `capacity/{YYYY-MM}` — two or three MONTH docs,
+   * however many barbers the shop has.
+   *
+   * This used to fan out per barber (roster + busy range + exception range
+   * per head, on top of the hours listener), which priced a cold calendar at
+   * `barbers × occupied days` document reads — the one number in the app
+   * that grew with headcount. The rollup is trigger-maintained server-side
+   * from the same `buildDayWindows` math (see `rebuild-capacity.ts`), so
+   * this read is a lookup, not a computation. `observeDay` deliberately
+   * KEEPS reading real geometry: the time sheet needs minutes, not totals.
+   *
+   * The `barberIds` filter still applies — the rollup stores per-barber
+   * contributions precisely so a barber the catalog no longer lists stops
+   * counting the moment the catalog says so, without waiting for a sweep.
+   */
   observeRangeCapacity(
     locationId: LocationId | null,
     range: DateRange,
@@ -308,33 +348,42 @@ export class FirestoreAvailabilityReader implements AvailabilityReader {
       return of(ok<ReadonlyMap<string, number>, RepositoryError>(new Map()));
     }
 
+    const monthKeys = [
+      ...new Set(days.map((day) => capacityMonthKey(day.key()))),
+    ];
+    const rawBarberIds = barberIds.map((id) => id.value);
+
     return combineLatest(
-      days.map((day) =>
-        this.observeDay(locationId, day, barberIds).pipe(
-          map((result) => {
-            // A day that fails to load reads as "nothing free" rather than
-            // failing the whole month: one unreadable roster should dim one
-            // calendar cell, not blank the grid.
-            if (result.isFailure()) return [day.key(), 0] as const;
-            const freeMinutes = result.value.reduce(
-              (total, entry) =>
-                total +
-                Interval.totalMinutes(
-                  Interval.subtract(
-                    entry.windows.map((window) => window.interval),
-                    entry.busy,
-                  ),
-                ),
-              0,
-            );
-            return [day.key(), freeMinutes] as const;
-          }),
-        ),
+      monthKeys.map((month) =>
+        this.observeDoc(capacityMonthDocRef(this.db, month)),
       ),
     ).pipe(
-      map((entries) =>
-        ok<ReadonlyMap<string, number>, RepositoryError>(new Map(entries)),
-      ),
+      map((results) => {
+        const daysByMonth = new Map<string, Record<string, unknown>>();
+        for (const [index, result] of results.entries()) {
+          if (result.isFailure()) {
+            return fail<ReadonlyMap<string, number>, RepositoryError>(
+              result.error,
+            );
+          }
+          daysByMonth.set(
+            monthKeys[index] as string,
+            (result.value?.['days'] ?? {}) as Record<string, unknown>,
+          );
+        }
+
+        const capacity = new Map<string, number>();
+        for (const day of days) {
+          const dayKey = day.key();
+          const entry = daysByMonth.get(capacityMonthKey(dayKey))?.[dayKey] as
+            CapacityDayEntry | undefined;
+          capacity.set(
+            dayKey,
+            freeMinutesFor(entry, rawBarberIds, locationId?.value ?? null),
+          );
+        }
+        return ok<ReadonlyMap<string, number>, RepositoryError>(capacity);
+      }),
     );
   }
 }

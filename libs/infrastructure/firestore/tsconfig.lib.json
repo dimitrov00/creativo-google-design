@@ -19,6 +19,12 @@
   ],
   "references": [
     {
+      "path": "../../application/notifications/tsconfig.lib.json"
+    },
+    {
+      "path": "../../domain/notifications/tsconfig.lib.json"
+    },
+    {
       "path": "../../application/governance/tsconfig.lib.json"
     },
     {

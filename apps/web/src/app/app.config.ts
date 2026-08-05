@@ -35,12 +35,12 @@ import {
   AVAILABILITY_READER,
   BOOKING_DRAFT_STORE,
   BOOKING_GATEWAY,
+  BOOKING_POLICY_READER,
+  WAITLIST_GATEWAY,
+  WAITLIST_READER,
 } from '@creativo/application/booking';
 import { CATALOG_READER, MEDIA_READER } from '@creativo/application/catalog';
-import {
-  InMemoryNotificationReader,
-  NOTIFICATION_READER,
-} from '@creativo/application/notifications';
+import { NOTIFICATION_READER } from '@creativo/application/notifications';
 import {
   COUPON_GRANT_REPOSITORY,
   REWARD_PROGRESS_READER,
@@ -86,6 +86,10 @@ import {
   FirestoreEventRepository,
   FirestoreAvailabilityReader,
   CallableBookingGateway,
+  CallableWaitlistGateway,
+  FirestoreWaitlistReader,
+  FirestoreBookingPolicyReader,
+  FirestoreNotificationReader,
 } from '@creativo/infrastructure/firestore';
 import {
   FirebaseStorageAvatarUploader,
@@ -155,9 +159,16 @@ export const appConfig: ApplicationConfig = {
     { provide: CATALOG_READER, useClass: FirestoreCatalogReader },
     { provide: AVAILABILITY_READER, useClass: FirestoreAvailabilityReader },
     { provide: BOOKING_GATEWAY, useClass: CallableBookingGateway },
-    // STUB until the notifications feature lands — the port is real, so
-    // swapping this for the Firestore adapter is this one line.
-    { provide: NOTIFICATION_READER, useClass: InMemoryNotificationReader },
+    { provide: WAITLIST_GATEWAY, useClass: CallableWaitlistGateway },
+    { provide: WAITLIST_READER, useClass: FirestoreWaitlistReader },
+    {
+      provide: BOOKING_POLICY_READER,
+      useClass: FirestoreBookingPolicyReader,
+    },
+    // Real now, not the in-memory stub: the waitlist matcher writes a
+    // `waitlist_match` notification into the recipient's inbox, and a stub
+    // reader meant that write landed in a collection nothing read.
+    { provide: NOTIFICATION_READER, useClass: FirestoreNotificationReader },
     { provide: MEDIA_READER, useClass: StorageMediaReader },
     {
       provide: COUPON_GRANT_REPOSITORY,

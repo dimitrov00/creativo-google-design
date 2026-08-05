@@ -185,4 +185,87 @@ describe('firestore.rules', () => {
       },
     );
   });
+
+  // ── the booking-critical rules the audit found untested (F26) ─────────
+
+  describe('settings — public read, admin write', () => {
+    it('lets an anonymous visitor read the booking policy', async () => {
+      await testEnv.withSecurityRulesDisabled(async (ctx) => {
+        await setDoc(doc(ctx.firestore(), 'settings', 'bookingPolicy'), {
+          horizonMonths: 2,
+        });
+      });
+      const anon = testEnv.unauthenticatedContext();
+      await assertSucceeds(
+        getDoc(doc(anon.firestore(), 'settings', 'bookingPolicy')),
+      );
+    });
+
+    it('refuses a non-admin write to settings', async () => {
+      const barber = testEnv.authenticatedContext('staff-1', {
+        roles: ['barber'],
+      });
+      await assertFails(
+        setDoc(doc(barber.firestore(), 'settings', 'bookingPolicy'), {
+          horizonMonths: 12,
+        }),
+      );
+    });
+  });
+
+  describe('scheduleExceptions — public read, staff write', () => {
+    it('lets an anonymous visitor read an exception, and a client not write one', async () => {
+      await testEnv.withSecurityRulesDisabled(async (ctx) => {
+        await setDoc(
+          doc(ctx.firestore(), 'scheduleExceptions', 'ivan__2026-09-01'),
+          {
+            barberId: 'ivan',
+            dayKey: '2026-09-01',
+            zone: 'Europe/Sofia',
+            locationId: 'loc-center',
+            effect: { kind: 'closed' },
+          },
+        );
+      });
+      const anon = testEnv.unauthenticatedContext();
+      await assertSucceeds(
+        getDoc(doc(anon.firestore(), 'scheduleExceptions', 'ivan__2026-09-01')),
+      );
+      const client = testEnv.authenticatedContext('user-1', {
+        roles: ['client'],
+      });
+      await assertFails(
+        setDoc(
+          doc(client.firestore(), 'scheduleExceptions', 'ivan__2026-09-02'),
+          {
+            barberId: 'ivan',
+            dayKey: '2026-09-02',
+            zone: 'Europe/Sofia',
+            locationId: 'loc-center',
+            effect: { kind: 'closed' },
+          },
+        ),
+      );
+    });
+  });
+
+  describe('waitlistRequests — callable-only writes', () => {
+    it('refuses the owner direct status flip the callable replaced', async () => {
+      await testEnv.withSecurityRulesDisabled(async (ctx) => {
+        await setDoc(doc(ctx.firestore(), 'waitlistRequests', 'wl-1'), {
+          ownerUserId: 'user-1',
+          status: 'open',
+          dayKeys: ['2026-09-01'],
+        });
+      });
+      const owner = testEnv.authenticatedContext('user-1', {
+        roles: ['client'],
+      });
+      await assertFails(
+        updateDoc(doc(owner.firestore(), 'waitlistRequests', 'wl-1'), {
+          status: 'cancelled',
+        }),
+      );
+    });
+  });
 });

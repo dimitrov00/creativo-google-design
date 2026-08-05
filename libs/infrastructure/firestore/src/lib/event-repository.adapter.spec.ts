@@ -67,6 +67,7 @@ vi.mock('firebase/firestore', () => ({
     value,
   })),
   orderBy: vi.fn((field: string, direction?: string) => ({ field, direction })),
+  limit: vi.fn((count: number) => ({ limit: count })),
   onSnapshot: vi.fn(
     (
       q: FakeQuery,

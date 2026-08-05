@@ -35,6 +35,8 @@ const EMPTY_DRAFT: BookingDraft = {
   locationId: null,
   timeSlot: null,
   dayKey: null,
+  when: null,
+  zone: null,
 };
 
 describe('SessionStorageDraftStore', () => {
@@ -104,6 +106,8 @@ describe('SessionStorageDraftStore', () => {
       },
       locationId: 'location-1',
       dayKey: '2026-08-03',
+      when: null,
+      zone: null,
       timeSlot: {
         startIso: '2026-08-01T10:00:00.000+03:00',
         endIso: '2026-08-01T10:30:00.000+03:00',

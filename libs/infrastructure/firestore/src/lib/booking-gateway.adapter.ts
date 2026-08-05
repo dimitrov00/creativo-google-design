@@ -5,6 +5,8 @@ import {
   type BookingGateway,
   type BookingGatewayFailureCode,
   BookingGatewayError,
+  type CancelAppointmentRequest,
+  type RescheduleBookingRequest,
   type CommitBookingRequest,
   type CommittedBooking,
 } from '@creativo/application/booking';
@@ -31,10 +33,14 @@ function toFailureCode(error: unknown): {
   }
   const code = (details as { code?: unknown }).code;
   const rawParams = (details as { params?: unknown }).params;
-  const params =
+  const params: Record<string, string> =
     typeof rawParams === 'object' && rawParams !== null
-      ? (rawParams as Record<string, string>)
+      ? { ...(rawParams as Record<string, string>) }
       : {};
+  // The server's own domain code rides along so a consumer can translate a
+  // SPECIFIC message (the cancellation window has its own copy) while the
+  // failure taxonomy below stays coarse.
+  if (typeof code === 'string') params['serverCode'] = code;
 
   switch (code) {
     // A barber whose roster changed under a stale tab is the same situation as
@@ -44,6 +50,7 @@ function toFailureCode(error: unknown): {
     case 'booking.commit.barber_not_rostered':
       return { failure: 'slot_unavailable', params };
     case 'booking.commit.unauthenticated':
+    case 'booking.cancel.unauthenticated':
       return { failure: 'unauthenticated', params };
     case 'booking.commit.unknown_service':
     case 'booking.commit.service_not_at_location':
@@ -54,6 +61,10 @@ function toFailureCode(error: unknown): {
     case 'booking.commit.party_too_large':
     case 'booking.commit.too_soon':
     case 'booking.commit.beyond_horizon':
+    case 'booking.cancel.invalid_input':
+    case 'booking.cancel.not_found':
+    case 'booking.cancel.not_cancellable':
+    case 'booking.cancel.window_closed':
       return { failure: 'invalid_request', params };
     case 'booking.commit.store_failed':
       return { failure: 'unavailable', params };
@@ -109,6 +120,68 @@ export class CallableBookingGateway implements BookingGateway {
         new BookingGatewayError(
           failure,
           error instanceof Error ? error.message : 'commitBooking failed',
+          params,
+        ),
+      );
+    }
+  }
+
+  /**
+   * Calls `rescheduleAppointment`. Same failure vocabulary as `commit` —
+   * `slot_unavailable` is the one that matters, and it sends the flow back
+   * to a freshly computed grid rather than to a dead end.
+   */
+  async reschedule(
+    request: RescheduleBookingRequest,
+  ): Promise<Result<CommittedBooking, BookingGatewayError>> {
+    const callable = httpsCallable<
+      RescheduleBookingRequest,
+      CommitBookingResponse
+    >(this.functions, 'rescheduleAppointment');
+
+    try {
+      const response = await callable(request);
+      const appointmentId = response.data?.appointmentId;
+      if (typeof appointmentId !== 'string' || appointmentId.length === 0) {
+        return fail(
+          new BookingGatewayError(
+            'unknown',
+            'rescheduleAppointment returned no appointment id',
+          ),
+        );
+      }
+      return ok({ appointmentId });
+    } catch (error) {
+      const { failure, params } = toFailureCode(error);
+      return fail(
+        new BookingGatewayError(
+          failure,
+          error instanceof Error
+            ? error.message
+            : 'rescheduleAppointment failed',
+          params,
+        ),
+      );
+    }
+  }
+
+  async cancel(
+    request: CancelAppointmentRequest,
+  ): Promise<Result<void, BookingGatewayError>> {
+    const callable = httpsCallable<CancelAppointmentRequest, unknown>(
+      this.functions,
+      'cancelAppointment',
+    );
+
+    try {
+      await callable(request);
+      return ok(undefined);
+    } catch (error) {
+      const { failure, params } = toFailureCode(error);
+      return fail(
+        new BookingGatewayError(
+          failure,
+          error instanceof Error ? error.message : 'cancelAppointment failed',
           params,
         ),
       );

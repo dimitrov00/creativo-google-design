@@ -148,7 +148,11 @@ describe('FirestoreAppointmentRepository (emulator)', () => {
     ).rejects.toThrow();
   });
 
-  it('RULES: staff may still create at the counter', async () => {
+  // The counter path moved behind the callable ON PURPOSE: a staff direct
+  // write bypassed the commit transaction's conflict check, so the
+  // sanctioned walk-in was a guaranteed double-booking — the availability
+  // engine never saw it and the busy projection never learned of it.
+  it('RULES: nobody creates appointments directly — staff included', async () => {
     const db = modularFirestore(
       testEnv.authenticatedContext('staff-1', { roles: ['barber'] }),
     );
@@ -157,7 +161,7 @@ describe('FirestoreAppointmentRepository (emulator)', () => {
         doc(db, 'appointments', 'appt-counter'),
         appointmentToDocument(buildAppointment('appt-counter', 'user-1')),
       ),
-    ).resolves.toBeUndefined();
+    ).rejects.toBeDefined();
   });
 
   it('observeUpcomingFor emits only the requesting user’s own appointments', async () => {
@@ -189,7 +193,7 @@ describe('FirestoreAppointmentRepository (emulator)', () => {
     expect(emitted[0]?.id.value).toBe('appt-mine');
   });
 
-  it('lets staff read and confirm any appointment’s lifecycle', async () => {
+  it('lets staff READ any appointment, but never write its lifecycle directly', async () => {
     await seed(buildAppointment('appt-for-staff', 'user-1', 'pending'));
 
     const staffRepo = repoFor(
@@ -204,9 +208,9 @@ describe('FirestoreAppointmentRepository (emulator)', () => {
       throw new Error('expected appointment to exist');
     }
 
-    // The transition itself is domain logic and stays testable here; the
-    // WRITE is a targeted status update, which is what the staff rule grants
-    // (a whole-document save is refused for everyone now).
+    // The transition stays domain logic; PERSISTING it is a callable's job
+    // now (`cancelAppointment` today, a staff lifecycle callable tomorrow) —
+    // a direct status write skips the projection rebuild contract.
     const confirmed = unwrap(found.value.confirm());
     expect(confirmed.status.kind).toBe('confirmed');
 
@@ -217,6 +221,6 @@ describe('FirestoreAppointmentRepository (emulator)', () => {
       updateDoc(doc(staffDb, 'appointments', 'appt-for-staff'), {
         status: confirmed.status,
       }),
-    ).resolves.toBeUndefined();
+    ).rejects.toBeDefined();
   });
 });

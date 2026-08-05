@@ -11,6 +11,15 @@ import {
 import { UserId } from '@creativo/domain/accounts';
 import { AppointmentId } from '@creativo/domain/scheduling';
 import {
+  BOOKING_POLICY_DOC,
+  CAPACITY_COLLECTION,
+  WAITLIST_COLLECTION,
+  SCHEDULE_EXCEPTIONS_COLLECTION,
+  SETTINGS_COLLECTION,
+  busyDocumentId,
+  scheduleExceptionDocId,
+} from '@creativo/application/booking';
+import {
   BarberId,
   LocationId,
   ServiceCategoryId,
@@ -55,8 +64,33 @@ export const Collections = {
    * see a single free slot.
    */
   BarberBusy: 'barberBusy',
+  /**
+   * `scheduleExceptions/{barberId}__{YYYY-MM-DD}` — the sanitized public
+   * face of a roster deviation: closed, different hours, or blocked ranges.
+   * NEVER a reason — see `schedule-exception-document.ts`.
+   */
+  ScheduleExceptions: SCHEDULE_EXCEPTIONS_COLLECTION,
+  /**
+   * `capacity/{YYYY-MM}` — the calendar's month rollup, trigger-maintained.
+   * See `capacity-document.ts`; public-read like everything the anonymous
+   * grid needs, server-write only.
+   */
+  Capacity: CAPACITY_COLLECTION,
+  /** `waitlistRequests/{requestId}` — owner-read, callable-write. */
+  WaitlistRequests: WAITLIST_COLLECTION,
   Locations: 'locations',
   Coupons: 'coupons',
+  /**
+   * `couponGrants/{grantId}` — TOP-LEVEL, with the owner in a `userId`
+   * field. It was a per-user subcollection, which forced `findById` (a
+   * grant id carries no owner) through a collection-group query that (a)
+   * needed a `{path=**}` rule any signed-in account could dump every
+   * user's grants through, and (b) silently required a COLLECTION_GROUP
+   * fieldOverride that was never authored — green in the emulator, dead in
+   * production. Top-level, the same lookup is a point get and the rule is
+   * owner-only.
+   */
+  CouponGrants: 'couponGrants',
   RewardPrograms: 'rewardPrograms',
   Invitations: 'invitations',
   ImpersonationSessions: 'impersonationSessions',
@@ -64,17 +98,18 @@ export const Collections = {
   Positions: 'positions',
   Courses: 'courses',
   Events: 'events',
+  /**
+   * `settings/{docId}` — tenant configuration, one doc per concern
+   * (`settings/bookingPolicy`). Public-read: the booking horizon is literally
+   * how far an anonymous visitor's calendar scrolls. The string itself lives
+   * in the port module both SDKs share.
+   */
+  Settings: SETTINGS_COLLECTION,
   /** Server-only (Admin SDK, `apps/functions`) — closed to every client SDK by rule. */
   Otps: 'otps',
-  /** Server-only. */
-  RateLimits: 'rateLimits',
-  /** Server-only. */
-  Blocklist: 'blocklist',
 } as const;
 
 export const Subcollections = {
-  /** `users/{userId}/couponGrants/{grantId}`. */
-  CouponGrants: 'couponGrants',
   /** `users/{userId}/rewardProgress/{programId}`. */
   RewardProgress: 'rewardProgress',
   /** `invitations/{invitationId}/redemptions/{refereeUserId}` — doc id IS the
@@ -157,9 +192,14 @@ export function barberScheduleDocRef(
   return doc(db, Collections.BarberSchedules, id.value);
 }
 
-/** The composite key is the barber and the day — see `Collections.BarberBusy`. */
+/**
+ * The composite key is the barber and the day — see `Collections.BarberBusy`.
+ * Delegates to the port module's `busyDocumentId`: this is the one key whose
+ * byte-drift between the two SDKs would silently stop booking serialization,
+ * so exactly one function may spell it.
+ */
 export function barberBusyDocId(id: BarberId, dayKey: string): string {
-  return `${id.value}__${dayKey}`;
+  return busyDocumentId(id.value, dayKey);
 }
 
 export function barberBusyDocRef(
@@ -168,6 +208,44 @@ export function barberBusyDocRef(
   dayKey: string,
 ): DocumentReference<DocumentData> {
   return doc(db, Collections.BarberBusy, barberBusyDocId(id, dayKey));
+}
+
+export function scheduleExceptionDocRef(
+  db: Firestore,
+  id: BarberId,
+  dayKey: string,
+): DocumentReference<DocumentData> {
+  return doc(
+    db,
+    Collections.ScheduleExceptions,
+    scheduleExceptionDocId(id.value, dayKey),
+  );
+}
+
+export function capacityMonthDocRef(
+  db: Firestore,
+  monthKey: string,
+): DocumentReference<DocumentData> {
+  return doc(db, Collections.Capacity, monthKey);
+}
+
+export function waitlistRequestsCollection(
+  db: Firestore,
+): CollectionReference<DocumentData> {
+  return collection(db, Collections.WaitlistRequests);
+}
+
+export function waitlistRequestDocRef(
+  db: Firestore,
+  requestId: string,
+): DocumentReference<DocumentData> {
+  return doc(db, Collections.WaitlistRequests, requestId);
+}
+
+export function bookingPolicyDocRef(
+  db: Firestore,
+): DocumentReference<DocumentData> {
+  return doc(db, Collections.Settings, BOOKING_POLICY_DOC);
 }
 
 export function locationsCollection(
@@ -291,28 +369,15 @@ export function eventDocRef(
 
 export function couponGrantsCollection(
   db: Firestore,
-  userId: UserId,
 ): CollectionReference<DocumentData> {
-  return collection(
-    db,
-    Collections.Users,
-    userId.value,
-    Subcollections.CouponGrants,
-  );
+  return collection(db, Collections.CouponGrants);
 }
 
 export function couponGrantDocRef(
   db: Firestore,
-  userId: UserId,
   grantId: CouponGrantId,
 ): DocumentReference<DocumentData> {
-  return doc(
-    db,
-    Collections.Users,
-    userId.value,
-    Subcollections.CouponGrants,
-    grantId.value,
-  );
+  return doc(db, Collections.CouponGrants, grantId.value);
 }
 
 export function rewardProgressCollection(

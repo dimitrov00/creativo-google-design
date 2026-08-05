@@ -22,6 +22,7 @@ import {
   ImpersonationSessionId,
   ImpersonationSessionStatus,
 } from '@creativo/domain/governance';
+import { auditEntryToDocument } from '@creativo/application/shared';
 import {
   auditLogDocRef,
   impersonationSessionDocRef,
@@ -211,34 +212,11 @@ function buildAuditEntry(session: ImpersonationSession) {
   });
 }
 
-function serializeActor(actor: Actor): DocumentData {
-  switch (actor.kind) {
-    case 'system':
-      return { kind: 'system', source: actor.source };
-    case 'user':
-      return { kind: 'user', userId: actor.userId.value };
-    case 'admin':
-      return { kind: 'admin', adminUserId: actor.adminUserId.value };
-    case 'impersonator':
-      return {
-        kind: 'impersonator',
-        adminUserId: actor.adminUserId.value,
-        targetUserId: actor.targetUserId.value,
-        sessionId: actor.sessionId.value,
-        scope: actor.scope,
-      };
-  }
-}
-
+// The audit row's shape lives in the SHARED port module now — the booking
+// callables write the same collection through the admin SDK, and two copies
+// of one serializer is how shapes drift.
 function toAuditPersistence(entry: AuditEntry): DocumentData {
-  return {
-    actor: serializeActor(entry.actor),
-    action: entry.action,
-    at: entry.at.toISO(),
-    targetUserId: entry.targetUserId?.value ?? null,
-    resourceId: entry.resourceId,
-    context: entry.context ?? null,
-  };
+  return auditEntryToDocument(entry) as DocumentData;
 }
 
 /**

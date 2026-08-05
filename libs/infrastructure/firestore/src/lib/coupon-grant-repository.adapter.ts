@@ -1,8 +1,8 @@
 import { Injectable, inject } from '@angular/core';
 import {
   DocumentData,
-  collectionGroup,
   documentId,
+  getDoc,
   getDocs,
   query,
   setDoc,
@@ -377,14 +377,15 @@ function couponFromPersistence(
 }
 
 /**
- * `findById` only receives a `CouponGrantId`, but a grant lives in a
- * per-user subcollection (`users/{uid}/couponGrants/{grantId}`) — there is
- * no way to build that path without the owning `userId`. A denormalized
- * `id` field (equal to the doc id) lets a `collectionGroup` equality query
- * find it; a single-field equality filter on a collection-group query is
- * covered by Firestore's automatic indexing (no composite index needed —
- * only equality + a *different-field* orderBy would require one, and this
- * query has no orderBy).
+ * Grants live TOP-LEVEL (`couponGrants/{grantId}`) with the owner in a
+ * `userId` field. The earlier per-user subcollection forced `findById` (a
+ * grant id carries no owner) through a collection-group query whose rule
+ * had to widen to every signed-in account — an unfiltered dump of every
+ * user's grants — and whose index claim was simply wrong: a filtered CG
+ * query needs a COLLECTION_GROUP-scope fieldOverride that was never
+ * authored, so it passed the emulator and would have died in production
+ * the day the port got a caller. Top-level, `findById` is a point get and
+ * the rule is owner-only.
  */
 @Injectable()
 export class FirestoreCouponGrantRepository implements CouponGrantRepository {
@@ -393,7 +394,7 @@ export class FirestoreCouponGrantRepository implements CouponGrantRepository {
   async save(grant: CouponGrant): Promise<Result<void, RepositoryError>> {
     try {
       await setDoc(
-        couponGrantDocRef(this.db, grant.userId, grant.id),
+        couponGrantDocRef(this.db, grant.id),
         grantToPersistence(grant),
       );
       return ok(undefined);
@@ -406,20 +407,11 @@ export class FirestoreCouponGrantRepository implements CouponGrantRepository {
     id: CouponGrantId,
   ): Promise<Result<CouponGrant | null, RepositoryError>> {
     try {
-      const snapshot = await getDocs(
-        query(
-          collectionGroup(this.db, 'couponGrants'),
-          where('id', '==', id.value),
-        ),
-      );
-      if (snapshot.empty) {
+      const snapshot = await getDoc(couponGrantDocRef(this.db, id));
+      if (!snapshot.exists()) {
         return ok(null);
       }
-      const docSnap = snapshot.docs[0];
-      if (!docSnap) {
-        return ok(null);
-      }
-      return grantFromPersistence(docSnap.id, docSnap.data());
+      return grantFromPersistence(snapshot.id, snapshot.data() ?? {});
     } catch (error) {
       return fail(new RepositoryError('Failed to find CouponGrant', error));
     }
@@ -432,7 +424,10 @@ export class FirestoreCouponGrantRepository implements CouponGrantRepository {
     try {
       const snapshot = await getDocs(
         query(
-          couponGrantsCollection(this.db, userId),
+          couponGrantsCollection(this.db),
+          // Two equality filters — served by Firestore's automatic
+          // single-field indexes via index merging; no composite needed.
+          where('userId', '==', userId.value),
           where('state.kind', '==', 'active'),
         ),
       );

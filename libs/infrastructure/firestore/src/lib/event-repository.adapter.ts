@@ -3,6 +3,7 @@ import { Observable, of } from 'rxjs';
 import {
   DocumentData,
   getDoc,
+  limit,
   onSnapshot,
   orderBy,
   query,
@@ -119,6 +120,10 @@ export class FirestoreEventRepository implements ShopEventRepository {
             eventsCollection(this.db),
             where('startDateIso', '<', nowIso),
             orderBy('startDateIso', 'desc'),
+            // The Past tab is a highlight reel, not an archive — and it is
+            // on a PUBLIC page, so an unbounded listener re-billed every
+            // event the shop ever held to every visitor who clicked Past.
+            limit(24),
           );
 
     return subscribeWithRetry<readonly ShopEvent[]>((onNext, onError) =>

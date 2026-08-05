@@ -8,7 +8,9 @@ import { Auth, connectAuthEmulator, getAuth } from 'firebase/auth';
 import {
   Firestore,
   connectFirestoreEmulator,
-  getFirestore,
+  initializeFirestore,
+  persistentLocalCache,
+  persistentMultipleTabManager,
 } from 'firebase/firestore';
 import {
   Functions,
@@ -78,7 +80,20 @@ export function provideFirestoreDb(emulator?: FirebaseEmulatorConfig) {
     {
       provide: FIREBASE_FIRESTORE,
       useFactory: () => {
-        const firestore = getFirestore(inject(FIREBASE_APP));
+        // Persistent IndexedDB cache, NOT the default memory cache. The
+        // default is memory with EAGER GC: every listener teardown discards
+        // its docs and resume tokens, so each remount of a page re-bills its
+        // whole result set. Persistent cache serves unchanged docs locally
+        // and resumes listeners from tokens — the single biggest read-cost
+        // lever in the app (~150-200k reads/month at current scale). The
+        // multi-tab manager keeps two open tabs from fighting over the
+        // IndexedDB lease; where IndexedDB is unavailable (private mode) the
+        // SDK falls back to memory on its own.
+        const firestore = initializeFirestore(inject(FIREBASE_APP), {
+          localCache: persistentLocalCache({
+            tabManager: persistentMultipleTabManager(),
+          }),
+        });
         if (emulator?.firestoreHost && emulator.firestorePort) {
           connectFirestoreEmulator(
             firestore,

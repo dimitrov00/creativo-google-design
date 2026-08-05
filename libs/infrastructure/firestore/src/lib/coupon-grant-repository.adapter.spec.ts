@@ -6,8 +6,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 // time. Any mock var the factory reads directly (not through a lazy
 // closure) must go through `vi.hoisted` or it's a TDZ error the moment that
 // import chain runs, before the plain `const` below would have executed.
-const { setDocMock, getDocsMock } = vi.hoisted(() => ({
+const { setDocMock, getDocMock, getDocsMock } = vi.hoisted(() => ({
   setDocMock: vi.fn().mockResolvedValue(undefined),
+  getDocMock: vi.fn(),
   getDocsMock: vi.fn(),
 }));
 
@@ -31,6 +32,7 @@ vi.mock('firebase/firestore', () => ({
   })),
   documentId: vi.fn(() => '__name__'),
   setDoc: setDocMock,
+  getDoc: getDocMock,
   getDocs: getDocsMock,
 }));
 
@@ -65,6 +67,7 @@ function createRepo(): FirestoreCouponGrantRepository {
 describe('FirestoreCouponGrantRepository', () => {
   beforeEach(() => {
     setDocMock.mockClear();
+    getDocMock.mockReset();
     getDocsMock.mockReset();
   });
 
@@ -89,7 +92,7 @@ describe('FirestoreCouponGrantRepository', () => {
     return grant.value;
   }
 
-  it('save() writes the grant under users/{userId}/couponGrants/{grantId}', async () => {
+  it('save() writes the grant to top-level couponGrants/{grantId}', async () => {
     const repo = createRepo();
     const grant = buildGrant();
 
@@ -101,7 +104,7 @@ describe('FirestoreCouponGrantRepository', () => {
       { path: string },
       Record<string, unknown>,
     ];
-    expect(ref.path).toBe('users/user-1/couponGrants/grant-1');
+    expect(ref.path).toBe('couponGrants/grant-1');
     expect(data['id']).toBe('grant-1');
     expect(data['userId']).toBe('user-1');
     expect(data['couponId']).toBe('coupon-1');
@@ -110,7 +113,11 @@ describe('FirestoreCouponGrantRepository', () => {
   });
 
   it('findById() returns null when no matching grant exists', async () => {
-    getDocsMock.mockResolvedValueOnce(fakeSnapshot([]));
+    getDocMock.mockResolvedValueOnce({
+      exists: () => false,
+      id: 'grant-1',
+      data: () => undefined,
+    });
     const repo = createRepo();
 
     const result = await repo.findById(buildGrant().id);
@@ -120,27 +127,24 @@ describe('FirestoreCouponGrantRepository', () => {
     }
   });
 
-  it('findById() reconstitutes the grant from a matching document', async () => {
+  it('findById() reconstitutes the grant from a point get', async () => {
     const grant = buildGrant();
-    getDocsMock.mockResolvedValueOnce(
-      fakeSnapshot([
-        {
-          id: 'grant-1',
-          data: {
-            id: 'grant-1',
-            userId: 'user-1',
-            couponId: 'coupon-1',
-            value: { kind: 'percent_off', percent: 20 },
-            grantedAt: nowValue.toISO(),
-            state: {
-              kind: 'active',
-              capacity: { kind: 'single_use' },
-              expiration: { kind: 'no_expiry' },
-            },
-          },
+    getDocMock.mockResolvedValueOnce({
+      exists: () => true,
+      id: 'grant-1',
+      data: () => ({
+        id: 'grant-1',
+        userId: 'user-1',
+        couponId: 'coupon-1',
+        value: { kind: 'percent_off', percent: 20 },
+        grantedAt: nowValue.toISO(),
+        state: {
+          kind: 'active',
+          capacity: { kind: 'single_use' },
+          expiration: { kind: 'no_expiry' },
         },
-      ]),
-    );
+      }),
+    });
     const repo = createRepo();
 
     const result = await repo.findById(grant.id);

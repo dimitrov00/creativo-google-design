@@ -76,13 +76,7 @@ describe('FirestoreCouponGrantRepository (emulator)', () => {
   ) {
     await testEnv.withSecurityRulesDisabled(async (ctx) => {
       await setDoc(
-        doc(
-          ctx.firestore() as unknown as Firestore,
-          'users',
-          userId,
-          'couponGrants',
-          grantId,
-        ),
+        doc(ctx.firestore() as unknown as Firestore, 'couponGrants', grantId),
         {
           id: grantId,
           userId,
@@ -159,10 +153,34 @@ describe('FirestoreCouponGrantRepository (emulator)', () => {
     // on an EXISTING grant doc.
     await expect(
       setDoc(
-        doc(db('user-3'), 'users', 'user-3', 'couponGrants', 'grant-2'),
+        doc(db('user-3'), 'couponGrants', 'grant-2'),
         { value: { kind: 'percent_off', percent: 99 } },
         { merge: true },
       ),
     ).rejects.toBeDefined();
+  });
+
+  // The leak the top-level restructure closes: under the old `{path=**}`
+  // collection-group rule ANY signed-in account could dump every user's
+  // grants. Now a foreign get and an unpinned list both die at the rule.
+  it('denies reading another user grant, by get and by list (rules)', async () => {
+    await seedGrant('user-4', 'grant-3', 'coupon-1', {
+      kind: 'active',
+      capacity: { kind: 'single_use' },
+      expiration: { kind: 'no_expiry' },
+    });
+
+    const stranger = createRepo('stranger');
+    const grantId = CouponGrantId.create('grant-3');
+    if (grantId.isFailure()) throw new Error('unreachable');
+    const foreignGet = await stranger.findById(grantId.value);
+    expect(foreignGet.isFailure()).toBe(true);
+
+    const strangerId = UserId.create('user-4');
+    if (strangerId.isFailure()) throw new Error('unreachable');
+    // A stranger LISTING with someone else's userId pinned in the filter:
+    // the rule's `resource.data.userId == request.auth.uid` must refuse.
+    const foreignList = await stranger.findUsableForUser(strangerId.value, now);
+    expect(foreignList.isFailure()).toBe(true);
   });
 });

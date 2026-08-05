@@ -3,6 +3,7 @@ import { Observable } from 'rxjs';
 import {
   DocumentData,
   getDoc,
+  limit,
   onSnapshot,
   orderBy,
   query,
@@ -30,6 +31,7 @@ import { Money } from '@creativo/domain/kernel';
 import {
   AppointmentRepository,
   appointmentToDocument,
+  contactFromDocument,
 } from '@creativo/application/booking';
 import { RepositoryError } from '@creativo/application/shared';
 import { FIREBASE_FIRESTORE } from '@creativo/infrastructure/firebase-app';
@@ -195,6 +197,9 @@ function toDomain(
     locationId: data['locationId'],
     seats: seatsResult.value,
     status: data['status'],
+    // Best-effort: a contact that does not parse reads as absent rather than
+    // failing the appointment (see `contactFromDocument`).
+    contact: contactFromDocument(data),
   });
   if (reconstituted.isFailure()) {
     return fail(
@@ -249,12 +254,18 @@ export class FirestoreAppointmentRepository implements AppointmentRepository {
   }
 
   /**
-   * "Upcoming" = every appointment where this user holds the `self` seat,
-   * filtered to non-terminal statuses (`pending`/`confirmed`) client-side —
-   * simpler than a second range filter on `timeSlot.startIso`, and correct
-   * for the dashboard's purpose (a past `confirmed` appointment that never
-   * got marked `completed` is a staff data-hygiene issue, not something to
-   * hide from the query).
+   * "Upcoming" = every appointment where this user holds the `self` seat and
+   * the status is non-terminal — the SAME set the old client-side filter
+   * kept, now filtered in the QUERY. The difference is not semantics but
+   * billing: appointments are never deleted, so `ownerUserId ==` alone read
+   * a user's entire lifetime history on every mount — every cancelled cut
+   * since their first visit — then threw most of it away in the browser.
+   * O(lifetime) became O(open bookings). Deliberately still no date bound: a
+   * past `pending`/`confirmed` that never got closed out is a staff
+   * data-hygiene issue, not something to hide (see the product note in the
+   * repo history), and non-terminal docs number a handful by construction.
+   *
+   * Needs the `(ownerUserId, status.kind, timeSlot.startIso)` composite.
    */
   observeUpcomingFor(
     userId: UserId,
@@ -262,6 +273,7 @@ export class FirestoreAppointmentRepository implements AppointmentRepository {
     const upcomingQuery = query(
       appointmentsCollection(this.db),
       where('ownerUserId', '==', userId.value),
+      where('status.kind', 'in', ['pending', 'confirmed']),
       orderBy('timeSlot.startIso'),
     );
 
@@ -278,6 +290,60 @@ export class FirestoreAppointmentRepository implements AppointmentRepository {
             }
             if (!isTerminal(result.value.status)) {
               appointments.push(result.value);
+            }
+          }
+          onNext(appointments);
+        },
+        onError,
+      ),
+    );
+  }
+
+  /**
+   * History — the newest `limit` visits that are NOT upcoming.
+   *
+   * One query, ordered newest-first and capped, then split in the browser:
+   * a visit belongs to history if it has already started OR it reached a
+   * terminal status. Firestore cannot express that OR server-side without
+   * two queries, and two queries over the same bounded window costs more
+   * than filtering the window once.
+   *
+   * The cap is the point. Appointments are never deleted, so an unbounded
+   * `ownerUserId ==` reads a client's entire lifetime on every mount — the
+   * exact bill the upcoming query was rewritten to stop paying.
+   *
+   * Needs the `(ownerUserId, timeSlot.startIso DESC)` composite: the
+   * three-field upcoming index cannot serve this one, because `status.kind`
+   * sits between the equality and the ordering.
+   */
+  observeHistoryFor(
+    userId: UserId,
+    max: number,
+  ): Observable<Result<readonly Appointment[], RepositoryError>> {
+    const historyQuery = query(
+      appointmentsCollection(this.db),
+      where('ownerUserId', '==', userId.value),
+      orderBy('timeSlot.startIso', 'desc'),
+      limit(max),
+    );
+
+    return subscribeWithRetry<readonly Appointment[]>((onNext, onError) =>
+      onSnapshot(
+        historyQuery,
+        (snapshot) => {
+          const nowIso = new Date().toISOString();
+          const appointments: Appointment[] = [];
+          for (const docSnap of snapshot.docs) {
+            const result = toDomain(docSnap.id, docSnap.data());
+            // ONE unparseable document must not cost the whole history —
+            // unlike the upcoming list, where a booking you cannot see is a
+            // booking you cannot cancel, a past visit that fails to parse is
+            // simply dropped from the record.
+            if (result.isFailure()) continue;
+            const appointment = result.value;
+            const started = appointment.timeSlot.start.toISO() <= nowIso;
+            if (started || isTerminal(appointment.status)) {
+              appointments.push(appointment);
             }
           }
           onNext(appointments);
