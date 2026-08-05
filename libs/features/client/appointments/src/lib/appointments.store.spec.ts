@@ -7,6 +7,11 @@ import {
   Appointment,
   AppointmentId,
   AppointmentRepository,
+  BOOKING_GATEWAY,
+  BOOKING_POLICY_READER,
+  BookingPolicy,
+  BookingGateway,
+  BookingGatewayError,
   Result,
   Seat,
   SeatId,
@@ -56,7 +61,10 @@ function appointmentAt(id: string, startIso: string): Appointment {
   );
 }
 
-function configure(repository: AppointmentRepository): AppointmentsStore {
+function configure(
+  repository: AppointmentRepository,
+  gateway: Partial<BookingGateway> = {},
+): AppointmentsStore {
   TestBed.configureTestingModule({
     providers: [
       AppointmentsStore,
@@ -70,6 +78,22 @@ function configure(repository: AppointmentRepository): AppointmentsStore {
         },
       },
       { provide: APPOINTMENT_REPOSITORY, useValue: repository },
+      {
+        // Cancellation goes through the CALLABLE gateway, never the
+        // repository — the repository's save() refuses on the client.
+        provide: BOOKING_GATEWAY,
+        useValue: {
+          commit: async () => {
+            throw new Error('not used in this spec');
+          },
+          cancel: async () => ok(undefined),
+          ...gateway,
+        },
+      },
+      {
+        provide: BOOKING_POLICY_READER,
+        useValue: { observe: () => of(BookingPolicy.default()) },
+      },
       {
         provide: CLOCK,
         useValue: { now: (zone: string) => ZonedDateTime.now(zone) },
@@ -132,16 +156,21 @@ describe('AppointmentsStore', () => {
     expect(prevMonth).not.toBe(startMonth);
   });
 
-  it('cancel() runs the domain transition through the repository and reports success', async () => {
-    const savedAppointments: Appointment[] = [];
-    const store = configure({
-      findById: async () => ok(appointmentAt('appt_1', '2030-06-01T10:00:00')),
-      save: async (a: Appointment) => {
-        savedAppointments.push(a);
-        return ok(undefined);
+  it('cancel() sends the id and reason through the gateway and reports success', async () => {
+    const cancelled: { appointmentId: string; reason: string }[] = [];
+    const store = configure(
+      {
+        findById: async () => ok(null),
+        save: async () => ok(undefined),
+        observeUpcomingFor: () => of(ok([])),
       },
-      observeUpcomingFor: () => of(ok([])),
-    });
+      {
+        cancel: async (request) => {
+          cancelled.push(request);
+          return ok(undefined);
+        },
+      },
+    );
 
     const outcome = await store.cancel(
       unwrap(AppointmentId.create('appt_1')),
@@ -149,17 +178,24 @@ describe('AppointmentsStore', () => {
     );
 
     expect(outcome).toBe(true);
-    expect(savedAppointments).toHaveLength(1);
-    expect(savedAppointments[0]?.status.kind).toBe('cancelled');
+    expect(cancelled).toEqual([
+      { appointmentId: 'appt_1', reason: 'client requested' },
+    ]);
     expect(store.cancelError()).toBeNull();
   });
 
   it('cancel() surfaces a translated-ready DomainError on failure', async () => {
-    const store = configure({
-      findById: async () => ok(null),
-      save: async () => ok(undefined),
-      observeUpcomingFor: () => of(ok([])),
-    });
+    const store = configure(
+      {
+        findById: async () => ok(null),
+        save: async () => ok(undefined),
+        observeUpcomingFor: () => of(ok([])),
+      },
+      {
+        cancel: async () =>
+          fail(new BookingGatewayError('invalid_request', 'no such booking')),
+      },
+    );
 
     const outcome = await store.cancel(
       unwrap(AppointmentId.create('missing')),
@@ -167,8 +203,6 @@ describe('AppointmentsStore', () => {
     );
 
     expect(outcome).toBe(false);
-    expect(store.cancelError()?.code).toBe(
-      'booking.cancel_appointment.not_found',
-    );
+    expect(store.cancelError()?.code).toBe('booking.gateway.failed');
   });
 });

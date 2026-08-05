@@ -1,35 +1,152 @@
 <ng-container *transloco="let t">
+  <!-- Chrome first, and the same shape in both views: leave, switch, book.
+       Sticky over a scrim, like `/book`'s own bar — this screen scrolls a
+       long way and the way out must not scroll with it. -->
+  <ui-toolbar uiSticky uiToolbarBackground="scrim">
+    <ui-stack
+      uiAxis="horizontal"
+      uiAlignment="center"
+      uiSpacing="compact"
+      uiFrame
+      uiFrameMaxWidth="infinity"
+    >
+      <a
+        uiButton
+        uiButtonStyle="bordered"
+        uiTint="neutral"
+        uiControlSize="regular"
+        [uiIconOnly]="true"
+        routerLink="/account"
+        [attr.aria-label]="t('appointments.header.back')"
+        data-testid="appointments-back"
+      >
+        <ui-icon uiName="nav.back" />
+      </a>
+
+      <ui-spacer />
+
+      <!-- Two views of ONE set of visits, so a segmented track rather than
+           two separate buttons: the choice is exclusive and the control
+           should look like it. Icon-only — a list and a calendar are the two
+           glyphs nobody needs a word for. -->
+      <div
+        class="appointments-views"
+        role="tablist"
+        [attr.aria-label]="t('appointments.view.label')"
+      >
+        <button
+          type="button"
+          role="tab"
+          class="appointments-views__option"
+          [attr.aria-selected]="view() === 'list'"
+          [attr.data-selected]="view() === 'list' ? '' : null"
+          [attr.aria-label]="t('appointments.view.list')"
+          [title]="t('appointments.view.list')"
+          data-testid="appointments-view-list"
+          (click)="setView('list')"
+        >
+          <ui-icon uiName="view.list" uiScale="small" />
+        </button>
+        <button
+          type="button"
+          role="tab"
+          class="appointments-views__option"
+          [attr.aria-selected]="view() === 'calendar'"
+          [attr.data-selected]="view() === 'calendar' ? '' : null"
+          [attr.aria-label]="t('appointments.view.calendar')"
+          [title]="t('appointments.view.calendar')"
+          data-testid="appointments-view-calendar"
+          (click)="setView('calendar')"
+        >
+          <ui-icon uiName="view.calendar" uiScale="small" />
+        </button>
+      </div>
+
+      <ui-spacer />
+
+      <!-- Narrowing, as a MENU rather than a second row of pills: the pills
+           already own where-you-are, and HIG puts a secondary, occasional
+           choice behind a nav-bar glyph instead of spending permanent
+           screen on it. The funnel goes accent while it bites, because a
+           list that is hiding things has to say so. -->
+      <ui-menu
+        [uiPresented]="filterMenuOpen()"
+        uiAlignment="trailing"
+        [uiLabel]="t('appointments.filter.label')"
+        (uiDismissed)="filterMenuOpen.set(false)"
+      >
+        <button
+          uiMenuTrigger
+          type="button"
+          uiButton
+          uiButtonStyle="bordered"
+          uiTint="neutral"
+          uiControlSize="regular"
+          [uiIconOnly]="true"
+          class="appointments__filter"
+          [attr.aria-label]="filterButtonLabel()"
+          [title]="filterButtonLabel()"
+          data-testid="appointments-filter"
+          [attr.data-filtering]="filtering() ? '' : null"
+          (click)="filterMenuOpen.set(!filterMenuOpen())"
+        >
+          <ui-icon uiName="action.filter" />
+        </button>
+
+        <ui-list-group>
+          @for (option of filters; track option) {
+          <button
+            uiMenuItem
+            uiListRow
+            type="button"
+            [uiInteractive]="true"
+            [uiSelected]="filter() === option"
+            [attr.data-testid]="'appointments-filter-' + option"
+            (click)="setFilter(option)"
+          >
+            <span uiText uiFont="body">
+              {{ t('appointments.filter.' + option) }}
+            </span>
+            @if (filter() === option) {
+            <ui-icon
+              uiTrailing
+              uiName="checklist.done"
+              uiForegroundStyle="accent"
+            />
+            }
+          </button>
+          }
+        </ui-list-group>
+      </ui-menu>
+
+      <!-- The one thing this screen exists to lead to. The shop's own ink,
+           filled: HIG puts the additive action at the bar's trailing edge
+           and tints it with the app's accent — the DS's `borderedProminent`
+           is the white pill this app reserves for a screen's ONE primary
+           action, which a nav-bar glyph is not. -->
+      <a
+        uiButton
+        uiButtonStyle="bordered"
+        uiControlSize="regular"
+        [uiIconOnly]="true"
+        class="appointments__add"
+        routerLink="/book"
+        [attr.aria-label]="t('appointments.bookCta')"
+        [title]="t('appointments.bookCta')"
+        data-testid="appointments-book-cta"
+      >
+        <ui-icon uiName="action.add" />
+      </a>
+    </ui-stack>
+  </ui-toolbar>
+
   <ui-stack
     uiSpacing="comfortable"
     uiFrame
     [uiFrameMaxWidth]="'var(--sys-container-content)'"
     uiPaddingHorizontal="regular"
-    uiPaddingVertical="spacious"
+    class="appointments"
   >
-    <ui-stack uiAxis="horizontal" uiAlignment="center" uiSpacing="compact">
-      <a
-        uiButton
-        uiButtonStyle="plain"
-        uiControlSize="small"
-        routerLink="/account"
-        data-testid="appointments-back"
-      >
-        {{ t('appointments.header.back') }}
-      </a>
-      <ui-spacer />
-      <h1 uiText uiFont="title">{{ t('appointments.header.title') }}</h1>
-      <ui-spacer />
-      <a
-        uiButton
-        uiButtonStyle="bordered"
-        uiControlSize="small"
-        routerLink="/book"
-        data-testid="appointments-book-cta"
-      >
-        {{ t('appointments.bookCta') }}
-      </a>
-    </ui-stack>
-
     @switch (store.upcoming().kind) { @case ('loading') {
     <ui-stack uiSpacing="comfortable" data-testid="appointments-skeleton">
       <ui-skeleton uiFrame uiFrameHeight="3rem" />
@@ -47,233 +164,587 @@
       {{ translateListError() }}
     </p>
     } @default {
-    <ui-stack uiSpacing="comfortable">
-      <ui-stack uiAxis="horizontal" uiSpacing="compact" role="tablist">
-        <button
-          type="button"
-          uiChip
-          [uiSelected]="view() === 'list'"
-          data-testid="appointments-view-list"
-          (click)="setView('list')"
+
+    <!-- ── LIST ──────────────────────────────────────────────────────── -->
+    @if (view() === 'list') {
+    <ui-stack uiSpacing="none" class="appointments__head">
+      <h1 uiText uiFont="largeTitle">{{ t('appointments.header.title') }}</h1>
+      @if (totalVisits() > 0) {
+      <p
+        uiText
+        uiFont="subheadline"
+        uiForegroundStyle="secondary"
+        data-testid="appointments-count"
+      >
+        {{ countLabel() }}
+      </p>
+      }
+    </ui-stack>
+
+    @if (isEmpty()) {
+    <ui-stack uiSpacing="compact" data-testid="appointments-empty">
+      @if (isFilteredEmpty()) {
+      <!-- Empty BECAUSE of the funnel: the way out is the filter, not a
+           booking. Offering "book one" here would answer a question the
+           person did not ask. -->
+      <p uiText uiFont="body" uiForegroundStyle="secondary">
+        {{ t('appointments.empty.filtered') }}
+      </p>
+      <button
+        type="button"
+        uiButton
+        uiButtonStyle="bordered"
+        uiControlSize="regular"
+        data-testid="appointments-clear-filter"
+        (click)="setFilter('all')"
+      >
+        {{ t('appointments.filter.clear') }}
+      </button>
+      } @else {
+      <p uiText uiFont="body" uiForegroundStyle="secondary">
+        {{ t('appointments.empty.title') }}
+      </p>
+      <a
+        uiButton
+        uiButtonStyle="bordered"
+        uiControlSize="regular"
+        routerLink="/book"
+        data-testid="appointments-empty-cta"
+      >
+        {{ t('appointments.empty.cta') }}
+      </a>
+      }
+    </ui-stack>
+    } @else {
+
+    <!-- The pills NAVIGATE. One per section that actually holds a visit, so
+         every option leads somewhere; the current one follows the scroll. -->
+    <ui-scroll-row
+      uiSpacing="compact"
+      [uiFullBleed]="true"
+      class="appointments__pills"
+      data-testid="appointments-pills"
+    >
+      @for (section of sections(); track section.key) {
+      <button
+        type="button"
+        class="appointments__pill"
+        [attr.data-selected]="activeSection() === section.key ? '' : null"
+        [attr.data-section]="section.key"
+        data-testid="appointments-pill"
+        (click)="jumpTo(section.key)"
+      >
+        {{ section.label }}
+      </button>
+      }
+    </ui-scroll-row>
+
+    <ui-stack uiSpacing="comfortable" data-testid="appointments-list">
+      @for (section of sections(); track section.key) {
+      <ui-stack uiSpacing="compact">
+        <p
+          #sectionAnchor
+          uiText
+          uiFont="caption"
+          uiForegroundStyle="secondary"
+          class="appointments__section-head"
+          [attr.data-section-key]="section.key"
         >
-          {{ t('appointments.view.list') }}
-        </button>
-        <button
-          type="button"
-          uiChip
-          [uiSelected]="view() === 'calendar'"
-          data-testid="appointments-view-calendar"
-          (click)="setView('calendar')"
-        >
-          {{ t('appointments.view.calendar') }}
-        </button>
+          {{ section.label }}
+        </p>
+
+        <ui-list-group>
+          @for (visit of section.visits; track visit.id) {
+          <button
+            type="button"
+            uiListRow
+            uiSize="regular"
+            uiAlignment="center"
+            [uiInteractive]="true"
+            data-testid="appointment-row"
+            [attr.data-appointment-id]="visit.id"
+            [attr.data-status]="visit.status"
+            (click)="showVisit(visit)"
+          >
+            <!-- WHEN, as a stamp: weekday over day number, accent while the
+                 visit is still ahead and quiet once it is a memory. -->
+            <span
+              uiLeading
+              class="visit__date"
+              [attr.data-upcoming]="visit.upcoming ? '' : null"
+              aria-hidden="true"
+            >
+              <span class="visit__weekday">{{ visit.weekdayShort }}</span>
+              <span class="visit__day">{{ visit.dayOfMonth }}</span>
+            </span>
+
+            <ui-stack uiSpacing="none" class="visit__identity">
+              <span uiText uiFont="body" uiWeight="semibold">
+                {{ visit.title }}
+              </span>
+              <span class="visit__with">
+                @if (visit.multipleBarbers) {
+                <ui-icon
+                  uiName="booking.anyBarber"
+                  uiScale="small"
+                  uiForegroundStyle="secondary"
+                />
+                } @else {
+                <ui-avatar
+                  class="visit__face"
+                  [uiSrc]="visit.barberAvatarSrc"
+                  [uiName]="visit.barberMonogram"
+                  uiControlSize="small"
+                />
+                }
+                <span uiText uiFont="footnote" uiForegroundStyle="secondary">
+                  {{ visit.barberLabel }} · {{ visit.timeLabel }}
+                </span>
+              </span>
+            </ui-stack>
+          </button>
+          }
+        </ui-list-group>
+      </ui-stack>
+      }
+    </ui-stack>
+    } }
+
+    <!-- ── CALENDAR ──────────────────────────────────────────────────── -->
+    @else {
+    <ui-calendar-scroller
+      #calendarScroller
+      data-testid="appointments-calendar"
+      (scroll)="onCalendarScroll()"
+    >
+      <ui-stack uiCalendarLede uiSpacing="compact" class="appointments__head">
+        <h1 uiText uiFont="largeTitle">{{ t('appointments.header.title') }}</h1>
+        <ui-calendar-grid uiSize="large" aria-hidden="true">
+          @for (label of weekdayLabels(); track $index) {
+          <span uiWeekday uiText uiFont="caption" uiForegroundStyle="secondary">
+            {{ label }}
+          </span>
+          }
+        </ui-calendar-grid>
       </ui-stack>
 
-      @if (view() === 'calendar') {
-      <ui-card uiPadding="comfortable" data-testid="appointments-calendar">
-        <ui-stack uiAxis="horizontal" uiAlignment="center" uiSpacing="compact">
-          <button
-            type="button"
-            uiButton
-            uiButtonStyle="plain"
-            uiControlSize="small"
-            [uiIconOnly]="true"
-            data-testid="appointments-calendar-prev"
-            [attr.aria-label]="t('appointments.calendar.prev')"
-            (click)="store.previousMonth()"
-          >
-            <ui-icon uiName="calendar.previous" />
-          </button>
-          <ui-spacer />
-          <p
-            uiText
-            uiFont="headline"
-            data-testid="appointments-calendar-month-label"
-          >
-            {{ formatMonthLabel() }}
-          </p>
-          <ui-spacer />
-          <button
-            type="button"
-            uiButton
-            uiButtonStyle="plain"
-            uiControlSize="small"
-            [uiIconOnly]="true"
-            data-testid="appointments-calendar-next"
-            [attr.aria-label]="t('appointments.calendar.next')"
-            (click)="store.nextMonth()"
-          >
-            <ui-icon uiName="calendar.next" />
-          </button>
-        </ui-stack>
-        <ui-calendar-grid>
-          @for (label of weekdayLabels(); track $index) {
-          <span uiWeekday uiText uiFont="caption" uiForegroundStyle="secondary"
-            >{{ label }}</span
-          >
-          } @for (week of calendarMonth().weeks; track $index) { @for (cell of
-          week; track cell.dayKey) {
+      @for (month of months(); track month.key) {
+      <section
+        uiCalendarMonth
+        [attr.data-month-key]="month.key"
+        [attr.aria-label]="month.label"
+      >
+        <h2
+          uiText
+          uiFont="title3"
+          class="appointments__month"
+          data-testid="appointments-month-label"
+        >
+          {{ month.label }}
+        </h2>
+
+        <ui-calendar-grid uiSize="large">
+          @for (week of month.weeks; track $index) { @for (day of week; track
+          $index) { @if (day.dayOfMonth === null) {
+          <span uiDay aria-hidden="true"></span>
+          } @else if (day.visits.length > 0) {
+          <!-- A day with a visit says WHO, not merely that something is
+               there: the barber's face under the date, which is the fact a
+               person actually scans a month for. -->
           <button
             type="button"
             uiDay
             uiInteractive
-            uiRadius="capsule"
+            uiRadius="regular"
+            class="visit-day"
             data-testid="appointments-calendar-day"
-            [attr.data-day-key]="cell.dayKey"
-            [attr.data-selected]="selectedDayKey() === cell.dayKey ? '' : null"
-            (click)="selectDay(cell.dayKey)"
+            [attr.data-day-key]="day.dayKey"
+            [attr.aria-label]="dayAriaLabel(day.visits)"
+            (click)="showVisit(day.visits[0]!)"
           >
+            <!-- The SAME `ui-date-badge` an empty day renders: a date does
+                 not shrink because something happened on it, and a
+                 hand-rolled number here would be a second date typography
+                 to keep in step with the DS's. -->
             <ui-date-badge
-              [uiDay]="cell.date.day"
-              [uiState]="
-                          !cell.inCurrentMonth
-                            ? 'outside'
-                            : selectedDayKey() === cell.dayKey
-                              ? 'selected'
-                              : cell.isToday
-                                ? 'today'
-                                : 'plain'
-                        "
-              [uiMarker]="cell.appointmentCount > 0"
+              [uiDay]="day.dayOfMonth"
+              uiState="plain"
+              [uiToday]="day.isToday"
             />
+            @if (day.visits[0]; as visit) {
+            <ui-avatar
+              [uiSrc]="visit.barberAvatarSrc"
+              [uiName]="visit.barberMonogram"
+              uiControlSize="small"
+              class="visit-day__face"
+            />
+            }
           </button>
-          } }
+          } @else {
+          <span uiDay>
+            <ui-date-badge
+              [uiDay]="day.dayOfMonth"
+              uiState="plain"
+              [uiToday]="day.isToday"
+            />
+          </span>
+          } } }
         </ui-calendar-grid>
-      </ui-card>
+      </section>
+      } @empty {
+      <ui-stack uiSpacing="compact" data-testid="appointments-empty">
+        <p uiText uiFont="body" uiForegroundStyle="secondary">
+          {{ t('appointments.empty.title') }}
+        </p>
+        <a
+          uiButton
+          uiButtonStyle="bordered"
+          uiControlSize="regular"
+          routerLink="/book"
+          data-testid="appointments-empty-cta"
+        >
+          {{ t('appointments.empty.cta') }}
+        </a>
+      </ui-stack>
       }
+    </ui-calendar-scroller>
 
-      <div
-        data-testid="appointments-list"
-        [attr.data-state]="groups().length > 0 ? 'populated' : 'empty'"
+    <!-- Back to now. The SAME control the booking flow's calendar carries —
+         glass, icon-only, hugging the leading edge of a pane-anchored bar —
+         because it answers the same question there: a scrolling run of
+         months has no other way home.
+
+         ALWAYS on screen, like its twin and like iOS Calendar's own "Today".
+         An earlier pass revealed it only once today had scrolled away, which
+         sounds tidy and is not: a control that comes and goes cannot be
+         reached for without looking, and two calendars in one app behaving
+         differently is the inconsistency the quiet-chrome rule exists to
+         prevent. It is never idle either — with today already on screen it
+         still puts the month back at the top. -->
+    <ui-page-action-bar uiAnchor="pane" class="appointments__anchor">
+      <button
+        type="button"
+        uiButton
+        uiButtonStyle="glass"
+        uiControlSize="large"
+        [uiIconOnly]="true"
+        data-testid="appointments-scroll-today"
+        [attr.aria-label]="t('appointments.calendar.today')"
+        [title]="t('appointments.calendar.today')"
+        (click)="scrollToToday(true)"
       >
-        @if (groups().length === 0) {
-        <ui-card uiPadding="comfortable" data-testid="appointments-empty">
-          <p uiText uiFont="body" uiForegroundStyle="secondary">
-            {{ t('appointments.empty.title') }}
-          </p>
-          <a
-            uiButton
-            uiButtonStyle="bordered"
-            uiControlSize="small"
-            routerLink="/book"
-            data-testid="appointments-empty-cta"
-          >
-            {{ t('appointments.empty.cta') }}
-          </a>
-        </ui-card>
+        <ui-icon uiName="calendar.today" uiScale="medium" />
+      </button>
+    </ui-page-action-bar>
+    } } }
+  </ui-stack>
+
+  <!-- ── The visit ─────────────────────────────────────────────────────
+       What a row opens: the facts, then the one thing there is to DO about
+       them. Cancelling lives here rather than on the row, so a history reads
+       as a record instead of a list of things to delete. -->
+  @if (openVisit(); as visit) {
+  <ui-modal-sheet
+    sheetId="appointment-visit-sheet"
+    labelledBy="appointment-visit-title"
+    [closeLabel]="t('appointments.visit.close')"
+    [open]="true"
+    data-testid="appointment-visit-sheet"
+    (dismissed)="dismissVisit()"
+  >
+    <span sheet-title>{{ visit.title }}</span>
+
+    <ui-stack uiSpacing="comfortable" class="visit-sheet__body">
+      <ui-stack uiSpacing="tight">
+        <h2
+          id="appointment-visit-title"
+          uiSheetLargeTitle
+          uiText
+          uiFont="largeTitle"
+        >
+          {{ visit.title }}
+        </h2>
+        <p uiText uiFont="subheadline" uiForegroundStyle="secondary">
+          {{ fullDayLabel(visit) }} · {{ visit.timeLabel }}
+        </p>
+        <span uiBadge [uiTone]="statusTone(visit.status)">
+          {{ t('appointments.status.' + visit.status) }}
+        </span>
+      </ui-stack>
+
+      <!-- The verbs, as a run of labelled glyphs — the Maps place-card and
+           Contacts-card anatomy. A glyph with its word underneath is read at
+           a glance and still says what it does; a column of full-width
+           buttons would make four equal-weight demands of a screen whose
+           job is to state a fact. -->
+      <div class="visit-actions" role="group">
+        <!-- A visit that has HAPPENED wants a different first verb: nobody
+             calendars last month, and "the same again" is the one thing a
+             good haircut earns. -->
+        @if (visit.upcoming) {
+        <button
+          type="button"
+          class="visit-actions__item"
+          data-testid="appointment-add-to-calendar"
+          (click)="addToCalendar(visit)"
+        >
+          <span class="visit-actions__glyph">
+            <ui-icon uiName="visit.calendar" />
+          </span>
+          <span uiText uiFont="caption">
+            {{ t('appointments.visit.addToCalendar') }}
+          </span>
+        </button>
         } @else {
-        <ui-stack uiSpacing="comfortable">
-          @for (group of groups(); track group.dayKey) {
-          <ui-stack uiSpacing="compact">
-            <p uiText uiFont="footnote" uiForegroundStyle="secondary">
-              {{ formatDayLabel(group.date) }}
-            </p>
-            <ui-card uiPadding="none">
-              <ui-stack uiSpacing="none">
-                @for (appointment of group.appointments; track
-                appointment.id.value; let last = $last) {
-                <ui-list-row
-                  uiSize="regular"
-                  data-testid="appointment-row"
-                  [attr.data-appointment-id]="appointment.id.value"
-                  [attr.data-status]="appointment.status.kind"
-                >
-                  <ui-stack uiSpacing="tight" uiPaddingVertical="compact">
-                    <p uiText uiFont="body">
-                      {{ formatTime(appointment.timeSlot.start) }}
-                    </p>
-                    <span
-                      uiBadge
-                      [uiTone]="statusTone(appointment.status.kind)"
-                    >
-                      {{ t('appointments.status.' + appointment.status.kind) }}
-                    </span>
-                  </ui-stack>
-                  @if (canCancel(appointment)) {
-                  <button
-                    uiTrailing
-                    type="button"
-                    uiButton
-                    uiButtonStyle="borderedProminent"
-                    uiRole="destructive"
-                    uiControlSize="small"
-                    data-testid="appointment-cancel-trigger"
-                    [attr.data-appointment-id]="appointment.id.value"
-                    (click)="requestCancel(appointment.id)"
-                  >
-                    {{ t('appointments.cancel.trigger') }}
-                  </button>
-                  }
-                </ui-list-row>
-                @if (!last) {
-                <ui-divider />
-                } }
-              </ui-stack>
-            </ui-card>
-          </ui-stack>
-          }
-        </ui-stack>
+        <a
+          class="visit-actions__item"
+          routerLink="/book"
+          [queryParams]="{ repeat: visit.id }"
+          data-testid="appointment-book-again"
+        >
+          <span class="visit-actions__glyph">
+            <ui-icon uiName="visit.repeat" />
+          </span>
+          <span uiText uiFont="caption">
+            {{ t('appointments.visit.bookAgain') }}
+          </span>
+        </a>
+        } @if (visit.upcoming && canCancel(visit.appointment)) {
+        <!-- A move is governed by the SAME window a cancellation is, and
+             refused on the server by the same rule — so it appears exactly
+             while it is possible. -->
+        <a
+          class="visit-actions__item"
+          routerLink="/book"
+          [queryParams]="{ reschedule: visit.id }"
+          data-testid="appointment-reschedule"
+        >
+          <span class="visit-actions__glyph">
+            <ui-icon uiName="visit.reschedule" />
+          </span>
+          <span uiText uiFont="caption">
+            {{ t('appointments.visit.reschedule') }}
+          </span>
+        </a>
+        } @if (openVisitDirections(); as directions) {
+        <a
+          class="visit-actions__item"
+          [href]="directions"
+          target="_blank"
+          rel="noopener"
+          data-testid="appointment-directions"
+        >
+          <span class="visit-actions__glyph">
+            <ui-icon uiName="location.directions" />
+          </span>
+          <span uiText uiFont="caption">
+            {{ t('appointments.visit.directions') }}
+          </span>
+        </a>
+        } @if (openVisitPhoneHref(); as phoneHref) {
+        <a
+          class="visit-actions__item"
+          [href]="phoneHref"
+          data-testid="appointment-call"
+        >
+          <span class="visit-actions__glyph">
+            <ui-icon uiName="location.call" />
+          </span>
+          <span uiText uiFont="caption">
+            {{ t('appointments.visit.call') }}
+          </span>
+        </a>
         }
       </div>
-    </ui-stack>
-    } }
 
-    <ui-sheet
-      [uiIsPresented]="confirmingId() !== null"
-      (uiOnDismiss)="dismissCancel()"
-      data-testid="appointment-cancel-sheet"
-    >
-      <ui-stack uiSpacing="comfortable">
-        <p uiText uiFont="headline">
-          {{ t('appointments.cancel.sheetTitle') }}
-        </p>
-        <label>
-          <ui-stack uiSpacing="tight">
-            <span uiText uiFont="footnote" uiForegroundStyle="secondary">
-              {{ t('appointments.cancel.reasonLabel') }}
+      <!-- The facts, in the grouped-list register: who, where, what was
+           asked for, what it comes to. -->
+      <ui-list-group>
+        <ui-list-row uiSize="large">
+          <ui-avatar
+            uiLeading
+            [uiSrc]="visit.barberAvatarSrc"
+            [uiName]="visit.barberMonogram"
+            uiControlSize="regular"
+          />
+          <ui-stack uiSpacing="none">
+            <span uiText uiFont="body" uiWeight="semibold">
+              {{ visit.barberLabel }}
             </span>
-            <textarea
-              uiTextField
-              data-testid="appointment-cancel-reason"
-              [value]="cancelReason()"
-              (input)="cancelReason.set($any($event.target).value)"
-            ></textarea>
+            <span uiText uiFont="footnote" uiForegroundStyle="secondary">
+              {{ t('appointments.visit.barberRole') }}
+            </span>
           </ui-stack>
-        </label>
-        @if (translateCancelError(); as error) {
+        </ui-list-row>
+
+        @if (openVisitShopName(); as shopName) {
+        <ui-list-row uiSize="large" uiAlignment="leading">
+          <ui-icon
+            uiLeading
+            uiName="location.place"
+            uiForegroundStyle="secondary"
+          />
+          <ui-stack uiSpacing="none" class="visit-sheet__wrap">
+            <span uiText uiFont="body">{{ shopName }}</span>
+            <span uiText uiFont="footnote" uiForegroundStyle="secondary">
+              {{ openVisitAddress() }}
+            </span>
+          </ui-stack>
+        </ui-list-row>
+        }
+
+        <!-- What the client asked the shop to know. Written at booking and,
+             until now, never shown again — a note you cannot re-read is a
+             note you cannot trust was received. -->
+        @if (openVisitNote(); as note) {
+        <ui-list-row uiSize="large" uiAlignment="leading">
+          <ui-icon
+            uiLeading
+            uiName="visit.note"
+            uiForegroundStyle="secondary"
+          />
+          <ui-stack uiSpacing="none" class="visit-sheet__wrap">
+            <span uiText uiFont="footnote" uiForegroundStyle="secondary">
+              {{ t('appointments.visit.note') }}
+            </span>
+            <span uiText uiFont="body" data-testid="appointment-note">
+              {{ note }}
+            </span>
+          </ui-stack>
+        </ui-list-row>
+        } @if (openVisitTotal(); as total) {
+        <ui-list-row uiSize="large">
+          <ui-icon
+            uiLeading
+            uiName="visit.price"
+            uiForegroundStyle="secondary"
+          />
+          {{ t('appointments.visit.atTheShop') }}
+          <span uiTrailing uiText uiFont="body" uiWeight="semibold">
+            {{ total }}
+          </span>
+        </ui-list-row>
+        }
+      </ui-list-group>
+
+      <!-- Destructive LAST and on its own, per HIG: the window while
+           cancelling is still free, and the honest reason once the button
+           has gone — a control that silently disappears reads as a bug, not
+           as a policy. -->
+      @if (canCancel(visit.appointment)) {
+      <ui-stack uiSpacing="compact">
         <p
           uiText
           uiFont="footnote"
-          uiForegroundStyle="destructive"
-          role="alert"
-          data-testid="appointment-cancel-error"
+          uiForegroundStyle="secondary"
+          data-testid="appointment-cancel-deadline"
         >
-          {{ error }}
+          {{ t('appointments.cancel.deadline', { deadline:
+          cancellationDeadline(visit.appointment) }) }}
         </p>
-        }
-        <ui-stack uiAxis="horizontal" uiSpacing="compact">
-          <button
-            type="button"
-            uiButton
-            uiButtonStyle="plain"
-            data-testid="appointment-cancel-dismiss"
-            (click)="dismissCancel()"
-          >
-            {{ t('appointments.cancel.dismiss') }}
-          </button>
-          <button
-            type="button"
-            uiButton
-            uiButtonStyle="borderedProminent"
-            uiRole="destructive"
-            [uiLoading]="store.cancellingId() !== null"
-            data-testid="appointment-cancel-confirm"
-            (click)="confirmCancel()"
-          >
-            {{ t('appointments.cancel.confirm') }}
-          </button>
-        </ui-stack>
+        <button
+          type="button"
+          uiButton
+          uiButtonStyle="bordered"
+          uiRole="destructive"
+          uiControlSize="large"
+          [uiSpread]="true"
+          data-testid="appointment-cancel-trigger"
+          [attr.data-appointment-id]="visit.id"
+          (click)="requestCancel(visit.appointment.id)"
+        >
+          {{ t('appointments.cancel.trigger') }}
+        </button>
       </ui-stack>
-    </ui-sheet>
-  </ui-stack>
+      } @else if (windowClosed(visit.appointment)) {
+      <p
+        uiText
+        uiFont="footnote"
+        uiForegroundStyle="secondary"
+        data-testid="appointment-cancel-window-closed"
+      >
+        {{ t('appointments.cancel.windowClosed') }}
+      </p>
+      }
+    </ui-stack>
+  </ui-modal-sheet>
+  }
+
+  <!-- The confirmation, over the visit: cancelling is the one irreversible
+       thing on this screen, so it asks. -->
+  @if (confirmingId() !== null) {
+  <ui-modal-sheet
+    sheetId="appointment-cancel-sheet"
+    labelledBy="appointment-cancel-title"
+    [closeLabel]="t('appointments.cancel.dismiss')"
+    [open]="true"
+    data-testid="appointment-cancel-sheet"
+    (dismissed)="dismissCancel()"
+  >
+    <span sheet-title>{{ t('appointments.cancel.sheetTitle') }}</span>
+
+    <ui-stack uiSpacing="loose" class="visit-sheet__body">
+      <h2
+        id="appointment-cancel-title"
+        uiSheetLargeTitle
+        uiText
+        uiFont="largeTitle"
+      >
+        {{ t('appointments.cancel.sheetTitle') }}
+      </h2>
+
+      <label>
+        <ui-stack uiSpacing="tight">
+          <span uiText uiFont="footnote" uiForegroundStyle="secondary">
+            {{ t('appointments.cancel.reasonLabel') }}
+          </span>
+          <textarea
+            uiTextField
+            rows="3"
+            data-testid="appointment-cancel-reason"
+            [value]="cancelReason()"
+            (input)="cancelReason.set($any($event.target).value)"
+          ></textarea>
+        </ui-stack>
+      </label>
+
+      @if (translateCancelError(); as error) {
+      <p
+        uiText
+        uiFont="footnote"
+        uiForegroundStyle="destructive"
+        role="alert"
+        data-testid="appointment-cancel-error"
+      >
+        {{ error }}
+      </p>
+      }
+    </ui-stack>
+
+    <ui-sheet-action-bar sheet-overlay [uiVisible]="true">
+      <button
+        type="button"
+        uiButton
+        uiButtonStyle="borderedProminent"
+        uiRole="destructive"
+        [uiSpread]="true"
+        [uiLoading]="store.cancellingId() !== null"
+        data-testid="appointment-cancel-confirm"
+        (click)="confirmCancel()"
+      >
+        {{ t('appointments.cancel.confirm') }}
+      </button>
+      <button
+        type="button"
+        uiButton
+        uiButtonStyle="plain"
+        uiControlSize="small"
+        data-testid="appointment-cancel-dismiss"
+        (click)="dismissCancel()"
+      >
+        {{ t('appointments.cancel.dismiss') }}
+      </button>
+    </ui-sheet-action-bar>
+  </ui-modal-sheet>
+  }
 </ng-container>

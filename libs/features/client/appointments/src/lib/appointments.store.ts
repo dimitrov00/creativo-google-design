@@ -7,6 +7,7 @@ import {
   APPOINTMENT_REPOSITORY,
   Appointment,
   AppointmentId,
+  BOOKING_GATEWAY,
   CancelAppointmentUseCase,
   DomainError,
   ObserveUpcomingUseCase,
@@ -14,6 +15,15 @@ import {
 
 /** The whole product is Europe/Sofia-only for now (blueprint §7.1) — no tenant-configurable zone source exists yet. */
 export const APPOINTMENTS_ZONE = 'Europe/Sofia';
+
+/**
+ * How far back the history reads.
+ *
+ * Two years of monthly visits, give or take — enough that the month pills
+ * cover a real relationship with the shop, few enough that the read is a
+ * constant rather than a function of how long someone has been a client.
+ */
+export const HISTORY_LIMIT = 30;
 
 export type UpcomingListState =
   | { readonly kind: 'loading' }
@@ -30,12 +40,16 @@ export type UpcomingListState =
 @Injectable()
 export class AppointmentsStore {
   private readonly appointmentRepository = inject(APPOINTMENT_REPOSITORY);
+  private readonly bookingGateway = inject(BOOKING_GATEWAY);
   private readonly clock = inject(CLOCK);
   private readonly observeUpcomingUseCase = new ObserveUpcomingUseCase(
     this.appointmentRepository,
   );
+  // The GATEWAY, not the repository: cancellation is a server-side write
+  // (callable + projection rebuild), and the repository's save() refuses on
+  // the client by design.
   private readonly cancelAppointmentUseCase = new CancelAppointmentUseCase(
-    this.appointmentRepository,
+    this.bookingGateway,
   );
 
   /** "Now" in the product's fixed zone — resolved once at store construction via the injected Clock port, never a raw JS date constructor. */
@@ -62,6 +76,32 @@ export class AppointmentsStore {
   readonly appointments = computed<readonly Appointment[]>(() => {
     const state = this.upcoming();
     return state.kind === 'ready' ? state.appointments : [];
+  });
+
+  /**
+   * Past visits, newest first — a SECOND listener, bounded at
+   * {@link HISTORY_LIMIT}.
+   *
+   * Separate from `upcoming` rather than one query filtered twice: the two
+   * have different shapes (one is a handful of open bookings with no date
+   * bound, the other is the newest N of an ever-growing record) and only one
+   * of them is worth paying for on every mount.
+   */
+  private readonly historyResult = toSignal(
+    toObservable(this.userId).pipe(
+      switchMap((userId) =>
+        userId
+          ? this.appointmentRepository.observeHistoryFor(userId, HISTORY_LIMIT)
+          : of(null),
+      ),
+    ),
+    { initialValue: undefined },
+  );
+
+  readonly history = computed<readonly Appointment[]>(() => {
+    const result = this.historyResult();
+    if (!result || result.isFailure()) return [];
+    return result.value;
   });
 
   private readonly _focusedMonth = signal<ZonedDateTime | null>(null);

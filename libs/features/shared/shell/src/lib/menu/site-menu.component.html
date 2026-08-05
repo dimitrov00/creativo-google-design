@@ -212,9 +212,16 @@
               [uiRevealDelay]="140"
             >
               <ui-list-group>
+                <!-- The row says "my reservations" and counts them, so it
+                     goes to the reservations — not to the dashboard that
+                     merely links to them. It pointed at `/account` from
+                     before `/account/appointments` existed; the guest arm
+                     still asks for sign-in first, and comes back HERE. -->
                 <a
-                  [routerLink]="isAuthed() ? '/account' : '/auth'"
-                  [queryParams]="isAuthed() ? null : { redirect: '/account' }"
+                  [routerLink]="isAuthed() ? '/account/appointments' : '/auth'"
+                  [queryParams]="
+                    isAuthed() ? null : { redirect: '/account/appointments' }
+                  "
                   uiListRow
                   uiSize="large"
                   [uiInteractive]="true"

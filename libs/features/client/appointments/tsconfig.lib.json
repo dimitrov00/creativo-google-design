@@ -43,6 +43,9 @@
       "path": "../../../ui/controls/tsconfig.lib.json"
     },
     {
+      "path": "../../shared/catalog/tsconfig.lib.json"
+    },
+    {
       "path": "../account-state/tsconfig.lib.json"
     },
     {

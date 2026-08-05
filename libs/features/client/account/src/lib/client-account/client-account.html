@@ -40,19 +40,23 @@
             {{ t('account.tiles.book.subtitle') }}
           </p>
         </a>
-        <ui-card
+        <!-- Live since goal 6.4 — the tile sat disabled with a "coming
+             soon" badge for weeks after the screen it names shipped, which
+             is the one kind of placeholder that costs more than it saves. -->
+        <a
+          uiCard
           uiPadding="comfortable"
-          uiDisabled
+          [uiInteractive]="true"
+          routerLink="/account/appointments"
           data-testid="account-tile-appointments"
-          data-state="soon"
         >
           <p uiText uiFont="headline">
             {{ t('account.tiles.appointments.title') }}
           </p>
-          <span uiBadge uiTone="neutral"
-            >{{ t('account.tiles.comingSoon') }}</span
-          >
-        </ui-card>
+          <p uiText uiFont="footnote" uiForegroundStyle="secondary">
+            {{ t('account.tiles.appointments.subtitle') }}
+          </p>
+        </a>
         <!-- Was an inert "Settings — coming soon" placeholder; now the
              live personal-information screen it was standing in for. -->
         <a

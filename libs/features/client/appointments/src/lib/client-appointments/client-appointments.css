@@ -1,7 +1,426 @@
-/* Layout, spacing, list rows, calendar cells, and the content column all
-   ride the DS (ui-stack/ui-spacer/ui-list-row/ui-calendar-grid slots +
-   uiFrame content column); only the host's block display remains
-   (Angular hosts default inline). */
-:host {
-  display: block;
+/*
+ * The page clears the sticky toolbar the same way `/book`'s steps do: the
+ * bar floats over a scrim and reserves no flow space, so the content pads
+ * itself down by the bar's height plus a gutter.
+ */
+.appointments {
+  padding-block-start: calc(
+    var(--control-size-large) + var(--sys-space-regular)
+  );
+  padding-block-end: var(--sys-space-spacious);
+}
+
+.appointments__head {
+  padding-block-start: var(--sys-space-spacious);
+}
+
+/*
+ * ── The calendar is its own scroll region ──────────────────────────────
+ *
+ * Not a preference — a REQUIREMENT of the DS scroller. `ui-calendar-scroller`
+ * is `overflow-y: auto` with `overscroll-behavior: contain`, which is right
+ * when it owns the scroll (that is what stops a month run from dragging the
+ * page behind it). Left unbounded it sizes to its content, has nothing to
+ * scroll, and CONTAINS the gesture anyway: the wheel and the finger both
+ * died on the calendar while the page underneath scrolled perfectly well
+ * from code. So the view is laid out the way `/book`'s schedule step is —
+ * the host claims the viewport, the scroller claims what is left of it.
+ *
+ * The toolbar is `position: fixed` while sticky and reserves no flow space,
+ * so the months pass BENEATH it and dissolve into its scrim; the heading
+ * clears it with its own padding.
+ */
+:host([data-view='calendar']) {
+  display: flex;
+  flex-direction: column;
+  block-size: 100svh;
+  overflow: hidden;
+}
+
+:host([data-view='calendar']) .appointments {
+  flex: 1;
+  min-block-size: 0;
+  padding-block: 0;
+}
+
+:host([data-view='calendar']) ui-calendar-scroller {
+  flex: 1;
+  min-block-size: 0;
+}
+
+:host([data-view='calendar']) .appointments__head {
+  padding-block-start: calc(
+    var(--control-size-large) + var(--sys-space-comfortable)
+  );
+}
+
+/*
+ * ── The view switch ────────────────────────────────────────────────────
+ * A segmented track: one recessed container, two options, the selected one
+ * lifted onto its own surface. Feature-local rather than a DS component
+ * because this is its only consumer today — promote it the moment a second
+ * surface needs one, not before.
+ */
+.appointments-views {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sys-space-tight);
+  padding: var(--sys-space-tight);
+  border-radius: var(--control-radius-capsule);
+  background: var(--sys-color-fill);
+}
+
+.appointments-views__option {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: var(--control-size-small);
+  block-size: var(--control-size-small);
+  border: 0;
+  border-radius: var(--control-radius-capsule);
+  background: none;
+  color: var(--sys-color-secondary-label);
+  cursor: pointer;
+  transition:
+    background-color var(--sys-motion-duration-regular)
+      var(--sys-motion-ease-standard),
+    color var(--sys-motion-duration-regular) var(--sys-motion-ease-standard);
+}
+
+.appointments-views__option[data-selected] {
+  background: var(--sys-color-surface);
+  color: var(--sys-color-accent);
+}
+
+.appointments-views__option:focus-visible {
+  outline: var(--sys-focus-ring-width) solid var(--sys-color-ring);
+  outline-offset: var(--sys-focus-ring-offset);
+}
+
+/*
+ * ── The jump pills ─────────────────────────────────────────────────────
+ * Not `ui-chip`: a chip is a filter that changes what you see, and these
+ * change where you ARE. The selected one is filled because it states the
+ * current position rather than a chosen option.
+ */
+.appointments__pills {
+  padding-block: var(--sys-space-tight);
+}
+
+.appointments__pill {
+  flex: 0 0 auto;
+  min-block-size: var(--control-size-small);
+  padding-inline: var(--sys-space-regular);
+  border: 0;
+  border-radius: var(--control-radius-capsule);
+  background: var(--sys-color-fill);
+  color: var(--sys-color-foreground);
+  font: var(--sys-font-subheadline);
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    background-color var(--sys-motion-duration-regular)
+      var(--sys-motion-ease-standard),
+    color var(--sys-motion-duration-regular) var(--sys-motion-ease-standard);
+}
+
+.appointments__pill[data-selected] {
+  background: var(--sys-color-foreground);
+  color: var(--sys-color-background);
+}
+
+.appointments__pill:focus-visible {
+  outline: var(--sys-focus-ring-width) solid var(--sys-color-ring);
+  outline-offset: var(--sys-focus-ring-offset);
+}
+
+/* The section heading, in the grouped-list caption register. */
+.appointments__section-head {
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding-inline-start: var(--sys-space-compact);
+  /* Scrolled to by the jump pills — it must clear the sticky bar when it
+     lands, not hide behind it. */
+  scroll-margin-block-start: calc(
+    var(--control-size-large) + var(--sys-space-comfortable)
+  );
+}
+
+.appointments__month {
+  padding-block-end: var(--sys-space-compact);
+}
+
+/*
+ * ── A visit row ────────────────────────────────────────────────────────
+ * WHEN as a stamp, WHAT as the headline, WITH WHOM underneath.
+ */
+.visit__date {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.0625rem;
+  /* The row's own height comes from this stamp plus the list row's padding —
+     the reference proportion. A 3rem stamp with a headline beside it made a
+     row half again as tall as it needed to be for two short lines. */
+  inline-size: 2.5rem;
+  block-size: 2.5rem;
+  flex: none;
+  border-radius: var(--control-radius-subtle);
+  background: var(--sys-color-fill);
+  color: var(--sys-color-secondary-label);
+}
+
+/* Still ahead: the shop's own ink. Once it is a memory, the stamp goes
+   quiet — a history where every row shouts has no upcoming visit. */
+.visit__date[data-upcoming] {
+  background: color-mix(in srgb, var(--sys-color-accent) 16%, transparent);
+  color: var(--sys-color-accent);
+}
+
+.visit__weekday {
+  font: var(--sys-font-caption2, var(--sys-font-caption));
+  font-size: 0.625rem;
+  line-height: 1;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.visit__day {
+  font: var(--sys-font-headline);
+  line-height: 1.1;
+}
+
+/* A service name may wrap; `ui-list-row`'s label is single-line by default,
+   and the DS's own note says a multi-line identity stack resets that in its
+   own content. */
+.visit__identity,
+.visit__identity > span {
+  white-space: normal;
+}
+
+.visit__with {
+  display: flex;
+  align-items: center;
+  gap: var(--sys-space-tight);
+  min-inline-size: 0;
+}
+
+/*
+ * A face at footnote scale — it sits BESIDE a footnote line and belongs to
+ * it, so the DS's standing `small` control size (a tap target) is nearly
+ * twice what this needs. Sized by the box; the media fills it.
+ */
+.visit__face.ui-avatar {
+  inline-size: 1.25rem;
+  block-size: 1.25rem;
+  min-inline-size: 0;
+  flex: none;
+}
+
+/*
+ * ── A day with a visit ─────────────────────────────────────────────────
+ * The date over the face: a month is scanned for WHO, and a dot only says
+ * that something is there.
+ */
+/*
+ * ── A month that carries faces ─────────────────────────────────────────
+ *
+ * The DS's `large` month sizes its badges as 100% OF A SQUARE CELL, which is
+ * right for a picker: the tap target and the selected disc are the same
+ * shape. This month is not a picker — a day here can carry a face under its
+ * date, and a square cell has nowhere to put one, so the two ended up on top
+ * of each other and the date had to shrink to survive.
+ *
+ * So this grid publishes an EXPLICIT badge size and lets the cells size to
+ * their content instead. A date is then the same size on every day, whether
+ * or not something happened on it, and a day with a visit is simply taller —
+ * which is what makes its row taller, exactly as the reference does.
+ */
+.appointments .ui-calendar-grid[data-size='large'] {
+  --ui-date-badge-size: var(--control-size-regular);
+}
+
+/*
+ * EVERY cell is the same box — a tall one, the date at the top and room for
+ * a face beneath it whether or not this particular day has one.
+ *
+ * The first attempt let only the days WITH a visit grow, which is what a
+ * square grid does when one item outgrows it: that row got taller than its
+ * neighbours and the month lost its rhythm. A calendar's grid is a grid;
+ * the content varies, the cells do not.
+ */
+.appointments .ui-calendar-grid[data-size='large'] > [uiday] {
+  aspect-ratio: auto;
+  block-size: 4.5rem;
+  flex-direction: column;
+  justify-content: flex-start;
+  gap: 0.125rem;
+}
+
+.visit-day {
+  /* The ink covers the whole cell, date and face together — they are one
+     tap target and they should look like one. */
+  padding: 0;
+}
+
+/*
+ * Sized by its box, not by the `small` control token: the DS avatar takes
+ * its dimensions from `data-control-size`, so a consumer that needs a
+ * different one overrides the box and lets the media fill it.
+ */
+.visit-day__face.ui-avatar {
+  inline-size: 1.5rem;
+  block-size: 1.5rem;
+  min-inline-size: 0;
+}
+
+/* The sheet's own gutter and bar clearance, as every other sheet takes them. */
+.visit-sheet__body {
+  padding-inline: var(--ui-sheet-inset, var(--sys-space-comfortable));
+  padding-block-end: var(
+    --ui-sheet-action-bar-clearance,
+    var(--sys-space-spacious)
+  );
+}
+
+/*
+ * A status badge HUGS its word. Left to the stack it sits in it stretches to
+ * the sheet's full width, which reads as a filled banner — a much louder
+ * claim than "this one was a no-show".
+ */
+.visit-sheet__body [uiBadge] {
+  align-self: flex-start;
+}
+
+/*
+ * The additive action carries the shop's ink.
+ *
+ * NOT `borderedProminent`: that style is this app's white pill, reserved for
+ * a screen's ONE primary action (the confirm at the end of a flow). A
+ * nav-bar glyph that borrows it competes with the content for the eye — HIG
+ * asks for the accent here, which is also what makes the "+" read as the
+ * same promise as every other accent control in the app.
+ */
+.appointments__add.ui-button {
+  background: var(--sys-color-accent);
+  border-color: transparent;
+  color: var(--sys-color-on-accent);
+}
+
+.appointments__add.ui-button:hover:not(:disabled),
+.appointments__add.ui-button:active:not(:disabled) {
+  background: color-mix(in srgb, var(--sys-color-accent) 88%, black);
+}
+
+/*
+ * ── "This list is narrowed" ────────────────────────────────────────────
+ * A DOT, not a recoloured glyph.
+ *
+ * Tinting the funnel says "this control is interactive", which every control
+ * in the bar already is — the difference between the two states was a shade,
+ * and shades do not survive a glance. A mark that is ABSENT or PRESENT does:
+ * it is the iOS badge grammar (Mail's own filter, an unread count), read at
+ * the corner rather than in the middle of a shape.
+ *
+ * The ring is the bar's own backdrop, so the dot reads as sitting ON the
+ * button rather than inside it, and stays legible over the scrim in both
+ * themes.
+ */
+.appointments__filter {
+  position: relative;
+  overflow: visible;
+}
+
+.appointments__filter[data-filtering]::after {
+  content: '';
+  position: absolute;
+  inset-block-start: 0.125rem;
+  inset-inline-end: 0.125rem;
+  inline-size: 0.625rem;
+  block-size: 0.625rem;
+  border-radius: var(--control-radius-capsule);
+  background: var(--sys-color-accent);
+  box-shadow: 0 0 0 0.125rem var(--sys-color-background);
+}
+
+/* A month scrolled to by name lands UNDER the floating bar unless it says
+   otherwise — the same clearance the list's section headings take. */
+.appointments [uiCalendarMonth] {
+  scroll-margin-block-start: calc(
+    var(--control-size-large) + var(--sys-space-comfortable)
+  );
+}
+
+/*
+ * The calendar's pane is the positioned ancestor a `pane`-anchored bar pins
+ * to — the same arrangement the location step uses for its own bar over the
+ * map.
+ */
+:host([data-view='calendar']) .appointments {
+  position: relative;
+}
+
+/*
+ * ── A visit's verbs ────────────────────────────────────────────────────
+ * The Maps place-card / Contacts-card run: equal columns, each a glyph on
+ * its own tinted disc with the word beneath. Read at a glance, and still
+ * says what it does — which a bare glyph does not and a column of
+ * full-width buttons says four times too loudly.
+ */
+.visit-actions {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: var(--sys-space-compact);
+}
+
+.visit-actions__item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sys-space-tight);
+  padding-block: var(--sys-space-compact);
+  border: 0;
+  border-radius: var(--control-radius-regular);
+  background: none;
+  color: var(--sys-color-accent);
+  text-align: center;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.visit-actions__glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: var(--control-size-regular);
+  block-size: var(--control-size-regular);
+  border-radius: var(--control-radius-capsule);
+  background: color-mix(in srgb, var(--sys-color-accent) 16%, transparent);
+}
+
+.visit-actions__item:focus-visible {
+  outline: var(--sys-focus-ring-width) solid var(--sys-color-ring);
+  outline-offset: var(--sys-focus-ring-offset);
+}
+
+/* Hover and press ride the house grammar: the disc deepens, and the whole
+   column answers — including on touch, where there is no hover to rely on. */
+@media (hover: hover) {
+  .visit-actions__item:hover .visit-actions__glyph {
+    background: color-mix(in srgb, var(--sys-color-accent) 26%, transparent);
+  }
+}
+
+.visit-actions__item:active .visit-actions__glyph {
+  background: color-mix(in srgb, var(--sys-color-accent) 32%, transparent);
+}
+
+/* A note and an address wrap; the DS row label is one ellipsizing line by
+   default, which is right for a label and wrong for a sentence. */
+.visit-sheet__wrap,
+.visit-sheet__wrap > span {
+  white-space: normal;
 }
