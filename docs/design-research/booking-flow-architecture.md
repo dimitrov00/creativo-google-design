@@ -119,12 +119,76 @@ book?" and "why was Ivan busy?".
 `BookingGateway` port + callable adapter; `slot_unavailable` bounce-back.
 DS: `ui-labeled-content`, `ui-empty-state`. Review + confirmed steps.
 
-### Phase 5 — waitlist
+### Phase 5 — the calendar, flexible days, waitlist _(landed 2026-08-01)_
 
-`time-window.ts`, `waitlist-pref.ts` (monotonic ids — v2's bug 7.7 has an
-unfixed half here), `waitlist-request.ts`, `waitlist-match.ts`. Multi-select
-calendar → one summary row per day → per-day window sheet, presets first.
-The "we found a match" sheet jumps straight to review.
+**The schedule step is now one calendar.** A continuous run of months from
+today to the booking horizon, scrolling under a pinned Mo–Su header, cells at
+the Calendar-app scale, times moved into a sheet reached from a docked
+toolbar. The paged grid it replaces asked "which month?" before it would
+answer "which day?", and hid the boundary that matters most — the last week of
+one month and the first of the next are the same fortnight to someone deciding
+when to come in.
+
+**Domain.** `LocalTimeRange` gained `onDay`/`normalize` rather than growing a
+parallel `TimeWindow` — it already WAS the wall-clock span the plan described.
+`DayWindows` (a day plus its spans; **empty means the whole day**, never no
+time) and `FlexibleWhen` (the declaration). The plan's "monotonic ids" were
+deliberately NOT ported: they are load-bearing for guests, where two people can
+be indistinguishable, and meaningless for days, where the 26th re-added IS the
+same 26th and its windows _should_ be replaced. `FlexibleWhen` keys by
+`dayKey`, and §7.7's hazard cannot arise. `WaitlistRequest` is the aggregate,
+with a transition graph whose most important edge is `matched → open`: being
+notified is not the same as having acted, and a graph without it drops people
+from the waitlist for being asleep.
+
+**The engine takes a mask.** `AvailabilityQuery.withinMs` is applied to FREE
+TIME inside `freeFor`, never to the returned options — the enumeration is
+capped, so post-filtering spends the whole budget on the afternoon and then
+reports "nothing" for a wide-open morning. It also constrains a party's
+sequential seats, which post-filtering cannot.
+
+**`BookingPolicy.horizonDays` became `horizonMonths`**, with a calendar-correct
+`horizonEndFrom(today)` that lands on a month's last day (31 Jan + 2 months is
+31 Mar, not the 28 Feb naive clamping produces). Months, because that is the
+number a shop owner has an opinion about, and because a day-count horizon ends
+mid-grid — half a month live, half dead, with no explanation. Loaded through
+`BOOKING_POLICY_READER`, which falls back to the defaults on every failure
+path: the alternative to a usable policy is a booking flow that will not open.
+
+**The waitlist is earned, not offered.** Kept the ruling below: the flexible
+sheet's CTA stays "find times" until a search has actually RETURNED with days
+that had nothing. A search still in flight is not a search that found nothing.
+
+**Delivery lane.** `requestWaitlist` (onCall, owner from the token) writes the
+request; `matchWaitlistOnBusyChange` triggers on `barberBusy/{docId}` — the one
+artefact that changes when a day's availability does — re-runs the same engine
+with the request's own windows, and writes a `waitlist_match` notification into
+the recipient's inbox, which `FirestoreNotificationReader` observes live. That
+replaces `InMemoryNotificationReader`, which had been a declared stub: without
+it the matcher was writing to a collection nothing read. No push and no email:
+those need credentials, consent and a deliverability story that do not exist
+yet, and this is a real delivery without pretending otherwise. The notification
+says the slot is NOT held, because nothing reserves it — holds are Phase 7.
+
+### Two DS changes this phase
+
+1. **`ui-date-badge`: `today` stopped being a state.** Both consumers wrote the
+   same ternary — _selected, else today, else plain_ — which silently DROPPED
+   today-ness the moment the day was tapped. They are orthogonal facts, so
+   selection/availability is the state and `uiToday` is its own flag. Today now
+   reads as the number with an accent dot beneath it (the iOS treatment,
+   quieter than the ring it replaces), and the dot flips to the on-accent ink
+   when selected via `currentColor`.
+2. **`ui-calendar-scroller`**, and `uiSize` on `ui-calendar-grid`. The grid
+   publishes `--ui-date-badge-size` to its descendants, so a consumer sizes a
+   month once instead of threading an input through forty-two badges.
+
+Also `lib-booking-step-layout` gained `uiFill`, for a step whose body is itself
+a scroll region. Its one subtlety is worth restating: the shell's column is
+`min-height: 100svh` — a FLOOR — so a tall child grows it and the PAGE scrolls
+instead of the region inside. The fix is `max-block-size`, not `block-size`,
+because these are flex items with `flex: 1 1 0%` and flex-grow overrides a
+plain height.
 
 ### Phase 6 — money
 
@@ -194,13 +258,21 @@ already-written `VoucherCode` VO has a redemption path.
   `Location.hours` until an admin exists. Also: are buffers per-barber (a
   fixed turnaround) or per-service (cleanup after a colour)? The
   `StaffSchedule` shape assumes per-barber.
-- **How does a waitlist match reach the user?** The only sender in the repo
-  is `ConsoleLogOtpSender` and `NOTIFICATION_READER` is a declared stub, so
-  Phase 5 either needs a delivery lane or ships "check back in the app".
+- ~~**How does a waitlist match reach the user?**~~ ANSWERED (Phase 5): an
+  in-app notification, written by the matcher into `users/{uid}/notifications`
+  and observed live by `FirestoreNotificationReader`. A second channel (push,
+  email) still needs credentials, a consent flow and an unsubscribe path; the
+  seam for it is `FirestoreNotificationWriter`, not the matcher.
 - **Do guests need real names?** If "Guest 2" is acceptable the inline rename
   is polish; if the barber's day-sheet needs real names, the party step needs
   required-field validation and review needs to surface what is missing.
-- **Waitlist as files in `libs/domain/scheduling` or its own lib?** Currently
-  planned as files in scheduling — every waitlist invariant is scheduling
-  vocabulary. Splitting later costs a generator run; unifying later costs a
-  rename across imports.
+- ~~**Waitlist as files in `libs/domain/scheduling` or its own lib?**~~
+  SETTLED (Phase 5): files in scheduling. Every waitlist invariant turned out
+  to be scheduling vocabulary, and `WaitlistRequest` reuses `BookingCart`'s own
+  persistence shape and `FlexibleWhen`'s day set directly.
+
+- **Who authors the booking policy?** `BOOKING_POLICY_READER` reads
+  `settings/bookingPolicy` and falls back to `BookingPolicy.default()`, so the
+  seam is typed and live — but nothing writes that document yet. A staff admin
+  surface is the missing half, and the horizon is the field most worth exposing
+  first since it is literally how far the calendar scrolls.
