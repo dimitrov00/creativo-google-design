@@ -54,8 +54,11 @@
     outline-offset: var(--sys-focus-ring-offset);
   }
 
+  /* No `pointer-events: none` here: `disabled` already refuses activation, and
+     taking the chip out of hit-testing was what left it showing the pointer
+     cursor of whatever sat behind it. The shared disabled recipe in
+     modifiers.css owns the cursor. */
   .ui-chip:disabled {
     opacity: var(--sys-opacity-disabled);
-    pointer-events: none;
   }
 }

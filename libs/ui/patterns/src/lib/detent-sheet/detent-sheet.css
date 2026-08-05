@@ -48,7 +48,11 @@
     /* Clears the absolutely-positioned handle below, so projected header
        content starts under the grabber rather than behind it. */
     padding-block-start: var(--control-size-regular);
-    padding-block-end: var(--sys-space-compact);
+    /* The header owes its content real air — the same beat the modal sheet's
+       large title takes before its list (`booking-time-sheet`, the sheet this
+       one is measured against). A `compact` gap read as a title stuck to the
+       rows it was introducing. */
+    padding-block-end: var(--sys-space-comfortable);
     cursor: grab;
   }
 

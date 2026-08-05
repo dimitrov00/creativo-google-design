@@ -1,0 +1,68 @@
+@layer sys-components {
+  /*
+   * iOS switch metrics: a 51×31pt track with a 27pt knob and 2pt of inset.
+   * Scaled to the house tokens rather than hardcoded, so a density change
+   * moves the whole control instead of half of it.
+   */
+  .ui-switch {
+    --ui-switch-track-inline: 3.1875rem;
+    --ui-switch-track-block: 1.9375rem;
+    --ui-switch-inset: 0.125rem;
+
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    inline-size: var(--ui-switch-track-inline);
+    block-size: var(--ui-switch-track-block);
+    padding: var(--ui-switch-inset);
+    border: 0;
+    border-radius: var(--control-radius-capsule);
+    /* The OFF track is the same translucent fill every inert control surface
+       uses — a switch that is off is not a disabled switch, so it must not
+       read as one. */
+    background: var(--sys-color-fill);
+    cursor: pointer;
+    transition: background-color var(--sys-motion-duration-regular)
+      var(--sys-motion-ease-standard);
+  }
+
+  .ui-switch[data-on] {
+    background: var(--sys-color-accent);
+  }
+
+  .ui-switch__knob {
+    inline-size: calc(
+      var(--ui-switch-track-block) - var(--ui-switch-inset) * 2
+    );
+    block-size: calc(var(--ui-switch-track-block) - var(--ui-switch-inset) * 2);
+    border-radius: var(--control-radius-capsule);
+    /* Always white, in both themes: this is the knob of a physical toggle,
+       not a surface — the same reason iOS keeps it white on a dark track. */
+    background: #fff;
+    box-shadow:
+      0 0.1875rem 0.5rem rgb(0 0 0 / 0.15),
+      0 0.0625rem 0.0625rem rgb(0 0 0 / 0.16);
+    transition: transform var(--sys-motion-duration-regular)
+      var(--sys-motion-ease-standard);
+  }
+
+  .ui-switch[data-on] .ui-switch__knob {
+    transform: translateX(
+      calc(var(--ui-switch-track-inline) - var(--ui-switch-track-block))
+    );
+  }
+
+  .ui-switch:focus-visible {
+    outline: var(--sys-focus-ring-width) solid var(--sys-color-ring);
+    outline-offset: var(--sys-focus-ring-offset);
+  }
+
+  /* The knob's travel IS the state change — reduced motion drops the
+     animation, never the movement. */
+  @media (prefers-reduced-motion: reduce) {
+    .ui-switch,
+    .ui-switch__knob {
+      transition: none;
+    }
+  }
+}

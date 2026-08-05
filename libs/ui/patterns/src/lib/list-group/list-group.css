@@ -57,8 +57,19 @@
      prominent radius. The shared state layer and press scale compose from
      the [data-interactive] grammar — its overlay inherits border-radius,
      so the morph clips hover/press ink automatically. */
-  .ui-list-group > .ui-list-row[data-interactive]:active,
-  .ui-list-group > :not(.ui-list-row) > .ui-list-row[data-interactive]:active {
+  .ui-list-group
+    > .ui-list-row[data-interactive]:not(
+      :disabled,
+      [aria-disabled='true'],
+      [data-disabled]
+    ):active,
+  .ui-list-group
+    > :not(.ui-list-row)
+    > .ui-list-row[data-interactive]:not(
+      :disabled,
+      [aria-disabled='true'],
+      [data-disabled]
+    ):active {
     border-radius: var(--control-radius-prominent);
   }
 

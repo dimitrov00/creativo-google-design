@@ -409,6 +409,13 @@
       transparent
     );
   }
+  /* Glass deepens to the accent press-tier AND tints its glyph: over a busy
+     surface the 18% wash alone is too quiet for an icon-only toggle to read
+     as "on" at a glance. */
+  .ui-button[data-button-style='glass'][data-selected] {
+    background: color-mix(in srgb, var(--sys-color-accent) 18%, transparent);
+    color: var(--sys-color-accent);
+  }
   .ui-button[data-button-style='strokedBorder'][data-selected],
   .ui-button[data-button-style='plain'][data-selected] {
     background: color-mix(
@@ -440,9 +447,14 @@
   .ui-button:active:not(:disabled) {
     transform: scale(var(--sys-press-scale-control));
   }
+  /* No `pointer-events: none`: `disabled` already refuses activation, and
+     taking the button out of hit-testing meant the pointer landed on whatever
+     sat BEHIND it — so a disabled CTA showed the cursor of the action bar
+     under it, and any `cursor` rule on the button itself was dead. The shared
+     disabled recipe (modifiers.css) owns the cursor; every hover and press
+     rule here is already `:not(:disabled)`-gated, so nothing lights up. */
   .ui-button:disabled {
     opacity: var(--sys-opacity-disabled);
-    pointer-events: none;
   }
   .ui-button:focus-visible {
     outline: var(--sys-focus-ring-width) solid var(--sys-color-ring);

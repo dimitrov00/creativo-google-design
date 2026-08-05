@@ -179,11 +179,11 @@
      feedback (mobile press parity). Both fill with currentColor so the
      destructive item highlights red. */
   @media (hover: hover) and (pointer: fine) {
-    .ui-menu__item:not(.ui-list-row):hover {
+    .ui-menu__item:not(.ui-list-row, [disabled], [aria-disabled='true']):hover {
       background: var(--sys-state-layer-hover);
     }
   }
-  .ui-menu__item:not(.ui-list-row):active {
+  .ui-menu__item:not(.ui-list-row, [disabled], [aria-disabled='true']):active {
     background: var(--sys-state-layer-press);
   }
 
@@ -192,10 +192,11 @@
     outline-offset: -2px;
   }
 
+  /* The cursor comes from the shared disabled recipe (modifiers.css), which
+     also restores the hit-testing that made a `cursor` here dead. */
   .ui-menu__item[disabled] {
     color: var(--sys-color-secondary-label);
     opacity: var(--sys-opacity-disabled);
-    cursor: default;
   }
 
   /* The file-picker item form: a label wrapping a hidden input is the only

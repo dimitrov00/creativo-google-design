@@ -71,7 +71,9 @@
   @media (hover: hover) {
     .ui-card[data-interactive]:not(
         [data-tone='muted'],
-        [data-tone='accent']
+        [data-tone='accent'],
+        [data-disabled],
+        [aria-disabled='true']
       ):hover {
       box-shadow: var(--sys-elevation-overlay);
     }
@@ -81,7 +83,9 @@
      layer from modifiers.css. */
   .ui-card[data-interactive]:not(
       [data-tone='muted'],
-      [data-tone='accent']
+      [data-tone='accent'],
+      [data-disabled],
+      [aria-disabled='true']
     ):active {
     box-shadow: var(--sys-elevation-overlay);
   }

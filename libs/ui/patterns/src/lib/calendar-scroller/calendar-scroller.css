@@ -1,0 +1,56 @@
+@layer sys-components {
+  .ui-calendar-scroller {
+    display: flex;
+    flex-direction: column;
+    min-block-size: 0;
+    overflow-y: auto;
+    /* A scroll that reaches its end must not hand the gesture to the page
+       behind it — on a step whose whole body is this scroller, the chain
+       would drag the wizard itself. */
+    overscroll-behavior: contain;
+    /* Momentum scrolling on iOS. */
+    -webkit-overflow-scrolling: touch;
+
+    /* No scrollbar, for two reasons — the second is the load-bearing one.
+       This is a touch-scroll surface whose affordance is the month visibly
+       continuing past the fold, and the system calendars it is modelled on
+       show none. And a classic (non-overlay) scrollbar takes its width out of
+       THIS box only, so the month grids inside would end up narrower than the
+       weekday key the page chrome renders above them — a visible column
+       drift between the key and the cells it labels. */
+    scrollbar-width: none;
+  }
+
+  .ui-calendar-scroller::-webkit-scrollbar {
+    display: none;
+  }
+
+  .ui-calendar-scroller__months {
+    display: flex;
+    flex-direction: column;
+    /* Consumer-tunable: a run of month grids at a tight gap reads as one very
+       long grid with words in it, and how much air it needs depends on how big
+       the cells are. */
+    gap: var(--ui-calendar-scroller-month-gap, var(--sys-space-loose));
+    /* The last month needs room to be scrolled clear of a docked action bar;
+       without it the final week sits under the toolbar with no way to reach
+       it. Consumers override via the custom property when their bar is taller. */
+    padding-block-end: var(
+      --ui-calendar-scroller-floor,
+      var(--sys-space-spacious)
+    );
+  }
+
+  .ui-calendar-scroller [uicalendarmonth] {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sys-space-compact);
+    /* Anchors `scrollIntoView` for "jump to today" without the month label
+       landing under the page chrome floating over this box. `scrollIntoView`
+       aligns to the scroll box's own top edge and knows nothing about what
+       overlays it, so the consumer publishes that height as the ceiling. */
+    scroll-margin-block-start: calc(
+      var(--ui-calendar-scroller-ceiling, 0px) + var(--sys-space-loose)
+    );
+  }
+}

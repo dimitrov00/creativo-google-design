@@ -47,6 +47,10 @@ export const UI_ICON_REGISTRY = {
   'booking.anyBarber': 'groups',
   /** A service that cannot combine with what is already selected. */
   'booking.blocked': 'block',
+  /** Go back and change what was chosen — the summary's own pencil. Distinct
+   *  from `party.renameGuest`: that edits a label in place, this rewinds the
+   *  flow to the step that owns the answer. */
+  'booking.edit': 'edit',
 
   /* ── Account ────────────────────────────────────────────────────── */
   'account.reservations': 'event_available',
@@ -107,9 +111,41 @@ export const UI_ICON_REGISTRY = {
    *  ui-phone-field's country trigger). */
   'field.expand': 'arrow_drop_down',
 
+  /* ── Views / additive actions ───────────────────────────────────── */
+  /** The two ways to read one set of dated things — a segmented pair, so the
+   *  glyphs have to be legible against EACH OTHER, not merely on their own. */
+  'view.list': 'format_list_bulleted',
+  'view.calendar': 'calendar_month',
+  /** "One more of these" — the additive action at a bar's trailing edge. */
+  'action.add': 'add',
+  /** Narrow what a list shows. The funnel, not the sliders: sliders promise
+   *  several dials, a funnel promises one choice. */
+  'action.filter': 'filter_list',
+
+  /* ── A booked visit's own verbs and facts ───────────────────────────── */
+  /** Put this visit in the device's calendar (an `.ics` hand-off). */
+  'visit.calendar': 'event_available',
+  /** What the client asked the shop to know before the chair. */
+  'visit.note': 'sticky_note_2',
+  /** What it comes to — money, stated not charged. */
+  'visit.price': 'payments',
+  /** "The same again" — book a past visit's services with the same barber. */
+  'visit.repeat': 'replay',
+  /** Move THIS booking to another time — the same visit, not a new one. */
+  'visit.reschedule': 'edit_calendar',
+
   /* ── Calendars / paging ─────────────────────────────────────────── */
   'calendar.previous': 'chevron_left',
   'calendar.next': 'chevron_right',
+  /** Jump the scrolling calendar back to the current month. */
+  'calendar.today': 'today',
+  /** "Search several days for me" — the booking flow's multi-day declaration.
+   *  A search-flavoured glyph rather than a calendar one (owner ruling
+   *  2026-08-01): the mode's promise is the SEARCH across days, and next to a
+   *  month grid a calendar icon disappears into its surroundings. */
+  'calendar.flexible': 'manage_search',
+  /** A standing waitlist request: we are watching these days for you. */
+  'calendar.watching': 'notifications_active',
 
   /* ── Locations ──────────────────────────────────────────────────── */
   /** Place/address identity glyph on location cards and sheet rows. */

@@ -210,8 +210,21 @@
       var(--sys-motion-ease-standard);
   }
 
+  /* Every state below is gated on NOT being disabled.
+
+     It reads like belt-and-braces and is not: a disabled control is normally
+     dropped from hit-testing, so these never fired — but the disabled-cursor
+     recipe at the end of this file hands hit-testing BACK (that is the only
+     way a `cursor` on a disabled control can ever be seen), and without these
+     guards a dead row would light up and scale under the thumb while refusing
+     to do anything. Feedback is a promise; a disabled surface must not make
+     it. */
   @media (hover: hover) {
-    [data-interactive]:hover::after {
+    [data-interactive]:not(
+        :disabled,
+        [aria-disabled='true'],
+        [data-disabled]
+      ):hover::after {
       background: var(--sys-state-layer-hover);
     }
   }
@@ -222,12 +235,20 @@
      literal 0ms entry on a real iPhone: felt abrupt and, combined with
      iOS's own touch-vs-scroll disambiguation, buggy). Release still rides
      the base rule's 200ms fade for a smooth exit. */
-  [data-interactive]:active::after {
+  [data-interactive]:not(
+      :disabled,
+      [aria-disabled='true'],
+      [data-disabled]
+    ):active::after {
     background: var(--sys-state-layer-press);
     transition-duration: var(--sys-motion-duration-instant);
   }
 
-  [data-interactive]:active {
+  [data-interactive]:not(
+      :disabled,
+      [aria-disabled='true'],
+      [data-disabled]
+    ):active {
     transform: scale(var(--sys-press-scale-surface));
   }
 
@@ -292,10 +313,40 @@
   /* ── Disabled (uiDisabled → data-disabled) ──
      ≙ SwiftUI .disabled(_:): dimmed, inert. For non-form surfaces only —
      native controls keep the native `disabled` attribute and their own
-     `:disabled` rules (same recipe, same token). */
+     `:disabled` rules (same recipe, same token).
+
+     The SUBTREE goes inert rather than the host, so the host itself stays
+     hit-testable and can show the disabled cursor below. A host that is
+     itself activatable (`<button>`, `<a>`) must use the native `disabled`
+     attribute instead — this modifier carries no semantics that would stop a
+     click, which is exactly what its docblock already says. */
   [data-disabled] {
     opacity: var(--sys-opacity-disabled);
+  }
+
+  [data-disabled] * {
     pointer-events: none;
+  }
+
+  /* ── The disabled cursor, once, for every form it takes ──────────────
+     `:disabled` (native controls), `aria-disabled` (surfaces that only claim
+     it) and `data-disabled` (the modifier above) all read the same.
+
+     `pointer-events: auto` is the load-bearing half. The UA stylesheet drops
+     disabled form controls out of hit-testing entirely, so the pointer never
+     lands ON the control — it lands on whatever is behind it, inherits THAT
+     element's cursor, and any `cursor` declared here is dead CSS. (Measured:
+     `elementFromPoint` over a disabled CTA returned the action bar behind
+     it, and the control read `cursor: pointer` the whole time.) Handing
+     hit-testing back cannot make the control activatable: `disabled` is what
+     refuses activation, not `pointer-events`. Every hover and press rule in
+     this system is gated against these same three states, so nothing lights
+     up in exchange. */
+  :is(button, input, select, textarea, fieldset, optgroup, option):disabled,
+  [aria-disabled='true'],
+  [data-disabled] {
+    pointer-events: auto;
+    cursor: not-allowed;
   }
 
   /* ── Material (uiMaterial → data-material) ──

@@ -7,6 +7,7 @@ export * from './lib/media-card/media-card';
 export * from './lib/ambient-video/ambient-video';
 export * from './lib/text-field/text-field';
 export * from './lib/chip/chip';
+export * from './lib/switch/switch';
 export * from './lib/badge/badge';
 export * from './lib/avatar/avatar';
 export * from './lib/progress-view/progress-view';

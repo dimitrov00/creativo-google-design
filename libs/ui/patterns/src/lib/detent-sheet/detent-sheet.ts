@@ -336,6 +336,12 @@ export class UiDetentSheet {
    */
   protected onWheel(event: WheelEvent): void {
     if (this.atLargest() || event.deltaY <= 0) return;
+    // Only when there IS something the growth would reveal. A sheet whose
+    // rows already fit was swallowing the map behind it on any stray
+    // trackpad scroll — the gesture answered a question ("show me the rest")
+    // that the sheet had already answered.
+    const box = event.currentTarget as HTMLElement | null;
+    if (box && box.scrollHeight <= box.clientHeight + 1) return;
     const allowed = this.allowed();
     const index = allowed.indexOf(this.uiDetent());
     if (index < 0 || index >= allowed.length - 1) return;

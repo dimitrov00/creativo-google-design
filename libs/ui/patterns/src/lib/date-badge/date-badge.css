@@ -4,10 +4,16 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    inline-size: var(--control-size-regular);
-    block-size: var(--control-size-regular);
+    /* Set by `ui-calendar-grid`'s `uiSize` for every badge inside it; a badge
+       used on its own keeps the standing control size. */
+    inline-size: var(--ui-date-badge-size, var(--control-size-regular));
+    block-size: var(--ui-date-badge-size, var(--control-size-regular));
     border-radius: var(--control-radius-capsule);
-    font: var(--sys-font-body);
+    font: var(--ui-date-badge-font, var(--sys-font-body));
+    /* Tabular figures so the columns of a month grid line up: proportional
+       digits make a column of 1s visibly narrower than a column of 8s, and
+       across six rows that drift reads as a wobble. */
+    font-variant-numeric: tabular-nums;
     color: var(--sys-color-foreground);
   }
 
@@ -24,23 +30,41 @@
     color: var(--sys-color-tertiary-label);
   }
 
-  .ui-date-badge[data-state='today'] {
-    box-shadow: inset 0 0 0 1px var(--sys-color-accent);
-    font-weight: 600;
-  }
-
   .ui-date-badge[data-state='selected'] {
     background: var(--sys-color-accent);
     color: var(--sys-color-on-accent);
     font-weight: 600;
   }
 
+  /* Today carries weight even unselected — it is the grid's anchor, and a
+     4px dot alone is a small thing to find in six rows of numbers. */
+  .ui-date-badge[data-today] {
+    font-weight: 600;
+  }
+
   .ui-date-badge__marker {
     position: absolute;
-    inset-block-end: 2px;
-    inline-size: 4px;
-    block-size: 4px;
+    /* Hung from the NUMBER, not from the badge's edge: offset down from the
+       vertical centre, in `em`, so the dot rides just under the digits at
+       every size. Absolutely positioned and reserving nothing, so the number
+       in a today cell sits EXACTLY where it sits in every other cell — an
+       earlier pass padded a lane for the dot, which lifted today's number and
+       broke the row's rhythm on one column. */
+    inset-block-start: calc(50% + var(--ui-date-badge-dot-offset, 0.72em));
+    inline-size: var(--ui-date-badge-dot-size, 0.26em);
+    block-size: var(--ui-date-badge-dot-size, 0.26em);
     border-radius: var(--control-radius-capsule);
+    /* `currentColor` is the whole trick: on a selected day the badge's ink is
+       already `--sys-color-on-accent`, so the dot flips to the foreground of
+       the filled capsule rather than vanishing into the accent beneath it. */
     background: currentColor;
+  }
+
+  /* An unselected today tints its dot with the accent — the one place the
+     accent appears on an otherwise quiet grid, which is what makes today
+     findable at a glance. Selected, it inherits `currentColor` above. */
+  .ui-date-badge[data-today]:not([data-state='selected'])
+    > .ui-date-badge__marker {
+    background: var(--sys-color-accent);
   }
 }

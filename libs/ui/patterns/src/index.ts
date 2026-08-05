@@ -1,5 +1,6 @@
 export * from './lib/card/card';
 export * from './lib/calendar-grid/calendar-grid';
+export * from './lib/calendar-scroller/calendar-scroller';
 export * from './lib/confetti/confetti';
 export * from './lib/date-badge/date-badge';
 export * from './lib/detent-sheet/detent-sheet';

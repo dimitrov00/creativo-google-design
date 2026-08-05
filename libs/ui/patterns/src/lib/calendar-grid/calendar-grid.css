@@ -1,7 +1,14 @@
 @layer sys-components {
   .ui-calendar-grid {
     display: grid;
-    grid-template-columns: repeat(7, 1fr);
+    /* `minmax(0, …)`, not a bare `1fr`: a `1fr` column takes its MINIMUM from
+       its content, and a `ui-date-badge` is a fixed square — so seven badges
+       plus their gaps set a floor of ~332px that no phone-width card can
+       give, and the month ran off its card's trailing edge (days 7-9, 14-16
+       and 21-23 simply clipped). Columns that may shrink below their content
+       are what make a month FLUID; the badge rules below are what keep it
+       legible once they do. */
+    grid-template-columns: repeat(7, minmax(0, 1fr));
     gap: var(--sys-space-tight);
   }
 
@@ -9,18 +16,96 @@
      uiweekday) — selectors use the DOM form, same as ui-list-row. */
   .ui-calendar-grid > [uiweekday] {
     text-align: center;
+    /* A weekday initial must never be the thing that sets a column's floor
+       — the numbers below it are the content, and "срд" is wider than "12". */
+    overflow: hidden;
   }
 
-  /* Day tap cell — UA chrome stripped, badge centered; hover/press/focus
-     ride the shared [data-interactive] grammar, never a bespoke rule. */
-  .ui-calendar-grid > button[uiday] {
+  /* Day cell — the badge centered in its column, whether the cell is a tap
+     target (`button`) or a stated fact (`span`, read-only months). */
+  .ui-calendar-grid > button[uiday],
+  .ui-calendar-grid > span[uiday] {
     display: inline-flex;
     align-items: center;
     justify-content: center;
+  }
+
+  /* UA chrome stripped from the tap cell; hover/press/focus ride the shared
+     [data-interactive] grammar, never a bespoke rule. */
+  .ui-calendar-grid > button[uiday] {
     padding: var(--sys-space-tight);
     border: 0;
     background: none;
     color: inherit;
     font: inherit;
+  }
+
+  /* ── Regular: a month embedded in a card ────────────────────────────
+     The badge fills the column it is given, so a narrow card gets a smaller
+     month instead of a clipped one — but never grows past the standing
+     control size, so a wide card gets a normal month centered in roomy
+     columns rather than seven dinner plates. */
+  .ui-calendar-grid[data-size='regular'] {
+    --ui-date-badge-size: 100%;
+    /* The GRID is what stops growing — never the cell. A cell is a grid item
+       that STRETCHES to its column, which is the only reason a percentage
+       badge size has a definite box to resolve against; cap the cell (or give
+       it an auto margin) and the stretch is off, the cell shrink-wraps, and
+       the badge collapses to the width of the digit inside it. Capping the
+       whole month instead keeps every cell stretchy and simply stops seven
+       standing controls from becoming seven dinner plates on a wide card.
+
+       No auto margin to centre it, either: this grid is normally a FLEX
+       item (a `ui-stack` child), and an auto inline margin on a flex item
+       switches off the cross-axis stretch that gives the columns their
+       definite width — the same collapse, one level up. A capped month
+       simply starts at the leading edge, where an embedded month sits. */
+    max-inline-size: calc(
+      7 * var(--control-size-regular) + 6 * var(--sys-space-tight)
+    );
+  }
+
+  .ui-calendar-grid[data-size='regular'] > button[uiday],
+  .ui-calendar-grid[data-size='regular'] > span[uiday] {
+    /* Square cells and no cell padding, for the same reason `large` has
+       them: the cell is the tap target and the badge is the selected fill,
+       so a gap between the two makes the shape you press differ from the
+       shape that answers. */
+    aspect-ratio: 1;
+    padding: 0;
+  }
+
+  /* ── Large: the grid IS the screen ──────────────────────────────────
+     The badge sizes itself from `--ui-date-badge-size`, so a month scales by
+     publishing that here rather than by every consumer passing a size to
+     every cell.
+
+     The cell is a square (`aspect-ratio`) and the badge fills it EXACTLY —
+     no cell padding. That is not a spacing preference: the cell is the tap
+     target and carries the hover/press ink, while the badge carries the
+     selected fill, so any padding between them makes the shape you hover a
+     different size from the shape that appears when you commit. Separation
+     between days comes from the grid's gap, where it belongs. */
+  .ui-calendar-grid[data-size='large'] {
+    /* Columns nearly touch (the Apple month-view rhythm — a row of dates
+       reads as a week, not as seven separate controls); rows get real air,
+       which is what makes six of them scannable. */
+    column-gap: var(--sys-space-tight);
+    row-gap: var(--sys-space-compact);
+    --ui-date-badge-size: 100%;
+    --ui-date-badge-font: var(--sys-font-title3);
+  }
+
+  .ui-calendar-grid[data-size='large'] > button[uiday],
+  .ui-calendar-grid[data-size='large'] > span[uiday] {
+    /* Square cells, so six rows of a month keep a stable height regardless of
+       how wide the column is — the reason a scrolling run of months does not
+       jitter as it goes past. */
+    aspect-ratio: 1;
+    padding: 0;
+  }
+
+  .ui-calendar-grid[data-size='large'] > [uiweekday] {
+    padding-block-end: var(--sys-space-compact);
   }
 }
