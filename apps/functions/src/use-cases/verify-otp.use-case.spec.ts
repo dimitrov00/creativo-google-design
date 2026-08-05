@@ -60,6 +60,13 @@ function fakeOtpRepository(): OtpRepositoryPort & { store: Map<string, Otp> } {
     > {
       return ok(false);
     },
+    // The atomic exchange, faked over the same map — read, decide, persist.
+    async update(id, decide): Promise<Result<Otp | null, RepositoryError>> {
+      const current = store.get(id.value) ?? null;
+      const next = decide(current);
+      if (next !== null) store.set(next.id.value, next);
+      return ok(next ?? current);
+    },
   };
 }
 

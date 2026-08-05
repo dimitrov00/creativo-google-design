@@ -8,6 +8,7 @@ import {
   StaffScheduleHistory,
   WeeklyPattern,
 } from '@creativo/domain/scheduling';
+import { exceptionFromDocument } from '@creativo/application/booking';
 import {
   type BookingSnapshot,
   type DecideBookingRequest,
@@ -150,6 +151,7 @@ function snapshot(overrides: Partial<BookingSnapshot> = {}): BookingSnapshot {
     services: [fadeService(), beardService()],
     schedules: new Map([['ivan', schedule()]]),
     busy: new Map(),
+    exceptions: new Map(),
     ...overrides,
   };
 }
@@ -168,8 +170,9 @@ function seat(overrides: Partial<RequestedSeat> = {}): RequestedSeat {
 
 function request(
   seats: readonly RequestedSeat[] = [seat()],
+  overrides: Partial<DecideBookingRequest> = {},
 ): DecideBookingRequest {
-  return { locationId: 'loc-center', seats };
+  return { locationId: 'loc-center', seats, ...overrides };
 }
 
 const POLICY = BookingPolicy.default();
@@ -317,6 +320,32 @@ describe('decideBooking — availability is re-checked, not trusted', () => {
     );
     expect(result.isFailure()).toBe(true);
     if (result.isFailure()) {
+      expect(result.error.code).toBe('booking.commit.barber_not_rostered');
+    }
+  });
+
+  it('refuses a day a published exception has closed, roster notwithstanding', () => {
+    const exception = exceptionFromDocument({
+      barberId: 'ivan',
+      dayKey: '2026-08-03',
+      zone: ZONE,
+      locationId: 'loc-center',
+      effect: { kind: 'closed' },
+    });
+    expect(exception).not.toBeNull();
+    if (!exception) return;
+
+    const result = decideBooking(
+      request(),
+      snapshot({
+        exceptions: new Map([['ivan__2026-08-03', exception]]),
+      }),
+      deps(),
+    );
+    expect(result.isFailure()).toBe(true);
+    if (result.isFailure()) {
+      // The roster says Ivan works; the exception says not today. The day
+      // leaves the sellable set entirely, same refusal as no roster at all.
       expect(result.error.code).toBe('booking.commit.barber_not_rostered');
     }
   });
@@ -476,5 +505,48 @@ describe('decideBooking — policy and party rules', () => {
       deps(),
     );
     expect(result.isSuccess()).toBe(true);
+  });
+});
+
+describe('decideBooking — the contact rides along as a snapshot', () => {
+  const CONTACT = {
+    name: 'Емил Тестов',
+    phone: '+359896330113',
+    email: 'emil@example.com',
+    note: 'закъснявам 5 минути',
+  } as const;
+
+  it('carries the contact onto the appointment, note and all', () => {
+    const decision = unwrap(
+      decideBooking(
+        request([seat()], { contact: CONTACT }),
+        snapshot(),
+        deps(),
+      ),
+    );
+
+    expect(decision.appointment.contact?.name).toBe('Емил Тестов');
+    expect(decision.appointment.contact?.phone.value).toBe('+359896330113');
+    expect(decision.appointment.contact?.email?.value).toBe('emil@example.com');
+    expect(decision.appointment.contact?.note).toBe('закъснявам 5 минути');
+  });
+
+  it('commits with no contact at all — an older client still books', () => {
+    const decision = unwrap(decideBooking(request(), snapshot(), deps()));
+    expect(decision.appointment.contact).toBeNull();
+  });
+
+  it('REFUSES a contact the shop could not act on', () => {
+    // An unreachable number is caught here, before an appointment exists —
+    // not discovered when the shop tries to call.
+    const result = decideBooking(
+      request([seat()], { contact: { ...CONTACT, phone: '12' } }),
+      snapshot(),
+      deps(),
+    );
+
+    expect(result.isFailure()).toBe(true);
+    if (result.isSuccess()) return;
+    expect(result.error.code).toBe('booking.commit.invalid_input');
   });
 });

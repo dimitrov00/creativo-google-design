@@ -62,9 +62,14 @@ service cloud.firestore {
 
     // ── accounts ────────────────────────────────────────────────────────
     match /users/{uid} {
-      // Staff need to read client profiles (search, booking, dashboards);
-      // a client only ever sees their own doc.
-      allow read: if isOwner(uid) || isStaff();
+      // A client sees their own doc; staff may GET any profile (a booking
+      // names its client). LISTING — the search surface over everyone's
+      // phone/email/birthDate — is front-desk and admin business only: a
+      // `content_manager` edits the catalog, not the clientele, and every
+      // role in `isStaff()` could previously dump the whole collection.
+      allow get: if isOwner(uid) || isStaff();
+      allow list: if isOwner(uid)
+        || hasAnyRole(['receptionist', 'admin', 'sysadmin']);
 
       // Self-registration always starts as a plain `client` — every other
       // role is granted server-side only (Admin SDK bypasses these rules).
@@ -78,45 +83,51 @@ service cloud.firestore {
 
       allow delete: if false;
 
-      match /couponGrants/{grantId} {
-        allow read: if isOwner(uid);
-        // Grants are minted server-side only; the owner may transition
-        // their own grant's `state` (active → used), nothing security-
-        // relevant. Deliberately NOT `affectedKeys().hasOnly(['state'])` —
-        // `grantedAt` is free to re-serialize to a different (but
-        // instant-equal) ISO string across a read→reconstitute→persist
-        // round trip (the adapter's `ZonedDateTime` parsing always
-        // normalizes to a fixed zone), which would otherwise make a
-        // perfectly legal state transition fail this check. What actually
-        // must never change is the grant's identity/value/ownership.
-        allow update: if isOwner(uid)
-          && !affectedKeys().hasAny(['id', 'userId', 'couponId', 'value']);
-        allow create, delete: if false;
-      }
-
       match /rewardProgress/{programId} {
         // Materialized by Cloud Functions only (reward-progress sweep,
         // Phase 7) — matches v2's owner-read/server-write split exactly.
         allow read: if isOwner(uid);
         allow write: if false;
       }
+
+      match /notifications/{notificationId} {
+        // The recipient's own inbox. Delivered server-side only (the
+        // waitlist matcher writes here via the Admin SDK, which bypasses
+        // these rules) — a client that could write its own notifications
+        // could forge a "your slot is free" message.
+        allow read: if isOwner(uid);
+        // The ONE thing a recipient may change is their own read receipt.
+        // Everything else — what the message says, who it is from, where it
+        // points — is the sender's, and a client that could rewrite `body`
+        // or `deepLink` could turn its own inbox into a phishing surface.
+        allow update: if isOwner(uid)
+          && affectedKeys().hasOnly(['readAtIso']);
+        allow create, delete: if false;
+      }
     }
 
-    // `FirestoreCouponGrantRepository.findById` looks a grant up by id alone
-    // (a `CouponGrantId` doesn't carry the owning `userId`), via a
-    // `collectionGroup('couponGrants')` query filtered on `id`, not
-    // `userId`. Firestore only authorizes a collection-group query against a
-    // rule declared with the `{path=**}` wildcard — the nested
-    // `users/{uid}/couponGrants/{grantId}` rule above covers direct reads
-    // under a known parent only, not this query shape. A rule conditioned
-    // on `resource.data.userId` here fails Firestore's `list`-time static
-    // check (the query's own equality filter is on a *different* field, so
-    // it can't statically prove every matched doc has `userId` set) — so
-    // this intentionally widens to any signed-in user. Acceptable: grant
-    // ids are unguessable UUIDs, this is a point lookup (never a listing),
-    // and the grant's own data (a coupon value/state) isn't sensitive.
-    match /{path=**}/couponGrants/{grantId} {
-      allow read: if isSignedIn();
+    // TOP-LEVEL `couponGrants/{grantId}`, owner in the `userId` field. The
+    // subcollection layout this replaces needed a `{path=**}` collection-
+    // group rule that any signed-in account could dump EVERY user's grants
+    // through — the rule could not condition on `resource.data.userId`
+    // because the CG query filtered on a different field and failed the
+    // static list-time check. Top-level, `get` proves ownership on the doc
+    // itself, and `list` is only legal when the query's own filter pins
+    // `userId` to the caller (which `findUsableForUser` does).
+    match /couponGrants/{grantId} {
+      allow get: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow list: if isSignedIn()
+        && resource.data.userId == request.auth.uid;
+      // Grants are minted server-side only; the owner may transition their
+      // own grant's `state` (active → used), nothing security-relevant.
+      // Deliberately NOT `affectedKeys().hasOnly(['state'])` — `grantedAt`
+      // is free to re-serialize to a different (but instant-equal) ISO
+      // string across a read→reconstitute→persist round trip. What actually
+      // must never change is the grant's identity/value/ownership.
+      allow update: if isSignedIn()
+        && resource.data.userId == request.auth.uid
+        && !affectedKeys().hasAny(['id', 'userId', 'couponId', 'value']);
+      allow create, delete: if false;
     }
 
     // ── scheduling ──────────────────────────────────────────────────────
@@ -140,20 +151,19 @@ service cloud.firestore {
       // projection before writing. The Admin SDK bypasses these rules, so no
       // allowance for it is needed (or wanted) here.
       //
-      // `isStaff()` keeps the in-shop path open for a receptionist booking at
-      // the counter until that too moves behind the callable.
-      allow create: if isStaff();
-
-      // Staff manage the full lifecycle. A client may only cancel their own
-      // appointment — nothing else, and never seats/barber/service/status
-      // fields beyond that one transition.
-      allow update: if isStaff()
-        || (
-          isSignedIn()
-          && resource.data.ownerUserId == request.auth.uid
-          && affectedKeys().hasOnly(['status'])
-          && request.resource.data.status.kind == 'cancelled'
-        );
+      // NO direct writes for anyone — staff included. The earlier
+      // `create: if isStaff()` let a receptionist write an appointment the
+      // availability engine never saw: the commit transaction conflict-checks
+      // `barberBusy` only, and a direct doc write updates no projection, so
+      // the sanctioned walk-in path was a guaranteed double-booking. The
+      // owner direct-cancel grant was equally dead — the browser repository
+      // refuses `save()`, and a rules-level status flip would have left the
+      // slot phantom-blocked in `barberBusy` forever. Every lifecycle write
+      // goes through a callable (`commitBooking`, `cancelAppointment`), and
+      // the `rebuildBusy` trigger keeps the projection equal to what the
+      // appointments say.
+      allow create: if false;
+      allow update: if false;
 
       // Never hard-delete — status transitions only, so day-sheets and
       // history/analytics stay intact.
@@ -195,12 +205,51 @@ service cloud.firestore {
       allow write: if isStaff();
     }
 
+    match /scheduleExceptions/{dayDocId} {
+      // The sanitized availability effect of a day off / changed hours —
+      // geometry only, structurally reason-free (the doc schema has no field
+      // a reason could ride in; a `sick` day must never be derivable here).
+      allow read: if true;
+      allow write: if isStaff();
+    }
+
+    match /capacity/{monthId} {
+      // The calendar's month rollup — free minutes per day/barber/shop,
+      // trigger-maintained (Admin SDK). Same PII posture as barberBusy:
+      // geometry-derived numbers only.
+      allow read: if true;
+      allow write: if false;
+    }
+
     match /barberBusy/{dayDocId} {
       allow read: if true;
       // Written ONLY by the `commitBooking` transaction (Admin SDK, which
       // bypasses rules). A client that could widen its own busy projection
       // could hide a barber's free time from everyone else.
       allow write: if false;
+    }
+
+    match /waitlistRequests/{requestId} {
+      // A standing request to be told when a day opens up. The owner reads
+      // their own; staff read all of them, because "who is waiting for
+      // Saturday" is a question the shop legitimately asks.
+      allow read: if isSignedIn()
+        && (isOwner(resource.data.ownerUserId) || isStaff());
+
+      // Written ONLY by `requestWaitlist` and the matcher (Admin SDK, which
+      // bypasses rules). A client that could write its own document could
+      // name a different owner and sign a stranger up for notifications, or
+      // set `dayKeys` wider than the days it actually declared and make the
+      // matcher do unbounded work on every cancellation.
+      allow create: if false;
+
+      // Withdrawal goes through the `cancelWaitlist` callable — ONE door.
+      // A direct-write grant briefly lived here that nothing exercised (the
+      // client gateway already called the callable, which didn't exist);
+      // two sanctioned paths to one transition is how they drift.
+      allow update: if false;
+
+      allow delete: if false;
     }
 
     // ── programs (public browse, staff/content-manager write) ─────────────
@@ -237,7 +286,11 @@ service cloud.firestore {
     }
 
     match /invitations/{invitationId} {
-      allow read: if isSignedIn();
+      // GET only for a plain user: the client flow is a point lookup of a
+      // code someone handed you. `read` covered `list` too, which let any
+      // fresh account enumerate every invitation and self-redeem it.
+      allow get: if isSignedIn();
+      allow list: if isStaff();
       allow create: if isSignedIn()
         && request.resource.data.inviterUserId == request.auth.uid
         && request.resource.data.redemptionCount == 0;
@@ -250,7 +303,10 @@ service cloud.firestore {
       allow delete: if false;
 
       match /redemptions/{refereeUserId} {
-        allow read: if isSignedIn();
+        // Same split: doc ids ARE referee uids, so a listing is a referral
+        // graph dump.
+        allow get: if isSignedIn();
+        allow list: if isStaff();
         // Doc id IS the referee's uid — existence alone prevents double
         // redemption; self-redemption is rejected by requiring the doc id
         // to differ from the parent invitation's inviter.
@@ -271,17 +327,21 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
+    // ── tenant settings ─────────────────────────────────────────────────
+    // `settings/bookingPolicy` and siblings. Public-read because the booking
+    // horizon is literally how far an anonymous visitor's calendar scrolls —
+    // and the doc holds tuning numbers, nothing secret. The missing match
+    // here once default-denied every `/book` session into a silent
+    // defaults-only policy plus a per-tab retry loop.
+    match /settings/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
     // ── server-only (Admin SDK bypasses rules; closed to every client) ──
     match /otps/{otpId} {
       allow read, write: if false;
     }
 
-    match /rateLimits/{key} {
-      allow read, write: if false;
-    }
-
-    match /blocklist/{id} {
-      allow read, write: if false;
-    }
   }
 }

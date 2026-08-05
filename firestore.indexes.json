@@ -4,74 +4,272 @@
       "collectionGroup": "services",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "categoryId", "order": "ASCENDING" },
-        { "fieldPath": "status", "order": "ASCENDING" },
-        { "fieldPath": "sortOrder", "order": "ASCENDING" }
+        {
+          "fieldPath": "categoryId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "sortOrder",
+          "order": "ASCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "services",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "status", "order": "ASCENDING" },
-        { "fieldPath": "sortOrder", "order": "ASCENDING" }
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "sortOrder",
+          "order": "ASCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "barbers",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "locationIds", "arrayConfig": "CONTAINS" },
-        { "fieldPath": "status", "order": "ASCENDING" },
-        { "fieldPath": "sortOrder", "order": "ASCENDING" }
+        {
+          "fieldPath": "locationIds",
+          "arrayConfig": "CONTAINS"
+        },
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "sortOrder",
+          "order": "ASCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "barbers",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "status", "order": "ASCENDING" },
-        { "fieldPath": "sortOrder", "order": "ASCENDING" }
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "sortOrder",
+          "order": "ASCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "locations",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "status", "order": "ASCENDING" },
-        { "fieldPath": "sortOrder", "order": "ASCENDING" }
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "sortOrder",
+          "order": "ASCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "appointments",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "ownerUserId", "order": "ASCENDING" },
-        { "fieldPath": "timeSlot.startIso", "order": "ASCENDING" }
+        {
+          "fieldPath": "ownerUserId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "status.kind",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "timeSlot.startIso",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "appointments",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "busyKeys",
+          "arrayConfig": "CONTAINS"
+        },
+        {
+          "fieldPath": "status.kind",
+          "order": "ASCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "users",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "searchPrefixes", "arrayConfig": "CONTAINS" },
-        { "fieldPath": "searchName", "order": "ASCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "couponGrants",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "state.kind", "order": "ASCENDING" },
-        { "fieldPath": "grantedAt", "order": "ASCENDING" }
+        {
+          "fieldPath": "searchPrefixes",
+          "arrayConfig": "CONTAINS"
+        },
+        {
+          "fieldPath": "searchName",
+          "order": "ASCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "impersonationSessions",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "adminUserId", "order": "ASCENDING" },
-        { "fieldPath": "status.kind", "order": "ASCENDING" }
+        {
+          "fieldPath": "adminUserId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "status.kind",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "otps",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "destination",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "consumedAt",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "courses",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "enrollmentStatus",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "sortOrder",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "positions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "sortOrder",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "barberBusy",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "barberId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "dayKey",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "waitlistRequests",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "dayKeys",
+          "arrayConfig": "CONTAINS"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "notifications",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "kind",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "requestId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "sentAtIso",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "scheduleExceptions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "barberId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "dayKey",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "waitlistRequests",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "ownerUserId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAtIso",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "appointments",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "ownerUserId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "timeSlot.startIso",
+          "order": "DESCENDING"
+        }
       ]
     }
   ],

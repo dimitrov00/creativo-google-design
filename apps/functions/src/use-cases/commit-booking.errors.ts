@@ -93,9 +93,9 @@ export class CommitBookingTooSoonError extends DomainError {
 export class CommitBookingBeyondHorizonError extends DomainError {
   readonly code = 'booking.commit.beyond_horizon' as const;
 
-  constructor(horizonDays: number) {
-    super(`Bookings open ${horizonDays} days ahead`, {
-      horizonDays: String(horizonDays),
+  constructor(horizonMonths: number) {
+    super(`Bookings open ${horizonMonths} months ahead`, {
+      horizonMonths: String(horizonMonths),
     });
   }
 }

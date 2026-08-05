@@ -1,3 +1,4 @@
+import { Timestamp } from 'firebase-admin/firestore';
 import type { DocumentData, Firestore } from 'firebase-admin/firestore';
 import { Otp, OtpId } from '@creativo/domain/models';
 import {
@@ -23,6 +24,11 @@ function toPersistence(otp: Otp): DocumentData {
     maxAttempts: otp.maxAttempts,
     consumedAt: otp.consumedAt ? otp.consumedAt.toISO() : null,
     createdAt: otp.createdAt.toISO(),
+    // Native-Timestamp mirror for Firestore's TTL policy (TTL cannot read
+    // the domain's ISO strings). A consumed challenge holds destination +
+    // code hash — PII with no purpose past its own expiry; a day's grace
+    // covers debugging. Enable the policy on `otps.purgeAt` at deploy time.
+    purgeAt: Timestamp.fromMillis(otp.expiresAt.toMillis() + 24 * 3_600_000),
   };
 }
 
@@ -64,6 +70,31 @@ export class FirestoreOtpRepository implements OtpRepositoryPort {
       return ok(undefined);
     } catch (error) {
       return fail(new RepositoryError('Failed to save OTP', error));
+    }
+  }
+
+  async update(
+    id: OtpId,
+    decide: (otp: Otp | null) => Otp | null,
+  ): Promise<Result<Otp | null, RepositoryError>> {
+    try {
+      return await this.db.runTransaction(async (tx) => {
+        const ref = this.db.collection(COLLECTION).doc(id.value);
+        const snapshot = await tx.get(ref);
+        let current: Otp | null = null;
+        if (snapshot.exists) {
+          const parsed = toDomain(id.value, snapshot.data() ?? {});
+          if (parsed.isFailure()) {
+            return fail<Otp | null, RepositoryError>(parsed.error);
+          }
+          current = parsed.value;
+        }
+        const next = decide(current);
+        if (next !== null) tx.set(ref, toPersistence(next));
+        return ok<Otp | null, RepositoryError>(next ?? current);
+      });
+    } catch (error) {
+      return fail(new RepositoryError('Failed to update OTP', error));
     }
   }
 

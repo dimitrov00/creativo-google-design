@@ -485,6 +485,26 @@ function toStoredPattern(weeklyPattern) {
   );
 }
 
+// Locations FIRST: seeding a roster fires the capacity trigger, which
+// clamps windows to shop hours — hours that must already exist or the
+// first materialization computes unclamped days.
+for (const location of LOCATIONS) {
+  await db.collection('locations').doc(location.id).set({
+    name: location.name,
+    address: location.address,
+    phone: location.phone,
+    geo: location.geo,
+    hours: location.hours,
+    // Every slot the booking flow computes is materialized against this
+    // zone, never the device's — the §7.1 rule that a UTC server or a
+    // travelling client must still land on the shop's own calendar day.
+    timezone: 'Europe/Sofia',
+    status: 'active',
+    sortOrder: location.sortOrder,
+  });
+  console.log(`seeded location ${location.id}`);
+}
+
 for (const schedule of SCHEDULES) {
   await db.collection('barberSchedules').doc(schedule.barberId).set({
     barberId: schedule.barberId,
@@ -597,22 +617,37 @@ for (const schedule of SCHEDULES) {
   );
 }
 
-for (const location of LOCATIONS) {
-  await db.collection('locations').doc(location.id).set({
-    name: location.name,
-    address: location.address,
-    phone: location.phone,
-    geo: location.geo,
-    hours: location.hours,
-    // Every slot the booking flow computes is materialized against this
-    // zone, never the device's — the §7.1 rule that a UTC server or a
-    // travelling client must still land on the shop's own calendar day.
-    timezone: 'Europe/Sofia',
-    status: 'active',
-    sortOrder: location.sortOrder,
-  });
-  console.log(`seeded location ${location.id}`);
+/*
+ * One published schedule exception: Stefan is off five days from now.
+ *
+ * The SANITIZED public doc — effect only, structurally no reason field (the
+ * domain's `sick`/`training` reasons are staff-only data and must never be
+ * derivable from the anonymous surface). Seeded so the calendar visibly
+ * greys a day the roster says is worked; if it stops greying, the exception
+ * pipeline broke.
+ */
+{
+  const date = new Date();
+  date.setHours(0, 0, 0, 0);
+  date.setDate(date.getDate() + 5);
+  const dayKey = [
+    date.getFullYear(),
+    String(date.getMonth() + 1).padStart(2, '0'),
+    String(date.getDate()).padStart(2, '0'),
+  ].join('-');
+  await db
+    .collection('scheduleExceptions')
+    .doc(`stefan__${dayKey}`)
+    .set({
+      barberId: 'stefan',
+      dayKey,
+      zone: SCHEDULING_ZONE,
+      locationId: 'loc-center',
+      effect: { kind: 'closed' },
+    });
+  console.log(`seeded scheduleExceptions/stefan__${dayKey} (closed)`);
 }
+
 
 for (const barber of BARBERS) {
   const avatar = await uploadAvatar(barber.file, barber.id);
@@ -664,7 +699,29 @@ for (const service of SERVICES) {
   );
 }
 
+/*
+ * The tenant policy document, at its shipping defaults.
+ *
+ * Seeded EXPLICITLY even though every reader falls back to the same numbers,
+ * because a missing doc and a read defaults are indistinguishable on screen —
+ * which is precisely how the client's broken policy parse went unnoticed.
+ * With a real doc in the emulator, changing a number here must visibly move
+ * the calendar horizon; if it doesn't, the wiring broke again.
+ *
+ * Field values mirror `BookingPolicy.default()` (`libs/domain/scheduling`);
+ * the shape is owned by `booking-policy-document.ts` in application/booking.
+ */
+await db.collection('settings').doc('bookingPolicy').set({
+  maxPartySize: 5,
+  slotStepMinutes: 15,
+  minLeadMinutes: 120,
+  horizonMonths: 2,
+  cancellationWindowHours: 24,
+  maxFlexibleDays: 7,
+});
+console.log('seeded settings/bookingPolicy');
+
 console.log(
-  `Done: ${SERVICES.length} services + ${BARBERS.length} barbers + ${LOCATIONS.length} locations + ${SCHEDULES.length} rosters + 1 category in the ${PROJECT_ID} emulators.`,
+  `Done: ${SERVICES.length} services + ${BARBERS.length} barbers + ${LOCATIONS.length} locations + ${SCHEDULES.length} rosters + 1 category + booking policy in the ${PROJECT_ID} emulators.`,
 );
 process.exit(0);

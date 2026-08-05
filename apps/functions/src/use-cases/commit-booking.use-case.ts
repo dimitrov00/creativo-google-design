@@ -1,5 +1,5 @@
 import { Result, fail, ok } from '@creativo/domain/kernel';
-import { Appointment, BookingPolicy } from '@creativo/domain/scheduling';
+import { BookingPolicy } from '@creativo/domain/scheduling';
 import { ClockPort, IdGenerator } from '@creativo/application/shared';
 import {
   type CommitBookingError,
@@ -8,6 +8,7 @@ import {
 } from './commit-booking.errors';
 import {
   type BookingDecision,
+  type CommitOutcome,
   type BookingSnapshot,
   type DecideBookingRequest,
   decideBooking,
@@ -23,7 +24,7 @@ export interface BookingStore {
     decide: (
       snapshot: BookingSnapshot,
     ) => Result<BookingDecision, CommitBookingError>,
-  ): Promise<Result<BookingDecision, CommitBookingError>>;
+  ): Promise<Result<CommitOutcome, CommitBookingError>>;
 }
 
 export interface CommitBookingInput extends DecideBookingRequest {
@@ -61,7 +62,7 @@ export class CommitBookingUseCase {
 
   async execute(
     input: CommitBookingInput,
-  ): Promise<Result<Appointment, CommitBookingError>> {
+  ): Promise<Result<{ appointmentId: string }, CommitBookingError>> {
     if (!input.ownerUserId) {
       return fail(new CommitBookingUnauthenticatedError());
     }
@@ -70,6 +71,8 @@ export class CommitBookingUseCase {
     const request: DecideBookingRequest = {
       locationId: input.locationId,
       seats: input.seats,
+      attemptId: input.attemptId,
+      contact: input.contact,
     };
 
     const result = await this.store.commit(request, (snapshot) => {
@@ -86,6 +89,13 @@ export class CommitBookingUseCase {
     });
 
     if (result.isFailure()) return fail(result.error);
-    return ok(result.value.appointment);
+    // A replay IS a success — it is this very attempt's original answer,
+    // re-delivered after the response was lost in transit.
+    return ok({
+      appointmentId:
+        result.value.kind === 'replayed'
+          ? result.value.appointmentId
+          : result.value.decision.appointment.id.value,
+    });
   }
 }

@@ -79,6 +79,12 @@
           "buildTarget": "functions:build:production"
         }
       }
+    },
+    "test-integration": {
+      "executor": "@nx/vitest:test",
+      "options": {
+        "configFile": "apps/functions/vitest.integration.config.mts"
+      }
     }
   }
 }

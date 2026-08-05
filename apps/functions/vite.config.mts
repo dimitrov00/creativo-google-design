@@ -12,6 +12,10 @@ export default defineConfig(() => ({
     globals: true,
     environment: 'node',
     include: ['{src,tests}/**/*.{test,spec}.{js,mjs,cjs,ts,mts,cts}'],
+    // Emulator-backed suites run under the separate `test-integration`
+    // target (`vitest.integration.config.mts`) so `nx run-many -t test`
+    // stays emulator-free.
+    exclude: ['**/*.integration.spec.ts', '**/node_modules/**'],
     reporters: ['default'],
     coverage: {
       reportsDirectory: '../../coverage/apps/functions',

@@ -1,4 +1,4 @@
-import { OtpId } from '@creativo/domain/models';
+import { Otp, OtpId } from '@creativo/domain/models';
 import { Result, fail, ok } from '@creativo/domain/kernel';
 import {
   ONBOARDING_CLAIMS,
@@ -53,6 +53,12 @@ function parseInput(raw: unknown): Result<VerifyOtpInput, InvalidInputError> {
   return ok({ otpId, code });
 }
 
+/** What the atomic verify exchange decided — set by the decide callback. */
+type VerifyExchangeOutcome =
+  | { readonly kind: 'not_found' }
+  | { readonly kind: 'refused'; readonly reason: string }
+  | { readonly kind: 'verified'; readonly otp: Otp };
+
 export class VerifyOtpUseCase {
   constructor(
     private readonly otpRepository: OtpRepositoryPort,
@@ -87,36 +93,57 @@ export class VerifyOtpUseCase {
     }
     const now = nowResult.value;
 
-    const foundResult = await this.otpRepository.findById(otpIdResult.value);
-    if (foundResult.isFailure()) {
-      return fail(new RepositoryFailure(foundResult.error));
-    }
-    const otp = foundResult.value;
-    if (!otp) {
-      return fail(new OtpNotFoundError());
+    // Verify inside ONE atomic exchange, not find-then-save. The split
+    // version let N parallel wrong guesses all read `attemptCount: 0` and
+    // all persist `1` — the lockout `maxAttempts` promises never accrued
+    // for exactly the caller it exists to stop. `decide` may run more than
+    // once on contention, so the branch taken is re-derived each run and
+    // the LAST run's outcome is the one the transaction committed.
+    let outcome: VerifyExchangeOutcome | null = null;
+
+    const updateResult = await this.otpRepository.update(
+      otpIdResult.value,
+      (otp) => {
+        if (!otp) {
+          outcome = { kind: 'not_found' };
+          return null;
+        }
+        const verifyResult = otp.verify(input.code, this.hasher, now);
+        if (verifyResult.isFailure()) {
+          outcome = { kind: 'refused', reason: verifyResult.error.kind };
+          // The attempt itself is a real state change even though the code
+          // was wrong — persist the incremented attemptCount so lockout
+          // actually accrues, atomically with the read that justified it.
+          return verifyResult.error.kind === 'wrong_code'
+            ? otp.recordFailedAttempt()
+            : null;
+        }
+        outcome = { kind: 'verified', otp: verifyResult.value };
+        return verifyResult.value;
+      },
+    );
+    if (updateResult.isFailure()) {
+      return fail(new RepositoryFailure(updateResult.error));
     }
 
-    const verifyResult = otp.verify(input.code, this.hasher, now);
-    if (verifyResult.isFailure()) {
-      if (verifyResult.error.kind === 'wrong_code') {
-        // The attempt itself is a real state change even though the code
-        // was wrong — persist the incremented attemptCount so lockout
-        // actually accrues across separate requests.
-        await this.otpRepository.save(otp.recordFailedAttempt());
+    // The assertion is load-bearing: `outcome` is assigned only inside the
+    // decide closure, which TypeScript's flow analysis cannot see, so the
+    // variable — and anything initialized from it — stays narrowed to its
+    // initial `null` and every guard below would collapse to `never`.
+    const settled = outcome as VerifyExchangeOutcome | null;
+    if (settled === null || settled.kind === 'not_found') {
+      return fail(new OtpNotFoundError());
+    }
+    if (settled.kind === 'refused') {
+      if (settled.reason === 'wrong_code')
         return fail(new IncorrectCodeError());
-      }
-      if (verifyResult.error.kind === 'already_consumed')
+      if (settled.reason === 'already_consumed')
         return fail(new OtpAlreadyConsumedError());
-      if (verifyResult.error.kind === 'expired')
-        return fail(new OtpExpiredError());
+      if (settled.reason === 'expired') return fail(new OtpExpiredError());
       return fail(new OtpLockedOutError());
     }
 
-    const verifiedOtp = verifyResult.value;
-    const saveResult = await this.otpRepository.save(verifiedOtp);
-    if (saveResult.isFailure()) {
-      return fail(new RepositoryFailure(saveResult.error));
-    }
+    const verifiedOtp = settled.otp;
 
     const destinationResult = otpDestinationFromRaw(
       verifiedOtp.destination,

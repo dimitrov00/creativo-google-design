@@ -1,3 +1,4 @@
+import { Timestamp } from 'firebase-admin/firestore';
 import type {
   DocumentData,
   Firestore,
@@ -15,15 +16,20 @@ import {
   type WeeklyPatternProps,
 } from '@creativo/domain/scheduling';
 import {
+  type PersistedDocument,
   type PersistedSlot,
+  SCHEDULE_EXCEPTIONS_COLLECTION,
   appointmentToDocument,
+  busyContributionsOf,
   busyDocumentId,
   busyIntervalsOf,
+  exceptionFromDocument,
   mergeBusy,
 } from '@creativo/application/booking';
 import type {
   BookingDecision,
   BookingSnapshot,
+  CommitOutcome,
   DecideBookingRequest,
   LoadedSchedule,
 } from '../use-cases/decide-booking';
@@ -71,9 +77,27 @@ export class FirestoreBookingStore {
     decide: (
       snapshot: BookingSnapshot,
     ) => Result<BookingDecision, CommitBookingError>,
-  ): Promise<Result<BookingDecision, CommitBookingError>> {
+  ): Promise<Result<CommitOutcome, CommitBookingError>> {
     try {
       return await this.db.runTransaction(async (tx) => {
+        // Idempotency FIRST, and inside the transaction: if this attempt
+        // already committed (response lost, client retried), hand back the
+        // original answer. Without this the retry reads its OWN busy write
+        // and returns `slot_unavailable` — a phantom failure that walks the
+        // user into booking a second real appointment. The read also enters
+        // the conflict set, so a genuine double-fire serialises here too.
+        if (request.attemptId) {
+          const existing = await tx.get(
+            this.db.collection('appointments').doc(request.attemptId),
+          );
+          if (existing.exists) {
+            return ok<CommitOutcome, CommitBookingError>({
+              kind: 'replayed',
+              appointmentId: request.attemptId,
+            });
+          }
+        }
+
         const loaded = await this.load(tx, request);
         if (loaded.isFailure()) return fail(loaded.error);
 
@@ -81,7 +105,10 @@ export class FirestoreBookingStore {
         if (decision.isFailure()) return fail(decision.error);
 
         this.write(tx, decision.value, loaded.value);
-        return ok(decision.value);
+        return ok<CommitOutcome, CommitBookingError>({
+          kind: 'committed',
+          decision: decision.value,
+        });
       });
     } catch (error) {
       // A transaction that exhausts its retries, a network fault, a rules
@@ -91,15 +118,128 @@ export class FirestoreBookingStore {
     }
   }
 
-  /** Every read the decision needs, in one pass, before any write. */
+  /**
+   * Move an EXISTING appointment to a new time, atomically.
+   *
+   * The same decision the commit path runs, with one difference that is the
+   * whole reason this cannot be "cancel, then book": an appointment must not
+   * collide with ITSELF. Its own intervals are already in the busy
+   * projection, so the placement check is run against a projection with this
+   * appointment's contribution SUBTRACTED — which is exact rather than
+   * approximate, because the merge that built those spans is reversible: a
+   * merged run minus the intervals one appointment put there is the union of
+   * what everyone else put there, and no two appointments overlap by
+   * construction.
+   *
+   * The old day's projection is not touched here. The write lands on the
+   * appointment, and `rebuildBusyOnAppointmentChange` recomputes BOTH sides
+   * from live truth (it already reads keys from before and after the write,
+   * for exactly this case). The new day's spans ARE merged inline, closing
+   * the one window that matters: nobody else may take the slot this
+   * appointment just moved into.
+   */
+  async reschedule(
+    appointmentId: string,
+    ownerUserId: string,
+    request: DecideBookingRequest,
+    decide: (
+      snapshot: BookingSnapshot,
+      current: PersistedDocument,
+    ) => Result<BookingDecision, CommitBookingError>,
+  ): Promise<Result<CommitOutcome, CommitBookingError>> {
+    try {
+      return await this.db.runTransaction(async (tx) => {
+        const ref = this.db.collection('appointments').doc(appointmentId);
+        const snap = await tx.get(ref);
+        const current = snap.data();
+        if (!current || current['ownerUserId'] !== ownerUserId) {
+          // Indistinguishable from not-found on purpose: confirming that an
+          // id EXISTS to someone who does not own it is a leak.
+          return fail<CommitOutcome, CommitBookingError>(
+            new CommitBookingInvalidInputError('appointmentId'),
+          );
+        }
+
+        const loaded = await this.load(tx, request);
+        if (loaded.isFailure()) return fail(loaded.error);
+
+        const freed = this.withoutOwnContribution(loaded.value, current);
+        const decision = decide(freed.snapshot, current);
+        if (decision.isFailure()) return fail(decision.error);
+
+        this.write(tx, decision.value, freed);
+        return ok<CommitOutcome, CommitBookingError>({
+          kind: 'committed',
+          decision: decision.value,
+        });
+      });
+    } catch (error) {
+      return fail(new CommitBookingStoreError(error));
+    }
+  }
+
+  /**
+   * The same loaded attempt, minus what THIS appointment already occupies.
+   *
+   * Only the decision's view is narrowed — `rawBusy` (what the write merges
+   * onto) is left exactly as read, because the write must not drop spans
+   * that belong to other bookings.
+   */
+  private withoutOwnContribution(
+    loaded: LoadedAttempt,
+    current: PersistedDocument,
+  ): LoadedAttempt {
+    const own = busyContributionsOf(current);
+    if (own.size === 0) return loaded;
+
+    const busy = new Map(loaded.snapshot.busy);
+    for (const [key, contribution] of own) {
+      const existing = busy.get(key);
+      if (!existing) continue;
+      busy.set(key, Interval.subtract(existing, contribution.intervals));
+    }
+    return { ...loaded, snapshot: { ...loaded.snapshot, busy } };
+  }
+
+  /**
+   * Every read the decision needs, in TWO batched round trips, before any
+   * write.
+   *
+   * Phase 1 fetches the location, the services and the rosters together —
+   * none of those fetches depends on another's data. Phase 2 fetches the
+   * busy docs, and genuinely cannot join phase 1: a busy KEY is
+   * `${barberId}__${dayKey}` and the day key comes from parsing the seat's
+   * start in the shop's zone, which phase 1 is what provides. The earlier
+   * shape awaited one `tx.get` per document — seven serialized round trips
+   * for a two-seat party — which billed the same reads but held the
+   * transaction (and its conflict window on the hot busy docs) open several
+   * times longer than necessary.
+   */
   private async load(
     tx: Transaction,
     request: DecideBookingRequest,
   ): Promise<Result<LoadedAttempt, CommitBookingError>> {
-    const locationSnap = await tx.get(
-      this.db.collection('locations').doc(request.locationId),
+    // Distinct ids only: a party of four with one barber must not read that
+    // roster four times, and each extra read widens the contention window.
+    const serviceIds = [
+      ...new Set(request.seats.map((seat) => seat.serviceId)),
+    ];
+    const barberIds = [...new Set(request.seats.map((seat) => seat.barberId))];
+
+    const locationRef = this.db.collection('locations').doc(request.locationId);
+    const serviceRefs = serviceIds.map((id) =>
+      this.db.collection('services').doc(id),
     );
-    const locationData = locationSnap.data();
+    const scheduleRefs = barberIds.map((id) =>
+      this.db.collection('barberSchedules').doc(id),
+    );
+
+    const phaseOne = await tx.getAll(
+      locationRef,
+      ...serviceRefs,
+      ...scheduleRefs,
+    );
+    const locationData = phaseOne[0]?.data();
     if (!locationData) {
       return fail(new CommitBookingInvalidInputError('locationId'));
     }
@@ -109,17 +249,9 @@ export class FirestoreBookingStore {
     const shopHours = (locationData['hours'] ??
       []) as readonly LocationDayHours[];
 
-    // Distinct ids only: a party of four with one barber must not read that
-    // roster four times, and each extra read widens the contention window.
-    const serviceIds = [
-      ...new Set(request.seats.map((seat) => seat.serviceId)),
-    ];
-    const barberIds = [...new Set(request.seats.map((seat) => seat.barberId))];
-
     const services: Service[] = [];
-    for (const serviceId of serviceIds) {
-      const snap = await tx.get(this.db.collection('services').doc(serviceId));
-      const data = snap.data();
+    for (const [index, serviceId] of serviceIds.entries()) {
+      const data = phaseOne[1 + index]?.data();
       if (!data) continue;
       const service = toService(serviceId, data);
       // A malformed or inactive service is simply ABSENT from the snapshot;
@@ -129,11 +261,8 @@ export class FirestoreBookingStore {
     }
 
     const schedules = new Map<string, LoadedSchedule>();
-    for (const barberId of barberIds) {
-      const snap = await tx.get(
-        this.db.collection('barberSchedules').doc(barberId),
-      );
-      const data = snap.data();
+    for (const [index, barberId] of barberIds.entries()) {
+      const data = phaseOne[1 + serviceIds.length + index]?.data();
       if (!data) continue;
       const schedule = toSchedule(data, zone);
       if (schedule) schedules.set(barberId, schedule);
@@ -155,18 +284,39 @@ export class FirestoreBookingStore {
 
     const rawBusy = new Map<string, readonly PersistedSlot[]>();
     const busy = new Map<string, readonly Interval[]>();
-    for (const key of busyKeys) {
-      // Read even when absent: an EMPTY read still enters the transaction's
-      // conflict set, so two clients racing for a barber's first booking of
-      // the day still serialise.
-      const snap = await tx.get(this.db.collection('barberBusy').doc(key));
-      const slots = (snap.data()?.['busy'] ?? []) as readonly PersistedSlot[];
-      rawBusy.set(key, slots);
-      busy.set(key, busyIntervalsOf(slots, zone));
+    const exceptions = new Map<
+      string,
+      NonNullable<ReturnType<typeof exceptionFromDocument>>
+    >();
+    const orderedKeys = [...busyKeys];
+    if (orderedKeys.length > 0) {
+      // Busy AND published exceptions for the same (barber, day) keys, one
+      // round trip. Read even when absent: an EMPTY read still enters the
+      // transaction's conflict set, so two clients racing for a barber's
+      // first booking of the day still serialise — and a commit racing a
+      // just-declared day off loses honestly.
+      const snaps = await tx.getAll(
+        ...orderedKeys.map((key) => this.db.collection('barberBusy').doc(key)),
+        ...orderedKeys.map((key) =>
+          this.db.collection(SCHEDULE_EXCEPTIONS_COLLECTION).doc(key),
+        ),
+      );
+      for (const [index, key] of orderedKeys.entries()) {
+        const slots = (snaps[index]?.data()?.['busy'] ??
+          []) as readonly PersistedSlot[];
+        rawBusy.set(key, slots);
+        busy.set(key, busyIntervalsOf(slots, zone));
+
+        const exceptionData = snaps[orderedKeys.length + index]?.data();
+        if (exceptionData) {
+          const exception = exceptionFromDocument(exceptionData);
+          if (exception) exceptions.set(key, exception);
+        }
+      }
     }
 
     return ok({
-      snapshot: { zone, shopHours, services, schedules, busy },
+      snapshot: { zone, shopHours, services, schedules, busy, exceptions },
       rawBusy,
     });
   }
@@ -212,13 +362,24 @@ export class FirestoreBookingStore {
         zone,
         // Merged onto what THIS attempt read — see `LoadedAttempt`.
         busy: mergeBusy(loaded.rawBusy.get(key) ?? [], entry.intervals, zone),
+        // TTL mirror: no read path wants a busy day 30 days gone (the client
+        // range starts at today; commit reads current days), and expiring
+        // them also caps what the world-readable projection exposes.
+        purgeAt: busyPurgeAt(entry.dayKey),
       });
     }
   }
 }
 
+/** The busy projection's TTL horizon: 30 days after the day itself. */
+export function busyPurgeAt(dayKey: string): Timestamp {
+  return Timestamp.fromMillis(
+    new Date(`${dayKey}T00:00:00Z`).getTime() + 30 * 24 * 3_600_000,
+  );
+}
+
 /** Firestore doc → `Service`, or `null` when it is unbookable. */
-function toService(id: string, data: DocumentData): Service | null {
+export function toService(id: string, data: DocumentData): Service | null {
   if (data['status'] !== 'active') return null;
   const result = Service.reconstitute({
     id,
@@ -252,7 +413,10 @@ function toService(id: string, data: DocumentData): Service | null {
  * `decideBooking` reads as "not rostered": fail-closed, because treating an
  * unreadable roster as unrestricted would write a booking nobody works.
  */
-function toSchedule(data: DocumentData, zone: string): LoadedSchedule | null {
+export function toSchedule(
+  data: DocumentData,
+  zone: string,
+): LoadedSchedule | null {
   const versions: StaffScheduleVersion[] = [];
   for (const raw of (data['versions'] ?? []) as DocumentData[]) {
     const from = CalendarDay.create(String(raw['effectiveFrom'] ?? ''), zone);

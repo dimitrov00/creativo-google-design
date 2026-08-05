@@ -10,6 +10,8 @@ import {
 } from '@creativo/domain/catalog';
 import {
   Appointment,
+  BookingContact,
+  type BookingContactProps,
   BookingPolicy,
   CalendarDay,
   Interval,
@@ -17,6 +19,7 @@ import {
   SeatId,
   SeatLabel,
   SeatSubject,
+  ScheduleException,
   StaffScheduleHistory,
   buildDayWindows,
   shopDayHours,
@@ -52,6 +55,23 @@ export interface RequestedSeat {
 export interface DecideBookingRequest {
   readonly locationId: string;
   readonly seats: readonly RequestedSeat[];
+  /**
+   * Client-minted idempotency key, used VERBATIM as the appointment id when
+   * present (shape-validated at the callable). A retry that lost its
+   * response then finds its own committed appointment by id instead of
+   * seeing its own busy write and bouncing `slot_unavailable` — which sent
+   * users off to book a second real slot.
+   */
+  readonly attemptId?: string;
+  /**
+   * Who the shop calls about this booking, and what they should know — the
+   * client's own details by default, or a one-time override.
+   *
+   * Contact details only. Ownership comes from the verified token and is
+   * never read from here, so a caller choosing a name and a number changes
+   * nothing about who may see or cancel the appointment.
+   */
+  readonly contact?: BookingContactProps;
 }
 
 /** One barber's roster, as loaded from `barberSchedules/{barberId}`. */
@@ -73,6 +93,12 @@ export interface BookingSnapshot {
   readonly schedules: ReadonlyMap<string, LoadedSchedule>;
   /** Existing busy intervals keyed by `${barberId}__${dayKey}`, UNPADDED. */
   readonly busy: ReadonlyMap<string, readonly Interval[]>;
+  /**
+   * Published schedule exceptions keyed by `${barberId}__${dayKey}` — the
+   * sanitized public docs, read in the SAME transaction as the busy set so
+   * a commit racing a just-declared day off loses honestly.
+   */
+  readonly exceptions: ReadonlyMap<string, ScheduleException>;
 }
 
 /** A span to add to one barber's public busy projection. */
@@ -86,6 +112,16 @@ export interface BookingDecision {
   readonly appointment: Appointment;
   readonly busyWrites: readonly BusyWrite[];
 }
+
+/**
+ * What a commit attempt resolved to: a fresh decision, or the discovery that
+ * THIS attempt already committed. Replay carries only the id — the original
+ * response's one payload — because a retry after a lost response needs its
+ * answer back, not a re-parsed aggregate.
+ */
+export type CommitOutcome =
+  | { readonly kind: 'committed'; readonly decision: BookingDecision }
+  | { readonly kind: 'replayed'; readonly appointmentId: string };
 
 export interface DecideBookingDeps {
   readonly now: ZonedDateTime;
@@ -159,7 +195,9 @@ export function decideBooking(
   );
 
   const notBeforeMs = deps.now.toMillis() + deps.policy.minLeadMinutes * 60_000;
-  const horizonEnd = horizonEndDay(deps.now, deps.policy.horizonDays);
+  const horizonEnd = deps.policy.horizonEndFrom(
+    CalendarDay.fromZonedDateTime(deps.now),
+  );
 
   /** Per barber+day, the spans THIS booking claims — for the projection write. */
   const busyWrites: BusyWrite[] = [];
@@ -226,7 +264,9 @@ export function decideBooking(
 
     const day = CalendarDay.fromZonedDateTime(start);
     if (horizonEnd.isBefore(day)) {
-      return fail(new CommitBookingBeyondHorizonError(deps.policy.horizonDays));
+      return fail(
+        new CommitBookingBeyondHorizonError(deps.policy.horizonMonths),
+      );
     }
 
     // SERVER-RESOLVED terms — the whole point of the round trip.
@@ -295,11 +335,25 @@ export function decideBooking(
     });
   }
 
+  // The contact is validated HERE, with the rest of the request, so an
+  // unreachable number is refused before an appointment exists rather than
+  // discovered when the shop tries to call. Absent is allowed (a booking
+  // still works without one); present-and-broken is not.
+  let contact: BookingContact | null = null;
+  if (request.contact) {
+    const contactResult = BookingContact.create(request.contact);
+    if (contactResult.isFailure()) {
+      return fail(new CommitBookingInvalidInputError('contact'));
+    }
+    contact = contactResult.value;
+  }
+
   const appointmentResult = Appointment.create({
-    id: deps.nextId(),
+    id: request.attemptId ?? deps.nextId(),
     locationId: locationId.value,
     seats,
     now: deps.now,
+    contact,
   });
   if (appointmentResult.isFailure()) {
     // This is where a party's own seats colliding on one barber is caught,
@@ -337,11 +391,12 @@ function checkPlacement(input: {
   // Windows for the whole day, then narrowed to the shop being booked. A
   // barber's day can span two shops, and a Center booking may only use a
   // Center window — their Mladost afternoon is somebody else's capacity.
+  const exception = snapshot.exceptions.get(busyKey(barberId.value, day.key()));
   const windows = windowsAt(
     buildDayWindows({
       day,
       schedule: schedule.history,
-      exceptions: [],
+      exceptions: exception ? [exception] : [],
       shopHours: new Map([
         [locationId.value, shopDayHours(day, locationId, snapshot.shopHours)],
       ]),
@@ -397,13 +452,4 @@ function toSubject(
     return fail(new CommitBookingInvalidInputError('guest label'));
   }
   return ok(SeatSubject.anonymous(label.value));
-}
-
-/** The last bookable day — walked in calendar days, never `+ n × 24h`. */
-function horizonEndDay(now: ZonedDateTime, horizonDays: number): CalendarDay {
-  let cursor = CalendarDay.fromZonedDateTime(now);
-  for (let index = 0; index < horizonDays; index++) {
-    cursor = cursor.next();
-  }
-  return cursor;
 }
