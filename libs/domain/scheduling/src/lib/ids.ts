@@ -36,6 +36,18 @@ export class SeatId extends Id<'Seat'> {
   }
 }
 
+export class WaitlistRequestId extends Id<'WaitlistRequest'> {
+  private constructor(value: string) {
+    super(value);
+  }
+  static create(raw: string): Result<WaitlistRequestId, EmptyIdError> {
+    return createId('WaitlistRequestId', raw, (v) => new WaitlistRequestId(v));
+  }
+  static generate(): WaitlistRequestId {
+    return new WaitlistRequestId(crypto.randomUUID());
+  }
+}
+
 /**
  * A companion/guest slot on a `BookingParty`, before it graduates into a
  * real `Seat` on the confirmed `Appointment`. Deliberately has NO

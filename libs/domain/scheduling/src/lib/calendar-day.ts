@@ -112,6 +112,45 @@ export class CalendarDay {
     return CalendarDay.fromZonedDateTime(this.startOfDay().plusDays(-1));
   }
 
+  /**
+   * `count` days away, walking one day at a time.
+   *
+   * Deliberately a walk and not `+ count * 86_400_000`: a day is 23 or 25
+   * hours on a transition, so millisecond arithmetic silently repeats or skips
+   * a date twice a year. `count` may be negative.
+   */
+  plusDays(count: number): CalendarDay {
+    let cursor = count > 0 ? this.next() : this.previous();
+    if (count === 0) return this;
+    for (let step = 1; step < Math.abs(count); step++) {
+      cursor = count > 0 ? cursor.next() : cursor.previous();
+    }
+    return cursor;
+  }
+
+  /** The 1st of this day's month, same zone. */
+  startOfMonth(): CalendarDay {
+    const first = CalendarDay.create(`${this.key().slice(0, 8)}01`, this.zone);
+    if (first.isFailure()) throw new Error('unreachable: validated day');
+    return first.value;
+  }
+
+  /**
+   * The last day of this day's month — 28th, 29th, 30th or 31st, discovered by
+   * walking rather than by a lookup table with a leap-year rule in it.
+   */
+  endOfMonth(): CalendarDay {
+    if (this.next().month !== this.month) return this;
+    let cursor = this.next();
+    while (cursor.next().month === cursor.month) cursor = cursor.next();
+    return cursor;
+  }
+
+  /** Same year and month — what a month grid asks of every cell it renders. */
+  isSameMonthAs(other: CalendarDay): boolean {
+    return this.year === other.year && this.month === other.month;
+  }
+
   /** ISO weekday: 1 = Monday … 7 = Sunday. The roster pattern's key. */
   weekday(): number {
     return this.startOfDay().weekday;

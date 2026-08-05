@@ -30,6 +30,7 @@ import {
   canTransition,
   cancelled,
 } from './appointment-status';
+import { BookingContact } from './booking-contact';
 import { AppointmentId } from './ids';
 import { EmptyIdError } from './ids.errors';
 import { Seat } from './seat';
@@ -49,6 +50,12 @@ export interface CreateAppointmentProps {
   locationId: string;
   seats: Seat[];
   now: ZonedDateTime;
+  /**
+   * Who the shop calls about this booking, and what they should know first.
+   * Nullable: appointments written before contacts existed have none, and a
+   * staff-entered walk-in may genuinely have nobody to call.
+   */
+  contact?: BookingContact | null;
 }
 
 export interface ReconstituteAppointmentProps {
@@ -56,6 +63,7 @@ export interface ReconstituteAppointmentProps {
   locationId: string;
   seats: Seat[];
   status: AppointmentStatus;
+  contact?: BookingContact | null;
 }
 
 /**
@@ -88,6 +96,13 @@ export class Appointment {
     readonly locationId: LocationId,
     readonly seats: readonly Seat[],
     readonly status: AppointmentStatus,
+    /**
+     * A SNAPSHOT of the contact details this booking was made with — never a
+     * pointer to the profile, which is free to change afterwards. See
+     * `BookingContact`. Authority still rides on `ownerUserId`; this is who
+     * to phone, not who owns anything.
+     */
+    readonly contact: BookingContact | null = null,
   ) {}
 
   /** New appointment — starts `pending`; the party must begin in the future. */
@@ -113,6 +128,7 @@ export class Appointment {
     locationId: string;
     seats: Seat[];
     status: AppointmentStatus;
+    contact?: BookingContact | null;
   }): Result<Appointment, AppointmentError[]> {
     const idResult = AppointmentId.create(props.id);
     const locationIdResult = LocationId.create(props.locationId);
@@ -128,7 +144,15 @@ export class Appointment {
     }
     const [id, locationId] = combined.value;
 
-    return ok(new Appointment(id, locationId, props.seats, props.status));
+    return ok(
+      new Appointment(
+        id,
+        locationId,
+        props.seats,
+        props.status,
+        props.contact ?? null,
+      ),
+    );
   }
 
   private static validateSeats(seats: Seat[]): AppointmentError[] {

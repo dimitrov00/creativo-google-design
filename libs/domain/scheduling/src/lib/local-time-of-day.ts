@@ -1,5 +1,6 @@
 import { Result, ZonedDateTime, fail, ok } from '@creativo/domain/kernel';
 import { CalendarDay } from './calendar-day';
+import { Interval } from './interval';
 import {
   InvalidLocalTimeRangeError,
   InvalidTimeOfDayError,
@@ -123,6 +124,68 @@ export class LocalTimeRange {
       this.start.minutesFromMidnight() < other.end.minutesFromMidnight() &&
       other.start.minutesFromMidnight() < this.end.minutesFromMidnight()
     );
+  }
+
+  /**
+   * This clock-face span on a specific day, as an epoch interval.
+   *
+   * The single place a declared window ("I'm free 08:00–12:00") becomes
+   * something the availability engine can intersect — and therefore the single
+   * place DST can bite, exactly as {@link LocalTimeOfDay.onDay} documents.
+   * Both ends are resolved on the SAME day, so a Sofia spring-forward window
+   * is 3 hours of wall clock and 2 hours of real time, which is the truth.
+   */
+  onDay(day: CalendarDay): Result<Interval, InvalidTimeOfDayError> {
+    const start = this.start.onDay(day);
+    if (start.isFailure()) return fail(start.error);
+    const end = this.end.onDay(day);
+    if (end.isFailure()) return fail(end.error);
+    return ok(Interval.of(start.value.toMillis(), end.value.toMillis()));
+  }
+
+  equals(other: LocalTimeRange): boolean {
+    return this.start.equals(other.start) && this.end.equals(other.end);
+  }
+
+  /**
+   * Sorted, with overlapping and ABUTTING spans merged.
+   *
+   * Abutting is merged as well as overlapping — `08:00–12:00` and
+   * `12:00–15:00` are one availability of `08:00–15:00`, and leaving them as
+   * two would show a person two rows describing one continuous morning.
+   * Merging in minutes-from-midnight keeps this pure integer arithmetic on
+   * clock faces; no day, no zone, no DST.
+   */
+  static normalize(
+    ranges: readonly LocalTimeRange[],
+  ): readonly LocalTimeRange[] {
+    const sorted = ranges
+      .slice()
+      .sort(
+        (a, b) =>
+          a.start.minutesFromMidnight() - b.start.minutesFromMidnight() ||
+          a.end.minutesFromMidnight() - b.end.minutesFromMidnight(),
+      );
+
+    const merged: LocalTimeRange[] = [];
+    for (const range of sorted) {
+      const last = merged.at(-1);
+      if (
+        !last ||
+        last.end.minutesFromMidnight() < range.start.minutesFromMidnight()
+      ) {
+        merged.push(range);
+        continue;
+      }
+      if (last.end.minutesFromMidnight() >= range.end.minutesFromMidnight()) {
+        continue;
+      }
+      // Widen in place. `of` cannot fail here: `last.start` already precedes
+      // `last.end`, which this branch has established precedes `range.end`.
+      const widened = LocalTimeRange.of(last.start, range.end);
+      if (widened.isSuccess()) merged[merged.length - 1] = widened.value;
+    }
+    return merged;
   }
 
   toString(): string {

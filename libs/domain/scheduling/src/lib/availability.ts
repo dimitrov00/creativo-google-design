@@ -95,6 +95,16 @@ export interface AvailabilityQuery {
   readonly notBeforeMs: number;
   /** Cap on returned options, so a wide-open day cannot produce thousands. */
   readonly maxOptions?: number;
+  /**
+   * Only consider time inside these intervals — the client's own declared
+   * windows ("the 26th, but only 08:00–12:00").
+   *
+   * `undefined` means unconstrained, which is not the same as `[]`: an empty
+   * array is a caller saying "nothing qualifies" and correctly yields no
+   * options. See {@link DayWindows.toIntervals}, which returns the whole day
+   * rather than `[]` for an unnarrowed day precisely so the two never blur.
+   */
+  readonly withinMs?: readonly Interval[];
 }
 
 /**
@@ -130,12 +140,30 @@ export function candidateStarts(
   return starts;
 }
 
-/** Free time for a barber: windows minus busy. */
-function freeFor(barber: BarberDayAvailability): readonly Interval[] {
-  return Interval.subtract(
+/**
+ * Free time for a barber: rostered windows, minus busy, clipped to the
+ * caller's mask.
+ *
+ * The mask is how "I can only do 08:00–12:00" reaches the search. It is
+ * applied HERE, to the free set, rather than by filtering the returned options
+ * afterwards — and that distinction is load-bearing twice over. The
+ * enumeration is capped (`maxOptions`), so post-filtering spends the whole
+ * budget enumerating 14:00 arrangements and then discards them, reporting "no
+ * availability" for a morning that was wide open. And a mask that clips free
+ * time also constrains the SEQUENTIAL arrangements a party can be served by,
+ * so a second seat cannot be placed outside the window the person declared.
+ */
+function freeFor(
+  barber: BarberDayAvailability,
+  withinMs: readonly Interval[] | undefined,
+): readonly Interval[] {
+  const free = Interval.subtract(
     barber.windows.map((window) => window.interval),
     barber.busy,
   );
+  // `undefined` is "unconstrained", NOT "nothing allowed" — an empty mask
+  // would silently invert the caller's meaning into an empty grid.
+  return withinMs === undefined ? free : Interval.intersect(free, withinMs);
 }
 
 /**
@@ -227,11 +255,13 @@ function enumerateOptions(
   query: AvailabilityQuery,
   mode: { readonly dedupeByStart: boolean },
 ): readonly AvailabilityOption[] {
-  const { lines, barbers, policy, notBeforeMs } = query;
+  const { lines, barbers, policy, notBeforeMs, withinMs } = query;
   if (lines.length === 0) return [];
 
   const freeByBarber = new Map<string, readonly Interval[]>(
-    barbers.map((barber) => [barber.barberId.value, freeFor(barber)] as const),
+    barbers.map(
+      (barber) => [barber.barberId.value, freeFor(barber, withinMs)] as const,
+    ),
   );
 
   // Rule 1 — a stable, constraint-first line order.

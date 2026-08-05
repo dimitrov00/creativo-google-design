@@ -4,6 +4,8 @@ export * from './lib/ids.errors';
 export * from './lib/interval';
 export * from './lib/calendar-day';
 export * from './lib/calendar-day.errors';
+export * from './lib/booking-contact';
+export * from './lib/booking-contact.errors';
 export * from './lib/seat-label';
 export * from './lib/seat-label.errors';
 export * from './lib/time-slot';
@@ -28,6 +30,13 @@ export * from './lib/roster-window';
 export * from './lib/booking-policy';
 export * from './lib/booking-policy.errors';
 export * from './lib/availability';
+
+// ── Flexible "when" — days, and the spans within them ────────────────────
+export * from './lib/day-windows';
+export * from './lib/flexible-when';
+export * from './lib/flexible-when.errors';
+export * from './lib/waitlist-request';
+export * from './lib/waitlist-request.errors';
 
 // ── Occupancy / statistics ───────────────────────────────────────────────
 export * from './lib/occupancy-reason';

@@ -70,7 +70,8 @@ const policy = BookingPolicy.create({
   maxPartySize: 5,
   slotStepMinutes: 15,
   minLeadMinutes: 0,
-  horizonDays: 60,
+  horizonMonths: 2,
+  maxFlexibleDays: 7,
   cancellationWindowHours: 24,
 });
 if (policy.isFailure()) throw new Error('bad fixture');
@@ -79,7 +80,11 @@ const POLICY = policy.value;
 function solve(
   lines: readonly AvailabilityLine[],
   barbers: readonly BarberDayAvailability[],
-  overrides: { notBeforeMs?: number; maxOptions?: number } = {},
+  overrides: {
+    notBeforeMs?: number;
+    maxOptions?: number;
+    withinMs?: readonly Interval[];
+  } = {},
 ): readonly AvailabilityOption[] {
   return availableOptions({
     lines,
@@ -87,6 +92,7 @@ function solve(
     policy: POLICY,
     notBeforeMs: overrides.notBeforeMs ?? 0,
     maxOptions: overrides.maxOptions,
+    withinMs: overrides.withinMs,
   });
 }
 
@@ -694,5 +700,89 @@ describe('availableStarts — one arrangement per time, and the best one', () =>
     expect(JSON.stringify(availableStarts(query))).toBe(
       JSON.stringify(availableStarts(query)),
     );
+  });
+});
+
+// ── The declared-window mask ─────────────────────────────────────────────
+// How "I'm free on the 26th, but only 08:00–12:00 and 15:00–16:30" reaches
+// the search. Applied to FREE TIME rather than to the returned options, for
+// two reasons the tests below pin: the enumeration is capped, and a mask has
+// to constrain a party's later seats too.
+describe('availableOptions — withinMs', () => {
+  it('offers only starts inside the declared window', () => {
+    const options = solve([line('a', 60)], [barber(IVAN)], {
+      withinMs: [iv(9, 11)],
+    });
+    const starts = options.map((option) => option.envelope.startMs / H(1));
+    expect(Math.min(...starts)).toBe(9);
+    // A 60-minute service inside 09:00–11:00 last starts at 10:00.
+    expect(Math.max(...starts)).toBe(10);
+  });
+
+  it('honours several disjoint windows in one day', () => {
+    const options = solve([line('a', 60)], [barber(IVAN)], {
+      withinMs: [iv(8, 10), iv(15, 16.5)],
+    });
+    const hours = options.map((option) => option.envelope.startMs / H(1));
+    // The shift is 09:00–18:00, so the morning window contributes only its
+    // overlap with the roster (09:00, the one hour that fits before 10:00),
+    // and the afternoon window runs to the last 60-minute start that still
+    // ends by 16:30.
+    expect(hours).toEqual([9, 15, 15.25, 15.5]);
+  });
+
+  it('treats an undefined mask as unconstrained, NOT as empty', () => {
+    // The distinction `DayWindows.toIntervals` exists to preserve: an
+    // unnarrowed day must search the whole day, not nothing.
+    expect(solve([line('a', 60)], [barber(IVAN)]).length).toBeGreaterThan(0);
+  });
+
+  it('treats an EMPTY mask as nothing qualifying', () => {
+    expect(solve([line('a', 60)], [barber(IVAN)], { withinMs: [] })).toEqual(
+      [],
+    );
+  });
+
+  it('constrains a party’s LATER seats too, not just the first', () => {
+    // Two 60-minute seats, one barber, masked to 09:00–11:00. Sequential is
+    // the only shape that fits, and BOTH halves have to land inside the
+    // window — a mask applied to the returned options rather than to free
+    // time could hand back 09:00 paired with 11:00.
+    const options = solve(
+      [
+        line('a', 60, BarberPref.specific(IVAN)),
+        line('b', 60, BarberPref.specific(IVAN)),
+      ],
+      [barber(IVAN)],
+      { withinMs: [iv(9, 11)] },
+    );
+    expect(options.length).toBeGreaterThan(0);
+    for (const option of options) {
+      for (const assignment of option.assignments) {
+        expect(assignment.slot.startMs).toBeGreaterThanOrEqual(H(9));
+        expect(assignment.slot.endMs).toBeLessThanOrEqual(H(11));
+      }
+    }
+    // Two interchangeable seats can be ordered either way and both are
+    // legitimate; which the walk reaches first is an implementation detail
+    // this test has no business pinning. What it does pin: the window admits
+    // exactly the one back-to-back placement, in some order.
+    const placements = options.map((option) =>
+      option.assignments
+        .map((assignment) => assignment.slot.startMs / H(1))
+        .sort((a, b) => a - b),
+    );
+    expect(placements).toEqual(placements.map(() => [9, 10]));
+  });
+
+  it('still subtracts busy inside the window', () => {
+    const options = solve(
+      [line('a', 60)],
+      [barber(IVAN, { busy: [iv(9, 10)] })],
+      { withinMs: [iv(9, 11)] },
+    );
+    expect(options.map((option) => option.envelope.startMs / H(1))).toEqual([
+      10,
+    ]);
   });
 });

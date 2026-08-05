@@ -26,6 +26,12 @@ export class NotificationId extends Id<'Notification'> {
 export type NotificationKind =
   | 'appointment_reminder'
   | 'appointment_changed'
+  /**
+   * A standing waitlist request found something. The one kind that is
+   * time-critical: the slot it names is not held, so the notification is an
+   * invitation to race for it and its copy has to say so.
+   */
+  | 'waitlist_match'
   | 'reward_granted'
   | 'announcement';
 

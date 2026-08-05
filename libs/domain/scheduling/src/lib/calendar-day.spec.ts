@@ -143,3 +143,46 @@ describe('DateRange', () => {
     expect(range.value.contains(day('2026-08-02'))).toBe(false);
   });
 });
+
+describe('CalendarDay — month arithmetic', () => {
+  const day = (key: string) => {
+    const result = CalendarDay.create(key, 'Europe/Sofia');
+    if (result.isFailure()) throw new Error('bad fixture');
+    return result.value;
+  };
+
+  it('finds the 1st and the last day of a month', () => {
+    expect(day('2026-08-17').startOfMonth().key()).toBe('2026-08-01');
+    expect(day('2026-08-17').endOfMonth().key()).toBe('2026-08-31');
+    expect(day('2026-09-17').endOfMonth().key()).toBe('2026-09-30');
+  });
+
+  it('walks a month end by discovery, not by a leap-year rule', () => {
+    expect(day('2026-02-10').endOfMonth().key()).toBe('2026-02-28');
+    expect(day('2028-02-10').endOfMonth().key()).toBe('2028-02-29');
+  });
+
+  it('is idempotent on a month boundary', () => {
+    expect(day('2026-08-01').startOfMonth().key()).toBe('2026-08-01');
+    expect(day('2026-08-31').endOfMonth().key()).toBe('2026-08-31');
+  });
+
+  it('walks days in both directions across a month boundary', () => {
+    expect(day('2026-08-30').plusDays(3).key()).toBe('2026-09-02');
+    expect(day('2026-09-02').plusDays(-3).key()).toBe('2026-08-30');
+    expect(day('2026-08-17').plusDays(0).key()).toBe('2026-08-17');
+  });
+
+  // The reason it walks rather than adding 86_400_000 × n.
+  it('crosses a DST transition without repeating or skipping a date', () => {
+    // Europe/Sofia springs forward on 2026-03-29 and back on 2026-10-25.
+    expect(day('2026-03-28').plusDays(2).key()).toBe('2026-03-30');
+    expect(day('2026-10-24').plusDays(2).key()).toBe('2026-10-26');
+  });
+
+  it('compares months', () => {
+    expect(day('2026-08-01').isSameMonthAs(day('2026-08-31'))).toBe(true);
+    expect(day('2026-08-31').isSameMonthAs(day('2026-09-01'))).toBe(false);
+    expect(day('2025-08-01').isSameMonthAs(day('2026-08-01'))).toBe(false);
+  });
+});
