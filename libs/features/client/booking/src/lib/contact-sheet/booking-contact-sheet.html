@@ -1,0 +1,134 @@
+<ng-container *transloco="let t">
+  <ui-modal-sheet
+    sheetId="booking-contact-sheet"
+    labelledBy="booking-contact-title"
+    [closeLabel]="t('booking.contact.close')"
+    [open]="true"
+    (dismissed)="dismissed.emit()"
+  >
+    <span sheet-title>{{ t('booking.contact.title') }}</span>
+
+    <ui-stack uiSpacing="loose" class="booking-contact__body">
+      <ui-stack uiSpacing="tight">
+        <h2
+          id="booking-contact-title"
+          uiSheetLargeTitle
+          uiText
+          uiFont="largeTitle"
+        >
+          {{ t('booking.contact.title') }}
+        </h2>
+        <p uiText uiFont="subheadline" uiForegroundStyle="secondary">
+          {{ t('booking.contact.lede') }}
+        </p>
+      </ui-stack>
+
+      <ui-stack uiSpacing="regular">
+        <label>
+          <ui-stack uiSpacing="tight">
+            <span uiText uiFont="footnote">
+              {{ t('booking.contact.nameLabel') }}
+            </span>
+            <input
+              type="text"
+              uiTextField
+              uiControlSize="large"
+              autocomplete="name"
+              data-testid="booking-contact-name"
+              [readonly]="pending()"
+              [value]="name()"
+              (input)="name.set($any($event.target).value)"
+            />
+          </ui-stack>
+        </label>
+
+        <!-- The DS's composite phone control, so the country picker, the
+             as-you-type formatting and the E.164 contract are the SAME ones
+             onboarding and auth use. `value` is non-null only while the
+             number is genuinely valid, which is what gates Save. -->
+        <ui-phone-field
+          uiControlSize="large"
+          [label]="t('booking.contact.phoneLabel')"
+          [locale]="uiLocale()"
+          [defaultCountry]="uiDefaultCountry()"
+          [disabled]="pending()"
+          [pickerTitle]="t('auth.identify.countryPicker')"
+          [searchLabel]="t('auth.identify.countrySearch')"
+          [closeLabel]="t('auth.identify.countryClose')"
+          [noResultsLabel]="t('auth.identify.countryNoResults')"
+          [(country)]="phoneCountry"
+          [(value)]="phone"
+          data-testid="booking-contact-phone"
+        />
+
+        <label>
+          <ui-stack uiSpacing="tight">
+            <span uiText uiFont="footnote">
+              {{ t('booking.contact.emailLabel') }}
+            </span>
+            <input
+              type="email"
+              uiTextField
+              uiControlSize="large"
+              autocomplete="email"
+              inputmode="email"
+              data-testid="booking-contact-email"
+              [readonly]="pending()"
+              [value]="email()"
+              (input)="email.set($any($event.target).value)"
+            />
+          </ui-stack>
+        </label>
+      </ui-stack>
+
+      <!-- Persistence is asked for, never assumed. The switch saves the
+           WHOLE form (owner ruling 2026-08-05) — the footnote's job is to
+           say the one thing it does not touch: the sign-in identifier. -->
+      <ui-stack uiSpacing="tight">
+        <ui-list-group>
+          <ui-list-row uiSize="large">
+            {{ t('booking.contact.saveToProfile') }}
+            <button
+              uiSwitch
+              uiTrailing
+              [(uiOn)]="saveToProfile"
+              [uiDisabled]="pending()"
+              [attr.aria-label]="t('booking.contact.saveToProfile')"
+              data-testid="booking-contact-save-profile"
+            ></button>
+          </ui-list-row>
+        </ui-list-group>
+        <p uiText uiFont="footnote" uiForegroundStyle="secondary">
+          {{ t('booking.contact.loginUnchanged') }}
+        </p>
+      </ui-stack>
+
+      @if (error(); as message) {
+      <p
+        uiText
+        uiFont="footnote"
+        uiForegroundStyle="destructive"
+        role="alert"
+        data-testid="booking-contact-error"
+      >
+        {{ message }}
+      </p>
+      }
+    </ui-stack>
+
+    <ui-sheet-action-bar sheet-overlay [uiVisible]="true">
+      <button
+        type="button"
+        uiButton
+        uiButtonStyle="borderedProminent"
+        [uiSpread]="true"
+        [uiLoading]="pending()"
+        [disabled]="!canSave() || pending()"
+        data-testid="booking-contact-save"
+        (click)="save()"
+      >
+        {{ t('booking.contact.save') }}
+      </button>
+    </ui-sheet-action-bar>
+  </ui-modal-sheet>
+</ng-container>

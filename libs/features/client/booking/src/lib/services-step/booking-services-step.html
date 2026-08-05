@@ -240,6 +240,10 @@
       user simply has not got to yet — so the primary action hands them over
       rather than letting them leave a guest behind and discover it at the
       summary. Only once everyone has something does it become Continue.
+
+      When the empty person is the one already on screen there is nobody to
+      hand over TO, so the button names them and goes quiet — the rule stays
+      visible instead of firing as an error after the press.
     -->
     <button
       stepActions
@@ -247,7 +251,7 @@
       uiButton
       uiButtonStyle="borderedProminent"
       uiControlSize="large"
-      [disabled]="store.lineCount() === 0"
+      [disabled]="forwardBlocked()"
       data-testid="booking-services-continue"
       (click)="advance()"
     >
@@ -549,6 +553,7 @@
   <lib-booking-bag-sheet
     [seats]="seats()"
     [forwardLabel]="forwardLabel()"
+    [forwardBlocked]="forwardBlocked()"
     (editLine)="editFromBag($event)"
     (proceed)="leaveBag(); advance()"
     (dismissed)="bagOpen.set(false)"

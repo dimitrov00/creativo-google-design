@@ -1,7 +1,8 @@
 /*
  * Block, not `contents`: unlike the wizard steps this one does NOT go through
  * `lib-booking-step-layout` — there is no action bar to pin, because there is
- * no next step. It is the growing flex child itself.
+ * no next step. The 100svh centring lives on the template's own frame, the
+ * onboarding reward screen's recipe verbatim.
  */
 :host {
   display: block;
@@ -10,4 +11,10 @@
 /* Expressive centred finale — hero text centred under the mark. */
 .booking-confirmed {
   text-align: center;
+}
+
+/* Long words (a service name, a shop name) wrap rather than escape the
+   centred column. */
+.booking-confirmed {
+  overflow-wrap: break-word;
 }

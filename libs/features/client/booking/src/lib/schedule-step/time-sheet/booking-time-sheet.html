@@ -1,0 +1,147 @@
+<ng-container *transloco="let t">
+  <ui-modal-sheet
+    sheetId="booking-time-sheet"
+    labelledBy="booking-time-title"
+    [closeLabel]="t('booking.schedule.times.close')"
+    [open]="true"
+    data-testid="booking-time-sheet"
+    (dismissed)="dismissed.emit()"
+  >
+    <p sheet-title>{{ dayLabel() }}</p>
+
+    <ui-stack uiSpacing="loose" class="booking-time__body">
+      <ui-stack uiSpacing="tight">
+        <h2
+          id="booking-time-title"
+          uiSheetLargeTitle
+          uiText
+          uiFont="largeTitle"
+        >
+          {{ t('booking.schedule.times.title') }}
+        </h2>
+        <p uiText uiFont="subheadline" uiForegroundStyle="secondary">
+          {{ dayLabel() }}
+        </p>
+      </ui-stack>
+
+      @if (loading()) {
+      <p uiText uiFont="footnote" uiForegroundStyle="secondary">
+        {{ t('booking.schedule.loading') }}
+      </p>
+      } @else if (hasNoTimes()) {
+      <!-- Honest, not blank: this day genuinely cannot hold this party. The
+           bell in the bar below is what it earns — the user has now SEEN there
+           is nothing, which is the only condition the design record ever put
+           on offering the waitlist. -->
+      <ui-stack uiSpacing="compact" data-testid="booking-no-times">
+        <p uiText uiFont="body">{{ t('booking.schedule.noTimes.title') }}</p>
+        <p uiText uiFont="footnote" uiForegroundStyle="secondary">
+          {{ t('booking.schedule.noTimes.body') }}
+        </p>
+      </ui-stack>
+      } @else {
+      <!-- Segmented list runs, one per daypart — the house grouped-list
+           idiom (ui-list-group), not a wall of chips: a row states its time
+           at body scale, carries its shop when "any shop" makes that matter,
+           and shows selection the way every other list on the product does. -->
+      <ui-stack uiSpacing="comfortable" data-testid="booking-times">
+        @for (part of dayparts(); track part.key) {
+        <ui-stack uiSpacing="compact">
+          <!-- A plain caption, NOT `ui-section-header`: that pattern is the
+               marketing eyebrow/title/lede trio and renders at display scale.
+               This is a grouped-list header — the quietest thing on the
+               screen, like an iOS section label. -->
+          <h3 uiText uiFont="footnote" uiForegroundStyle="secondary">
+            {{ t('booking.schedule.daypart.' + part.key) }}
+          </h3>
+          <ui-list-group>
+            @for (start of part.starts; track start.key) {
+            <button
+              uiListRow
+              type="button"
+              [uiInteractive]="true"
+              [uiSelected]="isSelectedStart(start)"
+              data-testid="booking-time"
+              [attr.data-start]="start.startMs"
+              [attr.data-shop]="start.shopKey"
+              (click)="selectStart(start)"
+            >
+              <span uiText uiFont="body">{{ start.label }}</span>
+              @if (start.shopName) {
+              <!-- Only under "any shop": two shops can offer the same minute,
+                   and they are different appointments. -->
+              <span
+                uiTrailing
+                uiText
+                uiFont="footnote"
+                uiForegroundStyle="secondary"
+                >{{ start.shopName }}</span
+              >
+              }
+            </button>
+            }
+          </ui-list-group>
+        </ui-stack>
+        }
+      </ui-stack>
+      }
+
+      <!-- Which arrangement the user just picked. Only for a party: one person
+           served by one barber at the time they tapped explains itself. -->
+      @if (arrangement().length > 0) {
+      <ui-stack uiSpacing="tight" data-testid="booking-arrangement">
+        <p uiText uiFont="footnote" uiForegroundStyle="secondary">
+          {{ t('booking.schedule.arrangement.' + arrangementKind()) }}
+        </p>
+        <ui-list-group>
+          @for (line of arrangement(); track $index) {
+          <ui-list-row uiAlignment="leading">
+            <ui-stack uiSpacing="none">
+              <span uiText uiFont="body">{{ line.personLabel }}</span>
+              <span uiText uiFont="footnote" uiForegroundStyle="secondary">
+                {{ line.barberName }}
+              </span>
+            </ui-stack>
+            <span uiTrailing uiText uiFont="body">{{ line.timeLabel }}</span>
+          </ui-list-row>
+          }
+        </ui-list-group>
+      </ui-stack>
+      }
+    </ui-stack>
+
+    <!-- HIG bottom-bar grammar: the contextual option leading as a quiet
+         icon, the single confirming action trailing.
+
+         The bell is a STANDING option here (owner ruling 2026-08-01) and it
+         watches the ONE day this sheet is about. It is an option, never an
+         admission of failure, which is why it is a quiet icon beside the real
+         action rather than a CTA that replaces it. -->
+    <ui-sheet-action-bar sheet-overlay [uiVisible]="true">
+      <button
+        type="button"
+        uiButton
+        uiButtonStyle="glass"
+        uiControlSize="large"
+        [uiIconOnly]="true"
+        [disabled]="store.pending()"
+        data-testid="booking-time-watch"
+        [attr.aria-label]="t('booking.schedule.times.watchAria')"
+        (click)="watch.emit()"
+      >
+        <ui-icon uiName="calendar.watching" uiScale="medium" />
+      </button>
+      <button
+        type="button"
+        uiButton
+        uiButtonStyle="borderedProminent"
+        uiControlSize="large"
+        [disabled]="!canContinue()"
+        data-testid="booking-time-continue"
+        (click)="confirm()"
+      >
+        {{ t('booking.schedule.times.confirm') }}
+      </button>
+    </ui-sheet-action-bar>
+  </ui-modal-sheet>
+</ng-container>

@@ -92,8 +92,18 @@
         "invalid_guest": "Enter a name for this person.",
         "guest_not_found": "That person is no longer in the booking.",
         "empty_cart": "Pick at least one service to continue.",
+        "seat_without_service": "Everyone in the booking needs at least one service.",
         "invalid_cart_operation": "That item is no longer in your bag.",
-        "party_full": "That's the most people we can seat in one booking."
+        "party_full": "That's the most people we can seat in one booking.",
+        "flexible_days_full": "That's the most days we can search at once.",
+        "no_flexible_days": "Pick at least one day first."
+      },
+      "waitlist": {
+        "unauthenticated": "Sign in so we know who to tell.",
+        "invalid_request": "That request can't be watched — try picking the days again.",
+        "already_watching": "We're already watching those days for you.",
+        "too_many_days": "That's the most days we can watch at once.",
+        "failed": "Something went wrong. Please try again."
       }
     },
     "booking.gateway.failed": "Something went wrong. Please try again.",
@@ -108,7 +118,12 @@
     "booking.commit.beyond_horizon": "We are not taking bookings that far ahead yet.",
     "booking.commit.party_too_large": "A booking seats at most {{maxPartySize}} people.",
     "booking.commit.invariant_violated": "That combination is not possible. Try another time.",
-    "booking.commit.store_failed": "We could not save the booking. Please try again."
+    "booking.commit.store_failed": "We could not save the booking. Please try again.",
+    "booking.cancel.window_closed": "Free cancellation ends {{windowHours}} h before the appointment — call the shop.",
+    "booking.contact.empty_name": "Enter a name for the booking.",
+    "booking.contact.invalid_phone": "That number doesn't look valid.",
+    "booking.contact.invalid_email": "\"{{rawValue}}\" is not a valid email address.",
+    "booking.contact.note_too_long": "A note can be at most {{maxLength}} characters."
   },
   "shell": {
     "forbidden": {
@@ -254,6 +269,7 @@
       "save": "Save changes",
       "addAria": "Add {{service}} for {{person}}",
       "nextPerson": "Now for {{person}}",
+      "pickFor": "Choose for {{person}}",
       "seatAria": "{{person}} — {{count}} services",
       "replaceAria": "Replace and add {{service}} for {{person}}",
       "saveAria": "Save changes to {{service}} for {{person}}",
@@ -262,21 +278,29 @@
     },
     "schedule": {
       "title": "When suits you?",
-      "lede": "Pick a day, then a time — we only show what is genuinely free.",
+      "lede": {
+        "single": "Pick a day, then a time — we only show what is genuinely free."
+      },
       "locationLabel": "Shop",
-      "previousMonth": "Previous month",
-      "nextMonth": "Next month",
-      "dayFree": "{{day}} — times available",
-      "dayFull": "{{day}} — fully booked",
+      "today": "Back to today",
+      "chooseTime": "Choose time",
+      "dayFree": "{{date}} — times available",
+      "dayFull": "{{date}} — fully booked",
       "loading": "Finding times…",
       "daypart": {
         "morning": "Morning",
         "afternoon": "Afternoon",
         "evening": "Evening"
       },
+      "times": {
+        "title": "Pick a time",
+        "close": "Close times",
+        "confirm": "Confirm",
+        "watchAria": "Tell me when a time opens up"
+      },
       "noTimes": {
         "title": "This day is full.",
-        "body": "Try another day — or tell us when you are free and we will call you."
+        "body": "Try another day — or pick several at once and we will search them together."
       },
       "arrangement": {
         "parallel": "You go in together:",
@@ -289,12 +313,23 @@
     },
     "review": {
       "title": "Does this look right?",
-      "lede": "Check it over and confirm — you pay at the shop.",
       "payAtShop": "At the shop:",
-      "confirm": "Confirm booking",
+      "confirm": "Confirm",
       "signInAndConfirm": "Sign in and confirm",
       "confirming": "Confirming…",
-      "signInWhy": "Signing in is what lets you cancel or move it later."
+      "signInWhy": "Signing in is what lets you cancel or move it later.",
+      "directions": "Directions",
+      "services": "Services",
+      "edit": "Edit",
+      "contact": "Contact details",
+      "withBarber": "with {{name}}",
+      "editContact": "Edit contact details",
+      "move": "Move it",
+      "moveTitle": "A new time for the same visit",
+      "noteTitle": "Note for the shop",
+      "noteLede": "Anything the barber should know before your visit.",
+      "noteEdit": "Edit the note",
+      "notePlaceholder": "Add a note (optional)"
     },
     "configure": {
       "variant": "Option",
@@ -317,7 +352,9 @@
       "title": "You're booked!",
       "body": "Your chair is saved. We'll remind you before it's time.",
       "viewAppointments": "See your appointments",
-      "done": "Back to home"
+      "done": "Back to home",
+      "movedTitle": "Moved!",
+      "movedBody": "Your visit is at its new time. We'll remind you before it."
     },
     "location": {
       "title": "Which shop?",
@@ -328,6 +365,27 @@
         "title": "Any shop",
         "detail": "Wherever is soonest"
       }
+    },
+    "waitlisted": {
+      "title": "We're watching those days",
+      "lede": "The moment something opens up in the hours you gave us, you'll get a notification.",
+      "notHeld": "Nothing is reserved — when we tell you, be quick.",
+      "days": "Days we're watching",
+      "done": "Done"
+    },
+    "contact": {
+      "title": "Contact details",
+      "lede": "For this booking only — this is the number the shop will call.",
+      "nameLabel": "Name",
+      "phoneLabel": "Phone",
+      "emailLabel": "Email",
+      "noteLabel": "Note for the shop",
+      "notePlaceholder": "e.g. I'll be 5 minutes late",
+      "save": "Done",
+      "close": "Close",
+      "profileFailed": "The booking details are set, but your profile didn't save. Try again from your profile.",
+      "saveToProfile": "Save the changes to my profile",
+      "loginUnchanged": "Your sign-in details are not changed from here."
     }
   },
   "account": {
@@ -341,7 +399,8 @@
         "subtitle": "Pick a barber, service and time"
       },
       "appointments": {
-        "title": "Appointments"
+        "title": "Appointments",
+        "subtitle": "Upcoming and past"
       },
       "profile": {
         "title": "Personal information",
@@ -753,6 +812,70 @@
       "finalEyebrow": "You know the direction",
       "finalTitle": "Leave the rest to us.",
       "finalCta": "Book your chair"
+    }
+  },
+  "appointments": {
+    "header": {
+      "back": "Back",
+      "title": "Appointments"
+    },
+    "bookCta": "Book a new appointment",
+    "empty": {
+      "title": "No upcoming appointments.",
+      "cta": "Book an appointment",
+      "filtered": "No visits match this filter."
+    },
+    "view": {
+      "list": "List",
+      "calendar": "Calendar",
+      "label": "View"
+    },
+    "calendar": {
+      "today": "Back to today"
+    },
+    "status": {
+      "pending": "Requested",
+      "confirmed": "Confirmed",
+      "completed": "Past",
+      "cancelled": "Cancelled",
+      "no_show": "Missed"
+    },
+    "cancel": {
+      "trigger": "Cancel",
+      "sheetTitle": "Cancel this appointment?",
+      "reasonLabel": "Reason (optional)",
+      "confirm": "Cancel appointment",
+      "dismiss": "Keep it",
+      "deadline": "Free cancellation until {{deadline}}",
+      "windowClosed": "The free-cancellation window has closed — call the shop."
+    },
+    "count": "{{count}} visits",
+    "sections": {
+      "upcoming": "Upcoming"
+    },
+    "visit": {
+      "close": "Close",
+      "barberRole": "Barber",
+      "unknownService": "Visit",
+      "severalBarbers": "{{count}} barbers",
+      "severalThatDay": "{{day}} · {{count}} visits",
+      "addToCalendar": "Add to calendar",
+      "directions": "Directions",
+      "call": "Call",
+      "note": "Note for the shop",
+      "atTheShop": "At the shop",
+      "bookAgain": "Book again",
+      "reschedule": "Reschedule"
+    },
+    "countOne": "1 visit",
+    "filter": {
+      "label": "Filter",
+      "all": "All",
+      "upcoming": "Upcoming",
+      "completed": "Past",
+      "cancelled": "Cancelled",
+      "no_show": "No-shows",
+      "clear": "Show all"
     }
   }
 }

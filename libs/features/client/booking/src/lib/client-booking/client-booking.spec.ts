@@ -1,6 +1,6 @@
 import { EnvironmentProviders, Injectable } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { provideRouter } from '@angular/router';
+import { Router, provideRouter } from '@angular/router';
 import {
   Translation,
   TranslocoLoader,
@@ -16,10 +16,17 @@ import { AVATAR_UPLOADER, PROFILE_PORT } from '@creativo/application/accounts';
 import {
   BOOKING_DRAFT_STORE,
   BOOKING_GATEWAY,
+  BOOKING_POLICY_READER,
+  ZonedDateTime,
+  BookingPolicy,
+  WAITLIST_GATEWAY,
+  APPOINTMENT_REPOSITORY,
+  WAITLIST_READER,
   MAX_PARTY_SIZE,
   ok,
 } from '@creativo/application/booking';
 import { CATALOG_READER, MEDIA_READER } from '@creativo/application/catalog';
+import { CLOCK } from '@creativo/application/shared';
 import { SessionStorageDraftStore } from '@creativo/infrastructure/web-storage';
 import { ClientBooking } from './client-booking';
 
@@ -47,13 +54,30 @@ function provideTestI18n(): EnvironmentProviders[] {
  * IS one of the behaviours under test, and a fake would prove only that the
  * store calls a method.
  */
-async function renderShell(): Promise<ComponentFixture<ClientBooking>> {
+async function renderShell(
+  /**
+   * The query the shell is entered with. A draft resumes ONLY on a
+   * continuation, and every continuation says so in the URL — so a spec that
+   * means "mid-flow reload" has to arrive the way a reload does, carrying the
+   * step the machine had written. Bare (the default) is a fresh "Book now".
+   */
+  entryParams: Record<string, string> = {},
+): Promise<ComponentFixture<ClientBooking>> {
   await TestBed.configureTestingModule({
     imports: [ClientBooking],
     providers: [
       provideRouter([]),
       ...provideTestI18n(),
       { provide: BOOKING_DRAFT_STORE, useClass: SessionStorageDraftStore },
+      // The store reads the clock to prune a restored declaration's lapsed
+      // days. Fixed so these specs do not change meaning at midnight.
+      {
+        provide: CLOCK,
+        useValue: {
+          now: (zone: string) =>
+            ZonedDateTime.fromISO('2026-08-03T09:00:00.000+03:00', zone),
+        },
+      },
       // The store holds the gateway because `commit()` is the only way an
       // appointment is created; these specs never reach the review step, so a
       // stub that would fail loudly if called is the honest double.
@@ -62,6 +86,39 @@ async function renderShell(): Promise<ComponentFixture<ClientBooking>> {
         useValue: {
           commit: () => Promise.reject(new Error('not used in this spec')),
         },
+      },
+      // Same posture for the waitlist: these specs never reach the schedule
+      // step's flexible fork, so a double that fails loudly if called is the
+      // honest stand-in.
+      {
+        // `?repeat=` reads the visit it is repeating; the shell injects the
+        // repository whether or not a spec exercises that path.
+        provide: APPOINTMENT_REPOSITORY,
+        useValue: {
+          findById: async () => ok(null),
+          save: async () => ok(undefined),
+          observeUpcomingFor: () => of(ok([])),
+          observeHistoryFor: () => of(ok([])),
+        },
+      },
+      {
+        // The deep-link reader — never consulted without a ?waitlist param.
+        provide: WAITLIST_READER,
+        useValue: {
+          observeMine: () => of(ok([])),
+          findMine: async () => ok(null),
+        },
+      },
+      {
+        provide: WAITLIST_GATEWAY,
+        useValue: {
+          request: () => Promise.reject(new Error('not used in this spec')),
+          cancel: () => Promise.reject(new Error('not used in this spec')),
+        },
+      },
+      {
+        provide: BOOKING_POLICY_READER,
+        useValue: { observe: () => of(BookingPolicy.default()) },
       },
       {
         provide: AUTH_GATEWAY,
@@ -107,6 +164,12 @@ async function renderShell(): Promise<ComponentFixture<ClientBooking>> {
       },
     ],
   }).compileComponents();
+
+  // The URL is read in the shell's constructor, so it has to be in place
+  // BEFORE the component exists — same as a real navigation.
+  if (Object.keys(entryParams).length > 0) {
+    await TestBed.inject(Router).navigate([], { queryParams: entryParams });
+  }
 
   const fixture = TestBed.createComponent(ClientBooking);
   fixture.detectChanges();
@@ -354,14 +417,46 @@ describe('ClientBooking', () => {
     click(fixture, 'booking-seat-remove-guest-0');
     expect(guestIds(fixture)).toEqual(['guest-1']);
 
-    // Remount against the same sessionStorage — what a mid-flow reload does.
+    // Remount against the same sessionStorage — what a mid-flow reload does,
+    // landing on the URL the machine had written.
     TestBed.resetTestingModule();
-    const restored = await render();
+    const restored = await renderShell({ step: 'services' });
     expect(guestIds(restored)).toEqual(['guest-1']);
 
     // The counter survived too: without it the next guest would be handed
     // `guest-0`, the id that was already removed.
     click(restored, 'booking-add-guest');
     expect(guestIds(restored)).toEqual(['guest-1', 'guest-2']);
+  });
+
+  it('starts a FRESH booking when /book is entered with no step in the URL', async () => {
+    const fixture = await render();
+    click(fixture, 'booking-add-guest');
+    expect(guestIds(fixture)).toEqual(['guest-0']);
+
+    // Tapping "Book now" — a bare `/book`, the same tab, a draft still in
+    // storage. Landing three steps into someone else's half-finished booking
+    // is the wizard answering a question nobody asked.
+    TestBed.resetTestingModule();
+    const entered = await renderShell();
+
+    expect(host(entered).getAttribute('data-state')).toBe('location');
+    expect(guestIds(entered)).toEqual([]);
+  });
+
+  it('drops the stale draft on a fresh entry, so the next reload cannot resurrect it', async () => {
+    const fixture = await render();
+    click(fixture, 'booking-add-guest');
+    expect(guestIds(fixture)).toEqual(['guest-0']);
+
+    TestBed.resetTestingModule();
+    await renderShell();
+
+    // A reload right after the fresh entry: the URL says continuation, but
+    // there is nothing left to continue — the party is empty, not the one
+    // abandoned two mounts ago.
+    TestBed.resetTestingModule();
+    const reloaded = await renderShell({ step: 'services' });
+    expect(guestIds(reloaded)).toEqual([]);
   });
 });

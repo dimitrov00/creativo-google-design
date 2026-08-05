@@ -31,3 +31,20 @@
   padding-block-end: var(--sys-space-compact);
   text-align: center;
 }
+
+/*
+ * The step's own heading row, re-rendered in the bar once the heading it came
+ * from has scrolled under (today: the schedule step's Mo–Su key).
+ *
+ * It has to land on EXACTLY the measure column the step's content uses, or the
+ * weekday letters stop lining up with the date columns they label — which is
+ * the whole reason the key is a real `ui-calendar-grid` rather than seven
+ * evenly spaced words. The toolbar already pads itself by the same gutter the
+ * step's measure column uses, so only the cap and the centring are needed.
+ */
+.booking-shell__accessory {
+  inline-size: 100%;
+  max-inline-size: 34rem;
+  margin-inline: auto;
+  padding-block-end: var(--sys-space-compact);
+}

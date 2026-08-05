@@ -4,17 +4,31 @@
        (no hairline), icon-only back chevron, caption-less stepper. The side
        slots share equal flexible frames so the stepper stays truly centred
        even when only one side holds a control. -->
+  <!-- The bar's MEASURED height, published to the steps. A fill-mode step
+       pins content directly beneath the chrome (the schedule step's weekday
+       key) and the chrome is not one height — it grows a row when the large
+       title collapses into it. See `BookingChromeHeight`. -->
   <ui-stack
     uiSpacing="none"
     uiFrame
     uiFrameMinHeight="100svh"
     class="booking-shell"
+    [style.--booking-chrome-height.px]="chrome.height()"
+    [style.--booking-chrome-resting-height.px]="chrome.restingHeight()"
   >
-    <!-- Scrim rather than a solid bar: the location step puts a live map
+    <!-- NOT on the terminal states. `confirmed` and `waitlisted` are the end
+         of the flow: the stepper would say "4 of 4" about a wizard nobody is
+         in, the back chevron points at a transition the machine refuses, and
+         dismiss duplicates the screen's own way out. A completion screen owns
+         the whole screen — the same reason `/onboarding`'s reward step drops
+         its chrome (owner ruling 2026-08-04).
+
+         Scrim rather than a solid bar: the location step puts a live map
          directly under this, and a solid strip would slice the top off it.
          The ramp is the same quintic dissolve the action bar and the sheets
          use, pointing down instead of up. -->
-    <ui-toolbar uiSticky uiToolbarBackground="scrim">
+    @if (!store.isTerminal()) {
+    <ui-toolbar libChromeHeight uiSticky uiToolbarBackground="scrim">
       <ui-stack uiSpacing="none" uiFrame uiFrameMaxWidth="infinity">
         <!-- Row one is the navigation chrome, unchanged: back at the leading
              edge, the caption-less stepper centred, dismiss trailing. -->
@@ -105,9 +119,24 @@
         >
           {{ chrome.title() }}
         </p>
-        }
+
+        <!-- …and whatever else the step's heading carried, in the same
+             breath: the schedule step's Mo–Su key. ONE trigger fills both
+             rows, because the heading they came from was one block. An
+             earlier pass pinned the key separately, so the title landed at
+             one scroll position and the key at another, each with its own
+             fade. -->
+        @if (chrome.accessory(); as accessory) {
+        <div
+          class="booking-shell__accessory"
+          data-testid="booking-chrome-accessory"
+        >
+          <ng-container [ngTemplateOutlet]="accessory" />
+        </div>
+        } }
       </ui-stack>
     </ui-toolbar>
+    }
 
     <!-- Each step owns its measure column, spacer and action bar through
          `lib-booking-step-layout`, which must be the growing flex child of
@@ -122,6 +151,8 @@
     <lib-booking-review-step />
     } @case ('confirmed') {
     <lib-booking-confirmed-step />
+    } @case ('waitlisted') {
+    <lib-booking-waitlisted-step />
     } @default {
     <!-- The remaining steps land in their own phases; the shell, the
              machine and the history contract are already real. -->

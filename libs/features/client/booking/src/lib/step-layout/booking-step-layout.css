@@ -12,16 +12,113 @@
 }
 
 /*
+ * How much page chrome floats above this layout — TWO values, deliberately.
+ *
+ * `--booking-step-ceiling` is the bar's RESTING height, and it is a constant.
+ * Everything that reserves space in FLOW reads this one, because the bar grows
+ * a row when the large title collapses into it and flow that tracked the
+ * growth would shove the page down mid-scroll — which pushes the title back
+ * into view, un-collapses the bar, and drops the page again. A layout that
+ * feeds its own trigger oscillates; measured here, it moved content 22.5px on
+ * every collapse.
+ *
+ * `--booking-step-pinned-ceiling` is the MEASURED height, for things pinned
+ * OVER the flow rather than reserving space in it — the schedule step's sticky
+ * weekday key, which has to sit exactly at the bar's real bottom edge in both
+ * states and cannot move the content that decides which state that is.
+ */
+.booking-step-layout {
+  --booking-step-ceiling: max(
+    var(--booking-chrome-resting-height, 0px),
+    var(--control-size-large)
+  );
+  --booking-step-pinned-ceiling: max(
+    var(--booking-chrome-height, 0px),
+    var(--control-size-large)
+  );
+}
+
+/*
  * Clears the overlaying toolbar. The scrim bar does not reserve a strip, so
  * without this every step's title would start underneath the back chevron.
  * The location step deliberately does NOT use this layout — its map is
  * supposed to run behind the chrome.
+ *
+ * `:not([data-fill])` — a fill-mode step's body IS a scroll region, and its
+ * content is supposed to pass BEHIND the bar and dissolve into the scrim.
+ * Padding the whole layout down would end the scroll box at the bar's bottom
+ * edge instead, leaving the scrim with nothing underneath to fade and the
+ * step's large title unable to ever scroll away (which is what stopped the
+ * house title collapse from firing on the schedule step). Fill-mode steps
+ * clear the bar from INSIDE, via `--booking-step-ceiling`.
  */
-.booking-step-layout {
+.booking-step-layout:not([data-fill]) {
   /* The bar's own height plus a gutter — measured: the bar height alone left
      each step's title 10px under the back chevron, which reads as a collision
      rather than as clearance. */
   padding-block-start: calc(
-    var(--control-size-large) + var(--sys-space-regular)
+    var(--booking-step-ceiling) + var(--sys-space-regular)
   );
+}
+
+/*
+ * ── Fill mode ─────────────────────────────────────────────────────────────
+ * The step's body is its own scroll region (the schedule step's calendar), so
+ * the measure column claims the remaining height rather than growing with its
+ * content. `min-block-size: 0` on every link in the chain is the load-bearing
+ * part: a flex child defaults to `min-height: auto`, which means "at least my
+ * content", so without it the calendar would size to all of its months and
+ * push the bar off-screen instead of scrolling inside its box.
+ */
+/*
+ * Bounded, not just flexible. The shell's column is `min-height: 100svh` —
+ * a FLOOR, not a ceiling — so a tall child simply grows it and the PAGE ends
+ * up scrolling instead of the region inside. Every `flex: 1` below is then
+ * satisfied by a box that is already 1250px tall, and the sticky weekday
+ * header sticks to a top edge that is itself off-screen.
+ *
+ * `max-block-size`, NOT `block-size`: this element is a flex item with
+ * `flex: 1 1 0%`, so its used height comes from the flex algorithm and a
+ * plain `block-size` is only the basis it starts from — flex-grow then
+ * overrides it back to the container's full content height. `max-*` is the
+ * one thing that clamps a flex item.
+ *
+ * `100svh` is exactly right because the shell's toolbar is `position: fixed`
+ * and reserves no flow space; this layout's own `padding-block-start` (above)
+ * is what clears it.
+ */
+.booking-step-layout[data-fill] {
+  max-block-size: 100svh;
+}
+
+.booking-step-layout[data-fill] .booking-step-layout__measure,
+.booking-step-layout[data-fill] .booking-step-layout__column {
+  flex: 1;
+  min-block-size: 0;
+}
+
+/*
+ * `pane` anchoring needs a positioned ancestor, and this is it — the bar pins
+ * to the bottom of this box rather than to a scroll it does not participate
+ * in. The scroller then keeps the full height and its own end padding
+ * (`--ui-calendar-scroller-floor`) is what makes the last row reachable.
+ */
+.booking-step-layout[data-fill] {
+  position: relative;
+}
+
+/*
+ * A step that composes its OWN bar anatomy (the schedule step's stacked
+ * time-pick over a button row) projects one wrapper block instead of loose
+ * buttons. The bar's child contract pins non-primaries to their intrinsic
+ * box, which would leave the wrapper hugging its content at the leading edge
+ * — this hands it the full row, and the wrapper's own stylesheet takes over.
+ *
+ * The rule lives HERE and not in the step's stylesheet because the bar is
+ * stamped by THIS component's template — a step's emulated-encapsulation
+ * selector can reach the wrapper it projected, but never the bar around it.
+ */
+.booking-step-layout > .ui-page-action-bar > .booking-actions-block {
+  flex: 1 1 auto;
+  min-inline-size: 0;
 }

@@ -24,8 +24,13 @@ import {
   BOOKING_GATEWAY,
   BarberPref,
   SeatKey,
+  WAITLIST_GATEWAY,
+  APPOINTMENT_REPOSITORY,
+  WAITLIST_READER,
+  ZonedDateTime,
   ok,
 } from '@creativo/application/booking';
+import { CLOCK } from '@creativo/application/shared';
 import { SessionStorageDraftStore } from '@creativo/infrastructure/web-storage';
 import { BookingFlowStore } from '../booking-flow.store';
 import { ClientBooking } from '../client-booking/client-booking';
@@ -120,6 +125,15 @@ async function renderShell(): Promise<ComponentFixture<ClientBooking>> {
       provideRouter([]),
       ...provideTestI18n(),
       { provide: BOOKING_DRAFT_STORE, useClass: SessionStorageDraftStore },
+      // The store reads the clock to prune a restored declaration's lapsed
+      // days. Fixed so these specs do not change meaning at midnight.
+      {
+        provide: CLOCK,
+        useValue: {
+          now: (zone: string) =>
+            ZonedDateTime.fromISO('2026-08-03T09:00:00.000+03:00', zone),
+        },
+      },
       // The store holds the gateway because `commit()` is the only way an
       // appointment is created; these specs never reach the review step, so a
       // stub that would fail loudly if called is the honest double.
@@ -127,6 +141,34 @@ async function renderShell(): Promise<ComponentFixture<ClientBooking>> {
         provide: BOOKING_GATEWAY,
         useValue: {
           commit: () => Promise.reject(new Error('not used in this spec')),
+        },
+      },
+      // The store injects the waitlist gateway too. This spec never reaches
+      // the schedule step, so a double that fails loudly if called is honest.
+      {
+        // `?repeat=` reads the visit it is repeating; the shell injects the
+        // repository whether or not a spec exercises that path.
+        provide: APPOINTMENT_REPOSITORY,
+        useValue: {
+          findById: async () => ok(null),
+          save: async () => ok(undefined),
+          observeUpcomingFor: () => of(ok([])),
+          observeHistoryFor: () => of(ok([])),
+        },
+      },
+      {
+        // The deep-link reader — never consulted without a ?waitlist param.
+        provide: WAITLIST_READER,
+        useValue: {
+          observeMine: () => of(ok([])),
+          findMine: async () => ok(null),
+        },
+      },
+      {
+        provide: WAITLIST_GATEWAY,
+        useValue: {
+          request: () => Promise.reject(new Error('not used in this spec')),
+          cancel: () => Promise.reject(new Error('not used in this spec')),
         },
       },
       {
@@ -600,11 +642,18 @@ describe('BookingServicesStep', () => {
     expect(selected).toEqual(['fade']);
   });
 
-  it('leaves the step even when the ACTIVE person is the empty one', async () => {
-    // Regression: "next empty person" wrapped all the way round onto the seat
-    // already selected, so the CTA handed over to the person you were on —
-    // a `set` of the value the signal already held, which notifies nothing.
-    // The button went permanently dead with no way off the step.
+  it('holds the step when the ACTIVE person is the empty one', async () => {
+    // Two bugs meet here and the fix has to clear both.
+    //
+    // 1. "Next empty person" once wrapped onto the seat already selected, so
+    //    the CTA "handed over" to the person you were on — a `set` of the
+    //    value the signal held, which notifies nothing. The button went dead.
+    // 2. The fix for (1) stopped the sweep one short of the active seat, so
+    //    the person on screen could be the empty one while the CTA read
+    //    "Continue" — and it continued, leaving them booking nothing.
+    //
+    // The sweep now sees them, and the button changes its SENTENCE rather
+    // than its destination: it names whose turn it is, and goes quiet.
     const fixture = await toServices();
     click(fixture, 'booking-add-guest');
     await fixture.whenStable();
@@ -629,14 +678,76 @@ describe('BookingServicesStep', () => {
         ?.hasAttribute('data-selected'),
     ).toBe(true);
 
-    // …and now the CTA is the FORWARD move, not another hand-over to the
-    // person it is already on. (Asserted on the label rather than by pressing
-    // through: the next step needs ports this harness does not provide, and
-    // the regression is entirely in what "next empty person" returns.)
+    // …and there it asks for THEM rather than offering a way past them.
+    const cta = host(fixture).querySelector(
+      '[data-testid="booking-services-continue"]',
+    );
+    expect(cta?.textContent).toContain('booking.services.pickFor');
+    expect(cta?.hasAttribute('disabled')).toBe(true);
+  });
+
+  it('opens the forward move once the last empty person is served', async () => {
+    const fixture = await toServices();
+    click(fixture, 'booking-add-guest');
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    // The guest (active) takes one…
+    click(fixture, 'service-card-beard');
+    await fixture.whenStable();
+    fixture.detectChanges();
+    answer(fixture);
+    click(fixture, 'booking-add-to-bag');
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    // …the CTA hands over to the booker, who takes one of their own.
+    click(fixture, 'booking-services-continue');
+    await fixture.whenStable();
+    fixture.detectChanges();
+    click(fixture, 'service-card-fade');
+    await fixture.whenStable();
+    fixture.detectChanges();
+    answer(fixture);
+    click(fixture, 'booking-add-to-bag');
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    // Nobody is empty, so the button is finally the forward move.
+    const cta = host(fixture).querySelector(
+      '[data-testid="booking-services-continue"]',
+    );
+    expect(cta?.textContent).toContain('booking.continue');
+    expect(cta?.hasAttribute('disabled')).toBe(false);
+  });
+
+  it('goes quiet again the moment a fresh guest joins', async () => {
+    // The order that made the old CTA lie: everyone is served, THEN someone
+    // is added. `addGuest` scopes to the new person, and the sweep that
+    // skipped the active seat found nobody empty — so a party that had just
+    // grown was offered "Continue".
+    const fixture = await toServices();
+    click(fixture, 'service-card-fade');
+    await fixture.whenStable();
+    fixture.detectChanges();
+    answer(fixture);
+    click(fixture, 'booking-add-to-bag');
+    await fixture.whenStable();
+    fixture.detectChanges();
     expect(
       host(fixture).querySelector('[data-testid="booking-services-continue"]')
         ?.textContent,
     ).toContain('booking.continue');
+
+    click(fixture, 'booking-add-guest');
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    const cta = host(fixture).querySelector(
+      '[data-testid="booking-services-continue"]',
+    );
+    expect(cta?.textContent).toContain('booking.services.pickFor');
+    expect(cta?.hasAttribute('disabled')).toBe(true);
   });
 
   it('scopes conflicts to ONE seat — the same service stays open for a guest', async () => {

@@ -1,182 +1,220 @@
 <ng-container *transloco="let t">
-  <lib-booking-step-layout>
-    <ui-stack uiSpacing="tight">
-      <h1 libStepTitle uiText uiFont="title2">
-        {{ t('booking.schedule.title') }}
-      </h1>
-      <p uiText uiFont="subheadline" uiForegroundStyle="secondary">
-        {{ t('booking.schedule.lede') }}
-      </p>
-    </ui-stack>
+  <lib-booking-step-layout [uiFill]="true">
+    <!-- ── The calendar, heading and all ────────────────────────────────
+         Every month from this one to the shop's horizon, in one scroll —
+         and the heading scrolls WITH it.
 
-    <!-- The bounce-back from a lost race. Stated plainly and at the TOP,
-         because it is the reason the user is looking at this screen again
-         rather than at a confirmation. -->
-    @if (store.slotTaken()) {
-    <ui-stack uiSpacing="tight" role="alert" data-testid="booking-slot-taken">
-      <p uiText uiFont="body">{{ t('booking.schedule.slotTaken.title') }}</p>
-      <p uiText uiFont="footnote" uiForegroundStyle="secondary">
-        {{ t('booking.schedule.slotTaken.body') }}
-      </p>
-    </ui-stack>
-    }
+         That is the whole point of the `uiCalendarLede` slot. Rendered above
+         this box the title could never pass under the wizard's toolbar, so
+         this was the one step whose large title never collapsed into the bar
+         (the house behaviour every other step gets for free), and the bar's
+         scrim had nothing beneath it to dissolve — which read as a solid
+         strip and got a hand-rolled gradient bolted inside the scroller to
+         compensate.
 
-    <!-- WHEN — the month. -->
-    @if (month(); as grid) {
-    <ui-stack uiSpacing="compact">
-      <ui-stack uiAxis="horizontal" uiAlignment="center" uiSpacing="tight">
-        <h2 uiText uiFont="headline" data-testid="booking-month-label">
-          {{ monthLabel() }}
-        </h2>
-        <ui-spacer />
-        <button
-          type="button"
-          uiButton
-          uiButtonStyle="bordered"
-          uiTint="neutral"
-          uiControlSize="small"
-          [uiIconOnly]="true"
-          [disabled]="!canGoToPreviousMonth()"
-          data-testid="booking-month-previous"
-          [attr.aria-label]="t('booking.schedule.previousMonth')"
-          (click)="shiftMonth(-1)"
+         The only fade on this screen is the wizard toolbar's own scrim — the
+         same one every other step dissolves into. Nothing here rolls its
+         own. -->
+    <ui-calendar-scroller data-testid="booking-calendar">
+      <!-- The heading is ONE block — title, lede and the weekday key that
+           closes it — and it collapses as one: `libStepTitle` sits on the
+           BLOCK, so the bar fills the moment the key goes under it rather
+           than when the `<h1>` does. Two triggers is what made the title land
+           first and the row follow. -->
+      <!-- `comfortable`, the SAME gap the step layout's own column uses:
+           this stack holds the heading and the weekday key, and at `tight`
+           the key sat 4px under the lede while every other step gave its
+           first content 24px of air. -->
+      <ui-stack
+        uiCalendarLede
+        [libStepTitle]="t('booking.schedule.title')"
+        uiSpacing="comfortable"
+        class="booking-schedule__head"
+      >
+        <!-- The wizard's ONE heading recipe (owner ruling 2026-08-04): the
+             `ui-section-header` trio, at the same size and the same distance
+             from the bar as every other step. The collapse trigger stays on
+             the BLOCK, not on this header — the weekday key closes the
+             heading here, and the bar has to fill when the key goes under
+             it, not when the title does. -->
+        <ui-section-header>
+          <h1 uiTitle>{{ t('booking.schedule.title') }}</h1>
+          <p uiLede>{{ t('booking.schedule.lede.single') }}</p>
+        </ui-section-header>
+
+        <!-- The bounce-back from a lost race. Inside the heading, because it
+             is the reason the user is looking at this screen again rather
+             than at a confirmation — and it should scroll away like the
+             sentence it is, not hold a strip of the pinned chrome. -->
+        @if (store.slotTaken()) {
+        <ui-stack
+          uiSpacing="tight"
+          role="alert"
+          data-testid="booking-slot-taken"
         >
-          <ui-icon uiName="calendar.previous" />
-        </button>
-        <button
-          type="button"
-          uiButton
-          uiButtonStyle="bordered"
-          uiTint="neutral"
-          uiControlSize="small"
-          [uiIconOnly]="true"
-          data-testid="booking-month-next"
-          [attr.aria-label]="t('booking.schedule.nextMonth')"
-          (click)="shiftMonth(1)"
-        >
-          <ui-icon uiName="calendar.next" />
-        </button>
+          <p uiText uiFont="body">
+            {{ t('booking.schedule.slotTaken.title') }}
+          </p>
+          <p uiText uiFont="footnote" uiForegroundStyle="secondary">
+            {{ t('booking.schedule.slotTaken.body') }}
+          </p>
+        </ui-stack>
+        }
+
+        <!-- Closes the heading, and travels with it. -->
+        <ng-container [ngTemplateOutlet]="weekdays" />
       </ui-stack>
 
-      <ui-calendar-grid>
-        @for (label of weekdayLabels(); track $index) {
-        <span uiWeekday uiText uiFont="caption" uiForegroundStyle="secondary">
-          {{ label }}
-        </span>
-        } @for (week of grid.weeks; track $index) { @for (cell of week; track
-        cell.dayKey) {
-        <button
-          type="button"
-          uiDay
-          uiInteractive
-          uiRadius="capsule"
-          data-testid="booking-day"
-          [attr.data-day-key]="cell.dayKey"
-          [attr.data-selected]="isSelectedDay(cell) ? '' : null"
-          [disabled]="cell.outOfRange || cell.freeMinutes === 0"
-          [attr.aria-label]="
-                  cell.freeMinutes === 0
-                    ? t('booking.schedule.dayFull', { day: cell.dayOfMonth })
-                    : t('booking.schedule.dayFree', { day: cell.dayOfMonth })
-                "
-          (click)="selectDay(cell)"
+      @for (month of months(); track month.key) {
+      <section
+        uiCalendarMonth
+        [attr.data-month-key]="month.key"
+        [attr.aria-label]="monthLabel(month)"
+      >
+        <h2
+          uiText
+          uiFont="headline"
+          class="booking-schedule__month"
+          data-testid="booking-month-label"
         >
-          <ui-date-badge [uiDay]="cell.dayOfMonth" [uiState]="dayState(cell)" />
-        </button>
-        } }
-      </ui-calendar-grid>
-    </ui-stack>
-    }
+          {{ monthLabel(month) }}
+        </h2>
 
-    <!-- WHEN — the times, grouped the way people say them. -->
-    @if (selectedDayKey()) { @if (loadingDay()) {
-    <p uiText uiFont="footnote" uiForegroundStyle="secondary">
-      {{ t('booking.schedule.loading') }}
-    </p>
-    } @else if (hasNoTimes()) {
-    <!-- Honest, not blank: this day genuinely cannot hold this party,
-             and the waitlist is the next thing to offer (Phase 5). -->
-    <ui-stack uiSpacing="tight" data-testid="booking-no-times">
-      <p uiText uiFont="body">{{ t('booking.schedule.noTimes.title') }}</p>
-      <p uiText uiFont="footnote" uiForegroundStyle="secondary">
-        {{ t('booking.schedule.noTimes.body') }}
-      </p>
-    </ui-stack>
-    } @else {
-    <ui-stack uiSpacing="comfortable" data-testid="booking-times">
-      @for (part of dayparts(); track part.key) {
-      <ui-stack uiSpacing="compact">
-        <!-- A plain caption, NOT `ui-section-header`: that pattern is
-                   the marketing eyebrow/title/lede trio and renders at
-                   display scale. This is a grouped-list header — the quietest
-                   thing on the screen, like an iOS section label. -->
-        <h3 uiText uiFont="footnote" uiForegroundStyle="secondary">
-          {{ t('booking.schedule.daypart.' + part.key) }}
-        </h3>
-        <ui-flow uiSpacing="tight">
-          @for (start of part.starts; track start.key) {
+        <!-- Every per-cell fact is PRECOMPUTED (see `months()`): the label, the
+             resting state, whether it is bookable. Only selection is decided
+             here, because only selection changes on a tap — and it is a string
+             compare. The template used to call four methods per cell, two of
+             which ran `Intl.format` and a translation, so every tap on a day
+             re-derived ~200 aria labels before the selection could paint. That
+             is what "selecting a date feels slow" was. -->
+        <ui-calendar-grid uiSize="large">
+          @for (week of month.weeks; track $index) { @for (cell of week; track
+          $index) { @if (cell === null) {
+          <!-- A blank column before the 1st (or after the last). Not the
+               neighbouring month's dates: they are already on screen, three
+               rows away, and rendering them twice is what made today appear
+               twice across a month boundary. -->
+          <span uiDay aria-hidden="true"></span>
+          } @else {
           <button
             type="button"
-            uiChip
-            [uiSelected]="isSelectedStart(start)"
-            data-testid="booking-time"
-            [attr.data-start]="start.startMs"
-            [attr.data-shop]="start.shopKey"
-            (click)="selectStart(start)"
+            uiDay
+            uiInteractive
+            uiRadius="capsule"
+            data-testid="booking-day"
+            [attr.data-day-key]="cell.dayKey"
+            [attr.data-selected]="cell.dayKey === selectedDayKey() ? '' : null"
+            [disabled]="!cell.bookable"
+            [attr.aria-label]="cell.aria"
+            (click)="selectDay(cell)"
           >
-            {{ start.label }} @if (start.shopName) {
-            <!-- Only under "any shop": two shops can offer the same
-                           minute, and they are different appointments. -->
-            <span
-              uiText
-              uiFont="caption"
-              uiForegroundStyle="secondary"
-              class="booking-schedule__chip-shop"
-              >{{ start.shopName }}</span
-            >
-            }
+            <ui-date-badge
+              [uiDay]="cell.dayOfMonth"
+              [uiState]="
+                cell.dayKey === selectedDayKey() ? 'selected' : cell.state
+              "
+              [uiToday]="cell.isToday"
+            />
           </button>
-          }
-        </ui-flow>
-      </ui-stack>
+          } } }
+        </ui-calendar-grid>
+      </section>
       }
-    </ui-stack>
-    } }
+    </ui-calendar-scroller>
 
-    <!-- Which arrangement the user just picked. Only for a party: one person
-         served by one barber at the time they tapped explains itself. -->
-    @if (arrangement().length > 0) {
-    <ui-stack uiSpacing="tight" data-testid="booking-arrangement">
-      <p uiText uiFont="footnote" uiForegroundStyle="secondary">
-        {{ t('booking.schedule.arrangement.' + arrangementKind()) }}
-      </p>
-      <ui-list-group>
-        @for (line of arrangement(); track $index) {
-        <ui-list-row uiAlignment="leading">
-          <ui-stack uiSpacing="none">
-            <span uiText uiFont="body">{{ line.personLabel }}</span>
-            <span uiText uiFont="footnote" uiForegroundStyle="secondary">
-              {{ line.barberName }}
-            </span>
-          </ui-stack>
-          <span uiTrailing uiText uiFont="body">{{ line.timeLabel }}</span>
-        </ui-list-row>
-        }
-      </ui-list-group>
-    </ui-stack>
-    }
+    <!-- ── The docked decision, two rows ────────────────────────────────
+         The services sheet's anatomy on the page bar: the REQUIRED question
+         (which time) stacked above the forward move, hugged trailing where
+         the answer is spent. The row beneath follows HIG bottom-bar grammar —
+         quiet contextual controls leading, one confirming action trailing.
 
-    <button
-      stepActions
-      type="button"
-      uiButton
-      uiButtonStyle="borderedProminent"
-      uiControlSize="large"
-      [disabled]="!canContinue()"
-      data-testid="booking-schedule-continue"
-      (click)="continue()"
-    >
-      {{ t('booking.continue') }}
-    </button>
+         There is ONE way to answer "when" (owner ruling 2026-08-01): a day and
+         a time. The multi-date search toggle that used to sit here is gone —
+         it earned a mode, a second sheet layout and a per-day window editor
+         for a question most people never ask, and everything it touched had to
+         branch on it. The waitlist survives it, one day at a time, as the bell
+         inside the sheet. -->
+    <div stepActions class="booking-actions-block booking-schedule__decision">
+      <!-- The required question, as the select the services sheet docks: a
+           glass pill stating the answer once given, asking until then. The
+           way INTO the time sheet — the CTA below only advances. -->
+      <button
+        type="button"
+        uiButton
+        uiButtonStyle="glass"
+        uiControlSize="large"
+        class="booking-pick booking-schedule__time-pick"
+        [disabled]="!canOpenTimes()"
+        data-testid="booking-time-pick"
+        [attr.aria-label]="t('booking.schedule.chooseTime')"
+        (click)="timeOpen.set(true)"
+      >
+        <span class="booking-pick__value">{{ timePickLabel() }}</span>
+        <ui-icon uiName="field.expand" uiScale="small" />
+      </button>
+
+      <div class="booking-schedule__decision-row">
+        <button
+          type="button"
+          uiButton
+          uiButtonStyle="glass"
+          uiControlSize="large"
+          [uiIconOnly]="true"
+          data-testid="booking-scroll-today"
+          [attr.aria-label]="t('booking.schedule.today')"
+          (click)="scrollToToday()"
+        >
+          <ui-icon uiName="calendar.today" uiScale="medium" />
+        </button>
+
+        <button
+          type="button"
+          uiButton
+          uiButtonStyle="borderedProminent"
+          uiControlSize="large"
+          [disabled]="forwardBlocked()"
+          data-testid="booking-schedule-continue"
+          (click)="advance()"
+        >
+          {{ forwardLabel() }}
+        </button>
+      </div>
+    </div>
   </lib-booking-step-layout>
+
+  <!-- ── The weekday key, in ONE place ────────────────────────────────
+       Rendered inline at the end of the heading, and published to the chrome
+       so the bar can re-render THIS template beside its collapsed title once
+       the heading has gone under. One key in the source, two addresses — which
+       is what lets the title and the key arrive and leave together.
+
+       Same `ui-calendar-grid uiSize="large"` as every month, in the same
+       measure, so the columns line up with the cells either way. -->
+  <ng-template libChromeAccessory #weekdays>
+    <ui-calendar-grid
+      uiSize="large"
+      aria-hidden="true"
+      class="booking-schedule__weekdays"
+    >
+      @for (label of weekdayLabels(); track $index) {
+      <span uiWeekday uiText uiFont="caption" uiForegroundStyle="secondary">
+        {{ label }}
+      </span>
+      }
+    </ui-calendar-grid>
+  </ng-template>
+
+  <!-- ── The times ────────────────────────────────────────────────────
+       The chosen day's starts, grouped by daypart. Its bar carries the bell,
+       which watches this day. -->
+  @if (timeOpen() && selectedDay(); as day) {
+  <lib-booking-time-sheet
+    [day]="day"
+    [zone]="zone()"
+    [policy]="policy()"
+    (confirmed)="onTimeConfirmed($event)"
+    (watch)="watchSelectedDay()"
+    (dismissed)="timeOpen.set(false)"
+  />
+  }
 </ng-container>

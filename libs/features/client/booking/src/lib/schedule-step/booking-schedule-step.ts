@@ -1,26 +1,36 @@
-import { Component, computed, inject, signal } from '@angular/core';
+import {
+  Component,
+  ElementRef,
+  Injector,
+  afterNextRender,
+  computed,
+  inject,
+  signal,
+} from '@angular/core';
+import { Router } from '@angular/router';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { of, switchMap } from 'rxjs';
+import { distinctUntilChanged, of, switchMap } from 'rxjs';
 import { TranslocoDirective, TranslocoService } from '@jsverse/transloco';
 import {
   AVAILABILITY_READER,
-  type LocatedOption,
+  BOOKING_POLICY_READER,
   BookingPolicy,
   CalendarDay,
   ObserveDayAvailabilityUseCase,
   ObserveRangeCapacityUseCase,
-  type SeatAssignment,
-  TimeSlot,
+  type ScheduleSelection,
   ZonedDateTime,
 } from '@creativo/application/booking';
-import { BarberId, LocationId } from '@creativo/application/catalog';
+import { BarberId } from '@creativo/application/catalog';
 import { CLOCK } from '@creativo/application/shared';
+import { AccountStateService } from '@creativo/features/client/account-state';
 import {
   CatalogContentService,
   CatalogPresenter,
 } from '@creativo/features/shared/catalog';
-import { UiButton, UiChip, UiIcon } from '@creativo/ui/controls';
-import { UiFlow, UiSpacer, UiStack } from '@creativo/ui/layout';
+import { NgTemplateOutlet } from '@angular/common';
+import { UiButton, UiIcon } from '@creativo/ui/controls';
+import { UiStack } from '@creativo/ui/layout';
 import {
   UiForegroundStyleDirective,
   UiInteractiveDirective,
@@ -29,70 +39,58 @@ import {
 } from '@creativo/ui/modifiers';
 import {
   UiCalendarGrid,
+  UiCalendarScroller,
   UiDateBadge,
-  UiListGroup,
-  UiListRow,
+  UiSectionHeader,
 } from '@creativo/ui/patterns';
-import { SessionIdentityService } from '@creativo/features/shared/shell';
 import { BookingFlowStore } from '../booking-flow.store';
-import { BookingStepTitle } from '../chrome/booking-chrome.service';
+import {
+  BookingChromeAccessory,
+  BookingStepTitle,
+} from '../chrome/booking-chrome.service';
 import { BookingStepLayout } from '../step-layout/booking-step-layout';
+import { BookingTimeSheet } from './time-sheet/booking-time-sheet';
 import {
   type AvailabilityDayCell,
-  buildAvailabilityMonth,
-  monthQueryRange,
+  type AvailabilityMonth,
+  type ScheduleDayVm,
+  type ScheduleMonthVm,
+  buildAvailabilityMonths,
+  horizonQueryRange,
 } from './availability-month';
-
-/** A run of start times sharing a part of the day. */
-interface DaypartVm {
-  readonly key: 'morning' | 'afternoon' | 'evening';
-  readonly starts: readonly StartVm[];
-}
-
-interface StartVm {
-  readonly key: string;
-  readonly startMs: number;
-  readonly shopKey: string;
-  readonly label: string;
-  /**
-   * Which shop this time is at — rendered only under "any shop", where two
-   * shops can offer the same minute and they are different appointments.
-   */
-  readonly shopName: string | null;
-}
-
-/** One line of the "who, and when" explanation under the chosen time. */
-interface ArrangementLineVm {
-  readonly barberName: string;
-  readonly personLabel: string;
-  readonly timeLabel: string;
-}
-
-const MORNING_ENDS_AT = 12;
-const AFTERNOON_ENDS_AT = 17;
 
 /**
  * Step 3 — when.
  *
- * ### Why a month grid and not a list of days
- * The party's duration decides which days can hold them at all, so the
- * question "when could we come in" is genuinely a calendar question. A month
- * grid answers it at a glance — a day with nothing free is quiet and
- * untappable, which is the honest version of the endless-scroll list that
- * makes a user hunt for the first day that works.
+ * ### The whole step is one calendar
+ * It used to be a paged month grid with a list of times under it, which asked
+ * two questions on one screen and answered neither well: the grid was small
+ * enough to be an accessory, and paging to next month meant a button press
+ * that hid the boundary — the last week of August and the first of September
+ * are the same fortnight to someone deciding when to come in.
  *
- * ### Times are grouped by daypart, not listed flat
- * Twenty-eight chips in one run is a wall. Morning / afternoon / evening is
- * how people actually say it, and it is the same grouping iOS uses wherever
- * times are offered in bulk. Each group renders only when it has something,
- * so an evening-only barber does not show two empty headings.
+ * Now the calendar IS the screen: a continuous run of months from today to the
+ * booking horizon, its heading scrolling away under the wizard's toolbar and
+ * the Mo–Su key pinning beneath it, with cells large enough to be the primary
+ * target (`ui-calendar-scroller` + `ui-calendar-grid uiSize="large"`). Times
+ * moved into a sheet, reached from the toolbar, which is the same
+ * docked-decision shape the services step already uses — one bar, at the
+ * bottom, naming the outcome.
  *
- * ### The arrangement line is not decoration
- * With more than one person, the engine may serve the party in parallel or
- * back-to-back, and the user never picks a "mode" (owner ruling 2026-07-29).
- * What they DO need is to know which one they just chose — "both at 14:00"
- * and "you at 14:00, Maria at 14:45" are different afternoons. The line
- * states it plainly rather than making them infer it from a summary later.
+ * ### ONE way to answer "when"
+ * A day and a time. Tap a day, "Choose time", pick from the sheet.
+ *
+ * There was briefly a second way — a toggle that turned the calendar
+ * multi-select so several days could be searched at once, each narrowed to
+ * its own hours. It is gone (owner ruling 2026-08-01): it earned a mode, a
+ * second sheet layout and a per-day window editor for a question most people
+ * never ask, and every control it touched had to branch on it. The waitlist
+ * survives it as the bell in the sheet's bar, watching the one chosen day.
+ *
+ * ### Today is the only day the clock matters to
+ * The calendar's grey/live split comes from a coarse per-day capacity
+ * projection that never sees `now`, so today alone is answered by the real
+ * day query — see {@link isBookable}.
  *
  * ### Everything here is an OFFER
  * The grid is computed in the browser from live geometry. The authority is
@@ -103,80 +101,75 @@ const AFTERNOON_ENDS_AT = 17;
 @Component({
   selector: 'lib-booking-schedule-step',
   imports: [
+    BookingChromeAccessory,
     BookingStepLayout,
     BookingStepTitle,
+    BookingTimeSheet,
+    NgTemplateOutlet,
     TranslocoDirective,
     UiButton,
     UiCalendarGrid,
-    UiChip,
+    UiCalendarScroller,
     UiDateBadge,
-    UiFlow,
-    UiIcon,
     UiForegroundStyleDirective,
+    UiIcon,
     UiInteractiveDirective,
-    UiListGroup,
-    UiListRow,
+    // Without this the cells' `uiRadius="capsule"` sits inert in the DOM and
+    // the hover ink paints a SQUARE behind a round selected badge — the two
+    // states of one control disagreeing about its own shape.
     UiRadiusDirective,
-    UiSpacer,
+    UiSectionHeader,
     UiStack,
     UiTextDirective,
   ],
   templateUrl: './booking-schedule-step.html',
-  styleUrl: './booking-schedule-step.css',
+  // The time-pick renders the SHARED select recipe (booking-select.css) — the
+  // same pill the services sheet and the bag dock, so the three cannot drift.
+  styleUrls: ['./booking-schedule-step.css', '../chrome/booking-select.css'],
   host: { 'data-testid': 'booking-schedule-step' },
 })
 export class BookingScheduleStep {
   private readonly transloco = inject(TranslocoService);
-  private readonly identity = inject(SessionIdentityService);
   private readonly clock = inject(CLOCK);
   private readonly availability = inject(AVAILABILITY_READER);
+  private readonly policyReader = inject(BOOKING_POLICY_READER);
+  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
+  private readonly injector = inject(Injector);
+  private readonly router = inject(Router);
+  private readonly accountState = inject(AccountStateService);
 
   protected readonly catalog = inject(CatalogContentService);
   protected readonly content = inject(CatalogPresenter);
   protected readonly store = inject(BookingFlowStore);
 
-  private readonly observeDay = new ObserveDayAvailabilityUseCase(
-    this.availability,
-  );
   private readonly observeCapacity = new ObserveRangeCapacityUseCase(
     this.availability,
   );
 
-  /**
-   * Tenant policy arrives through a port with the staff editor; until then
-   * the domain's own defaults are the single source, not a literal here.
-   */
-  private readonly policy = BookingPolicy.default();
+  /** Today only — the one day whose bookability depends on the clock. */
+  private readonly observeToday = new ObserveDayAvailabilityUseCase(
+    this.availability,
+  );
 
   /**
-   * Which month the grid is showing. Null until the clock and shop are known,
-   * and re-anchored on whatever day the store still holds — coming back from
-   * review must land on the month the user was looking at, not on today.
+   * Tenant policy, through the port.
+   *
+   * The horizon this calendar runs to is a shop's decision, not a constant —
+   * and it is the number most visibly on screen here, since it is literally
+   * how far the page scrolls. `BookingPolicy.default()` is the adapter's
+   * fallback, so this reads the same before any admin surface exists.
    */
-  private readonly monthAnchor = signal<CalendarDay | null>(null);
+  protected readonly policy = toSignal(this.policyReader.observe(), {
+    initialValue: BookingPolicy.default(),
+  });
 
-  /**
-   * The selection lives in the STORE, not here: this component is destroyed
-   * every time the wizard advances, and a day the user has to re-pick after
-   * glancing at the summary is friction the machine already avoids for the
-   * location. It is also what makes the `slot_unavailable` bounce useful —
-   * the day survives, the time does not.
-   */
   protected readonly selectedDayKey = this.store.selectedDayKey;
-  private readonly selectedStartMs = this.store.selectedStartMs;
 
   // ── Where ───────────────────────────────────────────────────────────
 
   protected readonly locations = computed(() => this.catalog.locations());
 
-  /**
-   * The shop the client chose on step 1, or `null` for "any shop".
-   *
-   * No picker here any more: WHERE is its own first step, where it can be
-   * answered on a map. Asking again on a screen about WHEN was always the
-   * wrong place for it.
-   */
-  protected readonly location = computed(() => {
+  private readonly location = computed(() => {
     const chosen = this.store.locationId();
     if (!chosen) return null;
     return (
@@ -191,7 +184,7 @@ export class BookingScheduleStep {
    * single city. A chain spanning zones would have to render each option in
    * its own shop's clock, which is a different design and a different problem.
    */
-  private readonly zone = computed(
+  protected readonly zone = computed(
     () =>
       this.location()?.timezone ??
       this.locations().at(0)?.timezone ??
@@ -201,14 +194,8 @@ export class BookingScheduleStep {
   /**
    * EVERY active barber — the ROSTER decides who works where, not the barber's
    * editorial `locationIds`.
-   *
-   * Pre-filtering on the catalog list looks like a cheap optimisation and is a
-   * drift hazard: a barber whose roster covers Mladost but whose editorial list
-   * has not caught up would silently disappear from that shop's grid. The
-   * reader drops anyone with no window at the shop being asked about, which is
-   * the same answer derived from the thing that is actually true.
    */
-  protected readonly barberIds = computed<readonly BarberId[]>(() =>
+  private readonly barberIds = computed<readonly BarberId[]>(() =>
     this.catalog.barbers().map((barber) => barber.id),
   );
 
@@ -219,59 +206,153 @@ export class BookingScheduleStep {
     return result.isSuccess() ? result.value : null;
   });
 
-  private readonly today = computed<CalendarDay | null>(() => {
+  protected readonly today = computed<CalendarDay | null>(() => {
     const now = this.now();
     return now ? CalendarDay.fromZonedDateTime(now) : null;
   });
 
-  /** The last day anyone may book — the policy horizon, walked in calendar days. */
+  /** The last bookable day — the policy's own calendar walk, in months. */
   private readonly horizonEnd = computed<CalendarDay | null>(() => {
-    let cursor = this.today();
-    if (!cursor) return null;
-    for (let index = 0; index < this.policy.horizonDays; index++) {
-      cursor = cursor.next();
-    }
-    return cursor;
+    const today = this.today();
+    return today ? this.policy().horizonEndFrom(today) : null;
   });
 
-  /**
-   * The month to show: an explicit page turn wins, then the remembered day,
-   * then today. Reading the remembered day here is what makes a step back
-   * land where the user left off.
-   */
-  private readonly anchor = computed<CalendarDay | null>(() => {
-    const explicit = this.monthAnchor();
-    if (explicit) return explicit;
-    const dayKey = this.selectedDayKey();
-    if (dayKey) {
-      const remembered = CalendarDay.create(dayKey, this.zone());
-      if (remembered.isSuccess()) return remembered.value;
-    }
-    return this.today();
-  });
-
-  protected readonly month = computed(() => {
-    const anchor = this.anchor();
+  private readonly rawMonths = computed<readonly AvailabilityMonth[]>(() => {
     const today = this.today();
     const horizonEnd = this.horizonEnd();
-    if (!anchor || !today || !horizonEnd) return null;
-    return buildAvailabilityMonth({
-      anchor,
+    if (!today || !horizonEnd) return [];
+    return buildAvailabilityMonths({
       today,
       horizonEnd,
       capacityByDay: this.capacityByDay(),
     });
   });
 
-  protected readonly monthLabel = computed(() => {
-    const month = this.month();
-    if (!month) return '';
-    return new Intl.DateTimeFormat(this.content.locale(), {
-      month: 'long',
-      year: 'numeric',
-      timeZone: this.zone(),
-    }).format(new Date(month.anchor.startOfDay().toMillis()));
-  });
+  /**
+   * The spine, with every per-cell fact already resolved.
+   *
+   * Selection is deliberately NOT in here. Everything else — the label, the
+   * resting state, bookability — depends only on the data, so it is computed
+   * once per capacity/locale change instead of once per cell per
+   * change-detection cycle. The template used to call `dayState`, `dayAria`,
+   * `isBookable` and `hasWindows` per cell, and `dayAria` ran an
+   * `Intl.format` AND a translation each time, so a single tap on a day
+   * re-derived ~200 aria labels before the new selection could paint. Leaving
+   * selection out is what keeps this cheap: a tap changes one signal that the
+   * template answers with a string compare, and this whole computed does not
+   * re-run at all.
+   */
+  protected readonly months = computed<readonly ScheduleMonthVm[]>(() =>
+    this.rawMonths().map((month) => ({
+      ...month,
+      weeks: month.weeks.map((week) =>
+        week.map((cell) => (cell === null ? null : this.describe(cell))),
+      ),
+    })),
+  );
+
+  /** One cell's resting facts — everything except whether it is selected. */
+  private describe(cell: AvailabilityDayCell): ScheduleDayVm {
+    const bookable = this.isBookable(cell);
+    const date = this.dateAriaFormat().format(
+      new Date(cell.day.startOfDay().toMillis()),
+    );
+    return {
+      day: cell.day,
+      dayKey: cell.dayKey,
+      dayOfMonth: cell.dayOfMonth,
+      isToday: cell.isToday,
+      bookable,
+      // ONE language for "you cannot book this day". Splitting the ink by
+      // WHY — 'outside' (secondary) for past/beyond-horizon, 'unavailable'
+      // (tertiary) for full — made today-when-full dimmer than the past days
+      // beside it, which read as three different rules where a person sees
+      // one fact. The reason lives in the aria label; the ink says only
+      // yes-or-no.
+      state: bookable ? 'plain' : 'unavailable',
+      aria: this.transloco.translate(
+        bookable ? 'booking.schedule.dayFree' : 'booking.schedule.dayFull',
+        { date },
+      ),
+    };
+  }
+
+  /**
+   * "Август", "Септември 2027".
+   *
+   * Capitalized deliberately, and worth a note: Bulgarian orthography writes
+   * month names in lower case in running prose, and `Intl` is right to return
+   * "август". This is not running prose — it is a heading that titles a block,
+   * where the typographic convention wins (owner ruling 2026-08-01).
+   *
+   * Done on the string rather than with `text-transform: capitalize`, which
+   * would also capitalize the second word of a two-word label and cannot be
+   * told which locales it should leave alone.
+   */
+  /**
+   * Formatters, built ONCE per locale/zone and reused.
+   *
+   * `Intl.DateTimeFormat` construction is the expensive half of the API, and
+   * these are called per CELL per change-detection cycle — constructing them
+   * inline meant every tap on a day paid for ~200 fresh formatters before the
+   * selection could paint, which is the stutter that read as a glitch.
+   */
+  private readonly monthFormat = computed(
+    () =>
+      new Intl.DateTimeFormat(this.content.locale(), {
+        month: 'long',
+        timeZone: this.zone(),
+      }),
+  );
+
+  private readonly monthWithYearFormat = computed(
+    () =>
+      new Intl.DateTimeFormat(this.content.locale(), {
+        month: 'long',
+        year: 'numeric',
+        timeZone: this.zone(),
+      }),
+  );
+
+  private readonly dateAriaFormat = computed(
+    () =>
+      new Intl.DateTimeFormat(this.content.locale(), {
+        weekday: 'long',
+        day: 'numeric',
+        month: 'long',
+        timeZone: this.zone(),
+      }),
+  );
+
+  private readonly timeFormat = computed(
+    () =>
+      new Intl.DateTimeFormat(this.content.locale(), {
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false,
+        timeZone: this.zone(),
+      }),
+  );
+
+  /** Takes the anchor structurally, so the raw month and its VM both fit. */
+  protected monthLabel(month: { readonly anchor: CalendarDay }): string {
+    const locale = this.content.locale();
+    // The year is stated only when it is not this one — "August" needs no
+    // qualification in August, and "August 2026" on every heading is noise
+    // that the scroll position already answers.
+    const format =
+      month.anchor.year === (this.today()?.year ?? month.anchor.year)
+        ? this.monthFormat()
+        : this.monthWithYearFormat();
+    const label = format.format(new Date(month.anchor.startOfDay().toMillis()));
+
+    // Capitalized on the string, deliberately: Bulgarian writes month names
+    // lower-case in prose and `Intl` is right to return "август" — but this
+    // is a heading, where the typographic convention wins (owner ruling
+    // 2026-08-01). Not `text-transform: capitalize`, which would also
+    // capitalize the year-bearing second word.
+    return label.charAt(0).toLocaleUpperCase(locale) + label.slice(1);
+  }
 
   /** Mon-first weekday initials, localized — labels are never modeled as data. */
   protected readonly weekdayLabels = computed(() => {
@@ -285,30 +366,21 @@ export class BookingScheduleStep {
     );
   });
 
-  /** Can the grid step back? Never before the current month. */
-  protected readonly canGoToPreviousMonth = computed(() => {
-    const month = this.month();
-    const today = this.today();
-    if (!month || !today) return false;
-    return !(
-      month.anchor.year === today.year && month.anchor.month === today.month
-    );
-  });
-
   // ── Live reads ──────────────────────────────────────────────────────
 
   /**
-   * Derived from the ANCHOR, never from `month()` — `month()` is built FROM
-   * the capacity this query returns, so reading it here would make the query
-   * depend on its own result.
+   * ONE capacity query for the whole run, not one per month.
+   *
+   * Derived from today and the horizon rather than from `months()` — `months()`
+   * is built FROM this query's result, so reading it here would make the query
+   * depend on its own output.
    */
   private readonly capacityQuery = computed(() => {
     const today = this.today();
     const horizonEnd = this.horizonEnd();
     const barberIds = this.barberIds();
     if (!today || !horizonEnd || barberIds.length === 0) return null;
-    const anchor = this.anchor() ?? today;
-    const range = monthQueryRange(anchor, today, horizonEnd);
+    const range = horizonQueryRange(today, horizonEnd);
     return range
       ? { locationId: this.store.locationId(), range, barberIds }
       : null;
@@ -316,6 +388,14 @@ export class BookingScheduleStep {
 
   private readonly capacityResult = toSignal(
     toObservable(this.capacityQuery).pipe(
+      // STRUCTURAL identity, not object identity. The computed above mints a
+      // fresh literal per recompute, and `switchMap` on raw identity answered
+      // every no-op recompute by tearing down and re-billing the whole
+      // listener set — the single largest avoidable read cost in the app.
+      // Re-subscribe only when the QUERY genuinely changes.
+      distinctUntilChanged(
+        (a, b) => capacityQueryKey(a) === capacityQueryKey(b),
+      ),
       switchMap((input) =>
         input === null ? of(null) : this.observeCapacity.execute(input),
       ),
@@ -328,305 +408,286 @@ export class BookingScheduleStep {
     return result?.isSuccess() ? result.value : new Map();
   });
 
-  private readonly dayQuery = computed(() => {
+  // ── Bookability ─────────────────────────────────────────────────────
+
+  /**
+   * Can this day still be booked?
+   *
+   * TODAY is the only day where the clock matters, and it is the one day the
+   * capacity projection cannot answer: `observeRangeCapacity` reports a coarse
+   * free-minute total per day and never sees `now`, so at 21:00 today still
+   * looked as open as it did at 09:00 — a tappable day whose sheet then had
+   * nothing in it. So today, and only today, is answered by the REAL day query
+   * ({@link todayHasOptions}), which runs the same engine the time sheet does
+   * and does see the clock. Every other day keeps the cheap projection.
+   */
+  private isBookable(cell: AvailabilityDayCell): boolean {
+    if (cell.outOfRange) return false;
+    if (cell.isToday) return this.todayHasOptions();
+    return cell.freeMinutes > 0;
+  }
+
+  /**
+   * Today's real arrangements — one extra live query, for one day.
+   *
+   * Worth it: this is the difference between "today is grey because the shop
+   * is closed" and "today is tappable at 22:00 and lies about it". `null`
+   * (still loading) counts as bookable so the day does not flicker grey and
+   * back on every load.
+   */
+  private readonly todayQuery = computed(() => {
     const cart = this.store.cart();
     const now = this.now();
-    const dayKey = this.selectedDayKey();
-    if (!cart || !now || !dayKey) return null;
-    const day = CalendarDay.create(dayKey, this.zone());
-    if (day.isFailure()) return null;
+    const today = this.today();
+    if (!cart || !now || !today) return null;
     return {
       cart,
       services: this.catalog.services(),
       barberIds: this.barberIds(),
       locationId: this.store.locationId(),
-      day: day.value,
-      policy: this.policy,
+      day: today,
+      policy: this.policy(),
       now,
     };
   });
 
-  private readonly dayResult = toSignal(
-    toObservable(this.dayQuery).pipe(
+  private readonly todayResult = toSignal(
+    toObservable(this.todayQuery).pipe(
+      // Same structural guard as the capacity stream, plus the pieces this
+      // query adds: the cart and the clock's "now" tick. References suffice
+      // for cart/services — they change identity only on a real change.
+      distinctUntilChanged((a, b) => {
+        if (a === null || b === null) return a === b;
+        return (
+          a.cart === b.cart &&
+          a.services === b.services &&
+          a.day.key() === b.day.key() &&
+          a.policy === b.policy &&
+          a.now.toMillis() === b.now.toMillis() &&
+          (a.locationId?.value ?? null) === (b.locationId?.value ?? null) &&
+          a.barberIds.map((id) => id.value).join(',') ===
+            b.barberIds.map((id) => id.value).join(',')
+        );
+      }),
       switchMap((input) =>
-        input === null ? of(null) : this.observeDay.execute(input),
+        input === null ? of(null) : this.observeToday.execute(input),
       ),
     ),
     { initialValue: null },
   );
 
-  protected readonly loadingDay = computed(
-    () => this.selectedDayKey() !== null && this.dayResult() === null,
-  );
-
-  private readonly options = computed<readonly LocatedOption[]>(() => {
-    const result = this.dayResult();
-    return result?.isSuccess() ? result.value.options : [];
+  private readonly todayHasOptions = computed(() => {
+    const result = this.todayResult();
+    if (result === null) return true;
+    return result.isSuccess() && result.value.options.length > 0;
   });
-
-  protected readonly dayparts = computed<readonly DaypartVm[]>(() => {
-    const result = this.dayResult();
-    if (!result?.isSuccess()) return [];
-
-    // Named per shop only when the client did NOT pick one. With a shop chosen
-    // every chip is at it, and repeating the name on 28 chips is noise.
-    const nameShops = this.store.locationId() === null;
-
-    const groups = new Map<DaypartVm['key'], StartVm[]>([
-      ['morning', []],
-      ['afternoon', []],
-      ['evening', []],
-    ]);
-
-    for (const { locationId, option } of result.value.options) {
-      const startMs = option.envelope.startMs;
-      const start = ZonedDateTime.fromMillis(startMs, this.zone());
-      if (start.isFailure()) continue;
-      const hour = start.value.hour;
-      const key: DaypartVm['key'] =
-        hour < MORNING_ENDS_AT
-          ? 'morning'
-          : hour < AFTERNOON_ENDS_AT
-            ? 'afternoon'
-            : 'evening';
-      groups.get(key)?.push({
-        key: `${locationId.value}|${startMs}`,
-        startMs,
-        shopKey: locationId.value,
-        label: this.formatTime(startMs),
-        shopName: nameShops ? this.locationName(locationId) : null,
-      });
-    }
-
-    // A heading with nothing under it is a promise the day cannot keep.
-    return [...groups.entries()]
-      .filter(([, starts]) => starts.length > 0)
-      .map(([key, starts]) => ({ key, starts }));
-  });
-
-  protected readonly hasNoTimes = computed(
-    () =>
-      this.selectedDayKey() !== null &&
-      !this.loadingDay() &&
-      this.dayparts().length === 0,
-  );
-
-  /**
-   * The arrangement the user is committing to, if they have picked a time.
-   *
-   * The engine's order is total, so "the first option at this start" is a
-   * stable choice rather than whichever branch the search found first. Options
-   * now carry their shop; this step always has one chosen, so a start is
-   * unambiguous. When choosing a shop becomes optional, a chip will have to
-   * carry the shop it belongs to as well as the time.
-   */
-  private readonly selectedOption = computed<LocatedOption | null>(() => {
-    const startMs = this.selectedStartMs();
-    const shopKey = this.store.selectedShopKey();
-    if (startMs === null || shopKey === null) return null;
-    return (
-      this.options().find(
-        (entry) =>
-          entry.option.envelope.startMs === startMs &&
-          entry.locationId.value === shopKey,
-      ) ?? null
-    );
-  });
-
-  protected readonly canContinue = computed(
-    () => this.selectedOption() !== null,
-  );
-
-  /**
-   * Who serves whom, and when — rendered only for a party, since one person
-   * being served by one barber at the time they just tapped explains itself.
-   */
-  protected readonly arrangement = computed<readonly ArrangementLineVm[]>(
-    () => {
-      const option = this.selectedOption();
-      if (!option || this.store.partySize() < 2) return [];
-
-      const cart = this.store.cart();
-      if (!cart) return [];
-
-      const seatByLineId = new Map<string, string>();
-      for (const [seatKey, lines] of cart.entries()) {
-        for (const line of lines) {
-          seatByLineId.set(line.id.value, seatKey);
-        }
-      }
-
-      return option.option.assignments.map((assignment) => ({
-        barberName: this.barberName(assignment.barberId),
-        personLabel: this.personLabel(
-          seatByLineId.get(assignment.lineId) ?? '',
-        ),
-        timeLabel: this.formatTime(assignment.slot.startMs),
-      }));
-    },
-  );
-
-  /**
-   * Are the party's seats all at once, or one after another? Drives which
-   * sentence heads the arrangement — the engine returns both kinds and the
-   * user is told which one they picked.
-   */
-  protected readonly arrangementKind = computed<'parallel' | 'sequential'>(
-    () => {
-      const located = this.selectedOption();
-      const option = located?.option;
-      if (!option || option.assignments.length < 2) return 'parallel';
-      const first = option.assignments[0]?.slot.startMs;
-      return option.assignments.every(
-        (assignment) => assignment.slot.startMs === first,
-      )
-        ? 'parallel'
-        : 'sequential';
-    },
-  );
 
   // ── Commands ────────────────────────────────────────────────────────
 
-  protected selectDay(cell: AvailabilityDayCell): void {
-    if (cell.outOfRange || cell.freeMinutes === 0) return;
-    this.store.selectDay(cell.dayKey);
-  }
-
-  protected selectStart(start: StartVm): void {
-    this.store.selectStart(start.startMs, start.shopKey);
-  }
-
-  protected shiftMonth(delta: -1 | 1): void {
-    const month = this.month();
-    const today = this.today();
-    if (!month || !today) return;
-    const anchor = month.anchor;
-    // Walk a whole month by stepping to the 1st and crossing the boundary,
-    // never by adding 30 days.
-    let cursor = anchor;
-    if (delta === 1) {
-      while (cursor.month === anchor.month) cursor = cursor.next();
-    } else {
-      cursor = anchor.previous();
-      while (cursor.day !== 1) cursor = cursor.previous();
-      if (cursor.isBefore(today)) cursor = today;
-    }
-    this.monthAnchor.set(cursor);
-  }
-
-  /** Hand the machine the whole arrangement — envelope and per-seat placement. */
-  protected continue(): void {
-    const located = this.selectedOption();
-    if (!located) return;
-    const option = located.option;
-
-    const assignments: SeatAssignment[] = [];
-    for (const assignment of option.assignments) {
-      const slot = this.toTimeSlot(
-        assignment.slot.startMs,
-        assignment.slot.endMs,
-      );
-      const lineId = this.store.cartLineId(assignment.lineId);
-      if (!slot || !lineId) return;
-      assignments.push({ lineId, barberId: assignment.barberId, slot });
-    }
-
-    const envelope = this.toTimeSlot(
-      option.envelope.startMs,
-      option.envelope.endMs,
-    );
-    if (!envelope || assignments.length !== option.assignments.length) return;
-
-    this.store.selectSchedule({
-      // The shop comes from the OPTION, not from the picker: with "any shop"
-      // they differ, and the appointment happens where the barbers are.
-      locationId: located.locationId,
-      timeSlot: envelope,
-      assignments,
-    });
-  }
-
-  // ── Formatting ──────────────────────────────────────────────────────
-
-  protected isSelectedDay(cell: AvailabilityDayCell): boolean {
-    return this.selectedDayKey() === cell.dayKey;
+  protected selectDay(cell: ScheduleDayVm): void {
+    if (!cell.bookable) return;
+    this.store.selectDay(cell.dayKey, this.zone());
   }
 
   /**
-   * Bookability outranks month membership.
+   * Watch the chosen day — the bell in the sheet's bar.
    *
-   * The grid's padding rows are not decoration — they are the first days of
-   * the next month, and on the 30th they are most of what a client can
-   * actually book. Rendering them `outside` put bookable and unbookable days
-   * in the same grey, so the one question the grid exists to answer ("can I
-   * come in that day?") had no visual answer in the last row. `outside` now
-   * applies only where it costs nothing: a padding day nobody can book.
+   * One day, because there is only ever one: the multi-date search was removed
+   * as over-complication (owner ruling 2026-08-01). `submitWaitlist` sends
+   * `state.when`, and a single-day pick lives in `selectedDayKey`, so the day
+   * has to be declared first — `watchOnly` does exactly that, replacing rather
+   * than adding so a restored draft's days cannot ride along.
+   *
+   * Signed-out, this routes to auth FIRST rather than letting the server
+   * refuse: a waitlist request is a promise to notify someone, and there is
+   * nobody to notify yet. The draft carries the declaration across the round
+   * trip, so it costs nothing the user assembled.
    */
-  protected dayState(
-    cell: AvailabilityDayCell,
-  ): 'plain' | 'today' | 'selected' | 'outside' | 'unavailable' {
-    if (this.isSelectedDay(cell)) return 'selected';
-    if (cell.outOfRange) return 'outside';
-    if (cell.freeMinutes === 0) return 'unavailable';
-    return cell.isToday ? 'today' : 'plain';
+  protected async watchSelectedDay(): Promise<void> {
+    if (this.store.pending()) return;
+
+    const day = this.selectedDay();
+    if (!day) return;
+    this.store.watchOnly(day);
+
+    if (this.accountState.principal().kind !== 'active') {
+      await this.router.navigate(['/auth'], {
+        queryParams: { redirect: '/book?step=schedule' },
+      });
+      return;
+    }
+    await this.store.submitWaitlist();
   }
 
-  protected isSelectedStart(start: StartVm): boolean {
-    return (
-      this.selectedStartMs() === start.startMs &&
-      this.store.selectedShopKey() === start.shopKey
+  /**
+   * Bring TODAY into view — the way back from a long scroll, and where the
+   * step opens.
+   *
+   * Anchored on today's own cell rather than on its month. The run starts at
+   * the 1st because a month grid that begins mid-month is not a month grid,
+   * but that means the current month is mostly days nobody can book — on the
+   * 31st, an entire screen of grey before anything tappable. Landing on the
+   * cell puts the first bookable day where the eye already is; `scroll-margin`
+   * in the stylesheet keeps it clear of the pinned weekday row.
+   */
+  protected scrollToToday(
+    behavior: ScrollBehavior = 'smooth',
+    block: ScrollLogicalPosition = 'start',
+  ): void {
+    afterNextRender(
+      () => {
+        const key = this.today()?.key();
+        const cell = this.host.nativeElement.querySelector(
+          `[data-day-key="${key}"]`,
+        );
+        // jsdom has no layout and no `scrollIntoView` — this is polish, and
+        // polish never throws in an environment that cannot do it.
+        cell?.scrollIntoView?.({ block, behavior });
+      },
+      { injector: this.injector },
     );
+  }
+
+  /**
+   * Open on today, unless the user already chose a day.
+   *
+   * `nearest`, NOT `start`: on the 1st, today is already in the first row, and
+   * forcing it to the top of the scroll box scrolled the step's own heading
+   * away before the user had touched anything — the screen opened with its
+   * title already collapsed into the bar and half a row of dates dissolving
+   * under it. `nearest` scrolls the minimum, which is nothing at all when
+   * today is on screen. The BUTTON still uses `start`, because a deliberate
+   * "back to today" from three months out should land today at the top.
+   *
+   * Coming back from review must land where they left off — the same reason
+   * the machine keeps the location across a step back. The jump is
+   * unanimated: there is nothing on screen yet for an animation to explain.
+   */
+  constructor() {
+    if (this.selectedDayKey() === null) this.scrollToToday('auto', 'nearest');
+
+    // A waitlist match landed here through its notification: the freed day
+    // is already selected — open its times without another tap, because the
+    // notification promised a live search, not homework.
+    if (this.store.consumeWaitlistArrival() && this.selectedDayKey() !== null) {
+      this.timeOpen.set(true);
+    }
+  }
+
+  // ── The sheet ───────────────────────────────────────────────────────
+
+  protected readonly timeOpen = signal(false);
+
+  /** The day the time sheet is about in SINGLE mode, as a domain value. */
+  protected readonly selectedDay = computed<CalendarDay | null>(() => {
+    const key = this.selectedDayKey();
+    if (!key) return null;
+    const day = CalendarDay.create(key, this.zone());
+    return day.isSuccess() ? day.value : null;
+  });
+
+  /**
+   * Is there anything for the sheet to be ABOUT yet?
+   *
+   * One day in single mode, at least one declared day in multi-select. The
+   * pick is present in both modes and only ever changes its enabled state —
+   * a control that vanishes when you toggle a neighbouring one is the bar
+   * churn this step was rebuilt to stop.
+   */
+  protected readonly canOpenTimes = computed(() => this.selectedDay() !== null);
+
+  // ── The forward move ────────────────────────────────────────────────
+
+  /**
+   * The arrangement the time sheet's Confirm handed back — WHERE, WHEN and by
+   * whom, ready for the machine.
+   *
+   * Held here rather than dispatched by the sheet itself because confirming a
+   * time is no longer the step's exit: the CTA below is, exactly as on the
+   * services step, where the sheet configures and the bar advances. Validity
+   * is re-derived against the store's own start (below) so a `slot_unavailable`
+   * bounce — which clears the start — cannot leave a stale offer armed.
+   */
+  private readonly pendingSelection = signal<ScheduleSelection | null>(null);
+
+  /** The pending arrangement, IF it still describes the chosen start. */
+  private readonly validSelection = computed<ScheduleSelection | null>(() => {
+    const selection = this.pendingSelection();
+    const startMs = this.store.selectedStartMs();
+    if (!selection || startMs === null) return null;
+    return selection.timeSlot.start.toMillis() === startMs ? selection : null;
+  });
+
+  /**
+   * What the time-pick states: the chosen time, or the question. The DAY is
+   * already answered by the calendar behind it, so the pill only ever has to
+   * carry the hour.
+   */
+  protected readonly timePickLabel = computed(() => {
+    const selection = this.validSelection();
+    return selection
+      ? this.formatTime(selection.timeSlot.start.toMillis())
+      : this.transloco.translate('booking.schedule.chooseTime');
+  });
+
+  /**
+   * A plain forward move, like every other step — the time question lives in
+   * the pick above it.
+   */
+  protected readonly forwardLabel = computed(() =>
+    this.transloco.translate('booking.continue'),
+  );
+
+  /**
+   * A time, in both modes. Multi-select widens the SEARCH, not what counts as
+   * an answer: the machine's `select_schedule` takes one arrangement either
+   * way, and "3 days declared" is not something the review step can show.
+   */
+  protected readonly forwardBlocked = computed(
+    () => this.validSelection() === null,
+  );
+
+  protected advance(): void {
+    const selection = this.validSelection();
+    if (selection) this.store.selectSchedule(selection);
+  }
+
+  /** The sheet's Confirm: keep the offer, arm the CTA, put the sheet away. */
+  protected onTimeConfirmed(selection: ScheduleSelection): void {
+    this.pendingSelection.set(selection);
+    this.timeOpen.set(false);
   }
 
   protected formatTime(millis: number): string {
-    return new Intl.DateTimeFormat(this.content.locale(), {
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false,
-      timeZone: this.zone(),
-    }).format(new Date(millis));
+    return this.timeFormat().format(new Date(millis));
   }
+}
 
-  protected locationName(locationId: LocationId): string {
-    const location = this.locations().find((candidate) =>
-      candidate.id.equals(locationId),
-    );
-    return location
-      ? this.content.text({ en: location.name.en, bg: location.name.bg })
-      : locationId.value;
-  }
-
-  private barberName(barberId: BarberId): string {
-    const barber = this.catalog
-      .barbers()
-      .find((candidate) => candidate.id.equals(barberId));
-    return barber
-      ? this.content.text({ en: barber.name.en, bg: barber.name.bg })
-      : barberId.value;
-  }
-
-  /** `seatKeyValue` is `'self'` or the bare `GuestId` — never a prefixed form. */
-  private personLabel(seatKey: string): string {
-    // The booker by NAME once we know it — three steps said "You" to a
-    // signed-in user whose name was sitting in the session the whole time
-    // (owner ruling 2026-07-31). "You" is the fallback, not the rule.
-    if (seatKey === 'self')
-      return (
-        this.identity.displayName() ||
-        this.transloco.translate('booking.party.you')
-      );
-    const guest = this.store
-      .guests()
-      .find((candidate) => candidate.id.value === seatKey);
-    return guest?.label.value ?? seatKey;
-  }
-
-  private toTimeSlot(startMs: number, endMs: number): TimeSlot | null {
-    const zone = this.zone();
-    const start = ZonedDateTime.fromMillis(startMs, zone);
-    const end = ZonedDateTime.fromMillis(endMs, zone);
-    if (start.isFailure() || end.isFailure()) return null;
-    const slot = TimeSlot.of(start.value, end.value);
-    return slot.isSuccess() ? slot.value : null;
-  }
+/**
+ * The capacity query, flattened to a comparable string.
+ *
+ * The adapter listens to `capacity/{YYYY-MM}` month docs now, so the
+ * listener set depends only on the RANGE; `barberIds` and `locationId` are
+ * applied in its pure map. They stay in the key regardless: a change to
+ * either must re-emit a recomputed capacity map, and re-subscribing two or
+ * three month-doc listeners to get one is noise-level cost. `null` (query
+ * not ready) never equals a real key, so readiness transitions still pass.
+ */
+function capacityQueryKey(
+  query: {
+    readonly locationId: { readonly value: string } | null;
+    readonly range: {
+      readonly from: { key(): string };
+      readonly to: { key(): string };
+    };
+    readonly barberIds: readonly { readonly value: string }[];
+  } | null,
+): string {
+  if (query === null) return '∅';
+  return [
+    query.locationId?.value ?? '*',
+    query.range.from.key(),
+    query.range.to.key(),
+    query.barberIds.map((id) => id.value).join(','),
+  ].join('|');
 }

@@ -1,0 +1,22 @@
+/*
+ * The sheet's own gutter and bar clearance, exactly as the time sheet takes
+ * them: `--ui-sheet-inset` is the DS surface's fluid safe gutter, and the
+ * action bar publishes its own height as clearance. Hard-coding either would
+ * drift from the sheet the moment the DS retunes them.
+ */
+.booking-contact__body {
+  padding-inline: var(--ui-sheet-inset, var(--sys-space-comfortable));
+  padding-block-end: var(
+    --ui-sheet-action-bar-clearance,
+    var(--sys-space-spacious)
+  );
+}
+
+/*
+ * A note is a text field that grew: the same frame and ink, but it wraps, and
+ * it may only be resized along the axis that cannot break the sheet's layout.
+ */
+.booking-contact__body textarea[uiTextField] {
+  resize: vertical;
+  min-block-size: 5rem;
+}

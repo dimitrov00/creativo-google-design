@@ -1,53 +1,368 @@
 <ng-container *transloco="let t">
   <lib-booking-step-layout>
-    <ui-stack uiSpacing="tight">
-      <h1 libStepTitle uiText uiFont="title2">
-        {{ t('booking.review.title') }}
+    <!-- ONE heading recipe across the whole wizard: `ui-section-header`'s
+         title slot, the extra-large title the services step already used
+         (owner ruling 2026-08-04 — four steps had four different title sizes
+         and four different distances from the bar). No lede: the old one
+         promised "you pay at the shop" in the one place that cannot keep the
+         promise once pay-now exists, and where money is settled is the
+         bottom bar's sentence to say, beside the amount. -->
+    <ui-section-header>
+      <h1 uiTitle libStepTitle>
+        {{ store.isRescheduling() ? t('booking.review.moveTitle') :
+        t('booking.review.title') }}
       </h1>
-      <p uiText uiFont="subheadline" uiForegroundStyle="secondary">
-        {{ t('booking.review.lede') }}
-      </p>
-    </ui-stack>
+    </ui-section-header>
 
-    <!-- WHEN and WHERE, stated once and large: the two facts a person
-         double-checks before agreeing to anything. -->
-    <ui-stack uiSpacing="none" data-testid="booking-review-when">
-      <p uiText uiFont="title3">{{ dayLabel() }}</p>
-      <p uiText uiFont="body" uiForegroundStyle="secondary">
-        {{ windowLabel() }} · {{ locationName() }}
-      </p>
-    </ui-stack>
-
-    <!-- Each line, in the shape it has had since the bag. -->
-    <ui-list-group data-testid="booking-review-lines">
-      @for (line of lines(); track line.key) {
-      <ui-list-row uiAlignment="leading">
+    <!-- WHERE, as a place rather than a name — a card whose whole top IS the
+         map, the Maps place-card anatomy. The pin is centred and selected;
+         pan away and the DS map's offscreen indicator points back at it (the
+         same `ui-map` contract the location step rides). Cooperative gestures
+         stay ON, the default, because this map lives in a scrolling page: a
+         plain swipe must scroll the step, not pan the map. -->
+    <ui-card uiPadding="none" data-testid="booking-review-where">
+      <div class="booking-review__map">
+        <ui-map
+          [uiPins]="pins()"
+          [uiSelectedPinId]="selectedPinId()"
+          [uiColorScheme]="colorScheme()"
+          [uiSelectedZoom]="14.5"
+          data-testid="booking-review-map"
+        />
+      </div>
+      <!-- Identity leading, one hugged action trailing. The button is the
+           glyph alone: "Навигация" spent a third of the row's width saying
+           what the arrow says instantly, and HIG asks for the symbol when a
+           symbol is unambiguous. The label lives on, as the accessible name
+           and the tooltip. -->
+      <div class="booking-review__place">
         <ui-stack uiSpacing="none">
-          <span uiText uiFont="body">
-            {{ line.serviceName }}@if (line.variantName) {
-            <span uiForegroundStyle="secondary"> · {{ line.variantName }}</span>
-            }
+          <span uiText uiFont="body" uiWeight="semibold">
+            {{ locationName() }}
           </span>
           <span uiText uiFont="footnote" uiForegroundStyle="secondary">
-            {{ line.personLabel }} · {{ line.barberName }} · {{ line.timeLabel
-            }}
+            {{ locationAddress() }}
           </span>
         </ui-stack>
-        <span uiTrailing uiText uiFont="body">{{ line.priceLabel }}</span>
-      </ui-list-row>
-      }
-    </ui-list-group>
+        @if (directionsHref(); as href) {
+        <a
+          uiButton
+          uiButtonStyle="bordered"
+          uiControlSize="regular"
+          [uiIconOnly]="true"
+          [href]="href"
+          target="_blank"
+          rel="noopener"
+          [attr.aria-label]="t('booking.review.directions')"
+          [title]="t('booking.review.directions')"
+          data-testid="booking-review-directions"
+        >
+          <ui-icon uiName="location.directions" />
+        </a>
+        }
+      </div>
+    </ui-card>
 
-    @if (totalLabel(); as total) {
-    <!-- Nothing is charged here — money is a later phase. This is what to
-           expect at the chair, which is the honest thing to promise. -->
-    <ui-stack uiAxis="horizontal" uiAlignment="center" uiSpacing="tight">
-      <span uiText uiFont="body" uiForegroundStyle="secondary">
-        {{ t('booking.review.payAtShop') }}
-      </span>
-      <span uiText uiFont="headline" data-testid="booking-review-total">
-        {{ total }}
-      </span>
+    <!-- WHEN, as a calendar rather than a sentence: the month at a glance
+         with the chosen day filled — instantly recognisable the way a date
+         spelled out is not. The heading is the MONTH alone (the year only
+         when the booking leaves this one); the sentence that used to sit
+         under it repeated what the filled cell and the time row already say.
+
+         READ-ONLY: the cells are spans, not buttons, and the grid is
+         aria-hidden — the time row below carries the whole fact in words, so
+         forty-two silent cells would be noise to a screen reader. -->
+    <!-- `regular` padding, the same inset the place row and the service
+         cards carry: three cards in a column with three different insets
+         read as three different systems. -->
+    <ui-card uiPadding="regular" data-testid="booking-review-when">
+      <ui-stack uiSpacing="compact">
+        <span uiText uiFont="headline">{{ monthLabel() }}</span>
+
+        <ui-calendar-grid
+          uiSize="regular"
+          class="booking-review__calendar"
+          aria-hidden="true"
+          data-testid="booking-review-calendar"
+        >
+          @for (label of weekdayLabels(); track $index) {
+          <span uiWeekday uiText uiFont="caption" uiForegroundStyle="secondary">
+            {{ label }}
+          </span>
+          } @for (week of weeks(); track $index) { @for (day of week; track
+          $index) { @if (day === null) {
+          <span uiDay></span>
+          } @else {
+          <span uiDay>
+            <ui-date-badge
+              [uiDay]="day"
+              [uiState]="day === selectedDayOfMonth() ? 'selected' : 'plain'"
+            />
+          </span>
+          } } }
+        </ui-calendar-grid>
+
+        <!-- The window, under the grid where the day it belongs to is: a
+             stated fact, not a control — no chevron, nothing to tap. This is
+             the ONE place the time is said now; the service cards below name
+             their own minute only when there is a sequence to order. -->
+        <div class="booking-review__when-row" data-testid="booking-review-time">
+          <ui-icon uiName="booking.slot" uiForegroundStyle="secondary" />
+          <span uiText uiFont="body">{{ dayLabel() }}</span>
+          <span
+            uiText
+            uiFont="body"
+            uiWeight="semibold"
+            class="booking-review__when-value"
+          >
+            {{ windowLabel() }}
+          </span>
+        </div>
+      </ui-stack>
+    </ui-card>
+
+    <!-- WHAT — the bag's content, resolved: same shelves, same thumbnails,
+         with the open questions (which barber, which minute) now closed.
+         The header's trailing Edit is the HIG affordance for "this list is
+         changeable, elsewhere" — it rewinds to the step that owns the answer
+         instead of growing controls on every row. -->
+    <ui-stack uiSpacing="compact" data-testid="booking-review-lines">
+      <div class="booking-review__section-head">
+        <span uiText uiFont="headline">
+          {{ t('booking.review.services') }}
+        </span>
+        <!-- The pencil, not the word: an Edit affordance beside a heading is
+             one of the glyphs HIG treats as self-evident, and the word cost
+             a quarter of the row to say the same thing. It rewinds to the
+             step that owns the answer rather than growing controls on every
+             card. -->
+        <button
+          type="button"
+          uiButton
+          uiButtonStyle="plain"
+          uiControlSize="small"
+          [uiIconOnly]="true"
+          [attr.aria-label]="t('booking.review.edit')"
+          [title]="t('booking.review.edit')"
+          data-testid="booking-review-edit-services"
+          (click)="editServices()"
+        >
+          <!-- Accent ink, not the plain style's secondary label: a glyph
+               that DOES something has to read as tappable, and colour is
+               how iOS says so in a section header. -->
+          <ui-icon uiName="booking.edit" uiForegroundStyle="accent" />
+        </button>
+      </div>
+
+      @for (group of groups(); track group.key) {
+      <ui-stack
+        uiSpacing="compact"
+        [attr.data-testid]="'booking-review-group-' + group.key"
+      >
+        @if (multiPerson()) {
+        <ui-stack
+          uiAxis="horizontal"
+          uiAlignment="center"
+          uiSpacing="compact"
+          class="bag-person"
+        >
+          <ui-avatar
+            [uiSrc]="group.avatarSrc"
+            [uiName]="group.monogramName"
+            uiControlSize="small"
+          />
+          <span uiText uiFont="headline" class="bag-person__name">
+            {{ group.personLabel }}
+          </span>
+          @if (group.subtotalLabel; as subtotal) {
+          <span
+            uiText
+            uiFont="callout"
+            uiForegroundStyle="secondary"
+            class="bag-person__sum"
+            [attr.data-testid]="'booking-review-subtotal-' + group.key"
+          >
+            {{ subtotal }}
+          </span>
+          }
+        </ui-stack>
+        }
+
+        <!-- One CARD per booked service, the visit-card anatomy: the art
+             leading, the service's own name carrying the card, the variant
+             as a token rather than a run-on clause after a middot (the
+             variant is a CHOICE, and a choice reads as a chip), the price
+             riding the title line, and the person doing it with their face
+             on the bottom row. -->
+        @for (line of group.lines; track line.key) {
+        <ui-card
+          uiPadding="regular"
+          class="booking-review-line"
+          data-testid="booking-review-line"
+        >
+          <div class="booking-review-line__head">
+            <span class="bag-line__art">
+              @if (line.coverSrc) {
+              <ui-async-image [uiSrc]="line.coverSrc" uiAlt="" />
+              } @else {
+              <ui-icon uiName="service.placeholder" uiScale="medium" />
+              }
+            </span>
+            <ui-stack uiSpacing="tight" class="booking-review-line__identity">
+              <span uiText uiFont="headline">{{ line.serviceName }}</span>
+              @if (line.variantName) {
+              <span
+                uiBadge
+                uiTone="neutral"
+                class="booking-review-line__variant"
+              >
+                {{ line.variantName }}
+              </span>
+              }
+            </ui-stack>
+            <span uiText uiFont="body" class="booking-review-line__price">
+              {{ line.priceLabel }}
+            </span>
+          </div>
+
+          <div class="booking-review-line__barber">
+            <ui-avatar
+              [uiSrc]="line.barberAvatarSrc"
+              [uiName]="line.barberName"
+              uiControlSize="small"
+            />
+            <span uiText uiFont="subheadline" uiForegroundStyle="secondary">
+              {{ t('booking.review.withBarber', { name: line.barberName }) }}@if
+              (line.timeLabel) { · {{ line.timeLabel }} }
+            </span>
+          </div>
+        </ui-card>
+        }
+      </ui-stack>
+      }
+    </ui-stack>
+
+    <!-- The NOTE, as its own thing. It lived inside the contact sheet for a
+         day and earned its eviction: what the barber should know about the
+         VISIT is not contact data, and burying it there meant nobody who
+         did not open the contact editor ever found it. One row states it or
+         invites it; its own small sheet edits it. Signed-in only, because a
+         note travels on the booking's contact snapshot. -->
+    @if (isSignedIn() && account() !== null) {
+    <ui-stack uiSpacing="compact" data-testid="booking-review-note-section">
+      <div class="booking-review__section-head">
+        <span uiText uiFont="headline">
+          {{ t('booking.review.noteTitle') }}
+        </span>
+        <button
+          type="button"
+          uiButton
+          uiButtonStyle="plain"
+          uiControlSize="small"
+          [uiIconOnly]="true"
+          [attr.aria-label]="t('booking.review.noteEdit')"
+          [title]="t('booking.review.noteEdit')"
+          data-testid="booking-review-edit-note"
+          (click)="noteSheetOpen.set(true)"
+        >
+          <ui-icon uiName="booking.edit" uiForegroundStyle="accent" />
+        </button>
+      </div>
+      <ui-list-group>
+        <button
+          type="button"
+          uiListRow
+          uiSize="large"
+          uiAlignment="leading"
+          [uiInteractive]="true"
+          data-testid="booking-review-note-row"
+          (click)="noteSheetOpen.set(true)"
+        >
+          <ui-icon
+            uiLeading
+            uiName="visit.note"
+            uiForegroundStyle="secondary"
+          />
+          <ui-stack uiSpacing="none" class="booking-review-line__identity">
+            @if (contactNote(); as note) {
+            <span uiText uiFont="body">{{ note }}</span>
+            } @else {
+            <span uiText uiFont="body" uiForegroundStyle="secondary">
+              {{ t('booking.review.notePlaceholder') }}
+            </span>
+            }
+          </ui-stack>
+        </button>
+      </ui-list-group>
+    </ui-stack>
+    }
+
+    <!-- WHO the shop will call — the checkout-sheet contact row. A
+         DISCLOSURE, not a form: the details live on the profile screen, and
+         inline editing at the moment of commitment is where typos are made.
+         Signed-out there is nothing to show; the sign-in note below covers
+         that case. -->
+    @if (isSignedIn() && account() !== null) {
+    <ui-stack uiSpacing="compact" data-testid="booking-review-contact">
+      <!-- The SAME grammar the services section uses: a heading with one
+           quiet accent affordance that leaves for the screen that owns the
+           answer. Both sections mean "change this, elsewhere", and a screen
+           that says that two ways — a header button here, a whole-row
+           chevron there — reads as two systems.
+
+           HIG allows either: a row that pushes gets a disclosure chevron
+           (Apple Pay's own contact row does), a section edited elsewhere
+           gets a header action. Choosing the header action twice also makes
+           leaving mid-booking DELIBERATE — a full-width tap target one
+           thumb-width from Confirm is easy to hit by accident, and it walks
+           the user out of a flow they were finishing. -->
+      <div class="booking-review__section-head">
+        <span uiText uiFont="headline">
+          {{ t('booking.review.contact') }}
+        </span>
+        <button
+          type="button"
+          uiButton
+          uiButtonStyle="plain"
+          uiControlSize="small"
+          [uiIconOnly]="true"
+          [attr.aria-label]="t('booking.review.editContact')"
+          [title]="t('booking.review.editContact')"
+          data-testid="booking-review-edit-contact"
+          (click)="contactSheetOpen.set(true)"
+        >
+          <ui-icon uiName="booking.edit" uiForegroundStyle="accent" />
+        </button>
+      </div>
+
+      <ui-list-group>
+        <!-- A stated fact now, not a control: the pencil above is the way
+             out, so the row carries no chevron and no press ink. -->
+        <ui-list-row uiSize="large" data-testid="booking-review-contact-row">
+          <ui-avatar
+            uiLeading
+            [uiSrc]="avatarUrl()"
+            [uiName]="bookerName()"
+            uiControlSize="regular"
+          />
+          <ui-stack uiSpacing="none" class="booking-review-line__identity">
+            <span uiText uiFont="body" uiWeight="semibold">
+              {{ contactName() }}
+            </span>
+            <!-- Email first — it is the longer of the two, and the one that
+                 would otherwise be the one to truncate. -->
+            @if (contactEmail(); as email) {
+            <span uiText uiFont="footnote" uiForegroundStyle="secondary">
+              {{ email }}
+            </span>
+            } @if (contactPhone(); as phone) {
+            <span uiText uiFont="footnote" uiForegroundStyle="secondary">
+              {{ phone }}
+            </span>
+            }
+          </ui-stack>
+        </ui-list-row>
+      </ui-list-group>
     </ui-stack>
     } @if (errorMessage(); as message) {
     <p
@@ -69,20 +384,108 @@
         {{ t('booking.review.signInWhy') }}
       </p>
     </ui-stack>
+    } @if (noteSheetOpen()) {
+    <ui-modal-sheet
+      sheetId="booking-note-sheet"
+      labelledBy="booking-note-title"
+      [closeLabel]="t('booking.contact.close')"
+      [open]="true"
+      data-testid="booking-note-sheet"
+      (dismissed)="noteSheetOpen.set(false)"
+    >
+      <span sheet-title>{{ t('booking.review.noteTitle') }}</span>
+
+      <ui-stack uiSpacing="loose" class="booking-note__body">
+        <ui-stack uiSpacing="tight">
+          <h2
+            id="booking-note-title"
+            uiSheetLargeTitle
+            uiText
+            uiFont="largeTitle"
+          >
+            {{ t('booking.review.noteTitle') }}
+          </h2>
+          <p uiText uiFont="subheadline" uiForegroundStyle="secondary">
+            {{ t('booking.review.noteLede') }}
+          </p>
+        </ui-stack>
+
+        <ui-stack uiSpacing="tight">
+          <textarea
+            uiTextField
+            rows="4"
+            [attr.maxlength]="noteLimit"
+            [placeholder]="t('booking.contact.notePlaceholder')"
+            data-testid="booking-note-input"
+            [value]="noteDraft()"
+            (input)="noteDraft.set($any($event.target).value)"
+          ></textarea>
+          @if (noteDraft().trim().length > noteLimit - 40) {
+          <span uiText uiFont="caption" uiForegroundStyle="secondary">
+            {{ noteDraft().trim().length }} / {{ noteLimit }}
+          </span>
+          }
+        </ui-stack>
+      </ui-stack>
+
+      <ui-sheet-action-bar sheet-overlay [uiVisible]="true">
+        <button
+          type="button"
+          uiButton
+          uiButtonStyle="borderedProminent"
+          [uiSpread]="true"
+          data-testid="booking-note-save"
+          (click)="saveNote()"
+        >
+          {{ t('booking.contact.save') }}
+        </button>
+      </ui-sheet-action-bar>
+    </ui-modal-sheet>
+    } @if (contactSheetOpen()) {
+    <lib-booking-contact-sheet
+      [uiContact]="store.contact()"
+      [uiDefaultCountry]="defaultCountry"
+      [uiLocale]="content.locale()"
+      (saved)="onContactSaved($event)"
+      (dismissed)="contactSheetOpen.set(false)"
+    />
     }
 
-    <button
-      stepActions
-      type="button"
-      uiButton
-      uiButtonStyle="borderedProminent"
-      uiControlSize="large"
-      [disabled]="store.pending()"
-      data-testid="booking-review-confirm"
-      (click)="confirm()"
-    >
-      {{ store.pending() ? t('booking.review.confirming') : isSignedIn() ?
-      t('booking.review.confirm') : t('booking.review.signInAndConfirm') }}
-    </button>
+    <!-- The bar: what it comes to, then the way forward — the bag's own bar
+         anatomy, because this screen IS the bag resolved and a sum that
+         docked in one and sat inline in the other read as two different
+         screens. Nothing is charged here; money is a later phase. This is
+         what to expect at the chair, which is the honest thing to promise. -->
+    <div stepActions class="booking-actions-block booking-review__actions">
+      <ui-stack uiSpacing="none" class="bag__total">
+        <span uiText uiFont="footnote" uiForegroundStyle="secondary">
+          {{ t('booking.review.payAtShop') }}
+        </span>
+        @if (totalLabel(); as total) {
+        <span
+          uiText
+          uiFont="title3"
+          class="bag__amount"
+          data-testid="booking-review-total"
+        >
+          {{ total }}
+        </span>
+        }
+      </ui-stack>
+
+      <button
+        type="button"
+        uiButton
+        uiButtonStyle="borderedProminent"
+        uiControlSize="large"
+        [disabled]="store.pending()"
+        data-testid="booking-review-confirm"
+        (click)="confirm()"
+      >
+        {{ store.pending() ? t('booking.review.confirming') : !isSignedIn() ?
+        t('booking.review.signInAndConfirm') : store.isRescheduling() ?
+        t('booking.review.move') : t('booking.review.confirm') }}
+      </button>
+    </div>
   </lib-booking-step-layout>
 </ng-container>

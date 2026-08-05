@@ -236,12 +236,20 @@
               </span>
             </button>
 
-            <!-- Quiet on purpose: a red glyph repeated down every row
-                     turns a bag into a list of things to delete. -->
+            <!-- Destructive ink, like every other way this flow offers to
+                     remove something: the service sheet's remove button and
+                     the seat menu's Remove row are both `destructive`, and one
+                     verb wearing two colours across three screens reads as two
+                     systems (owner ruling 2026-08-04). The earlier note here
+                     argued a red glyph per row turns a bag into a list of
+                     things to delete — but iOS repeats exactly this glyph, in
+                     exactly this red, down every row of an editing list, and
+                     the row's weight is carried by its name and its price. -->
             <button
               type="button"
               uiButton
               uiButtonStyle="plain"
+              uiRole="destructive"
               uiControlSize="regular"
               [uiIconOnly]="true"
               class="bag-line__remove"
@@ -352,6 +360,7 @@
         uiButton
         uiButtonStyle="borderedProminent"
         uiControlSize="large"
+        [disabled]="forwardBlocked()"
         data-testid="booking-bag-continue"
         (click)="proceed.emit()"
       >

@@ -1,4 +1,11 @@
 import { Component, effect, inject, input, untracked } from '@angular/core';
+import { TranslocoService } from '@jsverse/transloco';
+import {
+  APPOINTMENT_REPOSITORY,
+  AppointmentId,
+  WAITLIST_READER,
+} from '@creativo/application/booking';
+import { NgTemplateOutlet } from '@angular/common';
 import { ActivatedRoute, Router } from '@angular/router';
 import { TranslocoDirective } from '@jsverse/transloco';
 import { UiButton, UiIcon } from '@creativo/ui/controls';
@@ -7,8 +14,12 @@ import { UiFrameDirective, UiMaterialDirective } from '@creativo/ui/modifiers';
 import { UiStepper } from '@creativo/ui/patterns';
 import { AccountStateService } from '@creativo/features/client/account-state';
 import { BookingFlowStore } from '../booking-flow.store';
-import { BookingChromeService } from '../chrome/booking-chrome.service';
+import {
+  BookingChromeHeight,
+  BookingChromeService,
+} from '../chrome/booking-chrome.service';
 import { BookingConfirmedStep } from '../confirmed-step/booking-confirmed-step';
+import { BookingWaitlistedStep } from '../waitlisted-step/booking-waitlisted-step';
 import { BookingLocationStep } from '../location-step/booking-location-step';
 import { BookingReviewStep } from '../review-step/booking-review-step';
 import { BookingScheduleStep } from '../schedule-step/booking-schedule-step';
@@ -45,7 +56,10 @@ import { BookingStepLayout } from '../step-layout/booking-step-layout';
 @Component({
   selector: 'lib-client-booking',
   imports: [
+    BookingChromeHeight,
+    NgTemplateOutlet,
     BookingConfirmedStep,
+    BookingWaitlistedStep,
     BookingLocationStep,
     BookingReviewStep,
     BookingScheduleStep,
@@ -82,14 +96,152 @@ export class ClientBooking {
   /** Bound from `?step=` by `withComponentInputBinding()` (already enabled). */
   readonly step = input<string | undefined>(undefined);
 
+  /** `?waitlist={requestId}&day={dayKey}` — the match notification's deep link. */
+  readonly waitlist = input<string | undefined>(undefined);
+  readonly day = input<string | undefined>(undefined);
+
+  /** `?repeat={appointmentId}` — "the same again", from a past visit. */
+  readonly repeat = input<string | undefined>(undefined);
+
+  /** `?reschedule={appointmentId}` — the SAME booking, at a new time. */
+  readonly reschedule = input<string | undefined>(undefined);
+
+  private readonly waitlistReader = inject(WAITLIST_READER);
+  private readonly appointments = inject(APPOINTMENT_REPOSITORY);
+  private readonly transloco = inject(TranslocoService);
+
+  /**
+   * Land the deep link: fetch the caller's own request and rebuild the flow
+   * around it — bag, shop, and the freed day already selected, times sheet
+   * opening on its own. The notification promised a live search; a blank
+   * wizard with no memory of why you came is not that.
+   *
+   * Every failure path falls through SILENTLY to the ordinary entry (draft
+   * restore already ran): a lapsed request, a foreign id, a retired service —
+   * none of them are worth an error screen over what is still a working
+   * booking flow.
+   */
+  private async landWaitlistDeepLink(requestId: string): Promise<void> {
+    const found = await this.waitlistReader.findMine(requestId);
+    if (found.isFailure() || found.value === null) return;
+    this.store.restoreFromWaitlist(found.value, this.day() ?? null, (ordinal) =>
+      this.transloco.translate('booking.party.guest', {
+        number: ordinal,
+      }),
+    );
+  }
+
+  /**
+   * Land "the same again": fetch the visit and rebuild the bag around it.
+   *
+   * Owner-scoped like the waitlist read, and silent on every failure path —
+   * a retired service or a foreign id is not worth an error screen over
+   * what is still a perfectly good booking flow.
+   */
+  private async landRepeat(appointmentId: string): Promise<void> {
+    const id = AppointmentId.create(appointmentId);
+    if (id.isFailure()) return;
+
+    const found = await this.appointments.findById(id.value);
+    if (found.isFailure() || found.value === null) return;
+    this.store.repeat(found.value, (ordinal) =>
+      this.transloco.translate('booking.party.guest', { number: ordinal }),
+    );
+  }
+
+  /**
+   * Land a move: the same bag as the appointment being moved, and the store
+   * told to COMMIT it as a move rather than as a second booking.
+   */
+  private async landReschedule(appointmentId: string): Promise<void> {
+    const id = AppointmentId.create(appointmentId);
+    if (id.isFailure()) return;
+
+    const found = await this.appointments.findById(id.value);
+    if (found.isFailure() || found.value === null) return;
+    this.store.rescheduleFrom(found.value, (ordinal) =>
+      this.transloco.translate('booking.party.guest', { number: ordinal }),
+    );
+  }
+
+  /** One-shot latch — the deep link lands exactly once per visit. */
+  private waitlistLanded = false;
+  private repeatLanded = false;
+  private rescheduleLanded = false;
+
   constructor() {
-    this.store.restore();
+    // A draft resumes only on a CONTINUATION, never on a fresh arrival.
+    //
+    // Tapping "Book now" and landing three steps in — someone else's day
+    // already picked, someone else's bag already full — is the wizard
+    // answering a question nobody asked. `/book` with nothing in the URL is
+    // a person starting a booking, so it starts one.
+    //
+    // Every genuine continuation announces itself IN THE URL, which is what
+    // makes this safe: the sign-in round trip returns to `?step=schedule`,
+    // a reload and browser Back/Forward carry the step they were on, and a
+    // waitlist match arrives as `?waitlist=…`. Those restore. Nothing else
+    // does — and the stale draft is dropped rather than left to ambush the
+    // next reload, which would otherwise restore a flow the user had just
+    // been shown the start of.
+    const params = this.route.snapshot.queryParamMap;
+    // `?repeat=` starts a NEW booking that happens to be prefilled — the
+    // draft it replaces must go, or the prefill lands on top of it.
+    if (params.has('repeat') || params.has('reschedule')) {
+      this.store.clearDraft();
+    } else if (params.has('step') || params.has('waitlist')) {
+      this.store.restore();
+    } else {
+      this.store.clearDraft();
+    }
+
+    // The deep link can only be honoured once the PRINCIPAL is live: the
+    // request is owner-readable, and on a cold tab Firebase auth hydrates
+    // asynchronously — a constructor-time read raced it, got a rules denial
+    // dressed as "no such request", and silently fell through to a blank
+    // wizard (caught live by the E2E journey). Waiting on the principal is
+    // not polish; it is the difference between the feature existing and not.
+    effect(() => {
+      const principal = this.accountState.principal();
+      const waitlistId = this.waitlist();
+      if (this.waitlistLanded || !waitlistId) return;
+      if (principal.kind !== 'active') return;
+      this.waitlistLanded = true;
+      untracked(() => void this.landWaitlistDeepLink(waitlistId));
+    });
+
+    // Same rule, same reason: the appointment is owner-readable, and on a
+    // cold tab Firebase auth hydrates asynchronously.
+    effect(() => {
+      const principal = this.accountState.principal();
+      const repeatId = this.repeat();
+      if (this.repeatLanded || !repeatId) return;
+      if (principal.kind !== 'active') return;
+      this.repeatLanded = true;
+      untracked(() => void this.landRepeat(repeatId));
+    });
+
+    effect(() => {
+      const principal = this.accountState.principal();
+      const moveId = this.reschedule();
+      if (this.rescheduleLanded || !moveId) return;
+      if (principal.kind !== 'active') return;
+      this.rescheduleLanded = true;
+      untracked(() => void this.landReschedule(moveId));
+    });
 
     // State → URL. Depends on the machine ONLY. `replaceUrl` stays false so
     // each step is its own history entry and Back walks the wizard.
     effect(() => {
       const kind = this.store.step();
-      untracked(() => this.writeStepParam(kind));
+      untracked(() => {
+        this.writeStepParam(kind);
+        // A new step starts at ITS top. Same-route query navigation keeps
+        // the scroll where the last step left it, so a step advanced from
+        // halfway down arrived halfway down — with the sticky action bar
+        // hanging mid-air over a page shorter than the leftover offset.
+        window.scrollTo(0, 0);
+      });
     });
 
     // URL → state. Depends on the query param ONLY.

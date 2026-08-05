@@ -10,12 +10,16 @@ import {
   type CommittedBooking,
   type Result,
   ScheduleSelection,
+  SeatKey,
   TimeSlot,
+  WAITLIST_GATEWAY,
+  WaitlistGatewayError,
   ZonedDateTime,
   fail,
   ok,
 } from '@creativo/application/booking';
 import { BarberId, LocationId, ServiceId } from '@creativo/application/catalog';
+import { CLOCK } from '@creativo/application/shared';
 import { BookingFlowStore } from './booking-flow.store';
 
 const ZONE = 'Europe/Sofia';
@@ -57,11 +61,44 @@ const NULL_DRAFT_STORE = {
   clear: () => ok(undefined),
 };
 
-function createStore(gateway: StubGateway): BookingFlowStore {
+/** Records what the waitlist was asked to watch, and answers as told. */
+class StubWaitlistGateway {
+  answer: Result<{ requestId: string }, WaitlistGatewayError> = ok({
+    requestId: 'wl-1',
+  });
+  calls: unknown[] = [];
+
+  async request(
+    input: unknown,
+  ): Promise<Result<{ requestId: string }, WaitlistGatewayError>> {
+    this.calls.push(input);
+    return this.answer;
+  }
+
+  async cancel(): Promise<Result<void, WaitlistGatewayError>> {
+    return ok(undefined);
+  }
+}
+
+function createStore(
+  gateway: StubGateway,
+  waitlist: StubWaitlistGateway = new StubWaitlistGateway(),
+): BookingFlowStore {
   TestBed.configureTestingModule({
     providers: [
       { provide: BOOKING_DRAFT_STORE, useValue: NULL_DRAFT_STORE },
       { provide: BOOKING_GATEWAY, useValue: gateway },
+      { provide: WAITLIST_GATEWAY, useValue: waitlist },
+      // Fixed, not the system clock: the store reads it to prune a restored
+      // declaration's lapsed days, and a spec whose meaning changes at
+      // midnight is a spec that fails once a day.
+      {
+        provide: CLOCK,
+        useValue: {
+          now: (zone: string) =>
+            ZonedDateTime.fromISO('2026-08-03T09:00:00.000+03:00', zone),
+        },
+      },
       BookingFlowStore,
     ],
   });
@@ -69,8 +106,12 @@ function createStore(gateway: StubGateway): BookingFlowStore {
 }
 
 /**
- * Walk a store to `review` the way a person does: a guest, a line each, a day,
- * a time. Anything shorter would be testing a state nobody can reach.
+ * Walk a store to `review` the way a person does: a guest, a line EACH, a day,
+ * a time. Anything shorter would be testing a state nobody can reach — and the
+ * "each" is load-bearing now that the machine refuses to leave the services
+ * step while anyone in the party is booking nothing. This walk used to add the
+ * guest and then give a line only to the booker, which is precisely the
+ * booking that silently dropped Maria somewhere before the wire.
  */
 function walkToReview(store: BookingFlowStore): ScheduleSelection {
   // Step 1 is WHERE, and it is optional — this walk takes the explicit shop.
@@ -78,34 +119,39 @@ function walkToReview(store: BookingFlowStore): ScheduleSelection {
   store.next();
 
   store.addGuest('Maria');
+
+  store.addLine(SeatKey.self(), {
+    serviceId: unwrap(ServiceId.create('svc-fade')),
+    variantId: null,
+    barberPref: BarberPref.any(),
+  });
+  const guest = store.guests()[0];
+  if (!guest) throw new Error('fixture setup failed: no guest');
+  store.addLine(SeatKey.guest(guest.id), {
+    serviceId: unwrap(ServiceId.create('svc-beard')),
+    variantId: null,
+    barberPref: BarberPref.any(),
+  });
   store.next();
 
-  store.addLine(
-    { kind: 'self' },
-    {
-      serviceId: unwrap(ServiceId.create('svc-fade')),
-      variantId: null,
-      barberPref: BarberPref.any(),
-    },
-  );
-  store.next();
-
-  store.selectDay('2026-08-03');
+  store.selectDay('2026-08-03', ZONE);
   store.selectStart(at(12).toMillis(), 'loc-center');
 
-  const lineId = store.cartLineId(
-    store.cart()?.entries()[0]?.[1][0]?.id.value ?? '',
-  );
+  const slot = unwrap(TimeSlot.of(at(12), at(13)));
+  // Both seats, served in parallel — the envelope is the longer of the two,
+  // which for one hour each is the hour.
+  const assignments = (store.cart()?.entries() ?? [])
+    .flatMap(([, lines]) => lines)
+    .map((line) => {
+      const lineId = store.cartLineId(line.id.value);
+      if (!lineId) throw new Error('fixture setup failed: line went missing');
+      return { lineId, barberId: unwrap(BarberId.create('ivan')), slot };
+    });
+
   const selection: ScheduleSelection = {
     locationId: unwrap(LocationId.create('loc-center')),
-    timeSlot: unwrap(TimeSlot.of(at(12), at(13))),
-    assignments: [
-      {
-        lineId: lineId as NonNullable<typeof lineId>,
-        barberId: unwrap(BarberId.create('ivan')),
-        slot: unwrap(TimeSlot.of(at(12), at(13))),
-      },
-    ],
+    timeSlot: slot,
+    assignments,
   };
   store.selectSchedule(selection);
   return selection;
@@ -125,7 +171,13 @@ describe('BookingFlowStore — commit', () => {
     await store.commit();
 
     const [request] = gateway.calls;
-    expect(request?.seats).toHaveLength(1);
+    // One per seat — the guest travels too, as a LABEL, because that is all a
+    // party member is until they have an account of their own.
+    expect(request?.seats).toHaveLength(2);
+    expect(request?.seats.map((seat) => seat.subject)).toEqual([
+      { kind: 'self' },
+      { kind: 'guest', label: 'Maria' },
+    ]);
     // Read as a loose bag on purpose: the assertion is that these keys do
     // not EXIST on the wire, which the typed shape cannot express.
     const seat = request?.seats[0] as unknown as Record<string, unknown>;
@@ -159,7 +211,7 @@ describe('BookingFlowStore — commit', () => {
     // …but NOT the time it can no longer honour.
     expect(store.selectedStartMs()).toBeNull();
     // The bag and the party survive — nothing about a lost race invalidates them.
-    expect(store.lineCount()).toBe(1);
+    expect(store.lineCount()).toBe(2);
     expect(store.guests()).toHaveLength(1);
   });
 

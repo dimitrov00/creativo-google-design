@@ -204,6 +204,14 @@ export class BookingBagSheet {
    */
   readonly forwardLabel = input.required<string>();
 
+  /**
+   * Whether that move is available — passed in for the same reason the label
+   * is. The bag can be full and the party still short a person, and a bar
+   * that decided this from its own total would offer a way forward the step
+   * behind it refuses.
+   */
+  readonly forwardBlocked = input.required<boolean>();
+
   /** Open this line in the full sheet, for the person who holds it. */
   readonly editLine = output<{ seatKey: string; lineId: CartLineId }>();
   readonly dismissed = output<void>();

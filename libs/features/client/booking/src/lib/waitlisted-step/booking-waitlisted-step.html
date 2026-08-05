@@ -1,0 +1,92 @@
+<ng-container *transloco="let t">
+  <!-- The SAME success geometry every terminal screen lands on (owner
+       ruling 2026-08-04): spacer-centred hero in a padded 28rem reveal
+       column, stacked action bar beneath. The glyph stays a bell, not a
+       check — celebrating a non-booking is dishonest, and the confetti
+       moment has to stay rare enough to mean something. -->
+  <ui-stack
+    uiAlignment="center"
+    uiSpacing="none"
+    uiFrame
+    uiFrameMinHeight="100svh"
+    class="booking-waitlisted"
+  >
+    <ui-spacer />
+    <ui-stack
+      uiAlignment="center"
+      uiSpacing="comfortable"
+      uiPaddingHorizontal="regular"
+      uiFrame
+      uiFrameMaxWidth="28rem"
+      uiReveal
+      uiRevealTrigger="mount"
+    >
+      <span class="booking-waitlisted__glyph" aria-hidden="true">
+        <ui-icon uiName="calendar.watching" uiScale="large" />
+      </span>
+
+      <ui-stack uiSpacing="tight" uiAlignment="center">
+        <h1 uiText uiFont="largeTitle">{{ t('booking.waitlisted.title') }}</h1>
+        <p uiText uiFont="body" uiForegroundStyle="secondary">
+          {{ t('booking.waitlisted.lede') }}
+        </p>
+      </ui-stack>
+
+      <!-- The single most important line on the screen. A waitlist match is
+           an invitation to race for a slot, never a reservation, and letting
+           someone believe otherwise sets up the worst possible surprise. -->
+      <ui-status-indicator
+        uiTone="warning"
+        data-testid="booking-waitlisted-hold"
+      >
+        {{ t('booking.waitlisted.notHeld') }}
+      </ui-status-indicator>
+
+      @if (days().length > 0) {
+      <ui-stack uiSpacing="compact" class="booking-waitlisted__days">
+        <h2 uiText uiFont="footnote" uiForegroundStyle="secondary">
+          {{ t('booking.waitlisted.days') }}
+        </h2>
+        <ui-list-group data-testid="booking-waitlisted-days">
+          @for (day of days(); track day.key) {
+          <ui-list-row>
+            {{ day.dateLabel }} @if (day.windowsLabel) {
+            <span uiTrailing uiText uiFont="body" uiForegroundStyle="secondary">
+              {{ day.windowsLabel }}
+            </span>
+            }
+          </ui-list-row>
+          }
+        </ui-list-group>
+      </ui-stack>
+      }
+    </ui-stack>
+    <ui-spacer />
+
+    <ui-page-action-bar
+      [uiStacked]="true"
+      uiReveal="fade"
+      uiRevealTrigger="mount"
+      [uiRevealDelay]="450"
+    >
+      <a
+        uiButton
+        uiButtonStyle="borderedProminent"
+        uiControlSize="large"
+        routerLink="/account/appointments"
+        data-testid="booking-waitlisted-appointments"
+      >
+        {{ t('booking.confirmed.viewAppointments') }}
+      </a>
+      <a
+        uiButton
+        uiButtonStyle="plain"
+        uiControlSize="small"
+        routerLink="/"
+        data-testid="booking-waitlisted-home"
+      >
+        {{ t('booking.waitlisted.done') }}
+      </a>
+    </ui-page-action-bar>
+  </ui-stack>
+</ng-container>

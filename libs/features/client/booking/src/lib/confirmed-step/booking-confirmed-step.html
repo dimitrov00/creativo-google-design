@@ -1,47 +1,72 @@
 <ng-container *transloco="let t">
-  <!-- Terminal: no step layout and no action bar's "Continue" — the wizard is
-       over, so the chrome that implies a next step goes with it. -->
+  <!-- Terminal: no step layout and no "Continue" — the wizard is over, so
+       the chrome that implies a next step goes with it. The GEOMETRY is the
+       onboarding reward screen's, verbatim (owner ruling 2026-08-04: every
+       success screen lands the same way): spacer-centred hero in a 28rem
+       reveal column, then the STACKED action bar — one filled primary with
+       the quiet link beneath, fading in a beat after the hero. -->
   <ui-stack
-    uiSpacing="comfortable"
     uiAlignment="center"
-    uiPaddingHorizontal="regular"
-    uiPaddingVertical="spacious"
+    uiSpacing="none"
+    uiFrame
+    uiFrameMinHeight="100svh"
     class="booking-confirmed"
     data-testid="booking-confirmed"
   >
-    <ui-reward-moment data-testid="booking-confetti" />
+    <ui-spacer />
+    <ui-stack
+      uiAlignment="center"
+      uiSpacing="comfortable"
+      uiPaddingHorizontal="regular"
+      uiFrame
+      uiFrameMaxWidth="28rem"
+      uiReveal
+      uiRevealTrigger="mount"
+    >
+      <ui-reward-moment data-testid="booking-confetti" />
 
-    <ui-stack uiSpacing="tight" uiAlignment="center">
-      <h1 uiText uiFont="largeTitle">{{ t('booking.confirmed.title') }}</h1>
-      <p uiText uiFont="body" uiForegroundStyle="secondary">
-        {{ t('booking.confirmed.body') }}
-      </p>
-    </ui-stack>
+      <ui-stack uiSpacing="tight" uiAlignment="center">
+        <h1 uiText uiFont="largeTitle">
+          {{ store.isRescheduling() ? t('booking.confirmed.movedTitle') :
+          t('booking.confirmed.title') }}
+        </h1>
+        <p uiText uiFont="body" uiForegroundStyle="secondary">
+          {{ store.isRescheduling() ? t('booking.confirmed.movedBody') :
+          t('booking.confirmed.body') }}
+        </p>
+      </ui-stack>
 
-    <ui-stack uiSpacing="none" uiAlignment="center">
-      <p uiText uiFont="title3" data-testid="booking-confirmed-when">
-        {{ whenLabel() }}
-      </p>
-      <p uiText uiFont="body" uiForegroundStyle="secondary">
-        {{ locationName() }}
-      </p>
-    </ui-stack>
+      <ui-stack uiSpacing="none" uiAlignment="center">
+        <p uiText uiFont="title3" data-testid="booking-confirmed-when">
+          {{ whenLabel() }}
+        </p>
+        <p uiText uiFont="body" uiForegroundStyle="secondary">
+          {{ locationName() }}
+        </p>
+      </ui-stack>
 
-    <!-- Only for a party: one person with one barber is the line above. -->
-    @if (lines().length > 0) {
-    <ui-list-group data-testid="booking-confirmed-lines">
-      @for (line of lines(); track line.key) {
-      <ui-list-row>
-        {{ line.personLabel }}
-        <span uiTrailing uiText uiFont="body" uiForegroundStyle="secondary">
-          {{ line.barberName }} · {{ line.timeLabel }}
-        </span>
-      </ui-list-row>
+      <!-- Only for a party: one person with one barber is the line above. -->
+      @if (lines().length > 0) {
+      <ui-list-group data-testid="booking-confirmed-lines">
+        @for (line of lines(); track line.key) {
+        <ui-list-row>
+          {{ line.personLabel }}
+          <span uiTrailing uiText uiFont="body" uiForegroundStyle="secondary">
+            {{ line.barberName }} · {{ line.timeLabel }}
+          </span>
+        </ui-list-row>
+        }
+      </ui-list-group>
       }
-    </ui-list-group>
-    }
+    </ui-stack>
+    <ui-spacer />
 
-    <ui-stack uiSpacing="compact" uiAlignment="center">
+    <ui-page-action-bar
+      [uiStacked]="true"
+      uiReveal="fade"
+      uiRevealTrigger="mount"
+      [uiRevealDelay]="450"
+    >
       <a
         uiButton
         uiButtonStyle="borderedProminent"
@@ -51,17 +76,17 @@
       >
         {{ t('booking.confirmed.viewAppointments') }}
       </a>
-      <!-- A plain footer link, not a second button: two filled CTAs on a
-           completion screen make the user choose twice. -->
+      <!-- The quiet way out, not a second filled button: two prominent CTAs
+           on a completion screen make the user choose twice. -->
       <a
-        uiText
-        uiFont="footnote"
-        uiForegroundStyle="secondary"
+        uiButton
+        uiButtonStyle="plain"
+        uiControlSize="small"
         routerLink="/"
         data-testid="booking-confirmed-home"
       >
         {{ t('booking.confirmed.done') }}
       </a>
-    </ui-stack>
+    </ui-page-action-bar>
   </ui-stack>
 </ng-container>

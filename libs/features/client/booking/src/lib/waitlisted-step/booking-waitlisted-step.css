@@ -1,0 +1,46 @@
+/*
+ * Block, not `contents`: like the confirmed step this one does NOT go through
+ * `lib-booking-step-layout` — there is no action bar to pin, because there is
+ * no next step. It is the growing flex child itself.
+ */
+:host {
+  display: block;
+}
+
+.booking-waitlisted {
+  text-align: center;
+  padding-block-start: calc(
+    var(--control-size-large) + var(--sys-space-spacious)
+  );
+  padding-inline: var(--sys-space-regular);
+}
+
+/*
+ * The mark. A quiet tinted disc rather than the confirmed step's animated
+ * check — same anatomy, deliberately less voltage: this screen reports a
+ * promise to watch, not a completed booking.
+ */
+.booking-waitlisted__glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: var(--control-size-large);
+  block-size: var(--control-size-large);
+  border-radius: var(--control-radius-capsule);
+  background: var(--sys-color-fill);
+  color: var(--sys-color-accent);
+}
+
+/* The list reads as a list, not as centred prose. */
+.booking-waitlisted__days {
+  inline-size: 100%;
+  max-inline-size: 34rem;
+  text-align: start;
+}
+
+/* A day label or a long window run must WRAP inside the 28rem column, never
+   push past it — the reason the hero column has padding at all. */
+.booking-waitlisted {
+  text-align: center;
+  overflow-wrap: break-word;
+}

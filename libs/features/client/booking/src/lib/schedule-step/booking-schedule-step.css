@@ -8,10 +8,134 @@
 }
 
 /*
- * Under "any shop" a time chip carries the shop beneath the time. Stacking
- * inside the chip rather than widening it keeps the grid's rhythm — a row of
- * chips that changes height per item reads as broken.
+ * The head SCROLLS — it is the scroller's `uiCalendarLede`, not a fixed block
+ * above it. Its own top padding is what clears the wizard's scrim toolbar,
+ * because in fill mode the layout deliberately does not (see
+ * `booking-step-layout.css`): the title has to be able to travel up behind the
+ * bar for the house large-title collapse to fire, and the bar's scrim needs
+ * something passing beneath it to dissolve.
+ *
+ * The bar's height plus a gutter, matching what the layout pads for every
+ * non-fill step — the wizard's heading must not start at a different height
+ * depending on which step you are on.
  */
-.booking-schedule__chip-shop {
-  display: block;
+.booking-schedule__head {
+  flex: none;
+  /*
+   * The bar's height, the layout's gutter, AND the measure column's own
+   * `spacious` block padding — the three things a NON-fill step's title sits
+   * below (`booking-step-layout.ts` pads the measure `spacious` whenever the
+   * step is not fill-mode). Reproducing only the first two is what left this
+   * step's title 48px higher than every other step's: measured, services and
+   * review started their heading at y=126 and this one at y=78.
+   *
+   * No ramp clearance on top of that: the bar stands its overhang down while
+   * the key below is pinned.
+   */
+  padding-block-start: calc(
+    var(--booking-step-ceiling) + var(--sys-space-regular) +
+      var(--sys-space-spacious)
+  );
+  padding-block-end: var(--sys-space-compact);
+}
+
+/*
+ * Where the weekday key pins, and how far "jump to today" has to clear.
+ *
+ * The PINNED ceiling (measured), not the resting one: the bar grows a row when
+ * the title collapses into it, and a key pinned to the resting height ends up
+ * half covered by the row that just appeared. Safe to track the live height
+ * because the key is pinned OVER the scroll and `scroll-margin` changes no
+ * layout — neither can feed the collapse that changes the height (see the
+ * two-value note in `booking-step-layout.css`).
+ */
+ui-calendar-scroller {
+  --ui-calendar-scroller-ceiling: var(--booking-step-pinned-ceiling);
+}
+
+/*
+ * A month's own heading, scrolling WITH its month rather than pinned.
+ *
+ * That is the point of it: the weekday key is a constant belonging to the
+ * whole run, while the month label is the one thing that says where in the run
+ * you are. Pinning it too would leave two stacked headers and no sense of
+ * having crossed a boundary.
+ */
+.booking-schedule__month {
+  /* Hung off the first column's number rather than the cell's outer edge, so
+     the heading reads as belonging to the grid beneath it. */
+  padding-inline-start: var(--sys-space-tight);
+  padding-block-end: var(--sys-space-tight);
+}
+
+/*
+ * The calendar claims the remaining height and scrolls inside it.
+ * `min-block-size: 0` is what lets it actually shrink — a flex child defaults
+ * to "at least my content", and its content is every month to the horizon.
+ * See the fill-mode note in booking-step-layout.css.
+ */
+ui-calendar-scroller {
+  flex: 1;
+  min-block-size: 0;
+
+  /*
+   * Clearance for the docked bar the last month scrolls under. The bar is
+   * `pane`-anchored in fill mode, so it overlays this region rather than
+   * sitting beside it — without this the final week would stop beneath the
+   * controls with no way to reach it.
+   */
+  --ui-calendar-scroller-floor: calc(
+    var(--control-size-large) + var(--sys-space-loose)
+  );
+
+  /* Months breathe apart. A run of grids at the default gap reads as one very
+     long grid with words in it. */
+  --ui-calendar-scroller-month-gap: var(--sys-space-spacious);
+}
+
+/*
+ * Clearance for the pinned chrome when a day is scrolled to.
+ *
+ * `scrollIntoView({block:'start'})` aligns to the scroll box's own top edge,
+ * which knows nothing about the toolbar floating over it or the weekday key
+ * pinned beneath that — so both have to be in the margin or "jump to today"
+ * lands today underneath them.
+ */
+[uiCalendarMonth] button[uiDay] {
+  scroll-margin-block-start: calc(
+    var(--booking-step-ceiling) + var(--control-size-regular) +
+      var(--sys-space-regular)
+  );
+}
+
+/*
+ * ── The docked decision, two rows ────────────────────────────────────────
+ * The services sheet's anatomy on the page bar: the REQUIRED question (which
+ * time) stacked above the forward move, hugged to the trailing edge where the
+ * answer is spent. The row below follows HIG bottom-bar grammar — quiet
+ * contextual controls leading, the single confirming action trailing.
+ */
+.booking-schedule__decision {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sys-space-compact);
+  align-items: stretch;
+}
+
+/* Stacked directly above the CTA it gates, like the sheet's selects. */
+.booking-schedule__time-pick {
+  align-self: flex-end;
+}
+
+.booking-schedule__decision-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sys-space-compact);
+}
+
+/* The bar's own trailing-dock contract, restated one level down: the wrapper
+   is the bar's single child, so the primary docks inside OUR row. */
+.booking-schedule__decision-row > [data-button-style='borderedProminent'] {
+  margin-inline-start: auto;
+  white-space: nowrap;
 }

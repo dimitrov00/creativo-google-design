@@ -6,3 +6,162 @@
 :host {
   display: contents;
 }
+
+/*
+ * The map fills the card's whole top edge — the Maps place-card anatomy,
+ * where the map IS the header rather than a picture inside one. `ui-map`'s
+ * own contract is "fill the box you are given and position against it" (the
+ * location step gives it the whole pane); here the box is a hand's width
+ * tall — enough to recognise the block and the cross-street, not so tall the
+ * summary below it drops off a phone screen. The card is `uiPadding="none"`,
+ * so the corners are clipped by the card's own radius.
+ */
+.booking-review__map {
+  position: relative;
+  block-size: 11rem;
+  /*
+   * The card draws a radius but does NOT clip (a card has to be able to hold
+   * a menu or a popover that escapes it), so a full-bleed map paints square
+   * corners over the rounded ones. The bleeding child does its own clipping:
+   * the card's radius on the two corners it actually touches.
+   */
+  border-start-start-radius: var(--control-radius-prominent);
+  border-start-end-radius: var(--control-radius-prominent);
+  overflow: hidden;
+}
+
+.booking-review__map > ui-map {
+  position: absolute;
+  inset: 0;
+}
+
+/* The place row under the map: identity leading, the one hugged action
+   trailing — the Maps idiom, and the house trailing-CTA rule. The padding
+   lives here because the card gives none (the map needs the full bleed). */
+.booking-review__place {
+  display: flex;
+  align-items: center;
+  gap: var(--sys-space-comfortable);
+  padding: var(--sys-space-regular);
+}
+
+.booking-review__place > a[uiButton] {
+  margin-inline-start: auto;
+}
+
+/*
+ * The window, stated under the grid. A row of facts, not a control: the icon
+ * is the same `booking.slot` glyph the time sheet uses, the day sits beside
+ * it, and the hours dock trailing where a value belongs.
+ */
+.booking-review__when-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sys-space-compact);
+}
+
+.booking-review__when-value {
+  margin-inline-start: auto;
+  white-space: nowrap;
+}
+
+/*
+ * One card per booked service. Two rows: what it is (art, name, variant
+ * token, price) and who is doing it (their face, their name, and — only in a
+ * sequence — the minute they start).
+ */
+.booking-review-line__head {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sys-space-compact);
+}
+
+/*
+ * The thumbnail is SQUARE, always.
+ *
+ * `.bag-line__art` sets both axes, but a flex item shrinks by default — so a
+ * long service name squeezed the picture's width while its height stayed put,
+ * and the photo inside a "square" tile came out a rectangle. In the bag it
+ * never showed: there the art is a grid cell, which does not shrink.
+ */
+.booking-review-line__head > .bag-line__art {
+  flex: 0 0 auto;
+}
+
+.booking-review-line__price {
+  margin-inline-start: auto;
+  white-space: nowrap;
+}
+
+/* A variant is a CHOICE, so it reads as a token — the run-on "· Къса коса"
+   after the name made a qualifier look like part of the service's title. The
+   badge hugs its text rather than stretching to the stack's width. */
+.booking-review-line__variant {
+  align-self: flex-start;
+}
+
+.booking-review-line__barber {
+  display: flex;
+  align-items: center;
+  gap: var(--sys-space-compact);
+  margin-block-start: var(--sys-space-compact);
+}
+
+/*
+ * A section head with a trailing Edit — the iOS Settings header anatomy.
+ *
+ * The button is `small` (36px) so the header row reads as a header rather
+ * than a control strip, and its BOX stays inside the column the cards below
+ * occupy. An optical pull (negative margin) put the glyph exactly on the
+ * card's edge but hung the hit area — and its press ink — over the outside,
+ * which is visible the moment anyone hovers it. A control that paints
+ * outside its own container is worse than a glyph 8px shy of an edge.
+ */
+.booking-review__section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sys-space-compact);
+}
+
+/*
+ * The line's identity stack WRAPS — a service name qualified by a variant is
+ * routinely wider than the column left beside a price, and the alternative to
+ * wrapping here was a name CLIPPED mid-glyph ("Класическа подстрı").
+ */
+.booking-review-line__identity,
+.booking-review-line__identity > span {
+  white-space: normal;
+  min-inline-size: 0;
+}
+
+/*
+ * The bar's two-part anatomy, verbatim from the bag (`.bag__actions`): the sum
+ * clusters leading as a plain block, the prominent CTA docks trailing under
+ * the bar's own child contract. The wrapper exists because the step projects
+ * ONE block into the bar — see the note in `booking-step-layout.css`.
+ */
+.booking-review__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--sys-space-comfortable);
+}
+
+.booking-review__actions > [data-button-style='borderedProminent'] {
+  margin-inline-start: auto;
+  white-space: nowrap;
+}
+
+/* The note sheet's body, on the sheet system's own gutters. */
+.booking-note__body {
+  padding-inline: var(--ui-sheet-inset, var(--sys-space-comfortable));
+  padding-block-end: var(
+    --ui-sheet-action-bar-clearance,
+    var(--sys-space-spacious)
+  );
+}
+
+.booking-note__body textarea[uiTextField] {
+  resize: vertical;
+  min-block-size: 6rem;
+}

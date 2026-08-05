@@ -461,23 +461,45 @@ export class BookingServicesStep {
    * The next person with an empty bag, if there is one.
    *
    * Ordered after the ACTIVE seat and wrapping, so "next" means the next one
-   * the user has not dealt with rather than always the first in the row.
+   * the user has not dealt with rather than always the first in the row. The
+   * wrap is INCLUSIVE (`<= seats.length`), so the active seat is the last
+   * candidate rather than no candidate at all: an earlier version stopped one
+   * short of it, which meant the person on screen could be the empty one and
+   * the button would still read "Continue" — and it continued, leaving them
+   * with nothing booked. That exclusion was itself a fix for a real bug (the
+   * CTA "handing over" to the seat already selected is a `signal.set` of the
+   * value it holds, which notifies nothing and made the button inert), so the
+   * active-seat case is handled by BRANCHING in {@link advance} rather than
+   * by pretending nobody is empty.
    */
   private readonly nextEmptySeat = computed<SeatScopeVm | null>(() => {
     const seats = this.seats();
     if (seats.length < 2) return null;
     const from = seats.findIndex((seat) => seat.key === this.activeSeat().key);
-    // `< seats.length`, NOT `<=`: the final wrap of an inclusive bound lands
-    // back on the ACTIVE seat, and `advance()` would then "hand over" to the
-    // person already selected — a `signal.set` of the value it already holds,
-    // which notifies nothing. The CTA became permanently inert whenever the
-    // active seat was the empty one, with no way off the step.
-    for (let step = 1; step < seats.length; step++) {
+    for (let step = 1; step <= seats.length; step++) {
       const seat = seats[(from + step) % seats.length];
       if (seat && seat.lineCount === 0) return seat;
     }
     return null;
   });
+
+  /**
+   * The person still holding nothing IS the one the catalog is pointing at.
+   *
+   * There is nobody to hand over to here — the hand-over already happened, or
+   * they were just added — so the forward move has no move to make. The CTA
+   * says whose turn it is and goes quiet until they have something, which
+   * keeps the rule where the user can see it instead of behind a press.
+   */
+  protected readonly activeSeatEmpty = computed(() => {
+    const pending = this.nextEmptySeat();
+    return pending !== null && pending.key === this.activeSeat().key;
+  });
+
+  /** Nothing in the bag, or somebody in the party still booking nothing. */
+  protected readonly forwardBlocked = computed(
+    () => this.store.lineCount() === 0 || this.activeSeatEmpty(),
+  );
 
   /**
    * What the primary action says.
@@ -487,19 +509,29 @@ export class BookingServicesStep {
    * party leave with a person who booked nothing — which would only surface
    * at the summary, several steps too late. Naming them is the point: "Next"
    * would be a mystery, "Maria's services" is a destination.
+   *
+   * Once the scope is already ON that person the sentence changes rather than
+   * the button going blank: "Now for Maria" would be pointing at the screen
+   * you are looking at, so it becomes "Choose for Maria" — the same fact, said
+   * from where the user is standing.
    */
   protected readonly forwardLabel = computed(() => {
     const pending = this.nextEmptySeat();
-    return pending
-      ? this.transloco.translate('booking.services.nextPerson', {
-          // "Сега за …" puts them in the object position — see `objectLabel`.
-          person: pending.objectLabel,
-        })
-      : this.transloco.translate('booking.continue');
+    if (!pending) return this.transloco.translate('booking.continue');
+    return this.transloco.translate(
+      this.activeSeatEmpty()
+        ? 'booking.services.pickFor'
+        : 'booking.services.nextPerson',
+      // Both read "… за {{person}}" — object position, see `objectLabel`.
+      { person: pending.objectLabel },
+    );
   });
 
   /** Hand over to the next empty person, or leave the step. */
   protected advance(): void {
+    // Belt to the disabled binding's braces: the bag renders this same action
+    // from its own bar, and a second surface is a second chance to press it.
+    if (this.forwardBlocked()) return;
     const pending = this.nextEmptySeat();
     if (pending) {
       this.setActiveSeat(pending.key);

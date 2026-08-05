@@ -7,12 +7,19 @@ import {
   CatalogPresenter,
 } from '@creativo/features/shared/catalog';
 import { UiButton } from '@creativo/ui/controls';
-import { UiStack } from '@creativo/ui/layout';
+import { UiSpacer, UiStack } from '@creativo/ui/layout';
 import {
   UiForegroundStyleDirective,
+  UiFrameDirective,
+  UiRevealDirective,
   UiTextDirective,
 } from '@creativo/ui/modifiers';
-import { UiListGroup, UiListRow, UiRewardMoment } from '@creativo/ui/patterns';
+import {
+  UiListGroup,
+  UiListRow,
+  UiPageActionBar,
+  UiRewardMoment,
+} from '@creativo/ui/patterns';
 import { SessionIdentityService } from '@creativo/features/shared/shell';
 import { BookingFlowStore } from '../booking-flow.store';
 
@@ -46,9 +53,13 @@ interface ConfirmedLineVm {
     TranslocoDirective,
     UiButton,
     UiForegroundStyleDirective,
+    UiFrameDirective,
     UiListGroup,
     UiListRow,
+    UiPageActionBar,
+    UiRevealDirective,
     UiRewardMoment,
+    UiSpacer,
     UiStack,
     UiTextDirective,
   ],

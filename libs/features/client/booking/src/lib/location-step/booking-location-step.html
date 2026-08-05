@@ -23,9 +23,13 @@
       [uiHandleLabel]="t('booking.location.resizeSheet')"
       data-testid="booking-location-sheet"
     >
-      <ui-stack uiHeader uiSpacing="none">
-        <h1 uiText uiFont="title3">{{ t('booking.location.title') }}</h1>
-        <p uiText uiFont="footnote" uiForegroundStyle="secondary">
+      <!-- The times sheet's header, verbatim (owner ruling 2026-08-04): a
+           large title with a secondary line under it, and the sheet's own
+           gap before the list. Four steps had four title sizes; a sheet is
+           still a step, so it gets the sheet form of the same one. -->
+      <ui-stack uiHeader uiSpacing="tight">
+        <h1 uiText uiFont="largeTitle">{{ t('booking.location.title') }}</h1>
+        <p uiText uiFont="subheadline" uiForegroundStyle="secondary">
           {{ t('booking.location.lede') }}
         </p>
       </ui-stack>

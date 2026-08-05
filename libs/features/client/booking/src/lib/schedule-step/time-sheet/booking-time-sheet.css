@@ -1,0 +1,32 @@
+/*
+ * The sheet's own gutter and bar clearance, exactly as the bag sheet takes
+ * them: `--ui-sheet-inset` is the DS surface's fluid safe gutter, and the
+ * action bar publishes its own height as clearance. Hard-coding either would
+ * drift from the sheet the moment the DS retunes them.
+ */
+.booking-time__body {
+  padding-inline: var(--ui-sheet-inset, var(--sys-space-comfortable));
+  padding-block-end: var(
+    --ui-sheet-action-bar-clearance,
+    var(--sys-space-spacious)
+  );
+}
+
+/*
+ * The expanded date group, revealed under the date it belongs to.
+ *
+ * A plain row rather than a nested group: it IS part of the same segmented
+ * run, and giving it its own container would draw a second box inside the
+ * first for content that belongs to the row above it.
+ */
+.booking-time__editor {
+  padding-block: var(--sys-space-compact);
+}
+
+/* HUGS, like every plain text action in this app. Stretched by the stack it
+   sits in, its hover ink painted a full-width destructive band across the
+   group — which reads as a filled button, and a filled destructive button is
+   a much louder promise than "remove this day" wants to make. */
+.booking-time__editor [data-button-style='plain'] {
+  align-self: flex-start;
+}

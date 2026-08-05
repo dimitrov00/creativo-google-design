@@ -170,28 +170,15 @@ lib-booking-bag-sheet {
   color: var(--sys-color-foreground);
 }
 
-/* Quiet, not loud. Destructive scarlet repeated down every row turns a bag
-   into a list of things to delete; the trash glyph and the aria-label carry
-   the meaning without shouting it. Tertiary at rest, destructive on the
-   press/hover. */
+/* The ink is the button's own `destructive` role now (see the template) —
+   the same red the service sheet's remove and the seat menu's Remove row
+   wear, so one verb looks like one verb everywhere in the flow. All this
+   rule still owns is where the glyph SITS. */
 .bag-line__remove {
   grid-area: remove;
-  color: var(--sys-color-secondary-label);
   /* The icon button's box is wider than its glyph, so cancel the overhang —
      otherwise the trash sits proud of the row's trailing gutter. */
   margin-inline-end: calc(var(--sys-space-compact) * -1);
-}
-
-@media (hover: hover) {
-  .bag-line__remove:hover {
-    color: var(--sys-color-destructive);
-  }
-}
-
-/* The ungated mirror — a touch device never satisfies `(hover: hover)`, so
-   without this a tap on the remove shows nothing until the row disappears. */
-.bag-line__remove:active {
-  color: var(--sys-color-destructive);
 }
 
 /* ── The pull-downs ──────────────────────────────────────────────────
