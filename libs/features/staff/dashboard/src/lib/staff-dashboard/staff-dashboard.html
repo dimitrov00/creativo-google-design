@@ -1,1 +1,1684 @@
-<p>StaffDashboard works!</p>
+<ng-container *transloco="let t">
+  <main
+    uiFrame
+    [uiFrameMaxWidth]="'var(--sys-container-content)'"
+    uiFrameMinHeight="100svh"
+    class="staff-day"
+  >
+    <!-- The header is the page's TOP TOOLBAR — sticky, so the date, the week
+         strip and the pickers stay reachable while a long run scrolls under
+         them. `ui-toolbar` is a flex ROW, so the header's own column rides
+         inside it as one child rather than fighting its layout. -->
+    <!-- SOLID, deliberately, and not the scrim the client-side bars use.
+         Tried the shared gradient here and reverted it: those bars sit over
+         a page you are reading THROUGH, and this one sits over a run of
+         tinted blocks that the ramp turns to mush at the top of the screen.
+         A schedule wants a hard edge between the chrome and the day. -->
+    <ui-toolbar uiSticky uiPlacement="top" class="staff-toolbar">
+      <ui-stack uiSpacing="tight" class="staff-toolbar__column">
+        <ui-stack uiAxis="horizontal" uiAlignment="center" uiSpacing="compact">
+          <!-- The period IS the control, and it sits BESIDE the search rather
+               than centred — the reference's anatomy, and it puts the two
+               things you reach for in one leading group.
+
+               A POPOVER, not a sheet: HIG's *Pickers* opens a compact date
+               picker's calendar anchored to the control that summoned it, and
+               `ui-menu` is this system's anchored surface (it opens next to
+               its trigger, dims nothing, and closes on any outside press). A
+               modal sheet for choosing a day is a heavier promise than the
+               act deserves. -->
+          <!-- A cluster of ONE, so the period wears the same chrome as the
+               trailing run rather than a second, near-miss grey. It was
+               `bordered`/`neutral` — an alpha-ladder film over whatever is
+               behind it — beside segments filled with opaque
+               `surface-secondary`; two quiet greys that never quite matched.
+               One recipe now covers both. -->
+          <div class="staff-cluster">
+            <ui-menu
+              [uiPresented]="datePickerOpen()"
+              uiAlignment="leading"
+              [uiLabel]="periodLabel()"
+              (uiDismissed)="datePickerOpen.set(false)"
+            >
+              <button
+                type="button"
+                uiButton
+                uiButtonStyle="plain"
+                uiTint="neutral"
+                uiControlSize="regular"
+                uiMenuTrigger
+                class="staff-cluster__item staff-period"
+                data-testid="staff-day-label"
+                [attr.aria-expanded]="datePickerOpen()"
+                (click)="toggleDatePicker()"
+              >
+                <span uiText uiFont="headline">{{ periodLabel() }}</span>
+                <ui-icon uiTrailing uiName="field.expand" />
+              </button>
+
+              <div class="staff-datepicker">
+                <ui-stack
+                  uiAxis="horizontal"
+                  uiAlignment="center"
+                  uiSpacing="compact"
+                >
+                  <span uiText uiFont="subheadline" uiWeight="semibold">
+                    {{ pickerMonthLabel() }}
+                  </span>
+                  <ui-spacer />
+                  <button
+                    type="button"
+                    uiButton
+                    uiButtonStyle="plain"
+                    uiTint="neutral"
+                    uiControlSize="small"
+                    [uiIconOnly]="true"
+                    [attr.aria-label]="t('staff.day.previous')"
+                    data-testid="staff-date-prev"
+                    (click)="shiftPickerMonth(-1)"
+                  >
+                    <ui-icon uiName="calendar.previous" />
+                  </button>
+                  <button
+                    type="button"
+                    uiButton
+                    uiButtonStyle="plain"
+                    uiTint="neutral"
+                    uiControlSize="small"
+                    [uiIconOnly]="true"
+                    [attr.aria-label]="t('staff.day.next')"
+                    data-testid="staff-date-next"
+                    (click)="shiftPickerMonth(1)"
+                  >
+                    <ui-icon uiName="calendar.next" />
+                  </button>
+                </ui-stack>
+
+                <ui-calendar-grid>
+                  @for (name of weekdayKey(); track name) {
+                  <span uiWeekday>{{ name }}</span>
+                  } @for (week of pickerWeeks(); track $index) { @for (cell of
+                  week; track $index) { @if (cell === null) {
+                  <span uiDay aria-hidden="true"></span>
+                  } @else {
+                  <button
+                    type="button"
+                    uiDay
+                    uiInteractive
+                    uiRadius="regular"
+                    [attr.data-selected]="
+                    cell.dayKey === store.dayKey() ? '' : null
+                  "
+                    [attr.data-today]="
+                    cell.dayKey === store.todayKey() ? '' : null
+                  "
+                    [attr.data-testid]="'staff-date-' + cell.dayKey"
+                    (click)="pickDay(cell.dayKey)"
+                  >
+                    {{ cell.day }}
+                  </button>
+                  } } }
+                </ui-calendar-grid>
+              </div>
+            </ui-menu>
+          </div>
+
+          <ui-stack uiSpacing="none" uiAlignment="center">
+            <!-- Midnight rolled over under an open tab. The sheet says so
+                 rather than moving the day under a thumb mid-tap. -->
+            @if (store.showingStaleToday()) {
+            <span
+              uiText
+              uiFont="caption"
+              uiForegroundStyle="accent"
+              data-testid="staff-day-stale"
+            >
+              {{ t('staff.day.staleDay') }}
+            </span>
+            }
+          </ui-stack>
+
+          <ui-spacer />
+
+          <!-- The trailing actions ride in ONE capsule, hairline-divided.
+               Not a segmented CONTROL — that is a single-choice picker, and
+               these are three separate acts — but the toolbar-group pattern
+               Apple uses to say "these belong together": one surface, no gaps,
+               and the divider doing the work the spacing used to. -->
+          <div class="staff-cluster">
+            <!-- TRAILING-aligned, both of these: they sit in the trailing
+               cluster, and a menu that grows from a trailing control has to
+               grow inward or it grows off the screen — which is what the
+               scope picker did the moment its rows gained a portrait rail. -->
+            <ui-menu
+              [uiPresented]="openPicker() === 'view'"
+              uiAlignment="trailing"
+              [uiLabel]="t('staff.day.viewLabel')"
+              (uiDismissed)="openPicker.set(null)"
+            >
+              <button
+                type="button"
+                uiButton
+                uiButtonStyle="plain"
+                uiTint="neutral"
+                uiControlSize="regular"
+                [uiIconOnly]="true"
+                uiMenuTrigger
+                class="staff-cluster__item"
+                [attr.aria-expanded]="openPicker() === 'view'"
+                [attr.aria-label]="
+                t('staff.day.viewLabel') +
+                ': ' +
+                t('staff.day.view.' + store.view())
+              "
+                data-testid="staff-view-trigger"
+                (click)="togglePicker('view')"
+              >
+                <ui-icon [uiName]="currentViewIcon()" />
+              </button>
+              <!-- The SAME composition the booking flow's pickers use, and the
+                 one `UiMenuItem` documents: the directive supplies the
+                 semantics and the keyboard model, `uiListRow` inside a
+                 `ui-list-group` owns the look. Bare menu items were this
+                 app's only picker not wearing its segmented run. -->
+              <ui-list-group>
+                @for (option of views; track option.id) {
+                <button
+                  type="button"
+                  uiMenuItem
+                  uiListRow
+                  [uiInteractive]="true"
+                  [uiSelected]="store.view() === option.id"
+                  [attr.data-testid]="'staff-view-' + option.id"
+                  (click)="store.setView(option.id); openPicker.set(null)"
+                >
+                  <!-- Icon AND label: the trigger may be a glyph, but the list
+                     that teaches which glyph means what cannot be. -->
+                  <ui-icon uiLeading [uiName]="option.icon" />
+                  {{ t('staff.day.view.' + option.id) }}
+                  <span uiTrailing>
+                    @if (store.view() === option.id) {
+                    <ui-icon
+                      uiName="checklist.done"
+                      uiForegroundStyle="accent"
+                    />
+                    }
+                  </span>
+                </button>
+                }
+              </ui-list-group>
+
+              <!-- BLOCKING TIME. It used to live on each lane header, and the
+                   agenda has no lane headers — one clock-ordered run has no
+                   per-barber row to hang it off. A shop-wide entry point is
+                   safe now in a way it was not before: the sheet carries the
+                   barber picker its own comment always promised, so this can
+                   no longer stand down whichever chair happened to sort
+                   first. -->
+              <ui-list-group>
+                <button
+                  type="button"
+                  uiMenuItem
+                  uiListRow
+                  [uiInteractive]="true"
+                  [disabled]="lanes().length === 0"
+                  data-testid="staff-lane-block"
+                  (click)="openPicker.set(null); openBlockSheet(lanes()[0]!.barberId)"
+                >
+                  <ui-icon uiLeading uiName="booking.blocked" />
+                  {{ t('staff.day.blockTime') }}
+                </button>
+              </ui-list-group>
+            </ui-menu>
+
+            <!-- Search sits between the two pickers and the person — the
+               trailing cluster runs view · find · who, which is the order
+               HIG puts a toolbar in: what you are looking at, how you find
+               something in it, then whose it is. -->
+            <button
+              type="button"
+              uiButton
+              uiButtonStyle="plain"
+              uiTint="neutral"
+              uiControlSize="regular"
+              [uiIconOnly]="true"
+              class="staff-cluster__item"
+              [attr.aria-label]="t('staff.day.searchLabel')"
+              data-testid="staff-search-open"
+              (click)="store.openSearch()"
+            >
+              <ui-icon uiName="action.search" />
+            </button>
+
+            <!-- In EVERY view. The multi-day views need it because a column is
+               a date and five barbers would be thirty-five columns; the list
+               and day views need it because a barber wants their own lane,
+               which is the single most-asked thing on this surface. -->
+            <ui-menu
+              [uiPresented]="openPicker() === 'scope'"
+              uiAlignment="trailing"
+              [uiLabel]="t('staff.day.scopeLabel')"
+              (uiDismissed)="openPicker.set(null)"
+            >
+              <!-- The SAME button as the search and view controls beside it —
+                 `bordered`/`neutral`, icon-only, at the regular rung — with a
+                 portrait where they carry a glyph. It used to be a bare
+                 element with the avatar as its only box, which is why it read
+                 a size smaller than its neighbours: it had no button behind
+                 it, not a smaller one. -->
+              <button
+                type="button"
+                uiButton
+                uiButtonStyle="plain"
+                uiTint="neutral"
+                uiControlSize="regular"
+                [uiIconOnly]="true"
+                uiMenuTrigger
+                class="staff-cluster__item staff-scope__trigger"
+                [attr.aria-expanded]="openPicker() === 'scope'"
+                [attr.aria-label]="
+                t('staff.day.scopeLabel') + ': ' + scopeLabel()
+              "
+                data-testid="staff-scope-trigger"
+                (click)="togglePicker('scope')"
+              >
+                @if (scopeAvatar(); as barber) {
+                <ui-avatar
+                  [uiSrc]="barber.avatarSrc"
+                  [uiName]="barber.name"
+                  uiControlSize="small"
+                />
+                } @else {
+                <!-- Everyone. A face-shaped answer takes the same control the
+                   faces do — `ui-avatar` with a glyph in place of the
+                   monogram — so the trigger keeps ONE inner box whichever
+                   answer is showing, and the booking flow's "Anyone" and this
+                   are now literally the same control. -->
+                <ui-avatar uiIcon="booking.anyBarber" uiControlSize="small" />
+                }
+              </button>
+              <ui-list-group>
+                <button
+                  type="button"
+                  uiMenuItem
+                  uiListRow
+                  [uiInteractive]="true"
+                  [uiSelected]="store.scope() === null"
+                  data-testid="staff-scope-all"
+                  (click)="store.setScope(null); openPicker.set(null)"
+                >
+                  <!-- The leading rail is STATIC, as the bag sheet's is: a slot
+                     that only exists inside an `@if` is projected into the
+                     default slot instead, which stacks the portrait above the
+                     name rather than beside it. Its WIDTH is the menu's job
+                     (menu.css holds a picker run's leading column open). -->
+                  <span uiLeading>
+                    <ui-avatar
+                      uiIcon="booking.anyBarber"
+                      uiControlSize="regular"
+                    />
+                  </span>
+                  {{ t('staff.day.scopeAll') }}
+                  <span uiTrailing>
+                    @if (store.scope() === null) {
+                    <ui-icon
+                      uiName="checklist.done"
+                      uiForegroundStyle="accent"
+                    />
+                    }
+                  </span>
+                </button>
+                @for (option of scopeOptions(); track option.id) {
+                <button
+                  type="button"
+                  uiMenuItem
+                  uiListRow
+                  [uiInteractive]="true"
+                  [uiSelected]="store.scope() === option.id"
+                  [attr.data-testid]="'staff-scope-' + option.id"
+                  (click)="store.setScope(option.id); openPicker.set(null)"
+                >
+                  <!-- THE LEGEND, badged to the portrait's corner.
+                       It sat after the NAME, and a legend cannot: names are
+                       different lengths, so the swatch landed at a different
+                       x on every row and there was no column to read down.
+                       Pinned to the avatar it lines up exactly, whatever the
+                       name does. Same corner-badge grammar as the card's
+                       "+N guests" mark, cut-out ring and all. -->
+                  <span uiLeading class="staff-scope__face">
+                    <ui-avatar
+                      [uiSrc]="option.avatarSrc"
+                      [uiName]="option.name"
+                      uiControlSize="regular"
+                    />
+                    <span
+                      class="staff-scope__swatch"
+                      [attr.data-barber-tone]="option.tone"
+                      aria-hidden="true"
+                    ></span>
+                  </span>
+                  {{ option.name }}
+                  <span uiTrailing>
+                    @if (store.scope() === option.id) {
+                    <ui-icon
+                      uiName="checklist.done"
+                      uiForegroundStyle="accent"
+                    />
+                    }
+                  </span>
+                </button>
+                }
+              </ui-list-group>
+            </ui-menu>
+          </div>
+        </ui-stack>
+
+        <!-- THE WEEK STRIP — it slides, and there is nothing to press.
+             `ui-scroll-row` supplies `scroll-snap-type: x mandatory` with
+             `scroll-snap-align: start` on each child, so a flick advances by
+             exactly one week and the snap is the browser's own, on the
+             compositor. No scroll listener, no drag maths, no JS: the only
+             script here is the tap that picks a day.
+
+             Each child is one week wide — that, and only that, is what makes
+             the gesture move a WEEK rather than a day. -->
+        <ui-scroll-row
+          uiSnap="start"
+          uiSpacing="none"
+          class="staff-weeks"
+          data-testid="staff-week-strip"
+        >
+          @for (week of weekStrip(); track week.key) {
+          <div
+            class="staff-weeks__week"
+            [attr.data-week]="week.key"
+            [attr.data-has-selection]="week.selectedIndex >= 0 ? '' : null"
+            [style.--staff-week-col]="week.selectedIndex"
+          >
+            <!-- ONE marker per week, sliding between columns. The disc used
+                 to be a background on whichever day was selected, so it
+                 teleported: the same 50ms of work read as slow because
+                 nothing connected the two states. A `translateX` on the
+                 compositor costs no layout and no paint. -->
+            <span class="staff-weeks__marker" aria-hidden="true"></span>
+            @for (day of week.days; track day.key) {
+            <button
+              type="button"
+              class="staff-weeks__day"
+              [attr.data-selected]="day.key === store.dayKey() ? '' : null"
+              [attr.data-today]="day.today ? '' : null"
+              [attr.aria-current]="day.key === store.dayKey() ? 'date' : null"
+              [attr.aria-label]="day.key"
+              (click)="pickDay(day.key)"
+            >
+              <span class="staff-weeks__initial" aria-hidden="true"
+                >{{ day.initial }}</span
+              >
+              <span class="staff-weeks__number">{{ day.number }}</span>
+            </button>
+            }
+          </div>
+          }
+        </ui-scroll-row>
+      </ui-stack>
+    </ui-toolbar>
+
+    <!-- The zone, said once. Not a picker: the product is one shop in one
+         zone, and a selector with a single entry pretends at a capability
+         that does not exist. -->
+    @if (zoneNoticeOpen()) {
+    <ui-modal-sheet
+      sheetId="staff-zone-sheet"
+      labelledBy="staff-zone-title"
+      [closeLabel]="t('staff.day.cancelDismiss')"
+      [open]="true"
+      data-testid="staff-zone-sheet"
+      (dismissed)="zoneNoticeOpen.set(false)"
+    >
+      <span sheet-title>{{ t('staff.day.zoneTitle') }}</span>
+      <ui-stack uiSpacing="loose" class="staff-cancel__body">
+        <ui-stack uiSpacing="tight">
+          <h2
+            id="staff-zone-title"
+            uiSheetLargeTitle
+            uiText
+            uiFont="largeTitle"
+          >
+            {{ t('staff.day.zoneTitle') }}
+          </h2>
+          <p uiText uiFont="subheadline" uiForegroundStyle="secondary">
+            {{ t('staff.day.zoneBody', { zone: zoneLabel() }) }}
+          </p>
+        </ui-stack>
+      </ui-stack>
+    </ui-modal-sheet>
+    }
+
+    <!-- Search. Its own sheet rather than a field in the bar: the results are
+         a LIST of visits across months, and a dropdown under a toolbar cannot
+         hold "Георги, чт 14 авг 15:00, past" legibly. -->
+    @if (store.searching()) {
+    <ui-modal-sheet
+      sheetId="staff-search-sheet"
+      labelledBy="staff-search-title"
+      [closeLabel]="t('staff.day.cancelDismiss')"
+      [open]="true"
+      data-testid="staff-search-sheet"
+      (dismissed)="store.closeSearch()"
+    >
+      <span sheet-title>{{ t('staff.day.searchLabel') }}</span>
+
+      <ui-stack uiSpacing="loose" class="staff-cancel__body">
+        <ui-stack uiSpacing="tight">
+          <h2
+            id="staff-search-title"
+            uiSheetLargeTitle
+            uiText
+            uiFont="largeTitle"
+          >
+            {{ t('staff.day.searchLabel') }}
+          </h2>
+          <input
+            uiTextField
+            type="search"
+            autocomplete="off"
+            [attr.placeholder]="t('staff.day.searchPlaceholder')"
+            data-testid="staff-search-input"
+            [value]="store.term()"
+            (input)="store.setTerm($any($event.target).value)"
+          />
+          <p uiText uiFont="caption" uiForegroundStyle="secondary">
+            {{ t('staff.day.searchScope') }}
+          </p>
+        </ui-stack>
+
+        @if (store.searchLoading()) {
+        <p uiText uiFont="footnote" uiForegroundStyle="secondary">
+          {{ t('staff.day.searchLoading') }}
+        </p>
+        } @else if (store.term().trim().length >= 2) { @if (searchResults(); as
+        hits) { @if (hits.length === 0) {
+        <p
+          uiText
+          uiFont="footnote"
+          uiForegroundStyle="secondary"
+          data-testid="staff-search-empty"
+        >
+          {{ t('staff.day.searchEmpty') }}
+        </p>
+        } @else {
+        <ul uiListGroup>
+          @for (hit of hits; track hit.id) {
+          <li class="staff-search__item">
+            <!-- A BUTTON, not a clickable `li`: the row is an action, so it
+                 owes focusability and Enter/Space for free rather than a
+                 hand-rolled keydown handler. -->
+            <button
+              type="button"
+              uiListRow
+              uiSize="large"
+              [attr.data-past]="hit.past ? '' : null"
+              data-testid="staff-search-hit"
+              (click)="openHit(hit)"
+            >
+              <ui-stack uiSpacing="none">
+                <span uiText uiFont="body">
+                  @for (part of hit.titleParts; track $index) { @if (part.hit) {
+                  <mark class="staff-search__mark">{{ part.text }}</mark>
+                  } @else {{{ part.text }}} }
+                </span>
+                <!-- EVERY field that earned the hit, with the matching run
+                   marked — a phone search must show the number it matched,
+                   not just the name sitting above it. -->
+                @for (match of hit.matches; track $index) {
+                <span
+                  uiText
+                  uiFont="footnote"
+                  uiForegroundStyle="secondary"
+                  class="staff-search__match"
+                >
+                  @for (part of match.parts; track $index) { @if (part.hit) {
+                  <mark class="staff-search__mark">{{ part.text }}</mark>
+                  } @else {{{ part.text }}} }
+                </span>
+                }
+              </ui-stack>
+              <span
+                uiTrailing
+                uiText
+                uiFont="footnote"
+                uiForegroundStyle="secondary"
+                class="staff-search__when"
+              >
+                {{ hit.whenLabel }}
+              </span>
+            </button>
+          </li>
+          }
+        </ul>
+        } } }
+      </ui-stack>
+    </ui-modal-sheet>
+    }
+
+    <ui-stack
+      uiSpacing="loose"
+      uiPaddingHorizontal="regular"
+      uiPaddingVertical="spacious"
+      class="staff-lanes"
+    >
+      @if (isGrid()) {
+      <!-- The calendar canvas. One renderer for day / 3-day / week — they
+           differ only in what a column IS, which the component never needs to
+           know. -->
+      <lib-staff-time-grid
+        [columns]="gridColumns()"
+        [rosterStartMinute]="rosterExtent().start"
+        [nowMinute]="nowMinute()"
+        [zoneLabel]="zoneLabel()"
+        [allDay]="allDay()"
+        [allDayAlways]="true"
+        [allDayLabel]="t('staff.day.allDay')"
+        (zonePicked)="explainZone()"
+        data-testid="staff-grid"
+        (eventPicked)="openVisit($event)"
+        (gapPicked)="openGap($event)"
+        (blockPicked)="openBlock($event)"
+      />
+      @if (!store.loading() && gridColumns().length === 0) {
+      <p uiText uiFont="body" uiForegroundStyle="secondary">
+        {{ t('staff.day.noRoster') }}
+      </p>
+      } } @else {
+
+      <!-- The agenda owns its OWN rhythm. It sits inside a stack spaced
+           `loose`, which put 32px between every group on top of the 4px
+           the groups ask for — reading as a hole in the day where there
+           was only layout. Free time is a CARD here; whitespace must
+           never be mistaken for it. -->
+      <!-- ALL-DAY, AND THEREFORE AT THE TOP.
+           A barber being off is not a footnote about the screen, it is a
+           fact ON the day — Apple Calendar banners exactly this class of
+           event above the timed run, and a shop reads "who is even in today"
+           before it reads the ten o'clock. It used to be a line of grey
+           footnote type UNDER the whole agenda, which is the last place it
+           gets read and the first thing you need.
+
+           One capsule per barber, each in their own chair's tone: `ui-badge`
+           already is a non-interactive capsule with a 14% tint — the same
+           14% the agenda cards are tinted with — so an all-day mark reads as
+           a miniature of the cards below it. The identity tone is set
+           through the component's OWN two variables rather than over the top
+           of it; `--ui-badge-tint` and `--ui-badge-ink` are how every tone in
+           badge.css is declared. -->
+      @if (resting().length > 0) {
+      <!-- ALL-DAY, AND THEREFORE AT THE TOP — one full-width row per barber.
+           A barber being off is not a footnote about the screen, it is a fact
+           ON the day, and Apple Calendar banners exactly this class of event
+           above the timed run. It has been a grey sentence under the agenda
+           and then a small inline capsule; both read as chrome. It is an
+           EVENT, so it is built out of the event's own parts: `.agenda-card`
+           unchanged, which brings the 14% chair tint, the radius, the padding
+           and the rail with it. Nothing here restates any of that.
+
+           No "all day" caption any more either. A full-width tinted row above
+           the run, carrying no clock time when every card below carries one,
+           says it by construction. -->
+      <ul class="staff-allday">
+        @for (barber of resting(); track barber.id) {
+        <li>
+          <!-- A BUTTON, at 44px. It opens the same block sheet the rest of
+               the screen edits days off through — a card-shaped thing at a
+               full touch target that does nothing when pressed would be a
+               worse lie than the footnote it replaced. -->
+          <button
+            type="button"
+            uiInteractive
+            class="agenda-card agenda-card--allday"
+            [attr.data-barber-tone]="barber.tone"
+            [attr.aria-label]="
+              t(
+                (store.isToday()
+                  ? 'staff.day.offToday.'
+                  : 'staff.day.offAnyDay.') + pluralOf(1),
+                { names: barber.name }
+              )
+            "
+            data-testid="staff-off-today"
+            (click)="openRestDay(barber.id)"
+          >
+            <span class="agenda-allday__body">
+              <!-- NO RAIL. The rail is a bar down the leading edge, and this
+                   row is a capsule — a straight 4px stripe inside a rounded
+                   end is a corner fight nothing wins. The chair's colour goes
+                   where this screen already puts a person: in a disc, the
+                   same shape and slot as the client's avatar on every card
+                   below, holding the mark instead of a face. Same colour, same
+                   leading column, a shape that belongs to the form. -->
+              <span class="agenda-allday__disc" aria-hidden="true">
+                <ui-icon uiName="staff.off" />
+              </span>
+              <span
+                class="agenda-allday__name"
+                uiText
+                uiFont="callout"
+                uiWeight="semibold"
+                >{{ barber.name }}</span
+              >
+              <!-- Where a card writes its clock time, this writes what it is
+                   instead — the trailing column is the same column. -->
+              <span
+                class="agenda-allday__meta"
+                uiText
+                uiFont="callout"
+                uiForegroundStyle="secondary"
+                >{{ t('staff.day.offBadge') }}</span
+              >
+            </span>
+          </button>
+        </li>
+        }
+      </ul>
+      }
+
+      <div class="agenda" [style.--agenda-face]="faceWidth()">
+        <!-- THE DAY IN ONE LINE. Plain type in the items lane, never a badge
+             — a count is a fact to read, not a thing to notice. It is also
+             what pays for elapsed holes not being cards at shop scope: the
+             minutes nobody bought are still stated, once, in words. -->
+        @if (daySummary(); as summary) {
+        <p
+          class="agenda-summary"
+          uiText
+          uiFont="footnote"
+          uiForegroundStyle="secondary"
+          data-testid="staff-day-summary"
+        >
+          {{ summary }}
+        </p>
+        }
+        <!-- THE AGENDA — the whole shop's day as ONE clock-ordered run.
+             It used to be a list per barber, stacked: three schedules printed
+             on one page, the same 16:00 written three times, and a now line
+             drawn three times to mean one thing. Grouping by START TIME says
+             the hour once and makes concurrency something you see rather than
+             reconstruct — and it hands the card's width back to the fields the
+             reader actually chose. -->
+        @for (group of agenda(); track group.key; let g = $index) {
+        <!-- NO NOW-LINE HERE. A rule across the run drawn at the current
+             time is a DAY-VIEW mark: it means something on a continuous
+             time axis, where the distance between two rows is the minutes
+             between them. This is a list — the gap between two cards is 4px
+             whether they are ten minutes or six hours apart — so a line
+             through it points at nothing. `lib-staff-time-grid` draws it,
+             on an axis where it is true.
+
+             The clock still decides where the run OPENS, though: the group
+             it would have sat before carries the scroll anchor instead. -->
+        <section
+          class="agenda-group"
+          [attr.data-past]="group.past ? '' : null"
+          [attr.data-now-anchor]="isNowAnchor(g) ? '' : null"
+          data-testid="staff-agenda-group"
+        >
+          <!-- THE HOUR GUTTER IS GONE, for the same reason the now-line is:
+               a time AXIS down the leading edge belongs to the day view,
+               where position on it is what carries the time. Here the run is
+               a list, and every card states its own interval in its own
+               fact row — so the column was 52px of chrome repeating, once
+               per group, something already on every card inside it.
+
+               The heading STAYS in the accessibility tree. It is what names
+               each group to a screen reader, and `aria-labelledby` on the
+               list below still points at it; losing the visual column is
+               not a reason to flatten the structure for someone navigating
+               by heading. -->
+          <h2
+            uiVisuallyHidden
+            class="agenda-group__time"
+            [id]="'agenda-time-' + group.key"
+          >
+            {{ group.timeLabel }}
+          </h2>
+
+          <ul
+            class="agenda-group__items"
+            [attr.aria-labelledby]="'agenda-time-' + group.key"
+          >
+            @for (entry of group.items; track entry.id) { @if (entry.kind ===
+            'gap') {
+            <!-- A HOLE, attributed. Free time belongs to one chair, so a gap
+                 card that did not name the barber would be meaningless sitting
+                 between two other people's cuts. -->
+            <!-- A HOLE — the same slots, fewer of them filled. No client,
+                 no service, no trail: a word, a length, and whose chair. -->
+            <!-- ONE WORD. It was "Свободно" ahead of the clock and
+                 "Незаето" behind it — two words for one thing, distinguished
+                 by a tense the row's own position already states. The
+                 difference that matters is whether it can still be sold, and
+                 that is carried in FORM: a sellable hole is a card the full
+                 height of a booking, an elapsed one is a line. -->
+            <li
+              class="agenda-card agenda-card--gap"
+              [class.agenda-card--idle]="!entry.sellable"
+              [attr.data-barber-tone]="entry.barberTone"
+              [attr.data-past]="entry.past ? '' : null"
+              [attr.data-testid]="
+                entry.sellable ? 'staff-gap-row' : 'staff-idle-row'
+              "
+            >
+              <span class="agenda-card__rail" aria-hidden="true"></span>
+
+              <!-- A HOLE is one line: the word at the leading edge and how
+                   long it runs at the trailing one. No client, no facts, no
+                   marks — there is nobody in it. -->
+              <div class="agenda-card__hole">
+                <span
+                  class="agenda-card__hole-word"
+                  uiText
+                  uiFont="callout"
+                  uiForegroundStyle="secondary"
+                >
+                  {{ t('staff.day.agendaFree') }}
+                </span>
+                <span
+                  class="agenda-card__gap-span"
+                  uiText
+                  uiFont="footnote"
+                  uiForegroundStyle="secondary"
+                >
+                  {{ span(entry.minutes) }}
+                </span>
+              </div>
+            </li>
+            } @else {
+            <!-- A VISIT — ONE ROW, three columns.
+                 ===============================================================
+                   [client disc +N]   [vstack of facts]   [aside]
+
+                 where the aside is itself a column: WHEN at the top (start
+                 solid, end muted beneath it, the relative time smaller under
+                 that) and WHAT BECAME OF IT at the bottom (status, marks,
+                 whose chair).
+
+                 The vstack gives every fact its OWN LINE. Nothing is joined
+                 to anything — no middots, no shared line, no race for a
+                 tail — because a fact that has to win an argument with
+                 another fact to be shown is a fact the card is not really
+                 carrying. Everything wraps except the note, which is the one
+                 free-text field and would otherwise set the card's height
+                 from a paragraph. -->
+            <li
+              class="agenda-card agenda-card--visit"
+              uiInteractive
+              tabindex="-1"
+              [attr.data-appointment-id]="entry.id"
+              [attr.data-status]="entry.status"
+              [attr.data-terminal]="entry.terminal ? '' : null"
+              [attr.data-past]="entry.past ? '' : null"
+              [attr.data-next]="entry.isNext ? '' : null"
+              [attr.data-live]="entry.live ? '' : null"
+              [attr.aria-label]="rowLabel(entry)"
+              [attr.data-barber-tone]="entry.barberTone"
+              data-testid="staff-visit-row"
+              (click)="onVisitRowClick($event, entry)"
+              (keydown.enter)="openVisitSheet(entry)"
+            >
+              <!-- IDENTITY, CHANNEL ONE. Constant x, full height: five
+                   chairs read as five stripes in one column, sampled as a
+                   pattern without reading a word. -->
+              <span class="agenda-card__rail" aria-hidden="true"></span>
+
+              <!-- ═ BODY ═ THE WHOLE CARD. The header row is gone: it held
+                   a relative time and a status pill across the top, which
+                   made every card two blocks tall before the client's name
+                   even appeared. Both facts moved into the body's trailing
+                   column, where they cost no height of their own. -->
+              <div class="agenda-card__body">
+                @if (fields.isOn('avatar')) {
+                <div class="agenda-card__face">
+                  <ui-avatar
+                    class="agenda-card__avatar"
+                    [uiName]="entry.clientLabel"
+                    uiControlSize="regular"
+                  />
+                  @if (fields.isOn('party') && entry.seatsHere > 1) {
+                  <!-- THIS CHAIR'S seats, not the whole party's. The agenda
+                       renders one row per appointment per lane, so a party
+                       spread across two chairs is ALREADY two rows and
+                       marking each "+1" would count the same people twice.
+                       Two seats in ONE chair — a father and son back to
+                       back — is the case this actually means. -->
+                  <span
+                    class="agenda-card__guests"
+                    data-testid="staff-visit-party"
+                    [attr.aria-label]="
+                      t('staff.day.partyOf', { count: entry.seatsHere })
+                    "
+                    >+{{ entry.seatsHere - 1 }}</span
+                  >
+                  }
+                </div>
+                }
+
+                <!-- EVERY FACT ITS OWN LINE, top-aligned, in a fixed order.
+                     A line that has nothing to say is not rendered, so it
+                     costs no height — but it never shares one either. -->
+                <div class="agenda-card__facts">
+                  <p
+                    class="agenda-card__name"
+                    uiText
+                    uiFont="callout"
+                    uiWeight="semibold"
+                  >
+                    {{ entry.clientLabel }}
+                  </p>
+
+                  @if (fields.isOn('email') && entry.email) {
+                  <p
+                    class="agenda-card__fact"
+                    uiText
+                    uiFont="callout"
+                    uiForegroundStyle="secondary"
+                    data-testid="staff-visit-email"
+                  >
+                    <ui-icon uiName="contact.email" aria-hidden="true" />
+                    <span>{{ entry.email }}</span>
+                  </p>
+                  } @if (fields.isOn('phone') && entry.phone) {
+                  <p
+                    class="agenda-card__fact"
+                    uiText
+                    uiFont="callout"
+                    uiForegroundStyle="secondary"
+                    data-testid="staff-visit-phone"
+                  >
+                    <ui-icon uiName="contact.phone" aria-hidden="true" />
+                    <span>{{ entry.phone }}</span>
+                  </p>
+                  } @if (fields.isOn('service')) {
+                  <p
+                    class="agenda-card__fact agenda-card__fact--service"
+                    uiText
+                    uiFont="callout"
+                    uiForegroundStyle="secondary"
+                  >
+                    {{ entry.serviceLabel }}
+                  </p>
+                  }
+                </div>
+
+                <!-- ONE TRAILING CLUSTER, settled to the end both ways:
+                     marks first, then whose chair. Two separate end-aligned
+                     groups read as two competing columns; one row of small
+                     marks reads as a single trailing gutter.
+
+                     The marks are ONLY facts the model actually holds — a
+                     note, and a rebooking (`Appointment.bookedFrom`). There
+                     is no paid glyph because payment is not modelled
+                     anywhere in this codebase, and an icon that can never
+                     appear is a claim about the schema, not a feature.
+
+                     The barber's disc shows their PHOTOGRAPH, with the
+                     chair's tone and their initials behind it as the
+                     fallback for a barber who has none.
+
+                     It was unbound for a while, on a real measurement: the
+                     roster's photos have a mean pairwise RGB distance of 23
+                     between chairs against the rail's 102, so at this size
+                     they cannot be told apart at a glance. But that argument
+                     only holds if the disc is the identity channel — and it
+                     is not. The rail is, unconditionally and at constant x.
+                     The disc is a face for someone who already knows the
+                     team, which is everyone who reads this screen. -->
+                <div class="agenda-card__aside">
+                  <!-- WHEN, at the top of the trailing column. Start solid,
+                       end muted underneath at the same size — the interval
+                       reads down rather than across, so no dash is needed to
+                       join two numbers that are plainly a pair.
+
+                       The relative time goes BELOW THE END, smaller and
+                       quieter. Reading order is the reason: the clock time
+                       is the fact and "in 2 h" is a gloss on it, so it
+                       follows rather than leads — supplementary text sits
+                       after the value it qualifies, not in front of it. -->
+                  <!-- Three switches, not one: the start, the end and the
+                       relative gloss answer three different questions and a
+                       reader should not lose all three to drop any one. -->
+                  @if (fields.isOn('timeStart') || fields.isOn('timeEnd') ||
+                  fields.isOn('timeRelative')) {
+                  <div
+                    class="agenda-card__times"
+                    data-testid="staff-visit-time"
+                  >
+                    @if (fields.isOn('timeStart')) {
+                    <span class="agenda-card__start"
+                      >{{ entry.startLabel }}</span
+                    >
+                    } @if (fields.isOn('timeEnd')) {
+                    <span class="agenda-card__end"
+                      >{{ entry.endLabel }}@if (entry.crossesMidnight)
+                      {<span>⁺¹</span>}</span
+                    >
+                    } @if (fields.isOn('timeRelative')) {
+                    <span class="agenda-card__when"
+                      >{{ whenLabel(entry) }}</span
+                    >
+                    }
+                  </div>
+                  }
+                </div>
+              </div>
+
+              <!-- ...and WHAT BECAME OF IT, at the foot: what it comes
+                       to, what state it is in, what else is attached, and
+                       whose chair.
+
+                       The status is a GLYPH, not a capsule with a word in
+                       it — the widest mark on the card for a fact that is
+                       "confirmed" nine times in ten. Monochrome, because hue
+                       here means whose chair and a colour cannot say "Ivan"
+                       and "no-show" at once; the shape carries it, and the
+                       word it replaced is still announced. -->
+              <!-- THE FOOT — its own row across the card, hugging the
+                   trailing edge. It was crammed into the bottom of the
+                   aside, sharing the narrow column the times need.
+
+                   GUARDED, because with every switch in it turned off it
+                   still rendered: an empty flex box of zero height, but the
+                   card's row-gap sat on both sides of it and made every card
+                   taller for nothing. (`:empty` was the tempting fix and is
+                   the wrong one twice over — it does not survive a single
+                   whitespace text node, and it could not have worked anyway,
+                   because the gap belongs to the grid TRACK, which exists
+                   whether or not anything is in it.) -->
+              @if (hasFoot(entry)) {
+              <div class="agenda-card__foot">
+                @if (fields.isOn('price') && entry.priceLabel) {
+                <span
+                  class="agenda-card__price"
+                  uiText
+                  uiFont="callout"
+                  uiForegroundStyle="secondary"
+                  >{{ entry.priceLabel }}</span
+                >
+                } @for (icon of rowIcons(entry); track icon) {
+                <ui-icon [uiName]="icon" class="agenda-card__mark" />
+                } @if (fields.isOn('barberAvatar')) {
+                <ui-avatar
+                  class="agenda-card__barber-face"
+                  [uiName]="entry.barberName"
+                  [uiSrc]="entry.barberAvatarSrc"
+                  uiControlSize="small"
+                  [attr.aria-label]="entry.barberName"
+                />
+                }
+              </div>
+              }
+
+              <!-- A failed write, in a row of its own. -->
+              @if (rowError(entry.id); as message) {
+              <p
+                class="agenda-card__err"
+                uiText
+                uiFont="footnote"
+                role="status"
+                data-testid="staff-row-error"
+              >
+                {{ message }}
+              </p>
+              }
+            </li>
+            } }
+          </ul>
+        </section>
+        }
+      </div>
+
+      <!-- ONLY when the rest line said nothing. The two branches used to fire
+           together, so an empty day named three barbers as off and then
+           announced there were none — off today AND nonexistent, one of the
+           two sentences necessarily false. The rest line already explains an
+           empty day whenever it can; this is the case where nothing does. -->
+      @if (!store.loading() && lanes().length === 0 && resting().length === 0) {
+      <p uiText uiFont="body" uiForegroundStyle="secondary">
+        {{ t('staff.day.noRoster') }}
+      </p>
+      } }
+    </ui-stack>
+
+    <ui-spacer />
+
+    <!-- The shop's three write actions, in the page's own bottom bar.
+         `ui-page-action-bar` brings the house chrome fade (the quintic
+         smootherstep ramp shared with the sheet chrome) and the trailing
+         thumb-zone dock, so this surface stops hand-rolling a floating
+         island and gets the same bottom edge every other page has.
+         Collapsed the cluster is one target; expanded it is a short
+         labelled run rising above the bar — a fan of bare circles would
+         make a receptionist guess which one blocks time. -->
+    <!-- The two views have genuinely different scroll models, so the bar
+         anchors differently in each. In the calendar the PAGE does not scroll
+         (the grid does), and `sticky` has nothing to stick to — `pane` pins
+         the bar to this positioned column instead, which is the case its own
+         docs describe. The list scrolls the page, so it keeps `page`. -->
+    <ui-page-action-bar [uiAnchor]="isGrid() ? 'pane' : 'page'">
+      <!-- WHAT THE CARDS CARRY, in the bar rather than buried in the view
+           menu: it is a property of this screen, it is reached often while
+           reading, and the bar is where this surface's own controls live.
+           Agenda only — a calendar block has no card to configure. -->
+      @if (!isGrid()) {
+      <div class="staff-cluster">
+        <button
+          type="button"
+          uiButton
+          uiButtonStyle="plain"
+          uiTint="neutral"
+          uiControlSize="large"
+          [uiIconOnly]="true"
+          class="staff-cluster__item"
+          [attr.aria-label]="t('staff.day.fieldsLabel')"
+          [title]="t('staff.day.fieldsLabel')"
+          data-testid="staff-fields-open"
+          (click)="openFields()"
+        >
+          <ui-icon uiName="action.filter" uiScale="medium" />
+        </button>
+      </div>
+      }
+      <!-- Back to today, in the bar rather than the header — the same
+           anatomy and the same glyph the appointments calendar uses, so the
+           two calendars answer "take me back" identically. Leading, because
+           it is a secondary act: the bar's primary is the pen. -->
+      @if (!store.isToday()) {
+      <!-- A cluster of ONE, the same recipe the toolbar's own controls wear.
+           It was `glass`, which is the DS's chrome material and composites to
+           a different, greyer fill than the segments at the top of the same
+           screen — so the two "take me somewhere" icon buttons on one page
+           read as two classes of control. The bar's gradient fade is what
+           separates this from the calendar scrolling under it; the material
+           was doing a job the fade already does. -->
+      <div class="staff-cluster">
+        <button
+          type="button"
+          uiButton
+          uiButtonStyle="plain"
+          uiTint="neutral"
+          uiControlSize="large"
+          [uiIconOnly]="true"
+          class="staff-cluster__item"
+          [attr.aria-label]="t('staff.day.backToToday')"
+          [title]="t('staff.day.backToToday')"
+          data-testid="staff-day-today"
+          (click)="store.jumpToToday()"
+        >
+          <ui-icon uiName="calendar.today" uiScale="medium" />
+        </button>
+      </div>
+      }
+    </ui-page-action-bar>
+  </main>
+
+  <!-- WHICH FACTS THE CARDS CARRY.
+       A shop's schedule is read by people asking different questions of it:
+       a barber between cuts wants the next name, a receptionist on the phone
+       wants the barber and the number, an owner closing up wants the money.
+       One fixed card serves whichever of those the designer imagined and
+       taxes the other two on every glance — so the ANATOMY is fixed and the
+       CONTENTS are chosen. Per device, like the theme. -->
+  @if (fieldsOpen()) {
+  <ui-modal-sheet
+    sheetId="staff-fields-sheet"
+    labelledBy="staff-fields-title"
+    [closeLabel]="t('staff.day.cancelDismiss')"
+    [open]="true"
+    data-testid="staff-fields-sheet"
+    (dismissed)="fieldsOpen.set(false)"
+  >
+    <span sheet-title>{{ t('staff.day.fieldsTitle') }}</span>
+
+    <ui-stack uiSpacing="loose" class="staff-cancel__body">
+      <ui-stack uiSpacing="tight">
+        <h2
+          id="staff-fields-title"
+          uiSheetLargeTitle
+          uiText
+          uiFont="largeTitle"
+        >
+          {{ t('staff.day.fieldsTitle') }}
+        </h2>
+        <p uiText uiFont="subheadline" uiForegroundStyle="secondary">
+          {{ t('staff.day.fieldsLede') }}
+        </p>
+      </ui-stack>
+
+      <ui-list-group>
+        @for (field of agendaFieldIds; track field) {
+        <ui-list-row uiSize="large">
+          {{ t('staff.day.field.' + field) }}
+          <button
+            uiSwitch
+            uiTrailing
+            [uiOn]="fields.isOn(field)"
+            [attr.aria-label]="t('staff.day.field.' + field)"
+            [attr.data-testid]="'staff-field-' + field"
+            (uiOnChange)="fields.toggle(field)"
+          ></button>
+        </ui-list-row>
+        }
+      </ui-list-group>
+    </ui-stack>
+
+    <!-- Reset lives in the sheet's own bar, and only once there is something
+         to reset — a permanent "restore defaults" under a list nobody has
+         touched is a control that cannot act. -->
+    @if (!fields.isDefault()) {
+    <ui-sheet-action-bar sheet-overlay [uiVisible]="true">
+      <!-- A cluster of ONE, the same recipe every other icon-only control on
+           this surface wears. Without it the button was a bare glyph: the DS
+           `plain` style paints no surface, and the toolbar's buttons only
+           look filled because `.staff-cluster__item` gives each segment its
+           own. A control that opens a sheet and the control that resets it
+           should not be two classes of object. -->
+      <div class="staff-cluster">
+        <button
+          type="button"
+          uiButton
+          uiButtonStyle="plain"
+          uiTint="neutral"
+          uiControlSize="large"
+          [uiIconOnly]="true"
+          class="staff-cluster__item"
+          [attr.aria-label]="t('staff.day.fieldsReset')"
+          [title]="t('staff.day.fieldsReset')"
+          data-testid="staff-fields-reset"
+          (click)="fields.reset()"
+        >
+          <ui-icon uiName="visit.repeat" uiScale="medium" />
+        </button>
+      </div>
+    </ui-sheet-action-bar>
+    }
+  </ui-modal-sheet>
+  }
+
+  <!-- THE VISIT SHEET — what the row could never be.
+       A booking was an inert `<li>`: the client's number sat unused on the
+       row model, the note glyph teased prose nothing could reveal, and the
+       destructive acts lived one tap deep in a popover that covered the row
+       it was about to destroy. This is where a person is opened. -->
+  @if (visitSheetRow(); as visit) {
+  <ui-modal-sheet
+    sheetId="staff-visit-sheet"
+    labelledBy="staff-visit-title"
+    [fitted]="true"
+    [closeLabel]="t('staff.day.cancelDismiss')"
+    [open]="true"
+    data-testid="staff-visit-sheet"
+    (dismissed)="closeVisitSheet()"
+  >
+    <span sheet-title>{{ visit.clientLabel }}</span>
+
+    <ui-stack uiSpacing="loose" class="staff-cancel__body">
+      <ui-stack uiSpacing="tight">
+        <h2 id="staff-visit-title" uiSheetLargeTitle uiText uiFont="largeTitle">
+          {{ visit.clientLabel }}
+        </h2>
+        <p uiText uiFont="subheadline" uiForegroundStyle="secondary">
+          {{ visit.serviceLabel }} · {{ visit.startLabel }}–{{ visit.endLabel
+          }}@if (visit.crossesMidnight) {<span>⁺¹</span>}
+        </p>
+      </ui-stack>
+
+      <!-- THE PHONE. The single most-asked-for thing in the review: a client
+           running late is a call, and the number was already computed here
+           and thrown away. `tel:` rather than a copy button — the device in
+           the barber's hand is a phone. -->
+      <ui-list-group>
+        @if (visit.phone; as phone) {
+        <ui-list-row uiSize="large">
+          {{ t('staff.day.visitCall') }}
+          <a
+            uiTrailing
+            uiButton
+            uiButtonStyle="plain"
+            uiControlSize="regular"
+            [href]="'tel:' + (visit.phoneHref ?? phone)"
+            data-testid="staff-visit-call"
+          >
+            {{ phone }}
+            <ui-icon uiTrailing uiName="location.call" />
+          </a>
+        </ui-list-row>
+        } @else {
+        <ui-list-row uiSize="large">
+          {{ t('staff.day.visitCall') }}
+          <span
+            uiTrailing
+            uiText
+            uiFont="footnote"
+            uiForegroundStyle="secondary"
+          >
+            {{ t('staff.day.visitNoPhone') }}
+          </span>
+        </ui-list-row>
+        } @if (visitSheetBarber(); as barberName) {
+        <ui-list-row uiSize="large">
+          {{ t('staff.day.visitBarber') }}
+          <span uiTrailing uiText uiFont="body" uiForegroundStyle="secondary">
+            {{ barberName }}
+          </span>
+        </ui-list-row>
+        } @if (visit.partyLabel) {
+        <ui-list-row uiSize="large">
+          {{ t('staff.day.visitParty') }}
+          <span uiTrailing uiText uiFont="body" uiForegroundStyle="secondary">
+            {{ t('staff.day.visitPartyValue', { label: visit.partyLabel }) }}
+          </span>
+        </ui-list-row>
+        }
+
+        <ui-list-row uiSize="large">
+          {{ t('staff.day.visitStatus') }}
+          <span uiBadge uiTrailing [uiTone]="statusTone(visit.status)">
+            {{ t('appointments.status.' + visit.status) }}
+          </span>
+        </ui-list-row>
+      </ui-list-group>
+
+      <!-- The note's PROSE, which the run deliberately withholds — this
+           surface was opened on purpose, not held up to the room. -->
+      @if (visit.note; as note) {
+      <ui-stack uiSpacing="tight" data-testid="staff-visit-note">
+        <span uiText uiFont="footnote" uiWeight="semibold">
+          {{ t('staff.day.visitNote') }}
+        </span>
+        <p uiText uiFont="body">{{ note }}</p>
+      </ui-stack>
+      } @if (rowError(visit.id); as message) {
+      <p uiText uiFont="footnote" uiForegroundStyle="destructive" role="alert">
+        {{ message }}
+      </p>
+      }
+
+      <!-- Every act the graph allows, at full size, named in words — this is
+           where "Откажи" belongs, not under a thumb on a scrolling run. -->
+      @if (visit.overflow.length > 0) {
+      <ui-stack uiSpacing="compact">
+        @for (action of visit.overflow; track action) {
+        <button
+          type="button"
+          uiButton
+          [uiButtonStyle]="action === 'cancelled' ? 'plain' : 'bordered'"
+          [uiRole]="
+            action === 'cancelled' || action === 'no_show'
+              ? 'destructive'
+              : undefined
+          "
+          uiControlSize="large"
+          [uiSpread]="true"
+          [uiLoading]="store.isPending(visit.id)"
+          [attr.data-testid]="'staff-visit-act-' + action"
+          (click)="actFromSheet(visit, action)"
+        >
+          {{ t(verbKey(visit.status, action)) }}
+        </button>
+        }
+      </ui-stack>
+      }
+    </ui-stack>
+
+    @if (visit.primary; as primary) {
+    <ui-sheet-action-bar sheet-overlay [uiVisible]="true">
+      <button
+        type="button"
+        uiButton
+        uiButtonStyle="borderedProminent"
+        uiControlSize="large"
+        [uiSpread]="true"
+        [uiLoading]="store.isPending(visit.id)"
+        [attr.data-testid]="'staff-visit-act-' + primary"
+        (click)="actFromSheet(visit, primary)"
+      >
+        {{ t(verbKey(visit.status, primary)) }}
+      </button>
+    </ui-sheet-action-bar>
+    }
+  </ui-modal-sheet>
+  }
+
+  <!-- The two write actions that need a server path that does not exist yet
+       say so. A control that appears to work and silently does nothing is the
+       exact trust failure this surface is graded on avoiding. -->
+  @if (pendingAction(); as pending) {
+  <ui-modal-sheet
+    sheetId="staff-pending-sheet"
+    [fitted]="true"
+    labelledBy="staff-pending-title"
+    [closeLabel]="t('staff.day.cancelDismiss')"
+    [open]="true"
+    data-testid="staff-pending-sheet"
+    (dismissed)="pendingAction.set(null)"
+  >
+    <span sheet-title>{{ t('staff.day.fab.' + pending) }}</span>
+    <ui-stack uiSpacing="loose" class="staff-cancel__body">
+      <ui-stack uiSpacing="tight">
+        <h2
+          id="staff-pending-title"
+          uiSheetLargeTitle
+          uiText
+          uiFont="largeTitle"
+        >
+          {{ t('staff.day.fab.' + pending) }}
+        </h2>
+        <p uiText uiFont="subheadline" uiForegroundStyle="secondary">
+          {{ t('staff.day.notBuiltYet') }}
+        </p>
+      </ui-stack>
+    </ui-stack>
+  </ui-modal-sheet>
+  }
+
+  <!-- Blocking time. The sheet asks only WHAT the effect is, never why: the
+       document it writes is structurally reason-free, because `/book` reads
+       it anonymously and a sick day is Art. 9 data. The kind picker that
+       would record a reason needs a staff-only sibling collection and an
+       owner ruling (Q4) before it can exist at all. -->
+  @if (blockLaneId(); as laneId) {
+  <ui-modal-sheet
+    sheetId="staff-block-sheet"
+    labelledBy="staff-block-title"
+    [closeLabel]="t('staff.day.cancelDismiss')"
+    [open]="true"
+    data-testid="staff-block-sheet"
+    (dismissed)="closeBlockSheet()"
+  >
+    <span sheet-title>{{ t('staff.day.blockTime') }}</span>
+
+    <ui-stack uiSpacing="loose" class="staff-cancel__body">
+      <ui-stack uiSpacing="tight">
+        <h2 id="staff-block-title" uiSheetLargeTitle uiText uiFont="largeTitle">
+          {{ t('staff.day.blockTime') }}
+        </h2>
+        <p uiText uiFont="subheadline" uiForegroundStyle="secondary">
+          {{ t('staff.day.blockLede', { name: blockLaneName() }) }}
+        </p>
+      </ui-stack>
+
+      <!-- WHICH CHAIR. The shop-wide action pre-aimed at the first lane and
+           offered no way to move it, so a barber reaching for the FAB stood
+           a colleague's chair down. A flat run rather than a nested menu: a
+           popover inside a modal sheet is a second transient layer, and the
+           shop has a handful of chairs, not a directory. -->
+      @if (blockLaneOptions().length > 1) {
+      <ui-list-group [attr.aria-label]="t('staff.day.blockBarber')">
+        @for (option of blockLaneOptions(); track option.id) {
+        <ui-list-row
+          uiSize="large"
+          [uiInteractive]="true"
+          [uiSelected]="blockLaneId() === option.id"
+          [attr.data-testid]="'staff-block-barber-' + option.id"
+          (click)="pickBlockLane(option.id)"
+        >
+          <span uiLeading class="staff-scope__face">
+            <ui-avatar
+              [uiSrc]="option.avatarSrc"
+              [uiName]="option.name"
+              uiControlSize="small"
+            />
+            <span
+              class="staff-scope__swatch"
+              [attr.data-barber-tone]="option.tone"
+              aria-hidden="true"
+            ></span>
+          </span>
+          {{ option.name }} @if (blockLaneId() === option.id) {
+          <ui-icon uiTrailing uiName="checklist.done" />
+          }
+        </ui-list-row>
+        }
+      </ui-list-group>
+      }
+
+      <ui-list-group>
+        <ui-list-row uiSize="large">
+          {{ t('staff.day.blockAllDay') }}
+          <button
+            uiSwitch
+            uiTrailing
+            [(uiOn)]="blockAllDay"
+            [uiDisabled]="store.absencePending()"
+            [attr.aria-label]="t('staff.day.blockAllDay')"
+            data-testid="staff-block-all-day"
+          ></button>
+        </ui-list-row>
+      </ui-list-group>
+
+      @if (!blockAllDay()) {
+      <ui-stack uiAxis="horizontal" uiSpacing="compact">
+        <label class="staff-block__field">
+          <ui-stack uiSpacing="tight">
+            <span uiText uiFont="footnote">{{ t('staff.day.blockFrom') }}</span>
+            <input
+              uiTextField
+              type="time"
+              step="300"
+              data-testid="staff-block-from"
+              [value]="blockFrom()"
+              (input)="blockFrom.set($any($event.target).value)"
+            />
+          </ui-stack>
+        </label>
+        <label class="staff-block__field">
+          <ui-stack uiSpacing="tight">
+            <span uiText uiFont="footnote">{{ t('staff.day.blockTo') }}</span>
+            <input
+              uiTextField
+              type="time"
+              step="300"
+              data-testid="staff-block-to"
+              [value]="blockTo()"
+              (input)="blockTo.set($any($event.target).value)"
+            />
+          </ui-stack>
+        </label>
+      </ui-stack>
+      }
+
+      <!-- What this actually does, stated plainly. Blocking removes sellable
+           time; it does NOT tell anyone, because nothing in this product
+           sends a message on a roster change (§6 of the brief). -->
+      <p uiText uiFont="footnote" uiForegroundStyle="secondary">
+        {{ t('staff.day.blockEffect') }}
+      </p>
+
+      <!-- ...and what it does NOT do. A 14:00–18:00 block over a 16:00 cut
+           used to read as harmless: the sheet said only that nobody gets
+           notified, and never mentioned the visit it was about to sit on
+           top of. Naming them is the honest minimum until a real "move
+           these" path exists. -->
+      @if (blockCollisions().length > 0) {
+      <ui-stack uiSpacing="tight" data-testid="staff-block-collisions">
+        <span uiText uiFont="footnote" uiWeight="semibold">
+          {{ t('staff.day.blockCollisionsTitle') }}
+        </span>
+        <ui-list-group>
+          @for (visit of blockCollisions(); track visit.id) {
+          <ui-list-row uiSize="regular" uiVariant="plain">
+            <span uiLeading uiText uiFont="footnote" uiWeight="semibold">
+              {{ visit.startLabel }}
+            </span>
+            {{ visit.clientLabel }}
+            <span
+              uiTrailing
+              uiText
+              uiFont="caption"
+              uiForegroundStyle="secondary"
+            >
+              {{ visit.serviceLabel }}
+            </span>
+          </ui-list-row>
+          }
+        </ui-list-group>
+        <span uiText uiFont="footnote" uiForegroundStyle="secondary">
+          {{ t('staff.day.blockCollisionsNote') }}
+        </span>
+      </ui-stack>
+      } @if (blockLiftArmed()) {
+      <p
+        uiText
+        uiFont="footnote"
+        uiForegroundStyle="destructive"
+        role="alert"
+        data-testid="staff-block-lift-warning"
+      >
+        {{ t('staff.day.blockLiftWarning') }}
+      </p>
+      } @if (store.absenceError()) {
+      <p uiText uiFont="footnote" uiForegroundStyle="destructive" role="alert">
+        {{ t('staff.day.blockFailed') }}
+      </p>
+      }
+    </ui-stack>
+
+    <ui-sheet-action-bar sheet-overlay [uiVisible]="true">
+      <button
+        type="button"
+        uiButton
+        uiButtonStyle="borderedProminent"
+        [uiSpread]="true"
+        [uiLoading]="store.absencePending()"
+        [disabled]="!blockRangeValid()"
+        data-testid="staff-block-confirm"
+        (click)="confirmBlock()"
+      >
+        {{ t('staff.day.blockConfirm') }}
+      </button>
+      <!-- LIFT. `liftBlock` has existed on this component since block-time
+           shipped and was bound to nothing, so a block written from here was
+           permanent from inside the app — the only way out was editing
+           Firestore by hand. Shown only when this chair actually has one,
+           and destructive because the store's `clearBlock` deletes the
+           barber's whole exception document for the day: the port cannot
+           remove one range among several, and the copy says so rather than
+           implying a surgical undo. -->
+      @if (laneHasBlock(laneId)) {
+      <button
+        type="button"
+        uiButton
+        [uiButtonStyle]="blockLiftArmed() ? 'borderedProminent' : 'plain'"
+        uiRole="destructive"
+        [uiSpread]="true"
+        [uiLoading]="store.absencePending()"
+        data-testid="staff-block-lift"
+        [attr.data-armed]="blockLiftArmed() ? '' : null"
+        (click)="liftBlock(laneId)"
+      >
+        {{ blockLiftArmed() ? t('staff.day.blockLiftArm') :
+        t('staff.day.blockLift') }}
+      </button>
+      }
+    </ui-sheet-action-bar>
+  </ui-modal-sheet>
+  }
+
+  <!-- The cancel sheet: the one verb that needs words, because the audit
+       row and the freed slot's waitlist notification both carry them. -->
+  @if (cancelId() !== null) {
+  <ui-modal-sheet
+    sheetId="staff-cancel-sheet"
+    labelledBy="staff-cancel-title"
+    [closeLabel]="t('staff.day.cancelDismiss')"
+    [open]="true"
+    data-testid="staff-cancel-sheet"
+    (dismissed)="cancelId.set(null)"
+  >
+    <span sheet-title>{{ t('staff.day.cancelTitle') }}</span>
+
+    <ui-stack uiSpacing="loose" class="staff-cancel__body">
+      <ui-stack uiSpacing="tight">
+        <h2
+          id="staff-cancel-title"
+          uiSheetLargeTitle
+          uiText
+          uiFont="largeTitle"
+        >
+          {{ t('staff.day.cancelTitle') }}
+        </h2>
+        <p uiText uiFont="subheadline" uiForegroundStyle="secondary">
+          {{ t('staff.day.cancelLede') }}
+        </p>
+      </ui-stack>
+
+      <!-- A closed vocabulary, not a sentence. Prose cannot be aggregated,
+           and "why do we lose Saturday mornings" is only answerable if every
+           cancellation carries a groupable code. Two taps beats typing
+           between cuts, so the honest fix is also the faster one. -->
+      <ui-stack uiSpacing="tight">
+        <span uiText uiFont="footnote">{{ t('staff.day.cancelReason') }}</span>
+        <ui-flow uiSpacing="compact">
+          @for (code of reasonCodes; track code) {
+          <button
+            type="button"
+            uiChip
+            [uiSelected]="cancelReasonCode() === code"
+            [attr.data-testid]="'staff-cancel-reason-' + code"
+            (click)="cancelReasonCode.set(code)"
+          >
+            {{ t('staff.day.cancelReasonCode.' + code) }}
+          </button>
+          }
+        </ui-flow>
+      </ui-stack>
+
+      <!-- The note appears only under `other`, which is the one arm that
+           carries one — and the one arm that requires it. -->
+      @if (cancelReasonCode() === 'other') {
+      <label>
+        <ui-stack uiSpacing="tight">
+          <span uiText uiFont="footnote">
+            {{ t('staff.day.cancelNote') }}
+          </span>
+          <textarea
+            uiTextField
+            rows="2"
+            data-testid="staff-cancel-note"
+            [value]="cancelNote()"
+            (input)="cancelNote.set($any($event.target).value)"
+          ></textarea>
+        </ui-stack>
+      </label>
+      }
+
+      <!-- Whose seat this actually calls off. On a mixed party the row is one
+           barber's share, and saying so prevents the exact mistake the
+           per-seat write was added to stop. -->
+      @if (cancelSeatId()) {
+      <p uiText uiFont="footnote" uiForegroundStyle="secondary">
+        {{ t('staff.day.cancelSeatOnly') }}
+      </p>
+      } @if (cancelError(); as message) {
+      <p uiText uiFont="footnote" uiForegroundStyle="destructive" role="alert">
+        {{ message }}
+      </p>
+      }
+    </ui-stack>
+
+    <ui-sheet-action-bar sheet-overlay [uiVisible]="true">
+      <button
+        type="button"
+        uiButton
+        uiButtonStyle="borderedProminent"
+        uiRole="destructive"
+        [uiSpread]="true"
+        [uiLoading]="cancelId() !== null && store.isPending(cancelId()!)"
+        [disabled]="!cancelReady()"
+        data-testid="staff-cancel-confirm"
+        (click)="confirmCancel()"
+      >
+        {{ t('staff.day.cancelConfirm') }}
+      </button>
+    </ui-sheet-action-bar>
+  </ui-modal-sheet>
+  }
+</ng-container>

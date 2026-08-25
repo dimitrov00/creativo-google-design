@@ -1,6 +1,9 @@
 import { InjectionToken } from '@angular/core';
 import { DomainError, Result } from '@creativo/domain/kernel';
-import type { BookingContactProps } from '@creativo/domain/scheduling';
+import type {
+  BookingContactProps,
+  CancellationReasonKind,
+} from '@creativo/domain/scheduling';
 
 /**
  * One seat, as the client asks for it.
@@ -21,6 +24,13 @@ export interface CommitBookingSeatRequest {
   readonly serviceId: string;
   readonly variantId: string | null;
   readonly barberId: string;
+  /**
+   * What the client ASKED for, beside the barber they were given. Absent
+   * reads as `specific` server-side — the conservative default, because it
+   * means staff phone before moving the booking rather than moving it
+   * silently. See `Seat.pref`.
+   */
+  readonly barberPref?: 'any' | 'specific';
   /** Wall-clock start with offset, in the shop's zone. */
   readonly startIso: string;
   /**
@@ -52,6 +62,17 @@ export interface CommitBookingRequest {
    * appointment; it carries no authority (ownership is the token's job).
    */
   readonly contact?: BookingContactProps;
+  /**
+   * The visit this booking was made from — set when the client arrived here
+   * from a previous appointment (a confirmation, a reminder, or "book again"
+   * in their history) rather than cold.
+   *
+   * It carries no authority and the server drops it if it does not parse. It
+   * exists because REBOOKING RATE — the strongest retention signal a shop
+   * has — cannot be reconstructed afterwards: two visits six weeks apart look
+   * identical whether one led to the other or not.
+   */
+  readonly bookedFromAppointmentId?: string | null;
 }
 
 /**
@@ -138,6 +159,48 @@ export interface BookingGateway {
   reschedule(
     request: RescheduleBookingRequest,
   ): Promise<Result<CommittedBooking, BookingGatewayError>>;
+
+  /**
+   * A STAFF lifecycle move — confirm / complete / no-show / shop-cancel.
+   * Role-checked and audited server-side; the graph (`canTransition`) is
+   * the only law it applies.
+   */
+  transition(
+    request: TransitionAppointmentRequest,
+  ): Promise<Result<void, BookingGatewayError>>;
+
+  /**
+   * Stamp the moment the party walked in.
+   *
+   * Separate from `transition` because arrival is not an edge in the
+   * lifecycle graph — it is a fact recorded alongside the status, and it
+   * survives every later move. Idempotent server-side: the first stamp wins.
+   */
+  markArrived(
+    appointmentId: string,
+  ): Promise<Result<void, BookingGatewayError>>;
+}
+
+export interface TransitionAppointmentRequest {
+  readonly appointmentId: string;
+  readonly to: 'confirmed' | 'completed' | 'no_show' | 'cancelled';
+  /**
+   * Required by the server when `to` is `cancelled` — a code from the closed
+   * union, never prose. "Why do we lose Saturday mornings" is answerable only
+   * if every cancellation carries a groupable code.
+   */
+  readonly reasonCode?: CancellationReasonKind;
+  /** Only read when `reasonCode` is `other`, where the server requires it. */
+  readonly note?: string;
+  /**
+   * Resolve ONE person's seat instead of the whole party.
+   *
+   * Omitted, the verb applies to every seat still open and the root takes
+   * `to` directly — the ordinary single-seat case. Supplied, only that seat
+   * is stamped and the root is RE-DERIVED from all of them, which is the only
+   * way "two guests served, one absent" is representable at all.
+   */
+  readonly seatId?: string;
 }
 
 export const BOOKING_GATEWAY = new InjectionToken<BookingGateway>(

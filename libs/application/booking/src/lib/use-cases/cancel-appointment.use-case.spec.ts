@@ -26,6 +26,9 @@ describe('CancelAppointmentUseCase', () => {
     const gateway: BookingGateway = {
       commit: vi.fn(),
       cancel,
+      reschedule: vi.fn(),
+      transition: vi.fn(),
+      markArrived: vi.fn(),
     };
 
     const result = await new CancelAppointmentUseCase(gateway).execute({
@@ -45,6 +48,9 @@ describe('CancelAppointmentUseCase', () => {
     const gateway: BookingGateway = {
       commit: vi.fn(),
       cancel: vi.fn().mockResolvedValue(fail(error)),
+      reschedule: vi.fn(),
+      transition: vi.fn(),
+      markArrived: vi.fn(),
     };
 
     const result = await new CancelAppointmentUseCase(gateway).execute({

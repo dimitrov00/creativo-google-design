@@ -18,7 +18,10 @@ import {
   AppointmentInvalidTransitionError,
   AppointmentMixedCurrencyError,
   AppointmentMultipleSelfSeatsError,
+  AppointmentNotArrivableError,
   AppointmentPastStartTimeError,
+  AppointmentSeatAlreadyResolvedError,
+  AppointmentUnknownSeatError,
 } from './appointment.errors';
 import {
   AppointmentStatus,
@@ -29,11 +32,19 @@ import {
   PENDING,
   canTransition,
   cancelled,
+  isTerminal,
 } from './appointment-status';
 import { BookingContact } from './booking-contact';
-import { AppointmentId } from './ids';
+import { AppointmentId, SeatId } from './ids';
 import { EmptyIdError } from './ids.errors';
 import { Seat } from './seat';
+import {
+  CancellationReason,
+  SEAT_SCHEDULED,
+  SeatOutcome,
+  outcomeForStatus,
+  summarizeSeatOutcomes,
+} from './seat-outcome';
 import { TimeSlot } from './time-slot';
 
 export type AppointmentError =
@@ -43,6 +54,7 @@ export type AppointmentError =
   | AppointmentMultipleSelfSeatsError
   | AppointmentBarberDoubleBookedError
   | AppointmentMixedCurrencyError
+  | AppointmentNotArrivableError
   | AppointmentPastStartTimeError;
 
 export interface CreateAppointmentProps {
@@ -56,6 +68,16 @@ export interface CreateAppointmentProps {
    * staff-entered walk-in may genuinely have nobody to call.
    */
   contact?: BookingContact | null;
+  /**
+   * The visit this one was booked from — the rebooking link.
+   *
+   * Set when a client books their next cut off the back of the last one
+   * (from the confirmation, the reminder, or the chair). It is what makes
+   * REBOOKING RATE computable, and there is no way to reconstruct it after
+   * the fact: two appointments for the same client six weeks apart look
+   * identical whether one was booked in the shop or found cold on the site.
+   */
+  bookedFromAppointmentId?: string | null;
 }
 
 export interface ReconstituteAppointmentProps {
@@ -64,6 +86,10 @@ export interface ReconstituteAppointmentProps {
   seats: Seat[];
   status: AppointmentStatus;
   contact?: BookingContact | null;
+  /** Absent for every appointment written before booking time was recorded. */
+  bookedAt?: ZonedDateTime | null;
+  arrivedAt?: ZonedDateTime | null;
+  bookedFromAppointmentId?: string | null;
 }
 
 /**
@@ -103,7 +129,76 @@ export class Appointment {
      * to phone, not who owns anything.
      */
     readonly contact: BookingContact | null = null,
+    /**
+     * WHEN the booking was made — not when it is for.
+     *
+     * The gap between this and the party's start is BOOKING LEAD TIME, and it
+     * is unrecoverable if not stamped here: nothing about a stored appointment
+     * reveals whether it was booked six weeks or six minutes ahead. `null`
+     * only for appointments written before this field existed.
+     */
+    readonly bookedAt: ZonedDateTime | null = null,
+    /** The visit this one was rebooked from — see `CreateAppointmentProps`. */
+    readonly bookedFrom: AppointmentId | null = null,
+    /**
+     * WHEN the party actually walked in. `null` until they do.
+     *
+     * ### Why this is a stamp and not a status
+     * `confirmed` used to double as "this person is here", which was only
+     * available while nothing auto-confirmed. Once a booking may land
+     * `confirmed` at creation (owner ruling 2026-08-07), that reading is gone
+     * and arrival needs its own field — otherwise the front desk LOSES the
+     * signal rather than gaining one. Keeping it off the status union also
+     * means `TRANSITIONS` and `canTransition` are untouched: arriving is not
+     * an edge in the lifecycle graph, it is a fact recorded alongside it.
+     *
+     * ### Unrecoverable if not stamped
+     * Exactly like `bookedAt`. Nothing about a stored appointment reveals
+     * whether the client was ten minutes early or twenty late, so every visit
+     * served before this field exists has no punctuality record and never
+     * will. It is what makes the measured "waiting 6 min" possible instead of
+     * a countdown fabricated from catalog durations.
+     */
+    readonly arrivedAt: ZonedDateTime | null = null,
   ) {}
+
+  /**
+   * Record that the party walked in.
+   *
+   * Idempotent on purpose: the first stamp is the true one, and a second tap
+   * on a busy Saturday must not quietly move a client's arrival ten minutes
+   * later. A settled appointment refuses outright — arriving after the visit
+   * is already completed or cancelled is not a fact, it is a mis-tap.
+   */
+  markArrived(at: ZonedDateTime): Result<Appointment, AppointmentError[]> {
+    if (this.status.kind !== 'pending' && this.status.kind !== 'confirmed') {
+      return fail([new AppointmentNotArrivableError(this.status.kind)]);
+    }
+    if (this.arrivedAt !== null) return ok(this);
+    return ok(
+      new Appointment(
+        this.id,
+        this.locationId,
+        this.seats,
+        this.status,
+        this.contact,
+        this.bookedAt,
+        this.bookedFrom,
+        at,
+      ),
+    );
+  }
+
+  /**
+   * How late the party was, in minutes — negative when they were early.
+   *
+   * `null` when they have not arrived, which is NOT the same as zero and must
+   * never be averaged in as punctual.
+   */
+  latenessMinutes(): number | null {
+    if (this.arrivedAt === null) return null;
+    return -this.arrivedAt.minutesUntil(this.timeSlot.start);
+  }
 
   /** New appointment — starts `pending`; the party must begin in the future. */
   static create(
@@ -113,7 +208,14 @@ export class Appointment {
     if (earliest && !earliest.isAfter(props.now)) {
       return fail([new AppointmentPastStartTimeError()]);
     }
-    return Appointment.build({ ...props, status: PENDING });
+    // `now` IS the booking instant — the clock the use case already resolved,
+    // never a second reading, so lead time is measured against the same
+    // instant the future-start invariant was checked against.
+    return Appointment.build({
+      ...props,
+      status: PENDING,
+      bookedAt: props.now,
+    });
   }
 
   /** Rebuild from persistence — same field validation, skips the future-start invariant. */
@@ -129,6 +231,9 @@ export class Appointment {
     seats: Seat[];
     status: AppointmentStatus;
     contact?: BookingContact | null;
+    bookedAt?: ZonedDateTime | null;
+    bookedFromAppointmentId?: string | null;
+    arrivedAt?: ZonedDateTime | null;
   }): Result<Appointment, AppointmentError[]> {
     const idResult = AppointmentId.create(props.id);
     const locationIdResult = LocationId.create(props.locationId);
@@ -144,6 +249,15 @@ export class Appointment {
     }
     const [id, locationId] = combined.value;
 
+    // A rebooking link that does not parse is dropped, not fatal: the booking
+    // is real and the client is waiting. Losing one analytics edge is the
+    // cheaper failure, and `null` already means "we don't know".
+    let bookedFrom: AppointmentId | null = null;
+    if (props.bookedFromAppointmentId != null) {
+      const parsed = AppointmentId.create(props.bookedFromAppointmentId);
+      if (parsed.isSuccess()) bookedFrom = parsed.value;
+    }
+
     return ok(
       new Appointment(
         id,
@@ -151,6 +265,9 @@ export class Appointment {
         props.seats,
         props.status,
         props.contact ?? null,
+        props.bookedAt ?? null,
+        bookedFrom,
+        props.arrivedAt ?? null,
       ),
     );
   }
@@ -264,20 +381,71 @@ export class Appointment {
 
   // ── Lifecycle ─────────────────────────────────────────────────────────
 
+  /** Confirming is about the BOOKING, not the work — no seat is resolved. */
   confirm(): Result<Appointment, AppointmentInvalidTransitionError> {
-    return this.transition('confirmed', CONFIRMED);
+    return this.transition('confirmed', CONFIRMED, null);
   }
 
-  complete(): Result<Appointment, AppointmentInvalidTransitionError> {
-    return this.transition('completed', COMPLETED);
+  /**
+   * The whole party was served. Every seat still open is stamped `worked`;
+   * a seat already resolved individually — the guest who no-showed while the
+   * other two were cut — keeps what it was given.
+   */
+  complete(
+    atMs: number,
+  ): Result<Appointment, AppointmentInvalidTransitionError> {
+    return this.transition('completed', COMPLETED, atMs);
   }
 
-  markNoShow(): Result<Appointment, AppointmentInvalidTransitionError> {
-    return this.transition('no_show', NO_SHOW);
+  /** Nobody came. Same fan-out rule as `complete`. */
+  markNoShow(
+    atMs: number,
+  ): Result<Appointment, AppointmentInvalidTransitionError> {
+    return this.transition('no_show', NO_SHOW, atMs);
+  }
+
+  /**
+   * They turned up after all — take the no-show back.
+   *
+   * The one correction edge in the lifecycle, and the reason `no_show` is no
+   * longer terminal. A no-show is a judgement made at a moment, and the
+   * moment it is most often wrong is the ten minutes right after it.
+   *
+   * Not expressible as a plain `transition('confirmed', …)`: that path takes
+   * `atMs: null` for confirm, because confirming says nothing about the
+   * work — so the status would walk back to `confirmed` while every seat
+   * kept the `no_show` outcome `markNoShow` stamped on it. A booking that
+   * says "confirmed" over seats that say "no-show" is a worse state than the
+   * one being undone, and it would poison every report that counts seats.
+   *
+   * So the stamp is lifted where this edge put it: seats whose outcome is
+   * `no_show` go back to `scheduled`. A seat resolved INDIVIDUALLY before
+   * the party-level stamp — the guest who cancelled while the other two were
+   * waiting — keeps what it was given, which is the same rule `markNoShow`
+   * itself honours on the way in.
+   */
+  reopenNoShow(): Result<Appointment, AppointmentInvalidTransitionError> {
+    // The status kind, NOT `canTransition(status, 'confirmed')` — that is
+    // also true of `pending`, so the graph check alone would let this edge
+    // confirm an unconfirmed booking while claiming to undo a no-show.
+    // This edge has exactly one legal starting point.
+    if (this.status.kind !== 'no_show') {
+      return fail(
+        new AppointmentInvalidTransitionError(this.status.kind, 'confirmed'),
+      );
+    }
+    const seats = this.seats.map((seat) =>
+      seat.outcome?.kind === 'no_show'
+        ? seat.withOutcome(SEAT_SCHEDULED)
+        : seat,
+    );
+    return ok(this.withSeats(seats, CONFIRMED));
   }
 
   cancel(
     reason: string,
+    atMs: number,
+    by: 'client' | 'staff' = 'staff',
   ): Result<
     Appointment,
     AppointmentInvalidTransitionError | AppointmentEmptyCancellationReasonError
@@ -286,16 +454,143 @@ export class Appointment {
     if (trimmed.length === 0) {
       return fail(new AppointmentEmptyCancellationReasonError());
     }
-    return this.transition('cancelled', cancelled(trimmed));
+    // The typed union is what reports group by; the sentence the shop typed
+    // rides along in `other.note` rather than being thrown away. A caller
+    // that knows the code should use `markSeatOutcome` per seat instead.
+    return this.transition(
+      'cancelled',
+      cancelled(trimmed),
+      atMs,
+      {
+        kind: 'other',
+        note: trimmed,
+      },
+      by,
+    );
+  }
+
+  /**
+   * Resolve ONE person's seat, and let the root status follow.
+   *
+   * This is the write path the mixed party needs: two guests served, one
+   * absent, and all three facts true at once. The root is recomputed from the
+   * seats by `summarizeSeatOutcomes` rather than set independently, so the
+   * summary can never contradict what the seats say.
+   *
+   * Note what is NOT checked: `canTransition`. The lifecycle graph governs
+   * PARTY-level moves — it is the rule that a completed booking cannot be
+   * un-completed. A seat outcome is a new fact about one person, and the root
+   * that follows from it is a derivation, not a move. What guards this path
+   * instead is that a resolved seat may never be re-resolved, and that a
+   * terminal appointment is closed to further facts.
+   */
+  markSeatOutcome(
+    seatId: SeatId,
+    outcome: SeatOutcome,
+  ): Result<
+    Appointment,
+    | AppointmentUnknownSeatError
+    | AppointmentSeatAlreadyResolvedError
+    | AppointmentInvalidTransitionError
+  > {
+    const seat = this.seats.find((candidate) => candidate.id.equals(seatId));
+    if (!seat) {
+      return fail(new AppointmentUnknownSeatError(seatId.value));
+    }
+    if (seat.isResolved()) {
+      return fail(
+        new AppointmentSeatAlreadyResolvedError(
+          seatId.value,
+          seat.outcome.kind,
+        ),
+      );
+    }
+    if (isTerminal(this.status)) {
+      return fail(
+        new AppointmentInvalidTransitionError(this.status.kind, outcome.kind),
+      );
+    }
+
+    const seats = this.seats.map((candidate) =>
+      candidate.id.equals(seatId) ? candidate.withOutcome(outcome) : candidate,
+    );
+    return ok(
+      this.withSeats(
+        seats,
+        summarizeSeatOutcomes(
+          seats.map((candidate) => candidate.outcome),
+          this.status,
+        ),
+      ),
+    );
+  }
+
+  /** Every seat whose story the shop has not told yet. */
+  openSeats(): readonly Seat[] {
+    return this.seats.filter((seat) => !seat.isResolved());
+  }
+
+  /**
+   * How far ahead this booking was made, in minutes — the metric `bookedAt`
+   * exists for. `null` when the appointment predates the field.
+   */
+  bookingLeadTimeMinutes(): number | null {
+    return this.bookedAt?.minutesUntil(this.timeSlot.start) ?? null;
   }
 
   private transition(
     to: AppointmentStatusKind,
     next: AppointmentStatus,
+    /** `null` for moves that say nothing about the work (confirm). */
+    atMs: number | null,
+    reason: CancellationReason = { kind: 'other', note: '' },
+    by: 'client' | 'staff' = 'staff',
   ): Result<Appointment, AppointmentInvalidTransitionError> {
     if (!canTransition(this.status, to)) {
       return fail(new AppointmentInvalidTransitionError(this.status.kind, to));
     }
-    return ok(new Appointment(this.id, this.locationId, this.seats, next));
+
+    const seatOutcome =
+      atMs === null ? null : outcomeForStatus(to, atMs, reason);
+    const seats =
+      seatOutcome === null
+        ? this.seats
+        : this.seats.map((seat) =>
+            seat.isResolved()
+              ? seat
+              : seat.withOutcome(
+                  seatOutcome.kind === 'cancelled'
+                    ? { ...seatOutcome, by }
+                    : seatOutcome,
+                ),
+          );
+
+    return ok(this.withSeats(seats, next));
+  }
+
+  /**
+   * Same appointment, new seats and status — every other field carried over.
+   *
+   * Exists because the constructor now takes seven arguments and the old
+   * `transition` silently dropped `contact` off the end of a four-argument
+   * call: every confirm/complete/cancel erased the phone number the shop was
+   * given, and nothing failed. One helper is one place for that to be right.
+   */
+  private withSeats(
+    seats: readonly Seat[],
+    status: AppointmentStatus,
+  ): Appointment {
+    return new Appointment(
+      this.id,
+      this.locationId,
+      seats,
+      status,
+      this.contact,
+      this.bookedAt,
+      this.bookedFrom,
+      // Arrival survives every lifecycle move. Completing a visit must not
+      // erase the fact that the client walked in at 10:52.
+      this.arrivedAt,
+    );
   }
 }

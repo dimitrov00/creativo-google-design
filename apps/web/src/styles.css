@@ -23,15 +23,39 @@
 @import '@fontsource/geist-mono/400.css';
 @import '@fontsource/geist-mono/700.css';
 
-@import '../../../libs/shared/design-tokens/css/tokens.css';
-@import '../../../libs/shared/design-tokens/css/light.css';
-@import '../../../libs/shared/design-tokens/css/dark.css';
+/* THE LEGACY LAYER IS GONE, tokens included.
+ *
+ * `typography.css` styled `[data-text-*]`, written only by the old `[text]`
+ * directive — imported by zero components; every one of its nine attributes
+ * matched zero elements across /, /book, /careers and /account.
+ * `cursor-target.css` styled `[crCursorTarget]`, likewise unused.
+ *
+ * With those two, `material.css` and `shape.css` out, NOTHING read
+ * `--cr-*` any more, so the three legacy token files followed them. That is
+ * a whole second token system — 75 custom properties, plus its light and
+ * dark themes — that every visitor was downloading and no rule consumed.
+ *
+ * `--cr-color-accent` in that set was #0b46c8: the RETIRED BRAND BLUE,
+ * sitting live in the cascade waiting for any unstyled anchor to pick it up.
+ * Deleting the set removes the last place it could come back from.
+ *
+ * `reset.css` and `reduced-motion.css` STAY — both are live, and neither
+ * reads a legacy token. */
 @import '../../../libs/shared/ui/src/lib/reset/reset.css';
 @import '../../../libs/shared/ui/src/lib/motion/reduced-motion.css';
-@import '../../../libs/shared/ui/src/lib/typography/typography.css';
-@import '../../../libs/shared/cursor/src/lib/cursor-target.css';
-@import '../../../libs/shared/ui/src/lib/material/material.css';
-@import '../../../libs/shared/ui/src/lib/shape/shape.css';
+/* `material.css` and `shape.css` are GONE from the bundle.
+ *
+ * Both were global sheets backing the legacy `crMaterial` / `crShape`
+ * directives, and both directives are imported by zero components — grepped
+ * across libs/features, libs/ui and apps/web. `shape.css` never matched
+ * anything at all (no `.cr-shape` or `[data-shape]` element exists in the
+ * rendered app). `material.css` DID match, because `[data-material]` is also
+ * what the DS's own `uiMaterial` writes — but it declares in
+ * `@layer cr-components`, which `styles.css` registers before
+ * `sys-components`, so every one of its rules was already being overridden
+ * by `modifiers.css`. ~96 lines of CSS shipped to every visitor to lose a
+ * cascade. Verified by diffing the computed backdrop/background of every
+ * `[data-material]` element before and after removal. */
 
 @import '../../../libs/ui/tokens/tokens.css';
 @import '../../../libs/ui/tokens/theme-light.css';
@@ -56,21 +80,30 @@
    have to exist. */
 @import '../../../libs/features/marketing/landing/src/lib/pages/home/locations/locations-map.css';
 
-/* Fallback chrome for the not-yet-migrated marketing pages only —
-   everything under the new libs/ui/* system styles its own link/focus
-   states via [data-*] selectors in its own co-located CSS. */
+/* THE APP-WIDE FOCUS RING — the fallback every focusable element that is
+   not a DS control lands on.
+ *
+ * It read `--cr-color-focus-ring` from the legacy token set, which resolves
+ * to #145cf3 on light and #7aa5ff on dark: the RETIRED BRAND BLUE, rendering
+ * live. Measured on a bare <button> with no focus rule of its own —
+ * `rgb(20, 92, 243)`. The canonical ring is ink, not a hue:
+ * `--sys-color-ring` is #121212 / #ededed.
+ *
+ * The rule STAYS in `cr-base` on purpose. `text-field.css`, `otp-field.css`
+ * and `date-field.css` each declare `outline: none` inside `sys-components`,
+ * which `styles.css` registers BEFORE `sys-base` — so a bare `:focus-visible`
+ * promoted to `sys-base` would out-rank them and draw a hard outline around
+ * every focused field on top of its own glow. Custom properties are
+ * `:root`-scoped and resolve the same in any layer, so only the values move.
+ *
+ * The `a { color }` / `a:hover` pair that lived here is GONE: `styles.css`
+ * sets anchor colour in `sys-base`, which wins on layer order, so those two
+ * rules were already dead — and they were the last read of
+ * `--cr-color-link*`. Verified: no anchor on the site rendered the blue. */
 @layer cr-base {
-  a {
-    color: var(--cr-color-link);
-  }
-
-  a:hover {
-    color: var(--cr-color-link-hover);
-  }
-
   :focus-visible {
-    outline: var(--cr-focus-ring-width) solid var(--cr-color-focus-ring);
-    outline-offset: var(--cr-focus-ring-offset);
+    outline: var(--sys-focus-ring-width) solid var(--sys-color-ring);
+    outline-offset: var(--sys-focus-ring-offset);
   }
 }
 
@@ -108,7 +141,8 @@
   a:not(.ui-button):not([data-foreground-style]):not([data-interactive]):not(
       [data-link]
     ) {
-    color: var(--sys-color-accent);
+    /* Ink, not fill: a bare link in the raw accent is 3.04:1 on white. */
+    color: var(--sys-color-accent-label);
   }
 }
 
@@ -119,7 +153,14 @@
    app.config.ts's withViewTransitions() call is the JS half of this pair. */
 ::view-transition-old(root),
 ::view-transition-new(root) {
-  animation-duration: var(--sys-motion-duration-slow);
+  /* DELIBERATE, not SLOW. `--sys-motion-duration-slow` is 480ms and the token
+     file is explicit that it is a MARKETING tier: the control-motion scale
+     "stops at `deliberate`" and the three longer tiers "extend it rather than
+     stretching that scale's meaning". Page chrome is control motion, not a
+     cinematic reveal — and at 480ms a full-viewport cross-fade of two page
+     snapshots is nearly double Chrome's own 250ms default. Measured, that
+     override alone cost 172ms on every navigation. */
+  animation-duration: var(--sys-motion-duration-deliberate);
   animation-timing-function: var(--sys-motion-ease-standard);
 }
 

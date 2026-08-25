@@ -1,0 +1,27 @@
+@layer sys-components {
+  /* A column, and the spacing is the whole design: the title and the body
+     are one thought (tight), the action is a separate one (regular). Five of
+     the seven call sites already used `tight` between the text lines, so
+     that rung is the majority, not a new opinion. */
+  .ui-empty-state {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sys-space-tight);
+  }
+
+  .ui-empty-state__title {
+    margin: 0;
+    font: var(--sys-font-headline);
+  }
+
+  /* The action steps away from the copy it answers — and takes NO position
+     of its own. Both call sites stretched their CTA to the column's width
+     (they sat in a `ui-stack`, which stretches), and an extraction that
+     quietly starts hugging is a design change smuggled inside a refactor.
+     Whether these buttons should hug is a real question; it is just not this
+     commit's question. `:where` keeps the rule at zero specificity so a
+     projected button's own rules always win. */
+  .ui-empty-state > :where([uiActions]) {
+    margin-block-start: var(--sys-space-compact);
+  }
+}

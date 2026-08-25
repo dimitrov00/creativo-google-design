@@ -20,7 +20,7 @@ import { UiListRow } from './list-row';
 })
 class HostComponent {
   size = signal<'regular' | 'large'>('large');
-  variant = signal<'plain' | 'prominent'>('plain');
+  variant = signal<'plain' | 'neutral' | 'prominent'>('plain');
   interactive = signal(false);
 }
 
@@ -55,6 +55,27 @@ describe('UiListRow', () => {
     expect(el.classList.contains('ui-list-row')).toBe(true);
     // Styling hangs off the attribute alone — never a variant class.
     expect(Array.from(el.classList).some((c) => c.includes('prominent'))).toBe(
+      false,
+    );
+  });
+
+  /**
+   * The middle rung, and the reason it exists: a stack that needs a second
+   * standalone destination reaches for `neutral` instead of a second
+   * `prominent`, which would be two competing primaries.
+   *
+   * It is deliberately NOT an accent wash — `[data-selected]` already owns
+   * that fill, so a permanently-washed row would be indistinguishable from
+   * a selected one.
+   */
+  it('stamps the neutral variant as data-variant', () => {
+    fixture.componentInstance.variant.set('neutral');
+    fixture.detectChanges();
+    const el: HTMLElement = fixture.nativeElement.querySelector(
+      '[data-testid="row"]',
+    );
+    expect(el.getAttribute('data-variant')).toBe('neutral');
+    expect(Array.from(el.classList).some((c) => c.includes('neutral'))).toBe(
       false,
     );
   });

@@ -35,8 +35,30 @@ export interface BarberDayTotals {
   readonly idleMinutes: number;
   readonly idleGapCount: number;
   readonly longestIdleGapMinutes: number;
+  /**
+   * Idle gaps long enough to actually sell — at least `shortestSellableMinutes`.
+   *
+   * The difference between this and {@link idleGapCount} is the whole
+   * FRAGMENTATION story, and it is what tells an owner which problem they
+   * have: 60% utilisation lost as one three-hour hole is a DEMAND problem
+   * (marketing), and the same 60% lost as eight twenty-minute slivers is a
+   * SCHEDULING problem (fixable in `slotStepMinutes` and buffers). No other
+   * pair of numbers separates those two, and the wrong diagnosis is expensive
+   * in opposite directions.
+   */
+  readonly sellableGapCount: number;
   /** SEATS, not appointments — a party of three is three services. */
   readonly serviceCount: number;
+  /**
+   * DISTINCT appointments touched — a party of three is ONE ticket.
+   *
+   * Kept beside `serviceCount` rather than instead of it because the two
+   * answer different questions and are routinely confused: average ticket
+   * divides revenue by THIS, per-barber average service value divides by
+   * `serviceCount`, and swapping them understates the first by the average
+   * party size.
+   */
+  readonly appointmentCount: number;
   readonly noShowCount: number;
   readonly revenueMinorUnits: number;
   readonly currencyCode: string;
@@ -77,6 +99,15 @@ export function foldBarberDay(
   windows: readonly RosterWindow[],
   blocks: readonly OccupancyBlock[],
   currencyCode = 'EUR',
+  /**
+   * The shortest service this shop actually sells, in minutes — the bar an
+   * idle gap has to clear to count as sellable. A parameter rather than a
+   * constant because it is a CATALOG fact that differs per shop, and the fold
+   * must stay pure. The default is deliberately small: over-counting sellable
+   * gaps understates fragmentation, which is the safer direction to be wrong
+   * (it never invents a scheduling problem that is not there).
+   */
+  shortestSellableMinutes = 15,
 ): BarberDayTotals {
   const rostered = rosteredMinutes(windows);
   const windowIntervals = windows.map((window) => window.interval);
@@ -90,6 +121,9 @@ export function foldBarberDay(
   let serviceCount = 0;
   let noShowCount = 0;
   let revenue = 0;
+  // A party's seats each carry the SAME appointment id, so a set is what turns
+  // "three services" into "one ticket".
+  const appointmentIds = new Set<string>();
 
   for (const block of blocks) {
     const minutes = block.minutes();
@@ -102,6 +136,7 @@ export function foldBarberDay(
     if (block.reason.kind === 'admin') adminBlocked += minutes;
     if (block.reason.kind === 'service') {
       serviceCount += 1;
+      appointmentIds.add(block.reason.appointmentId.value);
       revenue += block.revenueMinorUnits;
       if (block.reason.outcome === 'no_show') {
         noShow += minutes;
@@ -141,7 +176,11 @@ export function foldBarberDay(
       (longest, gap) => Math.max(longest, Interval.durationMinutes(gap)),
       0,
     ),
+    sellableGapCount: idleGaps.filter(
+      (gap) => Interval.durationMinutes(gap) >= shortestSellableMinutes,
+    ).length,
     serviceCount,
+    appointmentCount: appointmentIds.size,
     noShowCount,
     revenueMinorUnits: revenue,
     currencyCode,
@@ -173,4 +212,22 @@ export function chairTimeUtilisation(totals: BarberDayTotals): number | null {
 /** Rostered time that was never sellable, by reason — "busy from else". */
 export function committedButUnsellableMinutes(totals: BarberDayTotals): number {
   return Object.values(totals.excludedMinutes).reduce((a, b) => a + b, 0);
+}
+
+/**
+ * The share of idle gaps too short to sell — the DIAGNOSIS that turns a bad
+ * utilisation figure into an action.
+ *
+ * Near 0 means the idle time is in usable blocks: the shop has a demand
+ * problem and should market. Near 1 means the same idle minutes are shredded
+ * into unsellable slivers: the shop has a scheduling problem and should look
+ * at its slot step and buffers. Identical utilisation, opposite remedies.
+ *
+ * `null` when there was no idle time at all — a fully booked day has no
+ * fragmentation, and reporting 0 would read as "perfectly packed gaps"
+ * rather than "no gaps".
+ */
+export function fragmentationRatio(totals: BarberDayTotals): number | null {
+  if (totals.idleGapCount === 0) return null;
+  return (totals.idleGapCount - totals.sellableGapCount) / totals.idleGapCount;
 }

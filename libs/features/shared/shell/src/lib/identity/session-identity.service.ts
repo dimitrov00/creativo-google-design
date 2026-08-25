@@ -6,6 +6,7 @@ import {
   AVATAR_UPLOADER,
   UserId,
   profileCompletion,
+  STAFF_ROLES,
 } from '@creativo/application/accounts';
 import { AccountStateService } from '@creativo/features/client/account-state';
 
@@ -36,6 +37,22 @@ export class SessionIdentityService {
   readonly principal = this.accountState.principal;
 
   readonly isAuthed = computed(() => this.principal().kind === 'active');
+
+  /**
+   * A staff-tier principal — the SAME grouping firestore.rules' `isStaff()`
+   * and the /staff route guard use, read off the token's claims. Drives the
+   * menu's day-sheet entry and nothing security-bearing: the guard and the
+   * rules re-check for themselves.
+   */
+  readonly isStaffMember = computed(() => {
+    const principal = this.principal();
+    return (
+      principal.kind === 'active' &&
+      principal.roles.some((role) =>
+        (STAFF_ROLES as readonly string[]).includes(role as string),
+      )
+    );
+  });
 
   /**
    * The profile's own name once the snapshot lands, falling back to the

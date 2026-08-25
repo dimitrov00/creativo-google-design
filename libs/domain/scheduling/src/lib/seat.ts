@@ -6,8 +6,10 @@ import {
   ServiceTerms,
   ServiceVariantId,
 } from '@creativo/domain/catalog';
+import { BarberPref } from './barber-pref';
 import { SeatId } from './ids';
 import { SeatLabel } from './seat-label';
+import { SEAT_SCHEDULED, SeatOutcome, isSeatResolved } from './seat-outcome';
 import { TimeSlot } from './time-slot';
 
 /**
@@ -62,6 +64,23 @@ export interface SeatProps {
   readonly variantId: ServiceVariantId | null;
   /** RESOLVED, never a preference: scheduling consumes `BarberPref` and emits this. */
   readonly barberId: BarberId;
+  /**
+   * The preference this seat was resolved FROM — `any` when the client said
+   * anyone would do, `specific` when they asked for this barber by name.
+   *
+   * ### Why the resolved id is not enough
+   * `barberId` is a FACT of the appointment and says nothing about how it got
+   * there. "Ivan at 14:00" looks identical whether the client insisted on Ivan
+   * or simply took the first free chair — and those two bookings behave
+   * completely differently the morning Ivan calls in sick. One can be moved
+   * silently; the other needs a phone call. That distinction is the first
+   * question asked on any absence, and it is **destroyed at commit** unless
+   * recorded here: nothing about a stored seat can reconstruct it.
+   *
+   * `null` only for seats written before this field existed — which is also
+   * the flag for "we do not know", and must never be read as `any`.
+   */
+  readonly pref?: BarberPref | null;
   /** Price + duration SNAPSHOT taken at commit time. See the class doc. */
   readonly terms: ServiceTerms;
   /**
@@ -69,6 +88,12 @@ export interface SeatProps {
    * see the class doc on why the seat may not state its length twice.
    */
   readonly startsAt: ZonedDateTime;
+  /**
+   * What became of this person's seat. Omitted means `scheduled` — both for a
+   * brand-new booking and for every appointment written before outcomes
+   * existed, which is the same thing as far as a report is concerned.
+   */
+  readonly outcome?: SeatOutcome;
 }
 
 /**
@@ -117,6 +142,8 @@ export class Seat {
     readonly barberId: BarberId,
     readonly terms: ServiceTerms,
     readonly startsAt: ZonedDateTime,
+    readonly outcome: SeatOutcome = SEAT_SCHEDULED,
+    readonly pref: BarberPref | null = null,
   ) {}
 
   static of(props: SeatProps): Seat {
@@ -128,7 +155,37 @@ export class Seat {
       props.barberId,
       props.terms,
       props.startsAt,
+      props.outcome ?? SEAT_SCHEDULED,
+      props.pref ?? null,
     );
+  }
+
+  /**
+   * The same seat, resolved. Immutable like the rest of the domain — a signal
+   * holding a seat cannot have it mutated out from under a template.
+   *
+   * Placement is untouched on purpose: a no-show still occupied the chair,
+   * and its slot is what makes `noShowMinutes` separable from idle time.
+   */
+  withOutcome(outcome: SeatOutcome): Seat {
+    return new Seat(
+      this.id,
+      this.subject,
+      this.serviceId,
+      this.variantId,
+      this.barberId,
+      this.terms,
+      this.startsAt,
+      outcome,
+      // The preference survives resolution: what the client asked for does
+      // not change because the shop said what happened.
+      this.pref,
+    );
+  }
+
+  /** Has the shop said what happened to this seat yet? */
+  isResolved(): boolean {
+    return isSeatResolved(this.outcome);
   }
 
   /**

@@ -15,9 +15,25 @@ export type UiPageActionBarAnchor = 'page' | 'pane';
  * Page action bar — the bottom action row pinned in the thumb zone of a
  * full-height PAGE (auth/onboarding step screens). The page-level sibling
  * of `ui-sheet-action-bar`: same slot contract, different anchoring — the
- * bar is `position: sticky` at the page's bottom edge (compose it as the
- * last child of a `uiFrameMinHeight="100svh"` column so a short page pins
- * it to the viewport floor and a tall page lets it ride the scroll).
+ * bar is `position: sticky` at the page's bottom edge, so a tall page lets
+ * it ride the scroll.
+ *
+ * ### The one composition rule: the parent must be a COLUMN
+ * Compose the bar as the last child of a flex/grid column carrying
+ * `uiFrameMinHeight="100svh"` — a `ui-stack`, or a `main` the page's own
+ * CSS makes `display: flex; flex-direction: column`.
+ *
+ * Sticky does not do the flooring; `margin-block-start: auto` does. A
+ * bottom inset only pushes a sticky box back UP when scrolling would carry
+ * it out of the scrollport — on a page shorter than the viewport the box
+ * never leaves the constraint, so nothing shifts. A BLOCK parent therefore
+ * strands the bar in normal flow, directly under the last piece of content,
+ * with the rest of the screen empty below it (the staff schedule shipped
+ * that way until 2026-08-20: `main.staff-day` was `display: block`, so its
+ * `<ui-spacer />` was inert and a barber with two visits got the bar at
+ * mid-screen). The auto margin means a column parent needs no spacer at
+ * all; a spacer that is already there is harmless (it takes the free space
+ * first and the margin resolves to zero).
  *
  * ### `uiAnchor`
  * `page` (default) is the sticky behaviour above. `pane` anchors the bar to

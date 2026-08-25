@@ -55,6 +55,7 @@ export type ModalSheetScrollEvent = UiSheetScrollEvent;
     // own sheet content element instead of overloading this one.
     'data-testid': 'modal-sheet',
     '[attr.data-state]': "open() ? 'open' : closing() ? 'closing' : 'closed'",
+    '[attr.data-fitted]': "fitted() ? '' : null",
   },
 })
 export class UiModalSheet {
@@ -72,6 +73,19 @@ export class UiModalSheet {
    * collapse.
    */
   readonly titleAlwaysVisible = input(false);
+  /**
+   * Size the sheet to its CONTENT rather than to the viewport.
+   *
+   * The default height is unconditional, so a two-line confirmation drew the
+   * same 90svh box as a full booking form — a sentence, then six hundred
+   * pixels of nothing, with the action bar stranded at the bottom of an
+   * empty screen. Fitted turns that height into a cap: short content hugs,
+   * long content scrolls at exactly the same ceiling.
+   *
+   * For confirmations and short notices. A sheet whose content arrives
+   * asynchronously should stay unfitted, or its height jumps as it loads.
+   */
+  readonly fitted = input(false);
   /** Opt out of the open-time scroll-to-top when the consumer positions the scroller itself. */
   readonly resetScrollOnOpen = input(true);
   /** Dismissal *request* (Escape / backdrop / drag / close control) —

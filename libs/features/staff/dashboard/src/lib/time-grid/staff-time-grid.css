@@ -1,0 +1,743 @@
+/*
+ * The proportional calendar canvas.
+ *
+ * Every measurement derives from the token scale so `data-density="compact"`
+ * on the page steps the whole grid down together — the wide tier is a density
+ * step, never a second set of numbers.
+ */
+
+.staff-grid {
+  display: block;
+  min-inline-size: 0;
+}
+
+.staff-grid__frame {
+  /* One 15-minute row. Tall enough that a 30-minute cut clears the 44 rung. */
+  /* One 15-minute row. Apple Calendar gives an hour roughly 48–56pt; at
+     `* 7` an hour is 112px, which seats a 30-minute cut with two legible
+     lines and still shows a working day without a marathon scroll. */
+  --staff-slot-height: calc(var(--sys-space-unit) * 7);
+  --staff-gutter: calc(var(--sys-space-unit) * 14);
+  --staff-column-min: calc(var(--sys-space-unit) * 26);
+
+  display: flex;
+  flex-direction: column;
+  min-inline-size: 0;
+
+  /* The CALENDAR scrolls, not the page — Apple Calendar's model, and the only
+     one where the column head can actually pin.
+     `position: sticky` resolves against the nearest scrollable ancestor, so
+     while this frame owned `overflow-x` the head was sticky to a box that
+     never scrolled vertically and slid away with the page regardless of its
+     offset. Bounding the frame and letting it scroll BOTH ways makes the head
+     stick to the thing it belongs to. */
+  block-size: calc(100svh - var(--staff-head-offset, 0px));
+  overflow: auto;
+  overscroll-behavior: contain;
+
+  /* The calendar reaches the viewport FLOOR and scrolls UNDER the action bar,
+     which is the only arrangement where that bar's chrome fade has anything
+     to dissolve. Stopping short of it left a hard clip mid-block and a band
+     of bare page below — a fade over nothing reads as a solid strip.
+     The padding is what lets the last booking of the day clear the bar
+     instead of hiding behind it. */
+  padding-block-end: var(--staff-grid-footer, 6rem);
+}
+
+/*
+ * ONE track definition, one width, three bands.
+ *
+ * These used to be separate grids each sized `min-inline-size: max-content`,
+ * so every band resolved its own tracks against its own content: the head
+ * sized to the barbers' names, the body to `--staff-column-min`, the all-day
+ * row to its chips. Nothing lined up — the first name sat under its column,
+ * the second landed mid-column and the third somewhere else entirely.
+ *
+ * The width is now stated identically on all three: the frame's own width, or
+ * the columns' intrinsic minimum when that is larger (which is what makes the
+ * frame scroll sideways for a week). Identical width + identical template =
+ * identical tracks, which is the only way three grids stay in step.
+ */
+.staff-grid__head,
+.staff-grid__allday,
+.staff-grid__body {
+  display: grid;
+  grid-template-columns:
+    var(--staff-gutter)
+    repeat(var(--staff-grid-columns, 1), minmax(var(--staff-column-min), 1fr));
+  inline-size: max(
+    100%,
+    calc(
+      var(--staff-gutter) + var(--staff-grid-columns, 1) *
+        var(--staff-column-min)
+    )
+  );
+}
+
+/* The whole header block — column names and the all-day row — pins as one. */
+.staff-grid__chrome {
+  position: sticky;
+  inset-block-start: 0;
+  z-index: 3;
+  background: var(--sys-color-background);
+}
+
+.staff-grid__head {
+  border-block-end: 1px solid var(--sys-color-separator);
+}
+
+/* One barber, one column: the toolbar already names them, so the head keeps
+   only the zone rather than repeating the name under it. */
+.staff-grid__head--bare {
+  grid-template-columns: var(--staff-gutter);
+  inline-size: 100%;
+}
+
+/* The head's cells carry the SAME leading separator the body's columns do —
+   without it the header floated as a caption over the table instead of being
+   its first row, and the eye had nothing tying a name to its column. */
+.staff-grid__column-head {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: calc(var(--sys-space-unit) * 0.5);
+  padding: var(--sys-space-tight) var(--sys-space-compact);
+  min-inline-size: 0;
+  border-inline-start: 1px solid var(--sys-color-separator);
+}
+
+/* The zone cell closes the gutter column in both header bands, so the rule
+   under them runs unbroken. */
+.staff-grid__zone {
+  border-inline-end: 1px solid transparent;
+}
+
+.staff-grid__column-head > span {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The header portrait rides a SMALLER disc than the DS's small rung.
+ *
+ * 36px is a control tier — the size a thing you press is — and this is a
+ * label. Beside footnote text in a header band it out-weighed the name it
+ * belongs to, which inverts the reading order of the column head. Stated as
+ * the avatar's own disc property so the monogram and the glyph scale with it
+ * rather than being clipped by a width override. */
+.staff-grid__column-name .ui-avatar {
+  --ui-avatar-disc: calc(var(--sys-space-unit) * 6);
+}
+
+.staff-grid__column-name {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sys-space-tight);
+  inline-size: 100%;
+  min-inline-size: 0;
+  overflow: hidden;
+}
+
+/* Without this the name's intrinsic width leaks back into the track and the
+   head drifts out of step with the body again. */
+.staff-grid__column-name > span {
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The day number's capsule. Neutral by default; today fills with the accent,
+   which is the one place on this header a colour earns its keep. */
+.staff-grid__column-day {
+  display: inline-grid;
+  place-items: center;
+  /* A FIXED box, not a padded one. `min-inline-size` plus horizontal padding
+     let the capsule size to its digits, so 10 and 11 came out different
+     widths and the row of them looked hand-set. Every date gets the same
+     rectangle and the number centres inside it. */
+  inline-size: calc(var(--sys-space-unit) * 7);
+  block-size: calc(var(--sys-space-unit) * 6.5);
+  padding-inline: 0;
+  /* A rounded RECT, not a circle — the reference's clip, and it seats a
+     two-digit date without the pill stretching into a lozenge. */
+  border-radius: var(--control-radius-subtle);
+  font-variant-numeric: tabular-nums;
+  background: var(--sys-color-fill);
+  color: var(--sys-color-foreground);
+}
+
+.staff-grid__column-head[data-today] .staff-grid__column-day {
+  background: var(--sys-color-accent);
+  color: var(--sys-color-on-accent);
+}
+
+.staff-grid__column-detail {
+  color: var(--sys-color-secondary-label);
+}
+
+/*
+ * Today is marked by the day-number CAPSULE and nothing else.
+ *
+ * There used to be an accent underline here too. In the date-columned views
+ * that merely repeated the capsule; in the DAY view — where every column is a
+ * barber and they are all "today" together — it painted one unbroken accent
+ * bar across the whole header, which read as a stray rule rather than a
+ * marker. A signal that fires on every column is not a signal.
+ *
+ * `isToday` is still set on barber columns: the now-line needs to know
+ * whether today is on screen at all. It just has nothing to say visually
+ * when the answer is "all of them".
+ */
+
+.staff-grid__body {
+  position: relative;
+  /* Room for the first hour label, which sits ON its line and would
+     otherwise be clipped by the frame. Padding on the grid CONTAINER moves
+     the gutter and the columns together, so the alignment survives it.
+     NAMED, because the now-line's label has to subtract it back out — see
+     `.staff-grid__now-label`.
+
+     In SPACE UNITS, never `em`. A custom property substitutes its raw token
+     and the unit resolves WHERE IT IS USED — so `0.7em` was 10.5px here (body
+     font) and 7.7px inside the caption-sized label that read it back. The
+     label was subtracting a padding that did not exist, which is the whole of
+     the 1px the eye kept catching. `--sys-space-unit` is rem-based and
+     resolves to the same length at every use site. */
+  --staff-body-pad: calc(var(--sys-space-unit) * 2.5);
+  padding-block-start: var(--staff-body-pad);
+}
+
+.staff-grid__zone {
+  display: grid;
+  place-items: center;
+  padding: var(--sys-space-tight) calc(var(--sys-space-unit) * 0.5);
+  border: 0;
+  background: none;
+  cursor: pointer;
+  font: var(--sys-font-caption);
+  color: var(--sys-color-secondary-label);
+  text-transform: uppercase;
+  letter-spacing: var(--sys-tracking-caption);
+}
+
+@media (hover: hover) {
+  .staff-grid__zone:hover {
+    color: var(--sys-color-foreground);
+  }
+}
+
+/* Ungated `:active` mirror — a tap shows what a hover would. */
+.staff-grid__zone:active {
+  color: var(--sys-color-foreground);
+}
+
+/* ── All day ─────────────────────────────────────────────────────────── */
+
+/* Directly under the header band and pinned with it — the reference's
+   anatomy, and the row a whole-day fact has nowhere else to sit. */
+.staff-grid__allday {
+  position: sticky;
+  inset-block-start: var(--staff-allday-offset, 2.75rem);
+  z-index: 2;
+  min-block-size: calc(var(--sys-space-unit) * 8);
+  background: var(--sys-color-background);
+  border-block-end: 1px solid var(--sys-color-separator);
+}
+
+.staff-grid__allday-label {
+  display: grid;
+  place-items: center end;
+  padding-inline-end: var(--sys-space-compact);
+  color: var(--sys-color-secondary-label);
+  /* Two words in a 52px gutter wrap; tightening the leading keeps the pair
+     reading as one label rather than two stacked ones. */
+  line-height: 1.1;
+  text-align: end;
+}
+
+.staff-grid__allday-cell {
+  display: flex;
+  flex-wrap: wrap;
+  gap: calc(var(--sys-space-unit) * 0.5);
+  padding: var(--sys-space-tight) var(--sys-space-compact);
+  border-inline-start: 1px solid var(--sys-color-separator);
+  min-inline-size: 0;
+}
+
+.staff-grid__allday-chip {
+  padding: 1px var(--sys-space-tight);
+  border-radius: var(--control-radius-subtle);
+  background: var(--sys-color-fill);
+  color: var(--sys-color-secondary-label);
+  white-space: nowrap;
+}
+
+.staff-grid__gutter {
+  display: grid;
+  grid-auto-rows: calc(var(--staff-slot-height) * 4);
+  padding-block-start: 0;
+}
+
+.staff-grid__hour {
+  color: var(--sys-color-secondary-label);
+  font-variant-numeric: tabular-nums;
+  padding-inline-end: var(--sys-space-compact);
+  text-align: end;
+  /* Sits ON the hour line rather than inside the band it opens. */
+  transform: translateY(-0.5em);
+}
+
+.staff-grid__column {
+  position: relative;
+  display: grid;
+  grid-template-rows: repeat(var(--staff-grid-slots), var(--staff-slot-height));
+  border-inline-start: 1px solid var(--sys-color-separator);
+  min-inline-size: 0;
+}
+
+/* Hour rules as a BACKGROUND, not as elements.
+   They used to be one `<span>` per hour inside the same grid — but the events
+   carry an explicit `grid-row` and the rules did not, so auto-placement flowed
+   each rule around whatever block sat above it and the whole rail walked down
+   the column in steps. That was the "stairs". A gradient cannot be pushed by
+   anything.
+
+   On an OVERLAY rather than the column's own background, so it draws ON TOP
+   of the closed shading. The shading is a child element and would otherwise
+   cover the column's background entirely, breaking every hour line wherever
+   the shop is shut — and a rule that stops at the edge of a shaded block
+   makes the grid read as two tables stacked, not one day. Absolutely
+   positioned, so it is not a grid item and cannot take a track. */
+.staff-grid__column::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background-image: repeating-linear-gradient(
+    to bottom,
+    var(--sys-color-separator) 0,
+    var(--sys-color-separator) 1px,
+    transparent 1px,
+    transparent calc(var(--staff-slot-height) * 4)
+  );
+}
+
+/*
+ * The hours a column is SHUT.
+ *
+ * THE SAME GREY the toolbar's own buttons wear, and deliberately not
+ * `--sys-color-fill`. That token is the alpha ladder — `#121212` at 4% — which
+ * composites to rgb(245,245,245), a shade DARKER than the rgb(247,247,247)
+ * segments at the top of the same screen. Two quiet greys that never quite
+ * match is a small defect on a 44px pill and a loud one here, because this
+ * surface can be half the canvas and area amplifies value: the shut hours
+ * read as a heavy grey field rather than as the quietest thing on the page
+ * (owner-reported 2026-08-10).
+ *
+ * Opaque is now safe: the hour rules moved to the column's `::after` overlay
+ * above, so they draw over this instead of being covered by it.
+ *
+ * z-index 0 against the blocks' 2: a booking that overruns closing — exactly
+ * the thing a shop needs to see — sits ON the shading, not under it.
+ */
+.staff-grid__closed {
+  grid-column: 1;
+  z-index: 0;
+  background: var(--sys-color-surface-secondary);
+  pointer-events: none;
+}
+
+/* ── Blocks ──────────────────────────────────────────────────────────── */
+
+.staff-grid__event {
+  /* Side-by-side placement for genuine overlaps. */
+  --staff-event-lane: 0;
+  --staff-event-lanes: 1;
+
+  grid-column: 1;
+  position: relative;
+  /* Above BOTH the closed shading (0) and the hour-rule overlay (1). */
+  z-index: 2;
+  /* Lane offset and inset in ONE declaration each. A later
+     `margin-inline: 2px` shorthand was resetting `margin-inline-start`, so
+     every overlapping block collapsed onto lane 0 and only the last one was
+     visible — the lanes were computed correctly and then thrown away. */
+  inline-size: calc(100% / var(--staff-event-lanes) - 4px);
+  margin-inline-start: calc(
+    100% / var(--staff-event-lanes) * var(--staff-event-lane) + 2px
+  );
+  margin-inline-end: 2px;
+
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: flex-start;
+  gap: 0;
+  overflow: hidden;
+
+  /* Inset on every edge so a block reads as a card sitting IN its column
+     rather than a band spanning it — the reference's treatment, and what
+     lets two adjacent bookings stay visually separate. */
+  margin-block: 1px;
+  padding: calc(var(--sys-space-unit) * 0.75) var(--sys-space-tight);
+  /* Clears the rail and its inset. */
+  padding-inline-start: calc(var(--sys-space-unit) * 3);
+  border: 0;
+  /* Barely rounded. A calendar block is a SPAN OF TIME, and a generous
+     corner rounds away the very edges that state where it starts and ends. */
+  border-radius: var(--control-radius-subtle);
+  text-align: start;
+  font: inherit;
+  cursor: pointer;
+
+  /* THE design system's tint — the same 12% mix `.ui-button[bordered]` uses
+     for iOS's soft tinted fill. This was 16%, a value the system does not
+     use anywhere else; a surface inventing its own alpha is how a product
+     ends up with five nearly-identical tints and no rule.
+
+     NAMED, because the past hatch cuts stripes OUT of it rather than painting
+     grey ones over it — see `[data-past]`. */
+  /* WHOSE CHAIR, washed. This was the accent — the placeholder from when hue
+     meant "this is a booking" and there was only one identity to express. It
+     is the barber's tone now, at Apple's own measured 15% for a Calendar
+     day/week block.
+
+     The fill STAYS here while the agenda's was removed, and the two are not
+     in conflict: on the grid it is not saying WHO — the column head already
+     did — it is drawing the block's EXTENT, the duration and adjacency and
+     shape of the hour. That is geometry, and it has no substitute. */
+  --staff-event-tint: color-mix(
+    in srgb,
+    var(--barber-tone, var(--sys-color-fill)) 15%,
+    transparent
+  );
+  /* What the past hatch is DRAWN IN. Its own property rather than the tint
+     itself, because the two unfilled states have no tint to cut from — see
+     the `[data-past]` block. Deliberately LIGHTER than the fill: same tone,
+     less of it, so an hour that has gone recedes rather than shouting. */
+  --staff-event-hatch: color-mix(
+    in srgb,
+    var(--barber-tone, var(--sys-color-fill)) 7%,
+    transparent
+  );
+  background-color: var(--staff-event-tint);
+  color: var(--sys-color-foreground);
+}
+
+/*
+ * The leading rail — a pill, not an edge.
+ *
+ * A border or an inset shadow is welded to the block's own rectangle: it runs
+ * corner to corner and takes the block's radius, so it reads as part of the
+ * frame. The reference's rail is a separate mark sitting INSIDE the block —
+ * inset top and bottom, rounded at both ends — which is only expressible as
+ * an element with its own geometry.
+ */
+.staff-grid__event-rail {
+  position: absolute;
+  inset-block: calc(var(--sys-space-unit) * 0.75);
+  inset-inline-start: calc(var(--sys-space-unit) * 0.75);
+  inline-size: 3px;
+  border-radius: var(--control-radius-capsule);
+  /* WHOSE CHAIR. This rail has been `--sys-color-accent` since day one — the
+     literal placeholder behind "hue → it is a booking", written when there
+     was only ever one identity to express. It carries the barber now, the
+     same five tones the agenda uses, so the two views say "Ivan" in the same
+     colour. A carve-out has no barber and keeps the neutral fallback. */
+  background: var(--barber-tone, var(--sys-color-separator));
+  pointer-events: none;
+}
+
+/* The rail is IDENTITY and identity does not decay: a completed cut still
+   belongs to the barber who did it. Recolouring it by status put hue back on
+   state through the side door — the very thing the ruling above forbids —
+   and it is now the past HATCH that says the hour has gone, on every block
+   equally. */
+
+.staff-grid__event-title {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-inline-size: 100%;
+}
+
+/* The service, riding the title's own line on a quarter-hour block. Secondary
+   ink and a middot separator carry the demotion that the second line used to
+   carry by position — it is still plainly the subordinate half of the line. */
+.staff-grid__event-inline {
+  color: var(--sys-color-secondary-label);
+}
+
+.staff-grid__event-inline::before {
+  content: ' · ';
+}
+
+/* The secondary lines take the DS's own secondary tone. They used to take
+   `opacity: 0.75` — an invented alpha that also faded the BACKGROUND showing
+   through and could not track the theme. `uiFont="caption"` already carries
+   `--sys-color-secondary-label` in this system, so this is belt-and-braces
+   rather than a second opinion. */
+.staff-grid__event-detail,
+.staff-grid__event-who {
+  color: var(--sys-color-secondary-label);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-inline-size: 100%;
+}
+
+/*
+ * ── Status is FORM, never hue ──────────────────────────────────────────
+ *
+ * These blocks used to be green for completed, amber for no-show, accent for
+ * confirmed and grey for cancelled. Three HIG rules say that was wrong:
+ *
+ * 1. *Color* — "don't rely on color alone to convey information". A pale
+ *    green wash beside a pale amber one is the exact pair red-green colour
+ *    blindness cannot separate, and "the cut happened" vs "they never came"
+ *    is not a distinction to hang on a hue.
+ * 2. *Color* again — "avoid using semantic colors for non-semantic
+ *    purposes". Success and warning are system meanings; a finished haircut
+ *    is not a success and an absent client is not a warning.
+ * 3. Apple Calendar's own model: colour says WHICH CALENDAR an event belongs
+ *    to — an identity, chosen by the user — and never what state it is in.
+ *    State is carried by form: past events recede, declined events strike
+ *    through.
+ *
+ * So every booking now shares one hue, and the state is read off the block's
+ * SHAPE: filled = live, recessed = done, unfilled = the time was lost. A
+ * glyph doubles each of the terminal ones, and the accessible name carries
+ * the word — three channels, none of them colour alone.
+ */
+
+/* A sellable hole: the ABSENCE of a fill is the signal — no hatching, no
+   dashes, because this system has no vocabulary for either. */
+.staff-grid__event[data-kind='gap'] {
+  /* The tint must be reset here as well as the colour. It was not, so an
+     ELAPSED gap fell through to the past hatch and drew itself in accent
+     stripes — a hole in the day advertising itself in the brand colour. Same
+     class of bug the no-show branch already carries a comment about. */
+  --staff-event-tint: transparent;
+  --staff-event-hatch: var(--sys-color-fill);
+  background-color: transparent;
+  border: 1px dashed var(--sys-color-separator);
+  color: var(--sys-color-secondary-label);
+  box-shadow: none;
+}
+
+/*
+ * A CARVE-OUT — a break, an admin hour.
+ *
+ * Neutral, because hue is reserved: on this grid a colour says "this is a
+ * booking", and a lunch break is the opposite of one. It is still plainly an
+ * object — a filled rectangle with a rail, a glyph and a name — which is the
+ * whole point: it is time somebody deliberately took, so it has to be
+ * grabbable, not painted on as background.
+ *
+ * Distinct from the closed shading behind it in every channel that matters:
+ * this has a border, a rail, text, a hit target and an accessible name; the
+ * shading has none of those and is `aria-hidden`. That difference IS the
+ * signal that one can be moved and the other cannot.
+ */
+.staff-grid__event[data-kind='block'] {
+  --staff-event-tint: var(--sys-color-fill);
+  background-color: var(--staff-event-tint);
+  border: 1px solid var(--sys-color-separator);
+  color: var(--sys-color-secondary-label);
+}
+
+.staff-grid__event[data-kind='block'] .staff-grid__event-rail {
+  background: var(--sys-color-separator);
+}
+
+/* DONE — recedes, the way Apple Calendar dims the past. Same hue, less of
+   it: the day's achievement is still legible, just no longer competing with
+   what is still to come. */
+/* DONE — recedes, the way Apple Calendar dims the past. Same hue, less of it:
+   the day's achievement stays legible and stops competing with what is still
+   to come. The HATCH is not here — see below; it belongs to the clock. */
+.staff-grid__event[data-status='completed'] {
+  /* Same tone, half the wash. Hue is identity now, so this can no longer
+     reach for the accent without saying "Ivan" and "done" in one colour. */
+  --staff-event-tint: color-mix(
+    in srgb,
+    var(--barber-tone, var(--sys-color-fill)) 6%,
+    transparent
+  );
+  background-color: var(--staff-event-tint);
+  color: var(--sys-color-secondary-label);
+}
+
+/*
+ * ── Past is a TEXTURE, and it is orthogonal to status ──────────────────
+ *
+ * The hatch first shipped on `completed`, which quietly made it a fourth
+ * status colour in disguise. It is not: a completed cut, a no-show and a
+ * cancellation at 10:00 are all equally behind us by noon, and so is a
+ * booking still sitting `confirmed` — which is the one a shop most needs to
+ * see, because an unsettled past visit poisons every number derived from it.
+ *
+ * So the axes stay separate, and each keeps its own channel:
+ *   hue     → it is a booking
+ *   form    → what became of it
+ *   texture → whether its hour has gone
+ *
+ * The stripes are TRANSPARENT — gaps cut out of the block's own tint, not
+ * grey bars painted over it. Painting added a second colour to a surface that
+ * had just been reduced to one, and it dirtied every fill it crossed; cutting
+ * makes the block read as the same colour, thinned. Whatever tone a state
+ * carries, its past version is that tone with holes in it.
+ *
+ * …except that TWO states carry no tone at all. `no_show` and `cancelled` are
+ * unfilled by design, so cutting stripes out of their fill drew transparent
+ * stripes on transparent — the hatch was in the DOM, computed, and rendered
+ * nothing. A past no-show looked exactly like a future one, which is the
+ * single worst case for this indicator to fail on: a held chair nobody sat in
+ * is only actionable once its hour has gone. Those two draw the hatch in the
+ * same neutral their outline uses, so the texture exists on every block the
+ * clock has passed, whatever became of it.
+ */
+.staff-grid__event[data-past] {
+  background-color: transparent;
+  background-image: repeating-linear-gradient(
+    -45deg,
+    var(--staff-event-hatch) 0 5px,
+    transparent 5px 10px
+  );
+}
+
+/* NO-SHOW — unfilled. The chair was held and nobody sat in it, and an empty
+   outline is what that looks like. Distinct from a cancellation, which gave
+   the time back. */
+.staff-grid__event[data-status='no_show'] {
+  /* LONGHAND. `background: transparent` is a shorthand that also resets
+     `background-image`, so it wiped the past hatch off exactly the blocks
+     that most need it — an unfilled box and a missed hour look identical
+     without it. */
+  --staff-event-tint: transparent;
+  /* Nothing to cut from, so the hatch takes the outline's own neutral. */
+  --staff-event-hatch: var(--sys-color-fill);
+  background-color: transparent;
+  border: 1px solid var(--sys-color-separator);
+  color: var(--sys-color-secondary-label);
+}
+
+/* CANCELLED — struck through, Apple's treatment for a declined event, and
+   the most recessed of the three: nothing happened and nothing was lost. */
+.staff-grid__event[data-status='cancelled'] {
+  --staff-event-tint: transparent;
+  --staff-event-hatch: var(--sys-color-fill);
+  background-color: transparent;
+  border: 1px solid var(--sys-color-separator);
+  color: var(--sys-color-tertiary-label);
+  text-decoration: line-through;
+}
+
+/* The glyph that doubles the form, so the state survives a greyscale print
+   and a reader who cannot separate two washes. */
+.staff-grid__event-status {
+  align-self: flex-end;
+  margin-block-start: auto;
+  color: var(--sys-color-secondary-label);
+}
+
+/* One line only once the block is too short to hold two legibly. The text
+   still starts at the TOP: a short block centring its label while a tall one
+   top-aligns made a column of names that did not share a baseline. */
+.staff-grid__event[data-short] {
+  padding-block: 2px;
+}
+
+/* The one sanctioned hover grammar, with its ungated `:active` mirror so a
+   TAP shows what a hover would (standing mobile-press-parity ruling). */
+@media (hover: hover) {
+  .staff-grid__event:hover {
+    filter: brightness(0.97);
+  }
+}
+
+.staff-grid__event:active {
+  filter: brightness(0.94);
+  transform: scale(0.99);
+}
+
+.staff-grid__event:focus-visible {
+  outline: 2px solid var(--sys-color-accent);
+  outline-offset: 1px;
+}
+
+/* ── The now-line ────────────────────────────────────────────────────── */
+
+/*
+ * ── Now ────────────────────────────────────────────────────────────────
+ *
+ * A segment per column rather than one rule across the body: the hour is the
+ * same everywhere, so the line crosses everything — but only TODAY's stretch
+ * is accent. On Thursday's column the line says "this is where 10:38 falls",
+ * which is a ruler, not an event; spending the accent on it would claim
+ * something is happening there.
+ */
+.staff-grid__now {
+  position: absolute;
+  inset-inline: 0;
+  inset-block-start: calc(var(--staff-now-fraction, 0) * 100%);
+  block-size: 0;
+  border-block-start: 1px solid var(--sys-color-separator);
+  z-index: 3;
+  pointer-events: none;
+}
+
+.staff-grid__now[data-today] {
+  border-block-start-width: 2px;
+  border-block-start-color: var(--sys-color-accent);
+}
+
+/* The time, as a FILLED pill — the reference's treatment, and the one that
+   survives sitting over a booked block. Accent-on-white read as a floating
+   word; on-accent ink in a capsule reads as a marker. */
+.staff-grid__now-label {
+  position: absolute;
+  /*
+   * The same point as the line, in a different box.
+   *
+   * The line sits inside a COLUMN; this sits on the BODY, which is
+   * `--staff-body-pad` taller and starts that much higher. Feeding both the
+   * same percentage put them at two different places — the label rode above
+   * the rule by a fraction of that padding, which is exactly the "not
+   * centred" everyone could see and no percentage could fix.
+   *
+   * So the padding is added back and the fraction is taken over what remains
+   * — the column's own height — which lands the two on the same pixel.
+   */
+  inset-block-start: calc(
+    var(--staff-body-pad) + var(--staff-now-fraction, 0) *
+      (100% - var(--staff-body-pad))
+  );
+  /* In the GUTTER, ending exactly where every hour label ends — it belongs
+     to the same column of times, not to the far edge of the page. An
+     absolutely positioned box shrinks to its content, so anchoring the
+     TRAILING edge is what lets the pill hug its own text and still line up. */
+  inset-inline-start: auto;
+  inset-inline-end: calc(100% - var(--staff-gutter) + var(--sys-space-compact));
+  z-index: 4;
+  /* Centred on the line's VISUAL middle, not on its top edge.
+     `inset-block-start` places the element's border-box top, so a 2px rule
+     has its middle 1px lower — centring the pill on the coordinate alone left
+     it sitting a hair high, which is exactly the "not centred" that shows. */
+  transform: translateY(calc(-50% + 1px));
+  padding: 1px var(--sys-space-tight);
+  border-radius: var(--control-radius-capsule);
+  font-variant-numeric: tabular-nums;
+  background: var(--sys-color-accent);
+  color: var(--sys-color-on-accent);
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .staff-grid__event:active {
+    transform: none;
+  }
+}

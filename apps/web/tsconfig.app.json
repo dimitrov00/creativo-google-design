@@ -67,6 +67,9 @@
       "path": "../../libs/features/marketing/landing/tsconfig.lib.json"
     },
     {
+      "path": "../../libs/domain/accounts/tsconfig.lib.json"
+    },
+    {
       "path": "../../libs/infrastructure/clock/tsconfig.lib.json"
     },
     {

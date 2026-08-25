@@ -17,7 +17,16 @@ function fakeRepository(
     async save() {
       throw new Error('not used in this spec');
     },
+    async searchWindow() {
+      throw new Error('not used in this spec');
+    },
     observeUpcomingFor: () => stream,
+    observeHistoryFor() {
+      throw new Error('not used in this spec');
+    },
+    observeBarberDay() {
+      throw new Error('not used in this spec');
+    },
   };
 }
 

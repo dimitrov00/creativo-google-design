@@ -101,6 +101,39 @@ describe('UiIcon', () => {
       }
     });
 
+    /**
+     * Every registry value must be a ligature the PINNED font actually ships.
+     *
+     * This is not pedantry about typos. A Material Symbols ligature the font
+     * cannot resolve does not render a tofu box or throw — it renders its own
+     * NAME, in 24px capitals, in place of the icon. `staff.day` shipped as
+     * `contact_calendar` (a glyph newer than the pinned package) and the menu
+     * row read "CONTACT_CALENDAR" on screen. Nothing failed: not the build,
+     * not typecheck, not any other test.
+     *
+     * The names are read from the package's own `index.d.ts`, so bumping
+     * `material-symbols` re-checks the whole registry for free.
+     */
+    it('only uses ligatures the installed material-symbols package ships', async () => {
+      const { readFileSync } = await import('node:fs');
+      const declarations = readFileSync(
+        require.resolve('material-symbols/index.d.ts'),
+        'utf8',
+      );
+      const available = new Set(
+        [...declarations.matchAll(/"([a-z0-9_]+)",/g)].map(
+          (match) => match[1] as string,
+        ),
+      );
+      // Guard the guard: a parse that found nothing would pass vacuously.
+      expect(available.size).toBeGreaterThan(1000);
+
+      const missing = Object.entries(UI_ICON_REGISTRY).filter(
+        ([, glyph]) => !available.has(glyph),
+      );
+      expect(missing).toEqual([]);
+    });
+
     it('provideUiIcons remaps a semantic key without touching the registry', async () => {
       TestBed.resetTestingModule();
       await TestBed.configureTestingModule({

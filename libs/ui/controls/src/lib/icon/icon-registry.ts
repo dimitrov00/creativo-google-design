@@ -80,6 +80,12 @@ export const UI_ICON_REGISTRY = {
   'auth.email': 'mail',
   /** Phone OTP channel identity glyph (phone deployments, phone field). */
   'auth.phone': 'call',
+  /** A CLIENT'S own address and number — the contact details on a booking.
+   *  Distinct from `auth.*`, which identifies an OTP channel: the same two
+   *  marks today, but they answer different questions and must be free to
+   *  diverge. */
+  'contact.email': 'mail',
+  'contact.phone': 'call',
   /** "Resend code" affordance on the OTP screen. */
   'auth.resend': 'refresh',
   /** "Edit" affordance next to the sent-to identifier on the OTP screen. */
@@ -121,18 +127,76 @@ export const UI_ICON_REGISTRY = {
   /** Narrow what a list shows. The funnel, not the sliders: sliders promise
    *  several dials, a funnel promises one choice. */
   'action.filter': 'filter_list',
+  /** Find something in a list the eye cannot scan — the staff book's search.
+   *  Distinct from `calendar.flexible`'s `manage_search`, which promises a
+   *  search ACROSS DAYS rather than a plain lookup. */
+  'action.search': 'search',
 
   /* ── A booked visit's own verbs and facts ───────────────────────────── */
   /** Put this visit in the device's calendar (an `.ics` hand-off). */
   'visit.calendar': 'event_available',
+  /**
+   * The staff day sheet — the shop's own book. A calendar page WITH written
+   * entries, which is what a day sheet is; `calendar_month` (a bare grid) is
+   * already `view.calendar` and would say the wrong thing here anyway.
+   *
+   * NOT `contact_calendar`, however well it fits: that glyph does not exist
+   * in the pinned `material-symbols` package, and a ligature the font cannot
+   * resolve renders as its own NAME in 24px caps — the row read
+   * "CONTACT_CALENDAR" in the live menu. Ligature fonts fail loudly but
+   * silently at build time, so any new value here has to be checked against
+   * the installed set. `icon.spec.ts` now does that for every entry.
+   */
+  'staff.day': 'event_note',
+  /** A chair standing empty ALL DAY — the barber is off. Not `visit.noShow`
+   *  (that is a client who did not come) and not `visit.cancelled` (that is
+   *  one booking): this is the whole day, and it was never booked.
+   *  A cup rather than the sofa this started as: at 16px a sofa is a broad
+   *  blob, and `beach_access` — the other candidate — claims a HOLIDAY, which
+   *  an ordinary Monday off is not. (`palm_tree` does not ship in the pinned
+   *  font; `coffee`, `beach_access`, `sunny` and `deck` all do.) */
+  'staff.off': 'coffee',
   /** What the client asked the shop to know before the chair. */
   'visit.note': 'sticky_note_2',
+  /** The chair was held and nobody came. Distinct from a cancellation, which
+   *  freed the time — this one consumed it. */
+  'visit.noShow': 'person_off',
+  /**
+   * The rest of a row's verbs, behind an overflow trigger.
+   *
+   * Its own intent rather than a reuse of `service.details`: this opens a
+   * MENU of actions, not a description, and the two would diverge the first
+   * time either wanted its own mark.
+   */
+  'action.more': 'more_horiz',
   /** What it comes to — money, stated not charged. */
   'visit.price': 'payments',
   /** "The same again" — book a past visit's services with the same barber. */
   'visit.repeat': 'replay',
   /** Move THIS booking to another time — the same visit, not a new one. */
   'visit.reschedule': 'edit_calendar',
+  /**
+   * The agenda's row VERBS, as marks rather than words.
+   *
+   * A schedule card is read at arm's length between cuts, and a run of
+   * "Готово"/"Дойде" pills spends the card's width restating a small set of
+   * acts the reader learns once. These are the same three acts as glyphs —
+   * distinct silhouettes, not three variations on a tick, so they separate
+   * without being read.
+   */
+  /** The person is HERE — check-in, not completion. */
+  'visit.arrived': 'how_to_reg',
+  /** The work is done. A filled mark, so it reads as an end rather than a tick. */
+  'visit.completed': 'task_alt',
+  /** The shop accepts a booking it had been vetting. */
+  'visit.confirmed': 'check',
+  /** A booking that was withdrawn — a calendar with the day struck out,
+   *  distinct from `visit.noShow`, where the chair was held and nobody came. */
+  'visit.cancelled': 'event_busy',
+  /** Requested, not yet accepted — the state that is waiting on someone. */
+  'visit.pending': 'hourglass_top',
+  /** Take a no-show back — the lifecycle's one correction edge. */
+  'visit.reopen': 'undo',
 
   /* ── Calendars / paging ─────────────────────────────────────────── */
   'calendar.previous': 'chevron_left',
@@ -146,6 +210,17 @@ export const UI_ICON_REGISTRY = {
   'calendar.flexible': 'manage_search',
   /** A standing waitlist request: we are watching these days for you. */
   'calendar.watching': 'notifications_active',
+  /* The staff schedule's four renderings. Separate intents rather than one
+     `calendar.view` key, because the switcher shows the CURRENT one and the
+     four must be distinguishable at a glance in a 44pt target. */
+  /** The complete run as a list — visits and sellable gaps in clock order. */
+  'calendar.viewAgenda': 'view_agenda',
+  /** One day, one column per barber. */
+  'calendar.viewDay': 'calendar_view_day',
+  /** Three days side by side. */
+  'calendar.viewThreeDay': 'view_column',
+  /** A Monday-first week. */
+  'calendar.viewWeek': 'calendar_view_week',
 
   /* ── Locations ──────────────────────────────────────────────────── */
   /** Place/address identity glyph on location cards and sheet rows. */

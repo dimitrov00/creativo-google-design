@@ -8,6 +8,7 @@ import {
 import type { UiControlSize } from '../button/button';
 import { UiAsyncImage } from '../async-image/async-image';
 import { UiIcon } from '../icon/icon';
+import type { UiIconName } from '../icon/icon-registry';
 
 /**
  * Avatar sizes extend the shared control vocabulary with a `display` tier —
@@ -33,7 +34,9 @@ export type UiAvatarSize = UiControlSize | 'extraLarge';
       [uiAlt]="uiName()"
     >
       <span uiPlaceholder class="ui-avatar__fallback" aria-hidden="true">
-        @if (initial(); as monogram) {
+        @if (uiIcon(); as glyph) {
+          <ui-icon [uiName]="glyph" />
+        } @else if (initial(); as monogram) {
           {{ monogram }}
         } @else {
           <ui-icon uiName="account.anonymous" />
@@ -60,6 +63,24 @@ export class UiAvatar {
   readonly uiSrc = input<string | null>(null);
   readonly uiName = input('');
   readonly uiControlSize = input<UiAvatarSize>('regular');
+
+  /**
+   * A GLYPH in place of the monogram — for a disc that stands for something
+   * other than a person: "anyone", a team, an unassigned lane.
+   *
+   * It exists so that "a face-shaped mark where a face would go" is one
+   * recipe rather than a hand-rolled capsule per feature. Both the booking
+   * flow's "Anyone" and the staff scope picker's "All barbers" drew their own
+   * disc — same radius, same fill, same size ladder, two definitions — until
+   * this input made them the same control.
+   *
+   * The glyph rides the tier's own font (icons inherit font size), so it
+   * scales with `uiControlSize` for free, and takes the avatar's ink, so
+   * `--ui-avatar-ink` tints it exactly as it tints a monogram.
+   *
+   * It is a PLACEHOLDER, like the monogram: a real `uiSrc` still wins.
+   */
+  readonly uiIcon = input<UiIconName | null>(null);
 
   /**
    * Apple-monogram initials: first letters of the first two words

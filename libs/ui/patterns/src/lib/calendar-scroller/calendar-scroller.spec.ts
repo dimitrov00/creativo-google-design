@@ -53,9 +53,12 @@ describe('UiCalendarScroller', () => {
     // Not in the months wrapper — that carries the run's own gap and end
     // padding, which would then apply to the heading too.
     expect(months?.contains(lede as Node)).toBe(false);
+    // Narrowed rather than optional-chained: the assertion above already
+    // established both exist, and `undefined & mask` is silently 0 — a
+    // missing lede would have passed this as "not following".
+    if (!lede || !months) throw new Error('missing scroller parts');
     expect(
-      lede?.compareDocumentPosition(months as Node) &
-        Node.DOCUMENT_POSITION_FOLLOWING,
+      lede.compareDocumentPosition(months) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
   });
 

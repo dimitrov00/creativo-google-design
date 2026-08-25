@@ -177,6 +177,7 @@ describe('ObserveDayAvailabilityUseCase', () => {
       minLeadMinutes: 120,
       horizonMonths: 2,
       maxFlexibleDays: 7,
+      autoConfirm: true,
       cancellationWindowHours: 24,
     }),
   );

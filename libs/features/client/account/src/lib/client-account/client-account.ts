@@ -23,7 +23,12 @@ import {
   UiSkeleton,
 } from '@creativo/ui/controls';
 import { UiGrid, UiStack } from '@creativo/ui/layout';
-import { UiCard, UiListGroup, UiListRow } from '@creativo/ui/patterns';
+import {
+  UiCard,
+  UiEmptyState,
+  UiListGroup,
+  UiListRow,
+} from '@creativo/ui/patterns';
 import {
   UiDisabledDirective,
   UiFrameDirective,
@@ -68,9 +73,10 @@ type UpcomingState =
     UiButton,
     UiCard,
     UiDisabledDirective,
-    UiIcon,
+    UiEmptyState,
     UiFrameDirective,
     UiGrid,
+    UiIcon,
     UiListGroup,
     UiListRow,
     UiPaddingDirective,

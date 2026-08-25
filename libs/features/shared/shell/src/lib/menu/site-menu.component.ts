@@ -6,11 +6,12 @@ import {
   inject,
   input,
   output,
+  signal,
 } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { Router, RouterLink } from '@angular/router';
 import { map, of, switchMap } from 'rxjs';
-import { TranslocoDirective } from '@jsverse/transloco';
+import { TranslocoDirective, TranslocoService } from '@jsverse/transloco';
 import { UserId } from '@creativo/application/accounts';
 import {
   NOTIFICATION_READER,
@@ -84,10 +85,14 @@ import { LocaleThemeToggleComponent } from '../prefs/locale-theme-toggle.compone
 export class SiteMenuComponent {
   readonly open = input.required<boolean>();
   readonly isAuthed = input(false);
+  /** A staff-tier session — shows the day-sheet entry. UI-only: the /staff
+   *  route guard and firestore.rules re-check for themselves. */
+  readonly isStaffMember = input(false);
   readonly closed = output();
 
   protected readonly behavior = inject(UiSheetBehavior);
   private readonly router = inject(Router);
+  private readonly transloco = inject(TranslocoService);
   private readonly signOutUseCase = new SignOutUseCase(inject(AUTH_GATEWAY));
 
   /** Name + photo for the identity portrait — the same shell-level read
@@ -152,6 +157,48 @@ export class SiteMenuComponent {
     { initialValue: 0 },
   );
 
+  /**
+   * "сряда, 6 август" — the day the schedule opens on, as its own subtitle.
+   *
+   * Deliberately a CLOCK READ, not a query. The obvious richer subtitle is
+   * a live count ("4 visits today"), but the shop's day is N per-barber
+   * listeners (see `StaffDayStore`, which is page-scoped for exactly that
+   * reason) and this menu is mounted for the whole session — permanent
+   * listeners to decorate a row nobody has tapped yet. The date carries
+   * most of the value for none of the cost.
+   *
+   * Zone-pinned to the shop, like every other date in the product: a
+   * barber checking the schedule from a phone set to another timezone must
+   * still see the shop's own calendar day.
+   */
+  protected readonly todayLabel = computed(() =>
+    new Intl.DateTimeFormat(this.lang() === 'en' ? 'en-GB' : 'bg-BG', {
+      weekday: 'long',
+      day: 'numeric',
+      month: 'long',
+      timeZone: 'Europe/Sofia',
+    }).format(new Date(this.openedAt())),
+  );
+
+  /**
+   * The active language as a SIGNAL.
+   *
+   * `getActiveLang()` is a plain method call — reading it inside a
+   * `computed` captures no dependency, so the date kept rendering in the
+   * previous locale after the toggle while the title beside it switched.
+   * `langChanges$` is the reactive half of the same API.
+   */
+  private readonly lang = toSignal(this.transloco.langChanges$, {
+    initialValue: this.transloco.getActiveLang(),
+  });
+
+  /**
+   * Recomputed on every open, so a menu left mounted across midnight does
+   * not keep naming yesterday. `computed` needs a signal to depend on, and
+   * `Date.now()` is not one — this is that dependency.
+   */
+  private readonly openedAt = signal(Date.now());
+
   /** The portrait's headline: the name, or — for a session with no name
    *  stamped — the identifier itself rather than an empty line. */
   protected readonly identityTitle = computed(
@@ -189,7 +236,11 @@ export class SiteMenuComponent {
     // earlier in this same session (onboarding's avatar step) would
     // otherwise stay invisible behind the monogram until a reload.
     effect(() => {
-      if (this.open()) this.identity.refreshAvatar();
+      if (!this.open()) return;
+      this.identity.refreshAvatar();
+      // …and re-reads the clock, so the schedule row's date is right on a
+      // menu opened after midnight in a session left running overnight.
+      this.openedAt.set(Date.now());
     });
   }
 

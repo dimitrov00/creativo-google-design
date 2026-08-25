@@ -36,12 +36,10 @@
         />
         } @else if (select.kind === 'barber') {
         <!-- "Anyone" is an answer like any other, so it gets a face-shaped
-               mark like any other — the same disc the menu row uses, at the
-               trigger's small rung. Without it the trigger changed shape
+               mark like any other — the same control the menu row uses, at
+               the trigger's small rung. Without it the trigger changed shape
                depending on WHICH answer was given. -->
-        <span class="booking-any__glyph booking-any__glyph--compact">
-          <ui-icon uiName="booking.anyBarber" uiScale="small" />
-        </span>
+        <ui-avatar uiIcon="booking.anyBarber" uiControlSize="small" />
         }
         <span class="booking-pick__value">{{ select.label }}</span>
         <ui-icon uiName="field.expand" uiScale="small" />
@@ -89,15 +87,9 @@
               uiControlSize="regular"
             />
             } @else {
-            <!-- A row without a portrait in a run that has them still owes
-                   the same leading column, or every name below it steps
-                   sideways (HIG — list rows keep one leading rail). -->
-            <span class="booking-any__glyph">
-              <ui-icon
-                uiName="booking.anyBarber"
-                [uiForegroundStyle]="option.selected ? 'accent' : 'secondary'"
-              />
-            </span>
+            <!-- A face-shaped answer takes the same control the faces do:
+                   `ui-avatar` with a glyph instead of a monogram. -->
+            <ui-avatar uiIcon="booking.anyBarber" uiControlSize="regular" />
             }
           </span>
           <ui-stack uiSpacing="none" class="booking-option">
@@ -113,7 +105,7 @@
               {{ option.terms }}
             </span>
           </ui-stack>
-          <span uiTrailing class="bag-option__check">
+          <span uiTrailing>
             @if (option.selected) {
             <ui-icon uiName="checklist.done" uiForegroundStyle="accent" />
             }

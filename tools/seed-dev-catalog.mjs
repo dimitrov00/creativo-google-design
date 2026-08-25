@@ -34,6 +34,8 @@ if (!process.env.FIRESTORE_EMULATOR_HOST.includes('127.0.0.1')) {
   process.exit(1);
 }
 
+process.env.FIREBASE_AUTH_EMULATOR_HOST ??= '127.0.0.1:9099';
+
 admin.initializeApp({ projectId: PROJECT_ID, storageBucket: BUCKET });
 const db = admin.firestore();
 const bucket = admin.storage().bucket();
@@ -584,10 +586,19 @@ const BUSY_PATTERN = {
 
 const BUSY_HORIZON_DAYS = 21;
 
+/**
+ * How many days from today are seeded with REAL appointments.
+ *
+ * Those days get their `barberBusy` from the `rebuildBusyOnAppointmentChange`
+ * trigger instead of the fabrication below, so the two surfaces cannot
+ * disagree — see the appointments block near the end of this file.
+ */
+const APPOINTMENT_DAYS = 3;
+
 for (const schedule of SCHEDULES) {
   // eslint-disable-next-line security/detect-object-injection -- fixed keys.
   const pattern = BUSY_PATTERN[schedule.barberId] ?? [];
-  for (let offset = 0; offset < BUSY_HORIZON_DAYS; offset++) {
+  for (let offset = APPOINTMENT_DAYS; offset < BUSY_HORIZON_DAYS; offset++) {
     const date = new Date();
     date.setHours(0, 0, 0, 0);
     date.setDate(date.getDate() + offset);
@@ -613,7 +624,8 @@ for (const schedule of SCHEDULES) {
       .set({ barberId: schedule.barberId, dayKey, zone: SCHEDULING_ZONE, busy });
   }
   console.log(
-    `seeded ${BUSY_HORIZON_DAYS} busy days for ${schedule.barberId}`,
+    `seeded busy days ${APPOINTMENT_DAYS}..${BUSY_HORIZON_DAYS} for ${schedule.barberId}` +
+      ' (earlier days come from real appointments)',
   );
 }
 
@@ -720,6 +732,215 @@ await db.collection('settings').doc('bookingPolicy').set({
   maxFlexibleDays: 7,
 });
 console.log('seeded settings/bookingPolicy');
+
+
+/**
+ * A STAFF account, so /staff is reachable in dev at all.
+ *
+ * Only the users doc matters: `verifyOtpChallenge` finds the account by
+ * email, reads `roles` off the doc (rules make that field Admin-SDK-only),
+ * and mints them into the token — `signInWithCustomToken` then creates the
+ * Auth user on first sign-in by itself. Sign in as staff@test.local; the
+ * OTP prints to the emulator log like every dev sign-in.
+ */
+const STAFF_UID = 'dev-staff-ivan';
+await db.doc(`users/${STAFF_UID}`).set({
+  phone: '+35943012399',
+  firstName: 'Иван',
+  lastName: 'Колев',
+  roles: ['barber', 'admin'],
+  status: { kind: 'active' },
+  email: 'staff@test.local',
+  birthDate: null,
+  searchName: 'иван колев',
+  searchPrefixes: ['и', 'ив', 'ива', 'иван', 'к', 'ко', 'кол', 'коле', 'колев'],
+});
+console.log('seeded staff account: staff@test.local (barber+admin)');
+
+
+/*
+ * REAL APPOINTMENTS for the next few days.
+ *
+ * ### Why this exists
+ * The fixture used to fabricate `barberBusy` and stop there. That fed the
+ * client booking grid (which reads the projection) but left `appointments`
+ * EMPTY — so `/staff/schedule`, whose lanes read appointment documents,
+ * rendered "0 visits" on every chair no matter what the calendar showed. The
+ * two surfaces were seeded from different sources and quietly disagreed.
+ *
+ * Writing the appointment is now the only act: `rebuildBusyOnAppointmentChange`
+ * derives `barberBusy` for these days from it, so the projection agrees with
+ * the book BY CONSTRUCTION rather than by two hand-written tables matching.
+ * The fabricated busy above starts where these stop.
+ *
+ * ### The document shape mirrors `appointment-document.ts`
+ * Hand-written because this is a plain `.mjs` script with no TS import path.
+ * It must move when that mapper does — `arrivedAt` and `seats[].barberPref`
+ * are both recent additions and both are represented here.
+ *
+ * ### Every state the schedule draws
+ * A settled cut, one in progress (arrived), two still to come, a mixed party
+ * across two chairs, a no-show and a cancellation — because a fixture that
+ * only produces the happy path proves only the happy path.
+ */
+const ZONE = SCHEDULING_ZONE;
+
+/** `2026-08-07` for a day offset — the key `busyKeys` and lanes agree on. */
+function dayKeyAt(dayOffset) {
+  const date = new Date();
+  date.setHours(0, 0, 0, 0);
+  date.setDate(date.getDate() + dayOffset);
+  const pad = (n) => String(n).padStart(2, '0');
+  return [
+    date.getFullYear(),
+    pad(date.getMonth() + 1),
+    pad(date.getDate()),
+  ].join('-');
+}
+
+function seatOf({ id, barberId, serviceId, dayOffset, hour, minute, minutes, subject, pref, outcome }) {
+  const endMinute = minute + minutes;
+  return {
+    id,
+    serviceId,
+    variantId: null,
+    barberId,
+    // What the client ASKED for, beside what they got — the flag that tells
+    // staff on a sick day which bookings can move chairs without a call.
+    barberPref: pref,
+    terms: {
+      priceMinorUnits: 2800,
+      currencyCode: 'EUR',
+      durationMinutes: minutes,
+      setupMinutes: 0,
+      cleanupMinutes: 0,
+    },
+    slot: {
+      startIso: isoAt(dayOffset, hour, minute),
+      endIso: isoAt(dayOffset, hour + Math.floor(endMinute / 60), endMinute % 60),
+      zone: ZONE,
+    },
+    subject,
+    outcome,
+  };
+}
+
+const account = (userId) => ({ kind: 'account', userId, relationship: 'self' });
+const guest = (label) => ({ kind: 'anonymous', label });
+const scheduled = { kind: 'scheduled' };
+
+const APPOINTMENTS = [
+  {
+    id: 'appt-dev-1',
+    dayOffset: 0,
+    ownerUserId: 'dev-client-1',
+    status: { kind: 'completed' },
+    contact: { name: 'Георги Петров', phone: '+359881234567', email: 'georgi@test.local', note: null },
+    seats: [{ id: 'seat-1', barberId: 'ivan', serviceId: 'svc-fade', hour: 10, minute: 0, minutes: 45, subject: account('dev-client-1'), pref: 'specific', outcome: { kind: 'worked', atMs: Date.now() } }],
+  },
+  {
+    id: 'appt-dev-2',
+    dayOffset: 0,
+    ownerUserId: 'dev-client-2',
+    status: { kind: 'confirmed' },
+    // Already in the chair: the NOW treatment and the "Done" verb both need
+    // an arrival to be reachable at all.
+    arrived: true,
+    contact: { name: 'Мартин Илиев', phone: '+359887654321', email: 'martin@test.local', note: 'Къса отстрани' },
+    seats: [{ id: 'seat-2', barberId: 'ivan', serviceId: 'svc-classic-cut', hour: 12, minute: 30, minutes: 30, subject: account('dev-client-2'), pref: 'any', outcome: scheduled }],
+  },
+  {
+    id: 'appt-dev-3',
+    dayOffset: 0,
+    ownerUserId: 'dev-client-3',
+    status: { kind: 'confirmed' },
+    contact: { name: 'Петър Димитров', phone: '+359882223344', email: 'petar@test.local', note: null },
+    seats: [{ id: 'seat-3', barberId: 'niko', serviceId: 'svc-beard', hour: 14, minute: 0, minutes: 30, subject: account('dev-client-3'), pref: 'specific', outcome: scheduled }],
+  },
+  {
+    // A MIXED PARTY across two chairs — one appointment, two seats, two
+    // lanes. The cross-lane tie and the per-seat resolution both need it.
+    id: 'appt-dev-4',
+    dayOffset: 0,
+    ownerUserId: 'dev-client-4',
+    status: { kind: 'confirmed' },
+    contact: { name: 'Стоян Колев', phone: '+359881112233', email: null, note: null },
+    seats: [
+      { id: 'seat-4a', barberId: 'ivan', serviceId: 'svc-fade', hour: 16, minute: 0, minutes: 45, subject: account('dev-client-4'), pref: 'specific', outcome: scheduled },
+      { id: 'seat-4b', barberId: 'stefan', serviceId: 'svc-classic-cut', hour: 16, minute: 0, minutes: 30, subject: guest('Синът на Стоян'), pref: 'any', outcome: scheduled },
+    ],
+  },
+  {
+    id: 'appt-dev-5',
+    dayOffset: 0,
+    ownerUserId: 'dev-client-5',
+    status: { kind: 'no_show' },
+    contact: { name: 'Кирил Тодоров', phone: '+359884445566', email: 'kiril@test.local', note: null },
+    seats: [{ id: 'seat-5', barberId: 'stefan', serviceId: 'svc-beard', hour: 11, minute: 0, minutes: 30, subject: account('dev-client-5'), pref: 'specific', outcome: { kind: 'no_show', atMs: Date.now() } }],
+  },
+  {
+    id: 'appt-dev-6',
+    dayOffset: 1,
+    ownerUserId: 'dev-client-6',
+    status: { kind: 'cancelled', reason: 'client_changed_plans' },
+    contact: { name: 'Николай Иванов', phone: '+359883334455', email: null, note: null },
+    seats: [{ id: 'seat-6', barberId: 'ivan', serviceId: 'svc-fade', hour: 10, minute: 0, minutes: 45, subject: account('dev-client-6'), pref: 'any', outcome: { kind: 'cancelled', atMs: Date.now(), by: 'client', reason: { kind: 'client_changed_plans' } } }],
+  },
+  {
+    id: 'appt-dev-7',
+    dayOffset: 1,
+    ownerUserId: 'dev-client-7',
+    status: { kind: 'confirmed' },
+    contact: { name: 'Александър Стоянов', phone: '+359887778899', email: null, note: null },
+    seats: [{ id: 'seat-7', barberId: 'niko', serviceId: 'svc-modern-cut', hour: 15, minute: 0, minutes: 45, subject: account('dev-client-7'), pref: 'specific', outcome: scheduled }],
+  },
+  {
+    id: 'appt-dev-8',
+    dayOffset: 2,
+    ownerUserId: 'dev-client-8',
+    status: { kind: 'confirmed' },
+    contact: { name: 'Емил Георгиев', phone: '+359886665544', email: 'emil@test.local', note: null },
+    seats: [{ id: 'seat-8', barberId: 'stefan', serviceId: 'svc-scissor-trim', hour: 13, minute: 0, minutes: 30, subject: account('dev-client-8'), pref: 'any', outcome: scheduled }],
+  },
+];
+
+for (const appointment of APPOINTMENTS) {
+  const seats = appointment.seats.map((seat) =>
+    seatOf({ ...seat, dayOffset: appointment.dayOffset }),
+  );
+  const starts = seats.map((seat) => seat.slot.startIso).sort();
+  const ends = seats.map((seat) => seat.slot.endIso).sort();
+  const dayKey = dayKeyAt(appointment.dayOffset);
+
+  await db
+    .collection('appointments')
+    .doc(appointment.id)
+    .set({
+      locationId: 'loc-center',
+      ownerUserId: appointment.ownerUserId,
+      barberIds: [...new Set(seats.map((seat) => seat.barberId))].sort(),
+      // The rebuild trigger's reverse index — one key per (barber, day) this
+      // appointment occupies. `array-contains` on it is how one cancelled
+      // booking recomputes exactly the busy docs it touched.
+      busyKeys: [
+        ...new Set(seats.map((seat) => `${seat.barberId}__${dayKey}`)),
+      ].sort(),
+      timeSlot: { startIso: starts[0], endIso: ends[ends.length - 1], zone: ZONE },
+      seats,
+      status: appointment.status,
+      // Booked a week out, so lead-time figures have something real to read.
+      bookedAt: { iso: isoAt(appointment.dayOffset - 7, 12, 0), zone: ZONE },
+      bookedFromAppointmentId: null,
+      arrivedAt: appointment.arrived
+        ? { iso: isoAt(appointment.dayOffset, 12, 25), zone: ZONE }
+        : null,
+      contact: appointment.contact,
+    });
+}
+console.log(
+  `seeded ${APPOINTMENTS.length} appointments across ${APPOINTMENT_DAYS} days` +
+    ' (barberBusy for those days is rebuilt from them by the trigger)',
+);
 
 console.log(
   `Done: ${SERVICES.length} services + ${BARBERS.length} barbers + ${LOCATIONS.length} locations + ${SCHEDULES.length} rosters + 1 category + booking policy in the ${PROJECT_ID} emulators.`,

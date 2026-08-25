@@ -1,9 +1,15 @@
 import { ZonedDateTime } from '@creativo/domain/kernel';
+import { BarberId } from '@creativo/domain/catalog';
 import {
   Appointment,
+  AppointmentStatus,
+  BarberPref,
   BookingContact,
   CalendarDay,
+  CancellationReason,
   Interval,
+  SEAT_SCHEDULED,
+  SeatOutcome,
 } from '@creativo/domain/scheduling';
 
 /**
@@ -54,6 +60,10 @@ export function appointmentToDocument(
       serviceId: seat.serviceId.value,
       variantId: seat.variantId?.value ?? null,
       barberId: seat.barberId.value,
+      // WHAT THEY ASKED FOR, beside what they got. `null` for rows written
+      // before the field existed — never silently read as `any`, because
+      // "anyone will do" is exactly the permission this flag grants.
+      barberPref: seat.pref === null ? null : seat.pref.kind,
       terms: {
         priceMinorUnits: seat.terms.price.toMinorUnits(),
         currencyCode: seat.terms.price.currencyCode(),
@@ -74,14 +84,196 @@ export function appointmentToDocument(
               relationship: seat.subject.relationship,
             }
           : { kind: 'anonymous' as const, label: seat.subject.label.value },
+      // What became of THIS person. Written per seat because a party of three
+      // has three answers, and the root status can only hold one.
+      outcome: seatOutcomeToDocument(seat.outcome),
     })),
     status: appointment.status,
+    // WHEN the booking was made. Both halves are stored: the ISO carries the
+    // instant (offset included) and the zone lets a staff surface render it in
+    // shop time. `null` marks a row written before this field existed — which
+    // is also the flag for "this row's timing metrics are not trustworthy",
+    // see `seatOutcomeFromDocument`.
+    bookedAt: appointment.bookedAt
+      ? {
+          iso: appointment.bookedAt.toISO(),
+          zone: appointment.bookedAt.zoneName,
+        }
+      : null,
+    /** The rebooking edge. Nothing reconstructs this after the fact. */
+    bookedFromAppointmentId: appointment.bookedFrom?.value ?? null,
+    // WHEN they walked in. Same shape and same reasoning as `bookedAt`: the
+    // instant plus the zone, because a staff surface renders it in shop time.
+    // `null` is "not yet" — never "on time".
+    arrivedAt: appointment.arrivedAt
+      ? {
+          iso: appointment.arrivedAt.toISO(),
+          zone: appointment.arrivedAt.zoneName,
+        }
+      : null,
     // A SNAPSHOT, deliberately denormalized: the number given for THIS
     // booking is the number the shop dials for it, whatever the profile says
     // two months later. `null` for appointments booked before contacts
     // existed, and for a staff-entered walk-in with nobody to call.
     contact: appointment.contact?.toProps() ?? null,
   };
+}
+
+/**
+ * Seat outcome → document. Explicit rather than a structural dump, so the
+ * persisted vocabulary is reviewable in one place and a new union arm cannot
+ * reach storage without someone deciding how it is written.
+ */
+export function seatOutcomeToDocument(
+  outcome: SeatOutcome,
+): Record<string, unknown> {
+  switch (outcome.kind) {
+    case 'scheduled':
+      return { kind: 'scheduled' };
+    case 'worked':
+      return { kind: 'worked', atMs: outcome.atMs };
+    case 'no_show':
+      return { kind: 'no_show', atMs: outcome.atMs };
+    case 'cancelled':
+      return {
+        kind: 'cancelled',
+        atMs: outcome.atMs,
+        by: outcome.by,
+        reason:
+          outcome.reason.kind === 'other'
+            ? { kind: 'other', note: outcome.reason.note }
+            : { kind: outcome.reason.kind },
+      };
+  }
+}
+
+const CANCELLATION_REASON_KINDS: readonly CancellationReason['kind'][] = [
+  'client_changed_plans',
+  'client_unwell',
+  'staff_barber_absence',
+  'staff_shop_closure',
+  'no_show_converted',
+  'other',
+];
+
+function cancellationReasonFromDocument(raw: unknown): CancellationReason {
+  const data = (raw ?? {}) as Record<string, unknown>;
+  const kind = String(data['kind'] ?? '');
+  if (kind === 'other' || !CANCELLATION_REASON_KINDS.includes(kind as never)) {
+    // An unrecognised code degrades to `other` WITH the code preserved in the
+    // note, rather than being discarded — a vocabulary that grew in a later
+    // version stays readable by an older client.
+    return { kind: 'other', note: String(data['note'] ?? kind) };
+  }
+  return { kind } as CancellationReason;
+}
+
+/**
+ * Document → seat outcome, with a best-effort answer for rows written before
+ * outcomes existed.
+ *
+ * ### The legacy derivation, and its one honest limitation
+ * A seat with no stored outcome on a TERMINAL appointment is not really
+ * "scheduled" — the visit is over, and leaving it open would make every
+ * historical booking look like unfinished business on the day sheet. So the
+ * kind is derived from the root status, and the instant is approximated by the
+ * seat's own end time.
+ *
+ * That approximation is close for `worked`/`no_show` (a shop resolves those at
+ * the chair) and can be far off for `cancelled`, which is exactly why it must
+ * never feed a cancellation-lead-time figure. **`bookedAt === null` is the
+ * discriminator**: a row with no booking instant is a row whose timing numbers
+ * are derived, and every report must exclude it from lead-time statistics
+ * rather than average it in.
+ */
+export function seatOutcomeFromDocument(
+  raw: unknown,
+  rootStatus: AppointmentStatus | undefined,
+  seatEndMs: number,
+): SeatOutcome {
+  if (raw != null && typeof raw === 'object') {
+    const data = raw as Record<string, unknown>;
+    const kind = String(data['kind'] ?? '');
+    const atMs = Number(data['atMs']);
+    if (kind === 'worked' && Number.isFinite(atMs)) return { kind, atMs };
+    if (kind === 'no_show' && Number.isFinite(atMs)) return { kind, atMs };
+    if (kind === 'cancelled' && Number.isFinite(atMs)) {
+      return {
+        kind,
+        atMs,
+        by: data['by'] === 'client' ? 'client' : 'staff',
+        reason: cancellationReasonFromDocument(data['reason']),
+      };
+    }
+    if (kind === 'scheduled') return SEAT_SCHEDULED;
+    // Anything else is malformed and falls through to the derivation below,
+    // which is a better answer than a shape nobody can interpret.
+  }
+
+  switch (rootStatus?.kind) {
+    case 'completed':
+      return { kind: 'worked', atMs: seatEndMs };
+    case 'no_show':
+      return { kind: 'no_show', atMs: seatEndMs };
+    case 'cancelled':
+      return {
+        kind: 'cancelled',
+        atMs: seatEndMs,
+        by: 'staff',
+        reason: { kind: 'other', note: rootStatus.reason },
+      };
+    default:
+      return SEAT_SCHEDULED;
+  }
+}
+
+/** Document → the instant the booking was made, or `null` for a legacy row. */
+export function bookedAtFromDocument(
+  data: PersistedDocument,
+): ZonedDateTime | null {
+  return zonedFieldFromDocument(data, 'bookedAt');
+}
+
+/**
+ * Document → the preference this seat was resolved from.
+ *
+ * An unrecognised or absent value reads as `null` — "we do not know" — and
+ * NEVER as `any`. Guessing `any` here would tell a receptionist on a sick day
+ * that a client is happy with whichever barber is free, on no evidence, and
+ * the shop would move a booking it should have phoned about.
+ */
+export function barberPrefFromDocument(
+  raw: unknown,
+  barberId: BarberId,
+): BarberPref | null {
+  if (raw === 'any') return BarberPref.any();
+  if (raw === 'specific') return BarberPref.specific(barberId);
+  return null;
+}
+
+/**
+ * Document → arrival instant. `null` is "has not walked in", which every
+ * report must keep distinct from "arrived exactly on time".
+ */
+export function arrivedAtFromDocument(
+  data: PersistedDocument,
+): ZonedDateTime | null {
+  return zonedFieldFromDocument(data, 'arrivedAt');
+}
+
+/** The `{iso, zone}` pair both instant fields are written as. */
+function zonedFieldFromDocument(
+  data: PersistedDocument,
+  field: string,
+): ZonedDateTime | null {
+  const raw = data[field];
+  if (raw == null || typeof raw !== 'object') return null;
+  const entry = raw as Record<string, unknown>;
+  const parsed = ZonedDateTime.fromISO(
+    String(entry['iso'] ?? ''),
+    String(entry['zone'] ?? ''),
+  );
+  return parsed.isSuccess() ? parsed.value : null;
 }
 
 /**

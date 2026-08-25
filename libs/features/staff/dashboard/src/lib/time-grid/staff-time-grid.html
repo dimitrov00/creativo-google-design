@@ -1,0 +1,233 @@
+@if (!extent().empty) {
+<div
+  #frame
+  class="staff-grid__frame"
+  [style.--staff-grid-slots]="slotCount()"
+  [style.--staff-grid-columns]="columns().length"
+>
+  <!-- The head and the all-day row pin TOGETHER as one block. Pinning them
+       separately meant guessing the head's height as the all-day row's sticky
+       offset, and a wrong guess overlapped the first hour label. One sticky
+       ancestor needs no arithmetic. -->
+  <div class="staff-grid__chrome">
+    @if (columns().length > 1 || columns()[0]?.dayNumber !== null) {
+    <div class="staff-grid__head">
+      <!-- The zone, named. A grid that states times without stating which
+         clock they are on is one wrong assumption from a missed visit. -->
+      <button
+        type="button"
+        class="staff-grid__zone"
+        data-testid="staff-grid-zone"
+        (click)="zonePicked.emit()"
+      >
+        {{ zoneLabel() }}
+      </button>
+      @for (column of placedColumns(); track column.id) {
+      <div
+        class="staff-grid__column-head"
+        [attr.data-today]="column.isToday ? '' : null"
+        data-testid="staff-grid-column-head"
+      >
+        <!-- Weekday and number SIDE BY SIDE, the number in a capsule that
+           fills on today — one line rather than two, so the header costs a
+           row of chrome instead of a paragraph. -->
+        <span class="staff-grid__column-name">
+          @if (column.avatarSrc !== null) {
+          <ui-avatar
+            [uiSrc]="column.avatarSrc"
+            [uiName]="column.title"
+            uiControlSize="small"
+          />
+          }
+          <span uiText uiFont="footnote" uiWeight="semibold">
+            {{ column.title }}
+          </span>
+          @if (column.dayNumber !== null) {
+          <span
+            class="staff-grid__column-day"
+            uiText
+            uiFont="footnote"
+            uiWeight="semibold"
+          >
+            {{ column.dayNumber }}
+          </span>
+          } @else if (column.detail) {
+          <span uiText uiFont="caption" class="staff-grid__column-detail">
+            {{ column.detail }}
+          </span>
+          }
+        </span>
+      </div>
+      }
+    </div>
+    } @else {
+    <!-- A single barber column still owes the zone, which the head carried. -->
+    <div class="staff-grid__head staff-grid__head--bare">
+      <button
+        type="button"
+        class="staff-grid__zone"
+        data-testid="staff-grid-zone"
+        (click)="zonePicked.emit()"
+      >
+        {{ zoneLabel() }}
+      </button>
+    </div>
+    } @if (hasAllDay()) {
+    <!-- All-day: what is true of the WHOLE day and has no hour to sit at — a
+       closure, a day off, a whole-day block. Drawn only when something is
+       there, so an ordinary day pays nothing for it. -->
+    <div class="staff-grid__allday" data-testid="staff-grid-allday">
+      <span class="staff-grid__allday-label" uiText uiFont="caption">
+        {{ allDayLabel() }}
+      </span>
+      @for (column of placedColumns(); track column.id) {
+      <div class="staff-grid__allday-cell">
+        @for (entry of allDayFor(column.id); track entry) {
+        <span class="staff-grid__allday-chip" uiText uiFont="caption">
+          {{ entry }}
+        </span>
+        }
+      </div>
+      }
+    </div>
+    }
+  </div>
+
+  <div #body class="staff-grid__body">
+    <!-- The hour rail. `aria-hidden` because every block already states its
+         own time in its accessible name — a screen reader walking 11 hour
+         labels to reach one booking is worse than no rail at all. -->
+    <div class="staff-grid__gutter" aria-hidden="true">
+      @for (hour of hours(); track hour.key) {
+      <span class="staff-grid__hour" uiText uiFont="caption">
+        {{ hour.label }}
+      </span>
+      }
+    </div>
+
+    @for (column of placedColumns(); track column.id) {
+    <div
+      class="staff-grid__column"
+      [attr.data-today]="column.isToday ? '' : null"
+      [attr.data-column]="column.id"
+      data-testid="staff-grid-column"
+    >
+      <!-- The hours this column is SHUT. Drawn under the blocks (they carry
+           their own z-index) and translucent, so the hour rules keep running
+           through them — a closed morning is quieter, not a different grid.
+           `aria-hidden`: the column head already says whose day this is, and
+           a screen reader walking three "closed" regions per column to reach
+           one booking is worse than not knowing. -->
+      @for (run of column.closed; track run.key) {
+      <span
+        class="staff-grid__closed"
+        [style.grid-row]="run.row"
+        aria-hidden="true"
+        data-testid="staff-grid-closed"
+      ></span>
+      } @for (event of column.placed; track event.id) {
+      <button
+        type="button"
+        class="staff-grid__event"
+        [style.grid-row]="event.row"
+        [style.--staff-event-lane]="event.lane"
+        [style.--staff-event-lanes]="event.lanes"
+        [attr.data-kind]="event.kind"
+        [attr.data-barber-tone]="event.barberTone"
+        [attr.data-status]="event.status"
+        [attr.data-terminal]="event.terminal ? '' : null"
+        [attr.data-past]="event.past ? '' : null"
+        [attr.data-short]="event.short ? '' : null"
+        [attr.data-testid]="
+          event.kind === 'gap'
+            ? 'staff-grid-gap'
+            : event.kind === 'block'
+              ? 'staff-grid-block'
+              : 'staff-grid-event'
+        "
+        [attr.aria-label]="event.accessibleName"
+        (click)="pick(event)"
+      >
+        <!-- The leading rail is an ELEMENT, so it can have its own shape:
+             a pill, inset from every edge, rather than a border or a shadow
+             welded to the block's own rectangle. A carve-out gets one too —
+             it is a thing on the calendar, and the rail is what says so —
+             but in the neutral tone, because hue means "a booking". -->
+        @if (event.kind !== 'gap') {
+        <span class="staff-grid__event-rail" aria-hidden="true"></span>
+        }
+        <span
+          class="staff-grid__event-title"
+          uiText
+          uiFont="footnote"
+          uiWeight="semibold"
+        >
+          {{ event.title }}
+          <!-- A quarter-hour block holds ONE line, so the service joins the
+               name on it rather than being dropped. Losing it entirely was
+               the worse trade: "Мартин Илиев" alone does not say what was
+               booked, and a staff member reading the grid needs the service
+               more than they need the second line's whitespace. Apple
+               Calendar does the same — a short event states its title and its
+               time on one line and lets the ellipsis do the rest. -->
+          @if (event.short && event.detail) {
+          <span
+            class="staff-grid__event-inline"
+            uiText
+            uiFont="footnote"
+            uiWeight="regular"
+          >
+            {{ event.detail }}
+          </span>
+          }
+        </span>
+        @if (!event.short && event.detail) {
+        <span class="staff-grid__event-detail" uiText uiFont="caption">
+          {{ event.detail }}
+        </span>
+        } @if (event.attribution) {
+        <span class="staff-grid__event-who" uiText uiFont="caption">
+          {{ event.attribution }}
+        </span>
+        }
+        <!-- The state, doubled as a mark: it has to survive greyscale and a
+             reader who cannot separate two washes. -->
+        @if (event.statusIcon) {
+        <ui-icon
+          class="staff-grid__event-status"
+          [uiName]="event.statusIcon"
+          aria-hidden="true"
+        />
+        }
+      </button>
+      }
+
+      <!-- The hour is the same everywhere, so the rule crosses every column —
+           but only TODAY's stretch is accent. On another day the line marks
+           where the hour falls, not something happening there. -->
+      @if (showsNow()) {
+      <span
+        class="staff-grid__now"
+        [style.--staff-now-fraction]="nowFraction()"
+        [attr.data-today]="column.isToday ? '' : null"
+        aria-hidden="true"
+        data-testid="staff-grid-now"
+      ></span>
+      }
+    </div>
+    } @if (showsNow()) {
+    <span
+      class="staff-grid__now-label"
+      [style.--staff-now-fraction]="nowFraction()"
+      uiText
+      uiFont="caption"
+      uiWeight="semibold"
+      aria-hidden="true"
+      data-testid="staff-grid-now-label"
+    >
+      {{ nowLabel() }}
+    </span>
+    }
+  </div>
+</div>
+}

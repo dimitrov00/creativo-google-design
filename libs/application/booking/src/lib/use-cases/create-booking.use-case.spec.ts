@@ -45,7 +45,18 @@ function fakeRepository(): AppointmentRepository & {
     async findById(): Promise<Result<Appointment | null, RepositoryError>> {
       return ok(null);
     },
+    async searchWindow(): Promise<
+      Result<readonly Appointment[], RepositoryError>
+    > {
+      return ok([]);
+    },
     observeUpcomingFor() {
+      throw new Error('not used in this spec');
+    },
+    observeHistoryFor() {
+      throw new Error('not used in this spec');
+    },
+    observeBarberDay() {
       throw new Error('not used in this spec');
     },
   };

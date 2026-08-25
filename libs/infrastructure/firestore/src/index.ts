@@ -5,6 +5,7 @@ export * from './lib/availability-reader.adapter';
 export * from './lib/booking-gateway.adapter';
 export * from './lib/booking-policy-reader.adapter';
 export * from './lib/notification-reader.adapter';
+export * from './lib/schedule-exception-writer.adapter';
 export * from './lib/waitlist-gateway.adapter';
 export * from './lib/waitlist-reader.adapter';
 export * from './lib/catalog-reader.adapter';

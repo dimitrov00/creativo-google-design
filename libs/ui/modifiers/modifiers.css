@@ -80,7 +80,12 @@
     color: var(--sys-color-tertiary-label);
   }
   [data-foreground-style='accent'][data-foreground-style] {
-    color: var(--sys-color-accent);
+    /* THE INK CUT. `--sys-color-accent` is a FILL: as type on the light page
+       it measures 3.04:1, under the 4.5:1 floor, and this directive exists to
+       make text accent-coloured. `--sys-color-accent-label` is the same hue
+       and saturation darkened for light only (4.91:1) and aliases straight
+       back to the accent in dark, so dark is unchanged. */
+    color: var(--sys-color-accent-label);
   }
   [data-foreground-style='destructive'][data-foreground-style] {
     color: var(--sys-color-destructive);
@@ -492,6 +497,30 @@
      (fill: both holds the first keyframe through any delay). */
   [data-reveal][data-reveal-state='hidden'] {
     opacity: 0;
+  }
+
+  /* ── Identity tone (data-barber-tone) ─────────────────────────────
+     Resolves one of the five palette slots onto `--barber-tone`, which the
+     mark itself reads. A utility rather than a component rule because TWO
+     components draw it — the agenda card's rail and the calendar grid's —
+     and they must never drift apart: that they say "Ivan" in the same
+     colour is the whole point. Global for the same reason; one lives under
+     emulated encapsulation and the other does not.
+ */
+  [data-barber-tone='0'] {
+    --barber-tone: var(--sys-identity-0);
+  }
+  [data-barber-tone='1'] {
+    --barber-tone: var(--sys-identity-1);
+  }
+  [data-barber-tone='2'] {
+    --barber-tone: var(--sys-identity-2);
+  }
+  [data-barber-tone='3'] {
+    --barber-tone: var(--sys-identity-3);
+  }
+  [data-barber-tone='4'] {
+    --barber-tone: var(--sys-identity-4);
   }
 
   /* ── Visually hidden (uiVisuallyHidden → data-visually-hidden) ──

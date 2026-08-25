@@ -8,6 +8,7 @@ import {
   provideZonelessChangeDetection,
 } from '@angular/core';
 import {
+  ActivatedRouteSnapshot,
   provideRouter,
   withComponentInputBinding,
   withViewTransitions,
@@ -33,6 +34,7 @@ import {
 import {
   APPOINTMENT_REPOSITORY,
   AVAILABILITY_READER,
+  SCHEDULE_EXCEPTION_WRITER,
   BOOKING_DRAFT_STORE,
   BOOKING_GATEWAY,
   BOOKING_POLICY_READER,
@@ -85,6 +87,7 @@ import {
   FirestoreCourseRepository,
   FirestoreEventRepository,
   FirestoreAvailabilityReader,
+  FirestoreScheduleExceptionWriter,
   CallableBookingGateway,
   CallableWaitlistGateway,
   FirestoreWaitlistReader,
@@ -108,6 +111,23 @@ const emulators = environment.emulators.enabled
   ? environment.emulators
   : undefined;
 
+/**
+ * The path a snapshot resolves to, WITHOUT its query parameters.
+ *
+ * Comparing `routeConfig` identity would be cheaper and is the obvious first
+ * reach, but it is too blunt: two genuinely different URLs share one config
+ * whenever a route is parameterised (`/visit/1` -> `/visit/2`), and those are
+ * real navigations that should still animate. Comparing the resolved path
+ * skips exactly the case that is not a navigation at all — the same screen,
+ * re-published with a different query string.
+ */
+export function pathOf(snapshot: ActivatedRouteSnapshot): string {
+  return snapshot.pathFromRoot
+    .flatMap((route) => route.url)
+    .map((segment) => segment.path)
+    .join('/');
+}
+
 export const appConfig: ApplicationConfig = {
   providers: [
     provideBrowserGlobalErrorListeners(),
@@ -118,12 +138,27 @@ export const appConfig: ApplicationConfig = {
       appRoutes,
       withComponentInputBinding(),
       withViewTransitions({
-        onViewTransitionCreated: ({ transition }) => {
+        onViewTransitionCreated: ({ transition, from, to }) => {
           const document = inject(DOCUMENT);
           const prefersReducedMotion = document.defaultView?.matchMedia(
             '(prefers-reduced-motion: reduce)',
           ).matches;
-          if (prefersReducedMotion) {
+          // A QUERY-PARAM SYNC IS NOT A PAGE CHANGE.
+          //
+          // The staff day store mirrors the shown day into `?day=` through
+          // `router.navigate`, so every tap on the week strip was a real
+          // navigation — and the router handed it to
+          // `document.startViewTransition()`, which cross-dissolved the whole
+          // document. Measured across four independent instruments: the
+          // screen was a double exposure of two different days for ~400ms
+          // after each tap, and pixels stopped changing a median 378ms in
+          // against 30ms with this skip. It also swallowed the week strip's
+          // own 150ms disc slide whole — that animation ran underneath a
+          // snapshot layer between 0% and 2% opaque, which is why two rounds
+          // of tuning the disc's curve changed nothing anyone could see
+          // (measured difference between the old curve and the new one, on
+          // screen: 1.5ms).
+          if (prefersReducedMotion || pathOf(from) === pathOf(to)) {
             transition.skipTransition();
           }
         },
@@ -158,6 +193,10 @@ export const appConfig: ApplicationConfig = {
     },
     { provide: CATALOG_READER, useClass: FirestoreCatalogReader },
     { provide: AVAILABILITY_READER, useClass: FirestoreAvailabilityReader },
+    {
+      provide: SCHEDULE_EXCEPTION_WRITER,
+      useClass: FirestoreScheduleExceptionWriter,
+    },
     { provide: BOOKING_GATEWAY, useClass: CallableBookingGateway },
     { provide: WAITLIST_GATEWAY, useClass: CallableWaitlistGateway },
     { provide: WAITLIST_READER, useClass: FirestoreWaitlistReader },

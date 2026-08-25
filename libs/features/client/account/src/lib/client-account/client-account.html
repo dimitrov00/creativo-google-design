@@ -98,20 +98,21 @@
           {{ translateRepositoryError() }}
         </p>
         } @default {
-        <ui-stack uiSpacing="tight">
+        <ui-empty-state>
           <p uiText uiFont="body" uiForegroundStyle="secondary">
             {{ t('account.upcoming.empty') }}
           </p>
           <a
+            uiActions
             uiButton
             uiButtonStyle="bordered"
-            uiControlSize="small"
+            uiControlSize="regular"
             routerLink="/book"
             data-testid="account-upcoming-book-cta"
           >
             {{ t('account.upcoming.bookCta') }}
           </a>
-        </ui-stack>
+        </ui-empty-state>
         } }
       </ui-card>
 

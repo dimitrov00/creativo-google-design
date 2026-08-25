@@ -66,6 +66,21 @@ export interface BarberDayAvailability {
   readonly windows: readonly RosterWindow[];
   /** Already-taken intervals, ALREADY padded by this barber's turnaround. */
   readonly busy: readonly Interval[];
+  /**
+   * The stretches CARVED OUT of the worked day — breaks and admin blocks, as
+   * things rather than as absences (`buildDayCarveOuts`).
+   *
+   * The engine ignores these: they were already subtracted from `windows`, so
+   * counting them again would double-remove the same minutes. They are here
+   * for the surfaces that must DRAW a block — a staff calendar has to say
+   * "Ivan is on lunch" rather than rendering it identically to "the shop is
+   * shut", and that distinction is impossible to recover from `windows`
+   * alone.
+   *
+   * Optional so the seven existing constructions of this type keep compiling
+   * and keep meaning exactly what they meant; absent is "nobody asked".
+   */
+  readonly blocks?: readonly RosterWindow[];
 }
 
 export interface AvailabilityAssignment {

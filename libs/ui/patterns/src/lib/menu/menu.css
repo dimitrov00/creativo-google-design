@@ -85,6 +85,35 @@
     background: var(--sys-color-fill);
   }
 
+  /*
+   * A PICKER's two columns, held open by the MENU rather than by each
+   * consumer's stylesheet.
+   *
+   * Both were solved twice before landing here — once in the booking bag,
+   * once in the staff toolbar — which is one recipe with two definitions and
+   * exactly the drift the "reuse, never copy" ruling exists to stop.
+   *
+   * Leading: only when portraits are in the run. A row WITHOUT a face in a
+   * run that has them still owes the same rail, or every name below it steps
+   * sideways (HIG — list rows keep one leading rail). A run of plain glyphs
+   * wants no such rail, which is why this is gated on `:has()` rather than
+   * applied to every menu row.
+   */
+  .ui-menu__surface .ui-list-group:has(.ui-avatar) .ui-list-row > [uileading] {
+    inline-size: var(--control-size-regular);
+    block-size: var(--control-size-regular);
+  }
+
+  /* Trailing: the state marker's column stays open whether or not this row is
+     the chosen one, so picking a different option doesn't shift every label
+     in the menu. */
+  .ui-menu__surface .ui-list-row > [uitrailing] {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-inline-size: var(--ui-icon-medium);
+  }
+
   .ui-menu__surface:has(> .ui-list-group) {
     padding: var(--sys-space-tight);
     border-radius: calc(

@@ -78,7 +78,7 @@
           >
             <ui-stack uiSpacing="none">
               <span>{{ text(course.title) }}</span>
-              <span class="cr-programs-page__secondary">
+              <span uiText uiFont="footnote" uiForegroundStyle="secondary">
                 {{ text(course.description) }} @if (course.startsLabel) { · {{
                 text(course.startsLabel) }} }
               </span>

@@ -181,8 +181,15 @@ export class VerifyOtpUseCase {
     // (abandoned mid-flow) must still land back in `onboarding`, not be
     // waved through as `active` just because a Firestore record already
     // exists for them.
+    // The DOC's roles, not a hardcoded ['client']: firestore.rules already
+    // guarantees an owner cannot write their own `roles`, so whatever the
+    // doc says was granted by the Admin SDK — which makes minting it here
+    // the missing half of the "granted out-of-band" story rather than a
+    // new door. Empty (a stub, a pre-roles doc) falls back to `client`.
+    const storedRoles =
+      user.roles.length > 0 ? user.roles : (['client'] as const);
     const claims = user.registered
-      ? activeClaims([roleFromPrimitive('client')])
+      ? activeClaims(storedRoles.map(roleFromPrimitive))
       : ok(ONBOARDING_CLAIMS);
     if (claims.isFailure()) {
       // Unreachable — the literal roles array above is never empty.
@@ -225,6 +232,6 @@ export class VerifyOtpUseCase {
       return fail(new RepositoryFailure(saveUserResult.error));
     }
 
-    return ok({ ...stub, birthDate: null, registered: false });
+    return ok({ ...stub, birthDate: null, roles: [], registered: false });
   }
 }

@@ -10,7 +10,12 @@ import {
 } from './schedule-exception';
 import { StaffScheduleHistory } from './staff-schedule';
 import { WeeklyPattern } from './weekly-pattern';
-import { buildDayWindows, rosteredMinutes, windowsAt } from './roster-window';
+import {
+  buildDayCarveOuts,
+  buildDayWindows,
+  rosteredMinutes,
+  windowsAt,
+} from './roster-window';
 
 const zone = 'Europe/Sofia';
 
@@ -547,5 +552,126 @@ describe('buildDayWindows — a barber who covers TWO shops', () => {
       CENTER,
       MLADOST,
     ]);
+  });
+});
+
+describe('buildDayCarveOuts — the block as a thing, not an absence', () => {
+  /*
+   * The question `buildDayWindows` cannot answer. It subtracts a break and
+   * hands back the survivors, so by the time any UI sees the day "Ivan is on
+   * lunch", "Ivan is not rostered" and "the shop is shut" are one fact: no
+   * window. Correct for capacity, useless for a calendar — a block is a thing
+   * someone created, and it has to be drawable, nameable and removable.
+   */
+  it('returns the carved-out stretch as an interval of its own', () => {
+    const blocks = buildDayCarveOuts({
+      day: day('2026-07-29'),
+      schedule: scheduleFrom([['09:00', '18:00']]),
+      exceptions: [
+        exception(
+          { kind: 'break', ranges: [range('13:00', '14:00')], paid: false },
+          '2026-07-29',
+        ),
+      ],
+    });
+    expect(asClock(blocks)).toEqual(['13:00–14:00']);
+  });
+
+  // The two views are one subtraction: what is drawn as a block and what is
+  // removed from the windows must never be able to disagree.
+  it('is exactly the complement of what buildDayWindows kept', () => {
+    const input = {
+      day: day('2026-07-29'),
+      schedule: scheduleFrom([['09:00', '18:00']]),
+      exceptions: [
+        exception(
+          { kind: 'admin', ranges: [range('13:00', '14:00')], note: '' },
+          '2026-07-29',
+        ),
+      ],
+    };
+    expect(asClock(buildDayWindows(input))).toEqual([
+      '09:00–13:00',
+      '14:00–18:00',
+    ]);
+    expect(asClock(buildDayCarveOuts(input))).toEqual(['13:00–14:00']);
+  });
+
+  /*
+   * A block is only drawable where there was something to block. Carving an
+   * hour out of a day the barber does not work has removed nothing, and
+   * drawing it would lay a solid rectangle over hours the shop was already
+   * shut — inventing an event out of a no-op.
+   */
+  it('draws nothing for a carve-out over unrostered time', () => {
+    const blocks = buildDayCarveOuts({
+      day: day('2026-07-29'),
+      schedule: scheduleFrom([['14:00', '18:00']]),
+      exceptions: [
+        exception(
+          { kind: 'admin', ranges: [range('09:00', '10:00')], note: '' },
+          '2026-07-29',
+        ),
+      ],
+    });
+    expect(blocks).toEqual([]);
+  });
+
+  it('clips a carve-out that only partly overlaps the shift', () => {
+    const blocks = buildDayCarveOuts({
+      day: day('2026-07-29'),
+      schedule: scheduleFrom([['09:00', '18:00']]),
+      exceptions: [
+        exception(
+          { kind: 'admin', ranges: [range('17:30', '19:00')], note: '' },
+          '2026-07-29',
+        ),
+      ],
+    });
+    expect(asClock(blocks)).toEqual(['17:30–18:00']);
+  });
+
+  // The shop's envelope bounds a block exactly as it bounds a window — a
+  // block outside opening hours is over time that was never worked.
+  it('bounds a carve-out by the shop the segment is worked at', () => {
+    const blocks = buildDayCarveOuts({
+      day: day('2026-07-29'),
+      schedule: scheduleFrom([['09:00', '20:00']]),
+      exceptions: [
+        exception(
+          { kind: 'admin', ranges: [range('17:00', '19:00')], note: '' },
+          '2026-07-29',
+        ),
+      ],
+      shopHours: shopHours('2026-07-29', [['09:00', '18:00']]),
+    });
+    expect(asClock(blocks)).toEqual(['17:00–18:00']);
+  });
+
+  // A whole-day absence took the day; there is no worked time left for a
+  // carve-out to sit inside, and a block over a day off is a contradiction.
+  it('draws nothing on a day the barber is entirely off', () => {
+    const blocks = buildDayCarveOuts({
+      day: day('2026-07-29'),
+      schedule: scheduleFrom([['09:00', '18:00']]),
+      exceptions: [
+        exception({ kind: 'time_off' }, '2026-07-29'),
+        exception(
+          { kind: 'admin', ranges: [range('13:00', '14:00')], note: '' },
+          '2026-07-29',
+        ),
+      ],
+    });
+    expect(blocks).toEqual([]);
+  });
+
+  it('has nothing to say about a day with no exception at all', () => {
+    expect(
+      buildDayCarveOuts({
+        day: day('2026-07-29'),
+        schedule: scheduleFrom([['09:00', '18:00']]),
+        exceptions: [],
+      }),
+    ).toEqual([]);
   });
 });

@@ -167,6 +167,22 @@ ui-sheet.modal-sheet:not([data-presented]):not([data-closing]) {
   border-start-end-radius: var(--control-radius-prominent);
 }
 
+/* ── Fitted: a sheet that stops where its content does ──────────────────
+ *
+ * The height above is unconditional, so a two-line confirmation presented
+ * the same 90svh box as a full booking form — a sentence at the top and
+ * six hundred pixels of nothing under it, with the action bar stranded at
+ * the far end of an empty screen. `block-size` becomes a CAP rather than a
+ * size: short content hugs, long content still scrolls at exactly the same
+ * ceiling, so nothing about the tall case changes.
+ *
+ * For confirmations and short notices only. A sheet whose content grows
+ * with data must stay unfitted, or its height jumps around as it loads. */
+[data-fitted] .modal-sheet__scroll {
+  block-size: auto;
+  max-block-size: min(90svh, 58rem);
+}
+
 /* No timeline plumbing here: consumers label their large title
    `uiSheetLargeTitle`, which both names the `--ui-sheet-headline`
    view-timeline (scoped by the DS's own `.ui-sheet__surface:has(...)`
@@ -189,5 +205,10 @@ ui-sheet.modal-sheet:not([data-presented]):not([data-closing]) {
 
   .modal-sheet__scroll {
     block-size: min(96svh, 60rem);
+  }
+
+  [data-fitted] .modal-sheet__scroll {
+    block-size: auto;
+    max-block-size: min(96svh, 60rem);
   }
 }

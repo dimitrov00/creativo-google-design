@@ -47,6 +47,7 @@ export * from './lib/barber-day';
 export * from './lib/barber-day.errors';
 
 export * from './lib/seat';
+export * from './lib/seat-outcome';
 export * from './lib/barber-pref';
 export * from './lib/booking-party';
 export * from './lib/booking-party.errors';

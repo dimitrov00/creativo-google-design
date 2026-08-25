@@ -123,7 +123,12 @@
     "booking.contact.empty_name": "Въведи име за резервацията.",
     "booking.contact.invalid_phone": "Този номер не изглежда валиден.",
     "booking.contact.invalid_email": "„{{rawValue}}“ не е валиден имейл адрес.",
-    "booking.contact.note_too_long": "Бележката може да е до {{maxLength}} знака."
+    "booking.contact.note_too_long": "Бележката може да е до {{maxLength}} знака.",
+    "booking.transition.forbidden": "Само служители могат да правят това.",
+    "booking.transition.not_allowed": "Часът не може да мине от „{{from}}“ към „{{to}}“.",
+    "booking.transition.not_found": "Този час вече не съществува.",
+    "booking.transition.invalid_input": "Заявката не е валидна.",
+    "booking.transition.unauthenticated": "Влез отново, за да продължиш."
   },
   "shell": {
     "forbidden": {
@@ -334,7 +339,6 @@
     "configure": {
       "variant": "Вариант",
       "variantPick": "Избери вариант",
-      "barber": "Бръснар",
       "anyBarber": "Който и да е",
       "barberPick": "Избери бръснар"
     },
@@ -483,7 +487,8 @@
       "rewards": "Моите награди",
       "notifications": "Известия",
       "openPositions": "Отворени позиции",
-      "signOut": "Изход"
+      "signOut": "Изход",
+      "staffDay": "График"
     },
     "prefs": {
       "language": "Език",
@@ -876,6 +881,155 @@
       "cancelled": "Отказани",
       "no_show": "Пропуснати",
       "clear": "Покажи всички"
+    }
+  },
+  "staff": {
+    "day": {
+      "title": "График",
+      "previous": "Предишен ден",
+      "next": "Следващ ден",
+      "backToToday": "Към днес",
+      "freeDay": "Свободен ден",
+      "laneFailed": "Този график не се зареди — презареди страницата.",
+      "noRoster": "Днес никой не е на смяна.",
+      "unnamedClient": "Клиент без име",
+      "cancelTitle": "Отказ от салона",
+      "cancelLede": "Причината се записва и часът се освобождава веднага.",
+      "cancelReason": "Защо се отменя?",
+      "cancelConfirm": "Откажи часа",
+      "cancelDismiss": "Затвори",
+      "act": {
+        "confirmed": "Дойде",
+        "completed": "Готово",
+        "no_show": "Не дойде",
+        "cancelled": "Откажи",
+        "arrived": "Дойде",
+        "reopen": "Върни часа"
+      },
+      "gapFree": {
+        "one": "{{minutes}} мин свободна",
+        "other": "{{minutes}} мин свободни"
+      },
+      "visitCount": {
+        "one": "{{count}} посещение",
+        "other": "{{count}} посещения"
+      },
+      "offToday": {
+        "one": "Почива днес: {{names}}",
+        "other": "Почиват днес: {{names}}"
+      },
+      "hasNote": "Има бележка",
+      "moreActions": "Още действия",
+      "blockTime": "Блокирай време",
+      "blockLede": "Извади {{name}} от графика за част от деня или за целия ден.",
+      "blockAllDay": "Почива цял ден",
+      "blockFrom": "От",
+      "blockTo": "До",
+      "blockEffect": "Времето спира да е свободно за записване. Никой не получава известие.",
+      "blockConfirm": "Блокирай времето",
+      "blockFailed": "Не се запази. Опитай пак.",
+      "cancelNote": "Какво се случи?",
+      "cancelSeatOnly": "Отменя се само мястото на този човек. Останалите от групата запазват часа си.",
+      "cancelReasonCode": {
+        "client_changed_plans": "Промени плановете си",
+        "client_unwell": "Клиентът е болен",
+        "staff_barber_absence": "Бръснарят отсъства",
+        "staff_shop_closure": "Салонът е затворен",
+        "other": "Друго"
+      },
+      "staleDay": "Това е вчерашният график.",
+      "viewLabel": "Изглед",
+      "scopeLabel": "Бръснар",
+      "scopeAll": "Всички бръснари",
+      "view": {
+        "agenda": "Списък",
+        "day": "Ден",
+        "three-day": "3 дни",
+        "week": "Седмица"
+      },
+      "fab": {
+        "open": "Добави",
+        "close": "Затвори",
+        "booking": "Нов час",
+        "block": "Блокирай време",
+        "waitlist": "Добави в списъка на чакащите"
+      },
+      "notBuiltYet": "Още не е готово — това изисква запис от сървъра (фаза B4).",
+      "searchLabel": "Търсене",
+      "searchPlaceholder": "Име, телефон, имейл, услуга…",
+      "searchScope": "Търси в предстоящи и минали посещения.",
+      "searchLoading": "Чете графика…",
+      "searchEmpty": "Няма съвпадения.",
+      "allDay": "Цял ден",
+      "offChip": "{{name}} почива",
+      "offBadge": "Почивен ден",
+      "blockedLabel": "Блокирано",
+      "blockLift": "Премахни блокировките за деня",
+      "zoneTitle": "Часовете са в",
+      "zoneBody": "Всички часове в графика са по местното време на салона ({{zone}}). Салонът работи в една часова зона, така че няма какво да се сменя.",
+      "blockTimeFor": "Блокирай време — {{barber}}",
+      "rowAction": "{{verb}} — {{client}}, {{time}}",
+      "rowMenu": "Още действия — {{client}}, {{time}}",
+      "dayHeading": "График за {{day}}",
+      "blockBarber": "Кой бръснар",
+      "blockLiftArm": "Потвърди — премахва всичко за деня",
+      "blockLiftWarning": "Премахва всички блокировки за този ден, заедно с почивния ден, ако е зададен. Не може да се върне.",
+      "blockCollisionsTitle": "В блокираното време остават запазени часове",
+      "blockCollisionsNote": "Блокирането не ги мести и не ги отменя. Обади се и ги премести ръчно.",
+      "visitOpen": "Отвори часа",
+      "visitCall": "Обади се",
+      "visitNoPhone": "Няма номер",
+      "visitNote": "Бележка",
+      "visitBarber": "Стол",
+      "visitService": "Услуга",
+      "visitWhen": "Кога",
+      "visitParty": "Група",
+      "visitPartyValue": "Място {{label}}",
+      "visitArrived": "Дойде",
+      "visitStatus": "Състояние",
+      "visitDuration": "{{minutes}} мин",
+      "fieldsLabel": "Полета",
+      "fieldsTitle": "Какво да се вижда",
+      "fieldsLede": "Избери какво носи всяка карта. Пази се на това устройство.",
+      "fieldsReset": "Върни по подразбиране",
+      "fieldsCount": "{{count}} от {{total}}",
+      "field": {
+        "avatar": "Аватар на клиента",
+        "barberAvatar": "Аватар на бръснаря",
+        "barber": "Бръснар",
+        "email": "Имейл",
+        "phone": "Телефон",
+        "service": "Услуга",
+        "note": "Бележка",
+        "timeStart": "Начало",
+        "timeEnd": "Край",
+        "timeRelative": "Относително време",
+        "price": "Цена",
+        "party": "Група",
+        "freeTime": "Свободно време"
+      },
+      "agendaFree": "Свободно",
+      "agendaEmpty": "Нищо в графика за този ден.",
+      "nowLabel": "сега",
+      "arrivedGlyph": "Пристигнал",
+      "statusArrived": "Дошъл",
+      "liveNow": "Сега",
+      "spanMinutes": "{{minutes}} мин",
+      "spanHours": "{{hours}} ч",
+      "spanHoursMinutes": "{{hours}} ч {{minutes}} мин",
+      "partyOf": "Група от {{count}}",
+      "offAnyDay": {
+        "one": "Почива: {{names}}",
+        "other": "Почиват: {{names}}"
+      },
+      "nextUp": "Следващ",
+      "agendaRemaining": "още {{span}}",
+      "daySummaryFree": "{{span}} свободни",
+      "exception": {
+        "no_show": "Пропуснат",
+        "cancelled": "Отказан",
+        "pending": "Заявен"
+      }
     }
   }
 }

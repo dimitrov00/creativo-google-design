@@ -73,6 +73,7 @@ export class CommitBookingUseCase {
       seats: input.seats,
       attemptId: input.attemptId,
       contact: input.contact,
+      bookedFromAppointmentId: input.bookedFromAppointmentId,
     };
 
     const result = await this.store.commit(request, (snapshot) => {

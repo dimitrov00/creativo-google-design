@@ -6,7 +6,10 @@ import {
   canTransition,
 } from '@creativo/domain/scheduling';
 import type { ClockPort } from '@creativo/application/shared';
-import { contactFromDocument } from '@creativo/application/booking';
+import {
+  bookedAtFromDocument,
+  contactFromDocument,
+} from '@creativo/application/booking';
 import { FirestoreBookingStore } from '../adapters/firestore-booking-store';
 import {
   type CommitBookingError,
@@ -21,6 +24,25 @@ export interface RescheduleBookingInput extends DecideBookingRequest {
   readonly appointmentId: string;
   /** From the VERIFIED token. `null` is a refusal, never a guest move. */
   readonly ownerUserId: string | null;
+}
+
+/**
+ * Has any seat of the stored appointment already been resolved?
+ *
+ * Read off the raw document rather than the aggregate because this runs
+ * before the appointment is rebuilt. A seat with no `outcome` field is a row
+ * written before outcomes existed and counts as unresolved — a legacy booking
+ * must stay movable.
+ */
+function hasResolvedSeat(current: Record<string, unknown>): boolean {
+  const seats = Array.isArray(current['seats'])
+    ? (current['seats'] as readonly Record<string, unknown>[])
+    : [];
+  return seats.some((seat) => {
+    const outcome = seat['outcome'] as Record<string, unknown> | undefined;
+    const kind = outcome?.['kind'];
+    return typeof kind === 'string' && kind !== 'scheduled';
+  });
 }
 
 /**
@@ -86,6 +108,16 @@ export class RescheduleBookingUseCase {
           return fail(new CommitBookingInvalidInputError('status'));
         }
 
+        // A party MID-SERVICE cannot move. `decideBooking` rebuilds the seats
+        // from the request with fresh ids and fresh `scheduled` outcomes, so
+        // moving a party where one guest has already been served — or already
+        // no-showed — would silently erase that fact and there would be no
+        // source left to recover it from. The root status cannot catch this:
+        // a partially-resolved party is still `confirmed`.
+        if (hasResolvedSeat(current)) {
+          return fail(new CommitBookingInvalidInputError('seat_resolved'));
+        }
+
         // The window is read off the CURRENT start — the booking being moved
         // — because that is the commitment the shop planned around.
         const currentStart = String(
@@ -112,14 +144,26 @@ export class RescheduleBookingUseCase {
         // A move must not silently DOWNGRADE a confirmed booking to pending,
         // and must not lose the contact the shop was given. `decideBooking`
         // builds a fresh pending appointment because that is its job; this
-        // puts back the two facts that belong to the appointment's identity
+        // puts back the facts that belong to the appointment's IDENTITY
         // rather than to its placement.
+        //
+        // `bookedAt` is the subtle one. `decideBooking` stamps it with the
+        // transaction's own clock, so a move would restate every rescheduled
+        // booking as having been made just now — and booking lead time, the
+        // metric it exists for, would collapse toward zero for exactly the
+        // bookings that were planned furthest ahead. The booking instant
+        // belongs to when the client DECIDED, not to when they moved it.
         const restored = Appointment.reconstitute({
           id: decided.value.appointment.id.value,
           locationId: decided.value.appointment.locationId.value,
           seats: [...decided.value.appointment.seats],
           status,
           contact: contactFromDocument(current),
+          bookedAt: bookedAtFromDocument(current),
+          bookedFromAppointmentId:
+            typeof current['bookedFromAppointmentId'] === 'string'
+              ? current['bookedFromAppointmentId']
+              : null,
         });
         if (restored.isFailure()) {
           return fail(new CommitBookingInvariantError(restored.error));

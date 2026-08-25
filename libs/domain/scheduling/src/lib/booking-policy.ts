@@ -29,6 +29,18 @@ export interface BookingPolicyProps {
    * year" is not a request a shop can answer.
    */
   readonly maxFlexibleDays: number;
+  /**
+   * Does an online booking land `confirmed`, or wait for a human to accept it?
+   *
+   * Owner ruling 2026-08-07: **default on.** `Appointment.create` stamping
+   * `pending` was never a shop decision — it was an accident of the model, and
+   * it left clients reading "Requested" for a booking the shop was always
+   * going to take. Off is the opt-in for shops that genuinely vet bookings.
+   *
+   * Note what this does NOT mean: `confirmed` says the shop accepted the
+   * booking, never that the client is present. Arrival is `Appointment.arrivedAt`.
+   */
+  readonly autoConfirm: boolean;
 }
 
 /**
@@ -48,6 +60,7 @@ export class BookingPolicy {
     readonly horizonMonths: number,
     readonly cancellationWindowHours: number,
     readonly maxFlexibleDays: number,
+    readonly autoConfirm: boolean,
   ) {}
 
   static create(
@@ -94,6 +107,7 @@ export class BookingPolicy {
         props.horizonMonths,
         props.cancellationWindowHours,
         props.maxFlexibleDays,
+        props.autoConfirm,
       ),
     );
   }
@@ -121,6 +135,9 @@ export class BookingPolicy {
       horizonMonths: 2,
       cancellationWindowHours: 24,
       maxFlexibleDays: 7,
+      // Owner ruling 2026-08-07. The shop was never choosing to hold bookings
+      // in `pending` — the model was.
+      autoConfirm: true,
     });
     if (result.isFailure()) throw new Error('unreachable: defaults are valid');
     BookingPolicy._default = result.value;

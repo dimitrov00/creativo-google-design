@@ -13,11 +13,13 @@
   position: relative;
 }
 
-/* Placeholder copy for the steps that land in later phases — the secondary
-   label role, not a bespoke muted colour. */
-.booking-step-pending {
-  color: var(--sys-color-foreground-secondary);
-}
+/* `.booking-step-pending` IS GONE. It named `--sys-color-foreground-secondary`
+   — one hit repo-wide, defined in no theme, so the declaration was invalid at
+   computed-value time and painted nothing at all. The element it styled sits
+   in the `@default` arm of `@switch (store.step())`, and `BookingFlowStep`
+   has six members with a `@case` for every one, so the branch cannot render.
+   Deleted rather than repaired: the real hazard was a plausible-looking fake
+   `--sys-` token sitting in the tree waiting to be copied. */
 
 /*
  * The collapsed title, centred under the stepper. Truncates rather than

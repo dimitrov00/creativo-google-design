@@ -53,6 +53,60 @@ export type PublicExceptionEffect =
     };
 
 /**
+ * Domain exception → public doc. **This function is the GDPR boundary.**
+ *
+ * Written as an explicit switch rather than a structural dump for the same
+ * reason `seatOutcomeToDocument` is: a new `ScheduleExceptionKind` arm must
+ * not be able to reach public storage without someone deciding how it is
+ * sanitized. The compiler enforces that — add an arm and this stops building.
+ *
+ * The sanitizing is the point, not a side effect. `sick` (Art. 9 special-
+ * category health data), `time_off`, `training` and `travel` all collapse to
+ * the SAME `closed` effect, so the public document cannot distinguish a
+ * barber who is ill from one who is on holiday — not by field, not by
+ * absence of a field, not by inference. `break` and `admin` collapse to
+ * `blocked` for the same reason.
+ */
+export function exceptionToDocument(
+  exception: ScheduleException,
+): Record<string, unknown> {
+  return {
+    barberId: exception.barberId?.value ?? '',
+    dayKey: exception.day.key(),
+    zone: exception.day.zone,
+    locationId: exception.locationId.value,
+    effect: toEffect(exception.detail),
+  };
+}
+
+function toEffect(detail: ScheduleExceptionKind): PublicExceptionEffect {
+  switch (detail.kind) {
+    // Unavailable all day. Four domain reasons, ONE public effect — see the
+    // doc comment above; narrowing this is a privacy regression.
+    case 'closed':
+    case 'time_off':
+    case 'sick':
+    case 'training':
+    case 'travel':
+      return { kind: 'closed' };
+    case 'hours':
+      return { kind: 'hours', ranges: toSpans(detail.ranges) };
+    case 'break':
+    case 'admin':
+      return { kind: 'blocked', ranges: toSpans(detail.ranges) };
+  }
+}
+
+function toSpans(
+  ranges: readonly LocalTimeRange[],
+): readonly { readonly from: string; readonly to: string }[] {
+  return ranges.map((range) => ({
+    from: range.start.toString(),
+    to: range.end.toString(),
+  }));
+}
+
+/**
  * Public doc → domain exception, fail-closed the availability-friendly way:
  * a doc that does not parse contributes NO exception, so the roster stands.
  * (Refusing the whole day on a malformed doc would let one bad write silently

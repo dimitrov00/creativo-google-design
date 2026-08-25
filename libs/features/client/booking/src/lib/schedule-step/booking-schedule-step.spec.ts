@@ -249,18 +249,6 @@ function barControls(fixture: ComponentFixture<ClientBooking>): string[] {
   ].map((element) => element.getAttribute('data-testid') ?? '');
 }
 
-function text(
-  fixture: ComponentFixture<ClientBooking>,
-  testId: string,
-): string {
-  return (
-    host(fixture)
-      .querySelector(`[data-testid="${testId}"]`)
-      ?.textContent?.replace(/\s+/g, ' ')
-      .trim() ?? ''
-  );
-}
-
 describe('BookingScheduleStep', () => {
   let fixture: ComponentFixture<ClientBooking>;
 

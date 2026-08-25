@@ -9,6 +9,7 @@ const VALID: BookingPolicyProps = {
   horizonMonths: 2,
   cancellationWindowHours: 24,
   maxFlexibleDays: 7,
+  autoConfirm: true,
 };
 
 describe('BookingPolicy', () => {
@@ -68,6 +69,7 @@ describe('BookingPolicy', () => {
       horizonMonths: 0,
       cancellationWindowHours: -1,
       maxFlexibleDays: 0,
+      autoConfirm: true,
     });
     expect(result.isFailure()).toBe(true);
     if (result.isFailure()) {

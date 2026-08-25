@@ -39,6 +39,31 @@ service cloud.firestore {
       return hasAnyRole(['barber', 'receptionist', 'content_manager', 'admin', 'sysadmin']);
     }
 
+    /**
+     * The roles that WORK THE BOOK. Deliberately narrower than `isStaff()`:
+     * `content_manager` is a copy-and-media role and has no business reading
+     * every client's name, phone and note in the shop.
+     */
+    function worksTheBook() {
+      return hasAnyRole(['barber', 'receptionist', 'admin', 'sysadmin']);
+    }
+
+    /**
+     * Who may rewrite a chair's hours or declare it absent.
+     *
+     * The intended rule is SELF-OR-MANAGER, and it is not expressible yet:
+     * `Barber` deliberately carries no `userId`, so no token claim can say
+     * which chair the caller IS. Until that link exists this is the honest
+     * subset — everyone who works the book, minus `content_manager`, which
+     * is the part that was actually dangerous (a copy role could rewrite
+     * every barber's roster, and utilisation history divides by it).
+     *
+     * Narrow this to true self-or-manager the moment `Barber ↔ User` lands.
+     */
+    function mayEditRoster() {
+      return worksTheBook();
+    }
+
     function isCatalogManager() {
       return hasAnyRole(['content_manager', 'admin', 'sysadmin']);
     }
@@ -135,7 +160,10 @@ service cloud.firestore {
       // `ownerUserId` is a denormalized field (not part of the `Appointment`
       // domain aggregate) written by the adapter purely so rules/queries can
       // identify "my appointments" without scanning the `seats` array.
-      allow read: if isStaff()
+      // NOT `isStaff()`: that grouping includes `content_manager`, which
+      // could read every appointment, every client name, phone and note in
+      // the shop for a role that only edits marketing copy.
+      allow read: if worksTheBook()
         || (isSignedIn() && resource.data.ownerUserId == request.auth.uid);
 
       // CLIENTS MAY NOT CREATE APPOINTMENTS. This previously allowed any
@@ -201,8 +229,11 @@ service cloud.firestore {
     // which stays closed.
     match /barberSchedules/{barberId} {
       allow read: if true;
-      // Rosters are staff-authored; utilisation history divides by them.
-      allow write: if isStaff();
+      // Rosters are staff-authored; utilisation history DIVIDES BY THEM, so
+      // a blanket staff write let any barber rewrite any other barber's hours
+      // (and a `content_manager` rewrite all of them), silently changing
+      // everyone's utilisation denominator.
+      allow write: if mayEditRoster();
     }
 
     match /scheduleExceptions/{dayDocId} {
@@ -210,7 +241,8 @@ service cloud.firestore {
       // geometry only, structurally reason-free (the doc schema has no field
       // a reason could ride in; a `sick` day must never be derivable here).
       allow read: if true;
-      allow write: if isStaff();
+      // Same boundary as the roster it overrides — see `mayEditRoster`.
+      allow write: if mayEditRoster();
     }
 
     match /capacity/{monthId} {
@@ -218,6 +250,22 @@ service cloud.firestore {
       // trigger-maintained (Admin SDK). Same PII posture as barberBusy:
       // geometry-derived numbers only.
       allow read: if true;
+      allow write: if false;
+    }
+
+    match /barberLeadTimeSamples/{sampleId} {
+      // How far out each barber's first free day was, sampled daily by
+      // `sampleBarberLeadTimeDaily` (Admin SDK, so no write allowance is
+      // needed or wanted here).
+      //
+      // STAFF-ONLY, unlike the capacity rollup it is derived from — and the
+      // difference is deliberate. Capacity says "this day has free minutes",
+      // which is what a visitor already learns from the booking calendar. A
+      // lead-time SERIES says how heavily booked the shop is and which way
+      // that is trending, which is commercial intelligence: it is the number
+      // a competitor would use to time their own pricing, and no client needs
+      // it to book a haircut.
+      allow read: if isStaff();
       allow write: if false;
     }
 

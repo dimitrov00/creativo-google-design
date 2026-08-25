@@ -161,18 +161,7 @@ export function buildDayWindows(
   // Carve-outs: breaks and admin blocks sit inside a day that is still
   // worked. They are subtracted from the WINDOWS (not merely marked busy) so
   // that unpaid time never enters the capacity denominator in the first place.
-  const carveOuts = Interval.normalize(
-    relevant.flatMap((exception) => {
-      const detail = exception.detail;
-      if (detail.kind !== 'break' && detail.kind !== 'admin') return [];
-      return detail.ranges.flatMap((range) => {
-        const start = range.start.onDay(day);
-        const end = range.end.onDay(day);
-        if (start.isFailure() || end.isFailure()) return [];
-        return [Interval.of(start.value.toMillis(), end.value.toMillis())];
-      });
-    }),
-  );
+  const carveOuts = carveOutsOn(day, relevant);
 
   const windows: RosterWindow[] = [];
   for (const segment of segments) {
@@ -204,6 +193,93 @@ export function buildDayWindows(
       a.interval.startMs - b.interval.startMs ||
       a.locationId.value.localeCompare(b.locationId.value),
   );
+}
+
+/**
+ * The carve-outs an exception asks for on this day, normalised.
+ *
+ * Extracted so that "what does a break subtract" and "what does a break LOOK
+ * like" can never disagree — the two used to be one expression inside
+ * `buildDayWindows`, and the second question had no way to ask it at all.
+ */
+function carveOutsOn(
+  day: CalendarDay,
+  exceptions: readonly ScheduleException[],
+): readonly Interval[] {
+  return Interval.normalize(
+    exceptions.flatMap((exception) => {
+      const detail = exception.detail;
+      if (detail.kind !== 'break' && detail.kind !== 'admin') return [];
+      return detail.ranges.flatMap((range) => {
+        const start = range.start.onDay(day);
+        const end = range.end.onDay(day);
+        if (start.isFailure() || end.isFailure()) return [];
+        return [Interval.of(start.value.toMillis(), end.value.toMillis())];
+      });
+    }),
+  );
+}
+
+/**
+ * The carved-out stretches of a worked day — what `buildDayWindows` REMOVES,
+ * returned as things in their own right.
+ *
+ * ### Why this exists
+ * A break is modelled as an absence: `buildDayWindows` subtracts it and hands
+ * back the survivors, so by the time any UI sees the day, "Ivan is on lunch",
+ * "Ivan is not rostered" and "the shop is shut" are the same fact — no
+ * window. That is correct for capacity and wrong for everything else. A staff
+ * calendar has to draw a block as a block: it is a thing someone created, it
+ * has a start and an end, and it is the only kind of non-visit time a person
+ * can be expected to move or remove.
+ *
+ * ### A separate function, not a wider return type
+ * `buildDayWindows` has six production callers across the browser grid, the
+ * commit re-check and the capacity rebuild, and every one of them is doing
+ * arithmetic that must not change. This asks the second question without
+ * touching the answer to the first.
+ *
+ * ### Clipped to the day that would otherwise be worked
+ * A block is only drawable where there was something to block. An exception
+ * carving 13:00–14:00 out of a barber who is not rostered until 14:00 has
+ * removed nothing, and drawing it would put a solid rectangle over hours the
+ * shop was already shut — inventing an event out of a no-op.
+ */
+export function buildDayCarveOuts(
+  input: BuildDayWindowsInput,
+): readonly RosterWindow[] {
+  const { day, schedule, exceptions, shopHours } = input;
+  const relevant = exceptions.filter((exception) => exception.day.equals(day));
+
+  // A whole-day absence removed the day entirely — there is no worked time
+  // left for a carve-out to sit inside.
+  if (relevant.some((exception) => exception.isWholeDay())) return [];
+
+  const carveOuts = carveOutsOn(day, relevant);
+  if (carveOuts.length === 0) return [];
+
+  // Re-run the day WITHOUT its carve-outs, so what is left to intersect is
+  // exactly the worked time the real call then subtracts from. Passing the
+  // same input minus the carving exceptions reuses one implementation rather
+  // than restating the pattern/override/shop-hours order of application here,
+  // which is where a second copy would drift.
+  const worked = buildDayWindows({
+    day,
+    schedule,
+    exceptions: relevant.filter(
+      (exception) =>
+        exception.detail.kind !== 'break' && exception.detail.kind !== 'admin',
+    ),
+    shopHours,
+  });
+
+  const blocks: RosterWindow[] = [];
+  for (const window of worked) {
+    for (const interval of Interval.intersect([window.interval], carveOuts)) {
+      blocks.push({ interval, locationId: window.locationId });
+    }
+  }
+  return blocks.sort((a, b) => a.interval.startMs - b.interval.startMs);
 }
 
 /** Only the windows worked at one shop — what a booking at that shop may use. */

@@ -4,6 +4,7 @@ import { provideRouter } from '@angular/router';
 import {
   Translation,
   TranslocoLoader,
+  TranslocoService,
   provideTransloco,
 } from '@jsverse/transloco';
 import { Observable, of } from 'rxjs';
@@ -109,6 +110,8 @@ describe('SiteMenuComponent', () => {
   async function render(inputs: {
     open: boolean;
     isAuthed?: boolean;
+    /** A staff-tier session — surfaces the schedule row. */
+    isStaffMember?: boolean;
     /** How many upcoming visits the bookings row should report. */
     upcoming?: number;
     /** How many UNREAD notifications the inbox should report. */
@@ -197,6 +200,9 @@ describe('SiteMenuComponent', () => {
     fixture.componentRef.setInput('open', inputs.open);
     if (inputs.isAuthed !== undefined) {
       fixture.componentRef.setInput('isAuthed', inputs.isAuthed);
+    }
+    if (inputs.isStaffMember !== undefined) {
+      fixture.componentRef.setInput('isStaffMember', inputs.isStaffMember);
     }
     // Several passes: the avatar URL travels principal signal → observable
     // → storage-lookup promise → signal, so the portrait's <img> only
@@ -482,5 +488,175 @@ describe('SiteMenuComponent', () => {
     const fixture = await render({ open: true, isAuthed: true });
     const host: HTMLElement = fixture.nativeElement;
     expect(host.querySelectorAll('ui-icon[uitrailing]').length).toBe(0);
+  });
+
+  describe('the staff schedule row', () => {
+    it('is absent for a session without staff roles', async () => {
+      const fixture = await render({ open: true, isAuthed: true });
+      expect(
+        fixture.nativeElement.querySelector('[data-testid="menu-staff-day"]'),
+      ).toBeNull();
+    });
+
+    /**
+     * The row's whole reason for existing: someone behind the counter opens
+     * this menu to reach the day. Buried among the client rows it was the
+     * app's most frequent staff destination and its least findable one.
+     */
+    it('leads the run, ahead of the book CTA and outside the account group', async () => {
+      const fixture = await render({
+        open: true,
+        isAuthed: true,
+        isStaffMember: true,
+      });
+      const host: HTMLElement = fixture.nativeElement;
+
+      const cta = host.querySelector('[data-testid="menu-book"]')!;
+      const row = host.querySelector('[data-testid="menu-staff-day"]')!;
+      expect(row).not.toBeNull();
+
+      // BEFORE the CTA — the staff session's most likely action comes first.
+      expect(
+        row.compareDocumentPosition(cta) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+      // …and standalone, not a member of the segmented account run.
+      expect(row.closest('ui-list-group')).toBeNull();
+    });
+
+    /**
+     * The filled row follows the ROLE, because the most likely action does.
+     * Exactly one filled row per session either way — two would be two
+     * primaries and the eye would pick neither.
+     */
+    it('takes the fill for staff and hands the CTA the neutral rung', async () => {
+      const fixture = await render({
+        open: true,
+        isAuthed: true,
+        isStaffMember: true,
+      });
+      const host: HTMLElement = fixture.nativeElement;
+
+      const row = host.querySelector('[data-testid="menu-staff-day"]')!;
+      expect(row.getAttribute('data-variant')).toBe('prominent');
+      expect(row.getAttribute('data-size')).toBe('large');
+      expect(row.hasAttribute('data-interactive')).toBe(true);
+      expect(
+        host
+          .querySelector('[data-testid="menu-book"]')!
+          .getAttribute('data-variant'),
+      ).toBe('neutral');
+    });
+
+    it('leaves the CTA prominent for everyone who is not staff', async () => {
+      const fixture = await render({ open: true, isAuthed: true });
+      expect(
+        (fixture.nativeElement as HTMLElement)
+          .querySelector('[data-testid="menu-book"]')!
+          .getAttribute('data-variant'),
+      ).toBe('prominent');
+    });
+
+    /**
+     * An accent wash is not available as an emphasis rung: `[data-selected]`
+     * paints the identical fill, so a washed row would read as permanently
+     * selected. Neither row may reach for it.
+     */
+    it('uses no tint on either row', async () => {
+      const fixture = await render({
+        open: true,
+        isAuthed: true,
+        isStaffMember: true,
+      });
+      const host: HTMLElement = fixture.nativeElement;
+      for (const id of ['menu-staff-day', 'menu-book']) {
+        const el = host.querySelector(`[data-testid="${id}"]`)!;
+        expect(el.getAttribute('data-variant')).not.toBe('tinted');
+        expect(el.hasAttribute('data-selected')).toBe(false);
+      }
+    });
+
+    /**
+     * The disclosure belongs to the phrase that names the destination
+     * ("Thursday 6 August ›"), not to the row's trailing edge — the
+     * reference grammar. Unscaled so it rides the footnote's own size
+     * rather than snapping to the 16px accessory rung.
+     */
+    it('puts the disclosure chevron at the end of the subtitle line', async () => {
+      const fixture = await render({
+        open: true,
+        isAuthed: true,
+        isStaffMember: true,
+      });
+      const row = (fixture.nativeElement as HTMLElement).querySelector(
+        '[data-testid="menu-staff-day"]',
+      )!;
+
+      const chevron = row.querySelector('.cr-menu__staff-detail ui-icon');
+      expect(chevron).not.toBeNull();
+      expect(chevron!.hasAttribute('data-scale')).toBe(false);
+      // …and NOT pinned to the trailing edge, where it used to sit.
+      expect(
+        row.querySelector('[uitrailing] ui-icon:not(.cr-menu__staff-mark)'),
+      ).toBeNull();
+    });
+
+    /**
+     * The title carries no `uiFont`, so it inherits the row's own
+     * callout/500 and matches every neighbouring label. It shipped at
+     * `headline` first and read louder than the primary CTA above it.
+     */
+    it('keeps the title on the same type rung as every other row label', async () => {
+      const fixture = await render({
+        open: true,
+        isAuthed: true,
+        isStaffMember: true,
+      });
+      const title = (fixture.nativeElement as HTMLElement).querySelector(
+        '.cr-menu__staff-text > span:first-child',
+      )!;
+      expect(title.hasAttribute('uifont')).toBe(false);
+    });
+
+    it('subtitles itself with the day the schedule opens on', async () => {
+      const fixture = await render({
+        open: true,
+        isAuthed: true,
+        isStaffMember: true,
+      });
+      const date = fixture.nativeElement.querySelector(
+        '[data-testid="menu-staff-day-date"]',
+      );
+      expect(date).not.toBeNull();
+      expect(date!.textContent!.trim().length).toBeGreaterThan(0);
+    });
+
+    /**
+     * Regression: the label was built from `transloco.getActiveLang()`, a
+     * plain method call that captures no dependency inside a `computed` —
+     * so the title beside it switched language and the date did not.
+     */
+    it('re-formats the date when the language changes', async () => {
+      const fixture = await render({
+        open: true,
+        isAuthed: true,
+        isStaffMember: true,
+      });
+      const dateOf = () =>
+        (fixture.nativeElement as HTMLElement)
+          .querySelector('[data-testid="menu-staff-day-date"]')!
+          .textContent!.trim();
+
+      const inBulgarian = dateOf();
+      expect(/[а-я]/i.test(inBulgarian)).toBe(true);
+
+      TestBed.inject(TranslocoService).setActiveLang('en');
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      const inEnglish = dateOf();
+      expect(inEnglish).not.toBe(inBulgarian);
+      expect(/[а-я]/i.test(inEnglish)).toBe(false);
+    });
   });
 });

@@ -27,26 +27,30 @@
   }
 
   .ui-avatar[data-control-size='small'] {
-    inline-size: var(--control-size-small);
-    block-size: var(--control-size-small);
+    --ui-avatar-disc: var(--control-size-small);
+    inline-size: var(--ui-avatar-disc);
+    block-size: var(--ui-avatar-disc);
     font: var(--sys-font-footnote);
   }
   .ui-avatar[data-control-size='regular'] {
-    inline-size: var(--control-size-regular);
-    block-size: var(--control-size-regular);
+    --ui-avatar-disc: var(--control-size-regular);
+    inline-size: var(--ui-avatar-disc);
+    block-size: var(--ui-avatar-disc);
     font: var(--sys-font-callout);
   }
   .ui-avatar[data-control-size='large'] {
-    inline-size: var(--control-size-large);
-    block-size: var(--control-size-large);
+    --ui-avatar-disc: var(--control-size-large);
+    inline-size: var(--ui-avatar-disc);
+    block-size: var(--ui-avatar-disc);
     font: var(--sys-font-title3);
   }
   .ui-avatar[data-control-size='extraLarge'] {
     /* Profile-portrait tier (avatar-only, see UiAvatarSize): 28 units =
        112px at density 1 — no shared --control-size token since no other
        control renders at portrait scale. */
-    inline-size: calc(var(--sys-space-unit) * 28);
-    block-size: calc(var(--sys-space-unit) * 28);
+    --ui-avatar-disc: calc(var(--sys-space-unit) * 28);
+    inline-size: var(--ui-avatar-disc);
+    block-size: var(--ui-avatar-disc);
     font: var(--sys-font-largeTitle);
   }
 
@@ -75,5 +79,25 @@
    */
   .ui-avatar__fallback {
     color: var(--ui-avatar-ink, currentColor);
+  }
+
+  /*
+   * A GLYPH placeholder is sized by the DISC, not by the type around it.
+   *
+   * Two reasons it can't just ride the tier's font like the monogram does.
+   * A letterform fills its em box and a symbol does not, so a glyph set at
+   * the monogram's point size lands a small mark in a large circle. And a
+   * `.ui-button .ui-icon` rule (button.css) sizes glyphs INSIDE a button —
+   * which now reaches an avatar nested in one, so an avatar in a toolbar
+   * button and the same avatar in a menu row rendered their glyphs at two
+   * different sizes. The three-element selector is what makes this win that
+   * one deterministically rather than by stylesheet order.
+   *
+   * The fraction is disc-derived, not font-derived — the fixed icon ladder
+   * exists so glyphs BESIDE each other in running text agree, and this glyph
+   * has no neighbours but the capsule around it.
+   */
+  .ui-avatar .ui-avatar__fallback .ui-icon {
+    font-size: calc(var(--ui-avatar-disc, var(--control-size-regular)) * 0.55);
   }
 }

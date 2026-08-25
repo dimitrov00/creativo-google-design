@@ -6,6 +6,7 @@ import {
   type BookingGatewayFailureCode,
   BookingGatewayError,
   type CancelAppointmentRequest,
+  type TransitionAppointmentRequest,
   type RescheduleBookingRequest,
   type CommitBookingRequest,
   type CommittedBooking,
@@ -61,6 +62,17 @@ function toFailureCode(error: unknown): {
     case 'booking.commit.party_too_large':
     case 'booking.commit.too_soon':
     case 'booking.commit.beyond_horizon':
+    case 'booking.transition.unauthenticated':
+    case 'booking.transition.forbidden':
+    case 'booking.arrived.unauthenticated':
+    case 'booking.arrived.forbidden':
+      return { failure: 'unauthenticated', params };
+    case 'booking.transition.invalid_input':
+    case 'booking.transition.not_found':
+    case 'booking.transition.not_allowed':
+    case 'booking.arrived.invalid_input':
+    case 'booking.arrived.not_found':
+    case 'booking.arrived.not_allowed':
     case 'booking.cancel.invalid_input':
     case 'booking.cancel.not_found':
     case 'booking.cancel.not_cancellable':
@@ -159,6 +171,52 @@ export class CallableBookingGateway implements BookingGateway {
           error instanceof Error
             ? error.message
             : 'rescheduleAppointment failed',
+          params,
+        ),
+      );
+    }
+  }
+
+  async transition(
+    request: TransitionAppointmentRequest,
+  ): Promise<Result<void, BookingGatewayError>> {
+    const callable = httpsCallable<TransitionAppointmentRequest, unknown>(
+      this.functions,
+      'transitionAppointment',
+    );
+
+    try {
+      await callable(request);
+      return ok(undefined);
+    } catch (error) {
+      const { failure, params } = toFailureCode(error);
+      return fail(
+        new BookingGatewayError(
+          failure,
+          error instanceof Error ? error.message : 'transition failed',
+          params,
+        ),
+      );
+    }
+  }
+
+  async markArrived(
+    appointmentId: string,
+  ): Promise<Result<void, BookingGatewayError>> {
+    const callable = httpsCallable<{ appointmentId: string }, unknown>(
+      this.functions,
+      'markArrived',
+    );
+
+    try {
+      await callable({ appointmentId });
+      return ok(undefined);
+    } catch (error) {
+      const { failure, params } = toFailureCode(error);
+      return fail(
+        new BookingGatewayError(
+          failure,
+          error instanceof Error ? error.message : 'mark arrived failed',
           params,
         ),
       );

@@ -26,12 +26,10 @@
         </ui-card>
         } @case ('ready') { @if (current.positions.length === 0) {
         <ui-card data-testid="careers-empty">
-          <ui-stack uiSpacing="tight">
-            <p uiText uiFont="headline">
-              {{ t('programs.careers.empty.title') }}
-            </p>
+          <ui-empty-state [uiTitle]="t('programs.careers.empty.title')">
             <p>{{ t('programs.careers.empty.body') }}</p>
             <a
+              uiActions
               [href]="instagramUrl"
               target="_blank"
               rel="noopener"
@@ -42,7 +40,7 @@
               {{ t('programs.careers.empty.cta') }}
               <ui-icon uiName="link.external" />
             </a>
-          </ui-stack>
+          </ui-empty-state>
         </ui-card>
         } @else {
         <ui-list-group data-testid="careers-list">
@@ -56,7 +54,7 @@
           >
             <ui-stack uiSpacing="none">
               <span>{{ text(position.title) }}</span>
-              <span class="cr-programs-page__secondary"
+              <span uiText uiFont="footnote" uiForegroundStyle="secondary"
                 >{{ text(position.summary) }}</span
               >
             </ui-stack>

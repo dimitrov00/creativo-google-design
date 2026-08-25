@@ -6,7 +6,7 @@ import {
   TranslocoLoader,
   provideTransloco,
 } from '@jsverse/transloco';
-import { Observable, of } from 'rxjs';
+import { EMPTY, Observable, of } from 'rxjs';
 import {
   BarberId,
   ServiceId,
@@ -117,7 +117,9 @@ function repositoryStub(
     save: async () =>
       fail(new RepositoryError('appointments are written server-side')),
     observeUpcomingFor: () => of(ok(upcoming)),
+    observeBarberDay: () => EMPTY,
     observeHistoryFor: () => of(ok(history)),
+    searchWindow: async () => ok([]),
   };
 }
 
@@ -328,6 +330,9 @@ describe('ClientAppointments', () => {
         }),
         appointment('appt_past_2', '2020-06-02T10:00:00', {
           kind: 'cancelled',
+          // The arm carries its reason — a cancelled status without one is
+          // not representable, which is the whole point of the union.
+          reason: 'client_changed_plans',
         }),
       ],
     );

@@ -67,6 +67,7 @@ export class SiteHeaderComponent {
    *  photo when one exists, initials otherwise). */
   protected readonly identity = inject(SessionIdentityService);
   protected readonly isAuthed = this.identity.isAuthed;
+  protected readonly isStaffMember = this.identity.isStaffMember;
 
   protected readonly menuOpen = signal(false);
   protected readonly isScrolled = signal(false);

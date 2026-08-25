@@ -1,5 +1,5 @@
 import { TestBed } from '@angular/core/testing';
-import { Subject, of } from 'rxjs';
+import { EMPTY, Subject, of } from 'rxjs';
 import { CLOCK, RepositoryError } from '@creativo/application/shared';
 import { UserId, ZonedDateTime } from '@creativo/application/accounts';
 import {
@@ -112,6 +112,10 @@ describe('AppointmentsStore', () => {
       findById: async () => ok(null),
       save: async () => ok(undefined),
       observeUpcomingFor: () => upcoming$.asObservable(),
+      // Staff-side readers the port grew; this store only watches upcoming.
+      observeHistoryFor: () => EMPTY,
+      observeBarberDay: () => EMPTY,
+      searchWindow: async () => ok([]),
     });
 
     expect(store.upcoming().kind).toBe('loading');
@@ -131,6 +135,9 @@ describe('AppointmentsStore', () => {
       findById: async () => ok(null),
       save: async () => ok(undefined),
       observeUpcomingFor: () => of(fail(new RepositoryError('boom'))),
+      observeHistoryFor: () => EMPTY,
+      observeBarberDay: () => EMPTY,
+      searchWindow: async () => ok([]),
     });
 
     store.setUserId(unwrap(UserId.create('user_1')));
@@ -143,6 +150,9 @@ describe('AppointmentsStore', () => {
       findById: async () => ok(null),
       save: async () => ok(undefined),
       observeUpcomingFor: () => of(ok([])),
+      observeHistoryFor: () => EMPTY,
+      observeBarberDay: () => EMPTY,
+      searchWindow: async () => ok([]),
     });
 
     const startMonth = store.focusedMonth().month;
@@ -163,6 +173,9 @@ describe('AppointmentsStore', () => {
         findById: async () => ok(null),
         save: async () => ok(undefined),
         observeUpcomingFor: () => of(ok([])),
+        observeHistoryFor: () => EMPTY,
+        observeBarberDay: () => EMPTY,
+        searchWindow: async () => ok([]),
       },
       {
         cancel: async (request) => {
@@ -190,6 +203,9 @@ describe('AppointmentsStore', () => {
         findById: async () => ok(null),
         save: async () => ok(undefined),
         observeUpcomingFor: () => of(ok([])),
+        observeHistoryFor: () => EMPTY,
+        observeBarberDay: () => EMPTY,
+        searchWindow: async () => ok([]),
       },
       {
         cancel: async () =>

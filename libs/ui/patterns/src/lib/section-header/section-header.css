@@ -11,7 +11,10 @@
     font: var(--sys-font-eyebrow);
     letter-spacing: var(--sys-tracking-eyebrow);
     text-transform: uppercase;
-    color: var(--sys-color-accent);
+    /* Ink, not fill — 11px uppercase in the raw accent is 3.04:1 on the
+       light page. Dark is unchanged (the label token aliases to the
+       accent there). */
+    color: var(--sys-color-accent-label);
   }
 
   /* Status-qualifier eyebrows (uiEyebrowTone="secondary") — quiet

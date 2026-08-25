@@ -14,6 +14,17 @@
     --ui-action-bar-scrim: var(--sys-color-background);
     position: sticky;
     inset-block-end: 0;
+    /* Sticky alone does NOT floor the bar. `inset-block-end: 0` only ever
+       pushes the box back UP when scrolling would carry it out of the
+       scrollport; on a page whose content is shorter than the viewport the
+       box is already inside the constraint, so nothing shifts and the bar
+       lands wherever flow left it — halfway up a half-empty screen. The
+       auto margin is what actually eats the column's free space, so a
+       flex/grid COLUMN parent floors the bar on its own, with no hand-placed
+       `<ui-spacer />` for a call site to forget. (In block flow an auto block
+       margin computes to zero, which is exactly why the parent must be a
+       column — see the component doc.) */
+    margin-block-start: auto;
     z-index: var(--sys-layer-header);
     inline-size: 100%;
     display: flex;
@@ -42,6 +53,10 @@
     position: absolute;
     inset-block-end: 0;
     inset-inline: 0;
+    /* Out of flow, so there is no free space to eat — say so rather than
+       leaning on the abspos rule that quietly resolves an auto margin to
+       zero whenever the opposite inset is auto. */
+    margin-block-start: 0;
   }
 
   .ui-page-action-bar::before {

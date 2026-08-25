@@ -27,6 +27,7 @@ import {
 import { UiStack } from '@creativo/ui/layout';
 import {
   UiCard,
+  UiEmptyState,
   UiListGroup,
   UiListRow,
   UiSectionHeader,
@@ -64,6 +65,7 @@ const STATUS_TONES: Record<PositionStatus, UiBadgeTone> = {
     UiBadge,
     UiButton,
     UiCard,
+    UiEmptyState,
     UiFrameDirective,
     UiIcon,
     UiListGroup,

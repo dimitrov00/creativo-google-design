@@ -52,6 +52,22 @@ class StubGateway implements BookingGateway {
     this.calls.push(request);
     return this.answer;
   }
+
+  // The flow store only ever commits; the rest of the port exists for the
+  // staff surfaces and is out of this double's reach on purpose — reaching
+  // one here means the test drifted into someone else's use case.
+  cancel(): never {
+    throw new Error('not under test');
+  }
+  reschedule(): never {
+    throw new Error('not under test');
+  }
+  transition(): never {
+    throw new Error('not under test');
+  }
+  markArrived(): never {
+    throw new Error('not under test');
+  }
 }
 
 /** `sessionStorage` is not worth doubling here — the flow is what's under test. */

@@ -85,8 +85,14 @@ function toSnapshot(
     return fail(new RepositoryError('Malformed user document', idResult.error));
   }
   const firstName = data['firstName'];
+  const roles = Array.isArray(data['roles'])
+    ? data['roles'].filter((role): role is string => typeof role === 'string')
+    : [];
   return ok({
     id: idResult.value,
+    // Empty means "stub or pre-roles doc" — the mint site falls back to
+    // `client`, never to nothing.
+    roles,
     email: typeof data['email'] === 'string' ? data['email'] : null,
     phone: typeof data['phone'] === 'string' ? data['phone'] : null,
     birthDate: typeof data['birthDate'] === 'string' ? data['birthDate'] : null,

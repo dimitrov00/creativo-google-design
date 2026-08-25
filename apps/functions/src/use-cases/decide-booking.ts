@@ -10,6 +10,7 @@ import {
 } from '@creativo/domain/catalog';
 import {
   Appointment,
+  BarberPref,
   BookingContact,
   type BookingContactProps,
   BookingPolicy,
@@ -46,6 +47,12 @@ export interface RequestedSeat {
   readonly serviceId: string;
   readonly variantId: string | null;
   readonly barberId: string;
+  /**
+   * What the client ASKED for, beside the barber they were given. Absent
+   * reads as `specific` — the conservative default, because it means staff
+   * phone before moving the booking rather than moving it silently.
+   */
+  readonly barberPref?: 'any' | 'specific';
   readonly startIso: string;
   readonly subject:
     | { readonly kind: 'self' }
@@ -63,6 +70,17 @@ export interface DecideBookingRequest {
    * users off to book a second real slot.
    */
   readonly attemptId?: string;
+  /**
+   * The appointment this one was rebooked from, when the client came here
+   * from a previous visit rather than cold.
+   *
+   * Client-supplied and carries NO authority — it is an analytics edge, not a
+   * permission. A caller naming someone else's appointment gains nothing; the
+   * worst case is one wrong entry in a rebooking-rate numerator, which is why
+   * it is not worth a round-trip to verify. `Appointment.build` drops it if it
+   * does not parse.
+   */
+  readonly bookedFromAppointmentId?: string | null;
   /**
    * Who the shop calls about this booking, and what they should know — the
    * client's own details by default, or a one-time override.
@@ -305,6 +323,10 @@ export function decideBooking(
       barberId,
       terms,
       startsAt: start,
+      pref:
+        requested.barberPref === 'any'
+          ? BarberPref.any()
+          : BarberPref.specific(barberId),
     });
     seats.push(seat);
 
@@ -352,8 +374,12 @@ export function decideBooking(
     id: request.attemptId ?? deps.nextId(),
     locationId: locationId.value,
     seats,
+    // `now` becomes the appointment's `bookedAt` — the booking instant, and
+    // the denominator of every lead-time figure. It is the transaction's own
+    // clock reading, so the number is the server's, not the caller's.
     now: deps.now,
     contact,
+    bookedFromAppointmentId: request.bookedFromAppointmentId ?? null,
   });
   if (appointmentResult.isFailure()) {
     // This is where a party's own seats colliding on one barber is caught,
@@ -361,7 +387,23 @@ export function decideBooking(
     return fail(new CommitBookingInvariantError(appointmentResult.error));
   }
 
-  return ok({ appointment: appointmentResult.value, busyWrites });
+  // Auto-confirm (owner ruling 2026-08-07, `BookingPolicy.autoConfirm`,
+  // default on). `Appointment.create` always stamps `pending` because a
+  // booking's ACCEPTANCE is tenant policy, not a domain invariant — so the
+  // policy is applied here, at the one place a booking comes into existence.
+  //
+  // Note what this does NOT say: `confirmed` means the shop accepted the
+  // booking, never that the client is standing there. Arrival is its own
+  // stamp (`Appointment.arrivedAt`), which is exactly why turning this on
+  // does not cost the front desk its signal.
+  const appointment = deps.policy.autoConfirm
+    ? appointmentResult.value.confirm()
+    : ok(appointmentResult.value);
+  if (appointment.isFailure()) {
+    return fail(new CommitBookingInvariantError(appointment.error));
+  }
+
+  return ok({ appointment: appointment.value, busyWrites });
 }
 
 /**

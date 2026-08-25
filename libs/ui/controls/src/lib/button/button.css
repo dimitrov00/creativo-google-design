@@ -58,7 +58,15 @@
   .ui-button[data-button-style='bordered'] {
     /* v2 "soft" */
     background: color-mix(in srgb, var(--sys-color-accent) 12%, transparent);
-    color: var(--sys-color-accent);
+    /* INK, not fill. The raw accent as a label on this button's own 12% wash
+       measures 2.67:1 on light — the worst accent-text pairing in the system.
+       The label cut takes it to 4.3:1.
+       IT DOES NOT REACH 4.5. Closing the last 0.2 needs the wash lightened
+       from 12% to 8% (which lands it exactly on 4.5) — a visible paling of
+       every bordered button in the app, and a design call rather than a
+       conformance one. Left for that decision; the ink is fixed either way,
+       and dark is unaffected. */
+    color: var(--sys-color-accent-label);
   }
   .ui-button[data-button-style='plain'] {
     color: var(--sys-color-secondary-label);

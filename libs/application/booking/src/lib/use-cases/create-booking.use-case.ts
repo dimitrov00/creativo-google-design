@@ -1,6 +1,7 @@
 import { Result, combine, fail, ok } from '@creativo/domain/kernel';
 import {
   Appointment,
+  BarberPref,
   Seat,
   SeatId,
   SeatSubject,
@@ -39,6 +40,13 @@ export interface CreateBookingSeatInput {
   readonly serviceId: ServiceId;
   readonly variantId: ServiceVariantId | null;
   readonly barberId: BarberId;
+  /**
+   * The preference this seat was resolved FROM. Kept beside the resolved id
+   * because the two answer different questions, and only this one survives to
+   * tell staff whether the booking may be moved to another chair without a
+   * phone call. See `Seat.pref`.
+   */
+  readonly pref?: BarberPref | null;
   readonly terms: ServiceTerms;
   readonly slot: TimeSlot;
 }
@@ -88,6 +96,7 @@ export class CreateBookingUseCase {
         // the start crosses this boundary — the availability engine already
         // sized the slot from the same duration.
         startsAt: seatInput.slot.start,
+        pref: seatInput.pref ?? null,
       }),
     );
 

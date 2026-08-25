@@ -43,6 +43,12 @@ export function policyFromDocument(
       data['maxFlexibleDays'],
       fallback.maxFlexibleDays,
     ),
+    // A missing field means "the shop never chose", and the ruling's default
+    // is on — so an existing tenant document without the key auto-confirms.
+    autoConfirm:
+      typeof data['autoConfirm'] === 'boolean'
+        ? data['autoConfirm']
+        : fallback.autoConfirm,
   });
   return result.isSuccess() ? result.value : fallback;
 }
@@ -60,7 +66,7 @@ function numberOr(raw: unknown, fallback: number): number {
  */
 export function policyToDocument(
   policy: BookingPolicy,
-): Record<string, number> {
+): Record<string, number | boolean> {
   return {
     maxPartySize: policy.maxPartySize,
     slotStepMinutes: policy.slotStepMinutes,
@@ -68,5 +74,6 @@ export function policyToDocument(
     horizonMonths: policy.horizonMonths,
     cancellationWindowHours: policy.cancellationWindowHours,
     maxFlexibleDays: policy.maxFlexibleDays,
+    autoConfirm: policy.autoConfirm,
   };
 }

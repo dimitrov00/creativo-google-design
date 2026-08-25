@@ -1,0 +1,1701 @@
+/*
+ * The run's leading time column.
+ *
+ * Tabular figures are not a nicety here: the times are the leftmost thing on
+ * every row, and proportional digits do not align down a column — which is
+ * the whole reason the eye can scan a run for a hole.
+ */
+.staff-run__time {
+  font-variant-numeric: tabular-nums;
+  min-inline-size: 3.5em;
+}
+
+/*
+ * GONE — the other half of the greying, and the one that hid.
+ *
+ * A host-level `color` on the <li>, so every descendant that did not set its
+ * own ink inherited grey. It was keyed on `data-testid`, which styles the run
+ * through its test hook: rename the hook and the design silently changes.
+ *
+ * Cancelled now carries the strike and nothing else — see
+ * `.agenda-card[data-status='cancelled']` below. No-show still recedes, but
+ * on the elements that should recede, keyed on `data-status`.
+ */
+
+/*
+ * A gap is a row with NO segment fill.
+ *
+ * Deliberately no dashes, no hatching, no new texture: the absence of the
+ * fill IS the gap, and this system has no vocabulary for either.
+ */
+.staff-gap {
+  background: transparent;
+}
+
+.staff-lane__extent {
+  font-variant-numeric: tabular-nums;
+}
+
+/* The name may ellipsize; the hours line under it must not wrap mid-figure. */
+.staff-lane__identity {
+  min-inline-size: 0;
+}
+
+.staff-lane__identity > span {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.staff-run__glyph {
+  color: var(--sys-color-secondary-label);
+}
+
+/* ── Constant row height ───────────────────────────────────────────────
+ *
+ * Cadence is what lets a run be scanned at arm's length; when every row is a
+ * different height the eye loses its stride and starts READING. Both lines
+ * clamp to one, and `line-clamp` rather than `nowrap` + ellipsis on purpose:
+ * the box still grows with the font, so a barber at 200% text zoom gets a
+ * taller row rather than a truncated one that never reflows. The full record
+ * is one tap away in the visit sheet either way. */
+.staff-run__client,
+.staff-run__service {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 1;
+  line-clamp: 1;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   THE AGENDA
+   ══════════════════════════════════════════════════════════════════════
+
+   One clock-ordered run for the whole shop, grouped by start time. The
+   group heading carries the hour; the cards carry everything else. That
+   split is what lets a card stay legible while the reader turns fields on
+   and off — the one thing that can never move is the time, and the time
+   is not on the card.
+
+   A TRACK runs down the leading edge: the heading's time sits on it and
+   the cards hang off it, which is what makes a group read as "these
+   things happen together" rather than as an arbitrary run of rows. It is
+   the agenda's only structural line, and it earns its place — the old
+   list needed a repeated barber header every few rows to say the same
+   thing less clearly. */
+/* THE RUN IS A LIST.
+ *
+ * It had 16px between hour groups and 4px inside them — a rhythm built for a
+ * screen with a now-line running through it, where the bigger gap was where
+ * the clock could land. There is no now-line here any more, and the hour
+ * heading in the gutter already says where one group ends and the next
+ * begins. Two spacings for one kind of object just made the run look like
+ * several runs.
+ *
+ * One gap, everywhere: the same between two cards in the same hour and two
+ * cards three hours apart. Distance means nothing on this axis — that is
+ * precisely what makes it a list rather than a day.
+ *
+ * 8px, not 4. It was 4 while the cards were flat and neutral, where a tight
+ * rhythm read as one list. Now each card is a tinted pane with its own hue,
+ * and two adjacent panes 4px apart read as one striped object rather than two
+ * bookings. 8px is the platform's own step for separated elements and is what
+ * lets each block be a block. */
+.agenda {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sys-space-compact);
+}
+
+/* A GROUP IS NO LONGER A COLUMN LAYOUT.
+ *
+ * It was `3.25rem 1fr` — an hour gutter beside the cards — which is a time
+ * AXIS, and an axis belongs to the view where position on it carries the
+ * time. In a list it repeated, once per group, a fact that is already
+ * printed on every card inside that group, and it did so in 52px taken off
+ * the width the cards actually use.
+ *
+ * The section and its heading survive for structure and for screen readers;
+ * only the visual column goes. */
+.agenda-group {
+  min-inline-size: 0;
+}
+
+.agenda-group__items {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sys-space-compact);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  min-inline-size: 0;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   THE VISIT CARD
+
+     HEADER  hstack:  when ················ spacer ················ status
+     BODY    hstack:  [client +N]   [vstack of facts]   [marks]  [barber]
+
+   EVERY FACT GETS ITS OWN LINE. Nothing is joined to anything — no middots,
+   no shared line, no race for a tail. A fact that has to win an argument
+   with another fact in order to be shown is a fact the card is not really
+   carrying, so each one is a row that is either rendered in full or not
+   rendered at all. Everything wraps except the note.
+   ═══════════════════════════════════════════════════════════════════════ */
+.agenda-card {
+  /* What the discs' cut-out rings are made of: the thing the card sits on. */
+  /* THE CARD'S GROUND — the chair's tone, TRANSLUCENT over the page.
+   *
+   * It was an opaque `color-mix(tone 18%, surface-secondary)`, and that was
+   * wrong twice over. It read as flat paint rather than a tinted pane, and —
+   * measured — it put the fact column at **3.95:1 on light and 2.95:1 on
+   * dark**, under the 4.5:1 floor. Mixing a hue into an already-grey surface
+   * darkens the ground twice.
+   *
+   * As an alpha straight over the page it is genuinely translucent, which is
+   * what Apple's event blocks are, and 14% is the most tint the secondary
+   * text can carry: name 14.75:1 / fact 4.52:1 on light, 14.34 / 4.99 on
+   * dark. At 18% the fact drops to 4.21 and at 22% to 3.91.
+   *
+   * `--agenda-tint` is the dial; anything above 14% costs legibility, so
+   * raise it only with the fact column's contrast in hand. */
+  --agenda-tint: 14%;
+  --agenda-ground: color-mix(
+    in srgb,
+    var(--barber-tone, var(--sys-color-foreground)) var(--agenda-tint),
+    transparent
+  );
+
+  /* The SAME colour, composited — for the disc rings, which have to hide
+     what is behind them rather than let a past card's stripes run through a
+     person's face. A translucent cut-out is not a cut-out. */
+  --agenda-cutout: color-mix(
+    in srgb,
+    var(--barber-tone, var(--sys-color-foreground)) var(--agenda-tint),
+    var(--sys-color-background)
+  );
+
+  display: grid;
+  grid-template-columns: 0.75rem minmax(0, 1fr);
+  grid-template-areas:
+    'rail body'
+    'rail foot'
+    'rail err';
+  column-gap: 0;
+  /* NO ROW GAP — the rows space THEMSELVES, below.
+     `grid-template-areas` declares three rows and a gap sits between each
+     pair whether or not anything occupies them. Both `foot` and `err` are
+     empty on an ordinary card, so the gap charged 8px of dead height to
+     every row on the screen for two rows that were not there. Hiding the
+     elements cannot fix that — measured, `display: none` on the foot changed
+     the card's height by exactly zero, because the TRACK is what carries the
+     gap. A margin on the rows that do render costs nothing when they do
+     not. */
+  row-gap: 0;
+  align-items: start;
+  padding: var(--sys-space-compact) var(--sys-space-regular)
+    var(--sys-space-compact) var(--sys-space-compact);
+  border-radius: var(--control-radius-regular);
+  background-color: var(--agenda-ground);
+  min-inline-size: 0;
+}
+
+/* ── IDENTITY, CHANNEL ONE — THE RAIL ─────────────────────────────────
+   Constant x, full height: five chairs render as five interleaved stripes
+   in one column, which the eye samples as a pattern without reading a word.
+   Measured against the alternative — the barber's photograph at avatar size
+   has a mean pairwise RGB distance of 23 across the roster; this has 102. */
+.agenda-card__rail {
+  grid-area: rail;
+  justify-self: start;
+  align-self: stretch;
+  inline-size: 4px;
+  border-radius: var(--control-radius-capsule);
+  /* NO GLOW. A halo was right for a neon palette and is wrong for this one:
+     Apple Calendar's marks are painted, not lit, and a bloom around a 4px bar
+     an inch from a client's name is exactly the kind of ornament this screen
+     keeps removing. */
+  background-color: var(--barber-tone, var(--sys-color-separator));
+}
+
+/* ── THE ASIDE — WHEN, at the body's trailing edge ───────────────────
+ *
+ * Only the interval now. It used to carry the foot cluster underneath it as
+ * well, which meant the price, the marks and the barber's face were all
+ * competing for the same narrow column the times need — five things stacked
+ * into a gutter sized for four characters. The foot moved to a row of its
+ * own (below), and this went back to being one thing. */
+.agenda-card__aside {
+  flex: 0 0 auto;
+  align-self: start;
+  display: flex;
+  flex-direction: column;
+  align-items: end;
+  gap: var(--sys-space-compact);
+}
+
+/* THE INTERVAL, READ DOWNWARD. Start solid, end muted directly beneath it at
+   the same size — stacked, the two numbers are plainly a pair, so no dash is
+   needed to say so. Tabular figures because this is a column of times and
+   they have to line up down the run. */
+.agenda-card__times {
+  display: flex;
+  flex-direction: column;
+  align-items: end;
+  font-variant-numeric: tabular-nums;
+  text-align: end;
+}
+
+/* IDENTICAL TYPE, AND ONLY THE COLOUR DIFFERS.
+ *
+ * The start carried `font-weight: 600` against the end's 400. At one size
+ * that does not read as "heavier", it reads as BIGGER — a 600 glyph is
+ * optically larger than a 400 one, so the two lines of a single interval
+ * looked like two different type sizes stacked. Same face, same size, same
+ * weight, same line box; the start is solid ink and the end is muted, and
+ * that is the whole distinction. */
+.agenda-card__start,
+.agenda-card__end {
+  font: var(--sys-font-callout);
+  /* THE MONO FAMILY, because `tabular-nums` alone could not do it.
+   *
+   * Two bugs sat on top of each other here. The first: `font:` is a shorthand
+   * for `font-variant` too, so declaring it reset the `tabular-nums` the
+   * parent sets — the property was simply not applying. The second, once it
+   * did apply: DM Sans ships no `tnum` feature, so the declaration is inert
+   * in it. Measured, "10:00" rendered 35.94px against "11:00" at 30.72px —
+   * five characters, five pixels apart — which is why the two lines of one
+   * interval looked like different sizes.
+   *
+   * `--sys-font-family-mono` is the system's own answer and guarantees one
+   * advance width per digit. Both lines take it, so start and end stay
+   * identical in every respect but colour. */
+  font-family: var(--sys-font-family-mono);
+  font-size: 0.8125rem; /* mono runs optically larger; this matches 14px text */
+  line-height: 1.25rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.agenda-card__start {
+  color: var(--sys-color-foreground);
+}
+
+.agenda-card__end {
+  color: var(--sys-color-secondary-label);
+}
+
+/* THE GLOSS, under the value it qualifies. The clock time is the fact and
+   "след 2 ч" is a reading of it, so it follows rather than leads —
+   supplementary text sits after what it explains, never in front of it.
+   Smaller and quieter, and no longer tracked caps: it is not a label on the
+   card any more, it is the third line of a time. */
+.agenda-card__when {
+  font: var(--sys-font-caption);
+  line-height: 1rem;
+  color: var(--sys-color-secondary-label);
+  white-space: nowrap;
+}
+
+/* ── THE FOOT — its own row, the card's full width, hugging the end ──
+ *
+ * What the booking comes to, what became of it, what else is attached, and
+ * whose chair. It was crammed into the bottom of the aside, sharing a narrow
+ * column with the times — four marks and a photograph in a gutter sized for
+ * "16:00", so the card read as busier than it is.
+ *
+ * As a row it costs 24px of height and gives all of it back in air: the
+ * marks stop pressing on the times above them and on the fact column beside
+ * them, and they line up at the same x on every card in the run because the
+ * row is as wide as the card rather than as wide as whatever the aside
+ * happened to need. */
+.agenda-card__foot {
+  grid-area: foot;
+  /* The row's own spacing — see `row-gap: 0` on the card. */
+  margin-block-start: var(--sys-space-tight);
+  display: flex;
+  align-items: center;
+  justify-content: end;
+  gap: var(--sys-space-compact);
+  min-inline-size: 0;
+  color: var(--sys-color-secondary-label);
+}
+
+/* WHAT IT COMES TO, at the foot beside the state.
+ *
+ * In the SAME voice as every other fact on the card — callout, 400, muted.
+ * It was semibold foreground, which made the one number on the card shout
+ * over the client's own name; a price is a detail like the service or the
+ * phone, not a headline, and this screen is turned around in front of the
+ * person paying it. No capsule either: a pill would add prominence, which is
+ * the opposite of what it needed. */
+.agenda-card__price {
+  flex: 0 0 auto;
+  margin-inline-end: var(--sys-space-tight);
+  /* Type and ink come from `uiText` on the element — see the template.
+     Feature CSS is UNLAYERED and therefore beats `@layer sys-components`
+     where the directives live, so declaring them here did not merely
+     duplicate the system, it silently overruled it. */
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* ── BODY — the one horizontal row on the card ────────────────────────
+   Everything in it is top-aligned: a five-line fact stack must not push the
+   client's face to its vertical middle. */
+.agenda-card__body {
+  grid-area: body;
+  display: flex;
+  align-items: start;
+  gap: var(--sys-space-compact);
+  min-inline-size: 0;
+}
+
+/* ── THE CLIENT'S DISC, and what rides it ─────────────────────────────
+   Two marks live on this face because both are facts ABOUT this person's
+   booking rather than separate columns: whether they are here, and how many
+   of them there are. Both sit proud of the rim so neither covers the
+   monogram — a badge overlaps its host at the edge, not across its face. */
+.agenda-card__face {
+  position: relative;
+  flex: 0 0 auto;
+  inline-size: var(--control-size-regular);
+  block-size: var(--control-size-regular);
+}
+
+.agenda-card__avatar {
+  flex: 0 0 auto;
+}
+
+/* `+N` — the party, on the client's own disc. The glyph beside it used to
+   say "people"; only the number was ever information.
+
+   THE ARRIVAL DOT THAT SAT OPPOSITE IT IS GONE. A green disc on a person's
+   face is not readable as "they have walked in" — it reads as a presence
+   light, which is a different product's idiom. Arrival is a word in the
+   status pill now, in the slot that already says what the booking is. */
+.agenda-card__guests {
+  position: absolute;
+  inset-block-end: -3px;
+  inset-inline-end: -5px;
+  min-inline-size: 1.125rem;
+  padding-inline: 0.1875rem;
+  border-radius: var(--control-radius-capsule);
+  font: var(--sys-font-caption);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.125rem;
+  text-align: center;
+  color: var(--sys-color-background);
+  background: var(--sys-color-foreground);
+  box-shadow: 0 0 0 2px var(--agenda-cutout);
+}
+
+/* ── THE FACT STACK ───────────────────────────────────────────────────
+   One line per fact, in a fixed order, top-aligned. A fact with nothing to
+   say is not rendered at all, so it costs no height — but it never shares a
+   line either, and it never has to fight for a tail. */
+.agenda-card__facts {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-inline-size: 0;
+}
+
+/* THE NAME, AND EVERYTHING UNDER IT, IN ONE TYPE SIZE.
+ *
+ * The name was 18px display semibold over 13px text — two typefaces and a
+ * 5px step, which made the card read as a heading with a caption stuck to
+ * it. A feed row does not do that: the handle and the line beneath it are
+ * the SAME face at the SAME size, and what separates them is weight and
+ * colour. That is the whole hierarchy this card has — who, and everything
+ * else about them — so it is the whole hierarchy the type should carry.
+ *
+ * `--sys-font-callout` is the system's 400-weight 14px text tier. The name
+ * takes it at 600; every fact takes it as it comes. */
+.agenda-card__name {
+  margin: 0;
+  min-inline-size: 0;
+  /* Type and ink come from `uiText` on the element — see the template.
+     Feature CSS is UNLAYERED and therefore beats `@layer sys-components`
+     where the directives live, so declaring them here did not merely
+     duplicate the system, it silently overruled it. */
+  line-height: 1.25rem;
+  /* Wraps. NEVER truncates — half a surname identifies nobody. */
+  overflow-wrap: anywhere;
+}
+
+/* The same face, the same size, the same 400 weight the tier ships with.
+   Only the colour changes — which is the entire distinction. */
+.agenda-card__fact {
+  display: flex;
+  align-items: center;
+  gap: var(--sys-space-tight);
+  margin: 0;
+  min-inline-size: 0;
+  /* Type and ink come from `uiText` on the element — see the template.
+     Feature CSS is UNLAYERED and therefore beats `@layer sys-components`
+     where the directives live, so declaring them here did not merely
+     duplicate the system, it silently overruled it. */
+  line-height: 1.25rem;
+  overflow-wrap: anywhere;
+}
+
+/* A leading mark on the two facts that are neither a name nor a time and
+   would otherwise be two anonymous strings of characters. Sized off the
+   line it sits on — icons inherit their font size in this system — and
+   quieter than the text, because it is a label for the value, not the
+   value. */
+.agenda-card__fact ui-icon {
+  flex: 0 0 auto;
+  font-size: 0.875rem;
+  color: var(--sys-color-tertiary-label, var(--sys-color-secondary-label));
+}
+
+.agenda-card__fact > span {
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
+}
+
+/* ONE VOICE FOR EVERY FACT BUT THE NAME.
+ *
+ * The service was foreground, the chair was tinted with the barber's tone,
+ * the price was semibold foreground and the note was italic — four
+ * treatments down one column, each arguing it was the important one. A
+ * column of facts in five voices reads as a mess before it reads as
+ * anything, and the hierarchy this card actually has is exactly two rungs:
+ * WHO, and everything else about them.
+ *
+ * So `--fact` is the whole vocabulary and the modifiers below change only
+ * BEHAVIOUR, never appearance. */
+
+.agenda-card__mark {
+  font-size: 1rem;
+}
+
+/* ── IDENTITY, CHANNEL TWO — THE BARBER'S DISC ────────────────────────
+   In the trailing cluster beside the marks, and SMALL: it is a marginal
+   note about the row, not a second portrait competing with the client's.
+   The tone as a FILL with a monogram on it — hue alone resolves only three
+   chairs of five under deuteranopia, where letters resolve all five with no
+   legend. The rail says which stripe; this says who.
+
+   The tone and the monogram are the FALLBACK now — the photograph sits on
+   top of them when the barber has one, and shows through as their chair's
+   colour when they do not. The ink is one declaration correct in both
+   themes: a light background with dark tones resolves near-white, a dark
+   background with light tones resolves near-black. */
+.agenda-card__barber-face {
+  --ui-avatar-disc: 1.375rem; /* 22px — a mark, not a portrait */
+  flex: 0 0 auto;
+  inline-size: 1.375rem;
+  block-size: 1.375rem;
+  border-radius: 50%;
+  font-size: 0.5625rem;
+  font-weight: 700;
+  background: var(--barber-tone, var(--sys-color-secondary-label));
+  /* ONE declaration, correct in both themes — which is a property of this
+     palette, not a coincidence. A white monogram clears 4.50:1 on every
+     light fill and a black one 7.40:1 on every dark fill, and
+     `--sys-color-background` is white in light and black in dark. The neon
+     set needed a token per tone; this one does not. */
+  color: var(--sys-color-background);
+  overflow: hidden;
+}
+
+/* ── A FAILED WRITE, IN A ROW OF ITS OWN ──────────────────────────────
+   It used to carry the context line's class and land in the SAME grid cell
+   as it: two block paragraphs overlapping, invisible until a write failed. */
+.agenda-card__err {
+  /* The row's own spacing — see `row-gap: 0` on the card. This one renders
+     only inside an `@if`, so it needs no `:not(:empty)` guard. */
+  margin-block-start: var(--sys-space-tight);
+  grid-area: err;
+  margin: 0;
+  min-inline-size: 0;
+  /* Type and ink come from `uiText` on the element — see the template.
+     Feature CSS is UNLAYERED and therefore beats `@layer sys-components`
+     where the directives live, so declaring them here did not merely
+     duplicate the system, it silently overruled it. */
+  line-height: 1rem;
+  /* The ink STAYS: `uiForegroundStyle="destructive"` maps to
+     `--sys-color-destructive`, which is 3.12:1 on the dark card — the
+     `-label` cut is unreachable through the directive. */
+  color: var(--sys-color-destructive-label);
+  overflow-wrap: anywhere;
+}
+
+/* ── STATE IS THE CARD'S FORM ─────────────────────────────────────────
+ *
+ * The state used to be a WORD in the fact column, and that was the mistake:
+ * that column's premise is that every line is a fact of equal weight, so
+ * "Отказан" sat between a phone number and a service reading as one more
+ * field. A strike through the name was the only other mark, and a strike is
+ * a typographic detail — at arm's length, scanning a day, it is simply not
+ * visible. The state has to be legible from the CORNER OF THE EYE, before
+ * a single word is read.
+ *
+ * So the FILL carries it, which is Apple Calendar's own answer: a declined
+ * event there is drawn HOLLOW — the event's colour as an outline, nothing
+ * inside — while everything still happening is filled. Presence of a surface
+ * means "this occupies the chair"; its absence means "this hour is free".
+ * That is the operationally true statement, and it is readable as pure shape.
+ *
+ * Three forms, three states, no new colours:
+ *   filled tint      it is happening / it happened
+ *   hatched + faded  it is past (see below; cancelled is excluded there)
+ *   HOLLOW           it did not happen
+ *
+ * and one typographic mark separating the two hollow cases: cancelled is
+ * struck through, a no-show is not. Someone cancelled; someone else simply
+ * did not come. */
+
+/* THE EDGE IS IN KEY WITH THE FILL — it was three times louder than it.
+ *
+ * The outline was `--barber-tone` at FULL strength, on the reasoning that it
+ * matched the rail. The rail is a 4px bar; this traces the whole perimeter,
+ * roughly twice the rail's ink and spread around every edge of the card. And
+ * the card it sits beside is tinted at 14%. Measured against the page, the
+ * filled ground runs 1.20-1.27:1 while a full-strength outline runs
+ * 4.50-7.56:1 light and 7.40-14.23:1 dark — the cancelled row was **4.5x
+ * louder in light and 8.4x in dark** than the live bookings around it. A
+ * settled row shouting over live ones is exactly backwards.
+ *
+ * Tying it to the tint says the relationship rather than a magic number: the
+ * edge IS the fill's colour, three times over. Not once over — a hairline and
+ * a broad tinted area are not perceptually equal at equal contrast, and at
+ * the fill's own 1.20:1 a 1px line simply disappears and the card loses its
+ * shape. 3x lands at 42%, about 1.75-3.00:1: quiet enough to sit under a live
+ * card, strong enough to still be an edge.
+ *
+ * `box-shadow: inset` rather than `border`: the card is a grid with a fixed
+ * rail column, and a border would move every track by a pixel. An inset
+ * shadow paints inside the existing box and costs no layout. */
+.agenda-card[data-status='cancelled'],
+.agenda-card[data-status='no_show'] {
+  --agenda-edge: calc(var(--agenda-tint) * 3);
+  background-color: transparent;
+  box-shadow: inset 0 0 0 1px
+    color-mix(
+      in srgb,
+      var(--barber-tone, var(--sys-color-foreground)) var(--agenda-edge),
+      transparent
+    );
+}
+
+/* PENDING is not a third form but a qualifier on the first: the booking is
+   real and holds the chair, so it keeps its fill; it is merely not yet
+   agreed, so its edge is drawn provisionally. A dashed edge is the ordinary
+   calendar idiom for "tentative" and needs no legend. */
+.agenda-card[data-status='pending'] {
+  /* Same reasoning as the hollow edge above — a dashed line at full strength
+     was louder than the ground it encloses. */
+  outline: 1px dashed
+    color-mix(
+      in srgb,
+      var(--barber-tone, var(--sys-color-foreground))
+        calc(var(--agenda-tint) * 3),
+      transparent
+    );
+  outline-offset: -1px;
+}
+
+/* ── CANCELLED — AND THE LINE STAYS ───────────────────────────────────
+   `currentcolor` is load-bearing: the strike inherits the name's ink and
+   the name keeps its own. It was struck AND greyed, which is two marks for
+   one fact and reads as a row that is both cancelled and unimportant — and
+   a cancelled booking is often the most important row on the day, because
+   it is the hour that just came free. The strike is now the SECOND channel
+   rather than the only one: it is what separates a cancellation from a
+   no-show, both of which are hollow. */
+.agenda-card[data-status='cancelled'] .agenda-card__name {
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+  text-decoration-color: currentcolor;
+}
+
+/* ── AND WHEN A HOLLOW ROW IS ALSO PAST ───────────────────────────────
+ *
+ * The hollow cards were excluded from the past treatment entirely, which was
+ * right for the reason but wrong at the edge. The reason: a cancellation is
+ * the hour that just came FREE, so it must not recede — it is often the most
+ * actionable row on the day. But that argument is about a cancellation still
+ * ahead of you. Once the hour is gone there is nothing left to sell, and a
+ * settled no-show sitting at full strength was louder on the screen than the
+ * live bookings above it.
+ *
+ * So they fade, and only they — no hatch. The hatch says "past" by taking the
+ * surface away, and these have no surface to take: it would draw stripes
+ * across an empty box. The outline already says "did not happen"; opacity is
+ * all that is needed to add "and it is behind us".
+ *
+ * 0.55 rather than the filled card's 0.75: this composites an OUTLINE and
+ * text against the page instead of a tinted ground, so it starts louder and
+ * has further to fall to sit behind a live row. */
+.agenda-card[data-past][data-status='cancelled'],
+.agenda-card[data-past][data-status='no_show'] {
+  opacity: 0.55;
+}
+
+/* ── PAST — THE GROUND GOES, THE CONTENT STAYS ───────────────────────
+ *
+ * Applied to every past card EXCEPT a cancelled one: that is the only
+ * settled row still worth acting on — it is the hour that just came free —
+ * and recessing it would reintroduce the greying the owner corrected, four
+ * hours late.
+ *
+ * The first attempt put `opacity: 0.6` on the whole card. That is the wrong
+ * lever: opacity multiplies the CONTENT, so the client's name, their number
+ * and the barber's face all faded together, and a past row is exactly what
+ * a barber reads back ("who was the ten o'clock?"). It also forced every
+ * text colour to be lifted first just to survive the multiplication.
+ *
+ * So the ground recedes and nothing else does. A live card has a surface;
+ * a past card has only the hatch, with the page showing through between the
+ * stripes. Form, not opacity — and the text keeps its own colours, which
+ * means the name/fact hierarchy holds on a past card exactly as it does on
+ * a live one, and no contrast ratio moves at all.
+ *
+ * THE STRIPE IS THE CARD'S OWN SURFACE, not a grey painted over it. It was
+ * the foreground at 12%, which is a wash — a different material laid on top,
+ * darker than the card it belonged to. Painting the card's own
+ * `--sys-color-surface-secondary` instead makes a past card the same card
+ * with half of it missing: the page shows through between the stripes, and
+ * nothing new is introduced to the palette to say "past". */
+.agenda-card[data-past]:not([data-status='cancelled']):not(
+    [data-status='no_show']
+  ) {
+  background-color: transparent;
+  /* QUIETER, on two axes at once. It was the full 14% ground on a 6px pitch
+     and measured 1.27:1 stripe-to-gap — a pattern that competed with the
+     card's own content instead of sitting under it. Halving the tint takes it
+     to 1.14:1, about a hairline's weight in this system, and doubling the
+     pitch halves the number of edges over the same area, which is most of
+     what "prominent" actually meant here.
+
+     WORTH KNOWING: Apple Calendar marks past events not at all — a personal
+     calendar is a memory aid. This is an operational board where "that hour
+     is gone" is among the most-read facts on the screen, which is why the
+     treatment survives at all rather than being deleted outright. */
+  background-image: repeating-linear-gradient(
+    -45deg,
+    color-mix(
+        in srgb,
+        var(--barber-tone, var(--sys-color-foreground)) 8%,
+        transparent
+      )
+      0 8px,
+    transparent 8px 16px
+  );
+  /* AND IT FADES. 0.75 — chosen against the numbers below, not by eye.
+     Opacity multiplies everything under it, so this is the level at which
+     the quietest text on the card can still be compensated back over the
+     4.5:1 floor without overshooting the live card it has to stay behind. */
+  opacity: 0.75;
+}
+
+/* THE COMPENSATION, and the reason it is not simply "lift them to
+   foreground".
+ *
+ * A past card's ground is the PAGE showing through its stripes, so its text
+ * composites against the page. At 0.75 the facts' own
+ * `--sys-color-secondary-label` lands at 3.36:1 — under the floor, and a
+ * past row is exactly what a barber reads back ("who was the ten o'clock?").
+ * Lifting them all the way to the foreground instead overshoots: they would
+ * composite to 8.45:1 against a LIVE card's 5.74:1, so the finished rows
+ * would read louder than the ones still to come.
+ *
+ * Half way between is the answer: 5.17:1 light and 6.33:1 dark — over the
+ * floor, under the live card, and the name above still recedes from 18.73:1
+ * to 8.45:1. Everything on a past card is quieter than the same thing on a
+ * live one, and nothing has dropped out of range. */
+.agenda-card[data-past]:not([data-status='cancelled']):not(
+    [data-status='no_show']
+  )
+  .agenda-card__fact {
+  color: color-mix(
+    in srgb,
+    var(--sys-color-foreground) 50%,
+    var(--sys-color-secondary-label)
+  );
+}
+
+/* The discs stop the hatch rather than letting it run across a face — the
+   cut-out is the card's own ground, so they read as sitting ON the card. */
+.agenda-card[data-past] :is(.agenda-card__face, .agenda-card__barber-face) {
+  border-radius: 50%;
+  background-color: var(--agenda-cutout);
+}
+
+/* ── HOVER AND PRESS — `uiInteractive`, not a local invention ─────────
+ *
+ * This carried its own hover, press and focus rules, and they were wrong
+ * twice.
+ *
+ * They set `background-color`, which REPLACED the card's ground: hovering a
+ * booking threw away the chair's tint and left a flat grey, so the one
+ * interaction on this screen destroyed the thing the screen is colour-coded
+ * by. The fix for that was an inset shadow with a `100vmax` spread — which
+ * animates a repaint the size of the viewport on every frame, and is exactly
+ * the lag it felt like.
+ *
+ * Neither was necessary. `uiInteractive` is THE sanctioned grammar for a
+ * pressable surface and its own docs say surfaces must not invent their own:
+ * a `::after` state layer filling with `--sys-state-layer-hover`/`-press`,
+ * 200ms ease-standard in and 150ms on press, the sanctioned surface press
+ * scale, disabled guards, the shared focus ring, and a
+ * `prefers-reduced-motion` opt-out. All of it CSS, none of it JS, and it
+ * composites over the tint rather than replacing it — because the layer is a
+ * separate element, which is the whole reason the DS does it that way.
+ *
+ * The card contributes only the cursor-carrying `--visit` marker; every
+ * state below it belongs to the directive. */
+
+/* ── THE DAY IN ONE LINE ──────────────────────────────────────────────
+   In the items lane, on the run's own left edge, so it reads as a caption
+   to the run rather than a heading over it. */
+.agenda-summary {
+  margin: 0;
+  /* Type and ink come from `uiText` on the element — see the template.
+     Feature CSS is UNLAYERED and therefore beats `@layer sys-components`
+     where the directives live, so declaring them here did not merely
+     duplicate the system, it silently overruled it. */
+  font-variant-numeric: tabular-nums;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   THE HOLE — the visit's HEADER row and nothing else
+   ═══════════════════════════════════════════════════════════════════════
+   A hole has no ground: booked versus free is fill versus no fill, which is
+   the plainest distinction available once the card has a surface. It
+   borrows the row a booking uses for "when" and "what", and says "free" and
+   "how long" in the same two places. */
+.agenda-card--gap {
+  background-color: transparent;
+  background-image: none;
+}
+
+/* A HOLE is one line — the word leading, how long it runs trailing. */
+.agenda-card__hole {
+  grid-area: body;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sys-space-compact);
+  min-inline-size: 0;
+}
+
+.agenda-card__hole-word {
+  /* Type and ink come from `uiText` on the element — see the template.
+     Feature CSS is UNLAYERED and therefore beats `@layer sys-components`
+     where the directives live, so declaring them here did not merely
+     duplicate the system, it silently overruled it. */
+}
+
+.agenda-card__gap-span {
+  flex: 0 0 auto;
+  /* Type and ink come from `uiText` on the element — see the template.
+     Feature CSS is UNLAYERED and therefore beats `@layer sys-components`
+     where the directives live, so declaring them here did not merely
+     duplicate the system, it silently overruled it. */
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* An ELAPSED hole is a line, not a card: one is a thing to fill and is
+   competing with the bookings on either side of it, the other already
+   happened. Form, not hue. */
+.agenda-card--idle {
+  padding-block: var(--sys-space-tight);
+}
+
+/* A HOLLOW rail. Filled means someone is in that chair; hollow means nobody
+   is. Declared AFTER the past rules on purpose: equal specificity, so
+   source order decides, and a hole that has elapsed must read as a hole
+   first. */
+.agenda-card--gap .agenda-card__rail {
+  background-color: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--barber-tone, var(--sys-color-separator));
+}
+
+/* THE RAIL IS ALWAYS SOLID.
+ *
+ * It used to hatch on a past card, so the run carried two different 45°
+ * textures at two different pitches — 3px on a 4px bar, 5px across the card
+ * — reading as two unrelated patterns rather than one idea. Texture is the
+ * BACKGROUND's job now and the rail's only job is identity, which it should
+ * state at full strength whatever o'clock it is. */
+
+/* An elapsed hole is hollow AND striped — both facts, neither borrowed. */
+.agenda-card--gap[data-past] .agenda-card__rail {
+  background-image: none;
+  box-shadow: inset 0 0 0 1.5px
+    color-mix(
+      in srgb,
+      var(--barber-tone, var(--sys-color-separator)) 55%,
+      transparent
+    );
+}
+
+/* ── The next chair ────────────────────────────────────────────────────
+   The accent RAIL is gone. It was colour alone carrying state — the exact
+   failure the hue ruling quotes HIG to forbid — and the leading edge now
+   belongs to identity. "Next" says so in a word instead, in the accent chip
+   it shares with "in the chair now"; the two are mutually exclusive, and
+   pinned first in the chip row so the eye finds them in a fixed place
+   however many other fields the reader turned on. */
+
+/* THE NOW HAIRLINE IS GONE FROM THE LIST.
+ *
+ * A rule across the run drawn at the current time is a DAY-VIEW mark: it is
+ * true on a continuous axis, where the distance between two rows is the
+ * minutes between them. Here two cards are 4px apart whether they are ten
+ * minutes or six hours apart, so a line through the run points at nothing.
+ * `lib-staff-time-grid` draws it, on the axis where it means something.
+ *
+ * What the mark was also doing — deciding where the run opens — survives as
+ * `[data-now-anchor]` on the group the line would have preceded. */
+
+/* ── Where the day already went ────────────────────────────────────────
+ *
+ * A finished hour recedes so the live run reads first. Deliberately gentle,
+ * because a past visit is still a record a barber reads back ("who was the
+ * ten o'clock?") — a step down in emphasis, not a disabling.
+ *
+ * The TEXT only, never the row. Dimming the whole row took its verb with it,
+ * and a past row that still carries a verb is precisely the one that needs
+ * acting on: a cut that ran twenty minutes over is behind the clock and
+ * still in the chair, and its "Готово" must not look switched off. */
+.staff-run__row[data-past]:not([data-next]) .staff-run__time,
+.staff-run__row[data-past]:not([data-next]) .staff-run__client,
+.staff-run__row[data-past]:not([data-next]) .staff-run__service {
+  opacity: 0.62;
+}
+
+/* ── Separation in dark has to be BUILT ────────────────────────────────
+ *
+ * A row's shape in light comes from grey-on-white, which survives the token
+ * flip arithmetically and dies optically: the same delta on near-black reads
+ * as one undifferentiated field. The fix is not more fill — that greys the
+ * whole run — but an edge, at an alpha low enough to be felt rather than
+ * seen. Light needs none, so it gets none.
+ *
+ * Keyed to `[data-theme='dark']`, which is how this app selects its theme
+ * (stamped on `<html>` pre-paint from `localStorage['ui-theme']`) — a bare
+ * `prefers-color-scheme` query would miss every viewer who chose dark on a
+ * light OS, which is most of the ones who chose at all. */
+:root[data-theme='dark'] .staff-run__row,
+:root[data-theme='dark'] .staff-gap {
+  box-shadow: inset 0 0 0 1px
+    color-mix(in srgb, var(--sys-color-foreground) 6%, transparent);
+}
+
+/* ── The next chair ────────────────────────────────────────────────────
+ *
+ * ONE row per lane carries a leading accent rail — the answer to the
+ * between-cuts glance, found without reading a single time. A rail rather
+ * than a fill: the row keeps its surface, so the run's rhythm is untouched
+ * and only the edge changes. */
+.staff-run__row[data-next] {
+  position: relative;
+}
+
+.staff-run__row[data-next]::before {
+  content: '';
+  position: absolute;
+  inset-block: var(--sys-space-tight);
+  inset-inline-start: 0;
+  inline-size: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--sys-color-accent);
+}
+
+/* The row's disclosure. Quieter than the tertiary label, because it says
+   "there is more here" on EVERY row and must not read as a control competing
+   with the one verb beside it — HIG's own list chevron is barely there. */
+.staff-run__open {
+  color: var(--sys-color-tertiary-label, var(--sys-color-secondary-label));
+  opacity: 0.55;
+}
+
+/* The cancel sheet's body, on the sheet system's own gutters. */
+.staff-cancel__body {
+  padding-inline: var(--ui-sheet-inset, var(--sys-space-comfortable));
+  padding-block-end: var(
+    --ui-sheet-action-bar-clearance,
+    var(--sys-space-spacious)
+  );
+}
+
+/* From/To share the row evenly — a time field has a fixed intrinsic width
+   and would otherwise hug, leaving the pair floating at the leading edge. */
+.staff-block__field {
+  flex: 1 1 0;
+  min-inline-size: 0;
+}
+
+.staff-cancel__body textarea[uiTextField] {
+  resize: vertical;
+  min-block-size: 5rem;
+}
+
+/* ── The write actions ─────────────────────────────────────────────────
+ *
+ * Lives in `ui-page-action-bar` rather than as a fixed island: the bar
+ * already owns the house chrome fade, the safe-area floor and the trailing
+ * thumb-zone dock, and a second hand-rolled bottom edge on one page is how a
+ * product ends up with two of them.
+ *
+ * `uiPrimary` marks it as the bar's primary so it docks trailing at every
+ * viewport, hugging its intrinsic width (owner ruling 2026-07-25 — no
+ * full-width spread anywhere).
+ */
+.staff-fab {
+  /* The expanded run rises OUT of this box, so it anchors rather than flows. */
+  position: relative;
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* The 52 rung — the largest of the exact 36/44/52 control scale, which is
+   what a single always-present primary earns.
+
+   PRIMARY, not accent: accent is the schedule's own signal — the now-line,
+   today's column, the selected day, a booked block. Spending it again on
+   permanent chrome puts the loudest colour on the one thing that never
+   changes and competes with every live marker on the surface. */
+.staff-fab__trigger {
+  inline-size: var(--control-size-large, 52px);
+  block-size: var(--control-size-large, 52px);
+  border: 0;
+  border-radius: 50%;
+  background: var(--sys-color-primary);
+  color: var(--sys-color-on-primary);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  box-shadow: var(--sys-elevation-raised, 0 2px 12px rgb(0 0 0 / 18%));
+  transition: transform 180ms var(--sys-motion-ease-standard, ease-out);
+}
+
+.staff-fab[data-open] .staff-fab__trigger {
+  transform: rotate(45deg);
+}
+
+@media (hover: hover) {
+  .staff-fab__trigger:hover {
+    filter: brightness(1.06);
+  }
+}
+
+/* Ungated `:active` mirror — a tap must show what a hover would. */
+.staff-fab__trigger:active {
+  transform: scale(0.94);
+}
+
+.staff-fab[data-open] .staff-fab__trigger:active {
+  transform: rotate(45deg) scale(0.94);
+}
+
+.staff-fab__trigger:focus-visible,
+.staff-fab__action:focus-visible {
+  outline: 2px solid var(--sys-color-primary);
+  outline-offset: 2px;
+}
+
+/* Rises out of the bar rather than growing it: the bar's height is the page's
+   bottom rhythm and must not jump when the cluster opens. */
+.staff-fab__actions {
+  position: absolute;
+  inset-block-end: 100%;
+  inset-inline-end: 0;
+  padding-block-end: var(--sys-space-tight);
+
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--sys-space-tight);
+}
+
+/* Label BESIDE the icon, never a bare circle: a fan of unlabelled glyphs
+   makes a receptionist guess which one blocks time and which books someone. */
+.staff-fab__action {
+  display: flex;
+  align-items: center;
+  gap: var(--sys-space-compact);
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+
+  /* Staggered by index so the run reads as one gesture rather than three
+     things appearing at once. */
+  animation: staff-fab-rise 160ms var(--sys-motion-ease-standard, ease-out)
+    backwards;
+  animation-delay: calc(var(--staff-fab-index, 0) * 40ms);
+}
+
+.staff-fab__action-label {
+  padding: calc(var(--sys-space-unit) * 1.5) var(--sys-space-compact);
+  border-radius: var(--control-radius-regular);
+  background: var(--sys-color-surface);
+  color: var(--sys-color-foreground);
+  box-shadow: var(--sys-elevation-raised, 0 1px 6px rgb(0 0 0 / 14%));
+  white-space: nowrap;
+}
+
+.staff-fab__action-icon {
+  inline-size: var(--control-size-regular, 44px);
+  block-size: var(--control-size-regular, 44px);
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--sys-color-surface);
+  color: var(--sys-color-primary);
+  box-shadow: var(--sys-elevation-raised, 0 2px 10px rgb(0 0 0 / 16%));
+}
+
+@media (hover: hover) {
+  .staff-fab__action:hover .staff-fab__action-icon {
+    filter: brightness(0.96);
+  }
+}
+
+.staff-fab__action:active .staff-fab__action-icon {
+  transform: scale(0.94);
+}
+
+.staff-fab__scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 39;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  cursor: default;
+}
+
+@keyframes staff-fab-rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Motion is decoration here — the cluster works identically without it. */
+@media (prefers-reduced-motion: reduce) {
+  .staff-fab__trigger,
+  .staff-fab__action {
+    transition: none;
+    animation: none;
+  }
+
+  .staff-fab__trigger:active,
+  .staff-fab[data-open] .staff-fab__trigger:active,
+  .staff-fab__action:active .staff-fab__action-icon {
+    transform: none;
+  }
+
+  .staff-fab[data-open] .staff-fab__trigger {
+    transform: rotate(45deg);
+  }
+}
+
+/* ── The page's top toolbar ────────────────────────────────────────────
+ *
+ * `ui-toolbar` is a flex ROW with `justify-content: space-between` and a
+ * control-sized minimum height. This header is a COLUMN, so it rides inside
+ * as one child — and a single child has nothing to be spaced against, which
+ * is why it must GROW to fill the bar instead. Without this the column sized
+ * to its content and the trailing buttons stopped short of the bar's own
+ * padding edge; the row looked almost right, which is why it took measuring
+ * to see.
+ */
+/*
+ * The bar's height, published from the PAGE.
+ *
+ * It used to be declared on `.staff-toolbar` itself, where nothing could read
+ * it: custom properties inherit DOWNWARD, and the calendar is the toolbar's
+ * SIBLING. So `--staff-head-offset` fell back to its `0px` default, the
+ * calendar frame sized itself to a full `100svh` BELOW a bar that also took
+ * flow space, the page overflowed by exactly the bar's height — and the body
+ * scrolled, sliding the grid's own sticky column heads up underneath the
+ * sticky toolbar. Two sticky things, one of them stuck to the wrong box.
+ *
+ * Declared on the page, both children inherit it, the frame ends at the
+ * viewport floor, the body never scrolls, and the only thing that scrolls is
+ * the calendar — which is the arrangement its sticky head was built for.
+ */
+/*
+ * A COLUMN, not a block — which is what `ui-page-action-bar` asks its parent
+ * to be. `main` is `display: block` by default, and in block flow the bar's
+ * `margin-block-start: auto` (and the `<ui-spacer />` above it) both compute
+ * to nothing: the bar landed in normal flow right under the last lane, so a
+ * barber with two visits wore the FAB at mid-screen with half a page of
+ * empty below it. `min-block-size: 100svh` was already here doing nothing
+ * for the same reason. Flex column gives the free space somewhere to go and
+ * floors the bar.
+ *
+ * `position: relative` is the other half of the contract: the calendar view
+ * anchors the bar `pane` (absolute), and with no positioned ancestor that
+ * resolved against the initial containing block — which happened to land in
+ * the right place only because this page is exactly one viewport tall in
+ * grid mode. Now it is anchored to the box the docs name.
+ */
+.staff-day {
+  /* Wider than the app's 40rem default, on this route only. The agenda was
+     capped at 640px, so a front-desk iPad and a 1440px desktop rendered
+     IDENTICALLY to each other while the context line was clipping on a phone
+     — roughly 800px of screen sitting empty beside a run that had run out of
+     room. This is a schedule, not prose; its measure is the day's, not a
+     paragraph's. */
+  --sys-container-content: 52rem;
+  --staff-toolbar-height: calc(
+    var(--control-size-regular, 44px) + var(--sys-space-tight) * 2
+  );
+  --staff-head-offset: var(--staff-toolbar-height);
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+
+/* The lanes are the column's growing middle. Without this they keep flex's
+   default `shrink: 1` and a long day compresses against the 100svh floor
+   instead of scrolling the page. */
+.staff-day > .staff-lanes {
+  flex: 0 0 auto;
+}
+
+/* The bar GROWS to fit what it holds. It carried a fixed
+   `block-size: var(--staff-toolbar-height)` from when it held one row of
+   controls, which clipped the week strip added beneath them. The token stays
+   as the FLOOR — `settleOnNow` measures the bar's real height at runtime, so
+   nothing downstream depends on the literal. */
+.staff-toolbar {
+  align-items: stretch;
+  padding-block: var(--sys-space-tight);
+  min-block-size: var(--staff-toolbar-height);
+}
+
+/* ── THE WEEK STRIP ────────────────────────────────────────────────────
+ *
+ * A run of weeks that slides one WHOLE week per gesture, with no chevrons.
+ * `ui-scroll-row` brings the mechanics (`scroll-snap-type: x mandatory`,
+ * `scroll-snap-align: start` per child, hidden indicators); everything here
+ * is the week's own shape.
+ *
+ * `inline-size: 100%` on the week is the entire trick: the scroller's snap
+ * points are its children's edges, so a child exactly one viewport wide makes
+ * a flick advance by a week. Nothing measures a drag and nothing listens to
+ * scroll — the snap is the compositor's.
+ */
+.staff-weeks {
+  --staff-week-disc: 2.25rem;
+  /* The row is the toolbar's full width and each week fills it. */
+  inline-size: 100%;
+  /* A flick should feel like turning a page, not skidding. */
+  scroll-behavior: smooth;
+  overscroll-behavior-inline: contain;
+}
+
+.staff-weeks__week {
+  position: relative;
+  inline-size: 100%;
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+}
+
+/* ── THE SLIDING MARKER ───────────────────────────────────────────────
+ *
+ * One per week, parked over the shown day's column. It replaces a background
+ * on the selected numeral, which TELEPORTED — and a jump is what made a 50ms
+ * day change read as slow, because nothing carried the eye from the old day
+ * to the new one. (Measured: the disc updates in 8-23ms and the agenda in
+ * 49-63ms warm. The lag was never in the work.)
+ *
+ * `translateX` by whole column-widths: the columns are `1fr` of seven, so one
+ * column is exactly 100% of the marker's own width and the sum is integer
+ * arithmetic rather than a measured offset. Transform and opacity only, so
+ * this runs on the compositor — no layout, no paint. */
+.staff-weeks__marker {
+  position: absolute;
+  /* Pinned to the NUMERAL's own box, not the week's midpoint: the column
+     also holds the weekday initial, so 50% of the week sits between the two
+     rows and put the disc half off the bottom. The day button's bottom
+     padding and the disc size are the two facts that place it. */
+  inset-block-end: var(--sys-space-tight);
+  inset-inline-start: 0;
+  inline-size: calc(100% / 7);
+  block-size: var(--staff-week-disc);
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateX(calc(var(--staff-week-col, 0) * 100%));
+  /* EMPHASIZED, and on the fast tier — because the slowness was in the
+     DEPARTURE, not the duration.
+     `ease-standard` is `cubic-bezier(0.4, 0, 0.2, 1)`: an x1 of 0.4 means it
+     idles before it moves. Measured against a 200ms run, the disc had not
+     covered a QUARTER of its travel until 51ms and half until 70ms, and that
+     dead time at the start is what the eye reads as lag — a tap should be
+     answered on the next frame.
+     `ease-emphasized` (0.22, 1, 0.36, 1) leaves immediately and settles: a
+     quarter of the travel in 9ms, half in 20ms, 90% by 56ms. Same distance,
+     five times the departure, and it still arrives softly rather than
+     snapping. */
+  transition:
+    transform var(--sys-motion-duration-instant)
+      var(--sys-motion-ease-emphasized),
+    opacity var(--sys-motion-duration-instant) var(--sys-motion-ease-emphasized);
+}
+
+/* A CIRCLE, not a capsule: the marker box is a whole column wide so it can
+   translate by column-widths, but the disc inside it is the numeral's size
+   and centred within it. */
+.staff-weeks__marker::before {
+  content: '';
+  inline-size: var(--staff-week-disc);
+  block-size: var(--staff-week-disc);
+  border-radius: var(--control-radius-capsule);
+  background: var(--sys-color-foreground);
+}
+
+.staff-weeks__week[data-has-selection] .staff-weeks__marker {
+  opacity: 1;
+}
+
+/* Selected AND today: the fill takes the accent. */
+.staff-weeks__week:has([data-selected][data-today])
+  .staff-weeks__marker::before {
+  background: var(--sys-color-accent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .staff-weeks__marker {
+    transition: none;
+  }
+}
+
+/* One day. The column position already says which weekday it is, so the
+   letter above is a reminder rather than a label — Apple's own strip. */
+.staff-weeks__day {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.125rem;
+  padding-block: var(--sys-space-tight);
+  border: 0;
+  background: none;
+  cursor: pointer;
+  /* A 7-across strip on a 390px phone gives each day ~52px; the tap target
+     is the whole column, not the numeral. */
+  min-block-size: var(--control-size-regular);
+}
+
+.staff-weeks__initial {
+  font: var(--sys-font-caption);
+  color: var(--sys-color-secondary-label);
+  text-transform: uppercase;
+}
+
+/* The numeral sits ON the marker, so it paints no disc of its own — only
+   its ink flips, on the same curve the marker travels. 2.25rem, up from
+   1.75: the tap target was always the whole 57x44 column and already over
+   HIG's 44x44 floor, but the DISC read as the target and looked short of
+   it. This is the size the mark should have looked all along. */
+.staff-weeks__number {
+  position: relative;
+  display: grid;
+  place-items: center;
+  inline-size: var(--staff-week-disc);
+  block-size: var(--staff-week-disc);
+  font: var(--sys-font-subheadline);
+  font-variant-numeric: tabular-nums;
+  color: var(--sys-color-foreground);
+  /* The ink follows the disc on the same curve and tier, so the numeral
+     turns as the marker lands rather than after it. */
+  transition: color var(--sys-motion-duration-instant)
+    var(--sys-motion-ease-emphasized);
+}
+
+/* TODAY — the accent as ink, never a fill: a filled today competes with the
+   selected day, and only one disc on this strip may be filled. */
+.staff-weeks__day[data-today] .staff-weeks__number {
+  color: var(--sys-color-accent-label);
+  font-weight: 600;
+}
+
+/* THE SHOWN DAY — ink only; the disc under it belongs to the marker.
+   Foreground fill rather than accent, because the accent is already spent on
+   "today" and the two are usually different days. */
+.staff-weeks__day[data-selected] .staff-weeks__number {
+  color: var(--sys-color-background);
+}
+
+.staff-weeks__day[data-selected][data-today] .staff-weeks__number {
+  color: var(--sys-color-on-accent);
+}
+
+/* Hover is its own disc BEHIND the numeral, so it never fights the marker
+   sliding over the same column. */
+@media (hover: hover) {
+  .staff-weeks__day:not([data-selected]):hover .staff-weeks__number::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    border-radius: var(--control-radius-capsule);
+    background: var(--sys-state-layer-hover);
+  }
+}
+
+.staff-weeks__day:focus-visible {
+  outline: var(--sys-focus-ring-width) solid var(--sys-color-ring);
+  outline-offset: calc(var(--sys-focus-ring-offset) * -1);
+  border-radius: var(--control-radius-subtle);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .staff-weeks {
+    scroll-behavior: auto;
+  }
+}
+
+.staff-toolbar__column {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+}
+
+/* ── The barber picker ─────────────────────────────────────────────────
+ *
+ * A portrait, not a labelled button: the shop knows its own barbers by face,
+ * and the name is one tap away in the menu that this opens.
+ *
+ * The BOX is the design system's — `bordered`/`neutral`, icon-only, regular
+ * rung — so this control is the same size and weight as the search and view
+ * buttons beside it. All that is left here is making a portrait sit in a slot
+ * shaped for a glyph.
+ */
+/* INSET in the button, not filling it.
+ *
+ * The button is the control — same 44 rung, same `bordered`/`neutral` fill as
+ * its neighbours — and the portrait sits INSIDE it with the fill showing as a
+ * ring. Filling the button hid it completely, which is the opposite failure
+ * to the one before it: first there was no button, then there was one and the
+ * face covered it. */
+/* The portrait is INSET in its button rather than filling it — a face wants
+   air inside the control the way a glyph has it, and an avatar edge-to-edge
+   read as a photo with a button drawn round it.
+ *
+ * Stated as the avatar's own disc property, not as a width: the DS derives
+ * the box AND the glyph size from that one number, so the "everyone" symbol
+ * stays in proportion instead of being sized for a disc this rule shrank. */
+.staff-scope__trigger .ui-avatar {
+  --ui-avatar-disc: calc(
+    var(--control-size-regular) - var(--sys-space-unit) * 3
+  );
+}
+
+/*
+ * The period pull-down IS a cluster segment (see `.staff-cluster` below) —
+ * same fill, same radius ladder, same press morph as the trailing run. It
+ * carries `.staff-cluster__item` for all of that; this class states the one
+ * way it differs.
+ */
+.staff-period {
+  /* It has a LABEL, so it hugs its text instead of being a circle. */
+  flex: 0 1 auto;
+  min-inline-size: 0;
+  /* …and a label needs side room the icon-only segments don't. */
+  padding-inline: var(--sys-space-regular);
+}
+
+/* ── The trailing action cluster ───────────────────────────────────────
+ *
+ * `ui-list-group`'s segmented run, transposed to the INLINE axis.
+ *
+ * That recipe is this system's answer to "these belong together": a
+ * CHROMELESS wrapper, a half-unit seam, each segment owning its own surface,
+ * subtle inner corners and the prominent rung on the group's outer ones — a
+ * card exploded into segments. It reads as one control without a container
+ * drawn around it, which is why the list groups dropped card-and-divider for
+ * it in the first place.
+ *
+ * Not a segmented CONTROL: that expresses one mutually-exclusive choice, and
+ * these are three separate acts. Same shape grammar, different meaning.
+ *
+ * ONE departure from the vertical recipe: the group's outer corners are the
+ * CAPSULE, not the prominent rung. Turned on its side the run is made of
+ * buttons, and a button in this system is a capsule (owner ruling
+ * 2026-07-30 — "capsules and circles everywhere"). At the prominent rung a
+ * 44px square segment reads nearly round while the wide period pill beside
+ * it reads as a squircle: the same radius, two different shapes, because
+ * radius is absolute and these boxes are not the same size. The capsule is
+ * the only value that looks identical on both.
+ */
+.staff-cluster {
+  display: inline-flex;
+  align-items: center;
+  /* The seam — the same half unit the vertical runs use. */
+  gap: calc(var(--sys-space-unit) / 2);
+}
+
+/* A segment that carries a LABEL has to be allowed to shrink, and so does
+   every box between it and the toolbar row — a flex item's default
+   `min-inline-size: auto` floors it at its content, so the period would push
+   the trailing run off the bar before it ever ellipsized. */
+.staff-cluster:has(.staff-period),
+.staff-cluster > ui-menu:has(.staff-period) {
+  flex: 0 1 auto;
+  min-inline-size: 0;
+}
+
+/* Two of the three segments arrive wrapped in their own `ui-menu` host, so
+   the cluster's flex children are host · button · host. The hosts stay in
+   layout DELIBERATELY: `display: contents` would flatten them, and the menu
+   anchors its popover to its own box — removing that box drops the surface
+   onto some ancestor and the calendar opens in the wrong place. The seam
+   falls between the hosts, which is the same seam. */
+.staff-cluster > ui-menu {
+  display: inline-flex;
+}
+
+/* Each segment owns the surface; the wrapper stays chromeless. */
+.staff-cluster__item {
+  background: var(--sys-color-surface-secondary);
+  border-radius: var(--control-radius-subtle);
+  color: var(--sys-color-foreground);
+  transition: border-radius var(--sys-motion-duration-regular)
+    var(--sys-motion-ease-standard);
+}
+
+/* The group's OUTER corners ride the prominent rung — leading and trailing
+   here rather than top and bottom, the run having been turned on its side.
+ *
+ * Matched through the WRAPPER, exactly as the list-group recipe does it:
+ * `:first-child` on the segment itself is true of every menu-wrapped button
+ * (each is the first child of its own host), so the trailing corners landed
+ * on the leading edge of the last segment. The position that matters is the
+ * wrapper's within the cluster. */
+.staff-cluster > :first-child .staff-cluster__item,
+.staff-cluster > .staff-cluster__item:first-child {
+  border-start-start-radius: var(--control-radius-capsule);
+  border-end-start-radius: var(--control-radius-capsule);
+}
+
+.staff-cluster > :last-child .staff-cluster__item,
+.staff-cluster > .staff-cluster__item:last-child {
+  border-start-end-radius: var(--control-radius-capsule);
+  border-end-end-radius: var(--control-radius-capsule);
+}
+
+/* Shape morph on press — to the group's own outer shape. */
+.staff-cluster__item:active {
+  border-radius: var(--control-radius-capsule);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .staff-cluster__item {
+    transition: none;
+  }
+}
+
+/* ── THE LEGEND: A PATCH OF THE COLOUR, BADGED TO THE PORTRAIT ────────
+ *
+ * The rails down the left of every card teach an alphabet the shop is never
+ * given a key to — five colours, and nowhere says which chair each belongs
+ * to. This is the key, and it took three goes to place.
+ *
+ * It was a RING around the portrait first, which was wrong on its own terms:
+ * a legend swatch's whole job is to BE the colour, and an annulus drawn
+ * around a photograph is contaminated by what it encircles — its perceived
+ * hue shifts with the picture inside it, it competes with the portrait's own
+ * edge, and a headshot with a pale border or a bright background fights it
+ * outright. (The justification offered for it, that Apple does this, was also
+ * simply untrue: Apple Calendar uses a filled swatch and leaves imagery
+ * alone.)
+ *
+ * Then it followed the NAME, and a legend cannot: names are different
+ * lengths, so the patch landed at a different x on every row and there was no
+ * column to read down. A key whose entries do not align is not a key.
+ *
+ * Badged to the portrait's corner it is fixed relative to the avatar, so the
+ * swatches line up exactly however long the names run — and being a discrete
+ * patch with a cut-out ring, it never touches the photograph, which was the
+ * ring's real failure. This is the SAME grammar as the card's "+N guests"
+ * mark, down to the 2px cut-out; a second corner-badge idiom on one screen
+ * would be one too many. */
+.staff-scope__face {
+  position: relative;
+  display: inline-flex;
+  flex: 0 0 auto;
+}
+
+.staff-scope__swatch {
+  position: absolute;
+  inset-block-end: -2px;
+  inset-inline-end: -2px;
+  inline-size: 0.75rem;
+  block-size: 0.75rem;
+  /* CAPSULE, not the rounded square this started as. The square was chosen to
+     stand apart from a screen full of circles, but at 12px in a corner the
+     distinction is invisible, and the badge it now shares its grammar with is
+     a capsule. Consistency with the idiom beats a shape argument nobody can
+     see. */
+  border-radius: var(--control-radius-capsule);
+  /* Full strength, like the rail it is the key to — a swatch that is not the
+     colour it names is not a swatch. It is 12px of it rather than a whole
+     card's perimeter, which is why full strength is right here and was not
+     right for the cancelled outline. */
+  background-color: var(--barber-tone, var(--sys-color-separator));
+  /* The cut-out, so the patch never sits directly against the photograph. */
+  box-shadow: 0 0 0 2px var(--sys-color-surface);
+}
+
+/* ── ALL-DAY: WHO IS NOT IN ──────────────────────────────────────────
+ *
+ * A barber being off was a line of grey footnote type UNDER the whole run,
+ * then a small inline capsule above it. Both read as chrome about the screen
+ * rather than as something on the day. It is an ALL-DAY EVENT — Apple
+ * Calendar banners this class of fact above the timed run — so it is built
+ * out of the event's own parts: `.agenda-card` supplies the 14% chair tint
+ * and the padding, and neither is restated here.
+ *
+ * STICKY, under the bar. An all-day fact is true for the whole day, so it
+ * should not scroll away at the first hour of it — which is exactly why Apple
+ * pins its all-day row above the timed grid rather than letting it leave.
+ *
+ * It sticks to `--staff-toolbar-real`, NOT to `--staff-toolbar-height`. The
+ * token is only the bar's floor: the bar grows to fit the week strip and
+ * measures 117px against the token's 52px, so sticking to the token would
+ * park this band behind the bar. The component publishes the measured height
+ * with a ResizeObserver; the token is the fallback for the frame before the
+ * first measurement lands. */
+.staff-allday {
+  position: sticky;
+  inset-block-start: var(--staff-toolbar-real, var(--staff-toolbar-height));
+  /* Under the bar, over the run — the run must pass beneath this, and this
+     must pass beneath the bar. */
+  z-index: calc(var(--sys-layer-header) - 1);
+  display: grid;
+  gap: var(--sys-space-tight);
+  /* THE GAP TO THE RUN, pulled back to the page's regular beat.
+     The stack this sits in spaces its children `loose` — 32px — which
+     measured 48px of air between the band and the first card, against the
+     8px the run uses between its own groups. The calc names both tokens
+     instead of hard-coding -16px, so it stays correct if either moves. */
+  margin-block: 0 calc(var(--sys-space-regular) - var(--sys-space-loose));
+  padding: 0;
+  list-style: none;
+  /* The band's OWN ground. Without it the run shows through the gaps between
+     the rounded rows as they scroll underneath. */
+  background-color: var(--sys-color-background);
+}
+
+.agenda-card--allday {
+  /* NO RAIL COLUMN — the rail is gone, so the card's two-column grid with a
+     0.75rem gutter would leave an empty one. */
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas: 'body';
+  align-items: center;
+  /* FULLY ROUNDED. At a 44px row the capsule is a true stadium, which is what
+     separates an all-day event from the timed cards at a glance — they carry
+     the card radius, this carries none of the day's geometry because it has
+     none. */
+  border-radius: var(--control-radius-capsule);
+  /* APPLE HIG: 44pt is the minimum touch target, and this one is pressable. */
+  min-block-size: 2.75rem;
+  inline-size: 100%;
+  /* EQUAL ON THREE SIDES, so the disc sits concentric with the capsule's own
+     end: 8px above, below and before it, against a 32px disc in a 48px row.
+     It was 4px inline against 8px block, which put the disc a hair into the
+     curve and read as lopsided.
+     The TRAILING side is deliberately not equal — the text that ends the row
+     needs clearance from a curve that is closing in on it, and matching the
+     leading 8px would crowd it against the arc. This is the same asymmetry
+     `.agenda-card` itself uses (8px leading for the rail, 16px trailing for
+     the times). */
+  padding-block: var(--sys-space-compact);
+  padding-inline-start: var(--sys-space-compact);
+  padding-inline-end: var(--sys-space-regular);
+  /* The button's own chrome, off — the card supplies all of it. */
+  border: 0;
+  font: inherit;
+  color: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.agenda-allday__body {
+  grid-area: body;
+  display: flex;
+  align-items: center;
+  gap: var(--sys-space-compact);
+  min-inline-size: 0;
+}
+
+/* THE DISC — the chair's colour, in the avatar's shape and the avatar's slot.
+ *
+ * A TINT, not the rail's full strength, and the glyph follows the text.
+ *
+ * It was the rail's own colour at 100% with the glyph in
+ * `--sys-color-background` — black on a bright disc in dark, white on a deep
+ * one in light. That passes contrast (4.50:1 at worst) but it makes the disc
+ * the loudest object on the screen and the one icon on the page that does not
+ * share the ink of everything around it: every other glyph here — the mail
+ * and phone marks, the state marks, the toolbar — is foreground or secondary.
+ * An inverted glyph reads as a SELECTED state rather than a mark.
+ *
+ * Foreground ink is impossible on a saturated fill in both themes at once:
+ * the dark palette's identity tones are LIGHT colours (`#5de6ff`), so a
+ * near-white glyph on one disappears. Taking the disc down to a tint solves
+ * both at once — the glyph can be foreground like its neighbours, and the
+ * disc stops shouting. At 36% over the card's own 14% ground it measures
+ * 8.07:1 light and 5.46:1 dark against the 3:1 floor for a graphical object,
+ * and it still reads as a distinct object on the card because it is roughly
+ * two and a half times the ground it sits on. */
+.agenda-allday__disc {
+  display: inline-grid;
+  place-items: center;
+  inline-size: 2rem;
+  block-size: 2rem;
+  flex: none;
+  border-radius: var(--control-radius-capsule);
+  background-color: color-mix(
+    in srgb,
+    var(--barber-tone, var(--sys-color-separator)) 36%,
+    transparent
+  );
+  color: var(--sys-color-foreground);
+  /* Icons inherit their font size in this system, so the glyph is sized here
+     rather than on the icon. */
+  font-size: 1rem;
+}
+
+.agenda-allday__name {
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
+}
+
+/* The trailing column, which on a card holds the clock time. An all-day event
+   has no time — saying what it IS there keeps the run's trailing edge doing
+   one job. */
+.agenda-allday__meta {
+  margin-inline-start: auto;
+  flex: none;
+}
+
+/* ── THE RUN STARTS HIGHER ───────────────────────────────────────────
+ * `uiPaddingVertical="spacious"` is 48px, and above a sticky band that is a
+ * lot of empty page between the week strip and the first thing on the day.
+ * The BOTTOM keeps it — the action bar floats over the end of the run and
+ * needs the clearance. */
+.staff-lanes {
+  padding-block-start: var(--sys-space-regular);
+}

@@ -532,6 +532,11 @@ export class BookingFlowStore {
         serviceId: found.line.serviceId.value,
         variantId: found.line.variantId?.value ?? null,
         barberId: assignment.barberId.value,
+        // The cart line has carried the preference the whole way here and it
+        // was being dropped at this boundary — the resolved id looks the same
+        // whether the client insisted on Ivan or took the first free chair,
+        // and those are different bookings the morning Ivan calls in sick.
+        barberPref: found.line.barberPref.kind,
         startIso: assignment.slot.start.toISO(),
         subject:
           found.seatKey === 'self'

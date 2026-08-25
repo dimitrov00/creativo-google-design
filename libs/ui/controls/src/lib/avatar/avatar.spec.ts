@@ -1,5 +1,6 @@
 import { Component, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import type { UiIconName } from '../icon/icon-registry';
 import { UiAvatar } from './avatar';
 
 @Component({
@@ -7,12 +8,14 @@ import { UiAvatar } from './avatar';
   template: `<ui-avatar
     [uiSrc]="src()"
     [uiName]="name()"
+    [uiIcon]="icon()"
     [uiControlSize]="'large'"
   />`,
 })
 class HostComponent {
   readonly src = signal<string | null>(null);
   readonly name = signal('Ada Lovelace');
+  readonly icon = signal<UiIconName | null>(null);
 }
 
 describe('UiAvatar', () => {
@@ -55,6 +58,31 @@ describe('UiAvatar', () => {
     // it cross-fades out once the image loads and persists on error.
     expect(
       fixture.nativeElement.querySelector('.ui-avatar__fallback'),
+    ).not.toBeNull();
+  });
+
+  /* A disc that stands for something other than a person — "anyone", a team,
+     an unassigned lane. It replaces the monogram rather than joining it: the
+     glyph IS the identity here, so a name alongside it would be two answers
+     to the same question. */
+  it('renders a glyph in place of the monogram when uiIcon is set', () => {
+    fixture.componentInstance.icon.set('booking.anyBarber');
+    fixture.detectChanges();
+    const fallback: HTMLElement = fixture.nativeElement.querySelector(
+      '.ui-avatar__fallback',
+    );
+    expect(fallback.querySelector('.ui-icon')).not.toBeNull();
+    expect(fallback.textContent?.trim()).not.toBe('AL');
+  });
+
+  // It is a PLACEHOLDER like the monogram, so real bytes still win.
+  it('keeps the glyph behind a real src', async () => {
+    fixture.componentInstance.icon.set('booking.anyBarber');
+    fixture.componentInstance.src.set('https://example.com/a.png');
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(
+      fixture.nativeElement.querySelector('.ui-async-image__image'),
     ).not.toBeNull();
   });
 });

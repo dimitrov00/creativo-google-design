@@ -72,6 +72,7 @@ function fakeOtpRepository(): OtpRepositoryPort & { store: Map<string, Otp> } {
 
 /** Raw doc mirror of the adapter's `users/{uid}` shape — `registered` derives from `firstName` presence exactly as `FirestoreUserRepository` does. */
 interface StoredUserDoc {
+  roles?: string[];
   email: string | null;
   phone: string | null;
   firstName?: string;
@@ -111,6 +112,7 @@ function fakeUserRepository(): UserRepositoryPort & {
             email: doc.email,
             phone: doc.phone,
             birthDate: doc.birthDate ?? null,
+            roles: doc.roles ?? [],
             registered: !!doc.firstName,
           });
         }
@@ -376,7 +378,42 @@ describe('VerifyOtpUseCase', () => {
     }
   });
 
-  it('never mints owner/performer/admin claims through this path, even for an already-registered returning user', async () => {
+  it('mints the STORED roles for a staff account — the out-of-band grant finally reaches the token', async () => {
+    const otps = fakeOtpRepository();
+    const users = fakeUserRepository();
+    const authToken = fakeAuthToken();
+    const clock = new FixedClock('2026-01-01T00:00:00.000Z');
+    await otps.save(issueOtp(clock));
+
+    // An Admin-SDK-granted staff doc — firestore.rules is what guarantees
+    // nobody else can write this field, which is the whole reason minting
+    // it is safe.
+    users.store.set('uid_staff', {
+      email: 'client@example.com',
+      phone: '+14155552671',
+      firstName: 'Ivan',
+      roles: ['barber', 'admin'],
+    });
+
+    const useCase = new VerifyOtpUseCase(
+      otps,
+      users,
+      authToken,
+      clock,
+      fakeCrypto(),
+    );
+    const result = await useCase.execute({ otpId: 'otp_1', code: '123456' });
+
+    expect(result.isSuccess()).toBe(true);
+    const claims = authToken.mintedTokens[0].claims as {
+      stage: string;
+      roles: string[];
+    };
+    expect(claims.stage).toBe('active');
+    expect(claims.roles).toEqual(['barber', 'admin']);
+  });
+
+  it('falls back to client claims when the doc carries no roles — a stub or pre-roles record never escalates', async () => {
     const otps = fakeOtpRepository();
     const users = fakeUserRepository();
     const authToken = fakeAuthToken();

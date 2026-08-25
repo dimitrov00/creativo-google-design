@@ -3,6 +3,7 @@ import { Observable } from 'rxjs';
 import {
   DocumentData,
   getDoc,
+  getDocs,
   limit,
   onSnapshot,
   orderBy,
@@ -13,12 +14,13 @@ import { Result, fail, ok } from '@creativo/domain/kernel';
 import {
   Appointment,
   AppointmentId,
+  AppointmentStatus,
   Seat,
   SeatId,
   SeatLabel,
   SeatSubject,
   TimeSlot,
-  isTerminal,
+  isSettled,
 } from '@creativo/domain/scheduling';
 import { UserId } from '@creativo/domain/accounts';
 import {
@@ -31,14 +33,24 @@ import { Money } from '@creativo/domain/kernel';
 import {
   AppointmentRepository,
   appointmentToDocument,
+  arrivedAtFromDocument,
+  barberPrefFromDocument,
+  bookedAtFromDocument,
+  busyDocumentId,
   contactFromDocument,
+  seatOutcomeFromDocument,
 } from '@creativo/application/booking';
 import { RepositoryError } from '@creativo/application/shared';
 import { FIREBASE_FIRESTORE } from '@creativo/infrastructure/firebase-app';
 import { appointmentDocRef, appointmentsCollection } from './firestore-paths';
 import { subscribeWithRetry } from './subscribe-with-retry';
 
-function buildSeats(raw: unknown): Result<Seat[], RepositoryError> {
+function buildSeats(
+  raw: unknown,
+  /** The root status, so a seat with no stored outcome on a finished visit can
+   *  be derived rather than read back as still open. */
+  rootStatus: AppointmentStatus | undefined,
+): Result<Seat[], RepositoryError> {
   if (!Array.isArray(raw)) {
     return fail(
       new RepositoryError(
@@ -173,6 +185,12 @@ function buildSeats(raw: unknown): Result<Seat[], RepositoryError> {
         // snapshotted duration, so a persisted end that disagreed with the
         // terms can never become the answer.
         startsAt: slotResult.value.start,
+        outcome: seatOutcomeFromDocument(
+          entry['outcome'],
+          rootStatus,
+          slotResult.value.end.toMillis(),
+        ),
+        pref: barberPrefFromDocument(entry['barberPref'], barberIdResult.value),
       }),
     );
   }
@@ -187,7 +205,8 @@ function toDomain(
   // are write-time mirrors for querying, and `Appointment` derives both
   // from the seats. Reading them would create a second, drift-prone answer
   // to "when is this, and who is working it".
-  const seatsResult = buildSeats(data['seats']);
+  const status = data['status'] as AppointmentStatus | undefined;
+  const seatsResult = buildSeats(data['seats'], status);
   if (seatsResult.isFailure()) {
     return fail(seatsResult.error);
   }
@@ -200,6 +219,14 @@ function toDomain(
     // Best-effort: a contact that does not parse reads as absent rather than
     // failing the appointment (see `contactFromDocument`).
     contact: contactFromDocument(data),
+    // `null` for every row written before booking time was captured — which
+    // is the flag reports use to exclude a row from lead-time statistics.
+    bookedAt: bookedAtFromDocument(data),
+    arrivedAt: arrivedAtFromDocument(data),
+    bookedFromAppointmentId:
+      typeof data['bookedFromAppointmentId'] === 'string'
+        ? data['bookedFromAppointmentId']
+        : null,
   });
   if (reconstituted.isFailure()) {
     return fail(
@@ -288,7 +315,7 @@ export class FirestoreAppointmentRepository implements AppointmentRepository {
               onError(result.error);
               return;
             }
-            if (!isTerminal(result.value.status)) {
+            if (!isSettled(result.value.status)) {
               appointments.push(result.value);
             }
           }
@@ -342,10 +369,96 @@ export class FirestoreAppointmentRepository implements AppointmentRepository {
             if (result.isFailure()) continue;
             const appointment = result.value;
             const started = appointment.timeSlot.start.toISO() <= nowIso;
-            if (started || isTerminal(appointment.status)) {
+            if (started || isSettled(appointment.status)) {
               appointments.push(appointment);
             }
           }
+          onNext(appointments);
+        },
+        onError,
+      ),
+    );
+  }
+
+  /**
+   * One barber, one day, every status — the staff day sheet.
+   *
+   * A bare `array-contains` on the `busyKeys` mirror: single-field
+   * auto-index, no composite, and the SAME key the busy projection is
+   * rebuilt from. No status filter on purpose — the sheet shows the whole
+   * day, cancelled rows included, greyed rather than hidden: a gap with no
+   * explanation reads as a bug to the person working the chair. The
+   * handful of docs sort client-side.
+   */
+  async searchWindow(
+    nowIso: string,
+    limitPerSide: number,
+  ): Promise<Result<readonly Appointment[], RepositoryError>> {
+    // Two halves, each a range + orderBy on the SAME field — so both ride the
+    // single-field index Firestore maintains automatically and neither needs
+    // a composite one. Ordering each half outward from now is what makes
+    // `limit` cut the far edges instead of the middle.
+    const past = query(
+      appointmentsCollection(this.db),
+      where('timeSlot.startIso', '<', nowIso),
+      orderBy('timeSlot.startIso', 'desc'),
+      limit(limitPerSide),
+    );
+    const upcoming = query(
+      appointmentsCollection(this.db),
+      where('timeSlot.startIso', '>=', nowIso),
+      orderBy('timeSlot.startIso'),
+      limit(limitPerSide),
+    );
+
+    try {
+      const [pastSnap, upcomingSnap] = await Promise.all([
+        getDocs(past),
+        getDocs(upcoming),
+      ]);
+      const appointments: Appointment[] = [];
+      for (const docSnap of [...pastSnap.docs, ...upcomingSnap.docs]) {
+        const result = toDomain(docSnap.id, docSnap.data());
+        // Same lenient posture as the day read: one unparseable document
+        // must not empty a search that would otherwise have found someone.
+        if (result.isSuccess()) appointments.push(result.value);
+      }
+      appointments.sort((a, b) =>
+        a.timeSlot.start.isBefore(b.timeSlot.start) ? -1 : 1,
+      );
+      return ok(appointments);
+    } catch (cause) {
+      return fail(new RepositoryError('Could not search appointments', cause));
+    }
+  }
+
+  observeBarberDay(
+    barberId: BarberId,
+    dayKey: string,
+  ): Observable<Result<readonly Appointment[], RepositoryError>> {
+    const dayQuery = query(
+      appointmentsCollection(this.db),
+      where(
+        'busyKeys',
+        'array-contains',
+        busyDocumentId(barberId.value, dayKey),
+      ),
+    );
+
+    return subscribeWithRetry<readonly Appointment[]>((onNext, onError) =>
+      onSnapshot(
+        dayQuery,
+        (snapshot) => {
+          const appointments: Appointment[] = [];
+          for (const docSnap of snapshot.docs) {
+            const result = toDomain(docSnap.id, docSnap.data());
+            // Same lenient posture as history: one unparseable doc must not
+            // blank the whole day.
+            if (result.isSuccess()) appointments.push(result.value);
+          }
+          appointments.sort((a, b) =>
+            a.timeSlot.start.isBefore(b.timeSlot.start) ? -1 : 1,
+          );
           onNext(appointments);
         },
         onError,

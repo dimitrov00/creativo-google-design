@@ -16,10 +16,15 @@ import {
   PENDING,
   cancelled,
 } from './appointment-status';
+import { BookingContact } from './booking-contact';
 import { SeatId } from './ids';
 import { Seat, SeatSubject } from './seat';
+import { seatCancelled, seatNoShow, seatWorked } from './seat-outcome';
 
 const zone = 'Europe/Sofia';
+
+/** The instant a lifecycle verb is taken. Fixed so outcomes are comparable. */
+const RESOLVED_AT_MS = Date.UTC(2026, 7, 5, 9, 0, 0);
 
 function at(iso: string): ZonedDateTime {
   const r = ZonedDateTime.fromISO(iso, zone);
@@ -301,7 +306,7 @@ describe('Appointment status transition matrix (goal condition item)', () => {
     confirmed: ['completed', 'cancelled', 'no_show'],
     completed: [],
     cancelled: [],
-    no_show: [],
+    no_show: ['confirmed'],
   };
 
   const STARTING_STATUSES: Record<string, AppointmentStatus> = {
@@ -317,9 +322,9 @@ describe('Appointment status transition matrix (goal condition item)', () => {
     (appointment: Appointment) => { isSuccess(): boolean }
   > = {
     confirmed: (a) => a.confirm(),
-    completed: (a) => a.complete(),
-    cancelled: (a) => a.cancel('customer request'),
-    no_show: (a) => a.markNoShow(),
+    completed: (a) => a.complete(RESOLVED_AT_MS),
+    cancelled: (a) => a.cancel('customer request', RESOLVED_AT_MS),
+    no_show: (a) => a.markNoShow(RESOLVED_AT_MS),
   };
 
   for (const [from, statusFixture] of Object.entries(STARTING_STATUSES)) {
@@ -337,16 +342,302 @@ describe('Appointment status transition matrix (goal condition item)', () => {
 describe('Appointment.cancel', () => {
   it('rejects an empty cancellation reason', () => {
     const appointment = reconstituteWithStatus(PENDING);
-    const result = appointment.cancel('   ');
+    const result = appointment.cancel('   ', RESOLVED_AT_MS);
     expect(result.isFailure()).toBe(true);
   });
 
   it('carries the reason structurally on the cancelled status', () => {
     const appointment = reconstituteWithStatus(PENDING);
-    const result = appointment.cancel('no longer needed');
+    const result = appointment.cancel('no longer needed', RESOLVED_AT_MS);
     expect(result.isSuccess()).toBe(true);
     if (result.isSuccess() && result.value.status.kind === 'cancelled') {
       expect(result.value.status.reason).toBe('no longer needed');
+    }
+  });
+});
+
+// ── The write-time captures ────────────────────────────────────────────────
+
+describe('Appointment booking metadata', () => {
+  it('stamps bookedAt from the same instant it validated the start against', () => {
+    const now = at('2026-05-01T00:00:00');
+    const result = Appointment.create({
+      id: 'appointment-1',
+      locationId: LocationId.generate().toString(),
+      seats: oneSeat(),
+      now,
+    });
+    expect(result.isSuccess()).toBe(true);
+    if (result.isSuccess()) {
+      expect(result.value.bookedAt?.toMillis()).toBe(now.toMillis());
+    }
+  });
+
+  it('reports booking lead time in minutes', () => {
+    const result = Appointment.create({
+      id: 'appointment-1',
+      locationId: LocationId.generate().toString(),
+      // The fixture seat starts 2026-06-01T10:00 — one hour after this.
+      seats: [seat({ startIso: '2026-06-01T10:00:00' })],
+      now: at('2026-06-01T09:00:00'),
+    });
+    expect(result.isSuccess()).toBe(true);
+    if (result.isSuccess()) {
+      expect(result.value.bookingLeadTimeMinutes()).toBe(60);
+    }
+  });
+
+  it('has no lead time for an appointment written before bookedAt existed', () => {
+    expect(reconstituteWithStatus(PENDING).bookingLeadTimeMinutes()).toBeNull();
+  });
+
+  it('carries the rebooking link', () => {
+    const result = Appointment.create({
+      id: 'appointment-2',
+      locationId: LocationId.generate().toString(),
+      seats: oneSeat(),
+      now: at('2026-05-01T00:00:00'),
+      bookedFromAppointmentId: 'appointment-1',
+    });
+    expect(result.isSuccess()).toBe(true);
+    if (result.isSuccess()) {
+      expect(result.value.bookedFrom?.value).toBe('appointment-1');
+    }
+  });
+
+  it('drops an unparseable rebooking link rather than refusing the booking', () => {
+    const result = Appointment.create({
+      id: 'appointment-2',
+      locationId: LocationId.generate().toString(),
+      seats: oneSeat(),
+      now: at('2026-05-01T00:00:00'),
+      bookedFromAppointmentId: '   ',
+    });
+    expect(result.isSuccess()).toBe(true);
+    if (result.isSuccess()) {
+      expect(result.value.bookedFrom).toBeNull();
+    }
+  });
+});
+
+describe('Appointment seat outcomes', () => {
+  /** A party of two on different barbers, confirmed and ready to be resolved. */
+  function party(): Appointment {
+    const result = Appointment.reconstitute({
+      id: 'appointment-1',
+      locationId: LocationId.generate().toString(),
+      seats: [
+        seat({ startIso: '2026-06-01T10:00:00' }),
+        seat({ relationship: 'companion', startIso: '2026-06-01T10:00:00' }),
+      ],
+      status: CONFIRMED,
+    });
+    if (result.isFailure()) throw new Error('bad fixture');
+    return result.value;
+  }
+
+  it('starts every seat scheduled', () => {
+    expect(party().seats.every((s) => s.outcome.kind === 'scheduled')).toBe(
+      true,
+    );
+    expect(party().openSeats()).toHaveLength(2);
+  });
+
+  it('keeps the root unchanged while any seat is still open', () => {
+    const appointment = party();
+    const marked = appointment.markSeatOutcome(
+      appointment.seats[0]!.id,
+      seatWorked(RESOLVED_AT_MS),
+    );
+    expect(marked.isSuccess()).toBe(true);
+    if (marked.isSuccess()) {
+      expect(marked.value.status.kind).toBe('confirmed');
+      expect(marked.value.openSeats()).toHaveLength(1);
+    }
+  });
+
+  /**
+   * THE case the whole change exists for: two served, one absent. Before
+   * per-seat outcomes this party had no representable state — `no_show` at the
+   * root erased the completed work, `completed` erased the no-show.
+   */
+  it('summarises a mixed party as completed while keeping the no-show visible', () => {
+    const appointment = party();
+    const first = appointment.markSeatOutcome(
+      appointment.seats[0]!.id,
+      seatWorked(RESOLVED_AT_MS),
+    );
+    expect(first.isSuccess()).toBe(true);
+    if (!first.isSuccess()) return;
+
+    const second = first.value.markSeatOutcome(
+      first.value.seats[1]!.id,
+      seatNoShow(RESOLVED_AT_MS),
+    );
+    expect(second.isSuccess()).toBe(true);
+    if (!second.isSuccess()) return;
+
+    expect(second.value.status.kind).toBe('completed');
+    expect(second.value.seats[0]!.outcome.kind).toBe('worked');
+    expect(second.value.seats[1]!.outcome.kind).toBe('no_show');
+  });
+
+  it('summarises an all-cancelled party as cancelled, with groupable codes', () => {
+    const appointment = party();
+    const first = appointment.markSeatOutcome(
+      appointment.seats[0]!.id,
+      seatCancelled(RESOLVED_AT_MS, 'client', { kind: 'client_unwell' }),
+    );
+    if (!first.isSuccess()) throw new Error('unexpected failure');
+    const second = first.value.markSeatOutcome(
+      first.value.seats[1]!.id,
+      seatCancelled(RESOLVED_AT_MS, 'client', { kind: 'client_changed_plans' }),
+    );
+    expect(second.isSuccess()).toBe(true);
+    if (second.isSuccess() && second.value.status.kind === 'cancelled') {
+      expect(second.value.status.reason).toBe(
+        'client_changed_plans+client_unwell',
+      );
+    }
+  });
+
+  it('refuses a seat it does not hold', () => {
+    const result = party().markSeatOutcome(
+      SeatId.generate(),
+      seatWorked(RESOLVED_AT_MS),
+    );
+    expect(result.isFailure()).toBe(true);
+  });
+
+  it('refuses to re-resolve a seat', () => {
+    const appointment = party();
+    const first = appointment.markSeatOutcome(
+      appointment.seats[0]!.id,
+      seatWorked(RESOLVED_AT_MS),
+    );
+    if (!first.isSuccess()) throw new Error('unexpected failure');
+    const again = first.value.markSeatOutcome(
+      first.value.seats[0]!.id,
+      seatNoShow(RESOLVED_AT_MS),
+    );
+    expect(again.isFailure()).toBe(true);
+  });
+
+  it('refuses to resolve a seat on a terminal appointment', () => {
+    const appointment = party();
+    const done = appointment.cancel('shop closed', RESOLVED_AT_MS);
+    if (!done.isSuccess()) throw new Error('unexpected failure');
+    const result = done.value.markSeatOutcome(
+      done.value.seats[0]!.id,
+      seatWorked(RESOLVED_AT_MS),
+    );
+    expect(result.isFailure()).toBe(true);
+  });
+
+  it('fans a party-level complete out to every open seat', () => {
+    const result = party().complete(RESOLVED_AT_MS);
+    expect(result.isSuccess()).toBe(true);
+    if (result.isSuccess()) {
+      expect(result.value.seats.every((s) => s.outcome.kind === 'worked')).toBe(
+        true,
+      );
+    }
+  });
+
+  it('leaves an already-resolved seat alone when the party completes', () => {
+    const appointment = party();
+    const first = appointment.markSeatOutcome(
+      appointment.seats[0]!.id,
+      seatNoShow(RESOLVED_AT_MS),
+    );
+    if (!first.isSuccess()) throw new Error('unexpected failure');
+    const done = first.value.complete(RESOLVED_AT_MS + 60_000);
+    expect(done.isSuccess()).toBe(true);
+    if (done.isSuccess()) {
+      expect(done.value.seats[0]!.outcome.kind).toBe('no_show');
+      expect(done.value.seats[1]!.outcome.kind).toBe('worked');
+    }
+  });
+
+  it('reopens a no-show and lifts the stamp off the seats it wrote', () => {
+    // The correction edge. Without the seat sweep this would leave a booking
+    // saying "confirmed" over seats still saying "no_show" — a worse state
+    // than the one being undone, and one that poisons every seat count.
+    const marked = reconstituteWithStatus(CONFIRMED).markNoShow(RESOLVED_AT_MS);
+    if (!marked.isSuccess()) throw new Error('unexpected failure');
+    expect(marked.value.seats[0]!.outcome.kind).toBe('no_show');
+
+    const reopened = marked.value.reopenNoShow();
+    expect(reopened.isSuccess()).toBe(true);
+    if (reopened.isSuccess()) {
+      expect(reopened.value.status.kind).toBe('confirmed');
+      for (const seat of reopened.value.seats) {
+        expect(seat.outcome.kind).toBe('scheduled');
+      }
+    }
+  });
+
+  it('reopening leaves a seat that was resolved on its own alone', () => {
+    // Same rule `markNoShow` honours on the way in: the guest who cancelled
+    // while the other two waited keeps what they were given.
+    const base = party();
+    const withSeatCancelled = base.markSeatOutcome(
+      base.seats[0]!.id,
+      seatCancelled(RESOLVED_AT_MS, 'client', { kind: 'client_unwell' }),
+    );
+    if (!withSeatCancelled.isSuccess()) throw new Error('unexpected failure');
+    const marked = withSeatCancelled.value.markNoShow(RESOLVED_AT_MS + 1_000);
+    if (!marked.isSuccess()) throw new Error('unexpected failure');
+
+    const reopened = marked.value.reopenNoShow();
+    expect(reopened.isSuccess()).toBe(true);
+    if (reopened.isSuccess()) {
+      expect(reopened.value.seats[0]!.outcome.kind).toBe('cancelled');
+      expect(reopened.value.seats[1]!.outcome.kind).toBe('scheduled');
+    }
+  });
+
+  it('refuses to reopen anything that is not a no-show', () => {
+    for (const status of [PENDING, CONFIRMED, COMPLETED]) {
+      const result = reconstituteWithStatus(status).reopenNoShow();
+      expect(result.isSuccess()).toBe(false);
+    }
+  });
+
+  it('confirming resolves nothing — it is about the booking, not the work', () => {
+    const result = reconstituteWithStatus(PENDING).confirm();
+    expect(result.isSuccess()).toBe(true);
+    if (result.isSuccess()) {
+      expect(result.value.seats[0]!.outcome.kind).toBe('scheduled');
+    }
+  });
+
+  /**
+   * Regression: `transition` built a four-argument `Appointment`, so `contact`
+   * fell off the end and every confirm/complete/cancel silently erased the
+   * number the shop was given.
+   */
+  it('keeps the contact snapshot across a transition', () => {
+    const contact = BookingContact.create({
+      name: 'Ivan Petrov',
+      phone: '+359888123456',
+      email: null,
+      note: null,
+    });
+    if (contact.isFailure()) throw new Error('bad fixture');
+    const built = Appointment.reconstitute({
+      id: 'appointment-1',
+      locationId: LocationId.generate().toString(),
+      seats: oneSeat(),
+      status: PENDING,
+      contact: contact.value,
+    });
+    if (built.isFailure()) throw new Error('bad fixture');
+
+    const confirmed = built.value.confirm();
+    expect(confirmed.isSuccess()).toBe(true);
+    if (confirmed.isSuccess()) {
+      expect(confirmed.value.contact?.name).toBe('Ivan Petrov');
     }
   });
 });

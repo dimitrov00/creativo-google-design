@@ -400,9 +400,7 @@
             uiControlSize="small"
           />
           } @else if (barberAnswered()) {
-          <span class="booking-any__glyph booking-any__glyph--compact">
-            <ui-icon uiName="booking.anyBarber" uiScale="small" />
-          </span>
+          <ui-avatar uiIcon="booking.anyBarber" uiControlSize="small" />
           }
           <span class="booking-pick__value">{{ barberLabel() }}</span>
           <ui-icon uiName="field.expand" uiScale="small" />
@@ -420,19 +418,13 @@
             data-testid="booking-barber-any"
             (click)="pickBarber(null)"
           >
-            <!-- The glyph rides an avatar-sized disc rather than sitting
-                   bare: a row without a portrait in a run that has them still
-                   owes the same leading column, or every name below it steps
-                   sideways (HIG — list rows keep one leading rail). -->
-            <span uiLeading class="booking-any__glyph">
-              <ui-icon
-                uiName="booking.anyBarber"
-                [uiForegroundStyle]="
-                    barberAnswered() && draftBarberId() === null
-                      ? 'accent'
-                      : 'secondary'
-                  "
-              />
+            <!-- "Anyone" is a face-shaped answer like any other, so it takes
+                   the same control the faces do — `ui-avatar` with a glyph in
+                   place of the monogram. The disc, the capsule and the size
+                   ladder come from the DS rather than from a hand-rolled span
+                   here (and the leading rail is held open by the menu). -->
+            <span uiLeading>
+              <ui-avatar uiIcon="booking.anyBarber" uiControlSize="regular" />
             </span>
             <ui-stack uiSpacing="none">
               <span uiText uiFont="body">

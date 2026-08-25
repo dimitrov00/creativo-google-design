@@ -6,6 +6,7 @@ import {
   PENDING,
   canTransition,
   cancelled,
+  isSettled,
   isTerminal,
 } from './appointment-status';
 
@@ -25,10 +26,28 @@ describe('isTerminal', () => {
     expect(isTerminal(CONFIRMED)).toBe(false);
   });
 
-  it('completed, cancelled, and no_show are terminal', () => {
+  it('completed and cancelled are terminal', () => {
     expect(isTerminal(COMPLETED)).toBe(true);
     expect(isTerminal(cancelled('x'))).toBe(true);
-    expect(isTerminal(NO_SHOW)).toBe(true);
+  });
+
+  it('no_show is NOT terminal — it carries the correction edge', () => {
+    // A no-show is a judgement made at a moment, and the moment it is most
+    // often wrong is the ten minutes right after it.
+    expect(isTerminal(NO_SHOW)).toBe(false);
+  });
+});
+
+describe('isSettled', () => {
+  it('separates "the visit is over" from "the graph has nowhere to go"', () => {
+    // The two were the same set until no_show gained its edge, and readers
+    // used them interchangeably — so this split is what stops one new edge
+    // from putting no-showed bookings back into clients' upcoming lists.
+    expect(isSettled(COMPLETED)).toBe(true);
+    expect(isSettled(cancelled('x'))).toBe(true);
+    expect(isSettled(NO_SHOW)).toBe(true);
+    expect(isSettled(PENDING)).toBe(false);
+    expect(isSettled(CONFIRMED)).toBe(false);
   });
 });
 
@@ -48,11 +67,25 @@ describe('canTransition — the full lifecycle matrix', () => {
   });
 
   it('terminal states have no legal outgoing transitions', () => {
-    for (const status of [COMPLETED, cancelled('x'), NO_SHOW]) {
+    for (const status of [COMPLETED, cancelled('x')]) {
       expect(canTransition(status, 'confirmed')).toBe(false);
       expect(canTransition(status, 'completed')).toBe(false);
       expect(canTransition(status, 'cancelled')).toBe(false);
       expect(canTransition(status, 'no_show')).toBe(false);
     }
+  });
+
+  it('no_show can move back to confirmed, and nowhere else', () => {
+    expect(canTransition(NO_SHOW, 'confirmed')).toBe(true);
+    expect(canTransition(NO_SHOW, 'completed')).toBe(false);
+    expect(canTransition(NO_SHOW, 'cancelled')).toBe(false);
+    expect(canTransition(NO_SHOW, 'no_show')).toBe(false);
+  });
+
+  it('completed stays terminal — a delivered cut cannot be undelivered', () => {
+    // Deliberately asymmetric with no_show. A no-show is an assertion about
+    // the future that can be falsified minutes later; a completed cut is a
+    // fact, and money will hang off it.
+    expect(canTransition(COMPLETED, 'confirmed')).toBe(false);
   });
 });

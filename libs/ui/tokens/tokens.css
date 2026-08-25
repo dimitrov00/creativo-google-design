@@ -64,6 +64,14 @@
     /* ── Controls — ≙ SwiftUI .controlSize(.small/.regular/.large):
        36 / 44 (HIG tap) / 52. ── */
     --control-size-small: calc(var(--sys-space-unit) * 9);
+
+    /* THE STATUS DOT — the one genuinely missing primitive. Three divergent
+       hand-rolled geometries existed for the same mark (0.5rem in the status
+       indicator, 0.26em in the date badge, a 5px radial-gradient literal in
+       the staff run), so the consolidation had happened at component level
+       and not at token level. Two components draw this now and must not
+       drift. */
+    --sys-size-dot: 0.5rem;
     --control-size-regular: calc(var(--sys-space-unit) * 11);
     --control-size-large: calc(var(--sys-space-unit) * 13);
 

@@ -6,6 +6,7 @@ export * from './lib/ports/booking-gateway.port';
 export * from './lib/ports/booking-policy-document';
 export * from './lib/ports/capacity-document';
 export * from './lib/ports/schedule-exception-document';
+export * from './lib/ports/schedule-exception-writer.port';
 export * from './lib/ports/booking-policy-reader.port';
 export * from './lib/ports/waitlist-document';
 export * from './lib/ports/waitlist-gateway.port';

@@ -24,6 +24,7 @@ import {
   StaffScheduleVersion,
   WeeklyPattern,
   type WeeklyPatternProps,
+  buildDayCarveOuts,
   buildDayWindows,
   shopDayHours,
   windowsAt,
@@ -288,12 +289,17 @@ export class FirestoreAvailabilityReader implements AvailabilityReader {
             ? exceptionFromDocument(exceptionResult.value)
             : null;
 
-          const allWindows = buildDayWindows({
+          const buildInput = {
             day,
             schedule: parsed.history,
             exceptions: exception ? [exception] : [],
             shopHours: hoursResult.value,
-          });
+          };
+          const allWindows = buildDayWindows(buildInput);
+          // What the day HAD taken out of it. Same inputs, second question —
+          // the windows say what is left, these say what was blocked, and a
+          // calendar needs both or a break renders as the shop being shut.
+          const allBlocks = buildDayCarveOuts(buildInput);
 
           // Narrow to the shop being booked. `null` means the client has not
           // chosen one ("any shop"), and every window stays a candidate — the
@@ -302,11 +308,15 @@ export class FirestoreAvailabilityReader implements AvailabilityReader {
           const windows = locationId
             ? windowsAt(allWindows, locationId)
             : allWindows;
+          const blocks = locationId
+            ? windowsAt(allBlocks, locationId)
+            : allBlocks;
           if (windows.length === 0) continue;
 
           days.push({
             barberId,
             windows,
+            blocks,
             // Busy is location-AGNOSTIC on purpose: a barber booked at the
             // other shop is not free here either, and their padded block has
             // to keep blocking whichever shop is being asked about.

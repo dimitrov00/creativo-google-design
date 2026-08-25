@@ -41,7 +41,7 @@ export const USER_ROLES: readonly UserRole[] = [
  * sysadmin` are staff; `client` is not) — everyone who isn't a plain
  * client is staff.
  */
-const STAFF_ROLES: readonly UserRole[] = [
+export const STAFF_ROLES: readonly UserRole[] = [
   'barber',
   'receptionist',
   'content_manager',

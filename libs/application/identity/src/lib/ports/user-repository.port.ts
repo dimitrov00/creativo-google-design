@@ -29,6 +29,14 @@ export interface UserRecordSnapshot extends ProvisionedUser {
   /** Stored ISO `YYYY-MM-DD` birthday, if the registered profile has one. */
   readonly birthDate: string | null;
   /**
+   * The stored role set, verbatim — what `verifyOtpChallenge` mints into
+   * the token's claims. Safe to trust BECAUSE of `firestore.rules`: an
+   * owner's create must say `['client']` and an owner's update may not
+   * touch `roles` at all, so anything else here was written by the Admin
+   * SDK — the documented out-of-band grant path.
+   */
+  readonly roles: readonly string[];
+  /**
    * Whether `completeRegistration` has written the full accounts-shape
    * profile — the activation key `verifyOtpChallenge` mints claims off
    * (`active` vs `onboarding`).

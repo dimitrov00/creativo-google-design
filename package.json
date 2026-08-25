@@ -5,7 +5,7 @@
   "scripts": {
     "prepare": "husky",
     "lint:styles": "stylelint \"apps/**/*.css\" \"libs/**/*.css\"",
-    "dev": "pnpm nx build functions && firebase emulators:exec --only firestore,auth,functions,storage --project demo-creativo-test --ui \"pnpm nx serve web --host 0.0.0.0 --allowedHosts\"",
+    "dev": "pnpm nx build functions && firebase emulators:exec --only firestore,auth,functions,storage --project demo-creativo-test --ui \"pnpm run seed:dev && node tools/dev-host.mjs && pnpm nx serve web --host 0.0.0.0 --allowedHosts\"",
     "seed:dev": "node tools/seed-dev-catalog.mjs",
     "test:emulator": "firebase emulators:exec --only firestore,auth --project demo-creativo-test \"pnpm nx run-many -t test-integration\"",
     "e2e:web": "pnpm nx build functions && firebase emulators:exec --only firestore,auth,functions --project demo-creativo-test \"pnpm nx e2e web\""

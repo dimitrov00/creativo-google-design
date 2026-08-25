@@ -87,6 +87,101 @@
   white-space: normal;
 }
 
+/* Staff schedule — a staff session's primary destination.
+   ---------------------------------------------------------------------
+   Everything structural is the design system: `ui-list-row` at
+   `uiVariant="prominent"` owns the fill, the on-primary ink, the
+   standalone radius and the box; `uiAlignment="leading"` grows it for the
+   two-line label the same way the finish-your-profile row above grows.
+   What is local is the one thing that makes it a feature rather than a
+   row — the oversized glyph bleeding off the trailing edge.
+
+   `overflow: hidden` is what makes the bleed work: the mark is sized far
+   past the row and the row's own radius clips it, so the shape follows
+   the corner instead of needing its own mask. */
+.cr-menu__staff {
+  position: relative;
+  overflow: hidden;
+}
+
+/* Same reset, same reason as `.cr-menu__setup` — a stacked label has to
+   opt out of the row label's single-line ellipsis.
+
+   The trailing inset RESERVES the mark's zone. Measured, the Bulgarian
+   subtitle clears the mark by 48px and the English title by 85px — but
+   that is an accident of two strings, and `white-space: normal` means a
+   longer locale or a larger text-size preference WRAPS rather than
+   ellipsizes, putting a second line straight under the densest part of
+   the decoration. Text over the mark measures 4.08:1, under AA.
+   Reserving the space makes the separation structural: no string, no
+   locale and no font scale can reach the mark, so the contrast guarantee
+   does not depend on anybody re-measuring it. */
+.cr-menu__staff-text {
+  white-space: normal;
+  /* 5.25rem, not a round 4: the mark is 7rem wide and sits -0.12em past
+     the trailing edge, so its box reaches ~6rem inward. Measured, this
+     leaves the text box ending just clear of it — verified in the browser
+     rather than eyeballed, because the two are sized in different units
+     and a guess lands 6px wrong. */
+  padding-inline-end: 5.25rem;
+}
+
+/* The chevron rides the end of the subtitle rather than the row's trailing
+   edge — the reference grammar, where the disclosure belongs to the phrase
+   that names the destination.
+
+   `inline-flex` seats the glyph against the text baseline-box without the
+   `vertical-align` nudge an inline icon would otherwise need; the tight
+   gap is the same 4px rung the label stack itself uses.
+
+   The ink is a MUTED ON-PRIMARY, not the `secondary` foreground role: this
+   line lives on the filled row, and `secondary` is defined against the
+   page, so it would paint mid-grey on near-black. Deriving it from the
+   row's own ink keeps the relationship true in both themes — light fills
+   dark and dark fills light, and the same declaration is correct for
+   both. */
+.cr-menu__staff-detail {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sys-space-tight);
+  color: color-mix(in srgb, var(--sys-color-on-primary) 72%, transparent);
+}
+
+/* The decoration. An UNSCALED `ui-icon` rides the current font size (the
+   fixed small/medium/large ladder is opt-in via `uiScale`), so sizing it
+   here is one declaration and never fights the ladder.
+
+   Tint via `color-mix`, not `opacity`: the system expresses de-emphasis
+   through colour, and an opacity on the host would also fade the glyph's
+   own antialiasing against the wash it sits on.
+
+   `pointer-events: none` because the row is one target — a decorative
+   glyph must never eat the press that belongs to the anchor. */
+.cr-menu__staff-mark {
+  position: absolute;
+  inset-inline-end: -0.12em;
+  inset-block-start: 50%;
+  translate: 0 -50%;
+  rotate: -14deg;
+  font-size: 7rem;
+  /* Derived from the row's own ink, like the subtitle — the mark sits on
+     the filled surface, so an accent tint would be a third colour fighting
+     the fill rather than a shadow of it. 14% reads as texture at this size
+     without competing with the label. */
+  color: color-mix(in srgb, var(--sys-color-on-primary) 14%, transparent);
+  pointer-events: none;
+}
+
+/* Motion is a preference, not a flourish: the tilt is the whole gesture,
+   so a reduced-motion reader gets the mark square-on rather than absent —
+   removing it would change the layout, which is the thing the query is
+   trying to avoid. */
+@media (prefers-reduced-motion: reduce) {
+  .cr-menu__staff-mark {
+    rotate: none;
+  }
+}
+
 /* Section rhythm is nested stack gaps in the template: comfortable between
    the preferences lead and the action run, regular between action groups.
    The groups themselves are ui-list-group — the chromeless segmented run

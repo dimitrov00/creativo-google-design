@@ -4,6 +4,7 @@ import { BarberDay } from './barber-day';
 import {
   chairTimeUtilisation,
   committedButUnsellableMinutes,
+  fragmentationRatio,
   utilisation,
 } from './barber-day-totals';
 import { CalendarDay } from './calendar-day';
@@ -504,5 +505,108 @@ describe('BarberDay.totals — the numbers the owner asked for', () => {
     const off = dayWith([], []);
     expect(utilisation(off.totals())).toBeNull();
     expect(chairTimeUtilisation(off.totals())).toBeNull();
+  });
+});
+
+describe('BarberDayTotals — tickets and fragmentation', () => {
+  /** A service reason for a named booking — the arm, not the whole union. */
+  function serviceFor(appointmentId: AppointmentId): OccupancyReason {
+    return {
+      kind: 'service',
+      appointmentId,
+      seatId: SeatId.generate(),
+      serviceId: serviceId(),
+      variantId: null,
+      origin: 'online',
+      outcome: 'worked',
+    };
+  }
+
+  /** Two seats of ONE party, served back to back by this barber. */
+  function partyOfTwo(): readonly OccupancyBlock[] {
+    const appointmentId = AppointmentId.generate();
+    return [
+      block({
+        id: 'blk-party-a',
+        fromH: 10,
+        toH: 10.5,
+        reason: serviceFor(appointmentId),
+        revenueMinorUnits: 1500,
+      }),
+      block({
+        id: 'blk-party-b',
+        fromH: 10.5,
+        toH: 11,
+        reason: serviceFor(appointmentId),
+        revenueMinorUnits: 1500,
+      }),
+    ];
+  }
+
+  it('counts a party of two as two services but ONE ticket', () => {
+    const totals = dayWith([window(9, 18)], partyOfTwo()).totals();
+    expect(totals.serviceCount).toBe(2);
+    expect(totals.appointmentCount).toBe(1);
+  });
+
+  it('counts two separate bookings as two tickets', () => {
+    const totals = dayWith(
+      [window(9, 18)],
+      [
+        block({ id: 'a', fromH: 10, toH: 10.5, revenueMinorUnits: 1500 }),
+        block({
+          id: 'b',
+          fromH: 11,
+          toH: 11.5,
+          reason: serviceFor(AppointmentId.generate()),
+          revenueMinorUnits: 1500,
+        }),
+      ],
+    ).totals();
+    expect(totals.appointmentCount).toBe(2);
+  });
+
+  /**
+   * The diagnosis pair: identical idle MINUTES, opposite problems. One
+   * three-hour hole is demand; three ten-minute slivers is scheduling.
+   */
+  it('separates one sellable hole from a run of unsellable slivers', () => {
+    const oneHole = dayWith(
+      [window(9, 12)],
+      [block({ id: 'x', fromH: 9, toH: 9.5 })],
+    ).totals('EUR', 15);
+    expect(oneHole.idleGapCount).toBe(1);
+    expect(oneHole.sellableGapCount).toBe(1);
+    expect(fragmentationRatio(oneHole)).toBe(0);
+
+    // 09:00–09:50, 10:00–10:50, 11:00–11:50 booked → three 10-minute gaps.
+    const slivers = dayWith(
+      [window(9, 12)],
+      [
+        block({ id: 'a', fromH: 9, toH: 9 + 50 / 60 }),
+        block({ id: 'b', fromH: 10, toH: 10 + 50 / 60 }),
+        block({ id: 'c', fromH: 11, toH: 11 + 50 / 60 }),
+      ],
+    ).totals('EUR', 15);
+    expect(slivers.idleGapCount).toBe(3);
+    expect(slivers.sellableGapCount).toBe(0);
+    expect(fragmentationRatio(slivers)).toBe(1);
+  });
+
+  it('respects the shop’s own shortest sellable service', () => {
+    // One 20-minute gap: sellable to a shop with a 15-minute trim, not to one
+    // whose shortest service is half an hour.
+    const gapped = dayWith(
+      [window(9, 10)],
+      [block({ id: 'a', fromH: 9, toH: 9 + 40 / 60 })],
+    );
+    expect(gapped.totals('EUR', 15).sellableGapCount).toBe(1);
+    expect(gapped.totals('EUR', 30).sellableGapCount).toBe(0);
+  });
+
+  it('has NO fragmentation on a fully booked day, rather than 0', () => {
+    const packed = dayWith([window(9, 10)], [block({ fromH: 9, toH: 10 })]);
+    expect(packed.totals().idleGapCount).toBe(0);
+    expect(fragmentationRatio(packed.totals())).toBeNull();
   });
 });

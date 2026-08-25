@@ -174,13 +174,20 @@
 
 /* Still ahead: the shop's own ink. Once it is a memory, the stamp goes
    quiet — a history where every row shouts has no upcoming visit. */
+/* The INK cut, not the fill. Both children are bare spans — a 10px uppercase
+   weekday and an 18px numeral — so they inherited `--sys-color-accent`, which
+   this system measures at 3.04:1 AS TYPE, under the 4.5:1 floor. The
+   background is untouched: as a fill it is doing the job it is toned for. */
 .visit__date[data-upcoming] {
   background: color-mix(in srgb, var(--sys-color-accent) 16%, transparent);
-  color: var(--sys-color-accent);
+  color: var(--sys-color-accent-label);
 }
 
 .visit__weekday {
-  font: var(--sys-font-caption2, var(--sys-font-caption));
+  /* `--sys-font-caption2` never existed — the fallback was carrying this
+     the whole time, and the `font-size` below overrides the role's size
+     anyway. Naming the real token stops the fake one being copied. */
+  font: var(--sys-font-caption);
   font-size: 0.625rem;
   line-height: 1;
   text-transform: uppercase;
@@ -385,7 +392,10 @@
   border: 0;
   border-radius: var(--control-radius-regular);
   background: none;
-  color: var(--sys-color-accent);
+  /* Ink, not fill: this button carries an 11px caption beside its glyph, and
+     the raw accent is 3.04:1 as type. The icon takes the darker cut with it
+     and still clears the 3:1 graphical floor comfortably. */
+  color: var(--sys-color-accent-label);
   text-align: center;
   text-decoration: none;
   cursor: pointer;

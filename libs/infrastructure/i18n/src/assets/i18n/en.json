@@ -123,7 +123,12 @@
     "booking.contact.empty_name": "Enter a name for the booking.",
     "booking.contact.invalid_phone": "That number doesn't look valid.",
     "booking.contact.invalid_email": "\"{{rawValue}}\" is not a valid email address.",
-    "booking.contact.note_too_long": "A note can be at most {{maxLength}} characters."
+    "booking.contact.note_too_long": "A note can be at most {{maxLength}} characters.",
+    "booking.transition.forbidden": "Only staff can do that.",
+    "booking.transition.not_allowed": "The appointment cannot move from \"{{from}}\" to \"{{to}}\".",
+    "booking.transition.not_found": "That appointment no longer exists.",
+    "booking.transition.invalid_input": "That request is not valid.",
+    "booking.transition.unauthenticated": "Sign in again to continue."
   },
   "shell": {
     "forbidden": {
@@ -334,7 +339,6 @@
     "configure": {
       "variant": "Option",
       "variantPick": "Choose option",
-      "barber": "Barber",
       "anyBarber": "Anyone",
       "barberPick": "Choose barber"
     },
@@ -483,7 +487,8 @@
       "rewards": "My rewards",
       "notifications": "Notifications",
       "openPositions": "Open positions",
-      "signOut": "Sign out"
+      "signOut": "Sign out",
+      "staffDay": "Schedule"
     },
     "prefs": {
       "language": "Language",
@@ -876,6 +881,155 @@
       "cancelled": "Cancelled",
       "no_show": "No-shows",
       "clear": "Show all"
+    }
+  },
+  "staff": {
+    "day": {
+      "title": "Schedule",
+      "previous": "Previous day",
+      "next": "Next day",
+      "backToToday": "Back to today",
+      "freeDay": "Free day",
+      "laneFailed": "This schedule didn't load — reload the page.",
+      "noRoster": "Nobody is on shift today.",
+      "unnamedClient": "Unnamed client",
+      "cancelTitle": "Cancel from the shop",
+      "cancelLede": "The reason is recorded and the slot frees immediately.",
+      "cancelReason": "Why is it off?",
+      "cancelConfirm": "Cancel the appointment",
+      "cancelDismiss": "Close",
+      "act": {
+        "confirmed": "Arrived",
+        "completed": "Done",
+        "no_show": "No-show",
+        "cancelled": "Cancel",
+        "arrived": "Arrived",
+        "reopen": "Undo no-show"
+      },
+      "gapFree": {
+        "one": "{{minutes}} min free",
+        "other": "{{minutes}} min free"
+      },
+      "visitCount": {
+        "one": "{{count}} cut",
+        "other": "{{count}} cuts"
+      },
+      "offToday": {
+        "one": "Off today: {{names}}",
+        "other": "Off today: {{names}}"
+      },
+      "hasNote": "Has a note",
+      "moreActions": "More actions",
+      "blockTime": "Block time",
+      "blockLede": "Take {{name}} off the book for part of the day, or all of it.",
+      "blockAllDay": "Off all day",
+      "blockFrom": "From",
+      "blockTo": "To",
+      "blockEffect": "This removes the time from what can be booked. Nobody is notified.",
+      "blockConfirm": "Block the time",
+      "blockFailed": "That didn't save. Try again.",
+      "cancelNote": "What happened?",
+      "cancelSeatOnly": "This calls off only this person’s seat. The rest of the party keeps its booking.",
+      "cancelReasonCode": {
+        "client_changed_plans": "Changed plans",
+        "client_unwell": "Client unwell",
+        "staff_barber_absence": "Barber away",
+        "staff_shop_closure": "Shop closed",
+        "other": "Other"
+      },
+      "staleDay": "This is yesterday’s schedule.",
+      "viewLabel": "View",
+      "scopeLabel": "Barber",
+      "scopeAll": "All barbers",
+      "view": {
+        "agenda": "List",
+        "day": "Day",
+        "three-day": "3 days",
+        "week": "Week"
+      },
+      "fab": {
+        "open": "Add",
+        "close": "Close",
+        "booking": "Add booking",
+        "block": "Block time",
+        "waitlist": "Add to waitlist"
+      },
+      "notBuiltYet": "Not built yet — this one needs the server-side write (Phase B4).",
+      "searchLabel": "Search",
+      "searchPlaceholder": "Name, phone, email, service…",
+      "searchScope": "Looks through upcoming and past visits.",
+      "searchLoading": "Reading the book…",
+      "searchEmpty": "Nothing matches.",
+      "allDay": "All day",
+      "offChip": "{{name}} off",
+      "offBadge": "Off today",
+      "blockedLabel": "Blocked",
+      "blockLift": "Lift all blocks for this day",
+      "zoneTitle": "Times shown in",
+      "zoneBody": "Every time on this schedule is the shop’s local clock ({{zone}}). The shop works one timezone, so there is nothing to switch.",
+      "blockTimeFor": "Block time — {{barber}}",
+      "rowAction": "{{verb}} — {{client}}, {{time}}",
+      "rowMenu": "More actions — {{client}}, {{time}}",
+      "dayHeading": "Schedule for {{day}}",
+      "blockBarber": "Which barber",
+      "blockLiftArm": "Confirm — removes the whole day",
+      "blockLiftWarning": "Removes every block for this day, along with the rest day if one is set. This cannot be undone.",
+      "blockCollisionsTitle": "Booked visits stay inside the blocked time",
+      "blockCollisionsNote": "Blocking does not move or cancel them. Call and move them yourself.",
+      "visitOpen": "Open visit",
+      "visitCall": "Call",
+      "visitNoPhone": "No number",
+      "visitNote": "Note",
+      "visitBarber": "Chair",
+      "visitService": "Service",
+      "visitWhen": "When",
+      "visitParty": "Party",
+      "visitPartyValue": "Seat {{label}}",
+      "visitArrived": "Arrived",
+      "visitStatus": "Status",
+      "visitDuration": "{{minutes}} min",
+      "fieldsLabel": "Fields",
+      "fieldsTitle": "What to show",
+      "fieldsLede": "Choose what each card carries. Kept on this device.",
+      "fieldsReset": "Reset to defaults",
+      "fieldsCount": "{{count}} of {{total}}",
+      "field": {
+        "avatar": "Client avatar",
+        "barberAvatar": "Barber avatar",
+        "barber": "Barber",
+        "email": "Email",
+        "phone": "Phone",
+        "service": "Service",
+        "note": "Note",
+        "timeStart": "Start",
+        "timeEnd": "End",
+        "timeRelative": "Relative time",
+        "price": "Price",
+        "party": "Party",
+        "freeTime": "Free time"
+      },
+      "agendaFree": "Free",
+      "agendaEmpty": "Nothing scheduled for this day.",
+      "nowLabel": "now",
+      "arrivedGlyph": "Checked in",
+      "statusArrived": "Here",
+      "liveNow": "Now",
+      "spanMinutes": "{{minutes}} min",
+      "spanHours": "{{hours}} h",
+      "spanHoursMinutes": "{{hours}} h {{minutes}} min",
+      "partyOf": "Party of {{count}}",
+      "offAnyDay": {
+        "one": "Off: {{names}}",
+        "other": "Off: {{names}}"
+      },
+      "nextUp": "Next",
+      "agendaRemaining": "{{span}} left",
+      "daySummaryFree": "{{span}} free",
+      "exception": {
+        "no_show": "No-show",
+        "cancelled": "Cancelled",
+        "pending": "Requested"
+      }
     }
   }
 }

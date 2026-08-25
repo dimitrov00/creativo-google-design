@@ -213,29 +213,11 @@ lib-booking-bag-sheet {
 /* The menu row's leading rail — an avatar-sized box that holds a portrait or
    the "anyone" disc. Collapsed entirely for the variant menu, whose options
    have no face to show and would otherwise all start one rail in. */
-.bag-option__lead {
-  flex: 0 0 auto;
-  inline-size: var(--control-size-regular);
-  block-size: var(--control-size-regular);
-}
-
+/* The rail's WIDTH is the menu's (see menu.css — a picker run holds its
+   leading column open for every row). All this class still says is that a
+   select with no faces in it has no rail at all. */
 .bag-option__lead[data-empty] {
   display: none;
-}
-
-.bag-option__lead .booking-any__glyph {
-  inline-size: 100%;
-  block-size: 100%;
-}
-
-/* Holds the checkmark's column open whether or not this row is the chosen
-   one, so picking a different option doesn't shift every name in the menu. */
-.bag-option__check {
-  flex: 0 0 auto;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  inline-size: var(--ui-icon-medium, 1.25rem);
 }
 
 /* ── The bar ─────────────────────────────────────────────────────────── */

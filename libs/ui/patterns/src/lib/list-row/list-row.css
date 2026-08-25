@@ -66,6 +66,31 @@
     color: var(--sys-color-on-primary);
   }
 
+  /* `neutral` — the middle rung between plain and prominent: the SAME
+     segment fill and standalone radius `ui-list-group` gives its rows,
+     available to a row that stands alone.
+
+     A `plain` row is transparent by design — it gets its surface from the
+     group around it. A row outside a group therefore has no fill at all,
+     which is right for a row inside a card and wrong for a lone row that
+     has to read as a tappable destination. This is that row, and it reuses
+     the group's own token rather than inventing a second "row surface"
+     that would drift from it.
+
+     NOT an accent wash. That was the first attempt and it was removed:
+     `[data-selected]` below paints the identical fill from the identical
+     alpha rung, so a permanently-washed row is a permanently
+     selected-looking one, and the first picker built on `uiSelected` would
+     have had no way to show selection. Emphasis must not borrow a state's
+     signal. */
+  .ui-list-row[data-variant='neutral'] {
+    background: var(--sys-color-surface-secondary);
+    border-radius: var(--control-radius-prominent);
+  }
+  .ui-card .ui-list-row[data-variant='neutral'] {
+    border-radius: 0;
+  }
+
   /* Selected (SwiftUI List selection) — the segment-selected rung of the
      alpha ladder over accent; trailing detail lifts back to foreground so
      the emphasized row doesn't carry de-emphasized metadata. */

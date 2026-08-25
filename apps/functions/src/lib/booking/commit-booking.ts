@@ -49,6 +49,7 @@ interface CommitBookingPayload {
   readonly seats?: unknown;
   readonly attemptId?: unknown;
   readonly contact?: unknown;
+  readonly bookedFromAppointmentId?: unknown;
 }
 
 /**
@@ -90,6 +91,19 @@ function toAttemptId(raw: unknown): string | undefined {
   return typeof raw === 'string' && /^[A-Za-z0-9_-]{16,64}$/.test(raw)
     ? raw
     : undefined;
+}
+
+/**
+ * The rebooking edge, bounded because it is stored.
+ *
+ * Same charset as an appointment id (which is what it points at) and dropped
+ * rather than refused when it does not fit — a malformed analytics link must
+ * never cost the client their booking.
+ */
+function toBookedFrom(raw: unknown): string | null {
+  return typeof raw === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(raw)
+    ? raw
+    : null;
 }
 
 /**
@@ -144,6 +158,7 @@ export const commitBooking = onCall(async (request) => {
     seats: toSeats(payload.seats),
     attemptId: toAttemptId(payload.attemptId),
     contact: toContact(payload.contact),
+    bookedFromAppointmentId: toBookedFrom(payload.bookedFromAppointmentId),
     ownerUserId: request.auth?.uid ?? null,
   });
 

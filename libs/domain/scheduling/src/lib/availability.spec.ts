@@ -72,6 +72,7 @@ const policy = BookingPolicy.create({
   minLeadMinutes: 0,
   horizonMonths: 2,
   maxFlexibleDays: 7,
+  autoConfirm: true,
   cancellationWindowHours: 24,
 });
 if (policy.isFailure()) throw new Error('bad fixture');

@@ -153,8 +153,13 @@ export class BarberDay {
     );
   }
 
-  totals(currencyCode = 'EUR'): BarberDayTotals {
-    return foldBarberDay(this.windows, this.blocks, currencyCode);
+  totals(currencyCode = 'EUR', shortestSellableMinutes = 15): BarberDayTotals {
+    return foldBarberDay(
+      this.windows,
+      this.blocks,
+      currencyCode,
+      shortestSellableMinutes,
+    );
   }
 
   /**

@@ -22,12 +22,63 @@
     --sys-color-secondary-label: #666666; /* v2 muted-foreground */
     --sys-color-tertiary-label: #999999; /* ≙ .tertiary — one step quieter than secondary */
     --sys-color-accent: #f26b22;
+
+    /* The SAME accent, darkened for text on a light ground — one hue made
+       legible, not a second accent. #f26b22 as type measures 3.04:1 on the
+       page and 2.84:1 on a card: it has been failing our own 4.5:1 floor
+       everywhere it was used as a label (dark passes at 6.9:1, which is why
+       it went unnoticed). Hue 21.1° and saturation 0.89 are preserved
+       exactly; only lightness moves. Fills, rails and hairlines keep
+       --sys-color-accent — this token is for INK. */
+    --sys-color-accent-label: #c14b0b; /* 4.91:1 page, 4.58:1 card */
+
+    /* The same lift `-label` performs for the accent, for the destructive
+       tone: `--sys-color-destructive` is 3.12:1 on the dark card, so an
+       error rendered in it is less legible than the fact it is about.
+       Fills and icons keep --sys-color-destructive; this is for INK. */
+    --sys-color-destructive-label: #c62828; /* 5.25:1 on the card */
     --sys-color-on-accent: #ffffff;
     --sys-color-destructive: #c62828;
     --sys-color-success: #1f8a5f;
     --sys-color-warning: #b26a00;
     --sys-color-promo: #c2710c;
     --sys-color-on-promo: #241a00;
+
+    /* ── Identity tones — WHOSE chair, never what state ────────────────
+       Five slots a schedule assigns to barbers so a mixed run can be read
+       without parsing a name. Chroma is capped at OKLCH .08–.12, roughly
+       half the accent's .184, so a mark reads as identity and never as a
+       second brand beside the one sanctioned accent. None enters the
+       accent's warm Lab sector (h 25–95), so no barber can be mistaken for
+       "next", "live" or the now line — those are the accent's alone.
+       Lightness is deliberately NOT the separator: that channel carries
+       "this hour has gone". Non-text marks, so the rule relied on is
+       SC 1.4.11 (3:1); every tone clears 5.5:1 on its theme's card surface
+       anyway, which is headroom rather than licence to tint type. */
+    /* ── IDENTITY — Apple's calendar palette ────────────────────────
+       System blue, green, purple, teal and pink: the colours Apple Calendar
+       actually assigns, not a neon set. Restraint is the point — these are
+       saturated enough to tell five chairs apart and quiet enough to sit
+       beside a client's name without shouting over it.
+
+       LIGHT uses Apple's ACCESSIBLE (increased-contrast) cut, which is their
+       own answer to exactly our problem: the standard systemGreen is ~1.8:1
+       on white and cannot carry a 4px mark. Green is darkened two points
+       further, to #24883c, so a white monogram on it clears 4.5:1 exactly.
+
+       No orange and no red-orange: the accent (~21 deg) has to stay the only
+       thing on this screen that means "look here".
+
+       Measured — rails 4.10-7.06:1 light and 5.47-10.52:1 dark against a 3:1
+       floor; the five sit a mean 171/184 apart in RGB. A white monogram
+       clears 4.50:1 on every light fill and a black one 7.40:1 on every dark
+       one, which is why there is no per-tone ink token: with this palette one
+       declaration is correct in both themes. */
+    --sys-identity-0: #0040dd; /* blue */
+    --sys-identity-1: #24883c; /* green */
+    --sys-identity-2: #8944ab; /* purple */
+    --sys-identity-3: #008299; /* teal */
+    --sys-identity-4: #d30f45; /* pink */
     --sys-color-ring: #121212;
     --sys-separator-strength: 4%; /* v2 --border-strength light */
     --sys-color-separator: color-mix(

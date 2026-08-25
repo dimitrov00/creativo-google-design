@@ -7,7 +7,7 @@ import {
 
 /** Row heights ride the control-size ladder (≙ .controlSize naming). */
 export type UiListRowSize = 'regular' | 'large';
-export type UiListRowVariant = 'plain' | 'prominent';
+export type UiListRowVariant = 'plain' | 'neutral' | 'prominent';
 
 /**
  * Cross-axis placement of the accessories ≙ SwiftUI
@@ -52,6 +52,22 @@ export type UiListRowAlignment = 'leading' | 'center';
  * shape. The state-layer hover grammar composes on the filled surface
  * for free (currentColor = on-primary, exactly how uiButton prominent
  * hovers).
+ *
+ * `neutral` is the middle rung: the same segment fill and standalone
+ * radius a row gets inside a `ui-list-group`, applied to a row that
+ * stands ALONE. It exists for the second standalone row in a stack — the
+ * one that must read as a real destination without becoming a second
+ * primary. Two adjacent `prominent` rows are two competing primaries and
+ * the eye picks neither.
+ *
+ * There was briefly a `tinted` rung here — an accent wash — and it was
+ * removed rather than kept. In this system an accent wash on a row
+ * already MEANS something: `[data-selected]` paints the identical fill
+ * from the identical alpha rung. A permanently-tinted row is therefore a
+ * permanently selected-looking row, and the first real picker built on
+ * `uiSelected` would have rendered its selection indistinguishable from
+ * it. Emphasis that borrows a state's signal is not emphasis; it is
+ * ambiguity.
  */
 @Component({
   // `li[uiListRow]` — semantic-list rows (schedules, menus that must stay

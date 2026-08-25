@@ -186,6 +186,64 @@ describe('firestore.rules', () => {
     );
   });
 
+  describe('barberLeadTimeSamples — staff read, server-only write', () => {
+    const sampleId = 'ivan__2026-08-05';
+
+    async function seedSample(): Promise<void> {
+      await testEnv.withSecurityRulesDisabled(async (ctx) => {
+        await setDoc(doc(ctx.firestore(), 'barberLeadTimeSamples', sampleId), {
+          barberId: 'ivan',
+          dayKey: '2026-08-05',
+          leadTimeDays: 2,
+        });
+      });
+    }
+
+    it('lets a staff member read a sample', async () => {
+      await seedSample();
+      const barber = testEnv.authenticatedContext('staff-1', {
+        roles: ['barber'],
+      });
+      await assertSucceeds(
+        getDoc(doc(barber.firestore(), 'barberLeadTimeSamples', sampleId)),
+      );
+    });
+
+    /**
+     * Unlike the `capacity` rollup it is derived from, this is NOT public. A
+     * lead-time series says how heavily booked the shop is and which way that
+     * is trending — commercial intelligence a competitor would price against,
+     * and nothing a client needs in order to book.
+     */
+    it('denies an anonymous visitor and a plain client', async () => {
+      await seedSample();
+      const anon = testEnv.unauthenticatedContext();
+      await assertFails(
+        getDoc(doc(anon.firestore(), 'barberLeadTimeSamples', sampleId)),
+      );
+      const client = testEnv.authenticatedContext('client-1', {
+        roles: ['client'],
+      });
+      await assertFails(
+        getDoc(doc(client.firestore(), 'barberLeadTimeSamples', sampleId)),
+      );
+    });
+
+    it('refuses every client write, staff and admin included', async () => {
+      for (const roles of [['barber'], ['admin']]) {
+        const actor = testEnv.authenticatedContext(`actor-${roles[0]}`, {
+          roles,
+        });
+        await assertFails(
+          setDoc(
+            doc(actor.firestore(), 'barberLeadTimeSamples', 'ivan__2026-08-06'),
+            { barberId: 'ivan', leadTimeDays: 0 },
+          ),
+        );
+      }
+    });
+  });
+
   // ── the booking-critical rules the audit found untested (F26) ─────────
 
   describe('settings — public read, admin write', () => {

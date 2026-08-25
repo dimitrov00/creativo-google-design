@@ -169,25 +169,129 @@
           }
 
           <ui-stack uiSpacing="regular">
-            <!-- Book now — the standalone primary CTA as a PROMINENT LIST
-                 ROW (owner ruling: same shape as the rows below, but filled
-                 with primary). ui-list-row uiVariant="prominent" owns the
-                 fill, on-primary ink, standalone radius and the 52px
-                 large row box; the anchor form is already full-width.
-                 Leading glyph sits on the SAME ladder step as every row
-                 leading glyph (uiScale="medium" — see the icon-scale note
-                 at the account card). -->
+            <!-- ── The session's two loudest destinations ──────────────
+                 THE FILLED ROW FOLLOWS THE ROLE, because the most likely
+                 action does. A client opens this menu to book. Someone
+                 behind the counter opens it to reach the day — by the
+                 owner's own account the schedule outranks booking for
+                 staff, and booking still gets used. So the pair swaps:
+                 staff see the schedule filled and first, everyone else
+                 sees booking filled and alone.
+
+                 That is still exactly ONE filled row per session, which is
+                 the rule; it just picks the right one per audience. Two
+                 filled rows would be two primaries and the eye would pick
+                 neither, and an accent WASH for the second one is not
+                 available — `[data-selected]` already owns that fill (see
+                 list-row.css), so a permanently washed row reads as
+                 permanently selected. -->
+            @if (isStaffMember()) {
+              <!-- UI-only convenience: `rolesGuard` on /staff and
+                   `isStaff()` in firestore.rules are the actual locks;
+                   this only decides what is worth showing. -->
+              <div
+                class="cr-menu__section"
+                [uiReveal]="'fade-up'"
+                uiRevealTrigger="mount"
+                [uiRevealDelay]="100"
+              >
+                <a
+                  class="cr-menu__staff"
+                  routerLink="/staff/schedule"
+                  uiListRow
+                  uiSize="large"
+                  uiVariant="prominent"
+                  uiAlignment="leading"
+                  [uiInteractive]="true"
+                  data-testid="menu-staff-day"
+                  (click)="close()"
+                >
+                  <ui-icon uiLeading uiName="staff.day" uiScale="medium" />
+                  <ui-stack uiSpacing="tight" class="cr-menu__staff-text">
+                    <!-- No `uiFont`: the title inherits the row's own
+                         callout/500, so it matches every neighbouring row
+                         label. It carried `headline` (18px/600) at first
+                         and read as the loudest type in the menu, which is
+                         a different claim from being the primary ACTION —
+                         the fill already makes that one. The second line
+                         and the mark do the rest; the type does not need to
+                         shout as well. -->
+                    <span>{{ t('landing.menu.staffDay') }}</span>
+                    <!-- The day the sheet opens on, with the disclosure
+                         chevron riding the END OF THIS LINE rather than
+                         pinned to the row's trailing edge — the reference
+                         grammar ("View plan benefits ›"), where the chevron
+                         belongs to the sentence that describes where you
+                         are going.
+
+                         The date is a live fact rather than a static
+                         tagline: it previews the destination, and it is the
+                         one thing a person reaching for the schedule
+                         already has in mind. Costs nothing — a formatted
+                         clock read, no query. -->
+                    <!-- No `uiForegroundStyle`: `secondary` is a role
+                         defined against the PAGE, and this line sits on the
+                         filled row — it would paint mid-grey on near-black.
+                         The muted-on-primary ink is a property of the
+                         filled surface, so it belongs in the row's own CSS
+                         rather than in a page-level role here. -->
+                    <span
+                      uiText
+                      uiFont="footnote"
+                      class="cr-menu__staff-detail"
+                    >
+                      <span data-testid="menu-staff-day-date">{{
+                        todayLabel()
+                      }}</span>
+                      <!-- Unscaled on purpose: an inline glyph rides the
+                           surrounding font (the fixed ladder is opt-in),
+                           so it stays sized to the footnote it punctuates
+                           instead of overpowering it at 16px. -->
+                      <ui-icon uiName="nav.disclosure" />
+                    </span>
+                  </ui-stack>
+                  <ng-container ngProjectAs="[uiTrailing]">
+                    <span uiTrailing>
+                      <!-- The oversized glyph bleeding off the trailing
+                           edge — the row's only piece of decoration, and
+                           the reason it reads as a destination rather than
+                           another line item. Purely ornamental: it repeats
+                           the leading glyph, carries no information, and is
+                           hidden from AT. Absolutely positioned, so this
+                           slot contributes no layout of its own. -->
+                      <ui-icon
+                        class="cr-menu__staff-mark"
+                        uiName="staff.day"
+                        aria-hidden="true"
+                      />
+                    </span>
+                  </ng-container>
+                </a>
+              </div>
+            }
+
+            <!-- Book now — the standalone CTA as a LIST ROW (owner ruling:
+                 same shape as the rows below). `prominent` owns the fill,
+                 on-primary ink, standalone radius and the 52px box; the
+                 anchor form is already full-width. Leading glyph on the
+                 SAME ladder step as every row glyph (uiScale="medium").
+
+                 `neutral` for a staff session — the schedule above already
+                 holds the fill. Neutral is not "plain": a plain row is
+                 transparent and takes its surface from the group around
+                 it, and this one stands alone, so it carries the segment
+                 fill itself. -->
             <div
               class="cr-menu__section"
               [uiReveal]="'fade-up'"
               uiRevealTrigger="mount"
-              [uiRevealDelay]="100"
+              [uiRevealDelay]="120"
             >
               <a
                 routerLink="/book"
                 uiListRow
                 uiSize="large"
-                uiVariant="prominent"
+                [uiVariant]="isStaffMember() ? 'neutral' : 'prominent'"
                 [uiInteractive]="true"
                 data-testid="menu-book"
                 (click)="close()"

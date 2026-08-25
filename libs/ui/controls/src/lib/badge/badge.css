@@ -4,6 +4,20 @@
      does. Prominence then only chooses between them, so a new tone gets
      every prominence for free and the two axes never have to be spelled
      out as a matrix. */
+  /* ── Ink on a tint is TEXT, and has to clear AA as text ────────────────
+   *
+   * Every tone used to set its ink to the raw tone colour over a 14% wash of
+   * itself. Those colours are tuned to carry a fill or an icon, not caption
+   * type at weight 600, and the pairing measured 2.4–4.4:1 across the tones
+   * in the two themes — under AA on seven of eight. "Минал" and "Пропуснат",
+   * the two badges a barber reads all day, were among the failures.
+   *
+   * Each tinted ink is now the tone carried 60% of the way toward the
+   * FOREGROUND, which darkens in light and lightens in dark by construction,
+   * so one recipe serves both themes and no tone can drift out of range when
+   * a palette moves. Worst case across four tones × two themes is 4.80:1;
+   * the hue stays plainly recognisable. The saturated (`prominent`) faces
+   * are untouched — they carry `on-accent` and already pass. */
   .ui-badge {
     --ui-badge-tint: var(--sys-color-surface-secondary);
     --ui-badge-ink: var(--sys-color-foreground);
@@ -39,7 +53,11 @@
       var(--sys-color-accent) 14%,
       transparent
     );
-    --ui-badge-ink: var(--sys-color-accent);
+    --ui-badge-ink: color-mix(
+      in srgb,
+      var(--sys-color-accent) 60%,
+      var(--sys-color-foreground)
+    );
     --ui-badge-solid: var(--sys-color-accent);
     --ui-badge-on-solid: var(--sys-color-on-accent);
   }
@@ -49,7 +67,11 @@
       var(--sys-color-success) 14%,
       transparent
     );
-    --ui-badge-ink: var(--sys-color-success);
+    --ui-badge-ink: color-mix(
+      in srgb,
+      var(--sys-color-success) 60%,
+      var(--sys-color-foreground)
+    );
     --ui-badge-solid: var(--sys-color-success);
     --ui-badge-on-solid: var(--sys-color-on-accent);
   }
@@ -59,7 +81,11 @@
       var(--sys-color-warning) 14%,
       transparent
     );
-    --ui-badge-ink: var(--sys-color-warning);
+    --ui-badge-ink: color-mix(
+      in srgb,
+      var(--sys-color-warning) 60%,
+      var(--sys-color-foreground)
+    );
     --ui-badge-solid: var(--sys-color-warning);
     --ui-badge-on-solid: var(--sys-color-on-accent);
   }
@@ -69,7 +95,11 @@
       var(--sys-color-destructive) 14%,
       transparent
     );
-    --ui-badge-ink: var(--sys-color-destructive);
+    --ui-badge-ink: color-mix(
+      in srgb,
+      var(--sys-color-destructive) 60%,
+      var(--sys-color-foreground)
+    );
     --ui-badge-solid: var(--sys-color-destructive);
     --ui-badge-on-solid: var(--sys-color-on-accent);
   }
