@@ -1,10 +1,17 @@
-import { Result, ZonedDateTime, fail, ok } from '@creativo/domain/kernel';
+import {
+  Money,
+  Result,
+  ZonedDateTime,
+  fail,
+  ok,
+} from '@creativo/domain/kernel';
 import {
   BarberId,
   type LocationDayHours,
   LocationId,
   Service,
   ServiceId,
+  ServiceTerms,
   ServiceVariantId,
   servicesConflict,
 } from '@creativo/domain/catalog';
@@ -16,6 +23,7 @@ import {
   BookingPolicy,
   CalendarDay,
   Interval,
+  PENDING,
   Seat,
   SeatId,
   SeatLabel,
@@ -141,11 +149,75 @@ export type CommitOutcome =
   | { readonly kind: 'committed'; readonly decision: BookingDecision }
   | { readonly kind: 'replayed'; readonly appointmentId: string };
 
+/**
+ * A seat's terms as STAFF fixed them — the snapshot being carried forward,
+ * plus whatever the command just changed.
+ *
+ * It lives on `deps` rather than on `RequestedSeat` on purpose. `RequestedSeat`
+ * is the shape a browser payload is parsed into; anything on it is a field a
+ * client can try to send, and "name your own price" is the one thing the round
+ * trip exists to prevent. `deps` is assembled server-side by a use case that
+ * has already checked the caller works the book, so a privilege that lives
+ * here cannot be reached from the wire at all.
+ */
+export interface StaffTermsOverride {
+  readonly priceMinorUnits?: number;
+  readonly currencyCode?: string;
+  readonly durationMinutes?: number;
+  readonly setupMinutes?: number;
+  readonly cleanupMinutes?: number;
+}
+
 export interface DecideBookingDeps {
   readonly now: ZonedDateTime;
   readonly policy: BookingPolicy;
   readonly nextId: () => string;
-  readonly ownerUserId: string;
+  /**
+   * The booking's owner, from the VERIFIED token.
+   *
+   * `null` is a walk-in the shop entered itself: nobody owns it, and every
+   * seat on it is anonymous. It is not a licence to book in nobody's name —
+   * a `self` seat with no owner is still refused below, because a self seat
+   * IS the owner's seat and there is no owner to bind it to.
+   */
+  readonly ownerUserId: string | null;
+  /**
+   * The shop is placing this itself, so the BOOKABLE-WINDOW tier does not
+   * apply to it.
+   *
+   * `roster-window.ts` already states the principle in prose: what
+   * `buildDayWindows` returns is what a CLIENT may be offered, and never a
+   * bound on what can exist. A barber taking a regular at 08:00 before the
+   * shop opens is a real thing that occupies real time, is tracked, and counts
+   * in that barber's statistics — it simply never becomes publicly bookable.
+   *
+   * Exactly four refusals are dropped, and they are one idea between them —
+   * every rule whose subject is "what may we OFFER":
+   *   - the rostered windows and the shop's published hours;
+   *   - `minLeadMinutes`, the notice a client owes the shop (a receptionist
+   *     pushing a running-late 10:00 visit to 10:15 at 10:12 owes nobody
+   *     notice — it is the same visit, already in the building);
+   *   - `horizonMonths`, how far ahead the calendar opens;
+   *   - the future-start invariant, so a visit currently IN THE CHAIR can be
+   *     corrected at all.
+   *
+   * What it does NOT drop is collisions: see `allowOverlap`, which is a
+   * separate flag precisely because sitting on somebody else's slot has to be
+   * said out loud. This one is never acknowledged and has no second tap — it
+   * is not a refusal staff override, it is not the staff rule to begin with.
+   */
+  readonly allowOutsideWindow?: boolean;
+  /**
+   * Staff may double-book, once they have said so.
+   *
+   * Unlike the window, this one IS acknowledged: the sheet relabels its commit
+   * «Запази въпреки застъпването» and only then sends the flag. Set from that
+   * acknowledgement and nothing else, so the promise the button makes is a
+   * promise the server keeps.
+   */
+  readonly allowOverlap?: boolean;
+  /** Per-`lineId` terms staff fixed by hand. See `StaffTermsOverride`. */
+  readonly termsOverrides?: ReadonlyMap<string, StaffTermsOverride>;
 }
 
 /** `${barberId}__${dayKey}` — the busy projection's composite key. */
@@ -190,9 +262,16 @@ export function decideBooking(
   }
   const locationId = locationIdResult.value;
 
-  const ownerResult = UserId.create(deps.ownerUserId);
-  if (ownerResult.isFailure()) {
-    return fail(new CommitBookingInvalidInputError('ownerUserId'));
+  // A walk-in the shop entered itself has no owner at all — see
+  // `DecideBookingDeps.ownerUserId`. `toSubject` still refuses a `self` seat
+  // without one, so "nobody owns this" can never become "anybody may claim it".
+  let owner: UserId | null = null;
+  if (deps.ownerUserId !== null) {
+    const ownerResult = UserId.create(deps.ownerUserId);
+    if (ownerResult.isFailure()) {
+      return fail(new CommitBookingInvalidInputError('ownerUserId'));
+    }
+    owner = ownerResult.value;
   }
 
   // A "person" is a subject: the booker plus each distinctly-labelled guest.
@@ -224,14 +303,24 @@ export function decideBooking(
   const servicesByPerson = new Map<string, Service[]>();
 
   for (const requested of request.seats) {
-    const service = servicesById.get(requested.serviceId);
+    const override = deps.termsOverrides?.get(requested.lineId);
+    const service = servicesById.get(requested.serviceId) ?? null;
     if (!service) {
-      return fail(new CommitBookingUnknownServiceError(requested.serviceId));
-    }
-    // `servesLocation`, not a hand-rolled `some`: an EMPTY `locationIds` is
-    // the catalog's "every location", and reading it as "nowhere" refuses
-    // every service the shop never bothered to scope.
-    if (!service.servesLocation(locationId)) {
+      // A seat whose terms staff already fixed survives its service leaving
+      // the catalogue: the appointment EXISTS, its terms are a snapshot taken
+      // at commit, and the shop must still be able to move a booking for a
+      // service it retired last month. Without this a deactivated seasonal
+      // service freezes every booking of it forever — the exact frozen book
+      // this write path exists to unfreeze. Everything the catalogue row
+      // would have decided (location, variant, conflicts) is skipped with
+      // it, because there is no row left to decide from.
+      if (!override) {
+        return fail(new CommitBookingUnknownServiceError(requested.serviceId));
+      }
+    } else if (!service.servesLocation(locationId)) {
+      // `servesLocation`, not a hand-rolled `some`: an EMPTY `locationIds` is
+      // the catalog's "every location", and reading it as "nowhere" refuses
+      // every service the shop never bothered to scope.
       return fail(
         new CommitBookingServiceNotAtLocationError(
           requested.serviceId,
@@ -258,12 +347,28 @@ export function decideBooking(
       // A variant the service does not declare is unreachable through the UI,
       // so it is either a stale tab or a forged payload. Either way the terms
       // it would resolve to are not the ones the user saw.
-      if (!service.variants.some((variant) => variant.id.equals(chosen))) {
+      if (
+        service &&
+        !service.variants.some((variant) => variant.id.equals(chosen))
+      ) {
         return fail(new CommitBookingInvalidInputError('variantId'));
       }
-    } else if (service.variants.length > 0) {
+    } else if (service && service.variants.length > 0 && !override) {
       // The catalog offers a choice that moves the price; committing without
       // one would silently charge `baseTerms`.
+      //
+      // ⚠ An OVERRIDE is the exception, and it is the same argument the
+      // retired-service branch above already makes. A staff edit carries the
+      // seat's terms forward wholesale, so `resolveTerms` never consults the
+      // catalog and there is no `baseTerms` to charge by accident. Refusing
+      // here froze appointments that already exist: every seat booked before
+      // its service gained a variant is legitimately `variantId: null`, and
+      // this branch made every one of them permanently un-draggable — the
+      // exact frozen book `staffEditAppointment` exists to unfreeze.
+      //
+      // Safe because `termsOverrides` lives on `deps`, not on the request:
+      // the staff use case is its only producer, so no browser payload can
+      // reach this and a client commit still cannot skip its variant.
       return fail(new CommitBookingInvalidInputError('variantId'));
     }
 
@@ -276,38 +381,45 @@ export function decideBooking(
     }
     const start = startResult.value;
 
-    if (start.toMillis() < notBeforeMs) {
+    if (!deps.allowOutsideWindow && start.toMillis() < notBeforeMs) {
       return fail(new CommitBookingTooSoonError(deps.policy.minLeadMinutes));
     }
 
     const day = CalendarDay.fromZonedDateTime(start);
-    if (horizonEnd.isBefore(day)) {
+    if (!deps.allowOutsideWindow && horizonEnd.isBefore(day)) {
       return fail(
         new CommitBookingBeyondHorizonError(deps.policy.horizonMonths),
       );
     }
 
-    // SERVER-RESOLVED terms — the whole point of the round trip.
-    const terms = service.termsFor(barberId, variantId);
+    // SERVER-RESOLVED terms — the whole point of the round trip. The catalog
+    // answers first, always; an override then replaces the numbers staff are
+    // allowed to fix, and what the catalog said is kept beside them.
+    const catalogTerms = service?.termsFor(barberId, variantId) ?? null;
+    const resolved = resolveTerms(catalogTerms, override);
+    if (resolved.isFailure()) return fail(resolved.error);
+    const { terms, provenance } = resolved.value;
 
-    const person =
-      requested.subject.kind === 'self'
-        ? 'self'
-        : `guest:${requested.subject.label}`;
-    const existing = servicesByPerson.get(person) ?? [];
-    for (const other of existing) {
-      if (servicesConflict(service, other, snapshot.services)) {
-        return fail(
-          new CommitBookingConflictingServicesError(
-            service.id.value,
-            other.id.value,
-          ),
-        );
+    if (service) {
+      const person =
+        requested.subject.kind === 'self'
+          ? 'self'
+          : `guest:${requested.subject.label}`;
+      const existing = servicesByPerson.get(person) ?? [];
+      for (const other of existing) {
+        if (servicesConflict(service, other, snapshot.services)) {
+          return fail(
+            new CommitBookingConflictingServicesError(
+              service.id.value,
+              other.id.value,
+            ),
+          );
+        }
       }
+      servicesByPerson.set(person, [...existing, service]);
     }
-    servicesByPerson.set(person, [...existing, service]);
 
-    const subjectResult = toSubject(requested, ownerResult.value);
+    const subjectResult = toSubject(requested, owner);
     if (subjectResult.isFailure()) return fail(subjectResult.error);
 
     const seatIdResult = SeatId.create(deps.nextId());
@@ -322,6 +434,7 @@ export function decideBooking(
       variantId,
       barberId,
       terms,
+      catalogTerms: provenance,
       startsAt: start,
       pref:
         requested.barberPref === 'any'
@@ -344,6 +457,8 @@ export function decideBooking(
       occupied,
       snapshot,
       startIso: requested.startIso,
+      allowOutsideWindow: deps.allowOutsideWindow === true,
+      allowOverlap: deps.allowOverlap === true,
     });
     if (placement.isFailure()) return fail(placement.error);
 
@@ -370,17 +485,35 @@ export function decideBooking(
     contact = contactResult.value;
   }
 
-  const appointmentResult = Appointment.create({
-    id: request.attemptId ?? deps.nextId(),
-    locationId: locationId.value,
-    seats,
-    // `now` becomes the appointment's `bookedAt` — the booking instant, and
-    // the denominator of every lead-time figure. It is the transaction's own
-    // clock reading, so the number is the server's, not the caller's.
-    now: deps.now,
-    contact,
-    bookedFromAppointmentId: request.bookedFromAppointmentId ?? null,
-  });
+  const appointmentResult = deps.allowOutsideWindow
+    ? // The shop's own placement, so the FUTURE-START invariant is not asked.
+      // `Appointment.create` refuses a start that is not after `now`, which is
+      // right for a booking being made and wrong for a visit being corrected:
+      // the party is in the chair, the clock has passed their start, and
+      // "nudge them fifteen minutes" must not be refused on the grounds that
+      // ten o'clock has already happened. `bookedAt` and `status` are
+      // placeholders here — the staff path restores the appointment's real
+      // ones, exactly as it restores the contact and the arrival stamp.
+      Appointment.reconstitute({
+        id: request.attemptId ?? deps.nextId(),
+        locationId: locationId.value,
+        seats,
+        status: PENDING,
+        bookedAt: deps.now,
+        contact,
+        bookedFromAppointmentId: request.bookedFromAppointmentId ?? null,
+      })
+    : Appointment.create({
+        id: request.attemptId ?? deps.nextId(),
+        locationId: locationId.value,
+        seats,
+        // `now` becomes the appointment's `bookedAt` — the booking instant, and
+        // the denominator of every lead-time figure. It is the transaction's own
+        // clock reading, so the number is the server's, not the caller's.
+        now: deps.now,
+        contact,
+        bookedFromAppointmentId: request.bookedFromAppointmentId ?? null,
+      });
   if (appointmentResult.isFailure()) {
     // This is where a party's own seats colliding on one barber is caught,
     // and where a mixed-currency cart dies.
@@ -396,9 +529,10 @@ export function decideBooking(
   // booking, never that the client is standing there. Arrival is its own
   // stamp (`Appointment.arrivedAt`), which is exactly why turning this on
   // does not cost the front desk its signal.
-  const appointment = deps.policy.autoConfirm
-    ? appointmentResult.value.confirm()
-    : ok(appointmentResult.value);
+  const appointment =
+    deps.policy.autoConfirm && !deps.allowOutsideWindow
+      ? appointmentResult.value.confirm()
+      : ok(appointmentResult.value);
   if (appointment.isFailure()) {
     return fail(new CommitBookingInvariantError(appointment.error));
   }
@@ -407,11 +541,71 @@ export function decideBooking(
 }
 
 /**
+ * The terms this seat is actually written with, plus the catalog's answer
+ * when the two differ.
+ *
+ * Three cases, and none of them is "trust the caller": no override at all is
+ * the catalog verbatim (every client commit); an override on top of a live
+ * catalog row is a staff edit, and the catalog row is kept as provenance; an
+ * override with no catalog row left is a booking whose service has since been
+ * retired, and there is nothing to compare it to.
+ */
+function resolveTerms(
+  catalog: ServiceTerms | null,
+  override: StaffTermsOverride | undefined,
+): Result<
+  { terms: ServiceTerms; provenance: ServiceTerms | null },
+  CommitBookingError
+> {
+  if (!override) {
+    if (!catalog) return fail(new CommitBookingInvalidInputError('terms'));
+    return ok({ terms: catalog, provenance: null });
+  }
+
+  const currencyCode =
+    override.currencyCode ?? catalog?.price.currencyCode() ?? '';
+  const minorUnits = override.priceMinorUnits ?? catalog?.price.toMinorUnits();
+  const durationMinutes = override.durationMinutes ?? catalog?.durationMinutes;
+  if (minorUnits === undefined || durationMinutes === undefined) {
+    return fail(new CommitBookingInvalidInputError('terms'));
+  }
+
+  const price = Money.fromMinorUnitsAndCode(minorUnits, currencyCode);
+  if (price.isFailure()) {
+    return fail(new CommitBookingInvalidInputError('priceMinorUnits'));
+  }
+  const terms = ServiceTerms.create(price.value, durationMinutes, {
+    // Padding is chair geometry, not a price, and no command changes it —
+    // whichever of the two answers the caller carried forward is the one the
+    // busy projection was drawn from.
+    setupMinutes: override.setupMinutes ?? catalog?.setupMinutes ?? 0,
+    cleanupMinutes: override.cleanupMinutes ?? catalog?.cleanupMinutes ?? 0,
+  });
+  if (terms.isFailure()) {
+    return fail(new CommitBookingInvalidInputError('durationMinutes'));
+  }
+
+  return ok({
+    terms: terms.value,
+    // Equal terms are not an override — a move that changes nothing about the
+    // money must not start claiming the catalog was overruled.
+    provenance: catalog && !catalog.equals(terms.value) ? catalog : null,
+  });
+}
+
+/**
  * Is this exact span placeable for this barber?
  *
  * Two questions, and both must be re-asked here rather than inherited from
  * the client's grid: is the barber rostered for it (windows), and is anyone
  * else already in it (busy, padded by that barber's turnaround).
+ *
+ * ### The staff relaxations are refusals REMOVED, not checks re-run
+ * `allowOutsideWindow` drops the roster question entirely — `roster-window.ts`
+ * rules that what the windows describe is what a CLIENT may be offered, never
+ * a bound on what can exist. `allowOverlap` drops the collision question, and
+ * only once the sheet has said so out loud. Neither weakens the other: staff
+ * placing an 08:00 regular still cannot silently sit on somebody else's 08:00.
  */
 function checkPlacement(input: {
   readonly barberId: BarberId;
@@ -420,58 +614,73 @@ function checkPlacement(input: {
   readonly occupied: Interval;
   readonly snapshot: BookingSnapshot;
   readonly startIso: string;
+  readonly allowOutsideWindow: boolean;
+  readonly allowOverlap: boolean;
 }): Result<void, CommitBookingError> {
-  const { barberId, locationId, day, occupied, snapshot, startIso } = input;
+  const {
+    barberId,
+    locationId,
+    day,
+    occupied,
+    snapshot,
+    startIso,
+    allowOutsideWindow,
+    allowOverlap,
+  } = input;
 
   const schedule = snapshot.schedules.get(barberId.value);
-  if (!schedule) {
+  if (!schedule && !allowOutsideWindow) {
     return fail(
       new CommitBookingBarberNotRosteredError(barberId.value, day.key()),
     );
   }
 
-  // Windows for the whole day, then narrowed to the shop being booked. A
-  // barber's day can span two shops, and a Center booking may only use a
-  // Center window — their Mladost afternoon is somebody else's capacity.
-  const exception = snapshot.exceptions.get(busyKey(barberId.value, day.key()));
-  const windows = windowsAt(
-    buildDayWindows({
-      day,
-      schedule: schedule.history,
-      exceptions: exception ? [exception] : [],
-      shopHours: new Map([
-        [locationId.value, shopDayHours(day, locationId, snapshot.shopHours)],
-      ]),
-    }),
-    locationId,
-  );
-  if (windows.length === 0) {
-    return fail(
-      new CommitBookingBarberNotRosteredError(barberId.value, day.key()),
+  if (schedule && !allowOutsideWindow) {
+    // Windows for the whole day, then narrowed to the shop being booked. A
+    // barber's day can span two shops, and a Center booking may only use a
+    // Center window — their Mladost afternoon is somebody else's capacity.
+    const exception = snapshot.exceptions.get(
+      busyKey(barberId.value, day.key()),
     );
+    const windows = windowsAt(
+      buildDayWindows({
+        day,
+        schedule: schedule.history,
+        exceptions: exception ? [exception] : [],
+        shopHours: new Map([
+          [locationId.value, shopDayHours(day, locationId, snapshot.shopHours)],
+        ]),
+      }),
+      locationId,
+    );
+    if (windows.length === 0) {
+      return fail(
+        new CommitBookingBarberNotRosteredError(barberId.value, day.key()),
+      );
+    }
+
+    const inAWindow = windows.some((window) =>
+      Interval.contains(window.interval, occupied),
+    );
+    if (!inAWindow) {
+      // Rostered that day, but not for this span — the client was offered a
+      // time that the roster does not actually cover, so it is refused with the
+      // recoverable code: re-picking from a fresh grid is the fix.
+      return fail(
+        new CommitBookingSlotUnavailableError(barberId.value, startIso),
+      );
+    }
   }
 
-  const inAWindow = windows.some((window) =>
-    Interval.contains(window.interval, occupied),
-  );
-  if (!inAWindow) {
-    // Rostered that day, but not for this span — the client was offered a
-    // time that the roster does not actually cover, so it is refused with the
-    // recoverable code: re-picking from a fresh grid is the fix.
-    return fail(
-      new CommitBookingSlotUnavailableError(barberId.value, startIso),
-    );
-  }
+  if (allowOverlap) return ok(undefined);
 
+  // A barber with no roster document has no declared turnaround either, and
+  // zero is the honest reading: the reset time is a fact about the chair, and
+  // inventing one would block a neighbour that nothing says is blocked.
+  const turnaround = schedule?.turnaroundMinutes ?? 0;
   const taken = (
     snapshot.busy.get(busyKey(barberId.value, day.key())) ?? []
-  ).map((interval) =>
-    Interval.pad(
-      interval,
-      schedule.turnaroundMinutes,
-      schedule.turnaroundMinutes,
-    ),
-  );
+  ).map((interval) => Interval.pad(interval, turnaround, turnaround));
   if (taken.some((interval) => Interval.overlaps(interval, occupied))) {
     return fail(
       new CommitBookingSlotUnavailableError(barberId.value, startIso),
@@ -483,10 +692,15 @@ function checkPlacement(input: {
 
 function toSubject(
   requested: RequestedSeat,
-  ownerUserId: UserId,
+  ownerUserId: UserId | null,
 ): Result<SeatSubject, CommitBookingError> {
   if (requested.subject.kind === 'self') {
-    // Bound to the TOKEN, so a payload cannot book in someone else's name.
+    // Bound to the TOKEN, so a payload cannot book in someone else's name —
+    // and refused outright when there is no token to bind to, because the
+    // `self` seat IS the owner's seat.
+    if (ownerUserId === null) {
+      return fail(new CommitBookingInvalidInputError('ownerUserId'));
+    }
     return ok(SeatSubject.account(ownerUserId, 'self'));
   }
   const label = SeatLabel.create(requested.subject.label);

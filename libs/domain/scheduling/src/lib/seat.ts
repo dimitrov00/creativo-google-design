@@ -84,6 +84,20 @@ export interface SeatProps {
   /** Price + duration SNAPSHOT taken at commit time. See the class doc. */
   readonly terms: ServiceTerms;
   /**
+   * What the CATALOGUE said when this seat was last written, recorded only
+   * when `terms` differs from it — an override's provenance.
+   *
+   * `null` means "the terms are the catalogue's own", which is the ordinary
+   * case and the only case a client-committed booking can produce. Staff may
+   * discount a price or stretch a duration, and without this the two are
+   * indistinguishable on read: a 25 € cut in the history is either a
+   * catalogue price or a give-away, and nothing stored can say which. That
+   * question is asked of every past visit ("how much did we discount last
+   * quarter") and there is no way to answer it retroactively — the catalogue
+   * row has moved on.
+   */
+  readonly catalogTerms?: ServiceTerms | null;
+  /**
    * WHEN this seat STARTS. The end is DERIVED from `terms.durationMinutes` —
    * see the class doc on why the seat may not state its length twice.
    */
@@ -144,6 +158,7 @@ export class Seat {
     readonly startsAt: ZonedDateTime,
     readonly outcome: SeatOutcome = SEAT_SCHEDULED,
     readonly pref: BarberPref | null = null,
+    readonly catalogTerms: ServiceTerms | null = null,
   ) {}
 
   static of(props: SeatProps): Seat {
@@ -157,6 +172,12 @@ export class Seat {
       props.startsAt,
       props.outcome ?? SEAT_SCHEDULED,
       props.pref ?? null,
+      // Normalised at the boundary: terms that EQUAL the catalogue are not an
+      // override, however they were passed, so `overridden()` can never be
+      // true for a seat nobody actually changed.
+      props.catalogTerms && !props.catalogTerms.equals(props.terms)
+        ? props.catalogTerms
+        : null,
     );
   }
 
@@ -209,6 +230,18 @@ export class Seat {
 
   isContactless(): boolean {
     return SeatSubject.isContactless(this.subject);
+  }
+
+  /**
+   * Did somebody change what the catalogue said — a discount, a stretched
+   * duration, or both?
+   *
+   * `false` for every seat written before provenance was recorded, which is
+   * "we do not know" and NOT a claim that the terms are the catalogue's. Read
+   * it the way `pref === null` is read: absence of evidence.
+   */
+  overridden(): boolean {
+    return this.catalogTerms !== null;
   }
 
   durationMinutes(): number {

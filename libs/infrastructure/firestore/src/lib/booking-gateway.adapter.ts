@@ -10,6 +10,8 @@ import {
   type RescheduleBookingRequest,
   type CommitBookingRequest,
   type CommittedBooking,
+  type StaffEditAppointmentRequest,
+  type StaffEditedAppointment,
 } from '@creativo/application/booking';
 import { FIREBASE_FUNCTIONS } from '@creativo/infrastructure/firebase-app';
 
@@ -67,6 +69,20 @@ function toFailureCode(error: unknown): {
     case 'booking.arrived.unauthenticated':
     case 'booking.arrived.forbidden':
       return { failure: 'unauthenticated', params };
+    // The one staff refusal that is an OFFER: somebody is in the way, and the
+    // sheet may relabel its commit «Запази въпреки застъпването» and re-send
+    // with `acknowledgedOverlap`. It is `slot_unavailable` because the
+    // failure taxonomy already has a word for "the time you were shown is not
+    // free" — the `serverCode` riding in `params` is what lets the sheet tell
+    // this one apart and offer the override.
+    case 'booking.staffEdit.overlaps':
+      return { failure: 'slot_unavailable', params };
+    case 'booking.staffEdit.unauthenticated':
+    case 'booking.staffEdit.forbidden':
+      return { failure: 'unauthenticated', params };
+    case 'booking.staffEdit.invalid_command':
+    case 'booking.staffEdit.before_arrival':
+    case 'booking.staffEdit.stale':
     case 'booking.transition.invalid_input':
     case 'booking.transition.not_found':
     case 'booking.transition.not_allowed':
@@ -217,6 +233,57 @@ export class CallableBookingGateway implements BookingGateway {
         new BookingGatewayError(
           failure,
           error instanceof Error ? error.message : 'mark arrived failed',
+          params,
+        ),
+      );
+    }
+  }
+
+  /**
+   * Calls `staffEditAppointment`.
+   *
+   * Returns the new revision rather than nothing, because the sheet's next
+   * save has to claim what it last read — a stale banner that cannot say
+   * which version it is stale against is a banner that fires forever.
+   */
+  async staffEdit(
+    request: StaffEditAppointmentRequest,
+  ): Promise<Result<StaffEditedAppointment, BookingGatewayError>> {
+    const callable = httpsCallable<
+      StaffEditAppointmentRequest,
+      { appointmentId?: unknown; revision?: unknown }
+    >(this.functions, 'staffEditAppointment');
+
+    try {
+      const response = await callable(request);
+      const appointmentId = response.data?.appointmentId;
+      if (typeof appointmentId !== 'string' || appointmentId.length === 0) {
+        // A 200 with nothing usable in it. Treated as unknown rather than as
+        // success, for the same reason `commit` does: reporting a write that
+        // may not have happened is the one failure mode worse than reporting
+        // none.
+        return fail(
+          new BookingGatewayError(
+            'unknown',
+            'staffEditAppointment returned no appointment id',
+          ),
+        );
+      }
+      return ok({
+        appointmentId,
+        revision:
+          typeof response.data?.revision === 'number'
+            ? response.data.revision
+            : 0,
+      });
+    } catch (error) {
+      const { failure, params } = toFailureCode(error);
+      return fail(
+        new BookingGatewayError(
+          failure,
+          error instanceof Error
+            ? error.message
+            : 'staffEditAppointment failed',
           params,
         ),
       );

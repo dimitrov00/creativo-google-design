@@ -37,6 +37,7 @@ import {
   barberPrefFromDocument,
   bookedAtFromDocument,
   busyDocumentId,
+  catalogTermsFromDocument,
   contactFromDocument,
   seatOutcomeFromDocument,
 } from '@creativo/application/booking';
@@ -191,6 +192,13 @@ function buildSeats(
           slotResult.value.end.toMillis(),
         ),
         pref: barberPrefFromDocument(entry['barberPref'], barberIdResult.value),
+        // The catalogue's answer at the time of the last write, when staff
+        // overrode it. Read back so a SECOND staff edit cannot lose the
+        // provenance the first one recorded.
+        catalogTerms: catalogTermsFromDocument(
+          entry['terms'],
+          termsResult.value,
+        ),
       }),
     );
   }

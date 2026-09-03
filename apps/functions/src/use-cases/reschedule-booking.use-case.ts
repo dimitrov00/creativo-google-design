@@ -7,6 +7,7 @@ import {
 } from '@creativo/domain/scheduling';
 import type { ClockPort } from '@creativo/application/shared';
 import {
+  arrivedAtFromDocument,
   bookedAtFromDocument,
   contactFromDocument,
 } from '@creativo/application/booking';
@@ -93,8 +94,11 @@ export class RescheduleBookingUseCase {
 
     const result = await this.store.reschedule(
       input.appointmentId,
-      ownerUserId,
-      request,
+      // The CLIENT's rule: you may move your own booking and nobody else's.
+      // Staff have their own use case with its own predicate — see
+      // `StaffEditAppointmentUseCase`.
+      (current) => current['ownerUserId'] === ownerUserId,
+      () => ok(request),
       (snapshot, current) => {
         const now = this.clock.now(snapshot.zone);
         if (now.isFailure()) {
@@ -164,6 +168,14 @@ export class RescheduleBookingUseCase {
             typeof current['bookedFromAppointmentId'] === 'string'
               ? current['bookedFromAppointmentId']
               : null,
+          // The arrival stamp is an independent FACT, not part of the
+          // placement, and `reconstitute` accepts it without demanding it —
+          // so omitting it did not fail, it silently erased. An
+          // arrived-but-unfinished visit lost its stamp on every move, and
+          // because the sheet's completion verb is gated on `arrived`,
+          // FINISHING THE VISIT disappeared from the sheet the moment anyone
+          // moved it. It cannot be backfilled: the instant is gone.
+          arrivedAt: arrivedAtFromDocument(current),
         });
         if (restored.isFailure()) {
           return fail(new CommitBookingInvariantError(restored.error));

@@ -14,9 +14,9 @@ import {
   seatOutcomeFromDocument,
   seatOutcomeToDocument,
 } from '@creativo/application/booking';
-import { STAFF_ROLES } from '@creativo/domain/accounts';
 import { adminFirestore } from '../firebase-admin';
 import { appendAudit } from './audit';
+import { callerWorksTheBook } from './caller-roles';
 
 /**
  * The staff write path for an appointment's LIFECYCLE — confirm, complete,
@@ -32,8 +32,11 @@ import { appendAudit } from './audit';
  * The staff day view is where a booking becomes real, and this is its pen.
  *
  * ### Role check mirrors `firestore.rules`
- * `request.auth.token.roles` against the SAME `STAFF_ROLES` grouping the
- * rules' `isStaff()` uses. The check is server-side and claims-based — a
+ * `request.auth.token.roles` against the SAME `worksTheBook()` grouping the
+ * rules use on `appointments` — NOT the broader `isStaff()`. It used to be
+ * `STAFF_ROLES`, which includes `content_manager`: a role the rules refuse
+ * every appointment READ could nonetheless confirm, cancel, no-show and
+ * stamp arrival on one. The check is server-side and claims-based — a
  * client cannot grant itself these roles (rules keep the users doc's
  * `roles` field Admin-SDK-only, and `verifyOtp` mints only what the doc
  * says).
@@ -91,14 +94,6 @@ function isResolved(seat: Record<string, unknown> | undefined): boolean {
   );
 }
 
-function isStaffCaller(request: { auth?: { token?: object } }): boolean {
-  const token = (request.auth?.token ?? {}) as Record<string, unknown>;
-  const roles = Array.isArray(token['roles']) ? token['roles'] : [];
-  return roles.some((role) =>
-    (STAFF_ROLES as readonly string[]).includes(String(role)),
-  );
-}
-
 export const transitionAppointment = onCall(async (request) => {
   const uid = request.auth?.uid;
   if (!uid) {
@@ -106,7 +101,7 @@ export const transitionAppointment = onCall(async (request) => {
       code: 'booking.transition.unauthenticated',
     });
   }
-  if (!isStaffCaller(request)) {
+  if (!callerWorksTheBook(request)) {
     // Deliberately NOT masked as not-found: unlike the owner-only cancel,
     // this endpoint's existence is not a secret — the caller simply lacks
     // the role, and saying so is more debuggable than a phantom 404.

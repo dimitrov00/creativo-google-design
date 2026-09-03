@@ -68,6 +68,10 @@ class StubGateway implements BookingGateway {
   markArrived(): never {
     throw new Error('not under test');
   }
+
+  staffEdit(): never {
+    throw new Error('not under test');
+  }
 }
 
 /** `sessionStorage` is not worth doubling here — the flow is what's under test. */

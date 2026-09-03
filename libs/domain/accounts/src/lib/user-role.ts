@@ -65,3 +65,38 @@ export function isStaffRole(role: UserRole): boolean {
 export function isStaff(roles: readonly UserRole[]): boolean {
   return roles.some(isStaffRole);
 }
+
+/**
+ * The roles that WORK THE BOOK — the TypeScript twin of `worksTheBook()` in
+ * `firestore.rules`.
+ *
+ * Deliberately NARROWER than `STAFF_ROLES`: `content_manager` is a
+ * copy-and-media role, and the rules already refuse it every read on
+ * `appointments` on the grounds that it has no business seeing every client's
+ * name, phone and note. Until this existed the server disagreed with the
+ * rules — every appointment callable gated on `STAFF_ROLES`, so a marketing
+ * role could not READ an appointment but could confirm, cancel, no-show and
+ * stamp arrival on one. A permission the reader is denied and the writer is
+ * granted is not a narrow gap; it is the wrong way round.
+ *
+ * Keep this list and `worksTheBook()` in `firestore.rules` equal. They are
+ * two dialects of one rule, and the rules file cannot import this one.
+ */
+export const BOOK_ROLES: readonly UserRole[] = [
+  'barber',
+  'receptionist',
+  'admin',
+  'sysadmin',
+];
+
+/**
+ * Whether a role set may read and write the shop's book.
+ *
+ * Takes `readonly string[]` rather than `UserRole[]` because its callers hold
+ * unvalidated claims off an ID token, and narrowing them first would mean
+ * every call site rehearsing the same vocabulary check to no benefit — an
+ * unrecognised string is simply not in `BOOK_ROLES` and grants nothing.
+ */
+export function worksTheBook(roles: readonly string[]): boolean {
+  return roles.some((role) => (BOOK_ROLES as readonly string[]).includes(role));
+}

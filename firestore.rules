@@ -187,9 +187,25 @@ service cloud.firestore {
       // owner direct-cancel grant was equally dead — the browser repository
       // refuses `save()`, and a rules-level status flip would have left the
       // slot phantom-blocked in `barberBusy` forever. Every lifecycle write
-      // goes through a callable (`commitBooking`, `cancelAppointment`), and
-      // the `rebuildBusy` trigger keeps the projection equal to what the
-      // appointments say.
+      // goes through a callable (`commitBooking`, `cancelAppointment`,
+      // `rescheduleAppointment`, `transitionAppointment`, `markArrived`,
+      // `staffEditAppointment`), and the `rebuildBusy` trigger keeps the
+      // projection equal to what the appointments say.
+      //
+      // `staffEditAppointment` — the staff move/resize/re-price path — adds
+      // NOTHING here on purpose. It is the callable that finally lets a barber
+      // move a booking, and the temptation is to grant staff a direct write
+      // now that a staff surface writes at all. It stays refused: the reasons
+      // above are unchanged by who is asking. Rules cannot check availability,
+      // cannot re-resolve a price against the catalogue, and cannot update
+      // `barberBusy` — a receptionist's direct write would be exactly the
+      // guaranteed double-booking the old `create: if isStaff()` was.
+      //
+      // Note the READ rule above is `worksTheBook()`, deliberately narrower
+      // than `isStaff()`. Every appointment callable now gates on the SAME
+      // grouping (`worksTheBook` in `@creativo/domain/accounts`); before that,
+      // `content_manager` could not read an appointment but could transition
+      // one — the wrong way round.
       allow create: if false;
       allow update: if false;
 

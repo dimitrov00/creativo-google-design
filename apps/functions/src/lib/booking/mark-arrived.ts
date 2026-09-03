@@ -1,7 +1,7 @@
 import { HttpsError, onCall } from 'firebase-functions/v2/https';
-import { STAFF_ROLES } from '@creativo/domain/accounts';
 import { adminFirestore } from '../firebase-admin';
 import { appendAudit } from './audit';
+import { callerWorksTheBook } from './caller-roles';
 
 /**
  * Record that the party walked in.
@@ -27,14 +27,6 @@ import { appendAudit } from './audit';
  */
 const ARRIVABLE = ['pending', 'confirmed'];
 
-function isStaffCaller(request: { auth?: { token?: object } }): boolean {
-  const token = (request.auth?.token ?? {}) as Record<string, unknown>;
-  const roles = Array.isArray(token['roles']) ? token['roles'] : [];
-  return roles.some((role) =>
-    (STAFF_ROLES as readonly string[]).includes(String(role)),
-  );
-}
-
 export const markArrived = onCall(async (request) => {
   const uid = request.auth?.uid;
   if (!uid) {
@@ -42,7 +34,7 @@ export const markArrived = onCall(async (request) => {
       code: 'booking.arrived.unauthenticated',
     });
   }
-  if (!isStaffCaller(request)) {
+  if (!callerWorksTheBook(request)) {
     throw new HttpsError('permission-denied', 'Staff only', {
       code: 'booking.arrived.forbidden',
     });

@@ -179,6 +179,96 @@ export interface BookingGateway {
   markArrived(
     appointmentId: string,
   ): Promise<Result<void, BookingGatewayError>>;
+
+  /**
+   * Move, resize, re-price, re-time or re-chair an appointment — the shop's
+   * own pen on its own book.
+   *
+   * Separate from `reschedule` because four of that path's rules are the
+   * CLIENT's and every one of them is wrong here: the cancellation window,
+   * the ownership check, the rostered window, and the refusal to touch a
+   * party where one guest is already served. What is left after removing them
+   * is not a reschedule.
+   */
+  staffEdit(
+    request: StaffEditAppointmentRequest,
+  ): Promise<Result<StaffEditedAppointment, BookingGatewayError>>;
+}
+
+/**
+ * What the shop is doing to one of its own appointments.
+ *
+ * A DISCRIMINATED command, never a `PATCH` of two timestamps. Five acts, and
+ * a patch could carry only two of them: a chair swap and a discount are not
+ * timestamps in any encoding, and collapsing the three that are would lose
+ * the only thing that makes a refusal actionable — WHICH edge is in the way.
+ * "Ivan is busy" is not something a receptionist can act on; "the bottom
+ * handle runs into Ivan's 11:00" is.
+ *
+ * After Ruling B the appointment stores a start and a DURATION, not a start
+ * and an end, so the arms line up one-to-one with the gestures that produce
+ * them: dragging the block writes `Начало`, dragging a handle writes
+ * `Времетраене` (and, for the top handle, both).
+ */
+export type StaffEditCommand =
+  /** Drag the block, or tap a running-late chip: the whole party shifts. */
+  | { readonly kind: 'move'; readonly startIso: string }
+  /**
+   * Drag a handle. `end` holds the start; `start` holds the END and writes
+   * both, which is the honest form of "I'll start ten minutes later but still
+   * finish at eleven."
+   */
+  | {
+      readonly kind: 'resize';
+      readonly edge: 'start' | 'end';
+      readonly atIso: string;
+    }
+  /** A discount or a correction on one seat. Provenance is stored with it. */
+  | {
+      readonly kind: 'reprice';
+      readonly seatId: string;
+      readonly priceMinorUnits: number;
+    }
+  /** The `Времетраене` ladder — one seat, one duration, typed. */
+  | {
+      readonly kind: 'redurate';
+      readonly seatId: string;
+      readonly minutes: number;
+    }
+  /** `⋯ → Смени стола` — one seat changes lane. */
+  | {
+      readonly kind: 'restaff';
+      readonly seatId: string;
+      readonly barberId: string;
+    };
+
+export interface StaffEditAppointmentRequest {
+  readonly appointmentId: string;
+  readonly command: StaffEditCommand;
+  /**
+   * The user saw «Запази въпреки застъпването» and tapped it.
+   *
+   * The one thing that lets the write land on top of somebody else. Note what
+   * has NO field here: placing an appointment outside the rostered window
+   * needs no acknowledgement and no second tap, because it is not a refusal
+   * staff override — it is simply not the staff rule. See `roster-window.ts`.
+   */
+  readonly acknowledgedOverlap?: boolean;
+  /**
+   * The revision the sheet was drawn from.
+   *
+   * Optional, and its absence is not a claim: a running-late chip has no
+   * draft to be stale. When it IS sent and the stored appointment has moved
+   * on, the write is refused rather than allowed to overwrite a colleague's
+   * save with a screen five minutes old.
+   */
+  readonly expectedVersion?: number | null;
+}
+
+/** What the sheet sends as `expectedVersion` on its next save. */
+export interface StaffEditedAppointment {
+  readonly appointmentId: string;
+  readonly revision: number;
 }
 
 export interface TransitionAppointmentRequest {

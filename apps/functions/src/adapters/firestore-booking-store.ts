@@ -137,44 +137,77 @@ export class FirestoreBookingStore {
    * for exactly this case). The new day's spans ARE merged inline, closing
    * the one window that matters: nobody else may take the slot this
    * appointment just moved into.
+   *
+   * ### Who may write is a PREDICATE, not an owner id
+   * It used to be an owner id compared for equality, which encoded one
+   * caller's rule into the store and made the store unusable by the other.
+   * A client moving their own booking passes an owner check; staff moving the
+   * shop's book pass unconditionally — and that difference is exactly what
+   * unfreezes the walk-ins already in the collection, whose `ownerUserId` is
+   * `null` and therefore equal to nobody's uid. They were unreschedulable by
+   * ANYONE, which nothing ever decided and nobody ever wanted.
    */
-  async reschedule(
+  async reschedule<E = never>(
     appointmentId: string,
-    ownerUserId: string,
-    request: DecideBookingRequest,
+    canWrite: (current: PersistedDocument) => boolean,
+    plan: (
+      current: PersistedDocument,
+    ) => Result<DecideBookingRequest, CommitBookingError | E>,
     decide: (
       snapshot: BookingSnapshot,
       current: PersistedDocument,
-    ) => Result<BookingDecision, CommitBookingError>,
-  ): Promise<Result<CommitOutcome, CommitBookingError>> {
+      request: DecideBookingRequest,
+    ) => Result<BookingDecision, CommitBookingError | E>,
+    extraFields: (
+      current: PersistedDocument,
+    ) => Record<string, unknown> = () => ({}),
+  ): Promise<Result<CommitOutcome, CommitBookingError | E>> {
+    type Failure = CommitBookingError | E;
     try {
-      return await this.db.runTransaction(async (tx) => {
-        const ref = this.db.collection('appointments').doc(appointmentId);
-        const snap = await tx.get(ref);
-        const current = snap.data();
-        if (!current || current['ownerUserId'] !== ownerUserId) {
-          // Indistinguishable from not-found on purpose: confirming that an
-          // id EXISTS to someone who does not own it is a leak.
-          return fail<CommitOutcome, CommitBookingError>(
-            new CommitBookingInvalidInputError('appointmentId'),
-          );
-        }
+      return await this.db.runTransaction(
+        async (tx): Promise<Result<CommitOutcome, Failure>> => {
+          const ref = this.db.collection('appointments').doc(appointmentId);
+          const snap = await tx.get(ref);
+          const current = snap.data();
+          if (!current || !canWrite(current)) {
+            // Indistinguishable from not-found on purpose: confirming that an
+            // id EXISTS to someone who may not write it is a leak.
+            return fail<CommitOutcome, Failure>(
+              new CommitBookingInvalidInputError('appointmentId'),
+            );
+          }
 
-        const loaded = await this.load(tx, request);
-        if (loaded.isFailure()) return fail(loaded.error);
+          // The plan may need the STORED appointment — a staff edit's seats are
+          // the ones already in the document, not a cart the caller sent — so it
+          // runs after the read and before the loads that depend on it. Every
+          // read still strictly precedes every write, which is all Firestore
+          // asks.
+          const planned = plan(current);
+          if (planned.isFailure()) {
+            return fail<CommitOutcome, Failure>(planned.error);
+          }
+          const request = planned.value;
 
-        const freed = this.withoutOwnContribution(loaded.value, current);
-        const decision = decide(freed.snapshot, current);
-        if (decision.isFailure()) return fail(decision.error);
+          const loaded = await this.load(tx, request);
+          if (loaded.isFailure()) {
+            return fail<CommitOutcome, Failure>(loaded.error);
+          }
 
-        this.write(tx, decision.value, freed);
-        return ok<CommitOutcome, CommitBookingError>({
-          kind: 'committed',
-          decision: decision.value,
-        });
-      });
+          const freed = this.withoutOwnContribution(loaded.value, current);
+          const decision = decide(freed.snapshot, current, request);
+          if (decision.isFailure()) {
+            return fail<CommitOutcome, Failure>(decision.error);
+          }
+
+          this.write(tx, decision.value, freed, extraFields(current));
+          return ok<CommitOutcome, Failure>({
+            kind: 'committed',
+            decision: decision.value,
+          });
+        },
+      );
     } catch (error) {
-      return fail(new CommitBookingStoreError(error));
+      return fail<CommitOutcome, Failure>(new CommitBookingStoreError(error));
     }
   }
 
@@ -325,12 +358,19 @@ export class FirestoreBookingStore {
     tx: Transaction,
     decision: BookingDecision,
     loaded: LoadedAttempt,
+    extraFields: Record<string, unknown> = {},
   ): void {
     const zone = loaded.snapshot.zone;
 
     tx.set(
       this.db.collection('appointments').doc(decision.appointment.id.value),
-      appointmentToDocument(decision.appointment),
+      // `extraFields` FIRST, so the mapper always wins on any field it owns.
+      // It carries the two things the mapper cannot know: the revision counter
+      // this write is stamping, and whatever the stored document holds that
+      // this mapper does not write — a `set()` replaces the document whole,
+      // and a field the mapper has never heard of is a field a staff edit
+      // would otherwise silently delete.
+      { ...extraFields, ...appointmentToDocument(decision.appointment) },
     );
 
     // Group by document FIRST: two seats for one barber on one day are one

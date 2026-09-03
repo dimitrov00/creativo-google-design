@@ -1,5 +1,5 @@
-import { ZonedDateTime } from '@creativo/domain/kernel';
-import { BarberId } from '@creativo/domain/catalog';
+import { Money, ZonedDateTime } from '@creativo/domain/kernel';
+import { BarberId, ServiceTerms } from '@creativo/domain/catalog';
 import {
   Appointment,
   AppointmentStatus,
@@ -70,6 +70,15 @@ export function appointmentToDocument(
         durationMinutes: seat.terms.durationMinutes,
         setupMinutes: seat.terms.setupMinutes,
         cleanupMinutes: seat.terms.cleanupMinutes,
+        // WHAT THE CATALOGUE SAID, beside what was charged — written only
+        // when staff overrode it, `null` otherwise. Without this pair a
+        // discounted seat round-trips indistinguishable from a catalogue
+        // price: the stored terms are the whole truth, the catalogue row has
+        // since moved on, and "how much did we give away last quarter" has no
+        // answer left anywhere. It cannot be backfilled, which is why it
+        // ships with the first write path that can produce an override.
+        catalogPriceMinorUnits: seat.catalogTerms?.price.toMinorUnits() ?? null,
+        catalogDurationMinutes: seat.catalogTerms?.durationMinutes ?? null,
       },
       slot: {
         startIso: seat.slot.start.toISO(),
@@ -117,6 +126,97 @@ export function appointmentToDocument(
     // existed, and for a staff-entered walk-in with nobody to call.
     contact: appointment.contact?.toProps() ?? null,
   };
+}
+
+/**
+ * Every top-level field `appointmentToDocument` produces.
+ *
+ * Kept beside the writer so the two cannot drift, and used by
+ * `preservedAppointmentFields` below. A field added to the writer without
+ * being added here becomes a field a staff edit silently deletes.
+ */
+export const APPOINTMENT_DOCUMENT_FIELDS: readonly string[] = [
+  'locationId',
+  'ownerUserId',
+  'barberIds',
+  'busyKeys',
+  'timeSlot',
+  'seats',
+  'status',
+  'bookedAt',
+  'bookedFromAppointmentId',
+  'arrivedAt',
+  'contact',
+];
+
+/**
+ * Everything the stored document holds that this mapper does not write.
+ *
+ * An appointment is persisted with `set()`, not `update()` — the seats, the
+ * mirrors and the envelope have to be replaced wholesale or they disagree.
+ * That makes every write a potential DELETE of any field the mapper has not
+ * heard of: the revision counter, a staff note, whatever the next milestone
+ * adds. Carrying the unknown remainder forward is what stops a barber's move
+ * from quietly discarding it, and it is the mapper's job because the mapper
+ * is what knows which fields it owns.
+ */
+export function preservedAppointmentFields(
+  current: PersistedDocument,
+): PersistedDocument {
+  const preserved: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(current)) {
+    if (APPOINTMENT_DOCUMENT_FIELDS.includes(key)) continue;
+    // eslint-disable-next-line security/detect-object-injection -- keys come from the stored document's own entries, filtered against this mapper's owned set.
+    preserved[key] = value;
+  }
+  return preserved;
+}
+
+/**
+ * A seat's `terms` map → the CATALOGUE's answer at the time of the last
+ * write, or `null` when there was no override to record.
+ *
+ * The pads and the currency come from the effective terms rather than being
+ * stored twice: staff can override a price and a duration and nothing else,
+ * so a second copy of the padding would be a field that can only ever agree
+ * — until the day it did not.
+ */
+export function catalogTermsFromDocument(
+  raw: unknown,
+  effective: ServiceTerms,
+): ServiceTerms | null {
+  if (raw == null || typeof raw !== 'object') return null;
+  const terms = raw as Record<string, unknown>;
+  const price = terms['catalogPriceMinorUnits'];
+  const duration = terms['catalogDurationMinutes'];
+  if (typeof price !== 'number' || typeof duration !== 'number') return null;
+
+  const money = Money.fromMinorUnitsAndCode(
+    price,
+    effective.price.currencyCode(),
+  );
+  if (money.isFailure()) return null;
+  const result = ServiceTerms.create(money.value, duration, {
+    setupMinutes: effective.setupMinutes,
+    cleanupMinutes: effective.cleanupMinutes,
+  });
+  // A malformed provenance pair reads as "not recorded" rather than failing
+  // the seat: the booking is real and the terms that were CHARGED are intact.
+  return result.isSuccess() ? result.value : null;
+}
+
+/**
+ * The stored document's optimistic-concurrency counter.
+ *
+ * `0` for every row written before staff editing existed, which is the right
+ * answer: a sheet that has never seen a revision sends none, and the first
+ * staff edit stamps `1`. It counts EDITS, not versions of the schema — two
+ * receptionists holding the same visit open both read `3`, and the second to
+ * save is told the book moved rather than overwriting the first.
+ */
+export function revisionOf(current: PersistedDocument): number {
+  const raw = current['revision'];
+  return typeof raw === 'number' && Number.isFinite(raw) ? raw : 0;
 }
 
 /**
