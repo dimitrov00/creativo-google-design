@@ -26,6 +26,14 @@ import {
   formatMoney,
 } from '@creativo/application/booking';
 import { AGENDA_FIELDS, AgendaFields } from '../agenda-fields';
+import {
+  StaffVisitEditor,
+  type VisitEditorBarberOption,
+  type VisitEditorCommit,
+  type VisitEditorLeg,
+  type VisitEditorVerb,
+  type VisitEditorVm,
+} from '../visit-editor/staff-visit-editor';
 import { assignBarberTones } from '../barber-tone';
 import {
   CatalogContentService,
@@ -179,6 +187,16 @@ interface DayRowVm {
    */
   readonly note: string | null;
   readonly partyLabel: string | null;
+  /**
+   * THIS lane's seats, one entry each — the editor's service rows.
+   *
+   * `serviceLabel` joins them with `+` for the agenda card, which is the right
+   * shape for a line the eye skims and the wrong one for a list you edit: a
+   * leg carries its own duration, its own price and its own barber, and the
+   * join throws all three away. Built here rather than in the editor because
+   * `toRow` is already holding the seats and the catalog.
+   */
+  readonly legs: readonly VisitEditorLeg[];
   readonly status: AppointmentStatusKind;
   /** Whether the party has walked in — the gate for offering "Done". */
   readonly arrived: boolean;
@@ -505,6 +523,66 @@ function abbreviateWeekday(long: string, locale: string): string {
 /** The whole product is Europe/Sofia-only for now (blueprint §7.1). */
 const SHOP_ZONE = 'Europe/Sofia';
 
+/**
+ * A day key plus minutes-from-midnight → the instant, in shop time.
+ *
+ * The inverse of `shopMinuteOfDay`, and the boundary the editor deliberately
+ * does not cross: it works in minutes because it knows the day only as a key,
+ * and inventing a zone there would be wrong in every shop but this one.
+ *
+ * `'later'` on a DST gap: a spring-forward morning has no 02:30, and a staff
+ * member dragging a block through it means the next real minute — not a
+ * refusal they cannot act on. It cannot fail for a well-formed key, but the
+ * `Result` is unwrapped honestly rather than asserted away.
+ */
+function shopInstantIso(dayKey: string, minuteOfDay: number): string | null {
+  const [year, month, day] = dayKey.split('-').map(Number);
+  if (!year || !month || !day) return null;
+  const hour = Math.floor(minuteOfDay / 60);
+  const minute = minuteOfDay % 60;
+
+  // Two passes, because a wall-clock time does not name an instant until the
+  // zone's offset for THAT instant is known, and the offset depends on the
+  // instant. Guess as if Sofia were UTC, measure how far the guess actually
+  // lands from the wall clock we wanted, correct by that much, and measure
+  // again — the second pass is what makes the two DST days right.
+  //
+  // ⚠ `ZonedDateTime` would do this in one line, but it lives in
+  // `@creativo/domain/kernel` and this is a `type:feature` library: the
+  // boundary rule forbids the import, and `Intl` is what the file's own
+  // `shopMinuteOfDay` already uses for the inverse.
+  const wanted = Date.UTC(year, month - 1, day, hour, minute);
+  let guess = wanted;
+  for (let pass = 0; pass < 2; pass++) {
+    guess = wanted - (shopWallClockUtc(guess) - guess);
+  }
+  return new Date(guess).toISOString();
+}
+
+/** What `at` reads as on the shop's wall clock, expressed as a UTC stamp. */
+function shopWallClockUtc(at: number): number {
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+    timeZone: SHOP_ZONE,
+  }).formatToParts(new Date(at));
+  const value = (type: string): number =>
+    Number(parts.find((part) => part.type === type)?.value ?? '0');
+  return Date.UTC(
+    value('year'),
+    value('month') - 1,
+    value('day'),
+    value('hour') % 24,
+    value('minute'),
+    value('second'),
+  );
+}
+
 /** The verbs the sheet OFFERS, in the order a shop reaches for them. */
 const OFFERED: readonly AppointmentStatusKind[] = [
   'confirmed',
@@ -571,6 +649,7 @@ function primaryVerb(
   selector: 'lib-staff-dashboard',
   imports: [
     StaffTimeGrid,
+    StaffVisitEditor,
     TranslocoDirective,
     UiAvatar,
     UiBadge,
@@ -1120,6 +1199,27 @@ export class StaffDashboard {
   });
 
   protected readonly isGrid = computed(() => this.store.view() !== 'agenda');
+
+  /**
+   * The chairs the visit sheet's barber picker offers.
+   *
+   * The same roster the scope switcher draws, in the editor's own vocabulary
+   * — one resolution of "who works here", not two, which is also why the
+   * PORTRAIT comes along. `ui-avatar` falls back to a monogram whenever
+   * `uiSrc` is absent, so dropping `avatarSrc` here does not fail, it just
+   * quietly draws initials — which is exactly what the visit sheet was doing
+   * two inches under a toolbar showing faces.
+   */
+  protected readonly barberOptions = computed<
+    readonly VisitEditorBarberOption[]
+  >(() =>
+    this.scopeOptions().map((option) => ({
+      id: option.id,
+      label: option.name,
+      tone: option.tone,
+      avatarSrc: option.avatarSrc,
+    })),
+  );
 
   /** Chairs the scope picker offers — every chair that works this period. */
   protected readonly scopeOptions = computed(() =>
@@ -2289,6 +2389,21 @@ export class StaffDashboard {
       hasNote: (contact?.note?.trim().length ?? 0) > 0,
       note: contact?.note?.trim() || null,
       partyLabel,
+      legs: seats.map((seat) => {
+        const service = this.catalog.findService(seat.serviceId.value);
+        const seatBarberId = seat.barberId.value;
+        return {
+          seatId: seat.id.value,
+          serviceLabel: service
+            ? this.content.text({ en: service.name.en, bg: service.name.bg })
+            : seat.serviceId.value,
+          minutes: seat.terms.durationMinutes,
+          priceLabel: this.seatsPrice([seat]),
+          barberId: seatBarberId,
+          barberName: this.barberNameOf(seatBarberId),
+          barberTone: this.toneOf(seatBarberId),
+        };
+      }),
       status,
       primary,
       overflow: legal.filter((verb) => verb !== primary),
@@ -2365,6 +2480,115 @@ export class StaffDashboard {
     () => this.visitSheetRow()?.barberName ?? null,
   );
 
+  /**
+   * The row, plus the context only the day knows — its neighbours, its roster
+   * and its clock.
+   *
+   * The editor draws a frame, and a frame is meaningless without what surrounds
+   * the block: the chair's other visits are what make an overlap visible before
+   * it is committed. Those live on the lane, not the row, which is why this is
+   * assembled here rather than inside the editor.
+   */
+  protected readonly visitEditorVm = computed<VisitEditorVm | null>(() => {
+    const row = this.visitSheetRow();
+    if (row === null) return null;
+
+    // The agenda lane holds the neighbours; the STORE lane holds the roster
+    // windows. `LaneVm.rostered` is a boolean — "does this chair work today" —
+    // and the intervals it is named after live one layer down.
+    const lane = this.lanes().find((entry) =>
+      entry.entries.some((e) => e.kind === 'visit' && e.id === row.id),
+    );
+    const neighbours = (lane?.entries ?? [])
+      .filter(
+        (entry): entry is DayRowVm =>
+          entry.kind === 'visit' && entry.id !== row.id,
+      )
+      .map((entry) => ({
+        name: entry.clientLabel,
+        startMinute: shopMinuteOfDay(entry.startMs),
+        endMinute: shopMinuteOfDay(entry.endMs),
+        tone: entry.barberTone,
+      }));
+
+    const storeLane = this.store
+      .lanes()
+      .find((entry) => entry.barberId === lane?.barberId);
+    const rostered = (storeLane?.rostered ?? []).map((window) => ({
+      start: shopMinuteOfDay(window.startMs),
+      end: shopMinuteOfDay(window.endMs),
+    }));
+
+    return {
+      appointmentId: row.id,
+      dayKey: this.store.dayKey(),
+      dayLabel: this.dayPillLabel(),
+      startMinute: shopMinuteOfDay(row.startMs),
+      endMinute: shopMinuteOfDay(row.endMs),
+      legs: row.legs,
+      clientLabel: row.clientLabel,
+      phone: row.phone,
+      phoneHref: row.phoneHref,
+      // `rebooked` is the one durable fact the shop holds about a person here:
+      // a client who came back. Anything richer needs a history read the sheet
+      // does not have, so it says the true thing or nothing.
+      clientMeta: row.rebooked
+        ? this.transloco.translate('staff.visit.clientReturning')
+        : null,
+      note: row.note,
+      priceLabel: row.priceLabel,
+      status: row.status,
+      statusLabel: this.transloco.translate(
+        'appointments.status.' + row.status,
+      ),
+      chairName: row.barberName,
+      chairTone: row.barberTone,
+      neighbours,
+      rosterStartMinute: rostered.length
+        ? Math.min(...rostered.map((w) => w.start))
+        : 0,
+      rosterEndMinute: rostered.length
+        ? Math.max(...rostered.map((w) => w.end))
+        : 24 * 60,
+      nowMinute: this.store.isToday() ? this.nowMinute() : null,
+      // Regime A, carried through unchanged. `canTransition` already decided
+      // what is legal and `primaryVerb` already decided what leads; the editor
+      // renders that decision rather than re-taking it.
+      primaryVerb: row.primary ? this.toEditorVerb(row, row.primary) : null,
+      overflowVerbs: row.overflow.map((verb) => this.toEditorVerb(row, verb)),
+      acting: this.store.isPending(row.id),
+    };
+  });
+
+  private toEditorVerb(row: DayRowVm, verb: RowVerb): VisitEditorVerb {
+    return {
+      kind: verb,
+      label: this.transloco.translate(this.verbKey(row.status, verb)),
+      // `no_show` is as terminal as a cancellation and just as hard to undo by
+      // hand, so it wears the same warning as the act that opens a reason
+      // sheet. Only the CANCEL path actually asks a question first.
+      destructive: verb === 'cancelled' || verb === 'no_show',
+    };
+  }
+
+  /** `вт, 26 авг` — the date as the pill wears it. */
+  private dayPillLabel(): string {
+    const parts = this.store.dayKey().split('-').map(Number);
+    const [year = 1970, month = 1, day = 1] = parts;
+    return new Intl.DateTimeFormat(this.transloco.getActiveLang(), {
+      weekday: 'short',
+      day: 'numeric',
+      // ⚠ `long`: Bulgarian renders a `short` month NUMERICALLY, so this
+      // label promised a month name and printed `ср, 26.08`. It feeds the
+      // visit sheet's date pill and nothing else.
+      month: 'long',
+      // UTC throughout: the key is a wall-clock date with no instant behind
+      // it, and letting the host zone interpret it moves the label a day west
+      // of Sofia every evening.
+      timeZone: 'UTC',
+    }).format(new Date(Date.UTC(year, month - 1, day)));
+  }
+
   protected openVisitSheet(row: DayRowVm): void {
     this.presentOnly();
     this.visitSheetId.set(row.id);
@@ -2389,6 +2613,54 @@ export class StaffDashboard {
       this.visitSheetId.set(null);
     }
     await this.act(row, to);
+  }
+
+  /**
+   * The editor's `(acted)`, resolved back to the row it belongs to.
+   *
+   * The editor is handed a flat view model and emits a verb string; it has no
+   * `DayRowVm` and must not need one. Resolving the row here keeps the party
+   * arithmetic — which seat a terminal act settles — in the one place that
+   * already knows it.
+   */
+  protected async actFromEditor(
+    appointmentId: string,
+    to: string,
+  ): Promise<void> {
+    const row = this.visitSheetRow();
+    if (row === null || row.id !== appointmentId) return;
+    await this.actFromSheet(row, to as RowVerb);
+  }
+
+  /**
+   * The editor's finished gesture, turned into a server command.
+   *
+   * The editor speaks in minutes-from-midnight because it knows the day only
+   * as a key; the instant is built HERE, where the shop's zone lives. That
+   * split is deliberate — an editor that invented a timezone would be wrong in
+   * one shop out of every two.
+   */
+  protected async commitFromEditor(
+    appointmentId: string,
+    commit: VisitEditorCommit,
+  ): Promise<void> {
+    const dayKey = this.store.dayKey();
+    const minute =
+      commit.kind === 'move'
+        ? commit.startMinute
+        : commit.edge === 'start'
+          ? commit.startMinute
+          : commit.endMinute;
+    const iso = shopInstantIso(dayKey, minute);
+    if (iso === null) return;
+
+    await this.store.staffEdit({
+      appointmentId,
+      command:
+        commit.kind === 'move'
+          ? { kind: 'move', startIso: iso }
+          : { kind: 'resize', edge: commit.edge, atIso: iso },
+    });
   }
 
   protected readonly cancelId = signal<string | null>(null);

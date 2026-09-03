@@ -1,0 +1,453 @@
+/*
+ * THE VISIT EDITOR — layout only.
+ *
+ * Every surface, radius, ink and control height below comes out of a token
+ * or out of a DS component. The classes here do three things and nothing
+ * else: they lay out the pinned strip, they give the two disclosure segments
+ * back the box the list group takes away from them, and they frame the
+ * picture. There is no colour invented on this surface and no size that is
+ * not a rung on the control ladder.
+ */
+
+/*
+ * Tabular figures wherever a time or a price is read.
+ *
+ * Not a nicety: the frame's date sits above a ladder of other figures, and
+ * proportional digits do not align down a column — which is the whole reason
+ * the eye can scan for the hour it wants.
+ */
+.staff-visit__figures {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── THE LADDER ───────────────────────────────────────────────────────
+ *
+ * Groups separate by one comfortable space and nothing else — no eyebrow, no
+ * divider, no card. The seam does the grouping, exactly as Apple's own event
+ * editor does it.
+ */
+.staff-visit__body,
+.staff-visit__page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sys-space-comfortable);
+  padding-inline: var(--ui-sheet-inset, var(--sys-space-regular));
+  padding-block: var(--sys-space-regular)
+    var(--ui-sheet-action-bar-clearance, var(--sys-space-comfortable));
+}
+
+/* A page's own container is the focus landing on push; it is not a control
+   and must never draw a ring as if it were one. */
+.staff-visit__page:focus-visible {
+  outline: none;
+}
+
+.staff-visit__page > input,
+.staff-visit__note {
+  inline-size: 100%;
+}
+
+/* ── THE TINTED PILL ──────────────────────────────────────────────────
+ *
+ * A disclosure trigger for a form VALUE — six declarations and no new token.
+ * It is NOT a `ui-chip`: `uiSelected` there binds `aria-pressed`, and this
+ * is not a toggle. It is always value-bearing, never a bare chevron.
+ */
+.staff-sheet__pill {
+  display: inline-flex;
+  align-items: center;
+  gap: calc(var(--sys-space-unit) / 2);
+  min-block-size: var(--control-size-small);
+  padding-inline: var(--sys-space-compact);
+  border: 0;
+  border-radius: var(--control-radius-capsule);
+  /*
+   * ⚠ NEUTRAL AT REST. TINTED WHEN OPEN. (owner ruling 2026-08-27)
+   *
+   * This was accent-washed at rest, which is backwards from what iOS does
+   * and from what this repo has already ruled twice. Calendar's Starts/Ends
+   * pills are `tertiarySystemFill` grey with `.label` ink until you tap one;
+   * that ONE pill then turns tinted while its picker is open, and reverts
+   * when its sibling takes over. The tint IS the disclosure state.
+   *
+   * `list-row.css:78-85` reached the same conclusion the hard way — a
+   * permanent accent wash was tried and removed because "a permanently-washed
+   * row is a permanently selected-looking one… Emphasis must not borrow a
+   * state's signal." A pill tinted at rest has already spent the colour it
+   * needs to say it is open.
+   *
+   * `--sys-color-fill` is systemFill parity and translucent, so the same
+   * pill composites correctly on the list-group's secondary surface AND on
+   * the frame head's background — which is the entire reason that token
+   * exists. It also fixes the state layer for free: `uiInteractive` mixes
+   * `currentColor`, so hover and press were orange here and neutral on
+   * every other row of the sheet.
+   */
+  background: var(--sys-color-fill);
+  color: var(--sys-color-foreground);
+  font: inherit;
+  transition: background-color var(--sys-motion-duration-regular)
+    var(--sys-motion-ease-standard);
+}
+
+/*
+ * OPEN. Two selectors, and the split is deliberate: the day pill is a button
+ * that reports `aria-expanded`, so that attribute is authoritative and mere
+ * keyboard focus must not masquerade as "open". The `Начало` pill is a span
+ * wrapping a native `input[type=time]` whose UA picker cannot be observed,
+ * so `:focus-within` is the honest proxy — and `:not([aria-expanded])` keeps
+ * it off the button.
+ *
+ * 18% is not invented: `button.css:405-412` already defines that mix as "the
+ * open/pressed resting state for triggers and layout toggles".
+ */
+.staff-sheet__pill[aria-expanded='true'],
+.staff-sheet__pill:not([aria-expanded]):focus-within {
+  background: color-mix(in srgb, var(--sys-color-accent) 18%, transparent);
+}
+
+/*
+ * ⚠ The VALUE stays foreground ink and the CHEVRON carries the accent.
+ *
+ * iOS tints the open pill's text too, and this repo cannot follow it there:
+ * `--sys-color-accent-label` on an 18% wash measures ≈3.9:1, worse than the
+ * 4.3:1 `button.css` already flags as failing 4.5, and paling the wash to
+ * reach 4.5 makes it too quiet to read as open. The glyph is a graphic, so
+ * it answers to the 3:1 floor, which raw accent clears — the same move
+ * `.ui-list-row[data-selected]` makes when it lifts its trailing detail back
+ * to foreground over an accent wash.
+ */
+.staff-sheet__pill[aria-expanded='true'] .ui-icon,
+.staff-sheet__pill:not([aria-expanded]):focus-within .ui-icon {
+  color: var(--sys-color-accent);
+}
+
+/* The ungated `:active` mirror this surface requires of every hover effect.
+   `uiInteractive` supplies one on the day pill; the time pill is a bare span
+   and carries none, so a tap on a phone would show nothing at all. */
+.staff-sheet__pill:active {
+  background: color-mix(in srgb, var(--sys-color-accent) 18%, transparent);
+}
+
+/* The pill wraps the platform's own time control, so the input inside it
+   carries no second surface of its own. */
+.staff-sheet__pill input {
+  min-block-size: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+}
+
+/*
+ * Glyph discipline, stated once because it is the whole navigation model
+ * rendered at 20px: `⌄` (`field.expand`) means "a menu drops here"; `›`
+ * (`nav.disclosure`) means "you go somewhere and come back". Both are DS
+ * icons inside DS controls — a menu's value is a `uiButton` `plain`, never a
+ * hand-rolled span — so neither needs a rule of its own here.
+ */
+
+/* ── THE INLINE DISCLOSURE ────────────────────────────────────────────
+ *
+ * A sibling SEGMENT of the group, never a child of the row — so it inherits
+ * the half-unit seam and the corner treatment and reads as part of the run.
+ * The group flattens every non-row child to `display: contents` so a wrapped
+ * row still reaches its rules; this segment is a real box, so it takes its
+ * own display back and paints the same segment fill the rows do.
+ */
+.ui-list-group > .staff-sheet__disclosure {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sys-space-compact);
+  padding: var(--sys-space-regular);
+  background: var(--sys-color-surface-secondary);
+  border-radius: var(--control-radius-subtle);
+}
+
+.ui-list-group > .staff-sheet__disclosure:last-child {
+  border-end-start-radius: var(--control-radius-prominent);
+  border-end-end-radius: var(--control-radius-prominent);
+}
+
+/* Reminders' Today / Tomorrow: most date changes are one or two days and
+   should not require aiming at a cell. */
+.staff-visit__relatives {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sys-space-compact);
+}
+
+/* ── THE FRAME ────────────────────────────────────────────────────────
+ *
+ * Ground, one hairline ring, the regular radius, clipped. The grid inside
+ * owns its own height, its own scale and its own scroll: this is the box it
+ * is drawn in, and the date navigator that heads it sits OUTSIDE that height
+ * so the drawn window is the same at every density.
+ */
+.staff-frame {
+  display: flex;
+  flex-direction: column;
+  /* NO gap: the head, the month and the picture are ONE box. A gap here is
+     what made the date navigator read as a separate card floating above the
+     frame instead of as its header. */
+  gap: 0;
+  border: 1px solid var(--sys-color-separator);
+  border-radius: var(--control-radius-regular);
+  background: var(--sys-color-background);
+  /* The head's corners are the box's corners. */
+  overflow: clip;
+}
+
+/*
+ * THE FRAME'S HEAD — a calendar bar, not a list row.
+ *
+ * It carries the frame's own ground rather than a list group's fill, which
+ * is the whole point: it has to look like the top of the picture, not like a
+ * control that happens to sit above one. The hairline under it is the same
+ * separator the box is drawn with, so the head and the grid read as two
+ * regions of one surface.
+ */
+.staff-frame__head {
+  display: flex;
+  align-items: center;
+  gap: var(--sys-space-compact);
+  padding-inline: var(--sys-space-compact);
+  padding-block: var(--sys-space-tight);
+  border-block-end: 1px solid var(--sys-color-separator);
+}
+
+/* Three targets that read as ONE control, so they touch. Each still clears
+   44px of hit area; only the ink is small. */
+.staff-frame__steps {
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+  flex: none;
+}
+
+.staff-frame__steps > .ui-button {
+  min-block-size: max(var(--control-size-regular), 44px);
+  min-inline-size: max(var(--control-size-regular), 44px);
+}
+
+/*
+ * The date FILLS the rest of the head.
+ *
+ * A pill hugging its own text left a band of dead space between the steppers
+ * and the date, which read as two clusters rather than one bar. Filling it
+ * also buys the room the long month name needs — `26 август`, not `26.08`.
+ */
+/* LAYOUT ONLY — the tint, the radius and the label colour stay with
+   `.staff-sheet__pill`, which is the recipe every pill on this surface
+   shares. Restating them here is how two pills drift apart. */
+.staff-frame__pill {
+  flex: 1;
+  justify-content: space-between;
+  min-block-size: max(var(--control-size-regular), 44px);
+  padding-inline: var(--sys-space-comfortable);
+}
+
+/* The month, dropped over the picture from the head above it. */
+.staff-frame__calendar {
+  padding-inline: var(--sys-space-comfortable);
+  padding-block: var(--sys-space-compact);
+  border-block-end: 1px solid var(--sys-color-separator);
+}
+
+/* The box belongs to `.staff-frame` now, so the grid draws none of its own —
+   a second ring inside the first is what made the head look bolted on. */
+.staff-frame .staff-grid__frame {
+  border: 0;
+  border-radius: 0;
+  background: none;
+  overflow: clip auto;
+}
+
+/*
+ * The chair's face and its tone swatch.
+ *
+ * The same three-part composition the scope switcher and the block sheet
+ * already ship (`ui-avatar` + a corner swatch keyed on `data-barber-tone`,
+ * whose `--barber-tone` is a DS modifier). It is restated here rather than
+ * borrowed from `staff-dashboard.css` because that stylesheet belongs to a
+ * different component, and a surface that only renders correctly when
+ * another one happens to be loaded is a bug waiting for a lazy route. The
+ * pair belongs in the DS the day a third consumer appears.
+ */
+.staff-visit__face {
+  position: relative;
+  display: inline-flex;
+  flex: 0 0 auto;
+}
+
+.staff-visit__swatch {
+  position: absolute;
+  inset-block-end: -2px;
+  inset-inline-end: -2px;
+  inline-size: 0.75rem;
+  block-size: 0.75rem;
+  border-radius: var(--control-radius-capsule);
+  background-color: var(--barber-tone, var(--sys-color-separator));
+  /* The cut-out, so the patch never sits directly against the photograph. */
+  box-shadow: 0 0 0 2px var(--sys-color-surface);
+}
+
+/* ── THE CONSEQUENCE STRIP ────────────────────────────────────────────
+ *
+ * A non-interactive line under a pushed page's large title. It beats a
+ * popover on the popover's own terms: it shows the CHANGED value, where a
+ * panel over the parent could only ever show the stale one behind glass.
+ */
+.staff-sheet__consequence {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── TWO TARGETS IN ONE ROW ───────────────────────────────────────────
+ *
+ * The row pushes the person's page; the `☎` dials. Both clear 44x44 and
+ * their accessible names differ, which is what makes the pair legal. The
+ * anchor is a sibling of the row (an `<a>` inside a `<button>` is not
+ * markup), positioned over the row's trailing end, and the row reserves the
+ * width so the chevron never lands underneath it.
+ */
+.ui-list-group > .staff-visit__peer {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+}
+
+/* TWO trailing targets on one row, and they must not read as one control.
+   The row is a `<button>`, so the call cannot nest inside it — it is a
+   sibling positioned over the space the row reserves. At 8px apart the glyphs
+   merged into a single smudge (owner, 2026-08-26); the pair now gets a full
+   regular gutter and a hairline between them, which is how Apple separates a
+   detail-disclosure accessory from the row that carries it. */
+/* ⚠ Padding the ROW pushes its own trailing chevron inward with it, which is
+   how the two ended up in the wrong order. The row keeps its natural padding
+   so the chevron stays at the true trailing edge; only the LABEL is inset, to
+   clear the call button that floats over the space between them. */
+.staff-visit__peer > .ui-list-row {
+  flex: 1 1 auto;
+}
+
+.staff-visit__peer > .ui-list-row > .ui-list-row__label {
+  padding-inline-end: calc(
+    var(--control-size-regular) + var(--sys-space-loose)
+  );
+}
+
+.staff-visit__call {
+  position: absolute;
+  z-index: 1;
+  inset-block: 0;
+  /* Clear of the chevron's own column, not merely near it. */
+  inset-inline-end: calc(var(--control-size-regular) + var(--sys-space-tight));
+  margin-block: auto;
+}
+
+/* The seam between the two targets — the same separator the run itself uses,
+   inset so it reads as a divider between controls and not as a row edge. */
+.staff-visit__peer::after {
+  content: '';
+  position: absolute;
+  z-index: 1;
+  inset-block: 25%;
+  /* Between the two targets: right of the call, left of the chevron. */
+  inset-inline-end: calc(var(--control-size-regular) - var(--sys-space-tight));
+  inline-size: 1px;
+  background: var(--sys-color-separator);
+  pointer-events: none;
+}
+
+/* ── THE CLIENT'S WORDS ───────────────────────────────────────────────
+ *
+ * Someone else's prose, outside every group and marked up as what it is. A
+ * `ui-list-row` would dress a quotation as a control, and this one is never
+ * editable: overwriting it destroys evidence, and once merged it cannot be
+ * unmerged.
+ */
+.staff-visit__quote {
+  margin: 0;
+  padding-inline-start: var(--sys-space-regular);
+  border-inline-start: 2px solid var(--sys-color-separator);
+  color: var(--sys-color-secondary-label);
+  font: var(--sys-font-body);
+}
+
+/* The team note's textarea is the same lone row in its other face, so the
+   box must not add a second surface inside the segment it already has. */
+.staff-visit__note {
+  min-block-size: calc(var(--sys-space-unit) * 10);
+  resize: vertical;
+}
+
+/* ── THE DOCK ─────────────────────────────────────────────────────────
+ *
+ * No commit control: `staffEditAppointment` does not exist, so the label is
+ * replaced by a sentence. The bar docks a spread primary by auto margin, and
+ * this line carries none of the three markers that would claim that slot —
+ * it simply takes the leftover room and ellipsises rather than pretending to
+ * be a button.
+ */
+.staff-visit__honesty {
+  flex: 1 1 auto;
+  margin: 0;
+  margin-inline-start: auto;
+  text-align: end;
+  text-wrap: balance;
+}
+
+/* Destructive rows sit at the bottom of the scroll in their own group —
+   Apple's placement, one flick away rather than gated behind distance. The
+   red is the DS foreground modifier; there is no destructive row variant and
+   one must not be invented for a single row. */
+.staff-visit__destructive {
+  margin-block-start: var(--sys-space-comfortable);
+}
+
+/* The row carries no label, so the steps own the leading edge outright. */
+.staff-visit__daynav > .ui-list-row__label {
+  display: none;
+}
+
+/* ── A LIST ROW THAT IS ALSO A MENU TRIGGER ───────────────────────────
+ *
+ * `ui-list-group`'s recipe flattens exactly ONE wrapper between the group
+ * and a row (`.ui-list-group > :not(.ui-list-row) > .ui-list-row`, with the
+ * wrapper set to `display: contents`). A row that opens a menu has TWO —
+ * `li > ui-menu > button` — because `uiMenuTrigger` has to live inside the
+ * `ui-menu` that anchors the surface. The chain misses, and the row loses
+ * the segment fill and the run's outer corners: it renders as bare text on
+ * the sheet's ground beside neighbours that are properly carded.
+ *
+ * ⚠ `display: contents` on the `ui-menu` would flatten the chain but also
+ * kill the `position: relative` the surface is absolutely positioned
+ * against, so the menu would anchor to whatever is positioned further up —
+ * the sheet. The wrapper stays a box; the segment styling is restated for
+ * the one extra level instead. The day `--ui-list-group-wrapper` becomes a
+ * real hook (list-group.css:24 already names it in prose), this goes.
+ */
+.staff-visit__group > li > ui-menu {
+  /* `.ui-menu` is `inline-flex`, which shrink-wraps the row; the segment
+     must fill the run's width like every other. `position: relative`
+     survives, which is the part that matters. */
+  display: block;
+}
+
+.staff-visit__group > li > ui-menu > .ui-list-row {
+  background: var(--sys-color-surface-secondary);
+  border-radius: var(--control-radius-subtle);
+}
+
+.staff-visit__group > li:first-child > ui-menu > .ui-list-row {
+  border-start-start-radius: var(--control-radius-prominent);
+  border-start-end-radius: var(--control-radius-prominent);
+}
+
+.staff-visit__group > li:last-child > ui-menu > .ui-list-row {
+  border-end-start-radius: var(--control-radius-prominent);
+  border-end-end-radius: var(--control-radius-prominent);
+}

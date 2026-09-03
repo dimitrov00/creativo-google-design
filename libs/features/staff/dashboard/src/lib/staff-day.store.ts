@@ -20,6 +20,7 @@ import {
   SCHEDULE_EXCEPTION_WRITER,
   ScheduleException,
   ScheduleExceptionId,
+  type StaffEditAppointmentRequest,
   type TransitionAppointmentRequest,
 } from '@creativo/application/booking';
 import { BarberId, LocationId } from '@creativo/application/catalog';
@@ -817,6 +818,46 @@ export class StaffDayStore {
 
     try {
       const result = await this.gateway.markArrived(id);
+      if (result.isFailure()) {
+        this._errors.update((map) => new Map(map).set(id, result.error));
+        return false;
+      }
+      return true;
+    } finally {
+      this._pending.update((set) => {
+        const next = new Set(set);
+        next.delete(id);
+        return next;
+      });
+    }
+  }
+
+  /**
+   * Move, resize, re-price, re-time or re-chair the visit.
+   *
+   * Same shape as `transition` and `markArrived`, and same discipline: NO
+   * optimistic mutation. The live listener is what redraws the lane, so the
+   * block moves when the server says it moved and never before — which is the
+   * only version of this that cannot show a barber a booking at a time it is
+   * not at. The refusals matter more here than anywhere else on this surface:
+   * `slot_unavailable` carrying `serverCode: 'booking.staffEdit.overlaps'` is
+   * an OFFER (re-send with `acknowledgedOverlap`), and it is the row's error
+   * signal that carries it, so the offer renders in the visit that earned it
+   * rather than as a banner three screens away.
+   */
+  async staffEdit(request: StaffEditAppointmentRequest): Promise<boolean> {
+    const id = request.appointmentId;
+    if (this._pending().has(id)) return false;
+
+    this._pending.update((set) => new Set(set).add(id));
+    this._errors.update((map) => {
+      const next = new Map(map);
+      next.delete(id);
+      return next;
+    });
+
+    try {
+      const result = await this.gateway.staffEdit(request);
       if (result.isFailure()) {
         this._errors.update((map) => new Map(map).set(id, result.error));
         return false;

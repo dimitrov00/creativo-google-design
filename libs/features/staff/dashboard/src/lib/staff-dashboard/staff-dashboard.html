@@ -1202,148 +1202,34 @@
   </ui-modal-sheet>
   }
 
-  <!-- THE VISIT SHEET — what the row could never be.
-       A booking was an inert `<li>`: the client's number sat unused on the
-       row model, the note glyph teased prose nothing could reveal, and the
-       destructive acts lived one tap deep in a popover that covered the row
-       it was about to destroy. This is where a person is opened. -->
-  @if (visitSheetRow(); as visit) {
+  <!-- THE VISIT EDITOR — the redesigned sheet (2026-08-26).
+       The SHELL is authored here and the editor is its projected content, so
+       the page keeps one sheet-at-a-time in one place alongside the cancel,
+       zone and search sheets. Spec:
+       docs/design-research/staff-visit-editor-design.md -->
+  @if (visitEditorVm(); as editorVm) {
+  <!-- ⚠ The standard sheet chrome — a title and a close button, like every
+       other sheet on this page (owner ruling 2026-08-26, reversing the
+       `bareHeader` pass). The editor's own pinned summary strip is gone with
+       it: it duplicated the title bar's job, it carried a SECOND dismiss, and
+       projected as one element it could never reach the `sheet-accessory`
+       slot, so the `✕` it carried scrolled away with the content. -->
   <ui-modal-sheet
     sheetId="staff-visit-sheet"
     labelledBy="staff-visit-title"
-    [fitted]="true"
-    [closeLabel]="t('staff.day.cancelDismiss')"
     [open]="true"
+    [closeLabel]="t('staff.day.cancelDismiss')"
     data-testid="staff-visit-sheet"
     (dismissed)="closeVisitSheet()"
   >
-    <span sheet-title>{{ visit.clientLabel }}</span>
-
-    <ui-stack uiSpacing="loose" class="staff-cancel__body">
-      <ui-stack uiSpacing="tight">
-        <h2 id="staff-visit-title" uiSheetLargeTitle uiText uiFont="largeTitle">
-          {{ visit.clientLabel }}
-        </h2>
-        <p uiText uiFont="subheadline" uiForegroundStyle="secondary">
-          {{ visit.serviceLabel }} · {{ visit.startLabel }}–{{ visit.endLabel
-          }}@if (visit.crossesMidnight) {<span>⁺¹</span>}
-        </p>
-      </ui-stack>
-
-      <!-- THE PHONE. The single most-asked-for thing in the review: a client
-           running late is a call, and the number was already computed here
-           and thrown away. `tel:` rather than a copy button — the device in
-           the barber's hand is a phone. -->
-      <ui-list-group>
-        @if (visit.phone; as phone) {
-        <ui-list-row uiSize="large">
-          {{ t('staff.day.visitCall') }}
-          <a
-            uiTrailing
-            uiButton
-            uiButtonStyle="plain"
-            uiControlSize="regular"
-            [href]="'tel:' + (visit.phoneHref ?? phone)"
-            data-testid="staff-visit-call"
-          >
-            {{ phone }}
-            <ui-icon uiTrailing uiName="location.call" />
-          </a>
-        </ui-list-row>
-        } @else {
-        <ui-list-row uiSize="large">
-          {{ t('staff.day.visitCall') }}
-          <span
-            uiTrailing
-            uiText
-            uiFont="footnote"
-            uiForegroundStyle="secondary"
-          >
-            {{ t('staff.day.visitNoPhone') }}
-          </span>
-        </ui-list-row>
-        } @if (visitSheetBarber(); as barberName) {
-        <ui-list-row uiSize="large">
-          {{ t('staff.day.visitBarber') }}
-          <span uiTrailing uiText uiFont="body" uiForegroundStyle="secondary">
-            {{ barberName }}
-          </span>
-        </ui-list-row>
-        } @if (visit.partyLabel) {
-        <ui-list-row uiSize="large">
-          {{ t('staff.day.visitParty') }}
-          <span uiTrailing uiText uiFont="body" uiForegroundStyle="secondary">
-            {{ t('staff.day.visitPartyValue', { label: visit.partyLabel }) }}
-          </span>
-        </ui-list-row>
-        }
-
-        <ui-list-row uiSize="large">
-          {{ t('staff.day.visitStatus') }}
-          <span uiBadge uiTrailing [uiTone]="statusTone(visit.status)">
-            {{ t('appointments.status.' + visit.status) }}
-          </span>
-        </ui-list-row>
-      </ui-list-group>
-
-      <!-- The note's PROSE, which the run deliberately withholds — this
-           surface was opened on purpose, not held up to the room. -->
-      @if (visit.note; as note) {
-      <ui-stack uiSpacing="tight" data-testid="staff-visit-note">
-        <span uiText uiFont="footnote" uiWeight="semibold">
-          {{ t('staff.day.visitNote') }}
-        </span>
-        <p uiText uiFont="body">{{ note }}</p>
-      </ui-stack>
-      } @if (rowError(visit.id); as message) {
-      <p uiText uiFont="footnote" uiForegroundStyle="destructive" role="alert">
-        {{ message }}
-      </p>
-      }
-
-      <!-- Every act the graph allows, at full size, named in words — this is
-           where "Откажи" belongs, not under a thumb on a scrolling run. -->
-      @if (visit.overflow.length > 0) {
-      <ui-stack uiSpacing="compact">
-        @for (action of visit.overflow; track action) {
-        <button
-          type="button"
-          uiButton
-          [uiButtonStyle]="action === 'cancelled' ? 'plain' : 'bordered'"
-          [uiRole]="
-            action === 'cancelled' || action === 'no_show'
-              ? 'destructive'
-              : undefined
-          "
-          uiControlSize="large"
-          [uiSpread]="true"
-          [uiLoading]="store.isPending(visit.id)"
-          [attr.data-testid]="'staff-visit-act-' + action"
-          (click)="actFromSheet(visit, action)"
-        >
-          {{ t(verbKey(visit.status, action)) }}
-        </button>
-        }
-      </ui-stack>
-      }
-    </ui-stack>
-
-    @if (visit.primary; as primary) {
-    <ui-sheet-action-bar sheet-overlay [uiVisible]="true">
-      <button
-        type="button"
-        uiButton
-        uiButtonStyle="borderedProminent"
-        uiControlSize="large"
-        [uiSpread]="true"
-        [uiLoading]="store.isPending(visit.id)"
-        [attr.data-testid]="'staff-visit-act-' + primary"
-        (click)="actFromSheet(visit, primary)"
-      >
-        {{ t(verbKey(visit.status, primary)) }}
-      </button>
-    </ui-sheet-action-bar>
-    }
+    <span sheet-title>{{ t('staff.visit.editTitle') }}</span>
+    <lib-staff-visit-editor
+      [vm]="editorVm"
+      [uiBarbers]="barberOptions()"
+      (dismissed)="closeVisitSheet()"
+      (acted)="actFromEditor(editorVm.appointmentId, $event)"
+      (committed)="commitFromEditor(editorVm.appointmentId, $event)"
+    />
   </ui-modal-sheet>
   }
 

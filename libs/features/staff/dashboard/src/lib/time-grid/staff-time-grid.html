@@ -3,14 +3,22 @@
   #frame
   class="staff-grid__frame"
   [style.--staff-grid-slots]="slotCount()"
-  [style.--staff-grid-columns]="columns().length"
+  [style.--staff-grid-columns]="placedColumns().length"
+  [attr.data-viewport]="framed() ? 'framed' : null"
+  [style.--staff-grid-snap]="framed() ? snapMinutes() : null"
+  [attr.data-dragging]="dragging() ? '' : null"
 >
   <!-- The head and the all-day row pin TOGETHER as one block. Pinning them
        separately meant guessing the head's height as the all-day row's sticky
        offset, and a wrong guess overlapped the first hour label. One sticky
-       ancestor needs no arithmetic. -->
+       ancestor needs no arithmetic.
+       Drawn at all only when something is in it — in a frame the head is gone
+       and the all-day row is usually empty, and an empty sticky band would
+       still paint its background over the first hour. -->
+  @if (showsChrome()) {
   <div class="staff-grid__chrome">
-    @if (columns().length > 1 || columns()[0]?.dayNumber !== null) {
+    @if (showsHead()) { @if (columns().length > 1 || columns()[0]?.dayNumber !==
+    null) {
     <div class="staff-grid__head">
       <!-- The zone, named. A grid that states times without stating which
          clock they are on is one wrong assumption from a missed visit. -->
@@ -72,7 +80,7 @@
         {{ zoneLabel() }}
       </button>
     </div>
-    } @if (hasAllDay()) {
+    } } @if (hasAllDay()) {
     <!-- All-day: what is true of the WHOLE day and has no hour to sit at — a
        closure, a day off, a whole-day block. Drawn only when something is
        there, so an ordinary day pays nothing for it. -->
@@ -92,6 +100,7 @@
     </div>
     }
   </div>
+  }
 
   <div #body class="staff-grid__body">
     <!-- The hour rail. `aria-hidden` because every block already states its
@@ -130,8 +139,22 @@
         type="button"
         class="staff-grid__event"
         [style.grid-row]="event.row"
+        [style.--staff-event-top]="event.top"
+        [style.--staff-event-height]="event.height"
         [style.--staff-event-lane]="event.lane"
         [style.--staff-event-lanes]="event.lanes"
+        [attr.data-placement]="event.row === null ? 'proportional' : null"
+        [attr.data-editable]="event.id === uiEditableEventId() ? '' : null"
+        [attr.data-event-id]="event.id"
+        [attr.data-drag-owner]="event.id === editableId() ? '' : null"
+        [attr.data-moving]="
+          moving() && event.id === editableId() ? '' : null
+        "
+        [attr.aria-roledescription]="
+          event.id === editableId() ? uiDragCopy().blockRole || null : null
+        "
+        (pointerdown)="onBlockDown($event, event)"
+        (keydown)="onBlockKey($event, event)"
         [attr.data-kind]="event.kind"
         [attr.data-barber-tone]="event.barberTone"
         [attr.data-status]="event.status"
@@ -201,6 +224,102 @@
         }
       </button>
       }
+
+      <!-- A chair the cap could not give a column of its own. Outlined,
+           tinted at that barber's tone and NAMED IN WORDS, because the tone
+           alone is a 7% wash that a bright shop may not show at all — and the
+           whole point of the degradation is that a party across two chairs
+           stays legible. `aria-hidden`: the frame's own summary paragraph
+           states the sibling leg in a sentence, and walking a positioned span
+           to learn what that sentence says is worse than not knowing. -->
+      @for (ghost of column.ghosts; track ghost.key) {
+      <span
+        class="staff-grid__ghost"
+        [style.--staff-event-top]="ghost.top"
+        [style.--staff-event-height]="ghost.height"
+        [attr.data-barber-tone]="ghost.tone"
+        aria-hidden="true"
+        data-testid="staff-grid-ghost"
+      >
+        <span uiText uiFont="caption">{{ ghost.label }}</span>
+      </span>
+      }
+
+      <!-- ── The two handles ──────────────────────────────────────────
+           Real `<button>`s, and that is load-bearing twice over:
+           `role="slider"` on a native button gives free keyboard, free focus
+           ring and a free press state, and `UiSheetBehavior.onDragStart`
+           bails on `closest('button, a')`, so a handle can never be eaten by
+           the sheet's own drag-to-dismiss.
+
+           SIBLINGS of the block rather than children, because the block is
+           itself a button and a button may not nest. They take the same two
+           fractions the block is drawn from, so the three can never drift. -->
+      @if (column.editable; as block) { @if (block.top !== null) {
+      <button
+        type="button"
+        class="staff-frame__handle"
+        data-edge="start"
+        data-drag-owner
+        role="slider"
+        aria-orientation="vertical"
+        [style.--staff-event-top]="block.top"
+        [style.--staff-event-height]="block.height"
+        [attr.data-dragging]="draggingEdge() === 'start' ? '' : null"
+        [attr.aria-label]="uiDragCopy().handleStart || null"
+        [attr.aria-valuemin]="handleBounds()?.startMin"
+        [attr.aria-valuemax]="handleBounds()?.startMax"
+        [attr.aria-valuenow]="block.startMinute"
+        [attr.aria-valuetext]="handleText('start')"
+        (pointerdown)="onHandleDown($event, 'start', block)"
+        (keydown)="onHandleKey($event, 'start', block)"
+        data-testid="staff-frame-handle-start"
+      >
+        <ui-icon uiName="frame.handleStart" uiScale="small" />
+      </button>
+      <button
+        type="button"
+        class="staff-frame__handle"
+        data-edge="end"
+        data-drag-owner
+        role="slider"
+        aria-orientation="vertical"
+        [style.--staff-event-top]="block.top"
+        [style.--staff-event-height]="block.height"
+        [attr.data-dragging]="draggingEdge() === 'end' ? '' : null"
+        [attr.aria-label]="uiDragCopy().handleEnd || null"
+        [attr.aria-valuemin]="handleBounds()?.endMin"
+        [attr.aria-valuemax]="handleBounds()?.endMax"
+        [attr.aria-valuenow]="block.endMinute"
+        [attr.aria-valuetext]="handleText('end')"
+        (pointerdown)="onHandleDown($event, 'end', block)"
+        (keydown)="onHandleKey($event, 'end', block)"
+        data-testid="staff-frame-handle-end"
+      >
+        <ui-icon uiName="frame.handleEnd" uiScale="small" />
+      </button>
+
+      <!-- The readout. `aria-hidden` because it duplicates the slider's own
+           `aria-valuetext`, which every arrow press announces natively. -->
+      @if (readoutAnchor(); as anchor) {
+      <span
+        class="staff-frame__readout"
+        [style.--staff-readout-fraction]="anchor.fraction"
+        [attr.data-side]="anchor.side"
+        [attr.data-tone]="readoutTone()"
+        aria-hidden="true"
+        data-testid="staff-frame-readout"
+      >
+        <span uiText uiFont="caption" uiWeight="semibold">
+          {{ readoutText() }}
+        </span>
+        @if (readoutNote()) {
+        <span class="staff-frame__readout-note" uiText uiFont="caption">
+          {{ readoutNote() }}
+        </span>
+        }
+      </span>
+      } } }
 
       <!-- The hour is the same everywhere, so the rule crosses every column —
            but only TODAY's stretch is accent. On another day the line marks

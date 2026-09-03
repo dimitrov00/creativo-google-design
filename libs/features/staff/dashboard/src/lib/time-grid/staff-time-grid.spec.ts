@@ -1,6 +1,8 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import {
   type GridColumn,
+  type GridCommit,
+  type GridDraft,
   type GridEvent,
   StaffTimeGrid,
 } from './staff-time-grid';
@@ -317,6 +319,262 @@ describe('StaffTimeGrid', () => {
     });
   });
 
+  describe('placement', () => {
+    const blocks = (host: HTMLElement) => [
+      ...host.querySelectorAll<HTMLElement>('[data-testid="staff-grid-event"]'),
+    ];
+
+    const firstBlock = (host: HTMLElement): HTMLElement => {
+      const block = blocks(host)[0];
+      if (block === undefined) throw new Error('no block was drawn');
+      return block;
+    };
+
+    /*
+     * The page grid's placement, and the reason `slots` has to stay the
+     * default: a 10:05 start rounds DOWN to 10:00 and a 10:50 end rounds UP
+     * to 11:00, so the block meets the rules the eye is already following.
+     * 10:00 is grid line 41 on a 96-slot midnight-origin track.
+     */
+    it('rounds a block outward to the slot track by default', () => {
+      const host = render([
+        column({
+          events: [event({ id: 'a', startMinute: 605, endMinute: 650 })],
+        }),
+      ]);
+      const block = firstBlock(host);
+      expect(block.style.gridRow).toBe('41 / 45');
+      expect(block.hasAttribute('data-placement')).toBe(false);
+      expect(block.style.getPropertyValue('--staff-event-top')).toBe('');
+    });
+
+    /*
+     * The frame's placement. A five-minute quantum is unrepresentable on a
+     * 15-minute track without 288 rows a day, so the block takes a
+     * PERCENTAGE of the extent instead — the same mechanism the now-line
+     * uses. On a 09:00–12:00 window a 10:05 start is 65 of 180 minutes in.
+     */
+    it('places a block off the slot boundary when proportional', () => {
+      fixture.componentRef.setInput('uiPlacement', 'proportional');
+      fixture.componentRef.setInput('uiWindow', {
+        startMinute: 540,
+        endMinute: 720,
+      });
+      const host = render([
+        column({
+          events: [event({ id: 'a', startMinute: 605, endMinute: 650 })],
+        }),
+      ]);
+      const block = firstBlock(host);
+      expect(block.getAttribute('data-placement')).toBe('proportional');
+      expect(block.style.gridRow).toBe('');
+      // 65 / 180 = 0.361111 — a fifth of a slot down, where 10:05 actually is.
+      expect(block.style.getPropertyValue('--staff-event-top')).toBe(
+        '0.361111',
+      );
+      expect(block.style.getPropertyValue('--staff-event-height')).toBe('0.25');
+    });
+
+    // A neighbour that starts before the window shows the part of itself that
+    // is inside it: the block continues, the frame does not.
+    it('clamps a block that overruns the window', () => {
+      fixture.componentRef.setInput('uiPlacement', 'proportional');
+      fixture.componentRef.setInput('uiWindow', {
+        startMinute: 540,
+        endMinute: 720,
+      });
+      const host = render([
+        column({
+          events: [event({ id: 'early', startMinute: 480, endMinute: 570 })],
+        }),
+      ]);
+      const block = firstBlock(host);
+      expect(block.style.getPropertyValue('--staff-event-top')).toBe('0');
+      // 09:00–09:30 of a three-hour window, not the whole 90 minutes booked.
+      expect(block.style.getPropertyValue('--staff-event-height')).toBe(
+        '0.166667',
+      );
+    });
+
+    // A zero-height sliver at the edge would advertise a booking that is not
+    // there — and an off-screen block must not narrow a lane on screen.
+    it('drops a block that falls entirely outside the window', () => {
+      fixture.componentRef.setInput('uiPlacement', 'proportional');
+      fixture.componentRef.setInput('uiWindow', {
+        startMinute: 540,
+        endMinute: 720,
+      });
+      const host = render([
+        column({
+          events: [
+            event({ id: 'in', startMinute: 600, endMinute: 660 }),
+            event({ id: 'far', startMinute: 900, endMinute: 960 }),
+          ],
+        }),
+      ]);
+      expect(blocks(host)).toHaveLength(1);
+      expect(
+        firstBlock(host).style.getPropertyValue('--staff-event-lanes'),
+      ).toBe('1');
+    });
+
+    it('marks the one block that is being edited', () => {
+      fixture.componentRef.setInput('uiEditableEventId', 'b');
+      const host = render([
+        column({
+          events: [
+            event({ id: 'a', startMinute: 600, endMinute: 630 }),
+            event({ id: 'b', startMinute: 660, endMinute: 690 }),
+          ],
+        }),
+      ]);
+      expect(blocks(host).map((b) => b.hasAttribute('data-editable'))).toEqual([
+        false,
+        true,
+      ]);
+    });
+  });
+
+  describe('the window', () => {
+    /*
+     * Snapped OUTWARD to whole hours, never inward: the gutter lays its
+     * labels out as hour-tall rows from the extent's first minute, so a
+     * window opening at 09:35 would print "09:00" thirty-five minutes late
+     * and every label under it would inherit the lie.
+     */
+    it('clamps the axis to whole hours around what was asked for', () => {
+      fixture.componentRef.setInput('uiWindow', {
+        startMinute: 575,
+        endMinute: 665,
+      });
+      const host = render([column()]);
+      expect(hours(host)).toEqual(['09:00', '10:00', '11:00', '12:00']);
+    });
+
+    // The shading is drawn against the window's own origin, not midnight —
+    // 12:00 is line 13 on a 09:00-origin track, not line 49.
+    it('shades the closed hours against the window origin', () => {
+      fixture.componentRef.setInput('uiWindow', {
+        startMinute: 540,
+        endMinute: 720,
+      });
+      const host = render([
+        column({ open: [{ startMinute: 540, endMinute: 660 }] }),
+      ]);
+      expect(closedRows(host)).toEqual(['9 / 13']);
+    });
+
+    /*
+     * A run is a `grid-row` against the extent's own track. A shift reaching
+     * outside the window — a lunch break at 13:00 while the frame draws
+     * 09:00–12:00 — used to ask for rows the column does not have, and the
+     * browser invented them: the column grew an hour past its axis and every
+     * proportional placement in it drifted.
+     */
+    it('does not shade a break that falls outside the drawn hours', () => {
+      fixture.componentRef.setInput('uiWindow', {
+        startMinute: 540,
+        endMinute: 720,
+      });
+      const host = render([
+        column({
+          open: [
+            { startMinute: 540, endMinute: 780 },
+            { startMinute: 840, endMinute: 1080 },
+          ],
+        }),
+      ]);
+      expect(closedRows(host)).toEqual([]);
+    });
+
+    it('leaves the axis at the civil day when nothing is asked for', () => {
+      const host = render([column()]);
+      expect(hours(host)).toHaveLength(25);
+    });
+  });
+
+  describe('the framed viewport', () => {
+    const chrome = (host: HTMLElement) => ({
+      zone: host.querySelector('[data-testid="staff-grid-zone"]'),
+      head: host.querySelector('[data-testid="staff-grid-column-head"]'),
+      allDay: host.querySelector('[data-testid="staff-grid-allday"]'),
+    });
+
+    it('keeps every piece of page chrome on the page', () => {
+      fixture.componentRef.setInput('allDayAlways', true);
+      const host = render([column({ dayNumber: 12 })]);
+      const { zone, head, allDay } = chrome(host);
+      expect(zone).not.toBeNull();
+      expect(head).not.toBeNull();
+      expect(allDay).not.toBeNull();
+      expect(
+        host.querySelector('.staff-grid__frame')?.getAttribute('data-viewport'),
+      ).toBeNull();
+    });
+
+    /*
+     * A 240px window cannot afford furniture: the sheet's own header already
+     * names whose chair this is, the zone is a shop-wide setting nobody
+     * changes mid-edit, and an always-on empty all-day row would spend a
+     * tenth of the window saying nothing.
+     */
+    it('drops the head, the zone and an EMPTY all-day row', () => {
+      fixture.componentRef.setInput('uiViewport', 'framed');
+      fixture.componentRef.setInput('allDayAlways', true);
+      const host = render([column({ dayNumber: 12 })]);
+      const { zone, head, allDay } = chrome(host);
+      expect(zone).toBeNull();
+      expect(head).toBeNull();
+      expect(allDay).toBeNull();
+      // Nothing left in the band, so the band itself does not paint.
+      expect(host.querySelector('.staff-grid__chrome')).toBeNull();
+      expect(
+        host.querySelector('.staff-grid__frame')?.getAttribute('data-viewport'),
+      ).toBe('framed');
+    });
+
+    /*
+     * The row is not dropped, only its empty state: a whole-day closure has
+     * no start and no end, and drawn on the axis it would be a 24-hour
+     * rectangle under two handles that must refuse every drag.
+     */
+    it('keeps an all-day row that has something to say', () => {
+      fixture.componentRef.setInput('uiViewport', 'framed');
+      fixture.componentRef.setInput('allDay', { ivan: ['Отпуск'] });
+      const host = render([column()]);
+      expect(
+        chrome(host)
+          .allDay?.querySelector('.staff-grid__allday-chip')
+          ?.textContent?.trim(),
+      ).toBe('Отпуск');
+    });
+
+    /*
+     * The gutter lays its labels out as hour-tall rows, so a label on the
+     * closing line is a whole extra hour of box — and the body's row sizes to
+     * its tallest cell, which drags the columns to that height too. A quarter
+     * of a three-hour frame would be blank, and the axis box would stop being
+     * the same length as the axis.
+     */
+    it('drops the closing hour label, so the axis box is the axis', () => {
+      fixture.componentRef.setInput('uiViewport', 'framed');
+      fixture.componentRef.setInput('uiWindow', {
+        startMinute: 540,
+        endMinute: 720,
+      });
+      const host = render([column()]);
+      expect(hours(host)).toEqual(['09:00', '10:00', '11:00']);
+    });
+
+    it('publishes the snap pitch the drag hint draws at', () => {
+      fixture.componentRef.setInput('uiViewport', 'framed');
+      fixture.componentRef.setInput('uiSnapMinutes', 5);
+      const host = render([column()]);
+      const frame = host.querySelector<HTMLElement>('.staff-grid__frame');
+      expect(frame?.style.getPropertyValue('--staff-grid-snap')).toBe('5');
+    });
+  });
+
   describe('the now-line', () => {
     it('draws only when today is one of the columns', () => {
       fixture.componentRef.setInput('nowMinute', 600);
@@ -333,6 +591,365 @@ describe('StaffTimeGrid', () => {
           .querySelector('[data-testid="staff-grid-now-label"]')
           ?.textContent?.trim(),
       ).toBe('10:00');
+    });
+  });
+
+  /*
+   * ── The gesture ──────────────────────────────────────────────────────
+   *
+   * Every assertion below runs against the FALLBACK scale — jsdom lays
+   * nothing out, so `measurePxPerMinute` cannot measure and falls back to the
+   * frame's regular-density figure of 2.4px per minute. That is what makes
+   * these numbers readable: 24px is ten minutes, 36px is fifteen.
+   */
+  describe('drag', () => {
+    const PX_PER_MINUTE = 2.4;
+    /** Minutes → the pointer travel that asks for them. */
+    const travel = (minutes: number) => minutes * PX_PER_MINUTE;
+
+    /*
+     * A finished drag leaves exactly ONE capture-phase listener behind, to
+     * eat the trailing click the browser is about to fire, and clears it on a
+     * zero-delay timer. A synchronous test never yields, so the timer never
+     * runs and the listener would survive to eat the NEXT test's click.
+     */
+    afterEach(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    function pointer(type: string, clientY: number): PointerEvent {
+      return new PointerEvent(type, {
+        bubbles: true,
+        cancelable: true,
+        button: 0,
+        pointerId: 1,
+        clientY,
+      });
+    }
+
+    /** A frame with one editable 10:00–10:45 block, snapping at five. */
+    function frame(events?: readonly GridEvent[]): HTMLElement {
+      fixture.componentRef.setInput('uiViewport', 'framed');
+      fixture.componentRef.setInput('uiPlacement', 'proportional');
+      fixture.componentRef.setInput('uiWindow', {
+        startMinute: 540,
+        endMinute: 720,
+      });
+      fixture.componentRef.setInput('uiSnapMinutes', 5);
+      fixture.componentRef.setInput('uiEditable', true);
+      fixture.componentRef.setInput('uiEditableEventId', 'a');
+      return render([
+        column({
+          events: events ?? [
+            event({ id: 'a', startMinute: 600, endMinute: 645 }),
+          ],
+        }),
+      ]);
+    }
+
+    const grab = (host: HTMLElement, testid: string): HTMLElement => {
+      const el = host.querySelector<HTMLElement>(`[data-testid="${testid}"]`);
+      if (el === null) throw new Error(`no ${testid}`);
+      return el;
+    };
+
+    function drags(): {
+      readonly changed: GridDraft[];
+      readonly committed: GridCommit[];
+    } {
+      const changed: GridDraft[] = [];
+      const committed: GridCommit[] = [];
+      fixture.componentInstance.draftChanged.subscribe((d) => changed.push(d));
+      fixture.componentInstance.draftCommitted.subscribe((c) =>
+        committed.push(c),
+      );
+      return { changed, committed };
+    }
+
+    /*
+     * A resize moves ONE edge. The other is what the barber is holding still,
+     * and a gesture that quietly carried it along would be a move wearing a
+     * resize's clothes — which is exactly the pair the server validates
+     * differently.
+     */
+    it('moves one edge and leaves the other where it was', () => {
+      const host = frame();
+      const seen = drags();
+      const handle = grab(host, 'staff-frame-handle-end');
+
+      handle.dispatchEvent(pointer('pointerdown', 0));
+      document.dispatchEvent(pointer('pointermove', travel(15)));
+      fixture.detectChanges();
+
+      expect(seen.changed.at(-1)).toEqual({
+        id: 'a',
+        startMinute: 600,
+        endMinute: 660,
+      });
+
+      document.dispatchEvent(pointer('pointerup', travel(15)));
+      expect(seen.committed).toEqual([
+        { id: 'a', startMinute: 600, endMinute: 660, kind: 'resize' },
+      ]);
+    });
+
+    /*
+     * A move holds the DURATION. Naming it a move rather than deriving it
+     * from the numbers is the whole point of the second output: a move that
+     * happens to land on a legal duration is arithmetically indistinguishable
+     * from two resizes.
+     */
+    it('slides the whole block and keeps its length', () => {
+      const host = frame();
+      const seen = drags();
+      const block = grab(host, 'staff-grid-event');
+
+      block.dispatchEvent(pointer('pointerdown', 0));
+      document.dispatchEvent(pointer('pointermove', travel(10)));
+      document.dispatchEvent(pointer('pointerup', travel(10)));
+      fixture.detectChanges();
+
+      const last = seen.changed.at(-1);
+      expect(last).toEqual({ id: 'a', startMinute: 610, endMinute: 655 });
+      expect((last?.endMinute ?? 0) - (last?.startMinute ?? 0)).toBe(45);
+      expect(seen.committed.at(-1)?.kind).toBe('move');
+    });
+
+    /*
+     * The block is a tap target as well as a drag surface — it opens the
+     * visit. A thumb that wobbles a couple of pixels on the way down has to
+     * stay a tap, and a real drag must not ALSO open the sheet it just moved.
+     */
+    it('stays a tap under the threshold and swallows the click over it', () => {
+      const host = frame();
+      const opened: string[] = [];
+
+      fixture.componentInstance.eventPicked.subscribe((id) => opened.push(id));
+      const block = grab(host, 'staff-grid-event');
+
+      block.dispatchEvent(pointer('pointerdown', 0));
+      document.dispatchEvent(pointer('pointermove', 3));
+      document.dispatchEvent(pointer('pointerup', 3));
+      block.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      expect(opened).toEqual(['a']);
+
+      block.dispatchEvent(pointer('pointerdown', 0));
+      document.dispatchEvent(pointer('pointermove', travel(10)));
+      document.dispatchEvent(pointer('pointerup', travel(10)));
+      block.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      // Still one: the drag's trailing click was eaten in the capture phase.
+      expect(opened).toEqual(['a']);
+    });
+
+    /*
+     * `pointercancel` is the iOS case nobody plans for — momentum scroll in
+     * an ancestor fires it mid-gesture. It is a REVERT, not a drop, and the
+     * caller that was tracking every snap has to be told the interval went
+     * back rather than being left holding the last one.
+     */
+    it('reverts on pointercancel and never commits', () => {
+      const host = frame();
+      const seen = drags();
+      const handle = grab(host, 'staff-frame-handle-start');
+
+      handle.dispatchEvent(pointer('pointerdown', 0));
+      document.dispatchEvent(pointer('pointermove', -travel(20)));
+      fixture.detectChanges();
+      expect(seen.changed.at(-1)?.startMinute).toBe(580);
+
+      document.dispatchEvent(pointer('pointercancel', -travel(20)));
+      fixture.detectChanges();
+      expect(seen.changed.at(-1)).toEqual({
+        id: 'a',
+        startMinute: 600,
+        endMinute: 645,
+      });
+      expect(seen.committed).toEqual([]);
+      // And the picture went back with it.
+      expect(
+        grab(host, 'staff-grid-event').style.getPropertyValue(
+          '--staff-event-top',
+        ),
+      ).toBe('0.333333');
+    });
+
+    /*
+     * The typed rows beside the frame are the real keyboard contract, but a
+     * slider that could not be arrowed would be accessibility theatre. Each
+     * press is a whole gesture — press and release — so it publishes AND
+     * commits; there is nothing left to wait for.
+     */
+    it('steps by the snap, and by one minute with shift', () => {
+      const host = frame();
+      const seen = drags();
+      const handle = grab(host, 'staff-frame-handle-end');
+
+      handle.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }),
+      );
+      fixture.detectChanges();
+      expect(seen.changed.at(-1)?.endMinute).toBe(650);
+
+      handle.dispatchEvent(
+        new KeyboardEvent('keydown', {
+          key: 'ArrowDown',
+          shiftKey: true,
+          bubbles: true,
+        }),
+      );
+      fixture.detectChanges();
+      expect(seen.changed.at(-1)?.endMinute).toBe(651);
+      expect(seen.committed.map((c) => c.kind)).toEqual(['resize', 'resize']);
+
+      // The block's own vocabulary: the arrows slide the whole interval.
+      grab(host, 'staff-grid-event').dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true }),
+      );
+      fixture.detectChanges();
+      expect(seen.changed.at(-1)).toEqual({
+        id: 'a',
+        startMinute: 595,
+        endMinute: 646,
+      });
+      expect(seen.committed.at(-1)?.kind).toBe('move');
+    });
+
+    /* The handles publish their own bounds, which is what makes `Home`/`End`
+       land exactly on a limit without anyone being told a limit is there. */
+    it('publishes each handle as a bounded slider', () => {
+      const host = frame();
+      const start = grab(host, 'staff-frame-handle-start');
+      const end = grab(host, 'staff-frame-handle-end');
+      expect(start.getAttribute('role')).toBe('slider');
+      expect(start.getAttribute('aria-valuenow')).toBe('600');
+      // The start may not cross the end's floor: 645 − 10.
+      expect(start.getAttribute('aria-valuemax')).toBe('635');
+      expect(end.getAttribute('aria-valuemin')).toBe('610');
+      expect(end.getAttribute('aria-valuenow')).toBe('645');
+      // A button, which is what keeps the sheet's own drag out of contention.
+      expect(start.closest('button')).toBe(start);
+    });
+
+    /* Handles are a permission, not a decoration: the page grid tints the
+       open appointment without ever offering the gesture. */
+    it('draws no handles until the caller opts in', () => {
+      const host = frame();
+      fixture.componentRef.setInput('uiEditable', false);
+      fixture.detectChanges();
+      expect(
+        host.querySelector('[data-testid="staff-frame-handle-start"]'),
+      ).toBeNull();
+    });
+
+    /* Drawn, named and PERMITTED. A barber who parks two clients in one chair
+       knows something the model does not; the readout says so and lets him. */
+    it('goes destructive over a neighbour and names it', () => {
+      const host = frame([
+        event({ id: 'a', startMinute: 600, endMinute: 645 }),
+        event({ id: 'b', startMinute: 660, endMinute: 700, title: 'Петър' }),
+      ]);
+      fixture.componentRef.setInput('uiDragCopy', {
+        handleStart: 'Начало',
+        handleEnd: 'Край',
+        blockRole: 'преместваем блок',
+        minutes: '{{minutes}} мин',
+        overlap: 'Застъпва {{name}} {{time}}',
+        outside: 'Извън смяната',
+        tooShort: 'Най-малко {{minutes}} мин',
+      });
+      const handle = grab(host, 'staff-frame-handle-end');
+      handle.dispatchEvent(pointer('pointerdown', 0));
+      document.dispatchEvent(pointer('pointermove', travel(30)));
+      fixture.detectChanges();
+
+      const readout = grab(host, 'staff-frame-readout');
+      expect(readout.getAttribute('data-tone')).toBe('destructive');
+      expect(readout.textContent).toContain('Застъпва Петър 11:00');
+      // PERMITTED: the edge went 30 minutes down, straight past the
+      // neighbour's 11:00 start, instead of being stopped a minute short of
+      // a collision the barber chose on purpose.
+      expect(handle.getAttribute('aria-valuenow')).toBe('675');
+    });
+  });
+
+  /*
+   * ── Chair columns ────────────────────────────────────────────────────
+   *
+   * §3.4.2's "exactly one column" is reversed (owner, 2026-08-26) so a party
+   * across two chairs is legible at a glance. The cap is the load-bearing
+   * half of that reversal: 375px minus a 44px gutter is 331px, so two columns
+   * are 165px each — a name and a time — and three are 110px, which is
+   * neither.
+   */
+  describe('the column cap', () => {
+    const drawn = (host: HTMLElement) =>
+      host.querySelectorAll('[data-testid="staff-grid-column"]').length;
+
+    const chair = (id: string, title: string, startMinute: number) =>
+      column({
+        id,
+        title,
+        events: [
+          event({ id: `${id}-1`, startMinute, endMinute: startMinute + 45 }),
+        ],
+      });
+
+    it('draws two chairs side by side', () => {
+      fixture.componentRef.setInput('uiViewport', 'framed');
+      fixture.componentRef.setInput('uiPlacement', 'proportional');
+      const host = render([
+        chair('ivan', 'Иван', 600),
+        chair('petar', 'Петър', 600),
+      ]);
+      expect(drawn(host)).toBe(2);
+      expect(host.querySelector('[data-testid="staff-grid-ghost"]')).toBeNull();
+    });
+
+    /*
+     * Over the cap the frame does NOT pick two chairs out of three and hope
+     * it chose the interesting ones. The chair the sheet was opened at keeps
+     * its column and the rest are drawn inside it, named in words — because
+     * the 7% tone alone is a wash a bright shop may not show at all.
+     */
+    it('collapses past the cap to the opened chair, the rest as ghosts', () => {
+      fixture.componentRef.setInput('uiViewport', 'framed');
+      fixture.componentRef.setInput('uiPlacement', 'proportional');
+      fixture.componentRef.setInput('uiEditableEventId', 'petar-1');
+      const host = render([
+        chair('ivan', 'Иван', 600),
+        chair('petar', 'Петър', 600),
+        chair('nikolay', 'Николай', 600),
+      ]);
+      expect(drawn(host)).toBe(1);
+      expect(
+        host
+          .querySelector('[data-testid="staff-grid-column"]')
+          ?.getAttribute('data-column'),
+      ).toBe('petar');
+      const ghosts = [
+        ...host.querySelectorAll<HTMLElement>(
+          '[data-testid="staff-grid-ghost"]',
+        ),
+      ];
+      expect(ghosts.map((g) => g.textContent?.trim())).toEqual([
+        'Иван · 10:00',
+        'Николай · 10:00',
+      ]);
+      // Context, never a control.
+      expect(ghosts[0]?.getAttribute('aria-hidden')).toBe('true');
+    });
+
+    /* The page is the screen: it scrolls sideways, and a week of seven
+       columns is the thing it exists to draw. Only the frame has a ceiling. */
+    it('leaves the page grid uncapped', () => {
+      const host = render([
+        chair('a', 'A', 600),
+        chair('b', 'B', 600),
+        chair('c', 'C', 600),
+        chair('d', 'D', 600),
+        chair('e', 'E', 600),
+      ]);
+      expect(drawn(host)).toBe(5);
     });
   });
 });

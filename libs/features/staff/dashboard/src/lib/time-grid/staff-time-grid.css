@@ -45,6 +45,57 @@
 }
 
 /*
+ * ── The framed viewport ────────────────────────────────────────────────
+ *
+ * The same grid, drawn as a CONTROL inside a sheet rather than as the page.
+ *
+ * Three page assumptions come off. The height is the viewport minus the
+ * toolbar — meaningless inside a sheet that is itself shorter than the
+ * viewport. The footer padding exists so the last booking clears an action
+ * bar that is not here. And the column head, the zone and an always-present
+ * empty all-day row are furniture a 240px window cannot afford (the head is
+ * suppressed in the template; the all-day row still draws when it has
+ * something to say).
+ *
+ * `overflow: auto` STAYS. Sticky resolves against the nearest scrollable
+ * ancestor, and an all-day chip that has to pin needs this box to be it.
+ */
+.staff-grid__frame[data-viewport='framed'] {
+  /* The frame's own scale, from the geometry ruling: 0.6 units per minute —
+     2.21 / 2.4 / 2.59px, so five minutes is 11.0 / 12 / 13.0px and a
+     five-minute step is a thing a thumb can aim at. The page grid's
+     1.72–2.02px per minute cannot express that quantum at all.
+
+     Read through `--staff-frame-minute` with the ruling's value as the
+     FALLBACK, so a caller that sets the token on any ancestor wins without a
+     specificity fight against this rule. */
+  --staff-slot-height: calc(
+    var(--staff-frame-minute, calc(var(--sys-space-unit) * 0.6)) * 15
+  );
+  /* 44.2 / 48 / 51.8px, down from the page's `* 14`. One column means the
+     gutter is competing with the only thing worth looking at. */
+  --staff-gutter: calc(var(--sys-space-unit) * 12);
+  /* One snap step, in pixels — the pitch a drag hint or a snap-aligned rule
+     draws at. `--staff-grid-snap` is minutes, published by the template. */
+  --staff-grid-snap-height: calc(
+    var(--staff-slot-height) / 15 * var(--staff-grid-snap, 15)
+  );
+
+  /* 100 minutes at every density, and that is not luck: the height and the
+     scale are both stated in `--sys-space-unit`, so `(unit * 60) /
+     (unit * 0.6)` cancels the unit. Density changes how big 100 minutes is;
+     it never changes how much time you can see. */
+  block-size: var(--staff-frame-height, calc(var(--sys-space-unit) * 60));
+  padding-block-end: 0;
+}
+
+/* With no head above it there is nothing to clear — the row pins to the top
+   of the frame itself. */
+.staff-grid__frame[data-viewport='framed'] .staff-grid__allday {
+  inset-block-start: 0;
+}
+
+/*
  * ONE track definition, one width, three bands.
  *
  * These used to be separate grids each sized `min-inline-size: max-content`,
@@ -356,6 +407,10 @@
   /* Side-by-side placement for genuine overlaps. */
   --staff-event-lane: 0;
   --staff-event-lanes: 1;
+  /* The floor a proportionally-placed block draws at — one five-minute step
+     at frame scale (11.0 / 12 / 13.0px), so the shortest sellable service is
+     drawn true and nothing shorter can pretend to be taller than it is. */
+  --staff-event-min-height: calc(var(--sys-space-unit) * 3);
 
   grid-column: 1;
   position: relative;
@@ -425,6 +480,311 @@
   );
   background-color: var(--staff-event-tint);
   color: var(--sys-color-foreground);
+}
+
+/*
+ * ── Proportional placement ─────────────────────────────────────────────
+ *
+ * The block leaves the row track and takes a percentage of the extent —
+ * exactly the mechanism the now-line has always used, and the only one in
+ * which a 10:05 start draws at 10:05. The column KEEPS its tracks: they are
+ * what the hour rules and the gutter labels are measured against, and the
+ * extent is snapped to whole hours so a percentage of the column's height
+ * and a fraction of its time are the same number.
+ *
+ * The column is `position: relative` and is therefore this block's
+ * containing block; `grid-column: 1` above still resolves the inline edges
+ * against the column's track, so the lane arithmetic survives untouched.
+ * `inset-inline-start: 0` rather than a static position, so the offset is
+ * the lane margin and nothing else.
+ *
+ * The 1px block margins come off. On the page they separate two bookings
+ * that share an edge; here the shared edge IS the information — 10:30 is
+ * where one ends and the next begins — and a margin would put a lie a pixel
+ * either side of every boundary a person is about to drag.
+ */
+.staff-grid__event[data-placement='proportional'] {
+  /* THE TRACK STACK, not `100%`.
+     The column is a grid cell and stretches to whatever the tallest cell in
+     the body's row is; its own tracks are the axis. Those two are the same
+     length only by luck, and a percentage of the box would put a block at
+     the wrong minute the moment they were not — which is the bug the
+     now-line's `100%` has been quietly carrying on the page grid.
+     `--staff-grid-slots` is on the frame and inherits; times the slot height
+     it is the extent, exactly, at every density. */
+  --staff-event-extent: calc(
+    var(--staff-grid-slots, 1) * var(--staff-slot-height)
+  );
+
+  position: absolute;
+  inset-inline-start: 0;
+  inset-block-start: calc(
+    var(--staff-event-top, 0) * var(--staff-event-extent)
+  );
+  block-size: max(
+    calc(var(--staff-event-height, 0) * var(--staff-event-extent)),
+    var(--staff-event-min-height)
+  );
+  margin-block: 0;
+}
+
+/* The block under the handles. Above its neighbours, which is the layer
+   order the frame draws in — a neighbour is context, this is the subject. */
+.staff-grid__event[data-editable] {
+  z-index: 3;
+}
+
+/*
+ * ── The block as a THING TO GRAB ───────────────────────────────────────
+ *
+ * `touch-action: none` on the block ITSELF, never on the frame — the frame
+ * has to keep scrolling from every other pixel in it.
+ *
+ * This is the one place the shipping construction departs from §3.4.9, and
+ * it departs deliberately. That section chose `manipulation` so a touch
+ * starting on the block could still scroll the frame, and paid for it with a
+ * 250ms long press and a zero-pixel tolerance — the only way to tell a drag
+ * from a scroll once the browser may already have started scrolling. With
+ * `none` the browser never claims the gesture at all, so there is no race to
+ * arbitrate and no tax on every touch: a 4px threshold is enough to keep a
+ * wobbling tap a tap. What it costs is the block's own 40×N pixels as a
+ * scroll surface, which the rest of the frame gives back.
+ */
+.staff-grid__event[data-drag-owner] {
+  touch-action: none;
+  cursor: grab;
+}
+
+/*
+ * ── The handles ────────────────────────────────────────────────────────
+ *
+ * Positioned against the COLUMN, from the same two fractions the block is
+ * drawn from, so the handle and the edge it grabs can never drift apart.
+ */
+.staff-frame__handle {
+  --staff-event-extent: calc(
+    var(--staff-grid-slots, 1) * var(--staff-slot-height)
+  );
+  /*
+   * THE HIT AREA, STATED IN PIXELS AND SPLIT BY DIRECTION.
+   *
+   * 44 is a platform floor, not a taste preference: a reader who asked for a
+   * denser layout asked for less whitespace, not a smaller thumb. So the two
+   * reaches are fixed pixels, and only the INWARD one gives way.
+   *
+   * Outward is always 22 — outside the block there is nothing to steal from.
+   * Inward is 22, or HALF THE BLOCK when half the block is less than 22,
+   * which is what makes the two areas meet exactly instead of overlapping.
+   * Their total is `min(44px, blockHeight / 2 + 22px)`, the ruling's own
+   * figure — but a single centred box of that height is NOT the same shape:
+   * at the 10-minute floor it reaches 17px inward where only 12px of block
+   * exists, and the two ends steal 10px of taps from each other. The split is
+   * what makes the arithmetic and the geometry agree.
+   *
+   * Above 88px of block the two inward halves are a full 22 each and what is
+   * left between them IS the move region — one number, one derivation, two
+   * features.
+   */
+  --staff-handle-in: min(
+    22px,
+    calc(var(--staff-event-height, 0) * var(--staff-event-extent) / 2)
+  );
+
+  position: absolute;
+  inset-inline-start: 50%;
+  /* Above the block (3) and its lift (5) both — a handle that disappeared
+     under the thing it resizes would be unusable exactly while in use. */
+  z-index: 6;
+  /* 36.8 × 18.4 / 40 × 20 / 43.2 × 21.6 — the VISUAL capsule, which is free
+     to be small because the hit area above is not. */
+  inline-size: calc(var(--sys-space-unit) * 10);
+  block-size: calc(var(--sys-space-unit) * 5);
+  translate: -50% -50%;
+
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid var(--sys-color-separator);
+  border-radius: var(--control-radius-capsule);
+  background: var(--sys-color-surface);
+  color: var(--sys-color-foreground);
+  box-shadow: var(--sys-elevation-overlay);
+  cursor: ns-resize;
+  /* On the handle ONLY. On the frame it would stop the frame scrolling. */
+  touch-action: none;
+}
+
+.staff-frame__handle[data-edge='start'] {
+  inset-block-start: calc(
+    var(--staff-event-top, 0) * var(--staff-event-extent)
+  );
+}
+
+.staff-frame__handle[data-edge='end'] {
+  inset-block-start: calc(
+    (var(--staff-event-top, 0) + var(--staff-event-height, 0)) *
+      var(--staff-event-extent)
+  );
+}
+
+/*
+ * The hit surface STRADDLES the edge — 22px in, 22px out.
+ *
+ * Wholly inside it steals taps from the block body; wholly outside, from the
+ * neighbour. Straddling is the only construction that takes from neither, and
+ * what is left between the two inward halves is exactly the move region.
+ */
+.staff-frame__handle::before {
+  content: '';
+  position: absolute;
+  inset-inline-start: 50%;
+  translate: -50% 0;
+  min-inline-size: 44px;
+  inline-size: 100%;
+}
+
+/* The capsule is centred on the edge, so 50% of the capsule IS the edge. */
+.staff-frame__handle[data-edge='start']::before {
+  inset-block-start: calc(50% - 22px);
+  block-size: calc(22px + var(--staff-handle-in));
+}
+
+.staff-frame__handle[data-edge='end']::before {
+  inset-block-start: calc(50% - var(--staff-handle-in));
+  block-size: calc(var(--staff-handle-in) + 22px);
+}
+
+/* The icon rides the button's own font, per the standing parity ruling. */
+.staff-frame__handle .ui-icon {
+  pointer-events: none;
+}
+
+/* The one sanctioned hover grammar, with its ungated `:active` mirror —
+   every hover effect owes one, or a tap shows nothing at all on a phone. */
+@media (hover: hover) {
+  .staff-frame__handle:hover {
+    background: var(--sys-color-surface-secondary);
+  }
+}
+
+.staff-frame__handle:active,
+.staff-frame__handle[data-dragging] {
+  background: var(--sys-color-surface-secondary);
+}
+
+.staff-frame__handle:active {
+  /* `scale`, not `transform`: the capsule's centring already owns
+     `translate`, and the two properties compose instead of overwriting. */
+  scale: 0.94;
+}
+
+.staff-frame__handle:focus-visible {
+  outline: var(--sys-focus-ring-width) solid var(--sys-color-ring);
+  outline-offset: var(--sys-focus-ring-offset);
+}
+
+/*
+ * ── The readout ────────────────────────────────────────────────────────
+ *
+ * Pinned to the block's edge OPPOSITE the one under the finger, because
+ * finger occlusion is physical and does not get smaller because someone
+ * asked for a denser layout. A body drag has no far edge to hide behind —
+ * the finger is in the middle — so it takes the start edge instead.
+ *
+ * Always the boundary AND the resulting length: that is Google's
+ * duration-annotated-dropdown insight applied to a gesture, and it is what
+ * lets this frame snap at five minutes where Apple's silent snap needs
+ * fifteen.
+ */
+.staff-frame__readout {
+  --staff-event-extent: calc(
+    var(--staff-grid-slots, 1) * var(--staff-slot-height)
+  );
+
+  position: absolute;
+  inset-inline-start: 50%;
+  inset-block-start: calc(
+    var(--staff-readout-fraction, 0) * var(--staff-event-extent)
+  );
+  z-index: 7;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  padding: 2px var(--sys-space-compact);
+  border-radius: var(--control-radius-capsule);
+  background: var(--sys-color-foreground);
+  color: var(--sys-color-background);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.staff-frame__readout[data-side='above'] {
+  translate: -50% calc(-100% - var(--sys-space-compact));
+}
+
+.staff-frame__readout[data-side='below'] {
+  translate: -50% var(--sys-space-compact);
+}
+
+/* Red is a DECISION — an overlap the barber is choosing, or a floor the
+   gesture refuses to go under. Amber is ADVICE: outside the shift is
+   permitted and always was, and warning about it in red would make the one
+   tone that means "stop" mean "carry on" half the time. */
+.staff-frame__readout[data-tone='destructive'] {
+  background: var(--sys-color-destructive);
+  color: var(--sys-color-on-accent);
+}
+
+.staff-frame__readout[data-tone='warning'] {
+  background: var(--sys-color-warning);
+  color: var(--sys-color-on-accent);
+}
+
+.staff-frame__readout-note {
+  opacity: 0.92;
+}
+
+/*
+ * ── A chair with no column of its own ──────────────────────────────────
+ *
+ * Over the cap the frame does not pick two chairs out of four and hope: the
+ * chair the sheet was opened at keeps its column and every other one is drawn
+ * inside it, outlined and named. Never draggable — the frame edits the seat
+ * it was opened at, and editing a sibling seat is a separate open.
+ */
+.staff-grid__ghost {
+  --staff-event-extent: calc(
+    var(--staff-grid-slots, 1) * var(--staff-slot-height)
+  );
+
+  position: absolute;
+  inset-inline: 2px;
+  inset-block-start: calc(
+    var(--staff-event-top, 0) * var(--staff-event-extent)
+  );
+  block-size: max(
+    calc(var(--staff-event-height, 0) * var(--staff-event-extent)),
+    calc(var(--sys-space-unit) * 3)
+  );
+  z-index: 1;
+  display: flex;
+  align-items: flex-start;
+  overflow: hidden;
+  padding: 2px var(--sys-space-tight);
+  border: 1px dashed var(--sys-color-separator);
+  border-radius: var(--control-radius-subtle);
+  /* 7%, half the 15% a real block wears: same tone, less of it, so a chair
+     that is context recedes behind the one being edited. */
+  background: color-mix(
+    in srgb,
+    var(--barber-tone, var(--sys-color-fill)) 7%,
+    transparent
+  );
+  color: var(--sys-color-secondary-label);
+  pointer-events: none;
 }
 
 /*
@@ -669,6 +1029,22 @@
   outline-offset: 1px;
 }
 
+/*
+ * The lift. Apple's block "becomes opaque in colour"; Google's activation
+ * signal IS the haptic — which iOS Safari does not have, so on the platform
+ * where the gesture is hardest to learn this carries the whole lesson alone.
+ *
+ * DECLARED AFTER `:active`, deliberately: both selectors match while a finger
+ * is down and they carry the same specificity, so source order is what makes
+ * the lift win over the press-down it would otherwise cancel out with.
+ */
+.staff-grid__event[data-moving] {
+  transform: scale(1.02);
+  box-shadow: var(--sys-elevation-overlay);
+  cursor: grabbing;
+  z-index: 5;
+}
+
 /* ── The now-line ────────────────────────────────────────────────────── */
 
 /*
@@ -739,5 +1115,18 @@
 @media (prefers-reduced-motion: reduce) {
   .staff-grid__event:active {
     transform: none;
+  }
+
+  /* Direct manipulation is not "motion" in the reduced-motion sense — it
+     tracks the finger, which is the point. The LIFT is decoration on top of
+     it, so the scale goes and the shadow stays: the shadow is the answer to
+     "which one am I holding", and losing it would cost information rather
+     than motion. */
+  .staff-grid__event[data-moving] {
+    transform: none;
+  }
+
+  .staff-frame__handle:active {
+    scale: none;
   }
 }

@@ -1219,6 +1219,8 @@ describe('StaffDashboard', () => {
     const shown = days.findIndex((d) => d.hasAttribute('data-selected'));
     expect(shown).toBeGreaterThanOrEqual(0);
     const next = days[shown + 1] ?? days[shown - 1];
+    expect(next).toBeDefined();
+    if (!next) return;
 
     (Intl as { DateTimeFormat: unknown }).DateTimeFormat = spy;
     try {
