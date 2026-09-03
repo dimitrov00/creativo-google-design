@@ -42,6 +42,35 @@
     inline-size: 1em;
     block-size: 1em;
   }
+  /* ── THE DISCLOSURE CHEVRON ANSWERS ITS TRIGGER ─────────────────────
+   *
+   * One rule, house-wide: a `field.expand` chevron inside anything that
+   * reports `aria-expanded` points DOWN when shut and UP when open. Every
+   * `uiMenuTrigger` gets `aria-expanded` from the directive for free
+   * (menu.ts:35), so this reaches the leg-barber menu, the duration menus,
+   * the barber row, the booking pulldowns and the phone field's country
+   * picker without any of them opting in.
+   *
+   * ⚠ Keyed on the INTENT, never the glyph. `field.expand` is the only
+   * intent that means "a menu drops from here". `nav.disclosure` travels
+   * (chevron_right), `nav.back` returns, `calendar.previous`/`next` page,
+   * and `frame.handleStart`/`handleEnd` name the direction a DRAG moves —
+   * the registry says so in as many words. Rotating any of those would
+   * break a distinction that was drawn on purpose.
+   *
+   * No reduced-motion block: the global kill-switch shortens the duration
+   * to 1ms without touching the transform, so the chevron snaps to its
+   * open position instead of sweeping. Zeroing the rotation there would
+   * delete the STATE, not the motion.
+   */
+  [aria-expanded] .ui-icon[data-name='field.expand'] {
+    transition: rotate var(--sys-motion-duration-regular)
+      var(--sys-motion-ease-standard);
+  }
+
+  [aria-expanded='true'] .ui-icon[data-name='field.expand'] {
+    rotate: 180deg;
+  }
 }
 
 /* UNLAYERED on purpose — the one sanctioned exception to the "everything

@@ -78,6 +78,19 @@ export type UiIconScale = 'small' | 'medium' | 'large';
     class: 'ui-icon',
     'aria-hidden': 'true',
     '[attr.data-scale]': 'uiScale()',
+    /*
+     * The INTENT, stamped so CSS can reach it.
+     *
+     * The DOM used to carry only the resolved ligature, as the glyph span's
+     * text — so no rule could say "the disclosure chevron" without also
+     * catching every other icon in the same trigger. That is the difference
+     * between rotating `field.expand` when its menu opens and rotating the
+     * view picker's calendar glyph, the `⋯`, and the filter funnel with it.
+     * Intent, not glyph: two intents that share a ligature today can diverge
+     * tomorrow by editing one registry line, and a rule written against the
+     * intent keeps meaning what it meant.
+     */
+    '[attr.data-name]': 'uiName()',
   },
 })
 export class UiIcon {

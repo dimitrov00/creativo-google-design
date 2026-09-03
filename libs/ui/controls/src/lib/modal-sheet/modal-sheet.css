@@ -211,4 +211,14 @@ ui-sheet.modal-sheet:not([data-presented]):not([data-closing]) {
     block-size: auto;
     max-block-size: min(96svh, 60rem);
   }
+
+  /* Bare header — grabber only. The bar keeps its drag handlers and its
+     grabber; it stops reserving a control row it no longer holds. */
+  .modal-sheet__toolbar[data-bare] {
+    /* Tall enough to clear its own grabber and no taller. The grabber is
+       absolutely positioned 5pt off the top edge and is 5pt tall, so a bar
+       that collapses to 0 lets it land on the row beneath. */
+    min-block-size: calc(var(--sys-space-unit) * 4);
+    padding-block: 0;
+  }
 }

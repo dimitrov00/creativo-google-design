@@ -115,7 +115,46 @@ export const UI_ICON_REGISTRY = {
   /* ── Composite fields ───────────────────────────────────────────── */
   /** Disclosure caret on a field-embedded picker trigger (the "▾" on
    *  ui-phone-field's country trigger). */
-  'field.expand': 'arrow_drop_down',
+  /**
+   * ONE chevron family, owner ruling 2026-08-26.
+   *
+   * This was `arrow_drop_down` — a FILLED TRIANGLE — while every other
+   * direction glyph in the registry (`nav.back`, `nav.disclosure`,
+   * `calendar.previous`, `calendar.next`) is a STROKE CHEVRON. Two shapes for
+   * one idea read as two systems, which is exactly what the owner saw. The
+   * meanings still differ and must: `field.expand` drops a menu where you
+   * stand, `nav.disclosure` takes you somewhere and brings you back. Only the
+   * drawing is now consistent.
+   */
+  /**
+   * ⚠ `keyboard_arrow_down`, not `expand_more`. Both draw the same chevron,
+   * and only one of them is in the PINNED font: `material-symbols@0.45.8`
+   * ships no `expand_more`, and an unresolvable ligature does not tofu or
+   * throw — it renders its own NAME in capitals. It happened to look right
+   * in the browser because the CDN face is newer than the pinned package.
+   * `icon.spec.ts` checks every value against the package's own `index.d.ts`
+   * and is the only thing that catches this.
+   *
+   * It now shares a glyph with `frame.handleEnd`, which is fine and is the
+   * reason the registry is keyed on INTENT: the chevron-rotation rule in
+   * icon.css matches `data-name='field.expand'`, so the frame's drag handles
+   * — which mean a direction, not a menu — are untouched by it.
+   */
+  'field.expand': 'keyboard_arrow_down',
+
+  /* ── The visit frame's resize handles ───────────────────────────── */
+  /**
+   * The two chevrons on the edges of a draggable time block.
+   *
+   * Their own keys rather than a reuse of `nav.back`/`field.expand`: these
+   * are the ONLY glyphs in the vocabulary that name a DIRECTION A GESTURE
+   * MOVES rather than a place navigation goes or a menu that drops. The
+   * distinction is what lets the handle's arrow diverge from the disclosure
+   * chevron later without moving a call site — and it keeps the same
+   * stroke-chevron family the 2026-08-26 ruling above settled on.
+   */
+  'frame.handleStart': 'keyboard_arrow_up',
+  'frame.handleEnd': 'keyboard_arrow_down',
 
   /* ── Views / additive actions ───────────────────────────────────── */
   /** The two ways to read one set of dated things — a segmented pair, so the

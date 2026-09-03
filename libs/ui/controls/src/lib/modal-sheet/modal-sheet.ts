@@ -73,6 +73,22 @@ export class UiModalSheet {
    * collapse.
    */
   readonly titleAlwaysVisible = input(false);
+
+  /**
+   * Strip the header bar to its grabber — no title, no close control.
+   *
+   * The bar is right for a sheet whose content needs naming. It is dead weight
+   * on one that names itself in its first row: two stacked rows of chrome
+   * before any content, where the second already says who and when. Consumers
+   * that set this MUST carry their own dismiss affordance in
+   * `[sheet-accessory]` — the grabber, the scrim and Escape all still dismiss,
+   * but a visible control is not optional (HIG: a sheet always offers a way
+   * out that does not require a gesture).
+   *
+   * The header ELEMENT stays: it owns the grabber and the drag-to-dismiss
+   * pointer handlers, and removing it would take both.
+   */
+  readonly bareHeader = input(false);
   /**
    * Size the sheet to its CONTENT rather than to the viewport.
    *

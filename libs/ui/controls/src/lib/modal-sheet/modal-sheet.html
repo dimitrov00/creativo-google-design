@@ -36,6 +36,7 @@
     <div class="modal-sheet__chrome">
       <ui-sheet-header
         class="modal-sheet__toolbar"
+        [attr.data-bare]="bareHeader() ? '' : null"
         [attr.data-title-always]="titleAlwaysVisible() ? '' : null"
         (pointerdown)="sheetBehavior.onDragStart($event)"
         (pointermove)="sheetBehavior.onDragMove($event)"
@@ -46,9 +47,11 @@
              consumers label their in-content large title `uiSheetLargeTitle`
              and the header collapses when it scrolls under the bar (no
              per-consumer scroll math, no [titleVisible] plumbing). -->
+        @if (!bareHeader()) {
         <div uiTitle aria-hidden="true">
           <ng-content select="[sheet-title]" />
         </div>
+        } @if (!bareHeader()) {
         <button
           uiTrailing
           type="button"
@@ -62,6 +65,7 @@
         >
           <ui-icon uiName="sheet.close" />
         </button>
+        }
       </ui-sheet-header>
       <div class="modal-sheet__accessory">
         <ng-content select="[sheet-accessory]" />
