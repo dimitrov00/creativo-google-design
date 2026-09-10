@@ -1,18 +1,27 @@
 import { EnvironmentProviders, Injectable } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import {
+  AUTH_GATEWAY,
+  type Principal,
+  type PrincipalId,
+  roleFromPrimitive,
+} from '@creativo/application/identity';
+import {
   Translation,
   TranslocoLoader,
   provideTransloco,
 } from '@jsverse/transloco';
-import { Observable, of } from 'rxjs';
+import { BehaviorSubject, Observable, of } from 'rxjs';
+import { USER_SEARCH_PORT } from '@creativo/application/governance';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { provideRouter } from '@angular/router';
 import {
+  APPOINTMENT_NOTES,
   APPOINTMENT_REPOSITORY,
   AVAILABILITY_READER,
   Appointment,
   BOOKING_GATEWAY,
+  CommitBookingRequest,
   BookingContact,
   Interval,
   Money,
@@ -22,6 +31,7 @@ import {
   Result,
   ScheduleException,
   SeatSubject,
+  type SeatRelationship,
   ZonedDateTime,
   ok,
 } from '@creativo/application/booking';
@@ -31,6 +41,7 @@ import {
   CATALOG_READER,
   LocationId,
   MEDIA_READER,
+  Service,
   ServiceId,
   ServiceTerms,
 } from '@creativo/application/catalog';
@@ -66,28 +77,78 @@ function barber(id: string, name: string): Barber {
   );
 }
 
-/** One booked visit in `ivan`'s chair, starting at `startIso`. */
+/** One catalogue service, timed for `ivan` — the length the tag measures against. */
+function service(id: string, minutes: number): Service {
+  return value(
+    Service.create({
+      id,
+      name: { en: id, bg: id },
+      description: { en: 'x', bg: 'x' },
+      categoryId: 'cat-hair',
+      priceMinorUnits: 2800,
+      currencyCode: 'EUR',
+      durationMinutes: minutes,
+      offerings: [
+        {
+          barberId: 'ivan',
+          base: {
+            priceMinorUnits: 2800,
+            currencyCode: 'EUR',
+            durationMinutes: minutes,
+          },
+        },
+      ],
+      locationIds: [],
+      conflictsWith: [],
+      composition: { kind: 'single' },
+      upsellOnly: false,
+      popular: false,
+      status: 'active',
+      sortOrder: 0,
+    }),
+  );
+}
+
+/**
+ * One booked visit in `ivan`'s chair, starting at `startIso`.
+ *
+ * `withParty` adds a SECOND seat in another chair — the split party, which
+ * is the case the party mark exists for: `seatsHere` is 1 on both rows, so
+ * the avatar's `+N` shows nothing and only `1 / 2` says the two cards are
+ * one booking. The extra seat is in a chair whose lane returns nothing, so
+ * this adds a MARK to the existing card rather than a second card.
+ */
 function appointment(
   id: string,
   startIso: string,
   contact?: { name: string; phone: string },
   barberId = 'ivan',
+  withParty = false,
+  /** A catalogue service by id — the default is one the catalogue never knew. */
+  serviceId?: string,
 ): Appointment {
   const price = value(Money.fromMinorUnitsAndCode(2800, 'EUR'));
-  const seat = Seat.of({
-    id: SeatId.generate(),
-    subject: SeatSubject.account(UserId.generate(), 'self'),
-    serviceId: ServiceId.generate(),
-    variantId: null,
-    barberId: value(BarberId.create(barberId)),
-    terms: value(ServiceTerms.create(price, 30)),
-    startsAt: at(startIso),
-  });
+  // Only ONE seat may be `self` — `AppointmentMultipleSelfSeatsError` — and
+  // that is the real shape anyway: a father books himself and his son.
+  const makeSeat = (chair: string, relationship: SeatRelationship) =>
+    Seat.of({
+      id: SeatId.generate(),
+      subject: SeatSubject.account(UserId.generate(), relationship),
+      serviceId:
+        serviceId === undefined
+          ? ServiceId.generate()
+          : value(ServiceId.create(serviceId)),
+      variantId: null,
+      barberId: value(BarberId.create(chair)),
+      terms: value(ServiceTerms.create(price, 30)),
+      startsAt: at(startIso),
+    });
+  const seat = makeSeat(barberId, 'self');
   return value(
     Appointment.create({
       id,
       locationId: LocationId.generate().toString(),
-      seats: [seat],
+      seats: withParty ? [seat, makeSeat('niko', 'companion')] : [seat],
       now: at('2026-08-05T08:00:00'),
       contact: contact
         ? value(
@@ -141,10 +202,15 @@ describe('StaffDashboard', () => {
               // WITH a contact: the phone path is half this surface's point,
               // and without one "does not print the phone in the run" passed
               // vacuously against a row that had no phone to print.
-              appointment('appointment-1', '2026-08-05T10:00:00', {
-                name: 'Мартин Илиев',
-                phone: '+359881234567',
-              }),
+              appointment(
+                'appointment-1',
+                '2026-08-05T10:00:00',
+                { name: 'Мартин Илиев', phone: '+359881234567' },
+                'ivan',
+                // A SPLIT PARTY, so the `1 / 2` mark is under test rather
+                // than asserted vacuously against a card with no party.
+                true,
+              ),
             ]
           : [],
       ),
@@ -172,12 +238,21 @@ describe('StaffDashboard', () => {
     ),
   );
 
+  /** Who is at the book. `next()` a plain barber to shut the money gate. */
+  const principal$ = new BehaviorSubject<Principal>({
+    kind: 'active',
+    uid: 'dev-staff-ivan' as unknown as PrincipalId,
+    roles: ['barber', 'admin'].map(roleFromPrimitive),
+  });
+
   const put = vi.fn((_exception: ScheduleException) =>
     Promise.resolve(ok(undefined)),
   );
   const clear = vi.fn((_barberId: string, _dayKey: string) =>
     Promise.resolve(ok(undefined)),
   );
+  const putRange = vi.fn(() => Promise.resolve(ok(undefined)));
+  const clearRange = vi.fn(() => Promise.resolve(ok(undefined)));
   // Hoisted so the guards below can assert that a destructive write did NOT
   // happen on the tap that asked for it.
   const transition = vi.fn((_input: unknown) => Promise.resolve(ok(undefined)));
@@ -248,7 +323,9 @@ describe('StaffDashboard', () => {
           // not one lane, row, gap or verb on this surface was under test.
           provide: CATALOG_READER,
           useValue: {
-            listActiveServices: () => of(ok([])),
+            // One timed service, so the tag has a catalogue to measure
+            // against; the fixture's own seats use ids it never knew.
+            listActiveServices: () => of(ok([service('fade', 45)])),
             listActiveBarbers: () =>
               of(ok([barber('ivan', 'Иван'), barber('niko', 'Нико')])),
             listServiceCategories: () => of(ok([])),
@@ -265,7 +342,31 @@ describe('StaffDashboard', () => {
             observeRangeCapacity: () => of(ok(new Map())),
           },
         },
-        { provide: SCHEDULE_EXCEPTION_WRITER, useValue: { put, clear } },
+        {
+          provide: SCHEDULE_EXCEPTION_WRITER,
+          useValue: { put, clear, putRange, clearRange },
+        },
+        {
+          // The signed-in principal — a barber who also holds the keys, so
+          // the money gate opens; a plain barber's case is asserted below.
+          provide: AUTH_GATEWAY,
+          useValue: {
+            observePrincipal: () => principal$,
+            refreshToken: () => Promise.resolve(ok(undefined)),
+            signOut: () => Promise.resolve(ok(undefined)),
+          },
+        },
+        {
+          provide: USER_SEARCH_PORT,
+          useValue: { search: async () => ok([]) },
+        },
+        {
+          provide: APPOINTMENT_NOTES,
+          useValue: {
+            observe: () => of(ok(null)),
+            save: async () => ok(undefined),
+          },
+        },
         {
           provide: MEDIA_READER,
           useValue: { resolve: () => Promise.resolve(ok([])) },
@@ -301,14 +402,16 @@ describe('StaffDashboard', () => {
     expect(host().querySelector('[data-testid="staff-day-today"]')).toBeNull();
   });
 
-  it('title-cases the month in the period label', () => {
-    // Bulgarian writes months lowercase in prose ("7 август") and `Intl`
-    // follows the language — but this is a heading, not a sentence.
+  it("names the day the way the visit sheet does — the locale's compact date", () => {
+    // REVERSED (owner, 2026-09-09): the toolbar's label and the frame's pill
+    // are ONE component now, and one grammar — the compact date exactly as
+    // `Intl` renders it, `ср, 5.08`. The title-cased heading is gone with
+    // the headline segment it lived in.
     const label = host()
       .querySelector('[data-testid="staff-day-label"]')
       ?.textContent?.trim();
-    expect(label).toContain('Август');
-    expect(label).not.toContain('август');
+    expect(label).toContain('5.08');
+    expect(label).not.toMatch(/август/i);
   });
 
   it('reaches another day through the date pull-down', async () => {
@@ -325,7 +428,7 @@ describe('StaffDashboard', () => {
 
     (
       host().querySelector(
-        '[data-testid="staff-date-2026-08-06"]',
+        '[data-testid="ui-month-day-2026-08-06"]',
       ) as HTMLButtonElement
     ).click();
     fixture.detectChanges();
@@ -416,11 +519,13 @@ describe('StaffDashboard', () => {
     const component = fixture.componentInstance as unknown as {
       openRestDay: (id: string) => void;
       blockLaneId: () => string | null;
-      blockAllDay: () => boolean;
+      blockEdit: () => { allDay: boolean; blockId: string | null } | null;
     };
     component.openRestDay('nikо-test-id');
     expect(component.blockLaneId()).toBe('nikо-test-id');
-    expect(component.blockAllDay()).toBe(true);
+    expect(component.blockEdit()?.allDay).toBe(true);
+    // Editing something that exists — so the sheet offers the lift.
+    expect(component.blockEdit()?.blockId).not.toBeNull();
   });
 
   it('never says "off today" and "nobody in the catalog" at once', () => {
@@ -479,8 +584,9 @@ describe('StaffDashboard', () => {
     card.click();
     await fixture.whenStable();
     fixture.detectChanges();
+    // The sheet's acts are its EXITS, at the foot (owner, 2026-09-09).
     expect(
-      host().querySelector('[data-testid^="staff-visit-act-"]'),
+      host().querySelector('[data-testid="staff-visit-cancel"]'),
     ).not.toBeNull();
     // And the card can still take focus when its state changes underneath.
     expect(card.getAttribute('tabindex')).toBe('-1');
@@ -800,6 +906,32 @@ describe('StaffDashboard', () => {
     ).toBeGreaterThan(0);
   });
 
+  it('marks the party in the foot, not as a line of its own', () => {
+    // `1 / 2` is a MARK about the row — a glyph and a count — not a detail
+    // of the client like an email or a phone, and as a fact line it cost a
+    // whole line of card height to say four characters. The foot adds no
+    // height: the barber's disc already needs that row.
+    const share = host().querySelector(
+      '[data-testid="staff-visit-party-share"]',
+    );
+    expect(share).not.toBeNull();
+    expect(share?.closest('.agenda-card__foot')).not.toBeNull();
+    expect(share?.closest('.agenda-card__facts')).toBeNull();
+
+    // Figures adjacent, plain glyphs after them, the barber's disc last.
+    const foot = share?.closest('.agenda-card__foot');
+    const kids = [...(foot?.children ?? [])];
+    const shareAt = kids.indexOf(share as Element);
+    const markAt = kids.findIndex((el) =>
+      el.classList.contains('agenda-card__mark'),
+    );
+    const faceAt = kids.findIndex((el) =>
+      el.classList.contains('agenda-card__barber-face'),
+    );
+    if (markAt !== -1) expect(shareAt).toBeLessThan(markAt);
+    if (faceAt !== -1) expect(shareAt).toBeLessThan(faceAt);
+  });
+
   it('keeps hasFoot in step with what the foot actually renders', () => {
     // `hasFoot` duplicates the template's three conditions, and duplicated
     // conditions drift. This ties them together: for every card on screen,
@@ -819,7 +951,7 @@ describe('StaffDashboard', () => {
     for (const entry of entries) {
       const id = (entry as { id?: string }).id;
       if (id === undefined) continue;
-      const card = host().querySelector(`[data-appointment-id="${id}"]`);
+      const card = host().querySelector(`[data-row-id="${id}"]`);
       if (card === null) continue;
       checked++;
       expect(card.querySelector('.agenda-card__foot') !== null).toBe(
@@ -1115,8 +1247,110 @@ describe('StaffDashboard', () => {
     expect(sheet).not.toBeNull();
     // The number was already on the row model and thrown away; this is the
     // first surface in the product that shows it to staff.
+    //
+    // ONE, in the DOCK, and NAMED (owner, 2026-09-09: "the most common
+    // action you do when you open the appointment"; reverses the row
+    // placement of 2026-09-08). The client row keeps the number to read.
     const call = sheet?.querySelector('[data-testid="staff-visit-call"]');
+    expect(call?.closest('ui-sheet-action-bar')).not.toBeNull();
     expect(call?.getAttribute('href')).toMatch(/^tel:/);
+    expect(call?.getAttribute('aria-label')).toContain('staff.day.visitCall');
+    expect(
+      sheet?.querySelector('[data-testid^="staff-visit-call-"]'),
+    ).toBeNull();
+  });
+
+  it('names the sheet from the bar, which never collapses away', async () => {
+    /*
+     * The editor used to carry an `h2 uiSheetLargeTitle` that collapsed into
+     * the bar on scroll. On a ladder eight groups long that block bought
+     * nothing — the name is the same on every visit — so the bar shows it
+     * from the first frame and the id `aria-labelledby` resolves through
+     * moved with it. `aria-labelledby` still works although the bar title is
+     * `aria-hidden`: a referenced element contributes its text either way.
+     */
+    const row = host().querySelector(
+      '[data-testid="staff-visit-row"]',
+    ) as HTMLElement;
+    row.click();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    const sheet = host().querySelector('[data-testid="staff-visit-sheet"]');
+    expect(sheet?.querySelector('[uiSheetLargeTitle]')).toBeNull();
+
+    const label = sheet?.querySelector('#staff-visit-title');
+    expect(label).not.toBeNull();
+    expect(label?.hasAttribute('sheet-title')).toBe(true);
+  });
+
+  it('keeps the drafted day live, and releases it on close', async () => {
+    /*
+     * The frame in the sheet draws the chair's day around the block, and the
+     * pill can step that block onto a date the agenda underneath is not
+     * showing. Only `visibleDays()` was subscribed — one day, in day view —
+     * so the frame kept drawing the ORIGINAL day's neighbours under a pill
+     * that said a different date. The store now keeps the drafted day live
+     * as a PROBE; this is what proves the subscription actually moves.
+     */
+    const row = host().querySelector(
+      '[data-testid="staff-visit-row"]',
+    ) as HTMLElement;
+    row.click();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    const daysFor = () =>
+      observeBarberDay.mock.calls.map((call) => call[1] as string);
+    expect(daysFor()).toContain('2026-08-05');
+    observeBarberDay.mockClear();
+
+    const next = host().querySelector(
+      '[data-testid="staff-visit-day-next"]',
+    ) as HTMLElement;
+    next.click();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    // The next day is now subscribed — the frame can only draw what is live.
+    expect(daysFor()).toContain('2026-08-06');
+    observeBarberDay.mockClear();
+
+    // …and a closed sheet must not keep a listener open on a day nothing is
+    // looking at.
+    // The REAL close path — the shell's own ✕. A `dismissed` CustomEvent on
+    // the host does not reach an Angular `output()`, so dispatching one
+    // proved nothing about what closing actually does.
+    const close = host().querySelector<HTMLElement>(
+      '[data-testid="staff-visit-sheet"] .ui-sheet-header button[uitrailing]',
+    );
+    expect(close).not.toBeNull();
+    close?.click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(
+      host().querySelector('[data-testid="staff-visit-sheet"]'),
+    ).toBeNull();
+
+    /*
+     * ⚠ RELEASE IS PROVED BY THE NEXT SUBSCRIPTION, not by the absence of
+     * one. Closing shrinks the subscribed set, and nothing re-queries until
+     * something else moves it — so `not.toContain` straight after the close
+     * passed against an EMPTY list, which is true for the wrong reason.
+     * Moving the agenda forces a fresh subscription, and the probe's day is
+     * absent from it only if the probe was actually let go.
+     */
+    const component = fixture.componentInstance as unknown as {
+      store: { goToDay: (day: string) => void };
+    };
+    component.store.goToDay('2026-08-04');
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(daysFor()).toContain('2026-08-04');
+    expect(daysFor()).not.toContain('2026-08-06');
   });
 
   it('keeps every legal transition reachable — in the sheet, not a popover', async () => {
@@ -1130,7 +1364,7 @@ describe('StaffDashboard', () => {
     // The graph is never narrowed, only relocated: cancelling is still
     // reachable, at full size and named in words.
     expect(
-      host().querySelector('[data-testid="staff-visit-act-cancelled"]'),
+      host().querySelector('[data-testid="staff-visit-cancel"]'),
     ).not.toBeNull();
   });
 
@@ -1271,15 +1505,17 @@ describe('StaffDashboard', () => {
     // — every block plus the all-day absence — so it must not happen on the
     // tap that asked for it.
     const component = fixture.componentInstance as unknown as {
-      liftBlock: (barberId: string) => Promise<void>;
+      openRestDay: (barberId: string) => void;
+      liftFromEditor: () => Promise<void>;
       blockLiftArmed: () => boolean;
     };
+    component.openRestDay('ivan');
 
-    await component.liftBlock('ivan');
+    await component.liftFromEditor();
     expect(component.blockLiftArmed()).toBe(true);
     expect(clear).not.toHaveBeenCalled();
 
-    await component.liftBlock('ivan');
+    await component.liftFromEditor();
     expect(clear).toHaveBeenCalledTimes(1);
     expect(component.blockLiftArmed()).toBe(false);
   });
@@ -1289,30 +1525,36 @@ describe('StaffDashboard', () => {
     // meant one barber could stand a colleague's chair down in two taps.
     const component = fixture.componentInstance as unknown as {
       openBlockSheet: (barberId: string) => void;
-      pickBlockLane: (barberId: string) => void;
       blockLaneId: () => string | null;
-      blockLaneOptions: () => readonly { id: string }[];
+      barberOptions: () => readonly { id: string }[];
     };
     component.openBlockSheet('ivan');
+    fixture.detectChanges();
     expect(component.blockLaneId()).toBe('ivan');
-    // Every rostered chair is reachable from inside the sheet.
-    expect(component.blockLaneOptions().map((o) => o.id)).toContain('ivan');
-    component.pickBlockLane('ivan');
-    expect(component.blockLaneId()).toBe('ivan');
+    // The chair it opened on is a row; the others wait behind «Добави
+    // бръснар» (owner, 2026-09-09: several barbers, discretely).
+    expect(component.barberOptions().map((o) => o.id)).toContain('ivan');
+    expect(
+      host().querySelector('[data-testid="staff-block-barber-ivan"]'),
+    ).not.toBeNull();
+    expect(
+      host().querySelector('[data-testid="staff-block-add-barber"]'),
+    ).not.toBeNull();
   });
 
   it('names the visits a block would strand rather than sitting on them', () => {
     const component = fixture.componentInstance as unknown as {
-      openBlockSheet: (barberId: string) => void;
-      blockAllDay: { set: (on: boolean) => void };
-      blockCollisions: () => readonly { clientLabel: string }[];
+      openRestDay: (barberId: string) => void;
     };
-    component.openBlockSheet('ivan');
-    component.blockAllDay.set(true);
+    component.openRestDay('ivan');
     fixture.detectChanges();
     // The fixture books one live visit in Ivan's chair; a whole-day block
-    // lands squarely on top of it.
-    expect(component.blockCollisions().length).toBe(1);
+    // lands squarely on top of it, and the frame names it in red — under
+    // the picture, the way the visit sheet names a collision. (The suite's
+    // loader carries no copy, so the sentence is its key.)
+    const note = host().querySelector('[data-testid="staff-block-frame-note"]');
+    expect(note?.getAttribute('data-verdict')).toBe('conflict');
+    expect(note?.textContent).toContain('staff.visit.conflict');
   });
 
   it('keeps only ONE transient surface open at a time', () => {
@@ -1342,19 +1584,28 @@ describe('StaffDashboard', () => {
 
     (
       host().querySelector(
-        '[data-testid="staff-block-confirm"]',
+        '[data-testid="staff-block-save"]',
       ) as HTMLButtonElement
     ).click();
     await fixture.whenStable();
 
-    expect(put).toHaveBeenCalledTimes(1);
-    const [written] = put.mock.calls[0] ?? [];
-    if (!written) throw new Error('the writer was never called');
-    expect(written.barberId?.value).toBe('ivan');
-    expect(written.day.key()).toBe('2026-08-05');
     // The default is a RANGE, not the whole day — standing a chair down for
-    // a full day is the rarer act and must be chosen deliberately.
-    expect(written.detail.kind).toBe('admin');
+    // a full day is the rarer act and must be chosen deliberately. And a
+    // range ACCUMULATES: it goes through `putRange`, which merges into the
+    // day, never through `put`, which would replace it.
+    expect(put).not.toHaveBeenCalled();
+    expect(putRange).toHaveBeenCalledTimes(1);
+    const args = putRange.mock.calls[0] as unknown as [
+      string,
+      string,
+      string,
+      string,
+      { start: { toString: () => string }; end: { toString: () => string } },
+    ];
+    expect(args[0]).toBe('ivan');
+    expect(args[2]).toBe('2026-08-05');
+    expect(args[4].start.toString()).toBe('12:00');
+    expect(args[4].end.toString()).toBe('13:00');
   });
 
   it('stands the whole day down when the switch is on', async () => {
@@ -1372,7 +1623,7 @@ describe('StaffDashboard', () => {
     fixture.detectChanges();
     (
       host().querySelector(
-        '[data-testid="staff-block-confirm"]',
+        '[data-testid="staff-block-save"]',
       ) as HTMLButtonElement
     ).click();
     await fixture.whenStable();
@@ -1494,7 +1745,7 @@ describe('StaffDashboard', () => {
     fixture.detectChanges();
     (
       host().querySelector(
-        '[data-testid="staff-date-2026-08-26"]',
+        '[data-testid="ui-month-day-2026-08-26"]',
       ) as HTMLButtonElement
     ).click();
     fixture.detectChanges();
@@ -1718,8 +1969,292 @@ describe('StaffDashboard', () => {
     expect(
       host().querySelector('[data-testid="staff-fab-trigger"]'),
     ).toBeNull();
-    // The bar itself stays — "back to today" still lives in it.
+    // The bar itself stays — "back to today" still lives in it, and so does
+    // the ONE create door the page can honour today: the block editor.
     expect(host().querySelector('ui-page-action-bar')).not.toBeNull();
+    (
+      host().querySelector(
+        '[data-testid="staff-add-trigger"]',
+      ) as HTMLButtonElement
+    ).click();
+    fixture.detectChanges();
+    // The ＋ is the kind picker: what you are making, as a menu.
+    (
+      host().querySelector(
+        '[data-testid="staff-add-block"]',
+      ) as HTMLButtonElement
+    ).click();
+    fixture.detectChanges();
+    expect(
+      host().querySelector('[data-testid="staff-block-sheet"]'),
+    ).not.toBeNull();
+  });
+
+  it("tags a visit that runs off the catalogue's length, the way the frame does", async () => {
+    // Owner, 2026-09-10: "the events here should look a lot like the ones
+    // in the frame … the ±x min if extended or subtracted". The seat was
+    // sold for 30 minutes; the chair's catalogue says 45 for the fade, so
+    // the card says «−15 мин» in its foot, beside the marks — the frame's
+    // own tag, one recipe.
+    const visits = observeBarberDay.getMockImplementation();
+    observeBarberDay.mockImplementation((barberId: { value: string }) =>
+      of(
+        ok(
+          barberId.value === 'ivan'
+            ? [
+                appointment(
+                  'appointment-fade',
+                  '2026-08-05T14:00:00',
+                  undefined,
+                  'ivan',
+                  false,
+                  'fade',
+                ),
+              ]
+            : [],
+        ),
+      ),
+    );
+    try {
+      TestBed.resetTestingModule();
+      await build();
+      const tag = host().querySelector('[data-testid="staff-visit-tag"]');
+      // The loader returns no translations, so this asserts the true minus
+      // and the key the figure reaches for; the words are the helper's own
+      // spec's business (`shared/catalog-delta.spec.ts`).
+      expect(tag?.textContent?.trim()).toBe('−staff.visit.minutes');
+      expect(tag?.closest('.agenda-card__foot')).not.toBeNull();
+      expect(tag?.classList.contains('staff-event-tag')).toBe(true);
+    } finally {
+      if (visits) observeBarberDay.mockImplementation(visits);
+    }
+  });
+
+  it('opens the block sheet on a day nobody works — the ＋ never resolves to nobody', async () => {
+    // Owner, 2026-09-09: "adding a blocker when all are blocked for the
+    // selected date is not working — it should always open". A day everyone
+    // is off has no working lane, and the create chair used to be read off
+    // the lanes alone.
+    // No roster AND no bookings: a chair with a visit still works the day.
+    const roster = observeDay.getMockImplementation();
+    const visits = observeBarberDay.getMockImplementation();
+    observeDay.mockImplementation(() => of(ok([])));
+    observeBarberDay.mockImplementation(() => of(ok([])));
+    try {
+      TestBed.resetTestingModule();
+      await build();
+      const component = fixture.componentInstance as unknown as {
+        openCreate: (kind: 'booking' | 'block') => void;
+        lanes: () => readonly unknown[];
+        blockLaneId: () => string | null;
+      };
+      expect(component.lanes()).toHaveLength(0);
+      // The toolbar's own door is open too.
+      expect(
+        (
+          host().querySelector(
+            '[data-testid="staff-lane-block"]',
+          ) as HTMLButtonElement
+        ).disabled,
+      ).toBe(false);
+      component.openCreate('block');
+      fixture.detectChanges();
+      expect(
+        host().querySelector('[data-testid="staff-block-sheet"]'),
+      ).not.toBeNull();
+      expect(component.blockLaneId()).toBe('ivan');
+      // And the picture tells the truth: a chair with no roster is shut all
+      // day — one closed run over the whole column, not a free day.
+      expect(
+        host().querySelectorAll('[data-testid="staff-grid-closed"]'),
+      ).toHaveLength(1);
+    } finally {
+      if (roster) observeDay.mockImplementation(roster);
+      if (visits) observeBarberDay.mockImplementation(visits);
+    }
+  });
+
+  it('lets the front desk and the owners reprice a seat, and sends it as a reprice on save', async () => {
+    // Owner, 2026-09-10: the price is edited on the ladder for whoever may;
+    // the save carries it as the seat's new terms. A plain barber gets no
+    // pill: he may stretch his own time, not discount the shop's money.
+    const component = fixture.componentInstance as unknown as {
+      mayReprice: () => boolean;
+      commitFromEditor: (id: string, commit: unknown) => Promise<void>;
+      store: { staffEdit: (request: unknown) => Promise<boolean> };
+      visitSheetRow: () => {
+        appointmentId: string;
+        legs: readonly {
+          seatId: string;
+          minutes: number;
+          barberId: string;
+          priceLabel: string | null;
+        }[];
+      } | null;
+    };
+    expect(component.mayReprice()).toBe(true);
+
+    const edits: { command: readonly { kind: string }[] }[] = [];
+    component.store.staffEdit = async (request) => {
+      edits.push(request as { command: readonly { kind: string }[] });
+      return true;
+    };
+    (
+      host().querySelector('[data-testid="staff-visit-row"]') as HTMLElement
+    ).click();
+    fixture.detectChanges();
+    const row = component.visitSheetRow();
+    if (row === null) throw new Error('the sheet did not open');
+    const [leg] = row.legs;
+    if (leg === undefined) throw new Error('no seat on the row');
+    await component.commitFromEditor(row.appointmentId, {
+      kind: 'save',
+      dayKey: '2026-08-05',
+      startMinute: 600,
+      endMinute: 630,
+      note: null,
+      clients: [],
+      legs: [
+        {
+          seatId: leg.seatId,
+          serviceId: 'cut',
+          variantId: null,
+          minutes: leg.minutes,
+          priceLabel: '18,00 €',
+          priceMinorUnits: 1800,
+          barberId: leg.barberId,
+          clientId: 'user-martin',
+        },
+        // A seat minted in the draft, priced by hand: its reprice follows
+        // its addSeat in the same batch (owner, 2026-09-10).
+        {
+          seatId: 'draft-wash-1',
+          serviceId: 'wash',
+          variantId: null,
+          minutes: 10,
+          priceLabel: '9,00 €',
+          priceMinorUnits: 900,
+          barberId: leg.barberId,
+          clientId: 'user-martin',
+        },
+      ],
+    });
+    const commands = edits.flatMap((edit) => edit.command);
+    expect(commands).toContainEqual({
+      kind: 'reprice',
+      seatId: leg.seatId,
+      priceMinorUnits: 1800,
+    });
+    const seatOf = (command: { kind: string }) =>
+      (command as { seatId?: string }).seatId;
+    const added = commands.findIndex(
+      (command) =>
+        command.kind === 'addSeat' && seatOf(command) === 'draft-wash-1',
+    );
+    const repriced = commands.findIndex(
+      (command) =>
+        command.kind === 'reprice' && seatOf(command) === 'draft-wash-1',
+    );
+    expect(added).toBeGreaterThanOrEqual(0);
+    expect(repriced).toBeGreaterThan(added);
+    expect(commands[repriced]).toMatchObject({ priceMinorUnits: 900 });
+
+    // A plain barber: the gate shuts.
+    principal$.next({
+      kind: 'active',
+      uid: 'dev-staff-ivan' as unknown as PrincipalId,
+      roles: ['barber'].map(roleFromPrimitive),
+    });
+    expect(component.mayReprice()).toBe(false);
+    principal$.next({
+      kind: 'active',
+      uid: 'dev-staff-ivan' as unknown as PrincipalId,
+      roles: ['barber', 'admin'].map(roleFromPrimitive),
+    });
+  });
+
+  it('opens ONE kind of new visit from the ＋, starting at the next tick', () => {
+    // «Бърз час» is gone (owner, 2026-09-09): a walk-in is a kind of client,
+    // chosen in the sheet, and someone at the counter may want tomorrow.
+    const component = fixture.componentInstance as unknown as {
+      openCreate: (kind: 'booking' | 'block') => void;
+      createVm: () => { clientLabel: string; startMinute: number } | null;
+    };
+    expect(
+      host().querySelector('[data-testid="staff-add-walk-in"]'),
+    ).toBeNull();
+    component.openCreate('booking');
+    fixture.detectChanges();
+    expect(
+      host().querySelector('[data-testid="staff-create-sheet"]'),
+    ).not.toBeNull();
+    expect(component.createVm()?.clientLabel).toBe('');
+    expect((component.createVm()?.startMinute ?? 0) % 5).toBe(0);
+  });
+
+  it('places a party as one booking: the account holder owns it, the rest ride as guests', async () => {
+    // THE PARTY GRAMMAR. Every leg names its person. The first client WITH
+    // an account is the appointment's owner (`self` seats, `onBehalfOfUserId`);
+    // a walk-in placeholder or a minted guest rides as a `guest` seat under
+    // their own name — the domain's one-owner shape, not a shortcut here.
+    const requests: CommitBookingRequest[] = [];
+    const gateway = TestBed.inject(BOOKING_GATEWAY) as {
+      commit: (request: CommitBookingRequest) => Promise<unknown>;
+    };
+    gateway.commit = async (request) => {
+      requests.push(request);
+      return ok({ appointmentId: 'apt-party', status: 'confirmed' });
+    };
+    const component = fixture.componentInstance as unknown as {
+      openCreate: (kind: 'booking' | 'block') => void;
+      createFromEditor: (commit: unknown) => Promise<void>;
+      createVisit: () => unknown;
+    };
+    component.openCreate('booking');
+    fixture.detectChanges();
+    await component.createFromEditor({
+      kind: 'save',
+      dayKey: '2026-09-03',
+      startMinute: 600,
+      endMinute: 645,
+      note: null,
+      clients: [
+        { id: 'primary', label: 'Без запазен час', phone: null },
+        { id: 'user-martin', label: 'Мартин Илиев', phone: '+359881234567' },
+      ],
+      legs: [
+        {
+          seatId: 'draft-cut',
+          serviceId: 'cut',
+          variantId: null,
+          minutes: 30,
+          priceLabel: null,
+          barberId: 'ivan',
+          clientId: 'primary',
+        },
+        {
+          seatId: 'draft-beard',
+          serviceId: 'beard',
+          variantId: null,
+          minutes: 15,
+          priceLabel: null,
+          barberId: 'ivan',
+          clientId: 'user-martin',
+        },
+      ],
+    });
+    const request = requests[0];
+    expect(request?.onBehalfOfUserId).toBe('user-martin');
+    expect(request?.seats.map((seat) => seat.subject)).toEqual([
+      { kind: 'guest', label: 'Без запазен час' },
+      { kind: 'self' },
+    ]);
+    // The contact is the owner's, not the walk-in's.
+    expect(request?.contact?.name).toBe('Мартин Илиев');
+    // Serial from the chosen minute, in ladder order.
+    const at = request?.seats.map((seat) => Date.parse(seat.startIso)) ?? [];
+    expect(at[1] - at[0]).toBe(30 * 60_000);
+    expect(component.createVisit()).toBeNull();
   });
 
   it('keeps blocking time on the lane it belongs to, and only there', () => {

@@ -27,101 +27,23 @@
                its trigger, dims nothing, and closes on any outside press). A
                modal sheet for choosing a day is a heavier promise than the
                act deserves. -->
-          <!-- A cluster of ONE, so the period wears the same chrome as the
-               trailing run rather than a second, near-miss grey. It was
-               `bordered`/`neutral` — an alpha-ladder film over whatever is
-               behind it — beside segments filled with opaque
-               `surface-secondary`; two quiet greys that never quite matched.
-               One recipe now covers both. -->
-          <div class="staff-cluster">
-            <ui-menu
-              [uiPresented]="datePickerOpen()"
-              uiAlignment="leading"
-              [uiLabel]="periodLabel()"
-              (uiDismissed)="datePickerOpen.set(false)"
-            >
-              <button
-                type="button"
-                uiButton
-                uiButtonStyle="plain"
-                uiTint="neutral"
-                uiControlSize="regular"
-                uiMenuTrigger
-                class="staff-cluster__item staff-period"
-                data-testid="staff-day-label"
-                [attr.aria-expanded]="datePickerOpen()"
-                (click)="toggleDatePicker()"
-              >
-                <span uiText uiFont="headline">{{ periodLabel() }}</span>
-                <ui-icon uiTrailing uiName="field.expand" />
-              </button>
-
-              <div class="staff-datepicker">
-                <ui-stack
-                  uiAxis="horizontal"
-                  uiAlignment="center"
-                  uiSpacing="compact"
-                >
-                  <span uiText uiFont="subheadline" uiWeight="semibold">
-                    {{ pickerMonthLabel() }}
-                  </span>
-                  <ui-spacer />
-                  <button
-                    type="button"
-                    uiButton
-                    uiButtonStyle="plain"
-                    uiTint="neutral"
-                    uiControlSize="small"
-                    [uiIconOnly]="true"
-                    [attr.aria-label]="t('staff.day.previous')"
-                    data-testid="staff-date-prev"
-                    (click)="shiftPickerMonth(-1)"
-                  >
-                    <ui-icon uiName="calendar.previous" />
-                  </button>
-                  <button
-                    type="button"
-                    uiButton
-                    uiButtonStyle="plain"
-                    uiTint="neutral"
-                    uiControlSize="small"
-                    [uiIconOnly]="true"
-                    [attr.aria-label]="t('staff.day.next')"
-                    data-testid="staff-date-next"
-                    (click)="shiftPickerMonth(1)"
-                  >
-                    <ui-icon uiName="calendar.next" />
-                  </button>
-                </ui-stack>
-
-                <ui-calendar-grid>
-                  @for (name of weekdayKey(); track name) {
-                  <span uiWeekday>{{ name }}</span>
-                  } @for (week of pickerWeeks(); track $index) { @for (cell of
-                  week; track $index) { @if (cell === null) {
-                  <span uiDay aria-hidden="true"></span>
-                  } @else {
-                  <button
-                    type="button"
-                    uiDay
-                    uiInteractive
-                    uiRadius="regular"
-                    [attr.data-selected]="
-                    cell.dayKey === store.dayKey() ? '' : null
-                  "
-                    [attr.data-today]="
-                    cell.dayKey === store.todayKey() ? '' : null
-                  "
-                    [attr.data-testid]="'staff-date-' + cell.dayKey"
-                    (click)="pickDay(cell.dayKey)"
-                  >
-                    {{ cell.day }}
-                  </button>
-                  } } }
-                </ui-calendar-grid>
-              </div>
-            </ui-menu>
-          </div>
+          <!-- ONE DAY PILL, shared with the visit sheet's frame (owner,
+               2026-09-09): the same trigger, the same label grammar, the
+               same calendar at the same size. The toolbar only says which
+               day, and closes its other popovers when this one opens. -->
+          <lib-staff-day-pill
+            uiAlignment="leading"
+            [uiDayKey]="store.dayKey()"
+            [uiTodayKey]="store.todayKey()"
+            [uiLocale]="content.locale()"
+            [uiLabel]="periodLabel()"
+            [uiPreviousLabel]="t('staff.visit.monthPrevious')"
+            [uiNextLabel]="t('staff.visit.monthNext')"
+            uiTestId="staff-day-label"
+            [uiPresented]="datePickerOpen()"
+            (uiPresentedChange)="setDatePicker($event)"
+            (uiPicked)="pickDay($event)"
+          />
 
           <ui-stack uiSpacing="none" uiAlignment="center">
             <!-- Midnight rolled over under an open tab. The sheet says so
@@ -150,16 +72,19 @@
                cluster, and a menu that grows from a trailing control has to
                grow inward or it grows off the screen — which is what the
                scope picker did the moment its rows gained a portrait rail. -->
-            <ui-menu
-              [uiPresented]="openPicker() === 'view'"
+            <ui-choice-menu
               uiAlignment="trailing"
+              [uiOptions]="viewChoices()"
+              [uiSelectedId]="store.view()"
               [uiLabel]="t('staff.day.viewLabel')"
-              (uiDismissed)="openPicker.set(null)"
+              [uiPresented]="openPicker() === 'view'"
+              (uiPresentedChange)="openPicker.set($event ? 'view' : null)"
+              (uiPicked)="pickView($event)"
             >
               <button
                 type="button"
                 uiButton
-                uiButtonStyle="plain"
+                uiButtonStyle="bordered"
                 uiTint="neutral"
                 uiControlSize="regular"
                 [uiIconOnly]="true"
@@ -176,60 +101,21 @@
               >
                 <ui-icon [uiName]="currentViewIcon()" />
               </button>
-              <!-- The SAME composition the booking flow's pickers use, and the
-                 one `UiMenuItem` documents: the directive supplies the
-                 semantics and the keyboard model, `uiListRow` inside a
-                 `ui-list-group` owns the look. Bare menu items were this
-                 app's only picker not wearing its segmented run. -->
-              <ui-list-group>
-                @for (option of views; track option.id) {
-                <button
-                  type="button"
-                  uiMenuItem
-                  uiListRow
-                  [uiInteractive]="true"
-                  [uiSelected]="store.view() === option.id"
-                  [attr.data-testid]="'staff-view-' + option.id"
-                  (click)="store.setView(option.id); openPicker.set(null)"
-                >
-                  <!-- Icon AND label: the trigger may be a glyph, but the list
-                     that teaches which glyph means what cannot be. -->
-                  <ui-icon uiLeading [uiName]="option.icon" />
-                  {{ t('staff.day.view.' + option.id) }}
-                  <span uiTrailing>
-                    @if (store.view() === option.id) {
-                    <ui-icon
-                      uiName="checklist.done"
-                      uiForegroundStyle="accent"
-                    />
-                    }
-                  </span>
-                </button>
-                }
-              </ui-list-group>
-
-              <!-- BLOCKING TIME. It used to live on each lane header, and the
-                   agenda has no lane headers — one clock-ordered run has no
-                   per-barber row to hang it off. A shop-wide entry point is
-                   safe now in a way it was not before: the sheet carries the
-                   barber picker its own comment always promised, so this can
-                   no longer stand down whichever chair happened to sort
-                   first. -->
               <ui-list-group>
                 <button
                   type="button"
                   uiMenuItem
                   uiListRow
                   [uiInteractive]="true"
-                  [disabled]="lanes().length === 0"
+                  [disabled]="scopeOptions().length === 0"
                   data-testid="staff-lane-block"
-                  (click)="openPicker.set(null); openBlockSheet(lanes()[0]!.barberId)"
+                  (click)="openPicker.set(null); openCreate('block')"
                 >
                   <ui-icon uiLeading uiName="booking.blocked" />
                   {{ t('staff.day.blockTime') }}
                 </button>
               </ui-list-group>
-            </ui-menu>
+            </ui-choice-menu>
 
             <!-- Search sits between the two pickers and the person — the
                trailing cluster runs view · find · who, which is the order
@@ -238,7 +124,7 @@
             <button
               type="button"
               uiButton
-              uiButtonStyle="plain"
+              uiButtonStyle="bordered"
               uiTint="neutral"
               uiControlSize="regular"
               [uiIconOnly]="true"
@@ -254,22 +140,19 @@
                a date and five barbers would be thirty-five columns; the list
                and day views need it because a barber wants their own lane,
                which is the single most-asked thing on this surface. -->
-            <ui-menu
-              [uiPresented]="openPicker() === 'scope'"
+            <ui-choice-menu
               uiAlignment="trailing"
+              [uiOptions]="scopeChoices()"
+              [uiSelectedId]="store.scope() ?? 'all'"
               [uiLabel]="t('staff.day.scopeLabel')"
-              (uiDismissed)="openPicker.set(null)"
+              [uiPresented]="openPicker() === 'scope'"
+              (uiPresentedChange)="openPicker.set($event ? 'scope' : null)"
+              (uiPicked)="pickScope($event)"
             >
-              <!-- The SAME button as the search and view controls beside it —
-                 `bordered`/`neutral`, icon-only, at the regular rung — with a
-                 portrait where they carry a glyph. It used to be a bare
-                 element with the avatar as its only box, which is why it read
-                 a size smaller than its neighbours: it had no button behind
-                 it, not a smaller one. -->
               <button
                 type="button"
                 uiButton
-                uiButtonStyle="plain"
+                uiButtonStyle="bordered"
                 uiTint="neutral"
                 uiControlSize="regular"
                 [uiIconOnly]="true"
@@ -297,79 +180,25 @@
                 <ui-avatar uiIcon="booking.anyBarber" uiControlSize="small" />
                 }
               </button>
-              <ui-list-group>
-                <button
-                  type="button"
-                  uiMenuItem
-                  uiListRow
-                  [uiInteractive]="true"
-                  [uiSelected]="store.scope() === null"
-                  data-testid="staff-scope-all"
-                  (click)="store.setScope(null); openPicker.set(null)"
-                >
-                  <!-- The leading rail is STATIC, as the bag sheet's is: a slot
-                     that only exists inside an `@if` is projected into the
-                     default slot instead, which stacks the portrait above the
-                     name rather than beside it. Its WIDTH is the menu's job
-                     (menu.css holds a picker run's leading column open). -->
-                  <span uiLeading>
-                    <ui-avatar
-                      uiIcon="booking.anyBarber"
-                      uiControlSize="regular"
-                    />
-                  </span>
-                  {{ t('staff.day.scopeAll') }}
-                  <span uiTrailing>
-                    @if (store.scope() === null) {
-                    <ui-icon
-                      uiName="checklist.done"
-                      uiForegroundStyle="accent"
-                    />
-                    }
-                  </span>
-                </button>
-                @for (option of scopeOptions(); track option.id) {
-                <button
-                  type="button"
-                  uiMenuItem
-                  uiListRow
-                  [uiInteractive]="true"
-                  [uiSelected]="store.scope() === option.id"
-                  [attr.data-testid]="'staff-scope-' + option.id"
-                  (click)="store.setScope(option.id); openPicker.set(null)"
-                >
-                  <!-- THE LEGEND, badged to the portrait's corner.
-                       It sat after the NAME, and a legend cannot: names are
-                       different lengths, so the swatch landed at a different
-                       x on every row and there was no column to read down.
-                       Pinned to the avatar it lines up exactly, whatever the
-                       name does. Same corner-badge grammar as the card's
-                       "+N guests" mark, cut-out ring and all. -->
-                  <span uiLeading class="staff-scope__face">
-                    <ui-avatar
-                      [uiSrc]="option.avatarSrc"
-                      [uiName]="option.name"
-                      uiControlSize="regular"
-                    />
-                    <span
-                      class="staff-scope__swatch"
-                      [attr.data-barber-tone]="option.tone"
-                      aria-hidden="true"
-                    ></span>
-                  </span>
-                  {{ option.name }}
-                  <span uiTrailing>
-                    @if (store.scope() === option.id) {
-                    <ui-icon
-                      uiName="checklist.done"
-                      uiForegroundStyle="accent"
-                    />
-                    }
-                  </span>
-                </button>
+              <ng-template uiChoiceLeading let-option>
+                @if (option.id === 'all') {
+                <ui-avatar uiIcon="booking.anyBarber" uiControlSize="regular" />
+                } @else {
+                <span class="staff-scope__face">
+                  <ui-avatar
+                    [uiSrc]="option.avatarSrc ?? null"
+                    [uiName]="option.label"
+                    uiControlSize="regular"
+                  />
+                  <span
+                    class="staff-scope__swatch"
+                    [attr.data-barber-tone]="toneOf(option.id)"
+                    aria-hidden="true"
+                  ></span>
+                </span>
                 }
-              </ui-list-group>
-            </ui-menu>
+              </ng-template>
+            </ui-choice-menu>
           </div>
         </ui-stack>
 
@@ -400,11 +229,14 @@
                  teleported: the same 50ms of work read as slow because
                  nothing connected the two states. A `translateX` on the
                  compositor costs no layout and no paint. -->
-            <span class="staff-weeks__marker" aria-hidden="true"></span>
-            @for (day of week.days; track day.key) {
+            <span class="staff-weeks__marker" aria-hidden="true"
+              ><span class="staff-weeks__marker-disc"></span
+            ></span>
+            @for (day of week.days; track day.key; let column = $index) {
             <button
               type="button"
               class="staff-weeks__day"
+              [style.grid-column]="column + 1"
               [attr.data-selected]="day.key === store.dayKey() ? '' : null"
               [attr.data-today]="day.today ? '' : null"
               [attr.aria-current]="day.key === store.dayKey() ? 'date' : null"
@@ -686,7 +518,7 @@
              — a count is a fact to read, not a thing to notice. It is also
              what pays for elapsed holes not being cards at shop scope: the
              minutes nobody bought are still stated, once, in words. -->
-        @if (daySummary(); as summary) {
+        @if (daySummary() || dayTips()) {
         <p
           class="agenda-summary"
           uiText
@@ -694,7 +526,14 @@
           uiForegroundStyle="secondary"
           data-testid="staff-day-summary"
         >
-          {{ summary }}
+          <!-- Two facts about the same day, in one line: the minutes nobody
+               bought, and what was left on the counter. Both are `null` when
+               there is nothing true to say, so the separator only appears
+               when there are genuinely two. -->
+          @if (daySummary(); as summary) { {{ summary }} } @if (daySummary() &&
+          dayTips()) { · } @if (dayTips(); as tips) {
+          <span data-testid="staff-day-tips">{{ tips }}</span>
+          }
         </p>
         }
         <!-- THE AGENDA — the whole shop's day as ONE clock-ordered run.
@@ -812,7 +651,7 @@
               class="agenda-card agenda-card--visit"
               uiInteractive
               tabindex="-1"
-              [attr.data-appointment-id]="entry.id"
+              [attr.data-row-id]="entry.id"
               [attr.data-status]="entry.status"
               [attr.data-terminal]="entry.terminal ? '' : null"
               [attr.data-past]="entry.past ? '' : null"
@@ -843,12 +682,11 @@
                     uiControlSize="regular"
                   />
                   @if (fields.isOn('party') && entry.seatsHere > 1) {
-                  <!-- THIS CHAIR'S seats, not the whole party's. The agenda
-                       renders one row per appointment per lane, so a party
-                       spread across two chairs is ALREADY two rows and
-                       marking each "+1" would count the same people twice.
-                       Two seats in ONE chair — a father and son back to
-                       back — is the case this actually means. -->
+                  <!-- THIS CHAIR'S seats — the badge annotates the FACE, and
+                       one face standing for two people is what it says. The
+                       cross-chair case is not this mark's job: it is a
+                       relationship between rows, and it is stated as one on
+                       the party line below. -->
                   <span
                     class="agenda-card__guests"
                     data-testid="staff-visit-party"
@@ -906,6 +744,8 @@
                     {{ entry.serviceLabel }}
                   </p>
                   }
+                  <!-- ⚠ THE PARTY SHARE IS NOT A FACT LINE. It moved to the
+                       foot, with the marks. (owner ruling 2026-09-04) -->
                 </div>
 
                 <!-- ONE TRAILING CLUSTER, settled to the end both ways:
@@ -1002,6 +842,59 @@
                   uiForegroundStyle="secondary"
                   >{{ entry.priceLabel }}</span
                 >
+                } @if (fields.isOn('party') && entry.partyLabel) {
+                <!-- ⚠ THE CARD MUST SAY IT IS HALF OF SOMETHING.
+                     (owner ruling 2026-09-03; moved here 2026-09-04)
+
+                     A father with Ivan and his son with Stefan is ONE
+                     booking drawn as two cards at the same minute. Nothing
+                     on either said so: the avatar's `+N` counts one chair,
+                     so a split party — the case where it matters most —
+                     showed no mark at all, and staff read two unrelated
+                     16:00 visits that happen to share a surname.
+
+                     "1 / 2" is this chair's share over the whole party: the
+                     fact that makes the other card findable, and that tells
+                     a barber moving this seat leaves somebody else booked.
+
+                     ⚠ IT LEFT THE FACTS COLUMN. It is a MARK — a glyph and
+                     a count about the row — not a line of the client's
+                     details like an email or a phone, and it cost a whole
+                     line of card height to say four characters. The foot is
+                     where the row's marks already live, and it is the one
+                     place on this card that adds no height: it is a row that
+                     exists anyway for the barber's disc.
+
+                     It sits between the price and the plain glyphs so the
+                     two FIGURES are adjacent and share the trailing
+                     gutter's tabular column, with the pure marks after
+                     them. -->
+                <span
+                  class="agenda-card__party"
+                  uiText
+                  uiFont="callout"
+                  uiForegroundStyle="secondary"
+                  data-testid="staff-visit-party-share"
+                  [attr.aria-label]="
+                    t('staff.day.partyOf', { count: entry.partySize })
+                  "
+                >
+                  <ui-icon uiName="nav.team" aria-hidden="true" />
+                  <span class="agenda-card__figures"
+                    >{{ entry.partyLabel }}</span
+                  >
+                </span>
+                } @if (entry.tag) {
+                <!-- THE TAG — the frame's own mark, on the card (owner,
+                     2026-09-10): how far this run is from the catalogue's
+                     length, so a stretched or trimmed booking says so before
+                     its sheet is ever opened. A figure, so it sits with the
+                     figures, ahead of the plain glyphs. -->
+                <span
+                  class="staff-event-tag agenda-card__tag"
+                  data-testid="staff-visit-tag"
+                  >{{ entry.tag }}</span
+                >
                 } @for (icon of rowIcons(entry); track icon) {
                 <ui-icon [uiName]="icon" class="agenda-card__mark" />
                 } @if (fields.isOn('barberAvatar')) {
@@ -1072,7 +965,7 @@
         <button
           type="button"
           uiButton
-          uiButtonStyle="plain"
+          uiButtonStyle="bordered"
           uiTint="neutral"
           uiControlSize="large"
           [uiIconOnly]="true"
@@ -1090,6 +983,9 @@
            anatomy and the same glyph the appointments calendar uses, so the
            two calendars answer "take me back" identically. Leading, because
            it is a secondary act: the bar's primary is the pen. -->
+      <!-- THE CREATE DOOR (owner review 2026-09-08): the bar's prominent
+           child, docked trailing on the thumb rail. It opens the block
+           editor until the booking write exists, then the kind picker. -->
       @if (!store.isToday()) {
       <!-- A cluster of ONE, the same recipe the toolbar's own controls wear.
            It was `glass`, which is the DS's chrome material and composites to
@@ -1102,7 +998,7 @@
         <button
           type="button"
           uiButton
-          uiButtonStyle="plain"
+          uiButtonStyle="bordered"
           uiTint="neutral"
           uiControlSize="large"
           [uiIconOnly]="true"
@@ -1116,6 +1012,60 @@
         </button>
       </div>
       }
+      <!-- `uiPrimary` on the HOST: the bar docks its primary child trailing
+           by that marker, and the prominent button sits inside this menu
+           host, not as the bar's own child. Without it the ＋ clustered
+           leading beside the filter (owner, 2026-09-09; HIG: the primary
+           action on the thumb rail, rightmost). -->
+      <ui-menu
+        uiPrimary
+        [uiPresented]="createMenu()"
+        uiAlignment="trailing"
+        [uiLabel]="t('staff.day.fab.open')"
+        (uiDismissed)="createMenu.set(false)"
+      >
+        <button
+          type="button"
+          uiButton
+          uiButtonStyle="borderedProminent"
+          uiControlSize="large"
+          [uiIconOnly]="true"
+          uiMenuTrigger
+          [attr.aria-label]="t('staff.day.fab.open')"
+          [title]="t('staff.day.fab.open')"
+          data-testid="staff-add-trigger"
+          (click)="createMenu.set(!createMenu())"
+        >
+          <ui-icon uiName="action.add" uiScale="medium" />
+        </button>
+        <!-- THE KIND PICKER (owner review 2026-09-08): what you are making,
+             as a menu — five chips in 340px looked bad, and this is the
+             grammar every other choice on the sheet already uses. -->
+        <ui-list-group>
+          <button
+            type="button"
+            uiMenuItem
+            uiListRow
+            [uiInteractive]="true"
+            data-testid="staff-add-booking"
+            (click)="openCreate('booking')"
+          >
+            <span uiLeading><ui-icon uiName="appointment.book" /></span>
+            {{ t('staff.day.fab.booking') }}
+          </button>
+          <button
+            type="button"
+            uiMenuItem
+            uiListRow
+            [uiInteractive]="true"
+            data-testid="staff-add-block"
+            (click)="openCreate('block')"
+          >
+            <span uiLeading><ui-icon uiName="booking.blocked" /></span>
+            {{ t('staff.day.fab.block') }}
+          </button>
+        </ui-list-group>
+      </ui-menu>
     </ui-page-action-bar>
   </main>
 
@@ -1184,7 +1134,7 @@
         <button
           type="button"
           uiButton
-          uiButtonStyle="plain"
+          uiButtonStyle="bordered"
           uiTint="neutral"
           uiControlSize="large"
           [uiIconOnly]="true"
@@ -1217,19 +1167,119 @@
   <ui-modal-sheet
     sheetId="staff-visit-sheet"
     labelledBy="staff-visit-title"
+    [titleAlwaysVisible]="visitEditor.depth() === 0"
+    uiPresentationSizing="automatic"
     [open]="true"
     [closeLabel]="t('staff.day.cancelDismiss')"
     data-testid="staff-visit-sheet"
     (dismissed)="closeVisitSheet()"
   >
-    <span sheet-title>{{ t('staff.visit.editTitle') }}</span>
+    <!-- The id `labelledBy` points at. It used to sit on the editor's own
+         large title; that title is gone (owner ruling 2026-09-04) and the
+         bar carries the name permanently, so the label resolves here. -->
+    <!-- The bar names the PAGE when one is pushed (owner, 2026-09-09) and
+         the sheet at the root; on a page the large title collapses into it
+         the HIG way, at the root the bar carries the name permanently. -->
+    <span sheet-title id="staff-visit-title"
+      >{{ visitEditor.pageTitle() ?? t('staff.visit.editTitle') }}</span
+    >
+    <!-- THE WAY BACK from a pushed page, in the bar opposite the ✕ (owner,
+         2026-09-09) — never inside the content that scrolls. -->
+    @if (visitEditor.depth() > 0) {
+    <button
+      sheet-leading
+      type="button"
+      uiButton
+      uiButtonStyle="bordered"
+      uiTint="neutral"
+      uiControlSize="regular"
+      [uiIconOnly]="true"
+      [attr.aria-label]="t('staff.visit.back')"
+      data-testid="staff-visit-back"
+      (click)="visitEditor.pop()"
+    >
+      <ui-icon uiName="nav.back" />
+    </button>
+    }
     <lib-staff-visit-editor
+      #visitEditor
       [vm]="editorVm"
       [uiBarbers]="barberOptions()"
+      [uiServices]="visitServiceOptions()"
+      [uiFrameDay]="visitFrameDay()"
+      [uiSavedMark]="visitSavedMark()"
+      [uiMayReprice]="mayReprice()"
       (dismissed)="closeVisitSheet()"
+      (dayChanged)="onVisitDayChanged($event)"
+      (chairChanged)="onVisitChairChanged($event)"
       (acted)="actFromEditor(editorVm.appointmentId, $event)"
       (committed)="commitFromEditor(editorVm.appointmentId, $event)"
+      (peerPicked)="visitSheetId.set($event)"
+      (rebooked)="rebookFromEditor(editorVm)"
+      (blockedInstead)="blockInsteadFromEditor(editorVm)"
+      (tipped)="tipFromEditor($event)"
     />
+  </ui-modal-sheet>
+  }
+
+  <!-- THE CREATE SHEET — the visit editor drafting a visit that does not
+       exist yet (owner review 2026-09-08). Same component, empty
+       `appointmentId`; `Запази` becomes one `commitBooking` placed by the
+       shop. Client search is the app's user search, run here as the barber
+       types. -->
+  @if (createVm(); as newVm) {
+  <ui-modal-sheet
+    sheetId="staff-create-sheet"
+    labelledBy="staff-create-title"
+    [titleAlwaysVisible]="createEditor.depth() === 0"
+    uiPresentationSizing="automatic"
+    [open]="true"
+    [closeLabel]="t('staff.day.cancelDismiss')"
+    data-testid="staff-create-sheet"
+    (dismissed)="closeCreateSheet()"
+  >
+    <span sheet-title id="staff-create-title"
+      >{{ createEditor.pageTitle() ?? t('staff.visit.newTitle') }}</span
+    >
+    @if (createEditor.depth() > 0) {
+    <button
+      sheet-leading
+      type="button"
+      uiButton
+      uiButtonStyle="bordered"
+      uiTint="neutral"
+      uiControlSize="regular"
+      [uiIconOnly]="true"
+      [attr.aria-label]="t('staff.visit.back')"
+      data-testid="staff-visit-back"
+      (click)="createEditor.pop()"
+    >
+      <ui-icon uiName="nav.back" />
+    </button>
+    }
+    <lib-staff-visit-editor
+      #createEditor
+      [vm]="newVm"
+      [uiBarbers]="barberOptions()"
+      [uiServices]="visitServiceOptions()"
+      [uiClients]="visitClientOptions()"
+      (dismissed)="closeCreateSheet()"
+      (clientQuery)="searchClients($event)"
+      (chairChanged)="onCreateChairChanged($event)"
+      (committed)="$event.kind === 'save' ? createFromEditor($event) : null"
+    />
+    @if (store.createError()) {
+    <p
+      uiText
+      uiFont="footnote"
+      uiForegroundStyle="destructive"
+      role="alert"
+      data-testid="staff-create-error"
+      [attr.data-code]="store.createError()?.failure ?? null"
+    >
+      {{ t('staff.visit.createFailed') }}
+    </p>
+    }
   </ui-modal-sheet>
   }
 
@@ -1270,201 +1320,44 @@
        it anonymously and a sick day is Art. 9 data. The kind picker that
        would record a reason needs a staff-only sibling collection and an
        owner ruling (Q4) before it can exist at all. -->
-  @if (blockLaneId(); as laneId) {
+  @if (blockEditorVm(); as blockVm) {
+  <!-- THE BLOCK EDITOR — the visit sheet's chrome and ladder, for time a
+       barber takes out of the day (owner review 2026-09-08). Create and edit
+       are one sheet; a tapped block on the grid, a tapped free gap, the lane
+       header's button and the page's ＋ all land here. -->
   <ui-modal-sheet
     sheetId="staff-block-sheet"
     labelledBy="staff-block-title"
+    [titleAlwaysVisible]="true"
+    uiPresentationSizing="automatic"
     [closeLabel]="t('staff.day.cancelDismiss')"
     [open]="true"
     data-testid="staff-block-sheet"
     (dismissed)="closeBlockSheet()"
   >
-    <span sheet-title>{{ t('staff.day.blockTime') }}</span>
-
-    <ui-stack uiSpacing="loose" class="staff-cancel__body">
-      <ui-stack uiSpacing="tight">
-        <h2 id="staff-block-title" uiSheetLargeTitle uiText uiFont="largeTitle">
-          {{ t('staff.day.blockTime') }}
-        </h2>
-        <p uiText uiFont="subheadline" uiForegroundStyle="secondary">
-          {{ t('staff.day.blockLede', { name: blockLaneName() }) }}
-        </p>
-      </ui-stack>
-
-      <!-- WHICH CHAIR. The shop-wide action pre-aimed at the first lane and
-           offered no way to move it, so a barber reaching for the FAB stood
-           a colleague's chair down. A flat run rather than a nested menu: a
-           popover inside a modal sheet is a second transient layer, and the
-           shop has a handful of chairs, not a directory. -->
-      @if (blockLaneOptions().length > 1) {
-      <ui-list-group [attr.aria-label]="t('staff.day.blockBarber')">
-        @for (option of blockLaneOptions(); track option.id) {
-        <ui-list-row
-          uiSize="large"
-          [uiInteractive]="true"
-          [uiSelected]="blockLaneId() === option.id"
-          [attr.data-testid]="'staff-block-barber-' + option.id"
-          (click)="pickBlockLane(option.id)"
-        >
-          <span uiLeading class="staff-scope__face">
-            <ui-avatar
-              [uiSrc]="option.avatarSrc"
-              [uiName]="option.name"
-              uiControlSize="small"
-            />
-            <span
-              class="staff-scope__swatch"
-              [attr.data-barber-tone]="option.tone"
-              aria-hidden="true"
-            ></span>
-          </span>
-          {{ option.name }} @if (blockLaneId() === option.id) {
-          <ui-icon uiTrailing uiName="checklist.done" />
-          }
-        </ui-list-row>
-        }
-      </ui-list-group>
-      }
-
-      <ui-list-group>
-        <ui-list-row uiSize="large">
-          {{ t('staff.day.blockAllDay') }}
-          <button
-            uiSwitch
-            uiTrailing
-            [(uiOn)]="blockAllDay"
-            [uiDisabled]="store.absencePending()"
-            [attr.aria-label]="t('staff.day.blockAllDay')"
-            data-testid="staff-block-all-day"
-          ></button>
-        </ui-list-row>
-      </ui-list-group>
-
-      @if (!blockAllDay()) {
-      <ui-stack uiAxis="horizontal" uiSpacing="compact">
-        <label class="staff-block__field">
-          <ui-stack uiSpacing="tight">
-            <span uiText uiFont="footnote">{{ t('staff.day.blockFrom') }}</span>
-            <input
-              uiTextField
-              type="time"
-              step="300"
-              data-testid="staff-block-from"
-              [value]="blockFrom()"
-              (input)="blockFrom.set($any($event.target).value)"
-            />
-          </ui-stack>
-        </label>
-        <label class="staff-block__field">
-          <ui-stack uiSpacing="tight">
-            <span uiText uiFont="footnote">{{ t('staff.day.blockTo') }}</span>
-            <input
-              uiTextField
-              type="time"
-              step="300"
-              data-testid="staff-block-to"
-              [value]="blockTo()"
-              (input)="blockTo.set($any($event.target).value)"
-            />
-          </ui-stack>
-        </label>
-      </ui-stack>
-      }
-
-      <!-- What this actually does, stated plainly. Blocking removes sellable
-           time; it does NOT tell anyone, because nothing in this product
-           sends a message on a roster change (§6 of the brief). -->
-      <p uiText uiFont="footnote" uiForegroundStyle="secondary">
-        {{ t('staff.day.blockEffect') }}
-      </p>
-
-      <!-- ...and what it does NOT do. A 14:00–18:00 block over a 16:00 cut
-           used to read as harmless: the sheet said only that nobody gets
-           notified, and never mentioned the visit it was about to sit on
-           top of. Naming them is the honest minimum until a real "move
-           these" path exists. -->
-      @if (blockCollisions().length > 0) {
-      <ui-stack uiSpacing="tight" data-testid="staff-block-collisions">
-        <span uiText uiFont="footnote" uiWeight="semibold">
-          {{ t('staff.day.blockCollisionsTitle') }}
-        </span>
-        <ui-list-group>
-          @for (visit of blockCollisions(); track visit.id) {
-          <ui-list-row uiSize="regular" uiVariant="plain">
-            <span uiLeading uiText uiFont="footnote" uiWeight="semibold">
-              {{ visit.startLabel }}
-            </span>
-            {{ visit.clientLabel }}
-            <span
-              uiTrailing
-              uiText
-              uiFont="caption"
-              uiForegroundStyle="secondary"
-            >
-              {{ visit.serviceLabel }}
-            </span>
-          </ui-list-row>
-          }
-        </ui-list-group>
-        <span uiText uiFont="footnote" uiForegroundStyle="secondary">
-          {{ t('staff.day.blockCollisionsNote') }}
-        </span>
-      </ui-stack>
-      } @if (blockLiftArmed()) {
-      <p
-        uiText
-        uiFont="footnote"
-        uiForegroundStyle="destructive"
-        role="alert"
-        data-testid="staff-block-lift-warning"
-      >
-        {{ t('staff.day.blockLiftWarning') }}
-      </p>
-      } @if (store.absenceError()) {
-      <p uiText uiFont="footnote" uiForegroundStyle="destructive" role="alert">
-        {{ t('staff.day.blockFailed') }}
-      </p>
-      }
-    </ui-stack>
-
-    <ui-sheet-action-bar sheet-overlay [uiVisible]="true">
-      <button
-        type="button"
-        uiButton
-        uiButtonStyle="borderedProminent"
-        [uiSpread]="true"
-        [uiLoading]="store.absencePending()"
-        [disabled]="!blockRangeValid()"
-        data-testid="staff-block-confirm"
-        (click)="confirmBlock()"
-      >
-        {{ t('staff.day.blockConfirm') }}
-      </button>
-      <!-- LIFT. `liftBlock` has existed on this component since block-time
-           shipped and was bound to nothing, so a block written from here was
-           permanent from inside the app — the only way out was editing
-           Firestore by hand. Shown only when this chair actually has one,
-           and destructive because the store's `clearBlock` deletes the
-           barber's whole exception document for the day: the port cannot
-           remove one range among several, and the copy says so rather than
-           implying a surgical undo. -->
-      @if (laneHasBlock(laneId)) {
-      <button
-        type="button"
-        uiButton
-        [uiButtonStyle]="blockLiftArmed() ? 'borderedProminent' : 'plain'"
-        uiRole="destructive"
-        [uiSpread]="true"
-        [uiLoading]="store.absencePending()"
-        data-testid="staff-block-lift"
-        [attr.data-armed]="blockLiftArmed() ? '' : null"
-        (click)="liftBlock(laneId)"
-      >
-        {{ blockLiftArmed() ? t('staff.day.blockLiftArm') :
-        t('staff.day.blockLift') }}
-      </button>
-      }
-    </ui-sheet-action-bar>
+    <span sheet-title id="staff-block-title"
+      >{{ blockVm.blockId === null ? t('staff.block.new') :
+      t('staff.block.title') }}</span
+    >
+    <lib-staff-block-editor
+      [vm]="blockVm"
+      [uiBarbers]="barberOptions()"
+      (committed)="commitBlock($event)"
+      (lifted)="liftFromEditor()"
+      (dayChanged)="onBlockDayChanged($event)"
+      (converted)="convertBlockFromEditor($event)"
+    />
+    @if (store.absenceError()) {
+    <p
+      uiText
+      uiFont="footnote"
+      uiForegroundStyle="destructive"
+      role="alert"
+      data-testid="staff-block-error"
+    >
+      {{ t('staff.day.blockFailed') }}
+    </p>
+    }
   </ui-modal-sheet>
   }
 
@@ -1539,7 +1432,7 @@
       <!-- Whose seat this actually calls off. On a mixed party the row is one
            barber's share, and saying so prevents the exact mistake the
            per-seat write was added to stop. -->
-      @if (cancelSeatId()) {
+      @if (cancelSeatIds().length > 0) {
       <p uiText uiFont="footnote" uiForegroundStyle="secondary">
         {{ t('staff.day.cancelSeatOnly') }}
       </p>
@@ -1567,4 +1460,18 @@
     </ui-sheet-action-bar>
   </ui-modal-sheet>
   }
+
+  <!-- THE WAY BACK (owner ruling 2026-09-08). Every immediate stamp raises
+       this for eight seconds with its inverse WRITE: clearing an arrival,
+       reopening a completed or no-show visit, reinstating a cancellation —
+       each a real second write through the same callables, obeying the same
+       refusals, never a client-side rollback. One toast per page; a new act
+       replaces the last one. -->
+  <ui-toast
+    [uiPresented]="undo() !== null"
+    [uiLabel]="undo()?.message ?? ''"
+    [uiActionLabel]="t('staff.day.undo.action')"
+    (uiAction)="runUndo()"
+    (uiDismissed)="undo.set(null)"
+  />
 </ng-container>

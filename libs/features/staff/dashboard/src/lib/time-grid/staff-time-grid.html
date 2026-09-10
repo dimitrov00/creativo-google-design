@@ -7,6 +7,7 @@
   [attr.data-viewport]="framed() ? 'framed' : null"
   [style.--staff-grid-snap]="framed() ? snapMinutes() : null"
   [attr.data-dragging]="dragging() ? '' : null"
+  (scroll)="onFrameScroll()"
 >
   <!-- The head and the all-day row pin TOGETHER as one block. Pinning them
        separately meant guessing the head's height as the all-day row's sticky
@@ -108,7 +109,13 @@
          labels to reach one booking is worse than no rail at all. -->
     <div class="staff-grid__gutter" aria-hidden="true">
       @for (hour of hours(); track hour.key) {
-      <span class="staff-grid__hour" uiText uiFont="caption">
+      <span
+        class="staff-grid__hour"
+        uiText
+        uiFont="caption"
+        [attr.data-near-now]="hour.nearNow ? '' : null"
+        [attr.data-hour]="hour.key"
+      >
         {{ hour.label }}
       </span>
       }
@@ -154,6 +161,7 @@
           event.id === editableId() ? uiDragCopy().blockRole || null : null
         "
         (pointerdown)="onBlockDown($event, event)"
+        (contextmenu)="onContextMenu($event)"
         (keydown)="onBlockKey($event, event)"
         [attr.data-kind]="event.kind"
         [attr.data-barber-tone]="event.barberTone"
@@ -169,6 +177,7 @@
               : 'staff-grid-event'
         "
         [attr.aria-label]="event.accessibleName"
+        [attr.inert]="inertBlock(event) ? '' : null"
         (click)="pick(event)"
       >
         <!-- The leading rail is an ELEMENT, so it can have its own shape:
@@ -178,50 +187,121 @@
              but in the neutral tone, because hue means "a booking". -->
         @if (event.kind !== 'gap') {
         <span class="staff-grid__event-rail" aria-hidden="true"></span>
-        }
+        <!-- THE QUALIFIED STRETCHES, painted over the block's own fill and
+             under its words. Each is a span of this booking rather than a
+             state of the whole of it: the minutes that have gone, the ones
+             past closing, the ones another booking is already in. -->
+        @for (mask of event.masks; track $index) {
         <span
-          class="staff-grid__event-title"
-          uiText
-          uiFont="footnote"
-          uiWeight="semibold"
-        >
-          {{ event.title }}
-          <!-- A quarter-hour block holds ONE line, so the service joins the
+          class="staff-grid__event-mask"
+          aria-hidden="true"
+          [attr.data-kind]="mask.kind"
+          [style.--staff-mask-from]="mask.from"
+          [style.--staff-mask-to]="mask.to"
+        ></span>
+        } }
+        <!-- THE HEAD — the words on the left, the clock on the right: the
+             agenda card's own two columns (owner, 2026-09-10: "time start
+             and end should also be displayed"). The clock is hidden where
+             the column is too narrow to spare it; the accessible name
+             states the times whatever the width. -->
+        <span class="staff-grid__event-head">
+          <span class="staff-grid__event-lines">
+            <span
+              class="staff-grid__event-title"
+              uiText
+              uiFont="footnote"
+              uiWeight="semibold"
+            >
+              {{ event.title }}
+              <!-- A quarter-hour block holds ONE line, so the service joins the
                name on it rather than being dropped. Losing it entirely was
                the worse trade: "Мартин Илиев" alone does not say what was
                booked, and a staff member reading the grid needs the service
                more than they need the second line's whitespace. Apple
                Calendar does the same — a short event states its title and its
                time on one line and lets the ellipsis do the rest. -->
-          @if (event.short && event.detail) {
-          <span
-            class="staff-grid__event-inline"
-            uiText
-            uiFont="footnote"
-            uiWeight="regular"
-          >
-            {{ event.detail }}
+              @if (event.short && event.detail) {
+              <span
+                class="staff-grid__event-inline"
+                uiText
+                uiFont="footnote"
+                uiWeight="regular"
+              >
+                {{ event.detail }}
+              </span>
+              }
+            </span>
+            @if (!event.short && event.detail) {
+            <span class="staff-grid__event-detail" uiText uiFont="caption">
+              {{ event.detail }}
+            </span>
+            } @if (event.attribution) {
+            <span class="staff-grid__event-who" uiText uiFont="caption">
+              {{ event.attribution }}
+            </span>
+            }
+          </span>
+          <span class="staff-grid__event-times" aria-hidden="true">
+            <span class="staff-grid__event-start" uiText uiFont="caption"
+              >{{ timeOf(event.startMinute) }}</span
+            >
+            <span class="staff-grid__event-end" uiText uiFont="caption"
+              >{{ timeOf(event.endMinute) }}</span
+            >
+          </span>
+        </span>
+        <!-- THE MARK ROW — one line on the block's bottom edge that every
+             mark shares (owner, 2026-09-09: the tag "should always stay
+             where it is, bottom trailing next to the icon"). Two marks each
+             pushing themselves down with their own auto margin split the
+             slack between them and left the tag floating mid-block; one row
+             settles once, and its marks sit side by side. The party share
+             leads, everything else trails. -->
+        <span class="staff-grid__event-marks">
+          <!-- HALF OF SOMETHING. A block that is one chair's share of a
+               party says so on its own face: the sibling sits in another
+               column at the same minute, and dragging this one now moves
+               only this one. -->
+          @if (event.partyLabel) {
+          <span class="staff-grid__event-party" data-testid="staff-grid-party">
+            <ui-icon uiName="nav.team" aria-hidden="true" />
+            <span>{{ event.partyLabel }}</span>
           </span>
           }
+          <!-- THE TAG — how far the drafted length is from the catalogue's,
+               on the block's own face, where the length is being changed. -->
+          @if (event.tag) {
+          <span
+            class="staff-event-tag staff-grid__event-tag"
+            data-testid="staff-grid-tag"
+            >{{ event.tag }}</span
+          >
+          }
+          <!-- OUTSIDE THE SHIFT — a warning, never a refusal. It is the
+               barber's own book: working late happens, and the grid records
+               it rather than arguing. The hatch says WHICH minutes; this
+               says there are some at all, which is what survives a block too
+               short to draw a hatch on and a reader who cannot separate two
+               washes. -->
+          @if (event.outside) {
+          <ui-icon
+            class="staff-grid__event-warning"
+            uiName="schedule.outsideShift"
+            data-testid="staff-grid-outside"
+            aria-hidden="true"
+          />
+          }
+          <!-- The state, doubled as a mark: it has to survive greyscale and
+               a reader who cannot separate two washes. -->
+          @if (event.statusIcon) {
+          <ui-icon
+            class="staff-grid__event-status"
+            [uiName]="event.statusIcon"
+            aria-hidden="true"
+          />
+          }
         </span>
-        @if (!event.short && event.detail) {
-        <span class="staff-grid__event-detail" uiText uiFont="caption">
-          {{ event.detail }}
-        </span>
-        } @if (event.attribution) {
-        <span class="staff-grid__event-who" uiText uiFont="caption">
-          {{ event.attribution }}
-        </span>
-        }
-        <!-- The state, doubled as a mark: it has to survive greyscale and a
-             reader who cannot separate two washes. -->
-        @if (event.statusIcon) {
-        <ui-icon
-          class="staff-grid__event-status"
-          [uiName]="event.statusIcon"
-          aria-hidden="true"
-        />
-        }
       </button>
       }
 
@@ -272,6 +352,7 @@
         [attr.aria-valuenow]="block.startMinute"
         [attr.aria-valuetext]="handleText('start')"
         (pointerdown)="onHandleDown($event, 'start', block)"
+        (contextmenu)="onContextMenu($event)"
         (keydown)="onHandleKey($event, 'start', block)"
         data-testid="staff-frame-handle-start"
       >
@@ -293,6 +374,7 @@
         [attr.aria-valuenow]="block.endMinute"
         [attr.aria-valuetext]="handleText('end')"
         (pointerdown)="onHandleDown($event, 'end', block)"
+        (contextmenu)="onContextMenu($event)"
         (keydown)="onHandleKey($event, 'end', block)"
         data-testid="staff-frame-handle-end"
       >
@@ -349,4 +431,25 @@
     }
   </div>
 </div>
-}
+<!-- BACK TO THE BLOCK (owner, 2026-09-10: "an arrow to appear showing where
+     the event is, and on click scroll to it" — a map's own way home). Only in
+     a frame, only once the edited block has wholly left the picture, and
+     never under a finger: a chip at the edge it went past, naming its start;
+     a tap centres it again. On the host, not in the scroller, so it never
+     scrolls with the picture. -->
+@if (framed() && !dragging() && offscreen(); as edge) {
+<button
+  type="button"
+  class="staff-grid__recenter"
+  [attr.data-edge]="edge"
+  [attr.aria-label]="backToLabel()"
+  data-testid="staff-grid-recenter"
+  (click)="recenter()"
+>
+  <ui-icon
+    [uiName]="edge === 'before' ? 'frame.handleStart' : 'frame.handleEnd'"
+    uiScale="small"
+  />
+  <span class="staff-grid__recenter-time">{{ editableTimeLabel() }}</span>
+</button>
+} }

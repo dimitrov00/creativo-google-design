@@ -1,0 +1,56 @@
+@import '../shared/staff-sheet-pill.css';
+
+/* The host is a real box so the popover has something to anchor to and the
+   pill can sit at either edge of whatever row holds it. */
+.staff-day-pill {
+  display: inline-flex;
+  max-inline-size: 100%;
+}
+
+.staff-day-pill > .ui-menu {
+  display: flex;
+  max-inline-size: 100%;
+  /* THE SAME MONTH AT THE SAME SIZE in both places (owner, 2026-09-09): the
+     surface is what the grid fills, so the surface is where the width is
+     said — once. */
+  --ui-menu-min-width: 20rem;
+}
+
+/* A DS `bordered` / `neutral` button — the fill the sheet's close chip, the
+   back chip and the frame's arrows already wear (owner, 2026-09-09: one
+   material for these controls on the page and in the sheet, and the DS's
+   own directive rather than a local recipe). The button owns its height,
+   padding, fill and states — it does NOT wear `.staff-sheet__pill`, whose
+   field sizing (36px, 8px) sits outside the DS's cascade layer and would
+   win over the regular 44px control beside the segments. Hugs its label. */
+.staff-day-pill__trigger {
+  flex: 0 0 auto;
+  gap: var(--sys-space-compact);
+  font: var(--sys-font-headline);
+  white-space: nowrap;
+}
+
+/* OPEN — the same accent wash the field pills show, and the chevron carries
+   the accent while the label stays foreground ink (contrast: the glyph is a
+   graphic and answers to 3:1; the label would not clear 4.5 on the wash). */
+.staff-day-pill__trigger[aria-expanded='true'] {
+  background: color-mix(in srgb, var(--sys-color-accent) 18%, transparent);
+}
+
+.staff-day-pill__trigger[aria-expanded='true'] .ui-icon {
+  color: var(--sys-color-accent);
+}
+
+/* ⚠ LAYOUT THE COMPONENT DOES NOT OWN. `ui-month-picker` is a column with
+   its own gaps; what is local here is the popover PADDING and the licence to
+   be narrow: a month is FLUID by construction — the grid's columns are
+   `minmax(0, 1fr)` so seven of them may shrink on a phone — and a floor of
+   seven whole control widths is wider than the popover gets there. */
+.staff-day-pill__calendar {
+  padding: var(--sys-space-compact);
+  max-inline-size: min(100%, calc(100vw - 2rem));
+}
+
+.staff-day-pill__calendar ui-calendar-grid {
+  inline-size: 100%;
+}

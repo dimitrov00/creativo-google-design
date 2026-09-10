@@ -9,22 +9,27 @@ import { ActivatedRoute, Router } from '@angular/router';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { combineLatest, of, switchMap } from 'rxjs';
 import {
+  APPOINTMENT_NOTES,
   APPOINTMENT_REPOSITORY,
   AVAILABILITY_READER,
   Appointment,
   BOOKING_GATEWAY,
   BookingGatewayError,
+  type CommitBookingRequest,
   CalendarDay,
   Interval,
   LocalTimeRange,
   SCHEDULE_EXCEPTION_WRITER,
   ScheduleException,
   ScheduleExceptionId,
+  type RecordSeatTipRequest,
   type StaffEditAppointmentRequest,
   type TransitionAppointmentRequest,
+  Result,
+  ok,
 } from '@creativo/application/booking';
 import { BarberId, LocationId } from '@creativo/application/catalog';
-import { CLOCK } from '@creativo/application/shared';
+import { CLOCK, RepositoryError } from '@creativo/application/shared';
 import { CatalogContentService } from '@creativo/features/shared/catalog';
 
 /** The whole product is Europe/Sofia-only for now (blueprint §7.1). */
@@ -271,6 +276,7 @@ export interface BarberDayLane {
 @Injectable()
 export class StaffDayStore {
   private readonly repository = inject(APPOINTMENT_REPOSITORY);
+  private readonly notes = inject(APPOINTMENT_NOTES);
   private readonly availability = inject(AVAILABILITY_READER);
   private readonly exceptions = inject(SCHEDULE_EXCEPTION_WRITER);
   private readonly gateway = inject(BOOKING_GATEWAY);
@@ -503,9 +509,95 @@ export class StaffDayStore {
    * query whose ordering breaks across DST. It is also why the multi-day
    * views default to one chair.
    */
+  /**
+   * A day the screen is NOT showing but something on it needs live.
+   *
+   * The visit sheet's frame draws the chair's day around the block being
+   * edited, and a barber can step that block onto another date without the
+   * agenda underneath moving. Before this, only `visibleDays()` was
+   * subscribed — in day view that is exactly one day — so the frame kept
+   * drawing the ORIGINAL day's neighbours under a pill that said a different
+   * date, and the `data-today` marker went on lying too. A picture of who
+   * else is booked is the whole reason that frame exists; drawing the wrong
+   * day's is worse than drawing none. (owner ruling 2026-09-04)
+   *
+   * It is a PROBE, not a second anchor: it joins the SUBSCRIPTION set and
+   * nothing else. `visibleDays` still decides what the agenda renders, and
+   * `lanes` still resolves the anchor, so nothing on screen moves because a
+   * sheet is looking somewhere else.
+   */
+  /* ── The team's note on the OPEN visit ──────────────────────────── */
+
+  /** The appointment whose note the sheet is reading, or `null`. */
+  private readonly _noteFor = signal<string | null>(null);
+
+  /**
+   * The sheet's own subscription, like `probeDay`: one listener while a
+   * visit is open, none when it is not. The note lives in a staff-only
+   * sibling collection (see `AppointmentNotes`), so it is read beside the
+   * appointment rather than off it.
+   */
+  probeNote(appointmentId: string | null): void {
+    if (appointmentId === this._noteFor()) return;
+    this._noteFor.set(appointmentId);
+  }
+
+  private readonly noteResult = toSignal(
+    toObservable(this._noteFor).pipe(
+      switchMap((id) => (id === null ? of(ok(null)) : this.notes.observe(id))),
+    ),
+    { initialValue: undefined },
+  );
+
+  /** The note's text, or `null` — while loading, while absent, or with no visit open. */
+  readonly teamNote = computed<string | null>(() => {
+    const result = this.noteResult();
+    if (result === undefined || result.isFailure()) return null;
+    return result.value?.text ?? null;
+  });
+
+  /** The last note write that failed, by appointment — the sheet says so. */
+  private readonly _noteError = signal<string | null>(null);
+  readonly noteError = this._noteError.asReadonly();
+
+  /** Writes straight through; an empty text deletes. */
+  async saveTeamNote(
+    appointmentId: string,
+    text: string | null,
+  ): Promise<boolean> {
+    const result = await this.notes.save(appointmentId, text);
+    this._noteError.set(result.isFailure() ? appointmentId : null);
+    return result.isSuccess();
+  }
+
+  private readonly _probeDay = signal<string | null>(null);
+
+  /** Keep `dayKey` live while nothing on screen shows it. `null` releases it. */
+  probeDay(dayKey: string | null): void {
+    const valid =
+      dayKey !== null && /^\d{4}-\d{2}-\d{2}$/.test(dayKey) ? dayKey : null;
+    if (valid === this._probeDay()) return;
+    this._probeDay.set(valid);
+  }
+
+  /**
+   * Every day with a live listener — what is on screen, plus the probe.
+   *
+   * `dayCells` and `geometryResult` both pair against THIS list, in this
+   * order, which is what keeps the index arithmetic honest when a probe is
+   * appended.
+   */
+  private readonly subscribedDays = computed<readonly string[]>(() => {
+    const visible = this.visibleDays();
+    const probe = this._probeDay();
+    return probe === null || visible.includes(probe)
+      ? visible
+      : [...visible, probe];
+  });
+
   private readonly laneInputs = computed(() => ({
     dayKey: this._dayKey(),
-    days: this.visibleDays(),
+    days: this.subscribedDays(),
     barbers: this.scopedBarbers().map((barber) => barber.id),
   }));
 
@@ -566,7 +658,11 @@ export class StaffDayStore {
   readonly dayCells = computed<readonly StaffDayCell[]>(() => {
     const results = this.lanesResult();
     const barbers = this.scopedBarbers();
-    const days = this.visibleDays();
+    // ⚠ `subscribedDays`, not `visibleDays` — the list the results were
+    // FETCHED against. Pairing against the shorter one would drop the probe's
+    // cell and, worse, would still be index-correct for every visible day, so
+    // the bug would only ever show on the day nobody is looking at.
+    const days = this.subscribedDays();
     if (!results) return [];
 
     const geometry = this.geometryResult();
@@ -605,6 +701,11 @@ export class StaffDayStore {
       return { dayKey, lanes };
     });
   });
+
+  /** One subscribed day's cell, anchor or probe — `null` when it is neither. */
+  cellFor(dayKey: string): StaffDayCell | null {
+    return this.dayCells().find((cell) => cell.dayKey === dayKey) ?? null;
+  }
 
   /** The anchor day's lanes — what the single-day views draw. */
   readonly lanes = computed<readonly BarberDayLane[]>(() => {
@@ -740,10 +841,14 @@ export class StaffDayStore {
     barberId: string,
     locationId: string,
     ranges: readonly LocalTimeRange[],
+    // THE DAY IS A PARAMETER (2026-09-09): the block sheet steps its frame
+    // off the shown day, and a series is written day by day. Defaults to
+    // the day on screen, which is what every earlier caller meant.
+    dayKey: string = this._dayKey(),
   ): Promise<boolean> {
     if (this._absencePending()) return false;
 
-    const day = dayFromKey(this._dayKey());
+    const day = dayFromKey(dayKey);
     const barber = BarberId.create(barberId);
     const location = LocationId.create(locationId);
     if (!day || barber.isFailure() || location.isFailure()) {
@@ -772,7 +877,13 @@ export class StaffDayStore {
     this._absencePending.set(true);
     this._absenceError.set(null);
     try {
-      const result = await this.exceptions.put(exception.value);
+      // A RANGE ACCUMULATES; a whole day REPLACES (2026-09-08). One document
+      // per barber-day made a second lunch overwrite the first; the writer's
+      // `putRange` reads the day and merges instead.
+      const result =
+        ranges.length === 0
+          ? await this.exceptions.put(exception.value)
+          : await this.putRanges(barberId, locationId, ranges, dayKey);
       if (result.isFailure()) {
         this._absenceError.set('failed');
         return false;
@@ -784,12 +895,42 @@ export class StaffDayStore {
   }
 
   /** Lift the block — the chair returns to its ordinary roster. */
-  async clearBlock(barberId: string): Promise<boolean> {
+  private async putRanges(
+    barberId: string,
+    locationId: string,
+    ranges: readonly LocalTimeRange[],
+    dayKey: string,
+  ): Promise<Result<void, RepositoryError>> {
+    for (const range of ranges) {
+      const result = await this.exceptions.putRange(
+        barberId,
+        locationId,
+        dayKey,
+        STAFF_ZONE,
+        range,
+      );
+      if (result.isFailure()) return result;
+    }
+    return ok(undefined);
+  }
+
+  /**
+   * Lift ONE block when a range is given, or the whole day when it is not —
+   * the day-wide form is the armed, destructive path the sheet names as such.
+   */
+  async clearBlock(
+    barberId: string,
+    range: LocalTimeRange | null = null,
+    dayKey: string = this._dayKey(),
+  ): Promise<boolean> {
     if (this._absencePending()) return false;
     this._absencePending.set(true);
     this._absenceError.set(null);
     try {
-      const result = await this.exceptions.clear(barberId, this._dayKey());
+      const result =
+        range === null
+          ? await this.exceptions.clear(barberId, dayKey)
+          : await this.exceptions.clearRange(barberId, dayKey, range);
       if (result.isFailure()) {
         this._absenceError.set('failed');
         return false;
@@ -805,6 +946,34 @@ export class StaffDayStore {
    * because from the row's point of view it is the same kind of act — a
    * server write it must not pretend succeeded.
    */
+  /* ── Creating a booking from the desk ─────────────────────────── */
+
+  private readonly _creating = signal(false);
+  readonly creating = this._creating.asReadonly();
+  private readonly _createError = signal<BookingGatewayError | null>(null);
+  readonly createError = this._createError.asReadonly();
+
+  /**
+   * The shop placing its own book — `commitBooking` with `onBehalfOfUserId`
+   * set (a client's id, or `null` for a walk-in). The lane's live listener
+   * draws the new visit; nothing is written locally.
+   */
+  async createBooking(request: CommitBookingRequest): Promise<boolean> {
+    if (this._creating()) return false;
+    this._creating.set(true);
+    this._createError.set(null);
+    try {
+      const result = await this.gateway.commit(request);
+      if (result.isFailure()) {
+        this._createError.set(result.error);
+        return false;
+      }
+      return true;
+    } finally {
+      this._creating.set(false);
+    }
+  }
+
   async markArrived(appointmentId: string): Promise<boolean> {
     const id = appointmentId;
     if (this._pending().has(id)) return false;
@@ -818,6 +987,34 @@ export class StaffDayStore {
 
     try {
       const result = await this.gateway.markArrived(id);
+      if (result.isFailure()) {
+        this._errors.update((map) => new Map(map).set(id, result.error));
+        return false;
+      }
+      return true;
+    } finally {
+      this._pending.update((set) => {
+        const next = new Set(set);
+        next.delete(id);
+        return next;
+      });
+    }
+  }
+
+  /** The stamp taken back — the undo behind `markArrived`, same discipline. */
+  async clearArrival(appointmentId: string): Promise<boolean> {
+    const id = appointmentId;
+    if (this._pending().has(id)) return false;
+
+    this._pending.update((set) => new Set(set).add(id));
+    this._errors.update((map) => {
+      const next = new Map(map);
+      next.delete(id);
+      return next;
+    });
+
+    try {
+      const result = await this.gateway.clearArrival(id);
       if (result.isFailure()) {
         this._errors.update((map) => new Map(map).set(id, result.error));
         return false;
@@ -847,7 +1044,32 @@ export class StaffDayStore {
    */
   async staffEdit(request: StaffEditAppointmentRequest): Promise<boolean> {
     const id = request.appointmentId;
-    if (this._pending().has(id)) return false;
+
+    /*
+     * ⚠ A SECOND EDIT SUPERSEDES THE FIRST — IT IS NOT DISCARDED.
+     * (fixed 2026-09-04)
+     *
+     * This used to `return false` while a write for the same appointment was
+     * in flight, and nothing anywhere told the user: the block stayed where
+     * it was dropped, because the grid's own draft had already moved it, and
+     * the edit simply never reached the server. It came back on the next
+     * store tick. Measured: five drops in quick succession produced ONE
+     * write and four silent losses; the same five spaced 600ms apart all
+     * landed. That is exactly "sometimes the drop does not stick", and it is
+     * timing-dependent, which is why it looked random.
+     *
+     * The guard itself is right — two concurrent writes to one aggregate
+     * would race, and the second would carry a version the first has already
+     * moved past. What was wrong is throwing the newer intent away. A drag
+     * is a stream of positions whose LAST one is the answer, so the newest
+     * request replaces any queued one and goes the moment the wire is free.
+     * Intermediate drops are still dropped, which is the point; the final
+     * one no longer is.
+     */
+    if (this._pending().has(id)) {
+      this.queuedEdits.set(id, request);
+      return true;
+    }
 
     this._pending.update((set) => new Set(set).add(id));
     this._errors.update((map) => {
@@ -869,7 +1091,47 @@ export class StaffDayStore {
         next.delete(id);
         return next;
       });
+      // Whatever arrived while this was in flight, sent now — including
+      // after a FAILURE, because the queued position is still what the user
+      // last asked for and re-sending it is their best chance of it landing.
+      const next = this.queuedEdits.get(id);
+      if (next !== undefined) {
+        this.queuedEdits.delete(id);
+        void this.staffEdit(next);
+      }
     }
+  }
+
+  /**
+   * The newest edit per appointment that arrived while one was in flight.
+   *
+   * At most ONE per id: a drag produces a stream of positions and only the
+   * last is meaningful, so a newer request overwrites the queued one rather
+   * than joining a line of stale ones behind it.
+   */
+  private readonly queuedEdits = new Map<string, StaffEditAppointmentRequest>();
+
+  /**
+   * Record — or clear — what one seat was tipped.
+   *
+   * No pending guard and no coalescing: a tip is entered once, by hand, on a
+   * visit that is already over. There is no stream of positions to collapse
+   * and nothing racing it, so the request goes straight out and the error,
+   * if any, lands on the row like every other write's.
+   */
+  async recordTip(request: RecordSeatTipRequest): Promise<boolean> {
+    const id = request.appointmentId;
+    this._errors.update((map) => {
+      const next = new Map(map);
+      next.delete(id);
+      return next;
+    });
+    const result = await this.gateway.recordTip(request);
+    if (result.isFailure()) {
+      this._errors.update((map) => new Map(map).set(id, result.error));
+      return false;
+    }
+    return true;
   }
 
   /** `true` on success — the caller closes whatever asked for the reason. */

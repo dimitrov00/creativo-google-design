@@ -1,3 +1,5 @@
+@import '../shared/staff-cluster.css';
+@import '../shared/staff-event-tag.css';
 /*
  * The run's leading time column.
  *
@@ -459,6 +461,42 @@
   overflow-wrap: anywhere;
 }
 
+/* The party share reads as a RATIO — "1 / 2" — and a ratio is figures, so it
+   lines up with the price beside it rather than drifting on proportional
+   digits. It also must not break across the slash. */
+.agenda-card__figures {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* ── THE PARTY SHARE, IN THE FOOT ─────────────────────────────────────
+ *
+ * It was a line in the facts column and cost a full line of card height to
+ * say four characters. It is a MARK — a glyph and a count ABOUT the row —
+ * not a detail of the client like an email or a phone, so it belongs with
+ * the other marks, in the one row on this card that adds no height because
+ * the barber's disc already needs it. (owner ruling 2026-09-04)
+ *
+ * It keeps the fact column's glyph-then-value shape but hugs its content:
+ * in the foot's flex row a fact's `min-inline-size: 0` would let it collapse
+ * against the marks. The glyph matches `.agenda-card__mark`'s size, so the
+ * trailing gutter reads as one row of marks rather than a small one and a
+ * large one.
+ */
+.agenda-card__party {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sys-space-tight);
+  margin-inline-end: var(--sys-space-tight);
+  white-space: nowrap;
+}
+
+.agenda-card__party ui-icon {
+  font-size: 1rem;
+  color: var(--sys-color-tertiary-label, var(--sys-color-secondary-label));
+}
+
 /* ONE VOICE FOR EVERY FACT BUT THE NAME.
  *
  * The service was foreground, the chair was tinted with the barber's tone,
@@ -470,6 +508,12 @@
  *
  * So `--fact` is the whole vocabulary and the modifiers below change only
  * BEHAVIOUR, never appearance. */
+
+/* THE TAG — the frame's own mark, in the shared recipe; a figure among the
+   figures, ahead of the plain glyphs. */
+.agenda-card__tag {
+  flex: 0 0 auto;
+}
 
 .agenda-card__mark {
   font-size: 1rem;
@@ -552,37 +596,19 @@
  * struck through, a no-show is not. Someone cancelled; someone else simply
  * did not come. */
 
-/* THE EDGE IS IN KEY WITH THE FILL — it was three times louder than it.
+/* GONE — A GHOST OF THE FILL, NOT AN OUTLINE (owner, 2026-09-10: "the ghost
+ * fill, no borders").
  *
- * The outline was `--barber-tone` at FULL strength, on the reasoning that it
- * matched the rail. The rail is a 4px bar; this traces the whole perimeter,
- * roughly twice the rail's ink and spread around every edge of the card. And
- * the card it sits beside is tinted at 14%. Measured against the page, the
- * filled ground runs 1.20-1.27:1 while a full-strength outline runs
- * 4.50-7.56:1 light and 7.40-14.23:1 dark — the cancelled row was **4.5x
- * louder in light and 8.4x in dark** than the live bookings around it. A
- * settled row shouting over live ones is exactly backwards.
- *
- * Tying it to the tint says the relationship rather than a magic number: the
- * edge IS the fill's colour, three times over. Not once over — a hairline and
- * a broad tinted area are not perceptually equal at equal contrast, and at
- * the fill's own 1.20:1 a 1px line simply disappears and the card loses its
- * shape. 3x lands at 42%, about 1.75-3.00:1: quiet enough to sit under a live
- * card, strong enough to still be an edge.
- *
- * `box-shadow: inset` rather than `border`: the card is a grid with a fixed
- * rail column, and a border would move every track by a pixel. An inset
- * shadow paints inside the existing box and costs no layout. */
+ * A cancellation and a no-show keep the card's shape through the same ground
+ * every live card has, at HALF the wash; the strike and the glyph name which
+ * of the two it is. No stroke: the inset edge was a second grammar on one
+ * list — Google's hollow beside Apple's fill — and the only bordered card on
+ * the screen. Half rather than a third: measured against the page the live
+ * ground runs 1.20–1.27:1, and a third of that is no ground at all. The dial
+ * is `--agenda-tint`, so the disc rings' cut-outs follow the ghost too. */
 .agenda-card[data-status='cancelled'],
 .agenda-card[data-status='no_show'] {
-  --agenda-edge: calc(var(--agenda-tint) * 3);
-  background-color: transparent;
-  box-shadow: inset 0 0 0 1px
-    color-mix(
-      in srgb,
-      var(--barber-tone, var(--sys-color-foreground)) var(--agenda-edge),
-      transparent
-    );
+  --agenda-tint: 7%;
 }
 
 /* PENDING is not a third form but a qualifier on the first: the booking is
@@ -610,7 +636,11 @@
    it is the hour that just came free. The strike is now the SECOND channel
    rather than the only one: it is what separates a cancellation from a
    no-show, both of which are hollow. */
-.agenda-card[data-status='cancelled'] .agenda-card__name {
+/* …and a no-show is struck the same way (owner, 2026-09-10: "the missed
+   event should also appear with strikethrough so it's recognisable"): both
+   are hours that did not happen, and the glyph in the foot still says which. */
+.agenda-card[data-status='cancelled'] .agenda-card__name,
+.agenda-card[data-status='no_show'] .agenda-card__name {
   text-decoration: line-through;
   text-decoration-thickness: 1px;
   text-decoration-color: currentcolor;
@@ -1224,19 +1254,33 @@
  * arithmetic rather than a measured offset. Transform and opacity only, so
  * this runs on the compositor — no layout, no paint. */
 .staff-weeks__marker {
-  position: absolute;
+  /* A GRID ITEM spanning every column, not an absolute box a seventh of the
+     week wide (owner, 2026-09-09). The day buttons floor at 48px, so on a
+     phone seven of them overrun the 330px week; the old marker measured a
+     seventh of the WEEK and drifted a pixel further right per column. This
+     box is exactly the columns' span, so its seventh is exactly a column. */
+  grid-column: 1 / -1;
+  grid-row: 1;
+  align-self: end;
+  position: relative;
   /* Pinned to the NUMERAL's own box, not the week's midpoint: the column
-     also holds the weekday initial, so 50% of the week sits between the two
-     rows and put the disc half off the bottom. The day button's bottom
-     padding and the disc size are the two facts that place it. */
-  inset-block-end: var(--sys-space-tight);
-  inset-inline-start: 0;
-  inline-size: calc(100% / 7);
+     also holds the weekday initial. The day button's bottom padding and
+     the disc size are the two facts that place it. */
+  margin-block-end: var(--sys-space-tight);
   block-size: var(--staff-week-disc);
-  display: grid;
-  place-items: center;
   pointer-events: none;
   opacity: 0;
+  transition: opacity var(--sys-motion-duration-instant)
+    var(--sys-motion-ease-emphasized);
+}
+
+/* The column-wide carriage the disc rides in — translating by its own
+   width is translating by exactly one column. */
+.staff-weeks__marker-disc {
+  inline-size: calc(100% / 7);
+  block-size: 100%;
+  display: grid;
+  place-items: center;
   transform: translateX(calc(var(--staff-week-col, 0) * 100%));
   /* EMPHASIZED, and on the fast tier — because the slowness was in the
      DEPARTURE, not the duration.
@@ -1249,16 +1293,14 @@
      quarter of the travel in 9ms, half in 20ms, 90% by 56ms. Same distance,
      five times the departure, and it still arrives softly rather than
      snapping. */
-  transition:
-    transform var(--sys-motion-duration-instant)
-      var(--sys-motion-ease-emphasized),
-    opacity var(--sys-motion-duration-instant) var(--sys-motion-ease-emphasized);
+  transition: transform var(--sys-motion-duration-instant)
+    var(--sys-motion-ease-emphasized);
 }
 
 /* A CIRCLE, not a capsule: the marker box is a whole column wide so it can
    translate by column-widths, but the disc inside it is the numeral's size
    and centred within it. */
-.staff-weeks__marker::before {
+.staff-weeks__marker-disc::before {
   content: '';
   inline-size: var(--staff-week-disc);
   block-size: var(--staff-week-disc);
@@ -1272,12 +1314,13 @@
 
 /* Selected AND today: the fill takes the accent. */
 .staff-weeks__week:has([data-selected][data-today])
-  .staff-weeks__marker::before {
+  .staff-weeks__marker-disc::before {
   background: var(--sys-color-accent);
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .staff-weeks__marker {
+  .staff-weeks__marker,
+  .staff-weeks__marker-disc {
     transition: none;
   }
 }
@@ -1285,6 +1328,10 @@
 /* One day. The column position already says which weekday it is, so the
    letter above is a reminder rather than a label — Apple's own strip. */
 .staff-weeks__day {
+  /* Row 1 explicitly, on its own column: the marker spans that row under
+     every button, and a positioned button paints over it. */
+  grid-row: 1;
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -1400,110 +1447,6 @@
   --ui-avatar-disc: calc(
     var(--control-size-regular) - var(--sys-space-unit) * 3
   );
-}
-
-/*
- * The period pull-down IS a cluster segment (see `.staff-cluster` below) —
- * same fill, same radius ladder, same press morph as the trailing run. It
- * carries `.staff-cluster__item` for all of that; this class states the one
- * way it differs.
- */
-.staff-period {
-  /* It has a LABEL, so it hugs its text instead of being a circle. */
-  flex: 0 1 auto;
-  min-inline-size: 0;
-  /* …and a label needs side room the icon-only segments don't. */
-  padding-inline: var(--sys-space-regular);
-}
-
-/* ── The trailing action cluster ───────────────────────────────────────
- *
- * `ui-list-group`'s segmented run, transposed to the INLINE axis.
- *
- * That recipe is this system's answer to "these belong together": a
- * CHROMELESS wrapper, a half-unit seam, each segment owning its own surface,
- * subtle inner corners and the prominent rung on the group's outer ones — a
- * card exploded into segments. It reads as one control without a container
- * drawn around it, which is why the list groups dropped card-and-divider for
- * it in the first place.
- *
- * Not a segmented CONTROL: that expresses one mutually-exclusive choice, and
- * these are three separate acts. Same shape grammar, different meaning.
- *
- * ONE departure from the vertical recipe: the group's outer corners are the
- * CAPSULE, not the prominent rung. Turned on its side the run is made of
- * buttons, and a button in this system is a capsule (owner ruling
- * 2026-07-30 — "capsules and circles everywhere"). At the prominent rung a
- * 44px square segment reads nearly round while the wide period pill beside
- * it reads as a squircle: the same radius, two different shapes, because
- * radius is absolute and these boxes are not the same size. The capsule is
- * the only value that looks identical on both.
- */
-.staff-cluster {
-  display: inline-flex;
-  align-items: center;
-  /* The seam — the same half unit the vertical runs use. */
-  gap: calc(var(--sys-space-unit) / 2);
-}
-
-/* A segment that carries a LABEL has to be allowed to shrink, and so does
-   every box between it and the toolbar row — a flex item's default
-   `min-inline-size: auto` floors it at its content, so the period would push
-   the trailing run off the bar before it ever ellipsized. */
-.staff-cluster:has(.staff-period),
-.staff-cluster > ui-menu:has(.staff-period) {
-  flex: 0 1 auto;
-  min-inline-size: 0;
-}
-
-/* Two of the three segments arrive wrapped in their own `ui-menu` host, so
-   the cluster's flex children are host · button · host. The hosts stay in
-   layout DELIBERATELY: `display: contents` would flatten them, and the menu
-   anchors its popover to its own box — removing that box drops the surface
-   onto some ancestor and the calendar opens in the wrong place. The seam
-   falls between the hosts, which is the same seam. */
-.staff-cluster > ui-menu {
-  display: inline-flex;
-}
-
-/* Each segment owns the surface; the wrapper stays chromeless. */
-.staff-cluster__item {
-  background: var(--sys-color-surface-secondary);
-  border-radius: var(--control-radius-subtle);
-  color: var(--sys-color-foreground);
-  transition: border-radius var(--sys-motion-duration-regular)
-    var(--sys-motion-ease-standard);
-}
-
-/* The group's OUTER corners ride the prominent rung — leading and trailing
-   here rather than top and bottom, the run having been turned on its side.
- *
- * Matched through the WRAPPER, exactly as the list-group recipe does it:
- * `:first-child` on the segment itself is true of every menu-wrapped button
- * (each is the first child of its own host), so the trailing corners landed
- * on the leading edge of the last segment. The position that matters is the
- * wrapper's within the cluster. */
-.staff-cluster > :first-child .staff-cluster__item,
-.staff-cluster > .staff-cluster__item:first-child {
-  border-start-start-radius: var(--control-radius-capsule);
-  border-end-start-radius: var(--control-radius-capsule);
-}
-
-.staff-cluster > :last-child .staff-cluster__item,
-.staff-cluster > .staff-cluster__item:last-child {
-  border-start-end-radius: var(--control-radius-capsule);
-  border-end-end-radius: var(--control-radius-capsule);
-}
-
-/* Shape morph on press — to the group's own outer shape. */
-.staff-cluster__item:active {
-  border-radius: var(--control-radius-capsule);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .staff-cluster__item {
-    transition: none;
-  }
 }
 
 /* ── THE LEGEND: A PATCH OF THE COLOUR, BADGED TO THE PORTRAIT ────────
@@ -1698,4 +1641,15 @@
  * needs the clearance. */
 .staff-lanes {
   padding-block-start: var(--sys-space-regular);
+}
+
+/* ── THE UNDO TOAST ────────────────────────────────────────────────────
+   Raised over a page that keeps a dock at the bottom (the visit sheet's
+   action bar, the agenda's own controls), so it clears one large control
+   plus a breath rather than sitting on top of `Запази`. */
+.staff-dashboard ui-toast,
+ui-toast {
+  --ui-toast-clearance: calc(
+    var(--control-size-large) + var(--sys-space-comfortable)
+  );
 }

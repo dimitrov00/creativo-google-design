@@ -1,0 +1,239 @@
+@if (!extent().empty) {
+<div
+  #frame
+  class="staff-timeline__frame"
+  [style.--staff-timeline-hours]="hourCount()"
+  [attr.data-dragging]="dragging() ? '' : null"
+  (scroll)="onFrameScroll()"
+>
+  <!-- THE RULER — the hours across the top, pinned. `aria-hidden`: every
+       bar and the band already state their own time in their accessible
+       names, and a reader walking a row of hour labels to reach one booking
+       is worse than no ruler at all. -->
+  <div class="staff-timeline__scale" aria-hidden="true">
+    <span class="staff-timeline__corner"></span>
+    <span class="staff-timeline__ruler">
+      @for (hour of hours(); track hour.key) {
+      <span
+        class="staff-timeline__hour"
+        uiText
+        uiFont="caption"
+        [style.--staff-hour-index]="hour.index"
+        [attr.data-near-now]="hour.nearNow ? '' : null"
+        [attr.data-hour]="hour.key"
+      >
+        {{ hour.label }}
+      </span>
+      } @if (showsNow()) {
+      <span
+        class="staff-timeline__now-label"
+        uiText
+        uiFont="caption"
+        uiWeight="semibold"
+        [style.--staff-now-fraction]="nowFraction()"
+        data-testid="staff-timeline-now-label"
+      >
+        {{ nowLabel() }}
+      </span>
+      }
+      <!-- THE BAND'S NAME, on the ruler over its middle — not on its face,
+           where it would fight the bookings it lies across. While a drag
+           runs, the readout takes the same place. -->
+      @if (band(); as band) { @if (readoutAnchor() === null) {
+      <span
+        class="staff-timeline__band-tag"
+        uiText
+        uiFont="caption"
+        uiWeight="semibold"
+        [style.--staff-readout-fraction]="bandMiddle()"
+        data-testid="staff-timeline-band-tag"
+      >
+        <ui-icon uiName="booking.blocked" />
+        {{ band.title }}
+      </span>
+      } }
+      <!-- THE READOUT, on the ruler — above the band whatever row the finger
+           is on, and clear of the finger by construction. Always the boundary
+           AND the length, in the grid's own words. -->
+      @if (readoutAnchor() !== null) {
+      <span
+        class="staff-timeline__readout"
+        [style.--staff-readout-fraction]="readoutAnchor()"
+        [attr.data-tone]="readoutTone()"
+        data-testid="staff-timeline-readout"
+      >
+        <span uiText uiFont="caption" uiWeight="semibold">
+          {{ readoutText() }}
+        </span>
+        @if (readoutNote()) {
+        <span class="staff-timeline__readout-note" uiText uiFont="caption">
+          {{ readoutNote() }}
+        </span>
+        }
+      </span>
+      }
+    </span>
+  </div>
+
+  <div class="staff-timeline__body">
+    @for (row of rows(); track row.id) {
+    <div
+      class="staff-timeline__row"
+      [attr.data-row]="row.id"
+      [attr.data-today]="row.isToday ? '' : null"
+      data-testid="staff-timeline-row"
+    >
+      <!-- WHOSE ROW — the portrait, pinned at the leading edge while the
+           hours scroll under it. The avatar carries the name for a reader;
+           the chairs group above the picture says it in words. -->
+      <span class="staff-timeline__rail" [attr.title]="row.title">
+        <ui-avatar
+          [uiSrc]="row.avatarSrc"
+          [uiName]="row.title"
+          uiControlSize="small"
+        />
+      </span>
+      <div class="staff-timeline__track">
+        <!-- The hours this chair is SHUT — under the bars, translucent to
+             the hour rules, exactly as the grid shades a closed morning. -->
+        @for (run of row.closed; track run.key) {
+        <span
+          class="staff-timeline__closed"
+          [style.--staff-bar-from]="run.from"
+          [style.--staff-bar-span]="run.span"
+          data-testid="staff-timeline-closed"
+        ></span>
+        }
+        <!-- The bookings — context, never grabbed. One UNDER THE BAND is
+             marked in red: the collision the note beneath the picture names. -->
+        @for (bar of row.bars; track bar.id) {
+        <span
+          class="staff-timeline__bar"
+          [style.--staff-bar-from]="bar.from"
+          [style.--staff-bar-span]="bar.span"
+          [attr.data-kind]="bar.kind"
+          [attr.data-barber-tone]="bar.barberTone"
+          [attr.data-collides]="bar.collides ? '' : null"
+          [attr.aria-label]="bar.accessibleName"
+          data-testid="staff-timeline-bar"
+        >
+          <span
+            class="staff-timeline__bar-title"
+            uiText
+            uiFont="caption"
+            uiWeight="semibold"
+          >
+            {{ bar.title }}
+          </span>
+        </span>
+        } @if (showsNow()) {
+        <span
+          class="staff-timeline__now"
+          [style.--staff-now-fraction]="nowFraction()"
+          [attr.data-today]="row.isToday ? '' : null"
+          aria-hidden="true"
+          data-testid="staff-timeline-now"
+        ></span>
+        }
+      </div>
+    </div>
+    }
+
+    <!-- ── THE BAND ─────────────────────────────────────────────────
+         The block, once, across every chair — one thing at one time. A real
+         `<button>`, which is load-bearing: `UiSheetBehavior.onDragStart`
+         bails on `closest('button, a')`, so a drag here can never be eaten
+         by the sheet's own drag-to-dismiss. The handles are SIBLINGS, since
+         a button may not nest, and take the same two fractions the band is
+         drawn from, so the three can never drift. -->
+    @if (band(); as band) {
+    <button
+      type="button"
+      class="staff-timeline__band"
+      [style.--staff-bar-from]="band.from"
+      [style.--staff-bar-span]="band.span"
+      [attr.data-moving]="moving() ? '' : null"
+      [attr.data-whole]="band.whole ? '' : null"
+      [attr.data-editable]="editable() ? '' : null"
+      [attr.inert]="editable() ? null : ''"
+      [attr.aria-label]="band.accessibleName"
+      [attr.aria-roledescription]="
+        editable() ? uiDragCopy().blockRole || null : null
+      "
+      data-testid="staff-timeline-band"
+      (pointerdown)="onBandDown($event, band)"
+      (contextmenu)="onContextMenu($event)"
+      (keydown)="onBandKey($event, band)"
+    >
+      <!-- The minutes already gone, washed and hatched as the grid's are. -->
+      @if (bandElapsed(); as elapsed) {
+      <span
+        class="staff-timeline__band-elapsed"
+        [style.--staff-band-elapsed]="elapsed"
+        aria-hidden="true"
+      ></span>
+      }
+    </button>
+    @if (editable()) {
+    <button
+      type="button"
+      class="staff-timeline__handle"
+      data-edge="start"
+      role="slider"
+      aria-orientation="horizontal"
+      [style.--staff-bar-from]="band.from"
+      [style.--staff-bar-span]="band.span"
+      [attr.data-dragging]="draggingEdge() === 'start' ? '' : null"
+      [attr.aria-label]="uiDragCopy().handleStart || null"
+      [attr.aria-valuemin]="handleBounds()?.startMin"
+      [attr.aria-valuemax]="handleBounds()?.startMax"
+      [attr.aria-valuenow]="band.startMinute"
+      [attr.aria-valuetext]="handleText('start')"
+      (pointerdown)="onHandleDown($event, 'start', band)"
+      (contextmenu)="onContextMenu($event)"
+      (keydown)="onHandleKey($event, 'start', band)"
+      data-testid="staff-timeline-handle-start"
+    >
+      <ui-icon uiName="calendar.previous" uiScale="small" />
+    </button>
+    <button
+      type="button"
+      class="staff-timeline__handle"
+      data-edge="end"
+      role="slider"
+      aria-orientation="horizontal"
+      [style.--staff-bar-from]="band.from"
+      [style.--staff-bar-span]="band.span"
+      [attr.data-dragging]="draggingEdge() === 'end' ? '' : null"
+      [attr.aria-label]="uiDragCopy().handleEnd || null"
+      [attr.aria-valuemin]="handleBounds()?.endMin"
+      [attr.aria-valuemax]="handleBounds()?.endMax"
+      [attr.aria-valuenow]="band.endMinute"
+      [attr.aria-valuetext]="handleText('end')"
+      (pointerdown)="onHandleDown($event, 'end', band)"
+      (contextmenu)="onContextMenu($event)"
+      (keydown)="onHandleKey($event, 'end', band)"
+      data-testid="staff-timeline-handle-end"
+    >
+      <ui-icon uiName="calendar.next" uiScale="small" />
+    </button>
+    } }
+  </div>
+</div>
+<!-- BACK TO THE BAND — the grid's chip, on this axis (owner, 2026-09-10). -->
+@if (!dragging() && offscreen(); as edge) {
+<button
+  type="button"
+  class="staff-timeline__recenter"
+  [attr.data-edge]="edge"
+  [attr.aria-label]="backToLabel()"
+  data-testid="staff-timeline-recenter"
+  (click)="recenter()"
+>
+  <ui-icon
+    [uiName]="edge === 'before' ? 'calendar.previous' : 'calendar.next'"
+    uiScale="small"
+  />
+  <span class="staff-timeline__recenter-time">{{ editableTimeLabel() }}</span>
+</button>
+} }

@@ -13,9 +13,24 @@ import {
   signal,
   untracked,
   viewChild,
+  afterRenderEffect,
 } from '@angular/core';
 import { UiAvatar, UiIcon, type UiIconName } from '@creativo/ui/controls';
 import { UiTextDirective } from '@creativo/ui/modifiers';
+import {
+  DRAG_THRESHOLD_PX,
+  EdgeScroller,
+  HOLD_MS,
+  HOLD_SLOP_PX,
+  buzz,
+  capturePointer,
+  clamp,
+  fill,
+  hourLabel,
+  releasePointer,
+  snapTo,
+  timeLabel,
+} from './grid-gesture';
 
 /** One block drawn in a column — a visit, an absence, or a sellable hole. */
 export interface GridEvent {
@@ -59,6 +74,19 @@ export interface GridEvent {
   /** Secondary line, dropped as the block shrinks. */
   readonly detail: string | null;
   /**
+   * A short note pinned to the block's corner — «−10 мин» when the drafted
+   * length departs from the catalogue's (owner, 2026-09-09). Optional; the
+   * page's own blocks carry none.
+   */
+  readonly tag?: string | null;
+  /**
+   * The minutes at the END of the block beyond what its services need —
+   * drawn as a stretch of their own, under a dashed seam (owner, 2026-09-09:
+   * "when the event has surplus time, some indication"). Optional; the
+   * page's own blocks carry none.
+   */
+  readonly surplusMinutes?: number | null;
+  /**
    * Whose chair, when the column is a DAY rather than a chair. Absent in the
    * day view, where the column header already says it.
    */
@@ -86,6 +114,16 @@ export interface GridEvent {
   readonly accessibleName: string;
   /** Glyph doubling the terminal state, or `null` while it is still live. */
   readonly statusIcon: UiIconName | null;
+  /**
+   * THIS CHAIR'S SHARE of a party — "1 / 2" — or `null` when the booking is
+   * one person's.
+   *
+   * A party is one appointment drawn as one block PER CHAIR, and until this
+   * existed the two blocks were indistinguishable from two unrelated visits
+   * that happened to start together. A barber about to drag one needs to know
+   * somebody else is booked against it.
+   */
+  readonly partyLabel: string | null;
 }
 
 /** One column: a chair (day view) or a date (3-day / week). */
@@ -186,6 +224,8 @@ export interface GridDragCopy {
   readonly outside: string;
   /** `Най-малко {{minutes}} мин`. */
   readonly tooShort: string;
+  /** `Обратно към {{time}}` — the chip that points back to the edited block. */
+  readonly backTo: string;
 }
 
 const NO_DRAG_COPY: GridDragCopy = {
@@ -196,6 +236,7 @@ const NO_DRAG_COPY: GridDragCopy = {
   overlap: '',
   outside: '',
   tooShort: '',
+  backTo: '',
 };
 
 /** A muted stretch — the hours this column is shut, on the grid's own track. */
@@ -204,8 +245,42 @@ interface ClosedRun {
   readonly row: string;
 }
 
+/**
+ * A STRETCH OF A BLOCK that is qualified rather than plain.
+ *
+ * ⚠ The unit of these states is the SPAN, not the block. (owner ruling
+ * 2026-09-03)
+ *
+ * Everything here used to be all-or-nothing: a past block hatched entirely,
+ * a block outside the shift sat on grey shading drawn behind it, and a
+ * collision said so only in the drag readout. All three are facts about PART
+ * of a booking — the eleven minutes of it that have gone, the quarter-hour
+ * that runs past closing, the overlap with the cut before it — and rounding
+ * them up to the whole block throws away the only number worth reading.
+ *
+ * `from`/`to` are fractions of the block's OWN height, so the mask needs no
+ * knowledge of the extent, the density or the scale it is drawn at.
+ */
+interface EventMask {
+  /** `elapsed` — already happened. `surplus` — beyond what the services
+   *  need. `closed` — outside the shift. `overlap` — another booking is in
+   *  this chair at the same time. */
+  readonly kind: 'elapsed' | 'surplus' | 'closed' | 'overlap';
+  readonly from: number;
+  readonly to: number;
+}
+
 /** A block laid out against the grid's own minute track. */
 interface PlacedEvent extends GridEvent {
+  /** The qualified stretches of this block, painted over its own fill. */
+  readonly masks: readonly EventMask[];
+  /**
+   * Any of it falls outside the shift — what the warning glyph answers to.
+   *
+   * A hatch alone cannot carry this: it is the same hatch an overlap draws,
+   * and on a block too short to show one it is not drawn at all.
+   */
+  readonly outside: boolean;
   /** Slot placement: a `grid-row` span. `null` under `proportional`. */
   readonly row: string | null;
   /**
@@ -221,6 +296,16 @@ interface PlacedEvent extends GridEvent {
   readonly lanes: number;
   readonly short: boolean;
 }
+
+/**
+ * A block that has been LAID OUT but not yet qualified.
+ *
+ * `place` answers where a block goes; `maskEvent` answers what is true of
+ * parts of it, and it needs every sibling's final position to do so. Naming
+ * the intermediate keeps that order honest — a `PlacedEvent` always carries
+ * its masks, so nothing downstream has to wonder whether they were computed.
+ */
+type LaidEvent = Omit<PlacedEvent, 'masks' | 'outside'>;
 
 /**
  * A SIBLING CHAIR's block, drawn inside the opened chair's column.
@@ -251,11 +336,25 @@ interface DragState {
   readonly pointerId: number;
   readonly y0: number;
   readonly scrollTop0: number;
+  /** Where the pointer last was — what the edge loop measures against. */
+  y: number;
   /** The interval the gesture STARTED from — what a revert goes back to. */
   readonly startMinute: number;
   readonly endMinute: number;
   readonly pxPerMinute: number;
   readonly target: HTMLElement;
+  /** Where the finger landed across the axis nothing is dragged along. */
+  readonly x0: number;
+  /**
+   * A FINGER, which cannot be told from a scroll until it commits.
+   *
+   * A mouse can: it has a scroll wheel of its own, so a press on a block is
+   * unambiguously a press. Touch is the only pointer that has to be
+   * arbitrated, and it is arbitrated by the hold below.
+   */
+  readonly touch: boolean;
+  /** The hold that lifts a touch gesture, until it fires or is abandoned. */
+  hold: ReturnType<typeof setTimeout> | null;
   /** Past the threshold. A handle is armed on `pointerdown`; a body is not. */
   armed: boolean;
 }
@@ -263,6 +362,13 @@ interface DragState {
 const MINUTES_PER_SLOT = 15;
 /** A civil day. The axis is this long unless something runs past midnight. */
 const DAY_MINUTES = 1440;
+
+/**
+ * Minutes either side of "now" within which an hour label is withheld so the
+ * now pill has the gutter to itself. The pill is a caption line tall; at the
+ * grid's 2.4px-per-minute scale that is ~7 minutes, and ten leaves air.
+ */
+const NOW_LABEL_CLEARANCE = 10;
 /**
  * Under this many minutes a block cannot hold two lines legibly.
  *
@@ -297,20 +403,6 @@ const SHORT_BLOCK_MINUTES = 30;
 const NARROW_COLUMN_CAP = 2;
 const WIDE_COLUMN_CAP = 4;
 const WIDE_FRAME_PX = 600;
-/** How close to an edge the finger has to be before the frame scrolls itself. */
-const EDGE_SCROLL_MARGIN_PX = 28;
-/** The most one pointer move may scroll. The cap is what bounds the gesture. */
-const EDGE_SCROLL_STEP_PX = 14;
-
-/**
- * How far a pointer travels before a BODY drag arms.
- *
- * A handle has none — a dedicated 44pt target is unambiguous and claims its
- * pointer on `pointerdown`. The block is also a tap target (it opens the
- * visit), so a tap that wobbles by a few pixels has to stay a tap.
- */
-const DRAG_THRESHOLD_PX = 4;
-
 /**
  * The scale a gesture falls back to when the layout cannot be measured — a
  * hidden tab, a font still loading, a test harness with no layout engine.
@@ -376,6 +468,35 @@ export class StaffTimeGrid {
    * can scroll there, and has no use at all for where it ends.
    */
   readonly rosterStartMinute = input<number | null>(null);
+
+  /**
+   * Are the blocks TARGETS, or just drawn?
+   *
+   * The page grid's blocks open the visit they stand for, so they are
+   * buttons and `true` is right. The FRAME inside the visit sheet draws one
+   * editable block plus its neighbours for context, and binds nothing to
+   * `eventPicked` — so every neighbour was a `<button>` with a pointer
+   * cursor and a place in the tab order that did NOTHING when pressed. A
+   * control that promises a press and has none is worse than a picture.
+   *
+   * The editable block is exempt: it is dragged, resized and keyboard-moved,
+   * and it stays a control wherever it is drawn.
+   */
+  readonly uiPickable = input(true);
+
+  /**
+   * A block nobody can act on — inert, so it leaves the tab order and the
+   * accessibility tree together.
+   *
+   * `inert` rather than `disabled`: these are not disabled controls, they
+   * are not controls. Nothing is lost to a reader either — the frame's own
+   * summary sentence names every neighbour, and the editable block's label
+   * lists them again, so announcing each one a third time as a dead button
+   * was noise on top of a lie.
+   */
+  protected inertBlock(event: PlacedEvent): boolean {
+    return !this.uiPickable() && event.id !== this.editableId();
+  }
 
   /** Minutes from midnight; draws the now-line when it lands in the extent. */
   readonly nowMinute = input<number | null>(null);
@@ -553,15 +674,30 @@ export class StaffTimeGrid {
     // An asked-for window replaces the derived axis outright — the frame is
     // showing a neighbourhood, and the hours either side of it are not
     // "closed", they are not being drawn.
-    const window = this.uiWindow();
-    if (window !== null) {
-      const start = Math.max(0, Math.floor(window.startMinute / 60) * 60);
-      const end = Math.max(start + 60, Math.ceil(window.endMinute / 60) * 60);
-      return { start, end, minutes: end - start, empty: false };
-    }
     const ends = columns
       .flatMap((column) => column.events)
       .map((event) => event.endMinute);
+    const window = this.uiWindow();
+    if (window !== null) {
+      const start = Math.max(0, Math.floor(window.startMinute / 60) * 60);
+      // The window GROWS to hold what STARTS inside it and runs past its
+      // end, exactly as the derived axis does below: a 23:25 visit that
+      // ends at 00:15 is framed to the hour after its end, not cut at
+      // midnight (owner, 2026-09-09). An event entirely outside stays
+      // dropped — the window is a neighbourhood, and a far block must not
+      // stretch it.
+      const overflow = columns
+        .flatMap((column) => column.events)
+        .filter(
+          (event) =>
+            event.startMinute < window.endMinute &&
+            event.endMinute > window.startMinute,
+        )
+        .map((event) => event.endMinute);
+      const tail = Math.max(window.endMinute, ...overflow);
+      const end = Math.max(start + 60, Math.ceil(tail / 60) * 60);
+      return { start, end, minutes: end - start, empty: false };
+    }
     const end = Math.ceil(Math.max(DAY_MINUTES, ...ends) / 60) * 60;
     return { start: 0, end, minutes: end, empty: false };
   });
@@ -582,9 +718,21 @@ export class StaffTimeGrid {
      * would stop being the same length as the axis.
      */
     const last = this.framed() ? end - 60 : end;
-    const out: { readonly key: number; readonly label: string }[] = [];
+    // The hour the now pill would sit on gives way to it (owner, 2026-09-09;
+    // the reference does the same): two figures two pixels apart in one
+    // gutter read as a smudge, and the pill is the one that is news.
+    const now = this.showsNow() ? this.nowMinute() : null;
+    const out: {
+      readonly key: number;
+      readonly label: string;
+      readonly nearNow: boolean;
+    }[] = [];
     for (let at = start; at <= last; at += 60) {
-      out.push({ key: at, label: hourLabel(at) });
+      out.push({
+        key: at,
+        label: hourLabel(at),
+        nearNow: now !== null && Math.abs(at - now) < NOW_LABEL_CLEARANCE,
+      });
     }
     return out;
   });
@@ -597,6 +745,7 @@ export class StaffTimeGrid {
   protected readonly placedColumns = computed(() => {
     const { start, end, minutes, empty } = this.extent();
     const placement = this.uiPlacement();
+    const now = this.nowMinute();
     const draft = this.draft();
     const editableId = this.editableId();
     const { drawn, ghosted } = this.cappedColumns();
@@ -616,7 +765,13 @@ export class StaffTimeGrid {
                   }
                 : event,
             );
-      const placed = empty ? [] : place(events, start, end, minutes, placement);
+      const laid = empty ? [] : place(events, start, end, minutes, placement);
+      // The clock only qualifies a column that is actually TODAY — yesterday's
+      // ten o'clock is wholly past and tomorrow's wholly ahead, and neither is
+      // a booking half-run.
+      const placed = laid.map((event) =>
+        maskEvent(event, laid, column.open, column.isToday ? now : null),
+      );
       return {
         ...column,
         placed,
@@ -826,6 +981,97 @@ export class StaffTimeGrid {
     return null;
   });
 
+  /* ── The way back ─────────────────────────────────────────────────── */
+
+  /**
+   * THE SUBJECT — the block the sheet is about, editable or not. A
+   * cancelled or no-show visit opens as a reading sheet with no editable
+   * block, and the way back keyed on the editable one lost it the moment
+   * the picture was scrolled (owner, 2026-09-10: "I don't see why on other
+   * statuses the frame loses those anchors when the event moves out of
+   * sight"). The chip follows the subject; only the handles need the edit.
+   */
+  private readonly subjectBlock = computed(() => {
+    const id = this.uiEditableEventId();
+    if (id === null) return null;
+    for (const column of this.placedColumns()) {
+      const hit = column.placed.find((event) => event.id === id);
+      if (hit) return hit;
+    }
+    return null;
+  });
+
+  /**
+   * Which edge the edited block has gone past, if any — `before` above the
+   * picture, `after` below — so a chip can point the way back (owner,
+   * 2026-09-10: "an arrow to appear showing where the event is, and on
+   * click scroll to it", the way a map offers the way home). MEASURED, not
+   * derived: the scroller and the block both have boxes, and the question
+   * is whether one still holds the other. Only a block wholly outside
+   * counts; one clipped at the edge is still in the picture.
+   */
+  protected readonly offscreen = signal<'before' | 'after' | null>(null);
+
+  protected onFrameScroll(): void {
+    this.refreshOffscreen();
+  }
+
+  private refreshOffscreen(): void {
+    const id = this.uiEditableEventId();
+    const frame = this.frame()?.nativeElement;
+    const block = id === null ? null : this.blockElement(id);
+    let next: 'before' | 'after' | null = null;
+    if (this.framed() && frame && block) {
+      const box = frame.getBoundingClientRect();
+      const rect = block.getBoundingClientRect();
+      // A box with no height has no inside; nothing is out of it.
+      if (box.height > 0) {
+        if (rect.bottom <= box.top) next = 'before';
+        else if (rect.top >= box.bottom) next = 'after';
+      }
+    }
+    if (this.offscreen() !== next) this.offscreen.set(next);
+  }
+
+  /** Re-measured after every render that could have moved the block. */
+  // Kept as a member so the effect lives as long as the surface; nothing
+  // reads it, and nothing needs to.
+  protected readonly offscreenWatch = afterRenderEffect(() => {
+    this.placedColumns();
+    this.uiEditableEventId();
+    untracked(() => this.refreshOffscreen());
+  });
+
+  /** The chip's words: the block's start, and the way back to it. */
+  protected readonly editableTimeLabel = computed(() => {
+    const block = this.subjectBlock();
+    return block === null ? '' : timeLabel(block.startMinute);
+  });
+
+  protected readonly backToLabel = computed(() => {
+    const time = this.editableTimeLabel();
+    return fill(this.uiDragCopy().backTo, { time }) || time;
+  });
+
+  /**
+   * The edited block back to the middle of the picture — a tap on the
+   * chip glides there; the frame changing height (full screen, in or out)
+   * lands there at once, so the picture opens or closes around the block.
+   */
+  recenter(behavior?: ScrollBehavior): void {
+    const id = this.uiEditableEventId();
+    if (id === null) return;
+    this.applyCentre(id, behavior ?? (this.stillMotion() ? 'auto' : 'smooth'));
+  }
+
+  private stillMotion(): boolean {
+    return (
+      this.host.nativeElement.ownerDocument?.defaultView?.matchMedia?.(
+        '(prefers-reduced-motion: reduce)',
+      ).matches ?? false
+    );
+  }
+
   /**
    * What each handle may be dragged to, as minutes.
    *
@@ -857,6 +1103,11 @@ export class StaffTimeGrid {
    * extent actually stop a gesture, because outside them there is nothing to
    * draw.
    */
+  /** A block's clock, from its minutes — the card's start and end. */
+  protected timeOf(minute: number): string {
+    return timeLabel(minute);
+  }
+
   protected readonly draftVerdict = computed<
     | { readonly kind: 'short'; readonly minutes: number }
     | { readonly kind: 'overlap'; readonly name: string; readonly time: string }
@@ -972,11 +1223,16 @@ export class StaffTimeGrid {
   private detachPointer: (() => void) | null = null;
 
   /**
-   * A handle claims its pointer IMMEDIATELY — no threshold.
+   * A handle claims its pointer immediately — WITH A MOUSE.
    *
    * The threshold exists to protect a surface that must still accept taps. A
-   * dedicated 44pt handle is unambiguous, and a handle that needed 4px of
-   * travel before it moved would feel broken on the first small nudge.
+   * dedicated 44pt handle is unambiguous to a cursor, and one that needed 4px
+   * of travel before it moved would feel broken on the first small nudge.
+   *
+   * ⚠ A THUMB IS NOT A CURSOR. These are 44px discs lying on top of the block
+   * in a sheet that scrolls, so "immediately" meant a scroll that happened to
+   * begin on one resized the booking before the finger had travelled a pixel.
+   * `beginDrag` gives every touch the hold regardless of what is passed here.
    */
   protected onHandleDown(
     event: PointerEvent,
@@ -1015,11 +1271,16 @@ export class StaffTimeGrid {
     if (event.button !== 0) return;
     const target = event.currentTarget as HTMLElement | null;
     if (target === null) return;
+    const touch = event.pointerType === 'touch';
     this.drag = {
       id: block.id,
       kind,
       pointerId: event.pointerId,
       y0: event.clientY,
+      x0: event.clientX,
+      y: event.clientY,
+      touch,
+      hold: null,
       scrollTop0: this.frame()?.nativeElement.scrollTop ?? 0,
       startMinute: block.startMinute,
       endMinute: block.endMinute,
@@ -1028,17 +1289,42 @@ export class StaffTimeGrid {
       armed: false,
     };
     this.listenForPointer();
+
+    /*
+     * A FINGER WAITS. Nothing is captured and nothing is prevented yet, so
+     * the browser owns this touch and will scroll with it the instant it
+     * moves — which is the whole point. Only a finger that stays put long
+     * enough to mean it gets the block.
+     *
+     * The gesture the caller asked for is remembered, not started: `armed`
+     * decides whether a MOUSE skips the 4px threshold, and a mouse is the
+     * only pointer that may.
+     */
+    if (touch) {
+      this.drag.hold = setTimeout(() => this.arm(), HOLD_MS);
+      return;
+    }
     if (armed) this.arm(event);
   }
 
-  private arm(event: PointerEvent): void {
+  /**
+   * Lift the block: from here the gesture is an edit and the browser gets
+   * none of it.
+   *
+   * The event is optional because a held finger arms from a TIMER, with no
+   * event in hand — and needs none: no pan has begun (the finger has not
+   * travelled). What keeps the frame still from here is the refused
+   * `touchmove` in `listenForPointer`, not the capture.
+   */
+  private arm(event?: PointerEvent): void {
     const drag = this.drag;
     if (drag === null || drag.armed) return;
     drag.armed = true;
-    event.preventDefault();
+    this.clearHold(drag);
+    event?.preventDefault();
     // Belt and braces. The sheet already bails on a button, and the frame
     // wants the scroll it is not getting from a captured pointer anyway.
-    event.stopPropagation();
+    event?.stopPropagation();
     capturePointer(drag.target, drag.pointerId);
     this.gesture.set(drag.kind);
     // Guarded and never load-bearing: `navigator.vibrate` is Android-only in
@@ -1055,54 +1341,76 @@ export class StaffTimeGrid {
     const scrolled =
       (this.frame()?.nativeElement.scrollTop ?? drag.scrollTop0) -
       drag.scrollTop0;
-    const dy = event.clientY - drag.y0 + scrolled;
+    const dy = this.fingerY(event.clientY) - drag.y0 + scrolled;
     if (!drag.armed) {
+      /*
+       * A TRAVELLING FINGER IS A SCROLL, and it stays one.
+       *
+       * Distance must never arm a touch — that is precisely the rule that
+       * turned a flick down the sheet into a move. The hold is the only way
+       * in, and travelling past the wobble allowance closes it for good: the
+       * gesture is handed back to the browser rather than left pending, so
+       * resting the finger at the end of a scroll cannot lift the block.
+       */
+      if (drag.touch) {
+        const travelled =
+          Math.abs(event.clientY - drag.y0) >= HOLD_SLOP_PX ||
+          Math.abs(event.clientX - drag.x0) >= HOLD_SLOP_PX;
+        if (travelled) this.endDrag(drag);
+        return;
+      }
       if (Math.abs(dy) < DRAG_THRESHOLD_PX) return;
       this.arm(event);
     }
     if (event.cancelable) event.preventDefault();
+    drag.y = event.clientY;
     this.applyDelta(drag, dy);
-    // AFTER the delta, never before: this move is measured against the scroll
-    // position it started from, and the scroll it causes is picked up by the
-    // NEXT move through `scrolled`. That is what makes the block keep
-    // travelling while the finger rests near the edge.
-    this.edgeScroll(event.clientY);
+    // The edge loop reads the finger's position, never the block's, and
+    // keeps the frame scrolling while the finger rests at an edge — see
+    // `EdgeScroller`. Each scroll comes back through `followFinger`.
+    this.edge.update(event.clientY);
   }
 
   /**
-   * EDGE AUTO-SCROLL — the thing the delta above has always been written to
-   * tolerate and that nothing implemented.
-   *
-   * It did not matter while the frame drew a hundred minutes: the window was
-   * the block plus fifty minutes either side, so `moveTo`'s clamp could not
-   * push the block out of the viewport. The window is the whole working day
-   * now, and without this a barber moving a ten o'clock to the afternoon
-   * drags it straight off the bottom of the box and finishes the gesture with
-   * neither the block nor the time readout on screen — `touch-action: none`
-   * and the captured pointer mean the browser will not scroll for them.
-   *
-   * ⚠ **Driven by the FINGER, never by the block.** Scrolling to keep the
-   * block visible reads its own output: the scroll feeds `scrolled`, which
-   * moves the block, which asks for more scroll. Edge overlap is an input the
-   * gesture does not produce, the step is capped per event, and the write is
-   * clamped to the scrollable room — so a finger that stops moving stops the
-   * scroll, and a finger held at the edge cannot run past the end of the day.
+   * The frame scrolled itself under a resting finger: the block follows the
+   * finger's CONTENT position, exactly as a move would have measured it.
    */
-  private edgeScroll(clientY: number): void {
+  private followFinger(): void {
+    const drag = this.drag;
     const frame = this.frame()?.nativeElement;
-    if (!frame) return;
-    const room = frame.scrollHeight - frame.clientHeight;
-    if (room <= 0) return;
+    if (drag === null || !drag.armed || !frame) return;
+    const scrolled = frame.scrollTop - drag.scrollTop0;
+    this.applyDelta(drag, this.fingerY(drag.y) - drag.y0 + scrolled);
+  }
 
-    const box = frame.getBoundingClientRect();
-    const top = box.top + EDGE_SCROLL_MARGIN_PX;
-    const bottom = box.bottom - EDGE_SCROLL_MARGIN_PX;
-    const over =
-      clientY < top ? clientY - top : clientY > bottom ? clientY - bottom : 0;
-    if (over === 0) return;
+  /**
+   * The finger, CLAMPED to the frame's box. Past the top or the bottom the
+   * block rides that edge while the frame scrolls under it (owner,
+   * 2026-09-10), rather than following the finger off the screen and
+   * leaving neither the block nor its time in view.
+   */
+  private fingerY(clientY: number): number {
+    const box = this.frame()?.nativeElement.getBoundingClientRect();
+    // A box with no height is no box — a frame not yet laid out clamps nothing.
+    return box && box.height > 0
+      ? clamp(clientY, box.top, box.bottom)
+      : clientY;
+  }
 
-    const step = clamp(over, -EDGE_SCROLL_STEP_PX, EDGE_SCROLL_STEP_PX);
-    frame.scrollTop = clamp(frame.scrollTop + step, 0, room);
+  private readonly edge = new EdgeScroller(
+    'y',
+    () => this.frame()?.nativeElement,
+    () => this.followFinger(),
+  );
+
+  /**
+   * A long press on Android is also a context menu, and it arrives at about
+   * the moment a held finger has just lifted the block; with a gesture
+   * pending or armed the menu is refused. A right-click has no gesture —
+   * `beginDrag` bails on a non-primary button — and keeps its menu.
+   */
+  protected onContextMenu(event: Event): void {
+    if (this.drag !== null) event.preventDefault();
   }
 
   private applyDelta(drag: DragState, dy: number): void {
@@ -1173,7 +1481,35 @@ export class StaffTimeGrid {
     });
   }
 
+  /**
+   * Capture goes when the captured node leaves the document — which Angular
+   * does to move a node — as well as when a gesture really ends. A block
+   * still in the document with its gesture alive is the former: take the
+   * pointer back and carry on. Anything else is the cancel it always was;
+   * a release that follows `pointerup` or `pointercancel` finds no gesture
+   * left and does nothing.
+   */
+  private onLostCapture(event: PointerEvent): void {
+    const drag = this.drag;
+    if (drag === null || event.pointerId !== drag.pointerId) return;
+    if (drag.armed && drag.target.isConnected) {
+      capturePointer(drag.target, drag.pointerId);
+      return;
+    }
+    this.onPointerCancel(event);
+  }
+
+  /** A pending hold, dropped — on release, on cancel, and on travel. */
+  private clearHold(drag: DragState): void {
+    if (drag.hold !== null) {
+      clearTimeout(drag.hold);
+      drag.hold = null;
+    }
+  }
+
   private endDrag(drag: DragState): void {
+    this.clearHold(drag);
+    this.edge.stop();
     this.drag = null;
     this.gesture.set(null);
     this.detachPointer?.();
@@ -1392,15 +1728,35 @@ export class StaffTimeGrid {
     const up = (event: Event) => this.onPointerUp(event as PointerEvent);
     const cancel = (event: Event) =>
       this.onPointerCancel(event as PointerEvent);
+    const lost = (event: Event) => this.onLostCapture(event as PointerEvent);
+    /*
+     * THE ONE MOMENT A PAN CAN STILL BE REFUSED (2026-09-10, an iPhone).
+     *
+     * `touch-action: pan-y` lets the browser scroll on this touch, and
+     * nothing about pointer capture stops it: a captured pointer still
+     * pans, and `pointermove` cannot be prevented. The FIRST `touchmove`
+     * can — refused from a non-passive listener, the browser abandons the
+     * pan for the rest of the touch. So once the hold has lifted the block
+     * every touchmove is refused, and before it none is: a travelling
+     * finger scrolls as it should. Until today the TEXT under the finger
+     * was doing this by accident — iOS's selection long-press claimed the
+     * held touch and the page stopped panning. Made unselectable, the
+     * accident went, and a held finger that moved scrolled the frame.
+     */
+    const touch = (event: Event) => {
+      if (this.drag?.armed && event.cancelable) event.preventDefault();
+    };
     doc.addEventListener('pointermove', move, { passive: false });
+    doc.addEventListener('touchmove', touch, { passive: false });
     doc.addEventListener('pointerup', up);
     doc.addEventListener('pointercancel', cancel);
-    doc.addEventListener('lostpointercapture', cancel);
+    doc.addEventListener('lostpointercapture', lost);
     this.detachPointer = () => {
       doc.removeEventListener('pointermove', move);
       doc.removeEventListener('pointerup', up);
       doc.removeEventListener('pointercancel', cancel);
-      doc.removeEventListener('lostpointercapture', cancel);
+      doc.removeEventListener('lostpointercapture', lost);
+      doc.removeEventListener('touchmove', touch);
       this.detachPointer = null;
     };
   }
@@ -1431,6 +1787,7 @@ export class StaffTimeGrid {
         const width = entries[0]?.contentRect.width ?? 0;
         // A box with no layout yet is not an answer; leave the standing one.
         if (width > 0) this.wideFrame.set(width >= WIDE_FRAME_PX);
+        this.refreshOffscreen();
       });
       observer.observe(this.host.nativeElement);
       this.destroyRef.onDestroy(() => observer.disconnect());
@@ -1600,7 +1957,7 @@ export class StaffTimeGrid {
   }
 
   /** `true` once the scroll actually happened; `false` asks for another frame. */
-  private applyCentre(id: string): boolean {
+  private applyCentre(id: string, behavior: ScrollBehavior = 'auto'): boolean {
     // A gesture owns the scroll while it runs. Yanking the box mid-drag is
     // the one thing this must never do.
     if (this.gesture() !== null) return false;
@@ -1615,11 +1972,18 @@ export class StaffTimeGrid {
     // window shorter than the viewport has nowhere to scroll and an
     // unclamped write would land short of centre without saying so.
     const middle = rect.top - box.top + rect.height / 2;
-    frame.scrollTop = clamp(
+    const top = clamp(
       frame.scrollTop + middle - frame.clientHeight / 2,
       0,
       frame.scrollHeight - frame.clientHeight,
     );
+    // Smooth only on request — the first centring, under the sheet's own
+    // open animation, must land at once.
+    if (behavior === 'smooth' && typeof frame.scrollTo === 'function') {
+      frame.scrollTo({ top, behavior });
+    } else {
+      frame.scrollTop = top;
+    }
     return true;
   }
 }
@@ -1678,100 +2042,6 @@ function run(from: number, to: number, origin: number): ClosedRun {
 }
 
 /**
- * `540` → `"09:00"`.
- *
- * 24-hour, always: Bulgaria writes times that way, and a grid graded on being
- * scannable cannot spend two characters on am/pm. No `Intl` call — the input
- * is already a wall-clock offset, so formatting it through a timezone would
- * be converting a number that was never an instant.
- */
-function hourLabel(minute: number): string {
-  const hour = Math.floor(minute / 60) % 24;
-  return `${String(hour).padStart(2, '0')}:00`;
-}
-
-/**
- * `635` → `"10:35"`.
- *
- * `% 24` for the same reason the axis grows rather than wraps: a cut that
- * ends at minute 1455 ends at 00:15, not at 24:15.
- */
-function timeLabel(minute: number): string {
-  const hour = Math.floor(minute / 60) % 24;
-  return `${String(hour).padStart(2, '0')}:${String(Math.abs(minute % 60)).padStart(2, '0')}`;
-}
-
-/**
- * `{{name}}` holes, filled.
- *
- * Not a translation engine — the caller's own `t()` already ran and handed
- * over a template with the interpolations the GRID knows about still open,
- * because the neighbour under the finger is not knowable until the finger is
- * on it. An empty template stays empty, which is how a caller that never
- * wired the copy degrades to numbers rather than to English.
- */
-function fill(
-  template: string,
-  values: Readonly<Record<string, string | number>>,
-): string {
-  if (template === '') return '';
-  // Tightened first, so `{{ name }}` and `{{name}}` are the same hole, then
-  // filled by NAME rather than by computed lookup — a template is caller
-  // data and must never index anything.
-  let out = template.replace(/\{\{\s*(\w+)\s*\}\}/g, '{{$1}}');
-  for (const [key, value] of Object.entries(values)) {
-    out = out.split(`{{${key}}}`).join(String(value));
-  }
-  return out;
-}
-
-function clamp(value: number, min: number, max: number): number {
-  // `min` last: on a block longer than the extent the two bounds cross, and
-  // the near edge is the honest answer.
-  return Math.max(min, Math.min(max, value));
-}
-
-/** The snap quantum, applied ABSOLUTELY — the number that shows is on-grid. */
-function snapTo(minute: number, snap: number): number {
-  return Math.round(minute / snap) * snap;
-}
-
-/**
- * Every one of these is `?.()`-guarded and NONE is load-bearing.
- *
- * `navigator.vibrate` is Android-only in practice, absent on iOS Safari, and
- * policy-blocked without sticky user activation. The readout carries the
- * whole job on its own, which is exactly why the frame can afford a
- * five-minute quantum that Apple's own silent 15-minute snap cannot.
- */
-function buzz(pattern: number): void {
-  try {
-    globalThis.navigator?.vibrate?.(pattern);
-  } catch {
-    // A policy-blocked vibrate throws on some engines. It is decoration.
-  }
-}
-
-function capturePointer(target: HTMLElement, pointerId: number): void {
-  try {
-    target.setPointerCapture?.(pointerId);
-  } catch {
-    // Capture is an optimisation: without it the document listeners still
-    // receive the whole gesture. An engine that refuses it loses nothing.
-  }
-}
-
-function releasePointer(target: HTMLElement, pointerId: number): void {
-  try {
-    if (target.hasPointerCapture?.(pointerId)) {
-      target.releasePointerCapture?.(pointerId);
-    }
-  } catch {
-    // Already released, or never captured.
-  }
-}
-
-/**
  * The chairs the cap could not draw, as outlined blocks inside the one it
  * did.
  *
@@ -1816,13 +2086,122 @@ function ghostBlocks(
  * chair's column back-to-back — but in the WEEK view, where a column is a day
  * and every chair is merged, simultaneous blocks are the normal case.
  */
+/**
+ * The stretches of `[from, to)` that NO window covers.
+ *
+ * An empty window list means the chair is shut all day, and the answer is the
+ * whole span — which is the case the old whole-column shading could state and
+ * a per-block mark could not.
+ */
+function outsideRuns(
+  from: number,
+  to: number,
+  open: readonly OpenWindow[],
+): readonly (readonly [number, number])[] {
+  const runs: (readonly [number, number])[] = [];
+  let cursor = from;
+  const windows = [...open].sort((a, b) => a.startMinute - b.startMinute);
+  for (const window of windows) {
+    if (window.endMinute <= cursor) continue;
+    if (window.startMinute >= to) break;
+    if (window.startMinute > cursor) {
+      runs.push([cursor, Math.min(window.startMinute, to)]);
+    }
+    cursor = Math.max(cursor, window.endMinute);
+    if (cursor >= to) break;
+  }
+  if (cursor < to) runs.push([cursor, to]);
+  return runs;
+}
+
+/** Overlapping stretches, merged so two collisions do not double-paint. */
+function overlapRuns(
+  event: LaidEvent,
+  siblings: readonly LaidEvent[],
+): readonly (readonly [number, number])[] {
+  const hits: [number, number][] = [];
+  for (const other of siblings) {
+    // A gap is the ABSENCE of a booking — sitting on one is the point of the
+    // gesture, not a collision. The same rule `draftVerdict` applies.
+    if (other.id === event.id || other.kind === 'gap') continue;
+    const from = Math.max(event.startMinute, other.startMinute);
+    const to = Math.min(event.endMinute, other.endMinute);
+    if (to > from) hits.push([from, to]);
+  }
+  hits.sort((a, b) => a[0] - b[0]);
+  const merged: [number, number][] = [];
+  for (const hit of hits) {
+    const last = merged.at(-1);
+    if (last !== undefined && hit[0] <= last[1]) {
+      last[1] = Math.max(last[1], hit[1]);
+      continue;
+    }
+    merged.push([...hit]);
+  }
+  return merged;
+}
+
+/**
+ * Qualify one block: what has gone, what is outside the shift, what collides.
+ *
+ * ORDER IS PAINT ORDER. `elapsed` is a flat wash and goes down first so the
+ * two hatches read on top of it; a stretch that is both past and outside the
+ * shift says both, which is the honest answer and the reason these are a list
+ * rather than one state.
+ */
+function maskEvent(
+  event: LaidEvent,
+  siblings: readonly LaidEvent[],
+  open: readonly OpenWindow[],
+  now: number | null,
+): PlacedEvent {
+  const span = event.endMinute - event.startMinute;
+  if (span <= 0) return { ...event, masks: [], outside: false };
+  /** A minute of the day → where it falls down this block, as 0–1. */
+  const at = (minute: number): number => (minute - event.startMinute) / span;
+  const run = (
+    kind: EventMask['kind'],
+    [from, to]: readonly [number, number],
+  ) => ({ kind, from: at(from), to: at(to) }) satisfies EventMask;
+
+  const masks: EventMask[] = [];
+  if (now !== null && now > event.startMinute) {
+    masks.push({
+      kind: 'elapsed',
+      from: 0,
+      // Clamped, so a block that finished hours ago is wholly washed rather
+      // than asking the renderer for 400% of its own height.
+      to: Math.min(1, (now - event.startMinute) / span),
+    });
+  }
+
+  // The padding beyond the services, at the end — a stretch, not a state,
+  // and only when there is a real remainder to draw.
+  const surplus = event.surplusMinutes ?? 0;
+  if (surplus > 0 && surplus < span) {
+    masks.push(run('surplus', [event.endMinute - surplus, event.endMinute]));
+  }
+
+  // A carve-out is time taken OUT of the day; it is not a booking that can
+  // run past closing, and hatching it against a shift it is not part of
+  // would mark every break in the calendar as a problem.
+  const closed =
+    event.kind === 'block'
+      ? []
+      : outsideRuns(event.startMinute, event.endMinute, open);
+  for (const shut of closed) masks.push(run('closed', shut));
+  for (const hit of overlapRuns(event, siblings))
+    masks.push(run('overlap', hit));
+  return { ...event, masks, outside: closed.length > 0 };
+}
+
 function place(
   events: readonly GridEvent[],
   originMinute: number,
   endMinute: number,
   extentMinutes: number,
   placement: Placement,
-): readonly PlacedEvent[] {
+): readonly LaidEvent[] {
   const proportional = placement === 'proportional';
   // Under a clamped window a block can sit entirely outside the drawn hours.
   // Dropped rather than clamped to a sliver: a zero-height box still takes
@@ -1852,7 +2231,7 @@ function place(
   }
   if (current.length > 0) clusters.push(current);
 
-  const placed: PlacedEvent[] = [];
+  const placed: LaidEvent[] = [];
   for (const cluster of clusters) {
     const laneEnds: number[] = [];
     const assigned = cluster.map((event) => {
@@ -1877,7 +2256,21 @@ function place(
       });
     }
   }
-  return placed;
+  /*
+   * IN THE CALLER'S ORDER, never the packer's. The packer sorts by start to
+   * find clusters and lanes, and a template tracking its output moved a
+   * block's DOM node every time a drag carried it past a neighbour's start —
+   * and a node that leaves the document, even for the tick Angular takes to
+   * reinsert it, loses its pointer capture. That was the drag that reverted
+   * under a thumb the moment it crossed the visit above (owner, 2026-09-10,
+   * "dropping doesn't work all the time"). The editor already lists the
+   * edited block last, so its node stays where it is for the whole gesture.
+   */
+  const byId = new Map(placed.map((event) => [event.id, event] as const));
+  return visible.flatMap((event) => {
+    const laid = byId.get(event.id);
+    return laid === undefined ? [] : [laid];
+  });
 }
 
 /**

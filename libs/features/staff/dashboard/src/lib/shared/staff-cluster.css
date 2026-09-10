@@ -1,0 +1,90 @@
+/*
+ * THE SEGMENTED CLUSTER — one recipe, shared (2026-09-09).
+ *
+ * Extracted from the day toolbar so the sheets can carry the same control
+ * (the kind switch at the head of a new item). Chromeless wrapper, each
+ * segment a DS `bordered` button; the group's outer corners ride the
+ * capsule, the inner seams the subtle rung.
+ */
+/* ── The trailing action cluster ───────────────────────────────────────
+ *
+ * `ui-list-group`'s segmented run, transposed to the INLINE axis.
+ *
+ * That recipe is this system's answer to "these belong together": a
+ * CHROMELESS wrapper, a half-unit seam, each segment owning its own surface,
+ * subtle inner corners and the prominent rung on the group's outer ones — a
+ * card exploded into segments. It reads as one control without a container
+ * drawn around it, which is why the list groups dropped card-and-divider for
+ * it in the first place.
+ *
+ * Not a segmented CONTROL: that expresses one mutually-exclusive choice, and
+ * these are three separate acts. Same shape grammar, different meaning.
+ *
+ * ONE departure from the vertical recipe: the group's outer corners are the
+ * CAPSULE, not the prominent rung. Turned on its side the run is made of
+ * buttons, and a button in this system is a capsule (owner ruling
+ * 2026-07-30 — "capsules and circles everywhere"). At the prominent rung a
+ * 44px square segment reads nearly round while the wide period pill beside
+ * it reads as a squircle: the same radius, two different shapes, because
+ * radius is absolute and these boxes are not the same size. The capsule is
+ * the only value that looks identical on both.
+ */
+.staff-cluster {
+  display: inline-flex;
+  align-items: center;
+  /* The seam — the same half unit the vertical runs use. */
+  gap: calc(var(--sys-space-unit) / 2);
+}
+
+/* Two of the three segments arrive wrapped in their own `ui-menu` host, so
+   the cluster's flex children are host · button · host. The hosts stay in
+   layout DELIBERATELY: `display: contents` would flatten them, and the menu
+   anchors its popover to its own box — removing that box drops the surface
+   onto some ancestor and the calendar opens in the wrong place. The seam
+   falls between the hosts, which is the same seam. */
+.staff-cluster > ui-menu {
+  display: inline-flex;
+}
+
+/* Each segment owns the surface; the wrapper stays chromeless. */
+/* NO FILL OF ITS OWN (owner, 2026-09-09). Each segment is a DS `bordered` /
+   `neutral` button, so the fill, the ink and the hover/press states are the
+   DS's — the same ones the day pill beside it and every chip in the sheet
+   wear. The opaque `surface-secondary` this carried was the one grey on the
+   page that matched nothing else. This class only shapes the corners. */
+.staff-cluster__item {
+  border-radius: var(--control-radius-subtle);
+  transition: border-radius var(--sys-motion-duration-regular)
+    var(--sys-motion-ease-standard);
+}
+
+/* The group's OUTER corners ride the prominent rung — leading and trailing
+   here rather than top and bottom, the run having been turned on its side.
+ *
+ * Matched through the WRAPPER, exactly as the list-group recipe does it:
+ * `:first-child` on the segment itself is true of every menu-wrapped button
+ * (each is the first child of its own host), so the trailing corners landed
+ * on the leading edge of the last segment. The position that matters is the
+ * wrapper's within the cluster. */
+.staff-cluster > :first-child .staff-cluster__item,
+.staff-cluster > .staff-cluster__item:first-child {
+  border-start-start-radius: var(--control-radius-capsule);
+  border-end-start-radius: var(--control-radius-capsule);
+}
+
+.staff-cluster > :last-child .staff-cluster__item,
+.staff-cluster > .staff-cluster__item:last-child {
+  border-start-end-radius: var(--control-radius-capsule);
+  border-end-end-radius: var(--control-radius-capsule);
+}
+
+/* Shape morph on press — to the group's own outer shape. */
+.staff-cluster__item:active {
+  border-radius: var(--control-radius-capsule);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .staff-cluster__item {
+    transition: none;
+  }
+}

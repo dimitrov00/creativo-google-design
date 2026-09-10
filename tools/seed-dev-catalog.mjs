@@ -210,7 +210,10 @@ const HAIRCUTS = [
   'svc-scissor-trim',
   'svc-modern-cut',
 ];
-const excluding = (id) => [...HAIRCUTS.filter((other) => other !== id), 'svc-finish'];
+const excluding = (id) => [
+  ...HAIRCUTS.filter((other) => other !== id),
+  'svc-finish',
+];
 
 const CATEGORY = {
   id: 'cat-hair',
@@ -233,8 +236,16 @@ const SERVICES = [
     popular: true,
     variants: LENGTH_VARIANTS,
     offerings: [
-      { barberId: 'ivan', base: terms(14.5, 35), byVariant: { short: terms(14.5, 35), long: terms(18.5, 50) } },
-      { barberId: 'niko', base: terms(13, 30), byVariant: { short: terms(13, 30), long: terms(16.5, 45) } },
+      {
+        barberId: 'ivan',
+        base: terms(14.5, 35),
+        byVariant: { short: terms(14.5, 35), long: terms(18.5, 50) },
+      },
+      {
+        barberId: 'niko',
+        base: terms(13, 30),
+        byVariant: { short: terms(13, 30), long: terms(16.5, 45) },
+      },
       { barberId: 'stefan', base: terms(15, 45) },
     ],
     sortOrder: 1,
@@ -291,7 +302,11 @@ const SERVICES = [
     popular: false,
     variants: LENGTH_VARIANTS,
     offerings: [
-      { barberId: 'ivan', base: terms(19, 55), byVariant: { long: terms(23, 70) } },
+      {
+        barberId: 'ivan',
+        base: terms(19, 55),
+        byVariant: { long: terms(23, 70) },
+      },
       { barberId: 'stefan', base: terms(20.5, 60) },
     ],
     sortOrder: 4,
@@ -508,21 +523,24 @@ for (const location of LOCATIONS) {
 }
 
 for (const schedule of SCHEDULES) {
-  await db.collection('barberSchedules').doc(schedule.barberId).set({
-    barberId: schedule.barberId,
-    // NO document-level `locationId`: the location lives on each segment, so
-    // one barber's week can span shops. Ask the pattern where they work.
-    turnaroundMinutes: schedule.turnaroundMinutes,
-    // One open-ended version. `amend` closes it and appends the next.
-    versions: [
-      {
-        seq: 0,
-        effectiveFrom: '2026-01-01',
-        effectiveTo: null,
-        weeklyPattern: toStoredPattern(schedule.weeklyPattern),
-      },
-    ],
-  });
+  await db
+    .collection('barberSchedules')
+    .doc(schedule.barberId)
+    .set({
+      barberId: schedule.barberId,
+      // NO document-level `locationId`: the location lives on each segment, so
+      // one barber's week can span shops. Ask the pattern where they work.
+      turnaroundMinutes: schedule.turnaroundMinutes,
+      // One open-ended version. `amend` closes it and appends the next.
+      versions: [
+        {
+          seq: 0,
+          effectiveFrom: '2026-01-01',
+          effectiveTo: null,
+          weeklyPattern: toStoredPattern(schedule.weeklyPattern),
+        },
+      ],
+    });
   console.log(`seeded schedule for ${schedule.barberId}`);
 }
 
@@ -621,7 +639,12 @@ for (const schedule of SCHEDULES) {
     await db
       .collection('barberBusy')
       .doc(`${schedule.barberId}__${dayKey}`)
-      .set({ barberId: schedule.barberId, dayKey, zone: SCHEDULING_ZONE, busy });
+      .set({
+        barberId: schedule.barberId,
+        dayKey,
+        zone: SCHEDULING_ZONE,
+        busy,
+      });
   }
   console.log(
     `seeded busy days ${APPOINTMENT_DAYS}..${BUSY_HORIZON_DAYS} for ${schedule.barberId}` +
@@ -659,7 +682,6 @@ for (const schedule of SCHEDULES) {
     });
   console.log(`seeded scheduleExceptions/stefan__${dayKey} (closed)`);
 }
-
 
 for (const barber of BARBERS) {
   const avatar = await uploadAvatar(barber.file, barber.id);
@@ -733,7 +755,6 @@ await db.collection('settings').doc('bookingPolicy').set({
 });
 console.log('seeded settings/bookingPolicy');
 
-
 /**
  * A STAFF account, so /staff is reachable in dev at all.
  *
@@ -744,6 +765,30 @@ console.log('seeded settings/bookingPolicy');
  * OTP prints to the emulator log like every dev sign-in.
  */
 const STAFF_UID = 'dev-staff-ivan';
+/**
+ * The same prefixes `FirestoreProfileAdapter` / the functions' user repository
+ * write: every prefix of every name token, phone digits (E.164 without the
+ * plus, and the national `0…` form) and the email from the 3rd character.
+ * Kept in lockstep by hand — the seed is plain JS and cannot import them.
+ */
+function searchFields(firstName, lastName, phone, email) {
+  const searchName = `${firstName} ${lastName}`.trim().toLowerCase();
+  const out = new Set();
+  const prefixes = (token, from = 1) => {
+    for (let i = from; i <= token.length; i += 1) out.add(token.slice(0, i));
+  };
+  for (const token of searchName.split(/\s+/).filter(Boolean)) prefixes(token);
+  const digits = phone.replace(/\D/g, '');
+  prefixes(digits, 3);
+  if (digits.startsWith('359')) prefixes('0' + digits.slice(3), 3);
+  if (email) {
+    const lower = email.toLowerCase();
+    prefixes(lower, 3);
+    prefixes(lower.split('@')[0], 3);
+  }
+  return { searchName, searchPrefixes: [...out] };
+}
+
 await db.doc(`users/${STAFF_UID}`).set({
   phone: '+35943012399',
   firstName: 'Иван',
@@ -752,11 +797,35 @@ await db.doc(`users/${STAFF_UID}`).set({
   status: { kind: 'active' },
   email: 'staff@test.local',
   birthDate: null,
-  searchName: 'иван колев',
-  searchPrefixes: ['и', 'ив', 'ива', 'иван', 'к', 'ко', 'кол', 'коле', 'колев'],
+  ...searchFields('Иван', 'Колев', '+35943012399', 'staff@test.local'),
 });
 console.log('seeded staff account: staff@test.local (barber+admin)');
 
+/*
+ * THE SEEDED CLIENTS get a profile document too (owner, 2026-09-09), so the
+ * desk's client search — by name, number or mail — has somebody to find.
+ * Names and numbers are the same ones their seeded bookings carry.
+ */
+const CLIENT_PROFILES = [
+  ['dev-client-1', 'Георги', 'Петров', '+359881234567', 'georgi@test.local'],
+  ['dev-client-2', 'Мартин', 'Илиев', '+359887654321', 'martin@test.local'],
+  ['dev-client-3', 'Петър', 'Димитров', '+359882223344', 'petar@test.local'],
+  ['dev-client-4', 'Стоян', 'Колев', '+359881112233', null],
+  ['dev-client-7', 'Александър', 'Стоянов', '+359887778899', null],
+];
+for (const [uid, firstName, lastName, phone, email] of CLIENT_PROFILES) {
+  await db.doc(`users/${uid}`).set({
+    phone,
+    firstName,
+    lastName,
+    roles: ['client'],
+    status: { kind: 'active' },
+    email,
+    birthDate: null,
+    ...searchFields(firstName, lastName, phone, email),
+  });
+}
+console.log(`seeded ${CLIENT_PROFILES.length} client profiles`);
 
 /*
  * REAL APPOINTMENTS for the next few days.
@@ -798,26 +867,75 @@ function dayKeyAt(dayOffset) {
   ].join('-');
 }
 
-function seatOf({ id, barberId, serviceId, dayOffset, hour, minute, minutes, subject, pref, outcome }) {
+/**
+ * The chair's own terms for a service and variant, from the catalogue above
+ * — the price a seat is SOLD at. A seat used to be seeded at a flat 28,00 €
+ * whatever the service, so every seeded visit read as custom-priced («по
+ * договорка») on the staff sheet (owner, 2026-09-10).
+ */
+function chairTerms(serviceId, barberId, variantId) {
+  const service = SERVICES.find((entry) => entry.id === serviceId);
+  if (!service) throw new Error(`seed: no service ${serviceId}`);
+  // NO ILLEGAL SEATS (owner, 2026-09-10): a service with variants is only
+  // ever sold per variant — the callable refuses a bare seat on it, and the
+  // seeder, which writes past the callable, must refuse it too.
+  if (service.variants.length > 0 && !variantId) {
+    throw new Error(
+      `seed: ${serviceId} has variants — the seat must choose one`,
+    );
+  }
+  if (
+    variantId &&
+    !service.variants.some((variant) => variant.id === variantId)
+  ) {
+    throw new Error(`seed: ${serviceId} has no variant ${variantId}`);
+  }
+  const offering =
+    service.offerings.find((entry) => entry.barberId === barberId) ??
+    service.offerings[0];
+  if (!offering) throw new Error(`seed: nobody offers ${serviceId}`);
+  return (variantId && offering.byVariant?.[variantId]) || offering.base;
+}
+
+function seatOf({
+  id,
+  barberId,
+  serviceId,
+  variantId = null,
+  dayOffset,
+  hour,
+  minute,
+  minutes,
+  subject,
+  pref,
+  outcome,
+}) {
   const endMinute = minute + minutes;
+  const sold = chairTerms(serviceId, barberId, variantId);
   return {
     id,
     serviceId,
-    variantId: null,
+    variantId,
     barberId,
     // What the client ASKED for, beside what they got — the flag that tells
     // staff on a sick day which bookings can move chairs without a call.
     barberPref: pref,
     terms: {
-      priceMinorUnits: 2800,
+      priceMinorUnits: sold.priceMinorUnits,
       currencyCode: 'EUR',
+      // The minutes stay the seed's own: a visit booked shorter or longer
+      // than the catalogue is what the frame's tag exists to show.
       durationMinutes: minutes,
       setupMinutes: 0,
       cleanupMinutes: 0,
     },
     slot: {
       startIso: isoAt(dayOffset, hour, minute),
-      endIso: isoAt(dayOffset, hour + Math.floor(endMinute / 60), endMinute % 60),
+      endIso: isoAt(
+        dayOffset,
+        hour + Math.floor(endMinute / 60),
+        endMinute % 60,
+      ),
       zone: ZONE,
     },
     subject,
@@ -829,14 +947,53 @@ const account = (userId) => ({ kind: 'account', userId, relationship: 'self' });
 const guest = (label) => ({ kind: 'anonymous', label });
 const scheduled = { kind: 'scheduled' };
 
-const APPOINTMENTS = [
+/**
+ * A seeded "finished" visit on TODAY is finished only once its time has
+ * passed (owner, 2026-09-09: a 10:00 cut read «Минал» at 09:55). Before
+ * that it is an ordinary confirmed booking, so the sheet shows the live
+ * states — «след 5 мин», «В момента», «Дошъл» — on real data.
+ */
+function settledOnlyIfPast(appointment) {
+  if (appointment.dayOffset !== 0 || appointment.status.kind !== 'completed')
+    return appointment;
+  const zoneNow = new Date();
+  const ends = appointment.seats.map(
+    (seat) => seat.hour * 60 + seat.minute + seat.minutes,
+  );
+  const nowMinute = zoneNow.getHours() * 60 + zoneNow.getMinutes();
+  if (nowMinute >= Math.max(...ends)) return appointment;
+  return {
+    ...appointment,
+    status: { kind: 'confirmed' },
+    seats: appointment.seats.map((seat) => ({ ...seat, outcome: scheduled })),
+  };
+}
+
+const APPOINTMENTS_RAW = [
   {
     id: 'appt-dev-1',
     dayOffset: 0,
     ownerUserId: 'dev-client-1',
     status: { kind: 'completed' },
-    contact: { name: 'Георги Петров', phone: '+359881234567', email: 'georgi@test.local', note: null },
-    seats: [{ id: 'seat-1', barberId: 'ivan', serviceId: 'svc-fade', hour: 10, minute: 0, minutes: 45, subject: account('dev-client-1'), pref: 'specific', outcome: { kind: 'worked', atMs: Date.now() } }],
+    contact: {
+      name: 'Георги Петров',
+      phone: '+359881234567',
+      email: 'georgi@test.local',
+      note: null,
+    },
+    seats: [
+      {
+        id: 'seat-1',
+        barberId: 'ivan',
+        serviceId: 'svc-fade',
+        hour: 10,
+        minute: 0,
+        minutes: 45,
+        subject: account('dev-client-1'),
+        pref: 'specific',
+        outcome: { kind: 'worked', atMs: Date.now() },
+      },
+    ],
   },
   {
     id: 'appt-dev-2',
@@ -846,16 +1003,51 @@ const APPOINTMENTS = [
     // Already in the chair: the NOW treatment and the "Done" verb both need
     // an arrival to be reachable at all.
     arrived: true,
-    contact: { name: 'Мартин Илиев', phone: '+359887654321', email: 'martin@test.local', note: 'Къса отстрани' },
-    seats: [{ id: 'seat-2', barberId: 'ivan', serviceId: 'svc-classic-cut', hour: 12, minute: 30, minutes: 30, subject: account('dev-client-2'), pref: 'any', outcome: scheduled }],
+    contact: {
+      name: 'Мартин Илиев',
+      phone: '+359887654321',
+      email: 'martin@test.local',
+      note: 'Къса отстрани',
+    },
+    seats: [
+      {
+        id: 'seat-2',
+        barberId: 'ivan',
+        serviceId: 'svc-classic-cut',
+        variantId: 'short',
+        hour: 12,
+        minute: 30,
+        minutes: 30,
+        subject: account('dev-client-2'),
+        pref: 'any',
+        outcome: scheduled,
+      },
+    ],
   },
   {
     id: 'appt-dev-3',
     dayOffset: 0,
     ownerUserId: 'dev-client-3',
     status: { kind: 'confirmed' },
-    contact: { name: 'Петър Димитров', phone: '+359882223344', email: 'petar@test.local', note: null },
-    seats: [{ id: 'seat-3', barberId: 'niko', serviceId: 'svc-beard', hour: 14, minute: 0, minutes: 30, subject: account('dev-client-3'), pref: 'specific', outcome: scheduled }],
+    contact: {
+      name: 'Петър Димитров',
+      phone: '+359882223344',
+      email: 'petar@test.local',
+      note: null,
+    },
+    seats: [
+      {
+        id: 'seat-3',
+        barberId: 'niko',
+        serviceId: 'svc-beard',
+        hour: 14,
+        minute: 0,
+        minutes: 30,
+        subject: account('dev-client-3'),
+        pref: 'specific',
+        outcome: scheduled,
+      },
+    ],
   },
   {
     // A MIXED PARTY across two chairs — one appointment, two seats, two
@@ -864,10 +1056,36 @@ const APPOINTMENTS = [
     dayOffset: 0,
     ownerUserId: 'dev-client-4',
     status: { kind: 'confirmed' },
-    contact: { name: 'Стоян Колев', phone: '+359881112233', email: null, note: null },
+    contact: {
+      name: 'Стоян Колев',
+      phone: '+359881112233',
+      email: null,
+      note: null,
+    },
     seats: [
-      { id: 'seat-4a', barberId: 'ivan', serviceId: 'svc-fade', hour: 16, minute: 0, minutes: 45, subject: account('dev-client-4'), pref: 'specific', outcome: scheduled },
-      { id: 'seat-4b', barberId: 'stefan', serviceId: 'svc-classic-cut', hour: 16, minute: 0, minutes: 30, subject: guest('Синът на Стоян'), pref: 'any', outcome: scheduled },
+      {
+        id: 'seat-4a',
+        barberId: 'ivan',
+        serviceId: 'svc-fade',
+        hour: 16,
+        minute: 0,
+        minutes: 45,
+        subject: account('dev-client-4'),
+        pref: 'specific',
+        outcome: scheduled,
+      },
+      {
+        id: 'seat-4b',
+        barberId: 'stefan',
+        serviceId: 'svc-classic-cut',
+        variantId: 'long',
+        hour: 16,
+        minute: 0,
+        minutes: 30,
+        subject: guest('Синът на Стоян'),
+        pref: 'any',
+        outcome: scheduled,
+      },
     ],
   },
   {
@@ -875,34 +1093,109 @@ const APPOINTMENTS = [
     dayOffset: 0,
     ownerUserId: 'dev-client-5',
     status: { kind: 'no_show' },
-    contact: { name: 'Кирил Тодоров', phone: '+359884445566', email: 'kiril@test.local', note: null },
-    seats: [{ id: 'seat-5', barberId: 'stefan', serviceId: 'svc-beard', hour: 11, minute: 0, minutes: 30, subject: account('dev-client-5'), pref: 'specific', outcome: { kind: 'no_show', atMs: Date.now() } }],
+    contact: {
+      name: 'Кирил Тодоров',
+      phone: '+359884445566',
+      email: 'kiril@test.local',
+      note: null,
+    },
+    seats: [
+      {
+        id: 'seat-5',
+        barberId: 'stefan',
+        serviceId: 'svc-beard',
+        hour: 11,
+        minute: 0,
+        minutes: 30,
+        subject: account('dev-client-5'),
+        pref: 'specific',
+        outcome: { kind: 'no_show', atMs: Date.now() },
+      },
+    ],
   },
   {
     id: 'appt-dev-6',
     dayOffset: 1,
     ownerUserId: 'dev-client-6',
     status: { kind: 'cancelled', reason: 'client_changed_plans' },
-    contact: { name: 'Николай Иванов', phone: '+359883334455', email: null, note: null },
-    seats: [{ id: 'seat-6', barberId: 'ivan', serviceId: 'svc-fade', hour: 10, minute: 0, minutes: 45, subject: account('dev-client-6'), pref: 'any', outcome: { kind: 'cancelled', atMs: Date.now(), by: 'client', reason: { kind: 'client_changed_plans' } } }],
+    contact: {
+      name: 'Николай Иванов',
+      phone: '+359883334455',
+      email: null,
+      note: null,
+    },
+    seats: [
+      {
+        id: 'seat-6',
+        barberId: 'ivan',
+        serviceId: 'svc-fade',
+        hour: 10,
+        minute: 0,
+        minutes: 45,
+        subject: account('dev-client-6'),
+        pref: 'any',
+        outcome: {
+          kind: 'cancelled',
+          atMs: Date.now(),
+          by: 'client',
+          reason: { kind: 'client_changed_plans' },
+        },
+      },
+    ],
   },
   {
     id: 'appt-dev-7',
     dayOffset: 1,
     ownerUserId: 'dev-client-7',
     status: { kind: 'confirmed' },
-    contact: { name: 'Александър Стоянов', phone: '+359887778899', email: null, note: null },
-    seats: [{ id: 'seat-7', barberId: 'niko', serviceId: 'svc-modern-cut', hour: 15, minute: 0, minutes: 45, subject: account('dev-client-7'), pref: 'specific', outcome: scheduled }],
+    contact: {
+      name: 'Александър Стоянов',
+      phone: '+359887778899',
+      email: null,
+      note: null,
+    },
+    seats: [
+      {
+        id: 'seat-7',
+        barberId: 'niko',
+        serviceId: 'svc-modern-cut',
+        hour: 15,
+        minute: 0,
+        minutes: 45,
+        subject: account('dev-client-7'),
+        pref: 'specific',
+        outcome: scheduled,
+      },
+    ],
   },
   {
     id: 'appt-dev-8',
     dayOffset: 2,
     ownerUserId: 'dev-client-8',
     status: { kind: 'confirmed' },
-    contact: { name: 'Емил Георгиев', phone: '+359886665544', email: 'emil@test.local', note: null },
-    seats: [{ id: 'seat-8', barberId: 'stefan', serviceId: 'svc-scissor-trim', hour: 13, minute: 0, minutes: 30, subject: account('dev-client-8'), pref: 'any', outcome: scheduled }],
+    contact: {
+      name: 'Емил Георгиев',
+      phone: '+359886665544',
+      email: 'emil@test.local',
+      note: null,
+    },
+    seats: [
+      {
+        id: 'seat-8',
+        barberId: 'stefan',
+        serviceId: 'svc-scissor-trim',
+        variantId: 'long',
+        hour: 13,
+        minute: 0,
+        minutes: 30,
+        subject: account('dev-client-8'),
+        pref: 'any',
+        outcome: scheduled,
+      },
+    ],
   },
 ];
+const APPOINTMENTS = APPOINTMENTS_RAW.map(settledOnlyIfPast);
 
 for (const appointment of APPOINTMENTS) {
   const seats = appointment.seats.map((seat) =>
@@ -925,7 +1218,11 @@ for (const appointment of APPOINTMENTS) {
       busyKeys: [
         ...new Set(seats.map((seat) => `${seat.barberId}__${dayKey}`)),
       ].sort(),
-      timeSlot: { startIso: starts[0], endIso: ends[ends.length - 1], zone: ZONE },
+      timeSlot: {
+        startIso: starts[0],
+        endIso: ends[ends.length - 1],
+        zone: ZONE,
+      },
       seats,
       status: appointment.status,
       // Booked a week out, so lead-time figures have something real to read.

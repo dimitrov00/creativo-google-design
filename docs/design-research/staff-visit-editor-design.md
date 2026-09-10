@@ -1260,11 +1260,37 @@ The mechanism is a **new** `StaffDayStore.online` signal over `navigator.onLine`
 **Two items changed weight on 2026-08-26, and both changes are load-bearing rather than cosmetic.**
 
 - **`Смени стола` is promoted from a convenience to the only shop-wide staffing control.** Comments 2 and 7 delete the `Стол` row and take barbers out of the people field, so a visit's staffing is authored **per service** (on that service's page) and reassigned **for the whole visit** here. The split is the menu's own doctrine: `ui-menu` is documented for _"a command, option, or state"_, and **a shop-wide reassignment is a command** — it rewrites every leg's barber in one action. Reassigning **one** leg is a _value_, and a value lives on the row that owns it. R19's one-verdict-per-barber list (`Свободен` / `Зает — Петър 10:30` / `Извън смяната`) is unchanged and now carries more weight than it did this morning.
-- **`Всички промоции` is new (comment 3)** — a **read-only** catalogue page pushed from here: code, name, terms, validity, `minSpend`. It is deliberately reachable with **no appointment context**, because the question at the chair is _"is there still a code for a first haircut?"_, and answering it must not require pretending to apply something. ⚠ **It is not a promo state on an appointment and the honesty gate is not weakened:** nothing promo-shaped renders in `ПАРИ` before M8. This page ships in M7 and has nothing to apply and nothing to pretend.
+- **`Всички промоции` is new (comment 3)** — ⚠ **and is no longer an item in this sheet's `⋯` — which no longer exists at all (owner ruling 2026-09-04): it pushed `push('promo', null, …)`, the SAME page `ПАРИ`'s own promo row pushes in both of that row's faces. One page had two doors, and the second sat in a menu of state transitions under a different name. The context-free entry this bullet argues for belongs to a surface that has NO appointment; inside a sheet that has one, `ПАРИ` is the door.** A **read-only** catalogue page pushed from here: code, name, terms, validity, `minSpend`. It is deliberately reachable with **no appointment context**, because the question at the chair is _"is there still a code for a first haircut?"_, and answering it must not require pretending to apply something. ⚠ **It is not a promo state on an appointment and the honesty gate is not weakened:** nothing promo-shaped renders in `ПАРИ` before M8. This page ships in M7 and has nothing to apply and nothing to pretend.
 
 **`Добави човек към този час` is deliberately not in this menu**, and there is no `＋` row anywhere that could stand in for it — on a committed appointment the clients group simply has no `＋ Добави клиент` row. (Amended 2026-08-26: the carrier used to be _"the people field has no caret line"_; the field is gone, the exclusion is not.) See 3.3.9.
 
 ### R1 · The header title and the pinned summary strip
+
+> **⚠ REVERSED AGAIN 2026-09-04 (owner ruling). THE LARGE TITLE IS DELETED — for good this time. The bar carries the name from the first frame.**
+>
+> This ruling has now moved three times, so state the reasoning rather than the position. 2026-08-26 deleted the large title for a static bar title plus a pinned strip; 2026-08-27 deleted the strip and brought the large title back, on the grounds that _"the sheet states its name like every other sheet on this page."_ That grounds is the part that did not survive contact with the finished sheet.
+>
+> **The name is `Редактиране на час` on every visit.** It is the sheet's category, not its subject — never the answer to a question anybody opened it with — and a `largeTitle` block spends a whole screen-band of a ladder that is now **eight groups long** (`СТАТУС`, `БРЪСНАРИ`, `КЛИЕНТИ`, the clock, the frame, `УСЛУГИ`, `ПАРИ`, `БЕЛЕЖКА`) to say it. Every other sheet on this page states a name worth a band; this one does not. **The first thing under the thumb should be the visit, not its category** — which is now the status picker (R1's own amendment above), the one line that says what this appointment IS.
+>
+> **`titleAlwaysVisible` is the DS's own name for this**, and it is not new: the phone field's country picker has shipped an inline-title bar since it was written. The shell shows the compact title from the first frame with its chrome scrim landed ([modal-sheet.css:99](../../libs/ui/controls/src/lib/modal-sheet/modal-sheet.css:99)), so content dissolves under the bar exactly as it did after a collapse — there is simply nothing left to collapse.
+>
+> **The `labelledBy` id moved onto the `[sheet-title]` span**, in the page that owns the shell. `aria-labelledby` still resolves through it although the bar title is `aria-hidden`: a referenced element contributes its text to the accessible name whether or not it is hidden, which is the route the country picker already depends on.
+>
+> ⚠ **The pushed pages keep their own large titles.** `Фейд`, `Добави услуга`, a client's name — those ARE their pages' subjects, they change from push to push, and they sit above a consequence line that explains them. The rule is not "no large titles"; it is that a title earns its band by being the answer to something.
+
+> **⚠ AMENDED 2026-09-04 (owner ruling). The strip's last orphan lands, and it takes the whole state machine with it: `СТАТУС` IS A PICKER AT THE HEAD OF THE LADDER.**
+>
+> When the strip was deleted (2026-08-27) its facts were re-homed one by one — the client into `КЛИЕНТИ`, the range into the frame and `Начало`/`Времетраене`, the price into `В салона`. **The status was not.** `status`, `statusLabel` and a five-row `STATUS_TONES` map with a `statusTone()` helper sat on the component, correct and complete, and appeared in the template **zero times**. The sheet showed the NEXT transition in the dock and never once said what the appointment IS.
+>
+> **Ruling: one control at the top holds the state AND every way out of it — a `ui-list-row` that is a `uiMenuTrigger`, in the barber row's own shape.** Trigger reads `Потвърден` with `field.expand` beside it; the menu lists `Готово`, `Не дойде`, `Откажи`. Two pickers open the sheet in one grammar: **who is doing this, and where the visit stands.**
+>
+> **It ends the split, which had no basis in the graph.** The transitions were divided between a prominent docked CTA and a `⋯` — `Дойде` promoted, its three siblings hidden — and only FREQUENCY separated them. Frequency is not a reason to put two of a kind in two places. With all four in the picker, the overflow has nothing to overflow and the `⋯` is deleted outright (R5's dock amendment).
+>
+> **⚠ The trigger shows a STATE; the menu offers VERBS, and that asymmetry must survive any tidying.** `Дойде` stamps `arrivedAt`, which this document rules un-backfillable — these are **events with side effects, not an attribute being set** — so the items stay named as acts (`Готово`, not `Готов`) even though the trigger reads as a value. Destructive items trail, per `UiMenuItem`'s own documented convention; the `⋯` could ignore that ordering only because it never held the primary.
+>
+> **Words carry the tone; no badge.** `STATUS_TONES` keeps `confirmed` and `completed` NEUTRAL on purpose — nine visits in ten are one of them — so a capsule here would render a grey pill reading `Потвърден` almost every time the sheet opens, which is a badge that has stopped carrying information. Neutral inherits the row's own ink; `pending`, `cancelled` and `no_show` take the tone mixed 60% into the foreground, `ui-badge`'s own recipe, so the red here and a destructive badge anywhere else are the same red in both themes.
+>
+> **A settled visit STATES and does not offer.** Empty graph ⇒ a plain `li`, no trigger, no chevron: absent affordance, never a disabled one.
 
 > **⚠ REVERSED 2026-08-26 (comment 4). The large-title block is DELETED.** The owner's objection — _"the title is the client's name and the client is editable below, so the title is subject to change"_ — is correct, and it generalises past its own example into a law this document already enforces twice elsewhere.
 >
@@ -1316,7 +1342,7 @@ Titles: **`Час`** (an existing appointment) · **`Нов час`** (new) · *
 
 **Why `ui-badge` and not `ui-status-indicator`.** `UiStatusIndicatorTone` is `'success' | 'warning' | 'destructive'` and nothing else ([status-indicator.ts:8](../../libs/ui/patterns/src/lib/status-indicator/status-indicator.ts:8)); the component takes exactly one input, `uiTone`. It _does_ carry a `[uiDetail]` projection slot ([status-indicator.ts:23-25](../../libs/ui/patterns/src/lib/status-indicator/status-indicator.ts:23)), so the shape would fit the arrival stamp — what does not fit is the tone union. `statusTone()` already returns a `UiBadgeTone` and already returns `'neutral'` for both `confirmed` and `completed` ([staff-dashboard.ts:325-331](../../libs/features/staff/dashboard/src/lib/staff-dashboard/staff-dashboard.ts:325)). Wiring the status indicator here would be a type error on the two commonest statuses in the shop, and fixing it would mean widening a DS union to serve one call site. **The badge already ships in this exact sheet** ([staff-dashboard.html:1284](../../libs/features/staff/dashboard/src/lib/staff-dashboard/staff-dashboard.html:1284)). Reuse it, and put the arrival stamp beside it as text, where a detail belongs. The 2026-08-26 move from a title block to a pinned strip does not disturb this: **the badge is the same component in the same sheet at a different altitude**, and the tone-union argument is a type argument, not a layout one.
 
-**Three facts already on the VM finally surface in this sheet**: `durationMinutes`, `arrived` and `rebooked` ([staff-dashboard.ts:130](../../libs/features/staff/dashboard/src/lib/staff-dashboard/staff-dashboard.ts:130), [:184](../../libs/features/staff/dashboard/src/lib/staff-dashboard/staff-dashboard.ts:184), [:167](../../libs/features/staff/dashboard/src/lib/staff-dashboard/staff-dashboard.ts:167)). **Not five.** `priceLabel` is already rendered on the agenda card behind the `price` field toggle ([staff-dashboard.html:997-1004](../../libs/features/staff/dashboard/src/lib/staff-dashboard/staff-dashboard.html:997)) and `email` behind the `email` toggle ([staff-dashboard.html:877-886](../../libs/features/staff/dashboard/src/lib/staff-dashboard/staff-dashboard.html:877)). The sheet shows them unconditionally, which is a change in _reliability_, not a first appearance — and the document must not claim the barber is seeing a price for the first time. ⚠ **2026-08-26: only `durationMinutes` and `arrived` land in R1.** The strip carries the client, the range, the minutes and the status; **the price left it with the subtitle** and is now `В салона` in `ПАРИ` (R5), where a derivation belongs. `rebooked` lands on the client row (§3.6).
+**Three facts already on the VM finally surface in this sheet**: `durationMinutes`, `arrived` and `rebooked` ([staff-dashboard.ts:130](../../libs/features/staff/dashboard/src/lib/staff-dashboard/staff-dashboard.ts:130), [:184](../../libs/features/staff/dashboard/src/lib/staff-dashboard/staff-dashboard.ts:184), [:167](../../libs/features/staff/dashboard/src/lib/staff-dashboard/staff-dashboard.ts:167)). **Not five.** `priceLabel` is already rendered on the agenda card behind the `price` field toggle ([staff-dashboard.html:997-1004](../../libs/features/staff/dashboard/src/lib/staff-dashboard/staff-dashboard.html:997)) and `email` behind the `email` toggle ([staff-dashboard.html:877-886](../../libs/features/staff/dashboard/src/lib/staff-dashboard/staff-dashboard.html:877)). The sheet shows them unconditionally, which is a change in _reliability_, not a first appearance — and the document must not claim the barber is seeing a price for the first time. ⚠ **2026-08-26: only `durationMinutes` and `arrived` land in R1.** The strip carries the client, the range, the minutes and the status; **the price left it with the subtitle** and is now `В салона` — ⚠ **docked, not in `ПАРИ`, since 2026-09-04 (R5)**, where a derivation that crosses the seam belongs. `rebooked` lands on the client row (§3.6).
 
 **The arrival stamp needs one new VM field.** `Appointment.arrivedAt` is a real, persisted `ZonedDateTime` ([appointment.ts:162](../../libs/domain/scheduling/src/lib/appointment.ts:162)), round-tripped through the repository ([appointment-repository.adapter.ts:225](../../libs/infrastructure/firestore/src/lib/appointment-repository.adapter.ts:225)) — and the mapper flattens it to a boolean and throws the instant away ([staff-dashboard.ts:2253](../../libs/features/staff/dashboard/src/lib/staff-dashboard/staff-dashboard.ts:2253)). `DayRowVm.arrivedAtLabel: string | null` **`[new]`** restores it from data that is already on the wire, and it renders **in the strip**, after the badge. The orphan `staff.day.visitArrived` is the bare word `Дойде` and is **replaced**, not bound — a stamp without a time is the fact the boolean already carried. (It is the first of two orphans to get that treatment; `visitWhen` is the second — see §3.3's opening note.)
 
@@ -1691,7 +1717,8 @@ _Gloss: `Добави услуга` add a service · `Един след друг
   </li>
 
   <!-- 3 · nothing else. There is no editor segment: the editor is a PAGE
-          (§3.6.3), and the total lives in ПАРИ and appears ONCE. -->
+          (§3.6.3), and the total appears ONCE — ⚠ in the DOCK since
+          2026-09-04, not as the last row of ПАРИ (R5). -->
 </ul>
 <ui-flow uiSpacing="compact">
   <!-- arrangement, only when ≥2 legs share a subject -->
@@ -1839,6 +1866,53 @@ _Gloss: `Нов` new · `Добави клиент` add a client · `Или ос
 
 ### R5 · `ПАРИ`
 
+> **⚠ `ЗАПАЗИ` SHIPS, AND `ЗАТВОРИ` IS GONE. (owner ruling 2026-09-04)**
+>
+> **⚠ AMENDED the same day: `dirty` MEANS "THERE IS SOMETHING `ЗАПАЗИ` CAN DO", not "anything on this sheet differs".**
+>
+> The button did not go away after a successful save, and the cause was not timing. **The sheet and the server encode one visit two ways.** A `resize` writes the SEAT's own `durationMinutes`, so a 30-minute service stretched to 45 comes back _as a 45-minute service_ — while the draft still holds a 30-minute leg with a 45-minute `durationOverride` on top of it. Both describe the same booking; neither string-equals the other, so a whole-draft compare stayed dirty forever.
+>
+> Two changes, and they fix opposite halves of the same wrong idea:
+>
+> 1. **The sheet takes the server's encoding as its baseline once the server agrees** — the owner bumps `uiSavedMark` on a landed write, and the sheet adopts the stored day, start, span and per-leg minutes/chair. It waits for AGREEMENT rather than firing on the mark, because the callable returns before the listener delivers; adopting immediately would snap the sheet back to pre-save values and sit there while the truth arrived behind it. Only the TIME is adopted — the note, the clients, the promotion and any added service are left alone, since the save could not carry them and re-seeding wholesale would throw away work still on screen.
+> 2. **`dirty` is computed from the SAVEABLE shape only** — the day, the start, the span, and each leg's minutes and chair. A typed note used to raise the button; the barber tapped it, the note did not travel, and the button stayed, which reads as a failed save. A control must not promise what the command set cannot carry, and the sentence under the dock is where those live instead.
+>
+> ⚠ **The leg PRICE is in neither.** `reprice` exists, but the draft holds `priceLabel` as free text a barber typed and nothing converts it to minor units — the same refusal the docked total makes. It is named in the sentence with the rest until it has a path.
+>
+> Verified live: a note alone raises nothing; a duration change raises the button; the save lands, the button goes, the duration reads the saved value **and the note is still there**.
+>
+> **⚠ AND IT TOOK TWO TAPS. The fields committed on `change`, which fires on BLUR — so the tap reaching for `Запази` was the tap that CREATED it.** The press landed on nothing, the blur made the button appear under the finger, and the release had no element to complete a click on. The first tap looked ignored.
+>
+> `Начало` and `Времетраене` commit on `input` as well now, so the button is on screen before the thumb arrives. **The typing arm is not the blur arm**: it takes only a value that is already whole and legal (`6` on the way to `60` is not a six-minute visit and would shrink the frame between two keystrokes), and it does **no write-back** — the snap-and-spring-back that keeps the box honest belongs to `change`, on blur, not under the cursor.
+>
+> The alternative — rendering the button always and disabling it — was refused: a disabled button does not take the press either, so the first tap would still be swallowed, and it contradicts the ruling directly above that the button GOES when there is nothing to save.
+>
+> The dock's only draft verb was `Затвори` — a DISCARD wearing the word "close", beside a `✕` that already closes. The sheet held a second dismissal and no way to keep anything, which is not an editor. It is replaced by `Запази`, rightmost, absent until there is something to commit.
+>
+> **A save is a BATCH, and that is a server change, not a client one.** `StaffEditCommand` is gesture-shaped — one drag, one command — and a save is a day, a start, a duration and a leg's chair arriving as one intent. Sending them as four requests would be four placement decisions and a booking left moved but not stretched when the third is refused. `StaffEditAppointmentRequest.command` now accepts an ARRAY, folded over the stored seats **in order** and decided **once**: the whole save lands or none of it does. Order matters — the resize measures the end from where the move left it, and reversed it would stretch from a start about to change.
+>
+> **The call stopped being the CTA and moved beside the save.** Two prominent controls would have fought over the bar's trailing slot; the call is `bordered` again, and the auto margin that docks a prominent child moves onto the CALL in CSS so the pair hugs and travels together on the thumb rail. `:has()` keeps it honest when there is no number — the save then docks alone, as every other sheet's CTA does. The save is deliberately **not** `uiSpread`: a spread CTA eats the leftover width and pushes the call to the far side of the row.
+>
+> **It does not close the sheet.** The write is a round trip that can be refused, and a sheet that dismissed itself on the tap would take the draft with it and leave a barber with a toast about a booking they can no longer see.
+>
+> ⚠ **What it still cannot save is NAMED, not hedged.** The command set is `move | resize | reprice | redurate | restaff`, so a service added or removed, a client, the note and the promotion have no command to travel in. `staff.visit.notBuiltYet` said "saving is not wired to the server yet", which is no longer true and was never specific; it now names the four. It goes when `addSeat`/`removeSeat` land — which is blocked on **R-domain**: whether an appointment may hold more than one `self` seat.
+>
+> **Verified end to end** against the emulator: a 45→60 minute save on a confirmed booking returned `200` and the agenda row moved from `15:00 15:45` to `15:00 16:00`. A **cancelled** booking is refused with `commit.invalid_input: status` — `canTransition(status, 'cancelled')` is the liveness gate, and it held.
+
+> **⚠ THE MONTH PICKER IS ONE COMPONENT NOW — `ui-month-picker`. (owner ruling 2026-09-04)**
+>
+> This sheet's frame and the staff day's date pull-down each hand-assembled a month, and the two had drifted in every dimension a thing can drift in: `plain` step buttons against `bordered`; a weekday row built from `weekday: 'long'` through a bespoke `abbreviateWeekday` against one taking `Intl`'s own `short`; a sized grid against an unsized one; typed weekday heads against untyped; relative chips on one and not the other.
+>
+> **The proof it was costing something is already in the repo: the same bug had been fixed twice.** Both pickers rendered bare numerals instead of `ui-date-badge`, so neither highlighted the selected day OR today — someone found that, fixed it here, and found it again over there. That is not a tidiness argument, it is rent.
+>
+> `ui-month-picker` lives in `@creativo/ui/controls` (patterns cannot import controls — controls re-exports patterns) and owns the month head, the paging, **one** weekday algorithm, the grid, and which cell reads as selected and which as today. It owns **no trigger**: a page title and a field value are legitimately different controls, and folding them together is how a component acquires a `variant` input meaning "which of my two consumers am I".
+>
+> **The triggers keep two densities and now state the same FACTS.** The day's pull-down read `4 Септември` while this sheet's pill read `пт, 4.09` — the same date, and one of them never said which day of the week it was. In a barbershop a Saturday is not a Tuesday. It is `сб, 5 Септември` and `сб, 5.09` now: one long, one compact, both complete.
+>
+> **The relative chips stay this surface's own**, passed in rather than baked: re-dating a booking is usually a day or two and aiming at a cell for that is the wrong amount of work, while a browsing surface with a `Днес` button already in its bar would be saying the same thing twice.
+>
+> ⚠ Its browsed month is a `linkedSignal` **carrying `previous` forward** — the same trap the editor's draft fell into the same day. Without it the grid snaps back to the selection whenever anything unrelated recomputes, because re-derivation does not key on source equality.
+
 **Ask #6 is deferred to M8, the last milestone. Nothing promo-shaped renders ON AN APPOINTMENT in M1–M7** — no discount line, no promo chip run, no "you saved" figure, not even a zeroed row, **and not the `Промоция` row itself**. Until the scheduling side has a caller into `ApplyDiscountsUseCase`, this region is a subtotal and a total, and the honesty gate says a subtotal that admits it is one beats a discount line that is always empty. Read the wireframe as a specification, not a schedule.
 
 > **⚠ EXTENDED 2026-08-26 (owner comment 3). The owner asked for two things with two different costs, so they ship as THREE named surfaces across two milestones.** He asked to _apply_ a promo code and to _browse_ every promo the shop has. Applying needs the domain behind it; browsing needs nothing but a read.
@@ -1870,6 +1944,26 @@ _Gloss: `Нов` new · `Добави клиент` add a client · `Или ос
 ```
 
 _Gloss: `Услуги` services · `Промоция` promo · `Няма` none · `Отстъпки` discounts · `Депозит (платен)` deposit (paid) · `В салона` at the shop._
+
+> **⚠ REVERSED 2026-09-04 (owner ruling). `В салона` is NOT the last row of this group. It is docked, leading, opposite the primary verb.** The wireframe above still specifies the group's LINES; it no longer specifies where the total is drawn.
+>
+> Three reasons, and the first two were true from the day the row was written:
+>
+> 1. **It is not a peer.** `Промоция`, `Отстъпки` and `Депозит` are inputs; `В салона` is the output. Apple never renders a total as a sibling of the lines that feed it — Wallet, Apple Pay and the App Store order summary all footer it or dock it, and an inset grouped section is a set of things of the same kind.
+> 2. **Its scope crosses the seam.** The figure sums `УСЛУГИ` as well as this group, and R2's own law — one number, one place — cannot save a summary that lives inside one of the two sections it adds up. In the **empty state, which is most states**, this group contributes _nothing at all_ to its own total: every cent of the `28,00 €` comes from the group above it.
+> 3. **It read as the heaviest row in the section while being the only inert one.** `52 · weight 600` next to two `＋ Добави…` rows that both tap and both press — weight reads as importance, importance reads as tappable, and the boldest thing in the group was the one thing that did nothing.
+>
+> **Docked, it also stops scrolling away behind the notes** — the one number a barber reads at the counter is now on screen at every scroll offset and on every pushed page. That is the only reason to draw a live figure at all, and the row could never do it.
+>
+> **What this leaves in `ПАРИ` today is a homogeneous group**: `＋ Добави промоция` and `＋ Добави бакшиш`, two add-rows in the same grammar as `＋ Добави бележка` below. When M8 fills them they become value rows and the group becomes a genuine receipt — at which point the `Услуги` subtotal earns its place back (it is dropped for now, see the template's own note) because something finally sits between it and the total.
+>
+> ⚠ **The docked figure is the SAVED subtotal, not a live one** — as the row was too. `vm().priceLabel` is an input the store computes from the `Appointment`; the draft's legs carry `priceLabel` as an already-formatted string and no minor units, so nothing in the component can add them without parsing `28,00 €` back into a number. It also excludes the tip, which the VM carries separately as `tipLabel`. **A live total is the VM owner's job and wants minor units on `VisitEditorLeg`** — until then the dock's honesty sentence covers it, because nothing in this draft saves either.
+>
+> **The dock is now the figure and the phone, and nothing else.** (owner ruling 2026-09-04, superseding this ruling's own first pass.) Every transition moved into the `СТАТУС` picker (R1), so the `⋯` was deleted outright rather than merely emptied, and the prominent verb went with it — a docked `Дойде` would be a second door onto a control the sheet already states at the top.
+>
+> **What remains is the one thing a barber does from here that is not an edit: the phone, promoted to the CTA.** It is `borderedProminent`, so the bar's own slot contract docks it trailing on the thumb rail, and — unlike the bordered one it replaces — **it is NAMED.** `vm().phone` is a scalar; the label now reads `Обади се — Мартин Илиев` instead of leaving a two-client visit to guess whose number it dialled. `КЛИЕНТИ` keeps its per-client chips for reaching anyone who is not the visit's own client. **No phone, no button** — the dock is then the figure and the sentence, which is honest: there is nothing to press.
+
+> **The dock wraps to make room, and only this sheet's does.** The honesty sentence was `flex: 1 1 auto` with an auto leading margin — a second greedy child beside the spread primary, which pushed `Дойде` off the trailing gutter and wrapped the sentence into a four-line right-aligned column. It takes a line of its own now, above the controls: a caption ABOUT the sheet, never a control in it. `flex-wrap` sits on the consumer's own `.staff-visit__dock`, so `ui-sheet-action-bar` is untouched and every other sheet's single-row dock is unchanged. The body pays the extra line back through `--ui-sheet-action-bar-clearance` + one `comfortable` rung; **drop that term the day the sentence becomes a `Запази` button.**
 
 ```html
 <ul uiListGroup [attr.aria-label]="t('staff.visit.money')">
@@ -4129,7 +4223,7 @@ Two chips appear **only when ≥2 legs share one subject**: `( Един след
 
 ### Totals
 
-> **Ruling: no total under the run.** `Общо 28,00 €` appears **exactly once**, in `ПАРИ`. A services group that footed itself would give the sheet two places to read the same number, which is the thing R2 already forbids for time.
+> **Ruling: no total under the run.** `Общо 28,00 €` appears **exactly once** — ⚠ **in the DOCK since 2026-09-04 (R5)**, not as the last row of `ПАРИ`. A services group that footed itself would give the sheet two places to read the same number, which is the thing R2 already forbids for time.
 
 `Услуги` = `Σ leg.price` through `Money.add` → `Result`; a mixed-currency party yields `null` and renders `—` with a footnote, **never a wrong number** ([staff-dashboard.ts:1495-1505](../../libs/features/staff/dashboard/src/lib/staff-dashboard/staff-dashboard.ts:1495)). Every figure goes through `formatMoney(money, locale)` — see §3.8 for the one locale source — with `.staff-sheet__figures`, the sheet's tabular-numerals class (§3.3 R2), so the second lines align down the column exactly as the token value cells were supposed to.
 
@@ -5276,3 +5370,1087 @@ The capture-phase click swallow is still copied rather than reinvented — a nat
 | **Confetti on every save**                                                | Celebration belongs to the last cut of the day. An expressive moment that fires forty times is chrome, not a moment.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 
 ---
+
+---
+
+## Addendum, 2026-09-08 — the review of the BUILT sheet, and what the first pass changed
+
+Reviewed on the running app at 390×844 and 1280×860 (artifact: _One Sheet, Five Natures_,
+https://claude.ai/code/artifact/5e129680-9d78-45db-a5cd-9a210702a309). Owner rulings from
+the review comments, all before code:
+
+1. **The frame stays always open** — my disclosed-frame proposal is withdrawn. A block drawn
+   over its neighbours shows a collision before it is saved; a collapsed frame hides exactly
+   that. The frame therefore **moves up** to sit directly under the state, and the summary
+   row that would have replaced it does not exist.
+2. **The kind picker is a row, not a segmented control** — `Час · Бърз час · Лично ·
+Отсъствие · Салон` as a `uiMenuTrigger` opening the house `ui-menu` (create only; the
+   kind is the bar title on edit and conversion lives under `⋯`). Five chips in 340px
+   "look bad".
+3. **Every stamp is optional.** No `Дойде`/`Готово` is ever required; an elapsed unstamped
+   visit reads `Минал` in the neutral tone and counts as ordinary; no end-of-day
+   reconciliation. Rebook, duplicate and undo-no-show are the verbs that earn a place.
+4. **Every act has a way back** — an 8-second undo toast (§3.9 #13), the chip as the full
+   transition menu, and a **requested new ruling**: same-day correction edges
+   completed→confirmed (`Върни в работа`) and cancelled→confirmed (`Възстанови`, re-decides
+   placement). Not built yet; the graph is unchanged.
+
+**Built in the first pass (2026-09-08), all UI:**
+
+- **The state header** replaces the `СТАТУС` row (reversing 09-04): a chip that is the
+  picker (same `ui-menu`, same verbs, `field.expand`), a measured tagline (`в 12:25 · чака
+4 мин`, `закъснява 6 мин`, `след 2 ч 15 мин`, `без отметка`), and the VM's `primaryVerb`
+  docked trailing as a `bordered` button — withheld for `Дойде` once the visit has elapsed.
+  Tone is a leading-edge wash: `success` for arrived (new — `arrivedMinute` now rides the
+  VM), the record's own hues for pending/no-show/cancelled, none for confirmed/`Минал`.
+- **Ladder order:** state → frame (Today chip dropped; the popover's Днес does that job) →
+  `Начало`/`Времетраене` → barbers → clients → peers → services → `Плащане` → notes →
+  the honesty footnote.
+- **`Плащане ›`** is one row stating figure · promo-or-absence · tip, pushing a page that
+  holds the promotion group and the tip field. `Добави промоция`/`Добави бакшиш` are gone.
+- **`Добави клиент`** appears on the ladder only when the chair is empty; otherwise it is
+  `Добави още един клиент` on the client's page (`openClientSearchFromPage`, depth stays one).
+- **The dock** is the total and `Запази`. The call left it (the client row's chip is the
+  named one); the honesty sentence moved to the foot of the ladder.
+- **Settled visits go inert:** `uiEditable` off, the typed pair as text, no add rows.
+- The client's note is a `figure` captioned `От клиента`. One red in the status menu
+  (`destructive` only for `cancelled`). `ui-modal-sheet` gained `uiPresentationSizing`
+  (default `page`); the visit sheet passes `automatic`, capping the desk dialog at the
+  drawer measure instead of filling a 1280px viewport.
+
+**Second pass, same day (owner comments on the built sheet):** the state chip HUGS its
+contents and its `ui-menu` anchors to a real host box (`display: contents` on the menu
+host killed the `position: relative` its surface needs — the trap `ui-list-group` already
+documents — and the strip is a raised positioned context so the menu paints over the
+frame's head). Settled visits are now inert all the way down: barber rows and service rows
+render as `li`, not triggers; the client page loses "Добави още един клиент"; the
+`Плащане` row is absent on cancelled/no-show; the honesty footnote is absent. The late
+pills (`закъснява 6 мин · +10 мин · +15 мин`) draft the start forward (§3.9 #2). Legs whose
+terms differ from the catalogue say `по избор` (`VisitEditorLeg.overridden` ⇐
+`seat.catalogTerms !== null`). The grid block wears the arrived glyph while a visit is
+live, so the three surfaces share one vocabulary.
+
+**Third pass, same day — the way back is built.** `ui-toast` (ui/patterns) is the DS's
+transient status line: `role="status"`, one action, 8 s that pause on hover/focus, docked on
+the alert layer above sheets so an undo raised from inside the visit sheet is reachable. The
+dashboard raises it after every immediate stamp with the INVERSE WRITE, never a rollback:
+`Дойде` → `clearArrival` (new callable, mirror of `markArrived`, live visits only, idempotent);
+`Готово` / `Не дойде` / `Откажи` → `transitionAppointment` back to `confirmed`. The two
+**same-day correction edges** are built as the owner ruled: `transitionAppointment` lets the
+ROOT of a `completed` or `cancelled` visit return to `confirmed` while the shop is still in the
+visit's own calendar day (slot zone), every settled seat back to scheduled, audited as
+`booking.staff_reopen_completed` / `booking.staff_reinstate`; reinstating a cancellation first
+checks the chair is still free against every live seat on the same busy keys and refuses with
+`booking.transition.slot_taken`. The graph's `TRANSITIONS` is untouched — `completed` and
+`cancelled` stay terminal for every list and report; the domain carries the edge as
+`Appointment.reopenSettled(now)` beside `clearArrival()`. The dashboard offers `confirmed` on
+completed/cancelled rows only on today's book (`Върни в работа` / `Възстанови`), and the
+undo is offered only for whole-booking stamps — a per-seat stamp has no inverse the callable
+gives. Verified end to end on the emulator (arrive → undo, no-show → undo, complete → reopen).
+
+**Fourth pass, same day — `Запази` carries services and the team note.** Two new
+commands on `staffEditAppointment`: `addSeat` (client-minted `seatId`, `serviceId`,
+`barberId`, `startIso`, `minutes`, `subject`) and `removeSeat`. A fresh seat carries NO terms
+override — `decideBooking` prices and times it from the catalogue; the client's `minutes` only
+keeps the batch's own geometry (the `resize` that follows) honest. `removeSeat` refuses a
+resolved seat and the last seat. The dashboard diffs the draft's legs against the row's and
+sends removals, then additions (each placed after the legs before it, for the chair's own
+person: the booker as `self`, else the guest the chair is named after), then move/resize.
+**Domain ruling, relaxed:** an appointment may now hold several `self` seats as long as none
+overlap — "one person, one chair at a time" was the invariant actually being protected, and
+the old "at most one self seat" made cut-then-beard for one client unrepresentable.
+**The team note** lives in `appointmentNotes/{appointmentId}` — a staff-only sibling
+collection (`read, write: if worksTheBook()`), never on the appointment document the client
+can read — behind `AppointmentNotes` (application/booking) and `FirestoreAppointmentNotes`;
+the store probes it while a visit is open (`probeNote`), seeds the editor's draft, and
+`Запази` writes it beside the batch. The honesty footnote now names only clients and the
+promotion. Clients stay unsaved on purpose: a person without a seat is nothing in this model,
+so "add a client" is really "add a seat for another person", which needs the party UX
+(a service per person) the kind-picker milestone brings.
+
+**Fifth pass, same day — blocks get the sheet, and a day holds more than one.**
+`ScheduleExceptionWriter` gained `putRange` (read the day's document, merge the range into
+its `admin` ranges — `coalesceRanges` — and write the union; a whole-day absence swallows it)
+and `clearRange` (lift one range; the document goes with its last). `StaffDayStore.blockTime`
+routes ranges through `putRange` and whole days through `put`; `clearBlock(barberId, range?)`
+lifts one range or, armed, the day. **`staff-block-editor`** replaces the block sheet: the
+visit sheet's stylesheet and ladder — a state header (`Блок · 13:00 – 14:00 · 1 час вътре`,
+warning tone when it sits on a visit), the frame with the block drawn over the chair's real
+day (draggable, the DS grid's `kind: 'block'`), `Цял ден` / `От` / `До`, the barber row as
+the same `ui-menu`, the stranded visits named, and a dock with `Запази` and `Освободи`
+(`Освободи целия ден`, armed, when the day itself is off). Create and edit are one sheet:
+the page's new **＋** (`staff-add-trigger`, the page action bar's prominent child), a tapped
+free gap (prefilled with the hole), the lane header's button, a tapped block on the grid,
+and the rest-day card all land in it. Verified live: two blocks on one chair, drawn
+separately, one lifted, the other kept. **Still to come for creation:** `Час` / `Бърз час`
+need the staff commit path (nullable owner, staff-attributed creator, on-behalf booking);
+the ＋ becomes the kind picker the moment that exists. `Салон` (location-wide closure) waits
+on a shop-level exception document — `put` refuses `barberId: null` today.
+
+**Sixth pass, same day — the shop places its own book.** `commitBooking` takes
+`onBehalfOfUserId` (a client's id, or `null` for a walk-in); present at all it is STAFF
+PLACEMENT — refused for anyone who does not work the book, and for them: the owner may be a
+named client or nobody (guest seats), `allowOutsideWindow` (no lead time, no roster gate, a
+start already in the past for a walk-in in the chair), and the booking is **confirmed on
+creation** (`decideBooking` now confirms on `autoConfirm || allowOutsideWindow`; the
+staff-edit path restores the stored status, so only creation changes). Audited as
+`booking.staff_created` with the client as target. **The ＋ is the kind picker** — a
+`ui-menu` on the page action bar's prominent child: `Нов час`, `Бърз час` (walk-in, starts
+on the next five-minute tick, client `Случаен клиент` as a guest label), `Блокирай време`.
+A tapped free gap opens `Нов час` prefilled with the hole. **The visit editor drafts a new
+visit** with an empty `appointmentId`: chip `Нов час`, no client until one is added, a
+30-minute default span for the frame, `Запази` withheld until there is a service; its
+commit carries `clients`, and the dashboard turns legs into seats for the first client — a
+self seat when they have an account, a guest seat under their label otherwise — with a
+contact only when there is a number to parse. Client search is `USER_SEARCH_PORT` run by
+the dashboard as the barber types (`clientQuery` output); `UserSearchResult` gained
+`phone`. The draft is keyed on `appointmentId|rowId`, so a second create starts clean.
+Verified live: a walk-in (owner `null`, anonymous seat, confirmed, drawn at 23:25 with the
+`⁺¹` midnight mark) and a booking for a searched client (owner set, self seat, contact).
+**Still out:** a second client on a new visit (the party grammar); `Салон`.
+
+**Seventh pass, same day — polish from the review's list.** The service page wears ONE pill
+grammar (F7): `Времетраене` is the ladder's typed number pill (snapped to the grain, floored),
+`Цена` the same pill; the duration menu and its ladder of guesses are gone. Above six
+services the `Добави услуга` row pushes the picker page instead of dropping a menu (F8).
+`Запиши пак` is the header verb on every settled visit: it opens a NEW visit prefilled with
+the chair, the services (fresh draft ids) and the client, saveable at once; the correction
+edges stay in the chip's menu. The client page's `Добави още един клиент` is gone — it could
+not save, and a second person is the party grammar. `saveable` on a new visit is simply
+"has a service".
+
+**Deliberately not changed:** the date pill stays numeric (`вт, 8.09`) per the 09-04
+ruling; recurring and the kind picker on create wait for the domain work sized in §4.
+
+### Pass 8 — the party grammar (2026-09-08, evening)
+
+**Ruling applied.** A visit for two is two people with a service each, never
+one person with a crowd beside them. Every leg on the ladder now names its
+person; a person without a service is nothing in this model, so a party
+withholds Запази until everyone is served and says why under the ladder
+(`Всеки клиент има нужда от услуга.`).
+
+**What was built.**
+
+- Every draft leg carries `clientId`. A new leg is seeded to the first
+  person; the leg page grows a `За кого` row (house `ui-menu`) only once the
+  visit has more than one person — with one, the row would be furniture.
+- The ladder's leg line names the person on a party
+  (`50 мин · 17,50 € · Петър Гост`), and the second person is added from the
+  same `Добави клиент` row on any live visit, not only an empty chair.
+- Removing a person hands their seats to the first person left; nothing is
+  silently dropped.
+- Creation (`commitBooking`): the first client WITH an account owns the
+  appointment (`onBehalfOfUserId`, `self` seats); everyone else rides as a
+  `guest` seat under their own label. The contact is the owner's. Legs run
+  serially from the chosen minute in ladder order.
+- An existing visit (`staffEditAppointment` / `addSeat`): a leg for the
+  chair's own person keeps the chair's subject; a leg for anyone else is a
+  guest seat under their name.
+- **Variants, found live.** The seeded classic cut declares length variants
+  and the server refuses a bare seat on a service with variants (the price
+  moves with the choice). The staff picker now offers such a service PER
+  variant (`Класическа подстрижка · Къса коса`), priced from the chair's own
+  matrix, and `variantId` rides the leg through creation, `addSeat` and the
+  rebook prefill. A service without variants is one option, as before.
+- **A wrong word, fixed.** The gateway adapter reported every commit
+  validation refusal (`invalid_input`, `party_too_large`, `too_soon`, …) as
+  `unauthenticated`, sending a signed-in barber to look for a login problem.
+  They are `invalid_request` now.
+
+**Verified live** (emulators, Playwright): two people, two variants of the
+classic cut → refused only by a real collision at noon and at 17:00 (both
+taken by earlier runs), then confirmed at 14:00 as one appointment: owner
+`dev-staff-ivan`, seats `account/self` + `anonymous/"Петър Гост"`.
+
+**Still open.** A party across two chairs at once (parallel legs) is not
+drawn — legs are serial. The honesty footnote now says only the promotion
+is not saved. Салон (shop-level exception), «Същото като миналия път»,
+recurring blocks and the desk inspector remain as listed in pass 7.
+
+**Two more, same evening (owner, 2026-09-09).**
+
+- _Services first on a new visit._ The owner's point: a barber should not
+  have to think about the start and the duration before the services, since
+  the duration follows from them and the start usually came from the tap on
+  the grid. A NEW visit now runs state header → services → people → frame →
+  start/duration → barbers → payment → notes. An existing visit keeps the
+  frame on top, because moving and resizing is what it is opened for. One
+  modifier (`staff-visit__body--new`) and CSS `order`, so markup and specs
+  stay single.
+- _A party reopened is still a party._ Found live: after saving two people,
+  reopening listed only the owner and the legs lost their names. The row now
+  derives `people` from the seats themselves (an account by user id, a guest
+  by `guest-<label>`), each leg carries its person, and the sheet seeds its
+  draft from them. Verified: three people, three named legs, on reopen.
+
+**Owner review, 2026-09-09 (six items, all built).**
+
+1. _Negative duration across midnight._ A 23:25 walk-in for 50 minutes read
+   «−139 мин» because the end was taken as its own minute-of-day. An end is
+   now `start + length` (`shopMinuteAfter`) everywhere a row, a peer or a grid
+   entry is built, and the frame grows past 24:00 instead of wrapping.
+2. _The date pill hugs and trails._ It stretched across the frame head and
+   read as a field; it is `flex: 0 0 auto` at the trailing edge now.
+3. _Services before the frame, on every visit._ The owner reaffirmed the
+   ruling for existing visits too — a barber should not have to remember how
+   long a service takes before placing it. The markup itself moved (people +
+   services above the frame), the new-visit CSS `order` modifier is gone.
+4. _Leg minutes were «the original minutes»._ The ladder line shows minutes
+   only when they say something the frame does not: more than one leg AND no
+   duration override. Otherwise price, barber, person, «по избор».
+5. _Payment row height._ `uiSize="large"` like the add rows around it.
+6. _Menu triggers toggle._ Fixed in `ui-menu` itself: while open, a capture
+   click on `[uiMenuTrigger]` dismisses and stops the consumer's `set(true)`.
+   Every menu in the app gets it.
+   _Follow-up, same review:_ fixing the arithmetic was not enough — the
+   frame's window was pinned to `0..1440`, so the axis still stopped at
+   24:00, the block was cut and a drag inside the frame clamped the visit to
+   00:00 (that is how the 23:25 walk-in became a 35-minute seat). The grid's
+   asked-for window now grows to hold any event that STARTS inside it and
+   runs past its end — an event entirely outside stays dropped, so a
+   neighbourhood window is still a neighbourhood. Verified: 23:25 + 50 min
+   frames to 01:00 with a `00:00` label, saved as 23:25–00:15.
+
+**Owner, 2026-09-09, later.**
+
+- _The chair first of all._ The barber row moved to the top of the sheet,
+  above the people and the services: the chair decides which services are
+  even on offer and at what terms, so it is answered before the ladder is
+  drawn. Order now: state → barber → people → services → frame → start /
+  duration → payment → notes.
+- _«Времетраене» or «Край»._ The duration row's title is a `ui-menu`: the
+  same fact entered as minutes or as a clock time. Both write
+  `durationOverride`; the end is still stored nowhere. An end typed before
+  the start means the next day (23:25 → 00:15 = 50 min), never a negative
+  visit. Per sheet, not per visit.
+- _People at the tail._ The order is now chair → services → frame → start /
+  duration → people → payment → notes: who it is for is the last thing
+  agreed, and a walk-in has no name to give until the cut is.
+- _A walk-in is a kind of CLIENT, not a kind of visit._ «Бърз час» bundled
+  two unrelated facts — no profile, and "now" — and someone at the counter
+  may want tomorrow. The ＋ offers one «Нов час» (starting at the next tick;
+  the frame moves it anywhere) and «Блокирай време». In the people group an
+  empty chair offers «Случаен клиент — без профил» as one tap beside
+  «Добави клиент»; it seeds the placeholder person and disappears once
+  anyone is seated. Creation is unchanged underneath: `primary` → a guest
+  seat under the walk-in label.
+
+**Owner review, 2026-09-09, the client search (all built).**
+
+- _No «Случаен клиент» row._ Nobody seated IS the walk-in; the people
+  group offers only «Добави клиент». (The row from earlier the same day is
+  gone again.)
+- _Search by name, number or mail._ Both profile writers (`profile.adapter`
+  on the web, `firestore-user-repository` in functions) now index phone
+  digits (E.164 without the plus, and the national form) and the email
+  (whole and local part) from the 3rd character, in lockstep. The query is
+  normalised once, in `normalizeSearchQuery` beside the port: a typed
+  number with spaces, a plus or `00` becomes digits. The dev seed writes a
+  profile for every seeded client, so the desk has somebody to find.
+- _«Нов клиент» always reachable — in the dock._ On the search page the
+  dock's verb is «Нов клиент»; it opens a form (name, the DS phone field,
+  email) with what was typed already in the right field — digits to the
+  number, an `@` to the mail, anything else to the name. The dock's ✓ seats
+  the person and returns to the ladder; back from the form returns to the
+  search. A person needs a name; the number and mail are welcome.
+- _The way back lives in the sheet header._ `ui-sheet-header` gained a
+  leading slot and `ui-modal-sheet` a `[sheet-leading]` projection; the
+  dashboard draws the back chip there, opposite the ✕, bound to the editor's
+  now-public `depth()` / `pop()`. The page-level arrow is gone.
+
+**Owner review, 2026-09-09, the day chrome (all built).**
+
+1. _The week marker drifted._ Day buttons floor at 48px, so seven of them
+   overrun a 330px week on a phone; the marker measured a seventh of the
+   WEEK and slid a pixel further right per column. It is a grid item
+   spanning the columns now, with a column-wide carriage inside it — its
+   seventh is exactly a column. Measured live: 0px off on all seven.
+2. _One day pill._ `lib-staff-day-pill` (dashboard lib, `day-pill/`) is the
+   toolbar's date trigger AND the frame's: the same capsule, the same
+   `ср, 9 септември` grammar (`formatDayPill`), the same `ui-month-picker`
+   in a 20rem popover with the same padding. The frame's copy adds only the
+   visit's «Днес / Утре» relatives. The pill recipe (`.staff-sheet__pill`)
+   moved to `shared/staff-sheet-pill.css`, imported by both stylesheets, so
+   the toolbar wears it before the editor has ever rendered. The
+   title-cased toolbar month (2026-09-04) is superseded: one grammar,
+   `Intl`'s own.
+3. _The primary on the thumb rail._ The ＋ sits inside a `ui-menu` host,
+   so the action bar's docking rule never saw a prominent child; `uiPrimary`
+   on the host docks it trailing, and «Днес» (a secondary act) now sits
+   before it, so the ＋ is rightmost.
+   _Ruling (owner, 2026-09-09):_ the day pill's label stays exactly as
+   `Intl` produces it — `ср, 9 септември`, month lowercase in Bulgarian.
+   The title-cased month is retired for good; do not reintroduce a
+   capitaliser in `formatDayPill`.
+   _Amended the same hour:_ the COMPACT form — `ср, 9.09` — as `Intl` renders
+   the locale's short date (`month: 'short'`, numeric in Bulgarian, a word in
+   English). Still untouched afterwards.
+4. _One material for the small controls, page and sheet alike._ Three fills
+   had grown: opaque `surface-secondary` on the toolbar segments, systemFill
+   (`--sys-color-fill`, 8%) on the pills, and the DS `bordered / neutral`
+   button (currentColor at `--sys-alpha-interactive`, 12%) on the sheet's
+   close chip, back chip and frame arrows. Everything is the DS recipe now:
+   the day pill and every cluster segment are real `uiButton bordered
+neutral` (the segment class only shapes corners), and the span pills
+   that wrap native inputs state the same mix by hand, because a span
+   cannot be a button.
+   _Follow-up:_ the trigger had kept `.staff-sheet__pill` for its open-state
+   wash and so inherited that class's FIELD sizing (36px, 8px), which — being
+   outside the DS's cascade layer — beat the regular 44px control. The
+   trigger wears only its own class now (open wash and chevron tint restated
+   there) and measures 44px beside the 44px segments and frame arrows.
+5. _One choice menu._ `ui-choice-menu` (ui/controls, `choice-menu/`) is the
+   composition the pickers had each assembled by hand — `ui-menu` (rounded,
+   translucent, blurred), a `ui-list-group` segmented run, `uiMenuItem
+uiListRow` rows (`menuitemradio` + `aria-checked`, selected tint), a
+   leading portrait or glyph, the accent check on the chosen one. The
+   trigger stays the consumer's, projected by `[uiMenuTrigger]`; a consumer
+   with its own leading rail (the barber legend swatch) projects an
+   `<ng-template uiChoiceLeading let-option>`; extra content after the
+   options (the view menu's block-time action) projects into the default
+   slot. Migrated: the timing title, a leg's «За кого» and barber, the chair
+   row, the block editor's barber, and the toolbar's view and scope pickers.
+   The two menus that had bare `uiMenuItem`s (timing, «За кого») now match
+   the rest. Action menus (status verbs, ＋) stay bare `ui-menu`s: they
+   choose nothing.
+6. _The now indicator._ The time pill ended a compact step short of the
+   column, and that step read as a gap between the figure and its rule; and
+   at 09:51 the `10:00` label sat two pixels under it. The pill's trailing
+   edge is the column boundary now — it is the line's head, as in the
+   reference — and the hour label within ten minutes of now is withheld
+   (`data-near-now`, `visibility: hidden` so the gutter keeps its rows).
+   _And the known page-grid drift, closed:_ the gutter draws 25 hour rows
+   (the page keeps its closing midnight label), so the columns stretched an
+   hour taller than their 96 slots and a percentage of the column drew the
+   line ~4% low — at 09:55, inside the 10:00 block. The line and its label
+   now position against `--staff-grid-slots × --staff-slot-height`, the same
+   track the blocks use, so they agree by construction.
+   _Then (owner):_ the pill spans the WHOLE gutter, as every hour label's
+   box does, with the hours' own end padding — so its figure sits in the
+   same column of digits as `10:00` above and below it. Measured: the
+   pill's text ends at the same pixel as the hour labels' text.
+7. _After the cut, and during it (owner, 2026-09-09)._ Three findings from
+   one screenshot. (a) The seed marked today's 10:00 visit finished at
+   seed time, so at 09:55 it read «Минал»; the seed now finishes a
+   same-day example only once its time has passed. (b) A visit inside its
+   own window, unstamped, reads «В момента» (accent, `visit.now`) — with
+   stamps optional the window is the truth; the late pills stay on the
+   line beneath for the client who really is late. (c) A FINISHED visit is
+   correctable: the barber who had no time for the sheet mid-cut comes
+   back and updates services, length, price, even the time. The sheet
+   locks only what is GONE (cancelled, no-show); the server refuses only
+   those too, and a seat added to a finished visit is written as worked
+   at its own end. The header keeps its finished word and «Запиши пак».
+8. _The block's fill on black (owner, 2026-09-09: "muted, barely visible";
+   "the passed-time mask hides it almost 90%")._ Apple's 15% tone was
+   measured on a white day view; on this black ground it read as nothing.
+   In dark the block draws its tone at 28% (hatch 12%, finished 13%), keyed
+   on the root's stamped theme. The elapsed mask is a WASH, ground colour
+   at 60%, not an opaque lid: the minutes gone recede under the hatch but
+   the block stays one shape.
+9. _The frame follows the chair (owner, 2026-09-09)._ Switching the barber
+   in the sheet left the frame drawing the row's original chair. The sheet
+   now reports its chair (`chairChanged`, the draft's first leg's barber)
+   the way it reports its day, and the page builds the frame's day —
+   neighbours, roster, shading, tone — for that chair, for the visit sheet
+   and the create sheet alike (the create VM is rebuilt under the same
+   nonce, so the draft survives). The frame's column title and summary name
+   the draft's chair too.
+   _Follow-ups, same hour._ (a) A NEW visit with no service yet re-chaired
+   nothing — the fallback chair row was keyed `'chair'`, not the barber's
+   id. The draft now carries `chairId` (seeded from the row, moved by the
+   chair menu), the fallback row is keyed by it, a minted leg lands on it,
+   and the page's catalogue follows `visitDraftChair` too. (b) The
+   duration title's menu was clipped again once it became a
+   `ui-choice-menu` inside the row label: the guard moved into the DS —
+   `.ui-list-row__label:has(.ui-menu) { overflow: visible }` — so every
+   row label that holds a popover is unclipped, everywhere. No z-index can
+   paint past a clip; the layer token on the menu was never the problem.
+10. _The pushed pages, restructured (owner, 2026-09-09)._
+    - The sheet's bar names the PAGE (`pageTitle()` is public; the shell
+      binds it) and collapses the page's large title into it the HIG way;
+      at the root the bar carries the sheet's name permanently.
+    - The service page is only the service: no time line; barber as a DS
+      pill with his portrait; «Премахни услугата» is the dock's leading
+      destructive icon button.
+    - The dock follows the page: the saved total and «Запази» ONLY at the
+      root; on a page, that page's own act leading (remove, a count,
+      «Нов клиент») and a ✓ trailing that returns to the ladder — the draft
+      already holds the edits, ✓ is the way back, not a second write.
+    - The two searches are pinned: a sticky band under the bar on the
+      regular material, the search glyph inside the field. (The shell's
+      accessory slot belongs to the sheet owner; from inside the content a
+      sticky band on the same material is the same thing.)
+      _Shell change:_ `ui-modal-sheet` now measures its sticky chrome and
+      publishes `--modal-sheet-chrome-height` on its scroller, so content
+      inside a sheet can pin exactly under the bar without guessing from
+      tokens (the guess sat nine pixels under it).
+      _Pill portrait:_ the barber pill's avatar sat at the capsule's full 36px
+      (owner: "taking too much space"); it is a 24px disc with six pixels of
+      capsule around it now, the way a person chip carries a face.
+      _Selection mark:_ the service and client search rows carried
+      `aria-checked` and the selected tint only; they now carry the accent
+      check every chosen row in the app does (owner: "no indication it was
+      added").
+      _The service row (owner, 2026-09-09: "a box with a plus animating to a
+      check, and a way of adding/removing multiple times")._ A new DS control,
+      `ui-count-stepper`: at zero one square with `+`; the first press turns
+      it accent with a ✓ for a beat, then it opens into `− n +`; at zero it
+      folds back. The search row is an `li` with two controls — the label is
+      the checkbox that puts the service on or off the visit, the stepper
+      trailing puts the same service on more than once (two haircuts, two
+      people). Removing takes the LAST leg of that service, so the first keeps
+      its person and terms.
+11. _The service page grows two things (owner, 2026-09-09)._
+    - _The readout._ When a leg's length or price departs from the
+      catalogue's, a footnote under the rows says the catalogue figure and
+      the distance — «Каталог: 45 мин · −10 мин» — and the frame's block
+      wears the VISIT's distance from the catalogue total as a corner tag
+      (`GridEvent.tag`, «−10 мин»), where the length is being changed.
+    - _The variant row._ Merged into the title on the compact row, its own
+      `ui-choice-menu` row on the service page; a pick re-takes the
+      variant's catalogue minutes and price with its name.
+    - _The search row's title wraps_ rather than being clipped beside the
+      stepper.
+12. _The seat row, and the service page retired (owner, 2026-09-09: "go
+    ahead build it in that order")._
+    - _Chips on the row._ The ladder is one row per seat and the seat's
+      attributes ride it as chips, trailing: on a party the person's face,
+      then the barber's face, then the variant as a text chip — each a
+      `ui-choice-menu`, so a pick never leaves the ladder. The title drops
+      the variant suffix the chip now carries; the footnote line keeps the
+      barber and the minutes where they were.
+    - _Swipe to delete._ `libSwipeToDelete` (dashboard lib) — the row's
+      content slides on `--lib-swipe-x`, the destructive act waits behind
+      it. Past half the act settles open; past half the row deletes; less
+      springs back; eight pixels of travel before anything engages, so the
+      chips keep their taps. The act is a real button (a keyboard reaches
+      it; focus slides the content aside), painted only while it can be
+      reached. While open, the row is the topmost transient thing: a press
+      anywhere else closes it, and Escape closes IT, not the sheet — both
+      listened for at the document in the capture phase, because the sheet's
+      own Escape handler sits on the dialog and would win otherwise.
+    - _Prices in Плащане._ One line per seat on the payment page
+      (`staff-visit-pay-price-<seat>`), the catalogue readout as a footnote
+      under the duration row («Каталог: 45 мин · −10 мин»), the frame's tag
+      unchanged. The promotion is still not written — the honesty line
+      stays.
+    - _The service page is gone_ — with `currentLeg`, the leg ladder and the
+      per-leg duration field. The visit's duration field is the one length
+      control (the last leg absorbs a resize); the count stepper stays on the
+      search page.
+      _Two traps met on the way, recorded so they are not met twice._
+      (a) `ui-list-group` flattens every non-row child to `display: contents`;
+      a swipe `li` must state `display: block` or it has no box — its
+      absolutely positioned act then spans whatever is positioned above it,
+      which is the whole sheet. Same trap as the menu wrappers, same answer.
+      (b) A CSS `@import` anywhere but the top of the file is ignored by the
+      browser (esbuild only warns): the shared pill recipe's import had
+      drifted to line 56 of the editor stylesheet and the sheet's pills were
+      running on the fallback.
+13. _One tap, and the counter on the row (owner, 2026-09-09: "this should be
+    one tap add — no plus, no check, no stepper here; the stepper/counter
+    should be in the compact row")._
+    - _The search page is one tap._ Its rows are plain buttons: a tap seats
+      the service and the page goes, the way the menu closes on a pick.
+      Tapping a service the visit already has seats it again. The page has
+      no dock at all — no ✓, no count — the way back is the bar's back
+      button and nothing on this page needs confirming.
+    - _The ladder row is one row per KIND of seat._ Seats that agree on
+      everything (service, variant, barber, person, terms) fold into one row
+      with a `ui-count-stepper` trailing after the chips: `+` seats one more
+      of the same beside its kin, `−` takes the last one off, at nothing the
+      row goes. The row's chips act on every seat it holds, and the swipe
+      removes them all. A party is still one row per person, because the
+      person is part of the key; a repriced seat splits into its own row
+      rather than lying about its price.
+    - _The menu lost its check._ With a pick meaning "one more", a check
+      that reads as a toggle would lie; the ladder already says what is on
+      the visit.
+    - _The variant chip ellipsises_ at seven rems so four controls can share
+      the trailing run with a two-line title, which the owner prefers to a
+      hidden word.
+      _Amended the same hour (owner: "when editing an appointment we open it
+      for a specific barber, so the barber avatar on the row is repetition;
+      in its place an icon button for the variant, with the variant's name in
+      the title joined with a dot, as on the search page")._ The barber chip
+      is gone from the row — the chair row at the top is the one place the
+      barber changes, and it re-chairs every seat. The variant is an
+      icon-only chip (`service.variants`, the tune glyph) that opens the same
+      choice menu; the row's title is the catalogue's joined label
+      («Класическа подстрижка · Дълга коса»), or the stored name for a seat
+      saved without a variant. The trailing run is now person (party only),
+      variant (when the service has one), counter.
+      _Two more traps, from the same hour._ (c) A swipe row that clips
+      (`overflow: hidden`) swallows the popovers of the chips it holds — the
+      variant menu opened as a sliver behind the next row. The row now clips
+      only while something can stick out: under the finger, springing back
+      (`data-settling`, lifted on `transitionend`), open, or with the act
+      focused. (d) Escape inside a `ui-menu` also reached the sheet's dialog
+      and dismissed it on the same press; the menu now stops the event —
+      the innermost transient always takes the dismissal.
+14. _Popovers in the top layer, and the row's controls on their own line
+    (owner, 2026-09-09: "move those in a separate row — decide leading or
+    trailing"; "this menu dropdown is being z-hidden by other elements,
+    ensure those dropdowns are using best practices")._
+    - _The DS menu is a `popover`._ `ui-menu`'s surface carries
+      `popover="manual"`; on open the component measures the trigger,
+      writes fixed viewport coordinates for the resolved placement and
+      alignment, and calls `showPopover()` — the surface rides the TOP
+      LAYER, above every stacking context and overflow clip on the page,
+      and follows its trigger while anything scrolls or the viewport
+      resizes. The status strip's raised context, the swipe row's clip,
+      the frame's positioned head: none of them can hide a menu any more,
+      and no consumer needs a z-index of its own. The z-index arms race
+      that produced (c) and (d) above is over; the swipe row clips
+      permanently again and the directive's settling state is gone.
+    - _The ladder row is two lines._ The title has the row's full width;
+      the second line leads with the figures («50 мин · 18,50 €») and
+      carries the controls trailing — person on a party, the variant's
+      icon, the counter — on the thumb side, where every other control
+      in the sheet sits. Leading was considered and rejected: the figures
+      are what the eye reads first on that line, and controls under a
+      title read as a toolbar rather than as the row's own.
+    - _"Why is the option text muted?"_ It is not, by the stylesheet: the
+      items compute to the foreground token in both the old and the new
+      markup, and the surface now states that colour itself (the UA
+      popover stylesheet would otherwise give it `CanvasText`). The grey
+      the owner saw was in all likelihood the surface's entrance fade
+      caught by the pane's stalled frame; a fresh capture reads full
+      white.
+15. _The block's mark row (owner, 2026-09-09: "when the icon appears the
+    `+30 мин` tag moves toward the centre; it should always stay bottom
+    trailing, next to the icon")._ Every mark on a grid block — the party
+    share, the length tag, the outside-shift glyph, the state mark — now
+    lives in ONE row on the block's bottom edge (`.staff-grid__event-marks`),
+    settled once with a single auto margin; the party share leads and the
+    rest trail. Before, each mark pushed itself down with its own auto
+    margin, so two marks split the slack between them and the tag floated
+    mid-block whenever the glyph was present.
+16. _The call returns to the dock, and the drag readout reads at AA
+    (owner, 2026-09-09)._
+    - _Reversal._ The 2026-09-08 ruling put the call on the client row and
+      called a docked one "the sheet's third affordance for one number".
+      The owner insists ("the most common action you do when you open the
+      appointment") and is right about the frequency: a dock target is
+      reached without looking, a row target has to be found. The call is
+      docked again — an icon-only bordered chip hugging «Запази» on the
+      thumb rail, the total leading — and the row's chip is gone; the row
+      keeps the number to read. The visit's own number; a party's other
+      people are still reached from their client page.
+    - _Contrast._ The readout pills that ride a drag painted white on the
+      warning amber: 2.9:1 dark, 4.2:1 light, both under AA, and the note
+      line was faded to 92% on top. Two ink tokens now exist for anything
+      painted in a tone — `--sys-color-on-destructive` (white; 5.0 / 5.6:1)
+      and `--sys-color-on-warning` (dark; 6.1 / 4.9:1) — the readout reads
+      its words from them, and the note is demoted by weight, not opacity.
+      Nothing in the system should pair `on-accent` with a tone fill again.
+      _Measured, both themes, after the change._ The warning pill reads at
+      6.1:1 (dark) and 4.9:1 (light); the neutral pill's words were the other
+      failure — `uiFont="caption"` brought its own secondary ink over the
+      inverted fill (2.9:1 dark, 3.3:1 light) — and now inherit the pill's
+      ink at better than 17:1.
+17. _The head of the sheet says decisions, not states (owner, 2026-09-09:
+    "tracking confirmed and came and then done feels weird; no barber will
+    have time to note those — only the things at the bottom make sense")._
+    Reverses the state header of 2026-09-08 and the stamps that came with
+    it.
+    - _No status, no stamps._ The chip, its picker, «Дойде» and «Готово»
+      are gone from the sheet. The lifecycle stays in the domain and the
+      store (`markArrived`, the transition graph) for the day a desk or a
+      client's own check-in stamps it; nothing in this sheet asks a barber
+      to. Arrived, running, elapsed, finished: the frame already shows
+      where the clock is, and the sheet says nothing twice. An ordinary
+      confirmed visit has no head at all — the chair is the first thing
+      under the thumb.
+    - _The head speaks for a decision, or a move._ A NEW item carries the
+      kind switch «Час | Блок» (the toolbar's segmented cluster, shared
+      from `shared/staff-cluster.css`): switching hands the chair and the
+      time to the other sheet, so a gap tapped for a block costs one tap to
+      fix, and the block sheet carries the mirror switch. A REQUEST asks to
+      be answered — «Потвърди заявката» on a warning wash. A visit RUNNING
+      LATE keeps its line and its +10 / +15.
+    - _The exits are the last group._ «Не дойде» once the start has passed
+      (before it, nobody has failed to come), «Откажи часа», and «Откажи и
+      блокирай времето» — the appointment that should have been a block:
+      it cancels and opens the block sheet on the same range, named for
+      both halves. A no-show offers the way back, any settled visit «Запиши
+      пак». A saved block offers the mirror, «Превърни в час»: lifted, and
+      a visit drafted on its range. Destructive rows wear the destructive
+      ink, never a fill.
+    - _What did not survive, on purpose:_ the arrival tagline («в 12:25 ·
+      чака 4 мин»), the countdown («след 10 мин»), «В момента», «Минал»,
+      and the tone washes for arrived and running. Each was a fact the
+      frame shows or a stamp nobody will make.
+      _Withdrawn the same hour (owner: "when you click the FAB you choose
+      appointment or block, so remove it")._ The kind switch at the head of a
+      new item is gone from both sheets: the ＋ already asks the question,
+      and a second answer to it at the top of the sheet was chrome. A new
+      visit has no head at all; a new block keeps only its line («15:05 –
+      15:55 · 50 мин», the collisions after it). The compound acts stay as the
+      way across for a SAVED item: «Откажи и блокирай времето» on a visit,
+      «Превърни в час» on a block.
+18. _Four owner comments, built (2026-09-09)._
+    - _The typed pair moves ABOVE the frame._ «Начало» and «Времетраене»
+      (with the catalogue readout) now precede the picture: the figures are
+      the truth and the frame beneath them is the check, and while a thumb
+      drags the block the numbers it moves sit above the hand, not under it.
+      The date stays in the frame's head — the pair says when within the
+      day, the pill says which day.
+    - _The services drive the length._ Adding or removing a service, one
+      more of the same, or a variant, drops a typed length: the visit runs
+      to what the services need until the barber types over it again.
+      Before, a typed 95 minutes survived every change to the ladder and
+      the readout kept explaining a number nobody meant any more.
+    - _A surplus stretch on the block._ When the drafted length exceeds
+      the services' need, the frame's block draws the remainder as its own
+      stretch at the end: a dashed seam where the services end and the tail
+      beyond it paled, with the «+15 мин» tag sitting in it. Not a hatch —
+      on this grid a hatch means gone, shut or taken, and padding is none
+      of those. A visit SHORTER than its services keeps the readout and the
+      «−10 мин» tag; nothing is drawn outside the block.
+    - _The time field is ours on every engine._ `ui-time-field` (DS
+      controls): the platform's own `input[type=time]` stays for the wheel
+      and the dial, transparent over a face the stylesheet draws — `HH:mm`
+      in tabular figures and the DS clock glyph. A tap anywhere reaches the
+      native control; where `showPicker()` exists it opens the picker
+      outright. Chrome's segmented digits and indicator, iOS's grey box,
+      Firefox's spinner: none of them show through. «Начало», «Край» and
+      the block's «От» / «До» all wear it.
+    - _Every number lines up._ DM Sans, the text face, ships no tabular
+      figures at all — `tnum` measured as a no-op on the loaded files —
+      which is why «15:00» and «15:12» sat at different widths beside the
+      same rule. Onest, the display face, has them. The digits of every
+      text run now come from Onest by `unicode-range` (`Sys Figures`, first
+      in the text stack) and `tabular-nums` is the root default, so every
+      number in the app is tabular without a per-surface opt-in; letters
+      stay DM Sans and nothing new is fetched.
+      _A trap met on the way._ The figures face was first written into the
+      stylesheet's `@import` block, after the font imports: a browser drops
+      every `@import` that follows any other rule, so the whole design system
+      vanished for one build while nothing reported an error. It sits after
+      the LAST import now, in both apps, and the note at the top of
+      `styles.css` says why.
+      _Same hour:_ the catalogue readout was a paragraph floating between the
+      duration group and the frame, at the section gap on both sides (owner:
+      "too much gap, feels odd"). It is the duration row's own second line
+      now — «Времетраене» over «Каталог: 50 мин · +15 мин» — the leg rows'
+      two-line grammar, on the figure it explains.
+19. _The late nudge, removed (owner, 2026-09-09: "what sense does this
+    make? remove it")._ «закъснява 20 мин · +10 мин · +15 мин» was the last
+    thing the head said from the clock. It lasted a day: a barber who is
+    late moves the block or types the start, and a line that guesses by how
+    much — with two buttons that guess for them — was chrome. The head now
+    speaks only for a request waiting to be answered; on every other visit
+    the sheet opens on the chair.
+20. _The block sheet, brought into line (owner, 2026-09-09: "should have
+    similar ordering; this top element doesn't make sense; the frame header
+    is different; what are those saved appointment rows below; the visit
+    frame shows overlap in red, here the text is at the end; no option for
+    multiple barbers; and recurrence, for lunch breaks")._
+    - _The same ladder, in the same order._ Chairs first, the typed pair
+      («Цял ден», «От», «До», «Повтаряне»), the frame, the effect line,
+      the exits. The state strip is gone: the bar names the sheet and the
+      pair says the range.
+    - _Several chairs at once._ Every chair is a row, on or off, with the
+      visit sheet's face and swatch; at least one stays on. The frame draws
+      one column per chosen chair, the block over each real day; the save
+      writes one range per chair.
+    - _The frame head is the visit sheet's._ Step back, step forward, the
+      shared day pill; the dashboard keeps the drafted day's lanes live
+      through the same probe the visit sheet uses, and the block is written
+      on the drafted day.
+    - _Collisions are the frame's red note._ «Застъпва се с Мартин Илиев ·
+      12:30 – 13:00» under the picture, or «2 часа вътре: …» across chairs,
+      exactly where the visit sheet says it. The list of stranded rows and
+      its lecture are gone; the block still wears the overlap hatch.
+    - _A series._ «Повтаряне» is the row's title, a choice (Не · Всеки ден
+      · Работни дни · Всяка седмица); a series adds «Повтаря се до» with the
+      day pill, four weeks out by default, and says on how many days it
+      will be written — the size of the act before «Запази». The document
+      is per barber-day, so a series IS that many documents, written in
+      order (`expandRepeat`), and a day lifted later lifts that day alone.
+      A permanent lunch belongs in the roster in the end; this is the
+      book's answer until the roster can be edited from the app.
+      _Same hour (owner: "what if there are 20 barbers — be discrete like
+      Apple, an add-barber button"; "the choice does not make sense on the
+      label, rather the value")._ The chairs group lists only the CHOSEN
+      chairs, swiped off like a service row (the last one does not swipe),
+      and «Добави бръснар» — the ladder's quick-add grammar — offers the rest
+      in a menu. The repeat row is a plain «Повтаряне» label with the value
+      as a trailing pill that opens the choice: the day pill's own shape, so
+      the two rows of a series read as a pair. Rule: a row whose CHOICE is
+      its value puts the trigger trailing; only a row whose choice changes
+      what the row IS (Времетраене/Край) puts it on the title.
+      _Same hour (owner: "why are the options that big? reuse how they are in
+      the other barber select"; "when more than two barbers are selected,
+      switch strategy — horizontal like MS Calendar, each row a barber, the
+      columns the hour grid")._ «Добави бръснар» now opens THE choice menu
+      (`ui-choice-menu`, avatar rows) rather than a hand-built list. The frame
+      has two pictures of one day: up to two chairs, the grid's columns; from
+      three, `lib-staff-timeline` — one row per chair with its portrait pinned
+      at the leading edge, the hours across on a pinned ruler, the closed
+      hours shaded, the bookings as tone-washed bars, and the block as ONE
+      band across every row (Outlook's scheduling-assistant grammar: one thing
+      at one time over everyone). The band's NAME sits on the ruler over its
+      middle, not on its face, where it would fight the bookings it crosses;
+      the drag readout takes that same place. The minutes of it already gone
+      wear the grid's elapsed wash. Bookings under the band go red; the note
+      under the picture still names them. The gesture is the grid's along the
+      other axis — hold to lift on touch, threshold for a mouse, five-minute
+      snap, the readout on the ruler, sliders on the handles with
+      `aria-orientation="horizontal"` — shared through `grid-gesture.ts`.
+      _Same day (owner: "all-day blockers should span full width for the
+      barber row"; "adding a blocker when all are blocked for the selected
+      date is not working — it should always open")._ An all-day block is
+      drawn across the WHOLE axis in both pictures — 00:00 to 24:00, not the
+      roster — since the whole row is what the switch says; its accessible
+      name says «Цял ден», and on the timeline a band with no edge on screen
+      wears the taken hatch so it is seen at all. A chair with NO roster is
+      now shut in the frame (an empty window), not free from midnight to
+      midnight as the fallback had it. And the ＋ never resolves to nobody: the create
+      chair is the scope, else the first working lane, else the first chair
+      of the roster, so a day everyone is off still opens the block sheet
+      (and the toolbar's «Блокирай време» is enabled whenever the roster has
+      anyone). A block is exactly what one adds to, or lifts from, such a day.
+      _Same day (owner: "the bottom action toolbar at some pages is not
+      fixed but it scrolls")._ Not reproducible in Chromium or WebKit by
+      script, but the staff sheets were the ONLY sheets whose dock lived
+      inside the scrolling body as an absolutely positioned box — the one
+      arrangement iOS Safari is known to scroll along with the content on a
+      real finger; every other sheet projects its bar through the sheet's
+      overlay slot. `ui-sheet-action-bar` gained `uiAnchor="scroll"`
+      (sticky at the scroller's bottom edge, the page bar's own contract,
+      hidden = out of flow), both staff docks use it, and the bodies dropped
+      the overlay clearance padding they no longer owe.
+21. **2026-09-10 — money comes home (owner: "do we need the push, or should
+    it be inlined like the others?").** The «Плащане ›» row and its page are
+    gone. The page held three rows on an empty screen, cost the tip four
+    taps, restated the dock's total, repeated every service line, and —
+    the quiet kind of broken — edited a price the save never sent. Now:
+    - **ПЛАЩАНЕ is inline and carries only rows with something to do.** The
+      09-08 objection to permanent add-rows stands, answered with R1: the
+      **tip row** draws once a tip can exist (today past the start, any
+      earlier day, an arrival, a finish, or a tip already recorded), says
+      «Записва се веднага» because it writes straight through, and is
+      absent on a booking still ahead — the total still reads in the dock.
+      The promotion's value pill arrives with the engagement wiring, the
+      discount arm with its role; neither renders before (`ui-choice-menu`
+      value-pill grammar, as the repeat row).
+    - **Price is edited where it is read**: a tinted pill on the service
+      row for whoever may reprice (`receptionist`, `admin`, `sysadmin` —
+      `mayReprice` from the session's principal, through the
+      `application/identity` facade); a barber sees the figure as text.
+      Typed money is parsed (`18`, `18,5`, `18.50`, `28,00 €`), written back
+      formatted, carried in minor units, part of the dirty shape, and
+      **sent as `reprice`** on save; a seat added in the draft keeps the
+      catalogue price until saved.
+    - The honesty footnote and the `promoLabel` draft field left with the
+      page. Nothing the sheet shows is unsaved any more.
+      _Same day (owner: "move the price pill to the leading edge")._ The pill
+      leads the figures line — it is the figure — and the chips keep the
+      trailing edge, so a one-service row no longer spends its second line on
+      two chips floating right.
+22. **2026-09-10 — services only about services (owner: "what if we make
+    the services section only about services? … remove icon vs stepper …
+    adding a service like the country code search").** Three rulings,
+    built together because they share the row and the picker:
+    - **The service row is what is booked and nothing else**: the title
+      with its variant in it, the person chip on a party, the variant chip
+      when the service has one, and a visible «−» trailing (quiet, red under
+      the thumb — HIG's required alternative to the swipe, which stays).
+      No money on the row. The footnote line (minutes on a multi-service
+      visit, another chair's barber, overridden terms) takes no room when
+      empty.
+    - **No fold, no counter.** One row per seat; the same service twice is
+      two rows, each with its own time and price. The stepper was chrome on
+      every row for a rare case, and a folded row hid facts that diverge.
+      Minted seat ids carry a counter so two taps in one tick are two seats.
+    - **ПЛАЩАНЕ is the receipt**: one line per seat with what it costs — text
+      for a barber, the tinted pill for whoever may reprice (moved here from
+      the service row) — the person under the title on a party, then the
+      tip once a tip can exist, later the promotion's pill and the discount
+      arm. The dock keeps the total. Present whenever there is a seat; absent
+      on a cancelled visit and on an empty draft.
+    - **The picker is the one door**: «Добави услуга» opens the page with
+      the search pinned (the country picker's grammar), rows are one tap
+      with minutes and price, and two departures from that picker on
+      purpose — a tap SEATS and the page STAYS (a cut and a beard are the
+      common case), and no keyboard until the field is touched. What the
+      visit already has is marked with a check, ×2 when twice. The ✓ in
+      the dock or the back chevron returns; the page always opens on the
+      whole catalogue, never on a stale query. The quick-add menu is gone.
+23. **2026-09-10 — the dropdown, the shares, the hugging pills (owner:
+    "price inputs should wrap their contents"; "the tip like other
+    software — None, 5%, 10%, 15%, Other"; "adding a service like the
+    country code dropdown — one tap and hide, no check, no push page").**
+    - **The picker is a dropdown on the row**, a `ui-menu` in the top layer
+      with the search pinned at its top and the catalogue as one-tap rows;
+      a tap seats the service and the menu closes. What the visit already
+      has is marked, ×2 when twice. No keyboard until the field is
+      touched; a letter typed while a row has focus lands in the field. The
+      pushed page is gone entirely — pass 22's "stays open" departure is
+      reversed by the owner.
+    - **Tip presets**: under the tip row, a chip run «Няма · 5% · 10% · 15%
+      · Друго», each share a figure of the visit's total (the VM now carries
+      `priceMinorUnits`), stated on the chip's accessible name. A share
+      writes through on tap; «Друго» opens the typed pill. A recorded tip
+      reads back as its share, or as «Друго» with the figure.
+    - **Money pills hug their figure**: a hidden sizer shares the grid cell
+      with the field, and `field-sizing: content` keeps it honest while
+      typing where the engine knows it.
+    - **The breakdown stays flat, on my call**: two to four short lines,
+      the tip chips reachable in one tap at checkout, and the total already
+      in the dock — a collapsed group would add a tap to the most frequent
+      act and a summary row that restates the dock.
+24. **2026-09-10 — the owner's corrections on pass 23.**
+    - **The money pill's focus is the time pill's**: accent outline at 2px,
+      over the pill's own open wash — no white ring, no second surface.
+    - **No marks in the dropdown**: a service may be wanted twice, and a
+      check reads as "done".
+    - **The «−» is a tinted capsule**, the variant chip's own material; a
+      bare glyph beside a material chip read as two grammars.
+    - **Every receipt line is a pill for whoever may reprice**, a seat added
+      in the draft included: its typed price rides the save as a `reprice`
+      right after its `addSeat`, which the server's fold applies in order.
+      Only a visit the server has not seen keeps figures as text.
+    - **The tip row is on every saved visit that still stands** — the
+      "once begun" gate is withdrawn: it hid the row from a barber looking at
+      this afternoon's booking and read as nothing built ("where are the
+      tips?"). Absent only on a draft and on a cancelled or no-show visit.
+25. **2026-09-10 — one field for every typed figure (owner: "do not hand
+    roll multiple input fields, use a reusable DS component… I like those
+    with a postfix icon or text… the tip: rethink the use of choice… the
+    inputs should always have beautiful placeholders, never blank").**
+    - **`ui-unit-field`** (ui/controls): a figure with its unit after it —
+      `45 мин`, `28,00 €` — the unit a quieter word OUTSIDE the input, never
+      part of its value; a hidden sizer hugs the figure and `field-sizing:
+content` keeps it honest while typing; the time field's ring (accent
+      outline, 2px off) on focus; a placeholder always — `0,00` for money,
+      `0` for minutes — so an empty field reads `0,00 €`, never `€` alone;
+      a 16px floor against the iOS zoom. The pill recipe styles nothing
+      inside a DS field any more: its unlayered `font: inherit` had been
+      beating the floor. Minutes, price and tip are one component with one
+      focus, one placeholder rule, one hug.
+    - **The tip is a choice**: the row's value pill — the repeat row's
+      grammar — opens «Няма · 5% · 10% · 15% · Друго», each share already a
+      figure of the visit's total; «Друго» puts the unit field beside the
+      pill, holding whatever is recorded. The chip run is withdrawn: its
+      chips did not read as interactive, and a chip run under a row was a
+      third input grammar on one sheet.
+26. **2026-09-10 — the owner on pass 25's tip menu.**
+    - **The share's figure is a detail.** `ui-choice-menu` options may carry
+      a `detail` — «1,40 €» on «5%» — drawn at the trailing edge in the
+      secondary tone, on the chosen row too, with the check's column kept
+      on every row that carries one so the figures line up. The value pill
+      reads the same way: «10%», then the muted «2,80 €». One label doing
+      two jobs («5% · 1,40 €») read as confusing.
+    - **Row pills share one height.** A choice trigger sitting in a row is
+      the SMALL control size — the 36px the typed pills beside it are —
+      the tip's and the block sheet's repeat alike; regular is the head
+      bar's size, where the day pill sits beside 44px arrows.
+    - **Asked, assessed, not built** (owner: "should it be an option or
+      pills — what would HIG suggest?"; "a header or a footer on that
+      section?"). HIG's rule of thumb sends a short, fixed, mutually
+      exclusive set that people should see at once to a segmented control,
+      and a longer list or a tight row to a pop-up button; the tip's five
+      are short and chosen once at every checkout, so a segmented control
+      is the HIG-native answer, at the price of a second line, a new DS
+      control (none exists), and a break with the sheet's other choices.
+      A header on the money group earns its place only because its rows
+      repeat the services group's names; a footer is HIG's home for the
+      explanation now sitting under «Бакшиш» and for a breakdown once
+      there are more lines than one. `ui-list-group` has neither slot yet.
+27. **2026-09-10 — the owner on pass 26: the plus, the ring, the shift.**
+    - **The tip is a plus in the dock**: under «В салона 28,00 €», «+2,80 €
+      бакшиш» in the success tone (a new `success` foreground style in the
+      DS — ink, never a fill), rising in when it appears. The bill stays the
+      bill; the extra reads as extra.
+    - **The ring is the pill's.** A DS field draws its own ring only when
+      nobody owns its surface: the pill sets the `--ui-field-ring` hook to
+      none and outlines its own capsule, so the ring follows what the eye
+      sees rather than the box inside it — the unit field and the time
+      field alike.
+    - **«Друго» is typed inside the menu.** The row's trailing is the choice
+      pill alone, so choosing «Друго» never squeezes the label: the menu's
+      second group is one row — the word, a label for the unit field — and
+      a committed sum writes through, closes the menu, and reads back on
+      the pill as «Друго» with the muted figure, the shares' own grammar.
+      A share read back leaves the field on its placeholder. Committing is
+      leaving the field, however it is left.
+    - **Two groups part with a space** (owner, later the same day): the
+      menu separates sibling groups by a compact space — iOS's thicker
+      section seam — so «Друго» reads as its own section, not a fifth row.
+    - **«Без», not «Няма»** for the tip's none (owner: sounds better in
+      Bulgarian).
+    - **The card wears the frame's tag.** The agenda card's foot carries
+      «−5 мин» — how far the chair's run is from the catalogue's length —
+      in the frame's own recipe (`shared/staff-event-tag.css`) and by the
+      frame's own arithmetic (`shared/catalog-delta.ts`), so a stretched or
+      trimmed booking says so before its sheet is ever opened. A figure, so
+      it sits with the figures, ahead of the plain glyphs.
+28. **2026-09-10 — no borders: ghosts, and the rail in the frame.**
+    - **A gone visit is a ghost of the fill.** Cancelled and no-show cards
+      keep the card's ground at half the wash (`--agenda-tint: 7%`); the
+      inset edge is gone. On the grid the same two states take the finished
+      wash (`--staff-event-alpha-finished`) with no stroke, and the past
+      hatch cuts into that tint like any other block's. One rule across both
+      surfaces: fill means booked, a faint fill means it did not happen,
+      hatch means past. The strike and the glyph still say which. The one
+      edge left is the pending card's dashed outline — provisional, the
+      calendar idiom for "tentative" — and the carve-out's, which marks a
+      grabbable object against the closed shading; both are flagged, not
+      ruled.
+    - **The frame's block wears the rail.** It always had one; a rule that
+      lifts a block's words above its masks (`> :not(mask)`) had reset it to
+      `position: relative` and collapsed it to nothing. It is excluded now,
+      lifted by its own rule, and drawn to the card's geometry: 4px, a
+      capsule, inset by the block's own padding.
+29. **2026-09-10 — the block tells the time, and the two tags agree.**
+    - **The clock on the block.** The frame's block carries its start over
+      its end at the trailing edge, the agenda card's own aside — start in
+      the foreground ink, end in the secondary — beside the name and the
+      service. The block is a query container: below 160px of width the
+      clock is withheld and the name keeps the room, since the axis states
+      the hour anyway; a short block keeps only the start.
+    - **One resolver for the tag.** The frame measured a seat against the
+      sheet's per-variant option list, so a seat booked without a variant
+      on a service that has some found no match and read as running as
+      sold, while the card measured it against the chair's base terms and
+      said «−15 мин». The dashboard now hands each leg the catalogue
+      minutes it resolved for the card, and the frame falls back to them.
+30. **2026-09-10 — the block under a thumb (owner, on an iPhone).**
+    - **The clock's two inks.** The start takes the block's own ink and the
+      end a step quieter, as on the card; the caption role had muted both.
+    - **Nothing on the grid selects.** The hour rail, the blocks and the
+      handles' glyphs are all unselectable and refuse the callout and the
+      platform's image-style drag: a held finger is a lift, and every one
+      of those was the platform's own answer to a long press, ending the
+      gesture. A long-press context menu is refused while a gesture is
+      pending or armed; a right-click keeps it.
+    - **The frame scrolls itself while a finger rests at its edge.** Edge
+      scrolling ran only on pointer moves, a step per event, so a thumb that
+      reached the edge and waited got nothing. It is an animation-frame loop
+      now (`EdgeScroller`, shared by the grid and the timeline): a few
+      pixels a frame in proportion to how deep in the margin the pointer
+      rests, until it moves away, leaves the box, or the day runs out — and
+      the block follows the finger's content position after every scroll.
+      Still driven by the finger, never by the block.
+31. **2026-09-10 — past the frame, the frame keeps scrolling (owner:
+    "dragging above or below the frame doesn't scroll the frame itself as
+    you drag").** This reverses the 2026-09-04 rule that stopped the scroll
+    at the box. The loop makes the reversal safe: past the top or bottom the
+    frame scrolls at the full (capped) pace, frame by frame, and the drag is
+    measured against the finger CLAMPED to the box, so the block rides that
+    edge under a finger that has gone past it and moves steadily in one
+    direction; back inside, the scroll stops where it stands. The grid and
+    the timeline share the rule.
+    - **The dragged node stays put.** The packer's sorted output had been
+      the render order, so a drag carried past a neighbour's start moved
+      the block's DOM node — and a node that leaves the document, even for
+      the tick Angular takes to reinsert it, loses its pointer capture,
+      which reverted the drag mid-gesture (very likely the "dropping
+      doesn't work all the time" from the phone). Placement now returns the
+      caller's order, the edited block last; and a capture lost while the
+      block is still in the document is taken back, on both surfaces.
+32. **2026-09-10 — the variant as a description, and full screen.**
+    - **The variant is a description.** «Дълга коса» sits under the
+      service, muted and a size down, on the ladder row's footnote line
+      and under the receipt line — not welded to the name with a middot.
+      The frame's block names services only, joined with «+» as the card
+      does. The catalogue option carries the bare `serviceLabel`.
+    - **Full screen.** HIG's idiom: an expand control at the frame head's
+      trailing edge, the same control flipped to leave, Escape too. The
+      frame lifts off the sheet and fills its surface — fixed inside the
+      sheet's own transform, above its header and dock, below any popover —
+      and the picture takes every pixel the head leaves. On the block sheet
+      as well, timeline included.
+    - **The head's four targets are one bar** (owner, later): the full-screen
+      control clears the steps' 44px and sits in the day cluster at the
+      steps' own 4px seam. Entering and leaving full screen GROW: the frame
+      is a view-transition target (`staff-visit-frame` / `staff-block-frame`)
+      at the deliberate duration; no transition under reduced motion or
+      where the platform lacks one.
+33. **2026-09-10 — the way back (owner: "arrows just like in the maps —
+    when we scroll and don't see the event any more, an arrow showing where
+    it is, and on click scroll to it").** A chip in the handles' own
+    material at the edge the edited block went past — top or bottom of the
+    grid, left or right of the timeline's track — naming the block's start;
+    a tap centres it again, smoothly unless motion is reduced. Measured on
+    scroll, after render and on resize; shown only in a frame, only once
+    the block is wholly outside, never under a finger. Positioned on the
+    host, outside the scroller, so it never scrolls with the picture. Copy
+    `staff.visit.backTo` («Обратно към {{time}}») rides the drag copy.
+    - **Full screen centres the block either way through** (owner: "after
+      rescheduling in full screen, on exit the event should be scrolled
+      to, centred"). The helper's `settled` hook fires once the frame has
+      its new height — before a view transition takes its new snapshot —
+      and the editor centres the block at once, so the picture opens and
+      closes around it. The block sheet does the same for its band.
+34. **2026-09-10 — the pan, refused (owner, on an iPhone: "the dragging
+    capabilities were lost on mobile — when I try to drag the event or its
+    chevrons it starts to scroll").** Making the grid unselectable (pass 30)
+    took away what had been keeping the page still by accident: iOS's
+    selection long-press claimed a held touch, and the page stopped
+    panning. `touch-action: pan-y` otherwise lets a held finger that moves
+    scroll the frame, and pointer capture does not stop it. The first
+    `touchmove` is the one moment a pan can still be refused, so once the
+    hold has lifted the block or a handle every touchmove is refused from
+    a non-passive listener; before the hold none is, so a travelling
+    finger scrolls as it should. Both surfaces.
+    - **Truly the whole screen** (owner: "not filling the sheet height but
+      the entire screen"). While expanded the section is a manual
+      `popover`: the top layer answers to the viewport whatever the sheet's
+      transform or clip, the element stays where it is in the DOM and in
+      Angular's tree, and the date menu — a popover too — still opens above
+      it. The UA's popover box is overruled back to ours. Without popovers
+      the fixed box inside the sheet remains.
+    - **Escape, in order.** With a menu open inside the full-screen frame
+      the key closes the menu only; the next press leaves full screen; the
+      next closes the sheet. The frame defers to any open menu inside it,
+      and `ui-menu` now answers Escape from its own trigger as well as from
+      its surface — a calendar or a search leaves focus on the trigger,
+      and the key had been falling through to the sheet.
+35. **2026-09-10 — four small truths (owner).**
+    - **No sentence under the tip.** «Записва се веднага» is gone; that a
+      tip writes straight through is the dock's green plus to show.
+    - **The note row has a label**, «Бележка за екипа», above a field that
+      takes the row's width — like every other row.
+    - **The picker's variant is a description** too: «Класическа
+      подстрижка» is the row, «Къса коса · 45 мин · 15,00 €» its line.
+    - **«по избор» meant "custom terms"** — the seat's stored price or
+      minutes differ from the catalogue's. It reads «по договорка» now
+      ("as agreed"), which is what a barber would call it. It showed on
+      every seeded seat because the seeder sold everything at a flat
+      28,00 €; seats now carry the chair's catalogue price, and the seeder
+      refuses a seat without a variant on a service that has them — the
+      callable already did, and the seeder writes past it.
+36. **2026-09-10 — the state, read (owner: "at the first element of the
+    sheet the status and the actions possible — think as an Apple HIG
+    designer").** Not a reversal of 2026-09-09, which removed TRACKING: the
+    head still stamps nothing and an ordinary visit still has no head. A
+    settled visit — cancelled, a no-show, finished — opened as a reading
+    sheet with nothing saying why; the card carried the state in its form
+    and the sheet lost it. The head now says the state word once, in its
+    tone — destructive for cancelled, success for finished, neutral for a
+    no-show — with the acts a settled visit is opened for beside it: the
+    way back (prominent) and the next visit. Those two leave the exits
+    group, which keeps the destructive acts at the foot, where HIG keeps
+    them. The pending request's head is unchanged.
+    - **Reverted within the hour** (owner: "I don't like that"). The head
+      is decisions only again — a pending request's «Потвърди заявката»
+      and nothing else — and the way back and the next visit are exits at
+      the foot, as before. A state head has now been tried twice; do not
+      propose it a third time.
+    - **The way back follows the subject, not the edit** (owner, later:
+      "on other statuses the frame loses those anchors"). A cancelled or
+      no-show visit reads rather than edits, so it has no editable block —
+      but it is still what the sheet is about. The chip keys on the
+      subject now; only the handles need the edit.
+    - **A no-show is struck like a cancellation** (owner: "the missed event
+      should also appear with strikethrough so it's recognisable — in the
+      frame as well"). On the card and on the block the NAME is struck for
+      both hours that did not happen; the block's strike moved from its
+      whole face onto the name to match the card, so times, service and
+      tag stay legible. The glyph still tells the two apart.

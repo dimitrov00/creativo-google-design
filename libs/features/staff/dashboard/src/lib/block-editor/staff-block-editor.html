@@ -1,0 +1,426 @@
+<ng-container *transloco="let t">
+  <div class="staff-visit__body" data-testid="staff-block-root">
+    <!-- ── БРЪСНАРИ — first, and SEVERAL (owner, 2026-09-09: "no option to
+         add it for multiple barbers?"), DISCRETELY (owner, same hour: "what
+         if there are 20 barbers — be discrete like Apple, add a barber
+         button"). The chosen chairs are rows, swiped off like a service; the
+         rest wait behind «Добави бръснар», the ladder's own quick-add
+         grammar. At least one chair stays: the last row does not swipe. -->
+    <ul
+      uiListGroup
+      class="staff-visit__group"
+      [attr.aria-label]="t('staff.visit.barbers')"
+      data-testid="staff-block-barbers"
+    >
+      @for (barber of chosenBarbers(); track barber.id) { @if
+      (chosenBarbers().length > 1) {
+      <li
+        class="staff-visit__swipe"
+        libSwipeToDelete
+        [attr.data-testid]="'staff-block-barber-' + barber.id"
+        (deleted)="removeBarber(barber.id)"
+      >
+        <ui-list-row
+          uiSize="large"
+          uiAlignment="leading"
+          class="staff-visit__swipe-content"
+        >
+          <span uiLeading class="staff-visit__face">
+            <ui-avatar
+              [uiSrc]="barber.avatarSrc"
+              [uiName]="barber.label"
+              uiControlSize="regular"
+            />
+            <span
+              class="staff-visit__swatch"
+              [attr.data-barber-tone]="barber.tone"
+              aria-hidden="true"
+            ></span>
+          </span>
+          {{ barber.label }}
+        </ui-list-row>
+        <button
+          type="button"
+          class="staff-visit__swipe-action"
+          [attr.aria-label]="t('staff.block.removeBarber') + ': ' + barber.label"
+          [attr.data-testid]="'staff-block-remove-barber-' + barber.id"
+          (click)="removeBarber(barber.id)"
+        >
+          <ui-icon uiName="booking.removeLine" />
+        </button>
+      </li>
+      } @else {
+      <li
+        uiListRow
+        uiSize="large"
+        [attr.data-testid]="'staff-block-barber-' + barber.id"
+      >
+        <span uiLeading class="staff-visit__face">
+          <ui-avatar
+            [uiSrc]="barber.avatarSrc"
+            [uiName]="barber.label"
+            uiControlSize="regular"
+          />
+          <span
+            class="staff-visit__swatch"
+            [attr.data-barber-tone]="barber.tone"
+            aria-hidden="true"
+          ></span>
+        </span>
+        {{ barber.label }}
+      </li>
+      } } @if (chairChoices().length > 0) {
+      <!-- The rest of the roster, in THE choice menu — the same rows every
+           other barber pick in the app uses (owner, 2026-09-09: "why are the
+           options that big? reuse how they are in the other barber select"). -->
+      <li>
+        <ui-choice-menu
+          uiAlignment="leading"
+          [uiOptions]="chairChoices()"
+          [uiLabel]="t('staff.block.addBarber')"
+          [(uiPresented)]="chairMenu"
+          (uiPicked)="addBarber($event)"
+        >
+          <button
+            uiListRow
+            uiSize="large"
+            type="button"
+            uiMenuTrigger
+            [uiInteractive]="true"
+            data-testid="staff-block-add-barber"
+            (click)="chairMenu.set(true)"
+          >
+            <span uiLeading>
+              <ui-icon uiName="action.add" aria-hidden="true" />
+            </span>
+            {{ t('staff.block.addBarber') }}
+          </button>
+        </ui-choice-menu>
+      </li>
+      }
+    </ul>
+
+    <!-- ── КОГА — the typed pair, above the picture, as on the visit sheet;
+         «Цял ден» before it, the repeat after it. -->
+    <ul
+      uiListGroup
+      class="staff-visit__group"
+      [attr.aria-label]="t('staff.block.from')"
+    >
+      <li uiListRow uiSize="large">
+        {{ t('staff.block.allDay') }}
+        <button
+          uiSwitch
+          uiTrailing
+          [uiOn]="draft().allDay"
+          (uiOnChange)="setAllDay($event)"
+          [attr.aria-label]="t('staff.block.allDay')"
+          data-testid="staff-block-all-day"
+        ></button>
+      </li>
+      @if (!draft().allDay) {
+      <li uiListRow uiSize="regular">
+        <label for="staff-block-from">{{ t('staff.block.from') }}</label>
+        <span uiTrailing>
+          <span class="staff-sheet__pill staff-visit__figures">
+            <ui-time-field
+              uiId="staff-block-from"
+              [uiValue]="startLabel()"
+              uiTestId="staff-block-from"
+              (uiValueChange)="commitStart($event)"
+            />
+          </span>
+        </span>
+      </li>
+      <li uiListRow uiSize="regular">
+        <label for="staff-block-to">{{ t('staff.block.to') }}</label>
+        <span uiTrailing>
+          <span class="staff-sheet__pill staff-visit__figures">
+            <ui-time-field
+              uiId="staff-block-to"
+              [uiValue]="endLabel()"
+              uiTestId="staff-block-to"
+              (uiValueChange)="commitEnd($event)"
+            />
+          </span>
+        </span>
+      </li>
+      }
+      <!-- THE REPEAT (owner, 2026-09-09: "recurrence, for example for
+           lunch breaks"). THE VALUE IS THE CHOICE (owner, same hour: "the
+           choice does not make sense on the label, rather the value"):
+           «Повтаряне» is a plain label and the trailing pill opens the menu,
+           the day pill's own shape, so the two rows of a series read as a
+           pair; the series then says how far it reaches and on how many
+           days it will be written — the size of the act, before «Запази». -->
+      <li uiListRow uiSize="regular">
+        {{ t('staff.block.repeat') }}
+        <span uiTrailing>
+          <ui-choice-menu
+            uiAlignment="trailing"
+            [uiOptions]="repeatOptions()"
+            [uiSelectedId]="repeatId()"
+            [uiLabel]="t('staff.block.repeat')"
+            [(uiPresented)]="repeatMenu"
+            (uiPicked)="setRepeat($event)"
+          >
+            <button
+              type="button"
+              uiButton
+              uiButtonStyle="bordered"
+              uiTint="neutral"
+              uiControlSize="small"
+              uiMenuTrigger
+              [attr.aria-label]="t('staff.block.repeat') + ': ' + repeatLabel()"
+              data-testid="staff-block-repeat"
+              (click)="repeatMenu.set(true)"
+            >
+              <span data-testid="staff-block-repeat-value"
+                >{{ repeatLabel() }}</span
+              >
+              <ui-icon uiTrailing uiName="field.expand" />
+            </button>
+          </ui-choice-menu>
+        </span>
+      </li>
+      @if (draft().repeat; as repeat) {
+      <li uiListRow uiSize="regular">
+        <span class="staff-visit__leg-body">
+          <span>{{ t('staff.block.repeatUntil') }}</span>
+          <span
+            uiText
+            uiFont="footnote"
+            uiForegroundStyle="secondary"
+            class="staff-visit__figures"
+            data-testid="staff-block-repeat-days"
+            >{{ t('staff.block.repeatDays', { count: repeatDays() }) }}</span
+          >
+        </span>
+        <span uiTrailing>
+          <lib-staff-day-pill
+            uiAlignment="trailing"
+            [uiDayKey]="repeat.untilDayKey"
+            [uiTodayKey]="vm().todayKey"
+            [uiLocale]="locale()"
+            [uiPreviousLabel]="t('staff.visit.monthPrevious')"
+            [uiNextLabel]="t('staff.visit.monthNext')"
+            uiTestId="staff-block-until"
+            uiCalendarTestId="staff-block-until-calendar"
+            [(uiPresented)]="untilOpen"
+            (uiPicked)="setUntil($event)"
+          />
+        </span>
+      </li>
+      }
+    </ul>
+
+    <!-- ── THE FRAME — the block over each chosen chair's real day, under
+         the SAME head the visit sheet's frame wears (owner, 2026-09-09:
+         "the frame header is different??"): step back, step forward, the
+         day pill. -->
+    <section
+      class="staff-frame"
+      role="group"
+      [attr.aria-label]="t('staff.block.title') + ' · ' + draft().dayKey"
+      data-frame="block"
+      #frameSection
+      [attr.popover]="fullscreen.expanded() ? 'manual' : null"
+      [attr.data-expanded]="fullscreen.expanded() ? '' : null"
+      data-testid="staff-block-frame"
+      (keydown.escape)="fullscreen.onEscape($event)"
+    >
+      <header class="staff-frame__head">
+        <span class="staff-frame__steps">
+          <button
+            type="button"
+            uiButton
+            uiButtonStyle="bordered"
+            uiTint="neutral"
+            uiControlSize="small"
+            [uiIconOnly]="true"
+            [attr.aria-label]="t('staff.visit.dayPrevious')"
+            data-testid="staff-block-day-prev"
+            (click)="stepDay(-1)"
+          >
+            <ui-icon uiName="calendar.previous" />
+          </button>
+          <button
+            type="button"
+            uiButton
+            uiButtonStyle="bordered"
+            uiTint="neutral"
+            uiControlSize="small"
+            [uiIconOnly]="true"
+            [attr.aria-label]="t('staff.visit.dayNext')"
+            data-testid="staff-block-day-next"
+            (click)="stepDay(1)"
+          >
+            <ui-icon uiName="calendar.next" />
+          </button>
+        </span>
+        <span uiTrailing class="staff-frame__day">
+          <lib-staff-day-pill
+            uiAlignment="trailing"
+            [uiDayKey]="draft().dayKey"
+            [uiTodayKey]="vm().todayKey"
+            [uiLocale]="locale()"
+            [uiPreviousLabel]="t('staff.visit.monthPrevious')"
+            [uiNextLabel]="t('staff.visit.monthNext')"
+            uiTestId="staff-block-day"
+            uiCalendarTestId="staff-block-calendar"
+            [(uiPresented)]="dayOpen"
+            (uiPicked)="pickDay($event)"
+          />
+          <!-- FULL SCREEN (owner, 2026-09-10; HIG: an expand control at the
+               top trailing edge, and the same control, flipped, to leave).
+               The frame fills the sheet; its own chrome waits underneath. -->
+          <button
+            type="button"
+            uiButton
+            uiButtonStyle="bordered"
+            uiTint="neutral"
+            uiControlSize="small"
+            [uiIconOnly]="true"
+            class="staff-frame__expand"
+            [attr.aria-label]="
+              t(
+                fullscreen.expanded()
+                  ? 'staff.visit.frameCollapse'
+                  : 'staff.visit.frameExpand'
+              )
+            "
+            [attr.aria-pressed]="fullscreen.expanded()"
+            data-testid="staff-block-frame-expand"
+            (click)="fullscreen.toggle()"
+          >
+            <ui-icon
+              [uiName]="fullscreen.expanded() ? 'frame.collapse' : 'frame.expand'"
+            />
+          </button>
+        </span>
+      </header>
+      <!-- TWO PICTURES OF ONE DAY (owner, 2026-09-09: "when more than two
+           barbers are selected, switch strategy — horizontal like MS
+           Calendar, each row a barber, the columns the hour grid"). Up to
+           two chairs stand side by side, as the visit sheet's frame draws
+           them; from three, the chairs are ROWS and the hours run across,
+           with the block as one band over all of them. Both take the same
+           columns and answer with the same draft. -->
+      @if (timelineFramed()) {
+      <lib-staff-timeline
+        [columns]="frameColumns()"
+        [uiWindow]="frameWindow()"
+        [uiSnapMinutes]="snapMinutes"
+        [uiDragCopy]="dragCopy()"
+        uiEditableEventId="draft-block"
+        [uiEditable]="!draft().allDay"
+        [uiMinMinutes]="snapMinutes"
+        [nowMinute]="vm().nowMinute"
+        (draftChanged)="onFrameDraft($event)"
+        (draftCommitted)="onFrameCommit($event)"
+      />
+      } @else {
+      <lib-staff-time-grid
+        uiViewport="framed"
+        uiPlacement="proportional"
+        [columns]="frameColumns()"
+        [uiWindow]="frameWindow()"
+        [uiSnapMinutes]="snapMinutes"
+        [uiDragCopy]="dragCopy()"
+        uiEditableEventId="draft-block"
+        [uiEditable]="!draft().allDay"
+        [uiPickable]="false"
+        [uiMinMinutes]="snapMinutes"
+        [rosterStartMinute]="frameRosterStart()"
+        [nowMinute]="vm().nowMinute"
+        (draftChanged)="onFrameDraft($event)"
+        (draftCommitted)="onFrameCommit($event)"
+      />
+      }
+      <!-- WHAT IT SITS ON — named in red under the picture, the way the
+           visit sheet names a collision (owner, 2026-09-09: "the frame for
+           the appointments has red text when there is overlap; here the
+           text is at the end of the sheet?"). The block wears the overlap
+           hatch as well; the visits stay where they are. -->
+      @if (collisionNote(); as note) {
+      <p
+        uiText
+        uiFont="footnote"
+        uiForegroundStyle="destructive"
+        data-verdict="conflict"
+        data-testid="staff-block-frame-note"
+      >
+        {{ note }}
+      </p>
+      }
+    </section>
+
+    <p uiText uiFont="footnote" uiForegroundStyle="tertiary">
+      {{ t('staff.block.effect') }}
+    </p>
+
+    <!-- THE MIRROR of «Откажи и блокирай времето»: blocked time a client
+         then turns up for. Last, with the sheet's other exits. -->
+    @if (vm().blockId !== null && !draft().allDay) {
+    <ul
+      uiListGroup
+      class="staff-visit__group staff-visit__exits"
+      [attr.aria-label]="t('staff.visit.exits')"
+      data-testid="staff-block-exits"
+    >
+      <li>
+        <button
+          uiListRow
+          uiSize="large"
+          type="button"
+          [uiInteractive]="true"
+          [disabled]="vm().acting"
+          data-testid="staff-block-convert"
+          (click)="convert()"
+        >
+          <span uiLeading>
+            <ui-icon uiName="appointment.book" aria-hidden="true" />
+          </span>
+          {{ t('staff.block.convert') }}
+        </button>
+      </li>
+    </ul>
+    }
+  </div>
+
+  <!-- ── THE DOCK ──────────────────────────────────────────────────── -->
+  <ui-sheet-action-bar
+    [uiVisible]="true"
+    uiAnchor="scroll"
+    class="staff-visit__dock"
+  >
+    @if (vm().blockId !== null) {
+    <button
+      type="button"
+      uiButton
+      uiButtonStyle="plain"
+      uiRole="destructive"
+      uiControlSize="large"
+      [uiLoading]="vm().acting"
+      [attr.data-armed]="vm().liftArmed ? '' : null"
+      data-testid="staff-block-lift"
+      (click)="lifted.emit()"
+    >
+      {{ vm().liftArmed ? t('staff.day.blockLiftArm') : vm().dayIsOff ?
+      t('staff.block.liftDay') : t('staff.block.lift') }}
+    </button>
+    } @if (dirty()) {
+    <button
+      type="button"
+      uiButton
+      uiButtonStyle="borderedProminent"
+      uiControlSize="large"
+      [uiLoading]="vm().acting"
+      data-testid="staff-block-save"
+      (click)="save()"
+    >
+      {{ t('staff.block.save') }}
+    </button>
+    }
+  </ui-sheet-action-bar>
+</ng-container>

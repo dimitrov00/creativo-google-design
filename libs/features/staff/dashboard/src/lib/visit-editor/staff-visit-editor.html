@@ -19,235 +19,11 @@
     data-testid="staff-visit-page"
     [attr.data-page]="page.kind"
   >
-    <!-- BACK, on the page rather than in a strip above it. The sheet's own
-         `✕` closes the whole sheet from any depth; this is the way back to
-         the ladder, and it sits with the title it will leave behind. -->
-    <button
-      type="button"
-      uiButton
-      uiButtonStyle="plain"
-      uiControlSize="regular"
-      [uiIconOnly]="true"
-      class="staff-visit__back"
-      [attr.aria-label]="t('staff.visit.back')"
-      data-testid="staff-visit-back"
-      (click)="pop()"
-    >
-      <ui-icon uiName="nav.back" />
-    </button>
+    <!-- NO BACK BUTTON HERE (owner, 2026-09-09): the way back lives in the
+         sheet's header bar, opposite the ✕, drawn by the shell that owns the
+         sheet — `depth()` and `pop()` are public for exactly that. -->
 
-    @switch (page.kind) { @case ('service') { @if (currentLeg(); as leg) {
-    <h2
-      uiSheetLargeTitle
-      id="staff-visit-page-title"
-      uiText
-      uiFont="largeTitle"
-    >
-      {{ leg.serviceLabel }}
-    </h2>
-    <!-- The consequence, carried INTO the child rather than left behind
-           it: this line shows the CHANGED value, which a popover over the
-           parent could only ever show stale. -->
-    <p
-      class="staff-sheet__consequence"
-      uiText
-      uiFont="footnote"
-      uiForegroundStyle="tertiary"
-      data-testid="staff-visit-consequence"
-    >
-      {{ legConsequence() }}
-    </p>
-
-    <ul uiListGroup [attr.aria-label]="t('staff.visit.service')">
-      <li uiListRow uiSize="regular">
-        {{ t('staff.visit.barber') }}
-        <span uiTrailing>
-          <ui-menu
-            uiAlignment="trailing"
-            [uiPresented]="legBarberMenu()"
-            [uiLabel]="t('staff.visit.barber')"
-            (uiDismissed)="legBarberMenu.set(false)"
-          >
-            <button
-              type="button"
-              uiButton
-              uiButtonStyle="plain"
-              uiTint="neutral"
-              uiControlSize="small"
-              uiMenuTrigger
-              data-testid="staff-visit-leg-barber"
-              (click)="legBarberMenu.set(true)"
-            >
-              {{ leg.barberName }}
-              <ui-icon uiTrailing uiName="field.expand" />
-            </button>
-            @for (barber of barberOptions(); track barber.id) {
-            <button
-              type="button"
-              uiMenuItem
-              [uiSelected]="barber.id === leg.barberId"
-              (click)="setLegBarber(leg.seatId, barber)"
-            >
-              {{ barber.name }}
-            </button>
-            }
-          </ui-menu>
-        </span>
-      </li>
-
-      <li uiListRow uiSize="regular">
-        {{ t('staff.visit.duration') }}
-        <span uiTrailing>
-          <ui-menu
-            uiAlignment="trailing"
-            [uiPresented]="legDurationMenu()"
-            [uiLabel]="t('staff.visit.duration')"
-            (uiDismissed)="legDurationMenu.set(false)"
-          >
-            <button
-              type="button"
-              uiButton
-              uiButtonStyle="plain"
-              uiTint="neutral"
-              uiControlSize="small"
-              uiMenuTrigger
-              class="staff-visit__figures"
-              data-testid="staff-visit-leg-duration"
-              (click)="legDurationMenu.set(true)"
-            >
-              {{ t('staff.visit.minutes', { minutes: leg.minutes }) }}
-              <ui-icon uiTrailing uiName="field.expand" />
-            </button>
-            @for (step of legLadder(); track step.minutes) {
-            <button
-              type="button"
-              uiMenuItem
-              [uiSelected]="step.minutes === leg.minutes"
-              [attr.data-testid]="'staff-visit-leg-duration-' + step.minutes"
-              (click)="setLegDuration(leg.seatId, step.minutes)"
-            >
-              {{ t('staff.visit.minutes', { minutes: step.minutes }) }}
-            </button>
-            }
-          </ui-menu>
-        </span>
-      </li>
-
-      <li uiListRow uiSize="regular">
-        <label for="staff-visit-leg-price">{{ t('staff.visit.price') }}</label>
-        <span uiTrailing>
-          <input
-            uiTextField
-            id="staff-visit-leg-price"
-            type="text"
-            inputmode="decimal"
-            class="staff-visit__figures"
-            [value]="leg.priceLabel ?? ''"
-            data-testid="staff-visit-leg-price"
-            (change)="setLegPrice(leg.seatId, $any($event.target).value)"
-          />
-        </span>
-      </li>
-
-      <!-- ⚠ `Още` — the disclosure holding setup / cleanup / add-ons — is
-             DELIBERATELY ABSENT, not stubbed. The VM carries no shoulders
-             (they live on `seat.terms`) and `staff.visit` carries no copy for
-             them, so the row would be a control with a key for a label over
-             a value that is always zero. This surface's own doctrine is
-             "absent, never a disabled promise"; the row lands with the
-             buffers PR that gives it both a value and a name. -->
-    </ul>
-
-    @if (durationTouched()) {
-    <p
-      uiText
-      uiFont="footnote"
-      uiForegroundStyle="secondary"
-      data-testid="staff-visit-price-unchanged"
-    >
-      {{ t('staff.visit.priceUnchanged') }}
-    </p>
-    }
-
-    <!-- Destructive, at the BOTTOM of the scroll, never in the header.
-           `ui-list-row` has no destructive variant and one must not be
-           invented for one row: the red is the DS foreground modifier. -->
-    <ul uiListGroup class="staff-visit__destructive">
-      <li>
-        <button
-          uiListRow
-          uiSize="large"
-          type="button"
-          [uiInteractive]="true"
-          uiForegroundStyle="destructive"
-          data-testid="staff-visit-remove-leg"
-          (click)="removeLeg(leg.seatId)"
-        >
-          {{ t('staff.visit.removeService') }}
-        </button>
-      </li>
-    </ul>
-    } } @case ('serviceSearch') {
-    <h2
-      uiSheetLargeTitle
-      id="staff-visit-page-title"
-      uiText
-      uiFont="largeTitle"
-    >
-      {{ t('staff.visit.addService') }}
-    </h2>
-    <input
-      uiTextField
-      type="search"
-      [value]="query()"
-      [attr.placeholder]="t('staff.visit.searchService')"
-      [attr.aria-label]="t('staff.visit.searchService')"
-      data-testid="staff-visit-service-query"
-      (input)="onQuery($any($event.target).value)"
-    />
-    @if (serviceResults().length === 0) {
-    <p uiText uiFont="footnote" uiForegroundStyle="secondary">
-      {{ t('staff.visit.noService') }}
-    </p>
-    } @else {
-    <!-- Checkboxes, and the page STAYS on select: a barber adding cut +
-           beard + wash must not reopen the list three times. `uiSelected` is
-           documented as visual only, so the state is carried honestly by
-           `aria-checked` on a `role="checkbox"` row. -->
-    <ul uiListGroup [attr.aria-label]="t('staff.visit.services')">
-      @for (option of serviceResults(); track option.id) {
-      <li>
-        <button
-          uiListRow
-          uiSize="large"
-          uiAlignment="leading"
-          type="button"
-          role="checkbox"
-          [uiInteractive]="true"
-          [uiSelected]="option.selected"
-          [attr.aria-checked]="option.selected"
-          [attr.data-testid]="'staff-visit-service-' + option.id"
-          (click)="toggleService(option)"
-        >
-          <ui-stack uiSpacing="none">
-            <span uiText uiFont="callout" uiWeight="medium"
-              >{{ option.label }}</span
-            >
-            <span
-              uiText
-              uiFont="footnote"
-              uiForegroundStyle="secondary"
-              class="staff-visit__figures"
-            >
-              {{ t('staff.visit.minutes', { minutes: option.minutes }) }}@if
-              (option.priceLabel) { · {{ option.priceLabel }} }
-            </span>
-          </ui-stack>
-        </button>
-      </li>
-      }
-    </ul>
-    } } @case ('client') { @if (currentClient(); as client) {
+    @switch (page.kind) { @case ('client') { @if (currentClient(); as client) {
     <h2
       uiSheetLargeTitle
       id="staff-visit-page-title"
@@ -298,15 +74,28 @@
     >
       {{ t('staff.visit.addClient') }}
     </h2>
-    <input
-      uiTextField
-      type="search"
-      [value]="query()"
-      [attr.placeholder]="t('staff.visit.searchClient')"
-      [attr.aria-label]="t('staff.visit.searchClient')"
-      data-testid="staff-visit-client-query"
-      (input)="onQuery($any($event.target).value)"
-    />
+    <!-- THE SEARCH, PINNED (owner, 2026-09-09): it sticks under the bar
+         while the list scrolls — the sheet's `.searchable` grammar — and
+         leads with the glyph that says what it is. The sheet's accessory
+         slot belongs to the shell, not to this content; a sticky band with
+         the same material is the same thing from the inside. -->
+    <div class="staff-visit__search" uiMaterial="regular">
+      <ui-icon
+        uiName="action.search"
+        class="staff-visit__search-icon"
+        aria-hidden="true"
+      />
+      <input
+        uiTextField
+        type="search"
+        class="staff-visit__search-field"
+        [value]="query()"
+        [attr.placeholder]="t('staff.visit.searchClient')"
+        [attr.aria-label]="t('staff.visit.searchClient')"
+        data-testid="staff-visit-client-query"
+        (input)="onQuery($any($event.target).value)"
+      />
+    </div>
     <ul uiListGroup [attr.aria-label]="t('staff.visit.clients')">
       @for (option of clientResults(); track option.id) {
       <li>
@@ -333,57 +122,84 @@
               >{{ clientLine(option) }}</span
             >
           </ui-stack>
+          <!-- THE CHECK (owner, 2026-09-09: "no indication it was added"):
+               the same accent check every chosen row in the app carries.
+               The trailing rail is STATIC; only the glyph comes and goes. -->
+          <span uiTrailing>
+            @if (option.selected) {
+            <ui-icon uiName="checklist.done" uiForegroundStyle="accent" />
+            }
+          </span>
         </button>
       </li>
       } @empty {
       <li uiListRow uiSize="regular">{{ t('staff.visit.noMatch') }}</li>
       }
-      <!-- The last row mints the guest. It is the only row on this page
-             that CREATES, and it only appears when there is a name to
-             create from — a create row that cannot commit is a disabled
-             promise. -->
-      @if (query().trim()) {
-      <li>
-        <button
-          uiListRow
-          uiSize="large"
-          type="button"
-          [uiInteractive]="true"
-          data-testid="staff-visit-new-client"
-          (click)="createGuest()"
-        >
-          <span uiLeading>
-            <ui-icon uiName="action.add" aria-hidden="true" />
-          </span>
-          {{ t('staff.visit.newClient') }}
-        </button>
-      </li>
-      }
+      <!-- «Нов клиент» is NOT a row here (owner, 2026-09-09): it lives in
+           the dock, always reachable, whatever was typed. -->
     </ul>
-    } @case ('promo') {
+    } @case ('clientNew') {
     <h2
       uiSheetLargeTitle
       id="staff-visit-page-title"
       uiText
       uiFont="largeTitle"
     >
-      {{ t('staff.visit.allPromos') }}
+      {{ t('staff.visit.newClientTitle') }}
     </h2>
-    <ul uiListGroup [attr.aria-label]="t('staff.visit.promo')">
-      <li>
-        <button
-          uiListRow
-          uiSize="regular"
-          type="button"
-          [uiInteractive]="true"
-          [uiSelected]="draft().promoLabel === null"
-          data-testid="staff-visit-promo-none"
-          (click)="pickPromo(null)"
-        >
-          {{ t('staff.visit.promoNone') }}
-        </button>
-      </li>
-    </ul>
+    <!-- The same three fields the client's own contact sheet asks for, in
+         the same order, with the DS's composite phone control — so the
+         number the desk types obeys the same E.164 contract as one a client
+         types. What the search had in it is already in the right field. -->
+    <ui-stack uiSpacing="regular" class="staff-visit__form">
+      <label>
+        <ui-stack uiSpacing="tight">
+          <span uiText uiFont="footnote"
+            >{{ t('staff.visit.clientName') }}</span
+          >
+          <input
+            type="text"
+            uiTextField
+            uiControlSize="large"
+            autocomplete="off"
+            data-testid="staff-visit-new-name"
+            [value]="newClient().name"
+            (input)="setNewClientName($any($event.target).value)"
+          />
+        </ui-stack>
+      </label>
+      <ui-phone-field
+        uiControlSize="large"
+        [label]="t('staff.visit.clientPhone')"
+        [locale]="locale()"
+        [defaultCountry]="newClientCountry()"
+        [pickerTitle]="t('auth.identify.countryPicker')"
+        [searchLabel]="t('auth.identify.countrySearch')"
+        [closeLabel]="t('auth.identify.countryClose')"
+        [noResultsLabel]="t('auth.identify.countryNoResults')"
+        [(country)]="newClientCountry"
+        [value]="newClient().phone"
+        (valueChange)="setNewClientPhone($event)"
+        data-testid="staff-visit-new-phone"
+      />
+      <label>
+        <ui-stack uiSpacing="tight">
+          <span uiText uiFont="footnote"
+            >{{ t('staff.visit.clientEmail') }}</span
+          >
+          <input
+            type="email"
+            uiTextField
+            uiControlSize="large"
+            autocomplete="off"
+            inputmode="email"
+            data-testid="staff-visit-new-email"
+            [value]="newClient().email"
+            (input)="setNewClientEmail($any($event.target).value)"
+          />
+        </ui-stack>
+      </label>
+    </ui-stack>
     } }
   </section>
   } @else {
@@ -391,25 +207,93 @@
          day → picture → clock. No section eyebrows anywhere: every group's
          name is its `aria-label` and nothing else, and the seams do the
          grouping the way Apple's own event editor does. -->
+  <!-- THE ORDER (owner, 2026-09-09): chair → services → when → for whom →
+       money → notes. The chair decides the catalogue; the duration follows
+       from the services, so the frame is confirmed after them; and WHO it is
+       for comes last — a walk-in has no name to give until the cut is
+       agreed. The same order on a new visit and an old one. -->
   <div class="staff-visit__body" data-testid="staff-visit-root">
-    <!-- THE TITLE, the way every other sheet on this page states one: a
-         large title in the CONTENT that collapses into the bar as it scrolls
-         under it (`uiSheetLargeTitle` drives that, no per-consumer scroll
-         math). It carries the id the shell's `labelledBy` points at, exactly
-         as the zone and search sheets do. -->
-    <h2
-      id="staff-visit-title"
-      uiSheetLargeTitle
-      uiText
-      uiFont="largeTitle"
-      data-testid="staff-visit-large-title"
+    <!-- ⚠ NO LARGE TITLE. The sheet's name lives in the BAR, always.
+         (owner ruling 2026-09-04, reversing 2026-08-27)
+
+         This was an `h2 uiSheetLargeTitle` — a title in the content that
+         collapsed into the bar as it scrolled under it. On a sheet this
+         DENSE it bought nothing: the name is `Редактиране на час`, which is
+         the same on every visit and never the answer to a question anybody
+         opened the sheet with, and it cost a `largeTitle` block of vertical
+         room at the top of a ladder that is already eight groups long. The
+         first thing under the thumb should be the visit, not its category.
+
+         `titleAlwaysVisible` on the shell is the DS's own name for this
+         (the phone field's country picker got there first): the bar carries
+         its title from the first frame with its chrome landed, exactly as
+         an inline-title navigation bar does, and the scroll-collapse
+         machinery has nothing left to collapse.
+
+         ⚠ THE `labelledBy` ID MOVED WITH IT — onto the `[sheet-title]` span
+         in the page that owns the shell. `aria-labelledby` still resolves
+         through it although the bar title is `aria-hidden`: a referenced
+         element contributes its text to the name whether or not it is
+         hidden, which is the same route the phone field already relies on. -->
+
+    <!-- ── THE HEAD OF THE SHEET ────────────────────────────────────
+         (owner, 2026-09-09 — replaces the state header of 09-08)
+
+         NOTHING TO TRACK. The strip used to state the visit's status and
+         offer the stamps — «Дойде», «Готово» — and the owner ruled them
+         out: no barber has the time to note who came and when a cut ended,
+         and a lifecycle nobody stamps is bookkeeping the sheet did for
+         itself. What is left up here is a DECISION:
+
+         · a REQUEST asks to be answered — «Потвърди» here, the refusal with
+           the other exits at the foot of the sheet.
+
+         (The «закъснява · +10 · +15» line was here for a day and the owner
+         removed it, 2026-09-09: "what sense does this make" — a barber who
+         is late moves the block or types the start; a nudge that guesses
+         by how much is chrome.)
+
+         Arrived, running, elapsed, finished: the frame already shows where
+         the clock is, and the sheet says nothing twice. A NEW item has no
+         head either — the ＋ already asked "час or блок" (owner, same day,
+         withdrawing the kind switch built an hour earlier). The exits —
+         no-show, cancel, cancel-and-block — are the LAST group, where a
+         destructive act belongs and where nobody brushes one while editing. -->
+    @if (requestVerb(); as verb) {
+    <section
+      class="staff-visit__state"
+      data-head="request"
+      data-tone="warning"
+      data-testid="staff-visit-state"
     >
-      {{ t('staff.visit.editTitle') }}
-    </h2>
+      <p
+        class="staff-visit__state-line"
+        uiText
+        uiFont="footnote"
+        uiForegroundStyle="secondary"
+        data-testid="staff-visit-state-line"
+      >
+        {{ t('staff.visit.requestLine') }}
+      </p>
+      <button
+        type="button"
+        uiButton
+        uiButtonStyle="borderedProminent"
+        uiControlSize="regular"
+        class="staff-visit__verb"
+        [uiLoading]="vm().acting"
+        data-testid="staff-visit-confirm"
+        (click)="acted.emit(verb.kind)"
+      >
+        {{ t('staff.visit.confirmRequest') }}
+      </button>
+    </section>
+    }
 
     <!-- ── БРЪСНАРИ ────────────────────────────────────────────────
-         TOPMOST, with the clients under them: who is doing this and for whom
-         is the first question a sheet about an appointment answers.
+         TOPMOST, with the clients and the services under them (owner,
+         2026-09-09): the chair decides which services are even on offer and
+         at what terms, so it is answered before the ladder is drawn.
 
          The picker is the SAME `ui-menu` the view toolbar's scope switcher
          uses (owner ruling 2026-08-27) — portrait, tone badge, name, a check
@@ -421,13 +305,38 @@
       class="staff-visit__group"
       [attr.aria-label]="t('staff.visit.barbers')"
     >
-      @for (barber of barbers(); track barber.id) {
+      @for (barber of barbers(); track barber.id) { @if (gone()) {
+      <!-- Settled: the chair is a fact, not a choice. The row is an `li`,
+           and an `li` has nothing to tap (spec §3.3.9). -->
+      <li
+        uiListRow
+        uiSize="large"
+        [attr.data-testid]="'staff-visit-barber-' + barber.id"
+      >
+        <span uiLeading class="staff-visit__face">
+          <ui-avatar
+            [uiSrc]="barber.avatarSrc"
+            [uiName]="barber.label"
+            uiControlSize="regular"
+          />
+          <span
+            class="staff-visit__swatch"
+            [attr.data-barber-tone]="barber.tone"
+            aria-hidden="true"
+          ></span>
+        </span>
+        {{ barber.label }}
+      </li>
+      } @else {
       <li>
-        <ui-menu
+        <ui-choice-menu
           uiAlignment="trailing"
-          [uiPresented]="barberMenu() === barber.id"
+          [uiOptions]="barberChoices()"
+          [uiSelectedId]="barber.id"
           [uiLabel]="t('staff.visit.barbers')"
-          (uiDismissed)="barberMenu.set(null)"
+          [uiPresented]="barberMenu() === barber.id"
+          (uiPresentedChange)="barberMenu.set($event ? barber.id : null)"
+          (uiPicked)="pickChairBarber(barber.id, $event)"
         >
           <button
             uiListRow
@@ -458,47 +367,581 @@
               <ui-icon uiName="field.expand" aria-hidden="true" />
             </span>
           </button>
-          <ui-list-group>
-            @for (option of barberOptions(); track option.id) {
+          <ng-template uiChoiceLeading let-option>
+            <span class="staff-visit__face">
+              <ui-avatar
+                [uiSrc]="option.avatarSrc ?? null"
+                [uiName]="option.label"
+                uiControlSize="regular"
+              />
+              <span
+                class="staff-visit__swatch"
+                [attr.data-barber-tone]="barberToneOf(option.id)"
+                aria-hidden="true"
+              ></span>
+            </span>
+          </ng-template>
+        </ui-choice-menu>
+      </li>
+      } }
+    </ul>
+
+    <!-- ── УСЛУГИ ──────────────────────────────────────────────────── -->
+    <ul
+      uiListGroup
+      class="staff-visit__group staff-visit__group--services"
+      [attr.aria-label]="t('staff.visit.services')"
+    >
+      @if (gone()) { @for (leg of draft().legs; track leg.seatId) {
+      <li
+        uiListRow
+        uiSize="large"
+        uiAlignment="leading"
+        [attr.data-testid]="'staff-visit-leg-' + leg.seatId"
+      >
+        <ui-stack uiSpacing="none">
+          <span uiText uiFont="callout" uiWeight="medium"
+            >{{ leg.serviceLabel }}</span
+          >
+          <span
+            uiText
+            uiFont="footnote"
+            uiForegroundStyle="secondary"
+            class="staff-visit__figures"
+            [attr.data-testid]="'staff-visit-leg-line-' + leg.seatId"
+            >{{ legLine(leg) }}</span
+          >
+        </ui-stack>
+      </li>
+      } } @else { @for (leg of draft().legs; track leg.seatId) {
+      <!-- ONE ROW PER SEAT (owner, 2026-09-10: "services only about
+           services"). The row is what is booked and nothing else: the
+           title with its variant in it, the person on a party, the variant
+           chip when the service has one, and the way off. No money — that
+           is ПЛАЩАНЕ's — and no counter: the same service twice is two
+           rows, each a seat with its own time and price, and the fold that
+           hid that is gone. Swipe removes; the trailing «−» is the visible
+           way, the alternative HIG asks a swipe to have. -->
+      <li
+        class="staff-visit__swipe"
+        libSwipeToDelete
+        [attr.data-testid]="'staff-visit-leg-' + leg.seatId"
+        (deleted)="removeLeg(leg.seatId)"
+      >
+        <!-- CENTRED, not leading-aligned: most rows are one line now, and a
+             top-aligned title beside a centred «−» read as a slip. A two-line
+             body centres as a block, its chips still on its middle. -->
+        <ui-list-row uiSize="large" class="staff-visit__swipe-content">
+          <span class="staff-visit__leg-body">
+            <span uiText uiFont="callout" uiWeight="medium"
+              >{{ legService(leg) }}</span
+            >
+            <!-- Only when it says something the title does not: minutes on
+                 a multi-service visit, another chair's barber, overridden
+                 terms. Empty, it takes no line. -->
+            <span
+              uiText
+              uiFont="footnote"
+              uiForegroundStyle="secondary"
+              class="staff-visit__figures staff-visit__leg-line"
+              [class.staff-visit__leg-line--blank]="!legLine(leg)"
+              [attr.data-testid]="'staff-visit-leg-line-' + leg.seatId"
+              >{{ legLine(leg) }}</span
+            >
+          </span>
+          <span uiTrailing class="staff-visit__leg-chips">
+            @if (draft().clients.length > 1) {
+            <ui-choice-menu
+              uiAlignment="trailing"
+              [uiOptions]="legClientOptions()"
+              [uiSelectedId]="leg.clientId"
+              [uiLabel]="t('staff.visit.forWhom')"
+              [uiPresented]="isLegMenu(leg.seatId, 'client')"
+              (uiPresentedChange)="setLegMenu(leg.seatId, 'client', $event)"
+              (uiPicked)="setLegClient(leg.seatId, $event)"
+            >
+              <button
+                type="button"
+                uiButton
+                uiButtonStyle="bordered"
+                uiTint="neutral"
+                uiControlSize="small"
+                [uiIconOnly]="true"
+                uiMenuTrigger
+                class="staff-visit__leg-face-chip"
+                [attr.aria-label]="t('staff.visit.forWhom') + ': ' + legClientLabel(leg)"
+                [attr.data-testid]="'staff-visit-leg-person-' + leg.seatId"
+                (click)="setLegMenu(leg.seatId, 'client', true)"
+              >
+                <ui-avatar
+                  [uiName]="legClientLabel(leg)"
+                  uiControlSize="small"
+                />
+              </button>
+            </ui-choice-menu>
+            } @if (legVariantChoices(leg); as variants) { @if (variants.length >
+            0) {
+            <ui-choice-menu
+              uiAlignment="trailing"
+              [uiOptions]="variants"
+              [uiSelectedId]="legVariantId(leg)"
+              [uiLabel]="t('staff.visit.variant')"
+              [uiPresented]="isLegMenu(leg.seatId, 'variant')"
+              (uiPresentedChange)="setLegMenu(leg.seatId, 'variant', $event)"
+              (uiPicked)="pickLegVariant(leg.seatId, $event)"
+            >
+              <!-- An ICON (owner, 2026-09-09): the variant's name is in the
+                   title, joined with the dot the picker uses. -->
+              <button
+                type="button"
+                uiButton
+                uiButtonStyle="bordered"
+                uiTint="neutral"
+                uiControlSize="small"
+                [uiIconOnly]="true"
+                uiMenuTrigger
+                class="staff-visit__leg-variant-chip"
+                [attr.aria-label]="t('staff.visit.variant') + ': ' + legVariantLabel(leg)"
+                [attr.data-testid]="'staff-visit-leg-variant-' + leg.seatId"
+                (click)="setLegMenu(leg.seatId, 'variant', true)"
+              >
+                <ui-icon uiName="service.variants" />
+              </button>
+            </ui-choice-menu>
+            } }
+            <!-- THE WAY OFF, in sight: the same tinted capsule the variant
+                 chip beside it wears (owner, 2026-09-10: a bare glyph next
+                 to a material chip read as two grammars), red under the
+                 thumb. The swipe is the fast path; this is the honest one. -->
             <button
               type="button"
-              uiMenuItem
-              uiListRow
-              [uiInteractive]="true"
-              [uiSelected]="option.id === barber.id"
-              [attr.data-testid]="'staff-visit-barber-pick-' + option.id"
-              (click)="pickBarberFor(barber.id, option)"
+              uiButton
+              uiButtonStyle="bordered"
+              uiTint="neutral"
+              uiControlSize="small"
+              [uiIconOnly]="true"
+              class="staff-visit__leg-remove"
+              [attr.aria-label]="t('staff.visit.removeService') + ': ' + legTitle(leg)"
+              [attr.data-testid]="'staff-visit-remove-leg-' + leg.seatId"
+              (click)="removeLeg(leg.seatId)"
             >
-              <span uiLeading class="staff-visit__face">
-                <ui-avatar
-                  [uiSrc]="option.avatarSrc"
-                  [uiName]="option.name"
-                  uiControlSize="regular"
-                />
-                <span
-                  class="staff-visit__swatch"
-                  [attr.data-barber-tone]="option.tone"
-                  aria-hidden="true"
-                ></span>
-              </span>
-              {{ option.name }}
-              <span uiTrailing>
-                @if (option.id === barber.id) {
-                <ui-icon uiName="checklist.done" uiForegroundStyle="accent" />
-                }
-              </span>
+              <ui-icon uiName="action.remove" />
             </button>
+          </span>
+        </ui-list-row>
+        <!-- The act a swipe reveals — a real button, always in the DOM. -->
+        <button
+          type="button"
+          class="staff-visit__swipe-action"
+          [attr.aria-label]="t('staff.visit.removeService') + ': ' + legTitle(leg)"
+          [attr.data-testid]="'staff-visit-swipe-leg-' + leg.seatId"
+          (click)="removeLeg(leg.seatId)"
+        >
+          <ui-icon uiName="booking.removeLine" />
+        </button>
+      </li>
+      } }
+      <!-- THE DROPDOWN (owner, 2026-09-10: "like the country code dropdown
+           — one tap and hide, no check, no page"). A `ui-menu` on the row,
+           in the top layer, with the search pinned at its top and the
+           catalogue as one-tap rows: a tap seats the service and the menu
+           closes. Nothing is marked as already on the visit (owner, same
+           day): a service may be wanted twice, and a check reads as "done". No
+           keyboard until the field is touched — a catalogue this size is
+           scanned, not searched — but a letter typed while a row has focus
+           lands in the field, so a keyboard reaches it too. Opens on the
+           whole catalogue every time. -->
+      @if (!gone()) {
+      <li>
+        <ui-menu
+          uiAlignment="leading"
+          [uiPresented]="serviceMenu()"
+          [uiLabel]="t('staff.visit.addService')"
+          (uiDismissed)="serviceMenu.set(false)"
+        >
+          <button
+            uiListRow
+            uiSize="large"
+            type="button"
+            uiMenuTrigger
+            [uiInteractive]="true"
+            data-testid="staff-visit-add-service"
+            (click)="openServiceMenu()"
+          >
+            <span uiLeading>
+              <ui-icon uiName="action.add" aria-hidden="true" />
+            </span>
+            {{ t('staff.visit.addService') }}
+          </button>
+          <div class="staff-visit__picker">
+            <div class="staff-visit__search" uiMaterial="regular">
+              <ui-icon
+                uiName="action.search"
+                class="staff-visit__search-icon"
+                aria-hidden="true"
+              />
+              <input
+                uiTextField
+                type="search"
+                class="staff-visit__search-field"
+                [value]="query()"
+                [attr.placeholder]="t('staff.visit.searchService')"
+                [attr.aria-label]="t('staff.visit.searchService')"
+                data-testid="staff-visit-service-query"
+                (input)="onQuery($any($event.target).value)"
+              />
+            </div>
+            @if (serviceResults().length === 0) {
+            <p
+              uiText
+              uiFont="footnote"
+              uiForegroundStyle="secondary"
+              class="staff-visit__picker-empty"
+            >
+              {{ t('staff.visit.noService') }}
+            </p>
+            } @else {
+            <ui-list-group>
+              @for (option of serviceResults(); track option.id) {
+              <button
+                type="button"
+                uiMenuItem
+                uiListRow
+                uiAlignment="leading"
+                [uiInteractive]="true"
+                class="staff-visit__service-row"
+                [attr.data-testid]="'staff-visit-service-' + option.id"
+                (click)="quickAdd(option)"
+              >
+                <!-- The variant is a description here too (owner,
+                     2026-09-10) — the row's second line, ahead of the
+                     minutes and the price, never welded to the name. -->
+                <ui-stack uiSpacing="none">
+                  <span uiText uiFont="callout" uiWeight="medium"
+                    >{{ option.serviceLabel ?? option.label }}</span
+                  >
+                  <span
+                    uiText
+                    uiFont="footnote"
+                    uiForegroundStyle="secondary"
+                    class="staff-visit__figures"
+                  >
+                    @if (option.variantLabel) { {{ option.variantLabel }} · }{{
+                    t('staff.visit.minutes', { minutes: option.minutes }) }}@if
+                    (option.priceLabel) { · {{ option.priceLabel }} }
+                  </span>
+                </ui-stack>
+              </button>
+              }
+            </ui-list-group>
             }
-          </ui-list-group>
+          </div>
         </ui-menu>
       </li>
       }
     </ul>
 
-    <!-- ── КЛИЕНТИ ─────────────────────────────────────────────────── -->
+    @if (!everyoneServed()) {
+    <p
+      uiText
+      uiFont="footnote"
+      uiForegroundStyle="secondary"
+      class="staff-visit__group--services-note"
+      data-testid="staff-visit-needs-service"
+    >
+      {{ t('staff.visit.needsService') }}
+    </p>
+    }
+
+    <!-- ── НАЧАЛО + ВРЕМЕТРАЕНЕ ────────────────────────────────────
+           ABOVE the frame (owner, 2026-09-09), and unconditional: the typed
+           pair is the truth and the picture beneath it is the check — and
+           while a thumb drags the block, the figures it moves sit above the
+           hand rather than under it. There is no `До` field: the end is a
+           computation and it is stored nowhere, so `До ≤ От` is
+           unrepresentable rather than validated. -->
     <ul
       uiListGroup
       class="staff-visit__group"
+      [attr.aria-label]="t('staff.visit.start')"
+    >
+      <!-- THE FRAME AS THE GROUP'S FIRST SEGMENT (owner, 2026-09-10: "move
+           the frame inside this list group as a separate row" — then
+           "reverse it, the frame first and the timings below"). A plain
+           item, not a row: the group's seam and outer corners are the
+           frame's now. -->
+      <li class="staff-visit__frame-row" data-testid="staff-visit-frame-row">
+        <!-- ── THE FRAME ───────────────────────────────────────────────── -->
+        <section
+          class="staff-frame"
+          role="group"
+          [attr.aria-label]="frameSummary()"
+          data-frame="visit"
+          #frameSection
+          [attr.popover]="fullscreen.expanded() ? 'manual' : null"
+          [attr.data-expanded]="fullscreen.expanded() ? '' : null"
+          data-testid="staff-visit-frame"
+          (keydown.escape)="fullscreen.onEscape($event)"
+        >
+          <!-- One sentence is the ONLY narration of the frame: everything
+               drawn inside it is a visual encoding of a fact this paragraph
+               already states, and walking three positioned buttons to learn
+               what one sentence says is worse than not knowing. -->
+          <p uiVisuallyHidden data-testid="staff-visit-frame-summary">
+            {{ frameSummary() }}
+          </p>
+
+          <!-- THE FRAME'S HEADER — the date navigator, sat directly on the
+                 picture it navigates (owner ruling 2026-08-26). It replaces the
+                 chair's face, which was the wrong thing to put here twice over:
+                 it named a barber the participants at the top of the sheet now
+                 name properly, and it put a PERSON between a date and the day
+                 that date draws. Outlook's calendar bar is exactly this — step
+                 back, today, step forward, and a value-bearing date — and it
+                 belongs to the grid beneath it, not to the sheet. -->
+          <header class="staff-frame__head">
+            <span class="staff-frame__steps">
+              <button
+                type="button"
+                uiButton
+                uiButtonStyle="bordered"
+                uiTint="neutral"
+                uiControlSize="small"
+                [uiIconOnly]="true"
+                [attr.aria-label]="t('staff.visit.dayPrevious')"
+                data-testid="staff-visit-day-prev"
+                (click)="stepDay(-1)"
+              >
+                <ui-icon uiName="calendar.previous" />
+              </button>
+              <button
+                type="button"
+                uiButton
+                uiButtonStyle="bordered"
+                uiTint="neutral"
+                uiControlSize="small"
+                [uiIconOnly]="true"
+                [attr.aria-label]="t('staff.visit.dayNext')"
+                data-testid="staff-visit-day-next"
+                (click)="stepDay(1)"
+              >
+                <ui-icon uiName="calendar.next" />
+              </button>
+            </span>
+            <span uiTrailing class="staff-frame__day">
+              <!-- ONE DAY PILL, shared with the page toolbar (owner, 2026-09-09):
+                 same trigger, same label, same calendar. `dayRelatives` marks
+                 the visit's own days on the month. -->
+              <lib-staff-day-pill
+                uiAlignment="trailing"
+                [uiDayKey]="draft().dayKey"
+                [uiTodayKey]="vm().todayKey"
+                [uiLocale]="locale()"
+                [uiRelatives]="dayRelatives()"
+                [uiPreviousLabel]="t('staff.visit.monthPrevious')"
+                [uiNextLabel]="t('staff.visit.monthNext')"
+                uiTestId="staff-visit-day-pill"
+                uiCalendarTestId="staff-visit-calendar"
+                [(uiPresented)]="dayOpen"
+                (uiPicked)="pickDay($event)"
+              />
+              <!-- FULL SCREEN (owner, 2026-09-10; HIG: an expand control at the
+                 top trailing edge, and the same control, flipped, to leave).
+                 The frame fills the sheet; its own chrome waits underneath. -->
+              <button
+                type="button"
+                uiButton
+                uiButtonStyle="bordered"
+                uiTint="neutral"
+                uiControlSize="small"
+                [uiIconOnly]="true"
+                class="staff-frame__expand"
+                [attr.aria-label]="
+                t(
+                  fullscreen.expanded()
+                    ? 'staff.visit.frameCollapse'
+                    : 'staff.visit.frameExpand'
+                )
+              "
+                [attr.aria-pressed]="fullscreen.expanded()"
+                data-testid="staff-visit-frame-expand"
+                (click)="fullscreen.toggle()"
+              >
+                <ui-icon
+                  [uiName]="fullscreen.expanded() ? 'frame.collapse' : 'frame.expand'"
+                />
+              </button>
+            </span>
+          </header>
+
+          <lib-staff-time-grid
+            uiViewport="framed"
+            uiPlacement="proportional"
+            [columns]="frameColumns()"
+            [uiWindow]="frameWindow()"
+            [uiSnapMinutes]="snapMinutes"
+            [uiDragCopy]="dragCopy()"
+            [uiEditableEventId]="vm().appointmentId"
+            [uiEditable]="!gone()"
+            [uiPickable]="false"
+            [uiMinMinutes]="10"
+            [rosterStartMinute]="frameDay().rosterStartMinute"
+            [nowMinute]="frameDay().nowMinute"
+            (draftChanged)="onFrameDraft($event)"
+            (draftCommitted)="onFrameCommit($event)"
+          />
+
+          <!-- The line under the frame is SILENT by default. It speaks only
+               for what the drawing cannot say: a neighbour that may be
+               off-screen, or the consequence of leaving the shift. -->
+          @if (frameVerdict(); as verdict) {
+          <p
+            uiText
+            uiFont="footnote"
+            [uiForegroundStyle]="
+              verdict.kind === 'conflict' ? 'destructive' : 'secondary'
+            "
+            [attr.data-verdict]="verdict.kind"
+            data-testid="staff-visit-frame-note"
+          >
+            @if (verdict.kind === 'conflict') { {{ t('staff.visit.conflict', {
+            name: verdict.name, start: verdict.start, end: verdict.end }) }} }
+            @else { {{ t('staff.visit.outsideRoster', { time: verdict.time }) }}
+            }
+          </p>
+          }
+        </section>
+      </li>
+      <li uiListRow uiSize="regular">
+        <label for="staff-visit-start">{{ t('staff.visit.start') }}</label>
+        @if (gone()) {
+        <span uiTrailing class="staff-visit__figures">{{ startLabel() }}</span>
+        } @else {
+        <span uiTrailing>
+          <!-- The platform's own time control — the wheel on iOS, the dial
+                 on Android — behind the DS face (`ui-time-field`, owner
+                 2026-09-09): `HH:mm` in our figures and our clock glyph on
+                 every engine. `commitStart` refuses anything that does not
+                 parse. -->
+          <span class="staff-sheet__pill staff-visit__figures">
+            <ui-time-field
+              uiId="staff-visit-start"
+              [uiValue]="startValue()"
+              [uiMin]="startMinAttr()"
+              [uiMax]="startMaxAttr()"
+              uiTestId="staff-visit-start"
+              (uiValueChange)="commitStart($event)"
+            />
+          </span>
+        </span>
+        }
+      </li>
+
+      <li uiListRow uiSize="regular">
+        <!-- THE TITLE IS THE CHOICE (owner, 2026-09-09): `Времетраене` or
+             `Край` — the same fact, entered the way the barber is thinking
+             about it. Both write `durationOverride`; the end is still stored
+             nowhere. An end typed before the start means the next day.
+
+             ⚠ ONE ROOT PER BLOCK. A control-flow block is projected by its
+             single root's selector; give it two roots and the whole block
+             lands in the default slot — the pill left the trailing edge the
+             first time this row was written with the title and the field
+             inside one `@else`. -->
+        @if (gone()) {
+        <span>{{ t('staff.visit.duration') }}</span>
+        } @else {
+        <!-- The title, and under it THE READOUT when the figure departs from
+             the catalogue — «Каталог: 50 мин · +15 мин» on the row it
+             explains (owner, 2026-09-09: a paragraph floating between the
+             group and the frame "had too much gap and felt odd"). The leg
+             rows' own two-line grammar. -->
+        <span class="staff-visit__leg-body">
+          <ui-choice-menu
+            uiAlignment="leading"
+            [uiOptions]="timingOptions()"
+            [uiSelectedId]="timingMode()"
+            [uiLabel]="t('staff.visit.timingMode')"
+            [(uiPresented)]="timingMenu"
+            (uiPicked)="setTimingMode($event)"
+          >
+            <button
+              type="button"
+              uiInteractive
+              uiRadius="capsule"
+              uiMenuTrigger
+              class="staff-visit__row-title"
+              data-testid="staff-visit-timing-mode"
+              (click)="timingMenu.set(true)"
+            >
+              {{ t(timingMode() === 'end' ? 'staff.visit.end' :
+              'staff.visit.duration') }}
+              <ui-icon uiName="field.expand" />
+            </button>
+          </ui-choice-menu>
+          @if (visitCatalogNote(); as note) {
+          <span
+            uiText
+            uiFont="footnote"
+            uiForegroundStyle="secondary"
+            class="staff-visit__figures"
+            data-testid="staff-visit-catalog"
+            >{{ note }}</span
+          >
+          }
+        </span>
+        } @if (gone()) {
+        <span uiTrailing class="staff-visit__figures"
+          >{{ t('staff.visit.minutes', { minutes: durationMinutes() }) }}</span
+        >
+        } @else if (timingMode() === 'end') {
+        <span uiTrailing>
+          <span class="staff-sheet__pill staff-visit__figures">
+            <ui-time-field
+              uiId="staff-visit-end"
+              [uiValue]="endValue()"
+              [uiLabel]="t('staff.visit.end')"
+              uiTestId="staff-visit-end"
+              (uiValueChange)="commitEnd($event)"
+            />
+          </span>
+        </span>
+        } @else {
+        <span uiTrailing>
+          <!-- A TYPED NUMBER, not a menu. (owner ruling 2026-09-04)
+                 Duration is a quantity a barber KNOWS; a picker is for
+                 choosing among options, and the old ladder's rungs were never
+                 options, only shortcuts. `step` is the five-minute grain the
+                 whole surface snaps to; `min` is the floor the frame refuses
+                 to draw below. -->
+          <span class="staff-sheet__pill staff-visit__figures">
+            <!-- THE UNIT FIELD (owner, 2026-09-10): one component for every
+                 typed figure on this sheet — the minutes here, the money
+                 below — the unit a quiet word after the figure. -->
+            <ui-unit-field
+              uiId="staff-visit-duration"
+              uiType="number"
+              uiInputMode="numeric"
+              [uiMin]="snapMinutes"
+              [uiStep]="snapMinutes"
+              [uiValue]="durationFigure()"
+              uiPlaceholder="0"
+              [uiUnit]="t('staff.visit.minutesUnit')"
+              [uiLabel]="t('staff.visit.duration')"
+              uiTestId="staff-visit-duration"
+              (uiInput)="typeDuration($event)"
+              (uiValueChange)="commitDuration($event)"
+            />
+          </span>
+        </span>
+        }
+      </li>
+    </ul>
+
+    <!-- ── КЛИЕНТИ ─────────────────────────────────────────────────── -->
+    <ul
+      uiListGroup
+      class="staff-visit__group staff-visit__group--clients"
       [attr.aria-label]="t('staff.visit.clients')"
     >
       @for (client of draft().clients; track client.id) {
@@ -509,10 +952,15 @@
              not markup, so the peer is positioned over the row's trailing
              end instead of nested inside its target. -->
       <li class="staff-visit__peer">
+        <!-- CENTRED, not `leading`. The leading accessory here is a FACE, and
+             a face rides the whole two-line label the way Contacts and
+             Messages centre theirs — `leading` exists for a small glyph that
+             names a title, and top-aligning an avatar against a name over a
+             phone number is what made this row read as if it had slipped
+             (owner, 2026-09-03). -->
         <button
           uiListRow
           uiSize="large"
-          uiAlignment="leading"
           type="button"
           [uiInteractive]="true"
           [attr.data-testid]="'staff-visit-client-row-' + client.id"
@@ -539,27 +987,20 @@
               }
             </span>
           </ui-stack>
-          <!-- No trailing `›`. The row sits beside a `☎` that is a real
-               second target, and two trailing glyphs a thumb apart is the
-               merge this surface was already called out for; the row's own
-               press is the affordance. -->
+          <!-- No trailing `›` and no `☎` (owner, 2026-09-09): the call is
+               the dock's, where the thumb already is; the row's own press
+               is the affordance and the number is read here. -->
         </button>
-        @if (client.phone; as phone) {
-        <a
-          class="staff-visit__call"
-          uiButton
-          uiButtonStyle="plain"
-          uiControlSize="regular"
-          [uiIconOnly]="true"
-          [href]="'tel:' + (client.phoneHref ?? phone)"
-          [attr.aria-label]="t('staff.day.visitCall') + ' — ' + client.label"
-          [attr.data-testid]="'staff-visit-call-' + client.id"
-        >
-          <ui-icon uiName="location.call" />
-        </a>
-        }
       </li>
       }
+      <!-- NOBODY seated IS the walk-in (owner, 2026-09-09): a visit saved
+           with no client rides as a guest seat under «Случаен клиент», so
+           there is nothing to choose — only a person to add, when there is
+           one to name. -->
+      <!-- Any live visit: a booking gets its second person here. A party is
+           people with services, so each added person is then named on a
+           leg's `За кого` (owner review, 2026-09-08). -->
+      @if (!gone()) {
       <li>
         <button
           uiListRow
@@ -575,376 +1016,233 @@
           {{ t('staff.visit.addClient') }}
         </button>
       </li>
+      }
     </ul>
 
-    <!-- ── THE FRAME ───────────────────────────────────────────────── -->
-    <section
-      class="staff-frame"
-      role="group"
-      [attr.aria-label]="frameSummary()"
-      data-testid="staff-visit-frame"
-    >
-      <!-- One sentence is the ONLY narration of the frame: everything
-             drawn inside it is a visual encoding of a fact this paragraph
-             already states, and walking three positioned buttons to learn
-             what one sentence says is worse than not knowing. -->
-      <p uiVisuallyHidden data-testid="staff-visit-frame-summary">
-        {{ frameSummary() }}
-      </p>
-
-      <!-- THE FRAME'S HEADER — the date navigator, sat directly on the
-               picture it navigates (owner ruling 2026-08-26). It replaces the
-               chair's face, which was the wrong thing to put here twice over:
-               it named a barber the participants at the top of the sheet now
-               name properly, and it put a PERSON between a date and the day
-               that date draws. Outlook's calendar bar is exactly this — step
-               back, today, step forward, and a value-bearing date — and it
-               belongs to the grid beneath it, not to the sheet. -->
-      <header class="staff-frame__head">
-        <span class="staff-frame__steps">
+    <!-- ── ОСТАНАЛИТЕ ОТ РЕЗЕРВАЦИЯТА ──────────────────────────────────
+         Present only on a party, which is the point: this sheet frames ONE
+         chair's share, and without this run there is nothing on it saying the
+         booking continues in somebody else's column. A barber who moves this
+         seat has to be able to see who stays put — and reach them in one tap
+         rather than by closing the sheet and hunting the day for a second
+         card at the same minute. -->
+    @if (vm().peers.length > 0) {
+    <ui-stack uiSpacing="compact">
+      <span uiText uiFont="footnote" uiForegroundStyle="secondary">
+        {{ t('staff.visit.partyRest') }}
+      </span>
+      <ul uiListGroup [attr.aria-label]="t('staff.visit.partyRest')">
+        @for (peer of vm().peers; track peer.rowId) {
+        <li>
           <button
+            uiListRow
+            uiSize="large"
             type="button"
-            uiButton
-            uiButtonStyle="plain"
-            uiTint="neutral"
-            uiControlSize="small"
-            [uiIconOnly]="true"
-            [attr.aria-label]="t('staff.visit.dayPrevious')"
-            data-testid="staff-visit-day-prev"
-            (click)="stepDay(-1)"
+            [uiInteractive]="true"
+            [attr.data-testid]="'staff-visit-peer-' + peer.rowId"
+            (click)="peerPicked.emit(peer.rowId)"
           >
-            <ui-icon uiName="calendar.previous" />
+            <span uiLeading class="staff-visit__face">
+              <ui-avatar [uiName]="peer.clientLabel" uiControlSize="regular" />
+              <span
+                class="staff-visit__swatch"
+                [attr.data-barber-tone]="peer.chairTone"
+                aria-hidden="true"
+              ></span>
+            </span>
+            <ui-stack uiSpacing="none">
+              <span uiText uiFont="callout" uiWeight="medium"
+                >{{ peer.clientLabel }}</span
+              >
+              <span
+                uiText
+                uiFont="footnote"
+                uiForegroundStyle="secondary"
+                class="staff-visit__figures"
+              >
+                {{ peer.chairName }} · {{ peer.timeLabel }}
+              </span>
+            </ui-stack>
+            <!-- `›`, because this GOES somewhere: the sheet re-frames on that
+                 chair. It is not a menu and not a toggle. -->
+            <span uiTrailing>
+              <ui-icon uiName="nav.disclosure" aria-hidden="true" />
+            </span>
           </button>
-          <button
-            type="button"
-            uiButton
-            uiButtonStyle="plain"
-            uiTint="neutral"
-            uiControlSize="small"
-            [uiIconOnly]="true"
-            [attr.aria-label]="t('staff.visit.dayToday')"
-            data-testid="staff-visit-day-today"
-            (click)="goToday()"
-          >
-            <ui-icon uiName="visit.calendar" />
-          </button>
-          <button
-            type="button"
-            uiButton
-            uiButtonStyle="plain"
-            uiTint="neutral"
-            uiControlSize="small"
-            [uiIconOnly]="true"
-            [attr.aria-label]="t('staff.visit.dayNext')"
-            data-testid="staff-visit-day-next"
-            (click)="stepDay(1)"
-          >
-            <ui-icon uiName="calendar.next" />
-          </button>
-        </span>
-        <span uiTrailing>
-          <!-- A disclosure trigger for a form VALUE, not a toggle button —
-                   which is why it is a plain button with `.staff-sheet__pill`
-                   and not a `ui-chip` (whose `uiSelected` binds
-                   `aria-pressed`). Always value-bearing, never a bare `›`. -->
-          <button
-            type="button"
-            class="staff-sheet__pill staff-frame__pill staff-visit__figures"
-            uiInteractive
-            uiRadius="capsule"
-            [attr.aria-expanded]="dayOpen()"
-            [attr.aria-controls]="dayOpen() ? 'staff-visit-calendar' : null"
-            data-testid="staff-visit-day-pill"
-            (click)="toggleDay()"
-          >
-            {{ draft().dayLabel }}
-            <ui-icon uiName="field.expand" aria-hidden="true" />
-          </button>
-        </span>
-      </header>
+        </li>
+        }
+      </ul>
+    </ui-stack>
+    }
 
-      @if (dayOpen()) {
-      <!-- INSIDE the frame's box, under its head — the month drops out
-               of the header the way a calendar bar's does, over the picture
-               rather than beside it. It is not a `ui-list-group` segment any
-               more: the head stopped being a list row when it became the
-               frame's own chrome, and a lone disclosure `<li>` with no run to
-               belong to was inheriting seams from a group of one. -->
-      <div
-        class="staff-frame__calendar"
-        id="staff-visit-calendar"
-        data-testid="staff-visit-calendar"
-      >
-        <div class="staff-visit__relatives">
-          <button
-            type="button"
-            uiChip
-            uiControlSize="small"
-            data-testid="staff-visit-today"
-            (click)="pickDay(relativeDay(0))"
-          >
-            {{ t('staff.visit.today') }}
-          </button>
-          <button
-            type="button"
-            uiChip
-            uiControlSize="small"
-            data-testid="staff-visit-tomorrow"
-            (click)="pickDay(relativeDay(1))"
-          >
-            {{ t('staff.visit.tomorrow') }}
-          </button>
-        </div>
-
-        <ui-calendar-grid uiSize="regular">
-          @for (name of weekdayNames(); track $index) {
-          <span uiWeekday>{{ name }}</span>
-          } @for (week of calendarWeeks(); track $index) { @for (cell of week;
-          track $index) { @if (cell === null) {
-          <span uiDay aria-hidden="true"></span>
-          } @else {
-          <button
-            type="button"
-            uiDay
-            uiInteractive
-            uiRadius="capsule"
-            [attr.data-selected]="cell.dayKey === draft().dayKey ? '' : null"
-            [attr.aria-current]="
-                  cell.dayKey === draft().dayKey ? 'date' : null
-                "
-            [attr.data-testid]="'staff-visit-day-' + cell.dayKey"
-            (click)="pickDay(cell.dayKey)"
-          >
-            {{ cell.day }}
-          </button>
-          } } }
-        </ui-calendar-grid>
-
-        <p uiText uiFont="caption" uiForegroundStyle="tertiary">
-          {{ t('staff.visit.occupancyLoaded') }}
-        </p>
-      </div>
-      }
-
-      <lib-staff-time-grid
-        uiViewport="framed"
-        uiPlacement="proportional"
-        [columns]="frameColumns()"
-        [uiWindow]="frameWindow()"
-        [uiSnapMinutes]="snapMinutes"
-        [uiDragCopy]="dragCopy()"
-        [uiEditableEventId]="vm().appointmentId"
-        [uiEditable]="true"
-        [uiMinMinutes]="10"
-        [rosterStartMinute]="vm().rosterStartMinute"
-        [nowMinute]="vm().nowMinute"
-        (draftChanged)="onFrameDraft($event)"
-        (draftCommitted)="onFrameCommit($event)"
-      />
-
-      <!-- The line under the frame is SILENT by default. It speaks only
-             for what the drawing cannot say: a neighbour that may be
-             off-screen, or the consequence of leaving the shift. -->
-      @if (frameVerdict(); as verdict) {
-      <p
-        uiText
-        uiFont="footnote"
-        [uiForegroundStyle]="
-            verdict.kind === 'conflict' ? 'destructive' : 'secondary'
-          "
-        [attr.data-verdict]="verdict.kind"
-        data-testid="staff-visit-frame-note"
-      >
-        @if (verdict.kind === 'conflict') { {{ t('staff.visit.conflict', { name:
-        verdict.name, start: verdict.start, end: verdict.end }) }} } @else { {{
-        t('staff.visit.outsideRoster', { time: verdict.time }) }} }
-      </p>
-      }
-    </section>
-
-    <!-- ── НАЧАЛО + ВРЕМЕТРАЕНЕ ────────────────────────────────────
-           Below the frame, and unconditional. There is no `До` field: the
-           end is a computation and it is stored nowhere, so `До ≤ От` is
-           unrepresentable rather than validated. -->
-    <ul
-      uiListGroup
-      class="staff-visit__group"
-      [attr.aria-label]="t('staff.visit.start')"
-    >
-      <li uiListRow uiSize="regular">
-        <label for="staff-visit-start">{{ t('staff.visit.start') }}</label>
-        <span uiTrailing>
-          <!-- The platform's own time control — the wheel on iOS, the dial
-                 on Android. We build the calendar because we have occupancy
-                 to draw on it; we build nothing for time because we have
-                 nothing to add. -->
-          <span class="staff-sheet__pill staff-visit__figures">
-            <input
-              uiTextField
-              id="staff-visit-start"
-              type="time"
-              step="300"
-              [value]="startValue()"
-              [attr.min]="startMinAttr()"
-              [attr.max]="startMaxAttr()"
-              data-testid="staff-visit-start"
-              (change)="commitStart($any($event.target).value)"
-            />
-          </span>
-        </span>
-      </li>
-
-      <li uiListRow uiSize="regular">
-        {{ t('staff.visit.duration') }}
-        <span uiTrailing>
-          <ui-menu
-            uiAlignment="trailing"
-            [uiPresented]="durationMenu()"
-            [uiLabel]="t('staff.visit.duration')"
-            (uiDismissed)="durationMenu.set(false)"
-          >
-            <button
-              type="button"
-              uiButton
-              uiButtonStyle="plain"
-              uiTint="neutral"
-              uiControlSize="small"
-              uiMenuTrigger
-              class="staff-visit__figures"
-              data-testid="staff-visit-duration"
-              (click)="durationMenu.set(true)"
-            >
-              {{ t('staff.visit.durationOption', { minutes: durationMinutes(),
-              end: endLabel() }) }}
-              <ui-icon uiTrailing uiName="field.expand" />
-            </button>
-            <!-- Every row is a duration AND the end it yields: no
-                   arithmetic in either direction, ever, for anyone. -->
-            @for (step of durationLadder(); track step.minutes) {
-            <button
-              type="button"
-              uiMenuItem
-              [uiSelected]="step.minutes === durationMinutes()"
-              [attr.data-testid]="'staff-visit-duration-' + step.minutes"
-              (click)="setDuration(step.minutes)"
-            >
-              {{ t('staff.visit.durationOption', { minutes: step.minutes, end:
-              step.endLabel }) }}
-            </button>
-            }
-          </ui-menu>
-        </span>
-      </li>
-    </ul>
-
-    <!-- ── УСЛУГИ ──────────────────────────────────────────────────── -->
-    <ul
-      uiListGroup
-      class="staff-visit__group"
-      [attr.aria-label]="t('staff.visit.services')"
-    >
-      @for (leg of draft().legs; track leg.seatId) {
-      <li>
-        <!-- Two lines, 52px, the whole row is the target. `›` means "you
-               go somewhere and come back" — a barber learns in one tap which
-               rows travel and never has to guess again. -->
-        <button
-          uiListRow
-          uiSize="large"
-          uiAlignment="leading"
-          type="button"
-          [uiInteractive]="true"
-          [attr.data-testid]="'staff-visit-leg-' + leg.seatId"
-          (click)="push('service', leg.seatId, 'staff-visit-leg-' + leg.seatId)"
-        >
-          <ui-stack uiSpacing="none">
-            <span uiText uiFont="callout" uiWeight="medium"
-              >{{ leg.serviceLabel }}</span
-            >
-            <span
-              uiText
-              uiFont="footnote"
-              uiForegroundStyle="secondary"
-              class="staff-visit__figures"
-              [attr.data-testid]="'staff-visit-leg-line-' + leg.seatId"
-              >{{ legLine(leg) }}</span
-            >
-          </ui-stack>
-          <span uiTrailing>
-            <ui-icon uiName="nav.disclosure" aria-hidden="true" />
-          </span>
-        </button>
-      </li>
-      }
-      <li>
-        <button
-          uiListRow
-          uiSize="large"
-          type="button"
-          [uiInteractive]="true"
-          data-testid="staff-visit-add-service"
-          (click)="
-              push('serviceSearch', null, 'staff-visit-add-service')
-            "
-        >
-          <span uiLeading>
-            <ui-icon uiName="action.add" aria-hidden="true" />
-          </span>
-          {{ t('staff.visit.addService') }}
-        </button>
-      </li>
-    </ul>
-
-    <!-- ── ПАРИ ────────────────────────────────────────────────────── -->
+    <!-- ── ПЛАЩАНЕ — THE RECEIPT (owner, 2026-09-10: "no price on the
+         services, the price belongs to the payment section"). One line per
+         seat with what it costs — text for a barber, a pill for whoever may
+         reprice — then the tip once a tip can exist, and, when the
+         engagement wiring lands, the promotion's pill and the discount arm
+         with its role. The total stays in the dock, the one place it is
+         read; a single line's figure equals it, and that is two answers to
+         two questions — what the service costs, what is owed — not one
+         number twice. Absent on a cancelled visit and on a draft with no
+         seat yet. -->
+    @if (moneyShown()) {
     <ul
       uiListGroup
       class="staff-visit__group"
       [attr.aria-label]="t('staff.visit.money')"
+      data-testid="staff-visit-money"
     >
-      <li uiListRow uiSize="regular">
-        {{ t('staff.visit.services') }}
-        <span uiTrailing class="staff-visit__figures"
-          >{{ vm().priceLabel ?? '—' }}</span
-        >
-      </li>
-      <li>
-        <!-- The row's trailing value is the applied promo's name or the
-               literal `Няма` — never a placeholder, never a bare `›`. The
-               glyph is `nav.disclosure` because this row TRAVELS. -->
-        <button
-          uiListRow
-          uiSize="regular"
-          type="button"
-          [uiInteractive]="true"
-          data-testid="staff-visit-promo"
-          (click)="push('promo', null, 'staff-visit-promo')"
-        >
-          {{ t('staff.visit.promo') }}
-          <span uiTrailing>
-            {{ draft().promoLabel ?? t('staff.visit.promoNone') }}
-            <ui-icon uiName="nav.disclosure" aria-hidden="true" />
+      @for (leg of draft().legs; track leg.seatId) {
+      <li
+        uiListRow
+        uiSize="regular"
+        class="staff-visit__receipt-row"
+        [attr.data-testid]="'staff-visit-price-row-' + leg.seatId"
+      >
+        <ui-stack uiSpacing="none">
+          <span>{{ legService(leg) }}</span>
+          <!-- The variant as a description, the row's own footnote. -->
+          @if (legVariant(leg); as variant) {
+          <span
+            uiText
+            uiFont="footnote"
+            uiForegroundStyle="secondary"
+            [attr.data-testid]="'staff-visit-price-variant-' + leg.seatId"
+            >{{ variant }}</span
+          >
+          } @if (draft().clients.length > 1) {
+          <span uiText uiFont="footnote" uiForegroundStyle="secondary"
+            >{{ legClientLabel(leg) }}</span
+          >
+          }
+        </ui-stack>
+        <span uiTrailing>
+          @if (showsPricePill(leg)) {
+          <span class="staff-sheet__pill staff-visit__figures">
+            <ui-unit-field
+              [uiValue]="priceFigure(leg)"
+              [uiUnit]="t('staff.visit.currencySymbol')"
+              uiPlaceholder="0,00"
+              uiInputMode="decimal"
+              [uiLabel]="t('staff.visit.price') + ': ' + legTitle(leg)"
+              [uiTestId]="'staff-visit-leg-price-' + leg.seatId"
+              (uiValueChange)="setLegPrice(leg.seatId, $event)"
+            />
           </span>
-        </button>
+          } @else {
+          <span
+            class="staff-visit__figures"
+            [attr.data-testid]="'staff-visit-price-' + leg.seatId"
+            >{{ leg.priceLabel ?? '—' }}</span
+          >
+          }
+        </span>
       </li>
-      <li uiListRow uiSize="large">
-        <span uiWeight="semibold">{{ t('staff.visit.atShop') }}</span>
-        <span uiTrailing uiWeight="semibold" class="staff-visit__figures"
-          >{{ vm().priceLabel ?? '—' }}</span
-        >
+      } @if (tipRowShown()) {
+      <!-- THE TIP — A CHOICE (owner, 2026-09-10: "rethink the use of
+           choice instead"): the value pill opens the shares — «Няма», 5 ·
+           10 · 15 % of the visit's total, each already a figure — and
+           «Друго» for the sum the client actually left, typed in the unit
+           field that appears beside it. The repeat row's own grammar: the
+           value is the choice. Every pick writes STRAIGHT THROUGH, unlike
+           the rest of this sheet, and the row says so: it is money that has
+           already changed hands, and the whole point of recording it is the
+           barber's running total for the day. -->
+      <!-- One word, no sentence under it (owner, 2026-09-10: "the
+           description under the tip does not make sense"): that it writes
+           straight through is the dock's plus to show, not a row's to say. -->
+      <li
+        uiListRow
+        uiSize="regular"
+        class="staff-visit__tip-row"
+        data-testid="staff-visit-tip"
+      >
+        <span>{{ t('staff.visit.tip') }}</span>
+        <span uiTrailing>
+          <ui-choice-menu
+            uiAlignment="trailing"
+            [uiOptions]="tipChoices()"
+            [uiSelectedId]="tipChoiceId()"
+            [uiLabel]="t('staff.visit.tip')"
+            [(uiPresented)]="tipMenu"
+            (uiPicked)="pickTip($event)"
+          >
+            <button
+              type="button"
+              uiButton
+              uiButtonStyle="bordered"
+              uiTint="neutral"
+              uiControlSize="small"
+              uiMenuTrigger
+              [attr.aria-label]="t('staff.visit.tip') + ': ' + tipChoiceName()"
+              data-testid="staff-visit-tip-choice"
+              (click)="tipMenu.set(true)"
+            >
+              <!-- The share, then its figure in the secondary tone — the
+                   menu row's own grammar, and the same SMALL size as the
+                   typed pills beside it (owner, 2026-09-10). -->
+              <span data-testid="staff-visit-tip-value"
+                >{{ tipChoiceLabel() }}@if (tipChoiceDetail()) {<span
+                  class="staff-visit__tip-amount"
+                  uiForegroundStyle="secondary"
+                  >{{ tipChoiceDetail() }}</span
+                >}</span
+              >
+              <ui-icon uiTrailing uiName="field.expand" />
+            </button>
+            <!-- «ДРУГО» IS TYPED RIGHT HERE (owner, 2026-09-10: "or other to
+                 be directly written in the dropdown"): the menu's second
+                 group, the sum in the unit field — so the row outside never
+                 changes shape, and the pill reads it back as «Друго» with
+                 the figure, the shares' own grammar. The word is a label
+                 for the field: a tap on it lands in the figure. -->
+            <ul
+              uiListGroup
+              class="staff-visit__tip-other"
+              [attr.aria-label]="t('staff.visit.tipOther')"
+            >
+              <li
+                uiListRow
+                [uiSelected]="tipChoice() === 'other'"
+                data-testid="staff-visit-tip-other"
+              >
+                <label for="staff-visit-tip"
+                  >{{ t('staff.visit.tipOther') }}</label
+                >
+                <span uiTrailing>
+                  <span class="staff-sheet__pill staff-visit__figures">
+                    <ui-unit-field
+                      uiId="staff-visit-tip"
+                      [uiValue]="tipOtherFigure()"
+                      [uiUnit]="t('staff.visit.currencySymbol')"
+                      uiPlaceholder="0,00"
+                      uiInputMode="decimal"
+                      [uiLabel]="t('staff.visit.tipOther')"
+                      uiTestId="staff-visit-tip-field"
+                      (uiValueChange)="commitTip($event)"
+                    />
+                  </span>
+                </span>
+              </li>
+            </ul>
+          </ui-choice-menu>
+        </span>
       </li>
+      }
     </ul>
+    }
 
     <!-- ── БЕЛЕЖКИ — two of them, never merged ─────────────────────── -->
     @if (vm().note; as clientNote) {
     <!-- Someone else's words, so the markup says so: a bare blockquote
            OUTSIDE every group. A `ui-list-row` would dress prose as a
            control, and overwriting it destroys evidence. -->
-    <blockquote
-      class="staff-visit__quote"
-      data-testid="staff-visit-client-note"
-    >
-      {{ clientNote }}
-    </blockquote>
+    <figure class="staff-visit__quote" data-testid="staff-visit-client-note">
+      <figcaption uiText uiFont="caption" uiForegroundStyle="tertiary">
+        {{ t('staff.visit.clientNoteFrom') }}
+      </figcaption>
+      <blockquote>{{ clientNote }}</blockquote>
+    </figure>
     }
 
     <ul
@@ -953,18 +1251,26 @@
       [attr.aria-label]="t('staff.visit.teamNote')"
     >
       @if (noteOpen() || draft().note) {
+      <!-- A LABELLED row (owner, 2026-09-10: "some label like in other list
+           rows"): the word above the field, the field the row's own width. -->
       <li uiListRow uiSize="large" uiAlignment="leading">
-        <textarea
-          uiTextField
-          rows="2"
-          class="staff-visit__note"
-          [value]="draft().note ?? ''"
-          [attr.aria-label]="t('staff.visit.teamNote')"
-          data-testid="staff-visit-note-field"
-          (change)="commitNote($any($event.target).value)"
-        ></textarea>
+        <ui-stack uiSpacing="tight" class="staff-visit__note-stack">
+          <label for="staff-visit-note-field"
+            >{{ t('staff.visit.teamNote') }}</label
+          >
+          <textarea
+            uiTextField
+            id="staff-visit-note-field"
+            rows="2"
+            [attr.placeholder]="t('staff.visit.notePlaceholder')"
+            class="staff-visit__note"
+            [value]="draft().note ?? ''"
+            data-testid="staff-visit-note-field"
+            (change)="commitNote($any($event.target).value)"
+          ></textarea>
+        </ui-stack>
       </li>
-      } @else {
+      } @else { @if (!gone()) {
       <li>
         <button
           uiListRow
@@ -980,125 +1286,173 @@
           {{ t('staff.visit.addNote') }}
         </button>
       </li>
+      } }
+    </ul>
+
+    <!-- ── THE EXITS — LAST (owner, 2026-09-09) ───────────────────────
+         What the sheet can still do that is not an edit, at its foot — the
+         way iOS Calendar keeps «Delete Event» last. «Не дойде» once the
+         start has passed (before it, nobody has failed to come); «Откажи
+         часа» while the graph allows it; «Откажи и блокирай времето» for
+         the appointment that should have been a block — it cancels and
+         opens the block sheet on the same range, named for both halves. A
+         no-show can be taken back; a settled visit offers the next one. -->
+    @if (exits(); as exits) { @if (exits.length > 0) {
+    <ul
+      uiListGroup
+      class="staff-visit__group staff-visit__exits"
+      [attr.aria-label]="t('staff.visit.exits')"
+      data-testid="staff-visit-exits"
+    >
+      @for (exit of exits; track exit.id) {
+      <li>
+        <button
+          uiListRow
+          uiSize="large"
+          type="button"
+          [uiInteractive]="true"
+          [class.staff-visit__exit--destructive]="exit.destructive"
+          [disabled]="vm().acting"
+          [attr.data-testid]="'staff-visit-' + exit.id"
+          (click)="runExit(exit)"
+        >
+          <span uiLeading>
+            <ui-icon [uiName]="exit.icon" aria-hidden="true" />
+          </span>
+          {{ exit.label }}
+        </button>
+      </li>
       }
     </ul>
+    } }
   </div>
   }
 
   <!-- ── THE DOCK ──────────────────────────────────────────────────── -->
-  <ui-sheet-action-bar [uiVisible]="true">
+  <!-- THE DOCK FOLLOWS THE PAGE (owner, 2026-09-09; HIG bottom-toolbar
+       composition). At the ROOT: the saved total, leading, and «Запази»
+       trailing — the one thing read and the one thing that writes. On a
+       PUSHED PAGE the total means nothing (a service page is not the whole
+       appointment), so the bar carries that page's own acts: a destructive
+       icon or a count leading, and the ✓ that returns to the ladder
+       trailing. The draft already holds every edit the page made; ✓ is
+       the way back, not a second write.
+       ⚠ IT IS THE SAVED SUBTOTAL, NOT A LIVE ONE (unchanged): the draft's
+       legs carry a formatted price and no minor units, so nothing here can
+       add them up — a live figure is the VM owner's job. -->
+  <!-- INSIDE the body, so it pins with the scroller (`uiAnchor="scroll"`):
+       this dock is the editor's own and cannot reach the sheet's overlay
+       slot, and an absolute box in here is what a finger on iOS scrolls
+       away (owner, 2026-09-09). -->
+  <ui-sheet-action-bar
+    [uiVisible]="true"
+    uiAnchor="scroll"
+    class="staff-visit__dock"
+  >
+    @let dockPage = currentPage()?.kind ?? null; @if (dockPage === null) {
+    <ui-stack
+      uiSpacing="none"
+      uiAlignment="leading"
+      class="staff-visit__total"
+      data-testid="staff-visit-total"
+    >
+      <span uiText uiFont="footnote" uiForegroundStyle="secondary"
+        >{{ t('staff.visit.atShop') }}</span
+      >
+      <span
+        uiText
+        uiFont="headline"
+        uiWeight="semibold"
+        class="staff-visit__figures"
+        data-testid="staff-visit-total-figure"
+        >{{ vm().priceLabel ?? '—' }}</span
+      >
+      <!-- THE TIP, AS A PLUS (owner, 2026-09-10: "reflected in some cool
+           way with a green plus in the action bar"): the extra the client
+           left, under the bill, in the success tone; it rises in. -->
+      @if (vm().tipLabel; as tip) {
+      <span
+        uiText
+        uiFont="footnote"
+        uiWeight="semibold"
+        uiForegroundStyle="success"
+        class="staff-visit__figures staff-visit__tip-plus"
+        data-testid="staff-visit-dock-tip"
+        >{{ t('staff.visit.tipInDock', { amount: tip }) }}</span
+      >
+      }
+    </ui-stack>
+    <!-- THE CALL — docked (owner, 2026-09-09: "the most common action you
+         do when you open the appointment"). Reversal of the 2026-09-08
+         ruling that put it on the client row: a row target is read, a dock
+         target is reached, and this one is reached more than any other.
+         It hugs «Запази» on the thumb rail; the visit's own number. -->
     @if (vm().phone; as phone) {
     <a
+      class="staff-visit__dock-call"
       uiButton
       uiButtonStyle="bordered"
       uiTint="neutral"
       uiControlSize="large"
       [uiIconOnly]="true"
       [href]="'tel:' + (vm().phoneHref ?? phone)"
-      [attr.aria-label]="t('staff.day.visitCall')"
+      [attr.aria-label]="t('staff.day.visitCall') + ' — ' + vm().clientLabel"
       data-testid="staff-visit-call"
     >
       <ui-icon uiName="location.call" />
     </a>
-    } @if (dirty()) {
-    <button
-      type="button"
-      uiButton
-      uiButtonStyle="plain"
-      uiControlSize="large"
-      data-testid="staff-visit-discard"
-      (click)="discard()"
-    >
-      {{ t('staff.day.cancelDismiss') }}
-    </button>
-    }
-    <!-- THE `⋯` — every remaining legal transition, plus the promo page.
-         It moved here with the summary strip (owner ruling 2026-08-26): the
-         dock is where this sheet keeps the things that WRITE, and the
-         overflow is the primary verb's own siblings. The sheet's title bar
-         carries the name and the dismiss now. -->
-    <ui-menu
-      uiPlacement="bottom"
-      uiAlignment="trailing"
-      [uiPresented]="moreMenu()"
-      [uiLabel]="t('staff.day.moreActions')"
-      (uiDismissed)="moreMenu.set(false)"
-    >
-      <button
-        type="button"
-        uiMenuTrigger
-        uiButton
-        uiButtonStyle="plain"
-        uiControlSize="regular"
-        [uiIconOnly]="true"
-        [attr.aria-label]="t('staff.day.moreActions')"
-        data-testid="staff-visit-more"
-        (click)="moreMenu.set(true)"
-      >
-        <ui-icon uiName="action.more" />
-      </button>
-      <button
-        type="button"
-        uiMenuItem
-        data-testid="staff-visit-all-promos"
-        (click)="moreMenu.set(false); push('promo', null, 'staff-visit-more')"
-      >
-        {{ t('staff.visit.allPromos') }}
-      </button>
-      <!-- Every remaining legal transition. The dock leads with one; the
-             graph allows more, and hiding them would narrow what the shop can
-             do to a booking rather than tidy it. -->
-      @for (verb of vm().overflowVerbs; track verb.kind) {
-      <button
-        type="button"
-        uiMenuItem
-        [uiMenuItemRole]="verb.destructive ? 'destructive' : 'default'"
-        [attr.data-testid]="'staff-visit-act-' + verb.kind"
-        (click)="moreMenu.set(false); acted.emit(verb.kind)"
-      >
-        {{ verb.label }}
-      </button>
-      }
-    </ui-menu>
-
-    <!-- THE PRIMARY VERB — Regime A, and the one thing this sheet can
-           actually write today. `transitionAppointment` ships; the draft's
-           `staffEditAppointment` does not. Keeping these in the dock while the
-           draft has no commit is the whole point of the two-regime split. -->
-    @if (vm().primaryVerb; as verb) {
+    } @if (saveable()) {
     <button
       type="button"
       uiButton
       uiButtonStyle="borderedProminent"
       uiControlSize="large"
-      [uiSpread]="true"
       [uiLoading]="vm().acting"
-      [uiRole]="verb.destructive ? 'destructive' : undefined"
-      [attr.data-testid]="'staff-visit-act-' + verb.kind"
-      (click)="acted.emit(verb.kind)"
+      data-testid="staff-visit-save"
+      (click)="save()"
     >
-      {{ verb.label }}
+      {{ t('staff.visit.save') }}
+    </button>
+    } } @else if (dockPage === 'clientSearch') {
+    <button
+      type="button"
+      uiButton
+      uiButtonStyle="bordered"
+      uiTint="neutral"
+      uiControlSize="large"
+      data-testid="staff-visit-new-client"
+      (click)="openNewClient()"
+    >
+      <ui-icon uiLeading uiName="action.add" />
+      {{ t('staff.visit.newClient') }}
+    </button>
+    } @if (dockPage === 'clientNew') {
+    <button
+      type="button"
+      uiButton
+      uiButtonStyle="borderedProminent"
+      uiControlSize="large"
+      [uiIconOnly]="true"
+      [disabled]="!newClientReady()"
+      [attr.aria-label]="t('staff.visit.addPerson')"
+      data-testid="staff-visit-new-client-save"
+      (click)="saveNewClient()"
+    >
+      <ui-icon uiName="checklist.done" />
+    </button>
+    } @else if (dockPage !== null) {
+    <button
+      type="button"
+      uiButton
+      uiButtonStyle="borderedProminent"
+      uiControlSize="large"
+      [uiIconOnly]="true"
+      [attr.aria-label]="t('staff.visit.confirm')"
+      data-testid="staff-visit-page-done"
+      (click)="confirmPage()"
+    >
+      <ui-icon uiName="checklist.done" />
     </button>
     }
-
-    <!-- NO commit control for the DRAFT, and that is still the honest
-           shape — but the sentence under it is no longer the whole truth
-           (2026-08-26). `staffEditAppointment` SHIPS, and the frame's
-           gestures reach it: a drag or a handle publishes through
-           `committed` and the move is persisted. What has no path is
-           everything the draft holds — services, the price, the barber on a
-           leg, the day, the typed `Начало`. A `Запази` that cannot save is
-           the disabled promise this design keeps refusing, so the label is
-           still a sentence; ⚠ the sentence itself (`staff.visit.notBuiltYet`)
-           now overstates what is missing and needs the owner's wording. -->
-    <p
-      uiText
-      uiFont="footnote"
-      uiForegroundStyle="secondary"
-      class="staff-visit__honesty"
-      data-testid="staff-visit-not-built"
-    >
-      {{ t('staff.visit.notBuiltYet') }}
-    </p>
   </ui-sheet-action-bar>
 </ng-container>

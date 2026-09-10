@@ -592,6 +592,24 @@ describe('StaffTimeGrid', () => {
           ?.textContent?.trim(),
       ).toBe('10:00');
     });
+
+    it('withholds the hour label the now pill would sit on, and only that one', () => {
+      // 09:51 sits on 10:00's line in the gutter (owner, 2026-09-09): the
+      // hour gives way, its neighbours do not, and the row keeps its height.
+      fixture.componentRef.setInput('nowMinute', 591);
+      const host = render([column({ isToday: true })]);
+      const hour = (at: number) =>
+        host.querySelector<HTMLElement>(`.staff-grid__hour[data-hour="${at}"]`);
+      expect(hour(600)?.hasAttribute('data-near-now')).toBe(true);
+      expect(hour(540)?.hasAttribute('data-near-now')).toBe(false);
+      expect(hour(660)?.hasAttribute('data-near-now')).toBe(false);
+      expect(hour(600)).not.toBeNull();
+
+      // Not today: nothing is withheld, because nothing is drawn there.
+      fixture.componentRef.setInput('columns', [column({ isToday: false })]);
+      fixture.detectChanges();
+      expect(hour(600)?.hasAttribute('data-near-now')).toBe(false);
+    });
   });
 
   /*
@@ -602,6 +620,188 @@ describe('StaffTimeGrid', () => {
    * frame's regular-density figure of 2.4px per minute. That is what makes
    * these numbers readable: 24px is ten minutes, 36px is fifteen.
    */
+  /*
+   * ── QUALIFIED STRETCHES ──────────────────────────────────────────────
+   *
+   * Every one of these was all-or-nothing before: a past block hatched
+   * whole, closed hours were shading behind the column, and a collision was
+   * named only in the drag readout. They are facts about PART of a booking,
+   * and the fraction is the number worth reading.
+   */
+  /*
+   * ── DRAWN, NOT PRESSABLE ─────────────────────────────────────────────
+   *
+   * The visit sheet's frame shows one editable block plus its neighbours for
+   * context and binds nothing to `eventPicked`. Every neighbour was a
+   * `<button>` in the tab order with a pointer cursor and no action.
+   */
+  describe('pickability', () => {
+    it('leaves every block a control on the page grid', () => {
+      const host = render([
+        column({
+          events: [event({ id: 'a', startMinute: 600, endMinute: 660 })],
+        }),
+      ]);
+      const block = host.querySelector('[data-testid="staff-grid-event"]');
+      expect(block?.hasAttribute('inert')).toBe(false);
+    });
+
+    it('makes the context blocks inert while the edited one stays a control', () => {
+      fixture.componentRef.setInput('uiEditable', true);
+      fixture.componentRef.setInput('uiEditableEventId', 'a');
+      fixture.componentRef.setInput('uiPickable', false);
+      const host = render([
+        column({
+          events: [
+            event({ id: 'a', startMinute: 600, endMinute: 660 }),
+            event({ id: 'neighbour-0', startMinute: 700, endMinute: 730 }),
+          ],
+        }),
+      ]);
+      const blocks = [
+        ...host.querySelectorAll('[data-testid="staff-grid-event"]'),
+      ];
+      const byId = (id: string) =>
+        blocks.find((b) => b.getAttribute('data-event-id') === id);
+      // The one being edited is dragged, resized and keyboard-moved.
+      expect(byId('a')?.hasAttribute('inert')).toBe(false);
+      // The neighbour is a picture of somebody else's booking — it carries no
+      // id this sheet could write to, so it must not offer a press.
+      expect(byId('neighbour-0')?.hasAttribute('inert')).toBe(true);
+    });
+  });
+
+  describe('masks', () => {
+    const masksOf = (host: HTMLElement, index = 0) =>
+      [
+        ...host
+          .querySelectorAll('[data-testid="staff-grid-event"]')
+          [index].querySelectorAll('.staff-grid__event-mask'),
+      ].map((m) => ({
+        kind: m.getAttribute('data-kind'),
+        from: +(m as HTMLElement).style.getPropertyValue('--staff-mask-from'),
+        to: +(m as HTMLElement).style.getPropertyValue('--staff-mask-to'),
+      }));
+
+    it('washes only the minutes of a live booking that have gone', () => {
+      fixture.componentRef.setInput('nowMinute', 615);
+      const host = render([
+        column({
+          isToday: true,
+          open: [{ startMinute: 540, endMinute: 1080 }],
+          events: [event({ id: 'a', startMinute: 600, endMinute: 660 })],
+        }),
+      ]);
+      // 15 of 60 minutes gone — a quarter of the block, not all of it.
+      expect(masksOf(host)).toEqual([{ kind: 'elapsed', from: 0, to: 0.25 }]);
+    });
+
+    it('washes a finished booking end to end, by the same arithmetic', () => {
+      fixture.componentRef.setInput('nowMinute', 900);
+      const host = render([
+        column({
+          isToday: true,
+          open: [{ startMinute: 540, endMinute: 1080 }],
+          events: [event({ id: 'a', startMinute: 600, endMinute: 660 })],
+        }),
+      ]);
+      expect(masksOf(host)).toEqual([{ kind: 'elapsed', from: 0, to: 1 }]);
+    });
+
+    it('says nothing about time on a column that is not today', () => {
+      fixture.componentRef.setInput('nowMinute', 615);
+      const host = render([
+        column({
+          isToday: false,
+          open: [{ startMinute: 540, endMinute: 1080 }],
+          events: [event({ id: 'a', startMinute: 600, endMinute: 660 })],
+        }),
+      ]);
+      expect(masksOf(host)).toEqual([]);
+    });
+
+    it('marks the minutes beyond what the services need, from their end', () => {
+      const host = render([
+        column({
+          open: [{ startMinute: 540, endMinute: 1080 }],
+          // An hour drawn for forty-five minutes of services.
+          events: [
+            event({
+              id: 'a',
+              startMinute: 600,
+              endMinute: 660,
+              surplusMinutes: 15,
+            }),
+          ],
+        }),
+      ]);
+      expect(masksOf(host)).toEqual([{ kind: 'surplus', from: 0.75, to: 1 }]);
+    });
+
+    /*
+     * ⚠ PLACED, NOT REFUSED. It is the barber's own book — a cut that ran
+     * past closing is a thing that happened, and the grid records it. The
+     * mask says which minutes; the glyph says there are some at all.
+     */
+    it('hatches only the minutes past closing, and warns', () => {
+      const host = render([
+        column({
+          open: [{ startMinute: 540, endMinute: 1080 }],
+          // 17:30–18:30: half of it past an 18:00 close.
+          events: [event({ id: 'a', startMinute: 1050, endMinute: 1110 })],
+        }),
+      ]);
+      expect(masksOf(host)).toEqual([{ kind: 'closed', from: 0.5, to: 1 }]);
+      expect(
+        host.querySelector('[data-testid="staff-grid-outside"]'),
+      ).not.toBeNull();
+    });
+
+    it('leaves a booking inside the shift unmarked', () => {
+      const host = render([
+        column({
+          open: [{ startMinute: 540, endMinute: 1080 }],
+          events: [event({ id: 'a', startMinute: 600, endMinute: 660 })],
+        }),
+      ]);
+      expect(masksOf(host)).toEqual([]);
+      expect(
+        host.querySelector('[data-testid="staff-grid-outside"]'),
+      ).toBeNull();
+    });
+
+    it('hatches the overlapping stretch on BOTH blocks', () => {
+      const host = render([
+        column({
+          open: [{ startMinute: 0, endMinute: 1440 }],
+          events: [
+            event({ id: 'a', startMinute: 600, endMinute: 660 }),
+            event({ id: 'b', startMinute: 630, endMinute: 690 }),
+          ],
+        }),
+      ]);
+      // The last half of A and the first half of B are the same half-hour.
+      expect(masksOf(host, 0)).toEqual([{ kind: 'overlap', from: 0.5, to: 1 }]);
+      expect(masksOf(host, 1)).toEqual([{ kind: 'overlap', from: 0, to: 0.5 }]);
+    });
+
+    it('does not call a gap a collision — landing on one is the point', () => {
+      const host = render([
+        column({
+          open: [{ startMinute: 0, endMinute: 1440 }],
+          events: [
+            event({ id: 'a', startMinute: 600, endMinute: 660 }),
+            {
+              ...event({ id: 'g', startMinute: 600, endMinute: 660 }),
+              kind: 'gap' as const,
+            },
+          ],
+        }),
+      ]);
+      expect(masksOf(host, 0)).toEqual([]);
+    });
+  });
+
   describe('drag', () => {
     const PX_PER_MINUTE = 2.4;
     /** Minutes → the pointer travel that asks for them. */
@@ -665,6 +865,267 @@ describe('StaffTimeGrid', () => {
       );
       return { changed, committed };
     }
+
+    /*
+     * ── TOUCH AND HOLD ────────────────────────────────────────────────
+     *
+     * A thumb is the only pointer that cannot be told from a scroll, and this
+     * grid lives in a sheet people scroll. The block is what a finger lands
+     * on and the handles are 44px discs lying on top of it, so "4px of travel
+     * arms the drag" meant scrolling the day rewrote a booking.
+     *
+     * `pointerType: 'touch'` is what routes into the hold; the tests above
+     * leave it unset and keep the mouse's immediate behaviour.
+     */
+    const finger = (type: string, clientY: number, clientX = 0): PointerEvent =>
+      new PointerEvent(type, {
+        bubbles: true,
+        cancelable: true,
+        button: 0,
+        pointerId: 1,
+        pointerType: 'touch',
+        clientY,
+        clientX,
+      });
+
+    /** Longer than the 250ms hold, on real timers. */
+    const held = () => new Promise((resolve) => setTimeout(resolve, 320));
+
+    it('scrolls rather than moving when a finger travels off the block', () => {
+      const host = frame();
+      const seen = drags();
+      const block = grab(host, 'staff-grid-event');
+
+      block.dispatchEvent(finger('pointerdown', 0));
+      document.dispatchEvent(finger('pointermove', travel(15)));
+      fixture.detectChanges();
+
+      // Nothing drawn and nothing emitted: the browser still owns this touch,
+      // which is what lets the sheet scroll under it.
+      expect(seen.changed).toEqual([]);
+      document.dispatchEvent(finger('pointerup', travel(15)));
+      expect(seen.committed).toEqual([]);
+    });
+
+    it('does not arm a handle the moment a finger lands on it', () => {
+      const host = frame();
+      const seen = drags();
+      const handle = grab(host, 'staff-frame-handle-end');
+
+      // A mouse resizes from the first pixel — see the test above. A finger
+      // must not, or a scroll beginning on the disc resizes the booking
+      // before it has travelled at all.
+      handle.dispatchEvent(finger('pointerdown', 0));
+      document.dispatchEvent(finger('pointermove', travel(15)));
+      fixture.detectChanges();
+
+      expect(seen.changed).toEqual([]);
+    });
+
+    it('lifts the block once the finger has held still, then drags it', async () => {
+      const host = frame();
+      const seen = drags();
+      const block = grab(host, 'staff-grid-event');
+
+      block.dispatchEvent(finger('pointerdown', 0));
+      await held();
+      document.dispatchEvent(finger('pointermove', travel(15)));
+      fixture.detectChanges();
+
+      expect(seen.changed.at(-1)).toEqual({
+        id: 'a',
+        startMinute: 615,
+        endMinute: 660,
+      });
+
+      document.dispatchEvent(finger('pointerup', travel(15)));
+      expect(seen.committed).toEqual([
+        { id: 'a', startMinute: 615, endMinute: 660, kind: 'move' },
+      ]);
+    });
+
+    it('refuses the first touchmove once the hold has lifted the block — and never before or after', async () => {
+      // 2026-09-10, an iPhone: `touch-action: pan-y` lets the browser scroll
+      // a held touch, and pointer capture does not stop it. The first
+      // `touchmove` is the one moment a pan can still be refused, so it is —
+      // but only once the block is lifted, and not once it is released.
+      const host = frame();
+      const block = grab(host, 'staff-grid-event');
+      const touchmove = () =>
+        new Event('touchmove', { bubbles: true, cancelable: true });
+
+      block.dispatchEvent(finger('pointerdown', 0));
+      let move = touchmove();
+      document.dispatchEvent(move);
+      expect(move.defaultPrevented).toBe(false);
+
+      await held();
+      move = touchmove();
+      document.dispatchEvent(move);
+      expect(move.defaultPrevented).toBe(true);
+
+      document.dispatchEvent(finger('pointerup', 0));
+      move = touchmove();
+      document.dispatchEvent(move);
+      expect(move.defaultPrevented).toBe(false);
+    });
+
+    /*
+     * ⚠ THE ONE THAT MAKES IT SAFE. Resting at the end of a flick is what a
+     * thumb does every time it stops scrolling — if the hold were merely
+     * pending rather than closed, the block would lift under a finger that
+     * had already asked for a scroll.
+     */
+    it('cannot be lifted by resting the finger after a scroll has begun', async () => {
+      const host = frame();
+      const seen = drags();
+      const block = grab(host, 'staff-grid-event');
+
+      block.dispatchEvent(finger('pointerdown', 0));
+      document.dispatchEvent(finger('pointermove', travel(15)));
+      await held();
+      document.dispatchEvent(finger('pointermove', travel(30)));
+      fixture.detectChanges();
+
+      expect(seen.changed).toEqual([]);
+      document.dispatchEvent(finger('pointerup', travel(30)));
+      expect(seen.committed).toEqual([]);
+    });
+
+    /*
+     * ── THE DRAGGED NODE STAYS PUT ────────────────────────────────────────
+     *
+     * The packer sorts by start, and a template tracking its output moved
+     * the block's DOM node the moment a drag carried it past a neighbour's
+     * start — and a node that leaves the document loses its pointer capture,
+     * which reverted the drag under a thumb (owner, 2026-09-10). Two guards:
+     * the placement keeps the caller's order, and a capture lost while the
+     * block is still in the document is taken back rather than obeyed.
+     */
+    describe('a drag past a neighbour', () => {
+      const minutes = (label: string | null | undefined): number => {
+        const [h, m] = (label ?? '0:0').split(':').map(Number);
+        return h * 60 + m;
+      };
+      const startOf = (block: HTMLElement) =>
+        minutes(
+          block.querySelector('.staff-grid__event-start')?.textContent?.trim(),
+        );
+
+      it("keeps the dragged block's node where it was, behind the neighbour it passed", () => {
+        const host = frame([
+          event({ id: 'n', startMinute: 600, endMinute: 645 }),
+          event({ id: 'a', startMinute: 700, endMinute: 745 }),
+        ]);
+        const blocks = () => [
+          ...host.querySelectorAll<HTMLElement>(
+            '[data-testid="staff-grid-event"]',
+          ),
+        ];
+        const dragged = blocks().find((el) => el.dataset['eventId'] === 'a');
+        if (dragged === undefined) throw new Error('no dragged block');
+        expect(blocks().indexOf(dragged)).toBe(1);
+
+        dragged.dispatchEvent(pointer('pointerdown', 500));
+        document.dispatchEvent(pointer('pointermove', 100));
+        fixture.detectChanges();
+        // It crossed the neighbour's start…
+        expect(startOf(dragged)).toBeLessThan(600);
+        // …and its node is the same one, in the same place.
+        expect(blocks()[1]).toBe(dragged);
+        expect(blocks().map((el) => el.dataset['eventId'])).toEqual(['n', 'a']);
+        document.dispatchEvent(pointer('pointerup', 100));
+      });
+
+      it('takes the pointer back when capture is lost with the block still in the document', () => {
+        const host = frame();
+        const block = grab(host, 'staff-grid-event');
+        block.dispatchEvent(pointer('pointerdown', 500));
+        document.dispatchEvent(pointer('pointermove', 560));
+        fixture.detectChanges();
+        const moved = startOf(block);
+        expect(moved).not.toBe(600);
+
+        block.dispatchEvent(pointer('lostpointercapture', 560));
+        fixture.detectChanges();
+        // No revert…
+        expect(startOf(block)).toBe(moved);
+        // …and the gesture is still alive.
+        document.dispatchEvent(pointer('pointermove', 620));
+        fixture.detectChanges();
+        expect(startOf(block)).not.toBe(moved);
+        document.dispatchEvent(pointer('pointerup', 620));
+      });
+    });
+
+    /*
+     * ── EDGE AUTO-SCROLL, PAST THE EDGE TOO ──────────────────────────────
+     *
+     * A 2026-09-04 fix stopped the scroll at the box itself, because a step
+     * fired on every move at full size and fed back into the block's time.
+     * The owner reversed that on 2026-09-10 — "dragging above or below the
+     * frame should scroll the frame itself as you drag" — and the loop
+     * makes it safe: frame-paced, capped, and measured against the finger
+     * clamped to the box, so the block rides the edge under a finger that
+     * has gone past it.
+     */
+    describe('edge auto-scroll', () => {
+      /** A frame with a real box and real scroll room, which jsdom will not
+       *  produce on its own. */
+      function scrollable(host: HTMLElement, top: number, height: number) {
+        const frame = host.querySelector<HTMLElement>('.staff-grid__frame');
+        if (frame === null) throw new Error('no frame');
+        frame.getBoundingClientRect = () =>
+          ({ top, bottom: top + height, height }) as DOMRect;
+        Object.defineProperty(frame, 'scrollHeight', {
+          value: 4000,
+          configurable: true,
+        });
+        Object.defineProperty(frame, 'clientHeight', {
+          value: height,
+          configurable: true,
+        });
+        frame.scrollTop = 500;
+        return frame;
+      }
+
+      it('keeps scrolling while the pointer is above the frame, and the block rides its top edge', async () => {
+        const host = frame();
+        const box = scrollable(host, 400, 240);
+        const block = grab(host, 'staff-grid-event');
+
+        block.dispatchEvent(pointer('pointerdown', 500));
+        // 200px ABOVE the frame's top edge — past the container entirely.
+        document.dispatchEvent(pointer('pointermove', 200));
+        await new Promise((resolve) => setTimeout(resolve, 60));
+        const first = box.scrollTop;
+        expect(first).toBeLessThan(500);
+        await new Promise((resolve) => setTimeout(resolve, 60));
+        expect(box.scrollTop).toBeLessThan(first);
+
+        document.dispatchEvent(pointer('pointerup', 200));
+      });
+
+      it('scrolls while the pointer rests inside the frame edge band — on the frames that follow', async () => {
+        const host = frame();
+        const box = scrollable(host, 400, 240);
+        const block = grab(host, 'staff-grid-event');
+
+        block.dispatchEvent(pointer('pointerdown', 500));
+        // Just inside the bottom edge, within the 28px margin. The scroll is
+        // the edge loop's, one animation frame later, and it keeps coming
+        // while the pointer rests there (owner, 2026-09-10) — so the pointer
+        // is left where it is and the frames are simply waited for.
+        document.dispatchEvent(pointer('pointermove', 630));
+        await new Promise((resolve) => setTimeout(resolve, 60));
+        const first = box.scrollTop;
+        expect(first).toBeGreaterThan(500);
+        await new Promise((resolve) => setTimeout(resolve, 60));
+        expect(box.scrollTop).toBeGreaterThan(first);
+
+        document.dispatchEvent(pointer('pointerup', 630));
+      });
+    });
 
     /*
      * A resize moves ONE edge. The other is what the barber is holding still,
@@ -856,6 +1317,7 @@ describe('StaffTimeGrid', () => {
         overlap: 'Застъпва {{name}} {{time}}',
         outside: 'Извън смяната',
         tooShort: 'Най-малко {{minutes}} мин',
+        backTo: 'Обратно към {{time}}',
       });
       const handle = grab(host, 'staff-frame-handle-end');
       handle.dispatchEvent(pointer('pointerdown', 0));
@@ -950,6 +1412,147 @@ describe('StaffTimeGrid', () => {
         chair('e', 'E', 600),
       ]);
       expect(drawn(host)).toBe(5);
+    });
+  });
+
+  describe('the way back', () => {
+    it('points to the edited block once it has wholly left the picture, and a tap centres it again', () => {
+      // Owner, 2026-09-10: "an arrow to appear showing where the event is,
+      // and on click scroll to it" — the way a map offers the way home.
+      fixture.componentRef.setInput('uiViewport', 'framed');
+      fixture.componentRef.setInput('uiPlacement', 'proportional');
+      fixture.componentRef.setInput('uiWindow', {
+        startMinute: 540,
+        endMinute: 720,
+      });
+      fixture.componentRef.setInput('uiEditable', true);
+      fixture.componentRef.setInput('uiEditableEventId', 'a');
+      fixture.componentRef.setInput('uiDragCopy', {
+        handleStart: '',
+        handleEnd: '',
+        blockRole: '',
+        minutes: '{{minutes}} мин',
+        overlap: '',
+        outside: '',
+        tooShort: '',
+        backTo: 'Обратно към {{time}}',
+      });
+      const host = render([
+        column({
+          events: [event({ id: 'a', startMinute: 600, endMinute: 645 })],
+        }),
+      ]);
+      const box = host.querySelector<HTMLElement>('.staff-grid__frame');
+      const block = host.querySelector<HTMLElement>(
+        '[data-testid="staff-grid-event"]',
+      );
+      if (box === null || block === null) throw new Error('no frame');
+      const chip = () =>
+        host.querySelector<HTMLElement>('[data-testid="staff-grid-recenter"]');
+      const rect = (top: number, height: number) =>
+        ({ top, bottom: top + height, height }) as DOMRect;
+      box.getBoundingClientRect = () => rect(400, 240);
+
+      // In the picture: nothing to point at.
+      block.getBoundingClientRect = () => rect(450, 50);
+      box.dispatchEvent(new Event('scroll'));
+      fixture.detectChanges();
+      expect(chip()).toBeNull();
+
+      // Scrolled past the top: a chip at the top edge, naming the start.
+      block.getBoundingClientRect = () => rect(100, 50);
+      box.dispatchEvent(new Event('scroll'));
+      fixture.detectChanges();
+      expect(chip()?.dataset['edge']).toBe('before');
+      expect(chip()?.textContent).toContain('10:00');
+      expect(chip()?.getAttribute('aria-label')).toBe('Обратно към 10:00');
+
+      // Past the bottom: the other edge.
+      block.getBoundingClientRect = () => rect(700, 50);
+      box.dispatchEvent(new Event('scroll'));
+      fixture.detectChanges();
+      expect(chip()?.dataset['edge']).toBe('after');
+
+      // A tap scrolls the block to the middle of the box.
+      Object.defineProperty(box, 'scrollHeight', {
+        value: 4000,
+        configurable: true,
+      });
+      Object.defineProperty(box, 'clientHeight', {
+        value: 240,
+        configurable: true,
+      });
+      box.scrollTop = 500;
+      (
+        box as HTMLElement & { scrollTo: (options: ScrollToOptions) => void }
+      ).scrollTo = (options) => {
+        box.scrollTop = options.top ?? box.scrollTop;
+      };
+      chip()?.click();
+      // middle = 700 − 400 + 25 = 325 → 500 + 325 − 120.
+      expect(box.scrollTop).toBe(705);
+    });
+  });
+
+  describe('the way back, on a reading sheet', () => {
+    it('follows the subject block even when nothing is editable', () => {
+      // A cancelled or no-show visit opens read-only: no handles, no
+      // editable block — but it is still what the sheet is about, and the
+      // way back must still point at it (owner, 2026-09-10).
+      fixture.componentRef.setInput('uiViewport', 'framed');
+      fixture.componentRef.setInput('uiPlacement', 'proportional');
+      fixture.componentRef.setInput('uiWindow', {
+        startMinute: 540,
+        endMinute: 720,
+      });
+      fixture.componentRef.setInput('uiEditable', false);
+      fixture.componentRef.setInput('uiEditableEventId', 'a');
+      const host = render([
+        column({
+          events: [event({ id: 'a', startMinute: 600, endMinute: 645 })],
+        }),
+      ]);
+      const box = host.querySelector<HTMLElement>('.staff-grid__frame');
+      const block = host.querySelector<HTMLElement>(
+        '[data-testid="staff-grid-event"]',
+      );
+      if (box === null || block === null) throw new Error('no frame');
+      expect(host.querySelector('.staff-frame__handle')).toBeNull();
+      box.getBoundingClientRect = () =>
+        ({ top: 400, bottom: 640, height: 240 }) as DOMRect;
+      block.getBoundingClientRect = () =>
+        ({ top: 100, bottom: 150, height: 50 }) as DOMRect;
+      box.dispatchEvent(new Event('scroll'));
+      fixture.detectChanges();
+      const chip = host.querySelector<HTMLElement>(
+        '[data-testid="staff-grid-recenter"]',
+      );
+      expect(chip?.dataset['edge']).toBe('before');
+      expect(chip?.textContent).toContain('10:00');
+    });
+  });
+
+  describe('the clock', () => {
+    it("states start over end at the trailing edge — the card's aside — and leaves the name its own column", () => {
+      // Owner, 2026-09-10: "time start and end should also be displayed".
+      // The accessible name already tells the times, so the clock is
+      // decoration to a reader; the width rule that withholds it on a
+      // narrow column is CSS and is checked on the running app.
+      const host = render([column({ events: [event({ id: 'a' })] })]);
+      const block = host.querySelector('[data-testid="staff-grid-event"]');
+      const times = block?.querySelector('.staff-grid__event-times');
+      expect(times?.getAttribute('aria-hidden')).toBe('true');
+      expect(
+        times?.querySelector('.staff-grid__event-start')?.textContent?.trim(),
+      ).toBe('10:00');
+      expect(
+        times?.querySelector('.staff-grid__event-end')?.textContent?.trim(),
+      ).toBe('10:45');
+      expect(
+        block
+          ?.querySelector('.staff-grid__event-head .staff-grid__event-lines')
+          ?.querySelector('.staff-grid__event-title')?.textContent,
+      ).toContain('Георги Петров');
     });
   });
 });

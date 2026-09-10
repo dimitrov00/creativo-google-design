@@ -1,0 +1,16 @@
+/*
+ * THE TAG — how far a visit runs from the catalogue's length, on the
+ * block's own face: «−5 мин». One recipe for the frame's block and the
+ * agenda's card (owner, 2026-09-10: "the events here should look a lot like
+ * the ones in the frame"), imported by both stylesheets; the arithmetic is
+ * `shared/catalog-delta.ts`.
+ */
+.staff-event-tag {
+  padding: 0 var(--sys-space-tight);
+  border-radius: var(--control-radius-capsule);
+  background: color-mix(in srgb, var(--sys-color-accent) 18%, transparent);
+  color: var(--sys-color-foreground);
+  font: var(--sys-font-caption);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
