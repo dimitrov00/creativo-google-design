@@ -44,6 +44,14 @@ export interface CommitBookingSeatRequest {
 }
 
 export interface CommitBookingRequest {
+  /**
+   * STAFF PLACEMENT (owner ruling 2026-08-07 #3, built 2026-09-08). Absent,
+   * the caller books for themselves. A user id books ON BEHALF OF that
+   * client; `null` books a walk-in nobody owns (guest seats only). Either
+   * form is refused for a caller who does not work the book, and both
+   * relax lead time and roster containment — the shop places its own book.
+   */
+  readonly onBehalfOfUserId?: string | null;
   readonly locationId: string;
   readonly seats: readonly CommitBookingSeatRequest[];
   /**
@@ -181,6 +189,14 @@ export interface BookingGateway {
   ): Promise<Result<void, BookingGatewayError>>;
 
   /**
+   * The inverse of `markArrived` — the stamp taken back, for the undo that
+   * follows a mis-tap. Same gate as setting it: live visits only.
+   */
+  clearArrival(
+    appointmentId: string,
+  ): Promise<Result<void, BookingGatewayError>>;
+
+  /**
    * Move, resize, re-price, re-time or re-chair an appointment — the shop's
    * own pen on its own book.
    *
@@ -193,6 +209,27 @@ export interface BookingGateway {
   staffEdit(
     request: StaffEditAppointmentRequest,
   ): Promise<Result<StaffEditedAppointment, BookingGatewayError>>;
+
+  /**
+   * Record — or clear — what one seat was tipped.
+   *
+   * Deliberately NOT a `staffEdit` command. That path rebuilds the booking
+   * and refuses any appointment that is no longer cancellable, so it can
+   * touch every visit except the finished ones — which are the only visits
+   * a tip is ever recorded on. This is a stamp beside the status, the same
+   * shape as `markArrived`.
+   */
+  recordTip(
+    request: RecordSeatTipRequest,
+  ): Promise<Result<void, BookingGatewayError>>;
+}
+
+export interface RecordSeatTipRequest {
+  readonly appointmentId: string;
+  /** WHOSE tip — a party can be two barbers and two answers. */
+  readonly seatId: string;
+  /** `null` clears the recording, which is not the same as a zero tip. */
+  readonly amountMinorUnits: number | null;
 }
 
 /**
@@ -211,17 +248,43 @@ export interface BookingGateway {
  * `Времетраене` (and, for the top handle, both).
  */
 export type StaffEditCommand =
-  /** Drag the block, or tap a running-late chip: the whole party shifts. */
-  | { readonly kind: 'move'; readonly startIso: string }
+  /**
+   * Drag the block, or tap a running-late chip.
+   *
+   * `seatIds` NAMES THE SEATS THAT SHIFT; omitting it moves the whole party,
+   * which is the ordinary case and the only one that existed before.
+   *
+   * A party is one appointment drawn as one block PER CHAIR, so "the block"
+   * is ambiguous the moment two barbers are involved: a father with Ivan and
+   * his son with Stefan are two blocks, and dragging Stefan's used to shift
+   * Ivan's with it because a move could only ever mean the envelope. Stefan
+   * taking an urgent call has to be able to move his own half and leave the
+   * father where he is — the domain has always allowed it (`Seat.startsAt` is
+   * per-seat and `Appointment.timeSlot` is derived from the seats), and this
+   * is the arm that lets a caller ask for it.
+   *
+   * The delta is measured from the SCOPE's own start, not the party's, so the
+   * seat named lands exactly where it was dropped.
+   */
+  | {
+      readonly kind: 'move';
+      readonly startIso: string;
+      readonly seatIds?: readonly string[];
+    }
   /**
    * Drag a handle. `end` holds the start; `start` holds the END and writes
    * both, which is the honest form of "I'll start ten minutes later but still
    * finish at eleven."
+   *
+   * `seatIds` scopes the edge the same way, and for the same reason: the
+   * envelope's end belongs to whichever seat runs latest, so an unscoped
+   * resize of a split party stretched a leg in a chair nobody had touched.
    */
   | {
       readonly kind: 'resize';
       readonly edge: 'start' | 'end';
       readonly atIso: string;
+      readonly seatIds?: readonly string[];
     }
   /** A discount or a correction on one seat. Provenance is stored with it. */
   | {
@@ -240,11 +303,49 @@ export type StaffEditCommand =
       readonly kind: 'restaff';
       readonly seatId: string;
       readonly barberId: string;
+    }
+  /**
+   * A service ADDED to the visit — a new seat, priced and timed by the
+   * catalogue on the server (never by the client). `minutes` is what the
+   * client believes the catalogue says, used only so the rest of the batch's
+   * geometry (a `resize` after it) agrees with the seat it just added; the
+   * stored terms come from `decideBooking`. `seatId` is minted by the client
+   * so a later command in the same batch can address the seat.
+   */
+  | {
+      readonly kind: 'addSeat';
+      readonly seatId: string;
+      readonly serviceId: string;
+      readonly variantId?: string | null;
+      readonly barberId: string;
+      readonly startIso: string;
+      readonly minutes: number;
+      readonly subject:
+        | { readonly kind: 'self' }
+        | { readonly kind: 'guest'; readonly label: string };
+    }
+  /** A service REMOVED. Refused for a resolved seat and for the last one. */
+  | {
+      readonly kind: 'removeSeat';
+      readonly seatId: string;
     };
 
 export interface StaffEditAppointmentRequest {
   readonly appointmentId: string;
-  readonly command: StaffEditCommand;
+  /**
+   * One command, or SEVERAL applied together.
+   *
+   * The single form is a GESTURE — a drag, a handle, one row of a menu — and
+   * it is what every caller sent while the sheet's only writes were gestures.
+   * A `Запази` is not a gesture: it is a day, a start, a duration and a
+   * leg's price arriving as ONE intent, and sending them as four requests
+   * would be four placement decisions, four chances to be refused halfway,
+   * and a booking left in a state nobody asked for when the third fails.
+   *
+   * An array is folded over the stored seats in order and decided ONCE, so
+   * the whole save lands or none of it does.
+   */
+  readonly command: StaffEditCommand | readonly StaffEditCommand[];
   /**
    * The user saw «Запази въпреки застъпването» and tapped it.
    *

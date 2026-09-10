@@ -6,6 +6,7 @@ import { CryptoIdGenerator } from '../../adapters/crypto-id-generator';
 import { adminFirestore } from '../firebase-admin';
 import { loadBookingPolicy } from './load-booking-policy';
 import { appendAudit } from './audit';
+import { callerWorksTheBook } from './caller-roles';
 import type { CommitBookingError } from '../../use-cases/commit-booking.errors';
 import { CommitBookingUseCase } from '../../use-cases/commit-booking.use-case';
 import type { RequestedSeat } from '../../use-cases/decide-booking';
@@ -50,6 +51,7 @@ interface CommitBookingPayload {
   readonly attemptId?: unknown;
   readonly contact?: unknown;
   readonly bookedFromAppointmentId?: unknown;
+  readonly onBehalfOfUserId?: unknown;
 }
 
 /**
@@ -153,13 +155,31 @@ export const commitBooking = onCall(async (request) => {
   );
 
   const payload = (request.data ?? {}) as CommitBookingPayload;
+  /*
+   * STAFF PLACEMENT. `onBehalfOfUserId` present at all — a client's id, or
+   * `null` for a walk-in — means the shop is placing its own book, which only
+   * someone who works the book may do. Absent, this is a client booking for
+   * themselves, exactly as before.
+   */
+  const staffPlacement = payload.onBehalfOfUserId !== undefined;
+  if (staffPlacement && !callerWorksTheBook(request)) {
+    throw new HttpsError('permission-denied', 'Staff only', {
+      code: 'booking.commit.forbidden',
+    });
+  }
+  const onBehalfOf =
+    typeof payload.onBehalfOfUserId === 'string' &&
+    /^[A-Za-z0-9_-]{1,128}$/.test(payload.onBehalfOfUserId)
+      ? payload.onBehalfOfUserId
+      : null;
   const result = await useCase.execute({
     locationId: String(payload.locationId ?? ''),
     seats: toSeats(payload.seats),
     attemptId: toAttemptId(payload.attemptId),
     contact: toContact(payload.contact),
     bookedFromAppointmentId: toBookedFrom(payload.bookedFromAppointmentId),
-    ownerUserId: request.auth?.uid ?? null,
+    ownerUserId: staffPlacement ? onBehalfOf : (request.auth?.uid ?? null),
+    staffPlacement,
   });
 
   return match(result, {
@@ -167,8 +187,9 @@ export const commitBooking = onCall(async (request) => {
       // After the commit, never inside it — see `appendAudit`.
       void appendAudit({
         actorUserId: request.auth?.uid ?? '',
-        action: 'booking.committed',
+        action: staffPlacement ? 'booking.staff_created' : 'booking.committed',
         resourceId: appointmentId,
+        ...(onBehalfOf ? { targetUserId: onBehalfOf } : {}),
         atIso: new Date().toISOString(),
         context: { locationId: String(payload.locationId ?? '') },
       });

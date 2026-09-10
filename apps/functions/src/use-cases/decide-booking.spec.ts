@@ -550,3 +550,58 @@ describe('decideBooking — the contact rides along as a snapshot', () => {
     expect(result.error.code).toBe('booking.commit.invalid_input');
   });
 });
+
+/*
+ * STAFF PLACEMENT (owner ruling 2026-08-07 #3, built 2026-09-08). The shop
+ * placing its own book: nobody has to own it, the clock and the roster do
+ * not gate it, and it is confirmed the moment it is made.
+ */
+describe('decideBooking — the shop places its own book', () => {
+  it('books a walk-in nobody owns, as guest seats, confirmed', () => {
+    const decision = unwrap(
+      decideBooking(
+        request([
+          seat({ subject: { kind: 'guest', label: 'Случаен клиент' } }),
+        ]),
+        snapshot(),
+        { ...deps(), ownerUserId: null, allowOutsideWindow: true },
+      ),
+    );
+    expect(decision.appointment.status.kind).toBe('confirmed');
+    expect(decision.appointment.seats[0]?.subject.kind).toBe('anonymous');
+  });
+
+  it('places a booking that has already started — the walk-in is in the chair', () => {
+    // `now` is past the seat's start; a client booking would be refused.
+    const decision = decideBooking(
+      request([seat({ subject: { kind: 'guest', label: 'Случаен клиент' } })]),
+      snapshot(),
+      { ...deps(at(12, 10)), ownerUserId: null, allowOutsideWindow: true },
+    );
+    expect(decision.isSuccess()).toBe(true);
+  });
+
+  it('still refuses a self seat with nobody to bind it to', () => {
+    const decision = decideBooking(request(), snapshot(), {
+      ...deps(),
+      ownerUserId: null,
+      allowOutsideWindow: true,
+    });
+    expect(decision.isSuccess()).toBe(false);
+  });
+
+  it('confirms a booking placed on behalf of a client', () => {
+    const decision = unwrap(
+      decideBooking(request(), snapshot(), {
+        ...deps(),
+        ownerUserId: 'client-7',
+        allowOutsideWindow: true,
+      }),
+    );
+    expect(decision.appointment.status.kind).toBe('confirmed');
+    const subject = decision.appointment.seats[0]?.subject;
+    expect(subject?.kind === 'account' && subject.userId.value).toBe(
+      'client-7',
+    );
+  });
+});

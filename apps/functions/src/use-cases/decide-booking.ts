@@ -529,8 +529,12 @@ export function decideBooking(
   // booking, never that the client is standing there. Arrival is its own
   // stamp (`Appointment.arrivedAt`), which is exactly why turning this on
   // does not cost the front desk its signal.
+  // Staff placement CONFIRMS (2026-09-08): the shop that put the booking on
+  // its own book has already accepted it, and a walk-in left `pending` would
+  // wait on nobody. The staff-edit path discards this status anyway — it
+  // restores the stored one — so only creation is affected.
   const appointment =
-    deps.policy.autoConfirm && !deps.allowOutsideWindow
+    deps.policy.autoConfirm || deps.allowOutsideWindow
       ? appointmentResult.value.confirm()
       : ok(appointmentResult.value);
   if (appointment.isFailure()) {

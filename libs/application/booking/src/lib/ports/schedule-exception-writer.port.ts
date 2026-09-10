@@ -1,6 +1,6 @@
 import { InjectionToken } from '@angular/core';
 import { Result } from '@creativo/domain/kernel';
-import { ScheduleException } from '@creativo/domain/scheduling';
+import { LocalTimeRange, ScheduleException } from '@creativo/domain/scheduling';
 import { RepositoryError } from '@creativo/application/shared';
 
 /**
@@ -30,6 +30,28 @@ export interface ScheduleExceptionWriter {
    * is also what makes the rebuild trigger's reverse index work.
    */
   put(exception: ScheduleException): Promise<Result<void, RepositoryError>>;
+
+  /**
+   * ONE MORE BLOCK on a day that may already hold some (2026-09-08). `put`
+   * replaces the day's one document whole — right for an absence, wrong for
+   * a second lunch, which silently overwrote the first. This reads the day,
+   * merges the range into what is there (coalescing overlaps) and writes the
+   * union. A whole-day absence already on the day swallows the range.
+   */
+  putRange(
+    barberId: string,
+    locationId: string,
+    dayKey: string,
+    zone: string,
+    range: LocalTimeRange,
+  ): Promise<Result<void, RepositoryError>>;
+
+  /** Lift ONE range; the document goes when its last range does. */
+  clearRange(
+    barberId: string,
+    dayKey: string,
+    range: LocalTimeRange,
+  ): Promise<Result<void, RepositoryError>>;
 
   /** Lift an exception — the chair returns to its ordinary roster. */
   clear(

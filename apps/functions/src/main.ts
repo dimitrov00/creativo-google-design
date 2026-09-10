@@ -7,6 +7,8 @@ export { rescheduleAppointment } from './lib/booking/reschedule-appointment';
 export { auditProfileChanges } from './lib/booking/audit-profile-changes';
 export { transitionAppointment } from './lib/booking/transition-appointment';
 export { markArrived } from './lib/booking/mark-arrived';
+export { clearArrival } from './lib/booking/clear-arrival';
+export { recordSeatTip } from './lib/booking/record-seat-tip';
 export { staffEditAppointment } from './lib/booking/staff-edit-appointment';
 export { rebuildBusyOnAppointmentChange } from './lib/booking/rebuild-busy';
 export {

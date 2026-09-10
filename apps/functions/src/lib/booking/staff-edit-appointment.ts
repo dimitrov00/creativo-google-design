@@ -52,8 +52,24 @@ function toStaffHttpsError(error: StaffEditError): HttpsError {
  * `validateCommand` in the use case, where it is unit-testable without a
  * transport.
  */
-function toCommand(raw: unknown): StaffEditCommand {
-  return (raw ?? {}) as StaffEditCommand;
+function toCommand(raw: unknown): StaffEditCommand | StaffEditCommand[] {
+  return Array.isArray(raw)
+    ? (raw as StaffEditCommand[])
+    : ((raw ?? {}) as StaffEditCommand);
+}
+
+/**
+ * What the audit row calls this write.
+ *
+ * A gesture is named by its own kind — "who moved bookings" and "who
+ * discounted them" are different questions asked of the same log. A SAVE is
+ * several kinds at once, and naming it after whichever arm happens to be
+ * first would file the same act under a different heading depending on what
+ * else the barber changed. It gets its own name.
+ */
+function auditKind(command: StaffEditCommand | StaffEditCommand[]): string {
+  if (!Array.isArray(command)) return command.kind ?? 'edit';
+  return command.length === 1 ? (command[0]?.kind ?? 'edit') : 'save';
 }
 
 /**
@@ -104,7 +120,7 @@ export const staffEditAppointment = onCall(async (request) => {
       // single `booking.staff_edited` row cannot answer the second.
       void appendAudit({
         actorUserId: request.auth?.uid ?? '',
-        action: `booking.staff_${command.kind ?? 'edit'}`,
+        action: `booking.staff_${auditKind(command)}`,
         resourceId: appointmentId,
         atIso: new Date().toISOString(),
         context: { revision: String(revision) },

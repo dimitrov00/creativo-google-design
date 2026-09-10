@@ -1,6 +1,7 @@
 export * from './lib/firestore-paths';
 export * from './lib/subscribe-with-retry';
 export * from './lib/appointment-repository.adapter';
+export * from './lib/appointment-notes.adapter';
 export * from './lib/availability-reader.adapter';
 export * from './lib/booking-gateway.adapter';
 export * from './lib/booking-policy-reader.adapter';

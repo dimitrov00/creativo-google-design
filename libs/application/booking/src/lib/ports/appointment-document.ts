@@ -96,6 +96,18 @@ export function appointmentToDocument(
       // What became of THIS person. Written per seat because a party of three
       // has three answers, and the root status can only hold one.
       outcome: seatOutcomeToDocument(seat.outcome),
+      // WHAT WAS LEFT FOR THE BARBER, in the seat's own currency.
+      //
+      // Per seat for the same reason the outcome is: a party can be two
+      // barbers, and a tip belongs to whoever did the work. `null` is "not
+      // recorded", which a report must be able to tell apart from a genuine
+      // zero — so it is written as `null` rather than omitted, and never
+      // defaulted to `0`.
+      //
+      // No currency of its own: a tip is settled in the same money the seat
+      // was priced in, and a second currency field could only ever agree
+      // with `terms.currencyCode` until the day it did not.
+      tipMinorUnits: seat.tip?.toMinorUnits() ?? null,
     })),
     status: appointment.status,
     // WHEN the booking was made. Both halves are stored: the ISO carries the
@@ -286,6 +298,27 @@ function cancellationReasonFromDocument(raw: unknown): CancellationReason {
  * are derived, and every report must exclude it from lead-time statistics
  * rather than average it in.
  */
+/**
+ * A seat's stored tip → `Money`, or `null` when none was recorded.
+ *
+ * `null` and zero are DIFFERENT answers and both survive the round trip: a
+ * visit nobody has settled up yet is not a visit that tipped nothing, and a
+ * day's report has to be able to say which. So only a finite number becomes
+ * money; anything else — absent, `null`, a string, a row written before this
+ * field existed — reads back as "not recorded" rather than as `0`.
+ *
+ * The currency is the seat's own, because a tip is settled in the money the
+ * seat was priced in.
+ */
+export function seatTipFromDocument(
+  raw: unknown,
+  currencyCode: string,
+): Money | null {
+  if (typeof raw !== 'number' || !Number.isFinite(raw)) return null;
+  const money = Money.fromMinorUnitsAndCode(raw, currencyCode);
+  return money.isSuccess() ? money.value : null;
+}
+
 export function seatOutcomeFromDocument(
   raw: unknown,
   rootStatus: AppointmentStatus | undefined,

@@ -175,3 +175,44 @@ function toRanges(raw: unknown): readonly LocalTimeRange[] {
   }
   return ranges;
 }
+
+/**
+ * The union of a day's blocks: sorted, overlapping and touching spans merged.
+ * Pure, so the writer and a test can both say what a second block does.
+ */
+export function coalesceRanges(
+  ranges: readonly LocalTimeRange[],
+): readonly LocalTimeRange[] {
+  const sorted = [...ranges].sort(
+    (a, b) => a.start.minutesFromMidnight() - b.start.minutesFromMidnight(),
+  );
+  const out: LocalTimeRange[] = [];
+  for (const range of sorted) {
+    const last = out[out.length - 1];
+    if (
+      last &&
+      range.start.minutesFromMidnight() <= last.end.minutesFromMidnight()
+    ) {
+      if (range.end.minutesFromMidnight() > last.end.minutesFromMidnight()) {
+        const merged = LocalTimeRange.create(
+          last.start.toString(),
+          range.end.toString(),
+        );
+        if (merged.isSuccess()) out[out.length - 1] = merged.value;
+      }
+      continue;
+    }
+    out.push(range);
+  }
+  return out;
+}
+
+/** The day's blocks minus one — matched on its edges, not its identity. */
+export function withoutRange(
+  ranges: readonly LocalTimeRange[],
+  gone: LocalTimeRange,
+): readonly LocalTimeRange[] {
+  return ranges.filter(
+    (range) => !(range.start.equals(gone.start) && range.end.equals(gone.end)),
+  );
+}

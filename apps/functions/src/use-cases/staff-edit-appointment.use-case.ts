@@ -7,9 +7,9 @@ import {
   SEAT_SCHEDULED,
   Seat,
   type SeatOutcome,
-  canTransition,
 } from '@creativo/domain/scheduling';
 import type { ClockPort } from '@creativo/application/shared';
+import type { StaffEditCommand } from '@creativo/application/booking';
 import {
   arrivedAtFromDocument,
   bookedAtFromDocument,
@@ -18,6 +18,7 @@ import {
   preservedAppointmentFields,
   revisionOf,
   seatOutcomeFromDocument,
+  seatTipFromDocument,
 } from '@creativo/application/booking';
 import { FirestoreBookingStore } from '../adapters/firestore-booking-store';
 import {
@@ -44,52 +45,20 @@ import {
   StaffEditUnauthenticatedError,
 } from './staff-edit-appointment.errors';
 
-/**
- * What the shop is doing to this appointment — a DISCRIMINATED command, never
- * a patch of two timestamps.
+/*
+ * THE COMMAND LIVES IN THE PORT, and is re-exported here.
  *
- * A `PATCH {start, end}` would collapse five different acts into one shape and
- * lose the only thing that makes a refusal actionable: WHICH edge is the
- * problem. "Ivan is busy" is not an answer a receptionist can act on; "the
- * bottom handle runs into Ivan's 11:00" is. It also loses the acts that are
- * not geometry at all — a discount and a chair swap are not two timestamps in
- * any encoding.
+ * It was declared a SECOND time in this file — the same five arms, written
+ * out again — and the two copies had already begun to drift: the port grew a
+ * seat scope on `move`/`resize` and this one did not, so the server could not
+ * see a field the client was sending. A contract with two definitions is a
+ * contract with none.
  *
- * The five arms map one-to-one onto what the editor can actually do, which
- * after Ruling B is start-and-duration rather than start-and-end:
- *   - `move`     — drag the block, or tap a running-late chip. Holds duration,
- *                  changes the start of the WHOLE party. Sweeps the entire
- *                  interval and both buffers, and may land on another day.
- *   - `resize`   — drag a handle. `end` holds the start and writes a duration;
- *                  `start` holds the END and writes both, which is the honest
- *                  form of "I'll start ten minutes later but still finish at
- *                  eleven".
- *   - `redurate` — the `Времетраене` ladder: one seat, one duration, typed.
- *   - `reprice`  — a discount or a correction on one seat.
- *   - `restaff`  — `⋯ → Смени стола`: one seat changes lane.
+ * `@creativo/application/booking` is the one that ships to both sides of the
+ * wire, so it wins; the callable and the spec keep importing the name from
+ * here, which is where they have always reached for it.
  */
-export type StaffEditCommand =
-  | { readonly kind: 'move'; readonly startIso: string }
-  | {
-      readonly kind: 'resize';
-      readonly edge: 'start' | 'end';
-      readonly atIso: string;
-    }
-  | {
-      readonly kind: 'reprice';
-      readonly seatId: string;
-      readonly priceMinorUnits: number;
-    }
-  | {
-      readonly kind: 'redurate';
-      readonly seatId: string;
-      readonly minutes: number;
-    }
-  | {
-      readonly kind: 'restaff';
-      readonly seatId: string;
-      readonly barberId: string;
-    };
+export type { StaffEditCommand };
 
 export interface StaffEditAppointmentInput {
   readonly appointmentId: string;
@@ -97,7 +66,14 @@ export interface StaffEditAppointmentInput {
   readonly actorUserId: string | null;
   /** From the VERIFIED token's `roles` claim. */
   readonly actorRoles: readonly string[];
-  readonly command: StaffEditCommand;
+  /**
+   * One command, or several applied together — see the port's own note.
+   *
+   * A gesture sends one; a `Запази` sends the day, the start, the duration
+   * and any repriced leg as ONE intent, folded over the stored seats and
+   * decided once so the whole save lands or none of it does.
+   */
+  readonly command: StaffEditCommand | readonly StaffEditCommand[];
   /**
    * The sheet said «Запази въпреки застъпването» and the user tapped it.
    *
@@ -138,7 +114,24 @@ interface StoredSeat {
   readonly setupMinutes: number;
   readonly cleanupMinutes: number;
   readonly outcome: SeatOutcome;
+  /**
+   * What was left for the barber, in the seat's own currency. `null` is "not
+   * recorded" and is NOT zero.
+   *
+   * Carried through the rebuild for the same reason the outcome is: the
+   * decision re-derives placement and terms from the catalogue and knows
+   * nothing about money the shop never charged, so a tip not restored here
+   * is a tip erased by the next drag.
+   */
+  readonly tipMinorUnits: number | null;
   readonly subject: RequestedSeat['subject'];
+  /**
+   * Added in THIS batch and not yet priced: `decideBooking` resolves its
+   * terms from the catalogue, so it carries no override. `durationMinutes`
+   * is the client's reading of the catalogue, kept only so the batch's own
+   * geometry agrees with the seat it just added.
+   */
+  readonly fresh?: true;
 }
 
 const MINUTE_MS = 60_000;
@@ -216,6 +209,11 @@ function readSeat(
       rootStatus,
       start.value.toMillis() + durationMinutes * MINUTE_MS,
     ),
+    tipMinorUnits:
+      typeof seat['tipMinorUnits'] === 'number' &&
+      Number.isFinite(seat['tipMinorUnits'])
+        ? seat['tipMinorUnits']
+        : null,
     subject: requested,
   };
 }
@@ -275,9 +273,24 @@ export class StaffEditAppointmentUseCase {
       return fail(new StaffEditInvalidCommandError('appointmentId'));
     }
 
-    const shape = validateCommand(input.command);
-    if (shape.isFailure()) return fail(shape.error);
-    const command = shape.value;
+    /*
+     * ONE COMMAND OR SEVERAL, validated the same way and applied in order.
+     *
+     * A gesture sends one; a `Запази` sends the day, the start, the duration
+     * and any repriced leg as one intent. Folding them before deciding is
+     * what makes the save atomic — four requests would be four placement
+     * decisions and a booking left half-moved when the third is refused.
+     */
+    const raw = Array.isArray(input.command) ? input.command : [input.command];
+    if (raw.length === 0) {
+      return fail(new StaffEditInvalidCommandError('command'));
+    }
+    const commands: StaffEditCommand[] = [];
+    for (const arm of raw) {
+      const shape = validateCommand(arm);
+      if (shape.isFailure()) return fail(shape.error);
+      commands.push(shape.value);
+    }
 
     /**
      * What `plan` worked out, read back by `decide`.
@@ -300,7 +313,7 @@ export class StaffEditAppointmentUseCase {
         const result = this.plan(
           input.appointmentId,
           current,
-          command,
+          commands,
           input.expectedVersion,
         );
         if (result.isFailure()) return fail(result.error);
@@ -337,7 +350,7 @@ export class StaffEditAppointmentUseCase {
   private plan(
     appointmentId: string,
     current: PersistedDocument,
-    command: StaffEditCommand,
+    commands: readonly StaffEditCommand[],
     expectedVersion: number | null | undefined,
   ): Result<PlannedEdit, StaffEditError> {
     const revision = revisionOf(current);
@@ -357,9 +370,23 @@ export class StaffEditAppointmentUseCase {
       return fail(new CommitBookingInvalidInputError('seats'));
     }
 
-    const applied = applyCommand(stored, command);
-    if (applied.isFailure()) return fail(applied.error);
-    const next = applied.value;
+    /*
+     * FOLDED IN ORDER, so each command sees the one before it.
+     *
+     * A save that moves the day and then stretches the block must resize the
+     * MOVED seats — applying both against the stored ones would measure the
+     * second gesture from a start that no longer exists. Order is the
+     * caller's, which is the only place that knows what the barber did.
+     */
+    let next: readonly StoredSeat[] = stored;
+    // A seat added to a FINISHED visit was worked, not scheduled: the sheet
+    // is being filled in after the cut (owner, 2026-09-09).
+    const finished = rootStatus?.kind === 'completed';
+    for (const command of commands) {
+      const applied = applyCommand(next, command, finished);
+      if (applied.isFailure()) return fail(applied.error);
+      next = applied.value;
+    }
 
     const seats: RequestedSeat[] = [];
     const overrides = new Map<string, StaffTermsOverride>();
@@ -384,6 +411,8 @@ export class StaffEditAppointmentUseCase {
       // catalogue price rise from silently re-pricing a booking somebody
       // merely dragged fifteen minutes — the decision still resolves the
       // catalogue's answer, but only to record it as provenance.
+      // A fresh seat is priced by the catalogue, not by what the client said.
+      if (seat.fresh) continue;
       overrides.set(seat.id, {
         priceMinorUnits: seat.priceMinorUnits,
         currencyCode: seat.currencyCode,
@@ -409,6 +438,7 @@ export class StaffEditAppointmentUseCase {
       next,
       overrides,
       nextRevision: revision + 1,
+      commands,
     });
   }
 
@@ -425,12 +455,13 @@ export class StaffEditAppointmentUseCase {
     }
 
     const status = (current['status'] ?? {}) as AppointmentStatus;
-    // The domain's own lifecycle graph, never a re-encoded copy: a completed,
-    // no-showed or already-cancelled visit is HISTORY. `canTransition(_,
-    // 'cancelled')` is the liveness test the reschedule path already uses,
-    // and asking the same question twice in two dialects is how the two come
-    // to disagree.
-    if (!canTransition(status, 'cancelled')) {
+    // A visit that NEVER HAPPENED — cancelled, or a no-show — is history and
+    // has nothing to correct. A FINISHED one is not (owner, 2026-09-09): the
+    // barber who had no time for the sheet mid-cut updates the services, the
+    // length, the price after the fact, and the book must take it. It used
+    // to refuse everything `canTransition(_, 'cancelled')` refused, which
+    // lumped the two together.
+    if (status.kind === 'cancelled' || status.kind === 'no_show') {
       return fail(new CommitBookingInvalidInputError('status'));
     }
 
@@ -451,6 +482,15 @@ export class StaffEditAppointmentUseCase {
       }
     }
 
+    // A fresh seat must name a chair this shop rosters. The placement engine
+    // tolerates a chair with no roster for STAFF (outside-window placement
+    // is allowed), which let a display name through as an id — a seat on a
+    // chair no lane draws (found live, 2026-09-08).
+    for (const seat of planned.next) {
+      if (seat.fresh && !snapshot.schedules.has(seat.barberId)) {
+        return fail(new StaffEditInvalidCommandError('barberId'));
+      }
+    }
     const ids = planned.next.map((seat) => seat.id);
     let cursor = 0;
 
@@ -474,7 +514,7 @@ export class StaffEditAppointmentUseCase {
       termsOverrides: planned.overrides,
     });
     if (decided.isFailure()) {
-      return fail(translateRefusal(decided.error, input.command));
+      return fail(translateRefusal(decided.error, planned.commands));
     }
 
     // Per-seat outcomes are restored by INDEX, which is exact: the decision
@@ -493,6 +533,14 @@ export class StaffEditAppointmentUseCase {
         pref: seat.pref,
         // eslint-disable-next-line security/detect-object-injection -- `index` is the array index this very `map` produced, over an array the decision built from `planned.next` in order.
         outcome: planned.next[index]?.outcome ?? SEAT_SCHEDULED,
+        // Restored by the same index and for the same reason: the decision
+        // rebuilt this seat from the catalogue, which has no idea what the
+        // client left on the counter.
+        tip: seatTipFromDocument(
+          // eslint-disable-next-line security/detect-object-injection -- as above: `index` indexes the array this `map` is walking.
+          planned.next[index]?.tipMinorUnits ?? null,
+          seat.terms.price.currencyCode(),
+        ),
       }),
     );
 
@@ -526,6 +574,8 @@ interface PlannedEdit {
   readonly next: readonly StoredSeat[];
   readonly overrides: ReadonlyMap<string, StaffTermsOverride>;
   readonly nextRevision: number;
+  /** Carried so a refusal can still name which EDGE was being dragged. */
+  readonly commands: readonly StaffEditCommand[];
 }
 
 /**
@@ -540,16 +590,35 @@ function validateCommand(
 ): Result<StaffEditCommand, StaffEditError> {
   const parses = (iso: unknown): boolean =>
     typeof iso === 'string' && Number.isFinite(Date.parse(iso));
+  /*
+   * Absent is the ordinary case — the whole party. PRESENT means the caller
+   * named seats, so it must actually be a non-empty list of ids: an empty
+   * array or a bare string would otherwise reach `applyCommand`, where a
+   * string iterates into characters and an empty list would silently widen
+   * back to everyone. Widening is the one outcome a scoped move must never
+   * have — it is the bug the scope was added to fix.
+   */
+  const scopes = (ids: unknown): boolean =>
+    ids === undefined ||
+    (Array.isArray(ids) &&
+      ids.length > 0 &&
+      ids.every((id) => typeof id === 'string' && id.length > 0));
   const command = (raw ?? {}) as StaffEditCommand;
 
   switch (command.kind) {
     case 'move':
+      if (!scopes(command.seatIds)) {
+        return fail(new StaffEditInvalidCommandError('seatIds'));
+      }
       return parses(command.startIso)
         ? ok(command)
         : fail(new StaffEditInvalidCommandError('startIso'));
     case 'resize':
       if (command.edge !== 'start' && command.edge !== 'end') {
         return fail(new StaffEditInvalidCommandError('edge'));
+      }
+      if (!scopes(command.seatIds)) {
+        return fail(new StaffEditInvalidCommandError('seatIds'));
       }
       return parses(command.atIso)
         ? ok(command)
@@ -562,6 +631,42 @@ function validateCommand(
         command.priceMinorUnits >= 0
         ? ok(command)
         : fail(new StaffEditInvalidCommandError('priceMinorUnits'));
+    case 'addSeat': {
+      const id = (value: unknown): value is string =>
+        typeof value === 'string' && value.length > 0;
+      if (!id(command.seatId)) {
+        return fail(new StaffEditInvalidCommandError('seatId'));
+      }
+      if (!id(command.serviceId)) {
+        return fail(new StaffEditInvalidCommandError('serviceId'));
+      }
+      if (!id(command.barberId)) {
+        return fail(new StaffEditInvalidCommandError('barberId'));
+      }
+      if (!parses(command.startIso)) {
+        return fail(new StaffEditInvalidCommandError('startIso'));
+      }
+      if (!Number.isInteger(command.minutes) || command.minutes <= 0) {
+        return fail(new StaffEditInvalidCommandError('minutes'));
+      }
+      const subject = command.subject as { kind?: unknown; label?: unknown };
+      const subjectOk =
+        subject?.kind === 'self' ||
+        (subject?.kind === 'guest' && id(subject.label));
+      if (!subjectOk) {
+        return fail(new StaffEditInvalidCommandError('subject'));
+      }
+      if (command.variantId !== undefined && command.variantId !== null) {
+        if (!id(command.variantId)) {
+          return fail(new StaffEditInvalidCommandError('variantId'));
+        }
+      }
+      return ok(command);
+    }
+    case 'removeSeat':
+      return typeof command.seatId === 'string' && command.seatId.length > 0
+        ? ok(command)
+        : fail(new StaffEditInvalidCommandError('seatId'));
     case 'redurate':
       if (typeof command.seatId !== 'string' || command.seatId.length === 0) {
         return fail(new StaffEditInvalidCommandError('seatId'));
@@ -586,12 +691,15 @@ function validateCommand(
  * The command, applied to the stored seats.
  *
  * ### Which seats an edge belongs to
- * A `move` is the whole party: every seat shifts by one delta, so the
- * arrangement the shop offered — two guests in parallel, or one barber back
- * to back — is preserved exactly.
+ * An UNSCOPED `move` is the whole party: every seat shifts by one delta, so
+ * the arrangement the shop offered — two guests in parallel, or one barber
+ * back to back — is preserved exactly. A move carrying `seatIds` shifts only
+ * those, which is how one barber leaves a party without taking the rest of it
+ * with them; the delta is then measured from the SCOPE's own start, so the
+ * seat lands where it was dropped rather than where the party begins.
  *
  * A `resize` acts on the seats that OWN the edge being dragged: the ones
- * starting at the envelope's start, or ending at its end. Two guests
+ * starting at the scope's start, or ending at its end. Two guests
  * finishing together both extend when the bottom handle is pulled down; the
  * last leg of a sequential chain extends alone. Anything else would either
  * silently stretch a leg nobody touched or refuse a gesture the frame draws.
@@ -599,24 +707,40 @@ function validateCommand(
 function applyCommand(
   stored: readonly StoredSeat[],
   command: StaffEditCommand,
+  finished = false,
 ): Result<readonly StoredSeat[], StaffEditError> {
-  const envelopeStart = Math.min(...stored.map((seat) => seat.startMs));
-  const envelopeEnd = Math.max(...stored.map(endMs));
-
   switch (command.kind) {
     case 'move': {
-      const delta = Date.parse(command.startIso) - envelopeStart;
+      const scoped = scopeOf(stored, command.seatIds);
+      if (scoped.isFailure()) return scoped;
+      const scope = scoped.value;
+      // The delta is measured from the SCOPE's start, so a seat dragged to
+      // 17:00 lands at 17:00 whether or not a sibling in another chair starts
+      // earlier. Measuring from the party envelope is what made a scoped move
+      // land in the wrong place the moment the seats were not aligned.
+      const delta = Date.parse(command.startIso) - startOf(scope);
+      const inScope = idsOf(scope);
       return ok(
-        stored.map((seat) => ({ ...seat, startMs: seat.startMs + delta })),
+        stored.map((seat) =>
+          inScope.has(seat.id)
+            ? { ...seat, startMs: seat.startMs + delta }
+            : seat,
+        ),
       );
     }
     case 'resize': {
+      const scoped = scopeOf(stored, command.seatIds);
+      if (scoped.isFailure()) return scoped;
+      const scope = scoped.value;
+      const inScope = idsOf(scope);
+
       if (command.edge === 'end') {
+        const scopeEnd = endOf(scope);
         const deltaMinutes = Math.round(
-          (Date.parse(command.atIso) - envelopeEnd) / MINUTE_MS,
+          (Date.parse(command.atIso) - scopeEnd) / MINUTE_MS,
         );
         return reshape(stored, (seat) =>
-          endMs(seat) === envelopeEnd
+          inScope.has(seat.id) && endMs(seat) === scopeEnd
             ? { ...seat, durationMinutes: seat.durationMinutes + deltaMinutes }
             : seat,
         );
@@ -625,10 +749,11 @@ function applyCommand(
       // absorbs it. "I'll start ten minutes later but still finish at eleven"
       // is one gesture and two written values, which is exactly why a resize
       // cannot be a patch of one timestamp.
+      const scopeStart = startOf(scope);
       const at = Date.parse(command.atIso);
-      const deltaMinutes = Math.round((at - envelopeStart) / MINUTE_MS);
+      const deltaMinutes = Math.round((at - scopeStart) / MINUTE_MS);
       return reshape(stored, (seat) =>
-        seat.startMs === envelopeStart
+        inScope.has(seat.id) && seat.startMs === scopeStart
           ? {
               ...seat,
               startMs: at,
@@ -652,7 +777,89 @@ function applyCommand(
         ...seat,
         barberId: command.barberId,
       }));
+    case 'addSeat': {
+      if (stored.some((seat) => seat.id === command.seatId)) {
+        return fail(new StaffEditInvalidCommandError('seatId'));
+      }
+      // The zone and currency are the appointment's, read off any seat it
+      // already holds; a batch cannot add to an empty visit (`plan` refuses
+      // one before it gets here).
+      const template = stored[0];
+      if (!template) return fail(new StaffEditInvalidCommandError('seats'));
+      return ok([
+        ...stored,
+        {
+          id: command.seatId,
+          serviceId: command.serviceId,
+          variantId: command.variantId ?? null,
+          barberId: command.barberId,
+          zone: template.zone,
+          startMs: Date.parse(command.startIso),
+          durationMinutes: command.minutes,
+          priceMinorUnits: 0,
+          currencyCode: template.currencyCode,
+          setupMinutes: 0,
+          cleanupMinutes: 0,
+          // On a finished visit the new seat is history the moment it is
+          // written — worked, stamped at its own end.
+          outcome: finished
+            ? {
+                kind: 'worked',
+                atMs: Date.parse(command.startIso) + command.minutes * 60_000,
+              }
+            : SEAT_SCHEDULED,
+          tipMinorUnits: null,
+          subject: command.subject,
+          fresh: true,
+        },
+      ]);
+    }
+    case 'removeSeat': {
+      const target = stored.find((seat) => seat.id === command.seatId);
+      if (!target) return fail(new StaffEditInvalidCommandError('seatId'));
+      // A seat somebody already sat in (or was charged for, or cancelled out
+      // of) is history, not a line to delete; and a visit with no seats is
+      // not a visit — that is a cancellation, which has its own path.
+      if (target.outcome.kind !== 'scheduled' || stored.length === 1) {
+        return fail(new StaffEditInvalidCommandError('seatId'));
+      }
+      return ok(stored.filter((seat) => seat !== target));
+    }
   }
+}
+
+/**
+ * The seats a scoped edge acts on — every stored seat when unscoped.
+ *
+ * An unknown or empty id list is refused rather than silently widened to the
+ * whole party: a caller that named seats meant to name them, and quietly
+ * moving everyone because one id was stale is the failure mode this arm
+ * exists to prevent.
+ */
+function scopeOf(
+  stored: readonly StoredSeat[],
+  seatIds: readonly string[] | undefined,
+): Result<readonly StoredSeat[], StaffEditError> {
+  // Shape is `validateCommand`'s job and has already been settled; what is
+  // left is whether these ids are seats of THIS appointment.
+  if (seatIds === undefined) return ok(stored);
+  const wanted = new Set(seatIds);
+  const scope = stored.filter((seat) => wanted.has(seat.id));
+  return scope.length === wanted.size
+    ? ok(scope)
+    : fail(new StaffEditInvalidCommandError('seatIds'));
+}
+
+function idsOf(seats: readonly StoredSeat[]): ReadonlySet<string> {
+  return new Set(seats.map((seat) => seat.id));
+}
+
+function startOf(seats: readonly StoredSeat[]): number {
+  return Math.min(...seats.map((seat) => seat.startMs));
+}
+
+function endOf(seats: readonly StoredSeat[]): number {
+  return Math.max(...seats.map(endMs));
 }
 
 /** Map every seat, refusing a duration the edit drove to zero or below. */
@@ -695,11 +902,18 @@ function reshapeSeat(
  */
 function translateRefusal(
   error: CommitBookingError,
-  command: StaffEditCommand,
+  commands: readonly StaffEditCommand[],
 ): StaffEditError {
   if (error.code !== 'booking.commit.slot_unavailable') return error;
+  /*
+   * The edge names WHICH HANDLE the barber was dragging, so the sheet can
+   * say "this end will not fit" rather than "it will not fit". A batch has
+   * no single handle: only a lone resize can name one, and a save that
+   * happens to contain a resize was not dragged at all.
+   */
+  const only = commands.length === 1 ? commands[0] : undefined;
   return new StaffEditOverlapError(
-    command.kind === 'resize' ? command.edge : null,
+    only?.kind === 'resize' ? only.edge : null,
     String(error.params['barberId'] ?? ''),
     String(error.params['startIso'] ?? ''),
   );

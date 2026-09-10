@@ -10,6 +10,7 @@ import {
   type RescheduleBookingRequest,
   type CommitBookingRequest,
   type CommittedBooking,
+  type RecordSeatTipRequest,
   type StaffEditAppointmentRequest,
   type StaffEditedAppointment,
 } from '@creativo/application/booking';
@@ -58,12 +59,6 @@ function toFailureCode(error: unknown): {
     case 'booking.commit.unknown_service':
     case 'booking.commit.service_not_at_location':
       return { failure: 'catalog_changed', params };
-    case 'booking.commit.invalid_input':
-    case 'booking.commit.invariant_violated':
-    case 'booking.commit.conflicting_services':
-    case 'booking.commit.party_too_large':
-    case 'booking.commit.too_soon':
-    case 'booking.commit.beyond_horizon':
     case 'booking.transition.unauthenticated':
     case 'booking.transition.forbidden':
     case 'booking.arrived.unauthenticated':
@@ -80,6 +75,16 @@ function toFailureCode(error: unknown): {
     case 'booking.staffEdit.unauthenticated':
     case 'booking.staffEdit.forbidden':
       return { failure: 'unauthenticated', params };
+    // A request the server would not take AS SENT — a seat missing its
+    // variant, a party past the cap, a time outside the horizon. These used
+    // to report as `unauthenticated`, which sent a signed-in barber looking
+    // for a login problem that did not exist (2026-09-08).
+    case 'booking.commit.invalid_input':
+    case 'booking.commit.invariant_violated':
+    case 'booking.commit.conflicting_services':
+    case 'booking.commit.party_too_large':
+    case 'booking.commit.too_soon':
+    case 'booking.commit.beyond_horizon':
     case 'booking.staffEdit.invalid_command':
     case 'booking.staffEdit.before_arrival':
     case 'booking.staffEdit.stale':
@@ -239,6 +244,29 @@ export class CallableBookingGateway implements BookingGateway {
     }
   }
 
+  async clearArrival(
+    appointmentId: string,
+  ): Promise<Result<void, BookingGatewayError>> {
+    const callable = httpsCallable<{ appointmentId: string }, unknown>(
+      this.functions,
+      'clearArrival',
+    );
+
+    try {
+      await callable({ appointmentId });
+      return ok(undefined);
+    } catch (error) {
+      const { failure, params } = toFailureCode(error);
+      return fail(
+        new BookingGatewayError(
+          failure,
+          error instanceof Error ? error.message : 'clear arrival failed',
+          params,
+        ),
+      );
+    }
+  }
+
   /**
    * Calls `staffEditAppointment`.
    *
@@ -246,6 +274,35 @@ export class CallableBookingGateway implements BookingGateway {
    * save has to claim what it last read — a stale banner that cannot say
    * which version it is stale against is a banner that fires forever.
    */
+  /**
+   * Calls `recordSeatTip` — a stamp, not an edit.
+   *
+   * Returns nothing: unlike `staffEdit` there is no revision to claim,
+   * because a tip changes no geometry that a later save could be stale
+   * against.
+   */
+  async recordTip(
+    request: RecordSeatTipRequest,
+  ): Promise<Result<void, BookingGatewayError>> {
+    const callable = httpsCallable<RecordSeatTipRequest, unknown>(
+      this.functions,
+      'recordSeatTip',
+    );
+    try {
+      await callable(request);
+      return ok(undefined);
+    } catch (error) {
+      const { failure, params } = toFailureCode(error);
+      return fail(
+        new BookingGatewayError(
+          failure,
+          error instanceof Error ? error.message : 'recordSeatTip failed',
+          params,
+        ),
+      );
+    }
+  }
+
   async staffEdit(
     request: StaffEditAppointmentRequest,
   ): Promise<Result<StaffEditedAppointment, BookingGatewayError>> {

@@ -105,7 +105,7 @@ describe('FirestoreUserRepository', () => {
       email: 'client@example.com',
       birthDate: '1990-07-03',
       searchName: 'ada lovelace',
-      searchPrefixes: [
+      searchPrefixes: expect.arrayContaining([
         'a',
         'ad',
         'ada',
@@ -117,7 +117,7 @@ describe('FirestoreUserRepository', () => {
         'lovela',
         'lovelac',
         'lovelace',
-      ],
+      ]),
     });
   });
 

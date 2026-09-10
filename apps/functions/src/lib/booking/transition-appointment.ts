@@ -66,6 +66,32 @@ const STAFF_TRANSITIONS: readonly AppointmentStatusKind[] = [
  * reading of rows written before outcomes existed. `0` would make those rows
  * look ancient and resolve them wrongly, so it is parsed rather than faked.
  */
+/**
+ * The shop's calendar day of an instant — `YYYY-MM-DD` in the slot's zone.
+ * `en-CA` is the one locale whose default date is ISO-shaped.
+ */
+function shopDayKey(ms: number, zone: string): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: zone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date(ms));
+}
+
+function seatStartMs(seat: Record<string, unknown>): number {
+  const slot = seat['slot'] as Record<string, unknown> | undefined;
+  return Date.parse(String(slot?.['startIso'] ?? ''));
+}
+
+/** A seat that still holds its chair: no outcome yet, or scheduled. */
+function seatIsLive(seat: Record<string, unknown>): boolean {
+  const kind = (seat['outcome'] as Record<string, unknown> | undefined)?.[
+    'kind'
+  ];
+  return kind === undefined || kind === 'scheduled';
+}
+
 function seatEndMs(seat: Record<string, unknown>): number {
   const slot = seat['slot'] as Record<string, unknown> | undefined;
   const parsed = Date.parse(String(slot?.['endIso'] ?? ''));
@@ -142,7 +168,7 @@ export const transitionAppointment = onCall(async (request) => {
   // Reported separately in the audit trail: "confirmed a pending booking" and
   // "took a no-show back" are different acts, and a shop reviewing who
   // reverses stamps must be able to count the second without the first.
-  let reopened = false;
+  let reopenedFrom: AppointmentStatusKind | null = null;
 
   await db.runTransaction(async (tx) => {
     const ref = db.collection('appointments').doc(appointmentId);
@@ -229,6 +255,92 @@ export const transitionAppointment = onCall(async (request) => {
     // The DOMAIN's graph, never re-encoded: completed stays completed,
     // pending cannot skip to completed, and `no_show → confirmed` is legal
     // because it is the lifecycle's one correction edge.
+    /*
+     * THE SAME-DAY CORRECTION EDGES (owner ruling 2026-09-08).
+     *
+     * `completed` and `cancelled` stay terminal in the graph — money and
+     * history hang off them, and `canTransition` must keep saying no to
+     * everyone else. But the ten minutes after a fat-fingered `Готово` or a
+     * mis-tapped `Откажи` are real, and the desk needs a way back that is
+     * not "book it again". So the ROOT (never a seat) may return to
+     * `confirmed` while the shop is still inside the visit's own day, and
+     * every settled seat goes back to scheduled with it. Audited under its
+     * own action, so a report can tell a correction from a booking.
+     *
+     * Reinstating a cancellation has one extra check: the slot was released
+     * when it was cancelled, and the waitlist may have been paged into it.
+     * The chair has to be free again, or the answer is honestly "taken".
+     */
+    const reopeningSettled =
+      seatId.length === 0 &&
+      to === 'confirmed' &&
+      (status.kind === 'completed' || status.kind === 'cancelled');
+    if (reopeningSettled) {
+      const zone = String(
+        (data['timeSlot'] as Record<string, unknown> | undefined)?.['zone'] ??
+          'Europe/Sofia',
+      );
+      const endMs = Math.max(0, ...seats.map(seatEndMs));
+      const nowMs = Date.now();
+      if (shopDayKey(endMs, zone) !== shopDayKey(nowMs, zone)) {
+        throw new HttpsError(
+          'failed-precondition',
+          'A settled visit can only be reopened on its own day',
+          {
+            code: 'booking.transition.reopen_window_closed',
+            params: { from: status.kind, to },
+          },
+        );
+      }
+      if (status.kind === 'cancelled') {
+        const keys = Array.isArray(data['busyKeys'])
+          ? (data['busyKeys'] as string[])
+          : [];
+        for (const key of keys) {
+          const others = await tx.get(
+            db
+              .collection('appointments')
+              .where('busyKeys', 'array-contains', key)
+              .where('status.kind', 'in', ['pending', 'confirmed']),
+          );
+          for (const other of others.docs) {
+            if (other.id === appointmentId) continue;
+            const theirs = Array.isArray(other.data()['seats'])
+              ? (other.data()['seats'] as Record<string, unknown>[])
+              : [];
+            const taken = seats.some((mine) =>
+              theirs.some(
+                (seat) =>
+                  seatIsLive(seat) &&
+                  seat['barberId'] === mine['barberId'] &&
+                  seatStartMs(seat) < seatEndMs(mine) &&
+                  seatStartMs(mine) < seatEndMs(seat),
+              ),
+            );
+            if (taken) {
+              throw new HttpsError(
+                'failed-precondition',
+                'That time has been taken since',
+                {
+                  code: 'booking.transition.slot_taken',
+                  params: { from: status.kind, to },
+                },
+              );
+            }
+          }
+        }
+      }
+      tx.update(ref, {
+        status: { kind: 'confirmed' },
+        seats: seats.map((seat) =>
+          seatIsLive(seat)
+            ? seat
+            : { ...seat, outcome: seatOutcomeToDocument(SEAT_SCHEDULED) },
+        ),
+      });
+      reopenedFrom = status.kind;
+      return;
+    }
     if (!canTransition(status, to)) {
       throw new HttpsError(
         'failed-precondition',
@@ -284,7 +396,7 @@ export const transitionAppointment = onCall(async (request) => {
               ),
             }),
     });
-    reopened = reopening;
+    if (reopening) reopenedFrom = 'no_show';
   });
 
   // After the commit, never inside it — see `appendAudit`. The TARGET is
@@ -292,7 +404,14 @@ export const transitionAppointment = onCall(async (request) => {
   // not default to the staff actor.
   void appendAudit({
     actorUserId: uid,
-    action: reopened ? 'booking.staff_reopen_no_show' : `booking.staff_${to}`,
+    action:
+      reopenedFrom === 'no_show'
+        ? 'booking.staff_reopen_no_show'
+        : reopenedFrom === 'completed'
+          ? 'booking.staff_reopen_completed'
+          : reopenedFrom === 'cancelled'
+            ? 'booking.staff_reinstate'
+            : `booking.staff_${to}`,
     resourceId: appointmentId,
     targetUserId: ownerUserId ?? undefined,
     atIso: new Date().toISOString(),

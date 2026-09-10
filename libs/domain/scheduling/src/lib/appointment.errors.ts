@@ -11,7 +11,7 @@ export class AppointmentMultipleSelfSeatsError extends DomainError {
   override readonly code =
     'scheduling.appointment.multiple_self_seats' as const;
   constructor() {
-    super('An appointment may have at most one "self" seat');
+    super('The booker cannot hold two seats at the same time');
   }
 }
 
@@ -65,6 +65,21 @@ export class AppointmentInvalidTransitionError extends DomainError {
     super(`Cannot transition an appointment from "${from}" to "${to}"`, {
       from,
       to,
+    });
+  }
+}
+
+/**
+ * A settled visit may only be reopened on its own day. After midnight a
+ * completed cut is a fact with money hanging off it and a cancellation has
+ * long since given its time away; the honest path is a new booking.
+ */
+export class AppointmentReopenWindowClosedError extends DomainError {
+  override readonly code =
+    'scheduling.appointment.reopen_window_closed' as const;
+  constructor(public readonly from: string) {
+    super(`A ${from} appointment can only be reopened on its own day`, {
+      from,
     });
   }
 }

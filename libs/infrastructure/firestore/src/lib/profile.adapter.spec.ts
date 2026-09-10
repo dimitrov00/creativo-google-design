@@ -80,7 +80,19 @@ describe('FirestoreProfileAdapter', () => {
     expect(payload['roles']).toEqual(['client']);
     expect(payload['searchName']).toBe('ivan petrov');
     expect(payload['searchPrefixes']).toEqual(
-      expect.arrayContaining(['i', 'iv', 'ivan', 'p', 'pe', 'petrov']),
+      expect.arrayContaining([
+        'i',
+        'iv',
+        'ivan',
+        'p',
+        'pe',
+        'petrov',
+        // The number in both forms, digits only, from the 3rd character.
+        '359',
+        '359888123456',
+        '088',
+        '0888123456',
+      ]),
     );
   });
 

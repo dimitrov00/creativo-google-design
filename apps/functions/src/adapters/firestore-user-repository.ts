@@ -29,7 +29,11 @@ function prefixesOf(token: string): string[] {
  * write the same `users/{uid}` document, and `FirestoreUserSearchAdapter`
  * queries these fields regardless of which side last wrote them.
  */
-function computeSearchFields(fullName: string): {
+function computeSearchFields(
+  fullName: string,
+  phoneForms: readonly string[] = [],
+  email: string | null = null,
+): {
   searchName: string;
   searchPrefixes: string[];
 } {
@@ -39,6 +43,25 @@ function computeSearchFields(fullName: string): {
   for (const token of tokens) {
     for (const prefix of prefixesOf(token)) {
       prefixSet.add(prefix);
+    }
+  }
+  // THE NUMBER AND THE MAIL, too (owner, 2026-09-09): the desk searches by
+  // whatever the client says — a name, a number read off a phone, an
+  // address. Digits only for the phone, in every form a person types it
+  // (E.164 without the plus, and the national form); the email whole and
+  // its local part. Prefixes from the 3rd character keep the array sane.
+  for (const form of phoneForms) {
+    const digits = form.replace(/\D/g, '');
+    for (const prefix of prefixesOf(digits)) {
+      if (prefix.length >= 3) prefixSet.add(prefix);
+    }
+  }
+  if (email) {
+    const lower = email.trim().toLowerCase();
+    for (const token of [lower, lower.split('@')[0] ?? '']) {
+      for (const prefix of prefixesOf(token)) {
+        if (prefix.length >= 3) prefixSet.add(prefix);
+      }
     }
   }
   return { searchName, searchPrefixes: [...prefixSet] };
@@ -62,7 +85,11 @@ function statusToPersistence(status: AccountStatus): DocumentData {
  * server registers reconstitutes cleanly through the web's profile door.
  */
 function registeredToPersistence(user: User): DocumentData {
-  const { searchName, searchPrefixes } = computeSearchFields(user.fullName());
+  const { searchName, searchPrefixes } = computeSearchFields(
+    user.fullName(),
+    [user.phone.value, user.phone.formatNational()],
+    user.email ? user.email.value : null,
+  );
   return {
     phone: user.phone.value,
     firstName: user.firstName.value,

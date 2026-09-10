@@ -3,6 +3,7 @@ import type { DocumentData, QueryDocumentSnapshot } from 'firebase/firestore';
 import { getDocs, limit, orderBy, query, where } from 'firebase/firestore';
 import { FIREBASE_FIRESTORE } from '@creativo/infrastructure/firebase-app';
 import {
+  normalizeSearchQuery,
   UserSearchPort,
   UserSearchResult,
 } from '@creativo/application/governance';
@@ -28,7 +29,11 @@ function toSearchResult(
       ? data['searchName']
       : `${data['firstName'] ?? ''} ${data['lastName'] ?? ''}`.trim();
   const email = data['email'] ? Email.fromPrimitive(data['email']) : null;
-  return ok({ userId: idResult.value, displayName, email });
+  const phone =
+    typeof data['phone'] === 'string' && data['phone'].length > 0
+      ? data['phone']
+      : null;
+  return ok({ userId: idResult.value, displayName, email, phone });
 }
 
 /** Staff/admin-only free-text lookup (`UserSearchPort`) — backed by the same
@@ -41,7 +46,7 @@ export class FirestoreUserSearchAdapter implements UserSearchPort {
   async search(
     rawQuery: string,
   ): Promise<Result<readonly UserSearchResult[], RepositoryError>> {
-    const normalized = rawQuery.trim().toLowerCase();
+    const normalized = normalizeSearchQuery(rawQuery);
     if (normalized.length === 0) {
       return ok([]);
     }

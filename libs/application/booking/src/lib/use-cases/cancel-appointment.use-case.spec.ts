@@ -29,6 +29,7 @@ describe('CancelAppointmentUseCase', () => {
       reschedule: vi.fn(),
       transition: vi.fn(),
       markArrived: vi.fn(),
+      clearArrival: vi.fn(),
       staffEdit: vi.fn(),
     };
 
@@ -52,6 +53,7 @@ describe('CancelAppointmentUseCase', () => {
       reschedule: vi.fn(),
       transition: vi.fn(),
       markArrived: vi.fn(),
+      clearArrival: vi.fn(),
       staffEdit: vi.fn(),
     };
 

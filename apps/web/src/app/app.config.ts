@@ -32,6 +32,7 @@ import {
   OTP_CLIENT,
 } from '@creativo/application/identity';
 import {
+  APPOINTMENT_NOTES,
   APPOINTMENT_REPOSITORY,
   AVAILABILITY_READER,
   SCHEDULE_EXCEPTION_WRITER,
@@ -87,6 +88,7 @@ import {
   FirestoreCourseRepository,
   FirestoreEventRepository,
   FirestoreAvailabilityReader,
+  FirestoreAppointmentNotes,
   FirestoreScheduleExceptionWriter,
   CallableBookingGateway,
   CallableWaitlistGateway,
@@ -191,6 +193,7 @@ export const appConfig: ApplicationConfig = {
       provide: APPOINTMENT_REPOSITORY,
       useClass: FirestoreAppointmentRepository,
     },
+    { provide: APPOINTMENT_NOTES, useClass: FirestoreAppointmentNotes },
     { provide: CATALOG_READER, useClass: FirestoreCatalogReader },
     { provide: AVAILABILITY_READER, useClass: FirestoreAvailabilityReader },
     {

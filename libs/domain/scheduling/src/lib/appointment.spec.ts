@@ -604,6 +604,75 @@ describe('Appointment seat outcomes', () => {
     }
   });
 
+  /*
+   * THE SAME-DAY CORRECTION EDGE (owner ruling 2026-09-08). Terminal stays
+   * terminal for the graph; this is the one narrow way back, and it closes
+   * at midnight.
+   */
+  it('reopens a completed visit on its own day, every seat back to scheduled', () => {
+    const done = reconstituteWithStatus(PENDING).confirm();
+    if (!done.isSuccess()) throw new Error('unexpected failure');
+    const completed = done.value.complete(RESOLVED_AT_MS);
+    if (!completed.isSuccess()) throw new Error('unexpected failure');
+    expect(completed.value.seats[0]!.outcome.kind).toBe('worked');
+
+    const reopened = completed.value.reopenSettled(
+      completed.value.timeSlot.end,
+    );
+    expect(reopened.isSuccess()).toBe(true);
+    if (reopened.isSuccess()) {
+      expect(reopened.value.status.kind).toBe('confirmed');
+      expect(reopened.value.seats[0]!.outcome.kind).toBe('scheduled');
+    }
+  });
+
+  it('reinstates a cancelled visit on its own day', () => {
+    const cancelled = reconstituteWithStatus(CONFIRMED).cancel(
+      'mis-tap',
+      RESOLVED_AT_MS,
+    );
+    if (!cancelled.isSuccess()) throw new Error('unexpected failure');
+    const back = cancelled.value.reopenSettled(cancelled.value.timeSlot.end);
+    expect(back.isSuccess()).toBe(true);
+    if (back.isSuccess()) {
+      expect(back.value.status.kind).toBe('confirmed');
+      expect(back.value.seats[0]!.outcome.kind).toBe('scheduled');
+    }
+  });
+
+  it('refuses to reopen a settled visit the next day, or a live one at all', () => {
+    const completed = reconstituteWithStatus(COMPLETED);
+    const nextDay = completed.timeSlot.end.plusMinutes(24 * 60);
+    const late = completed.reopenSettled(nextDay);
+    expect(late.isSuccess()).toBe(false);
+    if (late.isFailure()) {
+      expect(late.error.code).toBe(
+        'scheduling.appointment.reopen_window_closed',
+      );
+    }
+    expect(
+      reconstituteWithStatus(CONFIRMED)
+        .reopenSettled(reconstituteWithStatus(CONFIRMED).timeSlot.end)
+        .isSuccess(),
+    ).toBe(false);
+  });
+
+  it('takes an arrival stamp back, and only while the visit is live', () => {
+    const live = reconstituteWithStatus(CONFIRMED);
+    const arrived = live.markArrived(live.timeSlot.start);
+    if (!arrived.isSuccess()) throw new Error('unexpected failure');
+    expect(arrived.value.arrivedAt).not.toBeNull();
+
+    const cleared = arrived.value.clearArrival();
+    expect(cleared.isSuccess()).toBe(true);
+    if (cleared.isSuccess()) expect(cleared.value.arrivedAt).toBeNull();
+    // Idempotent: clearing what was never set is a no-op.
+    expect(live.clearArrival().isSuccess()).toBe(true);
+    expect(reconstituteWithStatus(COMPLETED).clearArrival().isSuccess()).toBe(
+      false,
+    );
+  });
+
   it('confirming resolves nothing — it is about the booking, not the work', () => {
     const result = reconstituteWithStatus(PENDING).confirm();
     expect(result.isSuccess()).toBe(true);

@@ -35,6 +35,13 @@ export interface CommitBookingInput extends DecideBookingRequest {
    * ruling 2026-07-29 — anonymous until confirm).
    */
   readonly ownerUserId: string | null;
+  /**
+   * The shop placing its own book (owner ruling 2026-08-07 #3): the owner
+   * may be a named client or nobody (a walk-in of guest seats), lead time
+   * and roster containment do not apply, and the booking is CONFIRMED on
+   * creation — the desk that made it has already accepted it.
+   */
+  readonly staffPlacement?: boolean;
 }
 
 /**
@@ -63,7 +70,7 @@ export class CommitBookingUseCase {
   async execute(
     input: CommitBookingInput,
   ): Promise<Result<{ appointmentId: string }, CommitBookingError>> {
-    if (!input.ownerUserId) {
+    if (!input.ownerUserId && !input.staffPlacement) {
       return fail(new CommitBookingUnauthenticatedError());
     }
     const ownerUserId = input.ownerUserId;
@@ -86,6 +93,7 @@ export class CommitBookingUseCase {
         policy: this.policy,
         nextId: () => this.idGenerator.next(),
         ownerUserId,
+        allowOutsideWindow: input.staffPlacement === true,
       });
     });
 

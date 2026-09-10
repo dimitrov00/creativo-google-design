@@ -39,7 +39,11 @@ function prefixesOf(token: string): string[] {
 /** Standard Firestore "poor man's search" trick (mirrors v2's real
  * `users (searchPrefixes ARRAY_CONTAINS, searchName ASC)` index): every
  * prefix of every whitespace-split token in the full name, lowercased. */
-function computeSearchFields(fullName: string): {
+function computeSearchFields(
+  fullName: string,
+  phoneForms: readonly string[] = [],
+  email: string | null = null,
+): {
   searchName: string;
   searchPrefixes: string[];
 } {
@@ -49,6 +53,23 @@ function computeSearchFields(fullName: string): {
   for (const token of tokens) {
     for (const prefix of prefixesOf(token)) {
       prefixSet.add(prefix);
+    }
+  }
+  // Phone digits (E.164 without the plus, and the national form) and the
+  // email (whole, and its local part), from the 3rd character — in lockstep
+  // with the functions' `computeSearchFields` (owner, 2026-09-09).
+  for (const form of phoneForms) {
+    const digits = form.replace(/\D/g, '');
+    for (const prefix of prefixesOf(digits)) {
+      if (prefix.length >= 3) prefixSet.add(prefix);
+    }
+  }
+  if (email) {
+    const lower = email.trim().toLowerCase();
+    for (const token of [lower, lower.split('@')[0] ?? '']) {
+      for (const prefix of prefixesOf(token)) {
+        if (prefix.length >= 3) prefixSet.add(prefix);
+      }
     }
   }
   return { searchName, searchPrefixes: [...prefixSet] };
@@ -106,7 +127,11 @@ function statusFromPersistence(
 }
 
 function toPersistence(user: User): DocumentData {
-  const { searchName, searchPrefixes } = computeSearchFields(user.fullName());
+  const { searchName, searchPrefixes } = computeSearchFields(
+    user.fullName(),
+    [user.phone.value, user.phone.formatNational()],
+    user.email ? user.email.value : null,
+  );
   return {
     phone: user.phone.value,
     firstName: user.firstName.value,

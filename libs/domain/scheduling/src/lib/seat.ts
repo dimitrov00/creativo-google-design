@@ -1,4 +1,4 @@
-import { ZonedDateTime } from '@creativo/domain/kernel';
+import { Money, ZonedDateTime } from '@creativo/domain/kernel';
 import { UserId } from '@creativo/domain/accounts';
 import {
   BarberId,
@@ -108,6 +108,29 @@ export interface SeatProps {
    * existed, which is the same thing as far as a report is concerned.
    */
   readonly outcome?: SeatOutcome;
+  /**
+   * What this person left for the barber, beyond the price.
+   *
+   * ### Why it lives on the SEAT and not the appointment
+   * A party can be two barbers, and a tip belongs to whoever did the work —
+   * so an appointment-level number could not say whose it was the moment
+   * Ivan and Stefan share a booking. Every barber's day is then the sum of
+   * their OWN seats, which is the question actually asked ("what did I make
+   * in tips today"), answerable without a second aggregate to keep in step.
+   *
+   * ### Why it is not part of `terms`
+   * `terms` is a SNAPSHOT of what the shop charges — catalogue-derived,
+   * comparable against `catalogTerms`, and known before anyone sits down. A
+   * tip is none of those: it is decided by the client after the fact and it
+   * is not the shop's money. Folding it into the price would corrupt every
+   * figure derived from `terms` — revenue, the discount report, the client's
+   * own receipt — with an amount the shop never charged.
+   *
+   * `null` is "no tip recorded", which is NOT the same as zero: a visit
+   * nobody has settled up yet and a visit that genuinely tipped nothing are
+   * different facts, and a day's report has to be able to tell them apart.
+   */
+  readonly tip?: Money | null;
 }
 
 /**
@@ -159,6 +182,7 @@ export class Seat {
     readonly outcome: SeatOutcome = SEAT_SCHEDULED,
     readonly pref: BarberPref | null = null,
     readonly catalogTerms: ServiceTerms | null = null,
+    readonly tip: Money | null = null,
   ) {}
 
   static of(props: SeatProps): Seat {
@@ -178,6 +202,31 @@ export class Seat {
       props.catalogTerms && !props.catalogTerms.equals(props.terms)
         ? props.catalogTerms
         : null,
+      props.tip ?? null,
+    );
+  }
+
+  /**
+   * The same seat, tipped. `null` clears it back to "nothing recorded".
+   *
+   * Immutable like every other transition here, and deliberately independent
+   * of `outcome`: a tip is usually entered when the visit is settled, but
+   * nothing about the money depends on the lifecycle and a barber correcting
+   * yesterday's figure must not have to reopen a completed visit.
+   */
+  withTip(tip: Money | null): Seat {
+    return new Seat(
+      this.id,
+      this.subject,
+      this.serviceId,
+      this.variantId,
+      this.barberId,
+      this.terms,
+      this.startsAt,
+      this.outcome,
+      this.pref,
+      this.catalogTerms,
+      tip,
     );
   }
 

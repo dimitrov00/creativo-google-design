@@ -215,6 +215,15 @@ service cloud.firestore {
     }
 
     // ── catalog (public browse, staff/content-manager write) ──────────────
+    // ── the team's note on a visit ─────────────────────────────────────
+    // Staff-only in BOTH directions, and a sibling of the appointment on
+    // purpose: the appointment document is readable by its owner, so a note
+    // the shop writes about a client can never live on it. `worksTheBook()`,
+    // not `isStaff()` — a marketing role has no business reading these.
+    match /appointmentNotes/{appointmentId} {
+      allow read, write: if worksTheBook();
+    }
+
     match /serviceCategories/{categoryId} {
       allow read: if true;
       allow write: if isCatalogManager();

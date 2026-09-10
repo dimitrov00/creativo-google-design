@@ -16,6 +16,7 @@ import {
   AppointmentEmptyCancellationReasonError,
   AppointmentEmptySeatsError,
   AppointmentInvalidTransitionError,
+  AppointmentReopenWindowClosedError,
   AppointmentMixedCurrencyError,
   AppointmentMultipleSelfSeatsError,
   AppointmentNotArrivableError,
@@ -35,6 +36,7 @@ import {
   isTerminal,
 } from './appointment-status';
 import { BookingContact } from './booking-contact';
+import { CalendarDay } from './calendar-day';
 import { AppointmentId, SeatId } from './ids';
 import { EmptyIdError } from './ids.errors';
 import { Seat } from './seat';
@@ -190,6 +192,72 @@ export class Appointment {
   }
 
   /**
+   * The stamp taken back — the undo behind `markArrived`.
+   *
+   * Same gate as setting it: a live visit only. A settled visit's arrival is
+   * history and stays. Clearing what was never set is a no-op, not an error,
+   * because the undo that calls this may outlive a second tap.
+   */
+  clearArrival(): Result<Appointment, AppointmentError[]> {
+    if (this.status.kind !== 'pending' && this.status.kind !== 'confirmed') {
+      return fail([new AppointmentNotArrivableError(this.status.kind)]);
+    }
+    if (this.arrivedAt === null) return ok(this);
+    return ok(
+      new Appointment(
+        this.id,
+        this.locationId,
+        this.seats,
+        this.status,
+        this.contact,
+        this.bookedAt,
+        this.bookedFrom,
+        null,
+      ),
+    );
+  }
+
+  /**
+   * The same-day correction edge (owner ruling 2026-09-08).
+   *
+   * `completed` and `cancelled` stay terminal in `TRANSITIONS`: money and
+   * history hang off them, and every list that asks `isTerminal` must keep
+   * getting "yes". This is the ONE way past that, and it is narrow on
+   * purpose — the shop is still inside the visit's own calendar day (`now`
+   * read in the slot's zone), and the whole appointment comes back, every
+   * settled seat returned to scheduled. A fat-fingered `Готово` at 13:02 is
+   * undone at 13:03; the same tap next morning is refused, because by then
+   * the honest path is a new booking.
+   *
+   * What this does NOT check is whether the chair is still free — a
+   * cancellation gave its time away and the waitlist may have taken it.
+   * That is the placement engine's question, asked by the server on the way
+   * in, never re-derived here.
+   */
+  reopenSettled(
+    now: ZonedDateTime,
+  ): Result<
+    Appointment,
+    AppointmentInvalidTransitionError | AppointmentReopenWindowClosedError
+  > {
+    if (this.status.kind !== 'completed' && this.status.kind !== 'cancelled') {
+      return fail(
+        new AppointmentInvalidTransitionError(this.status.kind, 'confirmed'),
+      );
+    }
+    const visitDay = CalendarDay.fromZonedDateTime(this.timeSlot.end);
+    if (!visitDay.equals(CalendarDay.fromZonedDateTime(now))) {
+      return fail(new AppointmentReopenWindowClosedError(this.status.kind));
+    }
+    const seats = this.seats.map((seat) =>
+      seat.outcome.kind === 'scheduled'
+        ? seat
+        : seat.withOutcome(SEAT_SCHEDULED),
+    );
+    return ok(this.withSeats(seats, CONFIRMED));
+  }
+
+  /**
    * How late the party was, in minutes — negative when they were early.
    *
    * `null` when they have not arrived, which is NOT the same as zero and must
@@ -281,10 +349,19 @@ export class Appointment {
       return errors;
     }
 
+    // ONE PERSON, ONE CHAIR AT A TIME (relaxed 2026-09-08). This used to
+    // forbid a second `self` seat outright, which made "a cut and then a
+    // beard trim" for one client unrepresentable — the staff editor's whole
+    // service ladder. The invariant that was actually being protected is
+    // narrower: the booker cannot sit in two chairs at once. Sequential self
+    // seats are one visit with two services; overlapping ones are a mistake.
     const selfSeats = seats.filter(
       (s) => s.subject.kind === 'account' && s.subject.relationship === 'self',
     );
-    if (selfSeats.length > 1) {
+    const selfOverlaps = selfSeats.some((a, i) =>
+      selfSeats.some((b, j) => j > i && a.slot.overlaps(b.slot)),
+    );
+    if (selfOverlaps) {
       errors.push(new AppointmentMultipleSelfSeatsError());
     }
 

@@ -40,6 +40,7 @@ import {
   catalogTermsFromDocument,
   contactFromDocument,
   seatOutcomeFromDocument,
+  seatTipFromDocument,
 } from '@creativo/application/booking';
 import { RepositoryError } from '@creativo/application/shared';
 import { FIREBASE_FIRESTORE } from '@creativo/infrastructure/firebase-app';
@@ -198,6 +199,13 @@ function buildSeats(
         catalogTerms: catalogTermsFromDocument(
           entry['terms'],
           termsResult.value,
+        ),
+        // In the seat's own currency — a tip is settled in the money the
+        // seat was priced in. Absent reads back as "not recorded", never
+        // as zero.
+        tip: seatTipFromDocument(
+          entry['tipMinorUnits'],
+          termsResult.value.price.currencyCode(),
         ),
       }),
     );

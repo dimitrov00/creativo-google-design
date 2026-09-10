@@ -296,7 +296,7 @@ function useCase(store: FirestoreBookingStore): StaffEditAppointmentUseCase {
 }
 
 async function edit(
-  command: StaffEditCommand,
+  command: StaffEditCommand | readonly StaffEditCommand[],
   options: {
     readonly current?: PersistedDocument;
     readonly view?: BookingSnapshot;
@@ -458,6 +458,127 @@ describe('staffEditAppointment — move', () => {
     expect(starts).toEqual([at(12).toISO(), at(12, 45).toISO()]);
   });
 
+  /*
+   * A SCOPED move — one barber leaving a party without taking it with them.
+   *
+   * The case these exist for: a father with Ivan and his son with Petar, and
+   * Petar has to push his half back an hour. Before the scope, `move` could
+   * only mean the envelope, so Petar's drag moved the father too.
+   */
+  it('shifts ONLY the named seats, leaving the rest of the party put', async () => {
+    const party = document({ barberIds: ['ivan', 'petar'] }, [
+      seatDoc({ id: 'seat-1', startIso: at(10).toISO() }),
+      seatDoc({
+        id: 'seat-2',
+        barberId: 'petar',
+        startIso: at(10, 45).toISO(),
+        subject: { kind: 'anonymous', label: 'Гост' },
+      }),
+    ]);
+    const { result, captured } = await edit(
+      { kind: 'move', startIso: at(12).toISO(), seatIds: ['seat-2'] },
+      { current: party },
+    );
+    expect(result.isSuccess()).toBe(true);
+    const starts = seatsOf(captured).map(
+      (seat) => (seat['slot'] as Record<string, string>)['startIso'],
+    );
+    // seat-1 has not moved; seat-2 landed exactly where it was dropped —
+    // measured from ITS OWN start, not the party's.
+    expect(starts).toEqual([at(10).toISO(), at(12).toISO()]);
+  });
+
+  it('refuses a scope naming a seat this booking does not have', async () => {
+    const { result } = await edit({
+      kind: 'move',
+      startIso: at(12).toISO(),
+      seatIds: ['seat-99'],
+    });
+    expect(result.isFailure()).toBe(true);
+  });
+
+  /*
+   * The one outcome a scope must never have. An empty list is a caller bug,
+   * and treating it as "unscoped" would silently move the whole party —
+   * exactly the behaviour the scope was added to prevent.
+   */
+  it('refuses an EMPTY scope rather than widening it to the whole party', async () => {
+    const { result } = await edit({
+      kind: 'move',
+      startIso: at(12).toISO(),
+      seatIds: [],
+    });
+    expect(result.isFailure()).toBe(true);
+  });
+
+  it('resizes only the scoped seat, not whichever runs latest', async () => {
+    const party = document({ barberIds: ['ivan', 'petar'] }, [
+      // seat-1 runs to 11:30 and so OWNS the party envelope's end; seat-2
+      // finishes at 10:45.
+      seatDoc({ id: 'seat-1', startIso: at(10).toISO(), durationMinutes: 90 }),
+      seatDoc({
+        id: 'seat-2',
+        barberId: 'petar',
+        startIso: at(10).toISO(),
+        subject: { kind: 'anonymous', label: 'Гост' },
+      }),
+    ]);
+    const { result, captured } = await edit(
+      {
+        kind: 'resize',
+        edge: 'end',
+        atIso: at(11).toISO(),
+        seatIds: ['seat-2'],
+      },
+      { current: party },
+    );
+    expect(result.isSuccess()).toBe(true);
+    const minutes = seatsOf(captured).map(
+      (seat) => (seat['terms'] as Record<string, number>)['durationMinutes'],
+    );
+    // Unscoped, the delta would have been measured against 11:30 and applied
+    // to seat-1 — the seat in the chair nobody dragged.
+    expect(minutes).toEqual([90, 60]);
+  });
+
+  /*
+   * ── TIPS SURVIVE AN EDIT ─────────────────────────────────────────────
+   *
+   * Tips are RECORDED by `recordSeatTip`, not here — this path rebuilds the
+   * booking and refuses a settled visit, which is the only kind that gets
+   * tipped. What it must do is not destroy one: the rebuild re-derives every
+   * seat from the catalogue, which knows nothing about money the shop never
+   * charged, so a tip not restored explicitly is a tip erased by the next
+   * drag of the block.
+   */
+  it('preserves a recorded tip across a move', async () => {
+    const tipped = document({}, [
+      { ...seatDoc({ id: 'seat-1' }), tipMinorUnits: 700 },
+    ]);
+    const { result, captured } = await edit(
+      { kind: 'move', startIso: at(12).toISO() },
+      { current: tipped },
+    );
+    expect(result.isSuccess()).toBe(true);
+    expect(seatsOf(captured)[0]?.['tipMinorUnits']).toBe(700);
+  });
+
+  it('preserves a ZERO tip, which is a recording and not an absence', async () => {
+    const tipped = document({}, [
+      { ...seatDoc({ id: 'seat-1' }), tipMinorUnits: 0 },
+    ]);
+    const { captured } = await edit(
+      { kind: 'move', startIso: at(12).toISO() },
+      { current: tipped },
+    );
+    expect(seatsOf(captured)[0]?.['tipMinorUnits']).toBe(0);
+  });
+
+  it('leaves an untipped seat untipped rather than defaulting it to zero', async () => {
+    const { captured } = await edit({ kind: 'move', startIso: at(12).toISO() });
+    expect(seatsOf(captured)[0]?.['tipMinorUnits']).toBeNull();
+  });
+
   it('keeps the seat ids, so per-seat actions are not orphaned', async () => {
     const { captured } = await edit({ kind: 'move', startIso: at(11).toISO() });
     expect(seatsOf(captured).map((seat) => seat['id'])).toEqual(['seat-1']);
@@ -549,6 +670,153 @@ describe('staffEditAppointment — resize', () => {
       atIso: at(10).toISO(),
     });
     expect(code(result)).toBe('booking.staffEdit.invalid_command');
+  });
+});
+
+describe('staffEditAppointment — services added and removed', () => {
+  it('adds a seat after the visit, priced by the catalogue, not the client', async () => {
+    const { result, captured } = await edit([
+      {
+        kind: 'addSeat',
+        seatId: 'seat-2',
+        serviceId: 'svc-fade',
+        barberId: 'ivan',
+        startIso: at(10, 45).toISO(),
+        // The client says 30; the catalogue says 45 and wins.
+        minutes: 30,
+        subject: { kind: 'self' },
+      },
+    ]);
+    expect(result.isSuccess()).toBe(true);
+    const seats = seatsOf(captured);
+    expect(seats.map((seat) => seat['id'])).toEqual(['seat-1', 'seat-2']);
+    const added = seats[1] as Record<string, unknown>;
+    const terms = added['terms'] as Record<string, unknown>;
+    expect(terms['priceMinorUnits']).toBe(4000);
+    expect(terms['durationMinutes']).toBe(45);
+    // Nothing overridden — the catalogue pair stays null.
+    expect(terms['catalogPriceMinorUnits']).toBeNull();
+    expect((added['slot'] as Record<string, unknown>)['startIso']).toBe(
+      at(10, 45).toISO(),
+    );
+    expect((added['subject'] as Record<string, unknown>)['relationship']).toBe(
+      'self',
+    );
+    expect((added['outcome'] as Record<string, unknown>)['kind']).toBe(
+      'scheduled',
+    );
+  });
+
+  it('marks a seat added to a FINISHED visit as worked, not scheduled', async () => {
+    // The sheet filled in after the cut (owner, 2026-09-09): the service was
+    // done, so the seat is history the moment it is written.
+    const done = document({ status: { kind: 'completed' } });
+    const { result, captured } = await edit(
+      [
+        {
+          kind: 'addSeat',
+          seatId: 'seat-2',
+          serviceId: 'svc-fade',
+          barberId: 'ivan',
+          startIso: at(10, 45).toISO(),
+          minutes: 45,
+          subject: { kind: 'self' },
+        },
+      ],
+      { current: done },
+    );
+    expect(result.isSuccess()).toBe(true);
+    const added = seatsOf(captured)[1] as Record<string, unknown>;
+    expect((added['outcome'] as Record<string, unknown>)['kind']).toBe(
+      'worked',
+    );
+  });
+
+  it('lets one person hold a second, SEQUENTIAL seat — but never two at once', async () => {
+    const atOnce = await edit([
+      {
+        kind: 'addSeat',
+        seatId: 'seat-2',
+        serviceId: 'svc-fade',
+        barberId: 'petar',
+        startIso: at(10).toISO(),
+        minutes: 45,
+        subject: { kind: 'self' },
+      },
+    ]);
+    expect(atOnce.result.isSuccess()).toBe(false);
+  });
+
+  it('refuses a fresh seat on a chair the shop does not roster', async () => {
+    const { result } = await edit([
+      {
+        kind: 'addSeat',
+        seatId: 'seat-2',
+        serviceId: 'svc-fade',
+        barberId: 'Нико Димов',
+        startIso: at(10, 45).toISO(),
+        minutes: 45,
+        subject: { kind: 'self' },
+      },
+    ]);
+    expect(code(result)).toBe('booking.staffEdit.invalid_command');
+  });
+
+  it('removes a scheduled seat and keeps the others', async () => {
+    const { result, captured } = await edit(
+      { kind: 'removeSeat', seatId: 'seat-2' },
+      {
+        current: document({}, [
+          seatDoc(),
+          seatDoc({ id: 'seat-2', startIso: at(10, 45).toISO() }),
+        ]),
+      },
+    );
+    expect(result.isSuccess()).toBe(true);
+    expect(seatsOf(captured).map((seat) => seat['id'])).toEqual(['seat-1']);
+  });
+
+  it('refuses to remove the last seat, or one somebody already sat in', async () => {
+    const last = await edit({ kind: 'removeSeat', seatId: 'seat-1' });
+    expect(code(last.result)).toBe('booking.staffEdit.invalid_command');
+    const worked = await edit(
+      { kind: 'removeSeat', seatId: 'seat-2' },
+      {
+        current: document({}, [
+          seatDoc(),
+          seatDoc({
+            id: 'seat-2',
+            startIso: at(10, 45).toISO(),
+            outcome: { kind: 'worked', atMs: at(11, 30).toMillis() },
+          }),
+        ]),
+      },
+    );
+    expect(code(worked.result)).toBe('booking.staffEdit.invalid_command');
+  });
+
+  it('applies an add before the resize that follows it in one batch', async () => {
+    // The dashboard sends add → move → resize(end = start + every leg).
+    const { result, captured } = await edit([
+      {
+        kind: 'addSeat',
+        seatId: 'seat-2',
+        serviceId: 'svc-fade',
+        barberId: 'ivan',
+        startIso: at(10, 45).toISO(),
+        minutes: 45,
+        subject: { kind: 'self' },
+      },
+      { kind: 'move', startIso: at(10).toISO() },
+      { kind: 'resize', edge: 'end', atIso: at(11, 30).toISO() },
+    ]);
+    expect(result.isSuccess()).toBe(true);
+    const seats = seatsOf(captured);
+    expect(
+      seats.map(
+        (seat) => (seat['terms'] as Record<string, unknown>)['durationMinutes'],
+      ),
+    ).toEqual([45, 45]);
   });
 });
 
@@ -766,13 +1034,26 @@ describe('staffEditAppointment — what a move must not erase', () => {
     expect(captured.extra?.['staffNote']).toBe('дължи 5 лв от миналия път');
   });
 
-  it('refuses to touch a settled visit — history is not editable', async () => {
+  it('refuses to touch a visit that never happened — cancelled is history', async () => {
+    const gone = document({
+      status: { kind: 'cancelled', reason: 'client', atMs: 1 },
+    });
+    const { result } = await edit(
+      { kind: 'move', startIso: at(11).toISO() },
+      { current: gone },
+    );
+    expect(code(result)).toBe('booking.commit.invalid_input');
+  });
+
+  it('lets a FINISHED visit be corrected — the sheet is filled in after the cut', async () => {
+    // Owner, 2026-09-09: a barber who had no time for the sheet mid-visit
+    // comes back to it. Completed is not cancelled; the book takes the edit.
     const done = document({ status: { kind: 'completed' } });
     const { result } = await edit(
       { kind: 'move', startIso: at(11).toISO() },
       { current: done },
     );
-    expect(code(result)).toBe('booking.commit.invalid_input');
+    expect(result.isSuccess()).toBe(true);
   });
 });
 
@@ -800,5 +1081,48 @@ describe('staffEditAppointment — the revision', () => {
       { expectedVersion: null },
     );
     expect(result.isSuccess()).toBe(true);
+  });
+
+  /*
+   * ── A SAVE IS A BATCH ─────────────────────────────────────────────────
+   *
+   * A gesture is one command; `Запази` is a day, a start, a duration and a
+   * repriced leg arriving as ONE intent. Four requests would be four
+   * placement decisions and a booking left half-moved when the third is
+   * refused.
+   */
+  it('folds several commands in order and decides once', async () => {
+    const { result, captured } = await edit([
+      { kind: 'move', startIso: at(12).toISO() },
+      { kind: 'resize', edge: 'start', atIso: at(12, 15).toISO() },
+    ] as unknown as StaffEditCommand);
+
+    expect(result.isSuccess()).toBe(true);
+    /*
+     * ⚠ 12:15, which is only reachable if the RESIZE saw the MOVE.
+     *
+     * The top handle holds the end and pulls the start, and it measures from
+     * the scope's current start — so a resize applied against the STORED
+     * seats would have measured from 10:00 and landed somewhere else
+     * entirely. A later command seeing the one before it is the whole point
+     * of folding rather than sending four requests.
+     */
+    expect(captured.request?.seats[0]?.startIso).toContain('12:15');
+  });
+
+  it('refuses the whole batch when one arm is malformed', async () => {
+    const { result, captured } = await edit([
+      { kind: 'move', startIso: at(12).toISO() },
+      { kind: 'redurate', seatId: 'seat-1', minutes: 0 },
+    ] as unknown as StaffEditCommand);
+
+    expect(result.isFailure()).toBe(true);
+    // The good arm must not land on its own: nothing was even planned.
+    expect(captured.request).toBeUndefined();
+  });
+
+  it('refuses an empty batch rather than writing nothing quietly', async () => {
+    const { result } = await edit([] as unknown as StaffEditCommand);
+    expect(result.isFailure()).toBe(true);
   });
 });

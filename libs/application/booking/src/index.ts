@@ -1,5 +1,6 @@
 export * from './lib/ports/appointment-document';
 export * from './lib/ports/appointment-repository.port';
+export * from './lib/ports/appointment-notes.port';
 export * from './lib/ports/availability-reader.port';
 export * from './lib/ports/booking-draft';
 export * from './lib/ports/booking-gateway.port';
