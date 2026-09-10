@@ -1,7 +1,8 @@
 @layer sys-components {
   /* The anchor box. `inline-flex` so the menu wraps its trigger exactly —
-     the surface positions against THIS, not the viewport, which is why no
-     portal or floating-element library is needed. */
+     the surface is MEASURED against this and placed in the top layer at the
+     same viewport coordinates (see menu.ts), which is why no portal or
+     floating-element library is needed. */
   .ui-menu {
     position: relative;
     display: inline-flex;
@@ -13,23 +14,54 @@
      takes the items out of the tab order while closed, so no `inert` or
      tabindex gating is needed. */
   .ui-menu__surface {
-    position: absolute;
+    /* TOP LAYER: a `popover` — fixed viewport coordinates written by the
+       component from the trigger's rect. The UA popover stylesheet's own
+       inset, margin, border and colours are all restated below, because
+       author rules win over it and silence is not the same as "unset". */
+    position: fixed;
+    inset: auto;
+    margin: 0;
     z-index: var(--sys-layer-popover);
     display: flex;
     flex-direction: column;
     box-sizing: border-box;
+    color: var(--sys-color-foreground);
     /* Sizes to its longest command, like a real menu — never narrower than
        the trigger it hangs off, never wider than the viewport allows. */
     inline-size: max-content;
-    /* `--ui-menu-min-width` lets a consumer that has to POSITION the menu
-       itself state the width it is positioning — a feature stylesheet cannot
-       reach this element (emulated encapsulation), so restating it there
-       silently matches nothing. */
-    min-inline-size: max(var(--ui-menu-min-width, 12rem), 100%);
+    /* `--ui-menu-min-width` lets a consumer state the width the menu is
+       placed at — a feature stylesheet cannot reach this element (emulated
+       encapsulation), so restating it there silently matches nothing.
+       `--ui-menu-anchor-width` is the trigger's, measured on open. */
+    min-inline-size: max(
+      var(--ui-menu-min-width, 12rem),
+      var(--ui-menu-anchor-width, 0px)
+    );
     max-inline-size: min(
       var(--ui-menu-min-width, 20rem),
       calc(100vw - var(--sys-space-comfortable) * 2)
     );
+    /*
+     * BOUNDED BOTH WAYS. The inline size has been constrained since this was
+     * written and the block size never was, so a menu longer than the room
+     * below its trigger grew straight off the screen — the tail of a long
+     * catalogue was unreachable and nothing said it was there.
+     *
+     * `--ui-menu-max-block` is measured on open (see `measurePlacement`):
+     * the real distance to the viewport edge on the side the menu lands.
+     * The fallback matters — it is what applies before the first
+     * measurement and in any environment where the effect has not run —
+     * and it is deliberately generous, because a cap that is too tight
+     * hides items and a cap that is too loose only postpones the scroll.
+     */
+    max-block-size: var(--ui-menu-max-block, 55vh);
+    overflow-x: hidden;
+    overflow-y: auto;
+    /* The list stops at the surface's edge instead of dragging the sheet
+       behind it once it reaches the end. */
+    overscroll-behavior: contain;
+    /* iOS momentum inside a popover; a no-op everywhere else. */
+    -webkit-overflow-scrolling: touch;
     padding: var(--sys-space-tight);
     border: 1px solid var(--sys-color-separator);
     border-radius: var(--control-radius-regular);
@@ -56,7 +88,9 @@
       opacity var(--sys-motion-duration-instant) var(--sys-motion-ease-standard),
       transform var(--sys-motion-duration-instant)
         var(--sys-motion-ease-standard),
-      visibility var(--sys-motion-duration-instant);
+      visibility var(--sys-motion-duration-instant),
+      /* Stays in the top layer for the length of its exit fade. */ overlay
+        var(--sys-motion-duration-instant) allow-discrete;
   }
 
   /*
@@ -114,6 +148,14 @@
     min-inline-size: var(--ui-icon-medium);
   }
 
+  /* TWO GROUPS IN ONE MENU are two SECTIONS — the picks, then the typed
+     «Друго» — and iOS parts sections with a seam thicker than the rows'
+     own. A compact space, so the second run reads as its own thing rather
+     than as one more row of the first (owner, 2026-09-10). */
+  .ui-menu__surface > .ui-list-group + .ui-list-group {
+    margin-block-start: var(--sys-space-compact);
+  }
+
   .ui-menu__surface:has(> .ui-list-group) {
     padding: var(--sys-space-tight);
     border-radius: calc(
@@ -132,23 +174,15 @@
     transform: scale(1);
   }
 
+  /* Where it grows FROM — the coordinates themselves are inline, written
+     by the component from the trigger's rect. */
   .ui-menu__surface[data-placement='bottom'] {
-    inset-block-start: calc(100% + var(--sys-space-tight));
     transform-origin: top center;
   }
   .ui-menu__surface[data-placement='top'] {
-    inset-block-end: calc(100% + var(--sys-space-tight));
     transform-origin: bottom center;
   }
-
-  .ui-menu__surface[data-alignment='leading'] {
-    inset-inline-start: 0;
-  }
-  .ui-menu__surface[data-alignment='trailing'] {
-    inset-inline-end: 0;
-  }
   .ui-menu__surface[data-alignment='center'] {
-    inset-inline-start: 50%;
     translate: -50% 0;
   }
 

@@ -53,11 +53,16 @@ describe('UiDateBadge', () => {
     }
   });
 
-  it('renders the dot for today', () => {
+  /*
+   * ⚠ TODAY DRAWS NO DOT. iOS renders today as the accent-coloured NUMBER
+   * and keeps the dot for "there are events that day". Marking today with
+   * the event indicator left the system unable to say the other thing.
+   */
+  it('marks today without spending the dot on it', () => {
     fixture.componentInstance.today.set(true);
     fixture.detectChanges();
     expect(badge().getAttribute('data-today')).toBe('');
-    expect(badge().querySelector('.ui-date-badge__marker')).not.toBeNull();
+    expect(badge().querySelector('.ui-date-badge__marker')).toBeNull();
   });
 
   it('renders the dot for a consumer marker', () => {
@@ -75,13 +80,18 @@ describe('UiDateBadge', () => {
     fixture.detectChanges();
     expect(badge().getAttribute('data-state')).toBe('selected');
     expect(badge().getAttribute('data-today')).toBe('');
-    expect(badge().querySelector('.ui-date-badge__marker')).not.toBeNull();
   });
 
-  it('shows ONE dot when a day is both today and marked', () => {
+  /*
+   * The pair that used to be indistinguishable. Today is ink and the dot is
+   * the booking, so a booked today now says BOTH — which is the whole reason
+   * the dot stopped marking today.
+   */
+  it('says today AND booked at once, in two different channels', () => {
     fixture.componentInstance.today.set(true);
     fixture.componentInstance.marker.set(true);
     fixture.detectChanges();
+    expect(badge().getAttribute('data-today')).toBe('');
     expect(badge().querySelectorAll('.ui-date-badge__marker')).toHaveLength(1);
   });
 });

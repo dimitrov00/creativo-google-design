@@ -125,6 +125,15 @@
     animation: none;
   }
 
+  /* The LEADING slot — a sheet's way back from a pushed page (owner,
+     2026-09-09). It mirrors the close chip: same bar, same column logic,
+     opposite edge. A page that draws its own back arrow in the content
+     puts navigation where content scrolls; the bar is where it belongs. */
+  .ui-sheet-header > [uileading] {
+    grid-column: 1;
+    justify-self: start;
+  }
+
   .ui-sheet-header > [uitrailing] {
     grid-column: 3;
     justify-self: end;

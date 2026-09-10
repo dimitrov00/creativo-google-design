@@ -63,6 +63,24 @@
     pointer-events: auto;
   }
 
+  /* `scroll` anchoring — a bar rendered INSIDE the scrolling body, as its
+     last child, pinned with sticky at the scroller's bottom edge: the page
+     bar's own contract, inside a sheet. The auto top margin floors it when
+     the body is shorter than the scroller and its column parent has room;
+     `inset` drops the overlay's inline anchoring — a sticky box keeps its
+     flow width. Hidden, it leaves the flow entirely: a sticky box that is
+     merely transparent still reserves its row at the end of the content. */
+  .ui-sheet-action-bar[data-anchor='scroll'] {
+    position: sticky;
+    inset: auto;
+    inset-block-end: 0;
+    margin-block-start: auto;
+  }
+
+  .ui-sheet-action-bar[data-anchor='scroll']:not([data-visible]) {
+    display: none;
+  }
+
   /* SwiftUI-grade bottom scrim (owner ruling 2026-07-27, replacing the
      fully chromeless 2026-07-25 call): the SHEET SURFACE color rising
      through an eased ramp to transparent, cresting a beat above the bar —

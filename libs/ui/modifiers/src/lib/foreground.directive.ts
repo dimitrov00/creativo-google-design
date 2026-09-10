@@ -8,7 +8,7 @@ import { Directive, input } from '@angular/core';
  * simply supporting text.
  */
 export type UiForegroundStyle =
-  'primary' | 'secondary' | 'tertiary' | 'accent' | 'destructive';
+  'primary' | 'secondary' | 'tertiary' | 'accent' | 'destructive' | 'success';
 
 /** ≙ SwiftUI `.foregroundStyle(_:)` — writes `data-foreground-style`. `primary` omits the attribute (inherited color). */
 @Directive({

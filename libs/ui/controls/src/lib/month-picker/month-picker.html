@@ -1,0 +1,87 @@
+<!-- The month, and the two steps that page it. Paging must not touch the
+     chosen day — browsing is not choosing. -->
+<ui-stack uiAxis="horizontal" uiAlignment="center" uiSpacing="compact">
+  <span uiText uiFont="subheadline" uiWeight="semibold">
+    {{ monthLabel() }}
+  </span>
+  <ui-spacer />
+  <button
+    type="button"
+    uiButton
+    uiButtonStyle="plain"
+    uiTint="neutral"
+    uiControlSize="small"
+    [uiIconOnly]="true"
+    [attr.aria-label]="uiPreviousLabel()"
+    data-testid="ui-month-prev"
+    (click)="page(-1)"
+  >
+    <ui-icon uiName="calendar.previous" />
+  </button>
+  <button
+    type="button"
+    uiButton
+    uiButtonStyle="plain"
+    uiTint="neutral"
+    uiControlSize="small"
+    [uiIconOnly]="true"
+    [attr.aria-label]="uiNextLabel()"
+    data-testid="ui-month-next"
+    (click)="page(1)"
+  >
+    <ui-icon uiName="calendar.next" />
+  </button>
+</ui-stack>
+
+<!-- Reminders' Today / Tomorrow: on a surface where most changes are one or
+     two days, aiming at a cell is the wrong amount of work. Absent unless a
+     consumer asks — a picker that offers "today" beside a `Днес` button in
+     the bar above it says the same thing twice. -->
+@if (uiRelatives().length) {
+<div class="ui-month-picker__relatives">
+  @for (relative of uiRelatives(); track relative.offset) {
+  <button
+    type="button"
+    uiChip
+    uiControlSize="small"
+    [attr.data-testid]="'ui-month-relative-' + relative.offset"
+    (click)="pick(relativeDay(relative.offset))"
+  >
+    {{ relative.label }}
+  </button>
+  }
+</div>
+}
+
+<ui-calendar-grid [uiSize]="uiSize()">
+  @for (name of weekdays(); track $index) {
+  <span uiWeekday uiText uiFont="caption" uiForegroundStyle="secondary"
+    >{{ name }}</span
+  >
+  } @for (week of weeks(); track $index) { @for (cell of week; track $index) {
+  @if (cell === null) {
+  <span uiDay aria-hidden="true"></span>
+  } @else {
+  <!-- ⚠ `ui-date-badge`, NOT a bare numeral. The cell is the TAP TARGET and
+       the badge is the mark — which is what `ui-calendar-grid` is built
+       around, and what BOTH hand-rolled pickers were skipping: neither
+       highlighted the selected day or today, because a plain number has no
+       state to paint. `uiToday` is its own flag rather than a state, so a
+       selected today still says it is today. -->
+  <button
+    type="button"
+    uiDay
+    uiInteractive
+    uiRadius="capsule"
+    [attr.aria-current]="cell.dayKey === uiSelected() ? 'date' : null"
+    [attr.data-testid]="'ui-month-day-' + cell.dayKey"
+    (click)="pick(cell.dayKey)"
+  >
+    <ui-date-badge
+      [uiDay]="cell.day"
+      [uiState]="cell.dayKey === uiSelected() ? 'selected' : 'plain'"
+      [uiToday]="cell.dayKey === uiToday()"
+    />
+  </button>
+  } } }
+</ui-calendar-grid>

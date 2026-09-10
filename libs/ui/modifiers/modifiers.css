@@ -90,6 +90,10 @@
   [data-foreground-style='destructive'][data-foreground-style] {
     color: var(--sys-color-destructive);
   }
+  /* Good news in ink — a tip left, a booking confirmed. Never a fill. */
+  [data-foreground-style='success'][data-foreground-style] {
+    color: var(--sys-color-success);
+  }
 
   /* ── Multiline text alignment (uiMultilineTextAlignment →
      data-text-alignment) ──

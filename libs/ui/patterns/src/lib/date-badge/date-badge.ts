@@ -26,18 +26,19 @@ export type UiDateBadgeState = 'plain' | 'selected' | 'outside' | 'unavailable';
  * of them at a time forces the caller to choose which truth to tell. So
  * selection/availability is the state and {@link uiToday} is its own flag.
  *
- * ### The dot
- * Today reads as *the number, with an accent dot beneath it* — the iOS
- * Calendar treatment, and quieter than the ring it replaces, which competed
- * with the selected day's filled capsule for the same visual weight. Selecting
- * the day flips the dot to the on-accent ink so it stays legible on the filled
- * capsule instead of vanishing into it.
+ * ### The dot means EVENTS, and only events
+ * `uiMarker` is the consumer's "there is something on this day" dot — the
+ * appointments calendar's booked days — and it is the dot's only meaning.
+ * `currentColor` is the trick that keeps it legible: on a filled day the
+ * badge's ink is already the on-fill colour, so the dot flips with it rather
+ * than vanishing into the disc beneath.
  *
- * `uiMarker` is the consumer's own "there is something on this day" dot (the
- * appointments calendar's booked days). There is ONE dot slot: a day that is
- * both today and marked shows a single accent dot rather than two, because two
- * 4px dots under a number is noise, and "noteworthy" is what either of them
- * actually communicates at that size.
+ * ⚠ It used to ALSO mark today (`uiToday || uiMarker`), on the stated grounds
+ * that a dot beneath the number was "the iOS Calendar treatment" for today.
+ * It is not — iOS draws today in red TEXT and reserves the dot for events —
+ * and the borrowing cost this system the ability to say the other thing: a
+ * booked day and today drew the same dot, and a booked today drew one dot
+ * that meant either. {@link uiToday} is ink now; the dot is events again.
  *
  * `unavailable` is the booking grid's "nothing free that day": the number
  * stays legible (a struck-through or invisible date is worse than a quiet
@@ -75,14 +76,13 @@ export class UiDateBadge {
 
   /**
    * This day is today — orthogonal to {@link uiState}, so a selected today
-   * still says so. Renders the accent dot.
+   * still says so. Renders as the ACCENT-COLOURED number, and as an
+   * accent-FILLED disc once the day is also selected.
    */
   readonly uiToday = input(false);
 
   /** The consumer's own "something happens here" dot. */
   readonly uiMarker = input(false);
 
-  protected readonly showsDot = computed(
-    () => this.uiToday() || this.uiMarker(),
-  );
+  protected readonly showsDot = computed(() => this.uiMarker());
 }

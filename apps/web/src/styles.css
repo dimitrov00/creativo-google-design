@@ -80,6 +80,25 @@
    have to exist. */
 @import '../../../libs/features/marketing/landing/src/lib/pages/home/locations/locations-map.css';
 
+/* ⚠ AFTER THE LAST @import — a rule placed among them silently drops every
+   import that follows (see the note at the top).
+   FIGURES IN THE DISPLAY FACE (owner, 2026-09-09: "15:00 and 15:12 take
+   different widths — all numbers across the app should line up"). DM Sans,
+   the text face, ships no tabular figures — `tnum` measured as a no-op on
+   the loaded files — while Onest does. So the DIGITS of every text run come
+   from Onest, by unicode-range, and `tabular-nums` at the root (tokens.css)
+   then holds for every number in the app; letters stay DM Sans. The same
+   file the display roles already load, so nothing new is fetched. */
+@font-face {
+  font-family: 'Sys Figures';
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url('../../../node_modules/@fontsource-variable/onest/files/onest-latin-wght-normal.woff2')
+    format('woff2-variations');
+  unicode-range: U+0030-0039;
+}
+
 /* THE APP-WIDE FOCUS RING — the fallback every focusable element that is
    not a DS control lands on.
  *

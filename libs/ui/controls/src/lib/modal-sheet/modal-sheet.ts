@@ -1,21 +1,23 @@
 import { isPlatformBrowser } from '@angular/common';
 import {
-  Component,
-  type ElementRef,
-  PLATFORM_ID,
-  ViewEncapsulation,
   afterNextRender,
+  Component,
+  DestroyRef,
   effect,
   inject,
   input,
   output,
+  PLATFORM_ID,
+  type ElementRef,
   viewChild,
+  ViewEncapsulation,
 } from '@angular/core';
 import { UiButton } from '../button/button';
 import { UiIcon } from '../icon/icon';
 import {
   UiSheet,
   type UiSheetBehavior,
+  type UiSheetPresentationSizing,
   type UiSheetScrollEvent,
 } from '@creativo/ui/layout';
 import { UiMaterialDirective } from '@creativo/ui/modifiers';
@@ -102,6 +104,16 @@ export class UiModalSheet {
    * asynchronously should stay unfitted, or its height jumps as it loads.
    */
   readonly fitted = input(false);
+  /**
+   * How wide the surface may grow on regular widths (≙ `.presentationSizing`).
+   *
+   * `page` is the set-piece default this shell was promoted for — galleries
+   * and location detail trade the drawer measure for the wide container. A
+   * FORM ladder wants `automatic`: its rows were designed at a phone's
+   * width, and at `page` a 1280px viewport put a label at the far left and
+   * its value 1,600px away (staff visit sheet, reviewed 2026-09-08).
+   */
+  readonly uiPresentationSizing = input<UiSheetPresentationSizing>('page');
   /** Opt out of the open-time scroll-to-top when the consumer positions the scroller itself. */
   readonly resetScrollOnOpen = input(true);
   /** Dismissal *request* (Escape / backdrop / drag / close control) —
@@ -119,8 +131,32 @@ export class UiModalSheet {
   private readonly behavior =
     viewChild.required<UiSheetBehavior>('sheetBehavior');
   private readonly scroller = viewChild<ElementRef<HTMLElement>>('scroller');
+  private readonly destroyRef = inject(DestroyRef);
+  private readonly chrome = viewChild<ElementRef<HTMLElement>>('chrome');
 
   constructor() {
+    /*
+     * THE CHROME'S HEIGHT, PUBLISHED (2026-09-09). Content that wants to pin
+     * under the bar — a search band inside a pushed page — cannot know how
+     * tall the sticky chrome is (bar, grabber, an accessory when there is
+     * one), and guessing from tokens put it nine pixels under the bar. The
+     * shell measures itself and writes `--modal-sheet-chrome-height` on the
+     * scroller, so any descendant may `position: sticky` against it.
+     */
+    afterNextRender(() => {
+      const chrome = this.chrome()?.nativeElement;
+      const scroller = this.scroller()?.nativeElement;
+      if (!chrome || !scroller || typeof ResizeObserver === 'undefined') return;
+      const publish = () =>
+        scroller.style.setProperty(
+          '--modal-sheet-chrome-height',
+          `${chrome.getBoundingClientRect().height}px`,
+        );
+      publish();
+      const observer = new ResizeObserver(publish);
+      observer.observe(chrome);
+      this.destroyRef.onDestroy(() => observer.disconnect());
+    });
     // ui-sheet re-exposes only `uiOnDismiss`; scroll progress is forwarded
     // here under the landing-facing output name (one progress formula, the
     // behavior's).

@@ -1,0 +1,13 @@
+@layer sys-components {
+  /* The trailing pair: a detail, then the check — or the check's empty
+     column, so the figures line up down the run. */
+  .ui-choice-menu__trailing {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--sys-space-compact);
+  }
+
+  .ui-choice-menu__check-space {
+    visibility: hidden;
+  }
+}

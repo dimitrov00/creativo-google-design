@@ -1,0 +1,86 @@
+@layer sys-components {
+  /* One cell for the figure — the sizer states its width, the native input
+     lies over it — and a second for the unit. */
+  .ui-unit-field {
+    position: relative;
+    display: inline-grid;
+    grid-template-columns: auto auto;
+    align-items: center;
+    gap: var(--sys-space-compact);
+    min-block-size: var(--control-size-small);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .ui-unit-field__sizer,
+  .ui-unit-field__native {
+    grid-area: 1 / 1;
+    /* 16px keeps iOS from zooming into a focused field; `max` so a larger
+       inherited size still wins. */
+    font-size: max(1em, 16px);
+  }
+
+  .ui-unit-field__sizer {
+    visibility: hidden;
+    white-space: pre;
+    /* Room for the caret past the last digit. */
+    padding-inline-end: 0.5ch;
+  }
+
+  /* The native control carries no surface of its own — the field's owner
+     (a pill, a row) is the surface. */
+  .ui-unit-field__native {
+    inline-size: 100%;
+    min-inline-size: 2ch;
+    field-sizing: content;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    font-size: max(1em, 16px);
+    text-align: end;
+    appearance: textfield;
+    -moz-appearance: textfield;
+  }
+
+  .ui-unit-field__native::-webkit-outer-spin-button,
+  .ui-unit-field__native::-webkit-inner-spin-button {
+    appearance: none;
+    margin: 0;
+  }
+
+  .ui-unit-field__native::placeholder {
+    color: var(--sys-color-secondary-label);
+    opacity: 1;
+  }
+
+  /* Focus is drawn on the field, not inside it. */
+  .ui-unit-field__native:focus,
+  .ui-unit-field__native:focus-visible {
+    outline: none;
+    box-shadow: none;
+  }
+
+  /* The unit is a word on the figure, quieter by a role — the time field's
+     glyph, in letters. */
+  .ui-unit-field__unit {
+    grid-column: 2;
+    color: var(--sys-color-secondary-label);
+    white-space: nowrap;
+  }
+
+  /* The same ring the time field wears. */
+  /* The ring is the field's UNLESS its owner draws one: a pill wrapping
+     the field sets `--ui-field-ring: none` and rings itself, so the ring
+     follows the capsule the eye sees, not the box inside it (owner,
+     2026-09-10: "it outlines the input, not its wrapper"). */
+  .ui-unit-field:has(.ui-unit-field__native:focus-visible) {
+    border-radius: var(--control-radius-capsule);
+    outline: var(
+      --ui-field-ring,
+      var(--sys-focus-ring-width) solid var(--sys-color-accent)
+    );
+    outline-offset: 2px;
+  }
+}

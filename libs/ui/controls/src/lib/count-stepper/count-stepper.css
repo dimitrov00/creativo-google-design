@@ -1,0 +1,134 @@
+@layer sys-components {
+  .ui-count-stepper {
+    display: inline-flex;
+    flex-shrink: 0;
+  }
+
+  /* THE SQUARE — one small control, subtle corners, the DS neutral fill. */
+  .ui-count-stepper__add {
+    position: relative;
+    display: grid;
+    place-items: center;
+    inline-size: var(--control-size-small);
+    block-size: var(--control-size-small);
+    padding: 0;
+    border: 0;
+    border-radius: var(--control-radius-subtle);
+    background: color-mix(
+      in srgb,
+      currentColor var(--sys-alpha-interactive),
+      transparent
+    );
+    color: var(--sys-color-foreground);
+    cursor: pointer;
+    transition:
+      background-color var(--sys-motion-duration-regular)
+        var(--sys-motion-ease-standard),
+      color var(--sys-motion-duration-regular) var(--sys-motion-ease-standard);
+  }
+
+  .ui-count-stepper__add:hover:not(:disabled),
+  .ui-count-stepper__add:active {
+    background: color-mix(
+      in srgb,
+      currentColor var(--sys-alpha-press),
+      transparent
+    );
+  }
+
+  /* Both glyphs sit in the same cell; the `+` is the resting one. */
+  .ui-count-stepper__add > .ui-icon {
+    grid-area: 1 / 1;
+    transition:
+      transform var(--sys-motion-duration-regular)
+        var(--sys-motion-ease-emphasized),
+      opacity var(--sys-motion-duration-regular) var(--sys-motion-ease-standard);
+  }
+
+  .ui-count-stepper__check {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+
+  /* THE BEAT: the square goes accent, the `+` turns and leaves, the ✓
+     lands. */
+  .ui-count-stepper__add[data-added] {
+    background: var(--sys-color-accent);
+    color: var(--sys-color-on-accent);
+  }
+
+  .ui-count-stepper__add[data-added] .ui-count-stepper__plus {
+    opacity: 0;
+    transform: rotate(90deg) scale(0.4);
+  }
+
+  .ui-count-stepper__add[data-added] .ui-count-stepper__check {
+    opacity: 1;
+    transform: scale(1);
+  }
+
+  /* THE GROUP — a capsule of the same fill: `−`, the count, `+`. */
+  .ui-count-stepper__group {
+    display: inline-grid;
+    grid-template-columns: var(--control-size-small) auto var(
+        --control-size-small
+      );
+    align-items: center;
+    min-block-size: var(--control-size-small);
+    border-radius: var(--control-radius-capsule);
+    background: color-mix(
+      in srgb,
+      currentColor var(--sys-alpha-interactive),
+      transparent
+    );
+    color: var(--sys-color-foreground);
+  }
+
+  .ui-count-stepper__step {
+    display: grid;
+    place-items: center;
+    inline-size: var(--control-size-small);
+    block-size: var(--control-size-small);
+    padding: 0;
+    border: 0;
+    border-radius: var(--control-radius-capsule);
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+  }
+
+  .ui-count-stepper__step:hover:not(:disabled),
+  .ui-count-stepper__step:active:not(:disabled) {
+    background: color-mix(
+      in srgb,
+      currentColor var(--sys-alpha-press),
+      transparent
+    );
+  }
+
+  .ui-count-stepper__step:disabled {
+    opacity: 0.4;
+    cursor: default;
+  }
+
+  .ui-count-stepper__count {
+    min-inline-size: 1.5ch;
+    text-align: center;
+    font: var(--sys-font-subheadline);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .ui-count-stepper__add:focus-visible,
+  .ui-count-stepper__step:focus-visible {
+    outline: 2px solid var(--sys-color-accent);
+    outline-offset: 2px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .ui-count-stepper__add,
+    .ui-count-stepper__add > .ui-icon {
+      transition: none;
+    }
+  }
+}

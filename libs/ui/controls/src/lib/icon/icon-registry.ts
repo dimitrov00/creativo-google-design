@@ -47,6 +47,16 @@ export const UI_ICON_REGISTRY = {
   'booking.anyBarber': 'groups',
   /** A service that cannot combine with what is already selected. */
   'booking.blocked': 'block',
+  /**
+   * Placed, but outside the hours it belongs in — a booking that runs past
+   * closing or lands on a day off.
+   *
+   * NOT `booking.blocked`: that glyph means the thing cannot happen, and this
+   * one has already happened. It is the shop's own book, so a barber working
+   * late is recorded rather than argued with; the mark says so out loud so
+   * nobody reads it as an ordinary hour.
+   */
+  'schedule.outsideShift': 'running_with_errors',
   /** Go back and change what was chosen — the summary's own pencil. Distinct
    *  from `party.renameGuest`: that edits a label in place, this rewinds the
    *  flow to the step that owns the answer. */
@@ -163,6 +173,8 @@ export const UI_ICON_REGISTRY = {
   'view.calendar': 'calendar_month',
   /** "One more of these" — the additive action at a bar's trailing edge. */
   'action.add': 'add',
+  /** One fewer — the count stepper's minus. */
+  'action.remove': 'remove',
   /** Narrow what a list shows. The funnel, not the sliders: sliders promise
    *  several dials, a funnel promises one choice. */
   'action.filter': 'filter_list',
@@ -225,6 +237,8 @@ export const UI_ICON_REGISTRY = {
    */
   /** The person is HERE — check-in, not completion. */
   'visit.arrived': 'how_to_reg',
+  /** A visit happening now, by the book — inside its window, no stamp yet. */
+  'visit.now': 'timelapse',
   /** The work is done. A filled mark, so it reads as an end rather than a tick. */
   'visit.completed': 'task_alt',
   /** The shop accepts a booking it had been vetting. */
@@ -240,6 +254,9 @@ export const UI_ICON_REGISTRY = {
   /* ── Calendars / paging ─────────────────────────────────────────── */
   'calendar.previous': 'chevron_left',
   'calendar.next': 'chevron_right',
+  /* Full screen and the way back — Apple's diagonal arrows, in Material. */
+  'frame.expand': 'open_in_full',
+  'frame.collapse': 'close_fullscreen',
   /** Jump the scrolling calendar back to the current month. */
   'calendar.today': 'today',
   /** "Search several days for me" — the booking flow's multi-day declaration.

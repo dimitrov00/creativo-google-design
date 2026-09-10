@@ -1,5 +1,6 @@
 export * from './lib/button/button';
 export * from './lib/icon/icon';
+export * from './lib/month-picker/month-picker';
 export * from './lib/icon/icon-registry';
 export * from './lib/async-image/async-image';
 export * from './lib/map/map';
@@ -18,6 +19,10 @@ export * from './lib/modal-sheet/modal-sheet';
 export * from './lib/progress-ring/progress-ring';
 export * from './lib/phone-field/phone-field';
 export * from './lib/date-field/date-field';
+export * from './lib/choice-menu/choice-menu';
+export * from './lib/count-stepper/count-stepper';
+export * from './lib/time-field/time-field';
+export * from './lib/unit-field/unit-field';
 
 // UiStack/UiSheet live in @creativo/ui/layout and UiCard in @creativo/ui/patterns
 // (blueprint §1.1's true home for layout/pattern primitives) — re-exported here

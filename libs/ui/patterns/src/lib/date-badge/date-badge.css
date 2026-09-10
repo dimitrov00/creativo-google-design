@@ -30,16 +30,51 @@
     color: var(--sys-color-tertiary-label);
   }
 
+  /*
+   * SELECTED — a NEUTRAL filled disc, not a tinted one.
+   *
+   * This was accent-filled, which spent the tint on the commonest state in
+   * the grid and left today nothing to be marked with. iOS Calendar fills
+   * the chosen day with a dark disc and keeps red for today; so does this
+   * app's own week strip, which has always drawn selection as a foreground
+   * disc. The accent is reserved for today, below.
+   */
   .ui-date-badge[data-state='selected'] {
-    background: var(--sys-color-accent);
-    color: var(--sys-color-on-accent);
+    background: var(--sys-color-foreground);
+    color: var(--sys-color-background);
     font-weight: 600;
   }
 
-  /* Today carries weight even unselected — it is the grid's anchor, and a
-     4px dot alone is a small thing to find in six rows of numbers. */
-  .ui-date-badge[data-today] {
+  /*
+   * ⚠ TODAY IS THE ACCENT-COLOURED NUMBER. (owner ruling 2026-09-04)
+   *
+   * It used to be a dot hung beneath the digits, on the stated grounds that
+   * this was "the iOS Calendar treatment". It is not: iOS Calendar renders
+   * today's date in RED TEXT, and the dot under a date means THERE ARE
+   * EVENTS THAT DAY. Borrowing the event indicator for today left this
+   * system with no way to say the other thing — `showsDot` was
+   * `uiToday() || uiMarker()`, so a booked day and today drew the same dot,
+   * and a booked today drew one dot meaning either.
+   *
+   * Ink also settles the argument the dot was introduced to win. The ring it
+   * replaced competed with the selected day's filled capsule because both
+   * were SHAPES; a coloured numeral is not a shape and cannot compete with
+   * one. And it makes the two calendars in this app agree — the staff week
+   * strip has drawn today as accent ink all along.
+   *
+   * Specificity carries it over `outside` and `unavailable`: today stays
+   * findable even in a month it does not belong to.
+   */
+  .ui-date-badge[data-today]:not([data-state='selected']) {
+    color: var(--sys-color-accent-label);
     font-weight: 600;
+  }
+
+  /* Today AND selected — the fill takes the accent, so the day says both at
+     once rather than choosing. The week strip's own rule, exactly. */
+  .ui-date-badge[data-today][data-state='selected'] {
+    background: var(--sys-color-accent);
+    color: var(--sys-color-on-accent);
   }
 
   .ui-date-badge__marker {
@@ -58,13 +93,5 @@
        already `--sys-color-on-accent`, so the dot flips to the foreground of
        the filled capsule rather than vanishing into the accent beneath it. */
     background: currentColor;
-  }
-
-  /* An unselected today tints its dot with the accent — the one place the
-     accent appears on an otherwise quiet grid, which is what makes today
-     findable at a glance. Selected, it inherits `currentColor` above. */
-  .ui-date-badge[data-today]:not([data-state='selected'])
-    > .ui-date-badge__marker {
-    background: var(--sys-color-accent);
   }
 }

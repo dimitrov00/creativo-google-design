@@ -68,6 +68,7 @@ const LARGE_TITLE_SELECTOR = '[uisheetlargetitle]';
   selector: 'ui-sheet-header',
   template: `
     <span class="ui-sheet-header__grabber" aria-hidden="true"></span>
+    <ng-content select="[uiLeading]" />
     <ng-content select="[uiTitle]" />
     <ng-content select="[uiTrailing]" />
   `,

@@ -7,9 +7,16 @@
    ════════════════════════════════════════════════════════════════ */
 @layer sys-tokens {
   :root {
+    /* EVERY NUMBER LINES UP (owner, 2026-09-09): tabular figures are the
+       app's default, not a per-surface opt-in. Inherited by every text run;
+       the faces that have the feature honour it, the rest are unchanged. */
+    font-variant-numeric: tabular-nums;
     /* ── Typography: families (v2 parity: Onest / DM Sans / Geist Mono) ── */
     --sys-font-family-display: 'Onest Variable', system-ui, sans-serif;
-    --sys-font-family-text: 'DM Sans', system-ui, sans-serif;
+    /* `Sys Figures` first: Onest's digits, by unicode-range (each app's
+       styles.css), because DM Sans carries no tabular figures. Letters fall
+       through to DM Sans. */
+    --sys-font-family-text: 'Sys Figures', 'DM Sans', system-ui, sans-serif;
     --sys-font-family-mono: 'Geist Mono', ui-monospace, monospace;
 
     /* ── Typography: SwiftUI text roles (size/line-height ← v2 heading/text ladder) ── */

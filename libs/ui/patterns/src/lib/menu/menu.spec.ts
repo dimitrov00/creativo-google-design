@@ -144,6 +144,64 @@ describe('UiMenu', () => {
     expect(document.activeElement).toBe(host.querySelector('[uiMenuTrigger]'));
   });
 
+  it('keeps Escape to itself — a sheet around it must not close on the same press', async () => {
+    const { fixture, host } = await render();
+    await open(fixture, fixture.componentInstance);
+    // Stand-in for the dialog's own keydown listener, an ancestor.
+    let reachedAncestor = 0;
+    const onAncestor = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') reachedAncestor += 1;
+    };
+    host.addEventListener('keydown', onAncestor);
+
+    surface(host).dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+    );
+    fixture.detectChanges();
+    host.removeEventListener('keydown', onAncestor);
+
+    expect(fixture.componentInstance.dismissed).toBe(1);
+    expect(reachedAncestor).toBe(0);
+  });
+
+  it('closes on Escape from its own trigger too, and keeps that press to itself', async () => {
+    // A surface with nothing to focus — a calendar, a search — leaves
+    // focus on the trigger, where the surface's handler cannot hear the
+    // key; it went on to close the sheet around the menu (2026-09-10).
+    const { fixture, host } = await render();
+    await open(fixture, fixture.componentInstance);
+    let reachedAncestor = 0;
+    const onAncestor = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') reachedAncestor += 1;
+    };
+    host.addEventListener('keydown', onAncestor);
+
+    host
+      .querySelector('[uiMenuTrigger]')
+      ?.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+      );
+    fixture.detectChanges();
+    host.removeEventListener('keydown', onAncestor);
+
+    expect(fixture.componentInstance.dismissed).toBe(1);
+    expect(reachedAncestor).toBe(0);
+  });
+
+  it('rides the top layer as a popover, placed from its trigger', async () => {
+    const { fixture, host } = await render();
+    // A `popover` element: `showPopover()` lifts it above every stacking
+    // context and clip on the page; the coordinates are fixed, from the
+    // trigger's rect, written on open.
+    expect(surface(host).getAttribute('popover')).toBe('manual');
+    await open(fixture, fixture.componentInstance);
+    expect(surface(host).style.top).not.toBe('');
+    expect(surface(host).style.left).not.toBe('');
+    expect(
+      surface(host).style.getPropertyValue('--ui-menu-anchor-width'),
+    ).not.toBe('');
+  });
+
   it('dismisses on an outside press but not on a press inside', async () => {
     const { fixture, host } = await render();
     await open(fixture, fixture.componentInstance);
@@ -179,5 +237,39 @@ describe('UiMenu', () => {
       new KeyboardEvent('keydown', { key: 'Tab', bubbles: true }),
     );
     expect(fixture.componentInstance.dismissed).toBe(1);
+  });
+
+  /*
+   * ── THE SURFACE IS BOUNDED BOTH WAYS ──────────────────────────────────
+   *
+   * The inline size was constrained from the start and the block size never
+   * was, so a menu with more items than the room below its trigger grew
+   * straight off the screen — the tail of a long catalogue unreachable, with
+   * nothing to say it was there.
+   */
+  it('caps its own height and scrolls, rather than growing off the screen', async () => {
+    const { fixture, host } = await render();
+    await open(fixture, fixture.componentInstance);
+
+    const cap = surface(host).style.getPropertyValue('--ui-menu-max-block');
+    expect(cap).toMatch(/^\d+(\.\d+)?px$/);
+
+    /*
+     * ⚠ The CLAMP is the part under test, not the arithmetic.
+     *
+     * `room` is derived from a rect, and a rect read against a host that has
+     * moved — a sheet mid-scroll, a transform in flight — can be arbitrarily
+     * large. That is not hypothetical: measuring inside the opening effect
+     * rather than after render produced a 1163px cap on an 812px screen, and
+     * the menu it was meant to bound ran off the bottom of the phone.
+     *
+     * jsdom reports every rect as zero, so the raw `room` here is the whole
+     * viewport — which is exactly the shape of that bug, and the ceiling is
+     * what has to survive it.
+     */
+    const ceiling = window.innerHeight * 0.55;
+    expect(Number.parseFloat(cap)).toBeLessThanOrEqual(ceiling + 0.01);
+    // Never taller than the screen, whatever the arithmetic says.
+    expect(Number.parseFloat(cap)).toBeLessThan(window.innerHeight);
   });
 });

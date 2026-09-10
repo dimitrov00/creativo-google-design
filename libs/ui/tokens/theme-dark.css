@@ -34,6 +34,12 @@
        Fills and icons keep --sys-color-destructive; this is for INK. */
     --sys-color-destructive-label: #f4796f; /* 5.78:1 on #242424 */
     --sys-color-on-accent: #ffffff;
+    /* INK ON A TONE FILL. White on the destructive red clears AA; white on
+       the warning amber does not (2.9:1 dark, 4.2:1 light), so amber takes
+       dark ink — the way every yellow badge does. Anything painted in a
+       tone reads its words from these, never from `on-accent`. */
+    --sys-color-on-destructive: #ffffff;
+    --sys-color-on-warning: #1a1a1a; /* 6.1:1 on #d08a2c */
     --sys-color-destructive: #d32f2f;
     --sys-color-success: #3fa56e;
     --sys-color-warning: #d08a2c;

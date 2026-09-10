@@ -46,6 +46,23 @@ import {
  * `visibility: hidden` (the landing sheets' closed-state contract) need no
  * gating for the closed state.
  *
+ * ### `uiAnchor` — where the bar finds its bottom edge
+ * `overlay` (default) is the bar as the SHEET's own overlay: absolutely
+ * positioned on the sheet surface, projected through the sheet's
+ * `[sheet-overlay]` slot so it sits OUTSIDE the scrolling body.
+ *
+ * `scroll` is for a bar that is rendered INSIDE the scrolling body — the
+ * last child of a component the sheet projects — and cannot reach the
+ * overlay slot. It pins with `position: sticky` at the scroller's bottom
+ * edge instead, exactly as `ui-page-action-bar` pins to a page. ⚠ Never
+ * leave such a bar on `overlay`: an absolutely positioned box inside an
+ * overflow scroller, with its containing block outside it, is the one
+ * arrangement iOS Safari is known to scroll along with the content on a
+ * real finger (owner, 2026-09-09: "the bottom action toolbar at some
+ * pages is not fixed but it scrolls"). Sticky rides the scrolling tree
+ * itself and cannot. The body owes no clearance padding to a sticky bar —
+ * it takes its own row at the end of the content.
+ *
  * ```html
  * <ui-sheet-action-bar [uiVisible]="true">
  *   <a uiButton uiButtonStyle="bordered" …>…</a>          <!-- leading -->
@@ -53,6 +70,10 @@ import {
  * </ui-sheet-action-bar>
  * ```
  */
+
+/** How the bar finds its bottom edge. See the component doc. */
+export type UiSheetActionBarAnchor = 'overlay' | 'scroll';
+
 @Component({
   selector: 'ui-sheet-action-bar',
   template: `<ng-content />`,
@@ -66,8 +87,10 @@ import {
     class: 'ui-sheet-action-bar',
     '[attr.data-visible]': "uiVisible() ? '' : null",
     '[attr.aria-hidden]': "uiVisible() ? null : 'true'",
+    '[attr.data-anchor]': "uiAnchor() === 'scroll' ? 'scroll' : null",
   },
 })
 export class UiSheetActionBar {
   readonly uiVisible = input(false);
+  readonly uiAnchor = input<UiSheetActionBarAnchor>('overlay');
 }

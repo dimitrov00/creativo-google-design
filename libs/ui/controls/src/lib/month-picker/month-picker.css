@@ -1,0 +1,16 @@
+@layer sys-components {
+  /* A column: the month head, the optional shortcuts, then the grid. The
+     gaps are the only geometry here — the grid sizes its own cells from
+     `uiSize`, and the head is a `ui-stack`. */
+  .ui-month-picker {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sys-space-compact);
+    min-inline-size: max-content;
+  }
+
+  .ui-month-picker__relatives {
+    display: flex;
+    gap: var(--sys-space-tight);
+  }
+}

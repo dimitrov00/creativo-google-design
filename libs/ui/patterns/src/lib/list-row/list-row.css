@@ -138,6 +138,14 @@
     white-space: nowrap;
   }
 
+  /* A label that HOLDS a popover — a choice menu as the row's own title —
+     must not clip it: the ellipsis's `overflow: hidden` cut the surface at
+     the row's edge, and no z-index can paint past a clip (found live,
+     2026-09-09). Stated here, once, for every row in the app. */
+  .ui-list-row__label:has(.ui-menu) {
+    overflow: visible;
+  }
+
   .ui-list-row > [uitrailing] {
     flex-shrink: 0;
   }

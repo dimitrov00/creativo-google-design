@@ -16,3 +16,4 @@ export * from './lib/sheet-action-bar/sheet-action-bar';
 export * from './lib/sheet-header/sheet-header';
 export * from './lib/status-indicator/status-indicator';
 export * from './lib/stepper/stepper';
+export * from './lib/toast/toast';

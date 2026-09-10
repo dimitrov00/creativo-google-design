@@ -1,0 +1,72 @@
+/* ui-toast — docked bottom-centre, above the page's own action bars.
+   The host is a fixed layer that ignores pointer events so the page under
+   it stays usable; only the surface takes them. The surface is the DS thick
+   material (solid enough over media, per the sheet rulings), one prominent
+   corner radius, and a single row: sentence leading, action trailing. */
+.ui-toast {
+  position: fixed;
+  inset-inline: 0;
+  inset-block-end: calc(
+    var(--sys-space-regular) + env(safe-area-inset-bottom, 0px) +
+      var(--ui-toast-clearance, 0px)
+  );
+  /* Above the sheet layer: an undo raised from inside a sheet must be
+     reachable while that sheet is still open. */
+  z-index: var(--sys-layer-alert);
+  display: flex;
+  justify-content: center;
+  padding-inline: var(--sys-space-regular);
+  pointer-events: none;
+}
+
+.ui-toast__surface {
+  display: flex;
+  align-items: center;
+  gap: var(--sys-space-regular);
+  inline-size: min(100%, var(--sys-container-drawer));
+  min-block-size: var(--control-size-large);
+  padding-inline: var(--sys-space-regular) var(--sys-space-compact);
+  padding-block: var(--sys-space-compact);
+  border-radius: var(--control-radius-prominent);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.28);
+  color: var(--sys-color-foreground);
+  font: var(--sys-font-callout);
+  pointer-events: auto;
+  animation: ui-toast-in var(--sys-motion-duration-regular, 200ms)
+    var(--sys-motion-ease-standard, ease-out);
+}
+
+.ui-toast__label {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+}
+
+/* The one action: the plain-button recipe at the small rung, accent ink,
+   hugging its label. `uiInteractive` supplies hover and the ungated press. */
+.ui-toast__action {
+  flex: none;
+  min-block-size: var(--control-size-small);
+  padding-inline: var(--sys-space-compact);
+  border: 0;
+  background: none;
+  color: var(--sys-color-accent-label, var(--sys-color-accent));
+  font: inherit;
+  font-weight: 600;
+}
+
+@keyframes ui-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(var(--sys-space-compact));
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ui-toast__surface {
+    animation: none;
+  }
+}

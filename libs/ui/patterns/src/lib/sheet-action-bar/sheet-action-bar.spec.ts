@@ -4,13 +4,18 @@ import { UiSheetActionBar } from './sheet-action-bar';
 
 @Component({
   imports: [UiSheetActionBar],
-  template: `<ui-sheet-action-bar data-testid="bar" [uiVisible]="visible()">
+  template: `<ui-sheet-action-bar
+    data-testid="bar"
+    [uiVisible]="visible()"
+    [uiAnchor]="anchor()"
+  >
     <button type="button" data-testid="secondary">Call</button>
     <button type="button" data-testid="primary" data-spread>Book now</button>
   </ui-sheet-action-bar>`,
 })
 class HostComponent {
   visible = signal(false);
+  anchor = signal<'overlay' | 'scroll'>('overlay');
 }
 
 describe('UiSheetActionBar', () => {
@@ -21,6 +26,17 @@ describe('UiSheetActionBar', () => {
       imports: [HostComponent],
     }).compileComponents();
     fixture = TestBed.createComponent(HostComponent);
+  });
+
+  it('stamps the scroll anchor only when asked, so the overlay default draws unchanged', () => {
+    fixture.detectChanges();
+    const el: HTMLElement = fixture.nativeElement.querySelector(
+      '[data-testid="bar"]',
+    );
+    expect(el.getAttribute('data-anchor')).toBeNull();
+    fixture.componentRef.instance.anchor.set('scroll');
+    fixture.detectChanges();
+    expect(el.getAttribute('data-anchor')).toBe('scroll');
   });
 
   it('is hidden from assistive tech and unstamped while not visible', () => {
