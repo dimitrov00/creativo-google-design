@@ -28,16 +28,7 @@
   ],
   "references": [
     {
-      "path": "../../../ui/patterns/tsconfig.lib.json"
-    },
-    {
-      "path": "../../../ui/modifiers/tsconfig.lib.json"
-    },
-    {
       "path": "../../../ui/layout/tsconfig.lib.json"
-    },
-    {
-      "path": "../../../ui/controls/tsconfig.lib.json"
     },
     {
       "path": "../../../infrastructure/i18n/tsconfig.lib.json"
@@ -55,7 +46,25 @@
       "path": "../../../application/catalog/tsconfig.lib.json"
     },
     {
+      "path": "../../../application/engagement/tsconfig.lib.json"
+    },
+    {
+      "path": "../../../application/governance/tsconfig.lib.json"
+    },
+    {
+      "path": "../../../application/identity/tsconfig.lib.json"
+    },
+    {
       "path": "../../../application/booking/tsconfig.lib.json"
+    },
+    {
+      "path": "../../../ui/patterns/tsconfig.lib.json"
+    },
+    {
+      "path": "../../../ui/modifiers/tsconfig.lib.json"
+    },
+    {
+      "path": "../../../ui/controls/tsconfig.lib.json"
     }
   ]
 }

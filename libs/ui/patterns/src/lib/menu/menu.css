@@ -26,29 +26,46 @@
     flex-direction: column;
     box-sizing: border-box;
     color: var(--sys-color-foreground);
+    /* THE SAFE AREAS, resolved here because `env()` resolves only in CSS —
+       the component reads them back to keep the surface out from under a
+       notch or a home indicator. */
+    --ui-menu-safe-top: env(safe-area-inset-top, 0px);
+    --ui-menu-safe-right: env(safe-area-inset-right, 0px);
+    --ui-menu-safe-bottom: env(safe-area-inset-bottom, 0px);
+    --ui-menu-safe-left: env(safe-area-inset-left, 0px);
     /* Sizes to its longest command, like a real menu — never narrower than
-       the trigger it hangs off, never wider than the viewport allows. */
+       the trigger it hangs off, never wider than the window allows. */
     inline-size: max-content;
     /* `--ui-menu-min-width` lets a consumer state the width the menu is
        placed at — a feature stylesheet cannot reach this element (emulated
        encapsulation), so restating it there silently matches nothing.
-       `--ui-menu-anchor-width` is the trigger's, measured on open. */
-    min-inline-size: max(
-      var(--ui-menu-min-width, 12rem),
-      var(--ui-menu-anchor-width, 0px)
+       `--ui-menu-anchor-width` is the trigger's, measured on open;
+       `--ui-menu-window-inline` is the reachable window's width less the
+       gutters, measured with it. It bounds the MINIMUM too: `min-width`
+       beats `max-width` in CSS, so a row-wide anchor on a 320px phone used
+       to force a surface wider than the screen it was drawn on. */
+    min-inline-size: min(
+      max(var(--ui-menu-min-width, 12rem), var(--ui-menu-anchor-width, 0px)),
+      var(--ui-menu-window-inline, 100vw)
     );
     max-inline-size: min(
       var(--ui-menu-min-width, 20rem),
-      calc(100vw - var(--sys-space-comfortable) * 2)
+      var(
+        --ui-menu-window-inline,
+        calc(100vw - var(--sys-space-comfortable) * 2)
+      )
     );
+    /* Nothing lands on a surface that is not open — including one still
+       fading out, which stays in the top layer for the length of its fade. */
+    pointer-events: none;
     /*
      * BOUNDED BOTH WAYS. The inline size has been constrained since this was
      * written and the block size never was, so a menu longer than the room
      * below its trigger grew straight off the screen — the tail of a long
      * catalogue was unreachable and nothing said it was there.
      *
-     * `--ui-menu-max-block` is measured on open (see `measurePlacement`):
-     * the real distance to the viewport edge on the side the menu lands.
+     * `--ui-menu-max-block` is measured on open (see `remeasure` / `place`):
+     * the real room on the side the menu lands, inside the reachable window.
      * The fallback matters — it is what applies before the first
      * measurement and in any environment where the effect has not run —
      * and it is deliberately generous, because a cap that is too tight
@@ -172,18 +189,32 @@
     visibility: visible;
     opacity: 1;
     transform: scale(1);
+    pointer-events: auto;
   }
 
-  /* Where it grows FROM — the coordinates themselves are inline, written
-     by the component from the trigger's rect. */
+  /* Where it grows FROM: the corner it hangs off — the side the component
+     resolved and the edge it is aligned to — so a menu under a trailing
+     chip grows out of that chip rather than swelling from its own middle.
+     The coordinates themselves are inline, written by the component from
+     the trigger's box; a centred menu is centred in those, not by a
+     `translate` the clamping could not see. */
   .ui-menu__surface[data-placement='bottom'] {
-    transform-origin: top center;
+    transform-origin: top left;
   }
   .ui-menu__surface[data-placement='top'] {
-    transform-origin: bottom center;
+    transform-origin: bottom left;
   }
-  .ui-menu__surface[data-alignment='center'] {
-    translate: -50% 0;
+  .ui-menu__surface[data-placement='bottom'][data-alignment='trailing'] {
+    transform-origin: top right;
+  }
+  .ui-menu__surface[data-placement='top'][data-alignment='trailing'] {
+    transform-origin: bottom right;
+  }
+  .ui-menu__surface[data-placement='bottom'][data-alignment='center'] {
+    transform-origin: top center;
+  }
+  .ui-menu__surface[data-placement='top'][data-alignment='center'] {
+    transform-origin: bottom center;
   }
 
   /* Items ride the list-row register (callout at medium) rather than the

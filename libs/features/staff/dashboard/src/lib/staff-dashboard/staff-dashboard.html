@@ -1209,6 +1209,10 @@
       [uiFrameDay]="visitFrameDay()"
       [uiSavedMark]="visitSavedMark()"
       [uiMayReprice]="mayReprice()"
+      [uiMayDiscount]="mayReprice()"
+      [uiGrants]="store.grants()"
+      [uiPromoCode]="visitCodeResult()"
+      (promoCodeEntered)="resolveCodeFromEditor($event)"
       (dismissed)="closeVisitSheet()"
       (dayChanged)="onVisitDayChanged($event)"
       (chairChanged)="onVisitChairChanged($event)"
@@ -1392,9 +1396,25 @@
       <!-- A closed vocabulary, not a sentence. Prose cannot be aggregated,
            and "why do we lose Saturday mornings" is only answerable if every
            cancellation carries a groupable code. Two taps beats typing
-           between cuts, so the honest fix is also the faster one. -->
+           between cuts, so the honest fix is also the faster one.
+
+           AND IT IS OPTIONAL (owner, 2026-09-11: "barbers may not have time
+           to enter such issue"). One tap — the red button — cancels; a
+           reason is a second tap for the barber who has one, and a chip
+           tapped again lets go of it. The label says so where the eye is
+           when deciding whether to tap, the way a form marks an optional
+           field, rather than in a sentence above. Nothing picked is filed
+           `unspecified` on the server, a bucket of its own. -->
       <ui-stack uiSpacing="tight">
-        <span uiText uiFont="footnote">{{ t('staff.day.cancelReason') }}</span>
+        <ui-stack uiAxis="horizontal" uiSpacing="compact" uiAlignment="center">
+          <span uiText uiFont="footnote"
+            >{{ t('staff.day.cancelReason') }}</span
+          >
+          <ui-spacer />
+          <span uiText uiFont="footnote" uiForegroundStyle="secondary">
+            {{ t('staff.day.cancelOptional') }}
+          </span>
+        </ui-stack>
         <ui-flow uiSpacing="compact">
           @for (code of reasonCodes; track code) {
           <button
@@ -1402,7 +1422,7 @@
             uiChip
             [uiSelected]="cancelReasonCode() === code"
             [attr.data-testid]="'staff-cancel-reason-' + code"
-            (click)="cancelReasonCode.set(code)"
+            (click)="toggleReason(code)"
           >
             {{ t('staff.day.cancelReasonCode.' + code) }}
           </button>
@@ -1410,8 +1430,12 @@
         </ui-flow>
       </ui-stack>
 
-      <!-- The note appears only under `other`, which is the one arm that
-           carries one — and the one arm that requires it. -->
+      <!-- The note appears only under «Друго…», the one arm that carries
+           one. The placeholder is an EXAMPLE, not the label (HIG: a hint
+           of what goes here, gone the moment typing starts) — the label
+           above it stays, so the field is still named once it is full.
+           Left empty, «Друго…» is the door that was opened and not walked
+           through: the cancel still goes, filed as no reason given. -->
       @if (cancelReasonCode() === 'other') {
       <label>
         <ui-stack uiSpacing="tight">
@@ -1422,6 +1446,7 @@
             uiTextField
             rows="2"
             data-testid="staff-cancel-note"
+            [placeholder]="t('staff.day.cancelNotePlaceholder')"
             [value]="cancelNote()"
             (input)="cancelNote.set($any($event.target).value)"
           ></textarea>
@@ -1451,7 +1476,6 @@
         uiRole="destructive"
         [uiSpread]="true"
         [uiLoading]="cancelId() !== null && store.isPending(cancelId()!)"
-        [disabled]="!cancelReady()"
         data-testid="staff-cancel-confirm"
         (click)="confirmCancel()"
       >
@@ -1471,6 +1495,7 @@
     [uiPresented]="undo() !== null"
     [uiLabel]="undo()?.message ?? ''"
     [uiActionLabel]="t('staff.day.undo.action')"
+    [uiDismissLabel]="t('staff.day.undo.dismiss')"
     (uiAction)="runUndo()"
     (uiDismissed)="undo.set(null)"
   />

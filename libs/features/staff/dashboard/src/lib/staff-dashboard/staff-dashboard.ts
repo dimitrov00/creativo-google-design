@@ -17,9 +17,15 @@ import { toSignal } from '@angular/core/rxjs-interop';
 import { Title } from '@angular/platform-browser';
 import {
   AUTH_GATEWAY,
+  MONEY_ROLES as DOMAIN_MONEY_ROLES,
   principalHasRole,
   roleFromPrimitive,
 } from '@creativo/application/identity';
+import { Coupon } from '@creativo/application/engagement';
+import type {
+  BookingGatewayError,
+  StaffDiscountRequest,
+} from '@creativo/application/booking';
 import { TranslocoDirective, TranslocoService } from '@jsverse/transloco';
 import {
   Appointment,
@@ -29,9 +35,11 @@ import {
   type Money,
   OFFERED_CANCELLATION_REASONS,
   type Seat,
+  type SeatOutcome,
   type StaffEditCommand,
   canTransition,
   formatMoney,
+  summarizeSeatOutcomes,
   type CommitBookingSeatRequest,
   ownerUserIdOf,
 } from '@creativo/application/booking';
@@ -46,6 +54,11 @@ import {
   type VisitEditorLeg,
   type VisitEditorVerb,
   type VisitEditorVm,
+  VisitEditorCodeResult,
+  VisitEditorDiscount,
+  discountValueOf,
+  VisitEditorVoucher,
+  VisitEditorResolution,
 } from '../visit-editor/staff-visit-editor';
 import { assignBarberTones } from '../barber-tone';
 import {
@@ -293,6 +306,24 @@ interface DayRowVm {
    */
   readonly tipLabel: string | null;
   readonly tipMinorUnits: number | null;
+  /**
+   * WHAT WAS TAKEN OFF the bill, as the server snapshotted it — every
+   * discount on the visit, empty at full price. The whole appointment's,
+   * not this chair's: a discount is a fact about what is owed, and a party
+   * across two chairs owes one bill.
+   */
+  readonly discounts: readonly VisitEditorDiscount[];
+  /**
+   * WHAT VOUCHERS PAID — the live draw-downs, each with what this visit may
+   * still draw (its own amount plus what the voucher had left).
+   */
+  readonly vouchers: readonly VisitEditorVoucher[];
+  /**
+   * WHAT SETTLED THIS CHAIR — who called it off and when, and why, or that
+   * nobody came — for the sheet's head. `null` while the chair is live and
+   * on a finished visit, whose ending needs no explaining.
+   */
+  readonly resolution: VisitEditorResolution | null;
   /**
    * THIS lane's seats, one entry each — the editor's service rows.
    *
@@ -781,10 +812,12 @@ function primaryVerb(
  * day sheet is read by the barbers between cuts — it gets real `staff.*`
  * keys in both catalogs like every client surface.
  */
-/** The roles that may reprice a seat — the front desk and the owners. */
-const MONEY_ROLES = ['receptionist', 'admin', 'sysadmin'].map(
-  roleFromPrimitive,
-);
+/**
+ * The roles that may reprice a seat or invent a discount — the domain's own
+ * list (`handlesMoney`), in this surface's role type. The server gates the
+ * manual discount arm on the same list, so the two cannot drift.
+ */
+const MONEY_ROLES = DOMAIN_MONEY_ROLES.map(roleFromPrimitive);
 
 @Component({
   selector: 'lib-staff-dashboard',
@@ -2618,6 +2651,82 @@ export class StaffDashboard {
   }
 
   /**
+   * When a stamp landed, in shop time: the clock alone on the visit's own
+   * day, the day before it otherwise — in the day pill's short form, so a
+   * cancellation the evening before reads `24.08, 18:40`.
+   */
+  private stampLabel(atMs: number, visitStartMs: number): string {
+    if (this.dayOf(atMs) === this.dayOf(visitStartMs)) return this.time(atMs);
+    return new Intl.DateTimeFormat(this.content.locale(), {
+      day: 'numeric',
+      month: 'short',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+      timeZone: SHOP_ZONE,
+    }).format(new Date(atMs));
+  }
+
+  /**
+   * WHAT SETTLED THIS CHAIR, for the sheet's head (owner, 2026-09-11: "the
+   * cancellation reason or no-show is not showing in the event detail
+   * sheets").
+   *
+   * From the chair's OWN seats, the same way its status is: the stamp that
+   * closed the last of them is the moment; a cancellation is the client's
+   * act only when every seat says so; and the reasons are the DISTINCT
+   * ones — a father and son called off together for one reason read as one
+   * line, not two. A reason nobody gave adds nothing rather than "no
+   * reason", and «Друго» is the barber's own words. `null` on a live chair
+   * and on a finished one.
+   */
+  private resolutionOf(
+    seats: readonly Seat[],
+    status: AppointmentStatusKind,
+    visitStartMs: number,
+  ): VisitEditorResolution | null {
+    if (status !== 'cancelled' && status !== 'no_show') return null;
+    const outcomes = seats
+      .map((seat) => seat.outcome)
+      .filter(
+        (
+          outcome,
+        ): outcome is Extract<SeatOutcome, { kind: 'cancelled' | 'no_show' }> =>
+          outcome.kind === status,
+      );
+    if (outcomes.length === 0) return null;
+    const cancellations = outcomes.filter(
+      (outcome): outcome is Extract<SeatOutcome, { kind: 'cancelled' }> =>
+        outcome.kind === 'cancelled',
+    );
+    const details = new Set<string>();
+    for (const { reason } of cancellations) {
+      if (reason.kind === 'unspecified') continue;
+      details.add(
+        reason.kind === 'other'
+          ? reason.note
+          : this.transloco.translate(
+              'staff.day.cancelReasonCode.' + reason.kind,
+            ),
+      );
+    }
+    return {
+      kind: status,
+      by:
+        cancellations.length === 0
+          ? null
+          : cancellations.every((entry) => entry.by === 'client')
+            ? 'client'
+            : 'staff',
+      whenLabel: this.stampLabel(
+        Math.max(...outcomes.map((outcome) => outcome.atMs)),
+        visitStartMs,
+      ),
+      detail: details.size > 0 ? [...details].join(' · ') : null,
+    };
+  }
+
+  /**
    * One lane's view of one appointment.
    *
    * Only THIS chair's seats: a two-barber party appears in both lanes, each
@@ -2741,16 +2850,39 @@ export class StaffDashboard {
           all.findIndex((other) => other.id === person.id) === index,
       );
 
-    const status = appointment.status.kind;
+    /*
+     * THIS CHAIR'S status, not the party's (found live, 2026-09-11).
+     *
+     * A party across two chairs is one appointment whose ROOT stays
+     * `confirmed` while any seat is still scheduled — so a guest cancelled
+     * out of it kept reading as a live visit on his own chair, the sheet
+     * offered «Откажи часа» a second time, and the server refused it as
+     * already resolved with nothing the sheet could say but "something went
+     * wrong". Once every seat on this chair is resolved, the chair's own
+     * outcome is the row's status: the domain's fold (`summarizeSeatOutcomes`
+     * — cancelled if all cancelled, completed if any worked, else no-show),
+     * applied to this chair's seats. A chair with a seat still open keeps
+     * the root's word, as before; a one-chair visit is unchanged, because
+     * the root was folded from the same seats when it was written.
+     */
+    const chairStatus = summarizeSeatOutcomes(
+      seats.map((seat) => seat.outcome),
+      appointment.status,
+    );
+    const status = chairStatus.kind;
     const startMs = start.toMillis();
     const endMs = end.toMillis();
-    const legal = OFFERED.filter((to) => canTransition(appointment.status, to));
+    const legal = OFFERED.filter((to) => canTransition(chairStatus, to));
     // The same-day correction edges (owner ruling 2026-09-08): the graph
     // keeps `completed` and `cancelled` terminal, but the callable lets the
     // ROOT back to `confirmed` while the shop is still in the visit's day.
-    // Offered only on today's book, which is the only day it can succeed.
+    // Offered only on today's book, which is the only day it can succeed —
+    // and only when the ROOT itself is settled: a chair resolved inside a
+    // party that is still live has no such edge, the callable reopens the
+    // whole appointment or nothing.
     if (
       (status === 'completed' || status === 'cancelled') &&
+      appointment.status.kind === status &&
       this.store.isToday()
     ) {
       legal.push('confirmed');
@@ -2815,6 +2947,9 @@ export class StaffDashboard {
       note: contact?.note?.trim() || null,
       partyLabel,
       ...this.seatsTip(seats),
+      discounts: discountsOf(appointment),
+      vouchers: vouchersOf(appointment),
+      resolution: this.resolutionOf(seats, status, startMs),
       people,
       legs: seats.map((seat) => {
         const service = this.catalog.findService(seat.serviceId.value);
@@ -3199,6 +3334,9 @@ export class StaffDashboard {
       priceMinorUnits: row.priceMinorUnits,
       tipLabel: row.tipLabel,
       tipMinorUnits: row.tipMinorUnits,
+      discounts: row.discounts,
+      vouchers: row.vouchers,
+      resolution: row.resolution,
       status: row.status,
       statusLabel: this.transloco.translate(
         'appointments.status.' + row.status,
@@ -3271,6 +3409,10 @@ export class StaffDashboard {
     this.presentOnly();
     this.visitSheetId.set(row.id);
     this.store.probeNote(row.appointmentId);
+    // The client's own coupons, for the discount row — nobody's for a
+    // walk-in, which reads as none.
+    this.store.probeGrants(row.ownerUserId);
+    this.visitCodeResult.set(null);
   }
 
   protected closeVisitSheet(): void {
@@ -3282,8 +3424,55 @@ export class StaffDashboard {
     this.visitDraftChair.set(null);
     this.store.probeDay(null);
     this.store.probeNote(null);
+    this.store.probeGrants(null);
+    this.visitCodeResult.set(null);
     // Back to the row that opened it, or a keyboard user lands on <body>.
     if (id !== null) this.restoreFocusToRow(id);
+  }
+
+  /**
+   * THE CODE THE BARBER TYPED, answered.
+   *
+   * The sheet asks (`promoCodeEntered`) and reads the answer back off this
+   * input, the same shape as the client search: the editor stays free of
+   * the port, and a stale answer cannot apply to a newer code because the
+   * result names the code it is for.
+   */
+  protected readonly visitCodeResult = signal<VisitEditorCodeResult | null>(
+    null,
+  );
+
+  protected async resolveCodeFromEditor(code: string): Promise<void> {
+    const coupon = await this.store.resolveCode(code);
+    if (coupon !== null) {
+      this.visitCodeResult.set({
+        code,
+        promo: {
+          label: coupon.name,
+          value: discountValueOf(coupon.value),
+          exclusive: coupon.combinability.kind === 'exclusive',
+        },
+        voucher: null,
+        refusal: null,
+      });
+      return;
+    }
+    // Not a coupon: perhaps a gift voucher. Returned whatever its state, so
+    // the sheet can say WHY an empty or a void one will not take.
+    const found = await this.store.resolveVoucher(code);
+    this.visitCodeResult.set({
+      code,
+      promo: null,
+      voucher:
+        found === null
+          ? null
+          : {
+              voucherId: found.voucher.id.value,
+              code: found.voucher.code,
+              availableMinorUnits: found.voucher.balance.toMinorUnits(),
+            },
+      refusal: found?.refusal ?? null,
+    });
   }
 
   /**
@@ -3337,12 +3526,11 @@ export class StaffDashboard {
    * separately would be two placement decisions and a booking left moved but
    * not stretched when the second is refused.
    *
-   * ⚠ WHAT IT CANNOT SAVE, stated here rather than discovered. The command
-   * set is `move | resize | reprice | redurate | restaff`, so a service
-   * ADDED or REMOVED, a client, the note and the promotion have no command
-   * and are not in this batch. The sheet says so under the button; the fix
-   * is `addSeat`/`removeSeat`, which is blocked on whether an appointment may
-   * hold more than one `self` seat.
+   * WHAT TRAVELS: the day, the start, the span, each leg's minutes, chair
+   * and typed price, services added and removed (`addSeat`/`removeSeat`),
+   * the bill's discount (`discount`, 2026-09-10), and — beside the batch,
+   * in its own document — the team note. What still does not: a client
+   * added to an EXISTING visit, which is the party grammar's job.
    */
   private async saveFromEditor(
     appointmentId: string,
@@ -3482,6 +3670,41 @@ export class StaffDashboard {
     }
 
     /*
+     * THE DISCOUNT — the bill's, not a seat's — travels only when it changed,
+     * as a REFERENCE the server resolves (a grant, a code) or a figure the
+     * server checks the caller may author. Cleared with `null`. Last in the
+     * batch by convention; the fold settles it outside the seat commands
+     * either way.
+     */
+    // `?? []`: a commit that says nothing about the bill means no change.
+    const draftedDiscounts = commit.discounts ?? [];
+    if (!sameDiscounts(draftedDiscounts, row?.discounts ?? [])) {
+      commands.push({
+        kind: 'discounts',
+        discounts: draftedDiscounts.flatMap((discount) => {
+          const request = toDiscountRequest(discount);
+          return request === null ? [] : [request];
+        }),
+      });
+    }
+    /*
+     * THE VOUCHERS paying the bill, by code, in cover order — re-settled by
+     * the server against the balances it reads in the same transaction.
+     */
+    const draftedVouchers = commit.vouchers ?? [];
+    if (
+      !sameCodes(
+        draftedVouchers.map((voucher) => voucher.code),
+        (row?.vouchers ?? []).map((voucher) => voucher.code),
+      )
+    ) {
+      commands.push({
+        kind: 'vouchers',
+        codes: draftedVouchers.map((voucher) => voucher.code),
+      });
+    }
+
+    /*
      * THE TEAM NOTE writes beside the batch, not inside it: it lives in a
      * staff-only sibling collection the availability engine never sees, so
      * there is no command for it and no reason to hold it hostage to a
@@ -3591,23 +3814,36 @@ export class StaffDashboard {
   /** The codes a human may pick — the domain's list, not a local copy. */
   protected readonly reasonCodes = OFFERED_CANCELLATION_REASONS;
 
-  /** `other` is the only arm that carries a note, and it requires one. */
-  protected readonly cancelReady = computed(() => {
-    const code = this.cancelReasonCode();
-    if (code === null) return false;
-    return code !== 'other' || this.cancelNote().trim().length > 0;
-  });
+  /**
+   * Pick a reason, or let go of the one picked. The reason is optional
+   * (owner, 2026-09-11), so "none" has to be reachable again after a tap —
+   * a chip that could only be replaced would make the first tap binding.
+   */
+  protected toggleReason(code: CancellationReasonKind): void {
+    this.cancelReasonCode.update((current) => (current === code ? null : code));
+  }
 
   protected async confirmCancel(): Promise<void> {
     const appointmentId = this.cancelId();
-    const reasonCode = this.cancelReasonCode();
-    if (!appointmentId || reasonCode === null || !this.cancelReady()) return;
+    if (!appointmentId) return;
     const seatIds = this.cancelSeatIds();
+    /*
+     * THE REASON IS OPTIONAL (owner, 2026-09-11: "barbers may not have time
+     * to enter such issue"). Nothing picked sends no code, and the server
+     * files the cancellation as `unspecified`. «Друго…» with nothing
+     * written is the same: a door opened and not walked through, not a
+     * reason — the domain refuses an empty `other` as saying less than not
+     * asking, and a disabled button would have stopped the barber who
+     * tapped the chip by accident with no word about why.
+     */
+    const picked = this.cancelReasonCode();
+    const note = this.cancelNote().trim();
+    const reasonCode = picked === 'other' && note.length === 0 ? null : picked;
     const base = {
       appointmentId,
       to: 'cancelled',
-      reasonCode,
-      ...(reasonCode === 'other' ? { note: this.cancelNote().trim() } : {}),
+      ...(reasonCode === null ? {} : { reasonCode }),
+      ...(reasonCode === 'other' ? { note } : {}),
     } as const;
 
     /*
@@ -3722,6 +3958,12 @@ export class StaffDashboard {
       priceMinorUnits: null,
       tipLabel: null,
       tipMinorUnits: null,
+      // A visit the server has not seen cannot be discounted or paid yet:
+      // the rows wait for the first save, like the tip's.
+      discounts: [],
+      vouchers: [],
+      // Nothing has happened to a visit that does not exist yet.
+      resolution: null,
       status: 'new',
       statusLabel: this.transloco.translate('staff.visit.newTitle'),
       arrivedMinute: null,
@@ -4377,7 +4619,7 @@ export class StaffDashboard {
    */
   protected rowError(appointmentId: string): string | null {
     const error = this.store.errorFor(appointmentId);
-    return error ? translateDomainError(this.transloco, error) : null;
+    return error ? this.describeError(error) : null;
   }
 
   /** The cancel sheet's own error, which has no row to live in. */
@@ -4385,6 +4627,144 @@ export class StaffDashboard {
     const id = this.cancelId();
     if (id === null) return null;
     const error = this.store.errorFor(id);
-    return error ? translateDomainError(this.transloco, error) : null;
+    return error ? this.describeError(error) : null;
   });
+
+  /**
+   * A refusal, as a sentence.
+   *
+   * The gateway files every refusal under one coarse code (`booking.gateway.
+   * failed`, "something went wrong") and carries the server's OWN code in its
+   * params — and the server's is the one that knows why. It is translated
+   * first, when the catalogue has a line for it, with a status name in the
+   * shop's words rather than the graph's; a seat already resolved has its
+   * own line, because "from resolved to cancelled" is the graph talking.
+   */
+  private describeError(error: BookingGatewayError): string {
+    const params: Record<string, string> = {};
+    for (const [key, raw] of Object.entries(error.params ?? {})) {
+      if (raw !== undefined && raw !== null) params[key] = String(raw);
+    }
+    const serverCode = params['serverCode'];
+    if (serverCode === 'booking.transition.not_allowed') {
+      if (params['from'] === 'resolved') {
+        return this.transloco.translate(
+          'errors.booking.transition.seat_resolved',
+        );
+      }
+      for (const side of ['from', 'to'] as const) {
+        const kind = params[side];
+        if (!kind) continue;
+        const key = 'appointments.status.' + kind;
+        const label = this.transloco.translate(key);
+        if (label !== key) params[side] = label;
+      }
+    }
+    if (serverCode) {
+      const key = `errors.${serverCode}`;
+      const specific = this.transloco.translate(key, params);
+      if (specific !== key) return specific;
+    }
+    return translateDomainError(this.transloco, error);
+  }
+}
+
+/** The bill's discounts as the sheet reads them — every snapshot, in stored order. */
+function discountsOf(appointment: Appointment): VisitEditorDiscount[] {
+  return appointment.discounts.map((applied) => ({
+    source: applied.source,
+    label: applied.label,
+    value: discountValueOf(applied.value),
+    grantId: applied.grantId,
+    code: applied.code,
+    exclusive: applied.exclusive,
+  }));
+}
+
+/**
+ * The vouchers still paying the bill. `availableMinorUnits` is what THIS
+ * visit may draw on that voucher if the bill changes: its own amount plus
+ * what the voucher had left after it — the server re-clamps on save.
+ */
+function vouchersOf(appointment: Appointment): VisitEditorVoucher[] {
+  return appointment.voucherRedemptions
+    .filter((redemption) => redemption.live)
+    .map((redemption) => ({
+      voucherId: redemption.voucherId,
+      code: redemption.code,
+      availableMinorUnits:
+        redemption.amount.toMinorUnits() +
+        redemption.balanceAfter.toMinorUnits(),
+    }));
+}
+
+/** Same promise: source, provenance and value agree. */
+function sameDiscount(a: VisitEditorDiscount, b: VisitEditorDiscount): boolean {
+  return (
+    a.source === b.source &&
+    a.grantId === b.grantId &&
+    (a.code ?? null) === (b.code ?? null) &&
+    JSON.stringify(a.value) === JSON.stringify(b.value)
+  );
+}
+
+/** The same set of promises, whatever the order. */
+function sameDiscounts(
+  a: readonly VisitEditorDiscount[],
+  b: readonly VisitEditorDiscount[],
+): boolean {
+  return (
+    a.length === b.length &&
+    a.every((discount) => b.some((other) => sameDiscount(discount, other)))
+  );
+}
+
+/** The same vouchers in the same order — order is cover order, and it matters. */
+function sameCodes(a: readonly string[], b: readonly string[]): boolean {
+  return (
+    a.length === b.length &&
+    a.every(
+      (code, index) =>
+        Coupon.normalizeCode(code) === Coupon.normalizeCode(b[index] ?? ''),
+    )
+  );
+}
+
+/**
+ * A drafted discount → what the server is asked for. A grant and a code
+ * are sent as REFERENCES — the server resolves and snapshots them — and only
+ * a manual figure carries its value.
+ */
+function toDiscountRequest(
+  discount: VisitEditorDiscount,
+): StaffDiscountRequest | null {
+  switch (discount.source) {
+    case 'grant':
+      return discount.grantId === null
+        ? null
+        : { source: 'grant', grantId: discount.grantId };
+    case 'code':
+      return discount.code === null
+        ? null
+        : { source: 'code', code: discount.code };
+    case 'manual':
+      // A manual discount is a percent or an amount; `free_service` is a
+      // coupon's word, not the counter's, and cannot be typed here.
+      if (discount.value.kind === 'percent_off') {
+        return {
+          source: 'manual',
+          value: { kind: 'percent_off', percent: discount.value.percent },
+        };
+      }
+      if (discount.value.kind === 'fixed_amount') {
+        return {
+          source: 'manual',
+          value: {
+            kind: 'fixed_amount',
+            amountMinorUnits: discount.value.amountMinorUnits,
+          },
+        };
+      }
+      return null;
+  }
 }

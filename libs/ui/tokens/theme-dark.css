@@ -44,6 +44,7 @@
     --sys-color-success: #3fa56e;
     --sys-color-warning: #d08a2c;
     --sys-color-promo: #fbbf24;
+    --sys-color-promo-label: var(--sys-color-promo);
     --sys-color-on-promo: #241a00;
 
     /* ── Identity tones — WHOSE chair, never what state ────────────────

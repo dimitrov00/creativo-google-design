@@ -24,7 +24,16 @@ import {
   viewChild,
 } from '@angular/core';
 import { TranslocoDirective, TranslocoService } from '@jsverse/transloco';
-import { Money, formatMoney } from '@creativo/application/booking';
+import {
+  Money,
+  ZonedDateTime,
+  formatMoney,
+} from '@creativo/application/booking';
+import {
+  CouponValue,
+  DiscountApplication,
+  type DiscountInput,
+} from '@creativo/application/engagement';
 import {
   UiChoiceLeading,
   UiChoiceMenu,
@@ -168,6 +177,10 @@ export type VisitEditorCommit =
       }[];
       /** The team note as drafted — `null` when cleared. */
       readonly note: string | null;
+      /** The bill's discounts as drafted — empty for full price. */
+      readonly discounts: readonly VisitEditorDiscount[];
+      /** The vouchers paying the bill, in cover order. */
+      readonly vouchers: readonly VisitEditorVoucher[];
       /** Who the visit is for — an account id, or a guest's label. */
       readonly clients: readonly {
         readonly id: string;
@@ -185,6 +198,24 @@ export type VisitEditorCommit =
  * own seat — but it must not pretend the rest of the booking is not there, or
  * moving a seat looks like moving the whole visit.
  */
+/**
+ * WHAT SETTLED THIS CHAIR — the head of a cancelled or no-showed sheet.
+ *
+ * Built by the page, which holds the seats and the clock; the sheet only
+ * says it. `detail` is already in words: the reason's label, or the note
+ * itself when the reason was «Друго», joined when two seats in one chair
+ * were called off for different reasons — and `null` when nobody said why,
+ * which the head shows as nothing rather than as "no reason".
+ */
+export interface VisitEditorResolution {
+  readonly kind: 'cancelled' | 'no_show';
+  /** Whose act a cancellation was; `null` on a no-show, which is nobody's. */
+  readonly by: 'client' | 'staff' | null;
+  /** `14:32` on the visit's own day, `24.08, 14:32` on another. */
+  readonly whenLabel: string;
+  readonly detail: string | null;
+}
+
 export interface VisitEditorPeer {
   /** The row this pushes the sheet to — `appointmentId#barberId`. */
   readonly rowId: string;
@@ -260,6 +291,19 @@ export interface VisitEditorVm {
    * from a formatted string.
    */
   readonly tipMinorUnits: number | null;
+  /**
+   * What the server has taken off the bill — every discount, empty at full
+   * price. The ladder's baseline: the draft seeds from it, `dirty` compares
+   * back against it.
+   */
+  readonly discounts: readonly VisitEditorDiscount[];
+  /** The vouchers still paying the bill, in cover order. */
+  readonly vouchers: readonly VisitEditorVoucher[];
+  /**
+   * What became of a settled chair, for the head — `null` while it is live,
+   * and on a finished visit, whose ending needs no explaining.
+   */
+  readonly resolution: VisitEditorResolution | null;
   readonly status: string;
   readonly statusLabel: string;
   /**
@@ -355,6 +399,110 @@ export interface VisitEditorClientOption {
   readonly meta: string | null;
 }
 
+/**
+ * What a discount does to the bill, as plain data — the engagement domain's
+ * `CouponValue` without the `Money` inside it, so a draft can hold it, a
+ * `savedShape` can compare it and a VM can carry it across the sheet's edge.
+ */
+export type VisitEditorDiscountValue =
+  | { readonly kind: 'percent_off'; readonly percent: number }
+  | { readonly kind: 'fixed_amount'; readonly amountMinorUnits: number }
+  | { readonly kind: 'free_service' };
+
+/**
+ * A discount ON the visit — saved (on the VM) or drafted (in the draft).
+ * `source` says where it came from and what the save sends: a grant and a
+ * code travel as references the server re-resolves; a manual figure travels
+ * as its value. `label` is the coupon's name; a manual discount has none and
+ * the line names it by its value. `exclusive` is the coupon's own rule: such
+ * a discount must be alone on the bill.
+ */
+export interface VisitEditorDiscount {
+  readonly source: 'grant' | 'code' | 'manual';
+  readonly label: string;
+  readonly value: VisitEditorDiscountValue;
+  readonly grantId: string | null;
+  readonly code: string | null;
+  readonly exclusive: boolean;
+}
+
+/**
+ * A gift voucher PAYING for the visit. `availableMinorUnits` is what this
+ * visit may draw on it: the balance it had, plus whatever this visit had
+ * already drawn (a saved redemption re-settles rather than double-draws).
+ * What it actually covers is computed live, in cover order, against what
+ * the discounts leave.
+ */
+export interface VisitEditorVoucher {
+  readonly voucherId: string;
+  readonly code: string;
+  readonly availableMinorUnits: number;
+}
+
+/** A coupon THIS client already holds — one option in the discount menu. */
+export interface VisitEditorGrantOption {
+  readonly grantId: string;
+  readonly label: string;
+  readonly value: VisitEditorDiscountValue;
+  readonly exclusive: boolean;
+}
+
+/**
+ * The answer to a typed code, keyed by the code it answers so a slow answer
+ * to an earlier code can never apply to a later one. A code opens a coupon
+ * (`promo`), or names a voucher (`voucher`, whatever its state — `refusal`
+ * says why it will not take), or nothing at all.
+ */
+export interface VisitEditorCodeResult {
+  readonly code: string;
+  readonly promo: {
+    readonly label: string;
+    readonly value: VisitEditorDiscountValue;
+    readonly exclusive: boolean;
+  } | null;
+  readonly voucher: VisitEditorVoucher | null;
+  readonly refusal: 'void' | 'expired' | 'empty' | null;
+}
+
+/** The domain's value → the sheet's plain one. The one place the two meet. */
+export function discountValueOf(value: CouponValue): VisitEditorDiscountValue {
+  switch (value.kind) {
+    case 'percent_off':
+      return { kind: 'percent_off', percent: value.percent };
+    case 'fixed_amount':
+      return {
+        kind: 'fixed_amount',
+        amountMinorUnits: value.amount.toMinorUnits(),
+      };
+    case 'free_service':
+      return { kind: 'free_service' };
+  }
+}
+
+/** The sheet's plain value → the domain's, through its validating doors, or `null`. */
+function toCouponValue(
+  value: VisitEditorDiscountValue,
+  currencyCode: string,
+): CouponValue | null {
+  switch (value.kind) {
+    case 'percent_off': {
+      const result = CouponValue.percentOff(value.percent);
+      return result.isSuccess() ? result.value : null;
+    }
+    case 'fixed_amount': {
+      const money = Money.fromMinorUnitsAndCode(
+        value.amountMinorUnits,
+        currencyCode,
+      );
+      if (money.isFailure()) return null;
+      const result = CouponValue.fixedAmount(money.value);
+      return result.isSuccess() ? result.value : null;
+    }
+    case 'free_service':
+      return CouponValue.freeService();
+  }
+}
+
 /* ── The draft ─────────────────────────────────────────────────────────── */
 
 /**
@@ -407,6 +555,10 @@ interface VisitDraft {
   readonly clients: readonly DraftClient[];
   /** The STAFF note. The client's is on the VM and is never merged with it. */
   readonly note: string | null;
+  /** The discounts as drafted, in the order added. Empty is full price. */
+  readonly discounts: readonly VisitEditorDiscount[];
+  /** The vouchers as drafted, in cover order. */
+  readonly vouchers: readonly VisitEditorVoucher[];
 }
 
 /** Which page is presented on top of the ladder. Depth is exactly one. */
@@ -583,6 +735,8 @@ function seedDraft(vm: VisitEditorVm): VisitDraft {
     legs,
     clients,
     note: vm.teamNote,
+    discounts: vm.discounts,
+    vouchers: vm.vouchers,
   };
 }
 
@@ -720,6 +874,17 @@ export class StaffVisitEditor {
    * on the line as text, and an absent control needs no apology.
    */
   readonly uiMayReprice = input(false);
+  /**
+   * May this user INVENT a discount — the manual amount and percent arms of
+   * the discount menu. The front desk and the owners; a barber may still
+   * honour a coupon the client holds or a code the shop published, which is
+   * not gated here (see `handlesMoney` in the accounts domain).
+   */
+  readonly uiMayDiscount = input(false);
+  /** The coupons this visit's client already holds — the menu's own picks. */
+  readonly uiGrants = input<readonly VisitEditorGrantOption[]>([]);
+  /** The owner's answer to `promoCodeEntered` — see `VisitEditorCodeResult`. */
+  readonly uiPromoCode = input<VisitEditorCodeResult | null>(null);
 
   readonly uiSavedMark = input(0);
 
@@ -756,6 +921,11 @@ export class StaffVisitEditor {
    * commits could never feed.
    */
   readonly tipped = output<number | null>();
+  /**
+   * A promo code typed in the discount menu, normalised. The owner resolves
+   * it and answers through `uiPromoCode`; nothing is applied until it does.
+   */
+  readonly promoCodeEntered = output<string>();
 
   /**
    * Another chair's share was tapped — the sheet should re-frame on that row.
@@ -999,6 +1169,15 @@ export class StaffVisitEditor {
       // The team note saves now (its own staff-only document), so a typed
       // note is a change worth a `Запази`.
       note: draft.note?.trim() || null,
+      // The bill travels as its own commands (2026-09-10): the discounts as
+      // a set, the vouchers as codes in cover order.
+      discounts: draft.discounts.map((discount) => ({
+        source: discount.source,
+        grantId: discount.grantId,
+        code: discount.code,
+        value: discount.value,
+      })),
+      vouchers: draft.vouchers.map((voucher) => voucher.code),
     });
   }
 
@@ -1515,6 +1694,10 @@ export class StaffVisitEditor {
       partyLabel: null,
     };
 
+    // A neighbour's hour has gone when the day has, or when the clock on
+    // this day is past its end — not always, as it was marked: `past` is a
+    // fact the drag guards read, and a 16:00 neighbour at noon is not one.
+    const dayGone = draft.dayKey < vm.todayKey;
     const neighbours = day.neighbours.map<GridEvent>((neighbour, index) => ({
       id: `neighbour-${index}`,
       kind: 'visit',
@@ -1526,7 +1709,9 @@ export class StaffVisitEditor {
       attribution: null,
       status: null,
       terminal: false,
-      past: true,
+      past:
+        dayGone ||
+        (day.nowMinute !== null && neighbour.endMinute <= day.nowMinute),
       accessibleName: neighbour.name,
       statusIcon: null,
       // The frame draws THIS chair's share and the peer run above it names
@@ -1823,6 +2008,42 @@ export class StaffVisitEditor {
    * frame shows where the clock is, and the sheet says nothing twice.
    */
 
+  /*
+   * THE HEAD OF A SETTLED CHAIR SAYS WHAT SETTLED IT (owner, 2026-09-11:
+   * "the cancellation reason or no-show is not showing in the event detail
+   * sheets"). Not a state the barber tracks — the one fact that closed the
+   * visit, which the frame cannot draw: who called it off and when, or that
+   * nobody came, and the reason recorded, in the barber's own words when it
+   * was «Друго».
+   */
+
+  /** Which line the head reads — the act, and whose it was. */
+  protected readonly resolutionKey = computed<
+    'cancelledByStaff' | 'cancelledByClient' | 'noShow' | null
+  >(() => {
+    const resolution = this.vm().resolution;
+    if (resolution === null) return null;
+    if (resolution.kind === 'no_show') return 'noShow';
+    return resolution.by === 'client'
+      ? 'cancelledByClient'
+      : 'cancelledByStaff';
+  });
+
+  /**
+   * The glyph's ink. Cancelling keeps the sheet's one red — it is the
+   * destructive act everywhere else on it — and a no-show is a warning, the
+   * client's fact rather than the shop's.
+   */
+  protected readonly resolutionTone = computed<'destructive' | 'warning'>(() =>
+    this.vm().resolution?.kind === 'no_show' ? 'warning' : 'destructive',
+  );
+
+  protected readonly resolutionIcon = computed<UiIconName>(() =>
+    this.vm().resolution?.kind === 'no_show'
+      ? 'visit.noShow'
+      : 'visit.cancelled',
+  );
+
   /** A REQUEST waiting for its answer: the confirm edge, while pending. */
   protected readonly requestVerb = computed<VisitEditorVerb | null>(() => {
     if (this.vm().status !== 'pending') return null;
@@ -1887,7 +2108,10 @@ export class StaffVisitEditor {
         act: verb.kind,
       });
     }
-    if (this.settled()) {
+    // A FINISHED visit offers the next one here; a visit that is GONE
+    // offers it from the dock instead (owner, 2026-09-11), where nothing is
+    // due and «Запази» has nothing left to save — one control per act.
+    if (this.settled() && !this.gone()) {
       out.push({
         id: 'rebook',
         label: this.rawCopy('staff.visit.rebook'),
@@ -2751,6 +2975,483 @@ export class StaffVisitEditor {
     this.focusLater('[data-testid="staff-visit-tip-choice"]');
   }
 
+  /* ── THE BILL'S LADDER (2026-09-10) ──────────────────────────────────
+   *
+   * A value gets a pill; a LIST gets a ladder. What the shop takes off the
+   * bill — coupons the client holds, codes the shop published, the front
+   * desk's own figure — can be several, and what pays it — gift vouchers —
+   * can be several too, so each is a line in the receipt with its actual
+   * amount, in the order the evaluator applies them, removed by a swipe
+   * like a seat. One add row, «Отстъпка или код», opens the menu: the
+   * client's coupons as picks, and typed in its second group a CODE (a
+   * coupon's or a voucher's — the shop works out which), and for whoever
+   * handles the shop's money a sum or a percent.
+   *
+   * Every figure comes from `DiscountApplication`, the same evaluator the
+   * server runs, so the lines, the dock and the stored bill cannot disagree
+   * on a rounding. The lines ride the draft and travel with «Запази» as two
+   * commands — the discounts as a set the server re-resolves, the vouchers
+   * as codes it re-settles against the balances it reads in the same
+   * transaction.
+   */
+
+  /**
+   * The add row: on every SAVED visit that still stands and has something
+   * to bill. A draft the server has not seen waits for its first save.
+   */
+  protected readonly discountAddShown = computed(
+    () => !this.isNew() && !this.gone() && this.draft().legs.length > 0,
+  );
+
+  protected readonly discountMenu = signal(false);
+
+  /** The code being checked, normalised; `null` when nothing is in flight. */
+  private readonly pendingCode = signal<string | null>(null);
+
+  /** The code field's state: idle, waiting for the owner, or one of the refusals. */
+  protected readonly codeState = signal<
+    | 'idle'
+    | 'checking'
+    | 'unknown'
+    | 'already'
+    | 'void'
+    | 'expired'
+    | 'empty'
+    | 'nothingLeft'
+  >('idle');
+
+  /** The copy under the code field for its state; `null` when idle. */
+  protected readonly codeNote = computed<string | null>(() => {
+    switch (this.codeState()) {
+      case 'idle':
+        return null;
+      case 'checking':
+        return this.rawCopy('staff.visit.discountChecking');
+      case 'unknown':
+        return this.rawCopy('staff.visit.discountUnknownCode');
+      case 'already':
+        return this.rawCopy('staff.visit.codeAlready');
+      case 'void':
+        return this.rawCopy('staff.visit.voucherVoid');
+      case 'expired':
+        return this.rawCopy('staff.visit.voucherExpired');
+      case 'empty':
+        return this.rawCopy('staff.visit.voucherEmpty');
+      case 'nothingLeft':
+        return this.rawCopy('staff.visit.voucherNothingLeft');
+    }
+  });
+
+  /** A refusal reads red; a wait reads quiet. */
+  protected readonly codeRefused = computed(
+    () => this.codeState() !== 'idle' && this.codeState() !== 'checking',
+  );
+
+  /** The saved subtotal as money — what every discount here is a share of. */
+  private readonly subtotalMoney = computed<Money | null>(() => {
+    const minor = this.vm().priceMinorUnits;
+    if (minor === null || minor <= 0) return null;
+    const money = Money.fromMinorUnitsAndCode(minor, MONEY_CODE);
+    return money.isSuccess() ? money.value : null;
+  });
+
+  /**
+   * THE BILL, evaluated: every drafted discount through the one evaluator,
+   * in the order it applies them (fixed amounts first, then percents on the
+   * remainder, then a free service), each with what it actually took off.
+   */
+  private readonly bill = computed(() => {
+    const subtotal = this.subtotalMoney();
+    const discounts = this.draft().discounts;
+    const inputs: DiscountInput[] = [];
+    const keys = new Map<string, VisitEditorDiscount>();
+    discounts.forEach((discount, index) => {
+      const value = toCouponValue(discount.value, MONEY_CODE);
+      if (value === null) return;
+      const key = discountKey(discount);
+      keys.set(key, discount);
+      inputs.push({
+        id: key,
+        label: discount.label,
+        value,
+        grantedAt: instantAt(index),
+      });
+    });
+    const breakdown =
+      subtotal === null ? null : DiscountApplication.apply(subtotal, inputs);
+    const amounts = new Map<string, number>();
+    for (const line of breakdown?.lines ?? []) {
+      amounts.set(line.id, line.amount.toMinorUnits());
+    }
+    // The evaluator's own order — the two keys where the meaning lives.
+    const ordered = [...inputs].sort(
+      (a, b) =>
+        CouponValue.kindRank(a.value) - CouponValue.kindRank(b.value) ||
+        CouponValue.magnitude(a.value) - CouponValue.magnitude(b.value),
+    );
+    return {
+      subtotal,
+      discountTotal: breakdown?.discountTotal.toMinorUnits() ?? 0,
+      total:
+        breakdown?.total.toMinorUnits() ?? subtotal?.toMinorUnits() ?? null,
+      lines: ordered.map((input) => ({
+        key: input.id,
+        discount: keys.get(input.id) as VisitEditorDiscount,
+        amount: amounts.get(input.id) ?? 0,
+      })),
+    };
+  });
+
+  /** The receipt's discount lines: title, the rule beneath, the amount. */
+  protected readonly discountLines = computed(() =>
+    this.bill().lines.map((line) => ({
+      key: line.key,
+      title: this.discountTitle(line.discount),
+      footnote: this.discountFootnote(line.discount),
+      amountLabel: `−${this.moneyLabel(line.amount)}`,
+    })),
+  );
+
+  /**
+   * The receipt's voucher lines: each covers what the discounts and the
+   * vouchers before it left, never more than it has.
+   */
+  protected readonly voucherLines = computed(() => {
+    let due = this.bill().total ?? 0;
+    return this.draft().vouchers.map((voucher) => {
+      const cover = Math.max(0, Math.min(voucher.availableMinorUnits, due));
+      due -= cover;
+      return {
+        voucher,
+        cover,
+        amountLabel: `−${this.moneyLabel(cover)}`,
+        footnote: `${voucher.code} · ${this.rawCopy(
+          'staff.visit.voucherLeft',
+        ).replace(
+          '{{amount}}',
+          this.moneyLabel(voucher.availableMinorUnits - cover),
+        )}`,
+      };
+    });
+  });
+
+  private readonly voucherTotal = computed(() =>
+    this.voucherLines().reduce((sum, line) => sum + line.cover, 0),
+  );
+
+  /** Minor units → `2,80 €`, or `''` for anything that is not money. */
+  private moneyLabel(minor: number): string {
+    const money = Money.fromMinorUnitsAndCode(Math.max(0, minor), MONEY_CODE);
+    return money.isFailure()
+      ? ''
+      : formatMoney(money.value, this.transloco.getActiveLang());
+  }
+
+  /** What a value does, as a word: `−10%`, `−5,00 €`, «Безплатно». */
+  private valueLabel(value: VisitEditorDiscountValue): string {
+    switch (value.kind) {
+      case 'percent_off':
+        return `−${value.percent}%`;
+      case 'fixed_amount':
+        return `−${this.moneyLabel(value.amountMinorUnits)}`;
+      case 'free_service':
+        return this.rawCopy('staff.visit.discountFree');
+    }
+  }
+
+  /** The line's title: the coupon's name, or the row's own word for a manual figure. */
+  private discountTitle(discount: VisitEditorDiscount): string {
+    return discount.source === 'manual'
+      ? this.rawCopy('staff.visit.discount')
+      : discount.label;
+  }
+
+  /**
+   * The line's footnote — the RULE, where the amount alone would not say
+   * it: a percent (its share), a code (what was typed), a free service.
+   * A fixed sum's amount is its rule, so nothing.
+   */
+  private discountFootnote(discount: VisitEditorDiscount): string {
+    const rule =
+      discount.value.kind === 'fixed_amount'
+        ? ''
+        : this.valueLabel(discount.value);
+    if (discount.source === 'code' && discount.code) {
+      return rule ? `${discount.code} · ${rule}` : discount.code;
+    }
+    return rule;
+  }
+
+  /** The menu's picks: the client's coupons not yet on the bill, with their figures. */
+  protected readonly discountChoices = computed<readonly UiChoiceOption[]>(
+    () => {
+      const applied = new Set(
+        this.draft()
+          .discounts.filter((discount) => discount.source === 'grant')
+          .map((discount) => discount.grantId),
+      );
+      return this.uiGrants()
+        .filter((grant) => !applied.has(grant.grantId))
+        .map((grant) => ({
+          id: `grant:${grant.grantId}`,
+          label: grant.label,
+          detail: this.previewLabel(grant.value),
+          testId: `staff-visit-discount-pick-${grant.grantId}`,
+        }));
+    },
+  );
+
+  /** `−5,60 €` — what a value would take off the bill on its own. */
+  private previewLabel(value: VisitEditorDiscountValue): string {
+    const subtotal = this.subtotalMoney();
+    const couponValue = toCouponValue(value, MONEY_CODE);
+    if (subtotal === null || couponValue === null) return '';
+    const breakdown = DiscountApplication.apply(subtotal, [
+      {
+        id: 'preview',
+        label: 'preview',
+        value: couponValue,
+        grantedAt: instantAt(0),
+      },
+    ]);
+    return `−${this.moneyLabel(breakdown.discountTotal.toMinorUnits())}`;
+  }
+
+  /**
+   * THE DOCK'S FIGURE: what still changes hands at the counter — the saved
+   * subtotal, less what the drafted discounts take off, less what the
+   * drafted vouchers pay. The subtotal is the VM owner's (the legs' figures
+   * are labels, not a sum); the bill is the one live term, because this
+   * sheet is where it is chosen.
+   */
+  protected readonly dockTotalLabel = computed(() => {
+    const saved = this.vm().priceLabel ?? '—';
+    const total = this.bill().total;
+    if (total === null) return saved;
+    return this.moneyLabel(Math.max(0, total - this.voucherTotal())) || saved;
+  });
+
+  /** `2,80 €` for the dock's discount line, or `null` at full price. */
+  protected readonly dockDiscountAmount = computed(() => {
+    const off = this.bill().discountTotal;
+    return off > 0 ? this.moneyLabel(off) || null : null;
+  });
+
+  /** `10,00 €` for the dock's voucher line, or `null` when nothing is paid that way. */
+  protected readonly dockVoucherAmount = computed(() => {
+    const paid = this.voucherTotal();
+    return paid > 0 ? this.moneyLabel(paid) || null : null;
+  });
+
+  /** The dock's discount line, singular or plural by how many lines feed it. */
+  protected readonly dockDiscountKey = computed(() =>
+    this.draft().discounts.length > 1
+      ? 'staff.visit.discountsInDock'
+      : 'staff.visit.discountInDock',
+  );
+
+  protected readonly dockVoucherKey = computed(() =>
+    this.draft().vouchers.length > 1
+      ? 'staff.visit.vouchersInDock'
+      : 'staff.visit.voucherInDock',
+  );
+
+  protected pickDiscount(id: string): void {
+    const grant = this.uiGrants().find(
+      (entry) => `grant:${entry.grantId}` === id,
+    );
+    if (grant === undefined) return;
+    this.addDiscount({
+      source: 'grant',
+      label: grant.label,
+      value: grant.value,
+      grantId: grant.grantId,
+      code: null,
+      exclusive: grant.exclusive,
+    });
+  }
+
+  /**
+   * A discount joins the bill — or REPLACES it. An exclusive coupon must be
+   * alone, so picking one takes the others off; and one already on the bill
+   * that is exclusive gives way to whatever is picked next. A manual figure
+   * replaces the manual figure before it: the counter corrects, it does not
+   * pile up. The same promise twice is a no-op.
+   */
+  private addDiscount(discount: VisitEditorDiscount): void {
+    this.settleCode();
+    this.draft.update((draft) => {
+      if (draft.discounts.some((entry) => samePromise(entry, discount))) {
+        return draft;
+      }
+      const keeps = draft.discounts.filter(
+        (entry) =>
+          !entry.exclusive &&
+          !(entry.source === 'manual' && discount.source === 'manual'),
+      );
+      return {
+        ...draft,
+        discounts: discount.exclusive ? [discount] : [...keeps, discount],
+      };
+    });
+  }
+
+  private addVoucher(voucher: VisitEditorVoucher): void {
+    this.settleCode();
+    this.draft.update((draft) =>
+      draft.vouchers.some((entry) => entry.voucherId === voucher.voucherId)
+        ? draft
+        : { ...draft, vouchers: [...draft.vouchers, voucher] },
+    );
+  }
+
+  /** The swipe's act — one line off the bill. */
+  protected removeDiscount(key: string): void {
+    this.draft.update((draft) => ({
+      ...draft,
+      discounts: draft.discounts.filter(
+        (discount) => discountKey(discount) !== key,
+      ),
+    }));
+  }
+
+  protected removeVoucher(voucherId: string): void {
+    this.draft.update((draft) => ({
+      ...draft,
+      vouchers: draft.vouchers.filter(
+        (voucher) => voucher.voucherId !== voucherId,
+      ),
+    }));
+  }
+
+  /**
+   * A typed code → a question to the owner, never an answer here.
+   *
+   * Normalised the way the catalogue stores codes (trimmed, upper-case), so
+   * `first10` and `FIRST10` are one code. A code already on the bill — as a
+   * discount or a voucher — is not asked about again; the answer arrives
+   * through `uiPromoCode` and `adoptCode` does the rest.
+   */
+  protected commitCode(raw: string): void {
+    const code = raw.trim().toUpperCase();
+    if (code.length === 0) {
+      this.settleCode();
+      return;
+    }
+    const draft = this.draft();
+    const onBill =
+      draft.discounts.some((discount) => discount.code === code) ||
+      draft.vouchers.some((voucher) => voucher.code === code);
+    if (onBill) {
+      this.pendingCode.set(code);
+      this.codeState.set('already');
+      return;
+    }
+    this.pendingCode.set(code);
+    this.codeState.set('checking');
+    this.promoCodeEntered.emit(code);
+  }
+
+  /**
+   * The owner's answer, taken only for the code still being asked about — a
+   * slow answer to an earlier code cannot land on a later one. A coupon or
+   * a voucher joins the bill and the menu closes, the way a committed tip
+   * does; a miss leaves the field with its refusal under it, and the code
+   * where it was typed.
+   */
+  protected readonly adoptCode = effect(() => {
+    const answer = this.uiPromoCode();
+    untracked(() => {
+      const pending = this.pendingCode();
+      if (answer === null || pending === null) return;
+      if (answer.code.trim().toUpperCase() !== pending) return;
+      if (answer.promo !== null) {
+        this.addDiscount({
+          source: 'code',
+          label: answer.promo.label,
+          value: answer.promo.value,
+          grantId: null,
+          code: pending,
+          exclusive: answer.promo.exclusive,
+        });
+        this.closeDiscountMenu();
+        return;
+      }
+      if (answer.voucher !== null) {
+        if (answer.refusal !== null) {
+          this.codeState.set(answer.refusal);
+          return;
+        }
+        // Nothing left for it to cover: the bill is already paid.
+        const due = (this.bill().total ?? 0) - this.voucherTotal();
+        if (due <= 0) {
+          this.codeState.set('nothingLeft');
+          return;
+        }
+        this.addVoucher(answer.voucher);
+        this.closeDiscountMenu();
+        return;
+      }
+      this.codeState.set('unknown');
+    });
+  });
+
+  /**
+   * A typed sum off the bill — for whoever handles the shop's money. Takes
+   * what a keypad produces (`5`, `5,50`, `5.50`); anything that is not money
+   * springs the field back, the tip's rule. Empty does nothing: a manual
+   * figure leaves the bill by its swipe, like every line.
+   */
+  protected commitDiscountAmount(raw: string): void {
+    if (raw.trim().length === 0) return;
+    const minor = parsePriceInput(raw);
+    if (minor === null || minor <= 0) return;
+    this.addDiscount({
+      source: 'manual',
+      label: 'manual',
+      value: { kind: 'fixed_amount', amountMinorUnits: minor },
+      grantId: null,
+      code: null,
+      exclusive: false,
+    });
+    this.closeDiscountMenu();
+  }
+
+  /** A typed percent off the bill — whole, 1 to 100; same rules as the sum. */
+  protected commitDiscountPercent(raw: string): void {
+    if (raw.trim().length === 0) return;
+    const digits = raw.replace(/[^\d]/g, '');
+    const percent = digits.length === 0 ? NaN : Number(digits);
+    if (!Number.isInteger(percent) || percent <= 0 || percent > 100) return;
+    this.addDiscount({
+      source: 'manual',
+      label: 'manual',
+      value: { kind: 'percent_off', percent },
+      grantId: null,
+      code: null,
+      exclusive: false,
+    });
+    this.closeDiscountMenu();
+  }
+
+  /** The code field, at rest: nothing pending, nothing said. */
+  private settleCode(): void {
+    this.pendingCode.set(null);
+    this.codeState.set('idle');
+  }
+
+  /** The code field's figure: what is being checked, or nothing. */
+  protected readonly discountCodeFigure = computed(
+    () => this.pendingCode() ?? '',
+  );
+
+  /** A settled choice closes the menu and hands focus back to the add row. */
+  private closeDiscountMenu(): void {
+    if (!this.discountMenu()) return;
+    this.discountMenu.set(false);
+    this.focusLater('[data-testid="staff-visit-add-discount"]');
+  }
+
   protected openNote(): void {
     this.noteOpen.set(true);
     this.focusLater('[data-testid="staff-visit-note-field"]');
@@ -2856,6 +3557,8 @@ export class StaffVisitEditor {
       startMinute: draft.startMinute,
       endMinute: this.endMinute(),
       note: draft.note?.trim() ? draft.note.trim() : null,
+      discounts: draft.discounts,
+      vouchers: draft.vouchers,
       clients: draft.clients.map((client) => ({
         id: client.id,
         label: client.label,
@@ -2938,6 +3641,38 @@ export class StaffVisitEditor {
 
 /** The shop's one currency (see `project_currency_is_eur`). */
 const MONEY_CODE = 'EUR';
+
+/**
+ * The evaluator orders discounts by the instant they were applied, as its
+ * last tie-break; a draft has no clock, so the order of ADDING stands in —
+ * one millisecond apart from the epoch, deterministic and never read back.
+ */
+function instantAt(index: number): ZonedDateTime {
+  const instant = ZonedDateTime.fromMillis(index, 'UTC');
+  if (instant.isFailure()) throw new Error('unreachable: the UTC epoch');
+  return instant.value;
+}
+
+/** A line's identity on the ladder — the promise, never a stored id. */
+function discountKey(discount: VisitEditorDiscount): string {
+  switch (discount.source) {
+    case 'grant':
+      return `grant:${discount.grantId ?? ''}`;
+    case 'code':
+      return `code:${discount.code ?? ''}`;
+    case 'manual':
+      return 'manual';
+  }
+}
+
+/** The same promise: source and provenance agree (a manual figure by its value). */
+function samePromise(a: VisitEditorDiscount, b: VisitEditorDiscount): boolean {
+  if (a.source !== b.source) return false;
+  if (a.source === 'manual') {
+    return JSON.stringify(a.value) === JSON.stringify(b.value);
+  }
+  return a.grantId === b.grantId && a.code === b.code;
+}
 
 /** The tip shares on offer (owner, 2026-09-10) — the till's own trio. */
 const TIP_PERCENTS: readonly number[] = [5, 10, 15];

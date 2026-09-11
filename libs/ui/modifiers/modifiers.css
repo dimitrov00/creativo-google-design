@@ -94,6 +94,13 @@
   [data-foreground-style='success'][data-foreground-style] {
     color: var(--sys-color-success);
   }
+  /* Money taken OFF — a discount line, a promo's figure. The theme's own
+     promo hue (`--sys-color-promo`), which existed for exactly this and
+     was used nowhere until the receipt grew a discount (2026-09-10). Ink
+     only, like `success`; never a fill. */
+  [data-foreground-style='promo'][data-foreground-style] {
+    color: var(--sys-color-promo-label);
+  }
 
   /* ── Multiline text alignment (uiMultilineTextAlignment →
      data-text-alignment) ──

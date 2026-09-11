@@ -54,6 +54,57 @@
   font-weight: 600;
 }
 
+/* THE DISMISS — a ✕ inside the clock's ring, at the small rung, a circle
+   (`uiRadius="capsule"` on a square is one). Quiet ink: it is the way out,
+   not the way back, which the accent action beside it already is. */
+.ui-toast__dismiss {
+  flex: none;
+  display: grid;
+  place-items: center;
+  inline-size: var(--control-size-small);
+  block-size: var(--control-size-small);
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--sys-color-secondary-label);
+}
+
+.ui-toast__clock {
+  inline-size: calc(var(--sys-space-unit) * 6);
+  block-size: calc(var(--sys-space-unit) * 6);
+  fill: none;
+  stroke-linecap: round;
+}
+
+.ui-toast__clock-track {
+  stroke: var(--sys-color-separator);
+  stroke-width: 1.5;
+}
+
+/* WHAT IS LEFT. Drawn from 12 o'clock, the arc shrinks clockwise over the
+   toast's own duration and freezes whenever the toast is held. The drain
+   itself is a Web Animation the component owns (see toast.ts) — restarted
+   with the clock for a replaced message, paused and resumed with it — so
+   this rule only draws the full ring it starts from. Linear, because time is. */
+.ui-toast__clock-left {
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-dasharray: 1;
+  stroke-dashoffset: 0;
+  transform: rotate(-90deg);
+  transform-origin: 50% 50%;
+}
+
+/* Leaving: nothing lands on a surface on its way out. */
+.ui-toast__surface[data-leaving] {
+  pointer-events: none;
+}
+
+.ui-toast__clock-glyph {
+  stroke: currentColor;
+  stroke-width: 1.75;
+}
+
 @keyframes ui-toast-in {
   from {
     opacity: 0;
@@ -65,6 +116,9 @@
   }
 }
 
+/* The entrance is decoration and goes with reduced motion (the exit does
+   too, in the component); the drain is information — how long the way back
+   stays — and stays. */
 @media (prefers-reduced-motion: reduce) {
   .ui-toast__surface {
     animation: none;

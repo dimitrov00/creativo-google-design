@@ -290,6 +290,52 @@
     </section>
     }
 
+    <!-- ── WHAT BECAME OF IT ──────────────────────────────────────────
+         (owner, 2026-09-11: "the cancellation reason or no-show is not
+         showing in the event detail sheets")
+
+         A settled chair opens on the fact that settled it, where a
+         request's head would sit: the glyph in its own ink, the line in
+         the shop's words — who called it off and when, or that nobody
+         came — and beneath it the reason the sheet recorded, in the
+         barber's words when it was «Друго». No wash: a wash asks for a
+         decision, and this one is made. Absent on a finished visit, whose
+         ending needs no explaining, and silent about a reason nobody gave
+         rather than saying "no reason". -->
+    @if (vm().resolution; as resolution) {
+    <section
+      class="staff-visit__state"
+      data-head="resolution"
+      [attr.data-tone]="resolutionTone()"
+      [attr.data-detail]="resolution.detail !== null ? '' : null"
+      data-testid="staff-visit-resolution"
+    >
+      <span class="staff-visit__state-glyph" aria-hidden="true">
+        <ui-icon [uiName]="resolutionIcon()" uiScale="large" />
+      </span>
+      <p
+        class="staff-visit__state-line"
+        uiText
+        uiFont="footnote"
+        uiForegroundStyle="secondary"
+        data-testid="staff-visit-resolution-line"
+      >
+        {{ t('staff.visit.resolution.' + resolutionKey()) }} · {{
+        resolution.whenLabel }}
+      </p>
+      @if (resolution.detail; as detail) {
+      <p
+        class="staff-visit__state-detail"
+        uiText
+        uiFont="body"
+        data-testid="staff-visit-resolution-detail"
+      >
+        {{ detail }}
+      </p>
+      }
+    </section>
+    }
+
     <!-- ── БРЪСНАРИ ────────────────────────────────────────────────
          TOPMOST, with the clients and the services under them (owner,
          2026-09-09): the chair decides which services are even on offer and
@@ -1138,6 +1184,209 @@
           }
         </span>
       </li>
+      }
+      <!-- THE BILL'S LINES (2026-09-10): what the shop takes off, then what
+           vouchers pay — each a receipt line with its actual amount, in the
+           order the evaluator applies them, removed by a swipe like a seat.
+           A value gets a pill; a list gets a ladder. -->
+      @for (line of discountLines(); track line.key) {
+      <li
+        class="staff-visit__swipe"
+        libSwipeToDelete
+        [attr.data-testid]="'staff-visit-discount-' + line.key"
+        (deleted)="removeDiscount(line.key)"
+      >
+        <ui-list-row
+          uiSize="regular"
+          class="staff-visit__swipe-content staff-visit__receipt-row"
+        >
+          <ui-stack uiSpacing="none">
+            <span>{{ line.title }}</span>
+            <!-- The RULE beneath, where the amount alone would not say it:
+                 a code, a share, a free service. -->
+            @if (line.footnote) {
+            <span
+              uiText
+              uiFont="footnote"
+              uiForegroundStyle="secondary"
+              class="staff-visit__figures"
+              >{{ line.footnote }}</span
+            >
+            }
+          </ui-stack>
+          <span
+            uiTrailing
+            uiForegroundStyle="promo"
+            class="staff-visit__figures"
+            [attr.data-testid]="'staff-visit-discount-amount-' + line.key"
+            >{{ line.amountLabel }}</span
+          >
+        </ui-list-row>
+        <button
+          type="button"
+          class="staff-visit__swipe-action"
+          [attr.aria-label]="t('staff.visit.removeDiscount') + ': ' + line.title"
+          [attr.data-testid]="'staff-visit-swipe-discount-' + line.key"
+          (click)="removeDiscount(line.key)"
+        >
+          <ui-icon uiName="booking.removeLine" />
+        </button>
+      </li>
+      } @for (line of voucherLines(); track line.voucher.voucherId) {
+      <!-- A VOUCHER PAYS; it does not discount. Primary ink, the code and
+           what the voucher has left beneath, the way a card receipt prints
+           the balance. -->
+      <li
+        class="staff-visit__swipe"
+        libSwipeToDelete
+        [attr.data-testid]="'staff-visit-voucher-' + line.voucher.voucherId"
+        (deleted)="removeVoucher(line.voucher.voucherId)"
+      >
+        <ui-list-row
+          uiSize="regular"
+          class="staff-visit__swipe-content staff-visit__receipt-row"
+        >
+          <ui-stack uiSpacing="none">
+            <span>{{ t('staff.visit.voucher') }}</span>
+            <span
+              uiText
+              uiFont="footnote"
+              uiForegroundStyle="secondary"
+              class="staff-visit__figures"
+              [attr.data-testid]="'staff-visit-voucher-line-' + line.voucher.voucherId"
+              >{{ line.footnote }}</span
+            >
+          </ui-stack>
+          <span
+            uiTrailing
+            class="staff-visit__figures"
+            [attr.data-testid]="'staff-visit-voucher-amount-' + line.voucher.voucherId"
+            >{{ line.amountLabel }}</span
+          >
+        </ui-list-row>
+        <button
+          type="button"
+          class="staff-visit__swipe-action"
+          [attr.aria-label]="t('staff.visit.removeVoucher') + ': ' + line.voucher.code"
+          [attr.data-testid]="'staff-visit-swipe-voucher-' + line.voucher.voucherId"
+          (click)="removeVoucher(line.voucher.voucherId)"
+        >
+          <ui-icon uiName="booking.removeLine" />
+        </button>
+      </li>
+      } @if (discountAddShown()) {
+      <!-- THE ADD ROW — one for everything the bill can take (2026-09-10):
+           the client's coupons as picks, and typed in the menu's second
+           group a code (a coupon's or a voucher's — the shop works out
+           which), and for whoever handles the shop's money a sum or a
+           percent. The same `li > ui-choice-menu > row` chain the chair row
+           uses, so the segment keeps its fill and corners. -->
+      <li>
+        <ui-choice-menu
+          uiAlignment="leading"
+          [uiOptions]="discountChoices()"
+          [uiSelectedId]="null"
+          [uiLabel]="t('staff.visit.discountAdd')"
+          [(uiPresented)]="discountMenu"
+          (uiPicked)="pickDiscount($event)"
+        >
+          <button
+            uiListRow
+            uiSize="large"
+            type="button"
+            uiMenuTrigger
+            [uiInteractive]="true"
+            data-testid="staff-visit-add-discount"
+            (click)="discountMenu.set(true)"
+          >
+            <span uiLeading>
+              <ui-icon uiName="action.add" aria-hidden="true" />
+            </span>
+            {{ t('staff.visit.discountAdd') }}
+          </button>
+          <ul
+            uiListGroup
+            class="staff-visit__discount-typed"
+            [attr.aria-label]="t('staff.visit.discountCode')"
+          >
+            <li uiListRow data-testid="staff-visit-discount-code-row">
+              <ui-stack uiSpacing="none">
+                <label for="staff-visit-discount-code"
+                  >{{ t('staff.visit.discountCode') }}</label
+                >
+                @if (codeNote(); as note) {
+                <span
+                  uiText
+                  uiFont="footnote"
+                  [uiForegroundStyle]="codeRefused() ? 'destructive' : 'secondary'"
+                  [attr.role]="codeRefused() ? 'alert' : null"
+                  data-testid="staff-visit-discount-code-note"
+                  >{{ note }}</span
+                >
+                }
+              </ui-stack>
+              <span uiTrailing>
+                <input
+                  uiTextField
+                  uiControlSize="small"
+                  id="staff-visit-discount-code"
+                  class="staff-visit__code-field"
+                  type="text"
+                  autocomplete="off"
+                  autocapitalize="characters"
+                  spellcheck="false"
+                  enterkeyhint="done"
+                  [value]="discountCodeFigure()"
+                  [uiInvalid]="codeRefused()"
+                  [attr.placeholder]="t('staff.visit.discountCodePlaceholder')"
+                  data-testid="staff-visit-discount-code"
+                  (change)="commitCode($any($event.target).value)"
+                />
+              </span>
+            </li>
+            @if (uiMayDiscount()) {
+            <li uiListRow data-testid="staff-visit-discount-amount-row">
+              <label for="staff-visit-discount-amount"
+                >{{ t('staff.visit.discountAmount') }}</label
+              >
+              <span uiTrailing>
+                <span class="staff-sheet__pill staff-visit__figures">
+                  <ui-unit-field
+                    uiId="staff-visit-discount-amount"
+                    uiValue=""
+                    [uiUnit]="t('staff.visit.currencySymbol')"
+                    uiPlaceholder="0,00"
+                    uiInputMode="decimal"
+                    [uiLabel]="t('staff.visit.discountAmount')"
+                    uiTestId="staff-visit-discount-amount"
+                    (uiValueChange)="commitDiscountAmount($event)"
+                  />
+                </span>
+              </span>
+            </li>
+            <li uiListRow data-testid="staff-visit-discount-percent-row">
+              <label for="staff-visit-discount-percent"
+                >{{ t('staff.visit.discountPercent') }}</label
+              >
+              <span uiTrailing>
+                <span class="staff-sheet__pill staff-visit__figures">
+                  <ui-unit-field
+                    uiId="staff-visit-discount-percent"
+                    uiValue=""
+                    uiUnit="%"
+                    uiPlaceholder="0"
+                    uiInputMode="numeric"
+                    [uiLabel]="t('staff.visit.discountPercent')"
+                    uiTestId="staff-visit-discount-percent"
+                    (uiValueChange)="commitDiscountPercent($event)"
+                  />
+                </span>
+              </span>
+            </li>
+            }
+          </ul>
+        </ui-choice-menu>
+      </li>
       } @if (tipRowShown()) {
       <!-- THE TIP — A CHOICE (owner, 2026-09-10: "rethink the use of
            choice instead"): the value pill opens the shares — «Няма», 5 ·
@@ -1337,9 +1586,10 @@
        icon or a count leading, and the ✓ that returns to the ladder
        trailing. The draft already holds every edit the page made; ✓ is
        the way back, not a second write.
-       ⚠ IT IS THE SAVED SUBTOTAL, NOT A LIVE ONE (unchanged): the draft's
-       legs carry a formatted price and no minor units, so nothing here can
-       add them up — a live figure is the VM owner's job. -->
+       ⚠ IT IS THE SAVED SUBTOTAL LESS THE DRAFTED DISCOUNT: the legs'
+       figures are labels, not a sum, so the subtotal is the VM owner's; the
+       discount is the one live term, because this sheet is where it is
+       chosen (2026-09-10). -->
   <!-- INSIDE the body, so it pins with the scroller (`uiAnchor="scroll"`):
        this dock is the editor's own and cannot reach the sheet's overlay
        slot, and an absolute box in here is what a finger on iOS scrolls
@@ -1350,6 +1600,17 @@
     class="staff-visit__dock"
   >
     @let dockPage = currentPage()?.kind ?? null; @if (dockPage === null) {
+    <!-- NOTHING IS DUE ON A VISIT THAT IS GONE (owner, 2026-09-11). «В
+         салона · 9,00 €» reads "to be paid at the shop", and on a cancelled
+         or no-showed visit that is untrue — nor struck through, which is
+         the "was" price of a sale tag and asks what it is now. The dock
+         carries the sheet's one write: «Запази» while there is something
+         to save, and the NEXT visit once there is not — Wallet's "Buy
+         Again", on the thumb rail where «Запази» lives, hugging the call.
+         The receipt survives in the ladder, where every service row still
+         shows its own price. The foot loses its duplicate row; a no-show's
+         «Върни часа» stays there, a correction rather than a forward act. -->
+    @if (!gone()) {
     <ui-stack
       uiSpacing="none"
       uiAlignment="leading"
@@ -1365,8 +1626,32 @@
         uiWeight="semibold"
         class="staff-visit__figures"
         data-testid="staff-visit-total-figure"
-        >{{ vm().priceLabel ?? '—' }}</span
+        >{{ dockTotalLabel() }}</span
       >
+      <!-- THE DISCOUNTS, AS A MINUS (2026-09-10): what the shop took off,
+           under the bill, in the promo ink — the tip's plus, mirrored. Then
+           what vouchers PAID, quieter: money already in the till. -->
+      @if (dockDiscountAmount(); as off) {
+      <span
+        uiText
+        uiFont="footnote"
+        uiWeight="semibold"
+        uiForegroundStyle="promo"
+        class="staff-visit__figures staff-visit__dock-plus"
+        data-testid="staff-visit-dock-discount"
+        >{{ t(dockDiscountKey(), { amount: off }) }}</span
+      >
+      } @if (dockVoucherAmount(); as paid) {
+      <span
+        uiText
+        uiFont="footnote"
+        uiWeight="semibold"
+        uiForegroundStyle="secondary"
+        class="staff-visit__figures staff-visit__dock-plus"
+        data-testid="staff-visit-dock-voucher"
+        >{{ t(dockVoucherKey(), { amount: paid }) }}</span
+      >
+      }
       <!-- THE TIP, AS A PLUS (owner, 2026-09-10: "reflected in some cool
            way with a green plus in the action bar"): the extra the client
            left, under the bill, in the success tone; it rises in. -->
@@ -1376,12 +1661,13 @@
         uiFont="footnote"
         uiWeight="semibold"
         uiForegroundStyle="success"
-        class="staff-visit__figures staff-visit__tip-plus"
+        class="staff-visit__figures staff-visit__dock-plus"
         data-testid="staff-visit-dock-tip"
         >{{ t('staff.visit.tipInDock', { amount: tip }) }}</span
       >
       }
     </ui-stack>
+    }
     <!-- THE CALL — docked (owner, 2026-09-09: "the most common action you
          do when you open the appointment"). Reversal of the 2026-09-08
          ruling that put it on the client row: a row target is read, a dock
@@ -1401,7 +1687,18 @@
     >
       <ui-icon uiName="location.call" />
     </a>
-    } @if (saveable()) {
+    } @if (gone()) {
+    <button
+      type="button"
+      uiButton
+      uiButtonStyle="borderedProminent"
+      uiControlSize="large"
+      data-testid="staff-visit-rebook"
+      (click)="rebooked.emit()"
+    >
+      {{ t('staff.visit.rebook') }}
+    </button>
+    } @else if (saveable()) {
     <button
       type="button"
       uiButton

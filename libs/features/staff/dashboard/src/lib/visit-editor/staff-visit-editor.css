@@ -145,6 +145,17 @@
   overflow: clip;
 }
 
+/* IN LIGHT, THE RING STAYS (owner, 2026-09-11: "only on light mode it should
+   have at least a wrapper border"). The segment form above drops the frame's
+   ring and leaves the page's ground as its only chrome — in dark that ground
+   is black on a grey sheet and the frame reads as a box, in light it is the
+   sheet's own white and the picture had no edge at all. The same hairline
+   the picture draws its hour lines with, keyed on the stamped theme the
+   grid's own dark tones use; dark is untouched. */
+:root:not([data-theme='dark']) .staff-visit__frame-row > .staff-frame {
+  border: 1px solid var(--sys-color-separator);
+}
+
 /* The group's outer corners, wherever the frame sits in it — first now,
    with the timings under it (owner, later the same day). */
 .staff-visit__frame-row:first-child > .staff-frame {
@@ -445,6 +456,46 @@
   align-self: center;
 }
 
+/* ── A SETTLED CHAIR'S HEAD ───────────────────────────────────────────
+ *
+ * The glyph LEADS, in the tone's ink, with the line and the reason beside
+ * it — and no wash. The request head's wash asks for a decision; this one
+ * states a fact, and the tone lives in one glyph rather than across the
+ * ground, which is as loud as a visit that is over should be. */
+.staff-visit__state[data-head='resolution'] {
+  grid-template-columns: auto minmax(0, 1fr);
+}
+
+.staff-visit__state[data-head='resolution']::before {
+  content: none;
+}
+
+/* ONE LINE, ONE ROW (owner, 2026-09-11: "when it's a single text row it
+   had better be centred"). The head's second track is empty when nobody
+   said why, but an empty track still keeps its gap, and a glyph spanning
+   both sat its centre half a gap below the line. Without a detail there
+   is one row, and the glyph spans whatever rows there are. */
+.staff-visit__state[data-head='resolution']:not([data-detail]) {
+  grid-template-rows: auto;
+}
+
+.staff-visit__state-glyph {
+  grid-column: 1;
+  grid-row: 1 / -1;
+  display: inline-flex;
+  color: var(--staff-state-ink);
+}
+
+.staff-visit__state[data-head='resolution'] > .staff-visit__state-line {
+  grid-column: 2;
+}
+
+.staff-visit__state-detail {
+  grid-column: 2;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
 /* ── TWO TARGETS IN ONE ROW ───────────────────────────────────────────
  *
  * The row pushes the person's page; the `☎` dials. Both clear 44x44 and
@@ -530,25 +581,53 @@
   margin-inline-start: var(--sys-space-compact);
 }
 
-/* THE TIP IN THE DOCK: the extra the client left, under the bill — it
-   rises in, the sheet's one expressive moment (the owner's own taste for
-   "expressive success moments"), stilled for whoever asked for less motion. */
-.staff-visit__tip-plus {
+/* THE LINES UNDER THE BILL: the tip the client left (a green plus) and the
+   discount the shop gave (a minus in the promo ink) — each rises in, the
+   sheet's one expressive moment (the owner's own taste for "expressive
+   success moments"), stilled for whoever asked for less motion. */
+.staff-visit__dock-plus {
   display: inline-block;
 }
 
 @media (prefers-reduced-motion: no-preference) {
-  .staff-visit__tip-plus {
-    animation: staff-visit-tip-plus-in var(--sys-motion-duration-regular)
+  .staff-visit__dock-plus {
+    animation: staff-visit-dock-plus-in var(--sys-motion-duration-regular)
       var(--sys-motion-ease-standard) both;
   }
 
-  @keyframes staff-visit-tip-plus-in {
+  @keyframes staff-visit-dock-plus-in {
     from {
       opacity: 0;
       translate: 0 4px;
     }
   }
+}
+
+/* THE CODE FIELD, in the discount menu's typed group: a DS text field at the
+   small tier, sized for a code rather than a sentence, and shown the way a
+   code is printed. The row's label and its refusal stack on the left; the
+   field keeps the trailing edge like every pill beside it. */
+.staff-visit__code-field {
+  inline-size: 9.5rem;
+  min-inline-size: 0;
+  text-transform: uppercase;
+  font-variant-numeric: tabular-nums;
+}
+
+.staff-visit__code-field::placeholder {
+  text-transform: none;
+}
+
+/* The add row's menu: the picks (the client's coupons) and the typed group
+   are two runs in one surface; when there is nothing to pick, the empty
+   first run must not hold a seam of its own. */
+.staff-visit__discount-typed {
+  min-inline-size: 18rem;
+}
+
+.staff-visit__discount-typed .ui-list-row__label {
+  white-space: normal;
+  min-inline-size: 0;
 }
 
 /* THE WAY OFF — the chip's own capsule, red ink under the thumb. */

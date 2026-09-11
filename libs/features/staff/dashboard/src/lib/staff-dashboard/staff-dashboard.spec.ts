@@ -33,8 +33,15 @@ import {
   SeatSubject,
   type SeatRelationship,
   ZonedDateTime,
+  fail,
   ok,
+  BookingGatewayError,
 } from '@creativo/application/booking';
+import {
+  COUPON_GRANT_REPOSITORY,
+  COUPON_READER,
+  GIFT_VOUCHER_READER,
+} from '@creativo/application/engagement';
 import {
   Barber,
   BarberId,
@@ -255,7 +262,10 @@ describe('StaffDashboard', () => {
   const clearRange = vi.fn(() => Promise.resolve(ok(undefined)));
   // Hoisted so the guards below can assert that a destructive write did NOT
   // happen on the tap that asked for it.
-  const transition = vi.fn((_input: unknown) => Promise.resolve(ok(undefined)));
+  const transition = vi.fn(
+    (_input: unknown): Promise<Result<undefined, BookingGatewayError>> =>
+      Promise.resolve(ok(undefined)),
+  );
 
   /**
    * The whole fixture, with the CLOCK as the one dial worth turning.
@@ -366,6 +376,20 @@ describe('StaffDashboard', () => {
             observe: () => of(ok(null)),
             save: async () => ok(undefined),
           },
+        },
+        // The discount row's two reads (2026-09-10): nobody holds a coupon
+        // and no code opens one, so the menu offers «Без» and the typed arms.
+        {
+          provide: COUPON_GRANT_REPOSITORY,
+          useValue: { findUsableForUser: async () => ok([]) },
+        },
+        {
+          provide: COUPON_READER,
+          useValue: { findByCode: async () => ok(null) },
+        },
+        {
+          provide: GIFT_VOUCHER_READER,
+          useValue: { findByCode: async () => ok(null) },
         },
         {
           provide: MEDIA_READER,
@@ -1368,6 +1392,219 @@ describe('StaffDashboard', () => {
     ).not.toBeNull();
   });
 
+  /*
+   * ── A CHAIR RESOLVED INSIDE A LIVE PARTY (found live, 2026-09-11) ────
+   * A guest cancelled out of a two-chair party kept reading as a live visit
+   * on his chair, because the row took the ROOT's status — still confirmed
+   * while the other seat is scheduled. The sheet then offered «Откажи часа»
+   * again and the server refused it as already resolved.
+   */
+  it("reads a chair by its own seats' outcomes once all of them are resolved", async () => {
+    const visits = observeBarberDay.getMockImplementation();
+    const price = value(Money.fromMinorUnitsAndCode(2800, 'EUR'));
+    const seat = (
+      chair: string,
+      relationship: SeatRelationship,
+      cancelled: boolean,
+    ) =>
+      Seat.of({
+        id: SeatId.generate(),
+        subject: SeatSubject.account(UserId.generate(), relationship),
+        serviceId: ServiceId.generate(),
+        variantId: null,
+        barberId: value(BarberId.create(chair)),
+        terms: value(ServiceTerms.create(price, 30)),
+        startsAt: at('2026-08-05T10:00:00'),
+        ...(cancelled
+          ? {
+              outcome: {
+                kind: 'cancelled' as const,
+                atMs: Date.UTC(2026, 7, 5, 7, 0, 0),
+                by: 'staff' as const,
+                reason: { kind: 'client_unwell' as const },
+              },
+            }
+          : {}),
+      });
+    const party = value(
+      Appointment.create({
+        id: 'appointment-party',
+        locationId: LocationId.generate().toString(),
+        seats: [seat('ivan', 'self', false), seat('niko', 'companion', true)],
+        now: at('2026-08-05T08:00:00'),
+      }),
+    );
+    observeBarberDay.mockImplementation((barberId: { value: string }) =>
+      of(
+        ok(
+          barberId.value === 'ivan' || barberId.value === 'niko' ? [party] : [],
+        ),
+      ),
+    );
+    try {
+      TestBed.resetTestingModule();
+      await build();
+      const ivan = host().querySelector(
+        '[data-row-id="appointment-party#ivan"]',
+      );
+      const niko = host().querySelector(
+        '[data-row-id="appointment-party#niko"]',
+      );
+      // The root is still live, so Ivan's chair reads as it did…
+      expect(ivan?.getAttribute('data-status')).toBe('pending');
+      // …and Niko's reads by its own outcome.
+      expect(niko?.getAttribute('data-status')).toBe('cancelled');
+
+      // Opened, the cancelled chair offers no cancel and no no-show — only
+      // the next visit.
+      (niko as HTMLElement).click();
+      await fixture.whenStable();
+      fixture.detectChanges();
+      expect(
+        host().querySelector('[data-testid="staff-visit-cancel"]'),
+      ).toBeNull();
+      expect(
+        host().querySelector('[data-testid="staff-visit-no-show"]'),
+      ).toBeNull();
+      expect(
+        host().querySelector('[data-testid="staff-visit-rebook"]'),
+      ).not.toBeNull();
+
+      // …and it opens on what settled it: whose act, when, and why (owner,
+      // 2026-09-11). The stamp landed at 10:00 shop time on the visit's own
+      // day, so the clock stands alone; the reason is the catalogue's line.
+      const head = host().querySelector(
+        '[data-testid="staff-visit-resolution"]',
+      );
+      expect(head?.getAttribute('data-tone')).toBe('destructive');
+      const line =
+        head?.querySelector('[data-testid="staff-visit-resolution-line"]')
+          ?.textContent ?? '';
+      expect(line).toContain('staff.visit.resolution.cancelledByStaff');
+      expect(line).toContain('10:00');
+      expect(
+        head
+          ?.querySelector('[data-testid="staff-visit-resolution-detail"]')
+          ?.textContent?.trim(),
+      ).toBe('staff.day.cancelReasonCode.client_unwell');
+    } finally {
+      if (visits) observeBarberDay.mockImplementation(visits);
+    }
+  });
+
+  it("says why a cancellation was refused, in the shop's words rather than the gateway's", async () => {
+    const row = host().querySelector(
+      '[data-testid="staff-visit-row"]',
+    ) as HTMLElement;
+    row.click();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    (
+      host().querySelector('[data-testid="staff-visit-cancel"]') as HTMLElement
+    ).click();
+    fixture.detectChanges();
+    (
+      host().querySelector(
+        '[data-testid="staff-cancel-reason-client_changed_plans"]',
+      ) as HTMLElement
+    ).click();
+    fixture.detectChanges();
+    // The server's refusal rides in the gateway error's params; the sheet
+    // must reach for ITS line, not the gateway's "something went wrong".
+    transition.mockResolvedValueOnce(
+      fail(
+        new BookingGatewayError(
+          'invalid_request',
+          'That seat is already resolved',
+          {
+            serverCode: 'booking.transition.not_allowed',
+            from: 'resolved',
+            to: 'cancelled',
+          },
+        ),
+      ),
+    );
+    (
+      host().querySelector(
+        '[data-testid="staff-cancel-confirm"]',
+      ) as HTMLElement
+    ).click();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    const alert = host().querySelector(
+      '[data-testid="staff-cancel-sheet"] [role="alert"]',
+    );
+    // The loader returns no translations, so the KEY reached for is the assertion.
+    expect(alert?.textContent?.trim()).toBe(
+      'errors.booking.transition.seat_resolved',
+    );
+    expect(alert?.textContent).not.toContain('booking.gateway.failed');
+  });
+
+  /*
+   * ── THE REASON IS OPTIONAL (owner, 2026-09-11) ──────────────────────
+   * "Barbers may not have time to enter such issue." One tap cancels; a
+   * reason is a second tap for the barber who has one, and a chip tapped
+   * again lets go of it. «Друго…» opens the note, and the note carries an
+   * example rather than a second label.
+   */
+  it('cancels on one tap — a reason is offered, never demanded', async () => {
+    const row = host().querySelector(
+      '[data-testid="staff-visit-row"]',
+    ) as HTMLElement;
+    row.click();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    (
+      host().querySelector('[data-testid="staff-visit-cancel"]') as HTMLElement
+    ).click();
+    fixture.detectChanges();
+
+    // The red button is live with nothing picked.
+    const confirm = host().querySelector(
+      '[data-testid="staff-cancel-confirm"]',
+    ) as HTMLButtonElement;
+    expect(confirm.disabled).toBe(false);
+
+    // A reason picked and picked again is no reason.
+    const chip = host().querySelector(
+      '[data-testid="staff-cancel-reason-client_unwell"]',
+    ) as HTMLElement;
+    chip.click();
+    fixture.detectChanges();
+    expect(chip.getAttribute('aria-pressed')).toBe('true');
+    chip.click();
+    fixture.detectChanges();
+    expect(chip.getAttribute('aria-pressed')).toBe('false');
+
+    // «Друго…» opens a note with an EXAMPLE in it, and left empty it is a
+    // door opened and not walked through — the cancel still goes, unfiled.
+    (
+      host().querySelector(
+        '[data-testid="staff-cancel-reason-other"]',
+      ) as HTMLElement
+    ).click();
+    fixture.detectChanges();
+    const note = host().querySelector(
+      '[data-testid="staff-cancel-note"]',
+    ) as HTMLTextAreaElement;
+    expect(note.placeholder).toBe('staff.day.cancelNotePlaceholder');
+    expect(confirm.disabled).toBe(false);
+    confirm.click();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(transition).toHaveBeenCalledTimes(1);
+    const request = transition.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(request['to']).toBe('cancelled');
+    expect(request).not.toHaveProperty('reasonCode');
+    expect(request).not.toHaveProperty('note');
+    // The sheet closed on success.
+    expect(
+      host().querySelector('[data-testid="staff-cancel-sheet"]'),
+    ).toBeNull();
+  });
+
   it('slides the week strip a WHOLE week, in CSS, with nothing to press', () => {
     // The gesture is the browser's: `ui-scroll-row` supplies
     // `scroll-snap-type: x mandatory` and `scroll-snap-align: start` on each
@@ -2113,6 +2350,8 @@ describe('StaffDashboard', () => {
       startMinute: 600,
       endMinute: 630,
       note: null,
+      discounts: [],
+      vouchers: [],
       clients: [],
       legs: [
         {

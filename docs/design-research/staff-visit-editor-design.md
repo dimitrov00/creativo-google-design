@@ -6454,3 +6454,416 @@ content` keeps it honest while typing; the time field's ring (accent
       both hours that did not happen; the block's strike moved from its
       whole face onto the name to match the card, so times, service and
       tag stay legible. The glyph still tells the two apart.
+
+### Pass 9 — the discount row (2026-09-10)
+
+**The ask.** A way to add a promo code or a discount to an appointment, in
+the sheet, in the house grammar. **Built end to end**, not drawn: the row,
+the command, the server's resolution, the stored snapshot, the read-back.
+
+**Where it lives.** ONE row, `Отстъпка`, in the receipt group between the
+seat lines and `Бакшиш` — in the tip row's own grammar: the value pill IS the
+choice. The menu offers `Без`, then the coupons THIS client already holds
+(each already a figure of this visit, `Рожден ден · −2,90 €`), and, in the
+menu's second group, typed: `Код` (a DS text field, `напр. FIRST10`), and —
+for whoever handles the shop's money — `Сума` (€) and `Процент` (%), both
+`ui-unit-field` pills. The pill reads back the coupon's name with its figure
+in the promo ink, `−10%` with its figure, or the sum itself. The dock's
+figure becomes what is left, with `−2,90 € отстъпка` under it in the promo
+ink — the tip's green plus, mirrored.
+
+**Rulings applied, and one deviation from §3.8.** _(a)_ One discount per
+visit: the receipt reads one word and one figure; the domain and the
+document hold a LIST (`Appointment.discounts`), so stacking is a menu change
+later, not a schema change. _(b)_ No pushed page and no `Промоция ›` row:
+depth is one and the payment group sits on the root now, so the §3.8 page
+collapsed into the menu — the code field, the grants and the ad-hoc arm are
+its three parts, in that order. The `Отстъпки` line is gone with it: the
+pill's figure is the line. _(c)_ The role split stands exactly as written: a
+barber honours a grant the client holds or a code the shop published; only
+`receptionist | admin | sysadmin` (`handlesMoney`, now in the accounts
+domain beside `worksTheBook`) may type a sum or a percent, and for a barber
+those two rows are ABSENT, never disabled. _(d)_ The honesty gate: the row
+appears only on a SAVED visit that still stands and has a seat; a new visit
+waits for its first save, like the tip. _(e)_ A code is case-insensitive at
+the counter — `Coupon.normalizeCode`, stored and matched upper-case — and a
+retired coupon reads as "no such code", never as a promise withdrawn.
+
+**What it took.** `AppliedDiscount` (scheduling) — a snapshot of the value
+with the grant or the code as provenance, never re-resolved; the evaluator
+stays `DiscountApplication.apply`, called from `Appointment.breakdown()` /
+`total()` and from the sheet for every figure it shows. `Coupon.code` (a
+shareable code, `null` for grant-only). The document writes `discounts[]`
+beside `arrivedAt`. `StaffEditCommand` gained `discount` — a grant or a
+code as a REFERENCE, a manual figure as a value, `null` to clear — settled
+before the fold (outside the transaction, through a `DiscountResolver`),
+ownership checked inside it against the appointment's owner, refused as
+`invalid_command: discount` or, for a barber's manual figure, `forbidden`.
+`firestore.rules` lets the book read `couponGrants`. A `CouponReader` port
+resolves a typed code on the client; the sheet asks (`promoCodeEntered`) and
+reads the answer off `uiPromoCode`, keyed by code so a slow answer cannot
+land on a later one. `--sys-color-promo-label` is the promo hue's ink cut
+(5.5:1), behind `uiForegroundStyle="promo"`. The seed carries `FIRST10`,
+`BEARD5`, a retired `SUMMER`, a birthday grant for Мартин and a free fifth
+cut for Петър.
+
+**Verified live** (emulators, Playwright): the used grant is filtered out;
+pick → `Рожден ден −2,90 €`, dock `11,60 €`, save → stored with provenance,
+sheet clean; `first10` → `Първо посещение −1,45 €`, saved as `FIRST10`;
+`NOPE1234` → `Няма такъв код.` with the previous discount untouched; a sum
+of `3` → `−3,00 €`; `Без` → `[]`.
+
+**Still open.** Burning a single-use grant when the visit completes (the
+snapshot records the grant; nothing marks it used yet). A discount on
+CREATION (`commitBooking` has no arm; save first, then discount). Stacking.
+The client's own appointment view does not show the discount. The read-only
+promo catalogue (§3.8's browse page) is not built.
+
+### Pass 10 — stacking, and vouchers (2026-09-10, later)
+
+**The ask.** «What if you could use multiple codes and also vouchers» — then
+«go ahead and do them». Both built end to end.
+
+**A value gets a pill; a list gets a ladder.** The single `Отстъпка` choice
+row of Pass 9 lasted an afternoon. What the shop takes off can be several
+and what pays the bill can be several, so each is now a RECEIPT LINE under
+the seat lines, with its actual amount in the promo ink and its rule
+beneath (`FIRST10 · −10%`, `−20%`, «Безплатно»), in the order the evaluator
+applies them — fixed sums first, then percents on the remainder, then a
+free service — and removed by a swipe like a seat. One add row, `＋ Отстъпка
+или код`, opens the menu: the client's coupons not yet on the bill as picks
+(each already a figure), and typed in its second group ONE code field for
+a coupon's code OR a voucher's — the shop works out which — then, for
+`handlesMoney` roles, a sum and a percent. Rulings: an exclusive coupon
+clears the bill when picked and gives way when anything else is; the same
+promise twice is a no-op; a manual figure replaces the manual figure before
+it. The dock's figure is what still changes hands at the counter, with
+`−5,95 € отстъпки` in the promo ink and `−8,55 € ваучери` in the secondary
+ink beneath it.
+
+**Stacking.** The domain always held a list; the snapshot now carries the
+coupon's own `combinability`, and `AppliedDiscount.isLegalSet` says what a
+set may hold (an exclusive one alone, no promise twice). The command is
+`discounts: StaffDiscountRequest[]` — the whole set, replaced. The server
+KEEPS a discount already on the visit as stored rather than re-resolving it
+(a coupon retired since does not withdraw a promise kept), resolves only the
+new ones, and refuses a NEW manual figure from a barber while letting him
+keep one the desk set. At most one manual figure.
+
+**Vouchers.** A gift voucher PAYS; it does not discount, and the price stays
+full in every report. New aggregate `GiftVoucher` (engagement): a code, a
+value, a running balance, an optional expiry, an optional holder, `active`
+or `void`; `refusal(now)` names void / expired / empty; `settle(previous,
+next)` moves one visit's draw and is the one door the balance moves
+through — shrinking is allowed on a void or expired voucher, growing is
+not, and the balance never leaves `0 … issued`. On the appointment,
+`VoucherRedemption` snapshots (amount, the balance it left, reversed-at as
+history) and `balanceDue()`. The `vouchers: codes[]` command is settled
+LAST, against the bill as the batch leaves it, inside the same transaction
+as the visit — `FirestoreBookingStore.reschedule` grew a `side` extension
+(read after the booking loads, write after the appointment's own) and a
+`VoucherLedger` reads and writes `giftVouchers/*` through it. Every save
+re-settles: a reprice that shrinks the bill gives money back, a voucher no
+longer named is reversed in full, a bill already paid takes no more. A
+cancellation — staff or client — restores every live draw and closes its
+line as history (`voucher-restore.ts`, planned right after the appointment
+read so every read still precedes every write). `giftVouchers` are readable
+by the holder and the book, written by nobody but the server. Seeded:
+`GIFT2025` (25 €, Мартин's), `GIFT5`, and a spent `EMPTY001`.
+
+**Verified live** (emulators, Playwright, on the 14,50 € classic cut):
+`BEARD5` + `FIRST10` → −5,00 and −0,95, 8,55 € owed, saved as a set of two;
+the birthday grant (exclusive) replaced them; `GIFT5` paid 5,00, `GIFT2025`
+the 3,55 left (21,45 remaining), both balances drawn down on save; dropping
+`GIFT5` gave its 5,00 back and `GIFT2025` re-settled to 8,55; `EMPTY001`
+read «Ваучерът е изчерпан.»; cancelling the visit reversed both lines and
+restored both balances in full.
+
+**Still open.** Issuing and selling vouchers (an admin surface and a
+callable); a shop-level cap on stacked discounts (the evaluator has
+`capPercent`, nothing sets it); burning a single-use grant on completion;
+discounts and vouchers at creation; the client's own appointment view; the
+read-only promo catalogue; reinstating a cancelled visit does not re-draw
+its vouchers (the lines stay reversed; the barber re-adds the code).
+
+### Pass 11 — `ui-menu` on a phone (2026-09-11)
+
+**The report.** «Flashy, moving around, overflown by the phone screen, not
+positioned the right way.» All of it traced to the DS menu (`ui-menu`,
+patterns), which every popover on this sheet is, so it was rebuilt rather
+than patched per consumer.
+
+**Four causes, in the code.** _(a)_ The surface was REVEALED by a template
+binding before it was measured and raised: the entrance began inside the
+sheet's stacking context — a `transform`ed ancestor makes `position: fixed`
+mean "fixed to me" — and the element was promoted to the top layer
+mid-fade. _(b)_ On close it was lowered at once, so on engines without a
+discrete `overlay` transition the fading surface dropped back into the
+sheet and jumped to wherever "fixed" meant there. _(c)_ Every `scroll` and
+`resize` event re-measured (a forced layout each time) and RE-DECIDED the
+side, so a menu hopped from under its trigger to over it as the toolbar
+collapsed, the keyboard rose, or the finger that dismissed it also scrolled
+the sheet beneath. _(d)_ Sizes were clamped against `innerHeight`/`100vw`
+and never the visual viewport or the safe areas, and `min-inline-size`
+(anchor width) could exceed `max-inline-size` — `min-width` beats
+`max-width` — so a row-wide anchor on a 320px phone forced a surface wider
+than the screen.
+
+**The model now.** One pure resolver (`menu-geometry.ts`, its own spec)
+decides side, cap and coordinates from the anchor's box and the REACHABLE
+window — the visual viewport less `env()` safe areas — flipping only when
+the surface cannot fit, keeping the side already shown while it serves,
+capping to the room within a 55% ceiling, and SHIFTING into the window
+above a 160px floor rather than shrinking below it. Order on open: raise
+into the top layer, measure the natural size, place, then reveal. While
+open a frame loop reads the anchor and rewrites the coordinates only when
+it moved (a sheet still sliding in, a drag); nothing behind an open menu
+scrolls — `touchstart` and `wheel` outside are swallowed, as the platform's
+own menus do — and the window's changes (`resize`, `visualViewport`) are
+the only thing that re-measures, with a `ResizeObserver` for the surface's
+own content. On close the surface stays raised until its opacity transition
+ends. Where the popover API is missing, coordinates subtract the nearest
+ancestor that establishes a fixed-position containing block, so the
+fallback lands beside its trigger too. `transform-origin` follows
+placement × alignment.
+
+**Verified** on emulated iPhone 13 and a 320px SE, with real touch drags
+through CDP and once more with `showPopover` deleted: the add row's menu
+sits 4px under its row; a touch outside closes it and moves the sheet by
+0px while the same drag scrolls 125px once no menu is open; a trailing
+chip's menu ends on the chip's edge; a row at the screen's bottom gets its
+menu 4px above it; a window shrunk to 55% re-caps the surface and keeps it
+inside; no page errors. Real-device behaviour (iOS toolbar collapse, the
+keyboard's visual viewport) follows the same code paths but was not
+measured on hardware.
+
+### Pass 12 — the frame's edge in light (2026-09-11)
+
+**The report.** «In white mode it should have at least a wrapper border, it
+looks weird.» The segment experiment (2026-09-10) dropped the frame's ring
+and left the page's ground as its only chrome: black on a grey sheet in
+dark, where it read as a box, and the sheet's own white in light, where the
+head's controls floated on nothing. A grey ground for the whole frame and a
+head-only fill were both tried and both reverted by the owner the same
+hour; the ruling is the smallest one — **in light, the ring comes back**:
+the same hairline the picture draws its hour lines with, keyed on the
+stamped theme (`:root:not([data-theme='dark'])`, the grid's own key), and
+dark exactly as it was.
+
+### Pass 13 — the toast's dismiss, and its clock made visible (2026-09-11)
+
+**The ask.** «The toast should also have a dismiss button, and a dismiss
+progress so you know how much time it should stay.» Both, as one control:
+a ✕ at the trailing edge of `ui-toast` whose ring IS the clock — a hairline
+drawn from twelve o'clock that drains linearly over `uiDuration` and freezes
+while the toast is held (hover or focus), so how long the way back stays is
+never a guess. Drawn inline (a pattern cannot import `ui-icon` or
+`ui-progress-ring` without closing the controls→patterns cycle), quiet ink
+beside the accent action, a 36px circle, named through the new required
+`uiDismissLabel` (`staff.day.undo.dismiss`, «Затвори»). The hold is a true
+pause now — the clock resumes with what was left rather than from the top,
+the old restart-on-release having come from the arming effect tracking the
+paused flag. The entrance animation goes with reduced motion; the drain is
+information and stays. Verified live on a cancellation: the ring at 0.09 of
+the way after one second and 0.53 after four and a half of an 8 s clock,
+frozen under a hover, and gone on the ✕.
+
+_Same day, later (owner: "the dismiss animation should look smoother")._
+The toast had an entrance and no exit: the clock's end and the ✕ both cut
+it off. It now leaves the way it came — one regular beat, down and faded —
+and is unmounted only once that has played, the same for both ends; reduced
+motion leaves at once. The ring's drain and the exit are Web Animations the
+component owns rather than stylesheet keyframes, so a REPLACED message (a
+second stamp inside the first's eight seconds) restarts the clock and the
+ring together, which a keyframe on a mounted element could not. Measured on
+the ✕: opacity 1 → 0.92 → 0.35 → 0.14 → 0.02 across the exit, gone after.
+
+### Pass 14 — a chair resolved inside a live party (2026-09-11)
+
+**The report.** «When I try to cancel an appointment I see "Нещо се обърка.
+Пробвай пак."» Reproduced on the seeded two-chair party: the guest's seat had
+already been cancelled by staff earlier that day, and the agenda still drew
+that chair as a live visit, because a row took the PARTY's status — still
+`confirmed` while the other chair's seat is scheduled. The sheet offered
+«Откажи часа» a second time; the server rightly refused it as already
+resolved; and the sheet could say nothing but the gateway's generic line,
+since the gateway files every refusal under one code and carries the
+server's own only in its params.
+
+**Two fixes.** _(a)_ A row's status is THE CHAIR'S: once every seat on a
+chair is resolved, the domain's own fold (`summarizeSeatOutcomes`) over that
+chair's seats is the row's status — cancelled reads cancelled, no-show
+reads no-show, worked reads completed — while a chair with an open seat
+keeps the root's word and a one-chair visit is unchanged. The same-day
+correction edge is offered only when the ROOT itself is settled, since the
+callable reopens the whole appointment or nothing. _(b)_ A refusal is a
+sentence: the dashboard translates the server's own code first, with status
+names in the shop's words rather than the graph's, and an already-resolved
+seat has its own line — `errors.booking.transition.seat_resolved`, «Това
+място вече е приключено.» — instead of "from resolved to cancelled".
+
+**Verified live** on the seeded party: the son's row now reads `cancelled`
+with the cancelled mark, its sheet offers neither cancel nor no-show, only
+«Запиши пак».
+
+### Pass 15 — the cancel sheet lets go of its reason, and the sheet says what became of a visit (2026-09-11)
+
+**The asks.** On the cancel sheet's note: «Can you add some placeholder —
+what would Apple HIG suggest?» On the reason: «Wouldn't it be nice for this
+to be optional? Barbers may not have time to enter such issue.» And: «The
+cancellation reason or no-show is not showing in the event detail sheets,
+but should be.»
+
+**The note's placeholder.** The HIG's rule is short: placeholder text is a
+hint or an EXAMPLE of what goes in the field, never the field's only name,
+and it is gone the moment typing starts — so it must not carry anything the
+user needs once the field is full. The label «Какво се случи?» stays above
+the field, and the field itself shows an example in the secondary ink
+`ui-text-field` already gives placeholders: «Напр. записан по грешка», a
+thing a barber would actually write. Nothing hand-rolled. The chip that
+opens the note reads «Друго…» now — the ellipsis is the HIG's own mark on a
+control for "asks for more input before it acts".
+
+**The reason is optional.** One tap — the red button — cancels; a reason
+is a second tap for the barber who has one. The rulings, each the smallest
+that makes it true:
+
+- _The label says so, where the eye is._ «Защо се отменя?» keeps its line
+  and gains «по желание» trailing in secondary ink — the way a form marks an
+  optional field, in the place a barber looks when deciding whether to tap —
+  rather than a sentence above the chips. The lede drops to «Часът се
+  освобождава веднага.», the one fact left that the sheet has to disclose.
+- _A chip tapped again lets go._ With the reason optional, "none" has to be
+  reachable again after a tap; a chip that could only be replaced would make
+  the first tap binding.
+- _«Друго…» with nothing written is a door opened and not walked through._
+  The cancel still goes, filed as no reason given — the domain refuses an
+  empty `other` as saying less than not asking, and a disabled red button
+  would have stopped the barber who tapped the chip by accident with no word
+  about why.
+- _Optional is not absent._ `CancellationReason` gains `unspecified`: what
+  a cancellation nobody explained is filed as, a groupable bucket of its own
+  — "how many of Saturday's cancellations went unexplained" is a question a
+  nullable field could only answer by counting holes. `cancellationReasonOf`
+  parses NO code to it while still refusing an unknown one; the callable
+  files it; it is never a chip, because it is what picking nothing means.
+- _The client's own cancel now stamps its seats._ That path wrote the root
+  and nothing else, so every seat of a client's cancellation read back as
+  derived — stamped by the shop, at the seat's own end time, with the root's
+  stand-in string for a reason — and a sheet that says what became of a
+  visit would have said all three wrong. Its seats now carry `by: client`,
+  the moment, and the client's sentence as `other` or `unspecified`; the
+  legacy stand-in reads back as the client's, unspecified.
+
+**What became of it.** A settled chair opens on the fact that settled it,
+in the head where a request's decision sits — the one thing the frame
+cannot draw:
+
+```
+ ⊗   Отказан от салона · 14:32            ⊘   Не дойде · 10:15
+     Клиентът е болен
+```
+
+The glyph leads in the tone's ink — cancel keeps the sheet's one red, a
+no-show is a warning, the client's fact rather than the shop's — with NO
+wash: the request head's wash asks for a decision, and this one is made.
+The line is the act and whose it was, «Отказан от салона» / «Отказан от
+клиента» / «Не дойде», then the moment: the clock alone on the visit's own
+day, `24.08, 18:40` in the day pill's form when it landed on another. The
+detail beneath is the reason's catalogue line, or the barber's own words
+when it was «Друго»; a reason nobody gave is silence, not "no reason"; two
+seats in one chair called off for different reasons join with a `·`. It is
+the CHAIR's, like the row's status (Pass 14) — built beside it from the same
+seats — and absent on a finished visit, whose ending needs no explaining.
+`VisitEditorVm.resolution`, `data-head="resolution"` on the same
+`.staff-visit__state` container, the glyph in `--staff-state-ink`.
+
+**Verified live**, iPhone 13 on the emulators: the sheet's red button live
+with nothing picked; «Клиентът е болен» pressed and unpressed by two taps;
+«Друго…» revealing the note with its example in secondary ink; the cancel
+with nothing picked sent as `{to: 'cancelled'}` alone, accepted, and the
+seat reading `unspecified` with the head saying «Отказан от салона · 11:51»
+and nothing beneath; the son's seat cancelled with a reason reading its
+line and «Клиентът е болен»; a no-show head in warning ink; a client's own
+cancel through the callable, a week out, reading «Отказан от клиента ·
+11.09, 11:51» on that day's book. Suites: domain, application, functions
+and the dashboard green with nine new cases (five on the parse and the fold, one on the one-tap cancel, three on the head); lint clean.
+
+_Same day, later (owner: "when it's a single text row it had better be
+centred")._ The head's second track was empty on a no-show and on a cancel
+nobody explained, but an empty track keeps its gap, and the glyph spanning
+both rows sat its centre half a gap below the one line. The head now marks
+itself `data-detail` only when there is a second line; without it the grid
+has one row and the glyph spans whatever rows there are. Measured live: the
+glyph's centre and the text's centre coincide in both cases (offset 0 on a
+24px single row, and on the 16 + 22px pair).
+
+_Same day, later — the dock on a visit that is gone (owner: "what would you
+say about the bottom action bar having the price when the event was
+cancelled or no-show — strike-through, or should it be there?")._ Neither.
+«В салона · 9,00 €» reads "to be paid at the shop", which is untrue of a
+cancelled visit, and a struck figure is a sale tag's "was" price — it says
+"this was 9 € and is now less" and asks what it is now. Apple strikes a
+title to say a thing no longer stands (Calendar's cancelled event; this
+agenda's client name) and does not strike totals: a cancelled order in the
+Apple Store app keeps its amounts as plain lines in the details and drops
+the total due from the summary. The rule that covers both states: **the
+dock carries the sheet's one write** — «Запази» while there is something
+to save, and the NEXT visit once there is not. On a cancelled or no-showed
+visit the bill leaves the dock and «Запиши пак» takes the prominent slot,
+on the thumb rail where «Запази» lives, hugging the call (not the leading
+slot the total held — the primary act stays where the thumb already goes).
+The foot loses its duplicate «Запиши пак» row and keeps only corrections:
+a no-show's «Върни часа», and on the day itself a cancellation's
+«Възстанови» — a corrected mistake is not a forward act, and stays where
+the destructive acts were. A FINISHED visit keeps its bill, because money
+was owed and paid, and its «Запиши пак» at the foot, because its dock is
+still «Запази»'s. The receipt survives in the ladder, where every service
+row shows its own price. And if a no-show fee ever exists, the dock is
+exactly where that real figure belongs — one more reason not to seat a
+struck phantom there now.
+
+### Pass 16 — the frame focuses on its subject (2026-09-11)
+
+**The ask.** «When here we should focus on the specific event, no? Mute or
+lower the opacity of the rest of the events on the timeframe even more —
+past events should still have their own lower-opacity logic — or a ring on
+the event, or something else.»
+
+**What was there.** The frame drew the surroundings at the subject's own
+strength: the same 15% tint, the same ink, the same rail. The eye found the
+subject by its handles, and a subject that was gone had no handles and
+wore the page's finished wash, so a no-show under edit drew FAINTER than
+the neighbours around it. §3.4's mock had said «▒ neighbour 7%» from the
+first draft, and nothing ever painted it. Every neighbour was also marked
+`past`, whatever the clock said.
+
+**The rulings.** Context recedes and the subject does not — the way Apple
+Calendar dims the past and any editor pushes the unselected back, with
+nothing invented: the neighbour's number is the record's own, the inks are
+the system's tiers.
+
+- _A neighbour is a block that is only drawn_, and the paint keys on that
+  fact (`inert`, minus the subject a read-only frame also makes inert):
+  7% of the tone where the subject has 15% (14% against 28% on black), the
+  name in secondary ink and its figures in tertiary, the rail at the
+  system's disabled opacity, and a fainter hatch when its hour has gone —
+  so a past neighbour recedes twice over, which is the «even more» asked
+  for. Future neighbours keep the clock's logic too: `past` is real now,
+  and a 16:00 block at noon is not one.
+- _The subject keeps its strength whatever became of it._ Under edit the
+  block wears the live tint and the primary ink; the strike on the name
+  and the head above the frame say the rest. The elapsed hatch stays on
+  it, because it is the clock's fact and every block wears it alike.
+- _No ring._ With the surroundings at half strength and grey, the subject
+  is the one saturated, black-inked block on the picture, and on a live
+  visit it also carries the handles. A stroke would be a second grammar
+  for a fact the fill already states, and the only bordered block on the
+  day. It stays in reserve for a frame that ever needs a harder focus.
+
+**Verified live**, iPhone 13, with temporary neighbours placed either side
+of three subjects: a past visit (its neighbours hatched and receded), a
+future one (neighbours receded, unhatched), a no-show (full tint, struck
+name, primary ink beside a receded neighbour), and the future one on
+black. Measured: subject 15% / 28%, neighbours 7% / 14%, neighbour name in
+the secondary tier, rail at 0.4.

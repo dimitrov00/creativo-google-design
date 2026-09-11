@@ -217,6 +217,67 @@ describe('UiMenu', () => {
     expect(fixture.componentInstance.dismissed).toBe(1);
   });
 
+  /*
+   * ── MODAL TO THE PAGE BEHIND IT (2026-09-11) ──────────────────────────
+   * A menu on the platform is modal: the touch that dismisses it goes to
+   * nothing else, and nothing behind it scrolls while it is open. Without
+   * this the first touch outside both closed the menu and scrolled the sheet
+   * under it, so the trigger slid away from the fading surface.
+   */
+  it('swallows a touch and a wheel outside, and lets both through inside', async () => {
+    const { fixture, host } = await render();
+    await open(fixture, fixture.componentInstance);
+
+    const outsideTouch = new Event('touchstart', {
+      bubbles: true,
+      cancelable: true,
+    });
+    document.body.dispatchEvent(outsideTouch);
+    expect(outsideTouch.defaultPrevented).toBe(true);
+
+    const insideTouch = new Event('touchstart', {
+      bubbles: true,
+      cancelable: true,
+    });
+    surface(host).dispatchEvent(insideTouch);
+    expect(insideTouch.defaultPrevented).toBe(false);
+
+    const outsideWheel = new Event('wheel', {
+      bubbles: true,
+      cancelable: true,
+    });
+    document.body.dispatchEvent(outsideWheel);
+    expect(outsideWheel.defaultPrevented).toBe(true);
+
+    const insideWheel = new Event('wheel', { bubbles: true, cancelable: true });
+    items(host)[0]?.dispatchEvent(insideWheel);
+    expect(insideWheel.defaultPrevented).toBe(false);
+
+    // Closed, it listens for nothing.
+    fixture.componentInstance.open.set(false);
+    fixture.detectChanges();
+    const afterClose = new Event('touchstart', {
+      bubbles: true,
+      cancelable: true,
+    });
+    document.body.dispatchEvent(afterClose);
+    expect(afterClose.defaultPrevented).toBe(false);
+  });
+
+  it('resolves one side per presentation and states it on the surface', async () => {
+    const { fixture, host } = await render();
+    await open(fixture, fixture.componentInstance);
+    expect(surface(host).getAttribute('data-placement')).toMatch(
+      /^(bottom|top)$/,
+    );
+    expect(surface(host).getAttribute('data-alignment')).toBe('leading');
+    // The window's usable width reaches the stylesheet, so the surface can
+    // never be forced wider than the screen by its own minimum.
+    expect(
+      surface(host).style.getPropertyValue('--ui-menu-window-inline'),
+    ).toMatch(/px$/);
+  });
+
   it('runs the item action and closes — every item is a one-shot command', async () => {
     const { fixture, host } = await render();
     await open(fixture, fixture.componentInstance);

@@ -61,6 +61,29 @@ class TestTranslationLoader implements TranslocoLoader {
       'staff.visit.frameExpand': 'На цял екран',
       'staff.visit.frameCollapse': 'Изход от цял екран',
       'staff.visit.tipInDock': '+{{amount}} бакшиш',
+      'staff.visit.discount': 'Отстъпка',
+      'staff.visit.discountNone': 'Без',
+      'staff.visit.discountCode': 'Код',
+      'staff.visit.discountCodePlaceholder': 'напр. FIRST10',
+      'staff.visit.discountAmount': 'Сума',
+      'staff.visit.discountPercent': 'Процент',
+      'staff.visit.discountInDock': '−{{amount}} отстъпка',
+      'staff.visit.discountUnknownCode': 'Няма такъв код.',
+      'staff.visit.discountChecking': 'Проверявам…',
+      'staff.visit.discountFree': 'Безплатно',
+      'staff.visit.discountAdd': 'Отстъпка или код',
+      'staff.visit.discountsInDock': '−{{amount}} отстъпки',
+      'staff.visit.removeDiscount': 'Премахни отстъпката',
+      'staff.visit.voucher': 'Ваучер',
+      'staff.visit.voucherLeft': 'остават {{amount}}',
+      'staff.visit.voucherInDock': '−{{amount}} ваучер',
+      'staff.visit.vouchersInDock': '−{{amount}} ваучери',
+      'staff.visit.removeVoucher': 'Премахни ваучера',
+      'staff.visit.voucherEmpty': 'Ваучерът е изчерпан.',
+      'staff.visit.voucherExpired': 'Ваучерът е изтекъл.',
+      'staff.visit.voucherVoid': 'Ваучерът е анулиран.',
+      'staff.visit.voucherNothingLeft': 'Няма какво да покрие.',
+      'staff.visit.codeAlready': 'Вече е добавен.',
       'staff.visit.price': 'Цена',
       'staff.visit.currencySymbol': '€',
       'staff.visit.atShop': 'В салона',
@@ -179,6 +202,11 @@ function visit(partial: Partial<VisitEditorVm> = {}): VisitEditorVm {
     // rather than a field reading `0,00 €`.
     tipLabel: null,
     tipMinorUnits: null,
+    // Full price, nothing paid ahead — the bill's ladder holds only the seats.
+    discounts: [],
+    vouchers: [],
+    // Live — nothing has settled it, so the head has nothing to say.
+    resolution: null,
     status: 'confirmed',
     statusLabel: 'Потвърден',
     arrivedMinute: null,
@@ -1188,7 +1216,7 @@ describe('StaffVisitEditor', () => {
       expect(acted).toEqual(['no_show']);
     });
 
-    it('offers the way back from a no-show, and the next visit after any settled one', () => {
+    it('offers the way back from a no-show at the foot, and the next visit after a finished one', () => {
       const missed = render(
         visit({
           status: 'no_show',
@@ -1201,11 +1229,13 @@ describe('StaffVisitEditor', () => {
           overflowVerbs: [],
         }),
       );
-      expect(ids(missed)).toEqual([
-        'staff-visit-reinstate',
-        'staff-visit-rebook',
-      ]);
+      // The correction stays at the foot; the next visit moved to the dock
+      // once the visit was gone (owner, 2026-09-11) — one control per act.
+      expect(ids(missed)).toEqual(['staff-visit-reinstate']);
       expect(text(missed, 'staff-visit-reinstate')).toContain('Върни часа');
+      expect(
+        find(missed, 'staff-visit-rebook')?.closest('ui-sheet-action-bar'),
+      ).not.toBeNull();
       const acted: string[] = [];
       fixture.componentInstance.acted.subscribe((kind) => acted.push(kind));
       click(missed, 'staff-visit-reinstate');
@@ -1334,6 +1364,8 @@ describe('StaffVisitEditor', () => {
           startMinute: 600,
           endMinute: 645,
           note: null,
+          discounts: [],
+          vouchers: [],
           clients: [
             {
               id: 'user-martin',
@@ -1674,6 +1706,65 @@ describe('StaffVisitEditor', () => {
       // Nothing but controls in the dock: the honesty sentence is gone.
       expect(bar?.querySelector('p')).toBeNull();
     });
+
+    /*
+     * NOTHING IS DUE ON A VISIT THAT IS GONE (owner, 2026-09-11). «В салона
+     * · 9,00 €» is "to be paid at the shop", untrue of a cancelled visit and
+     * not to be struck through either — that is a sale tag's "was" price.
+     * The dock carries the sheet's one write, and once there is nothing
+     * left to save that is the next visit, on the rail where «Запази»
+     * lives, hugging the call. The foot loses its duplicate row.
+     */
+    it('carries the next visit instead of a bill once the visit is gone', () => {
+      const host = render(
+        visit({
+          status: 'cancelled',
+          statusLabel: 'Отказан',
+          primaryVerb: null,
+          overflowVerbs: [],
+          resolution: {
+            kind: 'cancelled',
+            by: 'staff',
+            whenLabel: '11:51',
+            detail: null,
+          },
+        }),
+      );
+      // No bill, no save; the next visit is prominent and last, with the
+      // call immediately before it.
+      expect(find(host, 'staff-visit-total')).toBeNull();
+      expect(find(host, 'staff-visit-save')).toBeNull();
+      const rebook = find(host, 'staff-visit-rebook');
+      expect(rebook?.closest('ui-sheet-action-bar')).not.toBeNull();
+      expect(rebook?.getAttribute('uiButtonStyle')).toBe('borderedProminent');
+      expect(rebook?.hasAttribute('data-spread')).toBe(false);
+      const controls = [
+        ...(host.querySelector('ui-sheet-action-bar')?.children ?? []),
+      ];
+      expect(controls.at(-1)).toBe(rebook);
+      expect(controls.at(-2)).toBe(find(host, 'staff-visit-call'));
+      // Nothing left at the foot: cancelled has no correction edge.
+      expect(find(host, 'staff-visit-exits')).toBeNull();
+
+      const rebooked: number[] = [];
+      fixture.componentInstance.rebooked.subscribe(() => rebooked.push(1));
+      click(host, 'staff-visit-rebook');
+      expect(rebooked.length).toBe(1);
+
+      // A FINISHED visit keeps its bill: money was owed and paid.
+      const done = render(
+        visit({
+          status: 'completed',
+          statusLabel: 'Минал',
+          primaryVerb: null,
+          overflowVerbs: [],
+        }),
+      );
+      expect(find(done, 'staff-visit-total')).not.toBeNull();
+      expect(
+        find(done, 'staff-visit-rebook')?.closest('ui-sheet-action-bar'),
+      ).toBeNull();
+    });
   });
 
   /*
@@ -1684,6 +1775,474 @@ describe('StaffVisitEditor', () => {
    * to defend the two that are real: the five-minute grain the grid draws
    * on, and the floor below which it will not draw at all.
    */
+  /*
+   * ── THE BILL'S LADDER (2026-09-10) ───────────────────────────────────
+   * A value gets a pill; a list gets a ladder. What the shop takes off and
+   * what vouchers pay are receipt lines with their actual amounts, in the
+   * evaluator's order, removed by a swipe like a seat; one add row opens
+   * the menu — the client's coupons as picks, and typed inside it a code
+   * (a coupon's or a voucher's), a sum and a percent. The lines ride the
+   * draft and travel with «Запази»; the dock shows what is still owed.
+   */
+  describe("the bill's ladder", () => {
+    /** The menu's own state is the component's; a test reaches it the one way it admits to. */
+    const closeDiscountMenu = () =>
+      (
+        fixture.componentInstance as unknown as {
+          discountMenu: { set(open: boolean): void };
+        }
+      ).discountMenu.set(false);
+
+    const GRANTS = [
+      {
+        grantId: 'grant-birthday',
+        label: 'Рожден ден',
+        value: { kind: 'percent_off' as const, percent: 20 },
+        exclusive: true,
+      },
+      {
+        grantId: 'grant-loyal',
+        label: 'Постоянен клиент',
+        value: { kind: 'percent_off' as const, percent: 5 },
+        exclusive: false,
+      },
+    ];
+
+    const renderWith = (
+      vm: VisitEditorVm = visit(),
+      inputs: Record<string, unknown> = {},
+    ) => {
+      for (const [key, value] of Object.entries(inputs)) {
+        fixture.componentRef.setInput(key, value);
+      }
+      return render(vm);
+    };
+
+    const openMenu = (host: HTMLElement) =>
+      click(host, 'staff-visit-add-discount');
+
+    const codeField = (host: HTMLElement) =>
+      host.querySelector(
+        'ui-menu[data-open] [data-testid="staff-visit-discount-code"]',
+      ) as HTMLInputElement;
+
+    const typeCode = (host: HTMLElement, value: string) => {
+      const field = codeField(host);
+      field.value = value;
+      field.dispatchEvent(new Event('change'));
+      fixture.detectChanges();
+    };
+
+    const answer = (result: unknown) => {
+      fixture.componentRef.setInput('uiPromoCode', result);
+      fixture.detectChanges();
+    };
+
+    const promo = (
+      code: string,
+      label: string,
+      value: unknown,
+      exclusive = false,
+    ) => ({
+      code,
+      promo: { label, value, exclusive },
+      voucher: null,
+      refusal: null,
+    });
+
+    it("adds the client's coupon as a receipt line with its figure, and the dock shows what is left", () => {
+      const host = renderWith(visit(), { uiGrants: GRANTS });
+      // The add row sits in the money group, after the seat lines and
+      // before the tip; the pill of the old single-choice row is gone.
+      const add = find(host, 'staff-visit-add-discount');
+      expect(add?.closest('[data-testid="staff-visit-money"]')).not.toBeNull();
+      expect(add?.textContent).toContain('Отстъпка или код');
+      expect(find(host, 'staff-visit-discount-choice')).toBeNull();
+      expect(find(host, 'staff-visit-dock-discount')).toBeNull();
+      expect(text(host, 'staff-visit-total-figure')).toBe('28,00 €');
+      expect(host.hasAttribute('data-dirty')).toBe(false);
+
+      openMenu(host);
+      // Each coupon names what it would take off: 20% of 28,00 € is 5,60 €.
+      expect(
+        find(host, 'staff-visit-discount-pick-grant-birthday')?.querySelector(
+          '.ui-choice-menu__detail',
+        )?.textContent,
+      ).toContain('−5,60');
+      expect(codeField(host)).not.toBeNull();
+      expect(codeField(host).getAttribute('placeholder')).toBe('напр. FIRST10');
+      // A barber sees no manual arms.
+      expect(find(host, 'staff-visit-discount-amount-row')).toBeNull();
+
+      pickOpen(host, 'staff-visit-discount-pick-grant-birthday');
+      const line = find(host, 'staff-visit-discount-grant:grant-birthday');
+      expect(line).not.toBeNull();
+      expect(line?.textContent).toContain('Рожден ден');
+      expect(line?.textContent).toContain('−20%');
+      expect(
+        text(host, 'staff-visit-discount-amount-grant:grant-birthday'),
+      ).toBe('−5,60 €');
+      expect(
+        find(
+          host,
+          'staff-visit-discount-amount-grant:grant-birthday',
+        )?.getAttribute('data-foreground-style'),
+      ).toBe('promo');
+      expect(text(host, 'staff-visit-total-figure')).toBe('22,40 €');
+      expect(text(host, 'staff-visit-dock-discount')).toBe('−5,60 € отстъпка');
+      expect(host.hasAttribute('data-dirty')).toBe(true);
+
+      // Applied, it leaves the menu.
+      openMenu(host);
+      expect(
+        host.querySelector(
+          'ui-menu[data-open] [data-testid="staff-visit-discount-pick-grant-birthday"]',
+        ),
+      ).toBeNull();
+      expect(
+        host.querySelector(
+          'ui-menu[data-open] [data-testid="staff-visit-discount-pick-grant-loyal"]',
+        ),
+      ).not.toBeNull();
+      closeDiscountMenu();
+      fixture.detectChanges();
+
+      const commits: unknown[] = [];
+      fixture.componentInstance.committed.subscribe((c) => commits.push(c));
+      click(host, 'staff-visit-save');
+      expect(commits[0]).toMatchObject({
+        kind: 'save',
+        discounts: [
+          {
+            source: 'grant',
+            grantId: 'grant-birthday',
+            label: 'Рожден ден',
+            value: { kind: 'percent_off', percent: 20 },
+            code: null,
+            exclusive: true,
+          },
+        ],
+        vouchers: [],
+      });
+
+      // The swipe's act takes it off again.
+      click(host, 'staff-visit-swipe-discount-grant:grant-birthday');
+      expect(
+        find(host, 'staff-visit-discount-grant:grant-birthday'),
+      ).toBeNull();
+      expect(text(host, 'staff-visit-total-figure')).toBe('28,00 €');
+      expect(host.hasAttribute('data-dirty')).toBe(false);
+    });
+
+    it("stacks what may stack, in the evaluator's order, and an exclusive coupon clears the bill", () => {
+      const host = renderWith(visit(), { uiGrants: GRANTS });
+      openMenu(host);
+      pickOpen(host, 'staff-visit-discount-pick-grant-loyal');
+      openMenu(host);
+      typeCode(host, 'beard5');
+      answer(
+        promo('BEARD5', 'Брада −5 €', {
+          kind: 'fixed_amount',
+          amountMinorUnits: 500,
+        }),
+      );
+
+      // The fixed sum comes off first, then 5% of what is left: 28,00 −
+      // 5,00 = 23,00, then 1,15 — the lines read in that order.
+      const lines = [
+        ...host.querySelectorAll('[data-testid^="staff-visit-discount-"]'),
+      ]
+        .map((node) => node.getAttribute('data-testid'))
+        .filter(
+          (id) =>
+            id?.startsWith('staff-visit-discount-code:') ||
+            id?.startsWith('staff-visit-discount-grant:'),
+        );
+      expect(lines).toEqual([
+        'staff-visit-discount-code:BEARD5',
+        'staff-visit-discount-grant:grant-loyal',
+      ]);
+      expect(text(host, 'staff-visit-discount-amount-code:BEARD5')).toBe(
+        '−5,00 €',
+      );
+      expect(text(host, 'staff-visit-discount-amount-grant:grant-loyal')).toBe(
+        '−1,15 €',
+      );
+      expect(
+        find(host, 'staff-visit-discount-code:BEARD5')?.textContent,
+      ).toContain('BEARD5');
+      expect(text(host, 'staff-visit-total-figure')).toBe('21,85 €');
+      expect(text(host, 'staff-visit-dock-discount')).toBe('−6,15 € отстъпки');
+      expect(host.querySelector('ui-menu[data-open]')).toBeNull();
+
+      // An exclusive coupon must be alone: picking it clears the others.
+      openMenu(host);
+      pickOpen(host, 'staff-visit-discount-pick-grant-birthday');
+      expect(find(host, 'staff-visit-discount-code:BEARD5')).toBeNull();
+      expect(find(host, 'staff-visit-discount-grant:grant-loyal')).toBeNull();
+      expect(
+        find(host, 'staff-visit-discount-grant:grant-birthday'),
+      ).not.toBeNull();
+      expect(text(host, 'staff-visit-total-figure')).toBe('22,40 €');
+      // …and gives way to whatever is picked next.
+      openMenu(host);
+      pickOpen(host, 'staff-visit-discount-pick-grant-loyal');
+      expect(
+        find(host, 'staff-visit-discount-grant:grant-birthday'),
+      ).toBeNull();
+      expect(
+        find(host, 'staff-visit-discount-grant:grant-loyal'),
+      ).not.toBeNull();
+    });
+
+    it('takes a voucher through the same code field, covers what the discounts leave, and says what it has left', () => {
+      const host = renderWith();
+      openMenu(host);
+      typeCode(host, 'first10');
+      answer(
+        promo('FIRST10', 'Първо посещение', {
+          kind: 'percent_off',
+          percent: 10,
+        }),
+      );
+      expect(text(host, 'staff-visit-total-figure')).toBe('25,20 €');
+
+      openMenu(host);
+      typeCode(host, 'gift2025');
+      answer({
+        code: 'GIFT2025',
+        promo: null,
+        voucher: {
+          voucherId: 'v1',
+          code: 'GIFT2025',
+          availableMinorUnits: 1000,
+        },
+        refusal: null,
+      });
+      const line = find(host, 'staff-visit-voucher-v1');
+      expect(line).not.toBeNull();
+      expect(line?.textContent).toContain('Ваучер');
+      expect(text(host, 'staff-visit-voucher-line-v1')).toBe(
+        'GIFT2025 · остават 0,00 €',
+      );
+      expect(text(host, 'staff-visit-voucher-amount-v1')).toBe('−10,00 €');
+      // The voucher PAYS: the price stays 25,20 €, the counter takes 15,20 €.
+      expect(text(host, 'staff-visit-total-figure')).toBe('15,20 €');
+      expect(text(host, 'staff-visit-dock-voucher')).toBe('−10,00 € ваучер');
+      expect(text(host, 'staff-visit-dock-discount')).toBe('−2,80 € отстъпка');
+      expect(host.querySelector('ui-menu[data-open]')).toBeNull();
+
+      // A second voucher covers only what is left, and says so.
+      openMenu(host);
+      typeCode(host, 'GIFT99');
+      answer({
+        code: 'GIFT99',
+        promo: null,
+        voucher: { voucherId: 'v2', code: 'GIFT99', availableMinorUnits: 5000 },
+        refusal: null,
+      });
+      expect(text(host, 'staff-visit-voucher-amount-v2')).toBe('−15,20 €');
+      expect(text(host, 'staff-visit-voucher-line-v2')).toBe(
+        'GIFT99 · остават 34,80 €',
+      );
+      expect(text(host, 'staff-visit-total-figure')).toBe('0,00 €');
+      expect(text(host, 'staff-visit-dock-voucher')).toBe('−25,20 € ваучери');
+
+      // With the bill paid, a third has nothing to cover.
+      openMenu(host);
+      typeCode(host, 'GIFT5');
+      answer({
+        code: 'GIFT5',
+        promo: null,
+        voucher: { voucherId: 'v3', code: 'GIFT5', availableMinorUnits: 500 },
+        refusal: null,
+      });
+      expect(text(host, 'staff-visit-discount-code-note')).toBe(
+        'Няма какво да покрие.',
+      );
+      expect(find(host, 'staff-visit-voucher-v3')).toBeNull();
+      closeDiscountMenu();
+      fixture.detectChanges();
+
+      const commits: unknown[] = [];
+      fixture.componentInstance.committed.subscribe((c) => commits.push(c));
+      click(host, 'staff-visit-save');
+      expect(commits[0]).toMatchObject({
+        kind: 'save',
+        discounts: [{ source: 'code', code: 'FIRST10' }],
+        vouchers: [
+          { voucherId: 'v1', code: 'GIFT2025' },
+          { voucherId: 'v2', code: 'GIFT99' },
+        ],
+      });
+
+      // Swiped off, the money is no longer counted.
+      click(host, 'staff-visit-swipe-voucher-v1');
+      expect(find(host, 'staff-visit-voucher-v1')).toBeNull();
+      expect(text(host, 'staff-visit-voucher-amount-v2')).toBe('−25,20 €');
+    });
+
+    it('says why a code will not take — unknown, spent, expired, void, already on the bill', () => {
+      const host = renderWith();
+      const asked: string[] = [];
+      fixture.componentInstance.promoCodeEntered.subscribe((c) =>
+        asked.push(c),
+      );
+      openMenu(host);
+      typeCode(host, ' nope1234 ');
+      expect(asked).toEqual(['NOPE1234']);
+      expect(text(host, 'staff-visit-discount-code-note')).toBe('Проверявам…');
+      // A stale answer, to another code, changes nothing.
+      answer({ code: 'OTHER', promo: null, voucher: null, refusal: null });
+      expect(text(host, 'staff-visit-discount-code-note')).toBe('Проверявам…');
+      answer({ code: 'NOPE1234', promo: null, voucher: null, refusal: null });
+      expect(text(host, 'staff-visit-discount-code-note')).toBe(
+        'Няма такъв код.',
+      );
+      expect(codeField(host).getAttribute('aria-invalid')).toBe('true');
+      expect(host.querySelector('ui-menu[data-open]')).not.toBeNull();
+
+      const voucher = {
+        voucherId: 'v',
+        code: 'EMPTY001',
+        availableMinorUnits: 0,
+      };
+      for (const [refusal, note] of [
+        ['empty', 'Ваучерът е изчерпан.'],
+        ['expired', 'Ваучерът е изтекъл.'],
+        ['void', 'Ваучерът е анулиран.'],
+      ] as const) {
+        typeCode(host, 'EMPTY001');
+        answer({ code: 'EMPTY001', promo: null, voucher, refusal });
+        expect(text(host, 'staff-visit-discount-code-note')).toBe(note);
+        expect(find(host, 'staff-visit-voucher-v')).toBeNull();
+      }
+
+      // A code already on the bill is not asked about again.
+      typeCode(host, 'first10');
+      answer(
+        promo('FIRST10', 'Първо посещение', {
+          kind: 'percent_off',
+          percent: 10,
+        }),
+      );
+      expect(find(host, 'staff-visit-discount-code:FIRST10')).not.toBeNull();
+      openMenu(host);
+      const before = asked.length;
+      typeCode(host, 'FIRST10');
+      expect(asked.length).toBe(before);
+      expect(text(host, 'staff-visit-discount-code-note')).toBe(
+        'Вече е добавен.',
+      );
+    });
+
+    it('keeps the sum and the percent for whoever handles the money — one manual figure at a time', () => {
+      const host = renderWith(visit(), { uiMayDiscount: true });
+      openMenu(host);
+      const amount = host.querySelector(
+        'ui-menu[data-open] [data-testid="staff-visit-discount-amount"]',
+      ) as HTMLInputElement;
+      expect(amount.closest('ui-unit-field')).not.toBeNull();
+      amount.value = '5';
+      amount.dispatchEvent(new Event('change'));
+      fixture.detectChanges();
+      // A sum IS its rule: the line says the row's word and the amount.
+      const line = find(host, 'staff-visit-discount-manual');
+      expect(line?.textContent).toContain('Отстъпка');
+      expect(text(host, 'staff-visit-discount-amount-manual')).toBe('−5,00 €');
+      expect(text(host, 'staff-visit-total-figure')).toBe('23,00 €');
+      expect(host.querySelector('ui-menu[data-open]')).toBeNull();
+
+      // A percent REPLACES the sum — the counter corrects, it does not pile up.
+      openMenu(host);
+      const percent = host.querySelector(
+        'ui-menu[data-open] [data-testid="staff-visit-discount-percent"]',
+      ) as HTMLInputElement;
+      expect(
+        percent
+          .closest('ui-unit-field')
+          ?.querySelector('.ui-unit-field__unit')
+          ?.textContent?.trim(),
+      ).toBe('%');
+      percent.value = '10';
+      percent.dispatchEvent(new Event('change'));
+      fixture.detectChanges();
+      expect(
+        host.querySelectorAll('[data-testid="staff-visit-discount-manual"]'),
+      ).toHaveLength(1);
+      expect(find(host, 'staff-visit-discount-manual')?.textContent).toContain(
+        '−10%',
+      );
+      expect(text(host, 'staff-visit-discount-amount-manual')).toBe('−2,80 €');
+      expect(text(host, 'staff-visit-total-figure')).toBe('25,20 €');
+
+      // Out of range springs back and changes nothing.
+      openMenu(host);
+      const wrong = host.querySelector(
+        'ui-menu[data-open] [data-testid="staff-visit-discount-percent"]',
+      ) as HTMLInputElement;
+      wrong.value = '140';
+      wrong.dispatchEvent(new Event('change'));
+      fixture.detectChanges();
+      expect(text(host, 'staff-visit-discount-amount-manual')).toBe('−2,80 €');
+      closeDiscountMenu();
+      fixture.detectChanges();
+
+      const commits: unknown[] = [];
+      fixture.componentInstance.committed.subscribe((c) => commits.push(c));
+      click(host, 'staff-visit-save');
+      expect(commits[0]).toMatchObject({
+        kind: 'save',
+        discounts: [
+          {
+            source: 'manual',
+            value: { kind: 'percent_off', percent: 10 },
+            grantId: null,
+            code: null,
+          },
+        ],
+      });
+    });
+
+    it('reads saved lines back as clean, and withholds the add row from a draft and a visit that is gone', () => {
+      const saved = renderWith(
+        visit({
+          discounts: [
+            {
+              source: 'code',
+              label: 'Първо посещение',
+              value: { kind: 'percent_off', percent: 10 },
+              grantId: null,
+              code: 'FIRST10',
+              exclusive: false,
+            },
+          ],
+          vouchers: [
+            { voucherId: 'v1', code: 'GIFT2025', availableMinorUnits: 1000 },
+          ],
+        }),
+      );
+      expect(find(saved, 'staff-visit-discount-code:FIRST10')).not.toBeNull();
+      expect(find(saved, 'staff-visit-voucher-v1')).not.toBeNull();
+      expect(text(saved, 'staff-visit-total-figure')).toBe('15,20 €');
+      expect(saved.hasAttribute('data-dirty')).toBe(false);
+      expect(find(saved, 'staff-visit-save')).toBeNull();
+
+      expect(
+        find(
+          renderWith(visit({ appointmentId: '', rowId: 'new-1' })),
+          'staff-visit-add-discount',
+        ),
+      ).toBeNull();
+      expect(
+        find(
+          renderWith(visit({ status: 'cancelled', statusLabel: 'Отказан' })),
+          'staff-visit-add-discount',
+        ),
+      ).toBeNull();
+    });
+  });
+
   describe('the duration field', () => {
     const type = (host: HTMLElement, value: string) => {
       const input = find(host, 'staff-visit-duration') as HTMLInputElement;
@@ -2343,6 +2902,107 @@ describe('StaffVisitEditor', () => {
         new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
       );
       expect(reached).toBe(1);
+    });
+  });
+
+  /*
+   * ── THE HEAD OF A SETTLED CHAIR (owner, 2026-09-11) ──────────────────
+   * "The cancellation reason or no-show is not showing in the event detail
+   * sheets." A settled chair opens on the fact that settled it — whose act,
+   * when, and why — where a request's head would sit; a live one has no
+   * such head, and a reason nobody gave is silence rather than "no reason".
+   */
+  describe('the head of a settled chair', () => {
+    const head = (host: HTMLElement) =>
+      host.querySelector('[data-testid="staff-visit-resolution"]');
+    const part = (host: HTMLElement, id: string) =>
+      host
+        .querySelector(`[data-testid="staff-visit-resolution-${id}"]`)
+        ?.textContent?.replace(/\s+/g, ' ')
+        .trim() ?? null;
+
+    it("says who called it off, when, and why — in the sheet's one red", () => {
+      const host = render(
+        visit({
+          status: 'cancelled',
+          statusLabel: 'Отказан',
+          resolution: {
+            kind: 'cancelled',
+            by: 'client',
+            whenLabel: '24.08, 18:40',
+            detail: 'Не вдига телефона',
+          },
+        }),
+      );
+      expect(head(host)?.getAttribute('data-tone')).toBe('destructive');
+      expect(part(host, 'line')).toBe(
+        'staff.visit.resolution.cancelledByClient · 24.08, 18:40',
+      );
+      expect(part(host, 'detail')).toBe('Не вдига телефона');
+      // Two rows: the stylesheet keys the glyph's span on it.
+      expect(head(host)?.hasAttribute('data-detail')).toBe(true);
+    });
+
+    it("reads a no-show as nobody's act, in warning ink, with no reason line", () => {
+      const host = render(
+        visit({
+          status: 'no_show',
+          statusLabel: 'Пропуснат',
+          resolution: {
+            kind: 'no_show',
+            by: null,
+            whenLabel: '10:15',
+            detail: null,
+          },
+        }),
+      );
+      expect(head(host)?.getAttribute('data-tone')).toBe('warning');
+      expect(part(host, 'line')).toBe('staff.visit.resolution.noShow · 10:15');
+      expect(part(host, 'detail')).toBeNull();
+      // One row, so the glyph centres on the one line rather than on a
+      // line and an empty track's gap.
+      expect(head(host)?.hasAttribute('data-detail')).toBe(false);
+    });
+
+    it('has nothing to say on a live visit', () => {
+      expect(head(render())).toBeNull();
+    });
+  });
+
+  /*
+   * ── THE FRAME'S NEIGHBOURS (owner, 2026-09-11) ────────────────────────
+   * Context recedes and the subject does not: a neighbour is a block that is
+   * only drawn, and the paint keys on `inert`. Its `past` mark is a fact the
+   * drag guards read, and it used to be stamped on every neighbour whatever
+   * the clock said.
+   */
+  describe("the frame's neighbours", () => {
+    const neighbour = (host: HTMLElement) =>
+      host.querySelector('[data-event-id="neighbour-0"]');
+
+    it('are drawn inert beside the one editable block', () => {
+      const host = render();
+      expect(neighbour(host)?.hasAttribute('inert')).toBe(true);
+      expect(neighbour(host)?.hasAttribute('data-editable')).toBe(false);
+      expect(
+        host.querySelector('[data-editable]')?.getAttribute('data-event-id'),
+      ).toBe('appointment-1');
+    });
+
+    it('are marked past only once their hour has gone', () => {
+      // Мартин 09:00 – 09:50; the clock decides.
+      expect(
+        neighbour(render(visit({ nowMinute: 560 })))?.hasAttribute('data-past'),
+      ).toBe(false);
+      expect(
+        neighbour(render(visit({ nowMinute: 600 })))?.hasAttribute('data-past'),
+      ).toBe(true);
+      // On another day there is no clock, and nothing has gone.
+      expect(
+        neighbour(render(visit({ nowMinute: null })))?.hasAttribute(
+          'data-past',
+        ),
+      ).toBe(false);
     });
   });
 });

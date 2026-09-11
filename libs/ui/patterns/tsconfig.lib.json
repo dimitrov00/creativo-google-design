@@ -25,5 +25,10 @@
     "src/**/*.test.jsx",
     "src/**/*.spec.jsx",
     "src/test-setup.ts"
+  ],
+  "references": [
+    {
+      "path": "../modifiers/tsconfig.lib.json"
+    }
   ]
 }

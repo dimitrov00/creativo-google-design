@@ -616,6 +616,66 @@
 }
 
 /*
+ * ── CONTEXT RECEDES; THE SUBJECT DOES NOT (owner, 2026-09-11) ──────────
+ *
+ * The frame is a picture of ONE booking in its surroundings, and the
+ * surroundings were drawn at the booking's own strength — the same 15%
+ * tint, the same ink, the same rail — so the eye had to find the subject
+ * by its handles. The record always said less for a neighbour ("▒ neighbour
+ * 7%", §3.4's mock) and nothing ever painted it.
+ *
+ * A neighbour is a block that is only drawn; `inert` is that fact, and the
+ * paint keys on it — minus the subject, which a read-only frame (a visit
+ * that is gone) also makes inert without making it context. Less than half
+ * the tint, the name in secondary ink and
+ * its figures in tertiary, the rail at the system's own opacity for a thing
+ * drawn but not actionable, and a fainter hatch when its hour has gone — so
+ * a past neighbour recedes twice over, the way Apple Calendar dims the past
+ * and any editor pushes the unselected back. Nothing invented: 7% is the
+ * record's number, the inks are the system's tiers.
+ */
+.staff-grid__event[inert]:not([data-editable]) {
+  --staff-event-alpha: 7%;
+  --staff-event-hatch-alpha: 4%;
+  color: var(--sys-color-secondary-label);
+}
+
+.staff-grid__event[inert]:not([data-editable]) .staff-grid__event-times,
+.staff-grid__event[inert]:not([data-editable]) .staff-grid__event-detail,
+.staff-grid__event[inert]:not([data-editable]) .staff-grid__event-who,
+.staff-grid__event[inert]:not([data-editable]) .staff-grid__event-inline {
+  color: var(--sys-color-tertiary-label);
+}
+
+.staff-grid__event[inert]:not([data-editable]) .staff-grid__event-rail {
+  opacity: var(--sys-opacity-disabled);
+}
+
+/* On black a neighbour needs twice its tone too, like every block — the
+   same ratio to the live 28% that 7% is to 15%. */
+:root[data-theme='dark']
+  .staff-grid
+  .staff-grid__event[inert]:not([data-editable]) {
+  --staff-event-alpha: 14%;
+  --staff-event-hatch-alpha: 7%;
+}
+
+/* THE SUBJECT KEEPS ITS STRENGTH. A settled booking recedes on the page —
+   the finished wash, the secondary or tertiary ink — and it receded in its
+   own frame too, where it is the one thing the picture is about: a no-show
+   under edit drew fainter than the neighbours around it. Under edit the
+   block wears the live tint and the primary ink whatever became of it; the
+   strike on the name and the head above the frame still say what did. The
+   elapsed hatch stays: it is the clock's fact, drawn on every block alike. */
+.staff-grid__event[data-editable] {
+  --staff-event-alpha-finished: var(--staff-event-alpha, 15%);
+}
+
+.staff-grid__event[data-editable][data-status] {
+  color: var(--sys-color-foreground);
+}
+
+/*
  * ── The handles ────────────────────────────────────────────────────────
  *
  * Positioned against the COLUMN, from the same two fractions the block is

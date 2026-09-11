@@ -7,7 +7,7 @@ import {
 } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { combineLatest, of, switchMap } from 'rxjs';
+import { combineLatest, from, of, switchMap } from 'rxjs';
 import {
   APPOINTMENT_NOTES,
   APPOINTMENT_REPOSITORY,
@@ -29,7 +29,21 @@ import {
   ok,
 } from '@creativo/application/booking';
 import { BarberId, LocationId } from '@creativo/application/catalog';
+import {
+  COUPON_GRANT_REPOSITORY,
+  COUPON_READER,
+  type Coupon,
+  CouponCombinability,
+  type CouponGrantWithCoupon,
+  GIFT_VOUCHER_READER,
+  type GiftVoucher,
+} from '@creativo/application/engagement';
+import { UserId } from '@creativo/application/identity';
 import { CLOCK, RepositoryError } from '@creativo/application/shared';
+import {
+  type VisitEditorGrantOption,
+  discountValueOf,
+} from './visit-editor/staff-visit-editor';
 import { CatalogContentService } from '@creativo/features/shared/catalog';
 
 /** The whole product is Europe/Sofia-only for now (blueprint §7.1). */
@@ -277,6 +291,9 @@ export interface BarberDayLane {
 export class StaffDayStore {
   private readonly repository = inject(APPOINTMENT_REPOSITORY);
   private readonly notes = inject(APPOINTMENT_NOTES);
+  private readonly grantRepository = inject(COUPON_GRANT_REPOSITORY);
+  private readonly coupons = inject(COUPON_READER);
+  private readonly giftVouchers = inject(GIFT_VOUCHER_READER);
   private readonly availability = inject(AVAILABILITY_READER);
   private readonly exceptions = inject(SCHEDULE_EXCEPTION_WRITER);
   private readonly gateway = inject(BOOKING_GATEWAY);
@@ -555,6 +572,92 @@ export class StaffDayStore {
     if (result === undefined || result.isFailure()) return null;
     return result.value?.text ?? null;
   });
+
+  /** The client whose usable coupons the sheet is offering, or `null`. */
+  private readonly _grantsFor = signal<string | null>(null);
+
+  /**
+   * THE CLIENT'S PROMISES, read while a visit is open (2026-09-10).
+   *
+   * The sheet's «Отстъпка» row offers the coupons the client already holds
+   * — the shop keeping its own word, which a barber may do at the chair —
+   * so they are read beside the visit, like the team note, and released
+   * with it. A walk-in has no account and no grants; `null` reads as none.
+   * One read per client rather than a listener: a grant does not change
+   * under an open sheet, and the save re-checks it on the server anyway.
+   */
+  probeGrants(userId: string | null): void {
+    if (userId === this._grantsFor()) return;
+    this._grantsFor.set(userId);
+  }
+
+  private readonly grantsResult = toSignal(
+    toObservable(this._grantsFor).pipe(
+      switchMap((id) =>
+        id === null
+          ? of(ok<readonly CouponGrantWithCoupon[], RepositoryError>([]))
+          : from(this.loadGrants(id)),
+      ),
+    ),
+    { initialValue: undefined },
+  );
+
+  private async loadGrants(
+    id: string,
+  ): Promise<Result<readonly CouponGrantWithCoupon[], RepositoryError>> {
+    const userId = UserId.create(id);
+    const now = this.clock.now(STAFF_ZONE);
+    if (userId.isFailure() || now.isFailure()) return ok([]);
+    const result = await this.grantRepository.findUsableForUser(
+      userId.value,
+      now.value,
+    );
+    if (result.isFailure()) return result;
+    // The port already filters to active grants; the expiry is the domain's
+    // own test, applied here so an expired one never reaches the menu.
+    return ok(result.value.filter(({ grant }) => grant.isUsable(now.value)));
+  }
+
+  /** What the sheet's discount menu offers — empty while loading, on failure, or for nobody. */
+  readonly grants = computed<readonly VisitEditorGrantOption[]>(() => {
+    const result = this.grantsResult();
+    if (result === undefined || result.isFailure()) return [];
+    return result.value.map(({ grant, coupon }) => ({
+      grantId: grant.id.value,
+      label: coupon.name,
+      value: discountValueOf(grant.value),
+      exclusive: CouponCombinability.isExclusive(coupon.combinability),
+    }));
+  });
+
+  /**
+   * A promo code typed at the counter → the enabled coupon it opens, or
+   * `null` for no such code. A failed read is `null` too: at the chair,
+   * "could not check" and "no such code" call for the same next move —
+   * try again — and the save re-resolves the code on the server regardless.
+   */
+  async resolveCode(code: string): Promise<Coupon | null> {
+    const result = await this.coupons.findByCode(code);
+    return result.isSuccess() ? result.value : null;
+  }
+
+  /**
+   * The other thing a typed code can be: a gift voucher, WHATEVER its state
+   * — the sheet says why an empty or a void one will not take, which "no
+   * such code" cannot.
+   */
+  async resolveVoucher(code: string): Promise<{
+    readonly voucher: GiftVoucher;
+    readonly refusal: 'void' | 'expired' | 'empty' | null;
+  } | null> {
+    const result = await this.giftVouchers.findByCode(code);
+    if (result.isFailure() || result.value === null) return null;
+    const now = this.clock.now(STAFF_ZONE);
+    return {
+      voucher: result.value,
+      refusal: now.isSuccess() ? result.value.refusal(now.value) : null,
+    };
+  }
 
   /** The last note write that failed, by appointment — the sheet says so. */
   private readonly _noteError = signal<string | null>(null);
