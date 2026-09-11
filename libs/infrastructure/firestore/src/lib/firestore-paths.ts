@@ -76,6 +76,8 @@ export const Collections = {
    * grid needs, server-write only.
    */
   Capacity: CAPACITY_COLLECTION,
+  /** `giftVouchers/{id}` — money the shop was paid, drawn down by visits. Book-read, server-write. */
+  GiftVouchers: 'giftVouchers',
   /** `waitlistRequests/{requestId}` — owner-read, callable-write. */
   WaitlistRequests: WAITLIST_COLLECTION,
   Locations: 'locations',
@@ -443,4 +445,10 @@ export function invitationRedemptionDocRef(
     Subcollections.Redemptions,
     refereeUserId.value,
   );
+}
+
+export function giftVouchersCollection(
+  db: Firestore,
+): CollectionReference<DocumentData> {
+  return collection(db, Collections.GiftVouchers);
 }

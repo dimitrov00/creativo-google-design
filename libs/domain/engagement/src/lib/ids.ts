@@ -90,3 +90,15 @@ export class AchievementId extends Id<'Achievement'> {
     return new AchievementId(crypto.randomUUID());
   }
 }
+
+export class GiftVoucherId extends Id<'GiftVoucher'> {
+  private constructor(value: string) {
+    super(value);
+  }
+  static create(raw: string): Result<GiftVoucherId, EmptyIdError> {
+    return createId('GiftVoucherId', raw, (v) => new GiftVoucherId(v));
+  }
+  static generate(): GiftVoucherId {
+    return new GiftVoucherId(crypto.randomUUID());
+  }
+}

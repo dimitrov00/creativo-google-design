@@ -19,10 +19,16 @@
       "path": "../../libs/domain/governance/tsconfig.lib.json"
     },
     {
+      "path": "../../libs/application/engagement/tsconfig.lib.json"
+    },
+    {
       "path": "../../libs/domain/accounts/tsconfig.lib.json"
     },
     {
       "path": "../../libs/domain/notifications/tsconfig.lib.json"
+    },
+    {
+      "path": "../../libs/domain/engagement/tsconfig.lib.json"
     },
     {
       "path": "../../libs/application/booking/tsconfig.lib.json"

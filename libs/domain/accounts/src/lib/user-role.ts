@@ -100,3 +100,27 @@ export const BOOK_ROLES: readonly UserRole[] = [
 export function worksTheBook(roles: readonly string[]): boolean {
   return roles.some((role) => (BOOK_ROLES as readonly string[]).includes(role));
 }
+
+/**
+ * The roles that may SPEND THE SHOP'S MONEY on a booking — reprice a seat,
+ * author an ad-hoc discount. The front desk and the owners; never a barber.
+ *
+ * A barber may stretch his own time; he may not discount the shop's money
+ * (visit editor design record, §3.8). He MAY honour a promise the shop has
+ * already made — a coupon the client holds, a code the shop published —
+ * because refusing that at the chair is the shop breaking its own word, and
+ * that act is gated on `worksTheBook`, not on this. Same three-role list
+ * `firestore.rules` uses for listing the clientele.
+ */
+export const MONEY_ROLES: readonly UserRole[] = [
+  'receptionist',
+  'admin',
+  'sysadmin',
+];
+
+/** Whether a role set may reprice a seat or invent a discount. Claims-tolerant like `worksTheBook`. */
+export function handlesMoney(roles: readonly string[]): boolean {
+  return roles.some((role) =>
+    (MONEY_ROLES as readonly string[]).includes(role),
+  );
+}

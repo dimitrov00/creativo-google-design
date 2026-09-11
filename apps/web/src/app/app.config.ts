@@ -46,6 +46,8 @@ import { CATALOG_READER, MEDIA_READER } from '@creativo/application/catalog';
 import { NOTIFICATION_READER } from '@creativo/application/notifications';
 import {
   COUPON_GRANT_REPOSITORY,
+  COUPON_READER,
+  GIFT_VOUCHER_READER,
   REWARD_PROGRESS_READER,
   INVITATION_PORT,
 } from '@creativo/application/engagement';
@@ -78,6 +80,8 @@ import {
   FirestoreAppointmentRepository,
   FirestoreCatalogReader,
   FirestoreCouponGrantRepository,
+  FirestoreCouponReader,
+  FirestoreGiftVoucherReader,
   FirestoreRewardProgressReader,
   FirestoreProfileAdapter,
   CallableContactChangeAdapter,
@@ -216,6 +220,9 @@ export const appConfig: ApplicationConfig = {
       provide: COUPON_GRANT_REPOSITORY,
       useClass: FirestoreCouponGrantRepository,
     },
+    // The counter's code lookup — what a typed promo code opens.
+    { provide: COUPON_READER, useClass: FirestoreCouponReader },
+    { provide: GIFT_VOUCHER_READER, useClass: FirestoreGiftVoucherReader },
     {
       provide: REWARD_PROGRESS_READER,
       useClass: FirestoreRewardProgressReader,

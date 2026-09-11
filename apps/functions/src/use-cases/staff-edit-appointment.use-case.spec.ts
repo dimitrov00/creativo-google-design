@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { Result, ZonedDateTime, ok, fail } from '@creativo/domain/kernel';
+import {
+  Money,
+  Result,
+  ZonedDateTime,
+  ok,
+  fail,
+} from '@creativo/domain/kernel';
 import { Service } from '@creativo/domain/catalog';
+import { Coupon, CouponValue, GiftVoucher } from '@creativo/domain/engagement';
 import {
   BookingPolicy,
   CalendarDay,
@@ -22,6 +29,8 @@ import type {
 import { CommitBookingInvalidInputError } from './commit-booking.errors';
 import type { StaffEditError } from './staff-edit-appointment.errors';
 import {
+  type DiscountResolver,
+  type VoucherLedger,
   type StaffEditCommand,
   StaffEditAppointmentUseCase,
 } from './staff-edit-appointment.use-case';
@@ -262,10 +271,19 @@ function makeStore(
         view: BookingSnapshot,
         doc: PersistedDocument,
         request: DecideBookingRequest,
+        side: unknown,
       ) => Result<BookingDecision, StaffEditError>,
       extraFields: (
         doc: PersistedDocument,
       ) => Record<string, unknown> = () => ({}),
+      side?: {
+        read: (
+          tx: unknown,
+          doc: PersistedDocument,
+          request: DecideBookingRequest,
+        ) => Promise<Result<unknown, StaffEditError>>;
+        write: (tx: unknown, decision: BookingDecision, side: unknown) => void;
+      },
     ) {
       if (!canWrite(current)) {
         return fail(new CommitBookingInvalidInputError('appointmentId'));
@@ -274,10 +292,18 @@ function makeStore(
       if (planned.isFailure()) return fail(planned.error);
       captured.request = planned.value;
 
-      const decision = decide(view, current, planned.value);
+      // The same order the real transaction keeps: the side reads after the
+      // plan, the side writes after the decision.
+      const sideRead = side
+        ? await side.read(TX, current, planned.value)
+        : ok(undefined);
+      if (sideRead.isFailure()) return fail(sideRead.error);
+
+      const decision = decide(view, current, planned.value, sideRead.value);
       if (decision.isFailure()) return fail(decision.error);
       captured.decision = decision.value;
       captured.extra = extraFields(current);
+      side?.write(TX, decision.value, sideRead.value);
       return ok({ kind: 'committed' as const, decision: decision.value });
     },
   };
@@ -287,11 +313,20 @@ function makeStore(
 
 const CLOCK = { now: () => ok(at(9)) };
 
-function useCase(store: FirestoreBookingStore): StaffEditAppointmentUseCase {
+/** The fake's transaction handle — the ledger stub below never reads it. */
+const TX = {} as never;
+
+function useCase(
+  store: FirestoreBookingStore,
+  resolver?: DiscountResolver,
+  ledger?: VoucherLedger,
+): StaffEditAppointmentUseCase {
   return new StaffEditAppointmentUseCase(
     store,
     CLOCK as never,
     BookingPolicy.default(),
+    resolver,
+    ledger,
   );
 }
 
@@ -304,25 +339,29 @@ async function edit(
     readonly actorUserId?: string | null;
     readonly acknowledgedOverlap?: boolean;
     readonly expectedVersion?: number | null;
+    readonly resolver?: DiscountResolver;
+    readonly ledger?: VoucherLedger;
   } = {},
 ) {
   const { store, captured } = makeStore(
     options.current ?? document(),
     options.view ?? snapshot(),
   );
-  const result = await useCase(store).execute({
-    appointmentId: APPOINTMENT,
-    actorUserId:
-      options.actorUserId === undefined ? 'staff-1' : options.actorUserId,
-    actorRoles: options.roles ?? ['barber'],
-    command,
-    ...(options.acknowledgedOverlap === undefined
-      ? {}
-      : { acknowledgedOverlap: options.acknowledgedOverlap }),
-    ...(options.expectedVersion === undefined
-      ? {}
-      : { expectedVersion: options.expectedVersion }),
-  });
+  const result = await useCase(store, options.resolver, options.ledger).execute(
+    {
+      appointmentId: APPOINTMENT,
+      actorUserId:
+        options.actorUserId === undefined ? 'staff-1' : options.actorUserId,
+      actorRoles: options.roles ?? ['barber'],
+      command,
+      ...(options.acknowledgedOverlap === undefined
+        ? {}
+        : { acknowledgedOverlap: options.acknowledgedOverlap }),
+      ...(options.expectedVersion === undefined
+        ? {}
+        : { expectedVersion: options.expectedVersion }),
+    },
+  );
   return { result, captured };
 }
 
@@ -1124,5 +1163,521 @@ describe('staffEditAppointment — the revision', () => {
   it('refuses an empty batch rather than writing nothing quietly', async () => {
     const { result } = await edit([] as unknown as StaffEditCommand);
     expect(result.isFailure()).toBe(true);
+  });
+});
+
+/*
+ * ── THE BILL: DISCOUNTS (2026-09-10) ───────────────────────────────────
+ * Facts about what is owed, not about any seat: settled before the fold,
+ * resolved through promise lookups the transaction never waits on, and
+ * snapshotted onto the appointment as a SET. Who may do what is the
+ * accounts domain's split — a barber keeps the shop's promises, the front
+ * desk may spend its money.
+ */
+describe('staffEditAppointment — the discounts on the bill', () => {
+  const percent = (value: number): CouponValue =>
+    unwrap(CouponValue.percentOff(value));
+  const eur = (minor: number): Money =>
+    unwrap(Money.fromMinorUnitsAndCode(minor, 'EUR'));
+
+  const resolver: DiscountResolver = {
+    async grant(grantId) {
+      const base = { grantId, userId: OWNER, value: percent(20), usable: true };
+      switch (grantId) {
+        case 'grant-1':
+          return { ...base, label: 'Рожден ден', exclusive: true };
+        case 'grant-loyal':
+          return {
+            ...base,
+            label: 'Постоянен клиент',
+            value: percent(5),
+            exclusive: false,
+          };
+        case 'grant-spent':
+          return {
+            ...base,
+            label: 'Рожден ден',
+            usable: false,
+            exclusive: true,
+          };
+        case 'grant-other':
+          return { ...base, userId: 'user-2', label: 'Чужд', exclusive: true };
+        default:
+          return null;
+      }
+    },
+    async code(raw) {
+      const code = Coupon.normalizeCode(raw);
+      switch (code) {
+        case 'FIRST10':
+          return {
+            couponId: 'coupon-first10',
+            label: 'Първо посещение',
+            value: percent(10),
+            code,
+            exclusive: false,
+          };
+        case 'BEARD5':
+          return {
+            couponId: 'coupon-beard5',
+            label: 'Брада −5 €',
+            value: unwrap(CouponValue.fixedAmount(eur(500))),
+            code,
+            exclusive: false,
+          };
+        case 'SOLO':
+          return {
+            couponId: 'coupon-solo',
+            label: 'Само това',
+            value: percent(15),
+            code,
+            exclusive: true,
+          };
+        default:
+          return null;
+      }
+    },
+  };
+
+  const discountsOf = (captured: { decision?: BookingDecision }) =>
+    written(captured)['discounts'] as readonly Record<string, unknown>[];
+  const set = (
+    discounts: readonly Record<string, unknown>[],
+  ): StaffEditCommand =>
+    ({ kind: 'discounts', discounts }) as unknown as StaffEditCommand;
+  const manual = (percentOff: number) => ({
+    source: 'manual',
+    value: { kind: 'percent_off', percent: percentOff },
+  });
+
+  it('takes a manual percent off from the front desk and stores it as a snapshot', async () => {
+    const { result, captured } = await edit(set([manual(10)]), {
+      roles: ['receptionist'],
+      resolver,
+    });
+    expect(result.isSuccess()).toBe(true);
+    expect(discountsOf(captured)).toEqual([
+      {
+        id: 'manual',
+        source: 'manual',
+        label: 'manual',
+        value: { kind: 'percent_off', percent: 10 },
+        grantId: null,
+        code: null,
+        appliedAt: { iso: at(9).toISO(), zone: ZONE },
+        combinability: 'stackable',
+      },
+    ]);
+    // 10% off a 40,00 € fade: the aggregate's own total says 36,00 €.
+    expect(captured.decision?.appointment.total().toMinorUnits()).toBe(3600);
+    // The seats are untouched: a discount is not a reprice.
+    expect(seatsOf(captured)[0]?.['terms']).toMatchObject({
+      priceMinorUnits: 4000,
+    });
+  });
+
+  it('refuses a NEW manual figure from a barber — forbidden, not malformed — but lets him keep one the desk set', async () => {
+    const refused = await edit(set([manual(10)]), {
+      roles: ['barber'],
+      resolver,
+    });
+    expect(code(refused.result)).toBe('booking.staffEdit.forbidden');
+    expect(refused.captured.decision).toBeUndefined();
+
+    const storedManual = {
+      id: 'manual',
+      source: 'manual',
+      label: 'manual',
+      value: { kind: 'percent_off', percent: 10 },
+      grantId: null,
+      code: null,
+      appliedAt: { iso: at(8).toISO(), zone: ZONE },
+      combinability: 'stackable',
+    };
+    const kept = await edit(set([manual(10)]), {
+      roles: ['barber'],
+      resolver,
+      current: document({ discounts: [storedManual] }),
+    });
+    expect(kept.result.isSuccess()).toBe(true);
+    // Kept AS STORED: the instant is the desk's, not this save's.
+    expect(discountsOf(kept.captured)).toEqual([storedManual]);
+  });
+
+  it("honours the client's own grant — a barber may — and refuses another client's, a spent one, or none", async () => {
+    const honoured = await edit(
+      set([{ source: 'grant', grantId: 'grant-1' }]),
+      {
+        roles: ['barber'],
+        resolver,
+      },
+    );
+    expect(honoured.result.isSuccess()).toBe(true);
+    expect(discountsOf(honoured.captured)[0]).toMatchObject({
+      id: 'grant:grant-1',
+      source: 'grant',
+      label: 'Рожден ден',
+      grantId: 'grant-1',
+      code: null,
+      value: { kind: 'percent_off', percent: 20 },
+      combinability: 'exclusive',
+    });
+
+    for (const grantId of ['grant-other', 'grant-spent', 'grant-unknown']) {
+      const refused = await edit(set([{ source: 'grant', grantId }]), {
+        roles: ['barber'],
+        resolver,
+      });
+      expect(code(refused.result)).toBe('booking.staffEdit.invalid_command');
+      expect(refused.captured.decision).toBeUndefined();
+    }
+  });
+
+  it('opens a code the shop published, however it was typed, and refuses one it did not', async () => {
+    const opened = await edit(set([{ source: 'code', code: ' first10 ' }]), {
+      roles: ['barber'],
+      resolver,
+    });
+    expect(opened.result.isSuccess()).toBe(true);
+    expect(discountsOf(opened.captured)[0]).toMatchObject({
+      id: 'code:coupon-first10',
+      source: 'code',
+      label: 'Първо посещение',
+      code: 'FIRST10',
+      grantId: null,
+    });
+
+    const refused = await edit(set([{ source: 'code', code: 'SUMMER' }]), {
+      roles: ['barber'],
+      resolver,
+    });
+    expect(code(refused.result)).toBe('booking.staffEdit.invalid_command');
+  });
+
+  it("stacks what may stack, in the evaluator's order, and refuses an exclusive coupon beside anything", async () => {
+    const stacked = await edit(
+      set([
+        { source: 'code', code: 'FIRST10' },
+        { source: 'code', code: 'BEARD5' },
+        manual(10),
+      ]),
+      { roles: ['admin'], resolver },
+    );
+    expect(stacked.result.isSuccess()).toBe(true);
+    expect(discountsOf(stacked.captured)).toHaveLength(3);
+    // 40,00 − 5,00 = 35,00; then 10% and 10% on the running remainder:
+    // 35,00 → 31,50 → 28,35. The evaluator's order, never the caller's.
+    expect(stacked.captured.decision?.appointment.total().toMinorUnits()).toBe(
+      2835,
+    );
+
+    for (const discounts of [
+      [
+        { source: 'code', code: 'SOLO' },
+        { source: 'code', code: 'FIRST10' },
+      ],
+      [
+        { source: 'grant', grantId: 'grant-1' },
+        { source: 'grant', grantId: 'grant-loyal' },
+      ],
+      [
+        { source: 'code', code: 'FIRST10' },
+        { source: 'code', code: 'first10' },
+      ],
+      [manual(10), manual(20)],
+    ]) {
+      const refused = await edit(set(discounts), {
+        roles: ['admin'],
+        resolver,
+      });
+      expect(code(refused.result)).toBe('booking.staffEdit.invalid_command');
+    }
+    // Alone, the exclusive coupon is welcome.
+    const alone = await edit(set([{ source: 'code', code: 'SOLO' }]), {
+      roles: ['barber'],
+      resolver,
+    });
+    expect(alone.result.isSuccess()).toBe(true);
+  });
+
+  it('keeps a stored discount whose coupon has since been retired, and carries the set through a move', async () => {
+    const stored = {
+      id: 'code:coupon-retired',
+      source: 'code',
+      label: 'Лятна промоция',
+      value: { kind: 'percent_off', percent: 15 },
+      grantId: null,
+      code: 'SUMMER',
+      appliedAt: { iso: at(8).toISO(), zone: ZONE },
+      combinability: 'stackable',
+    };
+    // The resolver knows nothing of SUMMER any more; the visit still does.
+    const kept = await edit(set([{ source: 'code', code: 'SUMMER' }]), {
+      current: document({ discounts: [stored] }),
+      roles: ['barber'],
+      resolver,
+    });
+    expect(kept.result.isSuccess()).toBe(true);
+    expect(discountsOf(kept.captured)).toEqual([stored]);
+
+    const moved = await edit(
+      { kind: 'move', startIso: at(12).toISO() },
+      { current: document({ discounts: [stored] }), resolver },
+    );
+    expect(moved.result.isSuccess()).toBe(true);
+    expect(discountsOf(moved.captured)).toEqual([stored]);
+
+    const cleared = await edit(set([]), {
+      current: document({ discounts: [stored] }),
+      roles: ['barber'],
+    });
+    expect(cleared.result.isSuccess()).toBe(true);
+    expect(discountsOf(cleared.captured)).toEqual([]);
+  });
+
+  it('refuses a malformed arm before anything is read', async () => {
+    for (const discounts of [
+      [{ source: 'manual', value: { kind: 'percent_off', percent: 12.5 } }],
+      [{ source: 'manual', value: { kind: 'percent_off', percent: 140 } }],
+      [
+        {
+          source: 'manual',
+          value: { kind: 'fixed_amount', amountMinorUnits: 0 },
+        },
+      ],
+      [{ source: 'grant', grantId: '' }],
+      [{ source: 'code' }],
+      [{ source: 'wishful' }],
+      'nonsense',
+    ]) {
+      const { result, captured } = await edit(
+        { kind: 'discounts', discounts } as unknown as StaffEditCommand,
+        { roles: ['admin'], resolver },
+      );
+      expect(code(result)).toBe('booking.staffEdit.invalid_command');
+      expect(captured.request).toBeUndefined();
+    }
+  });
+});
+
+/*
+ * ── THE BILL: VOUCHERS (2026-09-10) ────────────────────────────────────
+ * A gift voucher PAYS; it does not discount. Read and written inside the
+ * transaction through the ledger, settled last against the bill as the
+ * batch leaves it, and re-settled on every save so a shrinking bill gives
+ * money back.
+ */
+describe('staffEditAppointment — the vouchers paying the bill', () => {
+  const eur = (minor: number): Money =>
+    unwrap(Money.fromMinorUnitsAndCode(minor, 'EUR'));
+
+  function voucher(
+    id: string,
+    code: string,
+    balance: number,
+    options: {
+      readonly initial?: number;
+      readonly expiresAt?: ZonedDateTime | null;
+      readonly state?: GiftVoucher['state'];
+    } = {},
+  ): GiftVoucher {
+    return unwrap(
+      GiftVoucher.reconstitute({
+        id,
+        code,
+        value: eur(options.initial ?? balance),
+        balance: eur(balance),
+        issuedAt: at(8),
+        expiresAt: options.expiresAt ?? null,
+        state: options.state ?? { kind: 'active' },
+      }),
+    );
+  }
+
+  /** An in-memory ledger: a map of vouchers, read by id or code, written back. */
+  function ledgerOf(vouchers: readonly GiftVoucher[]) {
+    const state = new Map(vouchers.map((entry) => [entry.id.value, entry]));
+    const ledger: VoucherLedger = {
+      async read(_tx, codes, ids) {
+        const found = new Map<string, GiftVoucher>();
+        for (const id of ids) {
+          const hit = state.get(id);
+          if (hit) found.set(id, hit);
+        }
+        for (const raw of codes) {
+          const code = Coupon.normalizeCode(raw);
+          const hit = [...state.values()].find((entry) => entry.code === code);
+          if (hit) found.set(hit.id.value, hit);
+        }
+        return ok([...found.values()]);
+      },
+      write(_tx, settled) {
+        for (const entry of settled) state.set(entry.id.value, entry);
+      },
+    };
+    const balance = (id: string) => state.get(id)?.balance.toMinorUnits();
+    return { ledger, balance };
+  }
+
+  const redemptionsOf = (captured: { decision?: BookingDecision }) =>
+    written(captured)['voucherRedemptions'] as readonly Record<
+      string,
+      unknown
+    >[];
+  const vouchers = (codes: readonly string[]): StaffEditCommand => ({
+    kind: 'vouchers',
+    codes,
+  });
+
+  it('draws a voucher down by what the bill needs, and records the balance it leaves', async () => {
+    const { ledger, balance } = ledgerOf([voucher('v1', 'GIFT2025', 2500)]);
+    const { result, captured } = await edit(vouchers([' gift2025 ']), {
+      roles: ['barber'],
+      ledger,
+    });
+    expect(result.isSuccess()).toBe(true);
+    // A 40,00 € fade: the whole 25,00 € goes, 15,00 € stays owed.
+    expect(redemptionsOf(captured)).toEqual([
+      {
+        voucherId: 'v1',
+        code: 'GIFT2025',
+        amountMinorUnits: 2500,
+        balanceAfterMinorUnits: 0,
+        currencyCode: 'EUR',
+        appliedAt: { iso: at(9).toISO(), zone: ZONE },
+        reversedAt: null,
+      },
+    ]);
+    expect(captured.decision?.appointment.balanceDue().toMinorUnits()).toBe(
+      1500,
+    );
+    expect(balance('v1')).toBe(0);
+    // The price is untouched: a voucher pays, it does not discount.
+    expect(captured.decision?.appointment.total().toMinorUnits()).toBe(4000);
+  });
+
+  it('covers in order, after the discounts, and stops at the bill', async () => {
+    const { ledger, balance } = ledgerOf([
+      voucher('v5', 'GIFT5', 500),
+      voucher('v1', 'GIFT2025', 2500),
+    ]);
+    const resolver: DiscountResolver = {
+      grant: async () => null,
+      code: async (raw) =>
+        Coupon.normalizeCode(raw) === 'FIRST10'
+          ? {
+              couponId: 'c',
+              label: 'Първо посещение',
+              value: unwrap(CouponValue.percentOff(10)),
+              code: 'FIRST10',
+              exclusive: false,
+            }
+          : null,
+    };
+    const { result, captured } = await edit(
+      [
+        { kind: 'discounts', discounts: [{ source: 'code', code: 'FIRST10' }] },
+        vouchers(['GIFT5', 'GIFT2025']),
+      ],
+      { roles: ['barber'], resolver, ledger },
+    );
+    expect(result.isSuccess()).toBe(true);
+    // 40,00 − 10% = 36,00; GIFT5 pays 5,00, GIFT2025 pays 25,00, 6,00 left.
+    expect(
+      redemptionsOf(captured).map((entry) => entry['amountMinorUnits']),
+    ).toEqual([500, 2500]);
+    expect(captured.decision?.appointment.balanceDue().toMinorUnits()).toBe(
+      600,
+    );
+    expect(balance('v5')).toBe(0);
+    expect(balance('v1')).toBe(0);
+
+    // A bill already paid leaves nothing for a third voucher: it is not on
+    // the receipt, and its balance is untouched.
+    const small = ledgerOf([
+      voucher('v9', 'GIFT9', 9000),
+      voucher('v5', 'GIFT5', 500),
+    ]);
+    const paid = await edit(vouchers(['GIFT9', 'GIFT5']), {
+      roles: ['barber'],
+      ledger: small.ledger,
+    });
+    expect(paid.result.isSuccess()).toBe(true);
+    expect(redemptionsOf(paid.captured)).toHaveLength(1);
+    expect(small.balance('v9')).toBe(5000);
+    expect(small.balance('v5')).toBe(500);
+  });
+
+  it('re-settles a saved draw when the bill shrinks, and gives everything back when the voucher is dropped', async () => {
+    const stored = {
+      voucherId: 'v1',
+      code: 'GIFT2025',
+      amountMinorUnits: 2500,
+      balanceAfterMinorUnits: 0,
+      currencyCode: 'EUR',
+      appliedAt: { iso: at(8).toISO(), zone: ZONE },
+      reversedAt: null,
+    };
+    // The voucher is EMPTY — this visit emptied it — yet the visit may
+    // shrink its own draw: a reprice to 10,00 € hands 15,00 € back, with
+    // nothing about vouchers in the batch.
+    const shrunk = ledgerOf([voucher('v1', 'GIFT2025', 0, { initial: 2500 })]);
+    const repriced = await edit(
+      { kind: 'reprice', seatId: 'seat-1', priceMinorUnits: 1000 },
+      {
+        current: document({ voucherRedemptions: [stored] }),
+        roles: ['admin'],
+        ledger: shrunk.ledger,
+      },
+    );
+    expect(repriced.result.isSuccess()).toBe(true);
+    expect(redemptionsOf(repriced.captured)).toEqual([
+      { ...stored, amountMinorUnits: 1000, balanceAfterMinorUnits: 1500 },
+    ]);
+    expect(shrunk.balance('v1')).toBe(1500);
+    expect(
+      repriced.captured.decision?.appointment.balanceDue().toMinorUnits(),
+    ).toBe(0);
+
+    // Dropped: the line closes as history, the money is back in full.
+    const dropped = ledgerOf([voucher('v1', 'GIFT2025', 0, { initial: 2500 })]);
+    const cleared = await edit(vouchers([]), {
+      current: document({ voucherRedemptions: [stored] }),
+      roles: ['barber'],
+      ledger: dropped.ledger,
+    });
+    expect(cleared.result.isSuccess()).toBe(true);
+    expect(redemptionsOf(cleared.captured)).toEqual([
+      { ...stored, reversedAt: { iso: at(9).toISO(), zone: ZONE } },
+    ]);
+    expect(dropped.balance('v1')).toBe(2500);
+    expect(
+      cleared.captured.decision?.appointment.balanceDue().toMinorUnits(),
+    ).toBe(4000);
+  });
+
+  it('refuses a code that opens nothing, and a voucher spent, expired, void, or named twice', async () => {
+    const { ledger } = ledgerOf([
+      voucher('empty', 'EMPTY001', 0, { initial: 1000 }),
+      voucher('late', 'LATE0001', 1000, { expiresAt: at(7) }),
+      voucher('gone', 'GONE0001', 1000, {
+        state: { kind: 'void', voidedAt: at(7), reason: 'lost' },
+      }),
+      voucher('ok', 'GIFT5', 500),
+    ]);
+    for (const codes of [
+      ['NOPE1234'],
+      ['EMPTY001'],
+      ['LATE0001'],
+      ['GONE0001'],
+      ['GIFT5', 'gift5'],
+    ]) {
+      const { result, captured } = await edit(vouchers(codes), {
+        roles: ['barber'],
+        ledger,
+      });
+      expect(code(result)).toBe('booking.staffEdit.invalid_command');
+      expect(captured.decision).toBeUndefined();
+    }
   });
 });

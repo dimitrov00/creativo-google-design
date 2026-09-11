@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { Money, ZonedDateTime } from '@creativo/domain/kernel';
 import { UserId } from '@creativo/domain/accounts';
+import { CouponCombinability, CouponValue } from '@creativo/domain/engagement';
 import {
   BarberId,
   LocationId,
@@ -8,6 +9,7 @@ import {
   ServiceTerms,
 } from '@creativo/domain/catalog';
 import {
+  AppliedDiscount,
   Appointment,
   COMPLETED,
   CONFIRMED,
@@ -19,12 +21,16 @@ import {
   seatCancelled,
   seatNoShow,
   seatWorked,
+  VoucherRedemption,
 } from '@creativo/domain/scheduling';
 import {
   appointmentToDocument,
   bookedAtFromDocument,
   seatOutcomeFromDocument,
   seatOutcomeToDocument,
+  discountsFromDocument,
+  couponValueFromDocument,
+  voucherRedemptionsFromDocument,
 } from './appointment-document';
 
 const ZONE = 'Europe/Sofia';
@@ -193,5 +199,205 @@ describe('seatOutcome persistence', () => {
     if (outcome.kind === 'cancelled') {
       expect(outcome.reason).toEqual({ kind: 'other', note: 'weather' });
     }
+  });
+});
+
+describe('discount persistence', () => {
+  const percent = (value: number): CouponValue => {
+    const result = CouponValue.percentOff(value);
+    if (result.isFailure()) throw new Error('bad fixture');
+    return result.value;
+  };
+
+  const birthday = AppliedDiscount.of({
+    id: 'grant:grant-1',
+    source: 'grant',
+    label: 'Рожден ден',
+    value: percent(20),
+    grantId: 'grant-1',
+    appliedAt: at('2026-05-01T09:30:00'),
+  });
+
+  it('writes an empty list at full price, so absence stays distinguishable from age', () => {
+    expect(appointmentToDocument(appointment())['discounts']).toEqual([]);
+    // A row written before discounts existed has no field at all.
+    expect(discountsFromDocument({})).toEqual([]);
+  });
+
+  it('round-trips a discount as a snapshot with its provenance', () => {
+    const document = appointmentToDocument(
+      appointment().withDiscounts([birthday]),
+    );
+    expect(document['discounts']).toEqual([
+      {
+        id: 'grant:grant-1',
+        source: 'grant',
+        label: 'Рожден ден',
+        value: { kind: 'percent_off', percent: 20 },
+        grantId: 'grant-1',
+        code: null,
+        appliedAt: { iso: birthday.appliedAt.toISO(), zone: ZONE },
+        combinability: 'stackable',
+      },
+    ]);
+    const [read] = discountsFromDocument(document);
+    expect(read?.equals(birthday)).toBe(true);
+    expect(read?.label).toBe('Рожден ден');
+    expect(read?.appliedAt.toMillis()).toBe(birthday.appliedAt.toMillis());
+  });
+
+  it('writes a fixed amount in minor units beside its currency, and reads it back as money', () => {
+    const five = Money.fromMinorUnitsAndCode(500, 'EUR');
+    if (five.isFailure()) throw new Error('bad fixture');
+    const fixed = CouponValue.fixedAmount(five.value);
+    if (fixed.isFailure()) throw new Error('bad fixture');
+    const manual = AppliedDiscount.of({
+      id: 'manual',
+      source: 'manual',
+      label: 'manual',
+      value: fixed.value,
+      appliedAt: at('2026-05-01T09:30:00'),
+    });
+    const document = appointmentToDocument(
+      appointment().withDiscounts([manual]),
+    );
+    const [written] = document['discounts'] as Record<string, unknown>[];
+    expect(written?.['value']).toEqual({
+      kind: 'fixed_amount',
+      amountMinorUnits: 500,
+      currencyCode: 'EUR',
+    });
+    const value = couponValueFromDocument(written?.['value']);
+    expect(value?.kind).toBe('fixed_amount');
+    if (value?.kind === 'fixed_amount') {
+      expect(value.amount.toMinorUnits()).toBe(500);
+    }
+  });
+
+  it('drops an entry it cannot read rather than failing the appointment', () => {
+    const good = {
+      id: 'code:coupon-1',
+      source: 'code',
+      label: 'Първо посещение',
+      value: { kind: 'percent_off', percent: 10 },
+      grantId: null,
+      code: 'FIRST10',
+      appliedAt: { iso: at('2026-05-01T09:30:00').toISO(), zone: ZONE },
+    };
+    const read = discountsFromDocument({
+      discounts: [
+        good,
+        { ...good, id: '' },
+        { ...good, source: 'wishful' },
+        { ...good, value: { kind: 'percent_off', percent: 140 } },
+        { ...good, appliedAt: 'yesterday' },
+        'nonsense',
+      ],
+    });
+    expect(read).toHaveLength(1);
+    expect(read[0]?.code).toBe('FIRST10');
+    expect(read[0]?.source).toBe('code');
+  });
+});
+
+describe('voucher redemption persistence', () => {
+  const eur = (minor: number) => {
+    const money = Money.fromMinorUnitsAndCode(minor, 'EUR');
+    if (money.isFailure()) throw new Error('bad fixture');
+    return money.value;
+  };
+  const redemption = VoucherRedemption.of({
+    voucherId: 'v1',
+    code: 'GIFT2025',
+    amount: eur(1000),
+    balanceAfter: eur(1500),
+    appliedAt: at('2026-05-01T09:30:00'),
+  });
+
+  it('writes an empty list when nothing was paid ahead, and reads absence as none', () => {
+    expect(appointmentToDocument(appointment())['voucherRedemptions']).toEqual(
+      [],
+    );
+    expect(voucherRedemptionsFromDocument({})).toEqual([]);
+  });
+
+  it('round-trips a draw-down with the balance it left, live or reversed', () => {
+    const reversed = redemption.reversed(at('2026-05-02T09:30:00'));
+    const document = appointmentToDocument(
+      appointment().withVoucherRedemptions([redemption, reversed]),
+    );
+    expect(document['voucherRedemptions']).toEqual([
+      {
+        voucherId: 'v1',
+        code: 'GIFT2025',
+        amountMinorUnits: 1000,
+        balanceAfterMinorUnits: 1500,
+        currencyCode: 'EUR',
+        appliedAt: { iso: redemption.appliedAt.toISO(), zone: ZONE },
+        reversedAt: null,
+      },
+      {
+        voucherId: 'v1',
+        code: 'GIFT2025',
+        amountMinorUnits: 1000,
+        balanceAfterMinorUnits: 1500,
+        currencyCode: 'EUR',
+        appliedAt: { iso: redemption.appliedAt.toISO(), zone: ZONE },
+        reversedAt: { iso: reversed.reversedAt?.toISO(), zone: ZONE },
+      },
+    ]);
+    const read = voucherRedemptionsFromDocument(document);
+    expect(read).toHaveLength(2);
+    expect(read[0]?.live).toBe(true);
+    expect(read[0]?.amount.toMinorUnits()).toBe(1000);
+    expect(read[0]?.balanceAfter.toMinorUnits()).toBe(1500);
+    expect(read[1]?.live).toBe(false);
+  });
+
+  it('reads an exclusive discount back as exclusive', () => {
+    const exclusive = AppliedDiscount.of({
+      id: 'grant:g',
+      source: 'grant',
+      label: 'Рожден ден',
+      value: (() => {
+        const r = CouponValue.percentOff(20);
+        if (r.isFailure()) throw new Error('bad fixture');
+        return r.value;
+      })(),
+      grantId: 'g',
+      appliedAt: at('2026-05-01T09:30:00'),
+      combinability: CouponCombinability.exclusive(),
+    });
+    const document = appointmentToDocument(
+      appointment().withDiscounts([exclusive]),
+    );
+    expect(
+      (document['discounts'] as Record<string, unknown>[])[0]?.[
+        'combinability'
+      ],
+    ).toBe('exclusive');
+    expect(discountsFromDocument(document)[0]?.exclusive).toBe(true);
+  });
+
+  it('drops a draw-down it cannot read rather than failing the appointment', () => {
+    const read = voucherRedemptionsFromDocument({
+      voucherRedemptions: [
+        {
+          voucherId: '',
+          code: 'X',
+          amountMinorUnits: 1,
+          currencyCode: 'EUR',
+          appliedAt: { iso: at('2026-05-01T09:30:00').toISO(), zone: ZONE },
+        },
+        {
+          voucherId: 'v',
+          code: 'GIFT5',
+          amountMinorUnits: 'five',
+          currencyCode: 'EUR',
+        },
+        'nonsense',
+      ],
+    });
+    expect(read).toEqual([]);
   });
 });

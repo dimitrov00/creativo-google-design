@@ -1,6 +1,8 @@
 import { Money, ZonedDateTime } from '@creativo/domain/kernel';
 import { BarberId, ServiceTerms } from '@creativo/domain/catalog';
+import { CouponCombinability, CouponValue } from '@creativo/domain/engagement';
 import {
+  AppliedDiscount,
   Appointment,
   AppointmentStatus,
   BarberPref,
@@ -10,6 +12,7 @@ import {
   Interval,
   SEAT_SCHEDULED,
   SeatOutcome,
+  VoucherRedemption,
 } from '@creativo/domain/scheduling';
 
 /**
@@ -137,7 +140,206 @@ export function appointmentToDocument(
     // two months later. `null` for appointments booked before contacts
     // existed, and for a staff-entered walk-in with nobody to call.
     contact: appointment.contact?.toProps() ?? null,
+    // WHAT WAS TAKEN OFF, as snapshots — the value copied at the moment of
+    // applying, with the grant or the code kept as provenance and never
+    // re-resolved. An empty list is the ordinary full-price visit; it is
+    // written rather than omitted so a reader can tell "no discount" from
+    // "written before discounts existed".
+    discounts: appointment.discounts.map(appliedDiscountToDocument),
+    // WHAT VOUCHERS PAID — snapshots too, reversed ones kept as history.
+    voucherRedemptions: appointment.voucherRedemptions.map(
+      voucherRedemptionToDocument,
+    ),
   };
+}
+
+/** One voucher draw-down → its stored shape. */
+export function voucherRedemptionToDocument(
+  redemption: VoucherRedemption,
+): Record<string, unknown> {
+  return {
+    voucherId: redemption.voucherId,
+    code: redemption.code,
+    amountMinorUnits: redemption.amount.toMinorUnits(),
+    balanceAfterMinorUnits: redemption.balanceAfter.toMinorUnits(),
+    currencyCode: redemption.amount.currencyCode(),
+    appliedAt: {
+      iso: redemption.appliedAt.toISO(),
+      zone: redemption.appliedAt.zoneName,
+    },
+    reversedAt:
+      redemption.reversedAt === null
+        ? null
+        : {
+            iso: redemption.reversedAt.toISO(),
+            zone: redemption.reversedAt.zoneName,
+          },
+  };
+}
+
+/** Document → the voucher draw-downs, best-effort per entry, like the discounts. */
+export function voucherRedemptionsFromDocument(
+  data: PersistedDocument,
+): VoucherRedemption[] {
+  const raw = data['voucherRedemptions'];
+  if (!Array.isArray(raw)) return [];
+  const redemptions: VoucherRedemption[] = [];
+  for (const entry of raw) {
+    const parsed = voucherRedemptionFromDocument(entry);
+    if (parsed !== null) redemptions.push(parsed);
+  }
+  return redemptions;
+}
+
+function voucherRedemptionFromDocument(raw: unknown): VoucherRedemption | null {
+  if (raw == null || typeof raw !== 'object') return null;
+  const entry = raw as Record<string, unknown>;
+  const voucherId = entry['voucherId'];
+  const code = entry['code'];
+  const amount = entry['amountMinorUnits'];
+  const after = entry['balanceAfterMinorUnits'];
+  const currency = entry['currencyCode'];
+  if (typeof voucherId !== 'string' || voucherId.length === 0) return null;
+  if (typeof code !== 'string' || code.length === 0) return null;
+  if (typeof amount !== 'number' || typeof currency !== 'string') return null;
+  const money = Money.fromMinorUnitsAndCode(amount, currency);
+  const balance = Money.fromMinorUnitsAndCode(
+    typeof after === 'number' ? after : 0,
+    currency,
+  );
+  if (money.isFailure() || balance.isFailure()) return null;
+  const appliedAt = zonedFieldFromDocument(entry, 'appliedAt');
+  if (appliedAt === null) return null;
+  return VoucherRedemption.of({
+    voucherId,
+    code,
+    amount: money.value,
+    balanceAfter: balance.value,
+    appliedAt,
+    reversedAt: zonedFieldFromDocument(entry, 'reversedAt'),
+  });
+}
+
+/** One applied discount → its stored shape. Same value vocabulary as `coupons/*`. */
+export function appliedDiscountToDocument(
+  discount: AppliedDiscount,
+): Record<string, unknown> {
+  return {
+    id: discount.id,
+    source: discount.source,
+    label: discount.label,
+    value: couponValueToDocument(discount.value),
+    grantId: discount.grantId,
+    code: discount.code,
+    appliedAt: {
+      iso: discount.appliedAt.toISO(),
+      zone: discount.appliedAt.zoneName,
+    },
+    combinability: discount.combinability.kind,
+  };
+}
+
+function couponValueToDocument(value: CouponValue): Record<string, unknown> {
+  switch (value.kind) {
+    case 'percent_off':
+      return { kind: 'percent_off', percent: value.percent };
+    case 'fixed_amount':
+      return {
+        kind: 'fixed_amount',
+        amountMinorUnits: value.amount.toMinorUnits(),
+        currencyCode: value.amount.currencyCode(),
+      };
+    case 'free_service':
+      return { kind: 'free_service' };
+  }
+}
+
+/**
+ * Document → the discounts applied, best-effort per entry.
+ *
+ * A malformed entry is DROPPED rather than failing the appointment: the
+ * booking is real and the chair is booked whether or not one line of its
+ * bill parses, and the honest reading of a snapshot nobody can interpret is
+ * "no discount" — which the receipt then shows at full price, loudly, rather
+ * than hiding the whole visit. Absent (rows written before discounts
+ * existed) reads as none.
+ */
+export function discountsFromDocument(
+  data: PersistedDocument,
+): AppliedDiscount[] {
+  const raw = data['discounts'];
+  if (!Array.isArray(raw)) return [];
+  const discounts: AppliedDiscount[] = [];
+  for (const entry of raw) {
+    const parsed = appliedDiscountFromDocument(entry);
+    if (parsed !== null) discounts.push(parsed);
+  }
+  return discounts;
+}
+
+const DISCOUNT_SOURCES: readonly AppliedDiscount['source'][] = [
+  'grant',
+  'code',
+  'manual',
+];
+
+function appliedDiscountFromDocument(raw: unknown): AppliedDiscount | null {
+  if (raw == null || typeof raw !== 'object') return null;
+  const entry = raw as Record<string, unknown>;
+  const id = entry['id'];
+  const label = entry['label'];
+  const source = entry['source'];
+  if (typeof id !== 'string' || id.length === 0) return null;
+  if (typeof label !== 'string' || label.length === 0) return null;
+  if (!DISCOUNT_SOURCES.includes(source as never)) return null;
+  const value = couponValueFromDocument(entry['value']);
+  if (value === null) return null;
+  const appliedAt = zonedFieldFromDocument(entry, 'appliedAt');
+  if (appliedAt === null) return null;
+  return AppliedDiscount.of({
+    id,
+    source: source as AppliedDiscount['source'],
+    label,
+    value,
+    grantId: typeof entry['grantId'] === 'string' ? entry['grantId'] : null,
+    code: typeof entry['code'] === 'string' ? entry['code'] : null,
+    appliedAt,
+    // Absent on rows written before stacking existed: stackable, the
+    // permissive reading — the shop's own promise, already kept.
+    combinability:
+      entry['combinability'] === 'exclusive'
+        ? CouponCombinability.exclusive()
+        : CouponCombinability.stackable(),
+  });
+}
+
+/** The stored value → `CouponValue`, through the domain's own validating doors. */
+export function couponValueFromDocument(raw: unknown): CouponValue | null {
+  if (raw == null || typeof raw !== 'object') return null;
+  const value = raw as Record<string, unknown>;
+  switch (value['kind']) {
+    case 'percent_off': {
+      const percent = value['percent'];
+      if (typeof percent !== 'number') return null;
+      const result = CouponValue.percentOff(percent);
+      return result.isSuccess() ? result.value : null;
+    }
+    case 'fixed_amount': {
+      const amount = value['amountMinorUnits'];
+      const currency = value['currencyCode'];
+      if (typeof amount !== 'number' || typeof currency !== 'string') {
+        return null;
+      }
+      const money = Money.fromMinorUnitsAndCode(amount, currency);
+      if (money.isFailure()) return null;
+      const result = CouponValue.fixedAmount(money.value);
+      return result.isSuccess() ? result.value : null;
+    }
+    case 'free_service':
+      return CouponValue.freeService();
+    default:
+      return null;
+  }
 }
 
 /**
@@ -159,6 +361,8 @@ export const APPOINTMENT_DOCUMENT_FIELDS: readonly string[] = [
   'bookedFromAppointmentId',
   'arrivedAt',
   'contact',
+  'discounts',
+  'voucherRedemptions',
 ];
 
 /**
@@ -265,8 +469,29 @@ const CANCELLATION_REASON_KINDS: readonly CancellationReason['kind'][] = [
   'staff_barber_absence',
   'staff_shop_closure',
   'no_show_converted',
+  'unspecified',
   'other',
 ];
+
+/**
+ * A ROOT's cancellation string, read back as a reason.
+ *
+ * The root carries one string: the code a staff cancel filed, the sentence
+ * a client typed, or — from before the reason was optional — the stand-in
+ * `cancelled_by_client` the client path wrote when nothing was typed. A code
+ * is a code; the stand-in and an empty string mean nobody said; anything
+ * else is somebody's sentence.
+ */
+function cancellationReasonFromRoot(reason: string): CancellationReason {
+  const trimmed = reason.trim();
+  if (trimmed.length === 0 || trimmed === 'cancelled_by_client') {
+    return { kind: 'unspecified' };
+  }
+  return CANCELLATION_REASON_KINDS.includes(trimmed as never) &&
+    trimmed !== 'other'
+    ? ({ kind: trimmed } as CancellationReason)
+    : { kind: 'other', note: trimmed };
+}
 
 function cancellationReasonFromDocument(raw: unknown): CancellationReason {
   const data = (raw ?? {}) as Record<string, unknown>;
@@ -352,8 +577,14 @@ export function seatOutcomeFromDocument(
       return {
         kind: 'cancelled',
         atMs: seatEndMs,
-        by: 'staff',
-        reason: { kind: 'other', note: rootStatus.reason },
+        // The client path stamped no seats before 2026-09-11 and left its
+        // stand-in on the root; that is the one root string that names its
+        // side. Everything else was the shop's.
+        by:
+          rootStatus.reason.trim() === 'cancelled_by_client'
+            ? 'client'
+            : 'staff',
+        reason: cancellationReasonFromRoot(rootStatus.reason),
       };
     default:
       return SEAT_SCHEDULED;

@@ -1,24 +1,44 @@
-import { Result, ZonedDateTime, fail, ok } from '@creativo/domain/kernel';
-import { worksTheBook } from '@creativo/domain/accounts';
 import {
+  Money,
+  Result,
+  ZonedDateTime,
+  fail,
+  ok,
+} from '@creativo/domain/kernel';
+import type { Transaction } from 'firebase-admin/firestore';
+import { handlesMoney, worksTheBook } from '@creativo/domain/accounts';
+import {
+  Coupon,
+  CouponCombinability,
+  CouponValue,
+  GiftVoucher,
+} from '@creativo/domain/engagement';
+import {
+  AppliedDiscount,
   Appointment,
   type AppointmentStatus,
   BookingPolicy,
   SEAT_SCHEDULED,
   Seat,
   type SeatOutcome,
+  VoucherRedemption,
 } from '@creativo/domain/scheduling';
 import type { ClockPort } from '@creativo/application/shared';
-import type { StaffEditCommand } from '@creativo/application/booking';
+import type {
+  StaffDiscountRequest,
+  StaffEditCommand,
+} from '@creativo/application/booking';
 import {
   arrivedAtFromDocument,
   bookedAtFromDocument,
   contactFromDocument,
+  discountsFromDocument,
   type PersistedDocument,
   preservedAppointmentFields,
   revisionOf,
   seatOutcomeFromDocument,
   seatTipFromDocument,
+  voucherRedemptionsFromDocument,
 } from '@creativo/application/booking';
 import { FirestoreBookingStore } from '../adapters/firestore-booking-store';
 import {
@@ -98,6 +118,97 @@ export interface StaffEditResult {
   /** What the sheet should send as `expectedVersion` on its next save. */
   readonly revision: number;
 }
+
+/**
+ * A grant, as the resolver found it — the value it carries, whose it is, and
+ * whether it can still be honoured. Ownership is checked against the
+ * appointment inside the transaction, where the owner is known.
+ */
+export interface ResolvedGrant {
+  readonly grantId: string;
+  readonly userId: string;
+  /** The coupon's name — what the receipt calls the promise. */
+  readonly label: string;
+  readonly value: CouponValue;
+  readonly usable: boolean;
+  /** The coupon's own rule: may it share the bill? */
+  readonly exclusive: boolean;
+}
+
+/** An enabled coupon a code opens. */
+export interface ResolvedCode {
+  readonly couponId: string;
+  readonly label: string;
+  readonly value: CouponValue;
+  /** The code as stored — normalised — so the snapshot records what was matched. */
+  readonly code: string;
+  readonly exclusive: boolean;
+}
+
+/**
+ * How the use case looks up the promises a discount names. Two reads, both
+ * OUTSIDE the transaction: neither a grant nor a coupon is what the edit's
+ * transaction protects, and the snapshot taken here is all the appointment
+ * ever keeps of them (see `AppliedDiscount`).
+ */
+export interface DiscountResolver {
+  grant(grantId: string): Promise<ResolvedGrant | null>;
+  code(code: string): Promise<ResolvedCode | null>;
+}
+
+/** The default when no resolver is wired: every promise is unknown. */
+const NO_RESOLVER: DiscountResolver = {
+  grant: async () => null,
+  code: async () => null,
+};
+
+/**
+ * The gift vouchers a batch touches — read and written INSIDE the
+ * transaction, unlike the promises above, because a balance is the one
+ * thing two counters can race for. `read` returns every voucher named by
+ * code or already drawn on by this visit (by id); `write` lands the settled
+ * balances after the appointment's own write.
+ */
+export interface VoucherLedger {
+  read(
+    tx: Transaction,
+    codes: readonly string[],
+    ids: readonly string[],
+  ): Promise<Result<readonly GiftVoucher[], StaffEditError>>;
+  write(tx: Transaction, vouchers: readonly GiftVoucher[]): void;
+}
+
+/** The default when no ledger is wired: no voucher exists. */
+const NO_LEDGER: VoucherLedger = {
+  read: async () => ok([]),
+  write: () => undefined,
+};
+
+/**
+ * One requested discount, with whatever the resolver found for it — `null`
+ * when it found nothing. Resolution failures are NOT refusals yet: a code
+ * whose coupon was retired last week is still kept if it is already on the
+ * visit, and only `plan`, holding the stored document, can tell.
+ */
+interface PendingDiscountItem {
+  readonly request: StaffDiscountRequest;
+  readonly grant?: ResolvedGrant | null;
+  readonly coupon?: ResolvedCode | null;
+}
+
+/**
+ * What the batch says about the bill's discounts. `keep` is the ordinary
+ * case — a batch that never mentioned them carries the stored ones forward,
+ * exactly as it carries a tip.
+ */
+type PendingDiscounts =
+  | { readonly kind: 'keep' }
+  | { readonly kind: 'set'; readonly items: readonly PendingDiscountItem[] };
+
+/** The same for the vouchers paying the bill — the codes, in cover order. */
+type PendingVouchers =
+  | { readonly kind: 'keep' }
+  | { readonly kind: 'set'; readonly codes: readonly string[] };
 
 /** One stored seat, read as primitives before anything is decided about it. */
 interface StoredSeat {
@@ -254,6 +365,8 @@ export class StaffEditAppointmentUseCase {
     private readonly store: FirestoreBookingStore,
     private readonly clock: ClockPort,
     private readonly policy: BookingPolicy = BookingPolicy.default(),
+    private readonly discounts: DiscountResolver = NO_RESOLVER,
+    private readonly vouchers: VoucherLedger = NO_LEDGER,
   ) {}
 
   async execute(
@@ -292,6 +405,20 @@ export class StaffEditAppointmentUseCase {
       commands.push(shape.value);
     }
 
+    /*
+     * THE DISCOUNTS ARE RESOLVED FIRST, outside the transaction. They name
+     * promises — grants, codes — that have to be looked up, and the fold
+     * inside the transaction is synchronous by design (every read strictly
+     * precedes every write). What comes back is a snapshot of each promise;
+     * whether it may be kept for THIS visit is decided inside, where the
+     * owner and the stored bill are known. The VOUCHERS are the other way
+     * round: a balance is read and written inside the transaction, through
+     * the ledger, because it is the one thing two counters can race for.
+     */
+    const pendingDiscounts = await this.resolveDiscounts(commands);
+    if (pendingDiscounts.isFailure()) return fail(pendingDiscounts.error);
+    const pendingVouchers = pendingVouchersOf(commands);
+
     /**
      * What `plan` worked out, read back by `decide`.
      *
@@ -301,8 +428,13 @@ export class StaffEditAppointmentUseCase {
      */
     let planned: PlannedEdit | null = null;
     let nextRevision = 0;
+    /** The vouchers `decide` settled, for the ledger to write after the visit. */
+    let settledVouchers: readonly GiftVoucher[] = [];
 
-    const written = await this.store.reschedule<StaffEditError>(
+    const written = await this.store.reschedule<
+      StaffEditError,
+      readonly GiftVoucher[]
+    >(
       input.appointmentId,
       // Staff bypass the owner check entirely — which is also what unfreezes
       // every walk-in already in the collection. `ownerUserId: null` made
@@ -315,29 +447,105 @@ export class StaffEditAppointmentUseCase {
           current,
           commands,
           input.expectedVersion,
+          pendingDiscounts.value,
+          input.actorRoles,
         );
         if (result.isFailure()) return fail(result.error);
         planned = result.value;
         nextRevision = result.value.nextRevision;
         return ok(result.value.request);
       },
-      (snapshot, current, request) => {
+      (snapshot, current, request, vouchers) => {
         // Unreachable: `plan` runs first on every attempt and either sets this
         // or fails the attempt. Checked rather than asserted because a
         // silently-null plan would decide the WRONG geometry.
         if (planned === null) {
           return fail(new CommitBookingInvalidInputError('command'));
         }
-        return this.decide(snapshot, current, request, planned, input);
+        const decided = this.decide(
+          snapshot,
+          current,
+          request,
+          planned,
+          input,
+          vouchers,
+          pendingVouchers,
+        );
+        if (decided.isFailure()) return fail(decided.error);
+        settledVouchers = decided.value.touched;
+        return ok(decided.value.decision);
       },
       (current) => ({
         ...preservedAppointmentFields(current),
         revision: revisionOf(current) + 1,
       }),
+      {
+        // Every voucher the batch could touch: the ones it names, and the
+        // ones the visit already drew on (to give back, or to re-settle).
+        read: (tx, current) => {
+          const live = voucherRedemptionsFromDocument(current).filter(
+            (redemption) => redemption.live,
+          );
+          const codes =
+            pendingVouchers.kind === 'set'
+              ? pendingVouchers.codes
+              : live.map((redemption) => redemption.code);
+          return this.vouchers.read(
+            tx,
+            codes,
+            live.map((redemption) => redemption.voucherId),
+          );
+        },
+        write: (tx) => this.vouchers.write(tx, settledVouchers),
+      },
     );
 
     if (written.isFailure()) return fail(written.error);
     return ok({ appointmentId: input.appointmentId, revision: nextRevision });
+  }
+
+  /**
+   * The batch's LAST word on the discounts, resolved.
+   *
+   * Last, not first: a save sends one `discounts` arm, and if a caller ever
+   * sent two the later one is what the sheet showed when `Запази` was
+   * pressed. Nothing is refused here — a promise that does not resolve may
+   * still be one the visit already holds, and only `plan` can tell.
+   */
+  private async resolveDiscounts(
+    commands: readonly StaffEditCommand[],
+  ): Promise<Result<PendingDiscounts, StaffEditError>> {
+    const arm = [...commands]
+      .reverse()
+      .find(
+        (
+          command,
+        ): command is Extract<StaffEditCommand, { kind: 'discounts' }> =>
+          command.kind === 'discounts',
+      );
+    if (arm === undefined) return ok({ kind: 'keep' });
+
+    const items: PendingDiscountItem[] = [];
+    for (const request of arm.discounts) {
+      switch (request.source) {
+        case 'grant':
+          items.push({
+            request,
+            grant: await this.discounts.grant(request.grantId),
+          });
+          break;
+        case 'code':
+          items.push({
+            request,
+            coupon: await this.discounts.code(request.code),
+          });
+          break;
+        case 'manual':
+          items.push({ request });
+          break;
+      }
+    }
+    return ok({ kind: 'set', items });
   }
 
   /**
@@ -352,6 +560,8 @@ export class StaffEditAppointmentUseCase {
     current: PersistedDocument,
     commands: readonly StaffEditCommand[],
     expectedVersion: number | null | undefined,
+    pending: PendingDiscounts,
+    actorRoles: readonly string[],
   ): Result<PlannedEdit, StaffEditError> {
     const revision = revisionOf(current);
     if (expectedVersion != null && expectedVersion !== revision) {
@@ -383,10 +593,21 @@ export class StaffEditAppointmentUseCase {
     // is being filled in after the cut (owner, 2026-09-09).
     const finished = rootStatus?.kind === 'completed';
     for (const command of commands) {
+      // Discounts and vouchers are facts about the BILL, settled elsewhere;
+      // the seats do not change under them.
+      if (command.kind === 'discounts' || command.kind === 'vouchers') continue;
       const applied = applyCommand(next, command, finished);
       if (applied.isFailure()) return fail(applied.error);
       next = applied.value;
     }
+
+    const discounts = this.settleDiscounts(
+      pending,
+      current,
+      stored,
+      actorRoles,
+    );
+    if (discounts.isFailure()) return fail(discounts.error);
 
     const seats: RequestedSeat[] = [];
     const overrides = new Map<string, StaffTermsOverride>();
@@ -439,6 +660,257 @@ export class StaffEditAppointmentUseCase {
       overrides,
       nextRevision: revision + 1,
       commands,
+      discounts: discounts.value,
+    });
+  }
+
+  /**
+   * The bill's discounts after this batch — the stored ones carried forward,
+   * or the set the batch named, each item either KEPT as stored (the same
+   * grant, the same code, the same manual figure: a promise once kept is not
+   * withdrawn by a coupon retired since) or NEW, as a snapshot stamped now.
+   *
+   * A NEW grant must be the appointment owner's own and still usable; a
+   * new code must have opened a coupon; a new manual figure needs a role
+   * that handles money — keeping one a receptionist set earlier does not,
+   * so a barber saving a visit with such a discount on it is not refused.
+   * Then the SET: an exclusive coupon alone, no promise twice, one manual
+   * figure at most (`AppliedDiscount.isLegalSet`).
+   */
+  private settleDiscounts(
+    pending: PendingDiscounts,
+    current: PersistedDocument,
+    stored: readonly StoredSeat[],
+    actorRoles: readonly string[],
+  ): Result<readonly AppliedDiscount[], StaffEditError> {
+    const existing = discountsFromDocument(current);
+    if (pending.kind === 'keep') return ok(existing);
+    if (pending.items.length === 0) return ok([]);
+
+    const template = stored[0];
+    if (!template) return fail(new CommitBookingInvalidInputError('seats'));
+    const now = this.clock.now(template.zone);
+    if (now.isFailure()) return fail(new CommitBookingStoreError(now.error));
+
+    const settled: AppliedDiscount[] = [];
+    let manualCount = 0;
+    for (const item of pending.items) {
+      const request = item.request;
+      switch (request.source) {
+        case 'grant': {
+          const kept = existing.find(
+            (discount) =>
+              discount.source === 'grant' &&
+              discount.grantId === request.grantId,
+          );
+          if (kept) {
+            settled.push(kept);
+            break;
+          }
+          const grant = item.grant ?? null;
+          const owner = current['ownerUserId'];
+          if (
+            grant === null ||
+            !grant.usable ||
+            typeof owner !== 'string' ||
+            owner !== grant.userId
+          ) {
+            return fail(new StaffEditInvalidCommandError('discounts'));
+          }
+          settled.push(
+            AppliedDiscount.of({
+              id: `grant:${grant.grantId}`,
+              source: 'grant',
+              label: grant.label,
+              value: grant.value,
+              grantId: grant.grantId,
+              appliedAt: now.value,
+              combinability: grant.exclusive
+                ? CouponCombinability.exclusive()
+                : CouponCombinability.stackable(),
+            }),
+          );
+          break;
+        }
+        case 'code': {
+          const code = Coupon.normalizeCode(request.code);
+          const kept = existing.find(
+            (discount) => discount.source === 'code' && discount.code === code,
+          );
+          if (kept) {
+            settled.push(kept);
+            break;
+          }
+          const coupon = item.coupon ?? null;
+          if (coupon === null) {
+            return fail(new StaffEditInvalidCommandError('discounts'));
+          }
+          settled.push(
+            AppliedDiscount.of({
+              id: `code:${coupon.couponId}`,
+              source: 'code',
+              label: coupon.label,
+              value: coupon.value,
+              code: coupon.code,
+              appliedAt: now.value,
+              combinability: coupon.exclusive
+                ? CouponCombinability.exclusive()
+                : CouponCombinability.stackable(),
+            }),
+          );
+          break;
+        }
+        case 'manual': {
+          manualCount += 1;
+          const value = manualValue(request.value, template.currencyCode);
+          if (value === null) {
+            return fail(new StaffEditInvalidCommandError('discounts'));
+          }
+          const kept = existing.find(
+            (discount) =>
+              discount.source === 'manual' &&
+              discount.value.kind === value.kind &&
+              CouponValue.magnitude(discount.value) ===
+                CouponValue.magnitude(value),
+          );
+          if (kept) {
+            settled.push(kept);
+            break;
+          }
+          // A barber may stretch his own time; he may not discount the shop's
+          // money. Refused as FORBIDDEN, not as a bad command — the shape was
+          // fine, the caller was not.
+          if (!handlesMoney(actorRoles)) {
+            return fail(new StaffEditForbiddenError());
+          }
+          settled.push(
+            AppliedDiscount.of({
+              id: 'manual',
+              source: 'manual',
+              // No name to give: the receipt renders a manual discount by its
+              // value, and the source already says what it is.
+              label: 'manual',
+              value,
+              appliedAt: now.value,
+            }),
+          );
+          break;
+        }
+      }
+    }
+
+    if (manualCount > 1 || !AppliedDiscount.isLegalSet(settled)) {
+      return fail(new StaffEditInvalidCommandError('discounts'));
+    }
+    return ok(settled);
+  }
+
+  /**
+   * The vouchers paying the bill after this batch, settled against the
+   * balances the ledger read in this transaction.
+   *
+   * ALWAYS re-settled, even when the batch said nothing about vouchers: a
+   * reprice or a discount in the same save can drop the bill under what a
+   * voucher had paid, and the difference must go back. Each voucher covers
+   * what the ones before it left, never more than it has; a voucher no
+   * longer named gives back everything it paid, and its line stays as
+   * history with the instant it was reversed. A voucher NEW to the visit
+   * must be redeemable; one already on it may keep or shrink its draw
+   * whatever became of it since (`GiftVoucher.settle`).
+   */
+  private settleVouchers(
+    pending: PendingVouchers,
+    current: PersistedDocument,
+    appointment: Appointment,
+    vouchers: readonly GiftVoucher[],
+    now: ZonedDateTime,
+  ): Result<
+    { appointment: Appointment; touched: readonly GiftVoucher[] },
+    StaffEditError
+  > {
+    const stored = voucherRedemptionsFromDocument(current);
+    const live = stored.filter((redemption) => redemption.live);
+    const codes =
+      pending.kind === 'set'
+        ? pending.codes.map((code) => Coupon.normalizeCode(code))
+        : live.map((redemption) => redemption.code);
+    if (live.length === 0 && codes.length === 0) {
+      return ok({ appointment, touched: [] });
+    }
+
+    const currency = appointment.subtotal().currencyCode();
+    const zero = Money.fromMinorUnitsAndCode(0, currency);
+    if (zero.isFailure())
+      return fail(new CommitBookingInvalidInputError('seats'));
+    const money = (minor: number): Money => {
+      const result = Money.fromMinorUnitsAndCode(minor, currency);
+      return result.isSuccess() ? result.value : zero.value;
+    };
+    const byId = new Map(
+      vouchers.map((voucher) => [voucher.id.value, voucher]),
+    );
+    const byCode = new Map(vouchers.map((voucher) => [voucher.code, voucher]));
+    const touched = new Map<string, GiftVoucher>();
+    const history = stored.filter((redemption) => !redemption.live);
+
+    // 1. Give back what is no longer named — or what a bill no longer needs.
+    for (const prior of live) {
+      if (codes.includes(prior.code)) continue;
+      const voucher = byId.get(prior.voucherId) ?? byCode.get(prior.code);
+      if (voucher !== undefined) {
+        const settled = voucher.settle(prior.amount, zero.value);
+        if (settled.isFailure()) {
+          return fail(new StaffEditInvalidCommandError('vouchers'));
+        }
+        touched.set(voucher.id.value, settled.value);
+      }
+      history.push(prior.reversed(now));
+    }
+
+    // 2. Cover the bill in order.
+    let due = appointment.total().toMinorUnits();
+    const next: VoucherRedemption[] = [];
+    for (const code of codes) {
+      const voucher = byCode.get(code);
+      if (voucher === undefined) {
+        return fail(new StaffEditInvalidCommandError('vouchers'));
+      }
+      const prior = live.find(
+        (redemption) => redemption.voucherId === voucher.id.value,
+      );
+      if (prior === undefined && voucher.refusal(now) !== null) {
+        return fail(new StaffEditInvalidCommandError('vouchers'));
+      }
+      const previous = prior?.amount ?? zero.value;
+      const available =
+        voucher.balance.toMinorUnits() + previous.toMinorUnits();
+      const cover = Math.max(0, Math.min(available, due));
+      const settled = voucher.settle(previous, money(cover));
+      if (settled.isFailure()) {
+        return fail(new StaffEditInvalidCommandError('vouchers'));
+      }
+      touched.set(voucher.id.value, settled.value);
+      if (cover === 0) {
+        // Nothing left for it to cover: it is not on the bill, and if it
+        // was, its line closes as history.
+        if (prior !== undefined) history.push(prior.reversed(now));
+        continue;
+      }
+      next.push(
+        VoucherRedemption.of({
+          voucherId: voucher.id.value,
+          code: voucher.code,
+          amount: money(cover),
+          balanceAfter: settled.value.balance,
+          appliedAt: prior?.appliedAt ?? now,
+        }),
+      );
+      due -= cover;
+    }
+
+    return ok({
+      appointment: appointment.withVoucherRedemptions([...history, ...next]),
+      touched: [...touched.values()],
     });
   }
 
@@ -448,7 +920,12 @@ export class StaffEditAppointmentUseCase {
     request: DecideBookingRequest,
     planned: PlannedEdit,
     input: StaffEditAppointmentInput,
-  ): Result<BookingDecision, StaffEditError> {
+    vouchers: readonly GiftVoucher[],
+    pendingVouchers: PendingVouchers,
+  ): Result<
+    { decision: BookingDecision; touched: readonly GiftVoucher[] },
+    StaffEditError
+  > {
     const now = this.clock.now(snapshot.zone);
     if (now.isFailure()) {
       return fail(new CommitBookingStoreError(now.error));
@@ -556,14 +1033,31 @@ export class StaffEditAppointmentUseCase {
           ? current['bookedFromAppointmentId']
           : null,
       arrivedAt,
+      // The bill, as this batch left it — carried forward untouched by a
+      // move, the way a tip is, and never re-derived from the catalogue.
+      discounts: planned.discounts,
     });
     if (restored.isFailure()) {
       return fail(new CommitBookingInvariantError(restored.error));
     }
 
+    // The vouchers settle LAST, against the bill as this batch leaves it —
+    // the seats repriced, the discounts applied.
+    const paid = this.settleVouchers(
+      pendingVouchers,
+      current,
+      restored.value,
+      vouchers,
+      now.value,
+    );
+    if (paid.isFailure()) return fail(paid.error);
+
     return ok({
-      appointment: restored.value,
-      busyWrites: decided.value.busyWrites,
+      decision: {
+        appointment: paid.value.appointment,
+        busyWrites: decided.value.busyWrites,
+      },
+      touched: paid.value.touched,
     });
   }
 }
@@ -576,6 +1070,40 @@ interface PlannedEdit {
   readonly nextRevision: number;
   /** Carried so a refusal can still name which EDGE was being dragged. */
   readonly commands: readonly StaffEditCommand[];
+  /** The bill's discounts after the batch — see `settleDiscount`. */
+  readonly discounts: readonly AppliedDiscount[];
+}
+
+/** The batch's last word on the vouchers, normalised; `keep` when it said nothing. */
+function pendingVouchersOf(
+  commands: readonly StaffEditCommand[],
+): PendingVouchers {
+  const arm = [...commands]
+    .reverse()
+    .find(
+      (command): command is Extract<StaffEditCommand, { kind: 'vouchers' }> =>
+        command.kind === 'vouchers',
+    );
+  if (arm === undefined) return { kind: 'keep' };
+  return {
+    kind: 'set',
+    codes: arm.codes.map((code) => Coupon.normalizeCode(code)),
+  };
+}
+
+/** A typed manual figure → the domain's value, or `null` where its doors refuse it. */
+function manualValue(
+  raw: Extract<StaffDiscountRequest, { source: 'manual' }>['value'],
+  currencyCode: string,
+): CouponValue | null {
+  if (raw.kind === 'percent_off') {
+    const percent = CouponValue.percentOff(raw.percent);
+    return percent.isSuccess() ? percent.value : null;
+  }
+  const money = Money.fromMinorUnitsAndCode(raw.amountMinorUnits, currencyCode);
+  if (money.isFailure()) return null;
+  const fixed = CouponValue.fixedAmount(money.value);
+  return fixed.isSuccess() ? fixed.value : null;
 }
 
 /**
@@ -667,6 +1195,66 @@ function validateCommand(
       return typeof command.seatId === 'string' && command.seatId.length > 0
         ? ok(command)
         : fail(new StaffEditInvalidCommandError('seatId'));
+    case 'discounts': {
+      if (!Array.isArray(command.discounts)) {
+        return fail(new StaffEditInvalidCommandError('discounts'));
+      }
+      const named = (value: unknown): value is string =>
+        typeof value === 'string' && value.trim().length > 0;
+      for (const raw of command.discounts) {
+        const request = (raw ?? {}) as Partial<Record<string, unknown>>;
+        switch (request['source']) {
+          case 'grant':
+            if (!named(request['grantId'])) {
+              return fail(new StaffEditInvalidCommandError('discounts'));
+            }
+            break;
+          case 'code':
+            if (!named(request['code'])) {
+              return fail(new StaffEditInvalidCommandError('discounts'));
+            }
+            break;
+          case 'manual': {
+            const value = (request['value'] ?? {}) as Record<string, unknown>;
+            // Whole numbers only, in the domain's own ranges: a percent is
+            // 1–100 and an amount is a positive count of minor units. Nothing
+            // is rounded into plausibility — `12.5%` is a caller bug.
+            const legal =
+              (value['kind'] === 'percent_off' &&
+                Number.isInteger(value['percent']) &&
+                (value['percent'] as number) > 0 &&
+                (value['percent'] as number) <= 100) ||
+              (value['kind'] === 'fixed_amount' &&
+                Number.isInteger(value['amountMinorUnits']) &&
+                (value['amountMinorUnits'] as number) > 0);
+            if (!legal) {
+              return fail(new StaffEditInvalidCommandError('discounts'));
+            }
+            break;
+          }
+          default:
+            return fail(new StaffEditInvalidCommandError('discounts'));
+        }
+      }
+      return ok(command);
+    }
+    case 'vouchers': {
+      if (!Array.isArray(command.codes)) {
+        return fail(new StaffEditInvalidCommandError('vouchers'));
+      }
+      const codes = command.codes.map((code) =>
+        typeof code === 'string' ? Coupon.normalizeCode(code) : '',
+      );
+      // No blanks, and no voucher twice: the second draw would be measured
+      // against a balance the first already moved.
+      if (codes.some((code) => code.length === 0)) {
+        return fail(new StaffEditInvalidCommandError('vouchers'));
+      }
+      if (new Set(codes).size !== codes.length) {
+        return fail(new StaffEditInvalidCommandError('vouchers'));
+      }
+      return ok(command);
+    }
     case 'redurate':
       if (typeof command.seatId !== 'string' || command.seatId.length === 0) {
         return fail(new StaffEditInvalidCommandError('seatId'));
@@ -825,6 +1413,11 @@ function applyCommand(
       }
       return ok(stored.filter((seat) => seat !== target));
     }
+    case 'discounts':
+    case 'vouchers':
+      // Not seat edits — the bill's, settled outside the fold, which skips
+      // them. Listed so the switch stays exhaustive.
+      return ok(stored);
   }
 }
 

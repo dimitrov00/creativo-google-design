@@ -147,7 +147,7 @@ export class FirestoreBookingStore {
    * `null` and therefore equal to nobody's uid. They were unreschedulable by
    * ANYONE, which nothing ever decided and nobody ever wanted.
    */
-  async reschedule<E = never>(
+  async reschedule<E = never, S = undefined>(
     appointmentId: string,
     canWrite: (current: PersistedDocument) => boolean,
     plan: (
@@ -157,10 +157,26 @@ export class FirestoreBookingStore {
       snapshot: BookingSnapshot,
       current: PersistedDocument,
       request: DecideBookingRequest,
+      side: S,
     ) => Result<BookingDecision, CommitBookingError | E>,
     extraFields: (
       current: PersistedDocument,
     ) => Record<string, unknown> = () => ({}),
+    /**
+     * WHAT ELSE the attempt reads and writes in the SAME transaction — the
+     * gift vouchers a visit draws on (2026-09-10). `read` runs after the
+     * booking loads and before the decision, so every read still precedes
+     * every write; `write` runs after the appointment's own. Absent for a
+     * caller that touches nothing but the book.
+     */
+    side?: {
+      read: (
+        tx: Transaction,
+        current: PersistedDocument,
+        request: DecideBookingRequest,
+      ) => Promise<Result<S, CommitBookingError | E>>;
+      write: (tx: Transaction, decision: BookingDecision, side: S) => void;
+    },
   ): Promise<Result<CommitOutcome, CommitBookingError | E>> {
     type Failure = CommitBookingError | E;
     try {
@@ -193,13 +209,26 @@ export class FirestoreBookingStore {
             return fail<CommitOutcome, Failure>(loaded.error);
           }
 
+          const sideRead = side
+            ? await side.read(tx, current, request)
+            : ok<S, Failure>(undefined as S);
+          if (sideRead.isFailure()) {
+            return fail<CommitOutcome, Failure>(sideRead.error);
+          }
+
           const freed = this.withoutOwnContribution(loaded.value, current);
-          const decision = decide(freed.snapshot, current, request);
+          const decision = decide(
+            freed.snapshot,
+            current,
+            request,
+            sideRead.value,
+          );
           if (decision.isFailure()) {
             return fail<CommitOutcome, Failure>(decision.error);
           }
 
           this.write(tx, decision.value, freed, extraFields(current));
+          side?.write(tx, decision.value, sideRead.value);
           return ok<CommitOutcome, Failure>({
             kind: 'committed',
             decision: decision.value,

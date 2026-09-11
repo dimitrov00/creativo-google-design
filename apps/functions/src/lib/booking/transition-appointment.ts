@@ -17,6 +17,7 @@ import {
 import { adminFirestore } from '../firebase-admin';
 import { appendAudit } from './audit';
 import { callerWorksTheBook } from './caller-roles';
+import { applyVoucherRestore, planVoucherRestore } from './voucher-restore';
 
 /**
  * The staff write path for an appointment's LIFECYCLE — confirm, complete,
@@ -144,7 +145,9 @@ export const transitionAppointment = onCall(async (request) => {
   // The reason is a CODE from the closed union, parsed in the domain. Prose
   // cannot be aggregated, and every cancellation this shop has ever recorded
   // was filed `other` because the old shape only had somewhere to put a
-  // sentence.
+  // sentence. It is OPTIONAL (owner, 2026-09-11): no code files the
+  // cancellation as `unspecified`, while an unknown code — or `other` with
+  // nothing written — is still refused below.
   const reason =
     to === 'cancelled'
       ? cancellationReasonOf(
@@ -187,6 +190,21 @@ export const transitionAppointment = onCall(async (request) => {
     const seats = Array.isArray(data['seats'])
       ? (data['seats'] as Record<string, unknown>[])
       : [];
+
+    // A cancellation gives back what gift vouchers paid (2026-09-10). Read
+    // now — every read precedes every write — and applied below only where
+    // the ROOT actually ends up cancelled.
+    const restore =
+      to === 'cancelled'
+        ? await planVoucherRestore(tx, db, data, {
+            iso: new Date().toISOString(),
+            zone: String(
+              (data['timeSlot'] as Record<string, unknown> | undefined)?.[
+                'zone'
+              ] ?? 'Europe/Sofia',
+            ),
+          })
+        : null;
 
     const seatOutcome = outcomeForStatus(
       to,
@@ -238,15 +256,21 @@ export const transitionAppointment = onCall(async (request) => {
       // truth — the domain's own fold, so "any seat worked → completed" beats
       // "all resolved, none worked → no_show" here exactly as it does in every
       // report computed downstream.
+      const summarized = summarizeSeatOutcomes(
+        next.map((seat) =>
+          seatOutcomeFromDocument(seat['outcome'], status, seatEndMs(seat)),
+        ),
+        status,
+      );
+      const rootCancelled = summarized.kind === 'cancelled' && restore !== null;
       tx.update(ref, {
         seats: next,
-        status: summarizeSeatOutcomes(
-          next.map((seat) =>
-            seatOutcomeFromDocument(seat['outcome'], status, seatEndMs(seat)),
-          ),
-          status,
-        ),
+        status: summarized,
+        ...(rootCancelled
+          ? { voucherRedemptions: restore.voucherRedemptions }
+          : {}),
       });
+      if (rootCancelled) applyVoucherRestore(tx, restore);
       return;
     }
 
@@ -376,6 +400,7 @@ export const transitionAppointment = onCall(async (request) => {
         to === 'cancelled' && reason !== null
           ? { kind: 'cancelled', reason: rootCancellationReason(reason) }
           : { kind: to },
+      ...(restore ? { voucherRedemptions: restore.voucherRedemptions } : {}),
       ...(reopening
         ? {
             seats: seats.map((seat) =>
@@ -396,6 +421,7 @@ export const transitionAppointment = onCall(async (request) => {
               ),
             }),
     });
+    if (restore) applyVoucherRestore(tx, restore);
     if (reopening) reopenedFrom = 'no_show';
   });
 

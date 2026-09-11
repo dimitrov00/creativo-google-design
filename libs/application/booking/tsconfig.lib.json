@@ -28,13 +28,16 @@
       "path": "../shared/tsconfig.lib.json"
     },
     {
+      "path": "../../domain/engagement/tsconfig.lib.json"
+    },
+    {
       "path": "../../domain/accounts/tsconfig.lib.json"
     },
     {
-      "path": "../../domain/kernel/tsconfig.lib.json"
+      "path": "../../domain/catalog/tsconfig.lib.json"
     },
     {
-      "path": "../../domain/catalog/tsconfig.lib.json"
+      "path": "../../domain/kernel/tsconfig.lib.json"
     },
     {
       "path": "../../domain/scheduling/tsconfig.lib.json"

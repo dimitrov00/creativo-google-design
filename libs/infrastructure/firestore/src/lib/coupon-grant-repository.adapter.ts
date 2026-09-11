@@ -9,24 +9,15 @@ import {
   where,
 } from 'firebase/firestore';
 import { FIREBASE_FIRESTORE } from '@creativo/infrastructure/firebase-app';
-import {
-  Money,
-  Result,
-  ZonedDateTime,
-  fail,
-  ok,
-} from '@creativo/domain/kernel';
+import { Result, ZonedDateTime, fail, ok } from '@creativo/domain/kernel';
 import { UserId } from '@creativo/domain/accounts';
 import {
   Coupon,
-  CouponCombinability,
-  CouponExpiry,
   CouponGrant,
   CouponGrantCapacity,
   CouponGrantExpiration,
   CouponGrantId,
   CouponGrantState,
-  CouponValue,
 } from '@creativo/domain/engagement';
 import {
   CouponGrantRepository,
@@ -38,72 +29,11 @@ import {
   couponGrantsCollection,
   couponsCollection,
 } from './firestore-paths';
-
-// ── CouponValue ─────────────────────────────────────────────────────────
-
-function couponValueToPersistence(value: CouponValue): DocumentData {
-  switch (value.kind) {
-    case 'percent_off':
-      return { kind: 'percent_off', percent: value.percent };
-    case 'fixed_amount':
-      return {
-        kind: 'fixed_amount',
-        amountMinorUnits: value.amount.toMinorUnits(),
-        currencyCode: value.amount.currencyCode(),
-      };
-    case 'free_service':
-      return { kind: 'free_service' };
-  }
-}
-
-function couponValueFromPersistence(
-  data: DocumentData,
-): Result<CouponValue, RepositoryError> {
-  switch (data['kind']) {
-    case 'percent_off': {
-      const result = CouponValue.percentOff(data['percent']);
-      return result.isFailure()
-        ? fail(
-            new RepositoryError(
-              'Malformed CouponValue.percent_off',
-              result.error,
-            ),
-          )
-        : ok(result.value);
-    }
-    case 'fixed_amount': {
-      const moneyResult = Money.fromMinorUnitsAndCode(
-        data['amountMinorUnits'],
-        data['currencyCode'],
-      );
-      if (moneyResult.isFailure()) {
-        return fail(
-          new RepositoryError(
-            'Malformed CouponValue.fixed_amount amount',
-            moneyResult.error,
-          ),
-        );
-      }
-      const result = CouponValue.fixedAmount(moneyResult.value);
-      return result.isFailure()
-        ? fail(
-            new RepositoryError(
-              'Malformed CouponValue.fixed_amount',
-              result.error,
-            ),
-          )
-        : ok(result.value);
-    }
-    case 'free_service':
-      return ok(CouponValue.freeService());
-    default:
-      return fail(
-        new RepositoryError(
-          `Unknown CouponValue kind: ${String(data['kind'])}`,
-        ),
-      );
-  }
-}
+import {
+  couponFromPersistence,
+  couponValueFromPersistence,
+  couponValueToPersistence,
+} from './coupon-persistence';
 
 // ── CouponGrantState ────────────────────────────────────────────────────
 
@@ -319,58 +249,6 @@ function grantFromPersistence(
         'Malformed CouponGrant document',
         reconstituted.error,
       ),
-    );
-  }
-  return ok(reconstituted.value);
-}
-
-// ── Coupon mapper ───────────────────────────────────────────────────────
-
-function couponExpiryFromPersistence(
-  data: DocumentData,
-): Result<CouponExpiry, RepositoryError> {
-  switch (data['kind']) {
-    case 'days':
-      return ok({ kind: 'days', days: data['days'] });
-    case 'fixed_date': {
-      const atResult = ZonedDateTime.fromISO(data['atIso'], 'UTC');
-      if (atResult.isFailure()) {
-        return fail(
-          new RepositoryError('Malformed expiry.atIso', atResult.error),
-        );
-      }
-      return ok({ kind: 'fixed_date', at: atResult.value });
-    }
-    default:
-      return ok({ kind: 'never' });
-  }
-}
-
-function couponFromPersistence(
-  id: string,
-  data: DocumentData,
-): Result<Coupon, RepositoryError> {
-  const valueResult = couponValueFromPersistence(data['value']);
-  if (valueResult.isFailure()) return fail(valueResult.error);
-  const expiryResult = couponExpiryFromPersistence(data['expiry']);
-  if (expiryResult.isFailure()) return fail(expiryResult.error);
-  const combinability: CouponCombinability =
-    data['combinability']?.['kind'] === 'exclusive'
-      ? CouponCombinability.exclusive()
-      : CouponCombinability.stackable();
-
-  const reconstituted = Coupon.reconstitute({
-    id,
-    name: data['name'],
-    value: valueResult.value,
-    combinability,
-    expiry: expiryResult.value,
-    usageLimit: data['usageLimit'] ?? undefined,
-    enabled: data['enabled'],
-  });
-  if (reconstituted.isFailure()) {
-    return fail(
-      new RepositoryError('Malformed Coupon document', reconstituted.error),
     );
   }
   return ok(reconstituted.value);

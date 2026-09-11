@@ -328,6 +328,51 @@ export type StaffEditCommand =
   | {
       readonly kind: 'removeSeat';
       readonly seatId: string;
+    }
+  /**
+   * The discounts on the BILL — the whole set, replaced.
+   *
+   * The whole visit's, never a seat's: the evaluator takes the cart's
+   * subtotal and `DiscountInput` names no line, so this is a fact about
+   * what is owed rather than about any chair. The server RESOLVES what is
+   * named — a grant must be the client's own and still usable, a code must
+   * open an enabled coupon, a manual figure needs a role that handles money
+   * — and snapshots the value it found; a discount already on the visit is
+   * kept as stored rather than re-resolved, because a promise once kept is
+   * not withdrawn by a coupon retired since. The set must be LEGAL: an
+   * exclusive coupon alone, no promise twice, one manual figure at most.
+   * An empty list takes every discount off.
+   */
+  | {
+      readonly kind: 'discounts';
+      readonly discounts: readonly StaffDiscountRequest[];
+    }
+  /**
+   * The gift vouchers PAYING for the bill — the whole set, by code, in the
+   * order they cover it. Each voucher settles what the ones before it left,
+   * never more than its balance; the server reads and writes the balances
+   * inside the same transaction as the visit, gives back what a voucher no
+   * longer named had paid, and refuses a code that opens nothing or a
+   * voucher with nothing left. An empty list gives everything back.
+   */
+  | {
+      readonly kind: 'vouchers';
+      readonly codes: readonly string[];
+    };
+
+/**
+ * What the sheet asks to take off the bill. Three arms, two of them a
+ * REFERENCE the server resolves and one a VALUE the server checks the
+ * caller may author (see `handlesMoney`).
+ */
+export type StaffDiscountRequest =
+  | { readonly source: 'grant'; readonly grantId: string }
+  | { readonly source: 'code'; readonly code: string }
+  | {
+      readonly source: 'manual';
+      readonly value:
+        | { readonly kind: 'percent_off'; readonly percent: number }
+        | { readonly kind: 'fixed_amount'; readonly amountMinorUnits: number };
     };
 
 export interface StaffEditAppointmentRequest {
@@ -376,9 +421,11 @@ export interface TransitionAppointmentRequest {
   readonly appointmentId: string;
   readonly to: 'confirmed' | 'completed' | 'no_show' | 'cancelled';
   /**
-   * Required by the server when `to` is `cancelled` — a code from the closed
-   * union, never prose. "Why do we lose Saturday mornings" is answerable only
-   * if every cancellation carries a groupable code.
+   * Read when `to` is `cancelled` — a code from the closed union, never
+   * prose. "Why do we lose Saturday mornings" is answerable only if every
+   * cancellation carries a groupable code, which is why leaving it out does
+   * not leave a hole: the server files the cancellation as `unspecified`
+   * (owner, 2026-09-11 — a barber between cuts may not have the time).
    */
   readonly reasonCode?: CancellationReasonKind;
   /** Only read when `reasonCode` is `other`, where the server requires it. */

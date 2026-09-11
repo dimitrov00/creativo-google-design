@@ -54,6 +54,8 @@ export * from './lib/booking-party.errors';
 export * from './lib/booking-cart';
 export * from './lib/booking-cart.errors';
 
+export * from './lib/applied-discount';
+export * from './lib/voucher-redemption';
 export * from './lib/appointment-status';
 export * from './lib/appointment';
 export * from './lib/appointment.errors';

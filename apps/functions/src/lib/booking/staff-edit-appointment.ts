@@ -1,6 +1,8 @@
 import { HttpsError, onCall } from 'firebase-functions/v2/https';
 import { match } from '@creativo/domain/kernel';
 import { FirestoreBookingStore } from '../../adapters/firestore-booking-store';
+import { FirestoreDiscountResolver } from '../../adapters/firestore-discount-resolver';
+import { FirestoreVoucherLedger } from '../../adapters/firestore-voucher-ledger';
 import { SystemClock } from '../../adapters/system-clock';
 import { adminFirestore } from '../firebase-admin';
 import { loadBookingPolicy } from './load-booking-policy';
@@ -94,6 +96,8 @@ export const staffEditAppointment = onCall(async (request) => {
     new FirestoreBookingStore(db),
     new SystemClock(),
     await loadBookingPolicy(db),
+    new FirestoreDiscountResolver(db),
+    new FirestoreVoucherLedger(db),
   );
 
   const payload = (request.data ?? {}) as Record<string, unknown>;

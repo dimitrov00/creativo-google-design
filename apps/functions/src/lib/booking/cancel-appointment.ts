@@ -2,11 +2,16 @@ import { HttpsError, onCall } from 'firebase-functions/v2/https';
 import { ZonedDateTime } from '@creativo/domain/kernel';
 import {
   type AppointmentStatus,
+  type CancellationReason,
   canTransition,
+  rootCancellationReason,
+  seatCancelled,
 } from '@creativo/domain/scheduling';
+import { seatOutcomeToDocument } from '@creativo/application/booking';
 import { adminFirestore } from '../firebase-admin';
 import { loadBookingPolicy } from './load-booking-policy';
 import { appendAudit } from './audit';
+import { applyVoucherRestore, planVoucherRestore } from './voucher-restore';
 
 /**
  * The cancellation write path — a callable, like `commitBooking`, and for the
@@ -77,6 +82,17 @@ export const cancelAppointment = onCall(async (request) => {
       );
     }
 
+    // What gift vouchers paid comes back with the visit — read now, before
+    // any write, and written after the status below.
+    const timeSlotZone = String(
+      (data['timeSlot'] as Record<string, unknown> | undefined)?.['zone'] ??
+        'Europe/Sofia',
+    );
+    const restore = await planVoucherRestore(tx, db, data, {
+      iso: new Date().toISOString(),
+      zone: timeSlotZone,
+    });
+
     // The free-cancellation window (`BookingPolicy.mayCancelAt` — the SAME
     // rule the appointments page renders as a deadline and disables its
     // button by). The policy carried this number from day one and nothing
@@ -102,13 +118,46 @@ export const cancelAppointment = onCall(async (request) => {
       );
     }
 
+    /*
+     * THE SEATS SAY WHO AND WHEN (2026-09-11). This path wrote the root and
+     * nothing else, so every seat of a client's cancellation read back as
+     * derived — stamped by the shop, at the seat's own end time, with the
+     * root's stand-in string for a reason — and the staff sheet, once it
+     * began to say what became of a visit, said all three wrong. The
+     * client's sentence rides as `other`, in their words; nothing typed is
+     * `unspecified`, the same bucket the shop's own unexplained cancels use.
+     */
+    const cancellation: CancellationReason =
+      reason.length > 0
+        ? { kind: 'other', note: reason }
+        : { kind: 'unspecified' };
+    const outcome = seatOutcomeToDocument(
+      seatCancelled(Date.now(), 'client', cancellation),
+    );
+    const seats = Array.isArray(data['seats'])
+      ? (data['seats'] as Record<string, unknown>[])
+      : [];
+    const isResolved = (seat: Record<string, unknown>): boolean => {
+      const kind = (seat['outcome'] as Record<string, unknown> | undefined)?.[
+        'kind'
+      ];
+      return typeof kind === 'string' && kind !== 'scheduled';
+    };
+
     tx.update(ref, {
       status: {
         kind: 'cancelled',
-        // The client's reason is optional; the domain requires one.
-        reason: reason.length > 0 ? reason : 'cancelled_by_client',
+        // The root keeps the client's own sentence when there is one — the
+        // seats hold the code — and the code alone when there is not.
+        reason:
+          reason.length > 0 ? reason : rootCancellationReason(cancellation),
       },
+      seats: seats.map((seat) =>
+        isResolved(seat) ? seat : { ...seat, outcome },
+      ),
+      ...(restore ? { voucherRedemptions: restore.voucherRedemptions } : {}),
     });
+    if (restore) applyVoucherRestore(tx, restore);
   });
 
   void appendAudit({

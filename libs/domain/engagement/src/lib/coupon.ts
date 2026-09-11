@@ -14,6 +14,8 @@ import {
 } from './coupon.errors';
 import { CouponId } from './ids';
 import { EmptyIdError } from './ids.errors';
+import { VoucherCode } from './voucher-code';
+import { VoucherCodeInvalidError } from './voucher-code.errors';
 
 /**
  * When does a grant from this coupon stop being usable? Ports v2's
@@ -53,7 +55,10 @@ export const CouponExpiry = {
 } as const;
 
 export type CouponError =
-  EmptyIdError | CouponEmptyNameError | CouponInvalidUsageLimitError;
+  | EmptyIdError
+  | CouponEmptyNameError
+  | CouponInvalidUsageLimitError
+  | VoucherCodeInvalidError;
 
 export interface CreateCouponProps {
   id: string;
@@ -63,6 +68,13 @@ export interface CreateCouponProps {
   expiry: CouponExpiry;
   usageLimit?: number;
   enabled: boolean;
+  /**
+   * A SHAREABLE code that opens this coupon at the counter — `FIRST10` on a
+   * flyer, a code the client reads off their phone. `null` (the default)
+   * for a coupon that reaches people only as grants. Case-insensitive at
+   * the counter: stored and matched upper-case, whatever the flyer printed.
+   */
+  code?: string | null;
 }
 
 /**
@@ -79,6 +91,8 @@ export class Coupon {
     readonly expiry: CouponExpiry,
     readonly usageLimit: number | null,
     readonly enabled: boolean,
+    /** See `CreateCouponProps.code` — upper-case, or `null` for grant-only. */
+    readonly code: string | null = null,
   ) {}
 
   static create(props: CreateCouponProps): Result<Coupon, CouponError[]> {
@@ -95,16 +109,18 @@ export class Coupon {
     const idResult = CouponId.create(props.id);
     const nameResult = Coupon.validateName(props.name);
     const usageLimitResult = Coupon.validateUsageLimit(props.usageLimit);
+    const codeResult = Coupon.validateCode(props.code);
 
     const combined = combineAll([
       idResult,
       nameResult,
       usageLimitResult,
+      codeResult,
     ] as const);
     if (combined.isFailure()) {
       return fail(combined.error);
     }
-    const [id, name, usageLimit] = combined.value;
+    const [id, name, usageLimit, code] = combined.value;
 
     return ok(
       new Coupon(
@@ -115,8 +131,27 @@ export class Coupon {
         props.expiry,
         usageLimit,
         props.enabled,
+        code,
       ),
     );
+  }
+
+  /**
+   * Normalise a code the way the counter reads it: trimmed, upper-case, and
+   * a legal `VoucherCode` — the same shape a client would type in. Exposed
+   * so the lookup that RESOLVES a typed code prepares it identically.
+   */
+  static normalizeCode(raw: string): string {
+    return raw.trim().toUpperCase();
+  }
+
+  private static validateCode(
+    raw: string | null | undefined,
+  ): Result<string | null, VoucherCodeInvalidError> {
+    if (raw == null || raw.trim().length === 0) return ok(null);
+    const normalized = Coupon.normalizeCode(raw);
+    const parsed = VoucherCode.create(normalized);
+    return parsed.isFailure() ? fail(parsed.error) : ok(parsed.value.value);
   }
 
   /** Whether a grant from this coupon, granted `at`, is still within its expiry window at `now`. */

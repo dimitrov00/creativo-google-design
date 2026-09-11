@@ -4,7 +4,16 @@ import {
   assertSucceeds,
   RulesTestEnvironment,
 } from '@firebase/rules-unit-testing';
-import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
+import {
+  collection,
+  doc,
+  getDoc,
+  getDocs,
+  query,
+  setDoc,
+  updateDoc,
+  where,
+} from 'firebase/firestore';
 import { createEmulatorTestEnv } from '../testing/emulator-test-env';
 
 describe('firestore.rules', () => {
@@ -303,6 +312,120 @@ describe('firestore.rules', () => {
             effect: { kind: 'closed' },
           },
         ),
+      );
+    });
+  });
+
+  describe('couponGrants — the owner, and the book (2026-09-10)', () => {
+    const grant = {
+      id: 'grant-1',
+      userId: 'client-1',
+      couponId: 'coupon-1',
+      value: { kind: 'percent_off', percent: 20 },
+      grantedAt: '2026-09-01T09:00:00.000Z',
+      state: {
+        kind: 'active',
+        capacity: { kind: 'single_use' },
+        expiration: { kind: 'no_expiry' },
+      },
+    };
+
+    beforeEach(async () => {
+      await testEnv.withSecurityRulesDisabled(async (ctx) => {
+        await setDoc(doc(ctx.firestore(), 'couponGrants', 'grant-1'), grant);
+      });
+    });
+
+    it('lets the owner and a barber read a grant — the barber honours it at the chair', async () => {
+      const owner = testEnv.authenticatedContext('client-1');
+      await assertSucceeds(
+        getDoc(doc(owner.firestore(), 'couponGrants', 'grant-1')),
+      );
+      const barber = testEnv.authenticatedContext('staff-1', {
+        roles: ['barber'],
+      });
+      await assertSucceeds(
+        getDoc(doc(barber.firestore(), 'couponGrants', 'grant-1')),
+      );
+      await assertSucceeds(
+        getDocs(
+          query(
+            collection(barber.firestore(), 'couponGrants'),
+            where('userId', '==', 'client-1'),
+          ),
+        ),
+      );
+    });
+
+    it("denies another client, a content manager and an anonymous visitor someone else's grant", async () => {
+      const other = testEnv.authenticatedContext('client-2');
+      await assertFails(
+        getDoc(doc(other.firestore(), 'couponGrants', 'grant-1')),
+      );
+      const copy = testEnv.authenticatedContext('staff-2', {
+        roles: ['content_manager'],
+      });
+      await assertFails(
+        getDoc(doc(copy.firestore(), 'couponGrants', 'grant-1')),
+      );
+      const anon = testEnv.unauthenticatedContext();
+      await assertFails(
+        getDoc(doc(anon.firestore(), 'couponGrants', 'grant-1')),
+      );
+    });
+  });
+
+  describe('giftVouchers — the holder, the book, and nobody writes (2026-09-10)', () => {
+    const voucher = {
+      code: 'GIFT2025',
+      initialValueMinorUnits: 2500,
+      balanceMinorUnits: 2500,
+      currencyCode: 'EUR',
+      issuedAt: { iso: '2026-09-01T09:00:00.000+03:00', zone: 'Europe/Sofia' },
+      expiresAt: null,
+      issuedToUserId: 'client-1',
+      state: { kind: 'active' },
+    };
+
+    beforeEach(async () => {
+      await testEnv.withSecurityRulesDisabled(async (ctx) => {
+        await setDoc(doc(ctx.firestore(), 'giftVouchers', 'v1'), voucher);
+      });
+    });
+
+    it('lets the holder and a barber read a voucher, by id and by code', async () => {
+      const holder = testEnv.authenticatedContext('client-1');
+      await assertSucceeds(
+        getDoc(doc(holder.firestore(), 'giftVouchers', 'v1')),
+      );
+      const barber = testEnv.authenticatedContext('staff-1', {
+        roles: ['barber'],
+      });
+      await assertSucceeds(
+        getDoc(doc(barber.firestore(), 'giftVouchers', 'v1')),
+      );
+      await assertSucceeds(
+        getDocs(
+          query(
+            collection(barber.firestore(), 'giftVouchers'),
+            where('code', '==', 'GIFT2025'),
+          ),
+        ),
+      );
+    });
+
+    it("denies another client, an anonymous visitor, and every client-side write — even the book's", async () => {
+      const other = testEnv.authenticatedContext('client-2');
+      await assertFails(getDoc(doc(other.firestore(), 'giftVouchers', 'v1')));
+      const anon = testEnv.unauthenticatedContext();
+      await assertFails(getDoc(doc(anon.firestore(), 'giftVouchers', 'v1')));
+      const admin = testEnv.authenticatedContext('staff-2', {
+        roles: ['admin'],
+      });
+      await assertFails(
+        updateDoc(doc(admin.firestore(), 'giftVouchers', 'v1'), {
+          balanceMinorUnits: 0,
+        }),
       );
     });
   });

@@ -18,6 +18,13 @@ import {
  * commercially — a shop that cancels its own bookings has a rostering
  * problem, and a shop whose clients cancel has a reminder problem. They must
  * never land in the same bucket.
+ *
+ * The reason is OPTIONAL (owner, 2026-09-11: a barber between cuts may not
+ * have the time to say why). Optional does not mean absent: a cancellation
+ * nobody explained is filed `unspecified`, its own groupable bucket — "how
+ * many of Saturday's cancellations went unexplained" is a real question,
+ * and one that a nullable field could only answer by counting holes. It is
+ * distinct from `other`, which is a reason in the shop's words.
  */
 export type CancellationReason =
   | { readonly kind: 'client_changed_plans' }
@@ -26,6 +33,8 @@ export type CancellationReason =
   | { readonly kind: 'staff_shop_closure' }
   /** A no-show the shop later reclassified — kept distinct so it is never double-counted. */
   | { readonly kind: 'no_show_converted' }
+  /** Nobody said why. What a cancellation without a picked reason is filed as. */
+  | { readonly kind: 'unspecified' }
   | { readonly kind: 'other'; readonly note: string };
 
 export type CancellationReasonKind = CancellationReason['kind'];
@@ -36,7 +45,9 @@ export type CancellationReasonKind = CancellationReason['kind'];
  * `no_show_converted` is deliberately absent: it is stamped by the
  * correction edge when staff reclassify a no-show, never chosen from a list,
  * and offering it would let a cancellation be filed as a reclassification
- * that never happened.
+ * that never happened. `unspecified` is absent for the opposite reason — it
+ * is what picking NOTHING means, so a chip for it would be a chip for
+ * leaving the others alone.
  */
 export const OFFERED_CANCELLATION_REASONS: readonly CancellationReasonKind[] = [
   'client_changed_plans',
@@ -53,20 +64,24 @@ export const OFFERED_CANCELLATION_REASONS: readonly CancellationReasonKind[] = [
  * a server that accepted an unknown string would reopen the free-text bucket
  * this union exists to close. `other` is the only arm that carries a note,
  * and an `other` with nothing written is refused — it says less than not
- * asking.
+ * asking. NO code at all is not an unknown code: it is the shop declining to
+ * say, and it parses to `unspecified` rather than to a refusal.
  */
 export function cancellationReasonOf(
   code: string,
   note: string,
 ): CancellationReason | null {
   const trimmed = note.trim();
-  switch (code) {
+  switch (code.trim()) {
+    case '':
+    case 'unspecified':
+      return { kind: 'unspecified' };
     case 'client_changed_plans':
     case 'client_unwell':
     case 'staff_barber_absence':
     case 'staff_shop_closure':
     case 'no_show_converted':
-      return { kind: code };
+      return { kind: code.trim() as Exclude<CancellationReasonKind, 'other'> };
     case 'other':
       return trimmed.length === 0 ? null : { kind: 'other', note: trimmed };
     default:

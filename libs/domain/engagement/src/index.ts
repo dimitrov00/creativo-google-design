@@ -15,6 +15,8 @@ export * from './lib/coupon-grant';
 export * from './lib/coupon-grant.errors';
 export * from './lib/discount-application';
 export * from './lib/discount-application.errors';
+export * from './lib/gift-voucher';
+export * from './lib/gift-voucher.errors';
 
 export * from './lib/reward';
 export * from './lib/milestone';

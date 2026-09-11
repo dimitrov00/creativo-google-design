@@ -39,8 +39,10 @@ import {
   busyDocumentId,
   catalogTermsFromDocument,
   contactFromDocument,
+  discountsFromDocument,
   seatOutcomeFromDocument,
   seatTipFromDocument,
+  voucherRedemptionsFromDocument,
 } from '@creativo/application/booking';
 import { RepositoryError } from '@creativo/application/shared';
 import { FIREBASE_FIRESTORE } from '@creativo/infrastructure/firebase-app';
@@ -243,6 +245,11 @@ function toDomain(
       typeof data['bookedFromAppointmentId'] === 'string'
         ? data['bookedFromAppointmentId']
         : null,
+    // What was taken off the bill, and what vouchers paid of it — snapshots,
+    // read back so the receipt and the sheet's ladder say what the server
+    // agreed to.
+    discounts: discountsFromDocument(data),
+    voucherRedemptions: voucherRedemptionsFromDocument(data),
   });
   if (reconstituted.isFailure()) {
     return fail(

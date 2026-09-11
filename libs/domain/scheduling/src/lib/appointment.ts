@@ -12,6 +12,12 @@ import {
   EmptyIdError as CatalogEmptyIdError,
 } from '@creativo/domain/catalog';
 import {
+  DiscountApplication,
+  type DiscountBreakdown,
+} from '@creativo/domain/engagement';
+import { AppliedDiscount } from './applied-discount';
+import { VoucherRedemption } from './voucher-redemption';
+import {
   AppointmentBarberDoubleBookedError,
   AppointmentEmptyCancellationReasonError,
   AppointmentEmptySeatsError,
@@ -80,6 +86,10 @@ export interface CreateAppointmentProps {
    * identical whether one was booked in the shop or found cold on the site.
    */
   bookedFromAppointmentId?: string | null;
+  /** What was taken off the price — see `AppliedDiscount`. Empty by default. */
+  discounts?: readonly AppliedDiscount[];
+  /** What was PAID with vouchers — see `VoucherRedemption`. Empty by default. */
+  voucherRedemptions?: readonly VoucherRedemption[];
 }
 
 export interface ReconstituteAppointmentProps {
@@ -92,6 +102,10 @@ export interface ReconstituteAppointmentProps {
   bookedAt?: ZonedDateTime | null;
   arrivedAt?: ZonedDateTime | null;
   bookedFromAppointmentId?: string | null;
+  /** Absent for every appointment written before discounts could be applied. */
+  discounts?: readonly AppliedDiscount[];
+  /** Absent for every appointment written before vouchers could be redeemed. */
+  voucherRedemptions?: readonly VoucherRedemption[];
 }
 
 /**
@@ -162,6 +176,23 @@ export class Appointment {
      * a countdown fabricated from catalog durations.
      */
     readonly arrivedAt: ZonedDateTime | null = null,
+    /**
+     * WHAT WAS TAKEN OFF — every discount applied to this visit, as
+     * snapshots (see `AppliedDiscount`). Empty for a visit at full price.
+     *
+     * On the ROOT, not the seats: `DiscountInput` names no seat, and the
+     * evaluator takes the cart's subtotal, so a discount is a fact about the
+     * bill rather than about any one line of it. `subtotal()` is the seats'
+     * sum before these; `total()` is what the party actually owes.
+     */
+    readonly discounts: readonly AppliedDiscount[] = [],
+    /**
+     * WHAT WAS PAID with gift vouchers — every draw-down this visit made,
+     * reversed ones included as history (see `VoucherRedemption`). A
+     * payment, never a discount: the price is `total()`, and
+     * `balanceDue()` is what still changes hands at the counter.
+     */
+    readonly voucherRedemptions: readonly VoucherRedemption[] = [],
   ) {}
 
   /**
@@ -187,6 +218,8 @@ export class Appointment {
         this.bookedAt,
         this.bookedFrom,
         at,
+        this.discounts,
+        this.voucherRedemptions,
       ),
     );
   }
@@ -213,6 +246,8 @@ export class Appointment {
         this.bookedAt,
         this.bookedFrom,
         null,
+        this.discounts,
+        this.voucherRedemptions,
       ),
     );
   }
@@ -302,6 +337,8 @@ export class Appointment {
     bookedAt?: ZonedDateTime | null;
     bookedFromAppointmentId?: string | null;
     arrivedAt?: ZonedDateTime | null;
+    discounts?: readonly AppliedDiscount[];
+    voucherRedemptions?: readonly VoucherRedemption[];
   }): Result<Appointment, AppointmentError[]> {
     const idResult = AppointmentId.create(props.id);
     const locationIdResult = LocationId.create(props.locationId);
@@ -336,6 +373,8 @@ export class Appointment {
         props.bookedAt ?? null,
         bookedFrom,
         props.arrivedAt ?? null,
+        props.discounts ?? [],
+        props.voucherRedemptions ?? [],
       ),
     );
   }
@@ -447,6 +486,88 @@ export class Appointment {
         if (sum.isFailure()) throw new Error('unreachable: mixed currency');
         return sum.value;
       });
+  }
+
+  /**
+   * The bill, line by line: the subtotal, what each applied discount took
+   * off the running remainder, and what is left. ONE evaluator —
+   * `DiscountApplication.apply` — so the sheet, the receipt and any report
+   * cannot disagree on a rounding.
+   */
+  breakdown(): DiscountBreakdown {
+    return DiscountApplication.apply(
+      this.subtotal(),
+      this.discounts.map((discount) => discount.toDiscountInput()),
+    );
+  }
+
+  /** What the party owes AFTER discounts — `subtotal()` when there are none. */
+  total(): Money {
+    return this.discounts.length === 0
+      ? this.subtotal()
+      : this.breakdown().total;
+  }
+
+  /** What vouchers have paid of this visit, reversed ones excluded. */
+  redeemedTotal(): Money {
+    const currency = this.subtotal().currencyCode();
+    const minor = this.voucherRedemptions
+      .filter((redemption) => redemption.live)
+      .filter((redemption) => redemption.amount.currencyCode() === currency)
+      .reduce((sum, redemption) => sum + redemption.amount.toMinorUnits(), 0);
+    return Appointment.moneyOrZero(minor, currency);
+  }
+
+  /** What still changes hands at the counter: the total less what vouchers paid, never below zero. */
+  balanceDue(): Money {
+    const total = this.total();
+    const due = total.toMinorUnits() - this.redeemedTotal().toMinorUnits();
+    return Appointment.moneyOrZero(due, total.currencyCode());
+  }
+
+  /** The same visit with these voucher redemptions instead — the whole list, replaced. */
+  withVoucherRedemptions(
+    voucherRedemptions: readonly VoucherRedemption[],
+  ): Appointment {
+    return new Appointment(
+      this.id,
+      this.locationId,
+      this.seats,
+      this.status,
+      this.contact,
+      this.bookedAt,
+      this.bookedFrom,
+      this.arrivedAt,
+      this.discounts,
+      voucherRedemptions,
+    );
+  }
+
+  private static moneyOrZero(minor: number, currencyCode: string): Money {
+    const money = Money.fromMinorUnitsAndCode(Math.max(0, minor), currencyCode);
+    // Unreachable: the currency is the seats' own, validated at build.
+    if (money.isFailure()) throw new Error('unreachable: seat currency');
+    return money.value;
+  }
+
+  /**
+   * The same visit with these discounts instead — the whole list, replaced.
+   * Every other field carried over; the seats and the status are untouched,
+   * because a discount changes what is owed and nothing about the chair.
+   */
+  withDiscounts(discounts: readonly AppliedDiscount[]): Appointment {
+    return new Appointment(
+      this.id,
+      this.locationId,
+      this.seats,
+      this.status,
+      this.contact,
+      this.bookedAt,
+      this.bookedFrom,
+      this.arrivedAt,
+      discounts,
+      this.voucherRedemptions,
+    );
   }
 
   private static earliestStart(seats: readonly Seat[]): ZonedDateTime | null {
@@ -668,6 +789,10 @@ export class Appointment {
       // Arrival survives every lifecycle move. Completing a visit must not
       // erase the fact that the client walked in at 10:52.
       this.arrivedAt,
+      // And so does the bill: a completed visit was still discounted, and
+      // still paid the way it was paid.
+      this.discounts,
+      this.voucherRedemptions,
     );
   }
 }

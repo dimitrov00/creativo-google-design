@@ -51,3 +51,9 @@ export type {
 // about step (and its test doubles) can source `today` from the `Clock`
 // port and hand it to the VO without an illegal `type:domain` import.
 export { ZonedDateTime } from '@creativo/domain/kernel';
+
+// Who may touch the shop's money (2026-09-10) — the accounts domain's own
+// list and predicate, re-exported for the staff surfaces that gate on it.
+// `UserId` rides along for the one feature that hands a client's id to a
+// repository port.
+export { MONEY_ROLES, UserId, handlesMoney } from '@creativo/domain/accounts';

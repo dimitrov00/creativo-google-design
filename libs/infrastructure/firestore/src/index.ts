@@ -12,6 +12,8 @@ export * from './lib/waitlist-reader.adapter';
 export * from './lib/catalog-reader.adapter';
 export * from './lib/contact-change.adapter';
 export * from './lib/coupon-grant-repository.adapter';
+export * from './lib/coupon-reader.adapter';
+export * from './lib/gift-voucher-reader.adapter';
 export * from './lib/impersonation.adapter';
 export * from './lib/invitation.adapter';
 export * from './lib/profile.adapter';

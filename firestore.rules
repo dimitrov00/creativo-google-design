@@ -139,10 +139,15 @@ service cloud.firestore {
     // static list-time check. Top-level, `get` proves ownership on the doc
     // itself, and `list` is only legal when the query's own filter pins
     // `userId` to the caller (which `findUsableForUser` does).
+    // …and the BOOK may read them too (2026-09-10): a barber at the chair
+    // honours a coupon the client already holds, which means the visit
+    // sheet has to list the client's usable grants. Same predicate the
+    // clientele read uses — a copy-and-media role still sees nothing.
     match /couponGrants/{grantId} {
-      allow get: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow get: if isSignedIn()
+        && (resource.data.userId == request.auth.uid || worksTheBook());
       allow list: if isSignedIn()
-        && resource.data.userId == request.auth.uid;
+        && (resource.data.userId == request.auth.uid || worksTheBook());
       // Grants are minted server-side only; the owner may transition their
       // own grant's `state` (active → used), nothing security-relevant.
       // Deliberately NOT `affectedKeys().hasOnly(['state'])` — `grantedAt`
@@ -351,6 +356,17 @@ service cloud.firestore {
     match /coupons/{couponId} {
       allow read: if isSignedIn();
       allow write: if isAdmin();
+    }
+
+    // GIFT VOUCHERS — money the shop was paid (2026-09-10). The holder may
+    // read their own balance; the book reads any, because a code presented
+    // at the counter has to be looked up before it is honoured. Never
+    // written from a client: a balance moves only inside the server
+    // transaction that writes the visit drawing on it.
+    match /giftVouchers/{voucherId} {
+      allow get, list: if isSignedIn()
+        && (resource.data.issuedToUserId == request.auth.uid || worksTheBook());
+      allow write: if false;
     }
 
     match /rewardPrograms/{programId} {

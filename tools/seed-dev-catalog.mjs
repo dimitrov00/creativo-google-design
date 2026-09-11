@@ -828,6 +828,156 @@ for (const [uid, firstName, lastName, phone, email] of CLIENT_PROFILES) {
 console.log(`seeded ${CLIENT_PROFILES.length} client profiles`);
 
 /*
+ * PROMOTIONS (2026-09-10): what the visit sheet's «Отстъпка» row can offer.
+ * Two coupons open by CODE at the counter (`FIRST10`, `BEARD5`) and two reach
+ * clients only as GRANTS — Мартин (today's 12:30 chair) holds a birthday
+ * −20%, Петър a free fifth cut, and Мартин also holds one already USED so the
+ * sheet can be seen filtering it out. The document vocabulary is the
+ * engagement adapter's own (`coupon-persistence.ts`), value included.
+ */
+const COUPONS = [
+  {
+    id: 'coupon-first10',
+    name: 'Първо посещение',
+    code: 'FIRST10',
+    value: { kind: 'percent_off', percent: 10 },
+    combinability: { kind: 'stackable' },
+    expiry: { kind: 'never' },
+    enabled: true,
+  },
+  {
+    id: 'coupon-beard5',
+    name: 'Брада −5 €',
+    code: 'BEARD5',
+    value: { kind: 'fixed_amount', amountMinorUnits: 500, currencyCode: 'EUR' },
+    combinability: { kind: 'stackable' },
+    expiry: { kind: 'never' },
+    enabled: true,
+  },
+  {
+    id: 'coupon-retired',
+    name: 'Лятна промоция',
+    code: 'SUMMER',
+    value: { kind: 'percent_off', percent: 15 },
+    combinability: { kind: 'stackable' },
+    expiry: { kind: 'never' },
+    // Retired: the code must read as "no such code" at the counter.
+    enabled: false,
+  },
+  {
+    id: 'coupon-birthday',
+    name: 'Рожден ден',
+    code: null,
+    value: { kind: 'percent_off', percent: 20 },
+    combinability: { kind: 'exclusive' },
+    expiry: { kind: 'days', days: 30 },
+    enabled: true,
+  },
+  {
+    id: 'coupon-fifth-cut',
+    name: 'Пето подстригване',
+    code: null,
+    value: { kind: 'free_service' },
+    combinability: { kind: 'exclusive' },
+    expiry: { kind: 'never' },
+    enabled: true,
+  },
+];
+for (const coupon of COUPONS) {
+  const { id, ...data } = coupon;
+  await db.collection('coupons').doc(id).set(data);
+}
+
+const grantedAtIso = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString();
+const COUPON_GRANTS = [
+  {
+    id: 'grant-dev-martin-birthday',
+    userId: 'dev-client-2',
+    couponId: 'coupon-birthday',
+    value: { kind: 'percent_off', percent: 20 },
+    grantedAt: grantedAtIso,
+    state: {
+      kind: 'active',
+      capacity: { kind: 'single_use' },
+      expiration: { kind: 'no_expiry' },
+    },
+  },
+  {
+    id: 'grant-dev-martin-used',
+    userId: 'dev-client-2',
+    couponId: 'coupon-first10',
+    value: { kind: 'percent_off', percent: 10 },
+    grantedAt: grantedAtIso,
+    state: { kind: 'used', usedAtIso: grantedAtIso, note: 'seed' },
+  },
+  {
+    id: 'grant-dev-petar-fifth',
+    userId: 'dev-client-3',
+    couponId: 'coupon-fifth-cut',
+    value: { kind: 'free_service' },
+    grantedAt: grantedAtIso,
+    state: {
+      kind: 'active',
+      capacity: { kind: 'single_use' },
+      expiration: { kind: 'no_expiry' },
+    },
+  },
+];
+for (const grant of COUPON_GRANTS) {
+  const { id, ...data } = grant;
+  await db.collection('couponGrants').doc(id).set({ id, ...data });
+}
+console.log(`seeded ${COUPONS.length} coupons and ${COUPON_GRANTS.length} grants`);
+
+/*
+ * GIFT VOUCHERS (2026-09-10): money already paid, drawn down by visits.
+ * `GIFT2025` (25 €) is Мартин's, `GIFT5` (5 €) belongs to nobody in
+ * particular, `EMPTY001` was spent — the sheet must say so, not "no such
+ * code". The document vocabulary is `gift-voucher-document.ts`'s.
+ */
+const issuedAtIso = grantedAtIso;
+const GIFT_VOUCHERS = [
+  {
+    id: 'voucher-dev-martin',
+    code: 'GIFT2025',
+    initialValueMinorUnits: 2500,
+    balanceMinorUnits: 2500,
+    currencyCode: 'EUR',
+    issuedAt: { iso: issuedAtIso, zone: 'Europe/Sofia' },
+    expiresAt: null,
+    issuedToUserId: 'dev-client-2',
+    state: { kind: 'active' },
+  },
+  {
+    id: 'voucher-dev-five',
+    code: 'GIFT5',
+    initialValueMinorUnits: 500,
+    balanceMinorUnits: 500,
+    currencyCode: 'EUR',
+    issuedAt: { iso: issuedAtIso, zone: 'Europe/Sofia' },
+    expiresAt: null,
+    issuedToUserId: null,
+    state: { kind: 'active' },
+  },
+  {
+    id: 'voucher-dev-empty',
+    code: 'EMPTY001',
+    initialValueMinorUnits: 1000,
+    balanceMinorUnits: 0,
+    currencyCode: 'EUR',
+    issuedAt: { iso: issuedAtIso, zone: 'Europe/Sofia' },
+    expiresAt: null,
+    issuedToUserId: null,
+    state: { kind: 'active' },
+  },
+];
+for (const voucher of GIFT_VOUCHERS) {
+  const { id, ...data } = voucher;
+  await db.collection('giftVouchers').doc(id).set(data);
+}
+console.log(`seeded ${GIFT_VOUCHERS.length} gift vouchers`);
+
+/*
  * REAL APPOINTMENTS for the next few days.
  *
  * ### Why this exists

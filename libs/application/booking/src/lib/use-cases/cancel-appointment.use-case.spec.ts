@@ -31,6 +31,7 @@ describe('CancelAppointmentUseCase', () => {
       markArrived: vi.fn(),
       clearArrival: vi.fn(),
       staffEdit: vi.fn(),
+      recordTip: vi.fn(),
     };
 
     const result = await new CancelAppointmentUseCase(gateway).execute({
@@ -55,6 +56,7 @@ describe('CancelAppointmentUseCase', () => {
       markArrived: vi.fn(),
       clearArrival: vi.fn(),
       staffEdit: vi.fn(),
+      recordTip: vi.fn(),
     };
 
     const result = await new CancelAppointmentUseCase(gateway).execute({
