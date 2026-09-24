@@ -389,11 +389,11 @@ describe('StaffVisitEditor', () => {
     host.querySelector<HTMLElement>(`[data-testid="${testId}"]`);
 
   /**
-   * A node's words, with the icon ligatures taken out.
+   * A node's words, with the icons taken out.
    *
-   * `ui-icon` renders its glyph as TEXT (a material-symbols ligature), so a
-   * row's `textContent` carries `arrow_drop_down` beside the value. Reading
-   * around it keeps the assertions about copy rather than about glyphs.
+   * `ui-icon` renders inline SVG today (no text), but the helper still strips
+   * the elements so the assertions stay about copy rather than about glyphs
+   * whatever the rendering becomes.
    */
   const text = (host: HTMLElement, testId: string) => {
     const node = find(host, testId)?.cloneNode(true) as HTMLElement | undefined;
@@ -498,21 +498,27 @@ describe('StaffVisitEditor', () => {
         legs: [
           {
             seatId: 'a',
+            serviceId: 'svc-cut',
+            variantId: null,
             serviceLabel: 'Подстригване',
             minutes: 30,
             priceLabel: '20,00 €',
             barberId: 'ivan',
             barberName: 'Иван',
             barberTone: 0,
+            overridden: false,
           },
           {
             seatId: 'b',
+            serviceId: 'svc-beard',
+            variantId: null,
             serviceLabel: 'Брада',
             minutes: 15,
             priceLabel: '8,00 €',
             barberId: 'ivan',
             barberName: 'Иван',
             barberTone: 0,
+            overridden: false,
           },
         ],
       }),
@@ -764,9 +770,9 @@ describe('StaffVisitEditor', () => {
     expect(pill && frame?.contains(pill)).toBe(true);
     // …and it heads it: the navigator precedes the grid inside the section.
     expect(
-      pill?.compareDocumentPosition(
+      (pill?.compareDocumentPosition(
         host.querySelector('lib-staff-time-grid') as Node,
-      ) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ) ?? 0) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
 
     // The barbers are PARTICIPANTS, named at the top with the services they
@@ -2571,7 +2577,12 @@ describe('StaffVisitEditor', () => {
         visit({
           status: 'cancelled',
           statusLabel: 'Отказан',
-          resolution: { kind: 'cancelledByClient', detail: null },
+          resolution: {
+            kind: 'cancelled',
+            by: 'client',
+            whenLabel: '11:51',
+            detail: null,
+          },
           primaryVerb: null,
         }),
       );
@@ -2833,7 +2844,12 @@ describe('StaffVisitEditor', () => {
         visit({
           status: 'cancelled',
           statusLabel: 'Отказан',
-          resolution: { kind: 'cancelledByClient', detail: null },
+          resolution: {
+            kind: 'cancelled',
+            by: 'client',
+            whenLabel: '11:51',
+            detail: null,
+          },
           primaryVerb: null,
         }),
       );
@@ -3304,7 +3320,13 @@ describe('StaffVisitEditor', () => {
       type('0882223');
       enter();
       expect(find(host, 'staff-visit-picked-user-petar')).not.toBeNull();
-      expect(fixture.componentInstance.query()).toBe('');
+      // `query` is protected — the template's, not the world's — so the spec
+      // reads it through the same test-visible shape the dashboard spec uses.
+      const queryOf = () =>
+        (
+          fixture.componentInstance as unknown as { query: () => string }
+        ).query();
+      expect(queryOf()).toBe('');
       type('Никой Никоев');
       enter();
       expect(find(host, 'staff-visit-page')?.dataset['page']).toBe('clientNew');
@@ -3448,7 +3470,11 @@ describe('StaffVisitEditor', () => {
       fixture.componentRef.setInput('uiClientSearching', false);
       fixture.detectChanges();
       expect(find(host, 'staff-visit-picked-user-marto')).toBeNull();
-      expect(fixture.componentInstance.query()).toBe('март');
+      expect(
+        (
+          fixture.componentInstance as unknown as { query: () => string }
+        ).query(),
+      ).toBe('март');
       // A whole number is somebody's whatever the index says: no waiting.
       fixture.componentRef.setInput('uiClientSearching', true);
       type('0887654321');

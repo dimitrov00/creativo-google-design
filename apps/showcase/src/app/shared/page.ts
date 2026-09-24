@@ -1,5 +1,6 @@
 import { ChangeDetectionStrategy, Component, input } from '@angular/core';
 import { RouterLink } from '@angular/router';
+import { UiIcon } from '@creativo/ui/icons';
 import { UiStack } from '@creativo/ui/layout';
 import { UiFrameDirective, UiTextDirective } from '@creativo/ui/modifiers';
 
@@ -11,7 +12,7 @@ import { UiFrameDirective, UiTextDirective } from '@creativo/ui/modifiers';
  */
 @Component({
   selector: 'sc-page',
-  imports: [RouterLink, UiStack, UiFrameDirective, UiTextDirective],
+  imports: [RouterLink, UiIcon, UiStack, UiFrameDirective, UiTextDirective],
   template: `
     <ui-stack
       uiSpacing="loose"
@@ -28,7 +29,7 @@ import { UiFrameDirective, UiTextDirective } from '@creativo/ui/modifiers';
             uiForegroundStyle="accent"
             class="sc-page__back"
           >
-            ← {{ scBackLabel() }}
+            <ui-icon uiName="nav.back" /> {{ scBackLabel() }}
           </a>
         }
         <ui-stack uiSpacing="tight">

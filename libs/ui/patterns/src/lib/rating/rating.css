@@ -9,24 +9,10 @@
     font-weight: 700;
   }
 
-  /* Glyph box math, not copy — the Material Symbols family and 1:1 box
-     must be restated after the `font` shorthand's reset. This lib cannot
-     compose ui-icon for it: @creativo/ui/controls re-exports patterns, so
-     importing controls from here would be circular. The recipe mirrors
-     ui-icon's (filled, 1em box, glyph rides the host font-size). */
-  .ui-rating__star {
-    flex-shrink: 0;
-    font-family: 'Material Symbols Rounded';
-    font-size: 1em;
-    font-weight: 400;
-    line-height: 1;
-    /* Same variation axes as icon.css — GRAD stays at the font default,
-       one glyph grammar. */
-    font-variation-settings:
-      'FILL' 1,
-      'wght' 400,
-      'opsz' 24;
-  }
+  /* The star is `<ui-icon uiName="rating.star">`, unscaled: it rides the
+     cluster's caption font at 1em, the way an SF Symbol rides a Label. The
+     registry lives in libs/ui/icons (below controls AND patterns) precisely
+     so this pattern can compose it without a circular import. */
 
   /* Ratings align in columns/lists — digits keep a fixed width. */
   .ui-rating__value {

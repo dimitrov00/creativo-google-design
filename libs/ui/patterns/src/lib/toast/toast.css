@@ -99,6 +99,13 @@
   color: var(--sys-color-secondary-label);
 }
 
+/* Ring and mark share the button's one grid cell: the clock underneath,
+   the registry's ✕ (16px, the ladder's accessory step) centred over it. */
+.ui-toast__clock,
+.ui-toast__dismiss-glyph {
+  grid-area: 1 / 1;
+}
+
 .ui-toast__clock {
   inline-size: calc(var(--sys-space-unit) * 6);
   block-size: calc(var(--sys-space-unit) * 6);
@@ -128,11 +135,6 @@
 /* Leaving: nothing lands on a surface on its way out. */
 .ui-toast__surface[data-leaving] {
   pointer-events: none;
-}
-
-.ui-toast__clock-glyph {
-  stroke: currentColor;
-  stroke-width: 1.75;
 }
 
 @keyframes ui-toast-in {

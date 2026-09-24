@@ -16,8 +16,8 @@ import {
   UI_ICON_OVERRIDES,
   UiButton,
   UiIcon,
+  UiIconRegistry,
   UiModalSheet,
-  resolveUiIcon,
 } from '@creativo/ui/controls';
 import { UiStack } from '@creativo/ui/layout';
 import {
@@ -143,9 +143,11 @@ export class LocationsComponent implements AfterViewInit {
   private readonly transloco = inject(TranslocoService);
   private readonly theme = inject(ThemeService);
   // The imperative MapLibre DOM below can't host <ui-icon>, but its glyphs
-  // still resolve through the SAME semantic registry (plus any
-  // provideUiIcons overrides), so a future remap of 'location.pin' /
-  // 'location.recenter' reaches the map without touching this file.
+  // are still built by the SAME registry (plus any provideUiIcons
+  // overrides), so a remap of 'location.pin' / 'location.recenter' — in
+  // code or from the backend's manifest — reaches the map without touching
+  // this file.
+  private readonly icons = inject(UiIconRegistry);
   private readonly iconOverrides = inject(UI_ICON_OVERRIDES, {
     optional: true,
   });
@@ -543,11 +545,15 @@ export class LocationsComponent implements AfterViewInit {
     // `transform` MapLibre rewrites on the button every `move` event.
     head.setAttribute('data-interactive', '');
 
-    const icon = document.createElement('span');
-    icon.className = 'locations-map__pin-icon material-symbols-rounded';
-    icon.setAttribute('aria-hidden', 'true');
-    icon.textContent = resolveUiIcon('location.pin', this.iconOverrides);
-    head.appendChild(icon);
+    const icon = this.icons.createElement(
+      document,
+      'location.pin',
+      this.iconOverrides,
+    );
+    if (icon) {
+      icon.classList.add('locations-map__pin-icon');
+      head.appendChild(icon);
+    }
 
     const tail = document.createElement('span');
     tail.className = 'locations-map__pin-tail';
@@ -592,15 +598,15 @@ export class LocationsComponent implements AfterViewInit {
         }),
       );
 
-      const arrow = document.createElement('span');
-      arrow.className =
-        'locations-map__indicator-arrow material-symbols-rounded';
-      arrow.setAttribute('aria-hidden', 'true');
-      arrow.textContent = resolveUiIcon(
+      const arrow = this.icons.createElement(
+        document,
         'location.recenter',
         this.iconOverrides,
       );
-      indicator.appendChild(arrow);
+      if (arrow) {
+        arrow.classList.add('locations-map__indicator-arrow');
+        indicator.appendChild(arrow);
+      }
 
       indicator.addEventListener('click', () => this.centerOnLocation(index));
       container.appendChild(indicator);
@@ -647,7 +653,7 @@ export class LocationsComponent implements AfterViewInit {
         const angleDeg = (Math.atan2(dy, dx) * 180) / Math.PI + 90;
 
         element.style.transform = `translate(-50%, -50%) translate(${clampedX}px, ${clampedY}px)`;
-        arrow.style.transform = `rotate(${angleDeg}deg)`;
+        if (arrow) arrow.style.transform = `rotate(${angleDeg}deg)`;
       }
     };
 

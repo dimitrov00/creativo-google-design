@@ -102,6 +102,21 @@ the four exempt projects (`libs/domain/kernel`, `libs/infrastructure/*`,
 `eslint.config.mjs`, re-declaring only the half of the restriction that
 still applies to them.
 
+**Amendment 2026-09-24 — `libs/ui/icons` and `scope:tooling`.** The icon
+registry moved out of `libs/ui/controls` into its own `type:ui` project,
+`libs/ui/icons`, because `ui/patterns` (the rating star) must compose
+`ui-icon` and `ui/controls` re-exports `ui/patterns` — the registry has to
+sit below both. It is also the ALLOW-LIST of the workspace icon guards
+(`no-restricted-syntax` icon selectors and `creativo/icon-registry-only`,
+both declared in the root `eslint.config.mjs` and turned off only in
+`libs/ui/icons/eslint.config.mjs`). `tools/lint-rules` (the local ESLint
+plugin) and `tools/icons` (the glyph generator and usage checker) are Nx
+projects tagged `scope:tooling`, `type:util` so their tests run under
+`nx affected -t test`; they import nothing from `libs/` (their fixtures are
+lint-ignored). No `depConstraints` entry names `scope:tooling`, so nothing
+may depend on it — the root ESLint config imports the plugin by relative
+path, outside any project.
+
 ## Temporary duplication: `libs/domain/models/src/lib/ports/*`
 
 The port interfaces that used to live in `libs/domain/models/src/lib/ports/`

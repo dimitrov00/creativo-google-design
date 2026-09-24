@@ -1,6 +1,10 @@
 import nx from '@nx/eslint-plugin';
 import security from 'eslint-plugin-security';
 import noUnsanitized from 'eslint-plugin-no-unsanitized';
+import templateParser from '@angular-eslint/template-parser';
+import creativo, {
+  ICON_SYNTAX_RESTRICTIONS,
+} from './tools/lint-rules/index.mjs';
 
 export default [
   ...nx.configs['flat/base'],
@@ -63,7 +67,11 @@ export default [
             // depend on scope:app as well as itself.
             {
               sourceTag: 'scope:web',
-              onlyDependOnLibsWithTags: ['scope:web', 'scope:app', 'scope:shared'],
+              onlyDependOnLibsWithTags: [
+                'scope:web',
+                'scope:app',
+                'scope:shared',
+              ],
             },
             // Layering (blueprint §1.2): keeps the hexagon's arrows one-way —
             // ui never sees application/infrastructure, application never
@@ -219,6 +227,57 @@ export default [
       ...security.configs.recommended.rules,
       'no-unsanitized/method': 'error',
       'no-unsanitized/property': 'error',
+    },
+  },
+  // ── Icons go through the registry (libs/ui/icons) ──────────────────
+  // Three guards, each catching what the others cannot:
+  //  1. `no-restricted-syntax` (TypeScript): icon-font / Angular Material
+  //     imports, `as UiIconName` casts, Material class or font names in
+  //     string literals — the holes the closed `UiIconName` union cannot see.
+  //  2. `creativo/icon-registry-only` (templates, inline ones included via
+  //     the angular-template processor): <mat-icon>, raw ligature spans, raw
+  //     glyph names in `uiName`/`uiIcon`, <img> logos.
+  //  3. `pnpm icons:check` in CI: the repo-wide sweep behind both.
+  // The allow-list is the registry's own project — libs/ui/icons turns the
+  // relevant halves off in its eslint.config.mjs. Selectors live in
+  // tools/lint-rules/icon-syntax.mjs and are tested there.
+  {
+    files: ['**/*.ts'],
+    rules: {
+      'no-restricted-syntax': ['error', ...ICON_SYNTAX_RESTRICTIONS],
+    },
+  },
+  {
+    // Specs may cast to UiIconName to exercise the runtime fallback.
+    files: ['**/*.spec.ts'],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        ...ICON_SYNTAX_RESTRICTIONS.filter(
+          (restriction) => !restriction.selector.includes('UiIconName'),
+        ),
+      ],
+    },
+  },
+  {
+    files: ['**/*.html'],
+    plugins: { creativo },
+    languageOptions: { parser: templateParser },
+    rules: {
+      'creativo/icon-registry-only': [
+        'error',
+        {
+          // The ONLY hand-drawn <svg>s outside libs/ui/icons, each a shape
+          // rather than a glyph: a progress ring, the toast's countdown ring,
+          // and the reward moment's draw-on stroke whose geometry IS the
+          // animation. A new entry here is a design decision, not a shortcut.
+          allowInlineSvg: [
+            'libs/ui/controls/src/lib/progress-ring/progress-ring.ts',
+            'libs/ui/patterns/src/lib/toast/toast.ts',
+            'libs/ui/patterns/src/lib/reward-moment/reward-moment.ts',
+          ],
+        },
+      ],
     },
   },
   {

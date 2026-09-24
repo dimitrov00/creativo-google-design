@@ -24,8 +24,8 @@ import {
   UiTextDirective,
 } from '@creativo/ui/modifiers';
 import { UiAvatar } from '../avatar/avatar';
-import { UiIcon } from '../icon/icon';
-import { UiIconName } from '../icon/icon-registry';
+import { UiIcon } from '@creativo/ui/icons';
+import { UiIconName } from '@creativo/ui/icons';
 
 /**
  * One option in a `ui-choice-menu`.

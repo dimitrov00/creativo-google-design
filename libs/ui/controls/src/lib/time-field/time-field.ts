@@ -5,7 +5,7 @@ import {
   input,
   output,
 } from '@angular/core';
-import { UiIcon } from '../icon/icon';
+import { UiIcon } from '@creativo/ui/icons';
 
 /**
  * THE TIME FIELD — the platform's own picker behind a face that is ours.

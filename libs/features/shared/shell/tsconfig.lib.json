@@ -37,6 +37,9 @@
       "path": "../../client/account-state/tsconfig.lib.json"
     },
     {
+      "path": "../../../ui/icons/tsconfig.lib.json"
+    },
+    {
       "path": "../../../application/notifications/tsconfig.lib.json"
     },
     {

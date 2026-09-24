@@ -8,8 +8,8 @@ import {
   output,
   viewChild,
 } from '@angular/core';
-import { UiIcon } from '../icon/icon';
-import type { UiIconName } from '../icon/icon-registry';
+import { UiIcon } from '@creativo/ui/icons';
+import type { UiIconName } from '@creativo/ui/icons';
 import { UiProgressView } from '../progress-view/progress-view';
 import { UiTextField } from '../text-field/text-field';
 

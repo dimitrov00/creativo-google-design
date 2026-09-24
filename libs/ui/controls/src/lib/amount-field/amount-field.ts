@@ -8,7 +8,7 @@ import {
   signal,
 } from '@angular/core';
 import { UiButton } from '../button/button';
-import { UiIcon } from '../icon/icon';
+import { UiIcon } from '@creativo/ui/icons';
 
 let nextAmountId = 0;
 

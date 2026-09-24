@@ -61,9 +61,11 @@ describe('UiSlider', () => {
   it('draws the ruler — a tick per step of the ruler, the taller ones where the owner says — and lights it to the value', () => {
     const rows = host().querySelectorAll('.ui-slider__ticks');
     expect(rows).toHaveLength(2);
-    expect(rows[0].querySelectorAll('.ui-slider__tick')).toHaveLength(21);
+    // `noUncheckedIndexedAccess`: the row may be undefined to the type
+    // system; `toHaveLength` fails on undefined, so the guard is the assertion.
+    expect(rows[0]?.querySelectorAll('.ui-slider__tick')).toHaveLength(21);
     expect(
-      rows[0].querySelectorAll('.ui-slider__tick[data-major]'),
+      rows[0]?.querySelectorAll('.ui-slider__tick[data-major]'),
     ).toHaveLength(5);
     expect(host().style.getPropertyValue('--ui-slider-fill')).toBe('0.15');
     expect(host().querySelector('.ui-slider__rail')).toBeNull();

@@ -71,6 +71,9 @@ class StubGateway implements BookingGateway {
   clearArrival(): never {
     throw new Error('not under test');
   }
+  recordTip(): never {
+    throw new Error('not under test');
+  }
 
   staffEdit(): never {
     throw new Error('not under test');

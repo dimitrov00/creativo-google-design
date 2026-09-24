@@ -102,7 +102,7 @@ async function configure(): Promise<ComponentFixture<SiteHeaderComponent>> {
 }
 
 describe('SiteHeaderComponent', () => {
-  it('floats transparent with the white wordmark by default (uiOverHero unset, no scroll)', async () => {
+  it('floats transparent with the wordmark on-media by default (uiOverHero unset, no scroll)', async () => {
     const fixture = await configure();
     fixture.detectChanges();
     await fixture.whenStable();
@@ -111,12 +111,14 @@ describe('SiteHeaderComponent', () => {
     const host: HTMLElement = fixture.nativeElement;
     const header = host.querySelector('[data-testid="site-header"]');
     expect(header?.getAttribute('data-view')).toBe('float');
-    expect(
-      header?.querySelector('.cr-header__brand img')?.getAttribute('src'),
-    ).toBe('/logo-white.svg');
+    // The wordmark is the registry's `ui-logo` (currentColor path data);
+    // its ink over the hero is the CSS's job, keyed on data-view.
+    const logo = header?.querySelector('.cr-header__brand ui-logo');
+    expect(logo?.querySelector('svg.ui-logo__mark path')).not.toBeNull();
+    expect(header?.querySelector('.cr-header__brand img')).toBeNull();
   });
 
-  it('is permanently solid with the dark wordmark when uiOverHero is false, even unscrolled', async () => {
+  it('is permanently solid, wordmark in the bar ink, when uiOverHero is false, even unscrolled', async () => {
     const fixture = await configure();
     fixture.componentRef.setInput('uiOverHero', false);
     fixture.detectChanges();
@@ -127,7 +129,7 @@ describe('SiteHeaderComponent', () => {
     const header = host.querySelector('[data-testid="site-header"]');
     expect(header?.getAttribute('data-view')).toBe('solid');
     expect(
-      header?.querySelector('.cr-header__brand img')?.getAttribute('src'),
-    ).toBe('/logo-black.svg');
+      header?.querySelector('.cr-header__brand ui-logo svg.ui-logo__mark'),
+    ).not.toBeNull();
   });
 });

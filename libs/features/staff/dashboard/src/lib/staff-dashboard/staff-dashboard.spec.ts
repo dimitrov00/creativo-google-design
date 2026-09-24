@@ -209,8 +209,15 @@ function provideTestI18n(): EnvironmentProviders[] {
 describe('StaffDashboard', () => {
   let fixture: ComponentFixture<StaffDashboard>;
 
-  /** Ivan holds one 10:00 visit; Niko's chair is empty. */
-  const observeBarberDay = vi.fn((barberId: { value: string }) =>
+  /** Ivan holds one 10:00 visit; Niko's chair is empty. Typed with the
+   *  port's two parameters so `mock.calls[n][1]` — the day subscribed — is a
+   *  string to the type system, not an out-of-range tuple index. */
+  const observeBarberDay = vi.fn<
+    (
+      barberId: { value: string },
+      dayKey: string,
+    ) => Observable<Result<readonly Appointment[], never>>
+  >((barberId) =>
     of(
       ok(
         barberId.value === 'ivan'
@@ -1384,8 +1391,7 @@ describe('StaffDashboard', () => {
     await fixture.whenStable();
     fixture.detectChanges();
 
-    const daysFor = () =>
-      observeBarberDay.mock.calls.map((call) => call[1] as string);
+    const daysFor = () => observeBarberDay.mock.calls.map((call) => call[1]);
     expect(daysFor()).toContain('2026-08-05');
     observeBarberDay.mockClear();
 
@@ -2785,7 +2791,7 @@ describe('StaffDashboard', () => {
       browseClients: () => Promise<void>;
       visitClientSections: () => readonly {
         id: string;
-        clients: readonly { label: string }[];
+        clients: readonly { label: string; meta: string | null }[];
       }[];
     };
     await component.browseClients();
@@ -3679,7 +3685,8 @@ describe('StaffDashboard', () => {
     expect(request?.contact?.name).toBe('Мартин Илиев');
     // Serial from the chosen minute, in ladder order.
     const at = request?.seats.map((seat) => Date.parse(seat.startIso)) ?? [];
-    expect(at[1] - at[0]).toBe(30 * 60_000);
+    // `NaN` if either seat is missing — which fails the assertion, as it should.
+    expect((at[1] ?? NaN) - (at[0] ?? NaN)).toBe(30 * 60_000);
     expect(component.createVisit()).toBeNull();
   });
 

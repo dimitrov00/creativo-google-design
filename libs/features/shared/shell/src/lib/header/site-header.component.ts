@@ -13,11 +13,11 @@ import {
 import { RouterLink } from '@angular/router';
 import { TranslocoDirective } from '@jsverse/transloco';
 import { UiAvatar, UiButton, UiIcon } from '@creativo/ui/controls';
+import { UiLogo } from '@creativo/ui/icons';
 import { UiStack, UiToolbar } from '@creativo/ui/layout';
 import { UiFrameDirective } from '@creativo/ui/modifiers';
 import { MenuIconComponent } from '../icons/icons';
 import { SessionIdentityService } from '../identity/session-identity.service';
-import { ThemeService } from '../prefs/theme.service';
 import { SiteMenuComponent } from '../menu/site-menu.component';
 
 /**
@@ -46,6 +46,7 @@ import { SiteMenuComponent } from '../menu/site-menu.component';
     UiButton,
     UiFrameDirective,
     UiIcon,
+    UiLogo,
     UiStack,
     UiToolbar,
   ],
@@ -55,7 +56,6 @@ import { SiteMenuComponent } from '../menu/site-menu.component';
 export class SiteHeaderComponent {
   private readonly platformId = inject(PLATFORM_ID);
   private readonly destroyRef = inject(DestroyRef);
-  private readonly theme = inject(ThemeService);
 
   /** Whether this page has a hero card underneath the header for it to
    *  float/morph over. Content pages pass `false` for a permanently
@@ -76,10 +76,6 @@ export class SiteHeaderComponent {
   /** Solid once scrolled, while the menu is open, or always when there's no hero to float over (v2 `isSolid`). */
   protected readonly isSolid = computed(
     () => !this.uiOverHero() || this.isScrolled() || this.menuOpen(),
-  );
-  /** White wordmark over the hero video or in dark mode. */
-  protected readonly logoWhite = computed(
-    () => !this.isSolid() || this.theme.theme() === 'dark',
   );
   protected readonly headerTransform = computed(() =>
     this.isSolid()

@@ -29,7 +29,7 @@ interface MapLibreModule {
     anchor: 'bottom';
   }) => MapLibreMarker;
 }
-import { UI_ICON_OVERRIDES, resolveUiIcon } from '../icon/icon-registry';
+import { UI_ICON_OVERRIDES, UiIconRegistry } from '@creativo/ui/icons';
 
 /** One place on the map. `id` is what selection and the output are keyed by. */
 export interface UiMapPin {
@@ -93,6 +93,7 @@ export class UiMap {
   private readonly platformId = inject(PLATFORM_ID);
   private readonly hostRef = inject<ElementRef<HTMLElement>>(ElementRef);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly icons = inject(UiIconRegistry);
   private readonly iconOverrides = inject(UI_ICON_OVERRIDES, {
     optional: true,
   });
@@ -148,7 +149,7 @@ export class UiMap {
   >();
   private indicators = new Map<
     string,
-    { element: HTMLElement; arrow: HTMLElement }
+    { element: HTMLElement; arrow: SVGSVGElement | null }
   >();
   private destroyed = false;
   /** The map exists and its style has loaded — markers may be attached. */
@@ -386,11 +387,17 @@ export class UiMap {
     // the button on every `move` event.
     head.setAttribute('data-interactive', '');
 
-    const icon = document.createElement('span');
-    icon.className = 'ui-map__pin-icon material-symbols-rounded';
-    icon.setAttribute('aria-hidden', 'true');
-    icon.textContent = resolveUiIcon('location.pin', this.iconOverrides);
-    head.appendChild(icon);
+    // The pin's glyph, through the same registry as <ui-icon> — MapLibre owns
+    // this DOM, so it is built imperatively rather than as a component.
+    const icon = this.icons.createElement(
+      document,
+      'location.pin',
+      this.iconOverrides,
+    );
+    if (icon) {
+      icon.classList.add('ui-map__pin-icon');
+      head.appendChild(icon);
+    }
 
     const tail = document.createElement('span');
     tail.className = 'ui-map__pin-tail';
@@ -482,14 +489,15 @@ export class UiMap {
       element.setAttribute('data-interactive', '');
       element.setAttribute('aria-label', pin.label);
 
-      const arrow = document.createElement('span');
-      arrow.className = 'ui-map__indicator-arrow material-symbols-rounded';
-      arrow.setAttribute('aria-hidden', 'true');
-      arrow.textContent = resolveUiIcon(
+      const arrow = this.icons.createElement(
+        document,
         'location.recenter',
         this.iconOverrides,
       );
-      element.appendChild(arrow);
+      if (arrow) {
+        arrow.classList.add('ui-map__indicator-arrow');
+        element.appendChild(arrow);
+      }
 
       element.addEventListener('click', () => this.uiPinSelect.emit(pin.id));
       container.appendChild(element);
@@ -542,6 +550,7 @@ export class UiMap {
         entry.element.style.transform = `translate(-50%, -50%) translate(${
           centerX + dx * t
         }px, ${centerY + dy * t}px)`;
+        if (!entry.arrow) continue;
         entry.arrow.style.transform = `rotate(${
           (Math.atan2(dy, dx) * 180) / Math.PI + 90
         }deg)`;

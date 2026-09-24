@@ -9,8 +9,8 @@ import {
   output,
 } from '@angular/core';
 import { UiInteractiveDirective } from '@creativo/ui/modifiers';
-import { UiIcon } from '../icon/icon';
-import type { UiIconName } from '../icon/icon-registry';
+import { UiIcon } from '@creativo/ui/icons';
+import type { UiIconName } from '@creativo/ui/icons';
 
 export type UiSegmentedControlSize = 'small' | 'regular';
 /** `rounded` is UISegmentedControl's own corner; `capsule` the toolbar PILL of iOS 26's bars. */

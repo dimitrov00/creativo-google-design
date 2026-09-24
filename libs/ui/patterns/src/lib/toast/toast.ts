@@ -17,6 +17,7 @@ import {
   UiMaterialDirective,
   UiRadiusDirective,
 } from '@creativo/ui/modifiers';
+import { UiIcon } from '@creativo/ui/icons';
 
 /**
  * ui-toast — a transient status line with ONE action, docked at the bottom.
@@ -58,7 +59,12 @@ import {
  */
 @Component({
   selector: 'ui-toast',
-  imports: [UiInteractiveDirective, UiMaterialDirective, UiRadiusDirective],
+  imports: [
+    UiIcon,
+    UiInteractiveDirective,
+    UiMaterialDirective,
+    UiRadiusDirective,
+  ],
   template: `
     @if (shown()) {
       <div
@@ -91,9 +97,10 @@ import {
             {{ uiActionLabel() }}
           </button>
         }
-        <!-- The dismiss: a ✕ inside the clock's ring. The ring drains from
-             full over the duration and holds with the toast; the glyph is
-             two strokes, so no control is imported. -->
+        <!-- The dismiss: the registry's ✕ inside the clock's ring. The ring
+             is an inline svg on purpose — it is a countdown, not a glyph:
+             it drains from full over the duration and holds with the toast.
+             The mark itself is the toast.dismiss intent, stacked over the ring. -->
         <button
           type="button"
           class="ui-toast__dismiss"
@@ -112,11 +119,12 @@ import {
               r="10.5"
               pathLength="1"
             />
-            <path
-              class="ui-toast__clock-glyph"
-              d="M8.5 8.5l7 7M15.5 8.5l-7 7"
-            />
           </svg>
+          <ui-icon
+            class="ui-toast__dismiss-glyph"
+            uiName="toast.dismiss"
+            uiScale="small"
+          />
         </button>
       </div>
     }

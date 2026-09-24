@@ -1,6 +1,6 @@
 import { ChangeDetectionStrategy, Component } from '@angular/core';
-import { UiIcon } from '@creativo/ui/controls';
-import type { UiIconName, UiIconScale } from '@creativo/ui/controls';
+import { UiIcon, UiLogo } from '@creativo/ui/icons';
+import type { UiIconName, UiIconScale } from '@creativo/ui/icons';
 import { UiFlow, UiStack } from '@creativo/ui/layout';
 import { UiTextDirective } from '@creativo/ui/modifiers';
 import type { UiFontStyle } from '@creativo/ui/modifiers';
@@ -15,7 +15,7 @@ interface IconScaleSample {
 @Component({
   selector: 'cr-icon-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [ScDemo, ScPage, UiFlow, UiIcon, UiStack, UiTextDirective],
+  imports: [ScDemo, ScPage, UiFlow, UiIcon, UiLogo, UiStack, UiTextDirective],
   templateUrl: './icon.page.html',
   styleUrl: './icon.page.css',
 })
@@ -46,6 +46,11 @@ export class IconPage {
     'prefs.theme.dark',
     'rating.star',
     'media.play',
+    'media.gallery',
+    // An ALIAS — resolves to layout.grid's artwork, keeps its own intent.
+    'gallery.grid',
+    // A VECTOR entry — brand marks Material Symbols does not carry.
+    'social.instagram',
   ];
 
   /** The fixed ladder — absolute rem steps, never font-derived fractions. */

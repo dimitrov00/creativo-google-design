@@ -1,26 +1,8 @@
 import { ChangeDetectionStrategy, Component, input } from '@angular/core';
 
-/** Instagram — Material Symbols carries no brand glyphs; the v2 inline mark.
- *  The svg attribute selector keeps the glyph inside the SVG namespace; the
- *  `cr` prefix is in the attribute name. */
-@Component({
-  // eslint-disable-next-line @angular-eslint/component-selector
-  selector: 'svg[crIconInstagram]',
-  changeDetection: ChangeDetectionStrategy.OnPush,
-  host: {
-    viewBox: '0 0 24 24',
-    fill: 'none',
-    stroke: 'currentColor',
-    'stroke-width': '2',
-    'stroke-linecap': 'round',
-    'stroke-linejoin': 'round',
-    'aria-hidden': 'true',
-  },
-  template: `<svg:rect x="2" y="2" width="20" height="20" rx="5" />
-    <svg:circle cx="12" cy="12" r="4" />
-    <svg:circle cx="17.5" cy="6.5" r="0.5" fill="currentColor" />`,
-})
-export class IconInstagram {}
+/* The Instagram mark moved into the icon registry as `social.instagram`
+   (libs/ui/icons, a vector entry) — brand marks are vocabulary, not
+   per-feature SVG. What stays here is a CONTROL, not a glyph: */
 
 /** Animated hamburger ⟷ close — the pre-migration landing's two-line mark:
  *  two bars pivot into an ✕ (not v2's three-bar morph, by design call). */

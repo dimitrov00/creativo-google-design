@@ -80,6 +80,17 @@
 
 .cr-header__brand {
   display: inline-flex;
+  /* The wordmark is currentColor path data: on the solid bar it takes the
+     theme's foreground (near-white in dark, near-black in light); floating
+     over the hero video it takes the on-media ink. One asset, no file
+     swap — the rule the old logo-black/logo-white pair encoded in TS. */
+  color: var(--sys-color-foreground);
+  transition: color var(--sys-motion-duration-deliberate)
+    var(--sys-motion-ease-standard);
+}
+
+.cr-header[data-view='float'] .cr-header__brand {
+  color: var(--sys-color-on-media);
 }
 
 /* Signed-in trigger: the monogram IS the button (owner ruling — no glass

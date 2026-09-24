@@ -10,7 +10,7 @@ import {
   output,
   signal,
 } from '@angular/core';
-import { UiIcon } from '../icon/icon';
+import { UiIcon } from '@creativo/ui/icons';
 
 /** How long the ✓ holds in the box before the count takes over. */
 const ADDED_BEAT_MS = 550;

@@ -1,6 +1,6 @@
 import { Component, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import type { UiIconName } from '../icon/icon-registry';
+import type { UiIconName } from '@creativo/ui/icons';
 import { UiAvatar } from './avatar';
 
 @Component({

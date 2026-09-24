@@ -241,5 +241,13 @@ export const appConfig: ApplicationConfig = {
     { provide: SHOP_EVENT_REPOSITORY, useClass: FirestoreEventRepository },
     { provide: BOOKING_DRAFT_STORE, useClass: SessionStorageDraftStore },
     { provide: KEY_VALUE_STORE, useClass: LocalStorageKeyValueStore },
+
+    // ── Icons and the logo ──
+    // Resolved by @creativo/ui/icons from its bundled manifest. The registry
+    // has a seam for a backend-supplied manifest (`provideUiIconManifest`),
+    // deliberately NOT wired: this is a web app on Firebase Hosting, a
+    // redeploy takes a minute and reaches every user on their next load, so
+    // a live override layer would only add a document, a cache and a
+    // listener to maintain. See docs/design-research/icon-registry-design.md §6.
   ],
 };

@@ -22,7 +22,7 @@ import { UiListGroup, UiListRow } from '@creativo/ui/patterns';
 import { UiModalSheet } from '../modal-sheet/modal-sheet';
 import { UiVisuallyHiddenDirective } from '@creativo/ui/modifiers';
 import { UiControlSize } from '../button/button';
-import { UiIcon } from '../icon/icon';
+import { UiIcon } from '@creativo/ui/icons';
 import { UiTextField } from '../text-field/text-field';
 
 /**

@@ -25,23 +25,54 @@
     vertical-align: -0.125em;
   }
 
-  .ui-icon__glyph {
-    /* House look — Material Symbols Rounded, FILLED. The vendor sheet
-       leaves FILL at 0 (outlined), so this is load-bearing everywhere. */
-    font-variation-settings:
-      'FILL' 1,
-      'wght' 400,
-      'opsz' 24;
+  /* The glyph is an inline <svg> on the em box — `1em` square, filled with
+     the current ink. Scale mapping, all in `font-size` so the ladder and the
+     unscaled regime are one mechanism:
+       no data-scale       → 1em (default — inherits the surrounding font;
+                             correct for glyphs inline in running text)
+       data-scale='small'  → var(--ui-icon-small)  1rem (16px)
+       data-scale='medium' → var(--ui-icon-medium) 1.25rem (20px)
+       data-scale='large'  → var(--ui-icon-large)  1.5rem (24px)
+     Inside a control the tier sets `font-size` on the HOST (button.css), which
+     the unscaled glyph inherits; an explicit step on the glyph itself still
+     wins, which is the documented "uiScale beats the tier" rule. */
+  .ui-icon .ui-icon__glyph {
+    display: block;
+    inline-size: 1em;
+    block-size: 1em;
+    font-size: 1em;
+    fill: currentColor;
+  }
+  .ui-icon[data-scale='small'] .ui-icon__glyph {
+    font-size: var(--ui-icon-small);
+  }
+  .ui-icon[data-scale='medium'] .ui-icon__glyph {
+    font-size: var(--ui-icon-medium);
+  }
+  .ui-icon[data-scale='large'] .ui-icon__glyph {
+    font-size: var(--ui-icon-large);
   }
 
-  /* Landing-local brand marks (e.g. svg[crIconInstagram]) carry the
-     .ui-icon host class themselves; any svg icon on the class shares the
-     same em box. */
+  /* Any svg riding the .ui-icon class shares the same em box. */
   svg.ui-icon,
   .ui-icon svg {
     inline-size: 1em;
     block-size: 1em;
   }
+
+  /* An unresolvable key keeps its em box so nothing reflows, and in
+     development it says so out loud. Production stamps `data-missing=""`
+     and stays quiet on screen — the reporter carries the failure. */
+  .ui-icon[data-missing] {
+    inline-size: 1em;
+    block-size: 1em;
+  }
+  .ui-icon[data-missing='loud'] {
+    outline: 1px dashed currentColor;
+    outline-offset: -1px;
+    border-radius: 2px;
+  }
+
   /* ── THE DISCLOSURE CHEVRON ANSWERS ITS TRIGGER ─────────────────────
    *
    * One rule, house-wide: a `field.expand` chevron inside anything that
@@ -73,35 +104,4 @@
   [aria-expanded='true'] .ui-icon[data-name='field.expand'] {
     rotate: 180deg;
   }
-}
-
-/* UNLAYERED on purpose — the one sanctioned exception to the "everything
-   in @layer sys-components" contract, and it exists because of how the
-   cascade treats layers: UNLAYERED author CSS beats ALL layered CSS
-   regardless of specificity. The vendor `material-symbols/rounded.css`
-   (imported unlayered in each app's styles.css) hard-codes
-   `.material-symbols-rounded { font-size: 24px }`, which silently
-   overrode a layered `font-size: inherit` here and froze every icon at
-   24px no matter the surrounding text. These rules must therefore live
-   OUTSIDE the layer; they out-specify the vendor's single class
-   (0,1,0 < 0,2,0) and restore the contract: unscaled glyphs ride the
-   current font, scaled glyphs snap to the fixed ladder.
-
-   Scale mapping:
-     no data-scale       → 1em (default — inherits the surrounding font;
-                           correct for glyphs inline in running text)
-     data-scale='small'  → var(--ui-icon-small)  1rem (16px)
-     data-scale='medium' → var(--ui-icon-medium) 1.25rem (20px)
-     data-scale='large'  → var(--ui-icon-large)  1.5rem (24px) */
-.ui-icon .ui-icon__glyph {
-  font-size: 1em;
-}
-.ui-icon[data-scale='small'] .ui-icon__glyph {
-  font-size: var(--ui-icon-small);
-}
-.ui-icon[data-scale='medium'] .ui-icon__glyph {
-  font-size: var(--ui-icon-medium);
-}
-.ui-icon[data-scale='large'] .ui-icon__glyph {
-  font-size: var(--ui-icon-large);
 }

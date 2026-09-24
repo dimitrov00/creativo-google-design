@@ -1,0 +1,33 @@
+@layer sys-components {
+  /* The mark fills the host's height and keeps its own aspect ratio; the
+     consumer sizes the host (default: the header's 1.5rem wordmark). */
+  .ui-logo {
+    --ui-logo-size: 1.5rem;
+    display: inline-flex;
+    align-items: center;
+    block-size: var(--ui-logo-size);
+    flex-shrink: 0;
+    line-height: 1;
+  }
+
+  .ui-logo .ui-logo__mark {
+    display: block;
+    block-size: 100%;
+    inline-size: auto;
+    fill: currentColor;
+  }
+
+  /* Two cuts → the theme picks. `<html data-theme>` is stamped by the
+     pre-paint script, so there is no first-frame flash; an explicit
+     `uiScheme` on the host overrides the theme. */
+  :root:not([data-theme='dark'])
+    .ui-logo:not([data-scheme])
+    .ui-logo__mark[data-scheme='dark'],
+  :root[data-theme='dark']
+    .ui-logo:not([data-scheme])
+    .ui-logo__mark[data-scheme='light'],
+  .ui-logo[data-scheme='light'] .ui-logo__mark[data-scheme='dark'],
+  .ui-logo[data-scheme='dark'] .ui-logo__mark[data-scheme='light'] {
+    display: none;
+  }
+}

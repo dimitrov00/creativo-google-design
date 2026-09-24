@@ -7,8 +7,8 @@ import {
 } from '@angular/core';
 import type { UiControlSize } from '../button/button';
 import { UiAsyncImage } from '../async-image/async-image';
-import { UiIcon } from '../icon/icon';
-import type { UiIconName } from '../icon/icon-registry';
+import { UiIcon } from '@creativo/ui/icons';
+import type { UiIconName } from '@creativo/ui/icons';
 
 /**
  * Avatar sizes extend the shared control vocabulary with a `display` tier —

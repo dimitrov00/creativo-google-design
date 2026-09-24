@@ -13,6 +13,9 @@
       "path": "../../libs/domain/kernel/tsconfig.lib.json"
     },
     {
+      "path": "../../libs/ui/icons/tsconfig.lib.json"
+    },
+    {
       "path": "../../libs/ui/patterns/tsconfig.lib.json"
     },
     {

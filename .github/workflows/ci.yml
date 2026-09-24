@@ -33,6 +33,12 @@ jobs:
       - run: pnpm exec nx format:check --base=$NX_BASE --head=$NX_HEAD
       - run: pnpm exec nx affected -t lint test build --base=$NX_BASE --head=$NX_HEAD
 
+      # Repo-wide icon sweep — every icon and the logo go through libs/ui/icons.
+      # Runs regardless of the affected graph: it is cheap and the lint rules
+      # it backs only run for projects that changed.
+      - run: pnpm icons:check
+      - run: node tools/icons/build-material-glyphs.mjs --check
+
       - run: pnpm audit --audit-level=high
 
       - uses: gitleaks/gitleaks-action@v2

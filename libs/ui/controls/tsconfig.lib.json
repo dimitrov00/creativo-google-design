@@ -38,6 +38,9 @@
     },
     {
       "path": "../layout/tsconfig.lib.json"
+    },
+    {
+      "path": "../icons/tsconfig.lib.json"
     }
   ]
 }

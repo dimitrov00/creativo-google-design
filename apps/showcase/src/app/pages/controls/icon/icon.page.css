@@ -10,3 +10,12 @@
 .icon__sample {
   inline-size: 9rem;
 }
+
+/* A dark strip standing in for media, so the forced dark scheme reads. */
+.icon__on-media {
+  display: inline-flex;
+  padding: var(--sys-space-regular);
+  border-radius: var(--control-radius-regular);
+  background: #121212;
+  color: #ffffff;
+}

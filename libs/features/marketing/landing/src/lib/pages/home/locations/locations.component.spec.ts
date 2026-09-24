@@ -33,11 +33,13 @@ describe('LocationsComponent', () => {
     expect(
       host.querySelectorAll('.location-card ui-status-indicator').length,
     ).toBe(2);
-    // Icons are named by INTENT (semantic registry keys), and the registry
-    // resolves the directions intent to its Material Symbols glyph.
-    expect(
-      host.querySelector('.location-card__maps .ui-icon__glyph')?.textContent,
-    ).toBe('near_me');
+    // Icons are named by INTENT (semantic registry keys); the registry
+    // resolves the directions intent to inline SVG artwork.
+    const directions = host.querySelector<HTMLElement>(
+      '.location-card__maps ui-icon',
+    );
+    expect(directions?.getAttribute('data-name')).toBe('location.directions');
+    expect(directions?.querySelector('svg.ui-icon__glyph path')).not.toBeNull();
     expect(host.querySelector('[data-locations-map]')).not.toBeNull();
     expect(host.querySelector('.location-card__media')).toBeNull();
 

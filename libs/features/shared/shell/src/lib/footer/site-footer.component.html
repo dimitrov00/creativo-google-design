@@ -52,8 +52,8 @@
                       uiForegroundStyle="secondary"
                     >
                       @if (link.social) {
-                        <!-- Brand mark rides the DS icon em box (svg.ui-icon). -->
-                        <svg crIconInstagram class="ui-icon"></svg>
+                        <!-- Brand mark — a vector entry of the icon registry. -->
+                        <ui-icon uiName="social.instagram" />
                       }
                       {{ t(link.labelKey) }}
                       @if (link.kind === 'external') {

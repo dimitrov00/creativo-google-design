@@ -37,10 +37,17 @@ import {
   type ServiceVm,
   serviceDurationRange,
   servicePriceFrom,
+  type ServiceVariantVm,
 } from '../content/catalog-vm';
 import { ShowcaseGalleryComponent } from '../gallery/showcase-gallery.component';
 import { type CapsuleVm, CapsuleListComponent } from './capsule-list.component';
 import { ServiceRowComponent } from './service-row.component';
+
+/** The mark each variant kind wears — keyed on the view model's own union. */
+const VARIANT_ICONS: Record<ServiceVariantVm['icon'], UiIconName> = {
+  length: 'service.variant.length',
+  skin: 'service.variant.skin',
+};
 
 /** One performer card — a barber with their own terms for this service. */
 interface PerformerVm {
@@ -199,10 +206,9 @@ export class ServiceDetailSheetComponent {
   protected readonly variantCapsules = computed<readonly CapsuleVm[]>(() =>
     this.service().variants.map((variant) => ({
       label: this.content.text(variant.name),
-      // The registry key is derived from the variant's own intent, so a
-      // new variant kind must add its glyph there — the cast is the seam
-      // where that contract is asserted (both keys exist today).
-      icon: `service.variant.${variant.icon}` as UiIconName,
+      // Exhaustive over the variant's own union: a new variant kind fails to
+      // compile here until it has a registry key — no cast, no string math.
+      icon: VARIANT_ICONS[variant.icon],
     })),
   );
 

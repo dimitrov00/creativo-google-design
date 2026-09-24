@@ -65,9 +65,8 @@
     color: var(--sys-color-background);
   }
 
-  /* Typography (size/fill) lives in the UNLAYERED glyph block at the
-     bottom of this file — the vendor Material Symbols class is unlayered
-     and would beat any layered size rule here. */
+  /* The glyph's box (1em, currentColor) lives in the unlayered
+     MapLibre-facing block at the bottom of this file. */
   .locations-map__indicator-arrow {
     display: block;
   }
@@ -164,28 +163,16 @@
   }
 }
 
-/* UNLAYERED on purpose — the icon.css precedent, restated for MapLibre-created
-   glyph spans (which can't be <ui-icon>: MapLibre owns this DOM). The vendor
-   `material-symbols/rounded.css` is imported UNLAYERED in each app's
-   styles.css and hard-codes `.material-symbols-rounded { font-size: 24px }`;
-   unlayered author CSS beats ALL layered CSS, so any size rule inside
-   @layer sys-components above silently loses to that 24px. These rules live
-   outside the layer and out-specify the vendor's single class (0,2,0 > 0,1,0):
-
-   - `font-size: 1em` — the glyph rides the deliberate font context its
-     chrome parent sets in the layered block above (callout on the pin head,
-     body on the indicator chip), same contract as ui-icon.
-   - full `font-variation-settings` — the house look is FILLED Material
-     Symbols Rounded; the vendor sheet leaves FILL at 0 (outlined), which is
-     exactly how the raw spans rendered before this block existed. */
+/* MapLibre-created glyphs (pin head, indicator arrow) are the icon
+   registry's inline <svg>, built by UiIconRegistry.createElement because
+   MapLibre owns this DOM. Same contract as ui-icon: a 1em box riding the
+   font context its chrome parent sets, inked in currentColor. */
 .locations-map__pin-head .locations-map__pin-icon,
 .locations-map__indicator .locations-map__indicator-arrow {
-  font-size: 1em;
-  line-height: 1;
-  font-variation-settings:
-    'FILL' 1,
-    'wght' 400,
-    'opsz' 24;
+  display: block;
+  inline-size: 1em;
+  block-size: 1em;
+  fill: currentColor;
 }
 
 /* ── MapLibre stacking containment ──────────────────────────────────────

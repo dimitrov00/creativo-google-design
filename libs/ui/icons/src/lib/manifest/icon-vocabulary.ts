@@ -1,7 +1,18 @@
-import { InjectionToken, Provider } from '@angular/core';
+import type {
+  UiIconManifest,
+  UiLogoEntry,
+  UiVectorAsset,
+} from './icon-manifest';
+import { normalizeIconEntry } from './icon-manifest';
 
 /**
- * Semantic icon registry — the design system's icon VOCABULARY.
+ * Semantic icon vocabulary — the BUNDLED manifest's icon table.
+ *
+ * Pure data, no Angular: `tools/icons/build-material-glyphs.mjs` imports
+ * this module under Node's type stripping to know which glyphs to fetch, and
+ * `icon-vocabulary.spec.ts` checks every value against the generated table.
+ * Angular wiring (DI overrides, the registry service) lives in
+ * `../registry`.
  *
  * Call sites name the INTENT (`'sheet.close'`, `'location.directions'`),
  * never the glyph (`'close'`, `'near_me'`). Two intents may share a glyph
@@ -18,7 +29,11 @@ import { InjectionToken, Provider } from '@angular/core';
  *
  * `as const satisfies Record<string, string>` keeps every value a literal
  * (so `UiIconName` is the closed union of keys) while still type-checking
- * the shape.
+ * the shape. Every value is a Material Symbols Rounded glyph NAME; the
+ * artwork itself is the generated `material-glyphs.generated.ts`, fetched
+ * at a pinned revision by `pnpm icons:glyphs` — a name that revision does
+ * not carry fails generation loudly instead of rendering its own name in
+ * capitals the way the old ligature font did.
  */
 export const UI_ICON_REGISTRY = {
   /* ── Appointments / booking ─────────────────────────────────────── */
@@ -130,6 +145,10 @@ export const UI_ICON_REGISTRY = {
 
   /* ── Sheets / overlays ──────────────────────────────────────────── */
   'sheet.close': 'close',
+  /** Send a toast away before its clock runs out. Its own intent: a toast is
+   *  not a sheet, and the two marks may diverge (a sheet's ✕ could become a
+   *  circled one without the toast following). Shares `close` today. */
+  'toast.dismiss': 'close',
 
   /* ── Composite fields ───────────────────────────────────────────── */
   /** Disclosure caret on a field-embedded picker trigger (the "▾" on
@@ -317,8 +336,7 @@ export const UI_ICON_REGISTRY = {
   'location.any': 'travel_explore',
 
   /* ── Galleries & layout toggles ─────────────────────────────────── */
-  /** Showcase gallery: switch to the expanded grid. */
-  'gallery.grid': 'grid_view',
+  /* `gallery.grid` is an ALIAS of `layout.grid` — see UI_ICON_ALIASES. */
   /** Showcase gallery: switch back to the film-strip carousel. */
   'gallery.strip': 'view_carousel',
   /** Generic list/grid layout toggle (service performers roster). */
@@ -355,62 +373,163 @@ export const UI_ICON_REGISTRY = {
   /** Two doors to a picture: the camera, and what the phone already holds. */
   'media.camera': 'photo_camera',
   'media.library': 'photo_library',
-  /** The shop's own pictures — the catalogue's covers and work. */
-  'media.gallery': 'collections',
+  /** The shop's own pictures — the catalogue's covers and work. An album,
+   *  not `collections`: that name exists in the legacy Material Icons set only,
+   *  and the ligature font rendered it as the WORD in capitals on the visit
+   *  editor's photo door. The glyph generator now refuses such a name. */
+  'media.gallery': 'photo_album',
 } as const satisfies Record<string, string>;
+
+/* ── Vector icons — marks Material Symbols does not carry ────────────── */
+/**
+ * Brand and signature marks as inert path data. Same rendering path as a
+ * remote override, so this table is also the worked example of what a
+ * backend may send for a key (see `icon-manifest.ts`).
+ */
+export const UI_ICON_VECTORS = {
+  /** Instagram — Material carries no brand glyphs. The v2 stroke mark:
+   *  rounded square, lens, dot; 2-unit strokes on a 24-unit box. */
+  'social.instagram': {
+    kind: 'vector',
+    viewBox: '0 0 24 24',
+    paths: [
+      {
+        d: 'M7 2h10a5 5 0 0 1 5 5v10a5 5 0 0 1-5 5H7a5 5 0 0 1-5-5V7a5 5 0 0 1 5-5z',
+        fill: 'none',
+        stroke: 'currentColor',
+        strokeWidth: 2,
+        strokeLinecap: 'round',
+        strokeLinejoin: 'round',
+      },
+      {
+        d: 'M16 12a4 4 0 1 1-8 0a4 4 0 1 1 8 0z',
+        fill: 'none',
+        stroke: 'currentColor',
+        strokeWidth: 2,
+      },
+      {
+        d: 'M18 6.5a.5.5 0 1 1-1 0a.5.5 0 1 1 1 0z',
+        fill: 'currentColor',
+        stroke: 'currentColor',
+        strokeWidth: 2,
+        strokeLinejoin: 'round',
+      },
+    ],
+  },
+} as const satisfies Record<string, UiVectorAsset>;
+
+/* ── Aliases — one intent DEFINED as another ─────────────────────────── */
+/**
+ * `key → key`. An alias is not "the same glyph today" (that is what two
+ * registry keys sharing a value express, and they are FREE to diverge); an
+ * alias says the first intent IS an instance of the second and should
+ * follow it wherever it goes. The type forbids aliasing an alias, so the
+ * bundled table never holds a chain — only a remote manifest can build one,
+ * and the resolver bounds and cycle-checks those at runtime.
+ *
+ * The other job of this table is vocabulary renames: retire a key by
+ * aliasing the old name to the new one for a release, migrate call sites,
+ * delete the alias.
+ */
+export const UI_ICON_ALIASES = {
+  /** The showcase gallery's grid toggle IS the generic list/grid toggle. */
+  'gallery.grid': 'layout.grid',
+} as const satisfies Record<string, keyof typeof UI_ICON_REGISTRY>;
 
 /**
  * The closed, type-safe icon vocabulary — `uiName` accepts ONLY these.
  * A typo'd or unregistered intent is a compile error at the call site.
  */
-export type UiIconName = keyof typeof UI_ICON_REGISTRY;
-
-/** A partial remap of semantic keys to different Material Symbol glyphs. */
-export type UiIconOverrides = Partial<Record<UiIconName, string>>;
+export type UiIconName =
+  | keyof typeof UI_ICON_REGISTRY
+  | keyof typeof UI_ICON_VECTORS
+  | keyof typeof UI_ICON_ALIASES;
 
 /**
- * Injection hook for theme/app remaps. Multi-provider: several layers may
- * each remap a slice of the vocabulary; later providers win on conflicts
- * (standard DI ordering — app config after library defaults).
+ * Key grammar: `domain.action` or `domain.action.qualifier`, camelCase
+ * segments, lower-case first letter. Dots mark semantic keys; a raw glyph
+ * name never contains one, which is what lets the lint rules and the
+ * runtime tell the two apart without a lookup.
  */
-export const UI_ICON_OVERRIDES = new InjectionToken<readonly UiIconOverrides[]>(
-  'UI_ICON_OVERRIDES',
+export const UI_ICON_KEY_PATTERN =
+  /^[a-z][a-zA-Z0-9]*(\.[a-z][a-zA-Z0-9]*){1,2}$/;
+
+export function isUiIconName(value: unknown): value is UiIconName {
+  return (
+    typeof value === 'string' &&
+    (value in UI_ICON_REGISTRY ||
+      value in UI_ICON_VECTORS ||
+      value in UI_ICON_ALIASES)
+  );
+}
+
+/* ── The logo ────────────────────────────────────────────────────────── */
+/**
+ * The Creativo wordmark, as path data in `currentColor` — ONE asset that
+ * follows the ink it sits in, where the old `logo-black.svg` /
+ * `logo-white.svg` pair needed the header to pick a file. Geometry is the
+ * 1920×419.82 artboard the files were drawn on; the two polygons became
+ * closed paths.
+ *
+ * A future logo may be an `image` asset (raster, multi-colour) with a
+ * separate `dark` variant — the manifest's logo shape carries both, and
+ * `ui-logo` shows the one the active theme asks for.
+ */
+export const UI_LOGO: UiLogoEntry = {
+  light: {
+    kind: 'vector',
+    viewBox: '0 0 1920 419.82',
+    paths: [
+      {
+        d: 'M1715.83,69.24c-77.57,0-140.67,63.11-140.67,140.67s63.11,140.67,140.67,140.67,140.67-63.11,140.67-140.67-63.11-140.67-140.67-140.67ZM1715.83,303.69c-51.71,0-93.77-42.07-93.77-93.77s42.07-93.77,93.77-93.77,93.77,42.07,93.77,93.77-42.07,93.77-93.77,93.77Z',
+      },
+      {
+        d: 'M937.63,69.24c-77.57,0-140.67,63.11-140.67,140.67s63.11,140.67,140.67,140.67c36,0,68.87-13.61,93.77-35.93v31.11h46.9v-133.47h-.06c.01-.8.06-1.58.06-2.38,0-77.57-63.11-140.67-140.67-140.67ZM937.63,303.69c-51.71,0-93.77-42.07-93.77-93.77s42.07-93.77,93.77-93.77,93.77,42.07,93.77,93.77-42.07,93.77-93.77,93.77Z',
+      },
+      { d: 'M1207.44 74.05L1322.55 345.77L1373.03 345.77L1257.92 74.05Z' },
+      {
+        d: 'M1544.52 74.05L1452.59 291.04L1360.66 74.05L1310.18 74.05L1425.29 345.77L1429.4 345.77L1475.77 345.77L1479.88 345.77L1595 74.05Z',
+      },
+      {
+        d: 'M204.17,116.14c40.09,0,74.36,25.29,87.75,60.75h48.97c-14.9-61.68-70.53-107.65-136.72-107.65-77.57,0-140.67,63.11-140.67,140.67s63.11,140.67,140.67,140.67c66.19,0,121.82-45.97,136.72-107.65h-48.97c-13.39,35.46-47.67,60.75-87.75,60.75-51.71,0-93.77-42.07-93.77-93.77s42.07-93.77,93.77-93.77Z',
+      },
+      {
+        d: 'M514.08,74.2c-10.02-2.78-20.41-4.19-30.89-4.19h-.42c-63.66,0-115.44,51.79-115.44,115.44v160.31h46.9v-160.31c0-37.8,30.75-68.54,68.54-68.54h.42c6.24,0,12.42.83,18.36,2.48l12.53-45.19Z',
+      },
+      {
+        d: 'M1217.16,302.75h-.42c-37.8,0-68.54-30.75-68.54-68.54v-86.47h52.35l-19.85-46.9h-32.5v-26.77h-46.9v160.15c0,63.66,51.79,115.44,115.44,115.44h.42c10.48,0,20.87-1.41,30.89-4.18l-12.53-45.19c-5.94,1.64-12.11,2.48-18.36,2.48Z',
+      },
+      {
+        d: 'M631.74,69.24c-77.57,0-140.67,63.11-140.67,140.67s63.11,140.67,140.67,140.67c55.36,0,103.33-32.16,126.28-78.77h-55.97c-17.19,19.51-42.32,31.87-70.31,31.87-51.71,0-93.77-42.07-93.77-93.77s42.07-93.77,93.77-93.77c43.61,0,80.37,29.93,90.8,70.32h-111.02l20.22,46.9,138.66.13c1.3-7.67,2.01-15.54,2.01-23.58,0-77.57-63.11-140.67-140.67-140.67Z',
+      },
+    ],
+  },
+};
+
+/* ── The bundled manifest ────────────────────────────────────────────── */
+/**
+ * The three tables above as ONE manifest document — the same shape a
+ * backend override arrives in, so the registry has exactly one merge and
+ * one resolver for both.
+ */
+export const UI_BUNDLED_ICON_MANIFEST: UiIconManifest = {
+  schemaVersion: 1,
+  icons: {
+    ...Object.fromEntries(
+      Object.entries(UI_ICON_REGISTRY).map(([key, glyph]) => [
+        key,
+        normalizeIconEntry(glyph),
+      ]),
+    ),
+    ...UI_ICON_VECTORS,
+    ...Object.fromEntries(
+      Object.entries(UI_ICON_ALIASES).map(([key, alias]) => [key, { alias }]),
+    ),
+  },
+  logo: UI_LOGO,
+};
+
+/** Every key the vocabulary knows — what a remote manifest may speak about. */
+export const UI_ICON_NAMES: ReadonlySet<string> = new Set(
+  Object.keys(UI_BUNDLED_ICON_MANIFEST.icons),
 );
-
-/**
- * Remap semantic icons for an app/route subtree WITHOUT forking the
- * registry — SwiftUI's "same semantic, different asset per theme" move.
- *
- * ```ts
- * // app.config.ts (or any route/component `providers`)
- * providers: [
- *   provideUiIcons({ 'location.pin': 'distance', 'sheet.close': 'cancel' }),
- * ]
- * ```
- *
- * Only KNOWN semantic keys can be remapped (typos are compile errors);
- * values are raw Material Symbols ligature names.
- */
-export function provideUiIcons(overrides: UiIconOverrides): Provider {
-  return { provide: UI_ICON_OVERRIDES, useValue: overrides, multi: true };
-}
-
-/**
- * Resolve a semantic name to its Material Symbols glyph: overrides
- * (last-wins) → registry → the name itself. The raw-name fallback is a
- * RUNTIME safety net only — un-migrated/dynamic call sites keep rendering
- * their ligature instead of a tofu box — the `UiIconName` input type is
- * what enforces the vocabulary at compile time.
- */
-export function resolveUiIcon(
-  name: UiIconName,
-  overrides?: readonly UiIconOverrides[] | null,
-): string {
-  if (overrides) {
-    for (let i = overrides.length - 1; i >= 0; i--) {
-      const glyph = overrides[i]?.[name];
-      if (glyph !== undefined) return glyph;
-    }
-  }
-  return UI_ICON_REGISTRY[name] ?? name;
-}

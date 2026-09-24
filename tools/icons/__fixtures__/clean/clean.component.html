@@ -1,0 +1,7 @@
+<button uiButton>
+  <ui-icon uiName="sheet.close" />
+  <ui-icon [uiName]="open() ? 'frame.collapse' : 'frame.expand'" />
+  <ui-avatar [uiName]="client.label" uiIcon="account.anonymous" />
+  <ui-logo uiLabel="Creativo" />
+</button>
+<ui-icon [uiName]="edge === 'before' ? 'frame.collapse' : 'frame.expand'" />

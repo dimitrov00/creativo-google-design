@@ -29,6 +29,7 @@ function event(partial: Partial<GridEvent> & Pick<GridEvent, 'id'>): GridEvent {
     past: false,
     accessibleName: 'Георги Петров, Фейд, 10:00–10:45',
     statusIcon: null,
+    partyLabel: null,
     ...partial,
     // AFTER the spread, coalesced: `Partial<GridEvent>` makes this
     // `number | null | undefined`, and `GridEvent` does not accept the
@@ -935,9 +936,9 @@ describe('StaffTimeGrid', () => {
   describe('masks', () => {
     const masksOf = (host: HTMLElement, index = 0) =>
       [
-        ...host
+        ...(host
           .querySelectorAll('[data-testid="staff-grid-event"]')
-          [index].querySelectorAll('.staff-grid__event-mask'),
+          [index]?.querySelectorAll('.staff-grid__event-mask') ?? []),
       ].map((m) => ({
         kind: m.getAttribute('data-kind'),
         from: +(m as HTMLElement).style.getPropertyValue('--staff-mask-from'),
@@ -1265,7 +1266,7 @@ describe('StaffTimeGrid', () => {
      */
     describe('a drag past a neighbour', () => {
       const minutes = (label: string | null | undefined): number => {
-        const [h, m] = (label ?? '0:0').split(':').map(Number);
+        const [h = 0, m = 0] = (label ?? '0:0').split(':').map(Number);
         return h * 60 + m;
       };
       const startOf = (block: HTMLElement) =>
@@ -1791,11 +1792,14 @@ describe('StaffTimeGrid', () => {
         configurable: true,
       });
       box.scrollTop = 500;
-      (
-        box as HTMLElement & { scrollTo: (options: ScrollToOptions) => void }
-      ).scrollTo = (options) => {
-        box.scrollTop = options.top ?? box.scrollTop;
-      };
+      // Replace the (overloaded) native method wholesale: the component calls
+      // the options form, and jsdom implements neither.
+      Object.defineProperty(box, 'scrollTo', {
+        value: (options: ScrollToOptions) => {
+          box.scrollTop = options.top ?? box.scrollTop;
+        },
+        configurable: true,
+      });
       chip()?.click();
       // middle = 700 − 400 + 25 = 325 → 500 + 325 − 120.
       expect(box.scrollTop).toBe(705);

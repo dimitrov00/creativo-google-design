@@ -211,7 +211,8 @@ describe('FirebaseAppointmentPhotos', () => {
       );
       const photos = createPhotos();
 
-      const seen: readonly AppointmentPhoto[][] = [];
+      // A mutable list OF readonly snapshots — the outer array is pushed to.
+      const seen: (readonly AppointmentPhoto[])[] = [];
       photos.observe('appt-1').subscribe((result) => {
         if (result.isSuccess()) seen.push([...result.value]);
       });

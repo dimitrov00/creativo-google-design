@@ -4,6 +4,7 @@ import {
   ViewEncapsulation,
   input,
 } from '@angular/core';
+import { UiIcon } from '@creativo/ui/icons';
 
 /**
  * Star-rating stat cluster — SwiftUI parity:
@@ -19,8 +20,9 @@ import {
  */
 @Component({
   selector: 'ui-rating',
+  imports: [UiIcon],
   template: `
-    <span class="ui-rating__star" aria-hidden="true">star</span>
+    <ui-icon uiName="rating.star" />
     <span class="ui-rating__value">{{ uiValue() }}</span>
     <ng-content />
   `,

@@ -28,6 +28,9 @@
   ],
   "references": [
     {
+      "path": "../icons/tsconfig.lib.json"
+    },
+    {
       "path": "../modifiers/tsconfig.lib.json"
     }
   ]

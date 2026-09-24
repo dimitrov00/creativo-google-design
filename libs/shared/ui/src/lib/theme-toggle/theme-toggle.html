@@ -8,8 +8,8 @@
   (click)="themeService.toggle()"
 >
   @if (themeService.theme() === 'dark') {
-  <span aria-hidden="true">🌙</span>
+  <ui-icon uiName="prefs.theme.dark" />
   } @else {
-  <span aria-hidden="true">☀️</span>
+  <ui-icon uiName="prefs.theme.light" />
   }
 </button>

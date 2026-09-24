@@ -1,0 +1,8 @@
+{
+  "name": "icon-tools",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "tools/icons",
+  "projectType": "library",
+  "tags": ["scope:tooling", "type:util"],
+  "targets": {}
+}

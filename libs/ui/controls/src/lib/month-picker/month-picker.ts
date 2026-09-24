@@ -23,7 +23,7 @@ import {
 } from '@creativo/ui/patterns';
 import { UiButton } from '../button/button';
 import { UiChip } from '../chip/chip';
-import { UiIcon } from '../icon/icon';
+import { UiIcon } from '@creativo/ui/icons';
 
 /** `YYYY-MM-DD`. The one shape every date on this surface travels as. */
 export type UiDayKey = string;

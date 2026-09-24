@@ -3,8 +3,9 @@
     <code>ui-icon</code> — the one icon vocabulary. ≙ SwiftUI
     <code>Image(systemName:)</code>: call sites name the INTENT
     (<code>'sheet.close'</code>), never the glyph — the registry resolves intent
-    → Material Symbols ligature, so intents sharing a glyph today can diverge
-    later by editing one registry line.
+    → inline SVG path data (Material Symbols Rounded at a pinned revision, or a
+    vector entry of its own), so intents sharing artwork today can diverge later
+    by editing one manifest line.
   </ng-container>
 
   <sc-demo scTitle="Semantic registry">
@@ -20,6 +21,21 @@
       </ui-stack>
       }
     </ui-flow>
+  </sc-demo>
+
+  <sc-demo scTitle="Logo">
+    <ng-container scAbout>
+      <code>ui-logo</code> — the brand mark through the same registry. One
+      <code>currentColor</code> asset follows the ink; a manifest with a
+      separate dark cut shows the one <code>&lt;html data-theme&gt;</code> asks
+      for, and <code>uiScheme</code> forces a variant.
+    </ng-container>
+    <ui-stack uiSpacing="comfortable" uiAlignment="leading">
+      <ui-logo uiLabel="Creativo" />
+      <div class="icon__on-media">
+        <ui-logo uiScheme="dark" />
+      </div>
+    </ui-stack>
   </sc-demo>
 
   <sc-demo scTitle="uiScale">

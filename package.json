@@ -8,7 +8,9 @@
     "dev": "pnpm nx build functions && firebase emulators:exec --only firestore,auth,functions,storage --project demo-creativo-test --ui \"pnpm run seed:dev && node tools/dev-host.mjs && pnpm nx serve web --host 0.0.0.0 --allowedHosts\"",
     "seed:dev": "node tools/seed-dev-catalog.mjs",
     "test:emulator": "firebase emulators:exec --only firestore,auth --project demo-creativo-test \"pnpm nx run-many -t test-integration\"",
-    "e2e:web": "pnpm nx build functions && firebase emulators:exec --only firestore,auth,functions --project demo-creativo-test \"pnpm nx e2e web\""
+    "e2e:web": "pnpm nx build functions && firebase emulators:exec --only firestore,auth,functions --project demo-creativo-test \"pnpm nx e2e web\"",
+    "icons:glyphs": "node tools/icons/build-material-glyphs.mjs",
+    "icons:check": "node tools/icons/check-icon-usage.mjs"
   },
   "lint-staged": {
     "*.{ts,html,css,json,md}": [
@@ -107,7 +109,6 @@
     "libphonenumber-js": "^1.13.9",
     "luxon": "^3.7.2",
     "maplibre-gl": "^5",
-    "material-symbols": "^0.45.8",
     "rxjs": "~7.8.0"
   },
   "pnpm": {

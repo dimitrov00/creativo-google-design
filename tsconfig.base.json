@@ -138,7 +138,8 @@
       ],
       "@creativo/features/shared/shell": [
         "./libs/features/shared/shell/src/index.ts"
-      ]
+      ],
+      "@creativo/ui/icons": ["./libs/ui/icons/src/index.ts"]
     }
   }
 }

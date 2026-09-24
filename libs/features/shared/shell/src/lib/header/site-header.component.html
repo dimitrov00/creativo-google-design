@@ -11,13 +11,11 @@
       [uiFrameMaxWidth]="'var(--landing-max-width)'"
       [uiToolbarBackground]="isSolid() ? 'automatic' : 'hidden'"
     >
+      <!-- The wordmark comes from the icon registry and follows the link's ink: white over the hero
+           and in dark mode, foreground on the solid bar — see the CSS. The
+           anchor carries the accessible name, so the mark is decorative. -->
       <a routerLink="/" class="cr-header__brand" aria-label="Creativo">
-        <img
-          [src]="logoWhite() ? '/logo-white.svg' : '/logo-black.svg'"
-          alt="Creativo"
-          uiFrame
-          [uiFrameHeight]="'1.5rem'"
-        />
+        <ui-logo />
       </a>
 
       <ui-stack uiAxis="horizontal" uiAlignment="center" uiSpacing="tight">

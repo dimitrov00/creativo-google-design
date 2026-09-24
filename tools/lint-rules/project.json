@@ -1,0 +1,8 @@
+{
+  "name": "lint-rules",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "tools/lint-rules",
+  "projectType": "library",
+  "tags": ["scope:tooling", "type:util"],
+  "targets": {}
+}

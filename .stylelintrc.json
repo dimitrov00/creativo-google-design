@@ -1,5 +1,6 @@
 {
   "//": "Token-enforcement lint (docs/styling-conventions.md). Design values may only come from --cr-* tokens: typography via text roles, stacking via the layer scale, motion via the motion tokens. The token sources themselves (design-tokens/css, typography.css) are exempt via overrides. Deliberate one-offs (the three art-directed heroes, icon glyph sizes) carry inline stylelint-disable comments naming their case-study rationale.",
+  "ignoreFiles": ["tools/icons/__fixtures__/**"],
   "rules": {
     "declaration-property-value-allowed-list": {
       "font": ["/^var\\(--cr-text-/", "inherit"],
@@ -17,8 +18,13 @@
       ],
       "/^(transition-timing-function|animation-timing-function)$/": [
         "/cubic-bezier|^ease/"
-      ]
-    }
+      ],
+      "font-family": ["/Material\\s?(Symbols|Icons)/i"]
+    },
+    "selector-disallowed-list": [
+      "/material-(symbols|icons)/i",
+      "/(^|[\\s>+~])mat-icon\\b/"
+    ]
   },
   "overrides": [
     {
@@ -33,7 +39,7 @@
       }
     },
     {
-      "//": "The new --sys-* design system (blueprint docs/migration-blueprint.md §3) is its own self-contained, newly-introduced token-governed subsystem — every design value already traces to a --sys-* custom property (or a small set of deliberate literal font-weight numbers, matching the blueprint's own §3.1 example code) enforced by the co-located CSS itself rather than this cr-*-specific allow-list. Exempted the same way the cr-* token sources above are. Extends to libs/features/**: every Phase 6 feature slice (blueprint §8) styles itself the same way — this isn't landing-specific, just the first slice's CSS to hit the stale cr-*-only allow-list.",
+      "//": "The new --sys-* design system (blueprint docs/migration-blueprint.md §3) is its own self-contained, newly-introduced token-governed subsystem — every design value already traces to a --sys-* custom property (or a small set of deliberate literal font-weight numbers, matching the blueprint's own §3.1 example code) enforced by the co-located CSS itself rather than this cr-*-specific allow-list. Exempted the same way the cr-* token sources above are. Extends to libs/features/**: every Phase 6 feature slice (blueprint §8) styles itself the same way — this isn't landing-specific, just the first slice's CSS to hit the stale cr-*-only allow-list. The icon-font ban (font-family) is re-declared here because this override replaces the whole rule: no stylesheet may summon Material Symbols — icons are inline SVG from libs/ui/icons.",
       "files": [
         "libs/ui/**/*.css",
         "libs/features/**/*.css",
@@ -42,7 +48,9 @@
       ],
       "rules": {
         "declaration-property-value-allowed-list": null,
-        "declaration-property-value-disallowed-list": null
+        "declaration-property-value-disallowed-list": {
+          "font-family": ["/Material\\s?(Symbols|Icons)/i"]
+        }
       }
     }
   ]

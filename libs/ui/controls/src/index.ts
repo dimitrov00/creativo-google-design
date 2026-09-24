@@ -1,7 +1,9 @@
 export * from './lib/button/button';
-export * from './lib/icon/icon';
+// The icon registry is its own library (libs/ui/icons) so ui/patterns can
+// compose ui-icon too; re-exported here so `@creativo/ui/controls` alone
+// still covers the full control set.
+export * from '@creativo/ui/icons';
 export * from './lib/month-picker/month-picker';
-export * from './lib/icon/icon-registry';
 export * from './lib/async-image/async-image';
 export * from './lib/map/map';
 export * from './lib/media-card/media-card';

@@ -12,7 +12,6 @@ import { AUTH_GATEWAY } from '@creativo/application/identity';
 import { UiIcon } from '@creativo/ui/controls';
 import { UiDivider, UiGrid, UiStack } from '@creativo/ui/layout';
 import { UiFrameDirective, UiTextDirective } from '@creativo/ui/modifiers';
-import { IconInstagram } from '../icons/icons';
 import { LocaleThemeToggleComponent } from '../prefs/locale-theme-toggle.component';
 
 /** One sitemap row — the four destination shapes the footer links out to. */
@@ -53,7 +52,6 @@ export interface FooterFlagshipLocation {
   selector: 'cr-site-footer',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
-    IconInstagram,
     LocaleThemeToggleComponent,
     RouterLink,
     TranslocoDirective,
