@@ -84,6 +84,42 @@
     color: var(--sys-color-foreground);
   }
 
+  /* THE UNFOLD (2026-09-17; owner: "a stepper should animate, expand —
+     smooth and cool"): the capsule opens OUT OF THE SQUARE'S OWN FOOTPRINT
+     rather than replacing it — the `+` stays where the box stood, and the
+     count and the `−` slide out to the leading side under a clip that
+     grows from the trailing edge, a beat behind. `@starting-style` gives
+     the first frame; a browser without it swaps, as before. */
+  .ui-count-stepper__group {
+    clip-path: inset(0 round var(--control-radius-capsule));
+    transition: clip-path var(--sys-motion-duration-deliberate)
+      var(--sys-motion-ease-emphasized);
+  }
+
+  .ui-count-stepper__group > .ui-count-stepper__step:first-child,
+  .ui-count-stepper__count {
+    transition:
+      opacity var(--sys-motion-duration-regular) var(--sys-motion-ease-standard)
+        60ms,
+      translate var(--sys-motion-duration-deliberate)
+        var(--sys-motion-ease-emphasized);
+  }
+
+  @starting-style {
+    .ui-count-stepper__group {
+      clip-path: inset(
+        0 0 0 calc(100% - var(--control-size-small)) round
+          var(--control-radius-capsule)
+      );
+    }
+
+    .ui-count-stepper__group > .ui-count-stepper__step:first-child,
+    .ui-count-stepper__count {
+      opacity: 0;
+      translate: calc(var(--sys-space-unit) * 3) 0;
+    }
+  }
+
   .ui-count-stepper__step {
     display: grid;
     place-items: center;
@@ -127,7 +163,10 @@
 
   @media (prefers-reduced-motion: reduce) {
     .ui-count-stepper__add,
-    .ui-count-stepper__add > .ui-icon {
+    .ui-count-stepper__add > .ui-icon,
+    .ui-count-stepper__group,
+    .ui-count-stepper__group > .ui-count-stepper__step:first-child,
+    .ui-count-stepper__count {
       transition: none;
     }
   }

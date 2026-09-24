@@ -1,0 +1,70 @@
+<sc-page scTitle="Slider">
+  <ng-container scLede>
+    <code>ui-slider</code> ≙ SwiftUI <code>Slider(value:in:step:)</code>. A
+    native range control underneath — the slider role, the arrow keys,
+    VoiceOver's adjustable — with the drawing on top: a RULER of ticks every
+    <code>uiTickEvery</code>, the taller ones every <code>uiMajorEvery</code>,
+    lit in <code>--ui-slider-tint</code> up to the thumb, and
+    <code>uiMarks</code> naming the points that matter. Without ticks it is the
+    plain rail. <code>uiValueChange</code> reports every move live, so a readout
+    can follow the finger; <code>uiValueText</code> is what a reader hears.
+  </ng-container>
+
+  <sc-demo scTitle="A percent on a ruler">
+    <ng-container scAbout>
+      The figure written large above (the amount field on a whole count, no
+      stepper — a tap types it), what it means in money beneath, and the ruler:
+      five-percent steps, the quarters taller and named.
+    </ng-container>
+    <ui-stack uiSpacing="regular" uiAlignment="stretch">
+      <ui-stack uiSpacing="tight" uiAlignment="center">
+        <ui-amount-field
+          uiUnit="%"
+          uiReserve="000"
+          [uiFractionDigits]="0"
+          [uiStepper]="false"
+          [uiValue]="percent()"
+          uiLabel="Percent off"
+          (uiValueChange)="percent.set($event ?? 0)"
+        />
+        <p uiText [uiFont]="'subheadline'" uiForegroundStyle="secondary">
+          −{{ off() }} € of a 28,00 € bill
+        </p>
+      </ui-stack>
+      <ui-slider
+        [uiValue]="percent()"
+        [uiMin]="0"
+        [uiMax]="100"
+        [uiStep]="5"
+        [uiTickEvery]="5"
+        [uiMajorEvery]="25"
+        [uiMarks]="percentMarks"
+        uiLabel="Percent off"
+        [uiValueText]="'−' + percent() + '%'"
+        (uiValueChange)="percent.set($event)"
+      />
+      <p uiText [uiFont]="'caption'" class="slider__mono">
+        uiStep=5 · uiTickEvery=5 · uiMajorEvery=25 · uiMarks at the quarters
+      </p>
+    </ui-stack>
+  </sc-demo>
+
+  <sc-demo scTitle="The plain rail">
+    <ng-container scAbout>
+      No ticks, no marks: the line every platform draws, lit to the value.
+    </ng-container>
+    <ui-stack uiSpacing="tight" uiAlignment="stretch">
+      <ui-slider
+        [uiValue]="plain()"
+        [uiMin]="0"
+        [uiMax]="100"
+        [uiStep]="1"
+        uiLabel="Plain"
+        (uiValueChange)="plain.set($event)"
+      />
+      <p uiText [uiFont]="'caption'" class="slider__mono">
+        uiValue={{ plain() }} · uiStep=1
+      </p>
+    </ui-stack>
+  </sc-demo>
+</sc-page>

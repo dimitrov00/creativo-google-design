@@ -5,6 +5,7 @@ import {
   input,
 } from '@angular/core';
 import { UiPaddingDirective } from '@creativo/ui/modifiers';
+import { UiProgressView } from '../progress-view/progress-view';
 
 /**
  * ≙ SwiftUI `.buttonStyle(_:)` — the exact SwiftUI vocabulary:
@@ -54,7 +55,21 @@ export type UiButtonBorderShape = 'roundedRectangle' | 'capsule';
  * be invalid HTML — pair it with `aria-hidden` on the cluster. */
 @Component({
   selector: 'button[uiButton], a[uiButton], span[uiButton]',
-  template: `<ng-content />`,
+  // BUSY (owner, 2026-09-17: "when saving or performing an async operation
+  // in any button add a spinner so you instantly know what is happening"):
+  // the button draws its OWN ring while `uiLoading` — no consumer composes
+  // a progress view into a label. The label keeps the box's width and goes
+  // clear (button.css); the ring turns at the centre in the button's ink.
+  // Hidden from assistive tech: `aria-busy` on the button already says it.
+  template: `<ng-content />
+    @if (uiLoading()) {
+      <span class="ui-button__progress" aria-hidden="true">
+        <ui-progress-view
+          [uiControlSize]="uiControlSize() === 'large' ? 'regular' : 'small'"
+        />
+      </span>
+    }`,
+  imports: [UiProgressView],
   styleUrl: './button.css',
   changeDetection: ChangeDetectionStrategy.OnPush,
   // Unscoped: bare `.ui-*`/`[data-*]` selectors never match a component's

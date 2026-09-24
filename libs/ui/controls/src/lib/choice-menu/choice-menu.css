@@ -10,4 +10,18 @@
   .ui-choice-menu__check-space {
     visibility: hidden;
   }
+
+  /* Two lines: the label, then what the option is. The pair takes the
+     row's label column and the description may wrap — a menu row that
+     names a kind is a sentence, not a command. */
+  .ui-choice-menu__lines {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    min-inline-size: 0;
+  }
+
+  .ui-choice-menu__description {
+    white-space: normal;
+  }
 }

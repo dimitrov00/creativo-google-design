@@ -1,4 +1,308 @@
 <ng-container *transloco="let t">
+  @if (currentPage() === 'repeat') {
+  <!-- ─────────────────────────── DEPTH 1 ───────────────────────────
+       THE REPEAT PAGE (2026-09-24: "like Apple Calendar, MS Calendar,
+       Google Calendar — defining which days it occurs, from, to").
+       Calendar's Repeat list and its Custom page on ONE page — the sheet
+       is one level deep, by rule: the shortcuts, each saying what it means
+       from THIS start; under «Персонализирано» the rule's own controls —
+       Google's «every N weeks on [days]», Apple's monthly «Each / On the…»;
+       then how the series ends, and one line reading the whole series back.
+       Every tap edits the draft at once; ‹ in the bar or the dock's ✓ goes
+       back to the ladder, where «Запази» writes. -->
+  <section
+    class="staff-visit__page"
+    tabindex="-1"
+    aria-labelledby="staff-block-page-title"
+    data-testid="staff-block-page"
+    data-page="repeat"
+  >
+    <ui-sheet-headline>
+      <h2
+        uiSheetLargeTitle
+        id="staff-block-page-title"
+        uiText
+        uiFont="largeTitle"
+      >
+        {{ t('staff.block.repeat') }}
+      </h2>
+    </ui-sheet-headline>
+
+    <!-- THE SHORTCUTS — a checklist, Apple's Repeat page. Each names what
+         it means from the frame's day («в четвъртък», «на 24-то число»):
+         Google's «Weekly on Thursday», said under the name rather than in
+         it. The check is READ OFF the rule, never stored beside it. The
+         chosen row wears the app's one selection (owner, 2026-09-24:
+         "like other common selections"): `uiSelected`'s wash and rounder
+         corner, the choice menu's own rows, plus the ✓. -->
+    <ul
+      uiListGroup
+      class="staff-visit__group"
+      role="radiogroup"
+      [attr.aria-label]="t('staff.block.repeatPresets')"
+      data-testid="staff-block-repeat-presets"
+    >
+      @for (row of repeatRows(); track row.id) {
+      <li>
+        <button
+          uiListRow
+          uiSize="large"
+          type="button"
+          role="radio"
+          [uiInteractive]="true"
+          [uiSelected]="row.checked"
+          [uiAlignment]="row.detail ? 'leading' : 'center'"
+          [attr.aria-checked]="row.checked"
+          [attr.data-testid]="'staff-block-repeat-' + row.id"
+          (click)="pickRepeat(row.id)"
+        >
+          <ui-stack uiSpacing="none">
+            <span>{{ row.label }}</span>
+            @if (row.detail) {
+            <span uiText uiFont="footnote" uiForegroundStyle="secondary"
+              >{{ row.detail }}</span
+            >
+            }
+          </ui-stack>
+          <span uiTrailing>
+            @if (row.checked) {
+            <ui-icon
+              uiName="checklist.done"
+              uiForegroundStyle="accent"
+              aria-hidden="true"
+            />
+            }
+          </span>
+        </button>
+      </li>
+      }
+    </ul>
+
+    @if (draft().repeat; as rule) { @if (customShown()) {
+    <!-- THE RULE — «Персонализирано»: how often (HIG's pop-up button in a
+         form row), every how many (a typed figure, the sheet's one field
+         for figures), and WHICH DAYS — the week as seven toggles, or the
+         month's reading of the start. A year needs nothing more: it
+         repeats on the start's own date. -->
+    <ul
+      uiListGroup
+      class="staff-visit__group"
+      [attr.aria-label]="t('staff.block.repeatRule')"
+      data-testid="staff-block-repeat-rule"
+    >
+      <li uiListRow uiSize="regular">
+        {{ t('staff.block.repeatFrequency') }}
+        <span uiTrailing>
+          <ui-choice-menu
+            uiAlignment="trailing"
+            [uiOptions]="frequencyOptions()"
+            [uiSelectedId]="rule.frequency"
+            [uiLabel]="t('staff.block.repeatFrequency')"
+            [(uiPresented)]="frequencyMenu"
+            (uiPicked)="setFrequency($event)"
+          >
+            <button
+              type="button"
+              uiButton
+              uiButtonStyle="bordered"
+              uiTint="neutral"
+              uiControlSize="small"
+              uiMenuTrigger
+              [attr.aria-label]="
+                t('staff.block.repeatFrequency') +
+                ': ' +
+                t('staff.block.repeatFrequencies.' + rule.frequency)
+              "
+              data-testid="staff-block-repeat-frequency"
+              (click)="frequencyMenu.set(true)"
+            >
+              <span
+                >{{ t('staff.block.repeatFrequencies.' + rule.frequency)
+                }}</span
+              >
+              <ui-icon uiTrailing uiName="field.popUp" />
+            </button>
+          </ui-choice-menu>
+        </span>
+      </li>
+      <li uiListRow uiSize="regular">
+        <label for="staff-block-repeat-interval"
+          >{{ t('staff.block.repeatInterval') }}</label
+        >
+        <span uiTrailing>
+          <span class="staff-sheet__pill staff-visit__figures">
+            <ui-unit-field
+              uiId="staff-block-repeat-interval"
+              uiType="number"
+              uiInputMode="numeric"
+              [uiMin]="1"
+              [uiStep]="1"
+              [uiValue]="'' + rule.interval"
+              uiPlaceholder="1"
+              [uiUnit]="intervalUnit(rule)"
+              [uiLabel]="t('staff.block.repeatInterval')"
+              uiTestId="staff-block-repeat-interval"
+              (uiValueChange)="commitInterval($event)"
+            />
+          </span>
+        </span>
+      </li>
+      @if (rule.frequency === 'weekly') {
+      <li uiListRow uiSize="regular">
+        <ui-weekday-picker
+          [uiSelected]="weekdayIsos()"
+          [uiLocale]="locale()"
+          [uiLabel]="t('staff.block.repeatWeekdaysLabel')"
+          uiTestId="staff-block-repeat-weekday"
+          (uiSelectedChange)="setWeekdays($event)"
+        />
+      </li>
+      } @if (rule.frequency === 'monthly') {
+      <li uiListRow uiSize="regular">
+        {{ t('staff.block.repeatMonthDay') }}
+        <span uiTrailing>
+          <ui-choice-menu
+            uiAlignment="trailing"
+            [uiOptions]="monthlyOptions()"
+            [uiSelectedId]="monthlySelectedId()"
+            [uiLabel]="t('staff.block.repeatMonthDay')"
+            [(uiPresented)]="monthlyMenu"
+            (uiPicked)="setMonthly($event)"
+          >
+            <button
+              type="button"
+              uiButton
+              uiButtonStyle="bordered"
+              uiTint="neutral"
+              uiControlSize="small"
+              uiMenuTrigger
+              [attr.aria-label]="t('staff.block.repeatMonthDay') + ': ' + monthlyLabel()"
+              data-testid="staff-block-repeat-month-day"
+              (click)="monthlyMenu.set(true)"
+            >
+              <span>{{ monthlyLabel() }}</span>
+              <ui-icon uiTrailing uiName="field.popUp" />
+            </button>
+          </ui-choice-menu>
+        </span>
+      </li>
+      }
+    </ul>
+    }
+
+    <!-- HOW IT ENDS — on a date, or after so many times (Google's «Ends»;
+         Apple's «End Repeat»). The date's calendar dots every day of the
+         series and will not go before its start, so the end is chosen
+         against the days it cuts. Switching between the two keeps the
+         days: the date becomes the last one's, the count how many. No
+         «Никога» — a series is written, so it must end (see the domain's
+         `RecurrenceEnd`). -->
+    <ul
+      uiListGroup
+      class="staff-visit__group"
+      [attr.aria-label]="t('staff.block.repeatEnd')"
+      data-testid="staff-block-repeat-end"
+    >
+      <li uiListRow uiSize="regular">
+        {{ t('staff.block.repeatEnd') }}
+        <span uiTrailing>
+          <ui-choice-menu
+            uiAlignment="trailing"
+            [uiOptions]="endOptions()"
+            [uiSelectedId]="rule.end.kind"
+            [uiLabel]="t('staff.block.repeatEnd')"
+            [(uiPresented)]="endMenu"
+            (uiPicked)="setEndKind($event)"
+          >
+            <button
+              type="button"
+              uiButton
+              uiButtonStyle="bordered"
+              uiTint="neutral"
+              uiControlSize="small"
+              uiMenuTrigger
+              [attr.aria-label]="t('staff.block.repeatEnd') + ': ' + endKindLabel()"
+              data-testid="staff-block-repeat-end-kind"
+              (click)="endMenu.set(true)"
+            >
+              <span>{{ endKindLabel() }}</span>
+              <ui-icon uiTrailing uiName="field.popUp" />
+            </button>
+          </ui-choice-menu>
+        </span>
+      </li>
+      @if (untilKey(); as until) {
+      <li uiListRow uiSize="regular">
+        {{ t('staff.block.repeatEndDate') }}
+        <span uiTrailing>
+          <lib-staff-day-pill
+            uiAlignment="trailing"
+            uiControlSize="small"
+            [uiDayKey]="until"
+            [uiTodayKey]="vm().todayKey"
+            [uiLocale]="locale()"
+            [uiMarked]="seriesDays()"
+            [uiMin]="draft().dayKey"
+            [uiPreviousLabel]="t('staff.visit.monthPrevious')"
+            [uiNextLabel]="t('staff.visit.monthNext')"
+            uiTestId="staff-block-until"
+            uiCalendarTestId="staff-block-until-calendar"
+            [(uiPresented)]="untilOpen"
+            (uiPicked)="setUntil($event)"
+          />
+        </span>
+      </li>
+      } @else {
+      <li uiListRow uiSize="regular">
+        <label for="staff-block-repeat-count"
+          >{{ t('staff.block.repeatEndCount') }}</label
+        >
+        <span uiTrailing>
+          <span class="staff-sheet__pill staff-visit__figures">
+            <ui-unit-field
+              uiId="staff-block-repeat-count"
+              uiType="number"
+              uiInputMode="numeric"
+              [uiMin]="1"
+              [uiStep]="1"
+              [uiValue]="countFigure()"
+              uiPlaceholder="1"
+              [uiUnit]="countUnit()"
+              [uiLabel]="t('staff.block.repeatEndCount')"
+              uiTestId="staff-block-repeat-count"
+              (uiValueChange)="commitCount($event)"
+            />
+          </span>
+        </span>
+      </li>
+      }
+    </ul>
+    <!-- THE SERIES, READ BACK — Calendar's «Event will occur every 2 weeks
+         on Monday and Wednesday», with the count and the span: the size of
+         the act before «Запази». Or, in red, why there is no series. -->
+    @if (repeatError(); as error) {
+    <p
+      uiText
+      uiFont="footnote"
+      uiForegroundStyle="destructive"
+      role="alert"
+      data-testid="staff-block-repeat-error"
+    >
+      {{ error }}
+    </p>
+    } @else if (repeatSummary(); as summary) {
+    <p
+      uiText
+      uiFont="footnote"
+      uiForegroundStyle="secondary"
+      class="staff-visit__figures"
+      data-testid="staff-block-repeat-summary"
+    >
+      {{ summary }}
+    </p>
+    } }
+  </section>
+  } @else {
   <div class="staff-visit__body" data-testid="staff-block-root">
     <!-- ── БРЪСНАРИ — first, and SEVERAL (owner, 2026-09-09: "no option to
          add it for multiple barbers?"), DISCRETELY (owner, same hour: "what
@@ -147,71 +451,49 @@
       </li>
       }
       <!-- THE REPEAT (owner, 2026-09-09: "recurrence, for example for
-           lunch breaks"). THE VALUE IS THE CHOICE (owner, same hour: "the
-           choice does not make sense on the label, rather the value"):
-           «Повтаряне» is a plain label and the trailing pill opens the menu,
-           the day pill's own shape, so the two rows of a series read as a
-           pair; the series then says how far it reaches and on how many
-           days it will be written — the size of the act, before «Запази». -->
-      <li uiListRow uiSize="regular">
-        {{ t('staff.block.repeat') }}
-        <span uiTrailing>
-          <ui-choice-menu
-            uiAlignment="trailing"
-            [uiOptions]="repeatOptions()"
-            [uiSelectedId]="repeatId()"
-            [uiLabel]="t('staff.block.repeat')"
-            [(uiPresented)]="repeatMenu"
-            (uiPicked)="setRepeat($event)"
-          >
-            <button
-              type="button"
-              uiButton
-              uiButtonStyle="bordered"
-              uiTint="neutral"
-              uiControlSize="small"
-              uiMenuTrigger
-              [attr.aria-label]="t('staff.block.repeat') + ': ' + repeatLabel()"
-              data-testid="staff-block-repeat"
-              (click)="repeatMenu.set(true)"
+           lunch breaks"; 2026-09-24: "like Apple Calendar, MS Calendar,
+           Google Calendar — defining which days it occurs, from, to"). A
+           VALUE ROW THAT TRAVELS: the repeat is a rule now — how often, on
+           which days, until when — and a row that owns several values
+           pushes a page (the visit sheet's «Отстъпка ›»). The value is the
+           rule's name; under the label, the size of the act before
+           «Запази» — which days, how many, from when to when — or, in red,
+           why there is no series to write. -->
+      <li>
+        <button
+          uiListRow
+          uiSize="large"
+          type="button"
+          [uiInteractive]="true"
+          [uiAlignment]="repeatFacts() ? 'leading' : 'center'"
+          [attr.aria-label]="repeatRowName()"
+          data-testid="staff-block-repeat"
+          (click)="openRepeatPage()"
+        >
+          <ui-stack uiSpacing="none">
+            <span>{{ t('staff.block.repeat') }}</span>
+            @if (repeatFacts(); as facts) {
+            <span
+              uiText
+              uiFont="footnote"
+              [uiForegroundStyle]="repeatError() ? 'destructive' : 'secondary'"
+              class="staff-visit__figures staff-visit__row-line"
+              data-testid="staff-block-repeat-facts"
+              >{{ facts }}</span
             >
-              <span data-testid="staff-block-repeat-value"
-                >{{ repeatLabel() }}</span
-              >
-              <ui-icon uiTrailing uiName="field.expand" />
-            </button>
-          </ui-choice-menu>
-        </span>
+            }
+          </ui-stack>
+          <span uiTrailing class="staff-visit__row-value">
+            <span
+              uiForegroundStyle="secondary"
+              data-testid="staff-block-repeat-value"
+              >{{ draft().repeat ? repeatValue() : t('staff.block.repeatNever')
+              }}</span
+            >
+            <ui-icon uiName="nav.disclosure" aria-hidden="true" />
+          </span>
+        </button>
       </li>
-      @if (draft().repeat; as repeat) {
-      <li uiListRow uiSize="regular">
-        <span class="staff-visit__leg-body">
-          <span>{{ t('staff.block.repeatUntil') }}</span>
-          <span
-            uiText
-            uiFont="footnote"
-            uiForegroundStyle="secondary"
-            class="staff-visit__figures"
-            data-testid="staff-block-repeat-days"
-            >{{ t('staff.block.repeatDays', { count: repeatDays() }) }}</span
-          >
-        </span>
-        <span uiTrailing>
-          <lib-staff-day-pill
-            uiAlignment="trailing"
-            [uiDayKey]="repeat.untilDayKey"
-            [uiTodayKey]="vm().todayKey"
-            [uiLocale]="locale()"
-            [uiPreviousLabel]="t('staff.visit.monthPrevious')"
-            [uiNextLabel]="t('staff.visit.monthNext')"
-            uiTestId="staff-block-until"
-            uiCalendarTestId="staff-block-until-calendar"
-            [(uiPresented)]="untilOpen"
-            (uiPicked)="setUntil($event)"
-          />
-        </span>
-      </li>
-      }
     </ul>
 
     <!-- ── THE FRAME — the block over each chosen chair's real day, under
@@ -359,15 +641,24 @@
       {{ t('staff.block.effect') }}
     </p>
 
-    <!-- THE MIRROR of «Откажи и блокирай времето»: blocked time a client
-         then turns up for. Last, with the sheet's other exits. -->
-    @if (vm().blockId !== null && !draft().allDay) {
+    <!-- THE EXITS — the sheet's last group, in the visit sheet's grammar.
+         THE LIFT LIVES HERE, NOT IN THE DOCK (owner, 2026-09-23: in the bar
+         it "looks bad… just text ghosted"). HIG's answer for a destructive
+         act on a saved thing is Calendar's own: a red ROW at the foot of
+         the form («Delete Event»), never a control in the bar — the bar is
+         for the one thing that writes. The lift arms on its first tap (the
+         row turns into the confirm and the warning appears beneath) and
+         lifts on the second, the standing A2 ruling. «Превърни в час» is
+         the mirror of «Откажи и блокирай времето»: blocked time a client
+         then turns up for. -->
+    @if (vm().blockId !== null) {
     <ul
       uiListGroup
       class="staff-visit__group staff-visit__exits"
-      [attr.aria-label]="t('staff.visit.exits')"
+      [attr.aria-label]="t('staff.block.exits')"
       data-testid="staff-block-exits"
     >
+      @if (!draft().allDay) {
       <li>
         <button
           uiListRow
@@ -384,32 +675,73 @@
           {{ t('staff.block.convert') }}
         </button>
       </li>
+      }
+      <li>
+        <button
+          uiListRow
+          uiSize="large"
+          type="button"
+          [uiInteractive]="true"
+          class="staff-visit__exit--destructive"
+          [disabled]="vm().acting"
+          [attr.data-armed]="vm().liftArmed ? '' : null"
+          data-testid="staff-block-lift"
+          (click)="lifted.emit()"
+        >
+          <span uiLeading>
+            <ui-icon
+              [uiName]="
+                vm().dayIsOff || draft().allDay ? 'staff.off' : 'booking.blocked'
+              "
+              aria-hidden="true"
+            />
+          </span>
+          {{ vm().liftArmed ? t('staff.day.blockLiftArm') : vm().dayIsOff ?
+          t('staff.block.liftDay') : t('staff.block.lift') }}
+        </button>
+      </li>
     </ul>
-    }
+    @if (vm().liftArmed) {
+    <!-- The warning the arm earns — a caption ABOUT the row beneath it,
+         where Calendar's own confirmation names what goes. -->
+    <p
+      class="staff-visit__exits-note"
+      role="status"
+      data-testid="staff-block-lift-warning"
+    >
+      {{ t('staff.day.blockLiftWarning') }}
+    </p>
+    } }
   </div>
+  }
 
   <!-- ── THE DOCK ──────────────────────────────────────────────────── -->
+  <!-- ONE THING IN THE DOCK: «Запази», while there is something to save.
+       The lift left it for the exits group above (owner, 2026-09-23). An
+       empty bar is no bar. ON THE PAGE, the visit sheet's ✓ — the draft
+       already holds the edits; back to the ladder. A SERIES THAT CANNOT BE
+       WRITTEN withholds «Запази» the way the visit sheet's missing service
+       does: the button says why and takes you there, never a disabled
+       dress on a control that answers a tap. -->
   <ui-sheet-action-bar
-    [uiVisible]="true"
+    [uiVisible]="dirty() || currentPage() !== null"
     uiAnchor="scroll"
     class="staff-visit__dock"
   >
-    @if (vm().blockId !== null) {
+    @if (currentPage() !== null) {
     <button
       type="button"
       uiButton
-      uiButtonStyle="plain"
-      uiRole="destructive"
+      uiButtonStyle="borderedProminent"
       uiControlSize="large"
-      [uiLoading]="vm().acting"
-      [attr.data-armed]="vm().liftArmed ? '' : null"
-      data-testid="staff-block-lift"
-      (click)="lifted.emit()"
+      [uiIconOnly]="true"
+      [attr.aria-label]="t('staff.visit.confirm')"
+      data-testid="staff-block-page-done"
+      (click)="pop()"
     >
-      {{ vm().liftArmed ? t('staff.day.blockLiftArm') : vm().dayIsOff ?
-      t('staff.block.liftDay') : t('staff.block.lift') }}
+      <ui-icon uiName="checklist.done" />
     </button>
-    } @if (dirty()) {
+    } @else if (dirty()) { @if (saveable()) {
     <button
       type="button"
       uiButton
@@ -421,6 +753,17 @@
     >
       {{ t('staff.block.save') }}
     </button>
-    }
+    } @else {
+    <button
+      type="button"
+      uiButton
+      uiButtonStyle="bordered"
+      uiControlSize="large"
+      data-testid="staff-block-repeat-fix"
+      (click)="openRepeatPage()"
+    >
+      {{ t('staff.block.repeatFix') }}
+    </button>
+    } }
   </ui-sheet-action-bar>
 </ng-container>

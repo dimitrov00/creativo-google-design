@@ -91,6 +91,11 @@ export interface PhoneDraft {
   readonly template: string | undefined;
 }
 
+/** The dial code a country's numbers carry after the `+` — `'BG'` → `'359'`. */
+export function countryCallingCode(country: CountryIso2): string {
+  return getCountryCallingCode(country as CountryCode);
+}
+
 /** Format `input` as the user types it, interpreted against `country` unless the text carries its own `+<dial code>`. */
 export function formatPhoneDraft(
   input: string,

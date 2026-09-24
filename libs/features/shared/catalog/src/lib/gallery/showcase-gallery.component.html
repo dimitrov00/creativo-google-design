@@ -37,7 +37,25 @@
       >
         @for (image of images(); track $index) {
           <figure uiRadius="prominent">
-            <ui-async-image [uiSrc]="image" [uiAlt]="imageAlt()" />
+            @if (selectable()) {
+              <button
+                type="button"
+                class="showcase-gallery__pick"
+                role="checkbox"
+                [attr.aria-checked]="selected().includes(image)"
+                [attr.aria-label]="imageAlt()"
+                (click)="picked.emit(image)"
+              >
+                <ui-async-image [uiSrc]="image" uiAlt="" />
+                @if (selected().includes(image)) {
+                  <span class="showcase-gallery__check" aria-hidden="true">
+                    <ui-icon uiName="checklist.done" uiScale="small" />
+                  </span>
+                }
+              </button>
+            } @else {
+              <ui-async-image [uiSrc]="image" [uiAlt]="imageAlt()" />
+            }
           </figure>
         }
       </ui-grid>
@@ -49,7 +67,25 @@
       >
         @for (image of images(); track $index) {
           <figure uiRadius="prominent">
-            <ui-async-image [uiSrc]="image" [uiAlt]="imageAlt()" />
+            @if (selectable()) {
+              <button
+                type="button"
+                class="showcase-gallery__pick"
+                role="checkbox"
+                [attr.aria-checked]="selected().includes(image)"
+                [attr.aria-label]="imageAlt()"
+                (click)="picked.emit(image)"
+              >
+                <ui-async-image [uiSrc]="image" uiAlt="" />
+                @if (selected().includes(image)) {
+                  <span class="showcase-gallery__check" aria-hidden="true">
+                    <ui-icon uiName="checklist.done" uiScale="small" />
+                  </span>
+                }
+              </button>
+            } @else {
+              <ui-async-image [uiSrc]="image" [uiAlt]="imageAlt()" />
+            }
           </figure>
         }
       </ui-scroll-row>

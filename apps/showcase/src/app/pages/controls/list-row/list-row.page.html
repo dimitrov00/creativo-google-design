@@ -143,6 +143,50 @@
         </p>
       </ui-stack>
     </ui-stack>
+    <ng-container scAbout>
+      On a STACKED label (<code>uiAlignment="leading"</code>) the size also
+      picks the block padding: <code>large</code> is the settings row — 16 round
+      a 44 disc, 76 tall — and <code>regular</code> the picker row — 12 round a
+      <code>small</code> disc, ≈60 tall. A list read down, a person a row, fits
+      seven where the settings row fits five.
+    </ng-container>
+    <ui-stack uiSpacing="comfortable" uiAlignment="leading">
+      @for (size of sizes; track size) {
+      <ui-stack uiSpacing="tight" uiAlignment="leading">
+        <ui-card
+          uiPadding="none"
+          uiTone="elevated"
+          uiFrame
+          [uiFrameWidth]="'24rem'"
+        >
+          <button
+            uiListRow
+            type="button"
+            [uiSize]="size"
+            uiAlignment="leading"
+            [uiInteractive]="true"
+          >
+            <span uiLeading>
+              <ui-avatar
+                uiName="Мартин Илиев"
+                [uiControlSize]="size === 'regular' ? 'small' : 'regular'"
+              />
+            </span>
+            <ui-stack uiSpacing="none" class="list-row__stacked">
+              <span>Мартин Илиев</span>
+              <span uiText [uiFont]="'footnote'" uiForegroundStyle="secondary"
+                >+359 88 765 4321 · martin&#64;test.local</span
+              >
+            </ui-stack>
+          </button>
+        </ui-card>
+        <p uiText [uiFont]="'caption'" class="list-row__mono">
+          uiSize={{ size }} + uiAlignment=leading{{ size === 'regular' ? ' — the
+          picker row' : ' — the settings row' }}
+        </p>
+      </ui-stack>
+      }
+    </ui-stack>
   </sc-demo>
 
   <sc-demo scTitle="uiVariant">

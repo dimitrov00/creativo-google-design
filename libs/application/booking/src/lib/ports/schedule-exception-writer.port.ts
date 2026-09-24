@@ -46,6 +46,22 @@ export interface ScheduleExceptionWriter {
     range: LocalTimeRange,
   ): Promise<Result<void, RepositoryError>>;
 
+  /**
+   * A SERIES — the same effect on many days of one barber, in one pass
+   * (2026-09-24). `ranges` empty stands each day down whole, as `put` does;
+   * otherwise every day takes the ranges the way `putRange` takes one,
+   * merged into what the day already holds. Written in batches, so a year
+   * of lunches is a few round trips rather than two per day, and each
+   * batch lands whole or not at all.
+   */
+  putSeries(
+    barberId: string,
+    locationId: string,
+    dayKeys: readonly string[],
+    zone: string,
+    ranges: readonly LocalTimeRange[],
+  ): Promise<Result<void, RepositoryError>>;
+
   /** Lift ONE range; the document goes when its last range does. */
   clearRange(
     barberId: string,

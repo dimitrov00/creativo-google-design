@@ -1,0 +1,39 @@
+@layer sys-components {
+  /* THE VIEWFINDER — the picture's own shape (3:4 unless the host says),
+     the prominent corner, black while the stream is not yet up so the
+     block reads as a camera and not a hole. The status beneath speaks in
+     the host's words; the shutter is the host's. */
+  .ui-camera-capture {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sys-space-compact);
+  }
+
+  .ui-camera-capture__view {
+    position: relative;
+    aspect-ratio: var(--ui-camera-capture-ratio, 3 / 4);
+    inline-size: 100%;
+    overflow: hidden;
+    border-radius: var(--control-radius-prominent);
+    background: #000;
+  }
+
+  .ui-camera-capture__video {
+    display: block;
+    inline-size: 100%;
+    block-size: 100%;
+    object-fit: cover;
+  }
+
+  .ui-camera-capture__status {
+    margin: 0;
+    text-align: center;
+    font: var(--sys-font-footnote);
+    color: var(--sys-color-secondary-label);
+  }
+
+  .ui-camera-capture[data-state='denied'] .ui-camera-capture__status,
+  .ui-camera-capture[data-state='unsupported'] .ui-camera-capture__status {
+    color: var(--sys-color-foreground);
+  }
+}

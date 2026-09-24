@@ -1,5 +1,6 @@
 import { EnvironmentProviders, Injectable } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
 import {
   AUTH_GATEWAY,
   type Principal,
@@ -14,9 +15,10 @@ import {
 import { BehaviorSubject, Observable, of } from 'rxjs';
 import { USER_SEARCH_PORT } from '@creativo/application/governance';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { provideRouter } from '@angular/router';
+import { Router, provideRouter } from '@angular/router';
 import {
   APPOINTMENT_NOTES,
+  APPOINTMENT_PHOTOS,
   APPOINTMENT_REPOSITORY,
   AVAILABILITY_READER,
   Appointment,
@@ -52,9 +54,16 @@ import {
   ServiceId,
   ServiceTerms,
 } from '@creativo/application/catalog';
-import { UserId } from '@creativo/application/accounts';
+import { AVATAR_UPLOADER, UserId } from '@creativo/application/accounts';
 import { CLOCK } from '@creativo/application/shared';
-import { StaffDashboard } from './staff-dashboard';
+import { StaffDashboard, reversibleSave } from './staff-dashboard';
+import {
+  StaffVisitEditor,
+  snapshotCommitOf,
+  type VisitEditorCommit,
+  type VisitEditorLeg,
+  type VisitEditorVm,
+} from '../visit-editor/staff-visit-editor';
 
 const ZONE = 'Europe/Sofia';
 
@@ -377,6 +386,47 @@ describe('StaffDashboard', () => {
             save: async () => ok(undefined),
           },
         },
+        {
+          // Nobody has a portrait here; the lookup answers "none" at once.
+          provide: AVATAR_UPLOADER,
+          useValue: {
+            find: async () => ok(null),
+            upload: async () => ok({ url: '', path: '' }),
+            remove: async () => ok(undefined),
+          },
+        },
+        {
+          provide: APPOINTMENT_PHOTOS,
+          // The shop's photos of a visit: none, and every shutter lands.
+          useValue: {
+            observe: () => of(ok([])),
+            attach: async (attachment: { appointmentId: string }) =>
+              ok({
+                photoId: 'p',
+                ...attachment,
+                url: '',
+                path: '',
+                takenAtIso: '',
+                takenByUid: null,
+                width: null,
+                height: null,
+              }),
+            adopt: async (reference: { appointmentId: string }) =>
+              ok({
+                photoId: 'p',
+                ...reference,
+                url: '',
+                path: '',
+                takenAtIso: '',
+                takenByUid: null,
+                width: null,
+                height: null,
+                origin: 'library',
+                label: null,
+              }),
+            remove: async () => ok(undefined),
+          },
+        },
         // The discount row's two reads (2026-09-10): nobody holds a coupon
         // and no code opens one, so the menu offers «Без» and the typed arms.
         {
@@ -385,7 +435,10 @@ describe('StaffDashboard', () => {
         },
         {
           provide: COUPON_READER,
-          useValue: { findByCode: async () => ok(null) },
+          useValue: {
+            findByCode: async () => ok(null),
+            listOpen: async () => ok([]),
+          },
         },
         {
           provide: GIFT_VOUCHER_READER,
@@ -706,7 +759,9 @@ describe('StaffDashboard', () => {
     // the roster, a photo at that size had a mean pairwise RGB distance of
     // 23 between chairs against the rail's 102 — it identified nobody. It is
     // a full disc at the far end of the row now, filled with the chair's
-    // tone and carrying the barber's initials.
+    // tone and carrying the barber's initials. The client's face LEADS the
+    // row: tried between the facts and the times (2026-09-16) and put back
+    // the same day — "it doesn't work".
     const card = host().querySelector('[data-testid="staff-visit-row"]');
     const body = card?.querySelector('.agenda-card__body');
     const foot = card?.querySelector('.agenda-card__foot');
@@ -714,6 +769,11 @@ describe('StaffDashboard', () => {
     expect(foot).not.toBeNull();
     const face = body?.querySelector('.agenda-card__face');
     expect(face).not.toBeNull();
+    // The face, then the shared head (the name, the lines, the clock).
+    const kids = [...(body?.children ?? [])];
+    expect(kids.length).toBe(2);
+    expect(kids[0]?.classList.contains('agenda-card__face')).toBe(true);
+    expect(kids[1]?.classList.contains('staff-event-head')).toBe(true);
     // The barber is no longer INSIDE the client's face...
     expect(face?.querySelector('.agenda-card__barber-face')).toBeNull();
     // ...it shares the FOOT row with the marks, after them...
@@ -869,7 +929,7 @@ describe('StaffDashboard', () => {
     }
 
     // The state is NOT a line in the fact column any more.
-    const facts = host().querySelector('.agenda-card__facts');
+    const facts = host().querySelector('.staff-event-head__lines');
     expect(facts?.querySelector('.agenda-card__fact--state')).toBeNull();
   });
 
@@ -940,7 +1000,7 @@ describe('StaffDashboard', () => {
     );
     expect(share).not.toBeNull();
     expect(share?.closest('.agenda-card__foot')).not.toBeNull();
-    expect(share?.closest('.agenda-card__facts')).toBeNull();
+    expect(share?.closest('.staff-event-head')).toBeNull();
 
     // Figures adjacent, plain glyphs after them, the barber's disc last.
     const foot = share?.closest('.agenda-card__foot');
@@ -991,11 +1051,12 @@ describe('StaffDashboard', () => {
     // that is either rendered in full or not rendered at all — which is why
     // the note, the only one that could not be, left the column entirely.
     const card = host().querySelector('[data-testid="staff-visit-row"]');
-    const facts = card?.querySelector('.agenda-card__facts');
+    // The shared head's column: the title, then one line per fact.
+    const facts = card?.querySelector('.staff-event-head__lines');
     expect(facts).not.toBeNull();
     expect((facts?.children.length ?? 0) > 1).toBe(true);
     for (const fact of facts?.children ?? []) {
-      expect(fact.tagName).toBe('P');
+      expect(fact.tagName).toBe('SPAN');
       // Nothing in this column truncates.
       expect(fact.className).not.toContain('--note');
     }
@@ -1075,7 +1136,7 @@ describe('StaffDashboard', () => {
       '[data-testid="staff-visit-row"]',
     )) {
       expect(
-        row.querySelector('.agenda-card__when')?.textContent?.trim(),
+        row.querySelector('.staff-event-head__gloss')?.textContent?.trim(),
       ).toBeTruthy();
     }
   });
@@ -1192,20 +1253,19 @@ describe('StaffDashboard', () => {
     // the bottom, and the card's own height between them.
     expect(host().querySelector('.agenda-card__header')).toBeNull();
 
-    const aside = host().querySelector('.agenda-card__aside');
-    expect(aside).not.toBeNull();
-    // The aside is ONE thing now: the interval. The foot cluster used to sit
-    // underneath it, five marks deep in a gutter sized for four characters.
-    const times = aside?.querySelector('.agenda-card__times');
+    // The clock is ONE thing: the interval, in the shared head's own
+    // column. The foot cluster used to sit underneath it, five marks deep
+    // in a gutter sized for four characters.
+    const times = host().querySelector('.staff-event-head__times');
     expect(times).not.toBeNull();
-    expect(aside?.querySelector('.agenda-card__foot')).toBeNull();
+    expect(times?.querySelector('.agenda-card__foot')).toBeNull();
 
     const foot = host().querySelector('.agenda-card__foot');
     expect(foot).not.toBeNull();
     expect(
-      aside &&
+      times &&
         foot &&
-        aside.compareDocumentPosition(foot) & Node.DOCUMENT_POSITION_FOLLOWING,
+        times.compareDocumentPosition(foot) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
 
     // The interval reads DOWNWARD — start, then end, then the gloss. The
@@ -1213,7 +1273,7 @@ describe('StaffDashboard', () => {
     const order = [...(times?.children ?? [])].map((el) => el.className);
     expect(order[0]).toContain('__start');
     expect(order[1]).toContain('__end');
-    expect(order[2]).toContain('__when');
+    expect(order[2]).toContain('__gloss');
 
     // STATE IS THE CARD'S FORM, NOT A LINE OF TEXT. It was a glyph on every
     // card (texture, not signal), then a word in the fact column — where it
@@ -1227,7 +1287,7 @@ describe('StaffDashboard', () => {
     const state = host().querySelector('[data-testid="staff-visit-status"]');
     if (state) {
       expect(state.hasAttribute('data-visually-hidden')).toBe(true);
-      expect(state.classList.contains('agenda-card__fact')).toBe(false);
+      expect(state.classList.contains('staff-event-head__line')).toBe(false);
     }
 
     // It reuses the app's EXISTING status vocabulary rather than a second
@@ -1353,6 +1413,19 @@ describe('StaffDashboard', () => {
     fixture.detectChanges();
     await fixture.whenStable();
     fixture.detectChanges();
+    // The day was stepped, so the draft is dirty and the ✕ asks first
+    // (2026-09-18, the discard guard); «Отхвърли» is the close.
+    expect(
+      host().querySelector('[data-testid="staff-visit-sheet"]'),
+    ).not.toBeNull();
+    (
+      host().querySelector(
+        '[data-testid="staff-discard-confirm"]',
+      ) as HTMLElement
+    ).click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
     expect(
       host().querySelector('[data-testid="staff-visit-sheet"]'),
     ).toBeNull();
@@ -1455,9 +1528,93 @@ describe('StaffDashboard', () => {
       // …and Niko's reads by its own outcome.
       expect(niko?.getAttribute('data-status')).toBe('cancelled');
 
+      // SAID IN A WORD where the countdown stood (owner, 2026-09-24: "so
+      // it's instantly recognised"), and a live chair keeps its countdown.
+      expect(
+        niko?.querySelector('[data-testid="staff-event-state"]')?.textContent,
+      ).toContain('appointments.status.cancelled');
+      expect(
+        niko
+          ?.querySelector('.staff-event-head')
+          ?.hasAttribute('data-gloss-state'),
+      ).toBe(true);
+      expect(
+        ivan?.querySelector('[data-testid="staff-event-state"]'),
+      ).toBeNull();
+
+      // …its glyph on the client's FACE, where a glance starts — moved, not
+      // copied: the foot no longer carries it (owner, 2026-09-24).
+      expect(
+        niko
+          ?.querySelector(
+            '.agenda-card__face [data-testid="staff-visit-state-badge"] ui-icon',
+          )
+          ?.getAttribute('data-name'),
+      ).toBe('visit.cancelled');
+      expect(
+        niko?.querySelector(
+          '.agenda-card__foot ui-icon[data-name="visit.cancelled"]',
+        ),
+      ).toBeNull();
+      expect(
+        ivan?.querySelector('[data-testid="staff-visit-state-badge"]'),
+      ).toBeNull();
+
+      // With faces switched off, the foot carries the glyph again.
+      const cards = fixture.componentInstance as unknown as {
+        fields: { isOn: (id: string) => boolean };
+        rowIcons: (entry: unknown) => readonly string[];
+      };
+      const isOn = cards.fields.isOn.bind(cards.fields);
+      cards.fields.isOn = (id: string) => (id === 'avatar' ? false : isOn(id));
+      expect(
+        cards.rowIcons({
+          status: 'cancelled',
+          rebooked: false,
+          hasNote: false,
+        }),
+      ).toContain('visit.cancelled');
+      cards.fields.isOn = isOn;
+      expect(
+        cards.rowIcons({
+          status: 'cancelled',
+          rebooked: false,
+          hasNote: false,
+        }),
+      ).not.toContain('visit.cancelled');
+
+      // The grid's block says the same on the line under the name.
+      const component = fixture.componentInstance as unknown as {
+        store: { setView: (view: string) => void };
+        gridColumns: () => readonly {
+          events: readonly { id: string; detail: string | null }[];
+        }[];
+      };
+      component.store.setView('day');
+      fixture.detectChanges();
+      const blocks = component.gridColumns().flatMap((column) => column.events);
+      expect(
+        blocks.find((block) => block.id === 'appointment-party#niko')?.detail,
+      ).toBe('appointments.status.cancelled');
+      expect(
+        (
+          blocks.find((block) => block.id === 'appointment-party#niko') as
+            { statusIcon?: string | null } | undefined
+        )?.statusIcon,
+      ).toBe('visit.cancelled');
+      expect(
+        blocks.find((block) => block.id === 'appointment-party#ivan')?.detail,
+      ).not.toBe('appointments.status.cancelled');
+      component.store.setView('agenda');
+      fixture.detectChanges();
+
       // Opened, the cancelled chair offers no cancel and no no-show — only
-      // the next visit.
-      (niko as HTMLElement).click();
+      // the next visit. (The agenda was drawn again: read the row anew.)
+      (
+        host().querySelector(
+          '[data-row-id="appointment-party#niko"]',
+        ) as HTMLElement
+      ).click();
       await fixture.whenStable();
       fixture.detectChanges();
       expect(
@@ -1811,13 +1968,24 @@ describe('StaffDashboard', () => {
     expect(component.openPicker()).toBeNull();
   });
 
-  it('blocks a range through the exception writer, sanitized', async () => {
+  /** Blocking time is an act, so its door is the ＋ menu's «Блок». */
+  function openBlockDoor(): void {
     (
       host().querySelector(
-        '[data-testid="staff-lane-block"]',
+        '[data-testid="staff-add-trigger"]',
       ) as HTMLButtonElement
     ).click();
     fixture.detectChanges();
+    (
+      host().querySelector(
+        '[data-testid="staff-add-block"]',
+      ) as HTMLButtonElement
+    ).click();
+    fixture.detectChanges();
+  }
+
+  it('blocks a range through the exception writer, sanitized', async () => {
+    openBlockDoor();
 
     (
       host().querySelector(
@@ -1846,12 +2014,7 @@ describe('StaffDashboard', () => {
   });
 
   it('stands the whole day down when the switch is on', async () => {
-    (
-      host().querySelector(
-        '[data-testid="staff-lane-block"]',
-      ) as HTMLButtonElement
-    ).click();
-    fixture.detectChanges();
+    openBlockDoor();
     (
       host().querySelector(
         '[data-testid="staff-block-all-day"]',
@@ -2227,6 +2390,149 @@ describe('StaffDashboard', () => {
     ).not.toBeNull();
   });
 
+  // The owner, 2026-09-24: "do the same for no-show visits" — one
+  // treatment for both hours that did not happen.
+  it('treats a no-show like a cancellation: the word, the face badge, no tag, and a glyph on the block', async () => {
+    const visits = observeBarberDay.getMockImplementation();
+    const base = appointment(
+      'appointment-missed',
+      '2026-08-05T09:00:00',
+      undefined,
+      'ivan',
+      false,
+      'fade',
+    );
+    const seat = base.seats[0];
+    if (seat === undefined) throw new Error('the fixture has no seat');
+    const missed = value(
+      Appointment.create({
+        id: 'appointment-missed',
+        locationId: base.locationId.toString(),
+        seats: [
+          Seat.of({
+            id: seat.id,
+            subject: seat.subject,
+            serviceId: seat.serviceId,
+            variantId: null,
+            barberId: seat.barberId,
+            terms: seat.terms,
+            startsAt: seat.slot.start,
+            outcome: {
+              kind: 'no_show' as const,
+              atMs: Date.UTC(2026, 7, 5, 7, 0, 0),
+            },
+          }),
+        ],
+        now: at('2026-08-05T08:00:00'),
+      }),
+    );
+    observeBarberDay.mockImplementation((barberId: { value: string }) =>
+      of(ok(barberId.value === 'ivan' ? [missed] : [])),
+    );
+    try {
+      TestBed.resetTestingModule();
+      await build();
+      const card = host().querySelector(
+        '[data-row-id="appointment-missed#ivan"]',
+      );
+      expect(card?.getAttribute('data-status')).toBe('no_show');
+      expect(
+        card?.querySelector('[data-testid="staff-event-state"]')?.textContent,
+      ).toContain('staff.visit.resolution.noShow');
+      expect(
+        card
+          ?.querySelector('[data-testid="staff-visit-state-badge"] ui-icon')
+          ?.getAttribute('data-name'),
+      ).toBe('visit.noShow');
+      expect(
+        card?.querySelector(
+          '.agenda-card__foot ui-icon[data-name="visit.noShow"]',
+        ),
+      ).toBeNull();
+      expect(card?.querySelector('[data-testid="staff-visit-tag"]')).toBeNull();
+      expect(
+        card?.querySelector('.staff-event-head')?.hasAttribute('data-struck'),
+      ).toBe(true);
+
+      const component = fixture.componentInstance as unknown as {
+        store: { setView: (view: string) => void };
+        gridColumns: () => readonly {
+          events: readonly {
+            id: string;
+            detail: string | null;
+            statusIcon: string | null;
+          }[];
+        }[];
+      };
+      component.store.setView('day');
+      fixture.detectChanges();
+      const block = component
+        .gridColumns()
+        .flatMap((column) => column.events)
+        .find((event) => event.id === 'appointment-missed#ivan');
+      expect(block?.detail).toBe('staff.visit.resolution.noShow');
+      expect(block?.statusIcon).toBe('visit.noShow');
+      component.store.setView('agenda');
+      fixture.detectChanges();
+    } finally {
+      if (visits) observeBarberDay.mockImplementation(visits);
+    }
+  });
+
+  // An hour that did not happen drops the marks that only matter to a
+  // live visit (owner, 2026-09-24): the catalogue tag first.
+  it('draws no duration tag on a cancelled visit', async () => {
+    const visits = observeBarberDay.getMockImplementation();
+    const cancelled = appointment(
+      'appointment-fade-off',
+      '2026-08-05T14:00:00',
+      undefined,
+      'ivan',
+      false,
+      'fade',
+    );
+    const seat = cancelled.seats[0];
+    if (seat === undefined) throw new Error('the fixture has no seat');
+    const resolved = value(
+      Appointment.create({
+        id: 'appointment-fade-off',
+        locationId: cancelled.locationId.toString(),
+        seats: [
+          Seat.of({
+            id: seat.id,
+            subject: seat.subject,
+            serviceId: seat.serviceId,
+            variantId: null,
+            barberId: seat.barberId,
+            terms: seat.terms,
+            startsAt: seat.slot.start,
+            outcome: {
+              kind: 'cancelled' as const,
+              atMs: Date.UTC(2026, 7, 5, 7, 0, 0),
+              by: 'client' as const,
+              reason: { kind: 'client_unwell' as const },
+            },
+          }),
+        ],
+        now: at('2026-08-05T08:00:00'),
+      }),
+    );
+    observeBarberDay.mockImplementation((barberId: { value: string }) =>
+      of(ok(barberId.value === 'ivan' ? [resolved] : [])),
+    );
+    try {
+      TestBed.resetTestingModule();
+      await build();
+      const card = host().querySelector(
+        '[data-row-id="appointment-fade-off#ivan"]',
+      );
+      expect(card?.getAttribute('data-status')).toBe('cancelled');
+      expect(card?.querySelector('[data-testid="staff-visit-tag"]')).toBeNull();
+    } finally {
+      if (visits) observeBarberDay.mockImplementation(visits);
+    }
+  });
+
   it("tags a visit that runs off the catalogue's length, the way the frame does", async () => {
     // Owner, 2026-09-10: "the events here should look a lot like the ones
     // in the frame … the ±x min if extended or subtracted". The seat was
@@ -2286,14 +2592,6 @@ describe('StaffDashboard', () => {
         blockLaneId: () => string | null;
       };
       expect(component.lanes()).toHaveLength(0);
-      // The toolbar's own door is open too.
-      expect(
-        (
-          host().querySelector(
-            '[data-testid="staff-lane-block"]',
-          ) as HTMLButtonElement
-        ).disabled,
-      ).toBe(false);
       component.openCreate('block');
       fixture.detectChanges();
       expect(
@@ -2309,6 +2607,894 @@ describe('StaffDashboard', () => {
       if (roster) observeDay.mockImplementation(roster);
       if (visits) observeBarberDay.mockImplementation(visits);
     }
+  });
+
+  it("raises a refused save as the page's toast, in the shop's words, and keeps the sheet", async () => {
+    // Owner, 2026-09-17: "save doesn't work all the time … if there is an
+    // error message it should appear as a toast". The row's own error line
+    // lives on the agenda behind the sheet; the toast is what the eye gets.
+    const gateway = TestBed.inject(BOOKING_GATEWAY) as {
+      staffEdit: (request: unknown) => Promise<unknown>;
+    };
+    gateway.staffEdit = async () =>
+      fail(
+        new BookingGatewayError(
+          'invalid_request',
+          'Services svc-classic-cut and svc-fade cannot be combined',
+          { serverCode: 'booking.commit.conflicting_services' },
+        ),
+      );
+    const component = fixture.componentInstance as unknown as {
+      commitFromEditor: (id: string, commit: unknown) => Promise<void>;
+      visitSheetRow: () => { appointmentId: string } | null;
+      undo: () => unknown;
+    };
+    (
+      host().querySelector('[data-testid="staff-visit-row"]') as HTMLElement
+    ).click();
+    fixture.detectChanges();
+    const row = component.visitSheetRow();
+    if (row === null) throw new Error('the sheet did not open');
+    const toast = () => host().querySelector('[data-testid="staff-toast"]');
+    expect(toast()?.hasAttribute('data-presented')).toBe(false);
+
+    // Every seat dropped: a batch with something in it, refused.
+    await component.commitFromEditor(row.appointmentId, {
+      kind: 'save',
+      dayKey: '2026-08-05',
+      startMinute: 600,
+      endMinute: 630,
+      note: null,
+      discounts: [],
+      vouchers: [],
+      tipMinorUnits: null,
+      clients: [],
+      legs: [],
+    });
+    fixture.detectChanges();
+    expect(toast()?.hasAttribute('data-presented')).toBe(true);
+    // The toast carries the refusal as `describeError` words it. The loader
+    // returns no translations here, so the server code's own line cannot
+    // be told from its key and the description falls back to the gateway's
+    // — the shop's sentence («Тези услуги не се комбинират.») is what the
+    // running app shows, verified live. No undo on offer, only the dismiss.
+    expect(toast()?.querySelector('[role="status"]')?.textContent?.trim()).toBe(
+      'booking.gateway.failed',
+    );
+    expect(toast()?.querySelectorAll('button').length).toBe(1);
+    expect(component.undo()).toBeNull();
+    expect(component.visitSheetRow()?.appointmentId).toBe(row.appointmentId);
+  });
+
+  it("sends the editor's shutter up with the visit's facts, and a refusal as the page's toast", async () => {
+    // Owner, 2026-09-17: photos on a visit carry who — the chair the sheet
+    // is on, the client it is for, the visit.
+    const requests: {
+      appointmentId: string;
+      barberId: string;
+      clientLabel: string;
+      file: Blob;
+    }[] = [];
+    let answer = true;
+    const component = fixture.componentInstance as unknown as {
+      store: {
+        attachPhoto: (request: (typeof requests)[number]) => Promise<boolean>;
+      };
+      visitEditorVm: () => {
+        appointmentId: string;
+        chairId: string;
+        clientLabel: string;
+      } | null;
+      attachPhotoFromEditor: (vm: unknown, file: File) => Promise<void>;
+      notice: () => string | null;
+    };
+    component.store.attachPhoto = async (request) => {
+      requests.push(request);
+      return answer;
+    };
+    (
+      host().querySelector('[data-testid="staff-visit-row"]') as HTMLElement
+    ).click();
+    fixture.detectChanges();
+    const vm = component.visitEditorVm();
+    if (vm === null) throw new Error('the sheet did not open');
+    const file = new File(['bytes'], 'cut.jpg', { type: 'image/jpeg' });
+
+    await component.attachPhotoFromEditor(vm, file);
+    expect(requests.length).toBe(1);
+    expect(requests[0]?.appointmentId).toBe(vm.appointmentId);
+    expect(requests[0]?.barberId).toBe(vm.chairId);
+    expect(requests[0]?.clientLabel).toBe(vm.clientLabel);
+    expect(requests[0]?.file).toBe(file);
+    expect(component.notice()).toBeNull();
+
+    answer = false;
+    await component.attachPhotoFromEditor(vm, file);
+    fixture.detectChanges();
+    // The loader returns no translations: the key reached for is the assertion.
+    expect(component.notice()).toBe('staff.visit.photoFailed');
+    expect(
+      host()
+        .querySelector('[data-testid="staff-toast"]')
+        ?.hasAttribute('data-presented'),
+    ).toBe(true);
+  });
+
+  it('asks the index by every form of a typed number, once per pause, and never lets a late answer win', async () => {
+    const component = fixture.componentInstance as unknown as {
+      searchClients: (query: string) => void;
+      visitClientOptions: () => readonly {
+        id: string;
+        label: string;
+        phone: string | null;
+        email?: string | null;
+      }[];
+      visitClientSearching: () => boolean;
+      userSearch: { search: (key: string) => Promise<unknown> };
+    };
+    const asked: string[] = [];
+    const userId = (id: string) => {
+      const created = UserId.create(id);
+      if (created.isFailure()) throw new Error('fixture: bad user id');
+      return created.value;
+    };
+    const hit = (id: string, name: string, phone: string) => ({
+      userId: userId(id),
+      displayName: name,
+      email: null,
+      phone,
+    });
+    component.userSearch.search = async (key: string) => {
+      asked.push(key);
+      // Only the national form finds him; the other two forms find nobody.
+      return ok(
+        key === '0887654321'
+          ? [hit('u-martin', 'Мартин Илиев', '+359887654321')]
+          : [],
+      );
+    };
+    vi.useFakeTimers();
+    try {
+      component.searchClients('88');
+      component.searchClients('887654');
+      component.searchClients('887654321');
+      expect(component.visitClientSearching()).toBe(true);
+      expect(asked).toEqual([]);
+      await vi.advanceTimersByTimeAsync(250);
+    } finally {
+      vi.useRealTimers();
+    }
+    // One pause, one question — asked in all three forms the index holds.
+    expect(asked).toEqual(['887654321', '0887654321', '359887654321']);
+    expect(component.visitClientSearching()).toBe(false);
+    expect(component.visitClientOptions()).toEqual([
+      expect.objectContaining({
+        id: 'u-martin',
+        label: 'Мартин Илиев',
+        phone: '+359 88 765 4321',
+      }),
+    ]);
+    // Cleared: nothing to ask, nothing listed, no ring.
+    component.searchClients('');
+    expect(component.visitClientOptions()).toEqual([]);
+    expect(component.visitClientSearching()).toBe(false);
+  });
+
+  it("builds the add-client page's one section — recent visitors from the window, never today's book", async () => {
+    const component = fixture.componentInstance as unknown as {
+      browseClients: () => Promise<void>;
+      visitClientSections: () => readonly {
+        id: string;
+        clients: readonly { label: string }[];
+      }[];
+    };
+    await component.browseClients();
+    const sections = component.visitClientSections();
+    // «Днес» is gone (owner, 2026-09-22): a person already in today's book
+    // is not one a barbershop adds to another visit.
+    expect(sections.map((section) => section.id)).toEqual(['recent']);
+    // The window's visit — dated 2026-08-05, behind any real clock — is
+    // the one recent visitor.
+    expect(sections[0]?.clients.map((client) => client.label)).toEqual([
+      'Георги Петров',
+    ]);
+    expect(sections[0]?.clients[0]?.meta).toMatch(
+      /^посл\. |^staff\.visit\.lastVisit/,
+    );
+  });
+
+  it('lands the compact title in the bar while the add-client search is engaged', () => {
+    (
+      host().querySelector('[data-testid="staff-visit-row"]') as HTMLElement
+    ).click();
+    fixture.detectChanges();
+    (
+      host().querySelector(
+        '[data-testid="staff-visit-add-client"]',
+      ) as HTMLElement
+    ).click();
+    fixture.detectChanges();
+    const header = () =>
+      host().querySelector(
+        '[data-testid="staff-visit-sheet"] .ui-sheet-header',
+      );
+    expect(header()?.hasAttribute('data-collapsed')).toBe(false);
+    const query = host().querySelector(
+      '[data-testid="staff-visit-client-query"]',
+    ) as HTMLInputElement;
+    query.dispatchEvent(new Event('focus'));
+    fixture.detectChanges();
+    // The editor's word reaches the sheet's own header: the folded title
+    // never scrolls under the bar, so nothing else could have said so.
+    expect(header()?.hasAttribute('data-collapsed')).toBe(true);
+    query.dispatchEvent(new Event('blur'));
+    fixture.detectChanges();
+    expect(header()?.hasAttribute('data-collapsed')).toBe(false);
+  });
+
+  // The «Нов час» sheet never forwarded the fold (found 2026-09-24): its
+  // client search folded the large title and the bar never landed the
+  // compact one, so the page lost its name.
+  it('lands the compact title on the new-visit sheet too, while its searches are engaged', () => {
+    (
+      host().querySelector(
+        '[data-testid="staff-add-trigger"]',
+      ) as HTMLButtonElement
+    ).click();
+    fixture.detectChanges();
+    (
+      host().querySelector(
+        '[data-testid="staff-add-booking"]',
+      ) as HTMLButtonElement
+    ).click();
+    fixture.detectChanges();
+    const header = () =>
+      host().querySelector(
+        '[data-testid="staff-create-sheet"] .ui-sheet-header',
+      );
+    for (const door of ['staff-visit-add-client', 'staff-visit-add-service']) {
+      (
+        host().querySelector(
+          `[data-testid="staff-create-sheet"] [data-testid="${door}"]`,
+        ) as HTMLElement
+      ).click();
+      fixture.detectChanges();
+      const field = host().querySelector(
+        '[data-testid="staff-create-sheet"] ui-search-field input',
+      ) as HTMLInputElement;
+      expect(header()?.hasAttribute('data-collapsed')).toBe(false);
+      field.dispatchEvent(new Event('focus'));
+      fixture.detectChanges();
+      expect(header()?.hasAttribute('data-collapsed')).toBe(true);
+      field.dispatchEvent(new Event('blur'));
+      fixture.detectChanges();
+      expect(header()?.hasAttribute('data-collapsed')).toBe(false);
+      (
+        host().querySelector(
+          '[data-testid="staff-create-sheet"] [data-testid="staff-visit-back"]',
+        ) as HTMLElement
+      ).click();
+      fixture.detectChanges();
+    }
+  });
+
+  it("gives the day search the sheets' one search grammar: the head folds, the DS field is pinned, ↓ reaches the hits", async () => {
+    (
+      host().querySelector(
+        '[data-testid="staff-search-open"]',
+      ) as HTMLButtonElement
+    ).click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    const head = () =>
+      host().querySelector('[data-testid="staff-search-headline"]');
+    const header = () =>
+      host().querySelector(
+        '[data-testid="staff-search-sheet"] .ui-sheet-header',
+      );
+    const input = host().querySelector(
+      '[data-testid="staff-search-input"]',
+    ) as HTMLInputElement;
+    expect(input.closest('ui-search-field[data-pinned]')).not.toBeNull();
+    expect(head()?.hasAttribute('data-folded')).toBe(false);
+
+    input.dispatchEvent(new Event('focus'));
+    fixture.detectChanges();
+    expect(head()?.hasAttribute('data-folded')).toBe(true);
+    expect(header()?.hasAttribute('data-collapsed')).toBe(true);
+
+    input.value = 'георги';
+    input.dispatchEvent(new Event('input'));
+    input.dispatchEvent(new Event('blur'));
+    fixture.detectChanges();
+    // A query standing keeps it folded, keyboard or not.
+    expect(head()?.hasAttribute('data-folded')).toBe(true);
+
+    input.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }),
+    );
+    fixture.detectChanges();
+    expect(document.activeElement?.getAttribute('data-testid')).toBe(
+      'staff-search-hit',
+    );
+  });
+
+  it('hands the omnibox the book — everyone in the loaded days, as their last booking wrote them', async () => {
+    const component = fixture.componentInstance as unknown as {
+      browseClients: () => Promise<void>;
+      visitClientBook: () => readonly {
+        id: string;
+        label: string;
+        phone: string | null;
+        meta: string | null;
+      }[];
+    };
+    expect(component.visitClientBook()).toEqual([]);
+    await component.browseClients();
+    // The window's one visitor, by the contact the booking was made with —
+    // searched on the keystroke, so no «last visit» line: it is never listed.
+    expect(component.visitClientBook()).toEqual([
+      expect.objectContaining({
+        label: 'Георги Петров',
+        phone: '+359 88 123 4567',
+        meta: null,
+      }),
+    ]);
+  });
+
+  it('keeps a drag in the frame in the draft — nothing written, no toast — and «Запази» carries it', async () => {
+    // The owner, 2026-09-23: the gesture's immediate write (the order
+    // review's one exception) and its toast's undo moved the server while
+    // the sheet's draft stayed put — the frame kept showing the dragged
+    // time after «Отмени». A drag is a draft edit now, like «Начало».
+    const component = fixture.componentInstance as unknown as {
+      store: { staffEdit: (request: unknown) => Promise<boolean> };
+      visitSheetRow: () => { appointmentId: string } | null;
+      undo: () => { message: string } | null;
+      notice: () => string | null;
+    };
+    const edits: {
+      command: readonly { kind: string; startIso?: string }[];
+    }[] = [];
+    component.store.staffEdit = async (request) => {
+      edits.push(
+        request as {
+          command: readonly { kind: string; startIso?: string }[];
+        },
+      );
+      return true;
+    };
+    (
+      host().querySelector('[data-testid="staff-visit-row"]') as HTMLElement
+    ).click();
+    fixture.detectChanges();
+    if (component.visitSheetRow() === null) {
+      throw new Error('the sheet did not open');
+    }
+    const editor = fixture.debugElement.query(By.directive(StaffVisitEditor))
+      .componentInstance as unknown as {
+      onFrameCommit: (commit: {
+        id: string;
+        kind: 'move';
+        startMinute: number;
+        endMinute: number;
+      }) => void;
+      dirty: () => boolean;
+    };
+    editor.onFrameCommit({
+      id: 'appt-1',
+      kind: 'move',
+      startMinute: 660,
+      endMinute: 705,
+    });
+    fixture.detectChanges();
+    expect(edits).toHaveLength(0);
+    // The toast's host is always mounted; what it shows is these two.
+    expect(component.undo()).toBeNull();
+    expect(component.notice()).toBeNull();
+    expect(editor.dirty()).toBe(true);
+
+    (
+      host().querySelector('[data-testid="staff-visit-save"]') as HTMLElement
+    ).click();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(edits).toHaveLength(1);
+    const move = edits[0]?.command.find((entry) => entry.kind === 'move');
+    expect(Date.parse(move?.startIso ?? '')).toBe(
+      Date.parse('2026-08-05T11:00:00+03:00'),
+    );
+    // The save's own receipt is the one toast a save raises.
+    expect(component.undo()?.message).toBe('staff.day.undo.saved');
+  });
+
+  // The owner, 2026-09-23: "build the save receipt with whole-save undo".
+  it('offers the receipt after a save, and its undo maps the visit back in one batch, then re-seeds the sheet', async () => {
+    const component = fixture.componentInstance as unknown as {
+      store: { staffEdit: (request: unknown) => Promise<boolean> };
+      visitSheetRow: () => { appointmentId: string } | null;
+      undo: () => { message: string } | null;
+      runUndo: () => Promise<void>;
+      visitReseedMark: () => { appointmentId: string; n: number };
+      rowWaitMs: number;
+    };
+    // The store under test never delivers a write, so the waits on the
+    // listener run to their ceiling — lowered to a tick here.
+    component.rowWaitMs = 0;
+    type Sent = {
+      command: readonly {
+        kind: string;
+        startIso?: string;
+        atIso?: string;
+        edge?: string;
+      }[];
+    };
+    const edits: Sent[] = [];
+    component.store.staffEdit = async (request) => {
+      edits.push(request as Sent);
+      return true;
+    };
+    (
+      host().querySelector('[data-testid="staff-visit-row"]') as HTMLElement
+    ).click();
+    fixture.detectChanges();
+    if (component.visitSheetRow() === null) {
+      throw new Error('the sheet did not open');
+    }
+    const editor = fixture.debugElement.query(By.directive(StaffVisitEditor))
+      .componentInstance as unknown as {
+      onFrameCommit: (commit: {
+        id: string;
+        kind: 'move';
+        startMinute: number;
+        endMinute: number;
+      }) => void;
+      dirty: () => boolean;
+    };
+    editor.onFrameCommit({
+      id: 'appointment-1',
+      kind: 'move',
+      startMinute: 660,
+      endMinute: 690,
+    });
+    fixture.detectChanges();
+    (
+      host().querySelector('[data-testid="staff-visit-save"]') as HTMLElement
+    ).click();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(edits).toHaveLength(1);
+    expect(component.undo()?.message).toBe('staff.day.undo.saved');
+
+    await component.runUndo();
+    expect(edits).toHaveLength(2);
+    const back = edits[1]?.command ?? [];
+    const move = back.find((entry) => entry.kind === 'move');
+    expect(Date.parse(move?.startIso ?? '')).toBe(
+      Date.parse('2026-08-05T10:00:00+03:00'),
+    );
+    const resize = back.find((entry) => entry.kind === 'resize');
+    expect(resize?.edge).toBe('end');
+    expect(Date.parse(resize?.atIso ?? '')).toBe(
+      Date.parse('2026-08-05T10:30:00+03:00'),
+    );
+    expect(
+      back.some(
+        (entry) => entry.kind === 'addSeat' || entry.kind === 'removeSeat',
+      ),
+    ).toBe(false);
+    expect(component.undo()).toBeNull();
+
+    // The store under test never moved the row, so it already agrees with
+    // the snapshot: the sheet on THIS visit is asked to re-seed, and the
+    // drag the save carried is gone from the draft.
+    await fixture.whenStable();
+    fixture.detectChanges();
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    fixture.detectChanges();
+    expect(component.visitReseedMark()).toEqual({
+      appointmentId: 'appointment-1',
+      n: 1,
+    });
+    expect(editor.dirty()).toBe(false);
+  });
+
+  it('says a refused undo left the save standing, and offers nothing to try again', async () => {
+    const component = fixture.componentInstance as unknown as {
+      store: {
+        staffEdit: (request: unknown) => Promise<boolean>;
+        errorFor: (id: string) => unknown;
+      };
+      undo: () => { message: string } | null;
+      notice: () => string | null;
+      runUndo: () => Promise<void>;
+      rowWaitMs: number;
+    };
+    component.rowWaitMs = 0;
+    let sent = 0;
+    component.store.staffEdit = async () => {
+      sent += 1;
+      return sent < 2;
+    };
+    component.store.errorFor = () => null;
+    (
+      host().querySelector('[data-testid="staff-visit-row"]') as HTMLElement
+    ).click();
+    fixture.detectChanges();
+    const editor = fixture.debugElement.query(By.directive(StaffVisitEditor))
+      .componentInstance as unknown as {
+      onFrameCommit: (commit: unknown) => void;
+    };
+    editor.onFrameCommit({
+      id: 'appointment-1',
+      kind: 'move',
+      startMinute: 660,
+      endMinute: 690,
+    });
+    fixture.detectChanges();
+    (
+      host().querySelector('[data-testid="staff-visit-save"]') as HTMLElement
+    ).click();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(component.undo()?.message).toBe('staff.day.undo.saved');
+
+    await component.runUndo();
+    expect(sent).toBe(2);
+    expect(component.undo()).toBeNull();
+    expect(component.notice()).toBe('staff.day.undo.refused');
+  });
+
+  it('pins every surviving leg to its ladder slot before the chair-wide move, and restaffs a moved chair back', () => {
+    const component = fixture.componentInstance as unknown as {
+      visitSheetRow: () =>
+        | (Record<string, unknown> & {
+            id: string;
+            startMs: number;
+            endMs: number;
+            legs: readonly VisitEditorLeg[];
+          })
+        | null;
+      visitEditorVm: () => VisitEditorVm | null;
+      commandsFor: (
+        target: VisitEditorCommit,
+        row: unknown,
+      ) => readonly {
+        kind: string;
+        seatIds?: readonly string[];
+        seatId?: string;
+        barberId?: string;
+        startIso?: string;
+      }[];
+      rowFor: (
+        rowId: string,
+        seatIds?: readonly string[],
+      ) => { id: string } | null;
+    };
+    (
+      host().querySelector('[data-testid="staff-visit-row"]') as HTMLElement
+    ).click();
+    fixture.detectChanges();
+    const row = component.visitSheetRow();
+    const vm = component.visitEditorVm();
+    if (row === null || vm === null) throw new Error('the sheet did not open');
+    const before = snapshotCommitOf(vm);
+    const cut = before.legs[0];
+    if (cut === undefined) throw new Error('the fixture row has no leg');
+
+    // The snapshot held two legs; the save dropped the second and dragged
+    // the block an hour on. The way back re-adds the beard at its slot and
+    // PINS the cut to the ladder's start before the chair-wide move, so one
+    // delta cannot swap them.
+    const twoLegs: VisitEditorCommit = {
+      ...before,
+      endMinute: before.startMinute + cut.minutes + 20,
+      legs: [
+        ...before.legs,
+        {
+          seatId: 'seat-beard',
+          serviceId: 'beard',
+          variantId: null,
+          minutes: 20,
+          priceLabel: '10,00 €',
+          barberId: cut.barberId,
+          clientId: cut.clientId,
+        },
+      ],
+    };
+    const hour = 60 * 60_000;
+    const later = {
+      ...row,
+      startMs: row.startMs + hour,
+      endMs: row.endMs + hour,
+    };
+    const back = component.commandsFor(twoLegs, later);
+    const moves = back.filter((entry) => entry.kind === 'move');
+    const pin = moves.find((entry) => entry.seatIds?.length === 1);
+    expect(pin).toEqual({
+      kind: 'move',
+      seatIds: [cut.seatId],
+      startIso: expect.any(String),
+    });
+    expect(Date.parse(pin?.startIso ?? '')).toBe(
+      Date.parse('2026-08-05T10:00:00+03:00'),
+    );
+    const wide = moves.find((entry) => entry !== pin);
+    expect(back.indexOf(pin as (typeof back)[number])).toBeLessThan(
+      back.indexOf(wide as (typeof back)[number]),
+    );
+    const readd = back.find((entry) => entry.kind === 'addSeat');
+    expect(Date.parse(readd?.startIso ?? '')).toBe(
+      Date.parse('2026-08-05T10:30:00+03:00'),
+    );
+    // A chair's share names the seats the batch LEAVES — never a removed one.
+    expect(wide?.seatIds).toEqual([cut.seatId, 'seat-beard']);
+
+    // The save restaffed the chair: the row now lives on another lane under
+    // another name, and is found by its seat. The way back restaffs it.
+    const onStefan: VisitEditorCommit = {
+      ...before,
+      legs: before.legs.map((leg) => ({ ...leg, barberId: 'stefan' })),
+    };
+    expect(component.rowFor('appointment-1#stefan')).toBeNull();
+    expect(component.rowFor('appointment-1#stefan', [cut.seatId])?.id).toBe(
+      'appointment-1#ivan',
+    );
+    expect(component.commandsFor(onStefan, row)).toContainEqual({
+      kind: 'restaff',
+      seatId: cut.seatId,
+      barberId: 'stefan',
+    });
+  });
+
+  it('withholds the way back only from a save that added a seat to a finished visit', () => {
+    const added = [{ kind: 'addSeat' }] as unknown as Parameters<
+      typeof reversibleSave
+    >[1];
+    const moved = [{ kind: 'move' }] as unknown as Parameters<
+      typeof reversibleSave
+    >[1];
+    expect(reversibleSave({ status: 'completed' }, added)).toBe(false);
+    expect(reversibleSave({ status: 'completed' }, moved)).toBe(true);
+    expect(reversibleSave({ status: 'confirmed' }, added)).toBe(true);
+    expect(reversibleSave(null, added)).toBe(true);
+  });
+
+  it("undoes a save by the save's own arithmetic: the added seat goes, the removed one returns with its terms, the block and the bill go back", () => {
+    const component = fixture.componentInstance as unknown as {
+      visitSheetRow: () => (DayRowShape & Record<string, unknown>) | null;
+      visitEditorVm: () => VisitEditorVm | null;
+      commandsFor: (
+        target: VisitEditorCommit,
+        row: unknown,
+      ) => readonly Record<string, unknown>[];
+    };
+    type DayRowShape = {
+      startMs: number;
+      endMs: number;
+      legs: readonly VisitEditorLeg[];
+      discounts: readonly unknown[];
+    };
+    (
+      host().querySelector('[data-testid="staff-visit-row"]') as HTMLElement
+    ).click();
+    fixture.detectChanges();
+    const row = component.visitSheetRow();
+    const vm = component.visitEditorVm();
+    if (row === null || vm === null) throw new Error('the sheet did not open');
+    const before = snapshotCommitOf(vm);
+    const cut = row.legs[0];
+    if (cut === undefined) throw new Error('the fixture row has no leg');
+
+    // The visit as a save left it: an hour later, the cut gone, a beard in
+    // its place, a code on the bill.
+    const hour = 60 * 60_000;
+    const after = {
+      ...row,
+      startMs: row.startMs + hour,
+      endMs: row.endMs + hour,
+      legs: [
+        {
+          seatId: 'seat-beard',
+          serviceId: 'beard',
+          variantId: null,
+          serviceLabel: 'Брада',
+          minutes: 20,
+          priceLabel: '10,00 €',
+          barberId: cut.barberId,
+          barberName: cut.barberName,
+          barberTone: cut.barberTone,
+          overridden: false,
+        },
+      ],
+      discounts: [
+        {
+          source: 'code',
+          label: 'FIRST10',
+          value: { kind: 'percent_off', percent: 10 },
+          grantId: null,
+          code: 'FIRST10',
+          exclusive: false,
+        },
+      ],
+    };
+
+    const back = component.commandsFor(before, after);
+    const kinds = back.map((entry) => entry['kind']);
+    expect(kinds).toContain('removeSeat');
+    expect(back.find((entry) => entry['kind'] === 'removeSeat')).toEqual({
+      kind: 'removeSeat',
+      seatId: 'seat-beard',
+    });
+    const readd = back.find((entry) => entry['kind'] === 'addSeat');
+    expect(readd).toEqual(
+      expect.objectContaining({
+        seatId: cut.seatId,
+        serviceId: cut.serviceId,
+        barberId: cut.barberId,
+        minutes: cut.minutes,
+        subject: { kind: 'self' },
+      }),
+    );
+    expect(Date.parse(String(readd?.['startIso']))).toBe(
+      Date.parse('2026-08-05T10:00:00+03:00'),
+    );
+    // Its stored price rides along, for a server that honours it.
+    expect(back).toContainEqual({
+      kind: 'reprice',
+      seatId: cut.seatId,
+      priceMinorUnits: 2800,
+    });
+    const move = back.find((entry) => entry['kind'] === 'move');
+    expect(Date.parse(String(move?.['startIso']))).toBe(
+      Date.parse('2026-08-05T10:00:00+03:00'),
+    );
+    // The bill's arm is sent EXPLICITLY, empty: omitting it would keep the
+    // code the save applied.
+    expect(back).toContainEqual({ kind: 'discounts', discounts: [] });
+    // In the server's order: seats before the move, the bill last.
+    expect(kinds.indexOf('removeSeat')).toBeLessThan(kinds.indexOf('move'));
+    expect(kinds.indexOf('addSeat')).toBeLessThan(kinds.indexOf('move'));
+    expect(kinds.at(-1)).toBe('discounts');
+  });
+
+  it('asks before a ✕ drops unsaved edits, and closes at once when the draft is clean', () => {
+    const component = fixture.componentInstance as unknown as {
+      dismissVisitSheet: () => void;
+      confirmDiscard: () => void;
+      discardPending: () => string | null;
+      visitSheetRow: () => unknown;
+    };
+    const openRow = () => {
+      (
+        host().querySelector('[data-testid="staff-visit-row"]') as HTMLElement
+      ).click();
+      fixture.detectChanges();
+    };
+    openRow();
+    expect(component.visitSheetRow()).not.toBeNull();
+    component.dismissVisitSheet();
+    fixture.detectChanges();
+    expect(component.visitSheetRow()).toBeNull();
+    expect(component.discardPending()).toBeNull();
+
+    openRow();
+    const editor = fixture.debugElement.query(By.directive(StaffVisitEditor))
+      .componentInstance as unknown as {
+      stepDay: (offset: number) => void;
+      dirty: () => boolean;
+    };
+    editor.stepDay(1);
+    fixture.detectChanges();
+    expect(editor.dirty()).toBe(true);
+    component.dismissVisitSheet();
+    fixture.detectChanges();
+    expect(component.discardPending()).toBe('visit');
+    expect(component.visitSheetRow()).not.toBeNull();
+    const sheet = host().querySelector('[data-testid="staff-discard-sheet"]');
+    expect(sheet).not.toBeNull();
+    (
+      sheet?.querySelector('[data-testid="staff-discard-keep"]') as HTMLElement
+    ).click();
+    fixture.detectChanges();
+    expect(component.discardPending()).toBeNull();
+    expect(component.visitSheetRow()).not.toBeNull();
+    component.dismissVisitSheet();
+    fixture.detectChanges();
+    (
+      host().querySelector(
+        '[data-testid="staff-discard-confirm"]',
+      ) as HTMLElement
+    ).click();
+    fixture.detectChanges();
+    expect(component.discardPending()).toBeNull();
+    expect(component.visitSheetRow()).toBeNull();
+  });
+
+  it("«Запиши пак» keeps the finished visit's own hour and span", () => {
+    const component = fixture.componentInstance as unknown as {
+      rebookFromEditor: (vm: unknown) => void;
+      visitEditorVm: () => Record<string, unknown> | null;
+      createVisit: () => { startMinute: number; minutes?: number } | null;
+    };
+    (
+      host().querySelector('[data-testid="staff-visit-row"]') as HTMLElement
+    ).click();
+    fixture.detectChanges();
+    const vm = component.visitEditorVm();
+    if (vm === null) throw new Error('the sheet did not open');
+    component.rebookFromEditor({ ...vm, startMinute: 615, endMinute: 660 });
+    fixture.detectChanges();
+    expect(component.createVisit()?.startMinute).toBe(615);
+    expect(component.createVisit()?.minutes).toBe(45);
+  });
+
+  it('sends the other shop as a relocate that LEADS the batch, and nothing when the shop is the same', async () => {
+    const component = fixture.componentInstance as unknown as {
+      commitFromEditor: (id: string, commit: unknown) => Promise<void>;
+      store: { staffEdit: (request: unknown) => Promise<boolean> };
+      visitSheetRow: () => {
+        appointmentId: string;
+        locationId: string;
+        legs: readonly {
+          seatId: string;
+          minutes: number;
+          barberId: string;
+          priceLabel: string | null;
+        }[];
+      } | null;
+    };
+    const edits: { command: readonly { kind: string }[] }[] = [];
+    component.store.staffEdit = async (request) => {
+      edits.push(request as { command: readonly { kind: string }[] });
+      return true;
+    };
+    (
+      host().querySelector('[data-testid="staff-visit-row"]') as HTMLElement
+    ).click();
+    fixture.detectChanges();
+    const row = component.visitSheetRow();
+    if (row === null) throw new Error('the sheet did not open');
+    const [leg] = row.legs;
+    if (leg === undefined) throw new Error('no seat on the row');
+    // The row knows its shop — the appointment's own.
+    expect(row.locationId.length).toBeGreaterThan(0);
+    const save = (locationId: string) => ({
+      kind: 'save',
+      dayKey: '2026-08-05',
+      startMinute: 600,
+      endMinute: 630,
+      locationId,
+      note: null,
+      discounts: [],
+      vouchers: [],
+      tipMinorUnits: null,
+      clients: [],
+      legs: [
+        {
+          seatId: leg.seatId,
+          serviceId: 'cut',
+          variantId: null,
+          minutes: leg.minutes,
+          priceLabel: leg.priceLabel,
+          barberId: leg.barberId,
+          clientId: 'user-martin',
+        },
+      ],
+    });
+    await component.commitFromEditor(row.appointmentId, save('loc-mladost'));
+    expect(edits).toHaveLength(1);
+    expect(edits[0]?.command[0]).toEqual({
+      kind: 'relocate',
+      locationId: 'loc-mladost',
+    });
+    // The same shop: no relocate at all.
+    await component.commitFromEditor(row.appointmentId, save(row.locationId));
+    expect(edits).toHaveLength(2);
+    expect(
+      edits[1]?.command.some((command) => command.kind === 'relocate'),
+    ).toBe(false);
   });
 
   it('lets the front desk and the owners reprice a seat, and sends it as a reprice on save', async () => {
@@ -2352,6 +3538,7 @@ describe('StaffDashboard', () => {
       note: null,
       discounts: [],
       vouchers: [],
+      tipMinorUnits: null,
       clients: [],
       legs: [
         {
@@ -2496,11 +3683,28 @@ describe('StaffDashboard', () => {
     expect(component.createVisit()).toBeNull();
   });
 
-  it('keeps blocking time on the lane it belongs to, and only there', () => {
-    // The FAB's block arm was a SECOND door to a control that already lives
-    // on each lane header, aimed by default at whichever chair sorted first.
+  it('keeps the view menu to views, and blocking time under ＋', () => {
+    // «Блокирай време» used to ride under the four readings (owner,
+    // 2026-09-23): a picker that chooses how the day is DRAWN must not also
+    // DO something to it. The act has one door, with the other acts.
+    (
+      host().querySelector(
+        '[data-testid="staff-view-trigger"]',
+      ) as HTMLButtonElement
+    ).click();
+    fixture.detectChanges();
+    expect(host().querySelector('[data-testid="staff-lane-block"]')).toBeNull();
     expect(
-      host().querySelector('[data-testid="staff-lane-block"]'),
+      host().querySelector('[data-testid="staff-view-week"]'),
+    ).not.toBeNull();
+    (
+      host().querySelector(
+        '[data-testid="staff-add-trigger"]',
+      ) as HTMLButtonElement
+    ).click();
+    fixture.detectChanges();
+    expect(
+      host().querySelector('[data-testid="staff-add-block"]'),
     ).not.toBeNull();
   });
   it('prints the contact details the owner asked for, behind their fields', () => {
@@ -2533,5 +3737,246 @@ describe('StaffDashboard', () => {
       after?.querySelector('[data-testid="staff-visit-email"]'),
     ).toBeNull();
     expect(after?.textContent ?? '').not.toMatch(/\+\d/);
+  });
+
+  // ── The grid views' design record (2026-09-23) ─────────────────────────
+
+  it("names a period in the pill's own numeric grammar", async () => {
+    chooseView('week');
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    // 2026-08-05 is a Wednesday; its week runs Monday the 3rd to Sunday the
+    // 9th, and the shared month is said once, the way the day pill says a
+    // day («ср, 5.08») — never the long month that pushed the cluster off a
+    // phone's bar.
+    const label = host()
+      .querySelector('[data-testid="staff-day-label"]')
+      ?.textContent?.replace(/\s/g, ' ')
+      .trim();
+    expect(label).toContain('3 – 9.08');
+    expect(label).not.toMatch(/август/i);
+  });
+
+  it('mounts the calendar in its own canvas, and the agenda in its stack', async () => {
+    chooseView('day');
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    // The calendar is the screen: no padded stack around it, no 52rem cap.
+    expect(
+      host().querySelector(
+        '[data-testid="staff-canvas"] [data-testid="staff-grid"]',
+      ),
+    ).not.toBeNull();
+    expect(host().querySelector('.staff-lanes')).toBeNull();
+    expect(
+      host().querySelector('.staff-day')?.getAttribute('data-view-kind'),
+    ).toBe('grid');
+
+    chooseView('agenda');
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(host().querySelector('.staff-lanes')).not.toBeNull();
+    expect(host().querySelector('[data-testid="staff-canvas"]')).toBeNull();
+    expect(
+      host().querySelector('.staff-day')?.getAttribute('data-view-kind'),
+    ).toBe('agenda');
+  });
+
+  it("carries the view switch twice — the cluster's menu and the bar's segments", () => {
+    // Both are in the DOM; the bar's own width shows one (a container query
+    // the test runner cannot evaluate). The menu's items keep their ids, so
+    // every `staff-view-{id}` query still resolves to the menu.
+    expect(
+      host().querySelector(
+        '[data-testid="staff-view-segments"] [data-testid="staff-view-segment-week"]',
+      ),
+    ).not.toBeNull();
+    (
+      host().querySelector(
+        '[data-testid="staff-view-trigger"]',
+      ) as HTMLButtonElement
+    ).click();
+    fixture.detectChanges();
+    expect(
+      host()
+        .querySelector('[data-testid="staff-view-week"]')
+        ?.closest('.staff-view-menu'),
+    ).not.toBeNull();
+  });
+
+  it("opens a date column's day in the day view from its head", async () => {
+    chooseView('week');
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    const heads = host().querySelectorAll<HTMLButtonElement>(
+      '[data-testid="staff-grid-head-day"]',
+    );
+    expect(heads.length).toBe(7);
+    // Thursday the 6th — Apple's own week-head tap.
+    heads[3]?.click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    const component = fixture.componentInstance as unknown as {
+      store: { view(): string; dayKey(): string };
+    };
+    expect(component.store.view()).toBe('day');
+    expect(component.store.dayKey()).toBe('2026-08-06');
+    expect(
+      host().querySelector('[data-testid="staff-day-label"]')?.textContent,
+    ).toContain('6.08');
+  });
+
+  it('offers the way back to now on today once the present has left the frame', async () => {
+    chooseView('day');
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    // On today, with the present in the box, there is nothing to come back to.
+    expect(host().querySelector('[data-testid="staff-day-today"]')).toBeNull();
+    // Driven through the grid's own report, as the template wires it.
+    const component = fixture.componentInstance as unknown as {
+      grid(): { nowInView: { emit(inView: boolean): void } } | undefined;
+    };
+    component.grid()?.nowInView.emit(false);
+    fixture.detectChanges();
+    const button = host().querySelector('[data-testid="staff-day-today"]');
+    expect(button).not.toBeNull();
+    // A button that scrolls must not say it jumps.
+    expect(button?.getAttribute('aria-label')).toBe('staff.day.backToNow');
+    component.grid()?.nowInView.emit(true);
+    fixture.detectChanges();
+    expect(host().querySelector('[data-testid="staff-day-today"]')).toBeNull();
+  });
+
+  it('reads the view and the chair from the route, and remembers the view', async () => {
+    fixture.componentRef.setInput('view', 'week');
+    fixture.componentRef.setInput('barber', 'ivan');
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    const component = fixture.componentInstance as unknown as {
+      store: { view(): string; scope(): string | null };
+    };
+    expect(component.store.view()).toBe('week');
+    expect(component.store.scope()).toBe('ivan');
+    // The view is kept on the device; the chair never is.
+    expect(localStorage.getItem('staff.schedule.view')).toBe('week');
+    // A name nobody has resolves to the list, not to a view that does not exist.
+    fixture.componentRef.setInput('view', 'month');
+    fixture.detectChanges();
+    expect(component.store.view()).toBe('agenda');
+  });
+
+  it('writes the view and the chair to the address bar, after the tick', async () => {
+    chooseView('week');
+    fixture.detectChanges();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await fixture.whenStable();
+    const router = TestBed.inject(Router);
+    expect(router.url).toContain('view=week');
+    (
+      host().querySelector(
+        '[data-testid="staff-scope-trigger"]',
+      ) as HTMLButtonElement
+    ).click();
+    fixture.detectChanges();
+    (
+      host().querySelector(
+        '[data-testid="staff-scope-ivan"]',
+      ) as HTMLButtonElement
+    ).click();
+    fixture.detectChanges();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await fixture.whenStable();
+    expect(router.url).toContain('barber=ivan');
+    expect(router.url).toContain('view=week');
+  });
+
+  it("opens the block sheet all day from a date's all-day band, and from a chair's", async () => {
+    chooseView('week');
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    const cells = host().querySelectorAll<HTMLButtonElement>(
+      '[data-testid="staff-grid-allday-add"]',
+    );
+    expect(cells.length).toBe(7);
+    // Thursday the 6th's band: the sheet opens ON that date, all day on,
+    // for the create chair.
+    cells[3]?.click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    const component = fixture.componentInstance as unknown as {
+      blockEditorVm(): {
+        allDay: boolean;
+        dayKey: string;
+        barberIds: readonly string[];
+      } | null;
+      closeBlockSheet(): void;
+    };
+    expect(
+      host().querySelector('[data-testid="staff-block-sheet"]'),
+    ).not.toBeNull();
+    expect(component.blockEditorVm()?.allDay).toBe(true);
+    expect(component.blockEditorVm()?.dayKey).toBe('2026-08-06');
+    component.closeBlockSheet();
+    fixture.detectChanges();
+
+    // The day view's band names a CHAIR: the sheet opens for it on the shown day.
+    chooseView('day');
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    const chairs = host().querySelectorAll<HTMLButtonElement>(
+      '[data-testid="staff-grid-allday-add"]',
+    );
+    chairs[1]?.click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(component.blockEditorVm()?.allDay).toBe(true);
+    expect(component.blockEditorVm()?.dayKey).toBe('2026-08-05');
+    expect(component.blockEditorVm()?.barberIds).toEqual(['niko']);
+  });
+
+  it("opens a chair's day off from its chip in the band, on that date", async () => {
+    chooseView('week');
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    // Niko is off every day of the fixture's week; the chip in WEDNESDAY's
+    // cell (the 5th, the third column) opens his rest day on that date,
+    // ready to lift — not the shown day, not the first cell's.
+    const cells = host().querySelectorAll<HTMLElement>(
+      '[data-testid="staff-grid-allday-cell"]',
+    );
+    const chip = cells[2]?.querySelector<HTMLButtonElement>(
+      '[data-testid="staff-grid-allday-chip"]',
+    );
+    expect(chip?.tagName).toBe('BUTTON');
+    chip?.click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    const component = fixture.componentInstance as unknown as {
+      blockEditorVm(): {
+        blockId: string | null;
+        allDay: boolean;
+        dayKey: string;
+        barberIds: readonly string[];
+        dayIsOff: boolean;
+      } | null;
+    };
+    expect(component.blockEditorVm()?.blockId).toBe('day:niko');
+    expect(component.blockEditorVm()?.allDay).toBe(true);
+    expect(component.blockEditorVm()?.dayKey).toBe('2026-08-05');
+    expect(component.blockEditorVm()?.barberIds).toEqual(['niko']);
+    expect(component.blockEditorVm()?.dayIsOff).toBe(true);
   });
 });

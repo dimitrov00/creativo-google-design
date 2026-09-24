@@ -2,14 +2,19 @@ import {
   DestroyRef,
   Injectable,
   computed,
+  effect,
   inject,
   signal,
+  untracked,
 } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { combineLatest, from, of, switchMap } from 'rxjs';
+import { combineLatest, from, map, of, switchMap } from 'rxjs';
+import { settledViewTransition } from './shared/view-transition';
 import {
   APPOINTMENT_NOTES,
+  APPOINTMENT_PHOTOS,
+  type AppointmentPhoto,
   APPOINTMENT_REPOSITORY,
   AVAILABILITY_READER,
   Appointment,
@@ -28,6 +33,7 @@ import {
   Result,
   ok,
 } from '@creativo/application/booking';
+import { downscaleImage } from '@creativo/infrastructure/storage';
 import { BarberId, LocationId } from '@creativo/application/catalog';
 import {
   COUPON_GRANT_REPOSITORY,
@@ -42,12 +48,13 @@ import { UserId } from '@creativo/application/identity';
 import { CLOCK, RepositoryError } from '@creativo/application/shared';
 import {
   type VisitEditorGrantOption,
+  type VisitEditorPromoOption,
   discountValueOf,
 } from './visit-editor/staff-visit-editor';
 import { CatalogContentService } from '@creativo/features/shared/catalog';
 
 /** The whole product is Europe/Sofia-only for now (blueprint §7.1). */
-const STAFF_ZONE = 'Europe/Sofia';
+export const STAFF_ZONE = 'Europe/Sofia';
 
 /**
  * The shortest hole the run will call sellable.
@@ -81,6 +88,43 @@ const SEARCH_WINDOW_PER_SIDE = 300;
  *   default and merge with attribution when the shop asks for all of them.
  */
 export type StaffView = 'agenda' | 'day' | 'three-day' | 'week';
+
+const STAFF_VIEWS: readonly StaffView[] = [
+  'agenda',
+  'day',
+  'three-day',
+  'week',
+];
+
+/** A view named in a URL or on the device, or `null` for anything else. */
+export function parseView(raw: string | null | undefined): StaffView | null {
+  return STAFF_VIEWS.find((view) => view === raw) ?? null;
+}
+
+/**
+ * Where the last view is kept on the device. `try/catch` on both sides:
+ * storage is absent in a private window and throws in some embedded views,
+ * and a schedule must open either way.
+ */
+const STORED_VIEW_KEY = 'staff.schedule.view';
+
+function readStoredView(): StaffView {
+  try {
+    return (
+      parseView(globalThis.localStorage?.getItem(STORED_VIEW_KEY)) ?? 'agenda'
+    );
+  } catch {
+    return 'agenda';
+  }
+}
+
+function writeStoredView(view: StaffView): void {
+  try {
+    globalThis.localStorage?.setItem(STORED_VIEW_KEY, view);
+  } catch {
+    // Nothing to remember on; the reading still shows.
+  }
+}
 
 const DAY_SPAN: Record<StaffView, number> = {
   agenda: 1,
@@ -136,6 +180,14 @@ export interface LaneGap {
  * this is a parse rather than a validation — but a hand-edited URL reaches it,
  * and a bad day must yield no geometry rather than a thrown listener.
  */
+/** One string for one subscription — the days and the chairs it answers. */
+function laneKeyOf(
+  days: readonly string[],
+  barbers: readonly { readonly value: string }[],
+): string {
+  return `${days.join('|')}#${barbers.map((barber) => barber.value).join('|')}`;
+}
+
 function dayFromKey(dayKey: string): CalendarDay | null {
   const result = CalendarDay.create(dayKey, STAFF_ZONE);
   return result.isSuccess() ? result.value : null;
@@ -291,6 +343,7 @@ export interface BarberDayLane {
 export class StaffDayStore {
   private readonly repository = inject(APPOINTMENT_REPOSITORY);
   private readonly notes = inject(APPOINTMENT_NOTES);
+  private readonly photos = inject(APPOINTMENT_PHOTOS);
   private readonly grantRepository = inject(COUPON_GRANT_REPOSITORY);
   private readonly coupons = inject(COUPON_READER);
   private readonly giftVouchers = inject(GIFT_VOUCHER_READER);
@@ -339,14 +392,26 @@ export class StaffDayStore {
   private readonly _chosen = signal(false);
 
   /**
-   * The last value this store wrote into `?day=`.
+   * The last values this store wrote into the URL — `?day=`, `?view=`,
+   * `?barber=`.
    *
-   * The URL is written by the store and read back as a component input, so
+   * The URL is written by the store and read back as component inputs, so
    * without this the echo of our own write looks like an external change and
    * bounces the day straight back to today. Compare against it and only an
    * ACTUAL external change — first load, or the back button — gets applied.
+   *
+   * ONE record for the three (2026-09-23, the grid views' design record
+   * §10): the view and the chair joined the day in the URL so a link pasted
+   * into the staff chat says "Ivan's week", and the back button restores
+   * the reading you left. `view` starts UNDEFINED, not null — "never
+   * published" — so the page's first look at a silent URL still asks the
+   * store to state the restored view (see `applyRouteView`).
    */
-  private readonly _published = signal<string | null>(null);
+  private readonly _published = signal<{
+    readonly day: string | null;
+    readonly view: StaffView | null | undefined;
+    readonly barber: string | null;
+  }>({ day: null, view: undefined, barber: null });
   readonly published = this._published.asReadonly();
 
   constructor() {
@@ -368,6 +433,35 @@ export class StaffDayStore {
     inject(DestroyRef).onDestroy(() => {
       clearInterval(tick);
       document.removeEventListener('visibilitychange', onVisible);
+      // A URL write scheduled by a store that is leaving would navigate a
+      // page that is no longer showing.
+      if (this.urlWrite !== null) clearTimeout(this.urlWrite);
+      this.destroyed = true;
+    });
+
+    // The reveal a jump asked for goes out when the asked day's lanes are
+    // the ones on hand — see `_pendingReveal`.
+    effect(() => {
+      if (this._pendingReveal() && this.settled()) {
+        this._pendingReveal.set(false);
+        this._revealKey.update((key) => key + 1);
+      }
+    });
+
+    // A chair named in a link that the catalogue does not know — a barber
+    // who left, a hand-edited id — resolves to everyone once the catalogue
+    // has answered, rather than to a schedule of nobody. Only once it HAS
+    // answered: an empty roster while it loads says nothing about the id.
+    effect(() => {
+      const scope = this._scope();
+      const barbers = this.catalog.barbers();
+      if (
+        scope !== null &&
+        barbers.length > 0 &&
+        !barbers.some((barber) => barber.id.value === scope)
+      ) {
+        untracked(() => this.setScope(null));
+      }
     });
   }
 
@@ -421,10 +515,38 @@ export class StaffDayStore {
     this.goToDay(addDays(this._dayKey(), delta * this.daySpan()));
   }
 
+  /**
+   * A JUMP, as opposed to a turn (2026-09-23, the grid views' design record
+   * §6): «Към днес» and a pick in the month popover are the two moments the
+   * calendar re-reveals its working day — the reader asked to be taken
+   * somewhere. Turning a day from the week strip, switching the view or the
+   * chair keeps the hour under the reader's thumb, the way swiping to the
+   * next day in Apple Calendar keeps the vertical position. The grid keys
+   * its reveal on this counter and on nothing else.
+   */
+  private readonly _revealKey = signal(0);
+  readonly revealKey = this._revealKey.asReadonly();
+
+  /**
+   * A jump asked for, not yet revealed. The key is bumped only once the
+   * lanes on hand answer the asked day (`settled`) — bumped at once, the
+   * calendar revealed on the PREVIOUS day's roster and latched before the
+   * asked day's arrived (found in review, 2026-09-23). Same day, already
+   * loaded: the effect fires in the same pass.
+   */
+  private readonly _pendingReveal = signal(false);
+
   jumpToToday(): void {
     this._dayKey.set(this._todayKey());
     this._chosen.set(false);
-    this.publishDay(null);
+    this.publishQuery({ day: null });
+    this._pendingReveal.set(true);
+  }
+
+  /** A day the reader ASKED for by name — the month popover's pick. */
+  jumpToDay(dayKey: string | null): void {
+    this.goToDay(dayKey);
+    this._pendingReveal.set(true);
   }
 
   /**
@@ -437,23 +559,80 @@ export class StaffDayStore {
     const next = valid ?? this._todayKey();
     this._dayKey.set(next);
     this._chosen.set(next !== this._todayKey());
-    this.publishDay(next === this._todayKey() ? null : next);
+    this.publishQuery({ day: next === this._todayKey() ? null : next });
   }
 
   /**
-   * The day lives in the URL so it can be pasted into a staff chat, and so
-   * that coming back from a visit returns to the day you were on. Absent
-   * means today — a link that pinned today would go stale by morning.
+   * The day, the view and the chair live in the URL so a reading can be
+   * pasted into a staff chat, and so that coming back from a visit returns
+   * to what you were looking at. Absent means the default — today, the
+   * list, everyone — a link that pinned today would go stale by morning,
+   * and a link that pinned the list would say nothing.
+   *
+   * `replaceUrl`, as `?day=` always was: the back button leaves the page,
+   * it does not walk back through every view switch of the morning.
    */
-  private publishDay(dayKey: string | null): void {
-    this._published.set(dayKey);
-    void this.router.navigate([], {
-      relativeTo: this.route,
-      queryParams: { day: dayKey },
-      queryParamsHandling: 'merge',
-      replaceUrl: true,
-    });
+  private publishQuery(
+    patch: Partial<{
+      readonly day: string | null;
+      readonly view: StaffView | null;
+      readonly barber: string | null;
+    }>,
+  ): void {
+    // Read UNTRACKED: a caller inside an effect must not come to depend on
+    // the record this writes, or it re-runs on its own write.
+    const current = untracked(this._published);
+    const next = { ...current, ...patch };
+    this._published.set(next);
+    // NOTHING TO SAY, NO NAVIGATION: a write that leaves every parameter as
+    // it was is recorded and not sent.
+    if (
+      next.day === current.day &&
+      (next.view ?? null) === (current.view ?? null) &&
+      next.barber === current.barber
+    ) {
+      return;
+    }
+    // AFTER THE CURRENT TASK, and coalesced (found live 2026-09-23). The
+    // page's route-input effects call this from inside change detection —
+    // inside the ACTIVATION of the page's own first navigation. A navigation
+    // started there re-enters the router before that first one has settled
+    // (`router.navigated` is still false, so even the same URL is processed
+    // anew), which re-activates the page, which re-runs the effect, which
+    // navigates again, synchronously, forever: the first look at a silent
+    // URL hung the tab. Written on the next task the address bar catches
+    // up once the navigation that asked for it is over, and three writes
+    // in one tick — a day, a view and a chair restored together — are one
+    // navigation with the final record.
+    if (this.urlWrite !== null) return;
+    this.urlWrite = setTimeout(() => {
+      this.urlWrite = null;
+      // …and AFTER any view transition still playing: the router starts
+      // one of its own on every navigation, and the platform allows one
+      // at a time — the write cut the canvas's cross-fade a few
+      // milliseconds in (found in review, 2026-09-23).
+      void settledViewTransition().then(() => {
+        if (this.destroyed) return;
+        const stated = this._published();
+        void this.router.navigate([], {
+          relativeTo: this.route,
+          queryParams: {
+            day: stated.day,
+            view: stated.view ?? null,
+            barber: stated.barber,
+          },
+          queryParamsHandling: 'merge',
+          replaceUrl: true,
+        });
+      });
+    }, 0);
   }
+
+  /** Set on destroy, so a write that waited on a transition stays unsent. */
+  private destroyed = false;
+
+  /** The pending address-bar write, if one is scheduled. */
+  private urlWrite: ReturnType<typeof setTimeout> | null = null;
 
   // ── What the sheet is showing ───────────────────────────────────────
 
@@ -462,7 +641,14 @@ export class StaffDayStore {
    * which argued for one canvas — the shop wants the calendar views it knows
    * from every other tool, and the switch is a toolbar action.
    */
-  private readonly _view = signal<StaffView>('agenda');
+  /**
+   * …and it OPENS where you left it (2026-09-23, §10): the last view is
+   * remembered on the device, the way Calendar reopens in the view you
+   * closed it in. Only the view — a shared front-desk iPad that woke scoped
+   * to one chair would be a lie waiting for the first phone call, so the
+   * chair lives in links alone.
+   */
+  private readonly _view = signal<StaffView>(readStoredView());
   readonly view = this._view.asReadonly();
 
   setView(view: StaffView): void {
@@ -470,6 +656,37 @@ export class StaffDayStore {
     // own lane and then tapped Day meant to stay on their own lane; resetting
     // it silently handed them the whole shop back.
     this._view.set(view);
+    this.publishQuery({ view: view === 'agenda' ? null : view });
+    writeStoredView(view);
+  }
+
+  /**
+   * The URL's say on the view. A valid name applies; silence — a link with
+   * no `?view=`, the first load — keeps the restored view and STATES it, so
+   * the address bar and the device agree from the first frame and a link
+   * copied from the bar carries the reading it shows.
+   */
+  applyRouteView(requested: string | null | undefined): void {
+    const view = parseView(requested);
+    if (view !== null) {
+      if (view !== this._view()) this.setView(view);
+      else this.publishQuery({ view });
+      return;
+    }
+    // A name nobody has («?view=month») is not silence: it falls back to
+    // the list, and the address bar is corrected to say so.
+    if (requested) {
+      this.setView('agenda');
+      return;
+    }
+    // Silence is an EXTERNAL change too — the site menu's plain link to
+    // this page arrives with no `?view=` while the record still says the
+    // last one (found in review, 2026-09-23). Forgetting the record first
+    // makes the restore a real write, so the bar states the view it shows.
+    this._published.update((stated) => ({ ...stated, view: undefined }));
+    this.publishQuery({
+      view: this._view() === 'agenda' ? null : this._view(),
+    });
   }
 
   /**
@@ -484,6 +701,14 @@ export class StaffDayStore {
 
   setScope(barberId: string | null): void {
     this._scope.set(barberId);
+    this.publishQuery({ barber: barberId });
+  }
+
+  /** The URL's say on the chair — applied as asked; the catalogue vets it. */
+  applyRouteBarber(requested: string | null | undefined): void {
+    const barber = requested ? requested : null;
+    if (barber !== this._scope()) this.setScope(barber);
+    else this.publishQuery({ barber });
   }
 
   /** How many days each view spans. */
@@ -573,6 +798,101 @@ export class StaffDayStore {
     return result.value?.text ?? null;
   });
 
+  /* ── The shop's photos of the open visit ─────────────────────────────── */
+
+  private readonly _photosFor = signal<string | null>(null);
+
+  /** Read the visit's photos live beside it, like the note; `null` releases them. */
+  probePhotos(appointmentId: string | null): void {
+    if (appointmentId === this._photosFor()) return;
+    this._photosFor.set(appointmentId);
+  }
+
+  private readonly photosResult = toSignal(
+    toObservable(this._photosFor).pipe(
+      switchMap((id) =>
+        id === null
+          ? of(ok<readonly AppointmentPhoto[]>([]))
+          : this.photos.observe(id),
+      ),
+    ),
+    { initialValue: undefined },
+  );
+
+  /** The open visit's photos in the order they were taken — none while loading, absent, or with no visit open. */
+  readonly visitPhotos = computed<readonly AppointmentPhoto[]>(() => {
+    const result = this.photosResult();
+    if (result === undefined || result.isFailure()) return [];
+    return result.value;
+  });
+
+  private readonly _photoWork = signal(0);
+  /** A photo is going up or coming down. */
+  readonly photoBusy = computed(() => this._photoWork() > 0);
+
+  /**
+   * A shutter press: the picture sized for the wire, then up with the
+   * visit's facts. `true` once the photo is on the visit — the live read
+   * draws it; the caller has no thumbnail to place.
+   */
+  async attachPhoto(request: {
+    readonly appointmentId: string;
+    readonly barberId: string;
+    readonly clientUserId: string | null;
+    readonly clientLabel: string;
+    readonly file: Blob;
+  }): Promise<boolean> {
+    this._photoWork.update((count) => count + 1);
+    try {
+      const sized = await downscaleImage(request.file);
+      const result = await this.photos.attach({
+        appointmentId: request.appointmentId,
+        barberId: request.barberId,
+        clientUserId: request.clientUserId,
+        clientLabel: request.clientLabel,
+        image: sized.image,
+        width: sized.width,
+        height: sized.height,
+      });
+      return result.isSuccess();
+    } finally {
+      this._photoWork.update((count) => count - 1);
+    }
+  }
+
+  /** One of the shop's own pictures onto the visit: a document, no bytes. */
+  async adoptPhoto(reference: {
+    readonly appointmentId: string;
+    readonly barberId: string;
+    readonly clientUserId: string | null;
+    readonly clientLabel: string;
+    readonly path: string;
+    readonly url: string;
+    readonly label: string | null;
+  }): Promise<boolean> {
+    this._photoWork.update((count) => count + 1);
+    try {
+      const result = await this.photos.adopt({
+        ...reference,
+        width: null,
+        height: null,
+      });
+      return result.isSuccess();
+    } finally {
+      this._photoWork.update((count) => count - 1);
+    }
+  }
+
+  async removePhoto(photo: AppointmentPhoto): Promise<boolean> {
+    this._photoWork.update((count) => count + 1);
+    try {
+      const result = await this.photos.remove(photo);
+      return result.isSuccess();
+    } finally {
+      this._photoWork.update((count) => count - 1);
+    }
+  }
+
   /** The client whose usable coupons the sheet is offering, or `null`. */
   private readonly _grantsFor = signal<string | null>(null);
 
@@ -624,10 +944,47 @@ export class StaffDayStore {
     if (result === undefined || result.isFailure()) return [];
     return result.value.map(({ grant, coupon }) => ({
       grantId: grant.id.value,
+      couponId: coupon.id.value,
       label: coupon.name,
       value: discountValueOf(grant.value),
       exclusive: CouponCombinability.isExclusive(coupon.combinability),
     }));
+  });
+
+  /**
+   * THE SHOP'S LIVE CODES, read once for the day (owner, 2026-09-16: "you
+   * are the staff — you know the valid promo codes; list them"): what the
+   * sheet's «Промо код» kind offers as rows, so nobody types a code the
+   * shop published. A failed read is an empty list — the voucher field
+   * still takes a typed code, and the save re-resolves on the server.
+   */
+  private readonly promosResult = toSignal(from(this.coupons.listOpen()), {
+    initialValue: undefined,
+  });
+
+  readonly promos = computed<readonly VisitEditorPromoOption[]>(() => {
+    const result = this.promosResult();
+    if (result === undefined || result.isFailure()) return [];
+    return (
+      result.value
+        .flatMap((coupon) =>
+          coupon.code === null
+            ? []
+            : [
+                {
+                  code: coupon.code,
+                  couponId: coupon.id.value,
+                  label: coupon.name,
+                  value: discountValueOf(coupon.value),
+                  exclusive: CouponCombinability.isExclusive(
+                    coupon.combinability,
+                  ),
+                },
+              ],
+        )
+        // By name, the way a barber says them — not by the store's own ids.
+        .sort((a, b) => a.label.localeCompare(b.label, 'bg'))
+    );
   });
 
   /**
@@ -708,10 +1065,17 @@ export class StaffDayStore {
    * Appointments for every (day, barber) on screen, flattened in that order
    * so the index arithmetic below is the only place the pairing lives.
    */
+  /**
+   * …KEYED to the inputs they answer (2026-09-23): `switchMap` keeps the
+   * previous answer in the signal until the new day's first emission, so a
+   * reader who has just jumped is looking at yesterday's lanes under
+   * today's key for a moment. `settled` below is how the calendar tells
+   * the two apart before it reveals its working day.
+   */
   private readonly lanesResult = toSignal(
     toObservable(this.laneInputs).pipe(
       switchMap(({ days, barbers }) =>
-        barbers.length === 0
+        (barbers.length === 0
           ? of([])
           : combineLatest(
               days.flatMap((dayKey) =>
@@ -719,7 +1083,8 @@ export class StaffDayStore {
                   this.repository.observeBarberDay(barberId, dayKey),
                 ),
               ),
-            ),
+            )
+        ).pipe(map((lanes) => ({ key: laneKeyOf(days, barbers), lanes }))),
       ),
     ),
     { initialValue: undefined },
@@ -737,14 +1102,17 @@ export class StaffDayStore {
   private readonly geometryResult = toSignal(
     toObservable(this.laneInputs).pipe(
       switchMap(({ days, barbers }) => {
-        if (barbers.length === 0) return of(undefined);
+        const key = laneKeyOf(days, barbers);
+        if (barbers.length === 0) return of({ key, days: undefined });
         const perDay = days.map((dayKey) => {
           const day = dayFromKey(dayKey);
           return day === null
             ? of(undefined)
             : this.availability.observeDay(null, day, barbers);
         });
-        return combineLatest(perDay);
+        return combineLatest(perDay).pipe(
+          map((answers) => ({ key, days: answers })),
+        );
       }),
     ),
     { initialValue: undefined },
@@ -753,13 +1121,26 @@ export class StaffDayStore {
   readonly loading = computed(() => this.lanesResult() === undefined);
 
   /**
+   * Do the lanes and the geometry on hand answer the days and chairs on
+   * screen? `false` for the moment between a change of day and the
+   * repository's first word on it, while the previous answer still shows.
+   */
+  readonly settled = computed(() => {
+    const { days, barbers } = this.laneInputs();
+    const key = laneKeyOf(days, barbers);
+    return (
+      this.lanesResult()?.key === key && this.geometryResult()?.key === key
+    );
+  });
+
+  /**
    * Every visible day, each with one lane per scoped chair.
    *
    * The flat `lanesResult` is re-paired here and NOWHERE else — day-major,
    * barber-minor, matching the order it was subscribed in.
    */
   readonly dayCells = computed<readonly StaffDayCell[]>(() => {
-    const results = this.lanesResult();
+    const results = this.lanesResult()?.lanes;
     const barbers = this.scopedBarbers();
     // ⚠ `subscribedDays`, not `visibleDays` — the list the results were
     // FETCHED against. Pairing against the shorter one would drop the probe's
@@ -768,7 +1149,7 @@ export class StaffDayStore {
     const days = this.subscribedDays();
     if (!results) return [];
 
-    const geometry = this.geometryResult();
+    const geometry = this.geometryResult()?.days;
 
     return days.map((dayKey, dayIndex) => {
       const dayGeometry = geometry?.[dayIndex];
@@ -908,6 +1289,14 @@ export class StaffDayStore {
     this._term.set(term);
   }
 
+  /** The window as last read — the add-client page's «Скорошни» read it too. */
+  readonly window = this._pool.asReadonly();
+
+  /** The window, read once if nobody has yet — the add-client page's way in. */
+  async ensureWindow(): Promise<void> {
+    if (this._pool().length === 0) await this.reloadSearchPool();
+  }
+
   /** Re-read the window — after a write, or when search is reopened stale. */
   async reloadSearchPool(): Promise<void> {
     const now = this.clock.now(STAFF_ZONE);
@@ -987,6 +1376,41 @@ export class StaffDayStore {
         ranges.length === 0
           ? await this.exceptions.put(exception.value)
           : await this.putRanges(barberId, locationId, ranges, dayKey);
+      if (result.isFailure()) {
+        this._absenceError.set('failed');
+        return false;
+      }
+      return true;
+    } finally {
+      this._absencePending.set(false);
+    }
+  }
+
+  /**
+   * A SERIES — the same block on many days of one chair, as ONE batched
+   * write (2026-09-24): `putSeries` reads the days in parallel and writes
+   * them in batches, where a day-by-day `blockTime` loop was two round
+   * trips a day — a year of lunches, a minute of spinner. `ranges` empty
+   * stands each day down whole. Same pending and error signals as
+   * `blockTime`: from the sheet's side it is the same act.
+   */
+  async blockSeries(
+    barberId: string,
+    locationId: string,
+    ranges: readonly LocalTimeRange[],
+    dayKeys: readonly string[],
+  ): Promise<boolean> {
+    if (this._absencePending()) return false;
+    this._absencePending.set(true);
+    this._absenceError.set(null);
+    try {
+      const result = await this.exceptions.putSeries(
+        barberId,
+        locationId,
+        dayKeys,
+        STAFF_ZONE,
+        ranges,
+      );
       if (result.isFailure()) {
         this._absenceError.set('failed');
         return false;

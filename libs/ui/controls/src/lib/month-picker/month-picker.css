@@ -13,4 +13,37 @@
     display: flex;
     gap: var(--sys-space-tight);
   }
+
+  /* ── APPLE'S INLINE PICKER (owner, 2026-09-24) ─────────────────────
+     The anatomy of `UIDatePicker`'s inline style, in this system's
+     tokens: the month as the head's title, the week's key in small
+     uppercase semibold, and the dates at 20pt in REGULAR weight — the
+     weight is what today and the chosen day step up from (the badge's
+     own rules: today 600 in the accent's ink, chosen 700 on its tint
+     disc). The size is not taste alone: the chosen number's contrast on
+     its disc clears only as LARGE bold text (see date-badge.css), which
+     20px is and the old 15px was not. */
+  .ui-month-picker .ui-calendar-grid {
+    --ui-date-badge-font: var(--sys-font-title3);
+  }
+
+  .ui-month-picker .ui-date-badge:not([data-state='selected'], [data-today]) {
+    font-weight: 400;
+  }
+
+  /* The key: uppercase, as the platform's picker writes it («ПН», «MON»),
+     spaced a touch so capitals do not crowd in a narrow column. */
+  .ui-month-picker__weekday {
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+  }
+
+  /* The title does not wrap: a long month and year («Септември 2026 г.»)
+     gives way to the steps with an ellipsis rather than a second line. */
+  .ui-month-picker__title {
+    min-inline-size: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
 }

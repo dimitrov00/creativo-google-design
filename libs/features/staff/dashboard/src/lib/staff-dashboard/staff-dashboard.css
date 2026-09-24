@@ -223,82 +223,15 @@
   background-color: var(--barber-tone, var(--sys-color-separator));
 }
 
-/* ── THE ASIDE — WHEN, at the body's trailing edge ───────────────────
- *
- * Only the interval now. It used to carry the foot cluster underneath it as
- * well, which meant the price, the marks and the barber's face were all
- * competing for the same narrow column the times need — five things stacked
- * into a gutter sized for four characters. The foot moved to a row of its
- * own (below), and this went back to being one thing. */
-.agenda-card__aside {
-  flex: 0 0 auto;
-  align-self: start;
-  display: flex;
-  flex-direction: column;
-  align-items: end;
-  gap: var(--sys-space-compact);
-}
-
-/* THE INTERVAL, READ DOWNWARD. Start solid, end muted directly beneath it at
-   the same size — stacked, the two numbers are plainly a pair, so no dash is
-   needed to say so. Tabular figures because this is a column of times and
-   they have to line up down the run. */
-.agenda-card__times {
-  display: flex;
-  flex-direction: column;
-  align-items: end;
-  font-variant-numeric: tabular-nums;
-  text-align: end;
-}
-
-/* IDENTICAL TYPE, AND ONLY THE COLOUR DIFFERS.
- *
- * The start carried `font-weight: 600` against the end's 400. At one size
- * that does not read as "heavier", it reads as BIGGER — a 600 glyph is
- * optically larger than a 400 one, so the two lines of a single interval
- * looked like two different type sizes stacked. Same face, same size, same
- * weight, same line box; the start is solid ink and the end is muted, and
- * that is the whole distinction. */
-.agenda-card__start,
-.agenda-card__end {
-  font: var(--sys-font-callout);
-  /* THE MONO FAMILY, because `tabular-nums` alone could not do it.
-   *
-   * Two bugs sat on top of each other here. The first: `font:` is a shorthand
-   * for `font-variant` too, so declaring it reset the `tabular-nums` the
-   * parent sets — the property was simply not applying. The second, once it
-   * did apply: DM Sans ships no `tnum` feature, so the declaration is inert
-   * in it. Measured, "10:00" rendered 35.94px against "11:00" at 30.72px —
-   * five characters, five pixels apart — which is why the two lines of one
-   * interval looked like different sizes.
-   *
-   * `--sys-font-family-mono` is the system's own answer and guarantees one
-   * advance width per digit. Both lines take it, so start and end stay
-   * identical in every respect but colour. */
-  font-family: var(--sys-font-family-mono);
-  font-size: 0.8125rem; /* mono runs optically larger; this matches 14px text */
-  line-height: 1.25rem;
-  font-variant-numeric: tabular-nums;
-}
-
-.agenda-card__start {
-  color: var(--sys-color-foreground);
-}
-
-.agenda-card__end {
-  color: var(--sys-color-secondary-label);
-}
-
-/* THE GLOSS, under the value it qualifies. The clock time is the fact and
-   "след 2 ч" is a reading of it, so it follows rather than leads —
-   supplementary text sits after what it explains, never in front of it.
-   Smaller and quieter, and no longer tracked caps: it is not a label on the
-   card any more, it is the third line of a time. */
-.agenda-card__when {
-  font: var(--sys-font-caption);
-  line-height: 1rem;
-  color: var(--sys-color-secondary-label);
-  white-space: nowrap;
+/* A HOLLOW RAIL — an hour that did not happen (owner, 2026-09-24: "so
+   it's instantly recognised"). The rail is the card's strongest glance
+   cue, so it carries the grid's own grammar: filled is a live booking,
+   UNFILLED is time that was lost. Still the barber's tone — identity, not
+   state, is what the hue says — drawn as an outline instead of a bar. */
+.agenda-card[data-status='cancelled'] .agenda-card__rail,
+.agenda-card[data-status='no_show'] .agenda-card__rail {
+  background-color: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--barber-tone, var(--sys-color-separator));
 }
 
 /* ── THE FOOT — its own row, the card's full width, hugging the end ──
@@ -345,6 +278,9 @@
 }
 
 /* ── BODY — the one horizontal row on the card ────────────────────────
+   The client's face, the facts, the times. (The face was tried between the
+   facts and the times on 2026-09-16 and put back the same day — "it
+   doesn't work": a disc in the middle split the card into two half-cards.)
    Everything in it is top-aligned: a five-line fact stack must not push the
    client's face to its vertical middle. */
 .agenda-card__body {
@@ -352,6 +288,17 @@
   display: flex;
   align-items: start;
   gap: var(--sys-space-compact);
+  min-inline-size: 0;
+}
+
+/* THE HEAD — the name, every fact on its own line, the clock — is ONE
+   recipe with the frame's block now: `shared/event-head/staff-event-head.css`,
+   at `regular` density here. The card keeps only what is the card's: its
+   ground, its rail, the client's face, the foot and its marks, and the state
+   rule below that strikes the title. The head takes the row's width after
+   the face and wraps inside it. */
+.agenda-card__head {
+  flex: 1 1 auto;
   min-inline-size: 0;
 }
 
@@ -395,70 +342,27 @@
   box-shadow: 0 0 0 2px var(--agenda-cutout);
 }
 
-/* ── THE FACT STACK ───────────────────────────────────────────────────
-   One line per fact, in a fixed order, top-aligned. A fact with nothing to
-   say is not rendered at all, so it costs no height — but it never shares a
-   line either, and it never has to fight for a tail. */
-.agenda-card__facts {
-  flex: 1 1 auto;
-  display: flex;
-  flex-direction: column;
-  min-inline-size: 0;
-}
-
-/* THE NAME, AND EVERYTHING UNDER IT, IN ONE TYPE SIZE.
- *
- * The name was 18px display semibold over 13px text — two typefaces and a
- * 5px step, which made the card read as a heading with a caption stuck to
- * it. A feed row does not do that: the handle and the line beneath it are
- * the SAME face at the SAME size, and what separates them is weight and
- * colour. That is the whole hierarchy this card has — who, and everything
- * else about them — so it is the whole hierarchy the type should carry.
- *
- * `--sys-font-callout` is the system's 400-weight 14px text tier. The name
- * takes it at 600; every fact takes it as it comes. */
-.agenda-card__name {
-  margin: 0;
-  min-inline-size: 0;
-  /* Type and ink come from `uiText` on the element — see the template.
-     Feature CSS is UNLAYERED and therefore beats `@layer sys-components`
-     where the directives live, so declaring them here did not merely
-     duplicate the system, it silently overruled it. */
-  line-height: 1.25rem;
-  /* Wraps. NEVER truncates — half a surname identifies nobody. */
-  overflow-wrap: anywhere;
-}
-
-/* The same face, the same size, the same 400 weight the tier ships with.
-   Only the colour changes — which is the entire distinction. */
-.agenda-card__fact {
-  display: flex;
-  align-items: center;
-  gap: var(--sys-space-tight);
-  margin: 0;
-  min-inline-size: 0;
-  /* Type and ink come from `uiText` on the element — see the template.
-     Feature CSS is UNLAYERED and therefore beats `@layer sys-components`
-     where the directives live, so declaring them here did not merely
-     duplicate the system, it silently overruled it. */
-  line-height: 1.25rem;
-  overflow-wrap: anywhere;
-}
-
-/* A leading mark on the two facts that are neither a name nor a time and
-   would otherwise be two anonymous strings of characters. Sized off the
-   line it sits on — icons inherit their font size in this system — and
-   quieter than the text, because it is a label for the value, not the
-   value. */
-.agenda-card__fact ui-icon {
-  flex: 0 0 auto;
-  font-size: 0.875rem;
-  color: var(--sys-color-tertiary-label, var(--sys-color-secondary-label));
-}
-
-.agenda-card__fact > span {
-  min-inline-size: 0;
-  overflow-wrap: anywhere;
+/* THE STATE ON THE FACE (owner, 2026-09-24: "so it's instantly
+   recognised") — a cancelled or missed hour's glyph at the disc's BOTTOM
+   LEADING corner: on the edge where a glance starts, level with the
+   party's «+N» opposite it and in its dress — foreground disc, background
+   ink, the card's own cut-out ring — so the two badges read as one family.
+   The top corner crowded the start of the struck name. A glyph, never a
+   coloured dot. */
+.agenda-card__state {
+  position: absolute;
+  inset-block-end: -3px;
+  inset-inline-start: -5px;
+  display: grid;
+  place-items: center;
+  inline-size: 1.125rem;
+  block-size: 1.125rem;
+  border-radius: var(--control-radius-capsule);
+  /* The glyph takes the badge's font size (icons inherit it). */
+  font-size: 0.75rem;
+  color: var(--sys-color-background);
+  background: var(--sys-color-foreground);
+  box-shadow: 0 0 0 2px var(--agenda-cutout);
 }
 
 /* The party share reads as a RATIO — "1 / 2" — and a ratio is figures, so it
@@ -481,7 +385,10 @@
  * in the foot's flex row a fact's `min-inline-size: 0` would let it collapse
  * against the marks. The glyph matches `.agenda-card__mark`'s size, so the
  * trailing gutter reads as one row of marks rather than a small one and a
- * large one.
+ * large one. The COUNT is set at the tag's size — caption, «1/2» tight
+ * (owner, 2026-09-16: "match the size of the −/+ minutes, and vertically
+ * centred") — so the two figures of the foot are one line box, centred on
+ * the marks beside them.
  */
 .agenda-card__party {
   flex: 0 0 auto;
@@ -638,13 +545,14 @@
    no-show, both of which are hollow. */
 /* …and a no-show is struck the same way (owner, 2026-09-10: "the missed
    event should also appear with strikethrough so it's recognisable"): both
-   are hours that did not happen, and the glyph in the foot still says which. */
-.agenda-card[data-status='cancelled'] .agenda-card__name,
-.agenda-card[data-status='no_show'] .agenda-card__name {
-  text-decoration: line-through;
-  text-decoration-thickness: 1px;
-  text-decoration-color: currentcolor;
-}
+   are hours that did not happen, and the glyph in the foot still says which.
+
+   ⚠ THE STRIKE IS NOT DRAWN HERE. This stylesheet is view-scoped, and the
+   name lives in `lib-staff-event-head`'s own view: a rule written here
+   compiles to `.staff-event-head__title[_ngcontent-…]` and never matches
+   — which is exactly how the no-show lost its strike for a day
+   (2026-09-17). The card passes `[struck]` to the head, which stamps and
+   styles it (staff-event-head.css). */
 
 /* ── AND WHEN A HOLLOW ROW IS ALSO PAST ───────────────────────────────
  *
@@ -740,17 +648,10 @@
  * Half way between is the answer: 5.17:1 light and 6.33:1 dark — over the
  * floor, under the live card, and the name above still recedes from 18.73:1
  * to 8.45:1. Everything on a past card is quieter than the same thing on a
- * live one, and nothing has dropped out of range. */
-.agenda-card[data-past]:not([data-status='cancelled']):not(
-    [data-status='no_show']
-  )
-  .agenda-card__fact {
-  color: color-mix(
-    in srgb,
-    var(--sys-color-foreground) 50%,
-    var(--sys-color-secondary-label)
-  );
-}
+ * live one, and nothing has dropped out of range.
+ *
+ * Drawn by the head, not here (the same view-scoping trap as the strike
+ * above): the card passes `[receded]` — past, and not a hollow card. */
 
 /* The discs stop the hatch rather than letting it run across a face — the
    cut-out is the card's own ground, so they read as sitting ON the card. */
@@ -948,6 +849,26 @@
 .staff-run__open {
   color: var(--sys-color-tertiary-label, var(--sys-color-secondary-label));
   opacity: 0.55;
+}
+
+/* WHAT MATCHED IS WHAT IS PRIMARY — the add-client search's own grammar
+   (the event head's marked runs, Spotlight's): the text around a match
+   recedes to the secondary ink and the typed run holds the foreground.
+   Ink only — the browser's yellow highlighter was the one search in the
+   app that wore one (2026-09-24). */
+.staff-search__item [uiText]:has(> .staff-search__mark) {
+  color: var(--sys-color-secondary-label);
+}
+
+.staff-search__mark {
+  background: none;
+  color: var(--sys-color-foreground);
+}
+
+/* A sheet's head in a body spaced `loose`: the fold takes THAT gap with it
+   (the DS default is the pages' `comfortable`). */
+.staff-sheet__headline {
+  --ui-sheet-headline-gap: var(--sys-space-loose);
 }
 
 /* The cancel sheet's body, on the sheet system's own gutters. */
@@ -1148,19 +1069,26 @@
  * to see.
  */
 /*
- * The bar's height, published from the PAGE.
+ * THE CALENDAR IS THE SCREEN (2026-09-23, the grid views' design record §2;
+ * owner: "I don't think there should be padding on the frame in other
+ * views").
  *
- * It used to be declared on `.staff-toolbar` itself, where nothing could read
- * it: custom properties inherit DOWNWARD, and the calendar is the toolbar's
- * SIBLING. So `--staff-head-offset` fell back to its `0px` default, the
- * calendar frame sized itself to a full `100svh` BELOW a bar that also took
- * flow space, the page overflowed by exactly the bar's height — and the body
- * scrolled, sliding the grid's own sticky column heads up underneath the
- * sticky toolbar. Two sticky things, one of them stuck to the wrong box.
+ * In a grid view the page is exactly one viewport tall and never scrolls:
+ * the toolbar sits on top, the canvas fills what is left as a flex child,
+ * and the pane-anchored action bar lands on the viewport floor by
+ * construction. The frame's height used to be `100svh − --staff-head-offset`
+ * with the offset at the toolbar's TOKEN floor (52px) while the bar with its
+ * week strip measured ~117px — so the frame's floor landed 65px under the
+ * viewport's, the page scrolled by that much, the FAB sat below the fold and
+ * two sticky bands fought over the top edge. A flex child cannot be wrong
+ * about a height it never computes. `--staff-head-offset` is gone;
+ * `--staff-toolbar-real` stays, for the agenda's sticky all-day band.
  *
- * Declared on the page, both children inherit it, the frame ends at the
- * viewport floor, the body never scrolls, and the only thing that scrolls is
- * the calendar — which is the arrangement its sticky head was built for.
+ * Full bleed, too: the grid left the padded `ui-stack` for a canvas of its
+ * own, and the 52rem cap — written for the agenda ("this is a schedule, not
+ * prose") — applies to the agenda alone. iOS Calendar's day is a scroll
+ * view edge to edge under the navigation bar; Mac Calendar's week fills
+ * the window.
  */
 /*
  * A COLUMN, not a block — which is what `ui-page-action-bar` asks its parent
@@ -1189,11 +1117,101 @@
   --staff-toolbar-height: calc(
     var(--control-size-regular, 44px) + var(--sys-space-tight) * 2
   );
-  --staff-head-offset: var(--staff-toolbar-height);
   display: flex;
   flex-direction: column;
   position: relative;
 }
+
+/* One viewport, no page scroll: only the frame inside the canvas scrolls. */
+.staff-day[data-view-kind='grid'] {
+  block-size: 100svh;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+/* The canvas is the column's growing middle; the grid fills it. A grid
+   cell rather than a flex line so the empty-day sentence and the grid can
+   share the one box — the sentence draws only when the grid has no columns
+   to draw. */
+.staff-day[data-view-kind='grid'] > .staff-canvas {
+  flex: 1 1 0;
+  min-block-size: 0;
+  min-inline-size: 0;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.staff-canvas > * {
+  grid-area: 1 / 1;
+  min-inline-size: 0;
+}
+
+.staff-canvas > p {
+  align-self: start;
+  padding: var(--sys-space-regular);
+}
+
+/* ── THE VIEW SWITCHER, TWICE (2026-09-23, §9) ──────────────────────────
+ *
+ * A menu on a phone — a receptionist switches DAY two hundred times a shift
+ * and VIEW once, so the day pill wins the phone's row — and an icon-only
+ * capsule segmented control from 600px of bar, where four 44px segments fit
+ * beside the pill and the cluster: Apple's own split between iPhone and
+ * iPad. Both are rendered; the bar's own width shows one, and the hidden
+ * carrier is `display: none`, out of the accessibility tree. The segmented
+ * control is a VIEW toggle, which is the one thing that control is for. */
+.staff-toolbar {
+  container: staff-toolbar / inline-size;
+}
+
+.staff-view-segments {
+  display: none;
+}
+
+@container staff-toolbar (width >= 37.5rem) {
+  .staff-view-segments {
+    display: inline-flex;
+  }
+
+  .staff-view-menu {
+    display: none;
+  }
+}
+
+/* The period pill may SHRINK before the cluster does — its own stylesheet
+   says how (`staff-day-pill.css`: the label ellipsises, the ring stays
+   clear); this sheet is scoped and could not reach inside it anyway. */
+
+/* A SHORT viewport — a phone held sideways — gives the height to the hours
+   (§7): the week strip folds away in the grid views (the day pill still
+   opens the month), the toolbar is one row, and the scale does not change;
+   in landscape the phone is being READ, not navigated. */
+@media (max-height: 30rem) {
+  .staff-day[data-view-kind='grid'] .staff-weeks {
+    /* COLLAPSED, not `display: none` (found in review, 2026-09-23): a
+       scroller taken out of layout forgets its `scrollLeft`, and the strip
+       came back on the first of thirteen weeks after a rotation. A zero
+       height keeps the scroller, its width and its parked week; hidden
+       visibility takes it out of the tab order and the accessibility tree
+       with it. */
+    block-size: 0;
+    min-block-size: 0;
+    overflow: hidden;
+    visibility: hidden;
+  }
+}
+
+/* On a wide bar the strip keeps its discs finger-spaced rather than
+   stretching seven of them across a desktop. */
+.staff-day[data-view-kind='grid'] .staff-weeks {
+  max-inline-size: var(--sys-container-content);
+  margin-inline: auto;
+}
+
+/* The view switch's cross-fade is stated in the grid's page stylesheet
+   (`staff-time-grid.page.css`, unscoped): `::view-transition-*` pseudo-
+   elements hang off the document root, and a scoped sheet's selectors are
+   prefixed with the component's attribute and never match them. */
 
 /* The lanes are the column's growing middle. Without this they keep flex's
    default `shrink: 1` and a long day compresses against the 100svh floor
@@ -1347,6 +1365,7 @@
 
 .staff-weeks__initial {
   font: var(--sys-font-caption);
+  font-variant-numeric: tabular-nums; /* the shorthand resets the app's tabular figures */
   color: var(--sys-color-secondary-label);
   text-transform: uppercase;
 }

@@ -1,0 +1,52 @@
+@layer sys-components {
+  /* The picker keeps room for its own focus ring: it is set inside a list
+     row's label, which clips (single-line ellipsis), and the first and
+     last circle would lose their outer edge of the ring to it. */
+  .ui-weekday-picker {
+    display: block;
+    padding: calc(var(--sys-focus-ring-width) + var(--sys-focus-ring-offset));
+  }
+
+  /* Seven equal cells across whatever width the row has; each circle is
+     the regular control size where there is room for it and shrinks with
+     the cell where there is not (a 330px phone), never below the small
+     tier's reach thanks to the row's own padding. */
+  .ui-weekday-picker__days {
+    display: grid;
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+    justify-items: center;
+    gap: var(--sys-space-tight);
+  }
+
+  /* A toggle: the DS control fill (systemFill parity, translucent), a
+     capsule, the day's short name. */
+  .ui-weekday-picker__day {
+    display: grid;
+    place-items: center;
+    box-sizing: border-box;
+    inline-size: 100%;
+    max-inline-size: var(--control-size-regular);
+    aspect-ratio: 1;
+    padding: 0;
+    border: 0;
+    border-radius: var(--control-radius-capsule);
+    background: var(--sys-color-fill);
+    color: var(--sys-color-foreground);
+    font: var(--sys-font-subheadline);
+    font-weight: 600;
+    /* The state layer of [data-interactive] rounds with the circle. */
+    isolation: isolate;
+  }
+
+  /* ON — the chosen tile's dress (ui-choice-tiles): the accent wash and a
+     2px accent ring, so the state survives greyscale and a reader who
+     cannot separate two washes (HIG: more than colour alone). */
+  .ui-weekday-picker__day[data-selected] {
+    background: color-mix(
+      in srgb,
+      var(--sys-color-accent) var(--sys-alpha-segment-selected),
+      transparent
+    );
+    box-shadow: inset 0 0 0 2px var(--sys-color-accent);
+  }
+}

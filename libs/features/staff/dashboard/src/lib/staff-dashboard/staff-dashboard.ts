@@ -1,4 +1,9 @@
-import { StaffDayPill, formatDayPill } from '../day-pill/staff-day-pill';
+import {
+  StaffDayPill,
+  formatDayPill,
+  formatDayPillRange,
+} from '../day-pill/staff-day-pill';
+import { runViewTransition } from '../shared/view-transition';
 import {
   ChangeDetectionStrategy,
   Component,
@@ -11,6 +16,7 @@ import {
   inject,
   input,
   signal,
+  viewChild,
   untracked,
 } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
@@ -28,6 +34,7 @@ import type {
 } from '@creativo/application/booking';
 import { TranslocoDirective, TranslocoService } from '@jsverse/transloco';
 import {
+  type AppointmentPhoto,
   Appointment,
   type AppointmentStatusKind,
   CancellationReasonKind,
@@ -48,8 +55,12 @@ import {
   StaffVisitEditor,
   type VisitEditorBarberOption,
   type VisitEditorClientOption,
+  type VisitEditorClientSection,
   type VisitEditorFrameDay,
+  type VisitEditorLibraryImage,
+  type VisitEditorPhoto,
   type VisitEditorServiceOption,
+  type VisitEditorShopOption,
   type VisitEditorCommit,
   type VisitEditorLeg,
   type VisitEditorVerb,
@@ -59,6 +70,7 @@ import {
   discountValueOf,
   VisitEditorVoucher,
   VisitEditorResolution,
+  snapshotCommitOf,
 } from '../visit-editor/staff-visit-editor';
 import { assignBarberTones } from '../barber-tone';
 import {
@@ -66,6 +78,11 @@ import {
   CatalogPresenter,
 } from '@creativo/features/shared/catalog';
 import { catalogMinutesOf, catalogTagOf } from '../shared/catalog-delta';
+import {
+  hollowStatus,
+  StaffEventHead,
+  type StaffEventLine,
+} from '../shared/event-head/staff-event-head';
 import {
   pluralForm,
   relativeTime,
@@ -75,6 +92,8 @@ import {
   UiChoiceLeading,
   UiChoiceMenu,
   type UiChoiceOption,
+  UiSegmentedControl,
+  type UiSegment,
   UiAvatar,
   UiBadge,
   UiBadgeTone,
@@ -83,6 +102,7 @@ import {
   UiIcon,
   type UiIconName,
   UiModalSheet,
+  UiSearchField,
   UiSwitch,
   UiTextField,
 } from '@creativo/ui/controls';
@@ -106,10 +126,13 @@ import {
   UiListGroup,
   UiListRow,
   UiMenu,
+  UiAlert,
+  type UiAlertAction,
   UiMenuItem,
   UiMenuTrigger,
   UiPageActionBar,
   UiSheetActionBar,
+  UiSheetHeadline,
   UiToast,
 } from '@creativo/ui/patterns';
 import {
@@ -120,6 +143,7 @@ import {
   type StaffView,
 } from '../staff-day.store';
 import {
+  type AllDayEntry,
   type GridColumn,
   type GridEvent,
   type OpenWindow,
@@ -130,10 +154,20 @@ import {
   type BlockEditorLane,
   type BlockEditorRange,
   type BlockEditorVm,
-  expandRepeat,
   StaffBlockEditor,
 } from '../block-editor/staff-block-editor';
 import { USER_SEARCH_PORT } from '@creativo/application/governance';
+import {
+  clientLookupKeys,
+  parseClientQuery,
+  rankClients,
+} from '../visit-editor/client-query';
+import { AVATAR_UPLOADER, UserId } from '@creativo/application/accounts';
+import {
+  AUTH_DEPLOYMENT,
+  PhoneNumber,
+  countryCallingCode,
+} from '@creativo/application/identity';
 
 /**
  * What a row can DO. `arrived` is not an `AppointmentStatusKind` on purpose:
@@ -163,11 +197,99 @@ function rowKey(appointmentId: string, barberId: string): string {
  * own seats and leaves the rest of the party booked — which is the entire
  * point of a seat-scoped verb.
  */
+/** What a save wrote BESIDE the batch — and so what its undo writes back. */
+interface SaveWrites {
+  readonly note: boolean;
+  readonly tip: boolean;
+}
+
+/**
+ * How long an undone save waits for the listener — for the save to reach
+ * the row before the way back is computed, and for the way back to reach
+ * it before the sheet re-seeds. The listener delivers in well under a
+ * second; this is the ceiling, not the expectation.
+ */
+const ROW_WAIT_MS = 5000;
+
+/**
+ * Whether a save has a way back through the same callable. A seat added to
+ * a FINISHED visit is worked the moment it is written (the after-the-cut
+ * flow, owner 2026-09-09) and the server keeps history: its `removeSeat`
+ * would be refused every time, so that save's receipt carries no «Отмени»
+ * (found in review).
+ */
+export function reversibleSave(
+  row: { readonly status: AppointmentStatusKind } | null,
+  commands: readonly StaffEditCommand[],
+): boolean {
+  return !(
+    row !== null &&
+    row.status === 'completed' &&
+    commands.some((command) => command.kind === 'addSeat')
+  );
+}
+
+/** How long an undone save gives the busy projection before its one retry. */
+const BUSY_SETTLE_MS = 1500;
+
+/**
+ * The server's overlap OFFER — `slot_unavailable` naming its own code — as
+ * opposed to any other refusal. The store's docblock on `staffEdit` names
+ * it; the sheet answers it with «Запази въпреки застъпването», and an
+ * undone save answers it with one more try.
+ */
+function isOverlapOffer(error: BookingGatewayError | null): boolean {
+  return error?.params?.['serverCode'] === 'booking.staffEdit.overlaps';
+}
+
+/**
+ * The stored facts a save can change, as one string — what an undone save
+ * compares the live row against to know the server has caught up.
+ */
+function rowShape(row: DayRowVm): string {
+  return JSON.stringify({
+    location: row.locationId,
+    start: row.startMs,
+    end: row.endMs,
+    legs: row.legs.map((leg) => [
+      leg.seatId,
+      leg.serviceId,
+      leg.variantId,
+      leg.minutes,
+      leg.barberId,
+      leg.priceLabel,
+    ]),
+    discounts: row.discounts
+      .map((discount) =>
+        JSON.stringify([
+          discount.source,
+          discount.grantId,
+          discount.code,
+          discount.value,
+        ]),
+      )
+      .sort(),
+    vouchers: row.vouchers.map((voucher) => voucher.code),
+    tip: row.tipMinorUnits,
+  });
+}
+
 function seatScopeOf(row: DayRowVm): readonly string[] {
   return row.seatsHere === row.partySize ? [] : row.seatIds;
 }
 
 /** One row of a barber's lane, precomputed — the sheet re-renders live. */
+/** The street line of a postal address — everything before its first comma. */
+function streetOf(address: string): string {
+  const street = address.split(',')[0]?.trim() ?? '';
+  return street.length > 0 ? street : address;
+}
+
+/** One question per typed name, not one per keystroke. */
+const CLIENT_SEARCH_DEBOUNCE_MS = 220;
+/** How many of the book's matches get their portrait looked up per query. */
+const BOOK_FACES_PER_QUERY = 12;
+
 interface DayRowVm {
   readonly kind: 'visit';
   /**
@@ -190,6 +312,8 @@ interface DayRowVm {
   readonly id: string;
   /** The aggregate this row is a share of. What the server is told about. */
   readonly appointmentId: string;
+  /** WHERE the visit is — the root's own fact, one place for every chair. */
+  readonly locationId: string;
   /**
    * THIS lane's seat. A row is one barber's share of a party, so resolving it
    * must name the seat — the root can hold one answer and a party has several.
@@ -458,6 +582,9 @@ interface LaneVm {
 const STATUS_ICONS: Partial<Record<AppointmentStatusKind, UiIconName>> = {
   completed: 'checklist.done',
   no_show: 'visit.noShow',
+  // It was missing (found 2026-09-24): a cancelled block drew no glyph at
+  // all while the card's face and the sheet carried one.
+  cancelled: 'visit.cancelled',
 };
 
 /**
@@ -679,6 +806,22 @@ function abbreviateWeekday(long: string, locale: string): string {
   return three.charAt(0).toLocaleUpperCase(locale) + three.slice(1);
 }
 
+/**
+ * «Иван» from «Иван Колев» — what a column head carries once the whole
+ * name would truncate (2026-09-23, the grid views' design record §4). Half
+ * a surname identifies nobody; a first name in a shop of five does.
+ */
+function firstNameOf(name: string): string {
+  return name.trim().split(/\s+/)[0] ?? name;
+}
+
+/**
+ * How many chairs the all-day band names on one date before it says «+N»
+ * (§8): a fourth chip would push the band into a second screen of chrome,
+ * and a phone has no tooltip to read the rest from.
+ */
+const ALL_DAY_CHIP_CAP = 3;
+
 /** The whole product is Europe/Sofia-only for now (blueprint §7.1). */
 const SHOP_ZONE = 'Europe/Sofia';
 
@@ -822,10 +965,13 @@ const MONEY_ROLES = DOMAIN_MONEY_ROLES.map(roleFromPrimitive);
 @Component({
   selector: 'lib-staff-dashboard',
   imports: [
+    UiAlert,
     UiChoiceLeading,
     UiChoiceMenu,
+    UiSegmentedControl,
     StaffTimeGrid,
     StaffVisitEditor,
+    StaffEventHead,
     TranslocoDirective,
     UiAvatar,
     UiBadge,
@@ -847,6 +993,8 @@ const MONEY_ROLES = DOMAIN_MONEY_ROLES.map(roleFromPrimitive);
     UiPageActionBar,
     UiScrollRow,
     UiSheetActionBar,
+    UiSheetHeadline,
+    UiSearchField,
     UiToast,
     UiSwitch,
     StaffBlockEditor,
@@ -868,6 +1016,8 @@ const MONEY_ROLES = DOMAIN_MONEY_ROLES.map(roleFromPrimitive);
   },
 })
 export class StaffDashboard {
+  /** An hour that did not happen — struck on the card's head (staff-event-head). */
+  protected readonly hollowStatus = hollowStatus;
   private readonly transloco = inject(TranslocoService);
   private readonly title = inject(Title);
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
@@ -1058,20 +1208,55 @@ export class StaffDashboard {
    * pinned today would be wrong by morning.
    */
   readonly day = input<string | null>(null);
+  /**
+   * `?view=` and `?barber=`, bound from the route beside the day
+   * (2026-09-23, the grid views' design record §10): a link pasted into
+   * the staff chat says "Ivan's week", and the back button restores the
+   * reading you left. Absent means the default — the view the device
+   * remembers, everyone.
+   */
+  readonly view = input<string | null>(null);
+  readonly barber = input<string | null>(null);
 
   constructor() {
+    this.destroyRef.onDestroy(() => this.rowWatch()?.settle());
     // The URL is an INPUT here and an OUTPUT of the store, so the echo of the
     // store's own write must not be mistaken for the user asking for a day —
     // that bounced every chevron press straight back to today. Comparing
     // against what the store last published leaves only genuine external
     // changes: the first load, and the back button.
     effect(() => {
-      const requested = this.day();
+      const requested = this.day() ?? null;
       // `published` is read UNTRACKED: it changes as a RESULT of goToDay, so
       // tracking it re-fires this effect with a stale `day()` and undoes the
       // navigation that just happened. Only `day()` may wake this.
-      if (requested !== untracked(() => this.store.published())) {
-        this.store.goToDay(requested);
+      if (requested !== untracked(() => this.store.published().day)) {
+        untracked(() => this.store.goToDay(requested));
+      }
+    });
+    // The same guard for the view and the chair. An ABSENT parameter reaches
+    // a route-bound input as `undefined`, not the input's `null` default —
+    // the binder sets every declared input from the route's data — so both
+    // are read as "silent" before the comparison. The view's published
+    // value starts UNDEFINED (never written) so the first look at a silent
+    // URL still reaches the store, which states the view the device
+    // restored; the store sends no navigation when nothing changes.
+    effect(() => {
+      const requested = this.view() ?? null;
+      const stated = untracked(() => this.store.published().view);
+      if (stated === undefined || requested !== (stated ?? null)) {
+        // UNTRACKED, like every store call from a route effect: the store
+        // reads the published record before it writes it, and a read inside
+        // this effect's own tracking would make the effect depend on the
+        // signal it changes — and re-run on its own write, forever (found
+        // live 2026-09-23 on the first silent URL after a remembered view).
+        untracked(() => this.store.applyRouteView(requested));
+      }
+    });
+    effect(() => {
+      const requested = this.barber() ?? null;
+      if (requested !== untracked(() => this.store.published().barber)) {
+        untracked(() => this.store.applyRouteBarber(requested));
       }
     });
 
@@ -1221,7 +1406,33 @@ export class StaffDashboard {
   /** Jump the sheet to the day a hit lives on, and close the search. */
   protected openHit(hit: SearchHitVm): void {
     this.store.goToDay(hit.dayKey);
+    this.closeSearchSheet();
+  }
+
+  /*
+   * THE SEARCH SHEET'S FOLD (2026-09-24): the head folds while the search
+   * is engaged — the field focused, or a query standing — the visit
+   * sheet's own grammar, told to the bar the same way.
+   */
+  protected readonly searchFieldFocused = signal(false);
+  protected readonly searchSheetEngaged = computed(
+    () => this.searchFieldFocused() || this.store.term().trim().length > 0,
+  );
+
+  /** A field taken away while focused reports no blur; the sheet resets it. */
+  protected closeSearchSheet(): void {
+    this.searchFieldFocused.set(false);
     this.store.closeSearch();
+  }
+
+  /** ↓ from the field lands on the first hit, as the visit sheet's lists do. */
+  protected focusFirstHit(event: KeyboardEvent): void {
+    const first = this.host.nativeElement.querySelector<HTMLElement>(
+      '[data-testid="staff-search-hit"]',
+    );
+    if (first === null) return;
+    event.preventDefault();
+    first.focus();
   }
 
   // ── The write actions ───────────────────────────────────────────────
@@ -1280,8 +1491,17 @@ export class StaffDashboard {
     requestAnimationFrame(() => this.settleOnWeek(index, framesLeft - 1));
   }
 
-  protected pickDay(dayKey: string): void {
-    this.store.goToDay(dayKey);
+  /**
+   * A day from the week strip is a TURN; one from the month popover is a
+   * JUMP (2026-09-23, §6). Both show the day; only the jump asks the
+   * calendar to reveal its working hours again — a turn keeps the reader's
+   * hour under their thumb, the way Apple Calendar keeps the scroll when a
+   * day is swiped. The agenda has no such distinction: it anchors to now on
+   * every change of day, as it always has.
+   */
+  protected pickDay(dayKey: string, jump = false): void {
+    if (jump) this.store.jumpToDay(dayKey);
+    else this.store.goToDay(dayKey);
     this.datePickerOpen.set(false);
 
     // TAPPING TODAY MEANS "TAKE ME TO NOW".
@@ -1362,6 +1582,23 @@ export class StaffDashboard {
       tone: option.tone,
       avatarSrc: option.avatarSrc,
     })),
+  );
+
+  /**
+   * THE SHOPS the «Салон» row offers — every active location, named in the
+   * reader's language, pinned by its coordinates, with its STREET line as
+   * the row's second line: the address up to its first comma. The city is
+   * where the staff already are, and the row has two lines to spend.
+   */
+  protected readonly shopOptions = computed<readonly VisitEditorShopOption[]>(
+    () =>
+      this.catalog.locations().map((location) => ({
+        id: location.id.value,
+        label: this.content.text(location.name),
+        address: streetOf(this.content.text(location.address)),
+        lat: location.geo.lat,
+        lng: location.geo.lng,
+      })),
   );
 
   /**
@@ -1498,6 +1735,12 @@ export class StaffDashboard {
       return (cell?.lanes ?? []).map((lane) => ({
         id: lane.barberId,
         title: this.barberNameOf(lane.barberId),
+        // THE HEAD AT THREE WIDTHS (2026-09-23, §4): the first name where
+        // the whole one would truncate, the portrait alone below that; the
+        // whole name stays on the accessible label.
+        shortTitle: firstNameOf(this.barberNameOf(lane.barberId)),
+        initial: null,
+        fullTitle: this.barberNameOf(lane.barberId),
         detail: null,
         dayNumber: null,
         // Barber columns all sit on the anchor day, so they are "today"
@@ -1515,28 +1758,46 @@ export class StaffDashboard {
       }));
     }
 
-    return cells.map((cell) => ({
-      id: cell.dayKey,
-      title: this.weekdayLabel(cell.dayKey),
-      detail: null,
-      dayNumber: Number(cell.dayKey.slice(8, 10)),
-      isToday: cell.dayKey === today,
-      avatarSrc: null,
-      events: cell.lanes
-        .filter((lane) => lane.rostered.length > 0 || lane.appointments.length)
-        .flatMap((lane) =>
-          // Gaps are omitted once chairs are merged into one date column:
-          // Ivan's free 14:00 is not the shop's free 14:00, and drawing both
-          // as holes in the same column would state something untrue.
-          this.eventsFor(lane, nowMs, this.store.scope() === null),
-        )
-        .sort((a, b) => a.startMinute - b.startMinute),
-      // Chairs are merged into a date here, so the column is open whenever
-      // ANY of them is — the union, not the intersection. A date nobody works
-      // has no windows at all and shades solid, which is how a closed Sunday
-      // finally looks different from an empty one.
-      open: this.openWindowsOf(cell.lanes),
-    }));
+    // Only the days ON SCREEN: the cells also carry the visit sheet's probe
+    // day, which is subscribed for the sheet's frame and is not a column.
+    const visible = this.store.visibleDays();
+    return cells
+      .filter((cell) => visible.includes(cell.dayKey))
+      .map((cell) => ({
+        id: cell.dayKey,
+        title: this.weekdayLabel(cell.dayKey),
+        // The short weekday beside the capsule while the column can carry a
+        // word; the weekday's INITIAL over it below that — the same narrow
+        // form the week strip writes, from the same formatter (§4). The
+        // long date is the accessible name at every width.
+        shortTitle: this.weekdayLabel(cell.dayKey),
+        initial: this.weekdayInitial(cell.dayKey),
+        fullTitle: this.formatDay(cell.dayKey, {
+          weekday: 'long',
+          day: 'numeric',
+          month: 'long',
+        }),
+        detail: null,
+        dayNumber: Number(cell.dayKey.slice(8, 10)),
+        isToday: cell.dayKey === today,
+        avatarSrc: null,
+        events: cell.lanes
+          .filter(
+            (lane) => lane.rostered.length > 0 || lane.appointments.length,
+          )
+          .flatMap((lane) =>
+            // Gaps are omitted once chairs are merged into one date column:
+            // Ivan's free 14:00 is not the shop's free 14:00, and drawing both
+            // as holes in the same column would state something untrue.
+            this.eventsFor(lane, nowMs, this.store.scope() === null),
+          )
+          .sort((a, b) => a.startMinute - b.startMinute),
+        // Chairs are merged into a date here, so the column is open whenever
+        // ANY of them is — the union, not the intersection. A date nobody works
+        // has no windows at all and shades solid, which is how a closed Sunday
+        // finally looks different from an empty one.
+        open: this.openWindowsOf(cell.lanes),
+      }));
   });
 
   /**
@@ -1632,9 +1893,9 @@ export class StaffDashboard {
    * date column showing four chairs must say the fifth is off, or the shop
    * reads an empty column as "free" rather than "away".
    */
-  protected readonly allDay = computed<Record<string, readonly string[]>>(
+  protected readonly allDay = computed<Record<string, readonly AllDayEntry[]>>(
     () => {
-      const out: Record<string, string[]> = {};
+      const out: Record<string, AllDayEntry[]> = {};
 
       // In the day view a column IS a barber, so the chip names the fact rather
       // than the person — the column head above it is already the name. The
@@ -1644,25 +1905,72 @@ export class StaffDashboard {
         const cell = this.store
           .dayCells()
           .find((entry) => entry.dayKey === this.store.dayKey());
+        const off = this.transloco.translate('staff.day.offBadge');
         for (const lane of cell?.lanes ?? []) {
           if (lane.rostered.length === 0) {
             out[lane.barberId] = [
-              this.transloco.translate('staff.day.offBadge'),
+              {
+                key: lane.barberId,
+                label: off,
+                shortLabel: off,
+                initial: firstNameOf(this.barberNameOf(lane.barberId)).charAt(
+                  0,
+                ),
+                tone: this.toneOf(lane.barberId),
+                accessibleName: off,
+              },
             ];
           }
         }
         return out;
       }
 
+      // A DATE column: the chip says WHO — the first name where the cell
+      // can carry a word, the initial on the chair's tone disc where it
+      // cannot (§8) — and the whole sentence stays the accessible name.
+      // Three chips, then «+N»: a phone has no tooltips, and a scroller
+      // inside the pinned band would be a trap.
       for (const cell of this.store.dayCells()) {
         const off = cell.lanes
           .filter((lane) => lane.rostered.length === 0)
-          .map((lane) =>
-            this.transloco.translate('staff.day.offChip', {
-              name: this.barberNameOf(lane.barberId),
-            }),
-          );
-        if (off.length > 0) out[cell.dayKey] = off;
+          .map((lane) => {
+            const name = this.barberNameOf(lane.barberId);
+            const first = firstNameOf(name);
+            return {
+              key: lane.barberId,
+              label: this.transloco.translate('staff.day.offChip', {
+                name: first,
+              }),
+              shortLabel: first,
+              initial: first.charAt(0),
+              tone: this.toneOf(lane.barberId),
+              accessibleName: this.transloco.translate('staff.day.offChip', {
+                name,
+              }),
+            };
+          });
+        if (off.length === 0) continue;
+        if (off.length <= ALL_DAY_CHIP_CAP) {
+          out[cell.dayKey] = off;
+          continue;
+        }
+        // Three named, then «+N» for the rest — never fewer names as more
+        // chairs are off (an off-by-one found in review, 2026-09-23).
+        const rest = off.length - ALL_DAY_CHIP_CAP;
+        const more = this.transloco.translate('staff.day.allDayMore', {
+          count: rest,
+        });
+        out[cell.dayKey] = [
+          ...off.slice(0, ALL_DAY_CHIP_CAP),
+          {
+            key: 'more',
+            label: `+${rest}`,
+            shortLabel: `+${rest}`,
+            initial: `+${rest}`,
+            tone: null,
+            accessibleName: more,
+          },
+        ];
       }
       return out;
     },
@@ -1698,7 +2006,10 @@ export class StaffDashboard {
           startMinute: this.minuteOfDay(row.startMs),
           endMinute: this.minuteOfDay(row.endMs, row.startMs),
           title: row.clientLabel,
-          detail: row.serviceLabel,
+          // A cancelled or missed hour says so on the line under the name —
+          // the block's clock is withheld on a narrow column, and the
+          // service matters less than that it did not happen (2026-09-24).
+          detail: this.stateLabel(row) ?? row.serviceLabel,
           attribution: attribute ? this.barberNameOf(lane.barberId) : null,
           status: row.status,
           terminal: row.terminal,
@@ -1907,6 +2218,19 @@ export class StaffDashboard {
     );
   }
 
+  /**
+   * The weekday's one-letter form — the week strip's own, from the same
+   * `Intl` narrow formatter, so a date column too narrow for a word writes
+   * its day the way the strip above it does (never a second formatter: the
+   * pickers may not differ in facts, 2026-09-04).
+   */
+  private weekdayInitial(dayKey: string): string {
+    return new Intl.DateTimeFormat(this.content.locale(), {
+      weekday: 'narrow',
+      timeZone: 'UTC',
+    }).format(new Date(`${dayKey}T12:00:00Z`));
+  }
+
   private formatDay(dayKey: string, options: Intl.DateTimeFormatOptions) {
     const [year, month, day] = dayKey.split('-').map(Number);
     return this.formatTitled(
@@ -1938,11 +2262,11 @@ export class StaffDashboard {
   }
 
   /**
-   * "7 август" for a day, "7 – 9 август" for a span inside one month,
-   * "30 юли – 5 август" across a boundary.
-   *
-   * Full month name, no weekday: the label is a heading, and the weekday is
-   * already on every column beneath it.
+   * «ср, 9.09» for a day; «21 – 27.09» for a period — the pill's ONE
+   * numeric grammar for both (2026-09-23, the grid views' design record
+   * §9). The range used to be written in the long month («23 – 25
+   * Септември») for a headline segment that no longer exists, and in the
+   * pill it pushed the search and the chair picker off a 390px bar.
    */
   protected readonly periodLabel = computed(() => {
     const days = this.store.visibleDays();
@@ -1963,11 +2287,19 @@ export class StaffDashboard {
       return formatDayPill(first, this.content.locale());
     }
     const last = days[days.length - 1] as string;
-    const sameMonth = first.slice(0, 7) === last.slice(0, 7);
-    return sameMonth
-      ? `${this.formatDay(first, { day: 'numeric' })} – ${this.formatDay(last, { day: 'numeric', month: 'long' })}`
-      : `${this.formatDay(first, { day: 'numeric', month: 'long' })} – ${this.formatDay(last, { day: 'numeric', month: 'long' })}`;
+    return formatDayPillRange(first, last, this.content.locale());
   });
+
+  /**
+   * The scroller's accessible name — which period the region holds, so a
+   * keyboard or a switch control landing on 3000px of two-axis scroll
+   * knows what it has reached.
+   */
+  protected readonly regionLabel = computed(() =>
+    this.transloco.translate('staff.day.gridRegion', {
+      period: this.periodLabel(),
+    }),
+  );
 
   /** "сряда, 5 август" — the header's whole answer. */
   protected readonly dayLabel = computed(() => {
@@ -2436,6 +2768,69 @@ export class StaffDashboard {
    * which `Intl` renders as "утре", "след 2 ч", "преди 20 мин". `short`,
    * because this shares a narrow column with the clock times above it.
    */
+  /**
+   * The lines under the client's name, in the card's fixed order — the
+   * email, the phone, the service — each only when its switch is on and it
+   * has something to say. A line that is not rendered costs no height.
+   */
+  protected factLines(entry: DayRowVm): readonly StaffEventLine[] {
+    const lines: StaffEventLine[] = [];
+    if (this.fields.isOn('email') && entry.email) {
+      lines.push({
+        text: entry.email,
+        icon: 'contact.email',
+        testId: 'staff-visit-email',
+      });
+    }
+    if (this.fields.isOn('phone') && entry.phone) {
+      lines.push({
+        text: entry.phone,
+        icon: 'contact.phone',
+        testId: 'staff-visit-phone',
+      });
+    }
+    if (this.fields.isOn('service')) lines.push({ text: entry.serviceLabel });
+    return lines;
+  }
+
+  /** The end, marked when it falls on the next day. */
+  protected endLabel(entry: DayRowVm): string {
+    return entry.crossesMidnight ? `${entry.endLabel}⁺¹` : entry.endLabel;
+  }
+
+  /**
+   * AN HOUR THAT DID NOT HAPPEN, SAID IN ONE WORD (owner, 2026-09-24: "so
+   * it's instantly recognised") — «Отказан», «Не дойде». The card puts it
+   * where the countdown stood (a countdown to a visit that will not happen
+   * was the card's loudest lie), the grid's block on its second line;
+   * `null` for every live or finished visit. ONE word, not «Отказан от
+   * салона»: at a phone's width the phrase widened the clock's column and
+   * broke the service line under the name in two — and whose act it was
+   * is the sheet's head, one tap away.
+   */
+  protected stateLabel(entry: DayRowVm): string | null {
+    if (entry.status === 'no_show') {
+      return this.transloco.translate('staff.visit.resolution.noShow');
+    }
+    if (entry.status === 'cancelled') {
+      return this.transloco.translate('appointments.status.cancelled');
+    }
+    return null;
+  }
+
+  /**
+   * THE STATE ON THE FACE (owner, 2026-09-24: "so it's instantly
+   * recognised") — the glyph of an hour that did not happen, as a badge on
+   * the client's disc, at the leading edge where a glance starts. The same
+   * two glyphs the grid's block and the sheet use; `null` for everything
+   * live or finished.
+   */
+  protected stateIcon(entry: DayRowVm): UiIconName | null {
+    if (entry.status === 'cancelled') return 'visit.cancelled';
+    if (entry.status === 'no_show') return 'visit.noShow';
+    return null;
+  }
+
   protected whenLabel(entry: DayRowVm): string {
     const lang = this.transloco.getActiveLang();
     if (entry.live) {
@@ -2573,8 +2968,11 @@ export class StaffDashboard {
     // they are the second channel for a state the card otherwise says only in
     // FORM — hollow, and struck through for a cancellation. Form reads across
     // the room; a glyph names which of the two it is without a word.
-    if (entry.status === 'cancelled') icons.push('visit.cancelled');
-    if (entry.status === 'no_show') icons.push('visit.noShow');
+    //
+    // …and since 2026-09-24 they ride the client's FACE (`stateIcon`), where
+    // scanning starts: the foot keeps them only when faces are switched off.
+    const state = this.stateIcon(entry);
+    if (state !== null && !this.fields.isOn('avatar')) icons.push(state);
     if (entry.rebooked) icons.push('visit.repeat');
     // The note is a MARK, not a row. Its text was a clamped line in the fact
     // column — the one fact there that could not be read in full, sitting in
@@ -2899,12 +3297,14 @@ export class StaffDashboard {
      * the one case that most needs saying so — two rows, same time, same
      * booking, different barbers — was the exact case that showed nothing.
      */
-    const partyLabel = seatCount > 1 ? `${seats.length} / ${seatCount}` : null;
+    // «1/2», set tight (owner, 2026-09-16): a share, not a sum.
+    const partyLabel = seatCount > 1 ? `${seats.length}/${seatCount}` : null;
 
     return {
       kind: 'visit',
       id: rowKey(appointment.id.value, barberId),
       appointmentId: appointment.id.value,
+      locationId: appointment.locationId.value,
       seatId: seats[0]?.id.value ?? '',
       seatIds: seats.map((seat) => seat.id.value),
       selfSeat: seats.some(
@@ -3012,11 +3412,14 @@ export class StaffDashboard {
       // on the appointment, so it takes the aggregate id and no seat.
       const done = await this.store.markArrived(row.appointmentId);
       if (done) this.offerUndo(row, 'arrived');
+      else this.refuse(this.store.errorFor(row.appointmentId));
       this.restoreFocusToRow(row.id);
       return;
     }
     if (to === 'unarrived') {
-      await this.store.clearArrival(row.appointmentId);
+      if (!(await this.store.clearArrival(row.appointmentId))) {
+        this.refuse(this.store.errorFor(row.appointmentId));
+      }
       this.restoreFocusToRow(row.id);
       return;
     }
@@ -3040,6 +3443,7 @@ export class StaffDashboard {
           done = (await this.store.transition({ ...base, seatId })) && done;
         }
       }
+      if (!done) this.refuse(this.store.errorFor(row.appointmentId));
       // A correction is not itself undoable — the toast it came from is gone
       // with it — and a per-seat stamp has no inverse the callable offers.
       if (done && to !== 'confirmed' && seatIds.length === 0) {
@@ -3078,10 +3482,36 @@ export class StaffDashboard {
               })
           : null;
     if (inverse === null) return;
-    this.undo.set({
-      message: this.transloco.translate('staff.day.undo.' + did),
+    this.offerUndoOf(
+      this.transloco.translate('staff.day.undo.' + did),
       inverse,
-    });
+    );
+  }
+
+  /** One toast per page: the newest act's way back replaces the last. */
+  private offerUndoOf(message: string, inverse: () => Promise<boolean>): void {
+    this.undo.set({ message, inverse });
+  }
+
+  /**
+   * A REFUSAL, AS A TOAST (owner, 2026-09-17: "if there is an error message
+   * it should appear as a toast"): the row's own error line lives on the
+   * agenda, behind the sheet whose «Запази» was just refused — so nobody
+   * saw why a save with two haircuts never landed. Every refusal reached
+   * from the sheet raises the page's one toast with the server's sentence;
+   * it replaces an undo on offer, and the agenda keeps its line. It also
+   * carries the one receipt that has no way back (see `reversibleSave`).
+   */
+  protected readonly notice = signal<string | null>(null);
+
+  private refuse(
+    error: BookingGatewayError | null,
+    fallbackKey = 'errors.booking.gateway.failed',
+  ): void {
+    this.undo.set(null);
+    this.notice.set(
+      error ? this.describeError(error) : this.transloco.translate(fallbackKey),
+    );
   }
 
   protected async runUndo(): Promise<void> {
@@ -3098,6 +3528,30 @@ export class StaffDashboard {
    * not go stale against the day it came from.
    */
   protected readonly visitSheetId = signal<string | null>(null);
+  /**
+   * THE TRAIL through a party (owner, 2026-09-17): each hop to a peer's
+   * visit leaves the visit it came from here, newest last, so the sheet's
+   * ‹ can walk back to it — the same sheet, re-subjected, not a page.
+   */
+  protected readonly visitTrail = signal<readonly string[]>([]);
+
+  /** A peer's row on the sheet: over to their visit, the way back kept. */
+  protected hopToPeer(rowId: string): void {
+    const current = this.visitSheetId();
+    if (current !== null && current !== rowId) {
+      this.visitTrail.update((trail) => [...trail, current]);
+    }
+    this.visitSheetId.set(rowId);
+  }
+
+  /** The ‹ at the root of a hopped-to visit: back to the one before it. */
+  protected backAlongTrail(): void {
+    const trail = this.visitTrail();
+    const previous = trail.at(-1);
+    if (previous === undefined) return;
+    this.visitTrail.set(trail.slice(0, -1));
+    this.visitSheetId.set(previous);
+  }
 
   /**
    * The day the open sheet's DRAFT is on — `null` while no sheet is open.
@@ -3272,6 +3726,7 @@ export class StaffDashboard {
     return {
       appointmentId: row.appointmentId,
       rowId: row.id,
+      locationId: row.locationId,
       /*
        * THE REST OF THE BOOKING.
        *
@@ -3330,6 +3785,10 @@ export class StaffDashboard {
         : null,
       note: row.note,
       teamNote: this.store.teamNote(),
+      photos: this.store
+        .visitPhotos()
+        .map((photo) => this.toEditorPhoto(photo)),
+      photoBusy: this.store.photoBusy(),
       priceLabel: row.priceLabel,
       priceMinorUnits: row.priceMinorUnits,
       tipLabel: row.tipLabel,
@@ -3360,7 +3819,12 @@ export class StaffDashboard {
       // renders that decision rather than re-taking it.
       primaryVerb: row.primary ? this.toEditorVerb(row, row.primary) : null,
       overflowVerbs: row.overflow.map((verb) => this.toEditorVerb(row, verb)),
-      acting: this.store.isPending(row.appointmentId),
+      // Busy while the store holds the visit, or while a save of it is
+      // under way here — a note or a tip alone never touches the store's
+      // pending set, and «Запази» must turn its ring for those too.
+      acting:
+        this.store.isPending(row.appointmentId) ||
+        this.savingVisitId() === row.appointmentId,
     };
   });
 
@@ -3409,21 +3873,97 @@ export class StaffDashboard {
     this.presentOnly();
     this.visitSheetId.set(row.id);
     this.store.probeNote(row.appointmentId);
+    this.store.probePhotos(row.appointmentId);
     // The client's own coupons, for the discount row — nobody's for a
     // walk-in, which reads as none.
     this.store.probeGrants(row.ownerUserId);
     this.visitCodeResult.set(null);
   }
 
+  /*
+   * THE DISCARD GUARD (2026-09-18, the order review). A ✕, the scrim or
+   * Escape on a sheet holding UNSAVED EDITS asks first — Calendar's own
+   * «Discard Changes?» — instead of dropping a beard trim somebody just
+   * added. The shell's dismiss lands here; a programmatic close (a
+   * rebooking, a cancellation) still uses `closeVisitSheet` directly and
+   * never asks.
+   */
+  private readonly visitEditorRef = viewChild<StaffVisitEditor>('visitEditor');
+  private readonly createEditorRef =
+    viewChild<StaffVisitEditor>('createEditor');
+  /** Which sheet's ✕ is waiting on «Отхвърли промените?», or none. */
+  protected readonly discardPending = signal<'visit' | 'create' | null>(null);
+
+  protected dismissVisitSheet(): void {
+    if (this.visitEditorRef()?.dirty()) {
+      this.discardPending.set('visit');
+      return;
+    }
+    this.closeVisitSheet();
+  }
+
+  protected dismissCreateSheet(): void {
+    if (this.createEditorRef()?.dirty()) {
+      this.discardPending.set('create');
+      return;
+    }
+    this.closeCreateSheet();
+  }
+
+  protected confirmDiscard(): void {
+    const which = this.discardPending();
+    this.discardPending.set(null);
+    if (which === 'visit') this.closeVisitSheet();
+    if (which === 'create') this.closeCreateSheet();
+  }
+
+  /**
+   * The alert's two answers (2026-09-23): the destructive one, and the
+   * safe one — bold, last in the stack, and what Escape and the scrim mean.
+   */
+  protected readonly discardActions = computed<readonly UiAlertAction[]>(() => [
+    {
+      id: 'discard',
+      label: this.rawCopy('staff.visit.discard'),
+      role: 'destructive',
+      testId: 'staff-discard-confirm',
+    },
+    {
+      id: 'keep',
+      label: this.rawCopy('staff.visit.keepEditing'),
+      role: 'cancel',
+      preferred: true,
+      testId: 'staff-discard-keep',
+    },
+  ]);
+
+  protected onDiscardPick(id: string): void {
+    if (id === 'discard') this.confirmDiscard();
+    else this.discardPending.set(null);
+  }
+
+  /** The zone notice's one way out. */
+  protected readonly zoneActions = computed<readonly UiAlertAction[]>(() => [
+    {
+      id: 'close',
+      label: this.rawCopy('staff.day.cancelDismiss'),
+      role: 'cancel',
+      preferred: true,
+      testId: 'staff-zone-close',
+    },
+  ]);
+
   protected closeVisitSheet(): void {
     const id = this.visitSheetId();
     this.visitSheetId.set(null);
+    this.visitTrail.set([]);
     // The probe is the sheet's own subscription — a closed sheet must not
     // keep a listener open on a day nothing is looking at.
     this.visitDraftDay.set(null);
     this.visitDraftChair.set(null);
     this.store.probeDay(null);
     this.store.probeNote(null);
+    this.store.probePhotos(null);
     this.store.probeGrants(null);
     this.visitCodeResult.set(null);
     // Back to the row that opened it, or a keyboard user lands on <body>.
@@ -3510,15 +4050,22 @@ export class StaffDashboard {
   }
 
   /**
-   * The editor's finished gesture, turned into a server command.
+   * `Запази` — the draft, as the commands the server actually has, and THE
+   * RECEIPT (owner, 2026-09-23: "build the save receipt with whole-save
+   * undo"). A save that lands raises the page's toast, «Промените са
+   * запазени», and its «Отмени» maps the visit back to what the sheet was
+   * opened on: ONE batch through the same callable, decided by the server
+   * like any edit, never a client-side rollback. The snapshot is the
+   * editor's seed as it would have saved it untouched (`snapshotCommitOf`),
+   * and the way back is this save's own arithmetic (`commandsFor`) run
+   * from the LIVE row towards that snapshot — a seat the save added is
+   * removed, one it removed is re-added with its old terms, the block
+   * moves home, the bill, the tip and the note go back.
    *
    * The editor speaks in minutes-from-midnight because it knows the day only
    * as a key; the instant is built HERE, where the shop's zone lives. That
    * split is deliberate — an editor that invented a timezone would be wrong in
    * one shop out of every two.
-   */
-  /**
-   * `Запази` — the draft, as the commands the server actually has.
    *
    * ⚠ ONE REQUEST, not one per change. `staffEdit` takes a batch and folds it
    * over the stored seats before deciding once, so a save that moves the day
@@ -3534,14 +4081,146 @@ export class StaffDashboard {
    */
   private async saveFromEditor(
     appointmentId: string,
-    commit: Extract<VisitEditorCommit, { kind: 'save' }>,
+    commit: VisitEditorCommit,
     row: DayRowVm | null,
   ): Promise<void> {
+    // The snapshot, taken BEFORE the write from the seed the sheet holds —
+    // the row as the server last said it, with the note beside it.
+    const vm = this.visitEditorVm();
+    const before =
+      row !== null && vm !== null && vm.appointmentId === appointmentId
+        ? snapshotCommitOf(vm)
+        : null;
+    const writes: SaveWrites = {
+      note: commit.note !== this.store.teamNote(),
+      tip:
+        row !== null &&
+        row.seatIds[0] !== undefined &&
+        (commit.tipMinorUnits ?? null) !== row.tipMinorUnits,
+    };
+    /*
+     * What the way back has to work with: whether this save has one at all
+     * (`reversibleSave`), and whether it could change the row's shape — a
+     * note alone cannot, and its undo need not wait for the listener.
+     */
+    const commands = this.commandsFor(commit, row);
+    const reversible = reversibleSave(row, commands);
+    const shapeNeutral =
+      !writes.tip &&
+      before !== null &&
+      JSON.stringify(commands) ===
+        JSON.stringify(this.commandsFor(before, row));
+    const landed = await this.writeFromEditor(
+      appointmentId,
+      commit,
+      row,
+      writes,
+    );
+    /*
+     * ⚠ ONLY ON SUCCESS. The mark tells the sheet the server has spoken, and
+     * the sheet then takes the server's own encoding of the time as its
+     * baseline — which is the only way the save button can ever go away,
+     * because a `resize` comes back as a changed SEAT DURATION while the
+     * draft holds an override on an unchanged leg. Two encodings of one
+     * visit; the stored one wins.
+     */
+    if (landed.batch) this.visitSavedMark.update((mark) => mark + 1);
+    // The sheet stays, the toast says why (owner, 2026-09-17) — and a
+    // save that lands takes a stale refusal down with it.
+    if (!landed.batch || !landed.note) {
+      this.refuse(this.store.errorFor(appointmentId));
+      return;
+    }
+    if (before !== null && row !== null && reversible) {
+      this.notice.set(null);
+      this.offerSaveUndo(appointmentId, row, before, writes, shapeNeutral);
+      return;
+    }
+    /*
+     * THE RECEIPT WITHOUT A WAY BACK: a seat added after the cut is worked
+     * the moment it is written and the server keeps history, so «Отмени»
+     * would only ever be refused. The toast still says the save landed.
+     */
+    this.undo.set(null);
+    this.notice.set(this.transloco.translate('staff.day.undo.saved'));
+  }
+
+  /**
+   * THE WRITES a target state costs from a row: the batch (`commandsFor`),
+   * and beside it the team note and the tip, each only when the caller says
+   * it changed — a save knows what it typed, and its undo knows what the
+   * save wrote. `batch` is the one answer «Запази» waits for; `note` is the
+   * side document's own.
+   */
+  private async writeFromEditor(
+    appointmentId: string,
+    target: VisitEditorCommit,
+    row: DayRowVm | null,
+    writes: SaveWrites,
+  ): Promise<{ readonly batch: boolean; readonly note: boolean }> {
+    const commands = this.commandsFor(target, row);
+
+    /*
+     * THE TEAM NOTE writes beside the batch, not inside it: it lives in a
+     * staff-only sibling collection the availability engine never sees, so
+     * there is no command for it and no reason to hold it hostage to a
+     * placement decision. An unchanged note writes nothing.
+     */
+    let noteWritten = true;
+    if (writes.note) {
+      noteWritten = await this.store.saveTeamNote(appointmentId, target.note);
+    }
+
+    /*
+     * THE TIP writes beside the batch too (2026-09-15): a stamp on the
+     * chair's first seat, not a `staffEdit` command (the port says why),
+     * and drafted with the rest of the sheet so «Запази» is the receipt's
+     * one verb. Unchanged writes nothing; a new visit carries none. The
+     * seat is the row's first — every seat in a row is the same barber's,
+     * so which carries the number changes nothing about whose tip it is.
+     */
+    const tipSeat = row?.seatIds[0];
+    const tipWritten =
+      writes.tip && row !== null && tipSeat !== undefined
+        ? await this.store.recordTip({
+            appointmentId,
+            seatId: tipSeat,
+            amountMinorUnits: target.tipMinorUnits ?? null,
+          })
+        : true;
+
+    // A save that changed only the note or the tip has no batch to send.
+    const batch =
+      commands.length === 0
+        ? tipWritten
+        : await this.store.staffEdit({ appointmentId, command: commands });
+    return { batch, note: noteWritten };
+  }
+
+  /**
+   * THE BATCH from a row to a target — the save's arithmetic, and the
+   * undo's, since both are "make the stored visit say this". Every command
+   * is decided by the server in one fold (see `saveFromEditor`).
+   */
+  private commandsFor(
+    commit: VisitEditorCommit,
+    row: DayRowVm | null,
+  ): StaffEditCommand[] {
     const startIso = shopInstantIso(commit.dayKey, commit.startMinute);
     const endIso = shopInstantIso(commit.dayKey, commit.endMinute);
-    if (startIso === null || endIso === null) return;
+    if (startIso === null || endIso === null) return [];
 
-    const seatIds = row === null ? [] : seatScopeOf(row);
+    /*
+     * THE SCOPE NAMES THE TARGET'S SEATS. A chair's share of a party is
+     * scoped to its own seats — but to the seats the batch LEAVES on the
+     * chair, as the target lists them: a seat the batch removes must not be
+     * named (the server refuses a stale id rather than widening), and one it
+     * adds exists by the time the chair-wide commands run (found in review).
+     */
+    const seatIds =
+      row === null || seatScopeOf(row).length === 0
+        ? []
+        : commit.legs.map((leg) => leg.seatId);
     const scope = seatIds.length > 0 ? { seatIds } : {};
 
     /*
@@ -3551,6 +4230,20 @@ export class StaffDashboard {
      * change and the block would land the wrong length.
      */
     const commands: StaffEditCommand[] = [];
+
+    /*
+     * THE SHOP, before everything: a visit moved to the other location is
+     * decided against that shop's hours and catalogue, so it leads the
+     * batch. Only when it differs — the row is a fact until somebody picks
+     * the other tile.
+     */
+    if (
+      typeof commit.locationId === 'string' &&
+      row !== null &&
+      commit.locationId !== row.locationId
+    ) {
+      commands.push({ kind: 'relocate', locationId: commit.locationId });
+    }
 
     /*
      * SERVICES ADDED AND REMOVED go first, so the move and the resize that
@@ -3620,6 +4313,35 @@ export class StaffDashboard {
         }
       }
       offset += leg.minutes;
+    }
+
+    /*
+     * THE LADDER, PINNED (found in review, 2026-09-23). The chair-wide move
+     * below shifts every seat by ONE delta measured from the earliest, and
+     * the resize stretches whichever ends last — one delta cannot put two
+     * seats where the ladder draws them once the stored seats no longer sit
+     * in that order: a seat re-added by an undo beside a survivor the save
+     * had moved landed the chair swapped and a seat cut short, and a
+     * lengthened non-last leg lands on top of the next. Each leg the row
+     * already holds is moved on its own first — a one-seat scope's delta is
+     * its own — so the chair-wide commands that follow land as no-ops. A
+     * lone leg needs no pin: the chair-wide move lands it exactly.
+     */
+    if (commit.legs.length > 1) {
+      let slot = 0;
+      for (const leg of commit.legs) {
+        if (before.some((entry) => entry.seatId === leg.seatId)) {
+          const at = shopInstantIso(commit.dayKey, commit.startMinute + slot);
+          if (at !== null) {
+            commands.push({
+              kind: 'move',
+              seatIds: [leg.seatId],
+              startIso: at,
+            });
+          }
+        }
+        slot += leg.minutes;
+      }
     }
 
     commands.push(
@@ -3704,97 +4426,324 @@ export class StaffDashboard {
       });
     }
 
-    /*
-     * THE TEAM NOTE writes beside the batch, not inside it: it lives in a
-     * staff-only sibling collection the availability engine never sees, so
-     * there is no command for it and no reason to hold it hostage to a
-     * placement decision. An unchanged note writes nothing.
-     */
-    if (commit.note !== this.store.teamNote()) {
-      await this.store.saveTeamNote(appointmentId, commit.note);
-    }
-
-    const written = await this.store.staffEdit({
-      appointmentId,
-      command: commands,
-    });
-    /*
-     * ⚠ ONLY ON SUCCESS. The mark tells the sheet the server has spoken, and
-     * the sheet then takes the server's own encoding of the time as its
-     * baseline — which is the only way the save button can ever go away,
-     * because a `resize` comes back as a changed SEAT DURATION while the
-     * draft holds an override on an unchanged leg. Two encodings of one
-     * visit; the stored one wins.
-     */
-    if (written) this.visitSavedMark.update((mark) => mark + 1);
+    return commands;
   }
 
+  /**
+   * THE WAY BACK FROM A SAVE. The toast holds the snapshot; its action waits
+   * for the listener to deliver the save it is undoing (the callable
+   * answers first), reads the visit AS IT NOW IS — the live row, on
+   * whichever loaded day or chair the save put it — and runs the save's own
+   * arithmetic from there towards the snapshot, then asks the sheet on that
+   * visit to re-seed once the server's row agrees. Edits typed into the
+   * sheet in the eight seconds after a save go with the save: «Отмени»
+   * means "as it was before I saved". A row the save moved beyond the
+   * loaded days is undone from its own snapshot, which brings the block
+   * home and leaves a seat change made in that same save for the sheet to
+   * show.
+   */
+  private offerSaveUndo(
+    appointmentId: string,
+    rowBefore: DayRowVm,
+    before: VisitEditorCommit,
+    writes: SaveWrites,
+    shapeNeutral: boolean,
+  ): void {
+    const shape = rowShape(rowBefore);
+    const find = () => this.rowFor(rowBefore.id, rowBefore.seatIds);
+    this.offerUndoOf(
+      this.transloco.translate('staff.day.undo.saved'),
+      async () => {
+        /*
+         * THE SAVE MUST HAVE REACHED THE ROW. The receipt is offered the
+         * moment the callable answers, and the listener that redraws the
+         * lane is a second channel: an undo computed from a row the save
+         * has not yet reached would find nothing to take back and report
+         * success (found in review). A save that could not change the
+         * row's shape — the note alone — has nothing to wait for.
+         */
+        if (!shapeNeutral) {
+          await this.awaitRow(
+            find,
+            (row) => row === null || rowShape(row) !== shape,
+          );
+        }
+        const write = () =>
+          this.writeFromEditor(
+            appointmentId,
+            before,
+            find() ?? rowBefore,
+            writes,
+          );
+        let landed = await write();
+        /*
+         * THE VISIT'S OWN GHOST. The busy projection is only UNIONED inside
+         * the save's transaction; the span the save vacated is cleared by a
+         * trigger a moment later, so an undo fired at once can be refused
+         * as overlapping the slot it is returning to — its own. One more
+         * try after the projection has had its moment; a second refusal is
+         * a real one (somebody took the slot in between) and the toast
+         * says so.
+         */
+        if (
+          !landed.batch &&
+          isOverlapOffer(this.store.errorFor(appointmentId))
+        ) {
+          await new Promise((resolve) => setTimeout(resolve, BUSY_SETTLE_MS));
+          landed = await write();
+        }
+        if (!landed.batch || !landed.note) {
+          /*
+           * A REFUSED UNDO is not "try again": the receipt is spent and the
+           * sheet is clean on the SAVED visit. The toast says the save
+           * stands, and why (found in review).
+           */
+          const error = this.store.errorFor(appointmentId);
+          this.undo.set(null);
+          this.notice.set(
+            this.transloco.translate('staff.day.undo.refused', {
+              reason: error === null ? '' : this.describeError(error),
+            }),
+          );
+          return false;
+        }
+        void this.reseedWhenBack(appointmentId, find, shape);
+        return true;
+      },
+    );
+  }
+
+  /**
+   * Once the server's row agrees with the snapshot — or the ceiling passes,
+   * for a server that normalised the way back into something the shape does
+   * not name — the sheet showing THAT visit takes the live row as its draft
+   * again. The mark carries the visit so a sheet opened on another one in
+   * the meantime keeps what was typed there (found in review).
+   */
+  private async reseedWhenBack(
+    appointmentId: string,
+    find: () => DayRowVm | null,
+    shape: string,
+  ): Promise<void> {
+    await this.awaitRow(find, (row) => row !== null && rowShape(row) === shape);
+    this.visitReseedMark.update(({ n }) => ({ appointmentId, n: n + 1 }));
+  }
+
+  /**
+   * A row by its own name — on the shown day first, then on any loaded day
+   * — and, failing that, by the SEATS it held: a save that restaffed the
+   * chair moved the visit to another lane and renamed its row, and its
+   * undo must still find it there (found in review). `seatIds` empty means
+   * by name alone.
+   */
+  private rowFor(
+    rowId: string,
+    seatIds: readonly string[] = [],
+  ): DayRowVm | null {
+    const hash = rowId.lastIndexOf('#');
+    const appointmentId = hash < 0 ? rowId : rowId.slice(0, hash);
+    const barberId = hash < 0 ? '' : rowId.slice(hash + 1);
+    const holds = (ids: readonly string[]) =>
+      ids.some((id) => seatIds.includes(id));
+    const shown = this.lanes().flatMap((lane) =>
+      lane.entries.filter((entry): entry is DayRowVm => entry.kind === 'visit'),
+    );
+    const named = shown.find((entry) => entry.id === rowId);
+    if (named !== undefined) return named;
+    const bySeat = shown.find(
+      (entry) => entry.appointmentId === appointmentId && holds(entry.seatIds),
+    );
+    if (bySeat !== undefined) return bySeat;
+
+    const nowMs = this.nowMs();
+    for (const cell of this.store.dayCells()) {
+      for (const lane of cell.lanes) {
+        const appointment = lane.appointments.find(
+          (entry) => entry.id.value === appointmentId,
+        );
+        if (appointment === undefined) continue;
+        if (lane.barberId === barberId) {
+          return this.toRow(appointment, barberId, nowMs);
+        }
+        const here = appointment.seats
+          .filter((seat) => seat.barberId.value === lane.barberId)
+          .map((seat) => seat.id.value);
+        if (holds(here)) return this.toRow(appointment, lane.barberId, nowMs);
+      }
+    }
+    return null;
+  }
+
+  /* ── Waiting on the live row, and the sheet's re-seed ──────────────── */
+
+  /**
+   * Bumped, FOR ONE VISIT, when the sheet showing it must take the live row
+   * as its draft again — the editor answers only a mark that names its own
+   * subject.
+   */
+  protected readonly visitReseedMark = signal<{
+    readonly appointmentId: string;
+    readonly n: number;
+  }>({ appointmentId: '', n: 0 });
+
+  /**
+   * How long an undone save waits on the listener, each way, before going
+   * on with what is live. The listener delivers in well under a second;
+   * this is the ceiling, not the expectation. A field so a test can lower it.
+   */
+  protected rowWaitMs = ROW_WAIT_MS;
+
+  private readonly rowWatch = signal<{
+    readonly find: () => DayRowVm | null;
+    readonly done: (row: DayRowVm | null) => boolean;
+    readonly settle: () => void;
+  } | null>(null);
+
+  /**
+   * Resolves once the live row satisfies `done`, or when the ceiling
+   * passes. One wait at a time: a newer one stands the older down, settled
+   * at once, and a destroyed page settles whatever it was waiting on.
+   */
+  private awaitRow(
+    find: () => DayRowVm | null,
+    done: (row: DayRowVm | null) => boolean,
+  ): Promise<void> {
+    return new Promise((resolve) => {
+      this.rowWatch()?.settle();
+      let timer: ReturnType<typeof setTimeout> | null = null;
+      const settle = () => {
+        if (timer !== null) clearTimeout(timer);
+        if (this.rowWatch()?.settle === settle) this.rowWatch.set(null);
+        resolve();
+      };
+      timer = setTimeout(settle, this.rowWaitMs);
+      this.rowWatch.set({ find, done, settle });
+    });
+  }
+
+  protected readonly rowWatched = effect(() => {
+    const watch = this.rowWatch();
+    if (watch === null) return;
+    const row = watch.find();
+    if (watch.done(row)) untracked(() => watch.settle());
+  });
+
+  /** The visit whose save from the editor is in flight — «Запази» turns its ring on it. */
+  private readonly savingVisitId = signal<string | null>(null);
+
+  /* ── The shop's photos of the visit ─────────────────────────────────── */
+
+  /** A photo as the sheet shows it: the chair by name, where the catalogue still has it. */
+  private toEditorPhoto(photo: AppointmentPhoto): VisitEditorPhoto {
+    return {
+      photoId: photo.photoId,
+      url: photo.url,
+      takenAtIso: photo.takenAtIso,
+      barberId: photo.barberId,
+      barberName:
+        this.barberOptions().find((chair) => chair.id === photo.barberId)
+          ?.label ?? null,
+      clientLabel: photo.clientLabel,
+      width: photo.width,
+      height: photo.height,
+      origin: photo.origin,
+      label: photo.label,
+    };
+  }
+
+  /**
+   * THE SHOP'S OWN PICTURES on offer to a visit (owner, 2026-09-17:
+   * "assign an image that is already in the system"): every service's
+   * cover and work shots, named for the service, each once.
+   */
+  protected readonly visitLibraryImages = computed<
+    readonly VisitEditorLibraryImage[]
+  >(() => {
+    const seen = new Set<string>();
+    const images: VisitEditorLibraryImage[] = [];
+    for (const vm of this.catalog.serviceVms()) {
+      const label = this.content.text(vm.name);
+      for (const url of [vm.coverSrc, ...vm.gallery]) {
+        if (!url || seen.has(url)) continue;
+        seen.add(url);
+        images.push({ id: `${vm.id}:${images.length}`, url, path: url, label });
+      }
+    }
+    return images;
+  });
+
+  /** The gallery page's pick: the picture pointed at, with the visit's facts. */
+  protected async adoptPhotoFromEditor(
+    vm: VisitEditorVm,
+    image: VisitEditorLibraryImage,
+  ): Promise<void> {
+    const done = await this.store.adoptPhoto({
+      appointmentId: vm.appointmentId,
+      barberId: vm.chairId,
+      clientUserId: vm.clientUserId,
+      clientLabel: vm.clientLabel,
+      path: image.path,
+      url: image.url,
+      label: image.label,
+    });
+    if (!done) this.refuse(null, 'staff.visit.photoFailed');
+  }
+
+  /**
+   * The editor's shutter (owner, 2026-09-17): the picture goes up with the
+   * VISIT's facts — the chair the sheet is on, the client it is for — and
+   * a refusal is the page's toast. Nothing is placed locally: the live read
+   * draws the photo once it is on the visit.
+   */
+  protected async attachPhotoFromEditor(
+    vm: VisitEditorVm,
+    file: File,
+  ): Promise<void> {
+    const done = await this.store.attachPhoto({
+      appointmentId: vm.appointmentId,
+      barberId: vm.chairId,
+      clientUserId: vm.clientUserId,
+      clientLabel: vm.clientLabel,
+      file,
+    });
+    if (!done) this.refuse(null, 'staff.visit.photoFailed');
+  }
+
+  protected async removePhotoFromEditor(photoId: string): Promise<void> {
+    const photo = this.store
+      .visitPhotos()
+      .find((entry) => entry.photoId === photoId);
+    if (photo === undefined) return;
+    if (!(await this.store.removePhoto(photo))) {
+      this.refuse(null, 'staff.visit.photoRemoveFailed');
+    }
+  }
+
+  /**
+   * THE SHEET'S ONE COMMIT IS «Запази» (owner, 2026-09-23).
+   *
+   * The frame's drag and resize committed on release from 2026-09-03 to the
+   * order review of 2026-09-18 — the sheet's one immediate write, guarded
+   * to the shown day, with the page's toast holding the inverse gesture.
+   * That way back rewrote the SERVER while the editor's draft kept the
+   * dragged time: «Отмени» moved the agenda's row home, and the frame,
+   * «Начало» and the dock went on saying otherwise ("you click cancel but
+   * your frame edit doesn't revert"). A drag is a draft edit now, carried
+   * by the save with everything else — the seat scope, the shop's zone and
+   * the day all travel the one road below — and there is no gesture toast
+   * left to be wrong about.
+   */
   protected async commitFromEditor(
     appointmentId: string,
     commit: VisitEditorCommit,
   ): Promise<void> {
     const row = this.visitSheetRow();
-    if (commit.kind === 'save') {
+    this.savingVisitId.set(appointmentId);
+    try {
       await this.saveFromEditor(appointmentId, commit, row);
-      return;
+    } finally {
+      this.savingVisitId.set(null);
     }
-
-    const dayKey = this.store.dayKey();
-    const minute =
-      commit.kind === 'move'
-        ? commit.startMinute
-        : commit.edge === 'start'
-          ? commit.startMinute
-          : commit.endMinute;
-    const iso = shopInstantIso(dayKey, minute);
-    if (iso === null) return;
-
-    /*
-     * THE GESTURE BELONGS TO THE SEATS IT WAS DRAWN ON. (owner ruling
-     * 2026-09-03)
-     *
-     * The sheet frames ONE chair's share, so its block and its handles are
-     * that chair's seats — but the command used to name none, and an unscoped
-     * move shifts the whole party. Stefan dragging his own block to 17:00 took
-     * the father with him, and dragging Stefan's bottom handle stretched
-     * whichever seat ran latest, which on a split party is somebody else's.
-     *
-     * `seatScopeOf` is empty for a row that already holds every seat, so a
-     * solo booking still sends the unscoped command it always did.
-     */
-    const seatIds = row === null ? [] : seatScopeOf(row);
-    const scope = seatIds.length > 0 ? { seatIds } : {};
-
-    await this.store.staffEdit({
-      appointmentId,
-      command:
-        commit.kind === 'move'
-          ? { kind: 'move', startIso: iso, ...scope }
-          : { kind: 'resize', edge: commit.edge, atIso: iso, ...scope },
-    });
-  }
-
-  /**
-   * Record what this chair was tipped — straight to the server.
-   *
-   * The tip goes on the row's FIRST seat, and the arbitrariness never
-   * surfaces: every seat in a row belongs to the same barber by
-   * construction, so which of them carries the number cannot change whose
-   * tip it is or what any total comes to. What matters is that it is a SEAT
-   * and not the appointment — a party split between two chairs has two
-   * barbers and two answers.
-   */
-  protected async tipFromEditor(
-    amountMinorUnits: number | null,
-  ): Promise<void> {
-    const row = this.visitSheetRow();
-    const seatId = row?.seatIds[0];
-    if (row === undefined || row === null || seatId === undefined) return;
-    await this.store.recordTip({
-      appointmentId: row.appointmentId,
-      seatId,
-      amountMinorUnits,
-    });
   }
 
   protected readonly cancelId = signal<string | null>(null);
@@ -3939,6 +4888,15 @@ export class StaffDashboard {
     return {
       appointmentId: '',
       rowId: `new-${create.nonce}`,
+      // A new visit starts in the chair's own shop — the first it is
+      // rostered at — and the «Салон» row may move it before the save.
+      locationId:
+        this.catalog
+          .barbers()
+          .find((barber) => barber.id.value === create.barberId)?.locationIds[0]
+          ?.value ??
+        this.catalog.locations()[0]?.id.value ??
+        null,
       peers: [],
       dayKey: this.store.dayKey(),
       dayLabel: this.dayPillLabel(this.store.dayKey()),
@@ -4065,9 +5023,12 @@ export class StaffDashboard {
     this.closeVisitSheet();
     this.presentOnly();
     this.visitClientOptions.set([]);
+    // The finished visit's own start and span (2026-09-18): the day is the
+    // desk's to pick, the hour is what the client already comes at.
     this.createVisit.set({
       barberId: vm.chairId,
-      startMinute: 12 * 60,
+      startMinute: vm.startMinute,
+      minutes: Math.max(vm.endMinute - vm.startMinute, 5),
       nonce: Date.now(),
       legs: vm.legs.map((leg, index) => ({
         ...leg,
@@ -4082,23 +5043,235 @@ export class StaffDashboard {
     });
   }
 
-  protected async searchClients(query: string): Promise<void> {
-    const trimmed = query.trim();
-    if (trimmed.length < 2) {
+  /**
+   * THE ADD-CLIENT PAGE'S SECTIONS (2026-09-18): «Скорошни» — the shop's
+   * last visitors, newest first, each with their last date, read from the
+   * same window the search sheet reads. Built when the page opens, kept
+   * for the sheet's life; a new source is one more section here. «Днес»
+   * — the people booked on the shown day — was the first section and was
+   * dropped (owner, 2026-09-22): a person already in today's book is not
+   * one a barbershop adds to another visit, and the section only invited
+   * the double booking.
+   */
+  protected readonly visitClientSections = signal<
+    readonly VisitEditorClientSection[]
+  >([]);
+
+  /**
+   * THE FACES (2026-09-18; owner: "where is the user avatar"): a client's
+   * portrait lives in Storage under their id (`avatars/{uid}/original`,
+   * readable by staff), not on the user document — so every person the
+   * add-client page shows is looked up once per session, and the option
+   * carries the url the moment it is known. Guests have no account and
+   * no portrait to look for.
+   */
+  private readonly avatarUploader = inject(AVATAR_UPLOADER);
+  private readonly avatarUrls = signal<Readonly<Record<string, string | null>>>(
+    {},
+  );
+  private readonly avatarLookups = new Set<string>();
+
+  private resolveAvatars(ids: readonly string[]): void {
+    for (const id of ids) {
+      if (id.startsWith('guest-') || this.avatarLookups.has(id)) continue;
+      const userId = UserId.create(id);
+      if (userId.isFailure()) continue;
+      this.avatarLookups.add(id);
+      void this.avatarUploader.find(userId.value).then((found) => {
+        const url = found.isSuccess() ? (found.value?.url ?? null) : null;
+        this.avatarUrls.update((urls) => ({ ...urls, [id]: url }));
+      });
+    }
+  }
+
+  private withFaces(
+    options: readonly VisitEditorClientOption[],
+  ): readonly VisitEditorClientOption[] {
+    const urls = this.avatarUrls();
+    return options.map((option) => ({
+      ...option,
+      avatarSrc: urls[option.id] ?? null,
+    }));
+  }
+
+  protected readonly visitClientOptionsWithFaces = computed(() =>
+    this.withFaces(this.visitClientOptions()),
+  );
+
+  protected readonly visitClientSectionsWithFaces = computed(() =>
+    this.visitClientSections().map((section) => ({
+      ...section,
+      clients: this.withFaces(section.clients),
+    })),
+  );
+
+  protected async browseClients(): Promise<void> {
+    await this.store.ensureWindow();
+    const now = Date.now();
+    const recentSeen = new Set<string>();
+    const recent: VisitEditorClientOption[] = [];
+    const past = this.store
+      .window()
+      .filter((appointment) => appointment.timeSlot.start.toMillis() < now)
+      .sort(
+        (a, b) => b.timeSlot.start.toMillis() - a.timeSlot.start.toMillis(),
+      );
+    for (const appointment of past) {
+      const owner = appointment.seats.find(
+        (seat) => seat.subject.kind === 'account',
+      )?.subject;
+      if (owner === undefined || owner.kind !== 'account') continue;
+      const id = owner.userId.value;
+      if (recentSeen.has(id)) continue;
+      recentSeen.add(id);
+      const contact = appointment.contact;
+      recent.push({
+        id,
+        label:
+          contact?.name ?? this.transloco.translate('staff.day.unnamedClient'),
+        phone: contact?.phone.formatInternational() ?? null,
+        phoneHref: contact?.phone.value ?? null,
+        meta: this.transloco.translate('staff.visit.lastVisit', {
+          date: this.shortDate(appointment.timeSlot.start.toMillis()),
+        }),
+        email: contact?.email?.value ?? null,
+      });
+      if (recent.length >= 8) break;
+    }
+    /*
+     * THE BOOK (2026-09-18): every account in the loaded days, past and to
+     * come — the omnibox ranks these on the keystroke, before the index
+     * answers. Newest contact first, so a changed number is the one read.
+     */
+    const bookSeen = new Set<string>();
+    const book: VisitEditorClientOption[] = [];
+    const newestFirst = [...this.store.window()].sort(
+      (a, b) => b.timeSlot.start.toMillis() - a.timeSlot.start.toMillis(),
+    );
+    for (const appointment of newestFirst) {
+      const owner = appointment.seats.find(
+        (seat) => seat.subject.kind === 'account',
+      )?.subject;
+      if (owner === undefined || owner.kind !== 'account') continue;
+      const id = owner.userId.value;
+      const contact = appointment.contact;
+      if (bookSeen.has(id) || contact === null) continue;
+      bookSeen.add(id);
+      book.push({
+        id,
+        label: contact.name,
+        phone: contact.phone.formatInternational(),
+        phoneHref: contact.phone.value,
+        meta: null,
+        email: contact.email?.value ?? null,
+      });
+    }
+    this.visitClientBook.set(book);
+    this.visitClientSections.set([
+      {
+        id: 'recent',
+        title: this.transloco.translate('staff.visit.clientsRecent'),
+        clients: recent,
+      },
+    ]);
+    this.resolveAvatars(recent.map((client) => client.id));
+  }
+
+  /** Everyone in the loaded days — searched by the omnibox, never listed. */
+  protected readonly visitClientBook = signal<
+    readonly VisitEditorClientOption[]
+  >([]);
+
+  protected readonly visitClientBookWithFaces = computed(() =>
+    this.withFaces(this.visitClientBook()),
+  );
+
+  /** `3 авг` — the day a person was last here. */
+  private shortDate(millis: number): string {
+    return new Intl.DateTimeFormat(this.content.locale(), {
+      day: 'numeric',
+      month: 'short',
+      timeZone: SHOP_ZONE,
+    }).format(new Date(millis));
+  }
+
+  /**
+   * THE LOOKUP BEHIND THE OMNIBOX (2026-09-18). What was typed is parsed
+   * once (`client-query.ts`) and the index is asked by its most selective
+   * part — the mail, else the number in EVERY form the index holds it
+   * («0887…», «359887…», the bare «887…» read aloud), else the longest word
+   * of the name — in parallel, merged and de-duplicated. Debounced, so a
+   * typed name is one question, not eight; and sequenced, so an answer
+   * that comes back late can never replace the answer to a newer query.
+   */
+  protected readonly visitClientSearching = signal(false);
+  private readonly deployment = inject(AUTH_DEPLOYMENT);
+  private clientSearchSeq = 0;
+  private clientSearchTimer: ReturnType<typeof setTimeout> | null = null;
+
+  protected searchClients(query: string): void {
+    if (this.clientSearchTimer !== null) clearTimeout(this.clientSearchTimer);
+    const parsed = parseClientQuery(query);
+    // By the shop's own dial code: «088…» is asked as «359 88…» too.
+    const code = countryCallingCode(this.deployment.defaultCountry);
+    const keys = clientLookupKeys(parsed, code);
+    // The book's own matches are on screen already — their faces are owed
+    // now, not when the index answers. Only the rows a phone can show.
+    if (parsed.kind !== 'empty') {
+      this.resolveAvatars(
+        rankClients(this.visitClientBook(), parsed, code)
+          .slice(0, BOOK_FACES_PER_QUERY)
+          .map(({ client }) => client.id),
+      );
+    }
+    const seq = ++this.clientSearchSeq;
+    if (keys.length === 0) {
       this.visitClientOptions.set([]);
+      this.visitClientSearching.set(false);
       return;
     }
-    const result = await this.userSearch.search(trimmed);
-    if (result.isFailure()) return;
-    this.visitClientOptions.set(
-      result.value.map((hit) => ({
-        id: hit.userId.value,
-        label: hit.displayName,
-        phone: hit.phone,
-        phoneHref: hit.phone,
-        meta: hit.email?.value ?? null,
-      })),
+    this.visitClientSearching.set(true);
+    this.clientSearchTimer = setTimeout(() => {
+      this.clientSearchTimer = null;
+      void this.runClientSearch(keys, seq);
+    }, CLIENT_SEARCH_DEBOUNCE_MS);
+  }
+
+  private async runClientSearch(
+    keys: readonly string[],
+    seq: number,
+  ): Promise<void> {
+    const answers = await Promise.all(
+      keys.map((key) => this.userSearch.search(key)),
     );
+    // A newer query owns the list now.
+    if (seq !== this.clientSearchSeq) return;
+    const seen = new Set<string>();
+    const options: VisitEditorClientOption[] = [];
+    for (const answer of answers) {
+      if (answer.isFailure()) continue;
+      for (const hit of answer.value) {
+        const id = hit.userId.value;
+        if (seen.has(id)) continue;
+        seen.add(id);
+        const email = hit.email?.value ?? null;
+        options.push({
+          id,
+          label: hit.displayName,
+          // Read as the profile prints it — «+359 88 765 4321», not the E.164.
+          phone:
+            hit.phone === null
+              ? null
+              : PhoneNumber.fromPrimitive(hit.phone).formatInternational(),
+          phoneHref: hit.phone,
+          meta: email,
+          email,
+        });
+      }
+    }
+    this.visitClientOptions.set(options);
+    this.visitClientSearching.set(false);
+    this.resolveAvatars(options.map((option) => option.id));
   }
 
   /**
@@ -4120,10 +5293,14 @@ export class StaffDashboard {
   ): Promise<void> {
     const create = this.createVisit();
     if (create === null || commit.legs.length === 0) return;
-    const locationId = this.catalog
-      .barbers()
-      .find((barber) => barber.id.value === create.barberId)
-      ?.locationIds[0]?.value;
+    // The shop the sheet drafted — the «Салон» row's pick — or, where the
+    // sheet had none to offer, the chair's own.
+    const locationId =
+      commit.locationId ??
+      this.catalog
+        .barbers()
+        .find((barber) => barber.id.value === create.barberId)?.locationIds[0]
+        ?.value;
     if (!locationId) return;
     // `primary` is the seeded placeholder for a walk-in's label and `guest-*`
     // a client minted on the search page; only a real id is an account.
@@ -4177,6 +5354,7 @@ export class StaffDashboard {
       onBehalfOfUserId: owner?.id ?? null,
     });
     if (done) this.createVisit.set(null);
+    else this.refuse(this.store.createError(), 'staff.visit.createFailed');
   }
 
   // ── Blocking time ───────────────────────────────────────────────────
@@ -4192,6 +5370,8 @@ export class StaffDashboard {
     readonly blockId: string | null;
     /** The chairs the sheet opens with — one, unless the sheet adds more. */
     readonly barberIds: readonly string[];
+    /** The day the sheet opens ON, when it is not the shown one — a date column's band. */
+    readonly dayKey?: string;
     readonly allDay: boolean;
     readonly startMinute: number;
     readonly endMinute: number;
@@ -4226,13 +5406,15 @@ export class StaffDashboard {
     const edit = this.blockEdit();
     if (edit === null) return null;
     const shownDay = this.store.dayKey();
-    const frameDay = this.blockDraftDay() ?? shownDay;
+    const openedDay = edit.dayKey ?? shownDay;
+    const frameDay = this.blockDraftDay() ?? openedDay;
     return {
       blockId: edit.blockId,
       barberIds: edit.barberIds,
-      // The day the sheet OPENED on seeds the draft; the frame follows the
-      // draft's own day through `lanes`.
-      dayKey: shownDay,
+      // The day the sheet OPENED on seeds the draft — the shown day, or the
+      // date whose all-day band was tapped; the frame follows the draft's
+      // own day through `lanes`.
+      dayKey: openedDay,
       todayKey: this.store.todayKey(),
       allDay: edit.allDay,
       startMinute: edit.startMinute,
@@ -4241,9 +5423,9 @@ export class StaffDashboard {
         this.blockLaneFor(option.id, frameDay, shownDay),
       ),
       nowMinute: frameDay === this.store.todayKey() ? this.nowMinute() : null,
-      dayIsOff: this.resting().some(
-        (barber) => barber.id === edit.barberIds[0],
-      ),
+      // By the OPENED day's own lanes — a date column's band may open a
+      // day that is not the shown one.
+      dayIsOff: this.offOn(edit.barberIds[0] ?? '', openedDay),
       liftArmed: this.blockLiftArmed(),
       acting: this.store.absencePending(),
     };
@@ -4405,13 +5587,66 @@ export class StaffDashboard {
    * in the same editor with the all-day switch already on, because the
    * barber IS off all day and the sheet should show that rather than ask.
    */
-  protected openRestDay(barberId: string): void {
+  protected openRestDay(
+    barberId: string,
+    dayKey: string = this.store.dayKey(),
+  ): void {
     this.openBlockSheet(barberId);
     this.blockEdit.update((edit) =>
       edit === null
         ? null
-        : { ...edit, blockId: `day:${barberId}`, allDay: true },
+        : { ...edit, blockId: `day:${barberId}`, allDay: true, dayKey },
     );
+    if (dayKey !== this.store.dayKey()) this.onBlockDayChanged(dayKey);
+  }
+
+  /**
+   * A CHIP in the all-day band (owner, 2026-09-23): a chair's day off opens
+   * to be edited or lifted — on the shown day in the day view, on that DATE
+   * in the date views; «+N» opens the date itself, where every chair's chip
+   * has room.
+   */
+  protected openAllDayEntry(pick: {
+    readonly columnId: string;
+    readonly key: string;
+  }): void {
+    if (pick.key === 'more') {
+      this.openDay(pick.columnId);
+      return;
+    }
+    const isChair = this.store.view() === 'day';
+    this.openRestDay(pick.key, isChair ? this.store.dayKey() : pick.columnId);
+  }
+
+  /** Is this chair off for the whole of that day — by that day's own lanes. */
+  private offOn(barberId: string, dayKey: string): boolean {
+    if (dayKey === this.store.dayKey()) {
+      return this.resting().some((barber) => barber.id === barberId);
+    }
+    const lane = this.store
+      .cellFor(dayKey)
+      ?.lanes.find((entry) => entry.barberId === barberId);
+    return lane !== undefined && lane.rostered.length === 0;
+  }
+
+  /**
+   * THE ALL-DAY BAND IS A DOOR (owner, 2026-09-23): a tap on the empty band
+   * above a column opens the block sheet with «цял ден» already on — for
+   * that chair on the shown day (the day view), or for the create chair on
+   * that DATE (the date views), the frame drawing the tapped day. A whole-
+   * day fact sits in that band, so that is where one is made.
+   */
+  protected openAllDay(columnId: string): void {
+    const shownDay = this.store.dayKey();
+    const isChair = this.store.view() === 'day';
+    const barberId = isChair ? columnId : this.createChair();
+    if (barberId === null) return;
+    const dayKey = isChair ? shownDay : columnId;
+    this.openBlockSheet(barberId);
+    this.blockEdit.update((edit) =>
+      edit === null ? null : { ...edit, allDay: true, dayKey },
+    );
+    if (dayKey !== shownDay) this.onBlockDayChanged(dayKey);
   }
 
   /** A block on the grid was tapped: edit THAT range. */
@@ -4444,10 +5679,13 @@ export class StaffDashboard {
   /**
    * «Запази» on the block sheet — one range (or a whole day) on EVERY chosen
    * chair, on EVERY day of the series (owner, 2026-09-09: several barbers,
-   * recurrence). The document is per barber-day, so that is the write: one
-   * `putRange` per chair per day, in order, and the sheet closes when the
-   * last has landed. An EDITED range is lifted where it was first — its own
-   * chair, the shown day — then written where it now is.
+   * recurrence). The document is per barber-day, so that is the write: the
+   * one day through `blockTime`, a series through `blockSeries` — one
+   * batched pass per chair (2026-09-24) — and the sheet closes when the
+   * last chair has landed. The DAYS are the sheet's: it expanded the rule
+   * with the same `RecurrenceSeries` it counted aloud. An EDITED range is
+   * lifted where it was first — its own chair, the shown day — then
+   * written where it now is.
    */
   protected async commitBlock(commit: BlockEditorCommit): Promise<void> {
     const edit = this.blockEdit();
@@ -4473,21 +5711,18 @@ export class StaffDashboard {
       if (range.isFailure()) return;
       ranges = [range.value];
     }
-    const days = expandRepeat(commit.dayKey, commit.repeat);
+    const days = commit.days;
+    const only = days.length === 1 ? days[0] : undefined;
     for (const barberId of commit.barberIds) {
       const locationId = this.catalog
         .barbers()
         .find((barber) => barber.id.value === barberId)?.locationIds[0]?.value;
       if (!locationId) continue;
-      for (const day of days) {
-        const done = await this.store.blockTime(
-          barberId,
-          locationId,
-          ranges,
-          day,
-        );
-        if (!done) return;
-      }
+      const done =
+        only !== undefined
+          ? await this.store.blockTime(barberId, locationId, ranges, only)
+          : await this.store.blockSeries(barberId, locationId, ranges, days);
+      if (!done) return;
     }
     this.closeBlockSheet();
   }
@@ -4495,17 +5730,19 @@ export class StaffDashboard {
   protected async liftFromEditor(): Promise<void> {
     const edit = this.blockEdit();
     if (edit === null) return;
-    const wholeDay =
-      edit.allDay ||
-      this.resting().some((barber) => barber.id === (edit.barberIds[0] ?? ''));
+    // The day the sheet OPENED on — a date column's band may have opened a
+    // day that is not the shown one, and the lift must take THAT day.
+    const dayKey = edit.dayKey ?? this.store.dayKey();
+    const barberId = edit.barberIds[0] ?? '';
+    const wholeDay = edit.allDay || this.offOn(barberId, dayKey);
     if (wholeDay) {
       if (!this.blockLiftArmed()) {
         this.blockLiftArmed.set(true);
         return;
       }
-      const done = await this.store.clearBlock(edit.barberIds[0] ?? '');
+      const done = await this.store.clearBlock(barberId, null, dayKey);
       this.blockLiftArmed.set(false);
-      if (done) this.blockEdit.set(null);
+      if (done) this.closeBlockSheet();
       return;
     }
     const range = LocalTimeRange.create(
@@ -4513,11 +5750,8 @@ export class StaffDashboard {
       clockOfMinute(edit.endMinute),
     );
     if (range.isFailure()) return;
-    const done = await this.store.clearBlock(
-      edit.barberIds[0] ?? '',
-      range.value,
-    );
-    if (done) this.blockEdit.set(null);
+    const done = await this.store.clearBlock(barberId, range.value, dayKey);
+    if (done) this.closeBlockSheet();
   }
 
   /** Which row's overflow menu is open — one at a time, by construction. */
@@ -4570,9 +5804,65 @@ export class StaffDashboard {
     })),
   );
 
+  /**
+   * A view switch CROSS-FADES (2026-09-23, §10) — Apple's own transition
+   * between Day and Week on iPad; no slide, because the views are not
+   * adjacent things. The platform's transition, through the same helper the
+   * frame's full screen uses; a plain switch where there is none or motion
+   * is reduced.
+   */
   protected pickView(id: string): void {
     const view = this.views.find((option) => option.id === id);
-    if (view) this.store.setView(view.id);
+    if (!view || view.id === this.store.view()) return;
+    runViewTransition(() => this.store.setView(view.id), this.injector);
+  }
+
+  /**
+   * The same four readings as SEGMENTS — the toolbar's icon pill from
+   * 600px of bar, where four 44px segments fit beside the pill and the
+   * cluster (Apple switches views from a menu on iPhone and from a toolbar
+   * segmented control on iPad and Mac). Both carriers are in the DOM; the
+   * bar's own width shows one.
+   */
+  protected readonly viewSegments = computed<readonly UiSegment[]>(() =>
+    this.views.map((view) => ({
+      id: view.id,
+      label: this.rawCopy(`staff.day.view.${view.id}`),
+      icon: view.icon,
+      iconOnly: true,
+      testId: `staff-view-segment-${view.id}`,
+    })),
+  );
+
+  /** A DATE column's head, tapped: that day, in the day view (§4). */
+  protected openDay(dayKey: string): void {
+    runViewTransition(() => {
+      this.store.goToDay(dayKey);
+      this.store.setView('day');
+    }, this.injector);
+  }
+
+  private readonly grid = viewChild<StaffTimeGrid>('grid');
+
+  /**
+   * The present has left the frame — the grid reports it from its own
+   * scroll path (§6), and the bar offers the way back to it: «Към сега»
+   * on today, the way Google's today control appears once you have
+   * scrolled away from now.
+   */
+  protected readonly nowAway = signal(false);
+
+  /** Back to the present: a glide on today, the jump home on any other day. */
+  protected backToNow(): void {
+    if (this.store.isToday() && this.isGrid()) {
+      this.grid()?.scrollToNow('smooth');
+    } else {
+      this.store.jumpToToday();
+    }
+    // The button removes itself once the present is back in view; the
+    // keyboard lands on the region it just scrolled, not on the body
+    // (found in review, 2026-09-23).
+    this.grid()?.focusFrame();
   }
 
   /** Everyone, then each chair — the scope switcher's options. */

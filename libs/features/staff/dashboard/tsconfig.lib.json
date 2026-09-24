@@ -28,6 +28,12 @@
   ],
   "references": [
     {
+      "path": "../../shared/shell/tsconfig.lib.json"
+    },
+    {
+      "path": "../../../infrastructure/storage/tsconfig.lib.json"
+    },
+    {
       "path": "../../../ui/layout/tsconfig.lib.json"
     },
     {

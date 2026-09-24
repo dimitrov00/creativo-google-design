@@ -11,6 +11,7 @@ export * from './lib/chip/chip';
 export * from './lib/switch/switch';
 export * from './lib/badge/badge';
 export * from './lib/avatar/avatar';
+export * from './lib/avatar-group/avatar-group';
 export * from './lib/progress-view/progress-view';
 export * from './lib/skeleton/skeleton';
 export * from './lib/otp-field/otp-field';
@@ -20,9 +21,16 @@ export * from './lib/progress-ring/progress-ring';
 export * from './lib/phone-field/phone-field';
 export * from './lib/date-field/date-field';
 export * from './lib/choice-menu/choice-menu';
+export * from './lib/choice-tiles/choice-tiles';
+export * from './lib/amount-field/amount-field';
 export * from './lib/count-stepper/count-stepper';
 export * from './lib/time-field/time-field';
 export * from './lib/unit-field/unit-field';
+export * from './lib/code-field/code-field';
+export * from './lib/search-field/search-field';
+export * from './lib/slider/slider';
+export * from './lib/segmented-control/segmented-control';
+export * from './lib/weekday-picker/weekday-picker';
 
 // UiStack/UiSheet live in @creativo/ui/layout and UiCard in @creativo/ui/patterns
 // (blueprint §1.1's true home for layout/pattern primitives) — re-exported here

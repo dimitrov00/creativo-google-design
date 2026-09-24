@@ -38,6 +38,7 @@
         class="modal-sheet__toolbar"
         [attr.data-bare]="bareHeader() ? '' : null"
         [attr.data-title-always]="titleAlwaysVisible() ? '' : null"
+        [uiCollapsed]="titleCollapsed()"
         (pointerdown)="sheetBehavior.onDragStart($event)"
         (pointermove)="sheetBehavior.onDragMove($event)"
         (pointerup)="sheetBehavior.onDragEnd($event)"

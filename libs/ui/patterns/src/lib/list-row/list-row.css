@@ -33,6 +33,20 @@
     padding-block: var(--sys-space-regular);
   }
 
+  /* THE COMPACT TWO-LINE ROW (2026-09-22) — `regular` size on a stacked
+     label. The `large` rung above is a settings row: 16 of padding round a
+     44 disc, 76 tall. A PICKER is read down, not across — a person a row,
+     forty of them — and there 76 shows five people where the field's own
+     pickers (Contacts, Messages' «To:», WhatsApp) show seven: 12 of padding
+     round a `small` disc (36), which is what two lines of callout over
+     footnote measure, ≈60 tall. The rung, not the consumer, owns the
+     figure: a picker that trimmed its own padding would drift from the
+     next one. Three units — between compact and regular on the ladder,
+     the same beat the coupon card's body takes. */
+  .ui-list-row[data-size='regular'][data-alignment='leading'] {
+    padding-block: calc(var(--sys-space-unit) * 3);
+  }
+
   /* …except the trailing detail, which stays CENTRED. The leading glyph
      belongs to the title — it names the row, so it rides the first line.
      The trailing value summarises the whole thing (2/4 is about the bar as

@@ -29,10 +29,17 @@
  * divider, no card. The seam does the grouping, exactly as Apple's own event
  * editor does it.
  */
-/* The host is a block — the dock inside it pins with `position: sticky`,
-   and a sticky box wants a block parent with a real bottom edge. */
+/* The host is a COLUMN that fills the sheet's scroller (the scroller turns
+   into a column for a body that docks its own bar — modal-sheet.css). The
+   dock is its last child with the DS bar's auto top margin, so on a short
+   page it floors at the sheet's bottom edge, and on the long root it sits
+   at the end of the content while `position: sticky` keeps it in view
+   (owner, 2026-09-15: the bar belongs at the bottom, not mid-screen). */
 .staff-visit {
-  display: block;
+  display: flex;
+  flex-direction: column;
+  flex: 1 0 auto;
+  min-block-size: 0;
 }
 
 .staff-visit__body,
@@ -378,17 +385,6 @@
   box-shadow: 0 0 0 2px var(--sys-color-surface);
 }
 
-/* ── THE CONSEQUENCE STRIP ────────────────────────────────────────────
- *
- * A non-interactive line under a pushed page's large title. It beats a
- * popover on the popover's own terms: it shows the CHANGED value, where a
- * panel over the parent could only ever show the stale one behind glass.
- */
-.staff-sheet__consequence {
-  margin: 0;
-  font-variant-numeric: tabular-nums;
-}
-
 /* ── THE STATE HEADER ─────────────────────────────────────────────────
  *
  * One strip: the chip (which is the picker) and its measured line on the
@@ -559,26 +555,17 @@
   margin: 0;
   color: var(--sys-color-secondary-label);
   font: var(--sys-font-body);
+  font-variant-numeric: tabular-nums; /* the shorthand resets the app's tabular figures */
 }
 
 /* The payment row's value: figure, promo, tip — then the `›`. */
 /* The typed figures — minutes, prices, the tip — are `ui-unit-field`s in the
    sheet's tinted pill; the field draws its own ring and needs nothing here. */
 
-/* THE DROPDOWN — the search pinned at the top of the menu's own scroller,
-   the rows beneath. The menu takes the row's width from its trigger. */
-.staff-visit__picker .staff-visit__search {
-  inset-block-start: 0;
-}
-
-.staff-visit__picker-empty {
-  padding: var(--sys-space-compact) var(--sys-space-regular);
-}
-
-/* The chosen share's figure rides the value pill in the secondary tone, a
-   compact space after the share. */
-.staff-visit__tip-amount {
-  margin-inline-start: var(--sys-space-compact);
+/* The page's group labels — a word over a segment at the footnote tier, on
+   the rows' own inset; the DS group has no header slot and gets none. */
+.staff-visit__page-label {
+  padding-inline: var(--sys-space-regular);
 }
 
 /* THE LINES UNDER THE BILL: the tip the client left (a green plus) and the
@@ -603,29 +590,44 @@
   }
 }
 
-/* THE CODE FIELD, in the discount menu's typed group: a DS text field at the
-   small tier, sized for a code rather than a sentence, and shown the way a
-   code is printed. The row's label and its refusal stack on the left; the
-   field keeps the trailing edge like every pill beside it. */
-.staff-visit__code-field {
-  inline-size: 9.5rem;
-  min-inline-size: 0;
-  text-transform: uppercase;
-  font-variant-numeric: tabular-nums;
+/* THE SUM under the tip tiles: the DS amount field on the page's own
+   ground, ATTACHED to the «Друга сума» tile it answers — the regular gap
+   above it (closer than the page's column gap, looser than the grid's
+   compact one, so it reads as the tile's continuation and not as the next
+   block). */
+.staff-visit__entry {
+  margin-block-start: calc(
+    var(--sys-space-regular) - var(--sys-space-comfortable)
+  );
 }
 
-.staff-visit__code-field::placeholder {
-  text-transform: none;
+/* THE DIAL — the figure written large over the ruler, lit in the promo
+   ink, the applied line's own. */
+/* THE LINES ON THE BILL — the card's own applied tickets, in the column
+   over the money group (2026-09-17): a new one rises in, the tip's own
+   success moment. Nothing else here: the ticket is `ui-coupon-card`,
+   which wears the rows' fill and corner on its own. */
+@media (prefers-reduced-motion: no-preference) {
+  .staff-visit__line {
+    animation: staff-visit-dock-plus-in var(--sys-motion-duration-regular)
+      var(--sys-motion-ease-standard) both;
+  }
 }
 
-/* The add row's menu: the picks (the client's coupons) and the typed group
-   are two runs in one surface; when there is nothing to pick, the empty
-   first run must not hold a seam of its own. */
-.staff-visit__discount-typed {
-  min-inline-size: 18rem;
+/* THE DOCK'S PRICE LINE — the old figure struck, a role quieter, on the
+   baseline of what is due. */
+.staff-visit__total-line {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--sys-space-tight);
 }
 
-.staff-visit__discount-typed .ui-list-row__label {
+.staff-visit__dial-slider {
+  --ui-slider-tint: var(--sys-color-promo-label);
+}
+
+/* A figure row's label wraps rather than running into its pill. */
+.staff-visit__figure-row .ui-list-row__label {
   white-space: normal;
   min-inline-size: 0;
 }
@@ -679,15 +681,33 @@
   color: var(--sys-color-destructive-label);
 }
 
-/* THE CALL, back in the dock (owner, 2026-09-09: "the most common action
-   you do when you open the appointment"). It takes the bar's auto margin
-   so it hugs «Запази» on the thumb rail, and the prominent button beside
-   it gives its own up — the two travel together, opposite the total. */
-.staff-visit__dock > .staff-visit__dock-call {
+/* ARMED — the row has become the confirm (the block sheet's day-wide lift,
+   2026-09-23): the same ink, weightier, so the second tap reads as the
+   decision it is. */
+.staff-visit__exit--destructive[data-armed] {
+  font-weight: 600;
+}
+
+/* The warning the arm earns, under the group: a caption about the row. */
+.staff-visit__exits-note {
+  margin: 0;
+  padding-inline: var(--sys-space-regular);
+  font: var(--sys-font-footnote);
+  font-variant-numeric: tabular-nums; /* the shorthand resets the app's tabular figures */
+  color: var(--sys-color-secondary-label);
+}
+
+/* THE ASIDE — a secondary docked beside the primary, hugging it on the
+   thumb rail: the call beside «Запази» at the root (owner, 2026-09-09:
+   "the most common action you do when you open the appointment") and
+   «Нов клиент» beside the ✓ on the client page (owner, 2026-09-22). It
+   takes the bar's auto margin and the prominent button beside it gives its
+   own up — the two travel together, opposite the total. */
+.staff-visit__dock > .staff-visit__dock-aside {
   margin-inline-start: auto;
 }
 
-.staff-visit__dock > .staff-visit__dock-call + .ui-button {
+.staff-visit__dock > .staff-visit__dock-aside + .ui-button {
   margin-inline-start: 0;
 }
 
@@ -800,45 +820,318 @@
 }
 
 .staff-visit__row-title > ui-icon {
-  color: var(--sys-color-label-secondary);
+  color: var(--sys-color-secondary-label);
 }
 
-/* ── THE PINNED SEARCH ───────────────────────────────────────────────────
-   Sticks under the sheet's bar (one large control tall) while the list
-   scrolls, full-bleed across the page's inset, on the same regular material
-   the shell's accessory search wears — the `.searchable` grammar from inside
-   the content. The glyph leads, inside the field. */
-.staff-visit__search {
-  position: sticky;
-  /* Exactly under the shell's sticky chrome, whatever it measures — the
-     shell publishes its own height (`ui-modal-sheet`, 2026-09-09). */
-  inset-block-start: var(
-    --modal-sheet-chrome-height,
-    var(--control-size-large)
-  );
-  z-index: 1;
-  margin-inline: calc(-1 * var(--ui-sheet-inset, var(--sys-space-regular)));
-  padding: var(--sys-space-tight)
-    var(--ui-sheet-inset, var(--sys-space-regular));
-  display: grid;
+/* THE COUPON FRAME — the DS scroll column, capped at two cards and a half
+   (two 112px tickets, two compact gaps, half a ticket): the cut card says
+   there is more, the way a half-visible row does in any list; one or two
+   cards hug their own height and never scroll. Nothing else — the cards
+   are the frame's own edges. */
+.staff-visit__coupons {
+  --ui-scroll-column-max-block-size: calc(var(--sys-space-unit) * 74);
+}
+
+/* THE CHOICE AT A ROW'S TRAILING EDGE — the same plain trigger as the
+   root's duration title, mirrored: the value in the secondary ink every
+   value row reads in, the pop-up mark beside it, and its padding hanging
+   past the row's inset so the words sit where a value sits. */
+.staff-visit__row-choice {
+  margin-inline-start: 0;
+  margin-inline-end: calc(-1 * var(--sys-space-compact));
+  color: var(--sys-color-secondary-label);
+}
+
+/* ── THE PINNED SEARCH is the DS's own since 2026-09-24 (`ui-search-field`
+   `uiPinned`), and a page's head with its fold is `ui-sheet-headline`. */
+
+/* The create row's disc: the avatar's own recipe, inked in the accent —
+   an action where a face would go, at the people's size. */
+.staff-visit__create-disc {
+  --ui-avatar-ink: var(--sys-color-accent);
+}
+
+/* A PERSON ROW'S HEAD (2026-09-22): the event head as the row's label. It
+   stands as tall as the disc and centres its lines in it, so a one-line
+   head — a name alone, «Нов клиент» with nothing typed — sits WITH the
+   disc the way a name sits with its face; a head of three lines is taller
+   than the disc and the row grows to it. The marks are the head's own. */
+.staff-visit__client-head {
+  min-block-size: var(--control-size-small);
   align-items: center;
 }
 
-.staff-visit__search-icon {
-  grid-area: 1 / 1;
-  justify-self: start;
-  margin-inline-start: var(--sys-space-compact);
-  color: var(--sys-color-secondary-label);
-  pointer-events: none;
-  z-index: 1;
+.staff-visit__client-trailing {
+  display: inline-flex;
+  gap: var(--sys-space-compact);
+  align-items: center;
 }
 
-.staff-visit__search-field {
-  grid-area: 1 / 1;
-  inline-size: 100%;
-  /* Room for the glyph: its inset, its width and a gap — measured, not
-     guessed, against the 15px icon the caption size draws. */
-  padding-inline-start: calc(var(--sys-space-unit) * 9);
+/* NOTHING TO SUGGEST YET: the search glyph, large and quiet, over one
+   line of help — a hint, not a "no match" for a search nobody has run. */
+.staff-visit__search-empty {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sys-space-compact);
+  align-items: center;
+  margin: 0;
+  padding-block: var(--sys-space-spacious);
+  color: var(--sys-color-tertiary-label);
+  text-align: center;
+}
+
+.staff-visit__search-empty > .ui-icon {
+  font-size: 2rem;
+}
+
+/* A VALUE ROW'S TRAILING RUN (2026-09-17): the value in its own ink, then
+   the mark that says what the row does — «›» for a row that pushes a
+   page, a chevron for the row that unfolds a section beneath it, turned
+   while the section is open. */
+.staff-visit__row-value {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sys-space-tight);
+}
+
+.staff-visit__disclosure {
+  transition: rotate var(--sys-motion-duration-regular)
+    var(--sys-motion-ease-emphasized);
+}
+
+[aria-expanded='true'] .staff-visit__disclosure {
+  rotate: 180deg;
+}
+
+/* THE ROW THAT EXTENDS (owner, 2026-09-17: "on click it should extend,
+   animate beautifully, like the tip row extending itself and the tip body
+   being inside that row"): one segment — the group's own fill and corners,
+   carried here because the group's rules stop one level up — holding the
+   row and, beneath it, the FOLD — a one-track grid whose track goes from
+   nothing to as tall as the section needs, so the segment GROWS out of
+   the row and folds back into it; the section fades and settles a beat
+   behind. `0fr → 1fr` is the one height animation CSS has for content it
+   has not measured, and it plays everywhere. The row is OUTSIDE the grid:
+   a two-track grid with the row as its `auto` track interpolated both
+   tracks and the row wobbled taller mid-way (measured: 52 → 122 → 52 px). */
+.staff-visit__extend {
+  display: flex;
+  flex-direction: column;
+  background: var(--sys-color-surface-secondary);
+  border-radius: var(--control-radius-subtle);
+}
+
+.staff-visit__fold {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows var(--sys-motion-duration-slow)
+    var(--sys-motion-ease-emphasized);
+}
+
+[data-open] > .staff-visit__fold {
+  grid-template-rows: 1fr;
+}
+
+/* The group's outer corners, as the group would give a segment of its own. */
+.staff-visit__group > li:first-child > .staff-visit__extend {
+  border-start-start-radius: var(--control-radius-prominent);
+  border-start-end-radius: var(--control-radius-prominent);
+}
+
+.staff-visit__group > li:last-child > .staff-visit__extend {
+  border-end-start-radius: var(--control-radius-prominent);
+  border-end-end-radius: var(--control-radius-prominent);
+}
+
+/* The row inside carries no fill of its own — the segment's is the one —
+   and its press ink follows the segment's corners, square at the bottom
+   once the section continues beneath it. */
+.staff-visit__extend > .ui-list-row {
+  background: transparent;
+  border-radius: inherit;
+}
+
+.staff-visit__extend[data-open] > .ui-list-row {
+  border-end-start-radius: 0;
+  border-end-end-radius: 0;
+}
+
+/* THE VALUE, ONCE (owner, 2026-09-17: "when expanded you see it a couple of
+   times — the row, the selected tile, the bottom toolbar — feels too
+   much"): while the section is open the tiles ARE the value, so the row's
+   own reading steps aside (Apple's inline date picker prints the selection
+   nowhere but in the picker; the compact one keeps a value only because
+   its picker is a modal elsewhere). It comes back as the section folds —
+   the disclosure's label says what is hidden. The dock's line stays: it is
+   the bill's line item, the payment sheet's own grammar, not a readout.
+   Only the SEGMENT'S OWN row steps aside: the receipt's rows inside the
+   discount page's fold keep their figures — they are what unfolds. */
+.staff-visit__row-value > .staff-visit__figures {
+  transition:
+    opacity var(--sys-motion-duration-regular) var(--sys-motion-ease-standard),
+    translate var(--sys-motion-duration-regular) var(--sys-motion-ease-standard);
+}
+
+.staff-visit__extend[data-open]
+  > .ui-list-row
+  .staff-visit__row-value
+  > .staff-visit__figures {
+  opacity: 0;
+  translate: 0 var(--sys-space-tight);
+}
+
+/* The section: no height of its own until the grid gives it one, and its
+   content clipped meanwhile; it rises in a beat behind the segment. */
+.staff-visit__fold-section {
+  min-block-size: 0;
+  overflow: hidden;
+  opacity: 0;
+  translate: 0 calc(-1 * var(--sys-space-unit));
+  transition:
+    opacity var(--sys-motion-duration-regular) var(--sys-motion-ease-standard),
+    translate var(--sys-motion-duration-slow) var(--sys-motion-ease-emphasized);
+}
+
+[data-open] > .staff-visit__fold > .staff-visit__fold-section {
+  opacity: 1;
+  translate: 0 0;
+  transition-delay: 60ms;
+}
+
+/* The body pads itself — the row's own inset — so the folded section is
+   exactly nothing tall. */
+.staff-visit__fold-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sys-space-regular);
+  padding: 0 var(--sys-space-regular) var(--sys-space-regular);
+}
+
+/* THE TICKETS INSIDE THE SEGMENT (2026-09-17; owner: "if shown expanded I
+   expect the coupon card, not just list rows"): a ticket's own fill is the
+   segment's, so inside the fold it would read as a hole — the card's
+   surface hook is set a fill step above the segment, the control fill's
+   own strength composed over it, and the badge's ring follows. */
+.staff-visit__fold-body {
+  --ui-coupon-card-surface: color-mix(
+    in srgb,
+    var(--sys-color-foreground) var(--sys-alpha-fill),
+    var(--sys-color-surface-secondary)
+  );
+}
+
+/* A ROW ASLEEP (2026-09-17): «Приложени · Няма» on a clean bill has
+   nothing to unfold — the row stays, so the first line changes its text
+   and moves nothing, but its chevron fades and it takes no press. */
+.staff-visit__extend > .ui-list-row:disabled {
+  cursor: default;
+}
+
+.staff-visit__extend > .ui-list-row:disabled .staff-visit__disclosure {
+  opacity: 0.4;
+}
+
+/* A ROW'S SECOND LINE THAT MAY RUN LONG — the shop's name — wraps to
+   two lines and then ends in an ellipsis instead of the row's
+   single-line clip, which cut an address mid-word (found live,
+   2026-09-18). The row's label resets nothing for a stack inside it;
+   the line does it for itself. */
+.staff-visit__row-line {
+  display: -webkit-box;
+  overflow: hidden;
+  white-space: normal;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+}
+
+/* «САЛОН» UNFOLDS A MAP OR A LIST (owner, 2026-09-18: "like the tip,
+   expandable, reusing our map"; then "map only, and a toolbar pill with
+   two icons toggling map or list … overlaying the map"): the two views
+   share one box, and the VIEW PILL floats over its top-trailing corner —
+   Maps' own corner for floating controls — staying put while the view
+   beneath it changes. The map is the review card's, in the fold's own
+   inset, taller by half again (owner: "a bit larger / higher") — a
+   fixed height, so the fold has a size to grow to before a tile has
+   drawn, on the control fill while it loads, and tall enough that the
+   other shop's edge arrow clears both the pill's band and the pin even
+   when it points due north; the list starts under the pill. */
+.staff-visit__views {
+  position: relative;
+}
+
+.staff-visit__view-pill {
+  position: absolute;
+  inset-block-start: var(--sys-space-compact);
+  inset-inline-end: var(--sys-space-compact);
+  z-index: 2;
+}
+
+/* The place line: the storefront at the street, a compact step under the
+   map (the views box stacks its children with no gap of its own). */
+.staff-visit__place {
+  display: flex;
+  gap: var(--sys-space-compact);
+  align-items: center;
+  margin: 0;
+  margin-block-start: var(--sys-space-compact);
+}
+
+.staff-visit__place[hidden] {
+  display: none;
+}
+
+.staff-visit__views[data-view='list'] > .staff-visit__shop-list {
+  padding-block-start: calc(
+    var(--control-size-small) + var(--sys-space-compact) * 2
+  );
+}
+
+.staff-visit__map {
+  position: relative;
+  block-size: 17rem;
+  overflow: hidden;
+  border-radius: var(--control-radius-subtle);
+  background: var(--sys-color-fill);
+}
+
+.staff-visit__map > .ui-map {
+  position: absolute;
+  inset: 0;
+}
+
+/* THE ROWS INSIDE THE SEGMENT: a row's own fill is the segment's, so
+   inside the fold it would read as a hole — lifted a fill step, the
+   tickets' own recipe, and the chosen one's wash composed over that. */
+.staff-visit__shop-list.ui-list-group > :not(.ui-list-row) > .ui-list-row {
+  background: color-mix(
+    in srgb,
+    var(--sys-color-foreground) var(--sys-alpha-fill),
+    var(--sys-color-surface-secondary)
+  );
+}
+
+.staff-visit__shop-list.ui-list-group
+  > :not(.ui-list-row)
+  > .ui-list-row[data-selected] {
+  background: color-mix(
+    in srgb,
+    var(--sys-color-accent) var(--sys-alpha-segment-selected),
+    color-mix(
+      in srgb,
+      var(--sys-color-foreground) var(--sys-alpha-fill),
+      var(--sys-color-surface-secondary)
+    )
+  );
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .staff-visit__disclosure,
+  .staff-visit__fold,
+  .staff-visit__fold-section,
+  .staff-visit__row-value > .staff-visit__figures {
+    transition: none;
+  }
 }
 
 /* The leg's barber, as a pill with his face: the DS small capsule, the
@@ -855,16 +1148,85 @@
   --ui-avatar-disc: calc(var(--sys-space-unit) * 6);
 }
 
-/* ── A ROW WITH TWO CONTROLS ─────────────────────────────────────────────
-   The service search row is an `li` holding the pick (a checkbox button
-   that IS the row's label) and the count stepper trailing. The pick fills
-   the label area edge to edge and carries the row's press state itself. */
+/* ── A ROW WITH TWO CONTROLS (the service card, 2026-09-17) ──────────────
+   The catalogue's row holds the PICK — a checkbox button that IS the row's
+   label, filling it edge to edge — and the DS count stepper trailing. A tap
+   on the pick selects: the row takes the DS selection wash (eased in, not
+   switched), and the stepper's square turns to a ✓ and unfolds into
+   `− 1 +` (owner: "in place of a check, a stepper should animate, expand").
+   The trailing cell is RESERVED at the open stepper's width from the
+   start, so the square sits where the `+` will land and the label never
+   rewraps under the unfold.
+
+   THE ROW IS INTERACTIVE (owner, 2026-09-17: "those rows do not have a
+   hover effect although they are interactive"): it rides the DS
+   `uiInteractive` state layer — hover and press ink over the whole
+   segment, the one grammar every tappable row has — and the stepper
+   inside keeps its own: while the pointer is on the stepper the row's
+   layer stays clear and the row does not press. */
+.staff-visit__service-row {
+  transition:
+    background-color var(--sys-motion-duration-deliberate)
+      var(--sys-motion-ease-standard),
+    transform var(--sys-motion-duration-instant) var(--sys-motion-ease-standard);
+}
+
+.staff-visit__service-row:has(
+    .staff-visit__service-count :is(:hover, :active)
+  )::after {
+  background: transparent;
+}
+
+.staff-visit__service-row:has(.staff-visit__service-count :active) {
+  transform: none;
+}
+
 .staff-visit__service-row > .ui-list-row__label {
   display: flex;
   min-inline-size: 0;
   white-space: normal;
   overflow: visible;
   text-overflow: clip;
+}
+
+/* A row's label as its own button, a trailing control beside it — the
+   catalogue's pick and a party person's row (2026-09-24) share it. */
+.staff-visit__service-pick,
+.staff-visit__row-press {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  min-inline-size: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: var(--control-radius-subtle);
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-variant-numeric: tabular-nums; /* the shorthand resets the app's tabular figures */
+  text-align: start;
+  cursor: pointer;
+}
+
+.staff-visit__service-pick:focus-visible,
+.staff-visit__row-press:focus-visible {
+  outline: var(--sys-focus-ring-width) solid var(--sys-color-accent);
+  outline-offset: 2px;
+}
+
+.staff-visit__service-count {
+  display: inline-flex;
+  justify-content: flex-end;
+  inline-size: calc(var(--control-size-small) * 2 + var(--sys-space-unit) * 5);
+  flex-shrink: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .staff-visit__service-row,
+  .staff-visit__service-pick {
+    transition: none;
+  }
 }
 
 /* ── SWIPE TO DELETE ────────────────────────────────────────────────────
@@ -905,8 +1267,11 @@
   transition: transform var(--sys-motion-duration-regular)
     var(--sys-motion-ease-emphasized);
   /* The row is a plain `ui-list-row` element here, so it paints its own
-     segment fill; the group's rules give it the corners. */
-  background: var(--sys-color-surface-secondary);
+     segment fill; the group's rules give it the corners. A TICKET on the
+     discount card follows the card's segment hook (coupon-card.css) so it
+     stays a step above the raised surface — and stays opaque over the act
+     waiting behind it. */
+  background: var(--ui-coupon-card-surface, var(--sys-color-surface-secondary));
 }
 
 .staff-visit__swipe[data-dragging] .staff-visit__swipe-content {
@@ -974,21 +1339,27 @@
   display: none;
 }
 
-/* A receipt line WRAPS its title rather than running it into the figure:
-   «Класическа подстрижка · Къса коса» is the line's whole point. */
-.staff-visit__receipt-row .ui-list-row__label,
-/* …and the tip row's, once «Друго» puts the field beside the pill. */
-.staff-visit__tip-row .ui-list-row__label {
-  white-space: normal;
-  min-inline-size: 0;
-}
-
 .staff-visit__leg-chips {
   display: inline-flex;
   align-items: center;
-  gap: var(--sys-space-tight);
+  /* A compact gap, so the 44 px hit boxes below meet without overlapping. */
+  gap: var(--sys-space-compact);
   flex-shrink: 0;
   margin-inline-start: auto;
+}
+
+/* 44 PX UNDER THE THUMB (2026-09-18, the order review): the chips keep
+   the small control's 36 px look and each takes HIG's 44 px hit box — a
+   transparent box 4 px past every edge, so a wet thumb aiming at «−» does
+   not have to be exact and does not land on the neighbour. */
+.staff-visit__leg-chips > .ui-button {
+  position: relative;
+}
+
+.staff-visit__leg-chips > .ui-button::before {
+  content: '';
+  position: absolute;
+  inset: -4px;
 }
 
 .staff-visit__leg-face-chip .ui-avatar {
@@ -1002,4 +1373,78 @@
 /* The note's label sits over a field that takes the row's whole width. */
 .staff-visit__note-stack {
   inline-size: 100%;
+}
+
+/* ── THE SHOP'S PHOTOS OF THE VISIT (2026-09-17) ─────────────────────────
+   A grid of squares in the row, as many across as the row is wide — each
+   a door to the picture's page — and, on that page, the picture in its own
+   shape with the group's corner. */
+.staff-visit__photo-grid {
+  display: grid;
+  grid-template-columns: repeat(
+    auto-fill,
+    minmax(calc(var(--sys-space-unit) * 18), 1fr)
+  );
+  gap: var(--sys-space-tight);
+  inline-size: 100%;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.staff-visit__photo {
+  display: block;
+  inline-size: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: var(--control-radius-subtle);
+  background: var(--sys-color-fill);
+  overflow: hidden;
+  cursor: pointer;
+}
+
+.staff-visit__photo:focus-visible {
+  outline: var(--sys-focus-ring-width) solid var(--sys-color-accent);
+  outline-offset: 2px;
+}
+
+/* THE PHOTO AS A VIEWER (2026-09-17; owner: "full sheet screen, no title —
+   the image at its original ratio, centered; the information shown by
+   default, the people as user rows"): the picture full-bleed in its own
+   shape on black; the facts are rows beneath it. */
+.staff-visit__photo-hero {
+  position: relative;
+  margin-inline: calc(-1 * var(--ui-sheet-inset, var(--sys-space-regular)));
+  background: #000;
+}
+
+/* THE VIEWER CENTRES ITS PICTURE (owner, 2026-09-17: "the image should be
+   centered, no?"): the page takes the whole of what the scroller gives it
+   above the dock — the host is the scroller's flex column, the dock
+   pushes itself to its end — and floats the picture in the middle, as
+   Photos does. With the facts unfolded the picture and its rows are
+   centred as one block, and only when that block outgrows the space does
+   the page scroll. */
+.staff-visit__page[data-page='photo'] {
+  flex: 1 0 auto;
+  justify-content: center;
+}
+
+.staff-visit__photo-hero > .ui-async-image {
+  display: block;
+  inline-size: 100%;
+}
+
+/* The camera's viewfinder fills the page; the shop's gallery is the shared
+   showcase gallery, full-bleed past the page's own gutter so its own — the
+   sheet's — applies once. */
+.staff-visit__camera {
+  display: flex;
+  inline-size: 100%;
+}
+
+.staff-visit__gallery {
+  margin-inline: calc(-1 * var(--ui-sheet-inset, var(--sys-space-regular)));
+  min-inline-size: 0;
 }

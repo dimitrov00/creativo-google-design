@@ -118,6 +118,25 @@ export const appRoutes: Route[] = [
       ),
   },
   {
+    path: 'controls/scroll-column',
+    loadComponent: () =>
+      import('./pages/controls/scroll-column/scroll-column.page').then(
+        (m) => m.ScrollColumnPage,
+      ),
+  },
+  {
+    path: 'controls/slider',
+    loadComponent: () =>
+      import('./pages/controls/slider/slider.page').then((m) => m.SliderPage),
+  },
+  {
+    path: 'controls/segmented-control',
+    loadComponent: () =>
+      import('./pages/controls/segmented-control/segmented-control.page').then(
+        (m) => m.SegmentedControlPage,
+      ),
+  },
+  {
     path: 'controls/divider-and-spacer',
     loadComponent: () =>
       import('./pages/controls/divider-and-spacer/divider-and-spacer.page').then(

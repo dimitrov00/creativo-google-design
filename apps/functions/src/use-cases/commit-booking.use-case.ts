@@ -94,6 +94,8 @@ export class CommitBookingUseCase {
         nextId: () => this.idGenerator.next(),
         ownerUserId,
         allowOutsideWindow: input.staffPlacement === true,
+        // A staff placement combines what it likes, like a staff edit.
+        allowConflictingServices: input.staffPlacement === true,
       });
     });
 

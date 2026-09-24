@@ -139,10 +139,28 @@
 }
 
 @layer sys-base {
+  /* EVERY NUMBER LINES UP (owner, 2026-09-09) — made to hold. tokens.css
+     sets tabular figures on :root to be INHERITED, but the `font` SHORTHAND
+     resets every font-variant longhand on the element it styles, so each
+     `font: var(--sys-font-…)` in the DS quietly returned that run's digits
+     to Onest's proportional default (measured 2026-09-16 in the running
+     app: «0000» 95px against «1111» 56px, both 97px tabular; body itself
+     computed `normal`, so nothing below it inherited the ruling). Declared
+     here on EVERY element, in the layer that beats the components', it
+     survives every shorthand beneath it. A feature stylesheet that is not
+     layered and writes its own `font:` shorthand still wins on that one
+     element and must say `font-variant-numeric: tabular-nums` after it. */
+  *,
+  ::before,
+  ::after {
+    font-variant-numeric: tabular-nums;
+  }
+
   body {
     background: var(--sys-color-background);
     color: var(--sys-color-foreground);
     font: var(--sys-font-body);
+    font-variant-numeric: tabular-nums;
     font-family: var(--sys-font-family-text);
     transition:
       background-color var(--sys-motion-duration-regular)

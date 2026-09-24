@@ -1,9 +1,18 @@
 <ng-container *transloco="let t">
+  <!-- THE CALENDAR IS THE SCREEN (2026-09-23, the grid views' design record
+       §2): in a grid view the page fills the display — no 52rem cap, no
+       page scroll, the canvas as the column's growing middle — and the
+       agenda keeps its measure. `data-view-kind` is what the stylesheet
+       keys the two boxes on. -->
   <main
     uiFrame
-    [uiFrameMaxWidth]="'var(--sys-container-content)'"
+    [uiFrameMaxWidth]="
+      isGrid() ? 'infinity' : 'var(--sys-container-content)'
+    "
     uiFrameMinHeight="100svh"
     class="staff-day"
+    [attr.data-view-kind]="isGrid() ? 'grid' : 'agenda'"
+    [attr.data-view]="store.view()"
   >
     <!-- The header is the page's TOP TOOLBAR — sticky, so the date, the week
          strip and the pickers stay reachable while a long run scrolls under
@@ -42,7 +51,7 @@
             uiTestId="staff-day-label"
             [uiPresented]="datePickerOpen()"
             (uiPresentedChange)="setDatePicker($event)"
-            (uiPicked)="pickDay($event)"
+            (uiPicked)="pickDay($event, true)"
           />
 
           <ui-stack uiSpacing="none" uiAlignment="center">
@@ -62,6 +71,24 @@
 
           <ui-spacer />
 
+          <!-- THE VIEW SWITCHER AS SEGMENTS (2026-09-23, §9): the same four
+               readings as an icon-only capsule, centred on the bar, shown
+               from 600px of toolbar by the bar's own width — Apple's iPad
+               and Mac form. Below that the menu in the cluster carries the
+               choice; both are in the DOM, one is hidden. -->
+          <ui-segmented-control
+            class="staff-view-segments"
+            uiShape="capsule"
+            uiControlSize="regular"
+            [uiSegments]="viewSegments()"
+            [uiSelectedId]="store.view()"
+            [uiLabel]="t('staff.day.viewLabel')"
+            data-testid="staff-view-segments"
+            (uiPicked)="pickView($event)"
+          />
+
+          <ui-spacer />
+
           <!-- The trailing actions ride in ONE capsule, hairline-divided.
                Not a segmented CONTROL — that is a single-choice picker, and
                these are three separate acts — but the toolbar-group pattern
@@ -73,6 +100,7 @@
                grow inward or it grows off the screen — which is what the
                scope picker did the moment its rows gained a portrait rail. -->
             <ui-choice-menu
+              class="staff-view-menu"
               uiAlignment="trailing"
               [uiOptions]="viewChoices()"
               [uiSelectedId]="store.view()"
@@ -101,20 +129,12 @@
               >
                 <ui-icon [uiName]="currentViewIcon()" />
               </button>
-              <ui-list-group>
-                <button
-                  type="button"
-                  uiMenuItem
-                  uiListRow
-                  [uiInteractive]="true"
-                  [disabled]="scopeOptions().length === 0"
-                  data-testid="staff-lane-block"
-                  (click)="openPicker.set(null); openCreate('block')"
-                >
-                  <ui-icon uiLeading uiName="booking.blocked" />
-                  {{ t('staff.day.blockTime') }}
-                </button>
-              </ui-list-group>
+              <!-- VIEWS ONLY (owner, 2026-09-23). «Блокирай време» rode
+                   here as a second row under the four readings, and a
+                   picker that chooses how the day is DRAWN must not also
+                   DO something to it — HIG's pull-down menus hold one kind
+                   of item. Blocking time is an act, and it lives with the
+                   other acts under ＋. -->
             </ui-choice-menu>
 
             <!-- Search sits between the two pickers and the person — the
@@ -258,50 +278,45 @@
     <!-- The zone, said once. Not a picker: the product is one shop in one
          zone, and a selector with a single entry pretends at a capability
          that does not exist. -->
-    @if (zoneNoticeOpen()) {
-    <ui-modal-sheet
-      sheetId="staff-zone-sheet"
-      labelledBy="staff-zone-title"
-      [closeLabel]="t('staff.day.cancelDismiss')"
-      [open]="true"
+    <!-- The zone, explained: a notice with one way out — an alert, the
+         platform's surface for a sentence that needs acknowledging, not
+         a sheet (owner, 2026-09-23). -->
+    <ui-alert
+      [uiPresented]="zoneNoticeOpen()"
+      [uiTitle]="t('staff.day.zoneTitle')"
+      [uiMessage]="t('staff.day.zoneBody', { zone: zoneLabel() })"
+      [uiActions]="zoneActions()"
       data-testid="staff-zone-sheet"
-      (dismissed)="zoneNoticeOpen.set(false)"
-    >
-      <span sheet-title>{{ t('staff.day.zoneTitle') }}</span>
-      <ui-stack uiSpacing="loose" class="staff-cancel__body">
-        <ui-stack uiSpacing="tight">
-          <h2
-            id="staff-zone-title"
-            uiSheetLargeTitle
-            uiText
-            uiFont="largeTitle"
-          >
-            {{ t('staff.day.zoneTitle') }}
-          </h2>
-          <p uiText uiFont="subheadline" uiForegroundStyle="secondary">
-            {{ t('staff.day.zoneBody', { zone: zoneLabel() }) }}
-          </p>
-        </ui-stack>
-      </ui-stack>
-    </ui-modal-sheet>
-    }
+      (uiPicked)="zoneNoticeOpen.set(false)"
+      (uiDismissed)="zoneNoticeOpen.set(false)"
+    />
 
-    <!-- Search. Its own sheet rather than a field in the bar: the results are
-         a LIST of visits across months, and a dropdown under a toolbar cannot
-         hold "Георги, чт 14 авг 15:00, past" legibly. -->
     @if (store.searching()) {
+    <!-- THE SHEETS' ONE SEARCH GRAMMAR (owner, 2026-09-24: "I like how the
+         client sheet on input focus collapses the title — this should be
+         done in adding a service and other places"): the page's head, its
+         scope as the line under the title, the DS field pinned under the
+         bar, and the head folding while the search is engaged — the bar
+         is told, because a folded title never scrolls under it. The read
+         in flight is the field's own quiet ring. -->
     <ui-modal-sheet
       sheetId="staff-search-sheet"
       labelledBy="staff-search-title"
       [closeLabel]="t('staff.day.cancelDismiss')"
       [open]="true"
+      [titleCollapsed]="searchSheetEngaged() ? true : undefined"
       data-testid="staff-search-sheet"
-      (dismissed)="store.closeSearch()"
+      (dismissed)="closeSearchSheet()"
     >
       <span sheet-title>{{ t('staff.day.searchLabel') }}</span>
 
-      <ui-stack uiSpacing="loose" class="staff-cancel__body">
-        <ui-stack uiSpacing="tight">
+      <!-- COMFORTABLE, the visit sheet's pages' own gap: the one search
+           grammar spaces its head, field and answers alike everywhere. -->
+      <ui-stack uiSpacing="comfortable" class="staff-cancel__body">
+        <ui-sheet-headline
+          [uiFolded]="searchSheetEngaged()"
+          data-testid="staff-search-headline"
+        >
           <h2
             id="staff-search-title"
             uiSheetLargeTitle
@@ -310,24 +325,25 @@
           >
             {{ t('staff.day.searchLabel') }}
           </h2>
-          <input
-            uiTextField
-            type="search"
-            autocomplete="off"
-            [attr.placeholder]="t('staff.day.searchPlaceholder')"
-            data-testid="staff-search-input"
-            [value]="store.term()"
-            (input)="store.setTerm($any($event.target).value)"
-          />
-          <p uiText uiFont="caption" uiForegroundStyle="secondary">
+          <p uiText uiFont="subheadline" uiForegroundStyle="secondary">
             {{ t('staff.day.searchScope') }}
           </p>
-        </ui-stack>
+        </ui-sheet-headline>
+        <ui-search-field
+          uiPinned
+          [uiValue]="store.term()"
+          [uiPlaceholder]="t('staff.day.searchPlaceholder')"
+          [uiBusy]="store.searchLoading()"
+          uiBusyTestId="staff-search-loading"
+          uiTestId="staff-search-input"
+          [uiClearLabel]="t('staff.day.searchClear')"
+          (uiInput)="store.setTerm($event)"
+          (uiFocusChange)="searchFieldFocused.set($event)"
+          (uiNavigate)="focusFirstHit($event)"
+        />
 
         @if (store.searchLoading()) {
-        <p uiText uiFont="footnote" uiForegroundStyle="secondary">
-          {{ t('staff.day.searchLoading') }}
-        </p>
+        <!-- The ring in the field says it; nothing below until it lands. -->
         } @else if (store.term().trim().length >= 2) { @if (searchResults(); as
         hits) { @if (hits.length === 0) {
         <p
@@ -391,20 +407,20 @@
         } } }
       </ui-stack>
     </ui-modal-sheet>
-    }
-
-    <ui-stack
-      uiSpacing="loose"
-      uiPaddingHorizontal="regular"
-      uiPaddingVertical="spacious"
-      class="staff-lanes"
-    >
-      @if (isGrid()) {
-      <!-- The calendar canvas. One renderer for day / 3-day / week — they
-           differ only in what a column IS, which the component never needs to
-           know. -->
+    } @if (isGrid()) {
+    <!-- THE CANVAS — full bleed, the column's growing middle, no padding
+         (owner, 2026-09-23). One renderer for day / 3-day / week — they
+         differ only in what a column IS, which is the one thing the grid is
+         told (`uiColumnKind`): chairs keep a legible floor and page
+         sideways, dates are fluid and never do. The reveal is keyed on the
+         store's jump counter; a turn of the day keeps the reader's hour. -->
+    <div class="staff-canvas" data-testid="staff-canvas">
       <lib-staff-time-grid
+        #grid
         [columns]="gridColumns()"
+        [uiColumnKind]="store.view() === 'day' ? 'chairs' : 'dates'"
+        [uiRevealKey]="store.revealKey()"
+        [uiRegionLabel]="regionLabel()"
         [rosterStartMinute]="rosterExtent().start"
         [nowMinute]="nowMinute()"
         [zoneLabel]="zoneLabel()"
@@ -416,13 +432,25 @@
         (eventPicked)="openVisit($event)"
         (gapPicked)="openGap($event)"
         (blockPicked)="openBlock($event)"
+        (dayPicked)="openDay($event)"
+        (allDayPicked)="openAllDay($event)"
+        (allDayEntryPicked)="openAllDayEntry($event)"
+        [uiAllDayAction]="t('staff.day.allDayBlock')"
+        (nowInView)="nowAway.set(!$event)"
       />
       @if (!store.loading() && gridColumns().length === 0) {
       <p uiText uiFont="body" uiForegroundStyle="secondary">
         {{ t('staff.day.noRoster') }}
       </p>
-      } } @else {
-
+      }
+    </div>
+    } @else {
+    <ui-stack
+      uiSpacing="loose"
+      uiPaddingHorizontal="regular"
+      uiPaddingVertical="spacious"
+      class="staff-lanes"
+    >
       <!-- The agenda owns its OWN rhythm. It sits inside a stack spaced
            `loose`, which put 32px between every group on top of the 4px
            the groups ask for — reading as a hole in the day where there
@@ -674,6 +702,10 @@
                    even appeared. Both facts moved into the body's trailing
                    column, where they cost no height of their own. -->
               <div class="agenda-card__body">
+                <!-- THE CLIENT'S FACE LEADS THE ROW. Tried between the facts
+                     and the times for an hour (owner, 2026-09-16) and put
+                     back the same day: "it doesn't work" — a disc in the
+                     middle of the card split it into two half-cards. -->
                 @if (fields.isOn('avatar')) {
                 <div class="agenda-card__face">
                   <ui-avatar
@@ -695,119 +727,52 @@
                     "
                     >+{{ entry.seatsHere - 1 }}</span
                   >
+                  } @if (stateIcon(entry); as state) {
+                  <!-- THE STATE ON THE FACE (owner, 2026-09-24): the glyph
+                       of an hour that did not happen, at the bottom leading
+                       corner, opposite the party's «+N» and in its dress —
+                       a glyph in a disc,
+                       never a coloured dot (the arrival dot was removed for
+                       reading as a presence light). The word is the gloss's
+                       and the row's name says it; this is the glance. -->
+                  <span
+                    class="agenda-card__state"
+                    aria-hidden="true"
+                    data-testid="staff-visit-state-badge"
+                  >
+                    <ui-icon [uiName]="state" />
+                  </span>
                   }
                 </div>
                 }
 
-                <!-- EVERY FACT ITS OWN LINE, top-aligned, in a fixed order.
-                     A line that has nothing to say is not rendered, so it
-                     costs no height — but it never shares one either. -->
-                <div class="agenda-card__facts">
-                  <p
-                    class="agenda-card__name"
-                    uiText
-                    uiFont="callout"
-                    uiWeight="semibold"
-                  >
-                    {{ entry.clientLabel }}
-                  </p>
-
-                  @if (fields.isOn('email') && entry.email) {
-                  <p
-                    class="agenda-card__fact"
-                    uiText
-                    uiFont="callout"
-                    uiForegroundStyle="secondary"
-                    data-testid="staff-visit-email"
-                  >
-                    <ui-icon uiName="contact.email" aria-hidden="true" />
-                    <span>{{ entry.email }}</span>
-                  </p>
-                  } @if (fields.isOn('phone') && entry.phone) {
-                  <p
-                    class="agenda-card__fact"
-                    uiText
-                    uiFont="callout"
-                    uiForegroundStyle="secondary"
-                    data-testid="staff-visit-phone"
-                  >
-                    <ui-icon uiName="contact.phone" aria-hidden="true" />
-                    <span>{{ entry.phone }}</span>
-                  </p>
-                  } @if (fields.isOn('service')) {
-                  <p
-                    class="agenda-card__fact agenda-card__fact--service"
-                    uiText
-                    uiFont="callout"
-                    uiForegroundStyle="secondary"
-                  >
-                    {{ entry.serviceLabel }}
-                  </p>
-                  }
-                  <!-- ⚠ THE PARTY SHARE IS NOT A FACT LINE. It moved to the
-                       foot, with the marks. (owner ruling 2026-09-04) -->
-                </div>
-
-                <!-- ONE TRAILING CLUSTER, settled to the end both ways:
-                     marks first, then whose chair. Two separate end-aligned
-                     groups read as two competing columns; one row of small
-                     marks reads as a single trailing gutter.
-
-                     The marks are ONLY facts the model actually holds — a
-                     note, and a rebooking (`Appointment.bookedFrom`). There
-                     is no paid glyph because payment is not modelled
-                     anywhere in this codebase, and an icon that can never
-                     appear is a claim about the schema, not a feature.
-
-                     The barber's disc shows their PHOTOGRAPH, with the
-                     chair's tone and their initials behind it as the
-                     fallback for a barber who has none.
-
-                     It was unbound for a while, on a real measurement: the
-                     roster's photos have a mean pairwise RGB distance of 23
-                     between chairs against the rail's 102, so at this size
-                     they cannot be told apart at a glance. But that argument
-                     only holds if the disc is the identity channel — and it
-                     is not. The rail is, unconditionally and at constant x.
-                     The disc is a face for someone who already knows the
-                     team, which is everyone who reads this screen. -->
-                <div class="agenda-card__aside">
-                  <!-- WHEN, at the top of the trailing column. Start solid,
-                       end muted underneath at the same size — the interval
-                       reads down rather than across, so no dash is needed to
-                       join two numbers that are plainly a pair.
-
-                       The relative time goes BELOW THE END, smaller and
-                       quieter. Reading order is the reason: the clock time
-                       is the fact and "in 2 h" is a gloss on it, so it
-                       follows rather than leads — supplementary text sits
-                       after the value it qualifies, not in front of it. -->
-                  <!-- Three switches, not one: the start, the end and the
-                       relative gloss answer three different questions and a
-                       reader should not lose all three to drop any one. -->
-                  @if (fields.isOn('timeStart') || fields.isOn('timeEnd') ||
-                  fields.isOn('timeRelative')) {
-                  <div
-                    class="agenda-card__times"
-                    data-testid="staff-visit-time"
-                  >
-                    @if (fields.isOn('timeStart')) {
-                    <span class="agenda-card__start"
-                      >{{ entry.startLabel }}</span
-                    >
-                    } @if (fields.isOn('timeEnd')) {
-                    <span class="agenda-card__end"
-                      >{{ entry.endLabel }}@if (entry.crossesMidnight)
-                      {<span>⁺¹</span>}</span
-                    >
-                    } @if (fields.isOn('timeRelative')) {
-                    <span class="agenda-card__when"
-                      >{{ whenLabel(entry) }}</span
-                    >
-                    }
-                  </div>
-                  }
-                </div>
+                <!-- THE HEAD — the name, every fact on its own line, and the
+                     clock: ONE recipe with the frame's block, at the card's
+                     density (owner, 2026-09-16: "the agenda card should be
+                     the same as the grid event, but bigger, so we stay
+                     consistent"). A line with nothing to say is not
+                     rendered, so it costs no height — but it never shares
+                     one either, and nothing here truncates. Three switches
+                     for the clock, not one: the start, the end and the
+                     relative gloss answer three different questions. The
+                     party share is NOT a line: it is a mark, in the foot
+                     (owner ruling 2026-09-04). -->
+                <lib-staff-event-head
+                  class="agenda-card__head"
+                  size="regular"
+                  [title]="entry.clientLabel"
+                  [struck]="hollowStatus(entry.status)"
+                  [receded]="entry.past && !hollowStatus(entry.status)"
+                  [lines]="factLines(entry)"
+                  [start]="fields.isOn('timeStart') ? entry.startLabel : null"
+                  [end]="fields.isOn('timeEnd') ? endLabel(entry) : null"
+                  [gloss]="
+                    stateLabel(entry) ??
+                    (fields.isOn('timeRelative') ? whenLabel(entry) : null)
+                  "
+                  [glossState]="stateLabel(entry) !== null"
+                  timesTestId="staff-visit-time"
+                />
               </div>
 
               <!-- ...and WHAT BECAME OF IT, at the foot: what it comes
@@ -872,7 +837,7 @@
                 <span
                   class="agenda-card__party"
                   uiText
-                  uiFont="callout"
+                  uiFont="caption"
                   uiForegroundStyle="secondary"
                   data-testid="staff-visit-party-share"
                   [attr.aria-label]="
@@ -884,8 +849,11 @@
                     >{{ entry.partyLabel }}</span
                   >
                 </span>
-                } @if (entry.tag) {
-                <!-- THE TAG — the frame's own mark, on the card (owner,
+                } @if (entry.tag && !hollowStatus(entry.status)) {
+                <!-- (Not on an hour that did not happen, 2026-09-24: how far
+                     a run is from the catalogue's length means nothing for a
+                     visit that will not run.)
+                     THE TAG — the frame's own mark, on the card (owner,
                      2026-09-10): how far this run is from the catalogue's
                      length, so a stretched or trimmed booking says so before
                      its sheet is ever opened. A figure, so it sits with the
@@ -937,10 +905,14 @@
       <p uiText uiFont="body" uiForegroundStyle="secondary">
         {{ t('staff.day.noRoster') }}
       </p>
-      } }
+      }
     </ui-stack>
 
+    <!-- The agenda's own free space, so the bar floors on a short run. In a
+         grid view the canvas takes the room, and a spacer beside it would
+         split it. -->
     <ui-spacer />
+    }
 
     <!-- The shop's three write actions, in the page's own bottom bar.
          `ui-page-action-bar` brings the house chrome fade (the quintic
@@ -986,7 +958,12 @@
       <!-- THE CREATE DOOR (owner review 2026-09-08): the bar's prominent
            child, docked trailing on the thumb rail. It opens the block
            editor until the booking write exists, then the kind picker. -->
-      @if (!store.isToday()) {
+      <!-- THE WAY BACK TO THE PRESENT (2026-09-23, §6): off today it jumps
+           home, as it always did; on today it appears once the now-line has
+           left the calendar's box and GLIDES back to it — «Към сега», because
+           a button that scrolls must not say it jumps. Google's today
+           control appears the same way. -->
+      @if (!store.isToday() || (isGrid() && nowAway())) {
       <!-- A cluster of ONE, the same recipe the toolbar's own controls wear.
            It was `glass`, which is the DS's chrome material and composites to
            a different, greyer fill than the segments at the top of the same
@@ -1003,10 +980,14 @@
           uiControlSize="large"
           [uiIconOnly]="true"
           class="staff-cluster__item"
-          [attr.aria-label]="t('staff.day.backToToday')"
-          [title]="t('staff.day.backToToday')"
+          [attr.aria-label]="
+            t(store.isToday() ? 'staff.day.backToNow' : 'staff.day.backToToday')
+          "
+          [title]="
+            t(store.isToday() ? 'staff.day.backToNow' : 'staff.day.backToToday')
+          "
           data-testid="staff-day-today"
-          (click)="store.jumpToToday()"
+          (click)="backToNow()"
         >
           <ui-icon uiName="calendar.today" uiScale="medium" />
         </button>
@@ -1088,7 +1069,7 @@
     <span sheet-title>{{ t('staff.day.fieldsTitle') }}</span>
 
     <ui-stack uiSpacing="loose" class="staff-cancel__body">
-      <ui-stack uiSpacing="tight">
+      <ui-sheet-headline class="staff-sheet__headline">
         <h2
           id="staff-fields-title"
           uiSheetLargeTitle
@@ -1100,7 +1081,7 @@
         <p uiText uiFont="subheadline" uiForegroundStyle="secondary">
           {{ t('staff.day.fieldsLede') }}
         </p>
-      </ui-stack>
+      </ui-sheet-headline>
 
       <ui-list-group>
         @for (field of agendaFieldIds; track field) {
@@ -1168,11 +1149,12 @@
     sheetId="staff-visit-sheet"
     labelledBy="staff-visit-title"
     [titleAlwaysVisible]="visitEditor.depth() === 0"
+    [titleCollapsed]="visitEditor.searchEngaged() ? true : undefined"
     uiPresentationSizing="automatic"
     [open]="true"
     [closeLabel]="t('staff.day.cancelDismiss')"
     data-testid="staff-visit-sheet"
-    (dismissed)="closeVisitSheet()"
+    (dismissed)="dismissVisitSheet()"
   >
     <!-- The id `labelledBy` points at. It used to sit on the editor's own
          large title; that title is gone (owner ruling 2026-09-04) and the
@@ -1180,12 +1162,14 @@
     <!-- The bar names the PAGE when one is pushed (owner, 2026-09-09) and
          the sheet at the root; on a page the large title collapses into it
          the HIG way, at the root the bar carries the name permanently. -->
-    <span sheet-title id="staff-visit-title"
-      >{{ visitEditor.pageTitle() ?? t('staff.visit.editTitle') }}</span
-    >
     <!-- THE WAY BACK from a pushed page, in the bar opposite the ✕ (owner,
-         2026-09-09) — never inside the content that scrolls. -->
-    @if (visitEditor.depth() > 0) {
+         2026-09-09) — never inside the content that scrolls. The same ‹
+         leads back through a PARTY (owner, 2026-09-17: "going to someone
+         in the reservation … add a back button to the header so it's
+         recognisable"): a hop to a peer's visit leaves the visit it came
+         from on a trail, and the ‹ walks it back, one visit at a time,
+         before it is the page's own way back. -->
+    @if (visitEditor.depth() > 0 || visitTrail().length > 0) {
     <button
       sheet-leading
       type="button"
@@ -1196,7 +1180,7 @@
       [uiIconOnly]="true"
       [attr.aria-label]="t('staff.visit.back')"
       data-testid="staff-visit-back"
-      (click)="visitEditor.pop()"
+      (click)="visitEditor.depth() > 0 ? visitEditor.pop() : backAlongTrail()"
     >
       <ui-icon uiName="nav.back" />
     </button>
@@ -1205,12 +1189,20 @@
       #visitEditor
       [vm]="editorVm"
       [uiBarbers]="barberOptions()"
+      [uiShops]="shopOptions()"
       [uiServices]="visitServiceOptions()"
+      [uiClients]="visitClientOptionsWithFaces()"
+      [uiClientSections]="visitClientSectionsWithFaces()"
+      [uiClientBook]="visitClientBookWithFaces()"
+      [uiClientSearching]="visitClientSearching()"
+      (clientQuery)="searchClients($event)"
+      (clientsBrowsed)="browseClients()"
       [uiFrameDay]="visitFrameDay()"
       [uiSavedMark]="visitSavedMark()"
-      [uiMayReprice]="mayReprice()"
+      [uiReseedMark]="visitReseedMark()"
       [uiMayDiscount]="mayReprice()"
       [uiGrants]="store.grants()"
+      [uiPromos]="store.promos()"
       [uiPromoCode]="visitCodeResult()"
       (promoCodeEntered)="resolveCodeFromEditor($event)"
       (dismissed)="closeVisitSheet()"
@@ -1218,11 +1210,25 @@
       (chairChanged)="onVisitChairChanged($event)"
       (acted)="actFromEditor(editorVm.appointmentId, $event)"
       (committed)="commitFromEditor(editorVm.appointmentId, $event)"
-      (peerPicked)="visitSheetId.set($event)"
+      [uiLibrary]="visitLibraryImages()"
+      (photoPicked)="attachPhotoFromEditor(editorVm, $event)"
+      (photoRemoved)="removePhotoFromEditor($event)"
+      (libraryPicked)="adoptPhotoFromEditor(editorVm, $event)"
+      (peerPicked)="hopToPeer($event)"
       (rebooked)="rebookFromEditor(editorVm)"
       (blockedInstead)="blockInsteadFromEditor(editorVm)"
-      (tipped)="tipFromEditor($event)"
     />
+    <!-- AFTER the editor on purpose: the title reads the editor's draft,
+         and a binding evaluated before the editor's inputs are bound would
+         read a required input that has no value yet. -->
+    <!-- THE BAR NAMES THE PERSON (2026-09-18, the order review): the
+         seat's client at the root — «Мартин Илиев», «Мартин +1», «Случаен
+         клиент» — bound to the draft, and the page's own name on a push.
+         «Редактиране на час» was the one line that never scrolled and
+         answered nothing, while the name sat below the first screen. -->
+    <span sheet-title id="staff-visit-title"
+      >{{ visitEditor.sheetTitle() }}</span
+    >
   </ui-modal-sheet>
   }
 
@@ -1236,15 +1242,13 @@
     sheetId="staff-create-sheet"
     labelledBy="staff-create-title"
     [titleAlwaysVisible]="createEditor.depth() === 0"
+    [titleCollapsed]="createEditor.searchEngaged() ? true : undefined"
     uiPresentationSizing="automatic"
     [open]="true"
     [closeLabel]="t('staff.day.cancelDismiss')"
     data-testid="staff-create-sheet"
-    (dismissed)="closeCreateSheet()"
+    (dismissed)="dismissCreateSheet()"
   >
-    <span sheet-title id="staff-create-title"
-      >{{ createEditor.pageTitle() ?? t('staff.visit.newTitle') }}</span
-    >
     @if (createEditor.depth() > 0) {
     <button
       sheet-leading
@@ -1265,25 +1269,24 @@
       #createEditor
       [vm]="newVm"
       [uiBarbers]="barberOptions()"
+      [uiShops]="shopOptions()"
       [uiServices]="visitServiceOptions()"
-      [uiClients]="visitClientOptions()"
+      [uiClients]="visitClientOptionsWithFaces()"
+      [uiClientSections]="visitClientSectionsWithFaces()"
+      [uiClientBook]="visitClientBookWithFaces()"
+      [uiClientSearching]="visitClientSearching()"
+      (clientsBrowsed)="browseClients()"
       (dismissed)="closeCreateSheet()"
       (clientQuery)="searchClients($event)"
       (chairChanged)="onCreateChairChanged($event)"
-      (committed)="$event.kind === 'save' ? createFromEditor($event) : null"
+      (committed)="createFromEditor($event)"
     />
-    @if (store.createError()) {
-    <p
-      uiText
-      uiFont="footnote"
-      uiForegroundStyle="destructive"
-      role="alert"
-      data-testid="staff-create-error"
-      [attr.data-code]="store.createError()?.failure ?? null"
+    <!-- AFTER the editor on purpose: the title reads the editor's draft,
+         and a binding evaluated before the editor's inputs are bound would
+         read a required input that has no value yet. -->
+    <span sheet-title id="staff-create-title"
+      >{{ createEditor.sheetTitle() }}</span
     >
-      {{ t('staff.visit.createFailed') }}
-    </p>
-    }
   </ui-modal-sheet>
   }
 
@@ -1302,7 +1305,7 @@
   >
     <span sheet-title>{{ t('staff.day.fab.' + pending) }}</span>
     <ui-stack uiSpacing="loose" class="staff-cancel__body">
-      <ui-stack uiSpacing="tight">
+      <ui-sheet-headline class="staff-sheet__headline">
         <h2
           id="staff-pending-title"
           uiSheetLargeTitle
@@ -1314,7 +1317,7 @@
         <p uiText uiFont="subheadline" uiForegroundStyle="secondary">
           {{ t('staff.day.notBuiltYet') }}
         </p>
-      </ui-stack>
+      </ui-sheet-headline>
     </ui-stack>
   </ui-modal-sheet>
   }
@@ -1332,18 +1335,38 @@
   <ui-modal-sheet
     sheetId="staff-block-sheet"
     labelledBy="staff-block-title"
-    [titleAlwaysVisible]="true"
+    [titleAlwaysVisible]="blockEditor.depth() === 0"
     uiPresentationSizing="automatic"
     [closeLabel]="t('staff.day.cancelDismiss')"
     [open]="true"
     data-testid="staff-block-sheet"
     (dismissed)="closeBlockSheet()"
   >
+    <!-- THE WAY BACK from the repeat page, in the bar opposite the ✕ — the
+         visit sheet's own ‹ (owner, 2026-09-09), never inside the content
+         that scrolls; the bar names the page while one is pushed. -->
+    @if (blockEditor.depth() > 0) {
+    <button
+      sheet-leading
+      type="button"
+      uiButton
+      uiButtonStyle="bordered"
+      uiTint="neutral"
+      uiControlSize="regular"
+      [uiIconOnly]="true"
+      [attr.aria-label]="t('staff.visit.back')"
+      data-testid="staff-block-back"
+      (click)="blockEditor.pop()"
+    >
+      <ui-icon uiName="nav.back" />
+    </button>
+    }
     <span sheet-title id="staff-block-title"
-      >{{ blockVm.blockId === null ? t('staff.block.new') :
-      t('staff.block.title') }}</span
+      >{{ blockEditor.pageTitle() ?? (blockVm.blockId === null ?
+      t('staff.block.new') : t('staff.block.title')) }}</span
     >
     <lib-staff-block-editor
+      #blockEditor
       [vm]="blockVm"
       [uiBarbers]="barberOptions()"
       (committed)="commitBlock($event)"
@@ -1379,7 +1402,7 @@
     <span sheet-title>{{ t('staff.day.cancelTitle') }}</span>
 
     <ui-stack uiSpacing="loose" class="staff-cancel__body">
-      <ui-stack uiSpacing="tight">
+      <ui-sheet-headline class="staff-sheet__headline">
         <h2
           id="staff-cancel-title"
           uiSheetLargeTitle
@@ -1391,7 +1414,7 @@
         <p uiText uiFont="subheadline" uiForegroundStyle="secondary">
           {{ t('staff.day.cancelLede') }}
         </p>
-      </ui-stack>
+      </ui-sheet-headline>
 
       <!-- A closed vocabulary, not a sentence. Prose cannot be aggregated,
            and "why do we lose Saturday mornings" is only answerable if every
@@ -1485,18 +1508,39 @@
   </ui-modal-sheet>
   }
 
+  <!-- THE DISCARD GUARD (2026-09-18, the order review): a dirty draft is
+       not dropped on a ✕ or the scrim without a word — Calendar's own
+       «Discard Changes?», over the sheet whose ✕ asked. AN ALERT, NOT A
+       SHEET (owner, 2026-09-23: the card "looks more like a second sheet
+       appearing"): a sheet is a place to do something, this is a sentence
+       and its two answers — the platform's centred dialog, the destructive
+       one red, the safe one bold and last. Mounted always, so its exit can
+       play; it draws nothing until asked. -->
+  <ui-alert
+    [uiPresented]="discardPending() !== null"
+    [uiTitle]="t('staff.visit.discardTitle')"
+    [uiMessage]="t('staff.visit.discardBody')"
+    [uiActions]="discardActions()"
+    data-testid="staff-discard-sheet"
+    (uiPicked)="onDiscardPick($event)"
+    (uiDismissed)="discardPending.set(null)"
+  />
+
   <!-- THE WAY BACK (owner ruling 2026-09-08). Every immediate stamp raises
        this for eight seconds with its inverse WRITE: clearing an arrival,
        reopening a completed or no-show visit, reinstating a cancellation —
        each a real second write through the same callables, obeying the same
        refusals, never a client-side rollback. One toast per page; a new act
-       replaces the last one. -->
+       replaces the last one — and so does A REFUSAL (owner, 2026-09-17: "if
+       there is an error message it should appear as a toast"): the server's
+       sentence, with no action, above the sheet it answers. -->
   <ui-toast
-    [uiPresented]="undo() !== null"
-    [uiLabel]="undo()?.message ?? ''"
-    [uiActionLabel]="t('staff.day.undo.action')"
+    [uiPresented]="undo() !== null || notice() !== null"
+    [uiLabel]="undo()?.message ?? notice() ?? ''"
+    [uiActionLabel]="undo() !== null ? t('staff.day.undo.action') : ''"
     [uiDismissLabel]="t('staff.day.undo.dismiss')"
+    data-testid="staff-toast"
     (uiAction)="runUndo()"
-    (uiDismissed)="undo.set(null)"
+    (uiDismissed)="undo.set(null); notice.set(null)"
   />
 </ng-container>

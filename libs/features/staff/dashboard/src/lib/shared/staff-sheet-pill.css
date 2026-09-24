@@ -82,7 +82,11 @@
 }
 
 .staff-sheet__pill:not([aria-expanded]):has(
-    :is(.ui-unit-field__native, .ui-time-field__native):focus-visible
+    :is(
+      .ui-unit-field__native,
+      .ui-time-field__native,
+      .ui-code-field__native
+    ):focus-visible
   ) {
   outline: var(--sys-focus-ring-width) solid var(--sys-color-accent);
   outline-offset: 2px;
@@ -126,8 +130,9 @@
   color: var(--sys-color-secondary-label);
 }
 
-/* Every typed figure inside a pill is a DS field now — `ui-time-field`
-   (2026-09-09) and `ui-unit-field` (2026-09-10) — and each owns its native
+/* Every typed value inside a pill is a DS field now — `ui-time-field`
+   (2026-09-09), `ui-unit-field` (2026-09-10), `ui-code-field` (2026-09-16)
+   — and each owns its native
    input: its size, its 16px floor against the iOS zoom, its spinners, its
    placeholder. The pill styles NOTHING inside them: an unlayered
    `font: inherit` on the pill's inputs used to beat the DS floor and hand

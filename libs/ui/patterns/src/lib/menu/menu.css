@@ -227,9 +227,11 @@
    * "choose one of these" reads the same whether it is a screen or a popover
    * (owner ruling 2026-07-31). These rules stand down for those, because
    * `.ui-list-row` and `.ui-menu__item` are equal specificity and whichever
-   * stylesheet loaded last would otherwise decide.
+   * stylesheet loaded last would otherwise decide. A COUPON CARD in a menu
+   * (2026-09-16) is its own surface the same way: the item grammar stands
+   * down, and the card keeps its ticket, its ring and its state layer.
    */
-  .ui-menu__item:not(.ui-list-row) {
+  .ui-menu__item:not(.ui-list-row, .ui-coupon-card) {
     display: flex;
     align-items: center;
     gap: var(--sys-space-regular);
@@ -273,15 +275,27 @@
      feedback (mobile press parity). Both fill with currentColor so the
      destructive item highlights red. */
   @media (hover: hover) and (pointer: fine) {
-    .ui-menu__item:not(.ui-list-row, [disabled], [aria-disabled='true']):hover {
+    .ui-menu__item:not(
+        .ui-list-row,
+        .ui-coupon-card,
+        [disabled],
+        [aria-disabled='true']
+      ):hover {
       background: var(--sys-state-layer-hover);
     }
   }
-  .ui-menu__item:not(.ui-list-row, [disabled], [aria-disabled='true']):active {
+  .ui-menu__item:not(
+      .ui-list-row,
+      .ui-coupon-card,
+      [disabled],
+      [aria-disabled='true']
+    ):active {
     background: var(--sys-state-layer-press);
   }
 
-  .ui-menu__item:focus-visible {
+  /* The card draws its ring inside its notched mask; an outline here would
+     be cut away with the notches. */
+  .ui-menu__item:not(.ui-coupon-card):focus-visible {
     outline: var(--sys-focus-ring-width) solid var(--sys-color-accent);
     outline-offset: -2px;
   }

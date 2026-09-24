@@ -1,0 +1,29 @@
+:host {
+  display: block;
+}
+
+.segmented__mono {
+  font-family: var(--sys-font-family-mono);
+}
+
+.segmented__wide {
+  inline-size: 20rem;
+  max-inline-size: 100%;
+}
+
+/* A stand-in for map tiles: a busy gradient the material has to read over. */
+.segmented__media {
+  position: relative;
+  block-size: 12rem;
+  border-radius: var(--control-radius-regular);
+  background:
+    radial-gradient(circle at 20% 30%, #f26b22 0, transparent 35%),
+    radial-gradient(circle at 80% 70%, #2f6fed 0, transparent 40%),
+    repeating-linear-gradient(45deg, #9a9a9a 0 6px, #d8d8d8 6px 12px);
+}
+
+.segmented__floating {
+  position: absolute;
+  inset-block-start: var(--sys-space-compact);
+  inset-inline: var(--sys-space-compact);
+}

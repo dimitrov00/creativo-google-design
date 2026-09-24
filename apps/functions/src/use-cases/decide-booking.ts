@@ -208,6 +208,16 @@ export interface DecideBookingDeps {
    */
   readonly allowOutsideWindow?: boolean;
   /**
+   * THE SHOP COMBINES WHAT IT LIKES (owner, 2026-09-17: "a staff account
+   * could do whatever he wants"). The catalogue's `conflictsWith` is the
+   * CLIENT's self-booking rule — what a stranger may put together from a
+   * menu without asking. The shop's own book is not bound by it: a staff
+   * edit and a staff placement skip the check, unconditionally and with no
+   * second tap, exactly like the window. The per-person scoping and the
+   * bundle inheritance stay as they are for everyone else.
+   */
+  readonly allowConflictingServices?: boolean;
+  /**
    * Staff may double-book, once they have said so.
    *
    * Unlike the window, this one IS acknowledged: the sheet relabels its commit
@@ -407,7 +417,10 @@ export function decideBooking(
           : `guest:${requested.subject.label}`;
       const existing = servicesByPerson.get(person) ?? [];
       for (const other of existing) {
-        if (servicesConflict(service, other, snapshot.services)) {
+        if (
+          !deps.allowConflictingServices &&
+          servicesConflict(service, other, snapshot.services)
+        ) {
           return fail(
             new CommitBookingConflictingServicesError(
               service.id.value,

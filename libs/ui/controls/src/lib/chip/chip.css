@@ -40,6 +40,18 @@
     color: var(--sys-color-on-primary);
   }
 
+  /* A CHIP WITH A FACE (2026-09-22) — the person as a token, Material's
+     input chip and the picked strip of every people picker: a `ui-avatar`
+     projected FIRST sits nearly flush with the leading edge (the tight
+     inset, not the label's regular one), one compact gap from the name.
+     The consumer picks the disc one rung under the chip — `small` in a
+     `regular` chip — so it clears the block padding; the avatar's own
+     monogram and ink ride the chip's colours, selected or not. */
+  .ui-chip:has(> .ui-avatar:first-child) {
+    padding-inline-start: var(--sys-space-tight);
+    gap: var(--sys-space-compact);
+  }
+
   /* The tinted selection — a chip that carries an ANSWER rather than a
      filter. `--sys-color-on-accent` (white in both themes), never
      `--sys-color-on-primary`, which flips to near-black in dark and would

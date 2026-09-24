@@ -1,5 +1,5 @@
 import { Injectable, inject } from '@angular/core';
-import { deleteDoc, getDoc, setDoc } from 'firebase/firestore';
+import { deleteDoc, getDoc, setDoc, writeBatch } from 'firebase/firestore';
 import { FIREBASE_FIRESTORE } from '@creativo/infrastructure/firebase-app';
 import {
   ScheduleExceptionWriter,
@@ -13,11 +13,44 @@ import { BarberId, LocationId } from '@creativo/domain/catalog';
 import { Result, fail, ok } from '@creativo/domain/kernel';
 import {
   CalendarDay,
+  type EmptyExceptionRangesError,
   LocalTimeRange,
   ScheduleException,
   ScheduleExceptionId,
 } from '@creativo/domain/scheduling';
 import { scheduleExceptionDocRef } from './firestore-paths';
+
+/** Firestore's ceiling on the writes one batch may carry. */
+const BATCH_LIMIT = 500;
+
+/**
+ * What a day holds once `ranges` are added to it: the union with what is
+ * there, coalesced — or `null` when a whole-day absence already covers
+ * every minute, so the ranges add nothing and must not demote the day to
+ * a partial block. ONE answer for `putRange` and `putSeries`.
+ */
+function withRanges(
+  existing: ScheduleException | null,
+  barberId: BarberId,
+  locationId: LocationId,
+  day: CalendarDay,
+  ranges: readonly LocalTimeRange[],
+): Result<ScheduleException, EmptyExceptionRangesError> | null {
+  if (existing?.isWholeDay()) return null;
+  const current =
+    existing && 'ranges' in existing.detail ? existing.detail.ranges : [];
+  return ScheduleException.create({
+    id: ScheduleExceptionId.of(`${barberId.value}__${day.key()}`),
+    day,
+    barberId,
+    locationId,
+    detail: {
+      kind: 'admin',
+      ranges: coalesceRanges([...current, ...ranges]),
+      note: '',
+    },
+  });
+}
 
 /**
  * `scheduleExceptions/{barberId}__{dayKey}` — staff's pen on the roster.
@@ -81,22 +114,14 @@ export class FirestoreScheduleExceptionWriter implements ScheduleExceptionWriter
       const existing = snapshot.exists()
         ? exceptionFromDocument(snapshot.data())
         : null;
-      // A whole-day absence already covers every minute; the range adds
-      // nothing and must not demote the day to a partial block.
-      if (existing?.isWholeDay()) return ok(undefined);
-      const current =
-        existing && 'ranges' in existing.detail ? existing.detail.ranges : [];
-      const exception = ScheduleException.create({
-        id: ScheduleExceptionId.of(`${barberId}__${dayKey}`),
-        day: day.value,
-        barberId: id.value,
-        locationId: location.value,
-        detail: {
-          kind: 'admin',
-          ranges: coalesceRanges([...current, range]),
-          note: '',
-        },
-      });
+      const exception = withRanges(
+        existing,
+        id.value,
+        location.value,
+        day.value,
+        [range],
+      );
+      if (exception === null) return ok(undefined);
       if (exception.isFailure()) {
         return fail(new RepositoryError('Bad block', exception.error));
       }
@@ -104,6 +129,82 @@ export class FirestoreScheduleExceptionWriter implements ScheduleExceptionWriter
       return ok(undefined);
     } catch (cause) {
       return fail(new RepositoryError('Could not save the block', cause));
+    }
+  }
+
+  async putSeries(
+    barberId: string,
+    locationId: string,
+    dayKeys: readonly string[],
+    zone: string,
+    ranges: readonly LocalTimeRange[],
+  ): Promise<Result<void, RepositoryError>> {
+    const id = BarberId.create(barberId);
+    const location = LocationId.create(locationId);
+    if (id.isFailure() || location.isFailure()) {
+      return fail(new RepositoryError('Bad block address'));
+    }
+    const days: CalendarDay[] = [];
+    for (const dayKey of dayKeys) {
+      const day = CalendarDay.create(dayKey, zone);
+      if (day.isFailure()) {
+        return fail(new RepositoryError('Bad block day', day.error));
+      }
+      days.push(day.value);
+    }
+    try {
+      const refs = days.map((day) =>
+        scheduleExceptionDocRef(this.db, id.value, day.key()),
+      );
+      // A whole day REPLACES what the day held, exactly as `put` does, so
+      // there is nothing to read first; ranges merge, so every day is read
+      // — in parallel, not one round trip after another.
+      const snapshots =
+        ranges.length === 0
+          ? null
+          : await Promise.all(refs.map((ref) => getDoc(ref)));
+      const writes: {
+        readonly ref: (typeof refs)[number];
+        readonly exception: ScheduleException;
+      }[] = [];
+      for (const [index, day] of days.entries()) {
+        const ref = refs[index];
+        if (ref === undefined) continue;
+        const snapshot = snapshots?.[index];
+        const exception =
+          snapshots === null
+            ? ScheduleException.create({
+                id: ScheduleExceptionId.of(`${barberId}__${day.key()}`),
+                day,
+                barberId: id.value,
+                locationId: location.value,
+                detail: { kind: 'time_off' },
+              })
+            : withRanges(
+                snapshot?.exists()
+                  ? exceptionFromDocument(snapshot.data())
+                  : null,
+                id.value,
+                location.value,
+                day,
+                ranges,
+              );
+        if (exception === null) continue;
+        if (exception.isFailure()) {
+          return fail(new RepositoryError('Bad block', exception.error));
+        }
+        writes.push({ ref, exception: exception.value });
+      }
+      for (let from = 0; from < writes.length; from += BATCH_LIMIT) {
+        const batch = writeBatch(this.db);
+        for (const write of writes.slice(from, from + BATCH_LIMIT)) {
+          batch.set(write.ref, exceptionToDocument(write.exception));
+        }
+        await batch.commit();
+      }
+      return ok(undefined);
+    } catch (cause) {
+      return fail(new RepositoryError('Could not save the series', cause));
     }
   }
 

@@ -1,0 +1,27 @@
+:host {
+  display: block;
+}
+
+.scroll-column__mono {
+  font-family: var(--sys-font-family-mono);
+}
+
+/* The consumer's one job: the cap. */
+.scroll-column__capped {
+  --ui-scroll-column-max-block-size: 14rem;
+}
+
+.scroll-column__short {
+  --ui-scroll-column-max-block-size: 9rem;
+}
+
+/* Row placeholder — accent-tinted stand-in for a list item. */
+.scroll-column__thumb {
+  display: flex;
+  align-items: center;
+  block-size: 3rem;
+  padding-inline: var(--sys-space-regular);
+  border-radius: var(--control-radius-subtle);
+  background: color-mix(in srgb, var(--sys-color-accent) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--sys-color-accent) 35%, transparent);
+}

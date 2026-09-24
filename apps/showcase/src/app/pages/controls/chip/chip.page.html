@@ -28,6 +28,34 @@
     </ui-stack>
   </sc-demo>
 
+  <sc-demo scTitle="People as tokens">
+    <ng-container scAbout>
+      A <code>ui-avatar</code> projected first makes the chip a person's token —
+      the picked strip of a people picker — flush with the leading edge, one
+      rung under the chip; a trailing ✕ says it comes off.
+    </ng-container>
+    <ui-flow uiSpacing="compact" uiAlignment="center">
+      <button uiChip [uiSelected]="true" aria-label="Премахни Мартин Илиев">
+        <ui-avatar
+          uiName="Мартин Илиев"
+          uiControlSize="small"
+          aria-hidden="true"
+        />
+        Мартин Илиев
+        <ui-icon uiName="sheet.close" aria-hidden="true" />
+      </button>
+      <button uiChip aria-label="Премахни Анна Костова">
+        <ui-avatar
+          uiName="Анна Костова"
+          uiControlSize="small"
+          aria-hidden="true"
+        />
+        Анна Костова
+        <ui-icon uiName="sheet.close" aria-hidden="true" />
+      </button>
+    </ui-flow>
+  </sc-demo>
+
   <sc-demo scTitle="Live filter row">
     <ng-container scAbout>
       Click to toggle — a signal-backed selection Set drives

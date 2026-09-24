@@ -8,8 +8,11 @@ import { RepositoryError } from '@creativo/application/shared';
  *
  * Separate from `CouponGrantRepository`, which is about what a PERSON holds:
  * a code on a flyer belongs to nobody until it is presented, so resolving
- * one is a catalogue question, not a grants question. One method, because
- * one surface asks it: the counter, typing a code the client read out.
+ * one is a catalogue question, not a grants question. Two methods, for the
+ * two things the counter asks: what a typed code opens (a voucher, a code
+ * the client read out), and which codes are LIVE — the book offers the
+ * shop's own promotions rather than asking staff to type them (owner,
+ * 2026-09-16: "you are the staff, you know the valid promo codes").
  */
 export interface CouponReader {
   /**
@@ -21,6 +24,14 @@ export interface CouponReader {
    * promise the shop stopped keeping.
    */
   findByCode(code: string): Promise<Result<Coupon | null, RepositoryError>>;
+
+  /**
+   * The ENABLED coupons that open by a code — the shop's live promotions,
+   * for the book to offer at the chair. Coupons that reach a client only
+   * as a grant (no code) are not here; they are the person's, not the
+   * counter's. A retired code is absent, never listed as "disabled".
+   */
+  listOpen(): Promise<Result<readonly Coupon[], RepositoryError>>;
 }
 
 export const COUPON_READER = new InjectionToken<CouponReader>('CouponReader');

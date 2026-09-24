@@ -1,6 +1,6 @@
 import { ChangeDetectionStrategy, Component } from '@angular/core';
-import type { UiAvatarSize } from '@creativo/ui/controls';
-import { UiAvatar } from '@creativo/ui/controls';
+import type { UiAvatarSize, UiControlSize } from '@creativo/ui/controls';
+import { UiAvatar, UiAvatarGroup } from '@creativo/ui/controls';
 import { UiFlow, UiStack } from '@creativo/ui/layout';
 import { UiTextDirective } from '@creativo/ui/modifiers';
 import { ScDemo } from '../../../shared/demo';
@@ -14,7 +14,15 @@ interface AvatarImageSample {
 @Component({
   selector: 'cr-avatar-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [ScDemo, ScPage, UiAvatar, UiFlow, UiStack, UiTextDirective],
+  imports: [
+    ScDemo,
+    ScPage,
+    UiAvatar,
+    UiAvatarGroup,
+    UiFlow,
+    UiStack,
+    UiTextDirective,
+  ],
   templateUrl: './avatar.page.html',
   styleUrl: './avatar.page.css',
 })
@@ -32,6 +40,13 @@ export class AvatarPage {
     { size: 'regular', src: 'https://i.pravatar.cc/128?img=25' },
     { size: 'large', src: 'https://i.pravatar.cc/128?img=32' },
     { size: 'extraLarge', src: 'https://i.pravatar.cc/256?img=47' },
+  ];
+
+  /** The group rides the shared control ladder — no portrait tier for a cluster. */
+  protected readonly groupSizes: UiControlSize[] = [
+    'small',
+    'regular',
+    'large',
   ];
 
   /** Guaranteed-to-fail source — demonstrates the error → placeholder path. */

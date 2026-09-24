@@ -1,0 +1,57 @@
+@layer sys-components {
+  /* A bounded vertical scroller: as tall as its content until the consumer's
+     `--ui-scroll-column-max-block-size` caps it, then it scrolls. The
+     indicator stays (thin) — HIG's own cue that content scrolls — and the
+     min-block-size lets the frame shrink inside a flex column. */
+  .ui-scroll-column {
+    display: flex;
+    flex-direction: column;
+    min-block-size: 0;
+    max-block-size: var(--ui-scroll-column-max-block-size, none);
+    overflow-y: auto;
+    scrollbar-width: thin;
+  }
+
+  /* Children keep their intrinsic height — a frame never squashes a card. */
+  .ui-scroll-column > * {
+    flex: 0 0 auto;
+  }
+
+  /* PROXIMITY, not mandatory: the frame may rest anywhere, and only settles
+     onto an item when it stops near one — a mandatory vertical snap fights
+     the thumb at the end of a list and inside a page that scrolls too. */
+  .ui-scroll-column[data-snap='start'] {
+    scroll-snap-type: y proximity;
+  }
+  .ui-scroll-column[data-snap='start'] > * {
+    scroll-snap-align: start;
+  }
+  .ui-scroll-column[data-snap='center'] {
+    scroll-snap-type: y proximity;
+  }
+  .ui-scroll-column[data-snap='center'] > * {
+    scroll-snap-align: center;
+  }
+
+  .ui-scroll-column[data-spacing='none'] {
+    gap: var(--sys-space-none);
+  }
+  .ui-scroll-column[data-spacing='tight'] {
+    gap: var(--sys-space-tight);
+  }
+  .ui-scroll-column[data-spacing='compact'] {
+    gap: var(--sys-space-compact);
+  }
+  .ui-scroll-column[data-spacing='regular'] {
+    gap: var(--sys-space-regular);
+  }
+  .ui-scroll-column[data-spacing='comfortable'] {
+    gap: var(--sys-space-comfortable);
+  }
+  .ui-scroll-column[data-spacing='loose'] {
+    gap: var(--sys-space-loose);
+  }
+  .ui-scroll-column[data-spacing='spacious'] {
+    gap: var(--sys-space-spacious);
+  }
+}

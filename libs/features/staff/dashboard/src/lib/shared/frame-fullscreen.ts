@@ -1,5 +1,5 @@
-import { DOCUMENT } from '@angular/common';
-import { Injector, afterNextRender, inject, signal } from '@angular/core';
+import { Injector, inject, signal } from '@angular/core';
+import { runViewTransition } from './view-transition';
 
 /**
  * FULL SCREEN for a frame (owner, 2026-09-10) — one rule for the visit
@@ -33,7 +33,6 @@ import { Injector, afterNextRender, inject, signal } from '@angular/core';
  */
 export class FrameFullscreen {
   readonly expanded = signal(false);
-  private readonly document = inject(DOCUMENT);
   private readonly injector = inject(Injector);
 
   constructor(
@@ -94,30 +93,14 @@ export class FrameFullscreen {
     // A transition that waits for a render that never comes would hang the
     // page; the same state twice is no change.
     if (this.expanded() === next) return;
-    const doc = this.document as Document & {
-      startViewTransition?: (update: () => Promise<void>) => unknown;
-    };
-    const still =
-      doc.defaultView?.matchMedia?.('(prefers-reduced-motion: reduce)')
-        .matches ?? false;
     if (!next) this.lower();
-    if (typeof doc.startViewTransition !== 'function' || still) {
-      this.expanded.set(next);
-      afterNextRender(() => this.settle(next), { injector: this.injector });
-      return;
-    }
-    doc.startViewTransition(
-      () =>
-        new Promise<void>((resolve) => {
-          this.expanded.set(next);
-          afterNextRender(
-            () => {
-              this.settle(next);
-              resolve();
-            },
-            { injector: this.injector },
-          );
-        }),
+    // The platform's transition, or a plain switch where there is none or
+    // motion is reduced — the shared recipe (`shared/view-transition.ts`),
+    // which the schedule's view switch runs through as well.
+    runViewTransition(
+      () => this.expanded.set(next),
+      this.injector,
+      () => this.settle(next),
     );
   }
 }

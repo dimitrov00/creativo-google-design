@@ -19,6 +19,16 @@
       var(--sys-color-foreground) 7%,
       var(--sys-color-surface)
     );
+    /* ≙ the RAISED thumb of a control — UISegmentedControl's selected
+       segment, which in dark is a clearly lighter grey (UIKit draws it at
+       ~#636366 over a #2c2c2e track), not the 7% lift a card gets: a thumb
+       must read against the very fill it sits in. Consumed by
+       ui-segmented-control (added 2026-09-18). */
+    --sys-color-surface-raised: color-mix(
+      in srgb,
+      var(--sys-color-foreground) 30%,
+      var(--sys-color-surface)
+    );
     --sys-color-primary: #ededed;
     --sys-color-on-primary: #0d0d0d;
     --sys-color-secondary-label: #8c8c8c;
@@ -43,8 +53,13 @@
     --sys-color-destructive: #d32f2f;
     --sys-color-success: #3fa56e;
     --sys-color-warning: #d08a2c;
-    --sys-color-promo: #fbbf24;
-    --sys-color-promo-label: var(--sys-color-promo);
+    /* THE PROMO INK IS THE ACCENT (owner, 2026-09-16, at the discount
+       card: "what is that yellow — use our accent colour"). Money taken
+       off a bill reads in the one tint the app has; the semantic name
+       stays so a discount line, a coupon's figure and a promo ruler ask
+       for the same thing. */
+    --sys-color-promo: var(--sys-color-accent);
+    --sys-color-promo-label: var(--sys-color-accent-label);
     --sys-color-on-promo: #241a00;
 
     /* ── Identity tones — WHOSE chair, never what state ────────────────
@@ -84,10 +99,16 @@
     --sys-identity-4: #ff6482; /* pink */
     --sys-color-ring: #ededed;
     --sys-separator-strength: 12%;
+    /* TRANSLUCENT (2026-09-17) — iOS `separator` parity, the fill's own
+       rule: mixed with the page ground this was one opaque grey — right on
+       the ground and wrong everywhere else: invisible on the surface, and
+       a BLACK outline around a field on a raised card (the code field in
+       the action sheet; owner: "the border is black"). Foreground over
+       transparent is the same hairline on every surface it crosses. */
     --sys-color-separator: color-mix(
       in srgb,
       var(--sys-color-foreground) var(--sys-separator-strength),
-      var(--sys-color-background)
+      transparent
     );
     --sys-color-scrim: color-mix(in srgb, #000 45%, transparent);
     --sys-color-media-scrim: color-mix(in srgb, #000 70%, transparent);

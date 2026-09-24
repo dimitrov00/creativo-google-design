@@ -415,6 +415,33 @@ describe('decideBooking — policy and party rules', () => {
     }
   });
 
+  it('ALLOWS two conflicting services for one person when the shop is booking — a staff edit or placement', () => {
+    // Owner, 2026-09-17: "a staff account could do whatever he wants". The
+    // `conflictsWith` rule is the client's self-booking rule; the shop's own
+    // book skips it, like the window, with no second tap.
+    const result = decideBooking(
+      request([
+        seat(),
+        seat({
+          lineId: 'line-2',
+          serviceId: 'svc-beard',
+          startIso: at(14).toISO(),
+        }),
+      ]),
+      snapshot({
+        services: [
+          fadeService({ conflictsWith: ['svc-beard'] }),
+          beardService(['svc-fade']),
+        ],
+      }),
+      { ...deps(), allowConflictingServices: true },
+    );
+    expect(result.isSuccess()).toBe(true);
+    if (result.isSuccess()) {
+      expect(result.value.appointment.seats.length).toBe(2);
+    }
+  });
+
   it('ALLOWS the same conflicting pair across two different people', () => {
     // Conflicts are scoped to a person: a couple can have one each.
     const result = decideBooking(

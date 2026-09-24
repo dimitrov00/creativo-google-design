@@ -41,6 +41,11 @@ export {
   PhoneNumber,
   PhoneNumberInvalidError,
   examplePhoneNumber,
+  // The staff omnibox reads a number as it is typed — «088 76» printed
+  // «+359 88 76» before it is whole — and asks the index by the tenant's
+  // own dial code (2026-09-22).
+  formatPhoneDraft,
+  countryCallingCode,
 } from '@creativo/domain/kernel';
 export type {
   CountryIso2,

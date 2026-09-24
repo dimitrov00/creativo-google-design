@@ -1,0 +1,112 @@
+@layer sys-components {
+  /* ONE cluster, centred: the −/+ pair hugs the figure at the regular gap,
+     so the three read as one control (a stepper is a pair around a value)
+     and both buttons sit where a thumb already is. No space of its own —
+     the page composes the control. */
+  .ui-amount-field {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--sys-space-regular);
+  }
+
+  /* THE FIGURE BOX: one cell with two things in it — the live line (the
+     digits, the unit) and, when the owner reserves one, a hidden line of
+     the widest figure it expects. The box is as wide as the wider of the
+     two and the live line sits centred in it, so the pair STAYS PUT as
+     digits come and go and any blank splits evenly on both sides of the
+     figure. The figure at the large-title tier, the unit a role quieter on
+     its baseline. */
+  .ui-amount-field__figure {
+    display: inline-grid;
+    justify-items: center;
+    min-inline-size: 0;
+    font: var(--sys-font-largeTitle);
+    font-weight: 700;
+    /* The `font` shorthand resets the app's tabular figures (tokens.css:
+       every number lines up); a cell that must be stable digit for digit
+       says so again, on its own. */
+    font-variant-numeric: tabular-nums;
+    color: var(--sys-color-foreground);
+  }
+
+  .ui-amount-field__reserve,
+  .ui-amount-field__line {
+    grid-area: 1 / 1;
+    display: inline-grid;
+    grid-template-columns: auto auto;
+    align-items: baseline;
+    gap: var(--sys-space-compact);
+  }
+
+  .ui-amount-field__reserve {
+    visibility: hidden;
+  }
+
+  /* One cell for the digits: the sizer states its width, the native input
+     lies over it (ui-unit-field's construction, scaled up). */
+  .ui-amount-field__sizer,
+  .ui-amount-field__native {
+    grid-area: 1 / 1;
+    font: inherit;
+  }
+
+  .ui-amount-field__sizer,
+  .ui-amount-field__reserve-figure {
+    visibility: hidden;
+    white-space: pre;
+    /* Room for the caret past the last digit. */
+    padding-inline-end: 0.15ch;
+  }
+
+  /* The native control carries no surface of its own — the page is the
+     surface; the accent caret is the only mark of focus a finger sees.
+     It adds NO WIDTH of its own either: `size="1"` (the markup) and
+     `field-sizing: content` keep a text input's twenty-character default
+     out of the cell, so the cell is the sizer's width and the figure
+     centres true between the pair instead of drifting to the unit. The
+     digits start where the cell starts; the caret's room is at the end. */
+  .ui-amount-field__native {
+    inline-size: 100%;
+    min-inline-size: 0;
+    field-sizing: content;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    text-align: start;
+    appearance: textfield;
+    -moz-appearance: textfield;
+    caret-color: var(--sys-color-accent);
+  }
+
+  /* Muted, not blank: the shape of the answer before the answer. */
+  .ui-amount-field__native::placeholder {
+    color: var(--sys-color-tertiary-label);
+    opacity: 1;
+  }
+
+  .ui-amount-field__native:focus,
+  .ui-amount-field__native:focus-visible {
+    outline: none;
+    box-shadow: none;
+  }
+
+  .ui-amount-field__unit {
+    grid-column: 2;
+    font: var(--sys-font-title3);
+    color: var(--sys-color-secondary-label);
+    white-space: nowrap;
+  }
+
+  /* NO RING (owner, 2026-09-16: "clicking on the input should not have an
+     outline ring or border, for those inputs and the flat price one"): a
+     figure written large is its own focus — the accent caret blinks in it
+     and the keypad rises — and a box drawn round it read as a field, which
+     it is not. The −/+ pair keeps the platform's ring for a keyboard. */
+
+  .ui-amount-field__step {
+    flex: 0 0 auto;
+  }
+}

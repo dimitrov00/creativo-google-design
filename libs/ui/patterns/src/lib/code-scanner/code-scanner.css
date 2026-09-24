@@ -1,0 +1,49 @@
+@layer sys-components {
+  /* THE VIEWFINDER — a square the camera fills, the regular corner, black
+     while the stream is not yet up so the block reads as a camera and not
+     a hole; a light frame over the live picture says where to hold the
+     code. The status beneath speaks in the host's words. */
+  .ui-code-scanner {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sys-space-compact);
+  }
+
+  .ui-code-scanner__view {
+    position: relative;
+    aspect-ratio: 1;
+    inline-size: 100%;
+    overflow: hidden;
+    border-radius: var(--control-radius-regular);
+    background: #000;
+  }
+
+  .ui-code-scanner__video {
+    display: block;
+    inline-size: 100%;
+    block-size: 100%;
+    object-fit: cover;
+  }
+
+  .ui-code-scanner__frame {
+    position: absolute;
+    inset: 18%;
+    border: 2px solid rgb(255 255 255 / 85%);
+    border-radius: var(--control-radius-regular);
+    box-shadow: 0 0 0 999px rgb(0 0 0 / 35%);
+    pointer-events: none;
+  }
+
+  .ui-code-scanner__status {
+    margin: 0;
+    text-align: center;
+    font: var(--sys-font-footnote);
+    font-variant-numeric: tabular-nums;
+    color: var(--sys-color-secondary-label);
+  }
+
+  .ui-code-scanner[data-state='denied'] .ui-code-scanner__status,
+  .ui-code-scanner[data-state='unsupported'] .ui-code-scanner__status {
+    color: var(--sys-color-foreground);
+  }
+}

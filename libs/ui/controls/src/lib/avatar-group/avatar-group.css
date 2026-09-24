@@ -1,0 +1,90 @@
+@layer sys-components {
+  /* Several people as one mark: discs overlapping by a third, each cut out
+     of the one behind it by a ring of the ground (`--ui-avatar-group-ring`,
+     the surface unless the consumer says otherwise — white over media),
+     the first in front. `isolation` keeps the discs' stacking inside the
+     group. */
+  .ui-avatar-group {
+    --ui-avatar-group-overlap: 0.3;
+
+    display: inline-flex;
+    align-items: center;
+    isolation: isolate;
+  }
+
+  .ui-avatar-group > .ui-avatar,
+  .ui-avatar-group__more {
+    position: relative;
+    box-shadow: 0 0 0 2px var(--ui-avatar-group-ring, var(--sys-color-surface));
+  }
+
+  /* Each disc after the first slides under its neighbour by the overlap —
+     read off its OWN disc size, so mixed tiers still meet cleanly. */
+  .ui-avatar-group > .ui-avatar + .ui-avatar,
+  .ui-avatar-group > .ui-avatar + .ui-avatar-group__more {
+    margin-inline-start: calc(
+      -1 * var(--ui-avatar-disc, var(--control-size-regular)) *
+        var(--ui-avatar-group-overlap)
+    );
+  }
+
+  /* The first in front: five is as many discs as a mark can carry before
+     the count takes over. */
+  .ui-avatar-group > :nth-child(1) {
+    z-index: 5;
+  }
+  .ui-avatar-group > :nth-child(2) {
+    z-index: 4;
+  }
+  .ui-avatar-group > :nth-child(3) {
+    z-index: 3;
+  }
+  .ui-avatar-group > :nth-child(4) {
+    z-index: 2;
+  }
+  .ui-avatar-group > :nth-child(5) {
+    z-index: 1;
+  }
+
+  /* The count: a disc of the group's tier, the avatar's own film and ink,
+     tabular so «+12» sits still. */
+  .ui-avatar-group__more {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    border-radius: var(--control-radius-capsule);
+    background: color-mix(
+      in srgb,
+      currentColor var(--sys-alpha-fill),
+      transparent
+    );
+    font-variant-numeric: tabular-nums;
+    font-weight: 700;
+  }
+
+  .ui-avatar-group[data-control-size='small'] > .ui-avatar-group__more {
+    --ui-avatar-disc: var(--control-size-small);
+
+    inline-size: var(--ui-avatar-disc);
+    block-size: var(--ui-avatar-disc);
+    font: var(--sys-font-footnote);
+    font-weight: 700;
+  }
+  .ui-avatar-group[data-control-size='regular'] > .ui-avatar-group__more {
+    --ui-avatar-disc: var(--control-size-regular);
+
+    inline-size: var(--ui-avatar-disc);
+    block-size: var(--ui-avatar-disc);
+    font: var(--sys-font-callout);
+    font-weight: 700;
+  }
+  .ui-avatar-group[data-control-size='large'] > .ui-avatar-group__more {
+    --ui-avatar-disc: var(--control-size-large);
+
+    inline-size: var(--ui-avatar-disc);
+    block-size: var(--ui-avatar-disc);
+    font: var(--sys-font-title3);
+    font-weight: 700;
+  }
+}

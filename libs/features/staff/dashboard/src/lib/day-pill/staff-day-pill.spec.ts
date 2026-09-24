@@ -1,6 +1,10 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { StaffDayPill, formatDayPill } from './staff-day-pill';
+import {
+  StaffDayPill,
+  formatDayPill,
+  formatDayPillRange,
+} from './staff-day-pill';
 
 describe('StaffDayPill', () => {
   let fixture: ComponentFixture<StaffDayPill>;
@@ -24,6 +28,33 @@ describe('StaffDayPill', () => {
     expect(formatDayPill('2026-09-09', 'en')).toBe('Wed, Sep 9');
     expect(trigger()?.textContent?.replace(/\s+/g, ' ').trim()).toContain(
       'ср, 9.09',
+    );
+  });
+
+  it('names a period in the same numeric grammar, the shared month said once', () => {
+    // Inside one month the month is written once, on the side the locale
+    // puts it (2026-09-23): «21 – 27.09» in Bulgarian, «Sep 21 – 27» in
+    // English — the long-month range («21 – 27 Септември») pushed the
+    // toolbar's cluster off a 390px bar.
+    expect(formatDayPillRange('2026-09-21', '2026-09-27', 'bg')).toBe(
+      '21 – 27.09',
+    );
+    expect(formatDayPillRange('2026-09-21', '2026-09-27', 'en')).toBe(
+      'Sep 21 – 27',
+    );
+    // Across a month both dates carry theirs, in Intl's own range form —
+    // which sets the dash in thin spaces in English; the words are what is
+    // pinned, not the whitespace.
+    const plain = (text: string) => text.replace(/\s/g, ' ');
+    expect(plain(formatDayPillRange('2026-09-30', '2026-10-02', 'bg'))).toBe(
+      '30.09 – 2.10',
+    );
+    expect(plain(formatDayPillRange('2026-09-30', '2026-10-02', 'en'))).toBe(
+      'Sep 30 – Oct 2',
+    );
+    // Across a year the years come along — the one time they are news.
+    expect(plain(formatDayPillRange('2026-12-28', '2027-01-03', 'en'))).toBe(
+      'Dec 28, 2026 – Jan 3, 2027',
     );
   });
 

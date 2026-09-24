@@ -1,0 +1,102 @@
+@layer sys-components {
+  .ui-choice-tiles {
+    display: block;
+  }
+
+  /* A fixed number of cells across (the consumer's `uiColumns`), rows of
+     one tile height, and DENSE packing so a two-by-two tile and the
+     regular tiles around it lock together without holes — the bento the
+     iOS Home Screen's widgets draw (small beside medium). */
+  .ui-choice-tiles__grid {
+    display: grid;
+    grid-template-columns: repeat(
+      var(--ui-choice-tiles-columns, 3),
+      minmax(0, 1fr)
+    );
+    grid-auto-rows: calc(var(--sys-space-unit) * 16);
+    grid-auto-flow: dense;
+    gap: var(--sys-space-compact);
+  }
+
+  /* LARGE: two cells by two, for a tile that carries two facts — the
+     figure steps up to the headline tier and the detail to body. */
+  .ui-choice-tile[data-size='large'] {
+    grid-column: span 2;
+    grid-row: span 2;
+    gap: var(--sys-space-tight);
+  }
+
+  /* Each `font` shorthand resets the tile's tabular figures; said again. */
+  .ui-choice-tile[data-size='large'] .ui-choice-tile__label {
+    font: var(--sys-font-headline);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .ui-choice-tile[data-size='large'] .ui-choice-tile__detail {
+    font: var(--sys-font-body);
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* WIDE: a full row, for the tile that is a different kind of thing. */
+  .ui-choice-tile[data-size='wide'] {
+    grid-column: 1 / -1;
+  }
+
+  /* A tile: the DS control fill (systemFill parity, translucent), the
+     regular corner, the figure over its quiet second line. Two text lines
+     need more than a row's 52px; sixteen units gives them air. */
+  .ui-choice-tile {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    box-sizing: border-box;
+    min-block-size: 0;
+    /* Compact on both axes: three tiles share a phone's width, and a
+       label like «до 15,00 €» must stay on one line in the third of it. */
+    padding: var(--sys-space-compact);
+    border: 0;
+    border-radius: var(--control-radius-regular);
+    background: var(--sys-color-fill);
+    color: var(--sys-color-foreground);
+    font: var(--sys-font-body);
+    font-weight: 600;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+    /* The state layer of [data-interactive] rounds with the tile. */
+    isolation: isolate;
+  }
+
+  .ui-choice-tile__label {
+    min-inline-size: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .ui-choice-tile__detail {
+    font: var(--sys-font-footnote);
+    font-variant-numeric: tabular-nums;
+    color: var(--sys-color-secondary-label);
+  }
+
+  /* THE CHOSEN TILE — the same accent wash the chosen list row wears, plus
+     a 2px accent ring so the state survives greyscale and a reader who
+     cannot separate two washes (HIG: more than colour alone). */
+  .ui-choice-tile[data-selected] {
+    background: color-mix(
+      in srgb,
+      var(--sys-color-accent) var(--sys-alpha-segment-selected),
+      transparent
+    );
+    box-shadow: inset 0 0 0 2px var(--sys-color-accent);
+  }
+
+  .ui-choice-tile[data-selected] .ui-choice-tile__detail {
+    color: var(--sys-color-foreground);
+  }
+
+  .ui-choice-tile[disabled] {
+    opacity: var(--sys-opacity-disabled);
+  }
+}

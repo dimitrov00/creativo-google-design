@@ -7,3 +7,4 @@ export * from './lib/flow/flow';
 export * from './lib/spacer/spacer';
 export * from './lib/grid/grid';
 export * from './lib/scroll-row/scroll-row';
+export * from './lib/scroll-column/scroll-column';

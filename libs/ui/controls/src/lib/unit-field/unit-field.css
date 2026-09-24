@@ -8,15 +8,18 @@
     align-items: center;
     gap: var(--sys-space-compact);
     min-block-size: var(--control-size-small);
+    /* 16px keeps iOS from zooming into a focused field; `max` so a larger
+       inherited size still wins. On the WHOLE control, not the digits alone
+       (owner, 2026-09-16: "start and duration font sizes don't match"): the
+       unit is quieter than the figure by a role, never by a size, and the
+       time field beside this one floors itself the same way. */
+    font-size: max(1em, 16px);
     font-variant-numeric: tabular-nums;
   }
 
   .ui-unit-field__sizer,
   .ui-unit-field__native {
     grid-area: 1 / 1;
-    /* 16px keeps iOS from zooming into a focused field; `max` so a larger
-       inherited size still wins. */
-    font-size: max(1em, 16px);
   }
 
   .ui-unit-field__sizer {
@@ -38,7 +41,6 @@
     background: transparent;
     color: inherit;
     font: inherit;
-    font-size: max(1em, 16px);
     text-align: end;
     appearance: textfield;
     -moz-appearance: textfield;

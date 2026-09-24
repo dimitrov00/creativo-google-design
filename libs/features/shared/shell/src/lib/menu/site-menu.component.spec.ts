@@ -617,17 +617,28 @@ describe('SiteMenuComponent', () => {
       expect(title.hasAttribute('uifont')).toBe(false);
     });
 
-    it('subtitles itself with the day the schedule opens on', async () => {
-      const fixture = await render({
-        open: true,
-        isAuthed: true,
-        isStaffMember: true,
-      });
-      const date = fixture.nativeElement.querySelector(
-        '[data-testid="menu-staff-day-date"]',
-      );
-      expect(date).not.toBeNull();
-      expect(date!.textContent!.trim().length).toBeGreaterThan(0);
+    /**
+     * The weekday is SHORT (owner, 2026-09-17): the longest date Bulgarian
+     * can write — a Thursday in September — wrapped the subtitle to two
+     * lines beside the row's mark on a 330px phone, dropping the chevron
+     * under it. Pinned on exactly that date, the shop's own day.
+     */
+    it('subtitles itself with the day the schedule opens on — the weekday short, so the longest date stays one line', async () => {
+      vi.useFakeTimers({ toFake: ['Date'] });
+      vi.setSystemTime(new Date('2026-09-17T10:00:00+03:00'));
+      try {
+        const fixture = await render({
+          open: true,
+          isAuthed: true,
+          isStaffMember: true,
+        });
+        const date = fixture.nativeElement.querySelector(
+          '[data-testid="menu-staff-day-date"]',
+        );
+        expect(date!.textContent!.trim()).toBe('чт, 17 септември');
+      } finally {
+        vi.useRealTimers();
+      }
     });
 
     /**

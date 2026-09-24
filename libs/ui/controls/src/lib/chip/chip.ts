@@ -6,7 +6,14 @@ import {
 } from '@angular/core';
 import type { UiControlSize } from '../button/button';
 
-/** Native `<button>` element — a toggleable pill (filter/choice chip). */
+/**
+ * Native `<button>` element — a toggleable pill (filter/choice chip).
+ *
+ * Projects its content: text, a trailing `ui-icon` (a removable token's
+ * ✕), and — projected FIRST — a `ui-avatar` for a chip that stands for a
+ * person, which then sits flush with the leading edge (chip.css). Pick the
+ * disc one rung under the chip: `small` in a `regular` chip.
+ */
 @Component({
   selector: 'button[uiChip]',
   template: `<ng-content />`,

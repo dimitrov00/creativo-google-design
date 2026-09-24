@@ -1,0 +1,225 @@
+/* ui-alert — ≙ SwiftUI `.alert`: a centred card of thick material over the
+   scrim, the platform's own 270pt measure, the question and its answers.
+   Unscoped like every DS pattern; every selector is `.ui-alert`-prefixed.
+   Unlayered, as the toast's sheet is, so the near-solid fill below beats the
+   modifier's generic material rule by specificity alone. */
+
+/* THE DIALOG IS THE VIEWPORT. The UA's dialog box — a fitted, bordered,
+   padded block centred by auto margins — is overruled to a full-viewport
+   grid, so the card sits at the centre and any press outside it lands on
+   the dialog itself (the scrim's own press). In the top layer `z-index`
+   means nothing; it is here for the one engine that opens the dialog in
+   place. */
+.ui-alert__dialog {
+  position: fixed;
+  inset: 0;
+  z-index: var(--sys-layer-alert);
+  display: grid;
+  place-items: center;
+  inline-size: 100%;
+  block-size: 100%;
+  max-inline-size: none;
+  max-block-size: none;
+  margin: 0;
+  padding: var(--sys-space-regular);
+  border: 0;
+  background: transparent;
+  color: var(--sys-color-foreground);
+  overflow: visible;
+}
+
+.ui-alert__dialog:not([open]) {
+  display: none;
+}
+
+/* THE SCRIM — the sheet's own dim, rising with the card. The literal is
+   the token's own recipe, for an engine whose backdrop cannot yet read a
+   custom property (Chrome before 122, Safari before 17.4). */
+.ui-alert__dialog::backdrop {
+  background: var(--sys-color-scrim, rgb(0 0 0 / 0.45));
+  animation: ui-alert-scrim-in var(--sys-motion-duration-regular, 200ms)
+    var(--sys-motion-ease-standard, ease-out);
+}
+
+/* THE CARD. The DS alert measure (20rem — the platform's 270pt, taken a
+   step up to this app's 52pt/60pt rhythm; owner, 2026-09-23: "isn't it
+   too small"). NEAR-SOLID thick material — the surface at 96% under the
+   thick blur, so what is behind it is a presence rather than a picture
+   (owner: "close to solid material with backdrop"); 96 rather than the
+   toast's 92 because the destructive ink is tuned to 4.5:1 on the surface
+   itself, and over a dark ground the last 4% of show-through took it under
+   the line (found in review). A hairline ring for the edge on a dark
+   ground, the overlay's lift, the prominent rung's corners, and the
+   platform's POP: in from a little larger, on the emphasized curve. */
+.ui-alert__surface {
+  inline-size: min(100%, var(--sys-container-alert));
+  border-radius: var(--control-radius-prominent);
+  box-shadow:
+    inset 0 0 0 1px var(--sys-color-separator),
+    var(--sys-elevation-overlay);
+  overflow: hidden;
+  outline: none;
+  animation: ui-alert-in var(--sys-motion-duration-deliberate, 300ms)
+    var(--sys-motion-ease-emphasized, ease-out);
+}
+
+.ui-alert__surface[data-material] {
+  --ui-material-fill: color-mix(
+    in srgb,
+    var(--sys-color-surface) 96%,
+    transparent
+  );
+}
+
+/* THE WORDS — centred, the title at the headline rung, the message a
+   callout in secondary ink, the platform's own arrangement. Longhands
+   after every shorthand: the `font` shorthand resets tabular figures. */
+.ui-alert__text {
+  display: grid;
+  gap: var(--sys-space-tight);
+  padding: var(--sys-space-comfortable) var(--sys-space-regular)
+    var(--sys-space-regular);
+  text-align: center;
+}
+
+.ui-alert__title {
+  margin: 0;
+  font: var(--sys-font-headline);
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.ui-alert__message {
+  margin: 0;
+  font: var(--sys-font-callout);
+  font-variant-numeric: tabular-nums;
+  color: var(--sys-color-secondary-label);
+  overflow-wrap: anywhere;
+}
+
+/* THE ANSWERS — text rows under a hairline, divided by hairlines: two
+   short ones side by side, anything longer stacked. LABEL INK for every
+   answer but the destructive one, which wears the destructive ink alone
+   (owner, 2026-09-23: the platform tints its answers, but this app's
+   accent is an orange a step from red, and «Отхвърли» beside «Продължи
+   редакцията» read as two shades of the same colour); the preferred one
+   bold. */
+.ui-alert__actions {
+  display: grid;
+  border-block-start: 1px solid var(--sys-color-separator);
+}
+
+.ui-alert__actions[data-layout='row'] {
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+}
+
+/* The hairlines BETWEEN answers are paint, not layout — a shadow on the
+   later sibling, one pixel outside its box — so every row is the same
+   height with its label at the same centre. A border on the second row
+   sat inside its box and left it a pixel shorter than the first, which
+   the eye read as two different rows (owner, 2026-09-23). Outside the box
+   it is also clear of the modifier's state layer. */
+.ui-alert__actions[data-layout='row'] > .ui-alert__action + .ui-alert__action {
+  box-shadow: -1px 0 0 0 var(--sys-color-separator);
+}
+
+.ui-alert__actions[data-layout='stacked']
+  > .ui-alert__action
+  + .ui-alert__action {
+  box-shadow: 0 -1px 0 0 var(--sys-color-separator);
+}
+
+/* One rung: the large control (52pt), the height of this app's own
+   primary buttons — an alert's answers are the most important buttons on
+   the screen — and a grid so the label sits at the exact centre whatever
+   its weight. `min` rather than a fixed height so a stacked answer may
+   still wrap to two lines. */
+.ui-alert__action {
+  display: grid;
+  place-items: center;
+  min-block-size: var(--control-size-large);
+  min-inline-size: 0;
+  padding: var(--sys-space-compact) var(--sys-space-regular);
+  /* The state layer the modifier paints is a positioned pseudo-element. */
+  position: relative;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: var(--sys-color-foreground);
+  font: var(--sys-font-body);
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+/* A stacked answer wraps at a word, or inside one wider than the row:
+   the label is a grid item sized from its min-content width, and only
+   `anywhere` counts mid-word opportunities there (`break-word` was dead
+   under the grid and a long unbroken label ran under the card's clip —
+   found in review). A rowed one never wraps — the component measures and
+   stacks the pair instead (the platform's own rule: side by side unless a
+   label would wrap). */
+.ui-alert__actions[data-layout='stacked'] > .ui-alert__action {
+  overflow-wrap: anywhere;
+}
+
+.ui-alert__actions[data-layout='row'] > .ui-alert__action {
+  white-space: nowrap;
+}
+
+.ui-alert__action[data-preferred] {
+  font-weight: 600;
+}
+
+.ui-alert__action[data-role='destructive'] {
+  color: var(--sys-color-destructive-label, var(--sys-color-destructive));
+}
+
+/* Hover and press are the modifier's (`uiInteractive` paints the state
+   layer; a second recipe here composited the tint twice — found in
+   review). A row of an alert does not SHRINK on press, whatever a card
+   does: the modifier's press scale is stood down. */
+.ui-alert__action:active {
+  transform: none;
+}
+
+.ui-alert__action:focus-visible {
+  outline: var(--sys-focus-ring-width) solid var(--sys-color-ring);
+  outline-offset: calc(-1 * var(--sys-focus-ring-width));
+}
+
+/* Leaving: nothing lands on a card on its way out. */
+.ui-alert__dialog[data-leaving] {
+  pointer-events: none;
+}
+
+@keyframes ui-alert-in {
+  from {
+    opacity: 0;
+    transform: scale(1.12);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes ui-alert-scrim-in {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+/* The pop and the scrim's rise are decoration and go with reduced motion;
+   the exit does too, in the component. */
+@media (prefers-reduced-motion: reduce) {
+  .ui-alert__surface,
+  .ui-alert__dialog::backdrop {
+    animation: none;
+  }
+}

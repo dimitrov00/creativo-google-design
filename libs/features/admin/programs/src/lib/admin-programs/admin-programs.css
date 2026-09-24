@@ -11,5 +11,6 @@ label {
   flex-direction: column;
   gap: var(--sys-space-tight);
   font: var(--sys-font-subheadline);
+  font-variant-numeric: tabular-nums; /* the shorthand resets the app's tabular figures */
   color: var(--sys-color-secondary-label);
 }

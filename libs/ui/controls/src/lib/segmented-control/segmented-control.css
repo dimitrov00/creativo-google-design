@@ -1,0 +1,166 @@
+@layer sys-components {
+  /* ≙ UISegmentedControl (iOS 13 on): a filled track, the chosen segment a
+     raised pill that GLIDES between slots, hairlines between the rest that
+     step aside beside the chosen one. Equal widths — the control is sized
+     by its surroundings and never asserts its own. */
+  .ui-segmented-control {
+    display: inline-flex;
+    box-sizing: border-box;
+    max-inline-size: 100%;
+    border-radius: var(--control-radius-regular);
+  }
+
+  .ui-segmented-control__track {
+    position: relative;
+    display: flex;
+    flex: 1 1 auto;
+    box-sizing: border-box;
+    inline-size: 100%;
+    min-inline-size: 0;
+    padding: 2px;
+    border-radius: inherit;
+    /* The DS control fill (systemFill parity, translucent). */
+    background: var(--sys-color-fill);
+    isolation: isolate;
+  }
+
+  /* On a material host (`uiMaterial` — over a map, a picture) the material
+     is the backdrop and the track keeps only its quiet film, the glass
+     button's own recipe: the fill's alpha of the current ink over it. */
+  .ui-segmented-control[data-material] > .ui-segmented-control__track {
+    background: color-mix(
+      in srgb,
+      currentColor var(--sys-alpha-fill),
+      transparent
+    );
+  }
+
+  /* THE THUMB — one slot wide, slid to the chosen slot along the logical
+     axis (so it reads right in either direction); off and invisible while
+     nothing is chosen. UIKit's own selected segment: white in light, a
+     clearly lighter grey in dark (the raised-surface token), lifted by
+     UISegmentedControl's shadow pair — 3px/8px at 12% over 3px/1px at 4%
+     — rather than the card's softer elevation. */
+  .ui-segmented-control__thumb {
+    position: absolute;
+    inset-block: 2px;
+    inset-inline-start: calc(
+      2px + var(--ui-segmented-index, 0) * (100% - 4px) /
+        var(--ui-segmented-count, 1)
+    );
+    z-index: 0;
+    inline-size: calc((100% - 4px) / var(--ui-segmented-count, 1));
+    border-radius: calc(var(--control-radius-regular) - 2px);
+    background: var(--sys-color-surface-raised);
+    box-shadow:
+      0 3px 8px rgb(0 0 0 / 12%),
+      0 3px 1px rgb(0 0 0 / 4%);
+    transition:
+      inset-inline-start var(--sys-motion-duration-regular)
+        var(--sys-motion-ease-standard),
+      opacity var(--sys-motion-duration-regular) var(--sys-motion-ease-standard);
+  }
+
+  .ui-segmented-control[data-empty] .ui-segmented-control__thumb {
+    opacity: 0;
+  }
+
+  /* THE PILL — a toolbar's view toggle (map | list) is a capsule, the
+     shape iOS 26 gives every grouped item in its bars; the thumb and the
+     segments follow the host's corner. */
+  .ui-segmented-control[data-shape='capsule'] {
+    border-radius: var(--control-radius-capsule);
+  }
+
+  .ui-segmented-control[data-shape='capsule'] .ui-segmented-control__thumb,
+  .ui-segmented-control[data-shape='capsule'] .ui-segmented-control__segment {
+    border-radius: var(--control-radius-capsule);
+  }
+
+  /* An icon-only pill hugs its glyphs: a square-ish segment per glyph. */
+  .ui-segmented-control__segment[data-icon-only] {
+    padding-inline: var(--sys-space-compact);
+    min-inline-size: calc(var(--control-size-small) - 4px);
+  }
+
+  /* A SEGMENT: the subheadline's 13px medium, the chosen one semibold; the
+     words on one line, cut with an ellipsis rather than wrapping a control
+     that must stay one height. The state layer of [data-interactive]
+     rounds with the segment. */
+  .ui-segmented-control__segment {
+    position: relative;
+    z-index: 1;
+    display: inline-flex;
+    flex: 1 1 0;
+    align-items: center;
+    justify-content: center;
+    gap: var(--sys-space-tight);
+    box-sizing: border-box;
+    min-inline-size: 0;
+    block-size: calc(var(--control-size-small) - 4px);
+    padding-block: 0;
+    padding-inline: var(--sys-space-compact);
+    border: 0;
+    border-radius: calc(var(--control-radius-regular) - 2px);
+    background: transparent;
+    color: var(--sys-color-foreground);
+    font: var(--sys-font-subheadline);
+    cursor: pointer;
+    isolation: isolate;
+  }
+
+  .ui-segmented-control[data-control-size='regular']
+    .ui-segmented-control__segment {
+    block-size: calc(var(--control-size-regular) - 4px);
+    font: var(--sys-font-callout);
+    font-weight: 500;
+  }
+
+  .ui-segmented-control__segment[data-selected] {
+    font-weight: 600;
+  }
+
+  /* An icon-only segment shows its glyph at the body's size — the glyph
+     inherits the current font, so the segment's is raised, not the icon's. */
+  .ui-segmented-control__segment[data-icon-only] {
+    font-size: 1.125rem;
+  }
+
+  .ui-segmented-control__label {
+    min-inline-size: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* THE HAIRLINE between two unchosen segments — never beside the chosen
+     one, which the raised pill already separates. */
+  .ui-segmented-control__segment + .ui-segmented-control__segment::before {
+    content: '';
+    position: absolute;
+    inset-block: 25%;
+    inset-inline-start: -0.5px;
+    inline-size: 1px;
+    background: var(--sys-color-separator);
+    transition: opacity var(--sys-motion-duration-regular)
+      var(--sys-motion-ease-standard);
+  }
+
+  .ui-segmented-control__segment[data-selected]::before,
+  .ui-segmented-control__segment[data-selected]
+    + .ui-segmented-control__segment::before {
+    opacity: 0;
+  }
+
+  .ui-segmented-control__segment:disabled {
+    opacity: var(--sys-opacity-disabled);
+    cursor: default;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .ui-segmented-control__thumb,
+    .ui-segmented-control__segment::before {
+      transition: none;
+    }
+  }
+}

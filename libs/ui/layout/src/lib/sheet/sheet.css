@@ -16,6 +16,23 @@
     pointer-events: auto;
   }
 
+  /* STACKED (sheet.ts): declared inside another sheet's surface, the host
+     is a manual popover and rises in the TOP LAYER over the whole viewport
+     — no ancestor transform holds it, no scroller clips it. The UA's
+     popover box (a fitted, bordered, padded block) is reset to the sheet's
+     own; its `display: none` while closed is already overruled by the
+     rule above, so the closed sheet keeps its place in the tree and its
+     exit transition plays before it leaves the layer. */
+  .ui-sheet[popover] {
+    margin: 0;
+    padding: 0;
+    border: 0;
+    inline-size: auto;
+    block-size: auto;
+    overflow: visible;
+    color: inherit;
+  }
+
   .ui-sheet__surface {
     background: var(--sys-color-surface);
     box-shadow: var(--sys-elevation-overlay);

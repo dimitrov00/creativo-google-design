@@ -1,0 +1,200 @@
+@layer sys-components {
+  /* One tier variable set drives the bordered dress — the text field's own
+     36/44/52 ladder of frame height, font role and inline padding — so a
+     code field and the name field beside it on a form are one family. */
+  .ui-code-field {
+    --ui-code-field-size: var(--control-size-regular);
+    --ui-code-field-pad: var(--sys-space-regular);
+    --ui-code-field-font: var(--sys-font-body);
+    display: block;
+    font-variant-numeric: tabular-nums;
+  }
+  .ui-code-field[data-control-size='small'] {
+    --ui-code-field-size: var(--control-size-small);
+    --ui-code-field-pad: var(--sys-space-compact);
+    --ui-code-field-font: var(--sys-font-footnote);
+  }
+  .ui-code-field[data-control-size='large'] {
+    --ui-code-field-size: var(--control-size-large);
+    --ui-code-field-pad: var(--sys-space-comfortable);
+    --ui-code-field-font: var(--sys-font-callout);
+  }
+
+  /* The native control never paints: whichever dress is worn, the frame or
+     the owner is the surface. Capitals as typed; the keyboard follows
+     through `autocapitalize`. `font: inherit` resets the numeral variant,
+     so tabular is said again after it. */
+  .ui-code-field__native {
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    font-variant-numeric: tabular-nums;
+    text-transform: uppercase;
+    appearance: none;
+  }
+  .ui-code-field__native::placeholder {
+    color: var(--sys-color-secondary-label);
+    opacity: 1;
+    text-transform: none;
+  }
+  /* Focus is drawn on the frame or by the owner, never inside. */
+  .ui-code-field__native:focus,
+  .ui-code-field__native:focus-visible {
+    outline: none;
+    box-shadow: none;
+  }
+
+  .ui-code-field__accessory {
+    display: inline-flex;
+    align-items: center;
+  }
+  .ui-code-field__accessory:empty {
+    display: none;
+  }
+
+  /* ── BORDERED — the form field ────────────────────────────────────
+     The text field's frame, fill and corner on a wrapper, the way the phone
+     field composes its country trigger and number inside one border: the
+     input and the accessory live INSIDE the frame, and the shared focus
+     glow rides :focus-within so the composite reads as ONE field. */
+  .ui-code-field[data-appearance='bordered'] .ui-code-field__frame {
+    position: relative;
+    display: flex;
+    align-items: stretch;
+    box-sizing: border-box;
+    inline-size: 100%;
+    min-block-size: var(--ui-code-field-size);
+    border: 1px solid var(--sys-color-separator);
+    border-radius: var(--control-radius-regular);
+    background: var(--sys-color-fill);
+    color: var(--sys-color-foreground);
+    font: var(--ui-code-field-font);
+    font-variant-numeric: tabular-nums;
+    transition:
+      border-color var(--sys-motion-duration-regular)
+        var(--sys-motion-ease-standard),
+      box-shadow var(--sys-motion-duration-regular)
+        var(--sys-motion-ease-standard);
+  }
+  .ui-code-field[data-appearance='bordered'] .ui-code-field__sizer {
+    display: none;
+  }
+  .ui-code-field[data-appearance='bordered'] .ui-code-field__native {
+    flex: 1 1 auto;
+    min-inline-size: 0;
+    padding-inline: var(--ui-code-field-pad);
+  }
+  /* The accessory sits where a search field keeps its clear glyph: its
+     glyph on the text's own inset, its box hugging the edge. */
+  .ui-code-field[data-appearance='bordered'] .ui-code-field__accessory {
+    padding-inline-end: var(--sys-space-compact);
+  }
+
+  /* iOS Safari zooms the page into a focused text control under 16px —
+     the text field's own floor, for the same reason. */
+  @media (hover: none) and (pointer: coarse) {
+    .ui-code-field[data-appearance='bordered'] .ui-code-field__native {
+      font-size: 1rem;
+    }
+  }
+
+  /* Pointer-hover devices only — the text field's pre-focus cue. */
+  @media (hover: hover) {
+    .ui-code-field[data-appearance='bordered']:not([data-invalid])
+      .ui-code-field__frame:hover:not(:focus-within) {
+      border-color: var(--sys-color-foreground);
+    }
+  }
+
+  .ui-code-field[data-appearance='bordered']
+    .ui-code-field__frame:focus-within {
+    border-color: var(--sys-color-accent);
+    box-shadow: 0 0 0 var(--sys-focus-glow-width)
+      color-mix(
+        in srgb,
+        var(--sys-color-accent) var(--sys-focus-glow-alpha),
+        transparent
+      );
+  }
+  .ui-code-field[data-appearance='bordered'][data-invalid]
+    .ui-code-field__frame {
+    border-color: var(--sys-color-destructive);
+  }
+  .ui-code-field[data-appearance='bordered'][data-invalid]
+    .ui-code-field__frame:focus-within {
+    box-shadow: 0 0 0 var(--sys-focus-glow-width)
+      color-mix(
+        in srgb,
+        var(--sys-color-destructive) var(--sys-focus-glow-alpha),
+        transparent
+      );
+  }
+
+  /* ── PLAIN — no surface of its own ────────────────────────────────
+     The owner (a pill, a row) is the surface. One cell for the code — the
+     sizer states its width, the native input lies over it, so the field
+     hugs its code — and a second for the accessory. 16px keeps iOS from
+     zooming into a focused field; `max` so a larger inherited size still
+     wins, on the WHOLE control as on the unit and time fields. */
+  .ui-code-field[data-appearance='plain'] {
+    display: inline-block;
+    font-size: max(1em, 16px);
+  }
+  .ui-code-field[data-appearance='plain'] .ui-code-field__frame {
+    position: relative;
+    display: inline-grid;
+    grid-template-columns: auto auto;
+    align-items: center;
+    gap: var(--sys-space-compact);
+    min-block-size: var(--control-size-small);
+  }
+  .ui-code-field[data-appearance='plain'] .ui-code-field__sizer,
+  .ui-code-field[data-appearance='plain'] .ui-code-field__native {
+    grid-area: 1 / 1;
+  }
+  /* The sizer measures the code the way it is shown — in capitals — and
+     the placeholder the way it is shown — as written, a hint, not a code. */
+  .ui-code-field[data-appearance='plain'] .ui-code-field__sizer {
+    visibility: hidden;
+    white-space: pre;
+    text-transform: uppercase;
+    /* Room for the caret past the last letter. */
+    padding-inline-end: 0.5ch;
+  }
+  .ui-code-field[data-appearance='plain'][data-empty] .ui-code-field__sizer {
+    text-transform: none;
+  }
+  .ui-code-field[data-appearance='plain'] .ui-code-field__native {
+    inline-size: 100%;
+    min-inline-size: 4ch;
+    field-sizing: content;
+  }
+  .ui-code-field[data-appearance='plain'] .ui-code-field__accessory {
+    grid-column: 2;
+  }
+  /* The same ring the unit field wears — the field's UNLESS its owner draws
+     one: a pill wrapping the field sets `--ui-field-ring: none` and rings
+     itself, so the ring follows the capsule the eye sees. A refused code
+     rings in the destructive ink. */
+  .ui-code-field[data-appearance='plain']:has(
+      .ui-code-field__native:focus-visible
+    ) {
+    border-radius: var(--control-radius-capsule);
+    outline: var(
+      --ui-field-ring,
+      var(--sys-focus-ring-width) solid var(--sys-color-accent)
+    );
+    outline-offset: 2px;
+  }
+  .ui-code-field[data-appearance='plain'][data-invalid]:has(
+      .ui-code-field__native:focus-visible
+    ) {
+    outline: var(
+      --ui-field-ring,
+      var(--sys-focus-ring-width) solid var(--sys-color-destructive)
+    );
+  }
+}

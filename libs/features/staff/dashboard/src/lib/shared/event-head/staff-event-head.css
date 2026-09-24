@@ -1,0 +1,214 @@
+/*
+ * THE EVENT'S HEAD — one recipe for the frame's block (`compact`) and the
+ * agenda's card (`regular`): the words on the left, the clock on the right
+ * (owner, 2026-09-16: "the agenda card should be the same as the grid
+ * event, but bigger, so we stay consistent"). Unscoped like every recipe in
+ * this feature — `.staff-event-head__*` is the contract — so a host's own
+ * state rules reach in: a struck title on a cancelled booking, dimmed lines
+ * on a neighbour's block.
+ *
+ * Every type declaration here is a LONGHAND. The `font` shorthand resets the
+ * app's tabular figures (tokens.css), and a head that is half figures must
+ * never lose them by accident.
+ */
+.staff-event-head {
+  /* THE SCALE — the block's numbers; `regular` steps each up one role. */
+  --staff-event-title-size: 0.75rem; /* footnote */
+  --staff-event-line-size: 0.6875rem; /* caption */
+  --staff-event-icon-size: 0.75rem;
+  --staff-event-gap: var(--sys-space-tight);
+
+  display: flex;
+  align-items: flex-start;
+  gap: var(--staff-event-gap);
+  min-inline-size: 0;
+  /* THE HOST'S WHOLE WIDTH, whichever way it lays its children: the block
+     stacks them in a column and aligns them to the start, so an item that
+     does not stretch is only as wide as its content — and with the size
+     containment below, its content counts for nothing and it collapses to
+     zero (the frame drew six blank blocks for a minute). Stretching takes
+     the host's cross size regardless; in the card's row it costs nothing. */
+  align-self: stretch;
+  /* The head decides for itself whether it is wide enough to carry the
+     clock beside the words — the block used to, on its own width. */
+  container-type: inline-size;
+  /* ONE leading for both densities — the block's — so the card is the block
+     scaled and not a looser cousin of it (owner, 2026-09-16: "a bigger gap
+     between the client name and the service"). */
+  line-height: 1.3;
+}
+
+.staff-event-head[data-size='regular'] {
+  --staff-event-title-size: 0.875rem; /* callout */
+  /* Mono runs optically larger: 13px reads as the card's 14px text. */
+  --staff-event-line-size: 0.8125rem;
+  --staff-event-icon-size: 0.875rem;
+  --staff-event-gap: var(--sys-space-compact);
+}
+
+.staff-event-head__lines {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+/* WHO — the one line in the text face, at 600. The card's whole hierarchy
+   is two rungs: who, and everything else about them. */
+.staff-event-head__title {
+  max-inline-size: 100%;
+  font-family: var(--sys-font-family-text);
+  font-size: var(--staff-event-title-size);
+  font-weight: 600;
+}
+
+/* The service on the title's own line (a quarter-hour block): secondary ink
+   and a middot carry the demotion the second line used to carry by
+   position — it is still plainly the subordinate half of the line. The
+   middot is a text node, not generated content, so it travels with a copy
+   and a test can read the line as it is seen. */
+.staff-event-head__sep,
+.staff-event-head__inline {
+  font-weight: 400;
+  color: var(--sys-color-secondary-label);
+}
+
+/* EVERY FACT under the name, in the mono face — one advance per glyph, the
+   owner's ruling for data (2026-09-16) — in secondary ink; a glyph leads a
+   line that would otherwise be an anonymous string of characters, sized off
+   the line and quieter than it. */
+.staff-event-head__line {
+  display: flex;
+  align-items: center;
+  gap: var(--sys-space-tight);
+  max-inline-size: 100%;
+  min-inline-size: 0;
+  color: var(--sys-color-secondary-label);
+}
+
+.staff-event-head__line ui-icon {
+  flex: 0 0 auto;
+  font-size: var(--staff-event-icon-size);
+  color: var(--sys-color-tertiary-label, var(--sys-color-secondary-label));
+}
+
+.staff-event-head__text {
+  min-inline-size: 0;
+}
+
+.staff-event-head__text,
+.staff-event-head__times {
+  font-family: var(--sys-font-family-mono);
+  font-size: var(--staff-event-line-size);
+  font-variant-numeric: tabular-nums;
+}
+
+/* THE CLOCK — the start in the row's own ink, the end a step quieter
+   beneath it, the reading of it smaller and quieter still. Read downward:
+   stacked, the two are plainly a pair, so no dash is needed to join them. */
+.staff-event-head__times {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  text-align: end;
+  white-space: nowrap;
+}
+
+.staff-event-head__end {
+  color: var(--sys-color-secondary-label);
+}
+
+.staff-event-head__gloss {
+  font-family: var(--sys-font-family-text);
+  font-size: 0.6875rem;
+  font-weight: 500;
+  color: var(--sys-color-secondary-label);
+}
+
+/* A STATE IN THE GLOSS (2026-09-24): «Отказан», «Не дойде» where the
+   countdown stood — the word the eye finds before it reads the name, in
+   the foreground ink and the weight, never a hue (status is form). */
+.staff-event-head[data-gloss-state] .staff-event-head__gloss {
+  color: var(--sys-color-foreground);
+  font-weight: 600;
+}
+
+/* WHAT MATCHED IS WHAT IS PRIMARY (2026-09-22, the add-client page's
+   search): a marked title or line recedes to the secondary ink around its
+   runs and the typed runs hold the foreground — Spotlight's grammar. Ink
+   only, never weight: the mono face has no honest semibold, and the title
+   is 600 already. */
+.staff-event-head__title[data-marked] {
+  color: var(--sys-color-secondary-label);
+}
+
+.staff-event-head__hit {
+  color: var(--sys-color-foreground);
+}
+
+/* COMPACT — a block scanned at a glance: one line each with an ellipsis,
+   and the clock only where the column can spare it (the frame's threshold
+   was 160px on the block; inside the block's padding that is 144px here).
+   A `regular` head asked to `truncate` (a picker's row) does the same. */
+.staff-event-head[data-size='compact'] .staff-event-head__title,
+.staff-event-head[data-size='compact'] .staff-event-head__line,
+.staff-event-head[data-size='compact'] .staff-event-head__text,
+.staff-event-head[data-truncate] .staff-event-head__title,
+.staff-event-head[data-truncate] .staff-event-head__line,
+.staff-event-head[data-truncate] .staff-event-head__text {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.staff-event-head[data-size='compact'] .staff-event-head__times {
+  display: none;
+}
+
+@container (min-width: 144px) {
+  .staff-event-head[data-size='compact'] .staff-event-head__times {
+    display: flex;
+  }
+}
+
+/* ── THE STATES — the head's own, stamped by its inputs ─────────────────
+ *
+ * STRUCK THROUGH — Apple's treatment for a declined event — on the NAME,
+ * for both hours that did not happen: a cancellation and a no-show (owner,
+ * 2026-09-10). `currentcolor` is load-bearing: the strike inherits the
+ * name's ink and the name keeps its own, so it is never struck AND greyed
+ * — two marks for one fact. The times, the service and the tag keep their
+ * figures legible; the host's glyph says which of the two it was.
+ *
+ * These rules live HERE and not in a host's stylesheet on purpose: the
+ * agenda's is view-scoped and its rule could never reach a title in this
+ * view (2026-09-17). */
+.staff-event-head[data-struck] .staff-event-head__title {
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+  text-decoration-color: currentcolor;
+}
+
+/* RECEDED — a past card fades to 0.75, and the facts' own secondary ink
+   would land under the 4.5:1 floor against the page showing through the
+   card's stripes. Half way to the foreground is the compensation: over the
+   floor, under a live card's own facts, the name above still receding. The
+   arithmetic is the agenda's (staff-dashboard.css, "the compensation"). */
+.staff-event-head[data-receded] .staff-event-head__line {
+  color: color-mix(
+    in srgb,
+    var(--sys-color-foreground) 50%,
+    var(--sys-color-secondary-label)
+  );
+}
+
+/* REGULAR — read at arm's length: lines wrap, and NOTHING truncates. Half a
+   surname identifies nobody. (A picker's row opts out above.) */
+.staff-event-head[data-size='regular']:not([data-truncate])
+  .staff-event-head__title,
+.staff-event-head[data-size='regular']:not([data-truncate])
+  .staff-event-head__text {
+  overflow-wrap: anywhere;
+}

@@ -133,4 +133,28 @@ describe('UiChoiceMenu', () => {
       q('pick-none')?.querySelector('.ui-choice-menu__check-space'),
     ).toBeNull();
   });
+  it('states a description under the label when an option carries one', async () => {
+    const { q } = await render(false, [
+      {
+        id: 'code',
+        label: 'Код',
+        description: 'Промо код или ваучер',
+        testId: 'pick-code',
+      },
+      { id: 'pct', label: 'Процент', testId: 'pick-pct' },
+    ]);
+    const code = q('pick-code');
+    const description = code?.querySelector('.ui-choice-menu__description');
+    expect(description?.textContent?.trim()).toBe('Промо код или ваучер');
+    expect(description?.getAttribute('data-foreground-style')).toBe(
+      'secondary',
+    );
+    expect(
+      code?.querySelector('.ui-choice-menu__lines')?.textContent,
+    ).toContain('Код');
+    // Without one, the label stands alone.
+    expect(
+      q('pick-pct')?.querySelector('.ui-choice-menu__description'),
+    ).toBeNull();
+  });
 });

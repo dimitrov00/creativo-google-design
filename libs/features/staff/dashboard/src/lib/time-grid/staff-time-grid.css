@@ -8,7 +8,12 @@
  */
 
 .staff-grid {
-  display: block;
+  /* A COLUMN, so the page frame can take whatever height the canvas hands
+     the host (2026-09-23, the grid views' design record §2): the frame's
+     height is a layout result now, never arithmetic on the viewport. */
+  display: flex;
+  flex-direction: column;
+  min-block-size: 0;
   /* The way-back chip is positioned against the host, outside the scroller. */
   position: relative;
   min-inline-size: 0;
@@ -36,12 +41,31 @@
 }
 
 .staff-grid__frame {
-  /* One 15-minute row. Tall enough that a 30-minute cut clears the 44 rung. */
-  /* One 15-minute row. Apple Calendar gives an hour roughly 48–56pt; at
-     `* 7` an hour is 112px, which seats a 30-minute cut with two legible
-     lines and still shows a working day without a marathon scroll. */
-  --staff-slot-height: calc(var(--sys-space-unit) * 7);
-  --staff-gutter: calc(var(--sys-space-unit) * 14);
+  /* ONE 15-MINUTE ROW: 6 units — 24px, 96px an hour (2026-09-23, the grid
+     views' design record §5; down from `* 7`). The number is the 30-minute
+     cut's: 48px less 1px margins and 3px padding each way is 40px of
+     content for ~31px of two lines (a footnote name, a caption service at
+     the head's 1.3 leading) — the block most of the catalogue draws keeps
+     saying WHAT it is, and a phone shows seven hours of a ten-hour shift
+     instead of six. Apple's hour is ~50pt with a one-line event; a
+     barbershop's unit is the half-hour cut, so it needs more.
+
+     Whole pixels where the engine can round (the `@supports` block below
+     the frame's rules) — at compact density 22.08px a slot blurred every
+     hour rule by nine o'clock, and whole-pixel rules are what separate a
+     drawn calendar from a rendered one. NOT a second declaration of the
+     same property: a custom property takes any token stream, so a later
+     `round()` would always win the cascade and, on an engine without it,
+     turn every consumer invalid at computed-value time. */
+  --staff-slot-height: calc(var(--sys-space-unit) * 6);
+  /* THE RAIL: 12 units, the width the sheets' frame and the timeline already
+     give the same thing, plus the notch on a phone held sideways — folded
+     INTO the gutter because a sticky inset resolves against the scrollport
+     and would ignore a padding on the scroller. Read `--staff-gutter`
+     anywhere and the rail, the template and the snap padding agree. */
+  --staff-gutter: calc(
+    var(--sys-space-unit) * 12 + env(safe-area-inset-left, 0px)
+  );
   --staff-column-min: calc(var(--sys-space-unit) * 26);
 
   display: flex;
@@ -55,17 +79,17 @@
      never scrolled vertically and slid away with the page regardless of its
      offset. Bounding the frame and letting it scroll BOTH ways makes the head
      stick to the thing it belongs to. */
-  block-size: calc(100svh - var(--staff-head-offset, 0px));
   overflow: auto;
   overscroll-behavior: contain;
+}
 
-  /* The calendar reaches the viewport FLOOR and scrolls UNDER the action bar,
-     which is the only arrangement where that bar's chrome fade has anything
-     to dissolve. Stopping short of it left a hard clip mid-block and a band
-     of bare page below — a fade over nothing reads as a solid strip.
-     The padding is what lets the last booking of the day clear the bar
-     instead of hiding behind it. */
-  padding-block-end: var(--staff-grid-footer, 6rem);
+/* The scale on whole pixels, where the engine can say so (Safari 15.4+,
+   Chrome 125+); elsewhere the plain calc above stands and compact density
+   draws its rules a hair soft. */
+@supports (width: round(1px, 1px)) {
+  .staff-grid__frame {
+    --staff-slot-height: round(calc(var(--sys-space-unit) * 6), 1px);
+  }
 }
 
 /*
@@ -113,12 +137,6 @@
   padding-block-end: 0;
 }
 
-/* With no head above it there is nothing to clear — the row pins to the top
-   of the frame itself. */
-.staff-grid__frame[data-viewport='framed'] .staff-grid__allday {
-  inset-block-start: 0;
-}
-
 /*
  * ONE track definition, one width, three bands.
  *
@@ -149,15 +167,35 @@
   );
 }
 
-/* The whole header block — column names and the all-day row — pins as one. */
+/* The whole header block — column names and the all-day row — pins as one.
+   ABOVE the rail (5 over 4): the two pin on different axes and cross at the
+   corner, and the band must ride over the hour labels or they paint through
+   the names. Under the band the now pill disappears, as Apple's does, rather
+   than floating over the heads.
+
+   The chrome's own box is the SCROLLPORT's width — a stretched flex item —
+   while the bands inside it run to the tracks' width and overflow it when
+   the chairs page sideways (found in review, 2026-09-23). So the ground and
+   the hairline are painted on the BANDS, which are as wide as the day; the
+   chrome keeps a ground of its own for the case where the bands are
+   narrower than it. */
 .staff-grid__chrome {
   position: sticky;
   inset-block-start: 0;
-  z-index: 3;
+  z-index: 5;
   background: var(--sys-color-background);
 }
 
-.staff-grid__head {
+.staff-grid__head,
+.staff-grid__allday {
+  background: var(--sys-color-background);
+}
+
+/* ONE hairline between the chrome and the day (2026-09-23, §2), on whichever
+   band is last. The head and the all-day row each drew their own, two rows
+   apart, which read as a table header; no dividers where one hairline will
+   do. */
+.staff-grid__chrome > :last-child {
   border-block-end: 1px solid var(--sys-color-separator);
 }
 
@@ -177,14 +215,42 @@
   justify-content: center;
   gap: calc(var(--sys-space-unit) * 0.5);
   padding: var(--sys-space-tight) var(--sys-space-compact);
+  /* The platform's target floor: a DATE head is a button now. */
+  min-block-size: var(--control-size-regular);
   min-inline-size: 0;
   border-inline-start: 1px solid var(--sys-color-separator);
 }
 
-/* The zone cell closes the gutter column in both header bands, so the rule
-   under them runs unbroken. */
-.staff-grid__zone {
-  border-inline-end: 1px solid transparent;
+/*
+ * ── THE AXIS STAYS PUT (2026-09-23, §3) ───────────────────────────────
+ *
+ * A two-axis scroller pins both headers — Apple Calendar keeps the hour
+ * rail fixed while a week pans, and so does every spreadsheet. The week
+ * used to lose its time axis after sixty pixels of pan: the gutter was an
+ * ordinary grid item. It is a sticky one now, and so are the two cells
+ * above it, each in its own band (the chrome pins them on the block axis;
+ * they pin themselves on the inline one), so the corner holds both ways.
+ *
+ * The vertical hairline lives on the STICKY cells' trailing edge, not on the
+ * first column's leading one: the first column pans away under the rail
+ * and its border goes with it; only a line on the thing that stays put
+ * stays put. The first column drops its leading rule in every band so the
+ * axis is one line, not two a pixel apart.
+ */
+.staff-grid__zone,
+.staff-grid__allday-label {
+  position: sticky;
+  inset-inline-start: 0;
+  /* Inside the chrome's own stacking context: over its cells, under nothing. */
+  z-index: 6;
+  background: var(--sys-color-background);
+  border-inline-end: 1px solid var(--sys-color-separator);
+}
+
+.staff-grid__zone + .staff-grid__column-head,
+.staff-grid__allday-label + .staff-grid__allday-cell,
+.staff-grid__gutter + .staff-grid__column {
+  border-inline-start: 0;
 }
 
 .staff-grid__column-head > span {
@@ -264,6 +330,12 @@
  * `isToday` is still set on barber columns: the now-line needs to know
  * whether today is on screen at all. It just has nothing to say visually
  * when the answer is "all of them".
+ *
+ * A WASH over today's column was considered and refused for the same
+ * reason (2026-09-23, the grid views' design record §11): Apple's week
+ * marks today by the numeral alone; on this canvas the accent already
+ * means NOW (the line, the pill, the capsule) and hue means WHOSE, and a
+ * wash under the closed shading would muddy both.
  */
 
 .staff-grid__body {
@@ -292,6 +364,7 @@
   background: none;
   cursor: pointer;
   font: var(--sys-font-caption);
+  font-variant-numeric: tabular-nums; /* the shorthand resets the app's tabular figures */
   color: var(--sys-color-secondary-label);
   text-transform: uppercase;
   letter-spacing: var(--sys-tracking-caption);
@@ -310,15 +383,22 @@
 
 /* ── All day ─────────────────────────────────────────────────────────── */
 
-/* Directly under the header band and pinned with it — the reference's
-   anatomy, and the row a whole-day fact has nowhere else to sit. */
+/* Directly under the header band and pinned WITH it — the chrome is the one
+   sticky ancestor, so this row needs no offset of its own (an inner sticky
+   reading a `--staff-allday-offset` that nothing set was here until
+   2026-09-23). The reference's anatomy, and the row a whole-day fact has
+   nowhere else to sit. */
 .staff-grid__allday {
-  position: sticky;
-  inset-block-start: var(--staff-allday-offset, 2.75rem);
-  z-index: 2;
   min-block-size: calc(var(--sys-space-unit) * 8);
   background: var(--sys-color-background);
-  border-block-end: 1px solid var(--sys-color-separator);
+}
+
+/* A hairline ABOVE the band too, where a head precedes it (owner,
+   2026-09-23): the band is a row of its own between the names and the
+   hours, and reads as one only with an edge on each side. A frame with no
+   head keeps the band flush to its top. */
+.staff-grid__head + .staff-grid__allday {
+  border-block-start: 1px solid var(--sys-color-separator);
 }
 
 .staff-grid__allday-label {
@@ -326,33 +406,142 @@
   place-items: center end;
   padding-inline-end: var(--sys-space-compact);
   color: var(--sys-color-secondary-label);
-  /* Two words in a 52px gutter wrap; tightening the leading keeps the pair
+  /* Two words in a 48px gutter wrap; tightening the leading keeps the pair
      reading as one label rather than two stacked ones. */
   line-height: 1.1;
   text-align: end;
 }
 
+/*
+ * ── The chips NEVER LEAVE THEIR CELL (2026-09-23, §8) ──────────────────
+ *
+ * They were `nowrap` in a wrapping row, and a chip wider than its column
+ * spilled into the next day's cell — «Нико Димов почива» under Tuesday
+ * stated a falsehood about Tuesday. The cell is a column now, one chip a
+ * line, clipped at its own edge; the chip carries the sentence, then the
+ * first name, then the chair's tone disc with the initial — the agenda's
+ * own mark for a chair that is out — by the cell's width. Three or four
+ * chairs off on one day stack, and beyond the cap the caller sends «+N».
+ */
 .staff-grid__allday-cell {
+  /* The blank space's button is laid under the chips, filling the cell. */
+  position: relative;
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
+  align-items: flex-start;
   gap: calc(var(--sys-space-unit) * 0.5);
-  padding: var(--sys-space-tight) var(--sys-space-compact);
+  padding: var(--sys-space-tight) calc(var(--sys-space-unit) * 1.5);
   border-inline-start: 1px solid var(--sys-color-separator);
   min-inline-size: 0;
+  overflow: hidden;
 }
 
+/* THE BLANK SPACE IS A DOOR: an unmarked button filling the cell beneath
+   its chips — a tap beside a chip, or on an empty cell, makes a whole-day
+   block. The one hover grammar with its ungated press mirror; the ring
+   inset so the band's own edges stay. */
+.staff-grid__allday-add {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+  background: none;
+  cursor: pointer;
+}
+
+@media (hover: hover) {
+  .staff-grid__allday-add:hover {
+    background: var(--sys-state-layer-hover);
+  }
+}
+
+.staff-grid__allday-add:active {
+  background: var(--sys-state-layer-press);
+}
+
+.staff-grid__allday-add:focus-visible {
+  outline: var(--sys-focus-ring-width) solid var(--sys-color-ring);
+  outline-offset: calc(-1 * var(--sys-focus-ring-width));
+}
+
+/* The block's own tone wash, so a day off reads as a miniature of the
+   blocks it replaces — 15%, and the dark theme's 28% through the same
+   `--staff-event-alpha` the blocks read. */
 .staff-grid__allday-chip {
+  /* Over the blank space's button; a chip is its own door on the page. */
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sys-space-tight);
+  max-inline-size: 100%;
+  min-inline-size: 0;
   padding: 1px var(--sys-space-tight);
   border-radius: var(--control-radius-subtle);
-  background: var(--sys-color-fill);
+  background: color-mix(
+    in srgb,
+    var(--barber-tone, var(--sys-color-fill)) var(--staff-event-alpha, 15%),
+    transparent
+  );
   color: var(--sys-color-secondary-label);
+  overflow: hidden;
   white-space: nowrap;
 }
 
+/* A chip on the page is a BUTTON (owner, 2026-09-23: a day off in the band
+   opens to be edited or lifted): the chip's own chrome, none of a button's;
+   the block's press grammar, and the ring inset. */
+button.staff-grid__allday-chip {
+  border: 0;
+  font: inherit;
+  cursor: pointer;
+}
+
+@media (hover: hover) {
+  button.staff-grid__allday-chip:hover {
+    filter: brightness(0.97);
+  }
+}
+
+button.staff-grid__allday-chip:active {
+  filter: brightness(0.94);
+  transform: scale(0.98);
+}
+
+button.staff-grid__allday-chip:focus-visible {
+  outline: var(--sys-focus-ring-width) solid var(--sys-color-ring);
+  outline-offset: calc(-1 * var(--sys-focus-ring-width));
+}
+
+.staff-grid__allday-word {
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.staff-grid__allday-word[data-label='short'],
+.staff-grid__allday-disc {
+  display: none;
+}
+
+/* Sticky on the inline axis, opaque, the axis hairline on its trailing
+   edge; the frame's positioned box for the now pill inside it. z 4 — under
+   the chrome (5), over the now-line (3) and the blocks (2): a column is not
+   a stacking context, so its now-line competes with the rail directly and
+   would cross it at an equal z the moment the first chair slid under the
+   rail (found in review, 2026-09-23). */
 .staff-grid__gutter {
+  position: sticky;
+  inset-inline-start: 0;
+  z-index: 4;
   display: grid;
   grid-auto-rows: calc(var(--staff-slot-height) * 4);
   padding-block-start: 0;
+  background: var(--sys-color-background);
+  border-inline-end: 1px solid var(--sys-color-separator);
 }
 
 .staff-grid__hour {
@@ -444,9 +633,6 @@
 
   grid-column: 1;
   position: relative;
-  /* A query container, so the block itself decides whether its column is
-     wide enough to carry the clock beside the name. */
-  container: staff-event / inline-size;
   /* Above BOTH the closed shading (0) and the hour-rule overlay (1). */
   z-index: 2;
   /* Lane offset and inset in ONE declaration each. A later
@@ -640,10 +826,9 @@
   color: var(--sys-color-secondary-label);
 }
 
-.staff-grid__event[inert]:not([data-editable]) .staff-grid__event-times,
-.staff-grid__event[inert]:not([data-editable]) .staff-grid__event-detail,
-.staff-grid__event[inert]:not([data-editable]) .staff-grid__event-who,
-.staff-grid__event[inert]:not([data-editable]) .staff-grid__event-inline {
+.staff-grid__event[inert]:not([data-editable]) .staff-event-head__times,
+.staff-grid__event[inert]:not([data-editable]) .staff-event-head__line,
+.staff-grid__event[inert]:not([data-editable]) .staff-event-head__inline {
   color: var(--sys-color-tertiary-label);
 }
 
@@ -950,101 +1135,10 @@
   pointer-events: none;
 }
 
-/* The rail is IDENTITY and identity does not decay: a completed cut still
-   belongs to the barber who did it. Recolouring it by status put hue back on
-   state through the side door — the very thing the ruling above forbids —
-   and it is now the past HATCH that says the hour has gone, on every block
-   equally. */
-
-.staff-grid__event-title {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-inline-size: 100%;
-}
-
-/* THE HEAD — the words on the left, the clock on the right, exactly the
-   agenda card's two columns (owner, 2026-09-10: "time start and end should
-   also be displayed"). */
-.staff-grid__event-head {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--sys-space-tight);
-  align-self: stretch;
-  min-inline-size: 0;
-}
-
-.staff-grid__event-lines {
-  flex: 1 1 auto;
-  min-inline-size: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-}
-
-/* THE CLOCK — start over end, the card's own aside, at the block's trailing
-   edge. Start is the fact, end its reading, the same two inks the card
-   uses. Hidden where the column is too narrow to spare it: a name beats a
-   clock the axis already states, and a short block keeps only the start. */
-.staff-grid__event-times {
-  display: none;
-  flex: none;
-  flex-direction: column;
-  align-items: flex-end;
-  white-space: nowrap;
-}
-
-/* `font:` on the text directive resets `font-variant`, so the figures ask
-   for their tabular forms themselves. */
-.staff-grid__event-start,
-.staff-grid__event-end {
-  font-variant-numeric: tabular-nums;
-}
-
-/* The card's two inks: the start in the block's own — the caption role
-   would mute it — and the end a step quieter. */
-.staff-grid__event-start {
-  color: inherit;
-}
-
-.staff-grid__event-end {
-  color: var(--sys-color-secondary-label);
-}
-
-.staff-grid__event[data-short] .staff-grid__event-end {
-  display: none;
-}
-
-@container staff-event (min-width: 160px) {
-  .staff-grid__event-times {
-    display: flex;
-  }
-}
-
-/* The service, riding the title's own line on a quarter-hour block. Secondary
-   ink and a middot separator carry the demotion that the second line used to
-   carry by position — it is still plainly the subordinate half of the line. */
-.staff-grid__event-inline {
-  color: var(--sys-color-secondary-label);
-}
-
-.staff-grid__event-inline::before {
-  content: ' · ';
-}
-
-/* The secondary lines take the DS's own secondary tone. They used to take
-   `opacity: 0.75` — an invented alpha that also faded the BACKGROUND showing
-   through and could not track the theme. `uiFont="caption"` already carries
-   `--sys-color-secondary-label` in this system, so this is belt-and-braces
-   rather than a second opinion. */
-.staff-grid__event-detail,
-.staff-grid__event-who {
-  color: var(--sys-color-secondary-label);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-inline-size: 100%;
-}
+/* THE HEAD — the title, the lines, the clock — is ONE recipe with the agenda
+   card now: `shared/event-head/staff-event-head.css`, at `compact` density
+   here. The block keeps only what is the block's: its fill, its rail, its
+   masks, its marks, and the state rules that reach into the head by class. */
 
 /*
  * ── Status is FORM, never hue ──────────────────────────────────────────
@@ -1346,6 +1440,15 @@
   background-color: var(--staff-event-tint);
 }
 
+/* THE HOLLOW RAIL — the agenda card's own (2026-09-24): an hour that did
+   not happen keeps the barber's tone as an outline instead of a bar, the
+   block's "unfilled is time that was lost" said again by its rail. */
+.staff-grid__event[data-status='no_show'] .staff-grid__event-rail,
+.staff-grid__event[data-status='cancelled'] .staff-grid__event-rail {
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--barber-tone, var(--sys-color-separator));
+}
+
 /* NO-SHOW — the chair was held and nobody sat in it. */
 .staff-grid__event[data-status='no_show'] {
   color: var(--sys-color-secondary-label);
@@ -1358,15 +1461,10 @@
 }
 
 /* STRUCK THROUGH — Apple's treatment for a declined event — on the NAME,
-   as the agenda card strikes it, for both hours that did not happen: a
-   cancellation and a no-show (owner, 2026-09-10). The times, the service
-   and the tag keep their figures legible; the glyph still says which. */
-.staff-grid__event[data-status='cancelled'] .staff-grid__event-title,
-.staff-grid__event[data-status='no_show'] .staff-grid__event-title {
-  text-decoration: line-through;
-  text-decoration-thickness: 1px;
-  text-decoration-color: currentcolor;
-}
+   for both hours that did not happen: a cancellation and a no-show (owner,
+   2026-09-10). Drawn by the head itself from `[struck]` (one mechanism for
+   the block and the card, staff-event-head.css); the times, the service and
+   the tag keep their figures legible, and the glyph still says which. */
 
 /* The glyph that doubles the form, so the state survives a greyscale print
    and a reader who cannot separate two washes. */
@@ -1458,14 +1556,15 @@
  */
 /*
  * THE TRACK IS THE BASIS, not the column's box (2026-09-09, closing the
- * note that stood here). The gutter draws one hour row more than the
- * columns have slots — the page keeps its closing midnight label — and the
- * columns, grid items in the same row, stretch to the gutter's height. A
+ * note that stood here). The gutter used to draw one hour row more than the
+ * columns have slots — the page kept its closing midnight label — and the
+ * columns, grid items in the same row, stretched to the gutter's height. A
  * percentage of the column was then a percentage of 25 hours drawn over
  * 24 hours of rows: at 09:55 the line sat inside the ten o'clock block.
- * `--staff-grid-slots × --staff-slot-height` IS the rows' height, the same
- * basis every proportionally placed block already uses, so the line agrees
- * with the blocks by construction — on the page and in the frame alike.
+ * The closing label is gone on the page too now (2026-09-23, §3), so the
+ * two boxes are the same height by construction — and the basis stays the
+ * track regardless: `--staff-grid-slots × --staff-slot-height` IS the rows'
+ * height, the same basis every proportionally placed block already uses.
  */
 .staff-grid__now {
   position: absolute;
@@ -1491,36 +1590,33 @@
 .staff-grid__now-label {
   position: absolute;
   /*
-   * The same point as the line, in a different box.
+   * The same point as the line, in the SAME KIND of box (2026-09-23, §3).
    *
-   * The line sits inside a COLUMN; this sits on the BODY, which is
-   * `--staff-body-pad` taller and starts that much higher. Feeding both the
-   * same percentage put them at two different places — the label rode above
-   * the rule by a fraction of that padding, which is exactly the "not
-   * centred" everyone could see and no percentage could fix.
-   *
-   * So the padding is added back and the fraction is taken over what remains
-   * — the column's own height — which lands the two on the same pixel.
+   * The pill used to sit on the BODY, which is `--staff-body-pad` taller
+   * than the columns and starts that much higher, so its fraction had to
+   * add the padding back to land on the line's pixel. It lives INSIDE the
+   * gutter now — a grid item that starts where the columns start — so the
+   * two share one basis by construction, and it pins with the rail when a
+   * week pans sideways instead of being left behind on the body.
    */
   inset-block-start: calc(
-    var(--staff-body-pad) + var(--staff-now-fraction, 0) *
-      var(--staff-grid-slots, 1) * var(--staff-slot-height)
+    var(--staff-now-fraction, 0) * var(--staff-grid-slots, 1) *
+      var(--staff-slot-height)
   );
   /* In the GUTTER, and FLUSH with the column edge the line starts from
      (owner, 2026-09-09): it used to end where the hour labels end, a
      compact step short of the column, and that step read as a gap between
      the figure and its rule. The pill is the line's head — the reference
-     joins the two — so its trailing edge is the column boundary. An
-     absolutely positioned box shrinks to its content, so anchoring the
-     TRAILING edge is what lets it hug its own text. */
+     joins the two — so its trailing edge is the column boundary. */
   /* THE WHOLE GUTTER, as every hour label's box is (owner, 2026-09-09): the
      pill spans from the gutter's leading edge to the column boundary and
      ends its figure at the same end padding the hours use, so `09:57`
      sits in the same column of digits as `10:00` above and below it —
      one more hour, drawn as a marker, rather than a tag hugging the edge. */
-  inset-inline-start: 0;
-  inset-inline-end: calc(100% - var(--staff-gutter));
+  inset-inline: 0;
   text-align: end;
+  /* Inside the rail's own stacking context (sticky makes one): over the
+     hour labels, and gone under the chrome with the rail at the top edge. */
   z-index: 4;
   /* Centred on the line's VISUAL middle, not on its top edge.
      `inset-block-start` places the element's border-box top, so a 2px rule
@@ -1566,42 +1662,4 @@
 
 .staff-grid__event[data-short] .staff-grid__event-tag {
   display: none;
-}
-
-/*
- * BACK TO THE BLOCK — a chip at the edge the edited block went past, in the
- * handles' own material (surface, hairline, capsule, the overlay's lift),
- * on the host rather than in the scroller so it never scrolls with the
- * picture. Centred across, a compact step in from the edge it names.
- */
-.staff-grid__recenter {
-  position: absolute;
-  inset-inline-start: 50%;
-  translate: -50% 0;
-  z-index: 3;
-  display: inline-flex;
-  align-items: center;
-  gap: var(--sys-space-tight);
-  min-block-size: var(--control-size-small);
-  padding: 0 var(--sys-space-compact);
-  border: 1px solid var(--sys-color-separator);
-  border-radius: var(--control-radius-capsule);
-  background: var(--sys-color-surface);
-  color: var(--sys-color-foreground);
-  box-shadow: var(--sys-elevation-overlay);
-  font: var(--sys-font-caption);
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.staff-grid__recenter[data-edge='before'] {
-  inset-block-start: var(--sys-space-compact);
-}
-
-.staff-grid__recenter[data-edge='after'] {
-  inset-block-end: var(--sys-space-compact);
-}
-
-.staff-grid__recenter-time {
-  font-variant-numeric: tabular-nums;
 }

@@ -46,6 +46,44 @@
     </ui-flow>
   </sc-demo>
 
+  <sc-demo scTitle="Group">
+    <ng-container scAbout>
+      <code>ui-avatar-group</code> — several people as one mark: the projected
+      avatars overlap by a third of their disc, each cut out of the one behind
+      it by a ring of the ground (<code>--ui-avatar-group-ring</code>, the
+      surface unless a host over media says white), the first in front.
+      <code>uiOverflow</code> draws the people not shown as a count. One
+      <code>role="group"</code> with the host's <code>aria-label</code> naming
+      everyone — the discs are decoration.
+    </ng-container>
+    <ui-flow uiSpacing="comfortable" uiAlignment="trailing">
+      @for (size of groupSizes; track size) {
+      <ui-stack uiAxis="vertical" uiSpacing="compact" uiAlignment="leading">
+        <ui-avatar-group
+          [uiControlSize]="size"
+          [uiOverflow]="size === 'large' ? 3 : 0"
+          aria-label="Ada Lovelace, Grace Hopper, Edsger Dijkstra"
+        >
+          <ui-avatar
+            [uiSrc]="imageSamples[0]?.src ?? null"
+            uiName="Ada Lovelace"
+            [uiControlSize]="size"
+          />
+          <ui-avatar uiName="Grace Hopper" [uiControlSize]="size" />
+          <ui-avatar
+            [uiSrc]="imageSamples[2]?.src ?? null"
+            uiName="Edsger Dijkstra"
+            [uiControlSize]="size"
+          />
+        </ui-avatar-group>
+        <p uiText [uiFont]="'caption'" class="avatar__mono">
+          controlSize={{ size }}{{ size === 'large' ? ' · overflow=3' : '' }}
+        </p>
+      </ui-stack>
+      }
+    </ui-flow>
+  </sc-demo>
+
   <sc-demo scTitle="Broken source">
     <ng-container scAbout>
       The <code>AsyncImage</code> error path: an unreachable

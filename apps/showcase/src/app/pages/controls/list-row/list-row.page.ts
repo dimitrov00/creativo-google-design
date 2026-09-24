@@ -1,8 +1,8 @@
 import { ChangeDetectionStrategy, Component } from '@angular/core';
 import { RouterLink } from '@angular/router';
-import { UiIcon } from '@creativo/ui/controls';
+import { UiAvatar, UiIcon } from '@creativo/ui/controls';
 import { UiDivider, UiStack } from '@creativo/ui/layout';
-import type { UiListRowAlignment } from '@creativo/ui/patterns';
+import type { UiListRowAlignment, UiListRowSize } from '@creativo/ui/patterns';
 import { UiCard, UiListRow } from '@creativo/ui/patterns';
 import {
   UiForegroundStyleDirective,
@@ -19,6 +19,7 @@ import { ScPage } from '../../../shared/page';
     RouterLink,
     ScDemo,
     ScPage,
+    UiAvatar,
     UiCard,
     UiDivider,
     UiFrameDirective,
@@ -37,4 +38,6 @@ export class ListRowPage {
     'center',
     'leading',
   ];
+  /** Both rungs on a stacked label — the picker row and the settings row. */
+  protected readonly sizes: readonly UiListRowSize[] = ['regular', 'large'];
 }

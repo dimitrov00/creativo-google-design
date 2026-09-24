@@ -1,0 +1,94 @@
+<sc-page scTitle="Scroll Column">
+  <ng-container scLede>
+    <code>ui-scroll-column</code> — the bounded vertical scroller, the
+    <code>ui-scroll-row</code>'s counterpart. ≙ SwiftUI
+    <code>ScrollView(.vertical)</code> under a <code>.frame(maxHeight:)</code>:
+    the consumer sets <code>--ui-scroll-column-max-block-size</code> on the host
+    and the column scrolls once its content passes it; unset, it hugs its
+    content and never scrolls. The indicator stays visible (HIG: an indicator
+    says the content scrolls), and <code>uiSnap</code> is proximity, never
+    mandatory — a vertical frame that cannot rest between items traps the thumb.
+  </ng-container>
+
+  <sc-demo scTitle="The cap">
+    <ng-container scAbout>
+      Eight cards under a 14rem cap: the cut card at the bottom is the cue that
+      there is more, and a swipe past the end carries on to the page. Two cards
+      under the same cap hug their own height.
+    </ng-container>
+    <ui-stack uiSpacing="comfortable" uiAlignment="stretch">
+      <ui-stack uiSpacing="tight" uiAlignment="stretch">
+        <ui-scroll-column
+          uiSnap="start"
+          uiSpacing="compact"
+          class="scroll-column__capped"
+        >
+          @for (card of cards; track card.title) {
+          <ui-card uiTone="elevated" uiPadding="regular">
+            <ui-stack uiSpacing="tight" uiAlignment="leading">
+              <p uiText [uiFont]="'headline'">{{ card.title }}</p>
+              <p uiText [uiFont]="'footnote'" uiForegroundStyle="secondary">
+                {{ card.detail }}
+              </p>
+            </ui-stack>
+          </ui-card>
+          }
+        </ui-scroll-column>
+        <p uiText [uiFont]="'caption'" class="scroll-column__mono">
+          --ui-scroll-column-max-block-size: 14rem · uiSnap=start ·
+          uiSpacing=compact
+        </p>
+      </ui-stack>
+      <ui-stack uiSpacing="tight" uiAlignment="stretch">
+        <ui-scroll-column
+          uiSnap="start"
+          uiSpacing="compact"
+          class="scroll-column__capped"
+        >
+          @for (card of few; track card.title) {
+          <ui-card uiTone="elevated" uiPadding="regular">
+            <ui-stack uiSpacing="tight" uiAlignment="leading">
+              <p uiText [uiFont]="'headline'">{{ card.title }}</p>
+              <p uiText [uiFont]="'footnote'" uiForegroundStyle="secondary">
+                {{ card.detail }}
+              </p>
+            </ui-stack>
+          </ui-card>
+          }
+        </ui-scroll-column>
+        <p uiText [uiFont]="'caption'" class="scroll-column__mono">
+          the same cap, two cards — nothing scrolls
+        </p>
+      </ui-stack>
+    </ui-stack>
+  </sc-demo>
+
+  <sc-demo scTitle="uiSnap">
+    <ng-container scAbout>
+      Scroll each frame: <code>start</code> settles a card on the top edge,
+      <code>center</code> settles one mid-frame, <code>none</code> rests
+      anywhere. All three are proximity snaps — a frame stopped between cards
+      stays there.
+    </ng-container>
+    <ui-stack uiSpacing="comfortable" uiAlignment="stretch">
+      @for (snap of snaps; track snap) {
+      <ui-stack uiSpacing="tight" uiAlignment="stretch">
+        <ui-scroll-column
+          [uiSnap]="snap"
+          uiSpacing="tight"
+          class="scroll-column__short"
+        >
+          @for (card of cards; track card.title) {
+          <div class="scroll-column__thumb">
+            <p uiText [uiFont]="'subheadline'">{{ card.title }}</p>
+          </div>
+          }
+        </ui-scroll-column>
+        <p uiText [uiFont]="'caption'" class="scroll-column__mono">
+          uiSnap={{ snap }} · uiSpacing=tight
+        </p>
+      </ui-stack>
+      }
+    </ui-stack>
+  </sc-demo>
+</sc-page>

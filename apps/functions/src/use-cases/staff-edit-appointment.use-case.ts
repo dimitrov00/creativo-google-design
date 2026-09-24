@@ -247,6 +247,15 @@ interface StoredSeat {
 
 const MINUTE_MS = 60_000;
 
+/** The shop the batch moves the visit to — the last «Салон» in it — or `null`. */
+function relocatedTo(commands: readonly StaffEditCommand[]): string | null {
+  let target: string | null = null;
+  for (const command of commands) {
+    if (command.kind === 'relocate') target = command.locationId;
+  }
+  return target;
+}
+
 function endMs(seat: StoredSeat): number {
   return seat.startMs + seat.durationMinutes * MINUTE_MS;
 }
@@ -593,9 +602,16 @@ export class StaffEditAppointmentUseCase {
     // is being filled in after the cut (owner, 2026-09-09).
     const finished = rootStatus?.kind === 'completed';
     for (const command of commands) {
-      // Discounts and vouchers are facts about the BILL, settled elsewhere;
-      // the seats do not change under them.
-      if (command.kind === 'discounts' || command.kind === 'vouchers') continue;
+      // Discounts and vouchers are facts about the BILL, and a relocation
+      // about the PLACE — settled elsewhere; the seats do not change under
+      // them.
+      if (
+        command.kind === 'discounts' ||
+        command.kind === 'vouchers' ||
+        command.kind === 'relocate'
+      ) {
+        continue;
+      }
       const applied = applyCommand(next, command, finished);
       if (applied.isFailure()) return fail(applied.error);
       next = applied.value;
@@ -646,7 +662,11 @@ export class StaffEditAppointmentUseCase {
     const contact = contactFromDocument(current)?.toProps();
     return ok({
       request: {
-        locationId: String(current['locationId'] ?? ''),
+        // The shop the batch moves the visit to, else the one it is at. The
+        // decision then loads THAT shop's hours and zone and checks every
+        // seat's service is offered there.
+        locationId:
+          relocatedTo(commands) ?? String(current['locationId'] ?? ''),
         seats,
         // REUSED as the attempt id, which is what keeps the edited
         // appointment the same DOCUMENT rather than minting a new one — the
@@ -986,6 +1006,8 @@ export class StaffEditAppointmentUseCase {
           : null,
       // Unconditional, no request field, no second tap — see the deps' doc.
       allowOutsideWindow: true,
+      // The shop combines what it likes (owner, 2026-09-17) — the deps' doc.
+      allowConflictingServices: true,
       // Acknowledged, and only acknowledged.
       allowOverlap: input.acknowledgedOverlap === true,
       termsOverrides: planned.overrides,
@@ -1195,6 +1217,11 @@ function validateCommand(
       return typeof command.seatId === 'string' && command.seatId.length > 0
         ? ok(command)
         : fail(new StaffEditInvalidCommandError('seatId'));
+    case 'relocate':
+      return typeof command.locationId === 'string' &&
+        command.locationId.length > 0
+        ? ok(command)
+        : fail(new StaffEditInvalidCommandError('locationId'));
     case 'discounts': {
       if (!Array.isArray(command.discounts)) {
         return fail(new StaffEditInvalidCommandError('discounts'));
@@ -1415,8 +1442,9 @@ function applyCommand(
     }
     case 'discounts':
     case 'vouchers':
-      // Not seat edits — the bill's, settled outside the fold, which skips
-      // them. Listed so the switch stays exhaustive.
+    case 'relocate':
+      // Not seat edits — the bill's and the place's, settled outside the
+      // fold, which skips them. Listed so the switch stays exhaustive.
       return ok(stored);
   }
 }

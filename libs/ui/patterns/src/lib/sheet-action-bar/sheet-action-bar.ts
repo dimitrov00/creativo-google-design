@@ -87,7 +87,7 @@ export type UiSheetActionBarAnchor = 'overlay' | 'scroll';
     class: 'ui-sheet-action-bar',
     '[attr.data-visible]': "uiVisible() ? '' : null",
     '[attr.aria-hidden]': "uiVisible() ? null : 'true'",
-    '[attr.data-anchor]': "uiAnchor() === 'scroll' ? 'scroll' : null",
+    '[attr.data-anchor]': "uiAnchor() === 'overlay' ? null : uiAnchor()",
   },
 })
 export class UiSheetActionBar {

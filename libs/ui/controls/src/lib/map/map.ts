@@ -514,7 +514,10 @@ export class UiMap {
       const centerY = height / 2;
       const minX = EDGE_PADDING;
       const maxX = width - EDGE_PADDING;
-      const minY = EDGE_PADDING;
+      // Chrome floating over the top edge (`uiTopInsetPx`) pushes the
+      // indicators down as it pushes the camera: an arrow under a toolbar
+      // points at nothing anyone can see.
+      const minY = EDGE_PADDING + this.uiTopInsetPx();
       const maxY = height - BOTTOM_EDGE_PADDING;
 
       for (const pin of this.uiPins()) {

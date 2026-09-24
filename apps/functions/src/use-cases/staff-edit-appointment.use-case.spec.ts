@@ -106,6 +106,31 @@ function fadeService(priceMinorUnits = 4000): Service {
  * The original fixture declared `variants: []`, so no staff-edit test ever
  * re-decided a variant service and the refusal shipped unnoticed.
  */
+/** The same fade, offered at every shop — `locationIds: []` is the catalogue's "everywhere". */
+function fadeEverywhere(): Service {
+  return unwrap(
+    Service.create({
+      id: 'svc-fade',
+      name: { bg: 'Фейд', en: 'Fade' },
+      description: { bg: '—', en: '—' },
+      categoryId: 'cat-hair',
+      priceMinorUnits: 4000,
+      currencyCode: 'EUR',
+      durationMinutes: 45,
+      cleanupMinutes: 10,
+      locationIds: [],
+      conflictsWith: [],
+      variants: [],
+      offerings: [],
+      composition: { kind: 'single' },
+      upsellOnly: false,
+      popular: false,
+      status: 'active',
+      sortOrder: 1,
+    }),
+  );
+}
+
 function fadeWithVariants(): Service {
   return unwrap(
     Service.create({
@@ -896,6 +921,31 @@ describe('staffEditAppointment — the three acts that are not geometry', () => 
     expect(result.isSuccess()).toBe(true);
     expect(seatsOf(captured)[0]?.['barberId']).toBe('petar');
     expect(written(captured)['barberIds']).toEqual(['petar']);
+  });
+
+  it("moves the WHOLE visit to the other shop — the root's own fact", async () => {
+    const { result, captured } = await edit(
+      { kind: 'relocate', locationId: 'loc-mladost' },
+      { view: snapshot({ services: [fadeEverywhere()] }) },
+    );
+    expect(result.isSuccess()).toBe(true);
+    expect(written(captured)['locationId']).toBe('loc-mladost');
+    // The seats are untouched by it: same chair, same start.
+    expect(seatsOf(captured)[0]?.['barberId']).toBe('ivan');
+  });
+
+  it('refuses the other shop when it does not offer the service', async () => {
+    // The fade is the Center's alone; Mladost cannot host it.
+    const { result } = await edit({
+      kind: 'relocate',
+      locationId: 'loc-mladost',
+    });
+    expect(code(result)).toBe('booking.commit.service_not_at_location');
+  });
+
+  it('refuses a relocation that names no shop', async () => {
+    const { result } = await edit({ kind: 'relocate', locationId: '' });
+    expect(code(result)).toBe('booking.staffEdit.invalid_command');
   });
 
   it('refuses a seat the appointment does not have', async () => {

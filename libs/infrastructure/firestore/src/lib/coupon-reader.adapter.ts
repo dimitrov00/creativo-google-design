@@ -46,4 +46,27 @@ export class FirestoreCouponReader implements CouponReader {
       );
     }
   }
+
+  /**
+   * `coupons/*` that are enabled and carry a code — one equality query on
+   * `enabled`, the code's presence read off each document, because a
+   * missing field is what "grant-only" looks like in the store and an
+   * inequality on it would ask for an index this read does not need.
+   */
+  async listOpen(): Promise<Result<readonly Coupon[], RepositoryError>> {
+    try {
+      const snapshot = await getDocs(
+        query(couponsCollection(this.db), where('enabled', '==', true)),
+      );
+      const coupons: Coupon[] = [];
+      for (const doc of snapshot.docs) {
+        const coupon = couponFromPersistence(doc.id, doc.data() ?? {});
+        if (coupon.isFailure()) return fail(coupon.error);
+        if (coupon.value.code !== null) coupons.push(coupon.value);
+      }
+      return ok(coupons);
+    } catch (error) {
+      return fail(new RepositoryError('Failed to list live coupons', error));
+    }
+  }
 }

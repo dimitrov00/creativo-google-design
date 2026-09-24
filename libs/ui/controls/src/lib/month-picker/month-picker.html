@@ -1,7 +1,10 @@
 <!-- The month, and the two steps that page it. Paging must not touch the
-     chosen day — browsing is not choosing. -->
+     chosen day — browsing is not choosing. APPLE'S INLINE PICKER (owner,
+     2026-09-24): the month is the head's title, bold at the headline tier,
+     and the steps are the tint — the two things in the head that ANSWER a
+     tap wear the colour that says so (HIG: tint marks interactivity). -->
 <ui-stack uiAxis="horizontal" uiAlignment="center" uiSpacing="compact">
-  <span uiText uiFont="subheadline" uiWeight="semibold">
+  <span uiText uiFont="headline" class="ui-month-picker__title">
     {{ monthLabel() }}
   </span>
   <ui-spacer />
@@ -16,7 +19,7 @@
     data-testid="ui-month-prev"
     (click)="page(-1)"
   >
-    <ui-icon uiName="calendar.previous" />
+    <ui-icon uiName="calendar.previous" uiForegroundStyle="accent" />
   </button>
   <button
     type="button"
@@ -29,7 +32,7 @@
     data-testid="ui-month-next"
     (click)="page(1)"
   >
-    <ui-icon uiName="calendar.next" />
+    <ui-icon uiName="calendar.next" uiForegroundStyle="accent" />
   </button>
 </ui-stack>
 
@@ -55,7 +58,13 @@
 
 <ui-calendar-grid [uiSize]="uiSize()">
   @for (name of weekdays(); track $index) {
-  <span uiWeekday uiText uiFont="caption" uiForegroundStyle="secondary"
+  <span
+    uiWeekday
+    uiText
+    uiFont="footnote"
+    uiWeight="semibold"
+    uiForegroundStyle="secondary"
+    class="ui-month-picker__weekday"
     >{{ name }}</span
   >
   } @for (week of weeks(); track $index) { @for (cell of week; track $index) {
@@ -68,19 +77,29 @@
        highlighted the selected day or today, because a plain number has no
        state to paint. `uiToday` is its own flag rather than a state, so a
        selected today still says it is today. -->
+  @let beforeMin = isBeforeMin(cell.dayKey);
   <button
     type="button"
     uiDay
     uiInteractive
     uiRadius="capsule"
+    [disabled]="beforeMin"
     [attr.aria-current]="cell.dayKey === uiSelected() ? 'date' : null"
     [attr.data-testid]="'ui-month-day-' + cell.dayKey"
+    [attr.data-marked]="marked().has(cell.dayKey) ? '' : null"
     (click)="pick(cell.dayKey)"
   >
     <ui-date-badge
       [uiDay]="cell.day"
-      [uiState]="cell.dayKey === uiSelected() ? 'selected' : 'plain'"
+      [uiState]="
+        cell.dayKey === uiSelected()
+          ? 'selected'
+          : beforeMin
+            ? 'unavailable'
+            : 'plain'
+      "
       [uiToday]="cell.dayKey === uiToday()"
+      [uiMarker]="marked().has(cell.dayKey)"
     />
   </button>
   } } }

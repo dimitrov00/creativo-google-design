@@ -56,6 +56,27 @@ describe('UiButton', () => {
     expect(el.getAttribute('data-control-size')).toBe('small');
   });
 
+  it('draws its own ring while loading, hidden from assistive tech, the label kept for its width', () => {
+    fixture.componentInstance.loading = true;
+    fixture.detectChanges();
+    const el: HTMLElement = fixture.nativeElement.querySelector('button');
+    const progress = el.querySelector('.ui-button__progress');
+    expect(progress?.getAttribute('aria-hidden')).toBe('true');
+    expect(
+      progress
+        ?.querySelector('ui-progress-view')
+        ?.getAttribute('data-control-size'),
+    ).toBe('small');
+    expect(el.textContent).toContain('Save');
+  });
+
+  it('draws no ring at rest', () => {
+    fixture.detectChanges();
+    const el: HTMLElement = fixture.nativeElement.querySelector('button');
+    expect(el.querySelector('.ui-button__progress')).toBeNull();
+    expect(el.querySelector('ui-progress-view')).toBeNull();
+  });
+
   it('marks aria-busy and data-state="loading" while loading', () => {
     fixture.componentInstance.loading = true;
     fixture.detectChanges();

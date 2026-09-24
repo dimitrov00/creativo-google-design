@@ -229,6 +229,16 @@ service cloud.firestore {
       allow read, write: if worksTheBook();
     }
 
+    // ── the shop's photos of a visit ─────────────────────────────────────
+    // Staff-only in both directions and a sibling of the appointment, for
+    // the note's reason: the appointment document is the client's to read,
+    // the shop's pictures of them are not. One document per photo, pointing
+    // at the visit; the bytes sit in Storage under the same rule
+    // (`storage.rules`, `/appointmentPhotos`).
+    match /appointmentPhotos/{photoId} {
+      allow read, write: if worksTheBook();
+    }
+
     match /serviceCategories/{categoryId} {
       allow read: if true;
       allow write: if isCatalogManager();

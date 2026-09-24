@@ -33,6 +33,8 @@ Three of the four views have no destination. `openVisit` resolves the row and se
 
 ### 1.2 The block sheet docks the _destructive_ action in the thumb slot — my regression
 
+> **Resolved 2026-09-23:** the lift left the dock altogether — it is a destructive ROW in the sheet's exits group (Calendar's «Delete Event» grammar: red text at the foot of the form, never a control in the bar), arming on the first tap with the warning beneath; the dock holds «Запази» alone and hides when there is nothing to save.
+
 `.ui-sheet-action-bar > [data-spread]` gets `margin-inline-start: auto`, and it matches **every** spread child, not just the first. `[data-spread]` deliberately does not grow (owner ruling 2026-07-23: "spread = the chunky ROW GRAMMAR only, never width"), so free space splits between the two auto margins and the **DOM-last** child lands flush against the trailing gutter. In the block sheet that's `staff-block-lift` — destructive, unconfirmed, and now sitting exactly where every other sheet in this app puts "yes". The confirm is pushed to the middle.
 
 One tap in the thumb dock deletes the barber's entire exception document for the day — every blocked range at once, since the port cannot remove one among several.
@@ -44,21 +46,29 @@ Introduced by me earlier today when I wired the previously-orphaned `liftBlock`.
 
 ### 1.3 The safe-area guard under the bottom bar is dead code
 
+> **2026-09-23:** the grid's rail, footer and bands now carry their `env()` terms; `viewport-fit=cover` itself is deferred to an owner ruling (it wakes every dormant guard in the DS at once) — see `staff-schedule-grid-views-design.md` §12.
+
 `env(safe-area-inset-*)` appears in the DS, but the app's viewport meta has no `viewport-fit=cover`, so every `env()` floor resolves to `0` on iOS. The bar and the FAB sit against the physical bottom edge, inside the home-indicator gesture area.
 **HIG _Layout_:** keep interactive controls clear of the home indicator.
 **Fix:** add `viewport-fit=cover` to the viewport meta, then re-measure the action bar and sheets — several existing `env()` guards become live at once.
 
 ### 1.4 The page action bar has no positioned ancestor
 
+> **Resolved** — `.staff-day` is `position: relative` (earlier pass); in grid views the page is one viewport tall and the bar lands on its floor (2026-09-23, §2).
+
 It's anchored `uiAnchor="pane"` (`position: absolute; inset-block-end: 0`), which the DS documents as pinning to its positioned ancestor — and `.staff-day` has no `position: relative`. It's currently resolving against the viewport by accident.
 **Fix:** one line — `position: relative` on `.staff-day`.
 
 ### 1.5 The grid frame overhangs the viewport by the page's own padding
 
+> **Superseded 2026-09-23:** no arithmetic at all — the frame is a flex child of a `100svh` page and the grid left the padded stack for its own canvas (§2).
+
 The frame is sized `100svh − toolbar`, then the page pushes it down another 48px of vertical padding, so its bottom edge lands 48px below the fold. The last part of every day is unreachable without the page itself scrolling.
 **Fix:** give the grid its own gutters — `uiPaddingVertical` = `none` in grid views — or subtract the padding in the frame's height math.
 
 ### 1.6 The hour rail scrolls away in week view
+
+> **Resolved 2026-09-23, extended:** the rail, the zone corner and the all-day label are sticky on the inline axis, the now pill lives inside the rail, and the chrome rides above the rail (§3). The week no longer scrolls sideways at all; the chair-columned day does, with the rail pinned.
 
 The frame pans both axes (838 × 2810 inside 375 × 760), and only the row axis is pinned. `.staff-grid__chrome` sticks so the column heads survive vertical scroll, but the hour gutter is an ordinary grid item: after ~56px of horizontal pan, the week view has **no time axis**.
 **HIG _Scrolling_** and the platform table convention: a grid that scrolls on two axes pins both headers. Apple Calendar keeps the hour rail fixed.
@@ -97,6 +107,8 @@ The good half: every type role is `rem` and there's no `html { font-size: <px> }
 
 ### 1.13 The day-view column head truncates every name
 
+> **Resolved 2026-09-23, tiered:** full name → first name → portrait alone by the head cell's own width; the portrait stays (hue and face say WHOSE); the full name is the accessible name at every width (§4).
+
 A column is (375 − 56) / 3 = 106px; minus padding and a 24px portrait, ~66px is left for a full name at 12px. All three heads truncate.
 **Fix:** first name only in the day view, full name on the accessible label, and drop the portrait from the head — the toolbar's scope control already identifies who you're looking at.
 
@@ -108,20 +120,24 @@ A column is (375 − 56) / 3 = 106px; minus padding and a 24px portrait, ~66px i
 - **The date popover never receives focus on open**, Escape from the trigger doesn't close it, and `pickDay` closes the surface while the tapped day still holds focus — so focus is blurred to `<body>`.
 - **No live region.** The design brief (§9) mandates one; the surface has none. Scope it to user-caused events, not the Firestore stream.
 - **The grid frame isn't focusable** — 2810 × 838px of scrollable content with no keyboard or switch-control path. `tabindex="0" role="region"` with a label fixes it.
+  > **Adopted 2026-09-23** (§3): a region named for its period, with an inset focus ring.
 - **Week view blocks never name their date to VoiceOver.** The accessible name is "client, service, time" with no day, and there's no per-column landmark.
 - **`view` and `scope` are lost on every relaunch.** `?day=` is restored deliberately; publish these alongside it.
+  > **Adopted 2026-09-23** (§10): `?view=` and `?barber=` join `?day=`; the view is also remembered on the device, the chair deliberately not.
 - **Blocking time can fail silently** — two bare `return`s in `confirmBlock` produce no message, no error state and no dismissal.
 - **Every write failure collapses to one generic sentence.** `BookingGatewayError.code` is a constant; the real reason lives in a `failure` discriminant this feature never reads.
 - **The stale-day notice is a wrapping third sibling in a fixed-height toolbar** — the first string to break at 375px. Move it to its own band beneath.
 - **`openSearch()` doesn't clear `fabOpen`** — dismissing the search sheet reveals a still-fanned FAB.
 - **Cancelled bookings fail contrast** — tertiary ink, struck through, at 11–12px, over a hatch. Move to secondary ink and let the strike-through and outline carry the state (three channels already).
 - **112px per hour × 24 hours = 3.7 screens per day.** A barber never sees a whole shift. Raising the short-block threshold to 45 min lets the slot height drop.
+  > **Half adopted 2026-09-23** (§5): 96px an hour on whole pixels; the 45-minute threshold is refused — it hides WHAT the appointment is on most of the catalogue.
 
 ## 3. Low
 
 - Sheet body copy sits at 13px (subheadline) where it should be body scale.
 - `.staff-fab__action-label` is `nowrap` with no width cap — the longest Bulgarian label will overflow.
 - `--staff-allday-offset` is referenced but set nowhere; the inner sticky is redundant since `.staff-grid__chrome` already pins head and all-day row together. Delete it.
+  > **Deleted 2026-09-23.**
 - Three `var(--cr-font-weight-semibold)` references reach into the legacy donor token namespace; use `uiWeight="semibold"`.
 
 ---

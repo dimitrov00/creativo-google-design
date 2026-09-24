@@ -92,6 +92,13 @@
      z-index makes it a stacking context; -1 paints under the projected
      controls, and the scrim rides the bar's own reveal transition. */
   .ui-sheet-action-bar::before {
+    /* The colour the fade dissolves INTO: the sheet's surface, unless the
+       owner sits the bar on another and says so in
+       `--ui-sheet-action-bar-surface`. */
+    --ui-sheet-action-bar-fade: var(
+      --ui-sheet-action-bar-surface,
+      var(--sys-color-surface)
+    );
     content: '';
     position: absolute;
     inset-inline: 0;
@@ -105,18 +112,40 @@
        padding: surface-on-surface at scroll end, invisible. */
     background: linear-gradient(
       to top,
-      var(--sys-color-surface) 0%,
-      color-mix(in srgb, var(--sys-color-surface) 98%, transparent) 12.5%,
-      color-mix(in srgb, var(--sys-color-surface) 90%, transparent) 25%,
-      color-mix(in srgb, var(--sys-color-surface) 73%, transparent) 37.5%,
-      color-mix(in srgb, var(--sys-color-surface) 50%, transparent) 50%,
-      color-mix(in srgb, var(--sys-color-surface) 27%, transparent) 62.5%,
-      color-mix(in srgb, var(--sys-color-surface) 10%, transparent) 75%,
-      color-mix(in srgb, var(--sys-color-surface) 2%, transparent) 87.5%,
+      var(--ui-sheet-action-bar-fade) 0%,
+      color-mix(in srgb, var(--ui-sheet-action-bar-fade) 98%, transparent) 12.5%,
+      color-mix(in srgb, var(--ui-sheet-action-bar-fade) 90%, transparent) 25%,
+      color-mix(in srgb, var(--ui-sheet-action-bar-fade) 73%, transparent) 37.5%,
+      color-mix(in srgb, var(--ui-sheet-action-bar-fade) 50%, transparent) 50%,
+      color-mix(in srgb, var(--ui-sheet-action-bar-fade) 27%, transparent) 62.5%,
+      color-mix(in srgb, var(--ui-sheet-action-bar-fade) 10%, transparent) 75%,
+      color-mix(in srgb, var(--ui-sheet-action-bar-fade) 2%, transparent) 87.5%,
       transparent 100%
     );
     pointer-events: none;
     z-index: -1;
+  }
+
+  /* ── YIELDING TO A SHEET STACKED ON THIS ONE (2026-09-16) ──────────────
+     While another sheet is up over a sheet surface (`data-ui-sheet-stacked`,
+     sheet.ts), the surface's own bars sink out of its way — the same slide
+     they arrived by, so the card rises as the dock falls and the two read
+     as one motion (owner: "when the action sheet appears the bottom action
+     bar should fade down"). The stacked sheet's own bar, inside the second
+     surface, is the one exception. A scroll-anchored bar keeps its row: it
+     is covered, not removed, so nothing behind the scrim reflows. Back up
+     on the base rule's own reveal transition once the mark goes. */
+  .ui-sheet__surface[data-ui-sheet-stacked]
+    .ui-sheet-action-bar[data-visible]:not(
+      .ui-sheet__surface .ui-sheet__surface *
+    ) {
+    opacity: 0;
+    transform: translateY(100%);
+    pointer-events: none;
+    transition:
+      opacity var(--sys-motion-duration-regular) var(--sys-motion-ease-standard),
+      transform var(--sys-motion-duration-deliberate)
+        var(--sys-motion-ease-standard);
   }
 
   /* Slot contract — the PRIMARY child docks trailing (thumb side); every

@@ -33,9 +33,29 @@ export class SessionExpiryService {
 
   private async checkSession(): Promise<void> {
     const result = await this.authGateway.refreshToken();
-    if (result.isFailure()) {
-      await this.authGateway.signOut();
-      void this.router.navigateByUrl('/auth');
-    }
+    if (result.isSuccess()) return;
+    // ONLY A SESSION THAT IS GONE signs out (2026-09-17). A refresh that
+    // failed because the network did — a phone in a tunnel, the shop's
+    // Wi-Fi dropping — is not a session gone bad, and signing the user out
+    // for it is the bug. The SDK itself already drops a session the server
+    // has revoked; this catches the codes it reports for one.
+    if (!sessionIsGone(result.error)) return;
+    await this.authGateway.signOut();
+    void this.router.navigateByUrl('/auth');
   }
+}
+
+/** The SDK's codes for a session that no longer exists on the server. */
+const SESSION_GONE_CODES = new Set([
+  'auth/user-token-expired',
+  'auth/user-not-found',
+  'auth/user-disabled',
+  'auth/invalid-user-token',
+  'auth/null-user',
+]);
+
+function sessionIsGone(error: unknown): boolean {
+  const cause = (error as { cause?: unknown } | null)?.cause;
+  const code = (cause as { code?: unknown } | null)?.code;
+  return typeof code === 'string' && SESSION_GONE_CODES.has(code);
 }

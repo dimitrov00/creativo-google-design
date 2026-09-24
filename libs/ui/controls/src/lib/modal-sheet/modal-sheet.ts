@@ -75,6 +75,16 @@ export class UiModalSheet {
    * collapse.
    */
   readonly titleAlwaysVisible = input(false);
+  /**
+   * The owner's own word on the collapse (≙ `ui-sheet-header`'s
+   * `uiCollapsed`, its first mechanism): `true` lands the compact title
+   * whatever the large title's scroll says, `false` keeps it away, and
+   * `undefined` (the default) leaves the sentinel observation in charge.
+   * For a page whose large title FOLDS while a search is engaged (the
+   * `.searchable` grammar): the title is gone but never scrolled under the
+   * bar, so no observer would ever see it cross — the owner says so.
+   */
+  readonly titleCollapsed = input<boolean | undefined>(undefined);
 
   /**
    * Strip the header bar to its grabber — no title, no close control.

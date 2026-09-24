@@ -14,12 +14,6 @@
   "exclude": ["src/**/*.spec.ts", "src/**/*.test.ts"],
   "references": [
     {
-      "path": "../firebase-app/tsconfig.lib.json"
-    },
-    {
-      "path": "../../application/shared/tsconfig.lib.json"
-    },
-    {
       "path": "../../application/catalog/tsconfig.lib.json"
     },
     {
@@ -29,10 +23,22 @@
       "path": "../../application/accounts/tsconfig.lib.json"
     },
     {
+      "path": "../../domain/accounts/tsconfig.lib.json"
+    },
+    {
       "path": "../../domain/kernel/tsconfig.lib.json"
     },
     {
-      "path": "../../domain/accounts/tsconfig.lib.json"
+      "path": "../../application/shared/tsconfig.lib.json"
+    },
+    {
+      "path": "../firestore/tsconfig.lib.json"
+    },
+    {
+      "path": "../../application/booking/tsconfig.lib.json"
+    },
+    {
+      "path": "../firebase-app/tsconfig.lib.json"
     }
   ]
 }

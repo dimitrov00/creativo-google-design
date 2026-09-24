@@ -1,0 +1,102 @@
+@layer sys-components {
+  .ui-search-field {
+    display: block;
+  }
+
+  /* The glyph, the field and the ring share one grid cell: the field spans
+     it, the glyph sits on its leading inset and the ring clear of the
+     engine's own ✕ at the trailing edge. */
+  .ui-search-field__frame {
+    display: grid;
+    align-items: center;
+  }
+
+  .ui-search-field__glyph {
+    grid-area: 1 / 1;
+    justify-self: start;
+    z-index: 1;
+    margin-inline-start: var(--sys-space-compact);
+    color: var(--sys-color-secondary-label);
+    pointer-events: none;
+  }
+
+  /* Room for the glyph — its inset, its width and a gap, measured against
+     the icon the field's body size draws. Two classes, so the text field's
+     own inline padding (one class and a size attribute, same layer) never
+     wins on source order. */
+  .ui-search-field .ui-search-field__native {
+    grid-area: 1 / 1;
+    inline-size: 100%;
+    padding-inline-start: calc(var(--sys-space-unit) * 9);
+  }
+
+  /* The engine's own ✕ goes (a blue glyph in one browser, none in
+     another); the field draws its own below. */
+  .ui-search-field .ui-search-field__native::-webkit-search-cancel-button {
+    -webkit-appearance: none;
+    appearance: none;
+  }
+
+  .ui-search-field[data-has-value] .ui-search-field__native {
+    padding-inline-end: var(--control-size-regular);
+  }
+
+  /* THE CLEAR: the circled ✕ in secondary ink at the trailing edge, a full
+     control's reach for the thumb; hover and the ungated press darken it. */
+  .ui-search-field__clear {
+    grid-area: 1 / 1;
+    justify-self: end;
+    z-index: 1;
+    display: grid;
+    place-items: center;
+    inline-size: var(--control-size-regular);
+    block-size: var(--control-size-regular);
+    padding: 0;
+    border: 0;
+    border-radius: var(--control-radius-capsule);
+    background: none;
+    /* Secondary, not tertiary: a control's glyph owes 3:1, and the
+       tertiary label is 2.85:1 on a light sheet. */
+    color: var(--sys-color-secondary-label);
+    cursor: pointer;
+  }
+
+  @media (hover: hover) {
+    .ui-search-field__clear:hover {
+      color: var(--sys-color-foreground);
+    }
+  }
+
+  .ui-search-field__clear:active {
+    color: var(--sys-color-foreground);
+  }
+
+  .ui-search-field__clear:focus-visible {
+    outline: var(--sys-focus-ring-width) solid var(--sys-color-ring);
+    outline-offset: calc(-1 * var(--sys-focus-ring-width));
+  }
+
+  /* The ring sits clear of the clear control, which trails it. */
+  .ui-search-field__busy {
+    grid-area: 1 / 1;
+    justify-self: end;
+    margin-inline-end: var(--control-size-regular);
+    pointer-events: none;
+  }
+
+  /* PINNED: the band sticks exactly under the sheet's chrome while the list
+     scrolls, full-bleed across the sheet's inset — the `.searchable`
+     grammar from inside the content, on the material the shell's own
+     accessory wears (stamped by the host). */
+  .ui-search-field[data-pinned] {
+    position: sticky;
+    inset-block-start: var(
+      --modal-sheet-chrome-height,
+      var(--control-size-large)
+    );
+    z-index: 1;
+    margin-inline: calc(-1 * var(--ui-sheet-inset, var(--sys-space-regular)));
+    padding: var(--sys-space-tight)
+      var(--ui-sheet-inset, var(--sys-space-regular));
+  }
+}

@@ -8,9 +8,9 @@ import {
 import { type Observable, of } from 'rxjs';
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
+  type BlockEditorCommit,
   type BlockEditorVm,
   StaffBlockEditor,
-  expandRepeat,
 } from './staff-block-editor';
 
 @Injectable()
@@ -25,12 +25,57 @@ class TestTranslationLoader implements TranslocoLoader {
       'staff.block.lift': 'Освободи',
       'staff.block.liftDay': 'Освободи целия ден',
       'staff.block.repeat': 'Повтаряне',
-      'staff.block.repeatNone': 'Не',
+      'staff.block.repeatNever': 'Никога',
       'staff.block.repeatDaily': 'Всеки ден',
-      'staff.block.repeatWeekdays': 'Работни дни',
+      'staff.block.repeatWeekdays': 'Делнични дни',
       'staff.block.repeatWeekly': 'Всяка седмица',
-      'staff.block.repeatUntil': 'Повтаря се до',
-      'staff.block.repeatDays': '{{count}} дни',
+      'staff.block.repeatMonthly': 'Всеки месец',
+      'staff.block.repeatYearly': 'Всяка година',
+      'staff.block.repeatCustom': 'Персонализирано',
+      'staff.block.repeatPresets': 'Повтаряне',
+      'staff.block.repeatRule': 'Правило',
+      'staff.block.repeatFrequency': 'Честота',
+      'staff.block.repeatFrequencies.daily': 'Ежедневно',
+      'staff.block.repeatFrequencies.weekly': 'Ежеседмично',
+      'staff.block.repeatFrequencies.monthly': 'Ежемесечно',
+      'staff.block.repeatFrequencies.yearly': 'Ежегодно',
+      'staff.block.repeatInterval': 'На всеки',
+      'staff.block.repeatUnit.weekly.one': 'седмица',
+      'staff.block.repeatUnit.weekly.other': 'седмици',
+      'staff.block.repeatUnit.monthly.one': 'месец',
+      'staff.block.repeatUnit.monthly.other': 'месеца',
+      'staff.block.repeatEvery.daily.one': 'Всеки ден',
+      'staff.block.repeatEvery.weekly.one': 'Всяка седмица',
+      'staff.block.repeatEvery.weekly.other': 'На всеки {{count}} седмици',
+      'staff.block.repeatEvery.monthly.one': 'Всеки месец',
+      'staff.block.repeatEvery.yearly.one': 'Всяка година',
+      'staff.block.repeatWeekdaysLabel': 'Дни от седмицата',
+      'staff.block.repeatMonthDay': 'В месеца',
+      'staff.block.repeatOnWeekday.monday': 'в понеделник',
+      'staff.block.repeatOnWeekday.wednesday': 'в сряда',
+      'staff.block.repeatOnWeekday.thursday': 'в четвъртък',
+      'staff.block.repeatOnDate': 'на {{date}} число',
+      'staff.block.repeatDateOrdinal.1': '{{n}}-во',
+      'staff.block.repeatDateOrdinal.other': '{{n}}-о',
+      'staff.block.repeatOnNth.feminine.2': 'във втората {{weekday}}',
+      'staff.block.repeatOnNth.masculine.2': 'във втория {{weekday}}',
+      'staff.block.repeatWeekdayGender.wednesday': 'feminine',
+      'staff.block.repeatOnDayOfYear': 'на {{date}}',
+      'staff.block.repeatEnd': 'Край',
+      'staff.block.repeatEndOn': 'На дата',
+      'staff.block.repeatEndAfter': 'След брой пъти',
+      'staff.block.repeatEndDate': 'Дата',
+      'staff.block.repeatEndCount': 'Брой пъти',
+      'staff.block.repeatTimes.one': '{{count}} път',
+      'staff.block.repeatTimes.other': '{{count}} пъти',
+      'staff.block.repeatTimesUnit.one': 'път',
+      'staff.block.repeatTimesUnit.other': 'пъти',
+      'staff.block.repeatFix': 'Смени края',
+      'errors.scheduling.recurrence.invalid_count':
+        'Броят пъти е от 1 до {{max}}.',
+      'errors.scheduling.recurrence.never_occurs':
+        'До края не се пада нито един ден.',
+      'staff.visit.confirm': 'Потвърди',
       'staff.block.collisionsNamed': '{{count}} часа вътре: {{names}}',
       'staff.block.effect': 'Времето спира да е свободно за записване.',
       'staff.block.convert': 'Превърни в час',
@@ -107,35 +152,6 @@ const BARBERS = [
   { id: 'stefan', label: 'Стефан Петров', tone: 2, avatarSrc: null },
   { id: 'niko', label: 'Нико Димов', tone: 1, avatarSrc: null },
 ];
-
-describe('expandRepeat', () => {
-  it('is the one day when nothing repeats', () => {
-    expect(expandRepeat('2026-09-09', null)).toEqual(['2026-09-09']);
-  });
-
-  it('walks every day, or every weekday, or every week, up to the end', () => {
-    // Wednesday the 9th through Monday the 14th.
-    expect(
-      expandRepeat('2026-09-09', { kind: 'daily', untilDayKey: '2026-09-14' }),
-    ).toEqual([
-      '2026-09-09',
-      '2026-09-10',
-      '2026-09-11',
-      '2026-09-12',
-      '2026-09-13',
-      '2026-09-14',
-    ]);
-    expect(
-      expandRepeat('2026-09-09', {
-        kind: 'weekdays',
-        untilDayKey: '2026-09-14',
-      }),
-    ).toEqual(['2026-09-09', '2026-09-10', '2026-09-11', '2026-09-14']);
-    expect(
-      expandRepeat('2026-09-09', { kind: 'weekly', untilDayKey: '2026-09-30' }),
-    ).toEqual(['2026-09-09', '2026-09-16', '2026-09-23', '2026-09-30']);
-  });
-});
 
 describe('StaffBlockEditor', () => {
   let fixture: ComponentFixture<StaffBlockEditor>;
@@ -295,32 +311,219 @@ describe('StaffBlockEditor', () => {
     );
   });
 
-  it('repeats: the row says how far and on how many days, and the commit carries it', () => {
-    const host = render();
-    expect(find(host, 'staff-block-until')).toBeNull();
-    // The VALUE is the choice: the trailing pill opens the menu.
-    expect(
-      find(host, 'staff-block-repeat')?.closest('[uitrailing]'),
-    ).not.toBeNull();
-    click(host, 'staff-block-repeat');
-    click(host, 'staff-block-repeat-weekdays');
-    expect(find(host, 'staff-block-repeat-value')?.textContent?.trim()).toBe(
-      'Работни дни',
-    );
-    // Four weeks by default: the 9th through 7 October, weekdays only.
-    expect(find(host, 'staff-block-until')).not.toBeNull();
-    expect(find(host, 'staff-block-repeat-days')?.textContent?.trim()).toBe(
-      '21 дни',
+  /* ── The repeat (2026-09-24: "like Apple Calendar, MS Calendar, Google
+     Calendar — defining which days it occurs, from, to") ─────────────── */
+
+  const commitsOf = () => {
+    const commits: BlockEditorCommit[] = [];
+    fixture.componentInstance.committed.subscribe((c) => commits.push(c));
+    return commits;
+  };
+  const text = (host: HTMLElement, testId: string) =>
+    find(host, testId)?.textContent?.replace(/\s+/g, ' ').trim() ?? null;
+  /** A pop-up button's value — its label, without the glyph's ligature text. */
+  const pill = (host: HTMLElement, testId: string) =>
+    find(host, testId)?.querySelector('span')?.textContent?.trim() ?? null;
+  const typeInto = (host: HTMLElement, testId: string, value: string) => {
+    const input = find(host, testId) as HTMLInputElement | null;
+    if (input === null) throw new Error(`no field ${testId}`);
+    input.value = value;
+    input.dispatchEvent(new Event('change'));
+    fixture.detectChanges();
+  };
+  const checked = (host: HTMLElement) =>
+    [...host.querySelectorAll('[role="radio"][aria-checked="true"]')].map(
+      (row) => row.getAttribute('data-testid'),
     );
 
-    const commits: { repeat: { kind: string; untilDayKey: string } | null }[] =
-      [];
-    fixture.componentInstance.committed.subscribe((c) => commits.push(c));
+  it('repeats through a value row that pushes its own page, Apple-style', () => {
+    const host = render();
+    const editor = fixture.componentInstance;
+    // THE VALUE IS THE CHOICE, and it travels: «Повтаряне · Никога ›».
+    expect(text(host, 'staff-block-repeat-value')).toBe('Никога');
+    expect(find(host, 'staff-block-repeat-facts')).toBeNull();
+    expect(find(host, 'staff-block-until')).toBeNull();
+
+    click(host, 'staff-block-repeat');
+    // A page in this sheet, not a menu: the ladder gives way, the bar names it.
+    expect(find(host, 'staff-block-page')).not.toBeNull();
+    expect(find(host, 'staff-block-root')).toBeNull();
+    expect(editor.depth()).toBe(1);
+    expect(editor.pageTitle()).toBe('Повтаряне');
+    expect(checked(host)).toEqual(['staff-block-repeat-never']);
+    // Each shortcut says what it means from THIS start — a Wednesday.
+    expect(text(host, 'staff-block-repeat-weekly')).toContain('в сряда');
+    expect(text(host, 'staff-block-repeat-monthly')).toContain('на 9-о число');
+
+    click(host, 'staff-block-repeat-weekdays');
+    expect(checked(host)).toEqual(['staff-block-repeat-weekdays']);
+    // Four weeks by default: the 9th through 7 October, weekdays only.
+    expect(text(host, 'staff-block-repeat-summary')).toContain('21 пъти');
+    expect(find(host, 'staff-block-until')).not.toBeNull();
+
+    // The dock's ✓ goes back; the row now reads the series.
+    click(host, 'staff-block-page-done');
+    expect(find(host, 'staff-block-page')).toBeNull();
+    expect(editor.depth()).toBe(0);
+    expect(text(host, 'staff-block-repeat-value')).toBe('Делнични дни');
+    expect(text(host, 'staff-block-repeat-facts')).toContain('21 пъти');
+
+    const commits = commitsOf();
     click(host, 'staff-block-save');
-    expect(commits[0]?.repeat).toEqual({
-      kind: 'weekdays',
-      untilDayKey: '2026-10-07',
-    });
+    const days = commits[0]?.days ?? [];
+    expect(days).toHaveLength(21);
+    expect(days[0]).toBe('2026-09-09');
+    expect(days[days.length - 1]).toBe('2026-10-07');
+    // No Saturday the 12th, no Sunday the 13th.
+    expect(days).not.toContain('2026-09-12');
+    expect(days).not.toContain('2026-09-13');
+  });
+
+  it('builds a rule of its own: every 2 weeks, on Monday and Wednesday, 4 times', () => {
+    const host = render();
+    click(host, 'staff-block-repeat');
+    click(host, 'staff-block-repeat-custom');
+    // Google's own custom default: weekly, on the start's weekday.
+    expect(checked(host)).toEqual(['staff-block-repeat-custom']);
+    expect(pill(host, 'staff-block-repeat-frequency')).toBe('Ежеседмично');
+    expect(
+      find(host, 'staff-block-repeat-weekday-3')?.getAttribute('aria-pressed'),
+    ).toBe('true');
+
+    click(host, 'staff-block-repeat-weekday-1');
+    typeInto(host, 'staff-block-repeat-interval', '2');
+    click(host, 'staff-block-repeat-end-kind');
+    click(host, 'staff-block-repeat-end-count');
+    typeInto(host, 'staff-block-repeat-count', '4');
+
+    expect(text(host, 'staff-block-repeat-summary')).toContain(
+      'На всеки 2 седмици',
+    );
+    expect(text(host, 'staff-block-repeat-summary')).toContain('4 пъти');
+    // A shaped rule stays under «Персонализирано».
+    expect(checked(host)).toEqual(['staff-block-repeat-custom']);
+
+    click(host, 'staff-block-page-done');
+    expect(text(host, 'staff-block-repeat-value')).toBe('На всеки 2 седмици');
+    const commits = commitsOf();
+    click(host, 'staff-block-save');
+    // Weeks count from the start's own week: Wed 9; then the week of the
+    // 21st (Mon, Wed); then the week of 5 October.
+    expect(commits[0]?.days).toEqual([
+      '2026-09-09',
+      '2026-09-21',
+      '2026-09-23',
+      '2026-10-05',
+    ]);
+  });
+
+  it('reads a month the way Google does — the date, or «the second Wednesday»', () => {
+    const host = render();
+    click(host, 'staff-block-repeat');
+    click(host, 'staff-block-repeat-monthly');
+    click(host, 'staff-block-repeat-custom');
+    expect(pill(host, 'staff-block-repeat-month-day')).toBe('На 9-о число');
+    click(host, 'staff-block-repeat-month-day');
+    click(host, 'staff-block-repeat-month-day-wednesday-2');
+    expect(pill(host, 'staff-block-repeat-month-day')).toBe(
+      'Във втората сряда',
+    );
+    expect(text(host, 'staff-block-repeat-summary')).toContain(
+      'във втората сряда',
+    );
+
+    click(host, 'staff-block-page-done');
+    const commits = commitsOf();
+    click(host, 'staff-block-save');
+    // Half a year by default, to 9 March: its second Wednesday is the 10th.
+    expect(commits[0]?.days).toEqual([
+      '2026-09-09',
+      '2026-10-14',
+      '2026-11-11',
+      '2026-12-09',
+      '2027-01-13',
+      '2027-02-10',
+    ]);
+  });
+
+  it('dots the series on its end calendar, and will not end before it starts', () => {
+    const host = render();
+    click(host, 'staff-block-repeat');
+    click(host, 'staff-block-repeat-weekly');
+    click(host, 'staff-block-until');
+    // The calendar opens on the end's own month, October.
+    expect(
+      find(host, 'ui-month-day-2026-10-07')?.hasAttribute('data-marked'),
+    ).toBe(true);
+    expect(
+      find(host, 'ui-month-day-2026-10-08')?.hasAttribute('data-marked'),
+    ).toBe(false);
+    click(host, 'ui-month-prev');
+    expect(
+      find(host, 'ui-month-day-2026-09-16')?.hasAttribute('data-marked'),
+    ).toBe(true);
+    expect(
+      (find(host, 'ui-month-day-2026-09-08') as HTMLButtonElement | null)
+        ?.disabled,
+    ).toBe(true);
+    click(host, 'ui-month-day-2026-09-23');
+    expect(text(host, 'staff-block-repeat-summary')).toContain('3 пъти');
+  });
+
+  it('refuses a series it cannot write — in words, and «Запази» says where to fix it', () => {
+    const host = render();
+    click(host, 'staff-block-repeat');
+    click(host, 'staff-block-repeat-custom');
+    // A typed count past the cap is refused, never clamped.
+    click(host, 'staff-block-repeat-end-kind');
+    click(host, 'staff-block-repeat-end-count');
+    typeInto(host, 'staff-block-repeat-count', '500');
+    expect(text(host, 'staff-block-repeat-error')).toBe(
+      'Броят пъти е от 1 до 366.',
+    );
+    typeInto(host, 'staff-block-repeat-count', '3');
+    expect(find(host, 'staff-block-repeat-error')).toBeNull();
+
+    // Ending on the start, Mondays only: a Wednesday start has no Monday.
+    click(host, 'staff-block-repeat-end-kind');
+    click(host, 'staff-block-repeat-end-until');
+    click(host, 'staff-block-until');
+    click(host, 'ui-month-day-2026-09-09');
+    click(host, 'staff-block-repeat-weekday-1');
+    click(host, 'staff-block-repeat-weekday-3');
+    expect(text(host, 'staff-block-repeat-error')).toBe(
+      'До края не се пада нито един ден.',
+    );
+
+    click(host, 'staff-block-page-done');
+    // The row says it in red; the dock withholds «Запази» and says where.
+    expect(
+      find(host, 'staff-block-repeat-facts')?.getAttribute(
+        'data-foreground-style',
+      ),
+    ).toBe('destructive');
+    expect(find(host, 'staff-block-save')).toBeNull();
+    click(host, 'staff-block-repeat-fix');
+    expect(find(host, 'staff-block-page')).not.toBeNull();
+  });
+
+  it('follows the frame: a start stepped to Thursday carries «every week» to Thursdays', () => {
+    const host = render();
+    click(host, 'staff-block-repeat');
+    click(host, 'staff-block-repeat-weekly');
+    click(host, 'staff-block-page-done');
+    click(host, 'staff-block-day-next');
+    expect(text(host, 'staff-block-repeat-value')).toBe('Всяка седмица');
+    const commits = commitsOf();
+    click(host, 'staff-block-save');
+    // The weekday went with the start; the end it still fits stays put
+    // (7 October, Google's reading), so the last Thursday is the 1st.
+    expect(commits[0]?.days).toEqual([
+      '2026-09-10',
+      '2026-09-17',
+      '2026-09-24',
+      '2026-10-01',
+    ]);
   });
 
   it('steps its day like the visit sheet, and tells the owner', () => {

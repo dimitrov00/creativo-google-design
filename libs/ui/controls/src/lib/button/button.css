@@ -447,11 +447,6 @@
     padding-block: var(--sys-space-compact);
   }
 
-  /* States — attributes only, never modifier classes */
-  .ui-button[data-state='loading'] {
-    pointer-events: none;
-    opacity: var(--sys-opacity-loading);
-  }
   .ui-button:active:not(:disabled) {
     transform: scale(var(--sys-press-scale-control));
   }
@@ -463,6 +458,36 @@
      rule here is already `:not(:disabled)`-gated, so nothing lights up. */
   .ui-button:disabled {
     opacity: var(--sys-opacity-disabled);
+  }
+
+  /* States — attributes only, never modifier classes.
+
+     BUSY (owner, 2026-09-17: "when saving or performing an async operation
+     in any button add a spinner so you instantly know what is happening"):
+     the ring IS the label. The label's ink goes clear — text through the
+     fill colour, element children (glyphs, stacks) through visibility — so
+     the box keeps its exact width and tier, and the ring turns at the
+     centre in the button's own `color`, on a filled pill as on a quiet
+     one: the App Store's "Get" pill mid-download. No dimming, whatever
+     `disabled` says beside it: a button at work is not a button asleep. It
+     takes no pointer; `aria-busy` says why. */
+  .ui-button[data-state='loading'] {
+    position: relative;
+    pointer-events: none;
+    opacity: 1;
+    -webkit-text-fill-color: transparent;
+  }
+  .ui-button[data-state='loading'] > :not(.ui-button__progress) {
+    visibility: hidden;
+  }
+  .ui-button__progress {
+    --ui-progress-view-tint: currentColor;
+    --ui-progress-view-track: color-mix(in srgb, currentColor 25%, transparent);
+
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
   }
   .ui-button:focus-visible {
     outline: var(--sys-focus-ring-width) solid var(--sys-color-ring);

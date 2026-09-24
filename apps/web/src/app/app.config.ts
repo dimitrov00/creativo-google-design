@@ -33,6 +33,7 @@ import {
 } from '@creativo/application/identity';
 import {
   APPOINTMENT_NOTES,
+  APPOINTMENT_PHOTOS,
   APPOINTMENT_REPOSITORY,
   AVAILABILITY_READER,
   SCHEDULE_EXCEPTION_WRITER,
@@ -101,6 +102,7 @@ import {
   FirestoreNotificationReader,
 } from '@creativo/infrastructure/firestore';
 import {
+  FirebaseAppointmentPhotos,
   FirebaseStorageAvatarUploader,
   StorageMediaReader,
 } from '@creativo/infrastructure/storage';
@@ -198,6 +200,7 @@ export const appConfig: ApplicationConfig = {
       useClass: FirestoreAppointmentRepository,
     },
     { provide: APPOINTMENT_NOTES, useClass: FirestoreAppointmentNotes },
+    { provide: APPOINTMENT_PHOTOS, useClass: FirebaseAppointmentPhotos },
     { provide: CATALOG_READER, useClass: FirestoreCatalogReader },
     { provide: AVAILABILITY_READER, useClass: FirestoreAvailabilityReader },
     {

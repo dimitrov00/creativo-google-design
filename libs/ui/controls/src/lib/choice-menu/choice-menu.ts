@@ -21,6 +21,7 @@ import {
 import {
   UiForegroundStyleDirective,
   UiInteractiveDirective,
+  UiTextDirective,
 } from '@creativo/ui/modifiers';
 import { UiAvatar } from '../avatar/avatar';
 import { UiIcon } from '../icon/icon';
@@ -47,6 +48,12 @@ export interface UiChoiceOption {
    * 2026-09-10: «5% · 1,40 €» as one label read as confusing).
    */
   readonly detail?: string;
+  /**
+   * A second line under the label — what the option IS, where the word
+   * alone would not say it («Код» · «Промо код или ваучер»; «Купон на
+   * клиента» · the coupon's name). Footnote, secondary ink, wraps.
+   */
+  readonly description?: string;
   /** The row's `data-testid`, when a test needs to find this option. */
   readonly testId?: string;
 }
@@ -92,6 +99,7 @@ export class UiChoiceLeading {
     UiListRow,
     UiMenu,
     UiMenuItem,
+    UiTextDirective,
   ],
   template: `
     <ui-menu
@@ -136,7 +144,20 @@ export class UiChoiceLeading {
             } @else if (option.icon) {
               <ui-icon uiLeading [uiName]="option.icon" />
             }
-            {{ option.label }}
+            @if (option.description) {
+              <span class="ui-choice-menu__lines">
+                <span>{{ option.label }}</span>
+                <span
+                  class="ui-choice-menu__description"
+                  uiText
+                  uiFont="footnote"
+                  uiForegroundStyle="secondary"
+                  >{{ option.description }}</span
+                >
+              </span>
+            } @else {
+              {{ option.label }}
+            }
             <!-- The DETAIL reads muted on the chosen row too, and the check
                  keeps its column on every row that carries a detail, so the
                  figures line up down the run. -->

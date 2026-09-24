@@ -1,0 +1,229 @@
+@layer sys-components {
+  /* A TICKET, on a button. The list row's own fill (owner, 2026-09-16: the
+     card must "match the row background" — in light the elevated surface
+     was white against grey rows), no hairline, the group's corner — and
+     two notches cut into its edges where the tear line runs, a foot's
+     height from the bottom, so the top may grow with a long name and the
+     notches stay put. The notches are a MASK, not paint: the card sits on
+     any ground.
+
+     THE SURFACE IS A HOOK (`--ui-coupon-card-surface`, 2026-09-16): on a
+     page the ticket is the row's own opaque fill; on a RAISED surface — an
+     action sheet's card — that fill is the same dark as the ground in the
+     dark theme and the ticket reads as a hole. The raised owner sets the
+     hook a fill step above its own surface, and the badge's ring, which
+     must cut the badge out of the glyph in the ticket's exact colour,
+     follows it. */
+  .ui-coupon-card {
+    --ui-coupon-card-foot: calc(var(--sys-space-unit) * 11); /* 44px */
+    --ui-coupon-card-notch: calc(var(--sys-space-unit) * 2.5); /* 10px */
+
+    display: flex;
+    flex-direction: column;
+    inline-size: 100%;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    /* The list group's own outer corner, so a ticket and the group above it
+       are one silhouette in the column. */
+    border-radius: var(--control-radius-prominent);
+    background: var(
+      --ui-coupon-card-surface,
+      var(--sys-color-surface-secondary)
+    );
+    color: var(--sys-color-foreground);
+    font: inherit;
+    text-align: start;
+    appearance: none;
+    cursor: pointer;
+    mask-image:
+      radial-gradient(
+        circle at 0 calc(100% - var(--ui-coupon-card-foot)),
+        transparent var(--ui-coupon-card-notch),
+        #000 calc(var(--ui-coupon-card-notch) + 1px)
+      ),
+      radial-gradient(
+        circle at 100% calc(100% - var(--ui-coupon-card-foot)),
+        transparent var(--ui-coupon-card-notch),
+        #000 calc(var(--ui-coupon-card-notch) + 1px)
+      );
+    -webkit-mask-composite: source-in;
+    mask-composite: intersect;
+  }
+
+  /* An outline would be masked away with the notches: the ring is inside. */
+  .ui-coupon-card:focus-visible {
+    outline: none;
+    box-shadow: inset 0 0 0 var(--sys-focus-ring-width) var(--sys-color-ring);
+  }
+
+  /* THE HEAD — the glyph at the leading edge, the name over the value. */
+  .ui-coupon-card__head {
+    display: flex;
+    align-items: center;
+    gap: var(--sys-space-regular);
+    padding: calc(var(--sys-space-unit) * 3) var(--sys-space-regular)
+      var(--sys-space-compact);
+    min-inline-size: 0;
+  }
+
+  /* The offer's own colour — the promo ink — on a glyph two rows tall, so
+     the card is told apart from a row at a glance. Icons inherit their
+     size in this system. */
+  .ui-coupon-card__glyph {
+    position: relative;
+    flex: 0 0 auto;
+    display: inline-flex;
+    font-size: calc(var(--sys-space-unit) * 9);
+    color: var(--sys-color-promo-label);
+  }
+
+  .ui-coupon-card__glyph:has(> :only-child:empty),
+  .ui-coupon-card__glyph:empty {
+    display: none;
+  }
+
+  /* THE BADGE — stamped on the glyph's corner, the way a presence dot sits
+     on a portrait: a small disc in the success ink, ringed in the card's
+     own fill so it reads as laid on top, holding whatever the host
+     projects (a check). Nothing projected, nothing drawn. */
+  .ui-coupon-card__badge {
+    position: absolute;
+    inset-inline-end: calc(var(--sys-space-unit) * -1);
+    inset-block-end: calc(var(--sys-space-unit) * -1);
+    display: inline-flex;
+    padding: 2px;
+    border-radius: var(--control-radius-capsule);
+    background: var(--sys-color-success);
+    color: #fff;
+    font-size: calc(var(--sys-space-unit) * 3);
+    box-shadow: 0 0 0 2px
+      var(--ui-coupon-card-surface, var(--sys-color-surface-secondary));
+  }
+
+  .ui-coupon-card__badge:empty {
+    display: none;
+  }
+
+  /* ON THE BILL: an article, pressed nowhere but on what it projects. */
+  .ui-coupon-card[data-applied] {
+    cursor: default;
+  }
+
+  /* CANNOT BE USED with what is on the bill: muted whole — desaturated,
+     faded, the offer's ink gone to secondary — so it is told from the
+     usable ones at a glance and never reads as a warning. The badge slot
+     holds the "cannot combine" glyph the host projects, in the secondary
+     ink where the check wears the success ink: one slot, three states.
+     The cursor comes from the shared disabled recipe. */
+  .ui-coupon-card[data-unavailable] {
+    filter: saturate(0.35);
+    opacity: 0.55;
+  }
+
+  .ui-coupon-card[data-unavailable] .ui-coupon-card__glyph,
+  .ui-coupon-card[data-unavailable] .ui-coupon-card__value {
+    color: var(--sys-color-secondary-label);
+  }
+
+  .ui-coupon-card[data-unavailable] .ui-coupon-card__badge {
+    background: var(--sys-color-secondary-label);
+  }
+
+  /* The projected action stands where the written call stood, its own
+     padding hanging past the inset so the word lands on the inset line. */
+  .ui-coupon-card__foot > [uiCouponAction] {
+    flex: 0 0 auto;
+    margin-inline-end: calc(var(--sys-space-compact) * -1);
+  }
+
+  .ui-coupon-card__lines {
+    flex: 1 1 auto;
+    min-inline-size: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--sys-space-tight);
+  }
+
+  .ui-coupon-card__title {
+    font: var(--sys-font-callout);
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+    overflow-wrap: anywhere;
+  }
+
+  /* THE VALUE, and the code beside it: the figure at the headline tier in
+     the promo ink — the same ink the applied line will show it in — the
+     code a role quieter, in the mono face an identifier wears. */
+  .ui-coupon-card__figures {
+    display: flex;
+    align-items: baseline;
+    gap: var(--sys-space-compact);
+    min-inline-size: 0;
+  }
+
+  .ui-coupon-card__value {
+    font: var(--sys-font-headline);
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    color: var(--sys-color-promo-label);
+    white-space: nowrap;
+  }
+
+  .ui-coupon-card__code {
+    font-family: var(--sys-font-family-mono);
+    font-size: 0.8125rem;
+    font-variant-numeric: tabular-nums;
+    color: var(--sys-color-secondary-label);
+    white-space: nowrap;
+  }
+
+  /* THE FOOT — a fixed height, so the tear above it and the notches at
+     its corners agree wherever the name wrapped: the conditions in a chip,
+     the call at the trailing edge. */
+  .ui-coupon-card__foot {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--sys-space-compact);
+    block-size: var(--ui-coupon-card-foot);
+    padding: 0 var(--sys-space-regular);
+    min-inline-size: 0;
+  }
+
+  /* The tear: a dashed hairline running between the two notches. */
+  .ui-coupon-card__foot::before {
+    content: '';
+    position: absolute;
+    inset-block-start: 0;
+    inset-inline: calc(var(--ui-coupon-card-notch) + var(--sys-space-tight));
+    border-block-start: 1px dashed var(--sys-color-separator);
+  }
+
+  .ui-coupon-card__detail {
+    min-inline-size: 0;
+    padding: var(--sys-space-tight) var(--sys-space-compact);
+    border-radius: var(--control-radius-capsule);
+    background: var(--sys-color-fill);
+    font: var(--sys-font-caption);
+    font-variant-numeric: tabular-nums;
+    color: var(--sys-color-secondary-label);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .ui-coupon-card__detail--none {
+    padding: 0;
+    background: none;
+  }
+
+  .ui-coupon-card__action {
+    flex: 0 0 auto;
+    font: var(--sys-font-callout);
+    font-weight: 600;
+    color: var(--sys-color-foreground);
+    white-space: nowrap;
+  }
+}

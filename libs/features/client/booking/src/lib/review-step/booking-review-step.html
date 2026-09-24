@@ -479,6 +479,7 @@
         uiButtonStyle="borderedProminent"
         uiControlSize="large"
         [disabled]="store.pending()"
+        [uiLoading]="store.pending()"
         data-testid="booking-review-confirm"
         (click)="confirm()"
       >

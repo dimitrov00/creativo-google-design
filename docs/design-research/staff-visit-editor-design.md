@@ -6867,3 +6867,2385 @@ future one (neighbours receded, unhatched), a no-show (full tint, struck
 name, primary ink beside a receded neighbour), and the future one on
 black. Measured: subject 15% / 28%, neighbours 7% / 14%, neighbour name in
 the secondary tier, rail at 0.4.
+
+### Pass 17 — the money rows: one row each, a page and a menu behind them (2026-09-15)
+
+**The ask.** The 2026-09-11 review of the bill ladder
+(https://claude.ai/code/artifact/a792948d-6f6b-45cd-a1ab-e7b5ee20f979) found the
+carrier wrong: the «＋ Отстъпка или код» row and the tip pill both opened a
+`ui-menu` whose second group was a set of text fields — an ARIA menu holding
+textboxes, a popover that had to dodge the keyboard, a barber opening a menu to
+find one field in it — and the tip wrote straight through with no pending state
+(the pill read «Без» for two seconds after a pick) on a different regime from the
+lines beside it. A first proposal expanded rows in place; the owner rejected it
+on 2026-09-12 («squishing elements too much») and asked for a single row per
+thing with the detail behind a push page or a choice, modelled on Apple's own
+iOS apps. The second pass drew that and was approved on 2026-09-15 («I like
+this, please start implementing it»). **Built end to end.**
+
+**Apple's grammar, applied.** Clock › Add Alarm (a value row travels, nothing
+unfolds in place; Label is a page with one focused field), Calendar › Alert
+(presets as a list, «Custom…» last and travelling), Reminders › Priority (≤ 5
+picks = a menu on the whole row; HIG: a pop-up button inside a modal instead of
+a disclosure), Apple Pay's coupon field (the verdict directly under the field),
+the App Store's Redeem page (one job, one verb). Rule: _a menu offers picks;
+anything typed is typed on a page._
+
+**What the receipt group holds now.** The seat price lines, then TWO value
+rows. «Отстъпка» reads «Няма ›» or the total that comes off at the counter
+(discounts and vouchers together, promo ink) with the lines named in its
+footnote («Първо посещение · Ваучер GIFT5») — or, with nothing on the bill, the
+coupon the client holds («Има купон: Рожден ден», promo ink), so the shop's
+promise is read without opening anything. «Бакшиш» is one `button[uiListRow]`
+across the row's whole width that opens a `ui-choice-menu`; the value trailing
+is a READOUT — the amount first, its share muted beside it, never a share the
+row inferred from a coincidence (the old pill turned «10 %» into «Друго» after
+any reprice).
+
+**The discount page** (`EditorPageKind` `'discount'`, depth one, the shell's ‹,
+the dock's ✓ — and the dock's bill, because the page is where it changes). Top
+group «Приложени»: every line with its amount and a VISIBLE way off (the seat
+rows' `action.remove`; the swipe stays the shortcut — HIG: a gesture is never
+the only way). Then «Добави»: «Вид», a whole-row choice of KIND — «Купон на
+клиента» (only while the client holds an unused grant, and then FIRST, with the
+grant's name as the option's second line), «Код» («Промо код или ваучер»), and
+for `handlesMoney` roles «Процент» and «Сума» — absent, never disabled. The
+input beneath follows the kind: a full-width code field with its verdict under
+it (return/Done asks; the ✓ pressed while a code is being checked WAITS — a
+hit returns, a refusal stays with its sentence); the grants as rows with their
+figures (a tap honours one, the line moves up); one figure with its unit and
+«Отстъпка за целия час» beneath, refused IN WORDS past the bill («Повече от
+сметката.» / «До 100 %.») where the menu used to spring back silently. The
+field of a figure shows the manual line it would replace. «Безплатна услуга»
+is NOT shipped: a discount carries no seat reference, so "which service is
+free" has nothing to attach to (owner's call 6).
+
+**The tip.** Presets are MONEY, by the bill's size (Square's two-regime Smart
+Tip): under `TIP_PERCENT_FROM_MINOR` (30 €) the round-up to the next whole euro
+when the remainder is ≥ 0,20 € («до 15,00 €» · 0,50 €), then 1 · 2 · 5 € with
+their shares as details, dropping any the round-up already exceeds; from 30 €
+up, 5 · 10 · 15 % rounded to 0,50 €. ⚠ **Amended the same day (owner, after
+seeing the built menu: "the tip should also be a push page … predefined tiles
+plus a custom tip option, more Apple-like").** The row no longer opens a menu:
+«Бакшиш · 2,00 € · 7 % ›» travels to the `'tip'` page, where the presets are a
+GRID OF TILES — new DS `ui-choice-tiles` (a `radiogroup` of `role="radio"`
+buttons, figure over its quiet share, the chosen one in the accent wash with a
+2px accent ring, arrow keys moving the check, the house `[data-interactive]`
+grammar) — with «Без» first, and under the tiles one row «Друга сума» holding
+the `ui-unit-field` for any other sum. A tile drafts on the tap; a typed sum
+unchecks the tiles and the field keeps its figure; a preset leaves the field
+on its placeholder, because the tile says the sum. Focus lands on the page, not
+in the field: the tiles come first, and a keyboard would cover them. Apple Cash's
+quick amounts over the keypad, Uber's and Square's tip grids. **The tip
+DRAFTS** (owner's call 1): `VisitDraft`
+and the `save` commit carry `tipMinorUnits`, `savedShape` compares it, the
+`tipped` output is gone, and the dashboard writes `recordTip` beside the batch
+when the commit's tip differs from the row's — the same seat as before, the
+same "stamp beside the status" the port describes. A save that changed only the
+note or the tip sends no `staffEdit` at all.
+
+**The dock** keeps the balance due and the green «+2,00 € бакшиш» line; the
+per-kind minus lines (`discountInDock`, `discountsInDock`, `voucherInDock`,
+`vouchersInDock`) are gone with `tipOther`, `discountNone` and `discountAdd`
+— the row names its items now. **DS:** `UiChoiceOption.description` (a second
+line under the label, footnote, secondary ink) in `ui-choice-menu`.
+
+**Verified live** (emulators, Playwright, 390×844 light as barber + admin,
+375×667 dark as barber, Мартин's 14,50 € cut): root «Отстъпка · Има купон:
+Рожден ден · Няма ›» and «Бакшиш · Без ⌄»; the tip menu «Без ✓ · до 15,00 €
+0,50 € · 1,00 € 7 % · 2,00 € 14 % · 5,00 € 34 % · Друга сума… ›» with zero
+inputs in it; the tip page focused on `#staff-visit-tip`, «3» → row «3,00 € ·
+21 %» and the dock's plus; the discount page opening on «Купон на клиента»
+with «Рожден ден −2,90 €»; kinds Купон · Код · Процент · Сума for the desk and
+Купон · Код for a barber; `NOPE1` → «Няма такъв код.» under the field;
+`FIRST10` → «Първо посещение · FIRST10 · −10% · −1,45 €» in «Приложени», the
+field cleared; ✓ → «Отстъпка · Първо посещение · −1,45 € ›», dock 13,05 € +
+3,00 € бакшиш; «Запази» → clean, both persisted after the round trip; the
+restore (Без, line removed, save) clean again. 260 dashboard specs and 117
+controls specs green; the 17 `typecheck` errors in the specs predate this pass
+(party-test casts, time-grid spec, dashboard spec) and sit outside its hunks.
+
+**Verified live, the tile page** (390×844 light, 375×667 dark): the row reads
+«Бакшиш · Без ›»; the page's tiles «Без · до 15,00 € 0,50 € · 1,00 € 7 % · 2,00 €
+14 % · 5,00 € 34 %», three per row at 113 × 64 px; a tap checks «2,00 €» and the
+dock reads «+2,00 € бакшиш»; «3,50» typed beneath unchecks every tile and the row
+reads «3,50 € · 24 %» with «Запази» raised and nothing written. 119 controls
+specs and 260 dashboard specs green.
+
+**Open, raised by the owner the same day — the service rows.** Instead of the
+price pill on the receipt line, a service row could carry `›` and push a
+service page (variant, person, price for money roles, later "make this the
+catalogue price"), which would make the receipt's per-seat price lines a
+duplicate of the ladder above. Assessment: merge once that page exists — one
+list of services with the price trailing on each row, the money group holding
+only «Отстъпка» and «Бакшиш», the dock the total — Apple's one-row-per-thing,
+and it removes the second list of the same names. Editing the shop's catalogue
+price is a settings act, not a visit act, and should stay off the visit page or
+be a separate, admin-only «Запази и в каталога» on it. Not built.
+
+**The pop-up's mark (owner, 2026-09-15: "shouldn't the dropdown/choice
+inputs have the chevron up-and-down icon").** Yes — it is HIG's own
+distinction. Three glyphs now mean three things house-wide: `field.popUp`
+(`unfold_more`, the stacked pair of a pop-up button) on every control whose
+value is CHOSEN from a list — the chair row, «Вид», the duration row's title
+menu, the block sheet's repeat pill, the phone field's country picker, the
+booking bag's selects, the booking variant, barber and time picks; it never
+rotates. `field.expand` (a single `⌄`, rotating 180° when open) only where
+something DISCLOSES in place — the frame's day pill and its calendar, the
+guest seat's second-press actions caret. `nav.disclosure` (`›`) where a row
+TRAVELS — «Отстъпка», «Бакшиш», the client rows. The registry carries the
+rule in words; `icon.spec.ts` guards the ligature against the pinned font.
+
+**The tiles, after a Mobbin sweep (owner, 2026-09-16: «до 22,00 €» confuses at
+first but is "brilliant", and 25 and 30 should join it; «Друга» "is not kinda
+selectable but always there").** Lyft, Uber Eats, Grab, Bolt, Freenow, Wonder,
+Keeta, Gojek, Urban Company, Fiverr, Blank Street, Deliveroo and Honest Greens
+agree on three things: on a small ticket the presets are AMOUNTS, «other» is
+one SELECTABLE option in the same set that reveals its entry only once chosen
+(Wonder and Keeta inline under the chips; Lyft, Uber Eats, Freenow and Bolt in
+a focused keypad view), and a round-up sits among the presets as a pill
+(Deliveroo's «Round up £0.23»). Applied: the percent regime is gone; the
+presets are the ROUND-UP FAMILY first — the next whole euro, the next 5, the
+next 10, each offered while its tip stays within 40 % of the bill («до 15,00 €
+· +0,50 €», «до 20,00 € · +5,50 €» on 14,50 €; «до 22», «до 25», «до 30» on
+21,50 €) — then the coins on top (1, 2, 5, 10 € within 3–25 % of the bill),
+never the same amount twice, four presets at most, so «Без» + four + «Друга
+сума» fill two rows of three. The round-up's detail carries a plus («+0,50 €»)
+to say it is what the client adds. «Друга сума» is a TILE like the others; the
+field appears beneath the grid only once it is chosen, takes the keyboard, and
+once a sum is typed the tile reads the sum with the word beneath (Blank Street's
+«Custom tip $1.50»); a preset tile folds the field away. The open field counts
+as the choice even while the draft still holds a preset, so the tile checks on
+the tap and the draft changes only when a sum replaces it.
+
+**The bento (owner, 2026-09-16: "why not make them more distinguishable …
+small tiles for direct tips, bigger tiles for the ones that mean something
+else, like a bento grid").** `ui-choice-tiles` grew sizes and columns: a tile
+is `regular` (one cell), `large` (two by two, the figure at the headline tier,
+the detail at body) or `wide` (a full row); the grid takes `uiColumns` and packs
+DENSELY, so large and regular tiles lock together without holes — the iOS Home
+Screen's small-beside-medium widgets. The tip page is four cells across: the
+round-ups LARGE and first, side by side («до 15,00 € · +0,50 €» beside «до
+20,00 € · +5,50 €»), then «Без» leading three coins as regular tiles — the three
+lowest of 1, 2, 5, 10, 20 € within 3–50 % of the bill, never an amount a
+round-up already is — which fill a row of four, or the two cells beside and the
+two beneath an odd round-up; «Друга сума» WIDE as the last row, reading the
+typed sum once there is one. Measured on 390 × 844: large 170 × 136, regular
+83 × 64, wide 355 × 64. The presets are no longer capped at four: the family is
+the round-ups that pass the cap plus three coins, which is what the owner meant
+by "you minimised the options".
+
+**The figure is the tip, everywhere (owner, 2026-09-16: «до 15,00 €» as the
+headline "might be read as any tip from 0 to 15"; and "the coins with a
+percentage below — the staff don't think in percentages").** Flipped: every
+tile's headline is the TIP, the round-up's target is its muted line, and the
+word is «общо» rather than «до» — «0,50 € · общо 15,00 €» — because a total
+cannot be read as a range the way "up to" can. The coin tiles carry nothing
+beneath the amount, and the row's readout lost its share too («Бакшиш · 2,00 €
+›»): the barber counts money; the percentage was the designer's number, not
+the counter's. The dock's plus is unchanged.
+
+**The sum, written large (owner, 2026-09-16: "in the center a muted
+placeholder 0,00 in a big font, and maybe a stepper for quick add and remove
+… a scalable, testable DS component").** New DS control `ui-amount-field`
+(ui/controls): the figure at the large-title tier with its unit a role quieter
+on the baseline, a muted «0,00» while empty, the decimal keypad on a tap, and a
+−/+ pair of bordered round buttons stepping by `uiStep` inside `[uiMin,
+uiMax]`. Its contract is money in MINOR UNITS — `uiValue: number | null`,
+`uiValueChange: number | null` (an emptied field answers `null`; a figure that
+is not money answers nothing and springs back) — and it formats and parses its
+own figure (`formatAmountFigure` / `parseAmountFigure` exported, `,` written,
+`.` accepted). Group semantics with the consumer's own names for the field and
+the two buttons; the ring rings the whole figure for a keyboard, the caret is
+the only mark for a finger. Mobbin (screens viewed): Bolt's «Set tip amount»,
+Venmo's «$0» and Postmates' «Enter other amount» for the big centred figure
+(Postmates writes the order total beneath it, as our hint line sits); Future
+Pro's «Goal entry» is the closest match — −/+ round buttons flanking «0 lb»
+with the unit a role quieter — with Lifesum, Commons and BlaBlaCar for the
+−/+ pair around a figure; Lyft for presets first and «Add custom tip» as its
+own step. On the tip page it replaces the row under the tiles, stepping by a
+0,50 € coin; zero and empty both read «Без». Rulings: choosing «Друга сума» is a NEW choice — a
+drafted preset is let go and the entry opens on «0,00» — and a custom sum
+already drafted opens with the entry open, so stepping it onto a coin's amount
+never folds the entry away.
+
+Owner, on the built page, the same day: "shouldn't the price be centred, what
+about the gap between the other options, and adding the custom tip should not
+change the label on the Other tile." Three corrections. (1) The native input
+was widening its cell: a text input is twenty characters wide by default and
+that intrinsic width reached the grid track, so the digits sat right-aligned
+against the unit and the − was orphaned at the far left. Fixed in the DS —
+`size="1"` and `field-sizing: content` on the native keep its own width out
+of the track, and the sizer now follows the LIVE text (what is being typed,
+else the figure kept, else the zero), so the cell is exactly the digits' width
+in every engine and the figure centres true. The −/+ pair now hugs the figure
+at the regular gap as ONE cluster (a stepper is a pair around a value; both
+buttons sit where the thumb already is), and the control owns no space of its
+own. (2) The entry is ATTACHED to the tile it answers: 16 px under the grid
+(the page's column gap is 24), the hint 8 px under the entry, composed by
+`.staff-visit__entry`. (3) The «Друга сума» tile keeps its name whatever the
+sum — the tile is the choice; the entry, the dock and the row are the
+readouts — so Blank Street's «Custom tip $1.50» label swap is retired.
+Measured live at 390 and 375 px in both themes: figure offset 0, gaps 16 / 16,
+input width = sizer width while typing «12,5» and after «12,50» is kept.
+
+Owner, an hour later, on the page in the pane: "haven't we decided all
+numbers use the tabular style … changing the value shifts the quick add /
+remove a bit", and "maybe remove that hint under the entry and move it to the
+title description". Two findings and three changes. FINDING ONE, app-wide:
+the 2026-09-09 ruling (tabular figures on `:root`, inherited) was DEAD in the
+running app — the CSS `font` shorthand resets every font-variant longhand on
+the element it styles, so `body { font: … }` and every `font: var(--sys-font-…)`
+in the DS returned that run to Onest's proportional default. Measured before:
+`body`, `[data-font]`, `.ui-list-row`, the agenda rows all computed `normal`,
+«0000» 95 px against «1111» 56 px (97 / 97 tabular). Fixed where it holds:
+each app's `sys-base` layer (above the components') now declares tabular
+figures on every element; the seven unlayered staff / admin feature
+stylesheets say it again after their own shorthands (eight sites), the DS
+tiles after theirs, and tokens.css carries the warning. Measured after, on
+the schedule: 129 digit-bearing leaves, 0 proportional. FINDING TWO: even
+tabular, a figure that gains a digit («9,50» → «10,00») widens the cell, and
+in a hugging cluster the pair moves. So `ui-amount-field` takes `uiReserve`
+— a figure whose width the cell always keeps, hidden beside the live line —
+and the live line centres in it; the tip page reserves «00,00», so the −/+
+stay put under a hundred euro and any blank splits evenly. Measured at 390
+and 375 px, both themes: the two buttons at the same x across «0,00»,
+«1,00», «7,00», «12,5» being typed and «12,50» kept; gaps 28 / 28 for four
+glyphs, 16 / 16 for five. THIRD: the hint «Оставена от клиента» is gone from
+under the entry — it was about the whole page, not the custom sum — and sits
+as the page's one-line description tight under the large title (subheadline,
+secondary, 8 px), key `tipPageDescription`. Precedent for a description
+under a sheet's title: our own contact and time sheets on the client side.
+
+Owner, on the schedule and the sheet, later still (2026-09-16): five things.
+(1) Grammar — «бакшиш» is masculine, so the description is «Оставен от
+клиента», not «Оставена». (2) «Start and duration font sizes don't match»:
+true — `ui-unit-field` floored only its DIGITS at 16px (the iOS zoom guard)
+while its unit and the time field's face inherited the pill's 14px. The
+floor now sits on the WHOLE of each control (`font-size: max(1em, 16px)` on
+`.ui-unit-field` and `.ui-time-field`), so a figure, its unit and the time
+beside it are one size — "quieter by a role, never by a size", the pill's
+own law, finally kept. Measured: face 16, glyph 16, digits 16, unit 16.
+(3) «The price and service row should be removed from there»: the receipt's
+per-seat lines are GONE from ПЛАЩАНЕ — the ladder already names every seat
+and the dock already sums them, so they were one number twice. With them
+went the repricing pill and the sheet's `uiMayReprice` input (the dashboard
+still computes `mayReprice` for the discount arms); the commit contract
+keeps `priceMinorUnits` on a leg for the service page, which is where a
+seat's price and its repricing now belong when that page is built. Until
+then a seat's price is read only in the total. The money group is
+«Отстъпка» and «Бакшиш», nothing else. (4) «Make all the data on the agenda
+card tabular … the 1 and 0 and o and t take different px … phone and mail
+look different sizes»: the card's identifiers — the phone number and the
+email — now wear the mono face the card's times already wear (Geist Mono
+at 13px against 14px text, the times' own optical rule), one advance per
+glyph. The size mismatch was real: the text face borrows Onest's digits for
+every number, so a phone number sat visibly larger than an email's
+lowercase beside it; one family for both ends it. The name and the service
+stay words in the text face — identifiers are scanned and compared, words
+are read, and Apple keeps names proportional everywhere. Flip-able with one
+class (`agenda-card__fact--datum`) if the owner wants the full-mono card.
+(5) Tabular digits everywhere, already restored above, now hold on every
+one of these surfaces too — measured, not assumed.
+
+And three more on the agenda card, minutes later (owner, 2026-09-16). (a)
+"Service names feel a different size than the mail and phone": they were —
+14 px text face against 13 px mono — so the service line joins the data
+lines in the mono face; the card is two rungs and nothing else, WHO in the
+text face at 600 and every fact beneath in the mono face at 13 px. The
+words-versus-identifiers argument above is withdrawn by the owner's eye.
+(b) The party share is set tight, «1/2», at the tag's size (caption) so the
+foot's two figures are one line box, centred on the marks; the string is
+built once in the dashboard and the time grid reads the same one. (c) The
+client's face was moved from the leading edge to the seam between the fact
+column and the times — facts, face, times — at the owner's request, and
+put back within the hour: "it doesn't work". A disc in the middle of the
+card split it into two half-cards and the times lost their column. The
+face leads the row; the spec pins that order.
+
+**One head for the block and the card (owner, 2026-09-16: "I like the way
+the grid event is styled and the agenda card should be the same but bigger,
+so we stay consistent … a bigger gap between the client name and the
+service … make things reusable, textbook").** Yes. The frame's block and
+the agenda's card show the same object in two views and had been copying
+each other by hand — the rail's geometry, the two-column head, the tag
+recipe — one piece at a time. The gap the owner saw was leading: the card's
+lines sat in 20 px line boxes on 13–14 px type (the callout role's 1.45)
+while the block's used its roles' own 1.35 and 1.3 — six pixels of air per
+line against four. So the head is ONE component now,
+`shared/event-head/staff-event-head.ts` (+ .css + .spec): the title, every
+fact on its own line, the clock on the right with the relative gloss
+beneath, at two densities of one grammar. `compact` is the block's (one
+line each with an ellipsis, the clock withheld where the head's own
+container query says the column cannot spare it, the service riding the
+title's line on a quarter-hour block), `regular` the card's (every role one
+step up, lines wrap, nothing truncates). One leading in both, 1.3, so the
+card is the block scaled. The type is the recipe's own, in longhands — the
+title in the text face at 600, every fact and the clock in the mono face —
+so no `font` shorthand can reset the app's tabular figures inside it. The
+hosts keep what is theirs: the block its fill, rail, masks and marks; the
+card its ground, rail, the client's face and the foot; each host's state
+rules (a struck title, dimmed lines on a neighbour's block, a past card's
+lifted ink) reach into the head by class. Both templates lost their own
+head markup and both stylesheets their head rules; the tag stays the shared
+recipe it was. Measured live, both themes — agenda: title 14 px / 600 /
+18.2 px leading, lines and clock Geist Mono 13 px / 16.9 px, the gloss
+beneath; frame: title 12 px / 15.6 px, lines and clock mono 11 px / 14.3 px,
+the clock hidden on a phone-width column as before. One trap on the way,
+worth the record: the head carries inline-size containment for its own
+container query, and in the block's column flex (children aligned to the
+start) an item that does not stretch is only as wide as its content — which
+containment counts as nothing — so the frame drew six blank blocks until the
+recipe took `align-self: stretch`, the old head's own declaration. Measured
+after: head 83 px of a 99 px block on a three-chair phone day. 262 dashboard
+specs green, the head with two of its own.
+
+**The discount page, redrawn (owner, 2026-09-16: "here we drift — elsewhere
+only the choice is the trigger, not the whole row; and this «Добави» label
+makes no sense, make the bottom CTA say Приложи −10% and switch; follow HIG,
+sweep Mobbin").** Three changes, one grammar. (1) THE CHOICE IS THE TRIGGER.
+«Вид» is a plain row whose label leads and whose value is a pop-up pill at
+the trailing edge — the block sheet's own «Повтаряне» pill, bordered, small,
+the up-and-down mark — so the page reads like every other chosen-value row
+in the app; the whole-row menu (Reminders' Priority) was the one exception
+and is gone. (2) NO EYEBROW over the form. The row says what it is, and the
+dock says what the page does. «Приложени» keeps its label: a list of what
+is on the bill needs naming above a form that adds to it. (3) THE PROMISE
+IS DOCKED. Nothing joins the bill from an input any more: the code field,
+the percent and sum pills and the coupon rows only ready the dock's CTA,
+which says in its own words what it would apply — «Приложи FIRST10»,
+«Приложи −10%», «Приложи −5,00 €», «Приложи купона» — and applying returns
+to the ladder, where the row reads the figure. With nothing to apply the
+dock keeps its ✓, so the page is only being read; a code being checked
+holds the button as «Проверявам…»; a figure past the bill keeps the button
+and disables it, the refusal under the field saying why (HIG: a button's
+label is the verb phrase of what it does; Apple Cash's «Add $20» carries the
+amount). The coupon rows became CHOICES — the client picker's accent check,
+`role="radio"` — with the first on offer chosen already, so «Приложи
+купона» is ready the moment the page opens on a client who holds one.
+Return in the code field is the CTA. The sweep (Mobbin, iOS) agrees on
+every point: Bolt, Bolt Food, Coinbase, Lugg, Wonder, Under Armour, IKEA,
+talabat, Setel, Forest put one explicit Apply / Redeem under the field and
+keep it disabled until there is something to apply; the verdict is a line
+under the field (Bolt "Invalid promo code", Coinbase "Code does not
+exist."); applied codes are a list with a way off (Under Armour "swipe to
+remove"); Splitwise's adjustments sheet is "choose a kind, enter a figure,
+add" — our «Вид» + field + CTA; UNIQLO's coupons are radio rows with an
+Apply beneath — our coupon rows. Specs: the six discount tests rewritten
+around «Приложи» (type → promise → apply → the page returns), 262 green.
+One more thing the live pass showed: the root row named a manual line by
+the row's own word — «Отстъпка · −1,45 €» over «Отстъпка» — so a manual
+line is named by its rule now («−10%») and a lone fixed sum by nothing, its
+amount being the row's value already; the coupon whisper stays for a bill
+with nothing on it.
+
+Owner, minutes after: "this pill looks bad — not consistent, the duration
+choice is not material-like"; and "list the promo codes: you are the staff,
+you know the valid codes, you are not supposed to apply non-existing promos;
+and some could stack". Two changes. (1) The «Вид» trigger is PLAIN now — the
+value with the pop-up mark in the secondary ink, the root's own duration
+title grammar mirrored to the trailing edge (`.staff-visit__row-choice`),
+no material capsule; the block sheet's bordered «Повтаряне» pill stays the
+odd one out, to be revisited. (2) THE SHOP'S CODES ARE OFFERED, NOT TYPED.
+The reader port grew `listOpen()` (the enabled coupons that open by a code;
+Firestore: one equality on `enabled`, the code's presence read off the
+document; grant-only coupons excluded, a retired code absent), the day store
+reads it once and publishes `promos` by name, the sheet takes `uiPromos`,
+and «Промо код» is a kind whose rows are the live codes not yet on the bill:
+a rewards glyph in the promo ink, the name, the code in the mono face, its
+rule, WHETHER IT STACKS in words («комбинира се» / «само този» — the domain's
+combinability, said on every coupon and promo row now, which answers "could
+some stack?": stackables stack, fixed sums before percents, an exclusive one
+clears the rest and gives way in turn), and what it would take off THIS bill
+(−1,45 € for FIRST10 on 14,50 €). Chosen with the accent check, applied by
+the dock's «Приложи FIRST10» with no round trip — it is known live, and the
+save re-resolves regardless. Nothing is preselected: a promotion is a
+decision among several, unlike the client's own coupon. The typed field is
+the VOUCHER'S alone — a gift voucher is the holder's secret, not the shop's
+list — under its own «Ваучер» kind with «напр. GIFT2025». Kinds by role:
+the client's coupon (when held), the shop's codes (when any are live), the
+voucher, and for money roles the percent and the sum. Mobbin precedent for
+offered-not-typed: UNIQLO's available coupons as radio rows with Apply,
+DoorDash's «Deals & gift cards» listing the offers beside the code field.
+Measured live on Мартин's 14,50 € visit: BEARD5 −5,00 € and FIRST10 −1,45 €
+listed, SUMMER (retired) absent, «Приложи FIRST10» on the tap, the row
+reading «Първо посещение · −1,45 €» and 13,05 € due; 263 dashboard specs
+green, the engagement and Firestore libraries green.
+
+Owner, on that list: "I don't like it — all promo codes are listed; what if
+there are a lot; better an add row; what if you want to stack a promo with a
+coupon, or they might be the same; the selected one is not visible; pull
+references from Mobbin." The third pass, and the page's settled grammar.
+Mobbin (iOS): Grab's checkout has the very shape — "Your deals" applied with
+a check, then "Save more › Apply more offers" as a row; Agoda stacks
+promotions as applied chips beside the coupon; Target's coupons are checked
+and read "Applied in cart"; Postmates makes selection a labelled state
+(SELECTED / SELECT) under a "One-per-order promotions — limit one" header;
+Shopify's discounts list pins a search over many; Snoonu offers "available
+vouchers" beside the typed field. So the page is the SERVICES LADDER'S own
+grammar now: what is on the bill, then «＋ Добави отстъпка», whose dropdown
+(the services picker: `ui-menu` on the row, the same search pinned at its
+top past six entries) offers everything that can be added — the client's own
+coupons first, then the shop's live codes, then the typed kinds — and a tap
+on a coupon or a code APPLIES it and closes the dropdown. The applied line
+IS the visible state: above, with its amount in the promo ink and a way
+off, which no check glyph could say as plainly; the page stays, so stacking
+is one more tap, and every row says in words whether it stacks. The same
+coupon held by the client and published as a code is offered ONCE, as the
+client's — theirs to burn (`couponId` on both options; the code hides). The
+typed kinds — a voucher's code, and for money roles a percent or a sum —
+are rows in the same dropdown that open an entry row under the add row with
+the keyboard, and the dock's CTA keeps what was typed and folds the row
+away; the page stays. The «Вид» switcher, the selection state and the
+"apply returns to the ladder" rule of the two passes before are gone.
+Measured live on Мартин's 14,50 € visit: the picker lists his birthday
+coupon (−2,90 €, «само този»), then BEARD5 and FIRST10 with their amounts,
+then «Ваучер…», «Процент…», «Сума…»; a tap on FIRST10 applies it and closes;
+the coupon then replaces it (exclusive); «Процент…» opens its row with the
+keyboard's focus, and «Приложи −10%» folds the row and — the coupon being
+exclusive — displaces it in turn, the bill reading «Отстъпка · −10% ·
+−1,45 €» and 13,05 € due: the domain's own rule, seen on the page. 265
+dashboard specs green.
+
+**The coupon card (owner, 2026-09-16: "I like the look of the foodpanda
+coupon with the Use now and the whole look of the card — copy it and make a
+custom card").** A DS pattern now, `ui/patterns/coupon-card` — a TICKET on a
+button: the glyph the host projects at the leading edge (`promo.coupon`, a
+new registry intent for Material's `confirmation_number`, in the promo
+ink), the offer's name over its VALUE — what it takes off this bill, at the
+headline tier in the promo ink, the same ink the applied line will show it
+in — with the code beside it in the mono face; a dashed tear line with a
+notch cut into each edge; and beneath, the conditions in a chip (the rule,
+whether it stacks) against the one call, «Използвай». The whole card is
+the button, so it sits in the picker as a menu item, and the call is its
+label rather than a second control — one thing to press, for a thumb and a
+reader alike. Two constructions worth recording: the notches are a CSS
+MASK, two radial cut-outs intersected, so the card sits on any ground
+without a painted patch pretending to be it (an outline would be masked
+away with them, so the focus ring is drawn inside); and the tear is fixed a
+foot's height from the bottom, the foot itself a fixed height, so a long
+name wraps above the line and the notches never drift. The picker's
+coupons and codes are these cards now, stacked under their section's word;
+the rows they replace are gone. The pattern owes nothing to the icon
+control (the glyph is projected) and rides the one interactive grammar as
+a host directive.
+
+**The discount page, the fourth pass — «Вид», and the camera (owner,
+2026-09-16: "I don't like this whole menu. What about a dropdown with
+options like Promo code, Voucher/Coupon, Percent, Flat — and based on the
+selection something should appear; see what Apple HIG would suggest; and
+for the voucher or coupon, scanning a QR code or a barcode, since they are
+too much to type by hand — but allow both, scan and type").** HIG, pop-up
+buttons: "Use a pop-up button to present a flat list of mutually exclusive
+options or states. A pop-up button helps people make a choice that affects
+their content or the surrounding view"; "give people a way to predict a
+pop-up button's options without opening it" — an introductory label; and
+"provide a useful default selection … the item that most people are likely
+to want". HIG, pickers: "Avoid switching views to show a picker. A picker
+works well when displayed in context, below or in proximity to the field
+people are editing." That is the owner's dropdown, named: a form row «Вид»
+whose VALUE is the pop-up — SwiftUI's `Picker` in the menu style inside a
+`Form` — drawn plain the way the root's «Времетраене» title is, mirrored to
+the trailing edge (secondary ink, the up-down mark, its own padding hanging
+into the inset so the words sit where every value sits; the bordered pill
+the owner rejected two passes ago stays rejected). Its options are the
+kinds by role and by what is at hand: «Промо код» while the shop has live
+codes, «Ваучер / Купон» always, «Процент» and «Сума» for the money roles —
+each with a second line saying what it is; a lone kind is stated in the
+row, not offered, since a pop-up needs options. The default is the client's
+own coupon when they hold one, else the first on offer — the codes.
+Beneath, IN PLACE, what the kind needs. «Промо код»: a search («Код или
+име…») with the shop's cards under it — all of a handful (four at most),
+the search's matches past that, «Въведи част от кода или името» while
+nothing is typed and «Няма такава отстъпка.» when nothing matches;
+«Използвай» applies and the page stays. «Ваучер / Купон»: the code field
+across the row with the scan glyph beside it and the verdict beneath, and
+the client's own coupons as cards under «Купон на клиента» — theirs need no
+code; typing readies the dock's «Приложи GIFT2025», and a hit empties the
+field for the next. «Процент» and «Сума»: the figure rows as before. A new
+kind lets go of what the last one typed. The add row, its picker, the entry
+rows and the search-past-six of the third pass are gone; the coupon cards
+moved from the menu onto the page, where a card can be read.
+
+The camera is a DS pattern, `ui/patterns/code-scanner` — `ui-code-scanner`:
+a square viewfinder over the back camera (`getUserMedia`, the environment
+facing mode), the engine's `BarcodeDetector` asked for a frame every 250 ms
+for the codes a voucher is printed with (QR, Code 128, EAN-13 and their
+kin), the first code read once and the camera let go; five states —
+starting, scanning, denied, unsupported, done — each said in words the host
+provides. The camera and the detector are injection tokens, so a spec hands
+it a fake frame and a real clock is never waited on; and a page whose engine
+has neither shows no scan control at all (`isCodeScannerSupported()`; the
+editor's `uiScan` input overrides it for tests): HIG's rule against offering
+a control that cannot work, and typing stays the way in everywhere. On the
+sheet it is a `scan` page kind standing in for the discount page — the
+page-replace the new-client form uses from the search, the one other place
+the sheet goes two deep — titled «Сканирай код» with its one line under the
+title and the viewfinder beneath; the dock carries «Въведи на ръка», the
+way back, where the search page's «Нов клиент» stands (Wallet's "Enter Code
+Manually" sits at the bottom of its scanner too), and the shell's ‹ is the
+same road. A code the camera reads returns to the field with it, upper-cased,
+and asks the owner at once — the same road a typed code takes from there.
+
+Measured live on Мартин's 14,50 € visit, in Playwright's Chromium (which
+has the detector, and a fake camera): «Вид · Ваучер / Купон» by default (he
+holds the birthday coupon), the trigger 36 px tall on the 52 px row with
+its mark on the inset line, secondary ink, no material; the field 44 px with
+the 44 px scan button 8 px beside it on one line; the birthday card under
+«Купон на клиента»; the pop-up's four kinds with their lines and the check
+on the one in force; «Промо код» → the search and BEARD5 / FIRST10 as cards,
+«be» leaving BEARD5, «zzz» the empty line; «Процент» → 10 → «Приложи −10%»;
+back to the voucher with the field empty and the ✓ restored; the scan page
+reading «Търся код…» over a square viewfinder with the video playing and
+only «Въведи на ръка» in the dock, which returns with the focus on the code
+field; «Използвай» on the birthday card → «Рожден ден · −20% · −2,90 €»,
+11,60 € due. 267 dashboard specs and 107 patterns specs green, lint and
+stylelint clean, the typecheck's 17 pre-existing spec errors unchanged.
+
+**The same evening, the rail (owner, 2026-09-16: "if Promo code is
+selected there is no need for that input row under it, since all promos are
+listed below — and it would be nice to list them somehow and make them
+scrollable").** The search under «Промо код» is gone, with its hint, its
+empty line and its three strings: the codes are the shop's to offer, and
+every live one is offered. The cards ride the DS scroll row now
+(`ui-scroll-row`, the week strip's own mechanics: snap per card, indicators
+hidden) — a horizontal rail rather than a boxed vertical list, because the
+page already scrolls the other way and a scroller inside a scroller fights
+the thumb (HIG, scroll views: nest scroll views only when they scroll in
+different directions). Full-bleed to the sheet's edges and aligned to its
+inset the way the search band is, one card tall, each card the page's width
+less a 32 px peek of the next — HIG's cue that content scrolls — and a lone
+card taking the width. The client's own coupons ride the same rail under
+their word. Measured live with three codes cloned into the emulator beside
+BEARD5 and FIRST10: five cards of 322,8 px on a 354,8 px page, the next one
+showing 24 px past an 8 px gap; a 200 px scroll snaps the second card onto
+the inset line (0,2 px off); at the end the last card's right edge sits on
+the right inset (0,4 px off); focusing the last card from the keyboard
+brings it into view; «Използвай» applies from the rail and the card leaves
+it; the lone coupon under «Ваучер / Купон» takes the full width. The «Вид»
+group is one row under «Промо код». 267 dashboard specs green, lint and
+stylelint clean.
+
+**And then the frame (owner, minutes later: "no — they should still be
+vertical, but ensure they are in a scrollable area / fragment / frame").**
+The rail lasted a screenshot. The cards are stacked again, inside a bounded
+vertical scroller — and since the design system had a horizontal one but no
+vertical one, the frame is a new layout primitive rather than a feature
+rule: `ui-scroll-column` (`ui/layout/scroll-column`), the row's counterpart,
+SwiftUI's `ScrollView(.vertical)` under a `.frame(maxHeight:)`. The consumer
+sets `--ui-scroll-column-max-block-size` on the host; below it the column
+hugs its content and never scrolls, past it the column scrolls. Two things
+are deliberately unlike the row: the indicator stays visible (HIG: a scroll
+indicator tells people that content scrolls; only carousels hide it), and
+the snap is proximity, never mandatory — a vertical frame that cannot rest
+between items traps the thumb at its end, and this one sits inside a page
+that scrolls too. The coupons' cap is two cards and a half (296 px: two
+112 px tickets, two compact gaps, half a ticket), so the cut card is the
+cue there is more — the same cue a half-visible row gives in any list — and
+one or two cards hug their own height. The nested-scroll objection stands
+on record; the owner weighed it and chose the frame, and the frame is built
+so that it costs nothing when the list is short. It has a showcase page
+beside the row's. Measured live with five codes on Мартин's visit: the
+frame 296 px tall over 590 px of cards, the third card 51 % visible, the
+thin indicator, proximity snap on the y axis; a 130 px scroll settles at
+120 px — the second card on the top edge, the fourth cut; at the end the
+last card's bottom sits on the frame's (0,5 px off); focusing the last card
+from the top brings it fully into view; «Използвай» applies from the frame
+and the card leaves it; the lone coupon under «Ваучер / Купон» hugs its
+112 px and does not scroll. 267 dashboard specs and 24 layout specs green,
+lint and stylelint clean.
+
+**The code field (owner, 2026-09-16, pointing at the voucher field: "this
+input feels weird, having some border — no other input looks like that;
+why are you hand-rolling inputs all the time instead of creating a robust
+Angular component and reusing it?").** The field was the DS text field, the
+bordered-and-filled form control every labelled page form mounts (the new
+client's name and mail, the admin's programs, the client's own contact
+sheet) — not hand-rolled, but the wrong grammar for a ROW: inside a list
+row it drew a box inside a box, and beside it the «Процент» and «Сума»
+rows put their typed value in the sheet's pill, chromeless, ringed on
+focus. Two typed values on one page in two dresses is the inconsistency
+the owner saw, and the fix is the one the unit and time fields already
+took: a DS control that carries no surface of its own, so its owner — the
+pill, the row — is the surface. `ui-code-field` (`ui/controls/code-field`),
+the unit field's sibling for a value that is letters: capitals as typed
+and on the keyboard, tabular, autocorrect and spell-check off, a hidden
+sizer so the field hugs its code, `uiInput` on every keystroke, `uiSubmit`
+on Return for an owner whose CTA asks the code, `aria-invalid` and a
+destructive ring for a refused one, and a projected accessory slot for
+whatever sits after it. The row is now the figure rows' own: «Код» with
+its hint or the verdict under it leading, the pill with the code trailing,
+and the scan glyph after the pill in the applied lines' small capsule; the
+feature stylesheet styles no input any more, and the pill rings the code
+field as it rings the others. One trap, found live and worth its own
+sentence: Return in a text input makes the engine fire `change` a beat
+after `keydown`, so an owner that feeds the leave event back as typing
+unsettles the very check Return just started — the row binds the
+keystroke stream only. Measured on Мартин's visit in both themes: the
+native input with no border and no ground of its own at 16 px, capitals,
+tabular; the pill the same fill as the figure pills, 36 px, capsule, its
+edge on the row's inset; the scan glyph 36 px at the compact gap, centred;
+typing «gift2025» narrows the pill to the code and rings it in the accent
+while the dock reads «Приложи GIFT2025»; Return and the dock's button both
+ask and both land «Ваучер GIFT2025 · остават 10,50 €» with 0,00 € due. 267
+dashboard specs and 131 controls specs green, lint and stylelint clean.
+
+**The code field, second thought (owner, minutes later: "the label is not
+needed, neither the description — they come from the type choice above;
+on light mode fix the coupon card background so it matches the row; and
+the field could look like the input fields used in the signup flow, so
+not only pill-looking inputs").** Three corrections, all kept. The code
+is not a row any more: it stands under the «Вид» group as the signup
+form's own field — no label, no hint, because «Вид · Ваучер / Купон»
+already said it — and the code field wears the form dress rather than
+the pill. So `ui-code-field` now has the two dresses SwiftUI's text field
+has: BORDERED, the default, is the text field's frame, fill, tiers and
+focus glow composed the way the phone field composes its country trigger
+and number inside one border, with the accessory INSIDE the frame at its
+trailing edge (Wallet's arrangement; the scan glyph sits where a search
+field keeps its clear glyph, on the text's own inset); PLAIN is the
+chromeless one for a pill or a row, with the hidden sizer. The verdict
+sits under the field, flush with its frame, in the destructive ink when
+the code is refused, and the frame's border turns with it. The lesson of
+the pass stands: the bordered text field is the FORM grammar, and it is
+right on the page under a row that names it; what was wrong was the box
+inside the row. And the coupon card paints the list row's own fill —
+`surface-secondary`, which in light is the rows' grey where the elevated
+surface was white — with no hairline and the group's own corner, so a
+ticket and the group above it are one silhouette in the column; the chip
+and the tear keep their tokens and read on both grounds. Measured live in
+both themes: the frame 1 px separator on the fill, the group's corner, 52
+px tall and exactly the page's width, flush with the «Вид» row's edges;
+the native input with no chrome of its own at 16 px in capitals; the scan
+glyph 36 px inside the frame, 9 px from its edge, centred; typing turns
+the border to the accent with the glow and the dock to «Приложи NOPE1»;
+Return refuses with «Няма такъв код.» under the field, the frame in the
+destructive ink, `aria-invalid` set; the cards' fill equals the row's in
+light (#f7f7f7) and dark (#242424), no shadow. 267 dashboard, 132 controls
+and 107 patterns specs green, lint and stylelint clean.
+
+**The percent, as tiles (owner, 2026-09-16: "for the percentage pull from
+Mobbin and design a really creative, cool percentage input — good
+looking, good UX").** The Mobbin sweep says one thing in many voices: a
+percent is chosen from a few the shop actually gives, and every choice
+says what it means in money. Depop's «Set discount» offers «25% off · SGD
+7,50 / 30% off · SGD 7,00 / 35% off · SGD 6,50» as tiles under the new
+price; Grailed's «Price Drop» has «↓10% $6 / ↓20% $5 / ↓30% $4 / Custom»
+and a CTA that names the result, «PRICE DROP TO $6»; Lyft, sweetgreen and
+Careem put the sum under each tip percent and a «Custom» beside them;
+Shopify and Squarespace, the plain versions, are a «%» field on a row —
+what the page had. So the «Процент» kind is the TIP PAGE'S OWN GRAMMAR,
+because it is the same question in the other direction: a bento of
+`ui-choice-tiles`, four across, the percents a shop gives — 5, 10, 15,
+20, 25, 30, 50 and the whole bill — each with WHAT IT TAKES OFF THIS BILL
+beneath it in the evaluator's own arithmetic (barbers count money), the
+full percent reading «Безплатно», and «Друг процент» as the wide tile at
+the end that opens the DS amount field on a muted «0 %» with a −/+ pair
+stepping by five — the amount field learned to carry a WHOLE COUNT for it
+(`uiFractionDigits`, none), the same control as the tip's «Друга сума».
+The «Сума» kind is the same field on «0,00 €», stepping by a euro and
+never past the bill. A tile drafts and the dock's «Приложи −10%» keeps
+it, as everything on this page is kept; the applied line is the state,
+and the tile stays on to say so; a custom percent keeps its entry with
+the figure a new one would replace. The «Вид» group is one row now for
+every kind: the row is the choice, the page is the answer. Two rules
+found on the way. The amount field no longer clamps a TYPED figure to
+its ceiling — a barber who typed 140 meaning 14 must not find «Приложи
+−100%» under their thumb; the field reports what was written and the page
+refuses it in words («До 100 %.», «Повече от сметката.»), the −/+ pair
+alone being clamped. And leaving an entry for the «Вид» pop-up makes the
+engine fire the entry's `change` a beat after the kind has moved on, so
+each entry's answer is guarded by its kind, or a whole percent lands in
+the sum entry as cents. Measured live on Мартин's 14,50 € visit in both
+themes: nine tiles, 64 px, four to a row, «−10% · −1,45 €» … «−100% ·
+Безплатно», the wide «Друг процент» last; «−10%» → «Приложи −10%» → the
+line «Отстъпка · −10% · −1,45 €», 13,05 € due, the tile still on; «Друг
+процент» → the field on «0» at 36 px with «%» beside it, the keypad
+numeric, the focus in it, «−» quiet at zero, «+» → 5 → «Приложи −5%»; 140
+typed → «До 100 %.» and the promise held; «Сума» → «0,00 €», «+» → «Приложи
+−1,00 €». 267 dashboard and 133 controls specs green, lint and stylelint
+clean.
+
+**The percent, on a ruler (owner, minutes after the tiles: "no, this looks
+very ugly and it is the same as the tip — I wanted a slider or something
+like that, but a catchy, creative component; I thought Mobbin has
+such").** The tiles lasted one screenshot. Mobbin does have such: Acorns
+sets a portfolio percent over a ruler of ticks under a big «19%»; Rocket
+Money's savings plan is a row of ticks lit in blue up to the value; Google
+Photos' edit sliders are tick strips; Binance's target ROI is a slider
+with «0% … 200%» marks; Nike Run Club's effort is a ruler filled to the
+number; and the tape pickers (Me+, Noom, MacroFactor, Brink) put a big
+figure over a moving rule. So the DS gained a SLIDER — SwiftUI's
+`Slider(value:in:step:)`, `ui/controls/slider` — drawn as a ruler: tick
+marks every `uiTickEvery`, the taller ones every `uiMajorEvery`, lit in
+the tint up to the thumb and quiet past it, a round white thumb as the
+platform's, and `uiMarks` naming the points that matter; without ticks it
+is the plain rail. Nothing is hand-rolled but the drawing: a native range
+control lies over the track, invisible, with its own thumb the drawn
+thumb's size, so the finger, the arrow keys and VoiceOver's adjustable
+are the engine's, snapping is `uiStep`'s, and `uiValueText` gives the
+reader the owner's words («−15% · −4,20 € · остават 23,80 €»). The
+percent kind is the figure written large — the amount field on a whole
+count with no stepper, a tap types it — with what it takes off THIS bill
+and what is left beneath, in the promo ink once there is one, and the
+ruler under both in five-percent steps with the quarters taller and
+named, lit in the promo ink. The sum is the same instrument from nothing
+to the bill in half-euro steps, a euro a tick, five the taller, its ends
+named. A move drafts, the dock's «Приложи −30%» keeps it, the applied
+line is the state and the thumb holds it; a figure typed past the ceiling
+is refused in words beneath while the thumb waits at the end; the floor
+writes a zero, which promises nothing. It has a showcase page. Measured
+live on Мартин's 14,50 € visit in both themes: the track 44 px tall and
+the page's width, twenty-one ticks of 12 px with the five quarters at
+20 px, the first and last centred under the thumb's two resting places,
+the thumb 28 px and white, the lit row clipped to the fill, the marks
+under the quarters; a touch drag to three tenths → 30, the thumb at
+112 px, «−4,35 € · остават 10,15 €», the figure 30 and «Приложи −30%»;
+applied → «Отстъпка · −30% · −4,35 €», 10,15 € due, the thumb still at
+30; 140 typed → «До 100 %.», the thumb at the end, the promise held; the
+arrow key steps and rings the thumb; the sum's ruler to 14,50 € in
+half-euro steps, a drag to the middle → 7,50 € and «остават 7,00 €». 267
+dashboard and 138 controls specs green, lint, stylelint and the showcase
+build clean.
+
+**The dock says what a discount does (owner, 2026-09-16, at the line
+under the figure: "no need of this label — better edit the bottom toolbar
+price, add a strikethrough or so; this applies to all discount addition.
+Also clicking on the input should not have an outline ring or border, for
+those inputs and the flat price one").** Two rulings, both kept. The
+money effect under the figure is gone; the DOCK carries it instead, in
+the sale tag's own grammar — Grab's «Rp500.000» struck over «Rp425.000»,
+Depop's new price beside the old: once anything has come off the bill,
+a coupon, a code, a figure or a voucher, the price as it was stands struck
+through, a role quieter, on the baseline of what is due, on every page
+and at the root; and WHILE a figure is being written on the discount
+page, the dock previews it — the draft's lines with the drafted manual
+figure standing in for the manual line it would replace, through the one
+evaluator, the vouchers covering what is left — so a barber dragging the
+ruler watches the price change before keeping it, and a figure the page
+refuses previews nothing. Under the figure only a refusal has words now,
+on a line that keeps its height so the ruler never hops; the slider's
+spoken value carries the dock's figure («−15% · 23,80 €»). And the amount
+field draws no focus ring on its line at all: a figure written large is
+its own focus — the accent caret blinks in it and the keypad rises — and
+a box drawn round it read as a field, which it is not; the −/+ pair keeps
+the platform's ring for a keyboard. Measured live on Мартин's 14,50 €
+visit in both themes: nothing struck while the price is whole; a drag to
+60 % → «14,50 €» struck at the subheadline tier in the secondary ink, 4 px
+before «5,80 €» at the headline tier, «Приложи −60%» in the dock; applied
+→ the same pair, the ✓ back; 140 typed → «До 100 %.» under the figure and
+the dock back on what is kept; a sum dragged to 3,50 € → «11,00 €»
+previewed in the percent's place; at the root after ✓ the tag stays; a
+tap on the figure leaves no outline, no shadow, no border. 267 dashboard
+specs green, lint and stylelint clean.
+
+**The tickets on the bill (owner, 2026-09-16: "now make the applied
+discounts look cooler and better — maybe they could look like the
+coupons").** They do: the «Приложени» lines are the same ticket the offers
+wear, and the coupon card learned a second life for it. On a BUTTON it is
+an offer — the whole card the control, «Използвай» its label, the
+consumer marking it `uiInteractive` for the one hover/press grammar (the
+host directive is gone; the list rows' own convention). On an `article`,
+`uiApplied`, it is a ticket ON THE BILL: nothing to press but what it
+projects — a badge stamped on the glyph's corner (`[uiCouponBadge]`, a
+check in the success ink ringed in the card's own fill, the way a presence
+dot sits on a portrait) and a real button where the call stood
+(`[uiCouponAction]`, «Премахни», its own padding hanging past the inset so
+the word lands on the inset line), so a whole card never removes a
+discount by accident; the swipe stays the shortcut off. Each kind wears
+its glyph — a coupon or a code the ticket, a percent the percent, a sum
+the price tag, a voucher the gift — with the amount it took off as the
+value, the code in the mono slot, the rule or what a voucher still holds
+in the chip. The lines stand in a plain stack of swipe wrappers, each
+rounded like the ticket inside it, and a new ticket rises in with the
+tip's own motion. Measured live on Мартин's 14,50 € visit in both themes:
+BEARD5's ticket and the voucher's, each an article with no type and no
+press grammar, on the rows' fill with the group's corner and the notches
+cut, the check badge 16 px at the glyph's corner in the success ink with
+its ring, «Премахни» a 36 px plain button inside the foot ending exactly
+on the inset; «Премахни» takes the ticket off and the swipe action stands
+on the next; the dock reads the price struck beside 0,00 € with the
+voucher covering the rest. 267 dashboard and 108 patterns specs green,
+lint and stylelint clean.
+
+**The snap (owner, 2026-09-16, at the sum's figure: "if typed more than
+the actual price it should auto-cap it to the total — same for the
+percentage and the flat sum").** A reversal of the refusal I had built
+and argued for, and kept as asked: a figure past what the page can take
+snaps to it AS IT IS TYPED — a percent to a hundred, a sum to the bill —
+and the figure, the thumb, the dock's preview and the promise all read
+the ceiling at once; the amount field clamps a typed figure on commit the
+way it clamps its steps, so the tip's «Друга сума» would too if it ever
+had a ceiling. The refusals («До 100 %.», «Повече от сметката.»), their
+copy and the line that held them under the figure are gone: there is
+nothing left to refuse. Verified in the specs: 140 typed → 100 in the
+figure and on the thumb, «Приложи −100%», 0,00 € due; 40 typed on a
+28,00 € bill → 28,00 €, «Приложи −28,00 €», 0,00 € due. And Return in a
+figure keeps it, as it does in the code field — the amount field gained
+`uiSubmit` — with the same guard the code row needed: the engine's
+`change` lands a beat after Return, and a commit that repeats what the
+field already shows is not read as typing, or the figure just kept would
+be drafted again. Live on Мартин's 14,50 € visit: 140 typed → 100 as
+typed, the thumb at the end, «Приложи −100%» and 0,00 € due; 40 typed
+into the sum → 14,50 € at once, «Приложи −14,50 €»; Return keeps it.
+
+**The dock's floor (owner, 2026-09-15: "why is this not fixed bottom?").** On
+the short pages the dock sat where the content stopped, mid-screen, because it
+rides the scroller as a sticky last child and the scroller was block flow — the
+DS bar's auto top margin (its documented way of flooring itself) had no column
+to push against. Now `modal-sheet.css` turns the scroller into a column for any
+body that docks a scroll-anchored bar (`:has()`-scoped, so no other sheet
+changes) and the editors' host is a column that fills it; the bar floors at the
+sheet's bottom edge on a short page and keeps its sticky behaviour on the long
+root. Measured: dock bottom = scroller bottom on the tip and discount pages;
+unchanged at the root's end.
+
+**Still open.** The percent-regime threshold and the 0,50 € rounding are
+constants, not shop settings; «Безплатна услуга» waits for a seat-targeted
+discount; issuing vouchers, a stacking cap,
+grant burning on completion, discounts at creation and the client-side view are
+as listed under Pass 10.
+
+### Pass 18 — the money rows as add rows, and the action sheet inside (2026-09-16, evening)
+
+**The ask.** Looking at the built sheet, the owner found the money group
+"weird and bad as UI/UX": «Отстъпка · Няма ›» and «Бакшиш · Без ›» were value
+rows with chevrons in a ladder whose every other empty thing is an add row —
+«＋ Добави клиент», «＋ Добави услуга», «＋ Добави бележка» — and a page push
+was a heavy way to pick a tip. They proposed an ACTION SHEET _inside_ the
+sheet, "with a cool creative animation", the docked bar fading down as it
+appears, and asked for Mobbin as the reference source and for a reusable,
+robust component "as an Angular guru would build it". **Built end to end.**
+
+**Mobbin, read.** Every tipping screen in the sweep makes the tip a card over
+the order (7-Eleven's «Driver Tip» half sheet, Gopuff's «Enter custom tip»,
+Walmart's subtotal card with «Custom», Snoonu's chips in a card, Zomato's
+tip card over the rating, Blackbird's «Set tip» card); every promo entry is a
+card rising over the cart with the field in it (Hims, Wonder, Ulta, Target,
+GoPay, Gojek, talabat, Lugg); and the nested-sheet grammar itself — a
+smaller card stacked on an open sheet, the sheet dimmed behind it — is
+Starbucks' «Topping Options», ChatGPT's table of contents, Notion's picker,
+Luma's «Cancel Event», Mesh's cadence sheet. HIG's action sheet (a card from
+the bottom, a scrim, one question) is the platform's word for it; SwiftUI's is
+`confirmationDialog`. The one difference here, and the owner's whole point:
+it presents INSIDE the sheet, the way a second sheet stacks on a first on iOS.
+
+**The rows.** With nothing on the bill the row is the ladder's own add row —
+`＋ Добави отстъпка`, `＋ Добави бакшиш`, the plus leading, no value, no
+chevron: a chevron promises a page, and these raise a card. The coupon the
+client holds is still whispered under the add row in the promo ink. Once
+something is on the bill the row reads its label and its value — «Отстъпка ·
+−5,60 €» with the lines named beneath, «Бакшиш · 2,00 €» — and still no
+chevron. Two `button[uiListRow]`s per state rather than one with an `@if`
+inside: a slot-marked node inside a control-flow block does not reach its
+named slot, so the leading plus and the trailing value cannot be conditional
+children of one row. Copy: `addDiscount`, `addTip`, `done`, `close` added;
+`discountNoneRow` retired. The spoken names follow: «Добави отстъпка, Има
+купон: Рожден ден» / «Отстъпка: −5,60 €, Рожден ден».
+
+**`ui-action-sheet`** (`libs/ui/controls/src/lib/action-sheet`). A DS
+component, ≙ `confirmationDialog(isPresented:)`: `[(uiIsPresented)]`,
+`uiTitle`, `uiMessage`, `uiLabel`, `uiCloseLabel`, `(uiOnDismiss)` (the card
+closed ITSELF — ✕, scrim, Escape, a drag down — after setting the model
+false), `(uiOnAppear)` (raised, placed, revealed; a field may take focus).
+The default slot is the card's body, a column at the sheet's gutter that
+scrolls inside the card once it outgrows the room; `[sheet-actions]` children
+dock in the card's FOOT — a real `ui-sheet-action-bar` anchored `scroll`
+inside the card's scroller, so the bar's own slot contract (a prominent or
+`uiPrimary` child trails, the rest lead), its sticky floor and its bottom
+fade all come for free, the fade dissolving into the card's surface through a
+new `--ui-sheet-action-bar-surface` hook. The head — grabber at the sheet
+header's exact metrics, title leading over the message, the ✕ chip trailing —
+is the card's own and the drag handle. It composes `UiSheetBehavior` as a host
+directive for focus into the card, the Tab trap, Escape, the scrim press
+(armed on down, fired on the paired up) and focus back to what opened it,
+with a new `lockScroll: false` option: the host sheet holds the document's
+lock, and two locks restoring one body would hand the page back frozen.
+Escape stops at the card (the menu's rule) — and a document-level capture
+listener catches it when focus has drifted outside the card, so the sheet
+around it never dismisses on the same press. The body mounts only while the
+card is presented or on its way out, so what is in the DOM is what is on
+screen.
+
+**Where it lives.** In the TOP LAYER, as `ui-menu` does and for the same
+reason: declared wherever its owner is, it must escape every clip and
+stacking context between there and the sheet surface. Its footprint is the
+context's box — the nearest `.ui-sheet__surface`, or the viewport with none —
+measured on open and followed every frame while up, with the context's own
+corner radii copied onto it, the bottom edge bounded by the visual viewport so
+a field in the card stays above the keyboard. Where the popover API is missing
+the layer is a fixed box inside the surface's own transform and `inset: 0` is
+the same footprint. The context is marked `data-ui-action-sheet-open` for as
+long as a card is up, and the DS chrome reads it with no consumer wiring: the
+modal sheet's scroller recedes (`scale(0.96)` from its top edge, gated on
+`@supports selector(:popover-open)` so it can never shrink a fallback card
+with it) and every `ui-sheet-action-bar` in that surface — the card's own
+foot excepted — sinks by its own reveal slide and fades, back up on the base
+rule's transition when the attribute goes.
+
+**The motion.** The scrim fades in over the deliberate beat; the card rises on
+the entrance curve (`--sys-motion-ease-entrance`, the slow duration) and
+sinks back on the standard one (the exit is the resting state's transition,
+the entrance the open state's); the ladder recedes and the dock falls on the
+same beat; and 120 ms behind the card the body's blocks cascade in — inside a
+grid of tiles or a run of rows, each tile and each row 35 ms after the last,
+eight pixels of rise and a fade, on `translate` so the tiles' own press scale
+keeps its property. All CSS on `data-open`; under `prefers-reduced-motion`
+the card only fades and nothing cascades. A latent bug surfaced by the new
+spec and fixed in the shared behavior: `deactivateEnvironment` nulled
+`previousFocus` before the deferred restore read it, so no sheet ever gave
+focus back to the control that opened it.
+
+**The cards' contents.** Unchanged from Pass 17 — the tip's bento of tiles
+with «Друга сума» revealing the amount field; the discount's tickets, the
+«Вид» pop-up and the kind's control beneath — moved from the pages into the
+cards. What the dock carried on those pages moved with them: each card's foot
+reads the bill from the ONE `#billTotal` template the dock reads (the struck
+subtotal, what is due, the tip's green plus) with its own test ids
+(`staff-visit-tip-total-*`, `staff-visit-discount-total-*`), and the one
+verb: the tip's «Готово» (bordered, prominent while the entry is open, also
+Return in the entry), the discount's «Приложи −10%» when something is ready
+and «Готово» otherwise. A tile that IS the answer drafts and closes the card
+on the tap — an action sheet's own rule; only «Друга сума» keeps it up. The
+scanner stays a page: the card steps aside (nothing cleared), the camera
+takes the root's place, and `pop` or a read code raises the card again with
+the field focused through `uiOnAppear`. `EditorPageKind` lost `'discount'`
+and `'tip'`; `openDiscountSheet` / `closeDiscountSheet` / `openTipSheet` /
+`closeTipSheet` replace the page verbs; `discountApply` / `applyDiscount`
+replace `pageApply` / `applyPage`; test ids `staff-visit-discount-apply`,
+`staff-visit-discount-done`, `staff-visit-tip-done`, the cards
+`staff-visit-discount-sheet` / `staff-visit-tip-sheet` (`data-presented`).
+Focus returns to the row after a card closes even when the draft turned the
+add row into a value row and the node that opened the card is gone.
+
+**Measured live** (Playwright against the running app, a 390×844 phone and a
+1280×860 desk, light and dark): the layer in the top layer at exactly the
+surface's box (34/0/390/810 on the phone; 43/352/576/774 on the desk) with
+the surface's corners (17.85 px at the top on the phone, all four on the
+desk); the scroller at `scale(0.96)`, the dock at opacity 0 and +68 px while
+the card is up and back at 1 and 0 after; the tip card 465 px tall over the
+dimmed ladder, its foot 68 px with the bill and «Готово»; with «Друга сума»
+open, 530 px with the entry and «+0,50 € бакшиш» on the foot; Escape closes
+the card and leaves the sheet presented, focus back on the row; a press on
+the scrim likewise; a tile closes the card on the tap and the row reads
+«Бакшиш 0,50 €» with the dock's plus. The showcase gained a page
+(`/controls/action-sheet`) with the card inside a sheet and on a page. 267
+dashboard, 6 new action-sheet specs green; lint and stylelint clean on the
+touched libs.
+
+**A segment on the card (owner, minutes later, at the dark discount card:
+"those are not using our DS directives for material, or our material is not
+alpha translucent, so it stacks good on dark UI").** Right: the «Вид» row and
+the tickets painted the opaque `surface-secondary` (#242424) on a card whose
+elevated surface is #262626 in the dark, and read as holes. The menu's own
+rule of 2026-07-31 — a grouped run goes translucent over a raised surface,
+systemFill layering every segment on whatever it landed on — is restated for
+the card: `.ui-action-sheet__card` publishes `--ui-action-sheet-segment`,
+the system fill RESOLVED over the elevated surface (opaque, because two things
+under a ticket need its exact colour: the badge's ring that cuts it out of the
+glyph, and the swipe face that hides the act behind it — an alpha fill would
+show both through), the body's grouped rows take it, and the coupon card
+gained a `--ui-coupon-card-surface` hook (background and ring) that the card
+sets to it; the visit editor's swipe face follows the same hook. The tiles
+keep their translucent fill: same maths, same colour. Measured in the dark:
+the card at srgb 0.149 (#262626), the row, the offer cards, the applied
+ticket and its ring all at 0.211 (#363636), the tiles' translucent fill
+composing to the same; in the light the step is white to #f5f5f5.
+
+**The second cut (owner, 2026-09-16, later in the evening, five asks at
+once).** (1) "When a discount is applied, inline it here in the sheet — the
+add sheet is for adding": the applied lines left the card for the LADDER.
+The money group is now the services group's grammar — one row per line on
+the bill (the kind's glyph leading in the promo ink, the name over its code
+and rule, what it actually took off trailing beside the same «−» chip, the
+swipe the fast path; a voucher in the secondary ink with its code and what it
+still holds), then «＋ Добави отстъпка» (whispering the client's coupon while
+nothing stands), then the tip. The summary row and its `−7,30 €` are gone;
+`discountLines` carry `detail` (code · rule), test ids
+`staff-visit-discount-<key>`, `-detail`, `-value`, `staff-visit-remove-discount-<key>`,
+`staff-visit-swipe-discount-<key>` (vouchers likewise). (2) "Make the type
+option fixed to the header and title": `ui-action-sheet` gained a
+`[sheet-accessory]` slot pinned between the head and the scroll, on the
+sheet's gutter, with the house chrome fade hanging off its edge — the modal
+sheet's `.searchable` grammar — and the discount card's «Вид» group lives
+there. (3) "The action bar is always at the bottom and fixed — you could
+scroll past it": a sticky bar INSIDE an iOS scroller rides its rubber band;
+the card's foot is now a sibling of the scroller in the card's column, and
+`ui-sheet-action-bar` gained the `flow` anchor for exactly that seat (its
+fade still overhangs the scroller above). (4) "Click a code to use it — it
+stays where it is and its button changes to remove; the ones that cannot
+combine should be instantly recognisable": the offers keep the catalogue's
+order in ONE OF THREE STATES — on offer, applied in place (an `article`
+stamped with the check, «Премахни» where the call stood), or BLOCKED by what
+is on the bill (an exclusive offer beside anything, any offer beside an
+exclusive one) — the coupon card gained `uiUnavailable`: desaturated and
+faded, the offer's ink to secondary, the button disabled, the DS "cannot
+combine" glyph (`booking.blocked`) in the same badge slot the check takes,
+«Не се комбинира» for the call. The old "an exclusive coupon clears the
+others / gives way" is gone from the cards: nothing is displaced silently.
+One `#offerCard` template renders both the shop's codes and the client's
+coupons (`OfferChoice`, `applyOffer`, `offerBlocked`). (5) "You see −5 €
+and −1,50 € but stacked it comes to 6 €; confusion = bad UX; show −10% —
+and that yellow, use our accent": a ticket's figure is the offer's RULE
+(`−10%`, `−5,00 €`), never a preview on this bill, and its chip says only
+whether it stacks; the actual amount lives on the ladder line and in the
+struck price. And the promo ink IS the accent now — `--sys-color-promo` and
+`-label` alias `--sys-color-accent` / `-label` in both themes; the semantic
+name stays so a discount line, a coupon's figure and the promo ruler ask for
+one thing. Verified live in the dark: «Вид» inside the accessory and outside
+the scroll; the foot a `flow` bar after the scroller at the card's bottom
+edge (776–844 on the phone); the offers `−5,00 €` / `−10%` in
+rgb(242, 107, 34) with «Използвай»; a tap turns the first into an article
+with «Премахни», order unchanged; the ladder row `staff-visit-discount-code:BEARD5`
+with the ticket glyph and the accent figure; the row's «−» takes it off.
+267 dashboard, 144 controls, 109 patterns specs green; lint and stylelint
+clean.
+
+**Two corrections the next morning (owner, 2026-09-17: "why did the type
+row stop using the proper material bg? — and that fade has to be the same
+as the bottom action bar's and everywhere else").** The card's segment rule
+had been scoped to its BODY, and the pinned «Вид» row, moved into the
+accessory, fell back to the opaque `surface-secondary` and read as a hole
+again; the rule now reaches the whole card — the accessory included — and
+stops only at a menu's own glass (`:not(.ui-menu__surface *)`, whose rows
+menu.css lays out translucent itself). And the accessory's fade is no longer
+its own 24px ramp, always on: it is THE house chrome fade — the modal sheet's
+top fade, the mirror of the action bar's — the same quintic ramp overhanging
+the scroll by 3rem in the card's surface colour, and GATED the same way,
+landing only once the body has scrolled under it (`data-scrolled` on the
+card, from the scroller's own scroll event), because an always-on fade shaded
+the first block at rest. The body's air under a foot went back to the
+sheet's comfortable 24px, so the foot's fade self-corrects at scroll end as
+the dock's does.
+
+**Still open.** Drag-to-dismiss on the card's head is wired through the
+behavior but not yet verified with real touches; the cascade's timings
+(120 ms lead, 35 ms stagger) are component custom properties, not tokens;
+the discount card's «Готово» and ✕ are two ways out, kept on purpose (HIG's
+Cancel row and iOS 16's ✕ both exist) but the owner may want one.
+
+### Pass 19 — the no-show's strike, restored to the head (2026-09-17)
+
+**The ask.** "What happened to the no-show being strikethrough?!" — Кирил's
+11:00 no-show sat on the agenda with its glyph but its name unstruck.
+
+**What had happened.** The event head refactor of 2026-09-16 moved the card's
+name into `lib-staff-event-head` (its own view, unscoped) and rewrote the
+agenda's strike rule to `.agenda-card[data-status='no_show'] .staff-event-head__title`.
+The agenda component is view-scoped, so that rule compiled to
+`…[_ngcontent-c1480427694] .staff-event-head__title[_ngcontent-c1480427694]`
+— a mark the title, rendered by the head's view, never carries. The rule was
+dead the moment it was written; the grid's twin kept working only because the
+grid is unscoped. The past card's fact-line compensation had died the same way.
+
+**The fix.** A state of the head is the head's: `struck` and `receded` are
+inputs, stamped on the host as `data-struck` / `data-receded` and styled in
+staff-event-head.css — the strike in `currentcolor` at 1px, the fact lines
+lifted half way to the foreground — and the hosts pass them (`hollowStatus`
+exported beside the head; the card also passes `receded` for a past card that
+is not hollow). The grid's duplicate rule is gone: one mechanism for the block
+and the card. The dashboard's two dead rules are replaced by comments naming
+the trap. Measured live: the no-show card's head `data-struck`, its title
+`text-decoration-line: line-through`; every other card unstruck; the frame's
+block for the same visit struck the same way. 268 dashboard specs green.
+
+**The rule that comes out of it.** A view-scoped component must never style a
+child component's parts by class; it passes an input and the child stamps the
+state. Unscoped hosts may still reach in for what is their own (the grid's
+inert dimming).
+
+### Pass 20 — tickets on the ladder, a card that closes on «Приложи», a hairline that crosses surfaces (2026-09-17)
+
+**The asks.** Three, from the built screens. "Clicking apply should also
+close the sheet — not to have users double-tap apply, then done." "By
+inlining the discounts I didn't mean list rows: the exact components you use
+in the action sheet — the coupon cards — the applied ones with «Премахни»,
+as it is in the action sheet." And the code field "looks hand-rolled a bit —
+compare it to the login flow's email input, there the border is not black".
+
+**The card closes on the promise.** `applyDiscount` closes the card after a
+figure is kept; a typed code closes it in `adoptCode` on the hit — a promo
+or a voucher — and leaves it up on a refusal, the verdict under the field
+and the code where it was typed. `closeDiscountSheet` already sends focus
+back to «＋ Добави отстъпка», so the act ends where it began. Offer cards
+keep applying in place and keep the card up (stacking is one more tap; ✕
+and «Готово» close). Measured live: «Приложи −10%» → `data-presented` gone,
+`document.activeElement` the add row, the ticket on the ladder.
+
+**The lines are tickets.** The money block is a compact `ui-stack`: the
+bill's lines as `article[uiCouponCard][uiApplied]` — the card's own applied
+ticket, the check badge on the kind's glyph, the name over the RULE with the
+code beside it, «Премахни» where the call stood — over the `ui-list-group`
+that holds «＋ Добави отстъпка» and the tip. The rows, their swipe and their
+«−» chip are gone. What differs from the card is the chip: on the bill it
+reads what the rule made of THIS bill — the evaluator's settled figure,
+«−1,25 €» under «−10%» — and nothing for a fixed sum whose rule is the
+amount (unless the bill capped it); a voucher's ticket reads what it covers
+as the figure, its code, and «остават …» in the chip. The ticket wears the
+rows' own fill (`--sys-color-surface-secondary`), so the column stays one
+silhouette. Test ids unchanged (`staff-visit-discount-<key>` with
+`-value/-code/-detail`, `staff-visit-remove-discount-<key>`; vouchers
+likewise); the swipe ids are gone.
+
+**The hairline.** Not hand-rolled: the code field's frame and the text
+field draw the same `border: 1px solid var(--sys-color-separator)`. The
+token was the foreground at 12 % mixed with the PAGE GROUND — one opaque
+#1c1c1c: a hairline on the login page's black, and a black outline around
+a field on the action sheet's raised #262626. It is now the foreground at
+the same strength over TRANSPARENT (4 % in light), the fill's own rule and
+iOS `separator` parity: the same hairline on every surface it crosses.
+Measured: the card's frame border `rgba(237,237,237,.12)`, the login email
+field the same value; light identical to before over white. Every other
+separator (dividers, the ticket's tear line, the grid lines) lightens by
+the same logic on raised surfaces and reads unchanged on the ground.
+
+**Numbers.** 269 dashboard specs green (87 in the editor), lint 0 errors,
+stylelint clean.
+
+### Pass 21 — the tip picks, then applies (2026-09-17)
+
+**The ask.** "The tip should not be one-tap applied — it should be selected,
+then at the bottom, as the flat tip: Apply."
+
+**What changed.** A tile no longer acts on the tap. It is PICKED (`tipPicked`),
+the tile shows as on, the foot's bill previews what the pick would make of
+the tip, and the verb becomes the promise — «Приложи 2,00 €», prominent,
+where «Готово» stood — exactly the flat sum's grammar on the discount card.
+«Приложи» keeps the pick (`applyTip` → `setTip`) and closes the card; ✕, the
+scrim, Escape and «Готово» let a pick go, and the bill's tip stands as it
+was. «Друга сума» opens its entry on a muted «0,00»; a sum in it IS the pick
+(`tipEntry`), and Return in it is the same act as the foot's button. Empty,
+the entry promises nothing — the foot keeps reading the kept tip and
+«Готово» — rather than claiming «Без»; «Без» is the tile that takes a tip
+off, and over a kept tip its promise reads «Премахни бакшиша» (key
+`removeTip`; «Приложи {{what}}» is `applyTip`). A pick that is what the bill
+already holds promises nothing either. Test ids: `staff-visit-tip-apply`
+beside the existing `staff-visit-tip-done`.
+
+**Why the entry waits instead of clearing.** The previous rule (zero and an
+emptied field both mean «Без») was right for a write-through field; with a
+promise at the foot it would have offered «Премахни бакшиша» the moment
+«Друга сума» was tapped over a kept preset, before a digit was typed. The
+foot now says only what the act would do.
+
+**Numbers.** 87 editor specs green, lint 0 errors.
+
+**Addendum, the same evening — two groups.** With the tickets above it, the
+money group's one segmented run put the discount's ADD row and the tip's
+VALUE row shoulder to shoulder — "separate them, it looks weird". The block
+is now two groups at the body's own gap: the discounts (the tickets in a
+compact stack over their `ui-list-group` with «＋ Добави отстъпка»,
+`staff-visit-discounts`) and the tip in a group of its own
+(`staff-visit-tip-group`); `staff-visit-money` wraps both at the
+comfortable gap, so they read as neighbours, not as one run. Measured
+live: 24 px between the add row's group and the tip's, two `ul`s.
+
+### Pass 22 — the catalogue as a card (2026-09-17)
+
+**The ask.** "Make add service an action sheet too."
+
+**What changed.** The `ui-menu` dropdown on «＋ Добави услуга» (Pass 8's
+"like the country code dropdown") is retired. The row is now the ladder's
+plain add row — the plus leading, no value, no chevron, exactly the money
+rows' — and it raises a `ui-action-sheet` inside the sheet, «Добави
+услуга», declared at the foot beside the discount and tip cards. The search
+is the card's pinned accessory (the «Вид» row's place, outside the scroll),
+the same band the client page pins, without its own stickiness, bleed or
+material — the card pins, pads and fades it. The rows beneath are the
+catalogue, each the service over its variant, minutes and price; ONE TAP
+seats the service and closes the card, focus back on the add row. No foot:
+a row IS the act, so the card's foot hides itself. Kept from the dropdown:
+nothing marked as already on the visit, the whole catalogue on every
+opening, and a letter typed anywhere while the card is up landing in the
+search (heard at the document while `serviceSheet` is true). All three of
+the ladder's add rows now speak one grammar.
+
+**Numbers.** 87 editor specs green, lint 0 errors.
+
+**Addendum, the same evening — picked, counted, then added.** "Make it
+animated like select — in place of a check, a stepper should animate,
+expand; smooth and cool." A row's tap no longer seats the service: it
+PICKS it. The row is `ui-list-row` holding two controls — the pick, a
+checkbox button that is the row's label, and the DS `ui-count-stepper`
+trailing — and the tap does three things at once: the row eases into the
+DS selection wash, the stepper's square turns accent with a ✓ for a beat,
+and then the square unfolds into «− 1 +» — the capsule opening out of the
+square's own footprint under a clip that grows from the trailing edge, the
+`−` and the count sliding out to the leading side (`@starting-style` in
+count-stepper.css; browsers without it swap, as before). The trailing cell
+is reserved at the open stepper's width from the start, so the square sits
+where the `+` will land and the label never rewraps. A second of the same
+service is one more press on the stepper, not a second trip; down to none
+takes the pick off. The foot promises «Добави» — «Добави 3 услуги» — and
+seats every pick at once, in the order picked; «Готово», ✕, the scrim and
+Escape let the picks go. Measured live: the tap checks the row and counts
+1 with the ✓ beat, the clip is mid-way at 560 ms and open at 680 ms, «+»
+makes 2 and the foot reads «Добави 2 услуги», the act adds two seats and
+closes.
+
+**A DS defect found on the way.** A selected row inside a `ui-list-group`
+never showed its wash: the group's segment rule out-ranks the row's
+`[data-selected]` rule by one class, so a picked row painted plain — on
+the card, darker than its neighbours, a hole. The group now composes the
+wash over its segment fill for selected rows, and the action sheet over
+its lifted segment. The client picker's checked rows read as checked for
+the first time as well.
+
+### Pass 23 — the action sheet retired; the cards are the sheet (2026-09-17)
+
+**The ask.** "Why is the action bar cutting the overflow of the services?
+… it has to have that gradient fade so services look like they hide
+beneath it. Same applies to the header. So this is yet another hand-rolled
+component? We already have a sheet component with a sophisticated header
+(collapsible, centered title, animations, fading header background, action
+toolbar top and bottom). Remove the new action sheet and reuse our sheet
+wherever it was used."
+
+**What was wrong.** The owner was right twice. `ui-action-sheet` shelled
+its own head, layer, scrim and card instead of composing the DS sheet; and
+its accessory and foot sat BESIDE its scroller (a flex column with the
+scroller between them), so the list was clipped at their edges — the fade
+overhung the scroller by 3rem, but the rows never passed under the chrome
+to dissolve. The modal sheet puts its chrome INSIDE the scroller (sticky)
+and its action bar OVER it (absolute), so content scrolls beneath both.
+
+**What changed.** `ui-action-sheet` is gone (component, spec, showcase page,
+the `flow` bar anchor, the `lockScroll`-only path). The three cards are
+`ui-modal-sheet`: the bar with the title from the start
+(`titleAlwaysVisible`), the pinned `[sheet-accessory]` under it («Вид», the
+search), the chrome fade, the body in `.staff-visit__card-body` with the
+bar's clearance, the `[sheet-overlay]` action bar with the dock's own fade;
+`fitted`, so a short card hugs and the catalogue scrolls at the ceiling.
+What the action sheet did that the DS sheet could not — present inside a
+transformed, scrolling surface — the DS sheet now does itself: a `ui-sheet`
+declared inside another sheet's surface is STACKED — it presents in the
+top layer as a manual popover, marks the surface beneath
+(`data-ui-sheet-stacked`) so the modal sheet recedes and its bars sink (the
+hooks the action sheet had, generalised), leaves the body's scroll lock to
+the sheet it sits in, and keeps its Escape and Tab to itself (the behavior
+stops both — an inner dialog's keys must not reach the outer). The scanner
+reopens the discount card and focuses its field a frame after the sheet's
+own initial focus (`focusWhenPresented`).
+
+**The rule.** A card, a picker, a confirmation inside a sheet is a
+`ui-modal-sheet` declared where its owner is; the DS stacks it. No new
+shell for "a sheet inside a sheet" — the sheet is the sheet.
+
+### Pass 24 — pages again, a minimal discount row, the tip unfolds, a trail through the party (2026-09-17)
+
+**The ruling.** The owner changed course: adding a service → a pushed
+page; adding a client → a page, as is; adding a discount → a pushed page,
+"the bottom toolbar for applying should go to the main sheet, applied
+discounts should live in the push sheet, in the main sheet only minimal on
+the row: «Discount — None ›», «Discount — SAVE20 (8.50 EUR)», «Discount — 2
+applied (8.50 EUR)»"; the tip → collapsible, "«Tip — None ^» and it should
+expand the contents it has now"; and going to someone in the party → as is,
+with a back button in the header "so it's recognisable" (debatable).
+
+**What stands now.**
+
+- THE SERVICE PAGE (`page.kind === 'service'`): the catalogue under its
+  large title, the search pinned as the client page pins its own, the rows
+  as picks with the count stepper unfolding; the DOCK carries «Добави» /
+  «Добави 3 услуги» (`staff-visit-service-apply`) or the ✓, and seats every
+  pick on the act; ‹ drops the picks.
+- THE DISCOUNT PAGE (`page.kind === 'discount'`): the applied tickets at
+  the top (`staff-visit-discount-applied`, the coupon-card articles with
+  «Премахни»), «Вид» as the first row of the page's own group, the kind's
+  control beneath; the DOCK reads the bill on this page too (the old price
+  struck, the drafted figure previewed) and carries «Приложи −10%» /
+  «Приложи FIRST10» or the ✓. Applying keeps the page — the ticket lands at
+  its top, where the applied ones live — and a typed code's hit does the
+  same. The scanner takes the page's place and comes back to it.
+- THE ROOT: the money group is two value rows. «Отстъпка» reads the bill
+  in one line — «Няма», one line's code (or name, or a figure's rule) with
+  what it took off in brackets, «2 приложени (7,30 €)» for more, vouchers
+  counted among them — in the promo ink once something is on the bill, the
+  held coupon still whispered beneath, `›` because it pushes. «Бакшиш»
+  reads the tip — «Без», the amount in the success ink — and a chevron
+  that turns as the row UNFOLDS its section in place: the one line of
+  explanation, the bento of tiles, the sum written large under «Друга
+  сума». A tile IS the answer again: the draft takes it, the row reads it,
+  the dock's plus rises; Return in the entry folds the section.
+- THE PARTY: a hop to a peer's visit leaves the visit it came from on a
+  trail in the dashboard (`visitTrail`), and the sheet's ‹ walks it back —
+  one visit at a time — before it is the page's own way back; the trail
+  clears with the sheet.
+
+**Retired with it.** The stacked cards (the three `ui-modal-sheet`s of
+Pass 23), the tip's pick-then-apply, and the copy for it («Приложи …»,
+«Премахни бакшиша», «Готово», «Затвори» on the sheet). The DS's stacked
+sheets stay: they are the right tool for a sheet inside a sheet, and the
+country picker is one.
+
+**Addendum — the row that extends.** "The tip body should be in a wrapper
+of the tip row being extended — on click it should extend, animate
+beautifully, the tip body inside the row's own body." The tip's `li` is
+now ONE segment (`.staff-visit__extend`: the group's fill and corners,
+carried by the feature because the group's rules stop one level up)
+holding the row and, beneath it, a fold — a one-track grid whose track
+goes `0fr → 1fr` — around the section. The segment grows out of the row
+and folds back into it; the section fades and settles a beat behind; the
+row's bottom corners square off while the section continues. The section
+stays in the tree, `inert` while folded, so the fold animates too. The
+first cut put the row and the section in one two-track grid, and the row
+wobbled taller mid-way (measured 52 → 122 → 52 px: `auto` tracks are
+interpolated with the rest); the row is outside the grid now, and stays
+at 52 px from the first frame to the last while the section runs 0 → 328.
+
+**Addendum — three more rulings on the tip row (2026-09-17).**
+
+1. "The description should be part of the label itself, under it, in the
+   whole row." «Оставен от клиента» is the row's second line now, the
+   discount row's own two-line grammar (`uiAlignment="leading"`); the
+   section holds only the tiles and the entry.
+2. "When expanded you see the tip a couple of times — the row, the
+   selected tile, the bottom toolbar — feels too much; you tell." Checked
+   against the HIG: a disclosure's label should say what it hides (the
+   folded row's value does that); a picker "works well when displayed in
+   context, below … the field people are editing", and Apple's INLINE date
+   picker prints the selection nowhere but in the picker, while the
+   compact one keeps a value on the row only because its picker is a modal
+   elsewhere; Apple Pay's sheet shows a charge as a line item AND inside the
+   total by design. So: the ROW'S VALUE STEPS ASIDE while the section is
+   open (the tiles are the value), returns as the section folds, and the
+   DOCK'S LINE STAYS — it is the bill's line item, not a readout. Two
+   readings while open, two while folded, never three.
+3. "«Без» is a common one; None and Other should be next to each other."
+   The amounts come first — the round-ups large, the coins — with «Без»
+   closing the coins' row as the amounts' zero, and «Друга сума» the full
+   row beneath it: the two that are not amounts sit together at the foot
+   of the grid, the order Square's tipping screen keeps (Apple Pay's own
+   segments lead with No Tip; we read the amounts first, and the bento
+   stays full without a hole).
+
+**Addendum — the discount page keeps no list of its own (2026-09-17, late).**
+"When adding a discount it appears above the type row and shifts the
+layout — weird, hard to understand, even duplicating: the promo code
+appearing both on top and on bottom." Right on both counts: the applied
+stack above «Вид» pushed the controls down on every apply, and a listed
+offer was drawn twice — applied in its frame and again in the stack. The
+stack is gone. A line now shows WHERE IT WAS MADE: an offer's line is the
+offer's own card, applied in place in its frame; a typed or scanned code,
+and a voucher, land as tickets right under the field
+(`staff-visit-discount-typed`, the Apple Pay coupon line's place), with the
+client's coupons beneath; a figure lands under its dial
+(`staff-visit-discount-manual-line`). Nothing above the «Вид» row moves
+when a line is added, nothing is drawn twice on one screen, and the row on
+the ladder still sums it all. A code applied from the promo frame does
+also read as a ticket under the field once the kind is switched to
+«Ваучер / Купон» — two views of one line, never two on one screen — so a
+code can always be taken off from the codes' own door.
+
+**Addendum — the bill on one row, the tickets under it (2026-09-17, later
+still).** "If you switch the type there is no indication that some
+discounts are applied — only the bottom price — and no way to jump and see
+all applied." True: with the lines shown only at their doors, «Процент»
+showed nothing of the code applied from the frame. A first cut put a
+receipt of ROWS under a row; the owner: "a bit weird — if shown expanded I
+expect the coupon card, not just list rows." So the page's group has a
+first row above «Вид»: «Приложени · Няма / BEARD5 (5,00 €) / 2 отстъпки
+(7,30 €)» — the whole bill whatever kind is in force ("2 отстъпки" where
+the root row says "2 приложени": the label already says applied) — that
+UNFOLDS, on the tap, out of its own segment (the tip row's fold, its
+classes generalised to `staff-visit__fold`), THE TICKETS: every line on
+the bill as the coupon card it is, «Премахни» on each, the vouchers after
+— the one place the applied lines live, the per-door lists (typed codes
+under the field, the figure under its dial) retired with it. An offer's
+card is still stamped in place in its frame. The tickets sit a fill step
+above the segment through the card's own surface hook. The row is always
+present, «Няма» and disabled on a clean bill, so the first line changes
+its text and moves nothing above «Вид». Leaving the page folds it.
+
+**Addendum — two groups (2026-09-17, later still).** "Grouping them
+doesn't seem right as an Apple HIG guide." Right: the inset grouped list
+keeps one concern to a group, and «Приложени» (the bill's lines: content)
+and «Вид» (the form's door) are two. They are two groups now, the page's
+own gap between them; the «Приложени» segment carries the group's full
+corners on its own, and unfolds inside them.
+
+**Addendum — a refusal is a toast; the shop combines what it likes
+(2026-09-17, later still).** "Save doesn't work all the time — I added
+multiple services and it doesn't save. If there is an error message it
+should appear as a toast, no?" Reproduced: the server refused the batch
+with `booking.commit.conflicting_services` (a classic cut and a fade) and
+the sheet said nothing — the store's error line lives on the agenda row,
+behind the sheet. Every refusal reached from the sheet — a save, a note, a
+tip, a creation, a verb — now raises the page's ONE toast (the undo's)
+with the server's sentence in the shop's words, no action; the sheet
+stays, and a save that lands takes a stale refusal down. The inline create
+error is gone with it. A first cut also blocked the rival row on the
+service page («Не се комбинира с Фейд»); the owner: "don't add such — a
+staff account could do whatever he wants". Right: the catalogue's
+"does not combine" rule is the CLIENT's self-booking rule; the shop's own
+book is not bound by it, on the page or on the server — a staff edit and a
+staff-made booking skip that check. The service rows also ride the DS
+`uiInteractive` state layer now — hover and press ink — with the stepper
+keeping its own. Busy buttons draw the DS ring (see the button memory).
+
+## Pass 25 — the shop's photos of a visit (2026-09-17)
+
+"It should be possible to attach / take picture/s to an appointment and
+they will have meta on them: who — barber, client, appointment." Built on
+the team note's precedent, which is the closest thing the sheet had.
+
+**Where they live.** Not on the appointment: its document is the client's
+to read, and the shop's pictures of a client are the shop's. One Firestore
+document per photo in `appointmentPhotos/{photoId}` pointing at the visit,
+the bytes at `appointmentPhotos/{appointmentId}/{photoId}` in Storage —
+both `worksTheBook()` in both directions (`firestore.rules`,
+`storage.rules`), like the note. The facts — the visit, the chair, the
+client (account and name), who pressed the shutter, when, the size — are
+written twice on purpose: on the document and as custom metadata on the
+object, so the file says who even with no document beside it. The download
+URL is written with the document, so a visit's photos read in one snapshot.
+The port is `AppointmentPhotos` (`@creativo/application/booking`), the
+adapter `FirebaseAppointmentPhotos` (`@creativo/infrastructure/storage`),
+and `downscaleImage` caps the long edge at 1600 px as JPEG with the camera's
+orientation baked in before anything goes up.
+
+**How they read on the sheet.** A group under the team note: the pictures
+taken as a grid of squares — each a door — and «＋ Добави снимка», the
+note's own grammar. The row opens the DS CHOICE MENU — the chair's and
+«Вид»'s own segmented rows (owner, later the same day: "why is it not
+using our ui menu the other dropdowns are using?") — with three doors:
+«Снимай», the DS viewfinder as a page (owner: "take a photo doesn't open
+the camera" — a capture input is only the camera on a phone); «Качи от
+телефона», the phone's picker, as many as it likes, one hidden input at
+the root reached inside the door's own tap; «От галерията», the shop's
+own pictures as a page (owner: "assign an image that is already in our
+system"). A picture commits on pick — not a draft, no «Запази» (the
+profile photo's own rule). The camera door is offered only where the
+engine has a camera to ask for.
+
+**The camera page.** `ui-camera-capture`, a new DS pattern on the same
+camera token the code scanner reads through (`CAMERA_MEDIA`, extracted):
+a 3:4 viewfinder asked for at the moment of use, the shutter in the DOCK —
+prominent, the camera's glyph, where «Запази» stands — taking exactly the
+box the viewfinder shows, at the camera's resolution, as a JPEG, once;
+the camera is released with it and the page pops. A refusal or an engine
+with no camera is said in words, and «Качи от телефона» takes the dock's
+place as the way in.
+
+**The gallery page.** Every service's cover and work shots from the
+catalogue, drawn by the SHARED showcase gallery — the barber's and the
+service's own sheets' — just pictures, no names (owner: "just images,
+exactly the same"), and the mosaic ONLY: no strip, no view toggle (owner:
+"it should be only a grid"). Picking is a MULTI-SELECT as Photos does it
+(owner: "the selection count in the bottom action bar, like Apple's
+gallery select"): the gallery's new `selectable` + `selected` mode makes
+every tile a checkbox with a filled, white-ringed check at its corner and
+a light veil; the dock carries the count in the bill's own dress — «Избрани» in the
+footnote over the figure in the headline — at its leading edge and
+«Добави» on the thumb rail, or the ✓ back while nothing is picked. «Добави»
+ASSIGNS every picked picture to the visit as it stands — `origin:
+'library'`, pointed at, never copied — in the catalogue's order, and comes
+back; the selection is cleared whenever the page opens or goes.
+
+**A photo's page — a viewer.** The thumbnail pushes a page — the editor's
+own navigation, never a nested sheet — that is the picture (owner, later
+still: "full sheet screen, no title — the image at its original ratio",
+"the image should be centered", then: "the (i) does not make sense — make
+the information shown by default, and the people as user rows"):
+full-bleed in its own shape on black, centred in the space between the
+header and the dock, no large title — the header names the moment, as
+Photos' bar does — and nothing drawn over it. Beneath it, the facts as
+ROWS, always: the people first, each a person row in the sheet's own
+grammar — the chair's portrait with its colour legend over «Бръснар», the
+client's initials over «Клиент» — then when it was taken, and which of the
+shop's pictures it is. A first cut floated the people over the picture as
+an avatar group behind an (i); both went (the `ui-avatar-group` control
+stays in the DS, shown on the showcase). The dock carries the one thing
+the page can do, «Изтрий снимката», red; the shell's ‹ is the way back.
+Deleting pops the page at once and the live read does the rest.
+
+**Left for later.** Clients seeing their own photos in their appointments;
+a before/after pairing; who pressed the shutter shown by name (the shop's
+staff accounts are not linked to chairs yet, so `takenByUid` is stored, not
+shown).
+
+## Pass 26 — «Салон»: where, right under who (2026-09-18)
+
+**The ask.** "Next feature: a location in the main sheet — could be like
+the tip expandable, reusing our map — be the designer, decide the looks."
+
+**Where it sits.** A visit is one physical place (`Appointment.locationId`
+is the root's own field — one shop for every chair of a party), so the
+sheet answers WHERE straight after WHO: a one-row group under «Бръснари»,
+above «Услуги». Calendar's own order — the place before the time — and
+the chair's own logic: a chair stands in a shop.
+
+**The row.** «Салон» at the label and the shop's NAME as the row's own
+second line — nothing trails but the disclosure (owner, later: "the
+location name doesn't make sense there — make it the description; it
+looks weird" — a first cut put the street line under the label and the
+name trailing, and the name read as a figure). The address moved to the
+list's rows, under each name, its street line only (the address up to its
+first comma — the city is where the staff already are; two lines, then an
+ellipsis)
+— a value row, `aria-expanded`, named «Салон: Креативо · Център» to
+assistive tech. Nothing leads it: the sheet's rows
+carry glyphs only for people and for the call.
+
+**The fold — a view pill, the map by default, the list behind it.** The
+tip's fold, verbatim (`.staff-visit__extend` + `.staff-visit__fold`): the
+segment grows out of the row and folds back into it, the row's word
+stepping aside while the section is open. Inside, in the fold's own
+inset: the two views share one box, and the VIEW PILL FLOATS over its
+top-trailing corner — Maps' own corner for floating controls — the new
+DS `ui-segmented-control` as an icon-only capsule in thick material
+(the owner's ruling for chrome over a map), map | list, staying put
+while the view beneath it changes (owner, correcting a misread: "a
+segmented control for toggling map or list view — a toolbar pill with
+two icons, list and map … I expected this to overlay over the map").
+Checked against the HIG's segmented-controls page (2026-09-18): images
+only, never mixed with text ✓; equal segments with content of one size
+✓; no more than five on iPhone ✓; "consider a segmented control to
+switch between closely related subviews" — which is exactly this pill's
+job ✓; nouns as labels («Карта», «Списък» as the accessible names) ✓.
+The colours the HIG leaves to UIKit were taken from UISegmentedControl
+itself: a translucent fill for the track, the selected segment white in
+light and a clearly lighter grey in dark (a new `--sys-color-surface-
+raised` token — the 7% card lift was invisible inside the fill), lifted
+by the control's own shadow pair, hairlines only between unchosen
+segments, 13pt medium with the chosen one semibold. Beneath the pill,
+by default (the owner: "map only", then "a bit
+larger / higher"), the booking flow's `ui-map` in the review card's dress
+but taller — a fixed 17rem box on the control fill, every shop a pin, the
+drafted one filled and centred at street level (14.5) in the part of the
+map under the pill's band (the camera's top inset is the pill's height,
+the location step's own toolbar grammar), cooperative gestures on because
+the map lives in a scrolling sheet, and the DS map's edge arrows ON again
+— the owner asked where they went; at 11rem an arrow due north had landed
+on the pin, and the DS map now keeps its arrows under top chrome too, so
+at 17rem they clear both the band and the pin. Under the map, a PLACE
+LINE — the chosen shop's street with the storefront glyph the pin and the
+list's rows wear, the review card's place row minus the name the row
+above already says (owner: "you could still include the location under
+the map when expanded"); map view only. Toggled
+to LIST, the shops as rows in the location step's own grammar — the
+storefront at the name, the address under it, the accent check on the
+chosen one — lifted a fill step so they read inside the segment, and
+starting beneath the pill. A row or a pin IS the answer: the draft takes it on the tap, the row above and
+the map read it, and the fold stays as it is. The map is mounted on the
+first unfold and kept, hidden behind the list, so a toggle never rebuilds
+it. Two cuts before this one are RETIRED: a bento of tiles under the map,
+and a segmented control of the shops' NAMES riding on the map — the
+segmented control switches the VIEW, never the shop.
+
+**What it writes.** The shop drafts with the rest and travels with «Запази»
+as a new `relocate` command — the port's, shared by both sides — that LEADS
+the batch: the server decides the whole visit against the new shop's hours
+and zone, refuses a service that shop does not offer
+(`service_not_at_location`, already worded), and writes the root's
+`locationId`. Sent only when it differs; a new visit starts in its chair's
+own shop and may be moved before it exists.
+
+**When it is not there.** Settled (cancelled, no-show): the place is a
+fact — an `li`, the name trailing, nothing to unfold. One shop in the
+catalogue: no row at all — a fact nobody needs told.
+
+**Left for later.** A hint when the chair is rostered elsewhere at that
+hour (the roster's segments carry a shop each); the map's pins named on
+long-press; a shop's hours read off the row.
+
+## Pass 27 — the order review: the ladder holds, four things move (2026-09-18)
+
+**The ask.** "Act as an Apple HIG UI/UX designer and challenge the order
+of the element groups in this sheet — think from the barber's and the
+staff's point of view: what will you use most of the time, is the sheet
+usable, what could you improve." Then: "go on and do your
+recommendations."
+
+**How it was answered.** A panel of five designers, each with one lens
+(the barber on a phone between cuts; the front desk; an Apple-editor
+purist; a frequency-and-thumb model; a minimalist), a dual-lens judge
+per proposal, and one synthesis; the designer then read the code behind
+every claim that mattered before deciding. Consensus frequency model,
+most frequent first: look and close (a third of openings); call the
+client; nudge the time in the frame; create a visit; add or remove a
+service; no-show or cancel; checkout money; confirm a request; move to
+another day; party edits; notes and photos; re-chair or relocate.
+
+**The ladder stands.** Chair first (it decides the catalogue and redraws
+the frame), «Салон» under it, services before the time (they set the
+duration), the frame in the lower half of screen one where the thumb
+lives, people after the time, exits last. Four proposals to move the
+client to the top or the chair below the frame were judged and declined:
+the frame keeps the client below the fold either way, a party would put
+250 px of people above the services, and re-chairing would redraw a
+frame above the tapped row. Four proposals to make the drag draft were
+declined by every judge: it taxes the commonest edit with a Save tap and
+kills the live grid feedback; the 2026-09-03 seat-scope ruling presupposes
+the write. The frame's write is ratified as the sheet's ONE immediate
+gesture, and this record's regime table is corrected by this pass.
+
+**What moved.**
+
+- **The bar names the person.** «Мартин Илиев» at the root, «Мартин +1»
+  when the chair holds two, «Случаен клиент» when nobody is seated, «Нов
+  час» while the visit is new, the page's own name on a push — bound to
+  the draft, so it follows an edit instead of contradicting it. This
+  reopens and replaces the 2026-09-04 ruling («Редактиране на час»
+  permanently) and answers the 2026-08-26 objection: since «people at the
+  tail» the name sat ≈ 650 px down, below the first screen on every
+  opening, and half the openings ask "who". Zero height. Apple: Maps'
+  place card, Contacts, Photos' bar — which the photo page already copies.
+- **The client's own note sits under the client.** «ще закъснея», «с
+  дете», «алергия» are read before the cut and never edited; they sat
+  after the money. Still a figure outside every group, still never merged
+  with the team's note (ruling 40 intact).
+- **The bill sits directly above the exits.** Tip and discount happen at
+  the counter, when the thumb is already at the foot reading «В салона»;
+  one flick lands «Бакшиш» beside the dock and its tiles unfold into the
+  thumb zone — Apple Pay's order of line items, tip, total, confirm. This
+  reopens the tail of the 2026-09-09 sequence; the team note and the
+  photos keep their own groups and their wording.
+- **The dock answers instead of vanishing.** While a party client has no
+  service, the withheld «Запази» is replaced by an enabled «Избери
+  услуга» that scrolls to the services and focuses the add row (D:2150's
+  own doctrine); a new visit quotes its catalogue sum under «По каталог»
+  until the server's figure replaces it.
+
+**What was fixed.** Verified in the code, not taken from the panel:
+
+- The frame's immediate move/resize built its instant from the SHOWN
+  day while the frame draws the DRAFTED day: step the pill to Friday,
+  drag to 15:00, and the visit was written onto today. A gesture on
+  another day now stays in the draft; «Запази» carries day and start.
+- The one immediate write had no way back: the toast now reads
+  «Преместен на 11:15 · Върни» / «Край в …» / «Начало в …», and «Върни»
+  sends the inverse gesture with the same seat scope — a real second
+  write, never a client-side rollback (the stamps' own rule).
+- A ✕, the scrim or Escape on a dirty draft dropped it silently; the
+  shell now asks «Отхвърли промените?» — «Продължи редакцията» /
+  «Отхвърли» — over the sheet whose ✕ asked (Calendar's «Discard
+  Changes?»). Programmatic closes never ask.
+- No group renders hollow: the bill's group exists only for its rows, the
+  team-note and photo groups are not drawn on a gone visit without them.
+- «Няма номер» on a client row without a phone; «Запиши пак» keeps the
+  finished visit's own hour and span instead of seeding noon; the three
+  chips on a service row keep their 36 px look and take 44 px hit boxes
+  (HIG's floor) at a compact gap.
+- The class doc and the frame's header comment described a sheet that no
+  longer existed («Час» title, a pinned strip, the typed pair above the
+  frame, «nothing here reaches the server»); both rewritten to the built
+  truth.
+
+**Left for later.** A conditional «Днес» in the frame's head (measure the
+53 px head at 320 px first); a walk-in fast path from the FAB as a
+visible first step, after a week of instrumentation; «Обади се» from the
+agenda card's context menu; removing a person from the client page and
+by swipe, once the save path carries client changes on an existing visit.
+
+### Pass 27, addendum — «Салон» moves under the people (2026-09-18)
+
+The owner: "I think location should not be one of the first items to
+show — in fact for me it should come last"; then, "maybe under the
+client section is best." The shop row leaves its chair-first slot for
+the people's tail: after the client rows, the client's own note and, on
+a party, the other chairs — before the team note, the photos and the
+bill. The reasoning it was placed by — a chair stands in a shop,
+Calendar's location-before-time — loses to use: the shop changes once or
+twice a week and has no claim on screen one; the barber's daily edits
+(services, time) come first, and the bill keeps its seat directly above
+the exits. The row's own shape — its fold, the map, the view pill, the
+list — is unchanged.
+
+## Pass 28 — the add-client page (2026-09-18)
+
+**The ask.** "Redesign this add-client push sheet as an Apple HIG designer —
+what is the CTA, what has to live in the toolbar, what should be the
+content; creative and scalable." References read on Mobbin: Shopify's
+"search or create a customer" (the create row first in the results), Lyft's
+contact picker (the picked as chips under the search), Goodreads' "2
+friends selected", Fabric's "Create tag “Product”" when nothing matches.
+
+**What it was.** A search field, a list that read «Няма съвпадение» before
+anyone had typed, «＋ Нов клиент» in the dock beside ✓ — and on an existing
+visit the search returned nothing at all: the visit sheet never bound the
+client search (the create sheet did). Fixed alongside.
+
+**The CTA.** Picking a person IS the act, and a pick lands in the draft on
+the tap — so the page has no verb of its own. The dock reads the count of
+the picked in the bill's dress («Избрани · 2», the gallery page's grammar)
+and keeps ✓ as the one way back. «Нов клиент» leaves the dock.
+
+**The toolbar.** The shell's bar (‹ title ✕) and, under it, the pinned
+search band (glyph + field, «Име или телефон»). Under the band, the PICKED
+as chips — Messages' «To:» — each tappable to take the person off; a choice
+made three scrolls ago stays in view.
+
+**The content, in three states of the search.**
+
+- Nothing typed: the owner's SECTIONS — «Днес», the people booked on the
+  shown day (one tap for a walk-in who is already in the book, with their
+  hour); «Скорошни», the shop's last visitors, newest first, each with the
+  date they were last here — read from the same window the search sheet
+  reads, once per sheet. With nothing to suggest: a quiet hint under the
+  search glyph, never a "no match" for a search nobody ran. Scalable: a
+  section is data (`VisitEditorClientSection`); regulars, the waitlist, a
+  family are one more entry from the owner.
+- Typing: the owner's results under the create row; the sheet filters them
+  locally by name, digits and mail as before.
+- The CREATE ROW, first and always: «＋ Нов клиент» before typing, «＋
+  Създай „Мария“» after — what was typed is already the new person's name,
+  number or mail on the form. First, so it is always reachable (the
+  2026-09-09 reason it lived in the dock); a search with no match is never
+  a dead end — the row is the answer.
+
+### Pass 28, addendum — faces, and a number typed the way it is dialled (2026-09-18)
+
+The owner: "where is the user avatar — and staff could directly type a
+phone number and either find an existing user or create a new one."
+
+- **Faces.** A client's portrait lives in Storage under their id
+  (`avatars/{uid}/original`, the profile's own convention, readable by
+  staff), not on the user document — so the dashboard looks each shown
+  person up once per session through the avatar port and hands the rows
+  the url as it lands; initials until then, and for guests. The dev seed
+  now gives two clients a face.
+- **A number.** The server already indexes phone digits in both forms
+  (international without the plus, and the national «0…»), so a typed
+  number finds its person — but the sheet's own filter compared the
+  dialled «0887…» against the stored «+359887…» digits and dropped the
+  hit. The filter now drops the trunk zero and looks for the rest
+  anywhere in the stored digits. The create row reads a number as a
+  number: «＋ Нов клиент с 088 765 4321», and the form opens with it in
+  the phone field.
+
+### Pass 28, second addendum — the field is an omnibox (2026-09-18)
+
+The owner: "it should auto detect phone or name or email and auto assign
+it and look it up — FAANG grade." The search field stops being a text
+filter and becomes one field that understands what it was given.
+
+- **Detection, as pure functions** (`client-query.ts`, unit-tested). The
+  typed line is read for EVERY part at once: the words are the name, the
+  digit run is the number (however it was dialled or punctuated), the token
+  with an `@` is the mail — so a line pasted from a message, «Мария Иванова
+  088 765 4321 <maria@mail.bg>», is three answers, not a failed search. A
+  stray figure stays in the name («Мария 2»); two digits on their way to a
+  number ask nothing yet.
+- **The desk sees the detection.** The field's own glyph morphs — the
+  magnifier for a name, the handset for a number, the envelope for a mail —
+  and the create row says what it will ASSIGN: «Нов клиент» over each
+  detected part with its glyph, the number printed the profile's way once
+  it is a whole number. The form then opens with every part in its field.
+- **Lookup by the most selective part.** The mail, else the number in
+  EVERY form the index holds it («0887…», «359887…», and the bare «887…»
+  somebody read aloud — three questions in parallel, merged and
+  de-duplicated), else the longest word of the name. The index matches one
+  token's prefix, so a full «Мартин Илиев» used to find nobody; the other
+  words are now matched in memory.
+- **Debounced and sequenced.** One question per pause (220 ms), not one per
+  keystroke; a late answer can never replace the answer to a newer query; a
+  quiet ring in the field while a lookup is in flight, and the list keeps
+  its last rows until the new ones land.
+- **Ranked and marked.** An exact number or mail first, then a number that
+  begins as typed, then names whose every typed word begins one of theirs
+  (first-name matches first). The typed run is heavy in the name, the
+  number and the mail — Spotlight's grammar — spacing kept in a printed
+  number.
+- **Duplicates, discouraged.** When the typed number or mail is already
+  somebody's, THEY lead, badged «Вече е клиент», and the create row steps
+  behind them — still there, because a parent and a child can share a
+  phone. A number that belongs to a differently named person still shows:
+  it is exactly the row the desk needs to see.
+- **Return is the answer.** One match goes onto the visit and the field
+  clears for the next person; no match opens the form; several, and focus
+  steps into the list (↓ does the same).
+
+### Pass 28, third addendum — local first, and a mark that reads (2026-09-18)
+
+A live pass over the omnibox found three things a desk would have felt.
+
+- **The book answers before the index does.** Кирил was in «Днес» and
+  typing his mail found nobody: the list was the index's answers only, and
+  the index did not know him. The editor now takes `uiClientBook` — every
+  account in the loaded days, as their newest booking wrote them, mail
+  included; never listed, only searched — and ranks the sections, the book
+  and the index's answers as ONE pool. The book's rows are there on the
+  keystroke (no debounce, no round trip, no empty list under a turning
+  ring); the index's rows join when they land. A person in both keeps the
+  place the book gave them — rows must not jump under a finger — and takes
+  the profile's fields, which are the truth about a name, a number and a
+  mail. The duplicate guard works on the book too: a whole number that is
+  somebody's says «Вече е клиент» at once. Portraits of the book's matches
+  are looked up per query, capped at what a phone can show (12).
+- **Return does not race the index.** With a local answer on screen, a fast
+  Return could pick the book's one «Мартин» while the index was still about
+  to say there are three. While a lookup is in flight Return WAITS and is
+  answered when it settles — one match onto the visit, none opens the form,
+  several and focus steps in — unless the typed number or mail is already
+  exactly somebody's, which no later answer can change. Typing again drops
+  the waiting Return: it answered an older question.
+- **The mark reads.** Medium against semibold in one ink was no mark at all
+  on a phone. A marked line now recedes around its mark — the runs that did
+  not match step down to the secondary label, the hit stays primary at
+  semibold (iOS Settings search's look); an unmarked line keeps its ink.
+  And the contact that matched LEADS the line: a mail found by its letters
+  moves ahead of the number, so the trailing ellipsis never eats the reason
+  the row is there. The number leads otherwise — it is what a barber dials.
+
+## Pass 29 — the add-client page against the field: a Mobbin benchmark (2026-09-19)
+
+The owner asked for the page to be measured against what is most used, by
+usability and UX. No redesign in this pass — a reading, two defects it
+turned up (fixed), and recommendations left for the owner to rule on.
+
+### Method
+
+Five Mobbin searches (iOS, deep mode): a client picker for an appointment;
+a people picker with removable chips; a first row that creates from the
+typed query; a business/POS customer picker; a typed number or mail
+offered as a row. 46 screens came back; 31 are people or customer pickers
+and are the corpus below (the rest — note search, grocery search, a meal
+log — were dropped). Ours was captured at 390×844, dark, in four states:
+at rest, a name, an exact number, a pasted line
+(`scratchpad/shots/130–133-add-client-*.png`).
+
+### What the field does most (n = 31 pickers)
+
+| Decision                         | Most used                                                                                                                                                     | Runner-up                                                                          | Ours                                                                                   |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| Where the search sits            | top of the content, under the title (28)                                                                                                                      | inside the nav bar (Venmo, ID)                                                     | top of content, sticky                                                                 |
+| What the placeholder says        | names every kind it takes — «Name, email, or phone number» (Expensify), «Name, username, email, mobile» (PayPal), «name or phone number» (GoPay, Lyft, Vivid) | bare «Search»                                                                      | said «Име или телефон» while taking a mail too — **fixed** to «Име, телефон или имейл» |
+| Before a search                  | sections of likely people — Recent / Top people / Frequently contacted / Saved (11)                                                                           | the whole list A–Z (9)                                                             | sections, and domain ones: «Днес», «Скорошни»                                          |
+| Picked people (15 multi-pickers) | an avatar strip with × badges (6: PayPal, Splitwise, Base, LINE, WhatsApp, Bond)                                                                              | text chips with × (4: Beli, Strava, Character AI, Lyft); nothing but row ticks (5) | text chips under the field                                                             |
+| An unpicked row                  | shows an empty circle or box (8)                                                                                                                              | shows nothing until picked (3: PayPal, Strava, Lyft)                               | nothing until picked (wash + ✓)                                                        |
+| The commit                       | a full-width button at the bottom (7)                                                                                                                         | a worded action top-right — Done / Next / Save (6)                                 | bottom dock: count left, round ✓ right (Bond and pillowtalk are the only other ✓s)     |
+| Creating somebody                | the FIRST row of the list (7: Shopify, Vivid, Splitwise, Beli, Revolut, YNAB, Co–Star)                                                                        | a toolbar action top-right (5: Revolut Business «+ New», PayPal, Uber, Up, Venmo)  | first row, present at rest, with results and with none                                 |
+| The create row's words           | echoes the query — «Create "Alex" Payee» (YNAB), «Add "Stainless Cup"» (Shopify), Fabric, ClickUp, pillowtalk (5)                                             | a fixed label (4)                                                                  | fixed «Нов клиент» + a line of the DETECTED PARTS, each with its glyph                 |
+| Marking the match                | nothing (most)                                                                                                                                                | the matched run bold (WhatsApp)                                                    | matched run primary semibold, the rest recedes                                         |
+
+### Where ours is ahead of the corpus
+
+- **One field, three kinds, read at once.** Several references ACCEPT a
+  name, a number or a mail; none shows that it understood which, and none
+  splits a pasted line into fields. The glyph that turns into a handset or
+  an envelope, and the create row listing «Мария Иванова · +359 88 111 0000
+  · maria@mail.bg», have no counterpart in the 31.
+- **The duplicate guard.** No reference demotes its create row when the
+  typed number is already somebody's. Consumer pickers do not need it; a
+  shop's client base does — it is the one costly mistake this page can
+  prevent, and it is prevented before the form opens.
+- **Never a dead end.** Evernote, ClickUp, Fabric, Mozi and Shopify's type
+  picker spend the screen on a "nothing found" illustration and put the way
+  out under it. Ours has no such state: the create row IS the answer.
+- **Domain sections.** «Днес» (who is in the book today) beats a generic
+  «Recent» for a desk: the walk-in's friend is usually already on the day.
+- **Local first + a Return that waits.** Not visible in a screenshot, but
+  no list here can sit empty under a spinner.
+
+### Where ours is behind — by usability
+
+1. **Results above the keyboard (high).** While a name is typed the field
+   sits at 173 pt, the chips end at 289, the create row ends at 381 and the
+   first person starts at 384 with 76 pt rows. Over a ≈336 pt keyboard on a
+   390×844 phone the list has until ≈508: **1.6 people visible.** The field
+   gets 3–6: ID shows six, Vivid three and a button, YNAB and Revolut start
+   their rows under 170 pt. They get there the way UISearchController does
+   — the title gives way while a search is on and the field rises to the
+   top. Ours keeps a 100 pt large title over a focused field.
+2. **Density at rest (medium).** The first person starts at 414 pt — 49 %
+   down the screen (title, field, chip, create row, section header come
+   first); the references start theirs at 18–27 %. Five people fit where
+   LINE and WhatsApp fit seven or eight: 76 pt rows against their 56–64.
+3. **The placeholder under-promised (low) — fixed.**
+4. **Multi-select is not announced (low).** Eight of eleven show an empty
+   circle on an unpicked row. Ours shows nothing — but the visit's own
+   person is already washed and ticked on entry, which teaches the grammar
+   by example, and most visits have one client. The owner's quiet-chrome
+   ruling stands unless a test says otherwise.
+5. **Three exits (low).** ‹, ✕ and ✓ against the field's two. Forgiving —
+   picks land in the draft at once, so ‹ and ✓ mean the same — but ✓ as an
+   icon has less scent than «Готово». Consistent with every other page of
+   this sheet, so it is a sheet-wide question, not this page's.
+6. **A pushed page opened where the root had been scrolled to — fixed.**
+   `push()` zeroed the editor's host, but the scroller is the sheet's; the
+   page opened 50 pt down with its title under the ‹. `scrollPageToTop()`
+   now zeroes every scrolled box up to `ui-sheet`. Every reference opens a
+   pushed picker at its top.
+
+### Recommendations, not yet built (the owner rules)
+
+- **R1 — give the list the screen while searching.** On focus of the field
+  (or the first key), scroll so the sticky field sits under the chrome and
+  the large title collapses to the inline one: +≈90 pt, 1.6 → ≈2.8 people
+  above the keyboard. The field is already sticky; this is one scroll.
+- **R2 — a compact person row for pickers.** 76 → 64 pt (avatar 40, the
+  same two lines): 5 → 6 people at rest, ≈2.8 → ≈3.4 while typing with R1.
+  A DS density on `uiListRow`, not a feature style.
+- **R3 — the create row steps behind NAME matches too, once there are
+  any.** Today it yields only to an exact number or mail. With «март»
+  typed and Мартин found, the likelier intent is the existing person; the
+  row costs 68 pt of the 291 above the keyboard. First when nothing
+  matches (never a dead end), last when something does. This departs from
+  the most used placement (first, always — Shopify, Vivid, Revolut), which
+  those apps can afford with a 44 pt single-line row.
+- **Kept as is:** text chips over an avatar strip (a name is the identity
+  at a desk; many clients have no portrait), the bottom dock (thumb zone,
+  the sheet's own grammar), sections over an A–Z list (the base is on the
+  server, not on the device).
+- **Later, from the corpus:** «Add from contacts» (Jobber, Co–Star) — the
+  Contact Picker API is Android-only on the web; a client's QR as a way in
+  (Venmo) — the scanner already exists for vouchers.
+
+References: [Shopify — create order](https://mobbin.com/screens/f2596e71-0e43-45b5-9a43-79fecfe0f8b8),
+[Revolut Business — select customer](https://mobbin.com/screens/fd5380a0-4a10-463b-9640-c4224331e612),
+[Splitwise](https://mobbin.com/screens/e4787d0f-ddaa-454c-bb29-c8caf30118b8),
+[Beli](https://mobbin.com/screens/25429bf3-46d5-42f6-8058-b0f31764f32b),
+[Lyft](https://mobbin.com/screens/97d33b1e-968d-42e9-9747-ae98799e5768),
+[WhatsApp](https://mobbin.com/screens/ee3a20c2-7479-487c-8804-0adb3679915d),
+[PayPal](https://mobbin.com/screens/fb56ecb1-26cf-4afa-837d-358f7de04a2d),
+[LINE](https://mobbin.com/screens/bda6effa-34dd-4ed2-b691-5dc45bf8df50),
+[Vivid](https://mobbin.com/screens/7c55fd71-9886-479e-9a43-0e797e700ea5),
+[YNAB](https://mobbin.com/screens/37fa5470-f579-429f-bde3-070c5cbe8455),
+[Expensify](https://mobbin.com/screens/6cf3c927-fa39-452f-a2be-23291533d5ab),
+[ID](https://mobbin.com/screens/ed915350-a91c-4f0c-91b3-3905db2f2d0d),
+[Bond](https://mobbin.com/screens/55d422a7-a9a0-4b5d-a481-913a420ee138).
+
+### Pass 29, addendum — R1–R3 built (2026-09-22)
+
+The owner ruled: build the three. Measured live at 390×844, dark, with a
+336 pt keyboard assumed (`scratchpad/shots/140–145-r-*.png`).
+
+- **R1 — the title gives way to the list.** The large title FOLDS the
+  moment the field takes focus (`searchFocused`, the grid rung run
+  backwards, the page's gap folding with it) and the field rises under the
+  bar — 173 → 115 pt — where the compact «Добави клиент» lands: the
+  UISearchController grammar. It returns when the field is left EMPTY; a
+  query still standing keeps it folded (`searchEngaged`, public). Folded,
+  not scrolled — so the sheet's collapse could not see it: `ui-modal-sheet`
+  gained `titleCollapsed`, forwarding to the header's first mechanism, and
+  the shell binds the editor's word to it. One more thing had to give: in
+  browsers with scroll-driven animations the compact title's reveal is
+  bound to the large title's EXIT (`--ui-sheet-headline`), and a title
+  folding in place never exits — so the folded title drops its
+  `view-timeline-name`, the timeline unattaches, the animation goes inert
+  and the `data-collapsed` flip shows the title. Verified: header
+  `data-collapsed`, compact title opacity 1, `view-timeline-name: none`.
+- **R2 — the picker row.** `uiListRow` `regular` size on a stacked label
+  now means 12 of block padding (three units, the coupon card's beat)
+  round a `small` disc: 60 tall against the settings row's 76. Person rows
+  and the create row take it; the avatars step to `small` (36 — what two
+  lines of callout over footnote measure, so the disc sits with its text).
+  The showcase's uiSize demo shows both rungs on a stacked label.
+- **R3 — the create row's place.** `createRowLeads` = nobody matches. It
+  leads before a search and after one that found no one — never a dead
+  end — and follows the people once somebody matches; the exact-match
+  badge is unchanged. «март» → Мартин, then «Нов клиент».
+- **What the numbers did.** Above the keyboard while a name is typed, from
+  the first person's top (255 pt now, 384 before) at the new row height:
+  capacity **1.6 → 4.2 people**. In the just-focused state with the
+  sections showing: 1.2 → 2.7. At rest the first person starts at 406
+  (the create row, at 44, still precedes the sections) and 5.8 → 7.3 fit
+  before the dock.
+- **Kept from the benchmark's "keep" list:** chips, the dock, sections.
+
+### Pass 29, second addendum — four questions from the owner's live look (2026-09-22)
+
+- **The create row's anatomy.** «Нов клиент» was a 44 pt one-liner with a
+  bare «+», alone above the sections — "small and not well designed
+  compared to the others". It takes the people's own anatomy now: a
+  `small` avatar disc where the face would go, the companion glyph
+  (`party.addGuest`) inked in the accent, 60 tall like every person row,
+  the label centred on the disc — WhatsApp's and Telegram's «New contact».
+  NOT moved to the dock as an icon (the owner's alternative): while a name
+  is typed and nobody matches, the dock is under the keyboard and the
+  create act must be reachable without dismissing it; Return and the row
+  are the two ways there. And the dock's ✓ stays the one verb (Pass 27).
+- **The phone country.** The form remembered a country picked for one
+  person and opened the next on +994. It now resets to the tenant default
+  on every open, and reads that default from `AUTH_DEPLOYMENT` — the same
+  token the login flow, onboarding and the booking contact sheet hand the
+  DS phone field — instead of a second `'BG'` written here. The field IS
+  the login flow's (`ui-phone-field`); its country picker is a sheet under
+  760 px and a popover above, by the sheet family's own gate — a 240-item
+  list is not a menu on a phone.
+- **Email is optional** — only the name gates the dock's ✓ (`newClientReady`);
+  the number and the mail are welcome. Unchanged.
+- **«Днес» — open.** Its case: the people in today's book, one tap away
+  when the desk builds a party out of visits booked separately, or
+  reseats a person who is here early. Its risk: tapping a person who has
+  their own visit at 16:00 onto a 14:00 visit doubles them; the «16:00»
+  in the row is the warning, but a section invites the tap. Options for
+  the owner: keep it; or drop the section and surface the same fact as a
+  badge on any match («Днес в 16:00»), keeping only «Скорошни» at rest.
+
+### Pass 29, third addendum — «Нов клиент» is the dock's (owner ruling, 2026-09-22)
+
+The owner asked twice: "shouldn't this be part of the toolbar". It is —
+back where the 2026-09-09 ruling had it, and the Pass 28 first row (the
+Shopify reading) is reversed. The dock on the client page reads
+[Избрани · n] … [person-add, bordered] [✓, prominent]: the secondary
+hugging the primary on the thumb rail is the root's own grammar (the call
+beside «Запази»), now one class, `.staff-visit__dock-aside`, for both;
+Contacts keeps its «+» in the bar the same way. The dock's `＋` opens the
+form with whatever the field holds already assigned.
+
+What the keyboard objection became: the in-list row survives for the ONE
+moment the dock cannot serve — a search that found nobody, the keyboard up
+over the dock — as the answer itself (Return is the other), every typed
+part already in the new person's fields; a search is still never a dead
+end. While people match they are the answer, no row among them (an exact
+number badged «Вече е клиент» stands alone — a row beside it would only
+invite the duplicate). Before anything is typed the dock is the way in and
+the sections start 60 pt higher. The empty results group no longer renders
+at all — it left a phantom gap between the chips and «Днес».
+
+### Pass 29, fourth addendum — "the new user should always be visible" (owner, 2026-09-22)
+
+With «088» typed, everybody with a Bulgarian mobile matched and the create
+row was gone — the third addendum showed it only when nobody matched. The
+owner's ruling: while a search is on, «Нов клиент» is ALWAYS in the list,
+FIRST — on screen whatever the list runs to, its parts already assigned —
+yielding only to an exact number or mail, which leads badged with the row
+behind it (a parent and a child can share a phone). The dock's ＋ stays
+for the rest state and for wide screens. R3 is therefore fully reversed:
+the row's 60 pt above the keyboard is the price of the desk never having
+to hunt for the way in, and the owner has paid it knowingly.
+
+### Pass 29, fifth addendum — the person row is the event's head; «Днес» is gone (owner, 2026-09-22)
+
+- **The row.** «+359 88 765 4321 · martin@test.local» in one footnote line
+  "looks cheap" — and it was a second recipe for a person beside the one
+  the agenda card and the frame's block already draw. The row's label is
+  now `lib-staff-event-head`, `regular` with the new `truncate` input: the
+  name, then every fact on its own glyph-led mono line in the card's own
+  order — ✉ the mail, ☏ the number, ⟲ when they were last here (a new
+  `visit.last` glyph) — so a person reads the same on every staff surface.
+  The head learned to draw MARKED RUNS (`titleParts`, a line's `parts`):
+  the typed run holds the primary ink and the rest of a marked name or
+  line recedes — ink only, never weight, the mono face has no honest
+  semibold. «Нов клиент» is the same head over its detected parts, one
+  per line. A one-line head centres on the disc; three lines grow the row
+  to ≈76 — a person with a mail, a number and a last visit is three facts,
+  and the owner chose facts over density.
+- **The number as it is typed.** «088 76» reads «+359 88 76» in the create
+  row before it is whole (the kernel's as-you-type formatter fed the
+  international form; `formatPhoneDraft` and a new `countryCallingCode`
+  reach the feature through `application/identity`); «+44 20 7946» keeps
+  its code. The dial code is the TENANT'S — `AUTH_DEPLOYMENT.defaultCountry`
+  — in the lookup keys, the ranking, the marks, the create row and the
+  form's prefill; the editor's own «359» (`guessE164`) is gone. The lookup
+  itself already read a trunk zero as «+359» since Pass 28; what the owner
+  could not see was the reading, and now sees it.
+- **«Днес» is gone.** The owner: a barbershop has no reason to add a
+  person who already has a visit today to another visit. The first section
+  is dropped; «Скорошни» stays, and today's people remain findable through
+  the search (the book holds the whole window).
+
+### Pass 29, sixth addendum — the create row stands alone (owner, 2026-09-22)
+
+"New client should be separate, not part of the list groups." It was the
+first segment of the results group, fused to the first person's row by the
+group's own corners. It is a group of its own now — `staff-visit-create-group`,
+one segment with the prominent radius all round, the ladder's comfortable
+space between it and the people — before them, or after them behind an
+exact match. An act is not a person, and the seam says so.
+
+### Pass 29, seventh addendum — the picked wear their faces (owner, 2026-09-22)
+
+"Why does the selected not have an avatar." The chip is a person's token
+and the field's pickers (PayPal, Splitwise, WhatsApp) show the face on it;
+ours showed the name alone. `uiChip` learned a face slot in the DS: a
+`ui-avatar` projected first sits flush with the leading edge (the tight
+inset) one compact gap from the name, one rung under the chip (`small` in
+a `regular` one) — Material's input chip; showcased. On the page the
+picked chip carries the same disc the row showed — the portrait, or the
+monogram — and the visit's own person, who arrives from the VM without a
+face, takes theirs from wherever the page already has it (the sections,
+the book, the index's answers). Found on the way: the draft's client type
+had no `avatarSrc`, and vitest does not typecheck — the dev build caught
+it (`DraftClient.avatarSrc?` added).
+
+### Pass 29, eighth addendum — no repetition of the picked (owner, 2026-09-22)
+
+The picked showed twice at rest: as chips under the field AND as washed,
+ticked rows in «Скорошни». The sections are suggestions, and a person
+already on the visit is not one: they leave the section the moment they
+are picked and live in their chip; the chip's ✕ puts them back. A SEARCH
+still answers with them, ticked — "who matches Мартин" is truthfully "the
+one already on the visit", and hiding him there is how a duplicate gets
+made. WhatsApp, LINE and Telegram keep the repetition (strip + ticks over
+a full contact list); ours has no full list, so the chips are the one
+place at rest.
+
+### Pass 29, ninth addendum — the HIG revisit: the picked are a group, not chips (2026-09-22)
+
+The owner asked for the page read again as a HIG designer, "whether users
+should be in a list group or separate". The reading:
+
+- **Chips were the wrong grammar.** A token is a TEXT FIELD's recipient
+  (Mail's, Messages') — compact, inline, text. Ours were 44 pt capsules
+  with a face and a ✕, wrapping to one per line under the field: a list
+  drawn as pills, and a second control (the chip's ✕) for what a row's tap
+  already does. Retired; the DS chip's face slot stays, showcased.
+- **The picked are a list group — «На посещението».** First under the
+  field, the same person rows the suggestions are made of, selected (the
+  wash and the ✓), Calendar's invitee list and the sheet's own «Клиенти»
+  group in this page's dress. One control for both directions: a tap on a
+  suggestion moves the person up, a tap on the group's row puts them
+  back. The visit's own person, who arrives with a name and a number, is
+  filled from what the page knows (the book, the sections, the index) so
+  the group reads the same for everyone in it.
+- **One person, one place.** The group under the field is where a picked
+  person shows; the suggestions and the search's answers leave them out.
+  A search for «Мартин» with Мартин on the visit shows him in the group
+  right above the answers, not twice. (The exact-number badge therefore
+  cannot fire on a picked person — acceptable: their number is in view.)
+- **Kept:** the dock's count (a summary, not a repetition — it is what the
+  desk sees once the list has scrolled the group away), the ＋ beside the
+  ✓, the create row's own group, «Скорошни».
+
+### Pass 25, addendum — the device door's name (owner, 2026-09-22)
+
+«Качи от телефона» named the device, and the desk is as often a tablet or
+a laptop. The door is «От устройството» now ("From this device") — the
+parallel of «От галерията» beside it, true on every device the app runs
+on; «Снимай» stays. The dock's fallback while the camera cannot be had
+says the same.
+
+### Pass 30 — the frame's gesture is a draft (owner, 2026-09-23)
+
+The order review of 2026-09-18 left the sheet one immediate write: a
+finished drag or resize in the frame wrote on release, guarded to the
+shown day, and the page's toast held the inverse gesture. The owner found
+the seam: _"editing the frame edits the event no matter you click save or
+not, and a toast appears; you click cancel but your frame edit doesn't
+revert … when in the sheet and editing it doesn't make sense to have that
+toast, no? only when the user saves."_ The undo rewrote the server — the
+agenda's row went home — while the editor's draft kept the dragged time,
+so the frame, «Начало» and the dock all went on saying otherwise.
+
+**Ruling.** Inside the sheet there is ONE regime for the fields: the
+draft. A drag or resize lands in the draft exactly as a typed «Начало»
+does, «Запази» carries it with the rest (the seat scope, the shop's zone
+and the day travel the save's one road), and ✕ asks before it is dropped.
+Nothing is written on release; nothing is offered back, so no toast. The
+`move`/`resize` commit variants, the day guard and `offerGestureUndo` are
+gone, with their copy (`staff.day.undo.moved/resizedEnd/resizedStart`).
+The toast stays what the 2026-09-08 ruling made it: the way back from an
+IMMEDIATE stamp — arrived, done, no-show, cancelled — each undone by a
+real inverse write, never a client-side rollback.
+
+**Not done, on purpose.** A save shows no toast and offers no undo: the
+dock's «Запази» leaving and the block settling are the receipt, and an
+honest undo of a save would have to invert the whole batch (seats added
+and removed, vouchers settled, the tip, the note), which is a separate
+piece of work if the owner wants it.
+
+### Pass 31 — the save receipt, with a whole-save undo (owner, 2026-09-23)
+
+The owner asked which model the sheet should have — every edit applied at
+once with a toast each, or one save — and chose the one save with a
+receipt: _"build the save receipt with whole-save undo."_
+
+**Ruling.** A save that lands raises the page's one toast, «Промените са
+запазени · Отмени». Its action maps the visit back to what the sheet was
+opened on, in ONE batch through the same callable, decided by the server
+like any edit — never a client-side rollback. The snapshot is the editor's
+own seed published as if «Запази» had been pressed on it untouched
+(`snapshotCommitOf`, every leg carrying its stored price as a figure), and
+the way back is the save's own arithmetic (`commandsFor`) run from the
+LIVE row towards that snapshot: a seat the save added is removed, one it
+removed is re-added with its old terms, the block moves home, the bill's
+arms are sent explicitly (an omitted arm would keep the save's discount),
+the tip and the team note are written back when the save wrote them. The
+visit is found on the shown day first and then on any loaded day, so a
+save that moved it to Friday is undone from Friday. Once the server's row
+agrees with the snapshot the open sheet re-seeds its whole draft
+(`uiReseedMark`), with a five-second ceiling; anything typed into the
+sheet in the eight seconds after the save goes with it — «Отмени» means
+"as it was before I saved". A refusal is the page's toast, as every
+refusal from the sheet is.
+
+**Two facts about the server, from its own code, shaped this.** (1) The
+busy projection is only unioned inside the save's transaction and the
+vacated span is cleared by a trigger a moment later, so an undo fired at
+once can be refused as overlapping the slot it returns to — its own; the
+undo tries once more after a beat, and only a second refusal is shown.
+(2) A seat re-added in a batch is priced and timed by the catalogue: the
+server skips a same-batch `reprice`/`redurate` on a fresh seat. The undo
+still sends the stored price alongside, for the day the server honours it;
+until then a hand-priced seat whose removal is undone returns at
+catalogue terms, and the same skip already drops the typed price on a
+service added by a save (filed as its own task).
+
+**Kept.** One toast at a time, eight seconds, replaced by the newest act.
+A new visit's create has no receipt; a stamp (arrived, done, no-show,
+cancelled) keeps its own undo.
+
+#### Pass 31, the review (three lenses, a skeptic per finding; 2026-09-23)
+
+Eight findings stood, two of them reproduced against the emulator through
+the real callable, and all are in:
+
+- **One delta cannot lay two seats.** The chair-wide `move` shifts every
+  seat by one delta from the earliest and the `resize` stretches whichever
+  ends last, so a seat re-added by an undo beside a survivor the save had
+  moved landed the chair swapped and a seat cut short — and a lengthened
+  non-last leg has always landed on top of the next. Every leg the row
+  already holds is now PINNED to its ladder slot by a one-seat move before
+  the chair-wide commands, which then land as no-ops. A chair's share
+  scopes those commands to the seats the batch LEAVES, never a removed one
+  (the server refuses a stale id).
+- **A restaffed visit is found by its seats.** The row's name carries the
+  chair; a save that moved the visit to another chair renamed it and took
+  it off the old lane, so the way back never sent the `restaff` and
+  reported success. `rowFor` now falls back to the seats the snapshot held.
+- **A seat added after the cut has no way back**: the server stamps it
+  worked and refuses its removal, so that save's receipt is the plain
+  «Промените са запазени» with no «Отмени» (`reversibleSave`).
+- **The undo waits for the save to reach the row.** The callable answers
+  before the listener redraws the lane; an undo computed from the pre-save
+  row found nothing to take back. It now waits for the row to leave the
+  snapshot's shape (a note-only save has nothing to wait for), with the
+  same five-second ceiling the re-seed has.
+- **The re-seed names its visit.** The mark the sheet answers carries the
+  appointment; a sheet opened on another visit in the meantime keeps what
+  was typed there, and a wait is settled when the page goes.
+- **A refused undo says the save stands, and why** («Отмяната не мина —
+  промените остават запазени. …»), with the staff-edit refusals finally
+  in the catalogue (overlaps, stale, invalid, before arrival, forbidden)
+  instead of «Нещо се обърка. Пробвай пак.» — the one refusal on this
+  surface where trying again is not an option.
+
+### Pass 32 — the party's next question, and a quieter client row (owner, 2026-09-24)
+
+The owner, on adding a second person: _"Adding a second client doesn't show
+up the save button? Instead it shows you need to scroll and see this
+paragraph which the user would normally skip — I find this BAD UI/UX."_
+And on the client row: _"this badge in the main sheet in the client row
+like last x date I find unnecessarily added, cause it already exists in the
+add client search."_
+
+**Why it happened.** A person is not something «Запази» can carry — only a
+seat, a service for a person, is — so adding one left the draft clean, the
+2026-09-18 dock answer «Избери услуга» was gated on the draft being dirty,
+and the only word about it was a footnote 600 px up the ladder. Two more
+steps hid behind it: the catalogue always seated its picks for the FIRST
+person, and the barber then moved the leg through its person chip.
+
+**Ruling.** (1) The dock offers «Избери услуга» the moment anyone on the
+visit has no service, dirty or not; the footnote is gone. (2) THE
+AUTO-PUSH FLOW: the add-client page's ✓ and «Нов клиент»'s save push the
+catalogue at once FOR the person without a service, named under its title
+(«За Мартин»), its picks seat for them, and when their picks are seated
+the catalogue opens again for the next one waiting — pick person, pick
+cut, «Запази». The dock's «Избери услуга» opens the same page for the
+first unserved person; ‹ out of the search leaves the dock to say it. The
+add row's catalogue still seats for the first person, and the leg's chip
+still moves a seat. (3) The sheet's client rows show the number, or that
+there is none — no «посл. 3 авг» / «Връща се» badge; the search rows and
+the person's own page keep the line.
+
+**Not changed.** «Баща и син» stays a one-seat bundle; a two-seat package
+for two people is a domain and catalogue decision recorded in the reply of
+2026-09-24 and not started. One contact per person; a second number
+belongs to the account.
+
+#### Pass 32, the review (two lenses, a skeptic per finding; 2026-09-24)
+
+Three findings stood, one reproduced against the emulator, and all are in:
+
+- **The first person on a new visit got no next question.** The "one
+  person is served" tolerance silenced a «Нов час» whose only person had
+  no seat at all — the dock showed nothing, the exact state the pass set
+  out to remove, and the second person's ✓ then asked for the FIRST
+  person's service. A lone person is unserved when the visit has no
+  seats; a stored visit always has them.
+- **A guest's id was re-minted after a removal** («guest-N» by count), so
+  a third guest took the id of one already unticked, was treated as
+  served, and vanished from the saved party. Guests are minted like
+  seats now, never reused.
+- **A cut picked before anyone was named stayed on the placeholder**, so
+  the first person joining was asked for a service again and the save
+  filed their cut under a walk-in. The first person to join an empty
+  draft adopts the placeholder's seats — the mirror of the heir rule.
+
+Refuted: the chain's hand-off "looks like a failed tap" (nothing in this
+sheet animates a push; the title line changes), and the «За …» line's
+tertiary ink (a consequence line, not the only carrier — the leg names its
+person the moment it lands).
+
+### Pass 33 — one search grammar, one page head (owner, 2026-09-24)
+
+The owner: _"revisit the sheet and push sheets for inconsistencies in the
+design — for example I like how the client sheet on input focus collapses
+the title; this should be done in adding a service and other places, no?"_
+
+**What had drifted.**
+
+- The fold lived on the client search alone. The catalogue page had the
+  same pinned search and no fold; the «Нов час» sheet never forwarded the
+  fold to its bar, so there the folded page lost its name; the day's search
+  sheet was a third grammar — an unpinned field, no glyph, no fold.
+- The two pinned searches were hand-assembled in the feature — a band of
+  material around a text field whose padding the feature overrode for the
+  glyph (a feature styling an input) — and had drifted: one carried
+  `autocomplete`, `spellcheck`, a Return key hint and ↓ into the answers,
+  the other none of them.
+- Pages wore four heads (a bare title; a title and a description in a
+  compact stack; a title with a tertiary footnote at the page's gap —
+  2.85:1 on a light sheet; the fold wrapper) and the day's sheets a fifth.
+- "Nothing here" was the search's glyph-and-line figure on the people and
+  a bare footnote at a row's inset on the catalogue and the gallery.
+- The person page printed the number under the name and again in the call
+  row beneath it.
+
+**Ruling.** Two DS pieces own it now. `ui-search-field` (controls) is the
+one search field: the glyph inside it (the owner may say what the typing
+was taken for), the engine's ✕, a quiet ring while a lookup is in flight,
+the keyboard attributes, Return and ↓ reported to the owner; `uiPinned`
+makes it the band that sticks under the sheet's chrome on the regular
+material. `ui-sheet-headline` (patterns) is the one head: the large title
+and at most one line under it, tight, subheadline in secondary ink; it
+FOLDS on the owner's word, taking the container's gap with it, and gives
+up its view-timeline while folded. It clips with `overflow: clip` — a
+`hidden` wrapper would become the title's scroll container and kill the
+compact title's scroll-linked reveal. Every page of the visit sheet, and
+the day's search, fields, pending and cancel sheets, wear the head; both
+visit-sheet searches and the day's search wear the field and fold while
+engaged (focused, or a query standing), and every owner tells its bar
+(`titleCollapsed`) — the «Нов час» sheet included. The catalogue's Return
+lets the keyboard go and keeps the answers; ↓ lands on the first answer
+in all three. "Nothing matched" is the glyph-and-line figure everywhere
+in the sheet (the gallery's with the photos glyph). The person page's
+line is the last visit (or «Няма номер») — the number is the call row's.
+
+**Left as it is.** The phone field's country picker keeps the DS's
+inline-title utility-picker anatomy (the shell's accessory slot, no large
+title): a picker inside a control, not a page. The day search's at-rest
+state stays blank until two letters are typed.
+
+**Added in the same pass.**
+
+- **The search field's own clear.** The engine's ✕ is a small blue glyph in
+  one browser and nothing in another; `ui-search-field` hides it and draws
+  the platform's circled clear (`field.clear`) at a full control's reach,
+  in secondary ink (a control's glyph owes 3:1; the tertiary label is
+  2.85:1), while there is a query — the query goes, the keyboard stays.
+- **A party's person comes off the way a service does** (owner, same day:
+  _"having multiple clients should be possible to remove one of them"_).
+  With more than one person on the chair, each person's row carries the
+  service rows' own grammar — a swipe, and the trailing «−» HIG asks a
+  swipe to have; the row's label still opens the person's page. ONE rule
+  for a person leaving, wherever it is done (the «−», the swipe, unticking
+  them on the add-client page): while others remain, they leave WITH their
+  services — a seat is a service for a person, and the old heir rule
+  handed a son's haircut to his father without asking. The last person is
+  the visit's own and offers no «−». A visit with no services left is
+  never saved: the dock asks «Избери услуга» instead, and calling a visit
+  off stays an exit.
+- **A party split across chairs** holds one person per chair, so there the
+  way to take someone off the booking is the chair's own exit, which the
+  shell already scoped to that chair's seats. It now says whose share it
+  calls off — «Откажи за Синът на Стоян» — where «Откажи часа» read as the
+  whole booking.
+- **The day search marks its matches by ink**, the add-client search's own
+  grammar: the text around a match recedes to the secondary ink and the
+  typed run holds the foreground — it was the one search in the app still
+  wearing the browser's yellow highlighter.

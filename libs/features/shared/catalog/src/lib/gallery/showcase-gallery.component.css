@@ -56,6 +56,51 @@ ui-async-image {
   block-size: 100%;
 }
 
+/* A tile that can be picked is a button with no chrome of its own — the
+   picture IS the control — and a focus ring drawn inside the tile, since
+   the figure clips its edges. */
+.showcase-gallery__pick {
+  position: relative;
+  display: block;
+  inline-size: 100%;
+  block-size: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+
+/* PICKED, as Photos marks it: a light veil over the picture and a filled
+   check in a white-ringed circle at the tile's bottom-right corner. */
+.showcase-gallery__pick[aria-checked='true']::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: rgb(255 255 255 / 16%);
+  pointer-events: none;
+}
+
+.showcase-gallery__check {
+  position: absolute;
+  inset-block-end: var(--sys-space-tight);
+  inset-inline-end: var(--sys-space-tight);
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  inline-size: calc(var(--sys-space-unit) * 6);
+  block-size: calc(var(--sys-space-unit) * 6);
+  border-radius: var(--control-radius-capsule);
+  background: var(--sys-color-accent);
+  color: var(--sys-color-on-accent);
+  box-shadow: 0 0 0 2px rgb(255 255 255 / 90%);
+}
+
+.showcase-gallery__pick:focus-visible {
+  outline: var(--sys-focus-ring-width) solid var(--sys-color-ring);
+  outline-offset: calc(-1 * var(--sys-focus-ring-width) - 2px);
+}
+
 /* ── Grid (expanded) — columns/gap from ui-grid. ── */
 
 /* Segmented mosaic — the ui-list-group grammar turned 2D: every tile is a

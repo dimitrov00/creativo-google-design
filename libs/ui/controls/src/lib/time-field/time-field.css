@@ -6,6 +6,11 @@
     display: inline-grid;
     align-items: center;
     min-block-size: var(--control-size-small);
+    /* The face wears the same 16px floor the native control needs against
+       the iOS zoom, so a time and the unit field beside it (the same floor)
+       read at one size (owner, 2026-09-16: "start and duration font sizes
+       don't match"). */
+    font-size: max(1em, 16px);
   }
 
   .ui-time-field__face {

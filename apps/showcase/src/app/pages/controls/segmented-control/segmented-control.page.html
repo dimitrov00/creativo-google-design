@@ -1,0 +1,111 @@
+<sc-page scTitle="Segmented Control">
+  <ng-container scLede>
+    <code>ui-segmented-control</code> — SwiftUI's <code>Picker</code> in
+    <code>.segmented</code> style, UISegmentedControl. A filled track of equal
+    segments; the chosen one is a raised pill that glides between slots, and the
+    hairlines between the others step aside beside it. For two to five short,
+    mutually exclusive answers worth seeing at once. A
+    <code>role="radiogroup"</code>: one tab stop, the arrows move the choice.
+  </ng-container>
+
+  <sc-demo scTitle="Anatomy">
+    <ng-container scAbout>
+      Three scopes, the chosen one raised. Tap or arrow through them and watch
+      the pill glide. The control hugs its segments; a consumer stretches it.
+    </ng-container>
+    <ui-stack uiSpacing="comfortable" uiAlignment="center">
+      <ui-segmented-control
+        [uiSegments]="scopes"
+        [uiSelectedId]="scope()"
+        uiLabel="Scope"
+        class="segmented__wide"
+        (uiPicked)="scope.set($event)"
+      />
+      <p uiText uiFont="caption" class="segmented__mono">
+        uiSegments · uiSelectedId="{{ scope() }}" · uiControlSize="small"
+      </p>
+    </ui-stack>
+  </sc-demo>
+
+  <sc-demo scTitle="Sizes">
+    <ng-container scAbout>
+      <code>small</code> is the 36px control, <code>regular</code> the 44px one
+      — the same two rungs every DS control stands on.
+    </ng-container>
+    <ui-stack uiSpacing="comfortable" uiAlignment="center">
+      <ui-segmented-control
+        [uiSegments]="shops"
+        [uiSelectedId]="shop()"
+        uiLabel="Shop"
+        uiControlSize="small"
+        class="segmented__wide"
+        (uiPicked)="shop.set($event)"
+      />
+      <ui-segmented-control
+        [uiSegments]="shops"
+        [uiSelectedId]="shop()"
+        uiLabel="Shop"
+        uiControlSize="regular"
+        class="segmented__wide"
+        (uiPicked)="shop.set($event)"
+      />
+    </ui-stack>
+  </sc-demo>
+
+  <sc-demo scTitle="Over a map or a picture">
+    <ng-container scAbout>
+      <code>uiMaterial="thick"</code> on the host frosts the control for riding
+      over busy tiles (thick reads solid; the owner's ruling for maps). The
+      track keeps only its quiet film over the material — the glass button's
+      recipe. This is the visit sheet's shop chooser, floating on the map.
+    </ng-container>
+    <div class="segmented__media">
+      <ui-segmented-control
+        [uiSegments]="shops"
+        [uiSelectedId]="shop()"
+        uiLabel="Shop"
+        uiMaterial="thick"
+        class="segmented__floating"
+        (uiPicked)="shop.set($event)"
+      />
+    </div>
+  </sc-demo>
+
+  <sc-demo scTitle="The view pill">
+    <ng-container scAbout>
+      <code>uiShape="capsule"</code> with icon-only segments — the toolbar PILL
+      that toggles a view (map, list, grid), the shape iOS 26 gives every
+      grouped item in its bars. The words stay as each segment's accessible
+      name. For views only — never for things that need naming, like shops:
+      those are rows or tiles.
+    </ng-container>
+    <ui-stack uiSpacing="comfortable" uiAlignment="center">
+      <ui-segmented-control
+        [uiSegments]="views"
+        [uiSelectedId]="view()"
+        uiShape="capsule"
+        uiLabel="View"
+        (uiPicked)="view.set($event)"
+      />
+      <p uiText uiFont="caption" class="segmented__mono">
+        uiShape="capsule" · iconOnly · view="{{ view() }}"
+      </p>
+    </ui-stack>
+  </sc-demo>
+
+  <sc-demo scTitle="Disabled and unchosen">
+    <ng-container scAbout>
+      A disabled segment is shown, not removed, and picks nothing. With nothing
+      chosen the pill hides and the first segment takes the tab stop.
+    </ng-container>
+    <ui-stack uiSpacing="comfortable" uiAlignment="center">
+      <ui-segmented-control
+        [uiSegments]="mixed"
+        [uiSelectedId]="mixedPick()"
+        uiLabel="Status"
+        class="segmented__wide"
+        (uiPicked)="mixedPick.set($event)"
+      />
+    </ui-stack>
+  </sc-demo>
+</sc-page>

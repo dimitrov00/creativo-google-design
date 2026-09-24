@@ -8,6 +8,7 @@ import {
   inject,
   input,
   model,
+  output,
 } from '@angular/core';
 import { UiAsyncImage, UiButton, UiIcon } from '@creativo/ui/controls';
 import { UiGrid, UiScrollRow, UiSpacer, UiStack } from '@creativo/ui/layout';
@@ -49,6 +50,16 @@ export class ShowcaseGalleryComponent {
   readonly carouselViewLabel = input.required<string>();
   readonly showToggle = input(true);
   readonly expanded = model(false);
+  /**
+   * A gallery to PICK FROM (the staff visit's «От галерията», 2026-09-17):
+   * every tile becomes a button and a tap says which picture, by its URL.
+   * Off by default — the barber's and the service's sheets show, they do
+   * not choose — and the tiles look exactly the same either way.
+   */
+  readonly selectable = input(false);
+  /** The pictures picked so far, by URL — a check on each, as Photos marks a selection. */
+  readonly selected = input<readonly string[]>([]);
+  readonly picked = output<string>();
 
   /** FLIP morph between the strip and the grid layouts. */
   protected toggleLayout(): void {

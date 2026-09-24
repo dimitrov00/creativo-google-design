@@ -26,6 +26,8 @@ export * from './lib/staff-schedule';
 export * from './lib/staff-schedule.errors';
 export * from './lib/schedule-exception';
 export * from './lib/schedule-exception.errors';
+export * from './lib/recurrence-rule';
+export * from './lib/recurrence-rule.errors';
 export * from './lib/roster-window';
 export * from './lib/booking-policy';
 export * from './lib/booking-policy.errors';

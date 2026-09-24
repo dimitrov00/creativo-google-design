@@ -65,6 +65,13 @@ export const UI_ICON_REGISTRY = {
   /* ── Account ────────────────────────────────────────────────────── */
   'account.reservations': 'event_available',
   'account.rewards': 'redeem',
+  /** A coupon or a promo code — the ticket on an offer's card. */
+  'promo.coupon': 'confirmation_number',
+  'promo.percent': 'percent',
+  'promo.sum': 'sell',
+  'promo.voucher': 'redeem',
+  /** Read a QR code or a barcode with the camera. */
+  'action.scan': 'qr_code_scanner',
   /** Personal-information surface — the menu's profile chip, the row that
    *  opens it. Distinct from `prefs.*` on purpose: this is WHO you are, not
    *  how the app behaves. */
@@ -96,6 +103,8 @@ export const UI_ICON_REGISTRY = {
    *  diverge. */
   'contact.email': 'mail',
   'contact.phone': 'call',
+  /** The person themselves — the third part an omnibox can detect. */
+  'contact.person': 'person',
   /** "Resend code" affordance on the OTP screen. */
   'auth.resend': 'refresh',
   /** "Edit" affordance next to the sent-to identifier on the OTP screen. */
@@ -151,6 +160,18 @@ export const UI_ICON_REGISTRY = {
    * — which mean a direction, not a menu — are untouched by it.
    */
   'field.expand': 'keyboard_arrow_down',
+  /**
+   * THE POP-UP BUTTON'S MARK — HIG's `chevron.up.chevron.down`: a control
+   * whose value is CHOSEN from a short list (a `ui-choice-menu` trigger, a
+   * country picker, a booking select). Distinct from `field.expand`, which
+   * discloses something in place and rotates when open, and from
+   * `nav.disclosure`, which travels (owner, 2026-09-15: "the dropdown/choice
+   * inputs should have the chevron up-and-down icon"). `unfold_more` is the
+   * pinned font's stacked pair; it never rotates.
+   */
+  'field.popUp': 'unfold_more',
+  /** The search field's own clear — the circled ✕ of the platform's field. */
+  'field.clear': 'cancel',
 
   /* ── The visit frame's resize handles ───────────────────────────── */
   /**
@@ -171,6 +192,8 @@ export const UI_ICON_REGISTRY = {
    *  glyphs have to be legible against EACH OTHER, not merely on their own. */
   'view.list': 'format_list_bulleted',
   'view.calendar': 'calendar_month',
+  /** The same set as a map — the other half of a map | list pill. */
+  'view.map': 'map',
   /** "One more of these" — the additive action at a bar's trailing edge. */
   'action.add': 'add',
   /** One fewer — the count stepper's minus. */
@@ -239,6 +262,8 @@ export const UI_ICON_REGISTRY = {
   'visit.arrived': 'how_to_reg',
   /** A visit happening now, by the book — inside its window, no stamp yet. */
   'visit.now': 'timelapse',
+  /** When a person was last here — the add-client page's «посл. 22.09» line. */
+  'visit.last': 'history',
   /** The work is done. A filled mark, so it reads as an end rather than a tick. */
   'visit.completed': 'task_alt',
   /** The shop accepts a booking it had been vetting. */
@@ -327,6 +352,11 @@ export const UI_ICON_REGISTRY = {
   'rating.star': 'star',
   /** Ambient-video / media play affordance. */
   'media.play': 'play_arrow',
+  /** Two doors to a picture: the camera, and what the phone already holds. */
+  'media.camera': 'photo_camera',
+  'media.library': 'photo_library',
+  /** The shop's own pictures — the catalogue's covers and work. */
+  'media.gallery': 'collections',
 } as const satisfies Record<string, string>;
 
 /**

@@ -94,21 +94,28 @@ describe('StaffTimeGrid', () => {
         column({ open: [{ startMinute: 540, endMinute: 1080 }] }),
       ]);
       const labels = hours(host);
-      expect(labels).toHaveLength(25);
+      // Twenty-four OPENING labels and no closing midnight (2026-09-23): a
+      // label on the last line was a whole extra hour of gutter that
+      // stretched the columns to a 25th hour under the action bar. Apple's
+      // day ends at 11 PM.
+      expect(labels).toHaveLength(24);
       expect(labels[0]).toBe('00:00');
       expect(labels[9]).toBe('09:00');
-      expect(labels.at(-1)).toBe('00:00');
+      expect(labels.at(-1)).toBe('23:00');
     });
 
     // A seat's own start day owns the row, so a cut booked at 23:30 ends at
-    // minute 1455 rather than wrapping to 15 — the axis stretches to hold it.
+    // minute 1455 rather than wrapping to 15 — the axis stretches to hold it,
+    // and the 25th hour prints its «00:00» as an opening label.
     it('grows for a booking that runs past midnight', () => {
       const host = render([
         column({
           events: [event({ id: 'late', startMinute: 1410, endMinute: 1455 })],
         }),
       ]);
-      expect(hours(host)).toHaveLength(26);
+      const labels = hours(host);
+      expect(labels).toHaveLength(25);
+      expect(labels.at(-1)).toBe('00:00');
     });
 
     // `empty` now means "no columns" — a day with columns always has an axis,
@@ -191,7 +198,7 @@ describe('StaffTimeGrid', () => {
       const block = host.querySelector('[data-testid="staff-grid-event"]');
       expect(block?.hasAttribute('data-short')).toBe(false);
       expect(
-        block?.querySelector('.staff-grid__event-detail')?.textContent?.trim(),
+        block?.querySelector('.staff-event-head__line')?.textContent?.trim(),
       ).toBe('Фейд');
     });
 
@@ -205,9 +212,9 @@ describe('StaffTimeGrid', () => {
       ]);
       const block = host.querySelector('[data-testid="staff-grid-event"]');
       expect(block?.hasAttribute('data-short')).toBe(true);
-      expect(block?.querySelector('.staff-grid__event-detail')).toBeNull();
+      expect(block?.querySelector('.staff-event-head__line')).toBeNull();
       expect(
-        block?.querySelector('.staff-grid__event-inline')?.textContent?.trim(),
+        block?.querySelector('.staff-event-head__inline')?.textContent?.trim(),
       ).toBe('Фейд');
     });
   });
@@ -448,7 +455,9 @@ describe('StaffTimeGrid', () => {
         endMinute: 665,
       });
       const host = render([column()]);
-      expect(hours(host)).toEqual(['09:00', '10:00', '11:00', '12:00']);
+      // 09:00 to 12:00, labelled by its three OPENING hours — the closing
+      // boundary carries no label anywhere now (2026-09-23).
+      expect(hours(host)).toEqual(['09:00', '10:00', '11:00']);
     });
 
     // The shading is drawn against the window's own origin, not midnight —
@@ -489,7 +498,248 @@ describe('StaffTimeGrid', () => {
 
     it('leaves the axis at the civil day when nothing is asked for', () => {
       const host = render([column()]);
-      expect(hours(host)).toHaveLength(25);
+      // Twenty-four hours, twenty-four opening labels (2026-09-23).
+      expect(hours(host)).toHaveLength(24);
+    });
+  });
+
+  describe('the page frame (2026-09-23, the grid views)', () => {
+    it('says what a column is and names itself a region — on the page only', () => {
+      fixture.componentRef.setInput('uiColumnKind', 'dates');
+      fixture.componentRef.setInput('uiRegionLabel', 'График: 21 – 27.09');
+      const host = render([column({ dayNumber: 12 })]);
+      const frame = host.querySelector('.staff-grid__frame');
+      expect(frame?.getAttribute('data-columns')).toBe('dates');
+      expect(frame?.getAttribute('role')).toBe('region');
+      expect(frame?.getAttribute('tabindex')).toBe('0');
+      expect(frame?.getAttribute('aria-label')).toBe('График: 21 – 27.09');
+
+      // A sheet's frame is one chair inside a dialog that is the region.
+      fixture.componentRef.setInput('uiViewport', 'framed');
+      fixture.detectChanges();
+      const framed = host.querySelector('.staff-grid__frame');
+      expect(framed?.getAttribute('data-columns')).toBeNull();
+      expect(framed?.getAttribute('role')).toBeNull();
+      expect(framed?.getAttribute('tabindex')).toBeNull();
+    });
+
+    // The pill is the axis's one live figure; inside the rail it pins with
+    // it when a week pans sideways, and shares the columns' basis.
+    it('keeps the now pill inside the pinned rail', () => {
+      fixture.componentRef.setInput('nowMinute', 600);
+      const host = render([column({ isToday: true })]);
+      expect(
+        host
+          .querySelector(
+            '[data-testid="staff-grid-gutter"] [data-testid="staff-grid-now-label"]',
+          )
+          ?.textContent?.trim(),
+      ).toBe('10:00');
+    });
+
+    it('names a chair head three ways, and makes a date head a button to its day', () => {
+      const host = render([
+        column({
+          id: 'ivan',
+          title: 'Иван Колев',
+          shortTitle: 'Иван',
+          initial: null,
+          fullTitle: 'Иван Колев',
+        }),
+        column({ id: 'niko', title: 'Нико Димов', shortTitle: 'Нико' }),
+      ]);
+      const chair = host.querySelector(
+        '[data-testid="staff-grid-column-head"]',
+      );
+      expect(chair?.getAttribute('data-kind')).toBe('chair');
+      // The whole name reaches a reader through a hidden span — never an
+      // `aria-label` on a plain cell, which the generic role forbids.
+      expect(chair?.getAttribute('aria-label')).toBeNull();
+      expect(
+        chair?.querySelector('.staff-grid__column-full')?.textContent?.trim(),
+      ).toBe('Иван Колев');
+      expect(
+        chair?.querySelector('[data-name="full"]')?.textContent?.trim(),
+      ).toBe('Иван Колев');
+      expect(
+        chair?.querySelector('[data-name="short"]')?.textContent?.trim(),
+      ).toBe('Иван');
+      expect(
+        chair?.querySelector('[data-testid="staff-grid-head-day"]'),
+      ).toBeNull();
+
+      const picked: string[] = [];
+      fixture.componentInstance.dayPicked.subscribe((day) => picked.push(day));
+      const dates = render([
+        column({
+          id: '2026-08-03',
+          title: 'Пон',
+          shortTitle: 'Пон',
+          initial: 'п',
+          fullTitle: 'понеделник, 3 август',
+          dayNumber: 3,
+        }),
+        column({ id: '2026-08-04', title: 'Вто', dayNumber: 4 }),
+      ]);
+      const date = dates.querySelector(
+        '[data-testid="staff-grid-column-head"]',
+      );
+      expect(date?.getAttribute('data-kind')).toBe('date');
+      expect(
+        date?.querySelector('[data-name="initial"]')?.textContent?.trim(),
+      ).toBe('п');
+      const button = date?.querySelector<HTMLButtonElement>(
+        '[data-testid="staff-grid-head-day"]',
+      );
+      expect(button?.getAttribute('aria-label')).toBe('понеделник, 3 август');
+      expect(button?.getAttribute('aria-current')).toBeNull();
+      button?.click();
+      expect(picked).toEqual(['2026-08-03']);
+    });
+
+    it('draws an all-day entry three ways, the whole sentence as its name', () => {
+      fixture.componentRef.setInput('allDay', {
+        ivan: [
+          {
+            key: 'niko',
+            label: 'Нико почива',
+            shortLabel: 'Нико',
+            initial: 'Н',
+            tone: 2,
+            accessibleName: 'Нико Димов почива',
+          },
+        ],
+      });
+      const host = render([column(), column({ id: 'niko' })]);
+      const chip = host.querySelector('.staff-grid__allday-chip');
+      // The sentence is a hidden span; the visible parts are decoration to
+      // a reader, so the disc tier still has a name.
+      expect(chip?.getAttribute('aria-label')).toBeNull();
+      expect(
+        chip?.querySelector('.staff-grid__allday-name')?.textContent?.trim(),
+      ).toBe('Нико Димов почива');
+      expect(
+        chip
+          ?.querySelector('.staff-grid__allday-word[data-label="long"]')
+          ?.getAttribute('aria-hidden'),
+      ).toBe('true');
+      expect(chip?.getAttribute('data-barber-tone')).toBe('2');
+      expect(
+        chip?.querySelector('.staff-grid__allday-disc')?.textContent?.trim(),
+      ).toBe('Н');
+      expect(
+        chip?.querySelector('[data-label="long"]')?.textContent?.trim(),
+      ).toBe('Нико почива');
+      expect(
+        chip?.querySelector('[data-label="short"]')?.textContent?.trim(),
+      ).toBe('Нико');
+    });
+
+    // The band's empty cell is a door to a whole-day block on the page, and
+    // a plain cell in a sheet's frame where nothing is a target.
+    it('lays a door under the chips, and makes each chip a door, on the page only', () => {
+      const picked: string[] = [];
+      const entries: { columnId: string; key: string }[] = [];
+      fixture.componentInstance.allDayPicked.subscribe((id) => picked.push(id));
+      fixture.componentInstance.allDayEntryPicked.subscribe((pick) =>
+        entries.push(pick),
+      );
+      fixture.componentRef.setInput('allDayAlways', true);
+      fixture.componentRef.setInput('uiAllDayAction', 'Блокирай целия ден');
+      fixture.componentRef.setInput('allDay', {
+        '2026-08-06': [
+          {
+            key: 'ivan',
+            label: 'Иван почива',
+            shortLabel: 'Иван',
+            initial: 'И',
+            tone: 1,
+            accessibleName: 'Иван Колев почива',
+          },
+        ],
+      });
+      const host = render([
+        column({
+          id: '2026-08-06',
+          fullTitle: 'четвъртък, 6 август',
+          dayNumber: 6,
+        }),
+        column({ id: '2026-08-07', dayNumber: 7 }),
+      ]);
+      // The blank space: a button filling the cell, named for the date and
+      // the act — not for the chips, which speak for themselves.
+      const add = host.querySelector<HTMLButtonElement>(
+        '[data-testid="staff-grid-allday-add"]',
+      );
+      expect(add?.getAttribute('aria-label')).toBe(
+        'четвъртък, 6 август, Блокирай целия ден',
+      );
+      add?.click();
+      expect(picked).toEqual(['2026-08-06']);
+      // The chip: a button to that chair's day off.
+      const chip = host.querySelector<HTMLButtonElement>(
+        '[data-testid="staff-grid-allday-chip"]',
+      );
+      expect(chip?.tagName).toBe('BUTTON');
+      chip?.click();
+      expect(entries).toEqual([{ columnId: '2026-08-06', key: 'ivan' }]);
+
+      // In a frame nothing is a target: no door, and the chip is a picture.
+      fixture.componentRef.setInput('uiViewport', 'framed');
+      fixture.detectChanges();
+      expect(
+        host.querySelector('[data-testid="staff-grid-allday-add"]'),
+      ).toBeNull();
+      expect(
+        host.querySelector('[data-testid="staff-grid-allday-chip"]')?.tagName,
+      ).toBe('SPAN');
+    });
+
+    // A box with no height has no inside; nothing has left it.
+    it('reports the present as in view while the box cannot be measured', () => {
+      const seen: boolean[] = [];
+      fixture.componentInstance.nowInView.subscribe((inView) =>
+        seen.push(inView),
+      );
+      fixture.componentRef.setInput('nowMinute', 600);
+      render([column({ isToday: true })]);
+      expect(seen).toEqual([true]);
+    });
+
+    // Measured boxes: the line above the box's top is out; back inside, it
+    // is in — reported on change only.
+    it('reports the present gone once its line leaves the box, and back', () => {
+      const seen: boolean[] = [];
+      fixture.componentInstance.nowInView.subscribe((inView) =>
+        seen.push(inView),
+      );
+      fixture.componentRef.setInput('nowMinute', 600);
+      const host = render([column({ isToday: true })]);
+      const frame = host.querySelector<HTMLElement>('.staff-grid__frame');
+      const line = host.querySelector<HTMLElement>('.staff-grid__now');
+      if (!frame || !line) throw new Error('no frame to measure');
+      const box = (top: number, height: number) =>
+        ({
+          top,
+          bottom: top + height,
+          height,
+          left: 0,
+          right: 300,
+          width: 300,
+          x: 0,
+          y: top,
+          toJSON: () => ({}),
+        }) as DOMRect;
+      frame.getBoundingClientRect = () => box(0, 400);
+      let lineTop = -50;
+      line.getBoundingClientRect = () => box(lineTop, 2);
+      frame.dispatchEvent(new Event('scroll'));
+      expect(seen).toEqual([true, false]);
+      frame.dispatchEvent(new Event('scroll'));
+      expect(seen).toEqual([true, false]);
+      lineTop = 120;
+      frame.dispatchEvent(new Event('scroll'));
+      expect(seen).toEqual([true, false, true]);
     });
   });
 
@@ -540,11 +790,22 @@ describe('StaffTimeGrid', () => {
      */
     it('keeps an all-day row that has something to say', () => {
       fixture.componentRef.setInput('uiViewport', 'framed');
-      fixture.componentRef.setInput('allDay', { ivan: ['Отпуск'] });
+      fixture.componentRef.setInput('allDay', {
+        ivan: [
+          {
+            key: 'ivan',
+            label: 'Отпуск',
+            shortLabel: 'Отпуск',
+            initial: 'О',
+            tone: null,
+            accessibleName: 'Отпуск',
+          },
+        ],
+      });
       const host = render([column()]);
       expect(
         chrome(host)
-          .allDay?.querySelector('.staff-grid__allday-chip')
+          .allDay?.querySelector('.staff-grid__allday-word[data-label="long"]')
           ?.textContent?.trim(),
       ).toBe('Отпуск');
     });
@@ -1009,7 +1270,7 @@ describe('StaffTimeGrid', () => {
       };
       const startOf = (block: HTMLElement) =>
         minutes(
-          block.querySelector('.staff-grid__event-start')?.textContent?.trim(),
+          block.querySelector('.staff-event-head__start')?.textContent?.trim(),
         );
 
       it("keeps the dragged block's node where it was, behind the neighbour it passed", () => {
@@ -1227,6 +1488,53 @@ describe('StaffTimeGrid', () => {
       });
       expect(seen.committed).toEqual([]);
       // And the picture went back with it.
+      expect(
+        grab(host, 'staff-grid-event').style.getPropertyValue(
+          '--staff-event-top',
+        ),
+      ).toBe('0.333333');
+    });
+
+    /*
+     * A SPENT draft is dropped (2026-09-23): the caller answered a step,
+     * then — an undone save — went back to where it started. A draft only
+     * masked by "the caller's value left the basis" rose again the moment
+     * the value returned, and drew a block nobody was proposing.
+     */
+    it('drops a spent draft, so a value returning to the basis does not resurrect it', () => {
+      const host = frame();
+      const seen = drags();
+      grab(host, 'staff-grid-event').dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }),
+      );
+      fixture.detectChanges();
+      expect(seen.changed.at(-1)).toEqual({
+        id: 'a',
+        startMinute: 605,
+        endMinute: 650,
+      });
+
+      // The caller answers with something else — it also shortened the span.
+      fixture.componentRef.setInput('columns', [
+        column({
+          events: [event({ id: 'a', startMinute: 605, endMinute: 645 })],
+        }),
+      ]);
+      fixture.detectChanges();
+      expect(
+        grab(host, 'staff-grid-event').style.getPropertyValue(
+          '--staff-event-top',
+        ),
+      ).toBe('0.361111');
+
+      // …and then back to where it began. The picture follows the caller,
+      // not the proposal it answered long ago.
+      fixture.componentRef.setInput('columns', [
+        column({
+          events: [event({ id: 'a', startMinute: 600, endMinute: 645 })],
+        }),
+      ]);
+      fixture.detectChanges();
       expect(
         grab(host, 'staff-grid-event').style.getPropertyValue(
           '--staff-event-top',
@@ -1494,6 +1802,47 @@ describe('StaffTimeGrid', () => {
     });
   });
 
+  describe('an hour that did not happen', () => {
+    it('hands the head its strike — a cancellation and a no-show, never a visit that stands', () => {
+      const host = render([
+        column({
+          events: [
+            event({ id: 'kept', startMinute: 540, endMinute: 585 }),
+            event({
+              id: 'missed',
+              startMinute: 600,
+              endMinute: 645,
+              status: 'no_show',
+            }),
+            event({
+              id: 'off',
+              startMinute: 660,
+              endMinute: 705,
+              status: 'cancelled',
+            }),
+          ],
+        }),
+      ]);
+      const heads = [
+        ...host.querySelectorAll('[data-testid="staff-grid-event"]'),
+      ].map((block) => [
+        block.querySelector('.staff-event-head__title')?.textContent?.trim(),
+        block.getAttribute('data-status'),
+        block
+          .querySelector('lib-staff-event-head')
+          ?.hasAttribute('data-struck'),
+      ]);
+      // The block's own status stays on the block; the head carries only
+      // whether to strike — its own state, from an input, so the rule lives
+      // where the title does (a scoped host's rule could never reach it).
+      expect(heads.map(([, status, struck]) => `${status}:${struck}`)).toEqual([
+        'confirmed:false',
+        'no_show:true',
+        'cancelled:true',
+      ]);
+    });
+  });
+
   describe('the way back, on a reading sheet', () => {
     it('follows the subject block even when nothing is editable', () => {
       // A cancelled or no-show visit opens read-only: no handles, no
@@ -1540,18 +1889,18 @@ describe('StaffTimeGrid', () => {
       // narrow column is CSS and is checked on the running app.
       const host = render([column({ events: [event({ id: 'a' })] })]);
       const block = host.querySelector('[data-testid="staff-grid-event"]');
-      const times = block?.querySelector('.staff-grid__event-times');
+      const times = block?.querySelector('.staff-event-head__times');
       expect(times?.getAttribute('aria-hidden')).toBe('true');
       expect(
-        times?.querySelector('.staff-grid__event-start')?.textContent?.trim(),
+        times?.querySelector('.staff-event-head__start')?.textContent?.trim(),
       ).toBe('10:00');
       expect(
-        times?.querySelector('.staff-grid__event-end')?.textContent?.trim(),
+        times?.querySelector('.staff-event-head__end')?.textContent?.trim(),
       ).toBe('10:45');
       expect(
         block
-          ?.querySelector('.staff-grid__event-head .staff-grid__event-lines')
-          ?.querySelector('.staff-grid__event-title')?.textContent,
+          ?.querySelector('.staff-event-head .staff-event-head__lines')
+          ?.querySelector('.staff-event-head__title')?.textContent,
       ).toContain('Георги Петров');
     });
   });

@@ -1,4 +1,4 @@
-import { DOCUMENT } from '@angular/common';
+import { DOCUMENT, NgTemplateOutlet } from '@angular/common';
 import {
   ChangeDetectionStrategy,
   Component,
@@ -16,7 +16,15 @@ import {
   afterRenderEffect,
 } from '@angular/core';
 import { UiAvatar, UiIcon, type UiIconName } from '@creativo/ui/controls';
-import { UiTextDirective } from '@creativo/ui/modifiers';
+import {
+  UiTextDirective,
+  UiVisuallyHiddenDirective,
+} from '@creativo/ui/modifiers';
+import {
+  hollowStatus,
+  StaffEventHead,
+  type StaffEventLine,
+} from '../shared/event-head/staff-event-head';
 import {
   DRAG_THRESHOLD_PX,
   EdgeScroller,
@@ -126,10 +134,47 @@ export interface GridEvent {
   readonly partyLabel: string | null;
 }
 
+/**
+ * A whole-day fact about one column — a chair off, a closure — drawn as a
+ * chip in the all-day band (2026-09-23, the grid views' design record §8).
+ *
+ * Three lengths of one sentence, because the band's cells are the columns'
+ * widths and a week column on a phone is 49px: the sentence («Нико почива»)
+ * where the cell can carry it, the first name where it cannot, and below
+ * that a disc in the chair's tone with the initial on it — the agenda's own
+ * mark for a chair that is out. The accessible name is the full sentence
+ * at every width; the eye gets less, the reader never does.
+ */
+export interface AllDayEntry {
+  /** What the entry is ABOUT — the chair's id, or `more` for «+N» — so two
+   *  chairs sharing a first name never share a key in one cell. */
+  readonly key: string;
+  readonly label: string;
+  readonly shortLabel: string;
+  readonly initial: string;
+  /** The chair's identity tone, or `null` for a fact about no one («+2»). */
+  readonly tone: number | null;
+  readonly accessibleName: string;
+}
+
 /** One column: a chair (day view) or a date (3-day / week). */
 export interface GridColumn {
   readonly id: string;
   readonly title: string;
+  /**
+   * THE HEAD AT THREE WIDTHS (2026-09-23, §4). A column on a phone is
+   * 104–114px in the day and 3-day views and 49px in the week; a head
+   * that truncated every name («Иван Ко…») said less than a first name
+   * would. `shortTitle` is the first name (a chair) or the short weekday
+   * (a date); `initial` the weekday's narrow form, for a date column too
+   * narrow for a word (a chair's initial is the portrait's own monogram);
+   * `fullTitle` the whole name or the long date, for the accessible name
+   * at every width. Optional, defaulting to `title`, so the sheets' frames
+   * — which draw no head — need not say them.
+   */
+  readonly shortTitle?: string;
+  readonly initial?: string | null;
+  readonly fullTitle?: string;
   readonly detail: string | null;
   /**
    * The day number, when a column IS a date — rendered as a capsule beside
@@ -366,22 +411,26 @@ const DAY_MINUTES = 1440;
 /**
  * Minutes either side of "now" within which an hour label is withheld so the
  * now pill has the gutter to itself. The pill is a caption line tall; at the
- * grid's 2.4px-per-minute scale that is ~7 minutes, and ten leaves air.
+ * page's 1.6px-per-minute scale (2026-09-23) that is ~9 minutes, and ten
+ * still leaves air. The frame draws at 2.4px a minute and needs less.
  */
 const NOW_LABEL_CLEARANCE = 10;
 /**
  * Under this many minutes a block cannot hold two lines legibly.
  *
- * MEASURED, not guessed. A slot is 28px (`--staff-slot-height`), so a
- * half-hour block is 56px tall; take off its 1px block margins and its 2px
- * padding and 50px of content box is left, against ~17px of footnote title
- * and ~16px of caption detail. Two lines fit with room to spare.
+ * MEASURED, not guessed — and re-measured for the page's scale of 24px a
+ * slot (2026-09-23, the grid views' design record §5). A half-hour block is
+ * 48px tall; take off its 1px block margins and its 3px padding each way
+ * and 40px of content box is left, against ~16px of footnote title and
+ * ~14px of caption detail at the head's 1.3 leading. Two lines fit with 9px
+ * spare. A quarter-hour block (24px) genuinely holds one line, and that is
+ * the case this constant is for; those put the service beside the name
+ * instead of losing it (see the template).
  *
  * The old value was 40, which made every 30-minute service — most of the
- * catalogue — drop the one line that says WHAT the appointment is. A
- * quarter-hour block (28px) genuinely holds one line, and that is the case
- * this constant is for; those put the service beside the name instead of
- * losing it (see the template).
+ * catalogue — drop the one line that says WHAT the appointment is. Raising
+ * it to 45 so the slot could shrink further (the phone audit's suggestion)
+ * was refused for the same reason.
  */
 const SHORT_BLOCK_MINUTES = 30;
 
@@ -441,9 +490,16 @@ const FALLBACK_PX_PER_MINUTE = 2.4;
  */
 @Component({
   selector: 'lib-staff-time-grid',
-  imports: [UiAvatar, UiIcon, UiTextDirective],
+  imports: [
+    NgTemplateOutlet,
+    UiAvatar,
+    UiIcon,
+    UiTextDirective,
+    UiVisuallyHiddenDirective,
+    StaffEventHead,
+  ],
   templateUrl: './staff-time-grid.html',
-  styleUrl: './staff-time-grid.css',
+  styleUrls: ['./staff-time-grid.css', './staff-time-grid.page.css'],
   changeDetection: ChangeDetectionStrategy.OnPush,
   // Unscoped like the ui patterns: bare `.staff-grid-*` selectors are the
   // styling contract, and a host-level attribute cannot reach a child's
@@ -452,6 +508,8 @@ const FALLBACK_PX_PER_MINUTE = 2.4;
   host: { class: 'staff-grid' },
 })
 export class StaffTimeGrid {
+  /** An hour that did not happen — struck on the block's head (staff-event-head). */
+  protected readonly hollowStatus = hollowStatus;
   readonly columns = input.required<readonly GridColumn[]>();
   /**
    * The first rostered minute across the visible columns — no longer the
@@ -523,7 +581,7 @@ export class StaffTimeGrid {
   readonly zoneLabel = input<string>('');
 
   /** All-day entries per column id — closures, days off, whole-day blocks. */
-  readonly allDay = input<Readonly<Record<string, readonly string[]>>>({});
+  readonly allDay = input<Readonly<Record<string, readonly AllDayEntry[]>>>({});
   /** The row's own label — the caller owns the copy, this owns the layout. */
   readonly allDayLabel = input<string>('');
   /**
@@ -534,6 +592,37 @@ export class StaffTimeGrid {
    * it is just an empty row that happened to be collapsed.
    */
   readonly allDayAlways = input(false);
+
+  /**
+   * WHAT A COLUMN IS — a chair or a date (2026-09-23, the grid views'
+   * design record §4). The page's three calendar views share this one
+   * renderer and differ only here, and the difference decides the width
+   * strategy: chairs keep a legible floor and page sideways past it (a
+   * fourth barber costs a swipe, not a name); dates are fluid and never
+   * scroll sideways (the week is read for its SHAPE, and a column's words
+   * give way by its own width). Published to CSS as `data-columns` on the
+   * page frame; the sheets' frames draw one chair and ignore it.
+   */
+  readonly uiColumnKind = input<'chairs' | 'dates'>('chairs');
+
+  /**
+   * WHEN TO REVEAL THE WORKING DAY (2026-09-23, §6). The page grid used to
+   * re-reveal on every change of columns, so turning a day from the week
+   * strip yanked the reader back to the first rostered minute — the very
+   * behaviour the data-update guard below was written to avoid. A reveal is
+   * now a JUMP the reader asked for: this counter changes on «Към днес» and
+   * on a month pick, and on nothing else. A turn of the day, a switch of
+   * view or chair keeps the reader's hour, as Apple Calendar does.
+   */
+  readonly uiRevealKey = input(0);
+
+  /**
+   * The scroller's own accessible name, page mode only — 3000px of
+   * two-axis scroll with no keyboard path was a hole the phone audit
+   * named; a focusable region gives the arrows and a switch control the
+   * frame, and the name says which period it holds.
+   */
+  readonly uiRegionLabel = input<string | null>(null);
 
   /* ── The second mode ───────────────────────────────────────────────────
    *
@@ -635,6 +724,39 @@ export class StaffTimeGrid {
   readonly gapPicked = output<string>();
   /** A break or admin block was tapped — the parent owns what that opens. */
   readonly blockPicked = output<string>();
+  /**
+   * A DATE column's head was tapped — Apple's own week-head gesture: the
+   * week is read for its shape and a day is opened for its words. The id
+   * is the column's day key; the page opens that day in the day view.
+   */
+  readonly dayPicked = output<string>();
+  /**
+   * An all-day CELL was tapped — the empty band above a column (owner,
+   * 2026-09-23): the page opens the block sheet for that column's chair or
+   * date with «цял ден» already on. The id is the column's. Page only, and
+   * only while the blocks are targets; in a sheet's frame the band is a
+   * picture.
+   */
+  readonly allDayPicked = output<string>();
+  /**
+   * A CHIP in the band was tapped — a chair's day off, or «+N» (owner,
+   * 2026-09-23: "if someone has an event it should be possible to open it,
+   * edit it, remove it"). The column's id and the entry's key; the page
+   * opens that chair's rest day on that date, or the date itself for «+N».
+   */
+  readonly allDayEntryPicked = output<{
+    readonly columnId: string;
+    readonly key: string;
+  }>();
+  /** What a tap on an all-day cell's blank space does, for its accessible name. */
+  readonly uiAllDayAction = input<string>('');
+  /**
+   * Whether the now-line is inside the frame's box, page mode only — what
+   * lets the page offer «Към сега» once the reader has scrolled away from
+   * the present, the way Google's today control appears. Emitted on change
+   * only; a box with no height (a hidden tab, a test) reports `true`.
+   */
+  readonly nowInView = output<boolean>();
 
   /**
    * The interval a live gesture is PROPOSING — fired on every snap, and once
@@ -707,17 +829,18 @@ export class StaffTimeGrid {
     const { start, end, empty } = this.extent();
     if (empty) return [];
     /*
-     * The CLOSING boundary gets no label in a frame.
+     * The CLOSING boundary gets no label, on the page as in a frame
+     * (2026-09-23, the grid views' design record §3).
      *
      * The gutter lays its labels out as hour-tall rows, so a label on the last
      * line is a whole extra hour of box — and the body's row sizes to the
-     * tallest of its cells, which drags the columns up to that height too.
-     * The page can afford the blank hour (it falls under the action bar's own
-     * padding) and would notice losing its midnight label. A 240px window
-     * cannot afford either: a quarter of it would be empty, and the axis box
-     * would stop being the same length as the axis.
+     * tallest of its cells, which dragged the columns to a 25th hour under
+     * the action bar and put the now-line's arithmetic on a different basis
+     * from the blocks'. Apple's day ends at 11 PM; the footer padding does
+     * the clearing. An extent stretched past midnight by a late cut still
+     * prints its «00:00» — as the 25th hour's OPENING label.
      */
-    const last = this.framed() ? end - 60 : end;
+    const last = end - 60;
     // The hour the now pill would sit on gives way to it (owner, 2026-09-09;
     // the reference does the same): two figures two pixels apart in one
     // gutter read as a smudge, and the pill is the one that is news.
@@ -914,8 +1037,20 @@ export class StaffTimeGrid {
     );
   });
 
-  protected allDayFor(columnId: string): readonly string[] {
+  protected allDayFor(columnId: string): readonly AllDayEntry[] {
     return this.allDay()[columnId] ?? [];
+  }
+
+  /** The band's cells are buttons on the page, a picture in a frame. */
+  protected readonly allDayPickable = computed(
+    () => !this.framed() && this.uiPickable(),
+  );
+
+  /** «Четвъртък, 24 септември, Блокирай целия ден» — the blank space's name. */
+  protected allDayCellLabel(column: GridColumn): string {
+    return [column.fullTitle ?? column.title, this.uiAllDayAction()]
+      .filter((part) => part.length > 0)
+      .join(', ');
   }
 
   protected pick(event: GridEvent): void {
@@ -951,6 +1086,27 @@ export class StaffTimeGrid {
       live.startMinute !== held.basis.startMinute ||
       live.endMinute !== held.basis.endMinute;
     return answered ? null : held.draft;
+  });
+
+  /**
+   * A SPENT draft is dropped, not merely masked. `draft` masks a held draft
+   * the moment the caller's value leaves the basis — but a value that later
+   * RETURNS to the basis (an undone save, 2026-09-23) un-masked it, and a
+   * block nobody was proposing rose again over the truth. Outside a gesture
+   * there is nothing left to hold it for; inside one the mask suffices and
+   * the release still reads the held draft.
+   */
+  protected readonly dropSpentDraft = effect(() => {
+    const held = this.draftState();
+    if (held === null || this.gesture() !== null) return;
+    const live = this.eventById(held.draft.id);
+    if (live === null) return;
+    if (
+      live.startMinute !== held.basis.startMinute ||
+      live.endMinute !== held.basis.endMinute
+    ) {
+      untracked(() => this.draftState.set(null));
+    }
   });
 
   /** The block that takes handles — `null` unless the caller opted in. */
@@ -1031,6 +1187,55 @@ export class StaffTimeGrid {
       }
     }
     if (this.offscreen() !== next) this.offscreen.set(next);
+    if (!this.framed()) this.refreshNowInView(frame);
+  }
+
+  /** The last answer given to `nowInView`, so the page hears changes only. */
+  private nowSeen: boolean | null = null;
+
+  /**
+   * The page's own question, asked in the frame's existing scroll path
+   * rather than by a second observer: is the present inside the box? The
+   * sticky chrome covers the top of the frame, so a line under it is out of
+   * sight though inside the rect — its height is subtracted. Without a
+   * now-line (another day) the answer is `true`: nothing to come back to.
+   */
+  private refreshNowInView(frame: HTMLElement | undefined): void {
+    let next = true;
+    if (frame && this.showsNow()) {
+      const line = frame.querySelector<HTMLElement>('.staff-grid__now');
+      const box = frame.getBoundingClientRect();
+      if (line && box.height > 0) {
+        const chrome =
+          frame.querySelector<HTMLElement>('.staff-grid__chrome')
+            ?.offsetHeight ?? 0;
+        const y = line.getBoundingClientRect().top;
+        next = y >= box.top + chrome && y <= box.bottom;
+      }
+    }
+    if (this.nowSeen === next) return;
+    this.nowSeen = next;
+    this.nowInView.emit(next);
+  }
+
+  /**
+   * Back to the present — «Към сега» on a day already today. The same
+   * landing the reveal uses (a quarter down, the morning above the line),
+   * glided unless motion is reduced.
+   */
+  scrollToNow(behavior: ScrollBehavior = 'smooth'): void {
+    const now = this.nowMinute();
+    if (now === null || !this.showsNow()) return;
+    this.landOn(now, this.stillMotion() ? 'auto' : behavior);
+  }
+
+  /**
+   * Focus the region without scrolling it — for a control that removes
+   * itself once pressed («Към сега» is gone the moment the present is back
+   * in view), so the keyboard does not fall to the document body.
+   */
+  focusFrame(): void {
+    this.frame()?.nativeElement.focus({ preventScroll: true });
   }
 
   /** Re-measured after every render that could have moved the block. */
@@ -1104,6 +1309,14 @@ export class StaffTimeGrid {
    * draw.
    */
   /** A block's clock, from its minutes — the card's start and end. */
+  /** The lines under a block's title, in the head's order: the service, then who booked it. */
+  protected eventLines(event: GridEvent): readonly StaffEventLine[] {
+    const lines: StaffEventLine[] = [];
+    if (event.detail !== null) lines.push({ text: event.detail });
+    if (event.attribution !== null) lines.push({ text: event.attribution });
+    return lines;
+  }
+
   protected timeOf(minute: number): string {
     return timeLabel(minute);
   }
@@ -1829,21 +2042,12 @@ export class StaffTimeGrid {
   });
 
   /**
-   * The set of columns on screen, as one string.
-   *
-   * The reveal fires on a change of DAY, VIEW or SCOPE — all three of which
-   * change which columns exist — and on nothing else. Keying it on the data
-   * instead would yank the grid back under the reader's thumb every time a
-   * booking updated, which is the behaviour every calendar that does this is
-   * rightly complained about for.
+   * The reveal key this grid has already answered — `null` until the first
+   * successful landing. The reveal used to be keyed on the set of column
+   * ids, so every turn of the day re-revealed; it keys on `uiRevealKey` now
+   * (2026-09-23, §6) — the mount and the reader's own jumps, nothing else.
    */
-  private readonly columnSignature = computed(() =>
-    this.columns()
-      .map((column) => column.id)
-      .join('|'),
-  );
-
-  private revealed: string | null = null;
+  private revealed: number | null = null;
   /** The edited block this frame has already centred on. Latched by id. */
   private centred: string | null = null;
   private centring = false;
@@ -1860,43 +2064,57 @@ export class StaffTimeGrid {
   }
 
   private revealWorkingDay(): void {
-    // Never in a frame. The reveal is keyed on which columns exist, and a
-    // frame keeps one column while its WINDOW moves — so the guard never
-    // fires again and every scroll the reader made would be yanked back the
-    // moment the window shifted under a drag. A frame that opens on its own
-    // block scrolls itself, from the surface that knows which block that is.
+    // Never in a frame. A frame keeps one column while its WINDOW moves, and
+    // every scroll the reader made would be yanked back the moment the
+    // window shifted under a drag. A frame that opens on its own block
+    // scrolls itself, from the surface that knows which block that is.
     if (this.framed()) return;
-    const signature = this.columnSignature();
+    const key = this.uiRevealKey();
+    // The extent is READ here so the effect wakes when the columns arrive:
+    // a grid mounted while the day is still loading has no axis to land on.
+    const { empty } = this.extent();
+    if (empty || key === this.revealed) return;
+    // Laid out but not measured yet (a hidden tab, a font still loading)?
+    // `revealed` stays unset so the next pass tries again rather than
+    // recording a scroll that never happened.
+    if (this.landOn(this.revealMinute())) this.revealed = key;
+  }
+
+  /**
+   * Scroll the frame so a minute lands a QUARTER down the box, not at its
+   * top edge. `false` when the box cannot be measured yet.
+   *
+   * Flush to the top, "now" arrived with the whole morning already scrolled
+   * away and nothing but shut hours below it — technically the right minute
+   * and the wrong view of the day. A quarter leaves roughly two hours of
+   * what just happened above the line, which is the window a shop is
+   * actually still acting on (a running late, an unsettled visit), and
+   * still gives three-quarters of the box to what is coming.
+   *
+   * Measured against the FIRST COLUMN's box, not the body's: the body wears
+   * a padding above the tracks (room for the first hour label), and a
+   * fraction of the padded height landed every minute a few pixels late.
+   * The column's tracks are exactly the extent.
+   */
+  private landOn(minute: number, behavior: ScrollBehavior = 'auto'): boolean {
     const frame = this.frame()?.nativeElement;
     const body = this.body()?.nativeElement;
-    const { minutes, empty } = this.extent();
-    if (!frame || !body || empty || signature === this.revealed) return;
-    this.revealed = signature;
-
-    const target = this.revealMinute();
-    const height = body.offsetHeight;
-    if (height === 0) {
-      // Laid out but not measured yet (a hidden tab, a font still loading).
-      // Leave `revealed` unset so the next pass tries again rather than
-      // recording a scroll that never happened.
-      this.revealed = null;
-      return;
-    }
-    // The target lands a QUARTER down the viewport, not at its top edge.
-    //
-    // Flush to the top, "now" arrived with the whole morning already scrolled
-    // away and nothing but shut hours below it — technically the right minute
-    // and the wrong view of the day. A quarter leaves roughly two hours of
-    // what just happened above the line, which is the window a shop is
-    // actually still acting on (a running late, an unsettled visit), and
-    // still gives three-quarters of the box to what is coming.
-    const bodyOffset =
-      body.getBoundingClientRect().top - frame.getBoundingClientRect().top;
-    const targetPx = ((target - this.extent().start) / minutes) * height;
-    frame.scrollTop = Math.max(
+    const { start, minutes, empty } = this.extent();
+    if (!frame || !body || empty) return false;
+    const track =
+      body.querySelector<HTMLElement>('.staff-grid__column') ?? body;
+    const height = track.offsetHeight;
+    if (height === 0) return false;
+    const trackOffset =
+      track.getBoundingClientRect().top - frame.getBoundingClientRect().top;
+    const targetPx = ((minute - start) / minutes) * height;
+    const top = Math.max(
       0,
-      frame.scrollTop + bodyOffset + targetPx - frame.clientHeight * 0.25,
+      frame.scrollTop + trackOffset + targetPx - frame.clientHeight * 0.25,
     );
+    if (behavior === 'auto') frame.scrollTop = top;
+    else frame.scrollTo({ top, behavior });
+    return true;
   }
 
   /**

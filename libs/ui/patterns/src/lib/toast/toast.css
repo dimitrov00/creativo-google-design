@@ -23,22 +23,52 @@
   display: flex;
   align-items: center;
   gap: var(--sys-space-regular);
-  inline-size: min(100%, var(--sys-container-drawer));
+  /* A PILL THAT HUGS ITS SENTENCE (owner, 2026-09-23), the way the
+     platform's own transient banners do — never a bar the width of a
+     drawer; the drawer measure is only its ceiling. */
+  inline-size: fit-content;
+  max-inline-size: min(100%, var(--sys-container-drawer));
   min-block-size: var(--control-size-large);
-  padding-inline: var(--sys-space-regular) var(--sys-space-compact);
+  padding-inline: var(--sys-space-comfortable) var(--sys-space-compact);
   padding-block: var(--sys-space-compact);
-  border-radius: var(--control-radius-prominent);
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.28);
+  border-radius: var(--control-radius-capsule);
+  /* THE HOUSE MATERIAL, NEAR SOLID (owner, 2026-09-23: "close to solid
+     material with backdrop"): the DS thick tier — blur and saturation from
+     the modifier — over the surface at 92%, so the page shows through as a
+     presence rather than a picture; a hairline ring for the edge on a dark
+     ground, and the overlay's lift from the token, not a literal. */
+  box-shadow:
+    inset 0 0 0 1px var(--sys-color-separator),
+    var(--sys-elevation-overlay);
   color: var(--sys-color-foreground);
   font: var(--sys-font-callout);
+  font-variant-numeric: tabular-nums; /* the shorthand resets the app's tabular figures */
   pointer-events: auto;
-  animation: ui-toast-in var(--sys-motion-duration-regular, 200ms)
-    var(--sys-motion-ease-standard, ease-out);
+  /* THE ENTRANCE: up from below and a breath larger as it lands, on the
+     entrance curve at the slow tier — a settle, not a slide. */
+  animation: ui-toast-in var(--sys-motion-duration-slow, 480ms)
+    var(--sys-motion-ease-entrance, ease-out);
+}
+
+.ui-toast__surface[data-material] {
+  --ui-material-fill: color-mix(
+    in srgb,
+    var(--sys-color-surface) 92%,
+    transparent
+  );
 }
 
 .ui-toast__label {
   flex: 1 1 auto;
   min-inline-size: 0;
+  /* Two lines at most: a toast is a sentence, and a paragraph is a sheet.
+     A token with no break in it (an id, an address in a refusal) breaks
+     rather than running out of the pill. */
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
 }
 
 /* The one action: the plain-button recipe at the small rung, accent ink,
@@ -108,7 +138,7 @@
 @keyframes ui-toast-in {
   from {
     opacity: 0;
-    transform: translateY(var(--sys-space-compact));
+    transform: translateY(calc(var(--sys-space-unit) * 6)) scale(0.96);
   }
   to {
     opacity: 1;

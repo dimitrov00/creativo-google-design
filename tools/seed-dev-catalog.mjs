@@ -828,6 +828,22 @@ for (const [uid, firstName, lastName, phone, email] of CLIENT_PROFILES) {
 console.log(`seeded ${CLIENT_PROFILES.length} client profiles`);
 
 /*
+ * TWO CLIENTS WITH A FACE (2026-09-18): a client's portrait lives in Storage
+ * under their id — the profile's own convention, `avatars/{uid}/original` —
+ * so the desk's add-client page has a portrait to draw beside initials.
+ */
+for (const [uid, file] of [
+  ['dev-client-1', 'stefan.jpg'],
+  ['dev-client-2', 'niko.jpg'],
+]) {
+  await bucket.file(`avatars/${uid}/original`).save(
+    readFileSync(join(barbersDir, file)),
+    { contentType: 'image/jpeg' },
+  );
+}
+console.log('seeded 2 client avatars');
+
+/*
  * PROMOTIONS (2026-09-10): what the visit sheet's «Отстъпка» row can offer.
  * Two coupons open by CODE at the counter (`FIRST10`, `BEARD5`) and two reach
  * clients only as GRANTS — Мартин (today's 12:30 chair) holds a birthday

@@ -38,6 +38,30 @@
       var(--sys-motion-ease-standard);
   }
 
+  /* A SELECTED SEGMENT (2026-09-17): the segment rule above out-ranks the
+     row's own `[data-selected]` wash (list-row.css) by one class, so a
+     selected row in a group painted plain — the service card's picks and
+     the client picker's checks were invisible as selections. The wash is
+     composed OVER the segment fill here, at the same alpha rung, so a
+     picked segment lifts warm and stays a segment.
+
+     AND IT TAKES THE PRESSED SHAPE (owner, 2026-09-24: "a bg to the
+     selected one, also a border radius just like the :active"): the
+     prominent rung the press morphs to, held while chosen — the radius
+     transition above animates the pick. Said HERE, for wrapped rows too:
+     the row's own `[data-selected]` radius only won by a specificity tie
+     on a bare row, so a menu's pick rounded and a `li`-wrapped one did
+     not (found on the repeat page's shortcuts). */
+  .ui-list-group > .ui-list-row[data-selected],
+  .ui-list-group > :not(.ui-list-row) > .ui-list-row[data-selected] {
+    background: color-mix(
+      in srgb,
+      var(--sys-color-accent) var(--sys-alpha-segment-selected),
+      var(--sys-color-surface-secondary)
+    );
+    border-radius: var(--control-radius-prominent);
+  }
+
   /* Outer corners of the group ride the prominent rung — the card tier —
      so the group reads as a card exploded into segments. `:first-child` is
      evaluated on the WRAPPER when there is one, which is exactly right:

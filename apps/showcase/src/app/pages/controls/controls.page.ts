@@ -43,6 +43,7 @@ export class ControlsPage {
         { slug: 'grid', name: 'Grid' },
         { slug: 'flow', name: 'Flow' },
         { slug: 'scroll-row', name: 'ScrollRow' },
+        { slug: 'scroll-column', name: 'ScrollColumn' },
         { slug: 'toolbar', name: 'Toolbar' },
         { slug: 'sheet', name: 'Sheet' },
         { slug: 'divider-and-spacer', name: 'Divider & Spacer' },
@@ -55,6 +56,8 @@ export class ControlsPage {
       links: [
         { slug: 'button', name: 'Button' },
         { slug: 'text-field', name: 'TextField' },
+        { slug: 'slider', name: 'Slider' },
+        { slug: 'segmented-control', name: 'SegmentedControl' },
         { slug: 'chip', name: 'Chip' },
         { slug: 'badge', name: 'Badge' },
         { slug: 'avatar', name: 'Avatar' },

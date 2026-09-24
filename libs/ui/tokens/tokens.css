@@ -9,7 +9,12 @@
   :root {
     /* EVERY NUMBER LINES UP (owner, 2026-09-09): tabular figures are the
        app's default, not a per-surface opt-in. Inherited by every text run;
-       the faces that have the feature honour it, the rest are unchanged. */
+       the faces that have the feature honour it, the rest are unchanged.
+       ⚠ Inheritance alone does NOT survive the `font` shorthand — it resets
+       every font-variant longhand on the element it styles — so each app's
+       `sys-base` layer declares this again on every element (styles.css),
+       above the components' layer; a DS cell that must be stable digit for
+       digit says it once more after its own shorthand. */
     font-variant-numeric: tabular-nums;
     /* ── Typography: families (v2 parity: Onest / DM Sans / Geist Mono) ── */
     --sys-font-family-display: 'Onest Variable', system-ui, sans-serif;
@@ -119,6 +124,11 @@
     --sys-container-console: 48rem;
     --sys-container-drawer: 36rem;
     --sys-container-sidebar: 17rem;
+    /* An alert's card (ui-alert). The platform's 270pt read as small
+       against this app's 52pt buttons and 60pt rows (owner, 2026-09-23),
+       so the card takes the same step up: 320px, still a card and never a
+       sheet, and the viewport minus its gutters on a 320px phone. */
+    --sys-container-alert: 20rem;
     /* Wide sheet surface (ui-sheet uiSize="wide") — the landing modal
        sheet's 72rem editorial width, promoted from a per-sheet literal. */
     --sys-container-sheet-wide: 72rem;

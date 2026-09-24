@@ -1,0 +1,7 @@
+:host {
+  display: block;
+}
+
+.slider__mono {
+  font-family: var(--sys-font-family-mono);
+}

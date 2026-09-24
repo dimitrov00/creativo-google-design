@@ -27,11 +27,12 @@ export type UiDateBadgeState = 'plain' | 'selected' | 'outside' | 'unavailable';
  * selection/availability is the state and {@link uiToday} is its own flag.
  *
  * ### The dot means EVENTS, and only events
- * `uiMarker` is the consumer's "there is something on this day" dot — the
- * appointments calendar's booked days — and it is the dot's only meaning.
- * `currentColor` is the trick that keeps it legible: on a filled day the
- * badge's ink is already the on-fill colour, so the dot flips with it rather
- * than vanishing into the disc beneath.
+ * `uiMarker` is the consumer's "there is something on this day" dot — a
+ * series' days on the calendar that picks its end — and it is the dot's
+ * only meaning. It is drawn in secondary ink, as iOS Calendar's event dots
+ * are: information beside the dates, never a second row of type. On the
+ * chosen day it takes the number's own ink instead, so it never vanishes
+ * into the disc beneath.
  *
  * ⚠ It used to ALSO mark today (`uiToday || uiMarker`), on the stated grounds
  * that a dot beneath the number was "the iOS Calendar treatment" for today.

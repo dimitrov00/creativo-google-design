@@ -1,0 +1,55 @@
+@layer sys-components {
+  /* The grid rung the sheet's other folds use: 1fr at rest, 0fr folded,
+     and the container's own gap folds with it so what follows lands right
+     under the bar. */
+  .ui-sheet-headline {
+    display: grid;
+    grid-template-rows: 1fr;
+    transition:
+      grid-template-rows var(--sys-motion-duration-slow)
+        var(--sys-motion-ease-emphasized),
+      margin-block-end var(--sys-motion-duration-slow)
+        var(--sys-motion-ease-emphasized);
+  }
+
+  /* ⚠ `clip`, never `hidden`: an `overflow: hidden` box is a SCROLL
+     CONTAINER, and the large title's view-timeline would bind to this
+     wrapper instead of the sheet's scroller — the compact title's
+     scroll-linked reveal would go dead at rest. `clip` cuts the fold
+     without becoming one. */
+  .ui-sheet-headline__body {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sys-space-tight);
+    min-block-size: 0;
+    overflow: clip;
+    transition: opacity var(--sys-motion-duration-deliberate)
+      var(--sys-motion-ease-standard);
+  }
+
+  .ui-sheet-headline__body > * {
+    margin: 0;
+  }
+
+  .ui-sheet-headline[data-folded] {
+    grid-template-rows: 0fr;
+    margin-block-end: calc(
+      -1 * var(--ui-sheet-headline-gap, var(--sys-space-comfortable))
+    );
+  }
+
+  .ui-sheet-headline[data-folded] > .ui-sheet-headline__body {
+    opacity: 0;
+  }
+
+  .ui-sheet-headline[data-folded] [uisheetlargetitle] {
+    view-timeline-name: none;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .ui-sheet-headline,
+    .ui-sheet-headline__body {
+      transition: none;
+    }
+  }
+}

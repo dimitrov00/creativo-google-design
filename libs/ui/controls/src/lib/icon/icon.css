@@ -56,7 +56,9 @@
    * (chevron_right), `nav.back` returns, `calendar.previous`/`next` page,
    * and `frame.handleStart`/`handleEnd` name the direction a DRAG moves —
    * the registry says so in as many words. Rotating any of those would
-   * break a distinction that was drawn on purpose.
+   * break a distinction that was drawn on purpose. `field.popUp` (the
+   * stacked up-and-down pair of a pop-up button) is likewise left alone:
+   * its two chevrons already say "either way", open or shut.
    *
    * No reduced-motion block: the global kill-switch shortens the duration
    * to 1ms without touching the transform, so the chevron snaps to its

@@ -5,7 +5,13 @@ import {
   input,
 } from '@angular/core';
 
-/** Row heights ride the control-size ladder (≙ .controlSize naming). */
+/**
+ * Row heights ride the control-size ladder (≙ .controlSize naming). On a
+ * STACKED label (`uiAlignment="leading"`) the size also picks the block
+ * padding: `large` is the settings row (16 round a 44 disc), `regular` the
+ * picker row (12 round a 36 disc, ≈60 tall) — a list read down, a person
+ * a row, fits seven where the settings row fits five.
+ */
 export type UiListRowSize = 'regular' | 'large';
 export type UiListRowVariant = 'plain' | 'neutral' | 'prominent';
 

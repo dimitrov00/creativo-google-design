@@ -10,6 +10,8 @@ import { UiMonthPicker } from './month-picker';
       [uiToday]="today()"
       uiLocale="bg"
       [uiRelatives]="relatives"
+      [uiMarked]="marked()"
+      [uiMin]="min()"
       (uiPicked)="picked.push($event)"
     />
   `,
@@ -17,6 +19,8 @@ import { UiMonthPicker } from './month-picker';
 class Host {
   readonly selected = signal('2026-08-26');
   readonly today = signal('2026-08-24');
+  readonly marked = signal<readonly string[]>([]);
+  readonly min = signal<string | null>(null);
   readonly relatives = [
     { offset: 0, label: 'Днес' },
     { offset: 1, label: 'Утре' },
@@ -154,5 +158,31 @@ describe('UiMonthPicker', () => {
     const host = fixture.nativeElement as HTMLElement;
 
     expect(host.querySelector('.ui-month-picker__relatives')).toBeNull();
+  });
+
+  /* A series' days on the calendar that picks where it ends (2026-09-24):
+     the badge's event dot, and nothing before the start answers. */
+  it('dots the marked days, and holds back the ones before the minimum', async () => {
+    const { fixture, host } = await render();
+    fixture.componentInstance.marked.set(['2026-08-20', '2026-08-27']);
+    fixture.componentInstance.min.set('2026-08-20');
+    fixture.detectChanges();
+
+    const marked = day(host, '2026-08-27');
+    expect(marked?.hasAttribute('data-marked')).toBe(true);
+    expect(marked?.querySelector('.ui-date-badge__marker')).not.toBeNull();
+    expect(
+      day(host, '2026-08-28')?.querySelector('.ui-date-badge__marker'),
+    ).toBeNull();
+
+    const early = day(host, '2026-08-19') as HTMLButtonElement | null;
+    expect(early?.disabled).toBe(true);
+    expect(
+      early?.querySelector('ui-date-badge')?.getAttribute('data-state'),
+    ).toBe('unavailable');
+    early?.click();
+    day(host, '2026-08-20')?.click();
+    fixture.detectChanges();
+    expect(fixture.componentInstance.picked).toEqual(['2026-08-20']);
   });
 });

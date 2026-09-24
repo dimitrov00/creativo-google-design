@@ -24,24 +24,20 @@
 
   <sc-demo scTitle="Inside a loading button">
     <ng-container scAbout>
-      The busy-CTA composition: <code>uiLoading</code> dims the button and cuts
-      pointer events (plus <code>aria-busy</code>), while a
-      <code>small</code> spinner sits in the label. Native
-      <code>disabled</code> shown alongside for the non-busy resting state.
+      The busy CTA is the button's own: <code>uiLoading</code> hides the label
+      in place, turns this ring at the centre in the button's ink and cuts
+      pointer events (plus <code>aria-busy</code>). Nothing is composed into the
+      label. Native <code>disabled</code> shown alongside for the resting state.
     </ng-container>
     <ui-flow uiSpacing="comfortable" uiAlignment="trailing">
       <ui-stack uiAxis="vertical" uiSpacing="compact" uiAlignment="leading">
-        <button uiButton [uiLoading]="true">
-          <ui-progress-view uiControlSize="small" />
-          Saving…
-        </button>
+        <button uiButton [uiLoading]="true">Saving…</button>
         <p uiText [uiFont]="'caption'" class="progress-view__mono">
           buttonStyle=borderedProminent · loading=true
         </p>
       </ui-stack>
       <ui-stack uiAxis="vertical" uiSpacing="compact" uiAlignment="leading">
         <button uiButton uiButtonStyle="bordered" [uiLoading]="true">
-          <ui-progress-view uiControlSize="small" />
           Loading…
         </button>
         <p uiText [uiFont]="'caption'" class="progress-view__mono">

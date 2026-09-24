@@ -17,6 +17,10 @@
        carries the lift; only dark themes lighten the fill. Consumed by
        ui-card[data-tone='elevated'] (added 2026-07-23). */
     --sys-color-surface-elevated: var(--sys-color-surface);
+    /* ≙ the RAISED thumb of a control — UISegmentedControl's selected
+       segment: white, its lift carried by the control's own shadow pair.
+       Consumed by ui-segmented-control (added 2026-09-18). */
+    --sys-color-surface-raised: #ffffff;
     --sys-color-primary: #121212;
     --sys-color-on-primary: #ffffff;
     --sys-color-secondary-label: #666666; /* v2 muted-foreground */
@@ -47,11 +51,12 @@
     --sys-color-destructive: #c62828;
     --sys-color-success: #1f8a5f;
     --sys-color-warning: #b26a00;
-    --sys-color-promo: #c2710c;
-    /* THE INK CUT, again (see `--sys-color-accent-label`): the promo hue is a
-       FILL and measures 3.7:1 as type on the page. Darkened for ink only —
-       5.5:1 page, 4.9:1 card — and aliased straight back to the hue in dark. */
-    --sys-color-promo-label: #9a5a09;
+    /* THE PROMO INK IS THE ACCENT (owner, 2026-09-16, at the discount
+       card: "what is that yellow — use our accent colour"): the fill is
+       the accent, the ink its darkened cut (see `--sys-color-accent-label`),
+       so money taken off a bill reads in the one tint the app has. */
+    --sys-color-promo: var(--sys-color-accent);
+    --sys-color-promo-label: var(--sys-color-accent-label);
     --sys-color-on-promo: #241a00;
 
     /* ── Identity tones — WHOSE chair, never what state ────────────────
@@ -91,10 +96,16 @@
     --sys-identity-4: #d30f45; /* pink */
     --sys-color-ring: #121212;
     --sys-separator-strength: 4%; /* v2 --border-strength light */
+    /* TRANSLUCENT (2026-09-17) — iOS `separator` parity, the fill's own
+       rule: mixed with the page ground this was one opaque grey — right on
+       the ground and wrong everywhere else: invisible on the surface, and
+       a BLACK outline around a field on a raised card (the code field in
+       the action sheet; owner: "the border is black"). Foreground over
+       transparent is the same hairline on every surface it crosses. */
     --sys-color-separator: color-mix(
       in srgb,
       var(--sys-color-foreground) var(--sys-separator-strength),
-      var(--sys-color-background)
+      transparent
     );
     --sys-color-scrim: color-mix(in srgb, #000 45%, transparent);
     --sys-color-media-scrim: color-mix(in srgb, #000 70%, transparent);

@@ -167,6 +167,59 @@ ui-sheet.modal-sheet:not([data-presented]):not([data-closing]) {
   border-start-end-radius: var(--control-radius-prominent);
 }
 
+/* ── A body that docks its own bar ──────────────────────────────────────
+ *
+ * `ui-sheet-action-bar[uiAnchor="scroll"]` rides INSIDE the scroller as the
+ * body's last child and floors itself with an auto top margin — which only
+ * has room to work when the body sits in a COLUMN that fills the scroller
+ * (sheet-action-bar.css says so). This scroller was block flow, so a short
+ * page — a tip page with five tiles — left the bar stranded where the
+ * content stopped, mid-screen, with empty sheet beneath it (owner,
+ * 2026-09-15: "why is this not fixed bottom?"). Scoped by `:has()` to the
+ * sheets that carry such a bar, so every other sheet's block flow stays
+ * exactly as it was; the sticky chrome keeps its row at the top. */
+.modal-sheet__scroll:has(> * > .ui-sheet-action-bar[data-anchor='scroll']) {
+  display: flex;
+  flex-direction: column;
+}
+
+.modal-sheet__scroll:has(> * > .ui-sheet-action-bar[data-anchor='scroll'])
+  > .modal-sheet__chrome {
+  flex: 0 0 auto;
+}
+
+/* ── The content RECEDES under a sheet stacked on this one (2026-09-16) ──
+ *
+ * A sheet presented INSIDE this shell — a card over the visit editor —
+ * marks the surface it sits in (`data-ui-sheet-stacked`, see sheet.ts) and
+ * the scroller steps back a shade — scaled from its top edge, the way the
+ * first sheet recedes behind a second on iOS — while the card rises over it
+ * and its scrim dims it. Only where the card can be in the top layer:
+ * elsewhere it is a fixed box INSIDE this surface, and a transform here
+ * would make the scroller its containing block and carry it with the
+ * content it covers. */
+@supports selector(:popover-open) {
+  .modal-sheet__scroll {
+    transform-origin: 50% 0;
+    transition: transform var(--sys-motion-duration-deliberate)
+      var(--sys-motion-ease-standard);
+  }
+
+  .ui-sheet__surface[data-ui-sheet-stacked] > .modal-sheet__scroll {
+    transform: scale(0.96);
+    transition: transform var(--sys-motion-duration-slow)
+      var(--sys-motion-ease-entrance);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .modal-sheet__scroll,
+    .ui-sheet__surface[data-ui-sheet-stacked] > .modal-sheet__scroll {
+      transform: none;
+      transition: none;
+    }
+  }
+}
+
 /* ── Fitted: a sheet that stops where its content does ──────────────────
  *
  * The height above is unconditional, so a two-line confirmation presented

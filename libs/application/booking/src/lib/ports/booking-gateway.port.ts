@@ -305,6 +305,18 @@ export type StaffEditCommand =
       readonly barberId: string;
     }
   /**
+   * «Салон» — the visit moved to the shop's other location, the whole
+   * party with it: `Appointment.locationId` is the ROOT's, one visit is
+   * one physical place whatever chairs it spans. The decision re-reads
+   * the new shop's hours and zone and refuses a service that shop does
+   * not offer (`service_not_at_location`), which is the only rule a
+   * relocation can break.
+   */
+  | {
+      readonly kind: 'relocate';
+      readonly locationId: string;
+    }
+  /**
    * A service ADDED to the visit — a new seat, priced and timed by the
    * catalogue on the server (never by the client). `minutes` is what the
    * client believes the catalogue says, used only so the rest of the batch's

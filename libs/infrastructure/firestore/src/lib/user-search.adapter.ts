@@ -24,10 +24,15 @@ function toSearchResult(
       new RepositoryError('Malformed user document: bad id', idResult.error),
     );
   }
+  // The name AS WRITTEN — `searchName` is the lowercased key the index
+  // matches on, and it read «мартин илиев» on the desk's rows (2026-09-18).
+  const written = `${data['firstName'] ?? ''} ${data['lastName'] ?? ''}`.trim();
   const displayName: string =
-    typeof data['searchName'] === 'string' && data['searchName'].length > 0
-      ? data['searchName']
-      : `${data['firstName'] ?? ''} ${data['lastName'] ?? ''}`.trim();
+    written.length > 0
+      ? written
+      : typeof data['searchName'] === 'string'
+        ? data['searchName']
+        : '';
   const email = data['email'] ? Email.fromPrimitive(data['email']) : null;
   const phone =
     typeof data['phone'] === 'string' && data['phone'].length > 0

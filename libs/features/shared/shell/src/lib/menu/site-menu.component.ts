@@ -158,7 +158,14 @@ export class SiteMenuComponent {
   );
 
   /**
-   * "сряда, 6 август" — the day the schedule opens on, as its own subtitle.
+   * "ср, 6 август" — the day the schedule opens on, as its own subtitle.
+   *
+   * The weekday SHORT (owner, 2026-09-17): «четвъртък, 17 септември» — the
+   * longest weekday and month Bulgarian has — outgrew the room the row
+   * leaves beside its mark on a 330px phone and wrapped to two lines,
+   * dropping the chevron under the date and growing the row. The short
+   * weekday reads as a date at a glance, can never wrap at any phone
+   * width, and is the weekday the staff day pill already uses.
    *
    * Deliberately a CLOCK READ, not a query. The obvious richer subtitle is
    * a live count ("4 visits today"), but the shop's day is N per-barber
@@ -173,7 +180,7 @@ export class SiteMenuComponent {
    */
   protected readonly todayLabel = computed(() =>
     new Intl.DateTimeFormat(this.lang() === 'en' ? 'en-GB' : 'bg-BG', {
-      weekday: 'long',
+      weekday: 'short',
       day: 'numeric',
       month: 'long',
       timeZone: 'Europe/Sofia',

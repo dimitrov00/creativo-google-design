@@ -44,6 +44,29 @@ describe('FirestoreUserSearchAdapter', () => {
     expect(getDocs).not.toHaveBeenCalled();
   });
 
+  it('names a person as written, not by the lowercased search key', async () => {
+    const { getDocs } = await import('firebase/firestore');
+    vi.mocked(getDocs).mockResolvedValueOnce({
+      docs: [
+        {
+          id: 'user-2',
+          data: () => ({
+            firstName: 'Мартин',
+            lastName: 'Илиев',
+            searchName: 'мартин илиев',
+            phone: '+359887654321',
+          }),
+        },
+      ],
+    } as never);
+    const result = await createAdapter().search('март');
+    expect(result.isSuccess()).toBe(true);
+    if (result.isSuccess()) {
+      expect(result.value[0]?.displayName).toBe('Мартин Илиев');
+      expect(result.value[0]?.phone).toBe('+359887654321');
+    }
+  });
+
   it('maps matching documents to UserSearchResult', async () => {
     const { getDocs } = await import('firebase/firestore');
     vi.mocked(getDocs).mockResolvedValueOnce({

@@ -31,18 +31,38 @@
   }
 
   /*
-   * SELECTED — a NEUTRAL filled disc, not a tinted one.
+   * SELECTED — THE DATE PICKER'S TINTED DISC (owner, 2026-09-24: "do the
+   * Apple-style pass on the month picker").
    *
-   * This was accent-filled, which spent the tint on the commonest state in
-   * the grid and left today nothing to be marked with. iOS Calendar fills
-   * the chosen day with a dark disc and keeps red for today; so does this
-   * app's own week strip, which has always drawn selection as a foreground
-   * disc. The accent is reserved for today, below.
+   * Apple draws a chosen day two ways, and they are different controls:
+   * the Calendar APP's week header fills it with a dark disc (this app's
+   * staff week strip, which keeps it), while its date PICKERS — the inline
+   * `UIDatePicker`, `UICalendarView` — lay a pale tint disc under a bold
+   * tinted number. Every `ui-date-badge` grid is a picker, so it takes the
+   * picker's reading. It was a dark disc until now.
+   *
+   * It no longer starves today of a mark, which is why the tint was taken
+   * off selection once: today is INK with no disc, the chosen day is a
+   * DISC — two shapes, so the one tint can say both — and a chosen today
+   * fills solid, below.
+   *
+   * THE CONTRAST, measured rather than assumed. The accent ink on the
+   * selection rung's wash is 4.21:1 on light and ≥ 3.84:1 on the dark
+   * surfaces: short of 4.5, so the number is BOLD at the picker's 20px —
+   * large text by both WCAG (≥ 18.66px bold) and the HIG's own table
+   * (bold text), where the bar is 3:1. The wash that would carry 4.5 at
+   * any size is 8%, and there the disc all but vanishes against the page
+   * (1.09:1) — the same trade `button.css` records for its own wash. A
+   * grid whose dates are drawn smaller than large must keep that in mind.
    */
   .ui-date-badge[data-state='selected'] {
-    background: var(--sys-color-foreground);
-    color: var(--sys-color-background);
-    font-weight: 600;
+    background: color-mix(
+      in srgb,
+      var(--sys-color-accent) var(--sys-alpha-segment-selected),
+      transparent
+    );
+    color: var(--sys-color-accent-label);
+    font-weight: 700;
   }
 
   /*
@@ -70,8 +90,10 @@
     font-weight: 600;
   }
 
-  /* Today AND selected — the fill takes the accent, so the day says both at
-     once rather than choosing. The week strip's own rule, exactly. */
+  /* Today AND selected — the disc fills SOLID with the accent, so the day
+     says both at once rather than choosing: the date picker's own rule, and
+     the week strip's. White on the accent is 3.04:1, which the bold 20px
+     number clears as large text and nothing smaller would. */
   .ui-date-badge[data-today][data-state='selected'] {
     background: var(--sys-color-accent);
     color: var(--sys-color-on-accent);
@@ -89,9 +111,19 @@
     inline-size: var(--ui-date-badge-dot-size, 0.26em);
     block-size: var(--ui-date-badge-dot-size, 0.26em);
     border-radius: var(--control-radius-capsule);
-    /* `currentColor` is the whole trick: on a selected day the badge's ink is
-       already `--sys-color-on-accent`, so the dot flips to the foreground of
-       the filled capsule rather than vanishing into the accent beneath it. */
+    /* SECONDARY INFORMATION, SECONDARY INK (2026-09-24). iOS Calendar's
+       event dots are grey: they say "something happens here" without
+       competing with the numbers, the chosen day or today's accent. In the
+       number's own ink, a run of weekdays under a series grew a second row
+       of black type (found on the repeat's end calendar). Not the accent
+       either: in this grid the accent already means TODAY. */
+    background: var(--sys-color-secondary-label);
+  }
+
+  /* On the chosen day's disc the dot takes the number's own ink
+     (`currentColor`): the accent on the pale disc, white on a chosen
+     today's solid one — so it never vanishes into the fill beneath. */
+  .ui-date-badge[data-state='selected'] .ui-date-badge__marker {
     background: currentColor;
   }
 }

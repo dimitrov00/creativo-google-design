@@ -135,6 +135,17 @@ export class UiMonthPicker {
    * above it is saying the same thing twice.
    */
   readonly uiRelatives = input<readonly UiMonthPickerRelative[]>([]);
+  /**
+   * Days that have something ON them — the badge's event dot. A series'
+   * own days, drawn on the calendar that picks where the series ends
+   * (2026-09-24), so the end is chosen against the days it will cut.
+   */
+  readonly uiMarked = input<readonly UiDayKey[]>([]);
+  /**
+   * The earliest day that may be picked; the ones before it read as
+   * unavailable and do not answer. An end cannot come before its start.
+   */
+  readonly uiMin = input<UiDayKey | null>(null);
 
   readonly uiPreviousLabel = input<string>('Previous month');
   readonly uiNextLabel = input<string>('Next month');
@@ -157,13 +168,21 @@ export class UiMonthPicker {
         : month,
   });
 
+  /**
+   * «Октомври 2026 г.» — a TITLE, so it starts with a capital. `Intl`
+   * writes the month as it sits mid-sentence («октомври»), which is right
+   * inside a sentence and wrong as a heading; CLDR's own context rule for
+   * a stand-alone month is title case, and Apple's picker follows it.
+   */
   protected readonly monthLabel = computed(() => {
     const [year, month] = this.shownMonth().split('-').map(Number);
-    return new Intl.DateTimeFormat(this.uiLocale(), {
+    const locale = this.uiLocale();
+    const label = new Intl.DateTimeFormat(locale, {
       month: 'long',
       year: 'numeric',
       timeZone: 'UTC',
     }).format(new Date(Date.UTC(year ?? 1970, (month ?? 1) - 1, 1)));
+    return label.charAt(0).toLocaleUpperCase(locale) + label.slice(1);
   });
 
   /**
@@ -205,6 +224,15 @@ export class UiMonthPicker {
     for (let i = 0; i < cells.length; i += 7) weeks.push(cells.slice(i, i + 7));
     return weeks;
   });
+
+  /** A set, read once per month drawn rather than scanned per cell. */
+  protected readonly marked = computed(() => new Set(this.uiMarked()));
+
+  /** Before the floor — keys sort as dates, so a string compare is the compare. */
+  protected isBeforeMin(dayKey: UiDayKey): boolean {
+    const min = this.uiMin();
+    return min !== null && dayKey < min;
+  }
 
   /** Resolved against today, so a relative shortcut cannot drift from it. */
   protected relativeDay(offset: number): UiDayKey {

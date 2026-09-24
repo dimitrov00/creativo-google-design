@@ -5,11 +5,19 @@
 .staff-day-pill {
   display: inline-flex;
   max-inline-size: 100%;
+  /* MAY SHRINK (2026-09-23, the grid views' design record §9): a period
+     label the bar cannot seat («28.12.2026 г. – 3.01.2027 г.») gives way
+     before the controls beside it do. The host and the menu only allow it;
+     the LABEL is what clips, so the trigger's focus ring — drawn outside
+     its box — is never cut. */
+  flex: 0 1 auto;
+  min-inline-size: 0;
 }
 
 .staff-day-pill > .ui-menu {
   display: flex;
   max-inline-size: 100%;
+  min-inline-size: 0;
   /* THE SAME MONTH AT THE SAME SIZE in both places (owner, 2026-09-09): the
      surface is what the grid fills, so the surface is where the width is
      said — once. */
@@ -24,10 +32,23 @@
    field sizing (36px, 8px) sits outside the DS's cascade layer and would
    win over the regular 44px control beside the segments. Hugs its label. */
 .staff-day-pill__trigger {
-  flex: 0 0 auto;
+  flex: 0 1 auto;
+  min-inline-size: 0;
   gap: var(--sys-space-compact);
   font: var(--sys-font-headline);
+  font-variant-numeric: tabular-nums; /* the shorthand resets the app's tabular figures */
   white-space: nowrap;
+}
+
+/* SMALL — the pill as a form row's VALUE (the repeat's end date,
+   2026-09-24): the 36px tier the row's other pills wear, in the button's
+   own type rather than the frame head's headline, so the row keeps the
+   52px every row beside it has. `revert-layer` hands the font back to the
+   DS button's layered rule; the shorthand resets tabular figures, so they
+   are said again. */
+.staff-day-pill[data-size='small'] .staff-day-pill__trigger {
+  font: revert-layer;
+  font-variant-numeric: tabular-nums;
 }
 
 /* OPEN — the same accent wash the field pills show, and the chevron carries
@@ -53,4 +74,13 @@
 
 .staff-day-pill__calendar ui-calendar-grid {
   inline-size: 100%;
+}
+
+/* The words give way with an ellipsis; the chevron keeps its place. */
+.staff-day-pill__label {
+  flex: 0 1 auto;
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }

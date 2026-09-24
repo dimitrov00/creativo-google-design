@@ -16,6 +16,14 @@ service firebase.storage {
       return isSignedIn() && request.auth.uid == uid;
     }
 
+    // The roles that WORK THE BOOK — the same grouping `firestore.rules`
+    // gates the appointments and the team's notes on. Custom claims ride
+    // the token here exactly as there.
+    function worksTheBook() {
+      return isSignedIn() && 'roles' in request.auth.token
+        && request.auth.token.roles.hasAny(['barber', 'receptionist', 'admin', 'sysadmin']);
+    }
+
     // One object per user, overwritten on re-upload. Publicly readable
     // (avatars are shown across staff dashboards and to other booking
     // parties, and carry no sensitive data) — writes restricted to the
@@ -43,6 +51,19 @@ service firebase.storage {
     match /media/{allPaths=**} {
       allow read: if true;
       allow write: if false;
+    }
+
+    // The shop's photos of a visit (`FirebaseAppointmentPhotos`, one object
+    // per photo under its visit): staff-only both ways, like the Firestore
+    // document beside each — a client never reads the shop's pictures of
+    // them here. Create/update and delete are split as for avatars: on a
+    // DELETE `request.resource` is null.
+    match /appointmentPhotos/{appointmentId}/{photoId} {
+      allow read: if worksTheBook();
+      allow create, update: if worksTheBook()
+        && request.resource.size < 8 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
+      allow delete: if worksTheBook();
     }
 
     match /{allPaths=**} {

@@ -1,0 +1,352 @@
+/*
+ * THE PAGE'S USE OF THE GRID — the rules that apply only when the calendar
+ * IS the screen (2026-09-23, the grid views' design record). The sheets'
+ * frame draws the same grid as a control inside a dialog and none of this
+ * reaches it: every rule here is gated on the page frame (no
+ * `data-viewport='framed'`), on `data-columns`, or on the page-only query
+ * containers.
+ *
+ * Its own stylesheet because it is its own chapter — the frame's box, what a
+ * column is, and how a column's words give way by its width — and because a
+ * component stylesheet has a budget: the canvas's own recipe is a calendar's
+ * worth of states already, and the page's chapter on top of it crossed the
+ * line. Both are unscoped like every recipe in this feature; the split is
+ * in the file, not in the cascade.
+ */
+/*
+ * ── The page's frame ───────────────────────────────────────────────────
+ *
+ * THE HEIGHT IS A LAYOUT RESULT (2026-09-23, §2). It was
+ * `calc(100svh − --staff-head-offset)`, and the offset was the toolbar's
+ * TOKEN floor — 52px — while the bar with its week strip measures ~117px:
+ * the frame's floor landed 65px under the viewport's, the page scrolled by
+ * that much, the pane-anchored action bar sat below the fold and two sticky
+ * bands fought over the top edge. A flex child of a column that is exactly
+ * one viewport tall cannot be wrong about a height it never computes, and
+ * it survives a bar that grows with the strip, a wrapping locale and
+ * dynamic type without a measurement.
+ *
+ * `overflow-anchor: none`: the columns re-render on every booking update,
+ * and the browser's scroll anchoring would "help" by shifting the box.
+ */
+.staff-grid__frame:not([data-viewport='framed']) {
+  flex: 1 1 0;
+  min-block-size: 0;
+  overflow-anchor: none;
+  /* The calendar reaches the viewport FLOOR and scrolls UNDER the action bar,
+     which is the only arrangement where that bar's chrome fade has anything
+     to dissolve. Stopping short of it left a hard clip mid-block and a band
+     of bare page below — a fade over nothing reads as a solid strip.
+     The padding is what lets the last booking of the day clear the bar:
+     the large control plus the bar's own compact padding twice, a breath,
+     and the home indicator — 13 + 4 + 4 = 21 units, plus the inset. */
+  --staff-grid-footer: calc(
+    var(--sys-space-unit) * 21 + env(safe-area-inset-bottom, 0px)
+  );
+  padding-block-end: var(--staff-grid-footer);
+  /* The view switch cross-fades the picture (§10) — a name, so the
+     platform's transition snapshots this box on its own. */
+  view-transition-name: staff-schedule-canvas;
+}
+
+.staff-grid__frame:not([data-viewport='framed']):focus-visible {
+  /* INSET, so the ring never widens the scroller or hides under its edge. */
+  outline: var(--sys-focus-ring-width) solid var(--sys-color-ring);
+  outline-offset: calc(-1 * var(--sys-focus-ring-width));
+}
+
+/*
+ * ── WHAT A COLUMN IS decides its width (2026-09-23, §4) ────────────────
+ *
+ * CHAIRS keep a legible floor — 26 units, the width at which a half-hour
+ * block still carries a client's name — and page SIDEWAYS past it, the
+ * rail pinned, each column a soft snap point: 48 + 3 × 104 seats three
+ * chairs on a 360px phone exactly, and a fourth costs a swipe rather than
+ * a name. `proximity`, never `mandatory`: a mandatory x-snap on a box that
+ * also owns vertical momentum corrects every diagonal flick with a jolt.
+ *
+ * DATES are fluid and never scroll sideways: the week is read for its
+ * SHAPE and a day is opened for its words (the head is a button), and the
+ * block's own content gives way by the column's width — the words, then
+ * the title, then the rail alone, the way Apple's portrait week draws
+ * blocks without a word on them. A zero floor turns the bands' intrinsic
+ * width into "fit", so nothing overflows on the inline axis at all.
+ */
+.staff-grid__frame[data-columns='chairs'] {
+  scroll-snap-type: x proximity;
+  scroll-padding-inline-start: var(--staff-gutter);
+}
+
+.staff-grid__frame[data-columns='chairs']
+  :is(.staff-grid__column, .staff-grid__column-head, .staff-grid__allday-cell) {
+  /* The same x in every band, by construction. */
+  scroll-snap-align: start;
+}
+
+.staff-grid__frame[data-columns='dates'] {
+  --staff-column-min: 0px;
+}
+
+/*
+ * The head cell, the all-day cell and the column share a track by
+ * template, so they share a width and cross every threshold together.
+ * PAGE ONLY: the sheets' frame has no tiers to serve, and the containment
+ * some engines still attach to a query container would make each column a
+ * stacking context under the frame's handles and readout.
+ *
+ * Thresholds are `rem`, the one place this stylesheet does not read the
+ * unit: a container condition cannot resolve a custom property, so 1 unit
+ * ≙ 0.25rem is stated as such. They track dynamic type and miss the 8%
+ * density step, which fails the right way — fewer words, never clipped ones.
+ */
+.staff-grid__frame:not([data-viewport='framed'])
+  :is(.staff-grid__column, .staff-grid__column-head, .staff-grid__allday-cell) {
+  container: staff-column / inline-size;
+}
+
+/*
+ * A DATE'S HEAD IS A BUTTON to that day (2026-09-23, §4) — Apple's own
+ * week-head tap. The whole cell is the target: the button takes the cell's
+ * padding back as negative margin and re-pads itself, so the hit area is
+ * the cell and the words sit where they sat. The one hover grammar, with
+ * its ungated press mirror.
+ */
+.staff-grid__head-day {
+  display: flex;
+  align-items: center;
+  flex: 1 1 auto;
+  margin: calc(-1 * var(--sys-space-tight)) calc(-1 * var(--sys-space-compact));
+  padding: var(--sys-space-tight) var(--sys-space-compact);
+  min-inline-size: 0;
+  border: 0;
+  border-radius: var(--control-radius-subtle);
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+@media (hover: hover) {
+  .staff-grid__head-day:hover {
+    background: var(--sys-state-layer-hover);
+  }
+}
+
+.staff-grid__head-day:active {
+  background: var(--sys-state-layer-press);
+}
+
+.staff-grid__head-day:focus-visible {
+  outline: var(--sys-focus-ring-width) solid var(--sys-color-ring);
+  outline-offset: calc(-1 * var(--sys-focus-ring-width));
+}
+
+/*
+ * THE NAME AT THREE WIDTHS (2026-09-23, §4). Every head used to truncate
+ * («Иван Ко…», «Нико Ди…», «Стефа…») on a three-chair phone, and half a
+ * surname identifies nobody. Full name from 36 units, first name from 20,
+ * and under that the portrait alone for a chair (`ui-avatar` draws its own
+ * monogram without a picture) or the weekday's initial OVER the capsule for
+ * a date. The cell's own width decides — the head cell is a query container
+ * — so the tier is the same at every density and chair count. The full name
+ * stays on the cell's accessible name at every width.
+ */
+/* A chair's name sits BESIDE its portrait; only a date spreads its weekday
+   and its capsule to the two edges. */
+.staff-grid__column-head[data-kind='chair'] .staff-grid__column-name {
+  justify-content: flex-start;
+}
+
+.staff-grid__column-name > [data-name] {
+  display: none;
+}
+
+.staff-grid__column-name > [data-name='full'] {
+  display: inline;
+}
+
+@container staff-column (width < 9rem) {
+  .staff-grid__column-name > [data-name='full'] {
+    display: none;
+  }
+
+  .staff-grid__column-name > [data-name='short'] {
+    display: inline;
+  }
+}
+
+@container staff-column (width < 5rem) {
+  .staff-grid__column-name > [data-name='short'] {
+    display: none;
+  }
+
+  /* A chair: the portrait, centred, alone. */
+  .staff-grid__column-head[data-kind='chair'] .staff-grid__column-name {
+    justify-content: center;
+  }
+
+  /* A date: the initial over the capsule, as the week strip writes a day. */
+  .staff-grid__column-head[data-kind='date']
+    .staff-grid__column-name
+    > [data-name='initial'] {
+    display: inline;
+    color: var(--sys-color-secondary-label);
+    text-transform: uppercase;
+  }
+
+  .staff-grid__column-head[data-kind='date'] .staff-grid__column-name {
+    flex-direction: column;
+    justify-content: center;
+    gap: 0;
+  }
+
+  .staff-grid__column-head[data-kind='date'] .staff-grid__head-day {
+    justify-content: center;
+  }
+}
+
+@container staff-column (width < 5.5rem) {
+  .staff-grid__allday-word[data-label='long'] {
+    display: none;
+  }
+
+  .staff-grid__allday-word[data-label='short'] {
+    display: inline;
+  }
+}
+
+@container staff-column (width < 4rem) {
+  /* Both words, by the same weight the tier above used to show one. */
+  .staff-grid__allday-word[data-label] {
+    display: none;
+  }
+
+  .staff-grid__allday-chip {
+    padding: 0;
+    background: none;
+  }
+
+  /* The agenda disc's measured recipe: the tone at 36% clears the 3:1
+     graphic floor in both themes, and the initial says WHOSE. */
+  .staff-grid__allday-disc {
+    display: inline-grid;
+    place-items: center;
+    inline-size: calc(var(--sys-space-unit) * 5);
+    block-size: calc(var(--sys-space-unit) * 5);
+    border-radius: var(--control-radius-capsule);
+    background: color-mix(
+      in srgb,
+      var(--barber-tone, var(--sys-color-separator)) 36%,
+      transparent
+    );
+    color: var(--sys-color-foreground);
+  }
+}
+
+/*
+ * BACK TO THE BLOCK — a chip at the edge the edited block went past, in the
+ * handles' own material (surface, hairline, capsule, the overlay's lift),
+ * on the host rather than in the scroller so it never scrolls with the
+ * picture. Centred across, a compact step in from the edge it names.
+ */
+.staff-grid__recenter {
+  position: absolute;
+  inset-inline-start: 50%;
+  translate: -50% 0;
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sys-space-tight);
+  min-block-size: var(--control-size-small);
+  padding: 0 var(--sys-space-compact);
+  border: 1px solid var(--sys-color-separator);
+  border-radius: var(--control-radius-capsule);
+  background: var(--sys-color-surface);
+  color: var(--sys-color-foreground);
+  box-shadow: var(--sys-elevation-overlay);
+  font: var(--sys-font-caption);
+  font-variant-numeric: tabular-nums; /* the shorthand resets the app's tabular figures */
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.staff-grid__recenter[data-edge='before'] {
+  inset-block-start: var(--sys-space-compact);
+}
+
+.staff-grid__recenter[data-edge='after'] {
+  inset-block-end: var(--sys-space-compact);
+}
+
+.staff-grid__recenter-time {
+  font-variant-numeric: tabular-nums;
+}
+
+/*
+ * ── THE BLOCK GIVES WAY BY ITS COLUMN'S WIDTH (2026-09-23, §4) ──────────
+ *
+ * The page's date columns are fluid and a week column on a phone is 49px.
+ * The block's content degrades in two steps, decided by the column's own
+ * width (a query container, page only): under 22 units the words go and
+ * the name stays alone on its tint; under 16 the name goes too and the
+ * block is its rail and its wash — Apple's portrait week, which draws
+ * blocks without a word on them and lets the shape of the day be read.
+ * The accessible name carries the client, the service and the times at
+ * every width; only the eye gets less. The head's own clock query (144px,
+ * in `staff-event-head.css`) keeps deciding the clock; nothing here
+ * restates it.
+ */
+@container staff-column (width < 5.5rem) {
+  .staff-grid__event .staff-event-head__line,
+  .staff-grid__event .staff-event-head__sep,
+  .staff-grid__event .staff-event-head__inline,
+  .staff-grid__event .staff-event-head__times,
+  .staff-grid__event-marks {
+    display: none;
+  }
+
+  .staff-grid__event {
+    padding-inline: calc(var(--sys-space-unit) * 2.5) 2px;
+  }
+}
+
+@container staff-column (width < 4rem) {
+  .staff-grid__event > .staff-event-head {
+    display: none;
+  }
+
+  .staff-grid__event {
+    padding: 0;
+  }
+
+  .staff-grid__event-rail {
+    inset-inline-start: 2px;
+    inset-block: 2px;
+    inline-size: 3px;
+  }
+}
+
+/* The notch on the trailing side, on a phone held the other way: the bands
+   keep the inset as padding inside their own width, so the last column
+   ends clear of it. Nothing while the viewport does not reach the notch. */
+.staff-grid__frame:not([data-viewport='framed'])
+  :is(.staff-grid__head, .staff-grid__allday, .staff-grid__body) {
+  padding-inline-end: env(safe-area-inset-right, 0px);
+}
+
+/* The view switch cross-fades the canvas (§10) — no morph, no slide; the
+   platform's default fade at the system's regular tier. Under reduced
+   motion the helper never starts a transition; this is the belt to its
+   braces. HERE, unscoped: these pseudo-elements hang off the document root,
+   and the page's own (scoped) stylesheet could never match them. */
+::view-transition-old(staff-schedule-canvas),
+::view-transition-new(staff-schedule-canvas) {
+  animation-duration: var(--sys-motion-duration-regular);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(*) {
+    animation: none;
+  }
+}

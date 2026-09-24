@@ -1,10 +1,15 @@
 @layer sys-components {
+  /* THE INK IS A HOOK (2026-09-17): the ring turns accent over the
+     separator track on a page; inside a busy button (button.css) the
+     owner sets `--ui-progress-view-tint` to the button's own ink and the
+     track to a wash of it, so the spinner reads on a filled pill as well
+     as on a quiet one. */
   .ui-progress-view {
     display: inline-block;
     inline-size: 1.5rem;
     block-size: 1.5rem;
-    border: 2px solid var(--sys-color-separator);
-    border-top-color: var(--sys-color-accent);
+    border: 2px solid var(--ui-progress-view-track, var(--sys-color-separator));
+    border-top-color: var(--ui-progress-view-tint, var(--sys-color-accent));
     border-radius: var(--control-radius-capsule);
     animation: ui-progress-view-spin
       calc(var(--sys-motion-duration-deliberate) * 2) linear infinite;
@@ -29,7 +34,7 @@
     block-size: 3px;
     border: 0;
     border-radius: var(--control-radius-capsule);
-    background: var(--sys-color-separator);
+    background: var(--ui-progress-view-track, var(--sys-color-separator));
     overflow: hidden;
     animation: none;
   }
@@ -37,7 +42,7 @@
   .ui-progress-view__fill {
     block-size: 100%;
     border-radius: inherit;
-    background: var(--sys-color-accent);
+    background: var(--ui-progress-view-tint, var(--sys-color-accent));
     transform: scaleX(var(--ui-progress-value, 0));
     transform-origin: 0 50%;
   }

@@ -1,10 +1,20 @@
 @if (!extent().empty) {
+<!-- ON THE PAGE the frame is a focusable REGION named for its period — a
+     two-axis scroller three screens tall with no keyboard path was a hole
+     the phone audit named — and it says what a column IS (`data-columns`),
+     which is what decides the width strategy (2026-09-23, the grid views'
+     design record §3–4). In a sheet's frame both stay off: the sheet is
+     the region, and one chair needs no strategy. -->
 <div
   #frame
   class="staff-grid__frame"
   [style.--staff-grid-slots]="slotCount()"
   [style.--staff-grid-columns]="placedColumns().length"
   [attr.data-viewport]="framed() ? 'framed' : null"
+  [attr.data-columns]="framed() ? null : uiColumnKind()"
+  [attr.tabindex]="framed() ? null : 0"
+  [attr.role]="framed() ? null : 'region'"
+  [attr.aria-label]="framed() ? null : uiRegionLabel()"
   [style.--staff-grid-snap]="framed() ? snapMinutes() : null"
   [attr.data-dragging]="dragging() ? '' : null"
   (scroll)="onFrameScroll()"
@@ -32,40 +42,44 @@
         {{ zoneLabel() }}
       </button>
       @for (column of placedColumns(); track column.id) {
+      <!-- THE HEAD AT THREE WIDTHS (2026-09-23, §4): the full name, the
+           first name (or the short weekday), the weekday's initial — all
+           three rendered, ONE shown, by the head cell's own width through a
+           container query. The cell's accessible name is the whole name or
+           the long date at every width. A DATE head is a button that opens
+           that day in the day view — Apple's own week-head tap: the week
+           is read for its shape, and a day is opened for its words. -->
+      <!-- The whole name reaches a reader ONE way: the date button's own
+           label, or a hidden span beside a chair's tiered words — never an
+           `aria-label` on a plain cell, which the generic role forbids and
+           most readers ignore (found in review, 2026-09-23). -->
       <div
         class="staff-grid__column-head"
         [attr.data-today]="column.isToday ? '' : null"
+        [attr.data-kind]="column.dayNumber === null ? 'chair' : 'date'"
         data-testid="staff-grid-column-head"
       >
-        <!-- Weekday and number SIDE BY SIDE, the number in a capsule that
-           fills on today — one line rather than two, so the header costs a
-           row of chrome instead of a paragraph. -->
-        <span class="staff-grid__column-name">
-          @if (column.avatarSrc !== null) {
-          <ui-avatar
-            [uiSrc]="column.avatarSrc"
-            [uiName]="column.title"
-            uiControlSize="small"
+        @if (column.dayNumber !== null) {
+        <button
+          type="button"
+          class="staff-grid__head-day"
+          [attr.aria-label]="column.fullTitle ?? column.title"
+          [attr.aria-current]="column.isToday ? 'date' : null"
+          data-testid="staff-grid-head-day"
+          (click)="dayPicked.emit(column.id)"
+        >
+          <ng-container
+            *ngTemplateOutlet="columnName; context: { $implicit: column }"
           />
-          }
-          <span uiText uiFont="footnote" uiWeight="semibold">
-            {{ column.title }}
-          </span>
-          @if (column.dayNumber !== null) {
-          <span
-            class="staff-grid__column-day"
-            uiText
-            uiFont="footnote"
-            uiWeight="semibold"
-          >
-            {{ column.dayNumber }}
-          </span>
-          } @else if (column.detail) {
-          <span uiText uiFont="caption" class="staff-grid__column-detail">
-            {{ column.detail }}
-          </span>
-          }
+        </button>
+        } @else {
+        <span uiVisuallyHidden class="staff-grid__column-full">
+          {{ column.fullTitle ?? column.title }}
         </span>
+        <ng-container
+          *ngTemplateOutlet="columnName; context: { $implicit: column }"
+        />
+        }
       </div>
       }
     </div>
@@ -90,12 +104,45 @@
         {{ allDayLabel() }}
       </span>
       @for (column of placedColumns(); track column.id) {
-      <div class="staff-grid__allday-cell">
-        @for (entry of allDayFor(column.id); track entry) {
-        <span class="staff-grid__allday-chip" uiText uiFont="caption">
-          {{ entry }}
+      <!-- THE CELL IS A DOOR, AND ITS CHIPS ARE DOORS (owner, 2026-09-23):
+           a tap on the blank band above a column opens the block sheet for
+           that chair or date with «цял ден» already on; a tap on a chip
+           opens THAT chair's day off to edit or lift it. A button cannot
+           hold buttons, so the blank space is a button laid UNDER the
+           chips, filling the cell, and each chip a button on top. In a
+           sheet's frame, where nothing is a target, both are pictures. -->
+      <div class="staff-grid__allday-cell" data-testid="staff-grid-allday-cell">
+        @if (allDayPickable()) {
+        <button
+          type="button"
+          class="staff-grid__allday-add"
+          [attr.aria-label]="allDayCellLabel(column)"
+          data-testid="staff-grid-allday-add"
+          (click)="allDayPicked.emit(column.id)"
+        ></button>
+        @for (entry of allDayFor(column.id); track entry.key) {
+        <button
+          type="button"
+          class="staff-grid__allday-chip"
+          [attr.data-barber-tone]="entry.tone"
+          data-testid="staff-grid-allday-chip"
+          (click)="allDayEntryPicked.emit({ columnId: column.id, key: entry.key })"
+        >
+          <ng-container
+            *ngTemplateOutlet="allDayChip; context: { $implicit: entry }"
+          />
+        </button>
+        } } @else { @for (entry of allDayFor(column.id); track entry.key) {
+        <span
+          class="staff-grid__allday-chip"
+          [attr.data-barber-tone]="entry.tone"
+          data-testid="staff-grid-allday-chip"
+        >
+          <ng-container
+            *ngTemplateOutlet="allDayChip; context: { $implicit: entry }"
+          />
         </span>
-        }
+        } }
       </div>
       }
     </div>
@@ -107,7 +154,15 @@
     <!-- The hour rail. `aria-hidden` because every block already states its
          own time in its accessible name — a screen reader walking 11 hour
          labels to reach one booking is worse than no rail at all. -->
-    <div class="staff-grid__gutter" aria-hidden="true">
+    <!-- PINNED on the inline axis (2026-09-23, §3): a week that pans
+         sideways keeps its time axis, and the now pill — the axis's one
+         live figure — is the rail's LAST CHILD so it pins with it and
+         shares the columns' basis by construction. -->
+    <div
+      class="staff-grid__gutter"
+      aria-hidden="true"
+      data-testid="staff-grid-gutter"
+    >
       @for (hour of hours(); track hour.key) {
       <span
         class="staff-grid__hour"
@@ -117,6 +172,17 @@
         [attr.data-hour]="hour.key"
       >
         {{ hour.label }}
+      </span>
+      } @if (showsNow()) {
+      <span
+        class="staff-grid__now-label"
+        [style.--staff-now-fraction]="nowFraction()"
+        uiText
+        uiFont="caption"
+        uiWeight="semibold"
+        data-testid="staff-grid-now-label"
+      >
+        {{ nowLabel() }}
       </span>
       }
     </div>
@@ -200,57 +266,24 @@
           [style.--staff-mask-to]="mask.to"
         ></span>
         } }
-        <!-- THE HEAD — the words on the left, the clock on the right: the
-             agenda card's own two columns (owner, 2026-09-10: "time start
-             and end should also be displayed"). The clock is hidden where
-             the column is too narrow to spare it; the accessible name
-             states the times whatever the width. -->
-        <span class="staff-grid__event-head">
-          <span class="staff-grid__event-lines">
-            <span
-              class="staff-grid__event-title"
-              uiText
-              uiFont="footnote"
-              uiWeight="semibold"
-            >
-              {{ event.title }}
-              <!-- A quarter-hour block holds ONE line, so the service joins the
-               name on it rather than being dropped. Losing it entirely was
-               the worse trade: "Мартин Илиев" alone does not say what was
-               booked, and a staff member reading the grid needs the service
-               more than they need the second line's whitespace. Apple
-               Calendar does the same — a short event states its title and its
-               time on one line and lets the ellipsis do the rest. -->
-              @if (event.short && event.detail) {
-              <span
-                class="staff-grid__event-inline"
-                uiText
-                uiFont="footnote"
-                uiWeight="regular"
-              >
-                {{ event.detail }}
-              </span>
-              }
-            </span>
-            @if (!event.short && event.detail) {
-            <span class="staff-grid__event-detail" uiText uiFont="caption">
-              {{ event.detail }}
-            </span>
-            } @if (event.attribution) {
-            <span class="staff-grid__event-who" uiText uiFont="caption">
-              {{ event.attribution }}
-            </span>
-            }
-          </span>
-          <span class="staff-grid__event-times" aria-hidden="true">
-            <span class="staff-grid__event-start" uiText uiFont="caption"
-              >{{ timeOf(event.startMinute) }}</span
-            >
-            <span class="staff-grid__event-end" uiText uiFont="caption"
-              >{{ timeOf(event.endMinute) }}</span
-            >
-          </span>
-        </span>
+        <!-- THE HEAD — the words on the left, the clock on the right: ONE
+             recipe with the agenda card, at the block's density (owner,
+             2026-09-16: "the agenda card should be the same as the grid
+             event, but bigger"). A quarter-hour block holds one line, so
+             the service rides the title's on it and the end time is
+             withheld; the clock is decoration here — the accessible name
+             states the times whatever the width, and the head withholds
+             the clock on a column too narrow to spare it. -->
+        <lib-staff-event-head
+          size="compact"
+          [title]="event.title"
+          [struck]="hollowStatus(event.status)"
+          [lines]="eventLines(event)"
+          [inline]="event.short && event.detail !== null"
+          [start]="timeOf(event.startMinute)"
+          [end]="event.short ? null : timeOf(event.endMinute)"
+          [timesDecorative]="true"
+        />
         <!-- THE MARK ROW — one line on the block's bottom edge that every
              mark shares (owner, 2026-09-09: the tag "should always stay
              where it is, bottom trailing next to the icon"). Two marks each
@@ -270,8 +303,9 @@
           </span>
           }
           <!-- THE TAG — how far the drafted length is from the catalogue's,
-               on the block's own face, where the length is being changed. -->
-          @if (event.tag) {
+               on the block's own face, where the length is being changed.
+               Never on an hour that did not happen (2026-09-24). -->
+          @if (event.tag && !hollowStatus(event.status)) {
           <span
             class="staff-event-tag staff-grid__event-tag"
             data-testid="staff-grid-tag"
@@ -416,18 +450,6 @@
       ></span>
       }
     </div>
-    } @if (showsNow()) {
-    <span
-      class="staff-grid__now-label"
-      [style.--staff-now-fraction]="nowFraction()"
-      uiText
-      uiFont="caption"
-      uiWeight="semibold"
-      aria-hidden="true"
-      data-testid="staff-grid-now-label"
-    >
-      {{ nowLabel() }}
-    </span>
     }
   </div>
 </div>
@@ -453,3 +475,79 @@
   <span class="staff-grid__recenter-time">{{ editableTimeLabel() }}</span>
 </button>
 } }
+
+<!-- THE COLUMN'S NAME, at three widths — one template for a chair's head and
+     a date's button (the date wraps it in a button; the chair does not). The
+     portrait rides only a chair; the capsule only a date; the three name
+     spans are all rendered and the head cell's own width picks one. -->
+<ng-template #columnName let-column>
+  <span class="staff-grid__column-name">
+    @if (column.avatarSrc !== null) {
+    <ui-avatar
+      [uiSrc]="column.avatarSrc"
+      [uiName]="column.fullTitle ?? column.title"
+      uiControlSize="small"
+    />
+    }
+    <span data-name="full" uiText uiFont="footnote" uiWeight="semibold">
+      {{ column.title }}
+    </span>
+    <span data-name="short" uiText uiFont="footnote" uiWeight="semibold">
+      {{ column.shortTitle ?? column.title }}
+    </span>
+    @if (column.initial) {
+    <span data-name="initial" uiText uiFont="caption" uiWeight="semibold">
+      {{ column.initial }}
+    </span>
+    } @if (column.dayNumber !== null) {
+    <span
+      class="staff-grid__column-day"
+      uiText
+      uiFont="footnote"
+      uiWeight="semibold"
+    >
+      {{ column.dayNumber }}
+    </span>
+    } @else if (column.detail) {
+    <span uiText uiFont="caption" class="staff-grid__column-detail">
+      {{ column.detail }}
+    </span>
+    }
+  </span>
+</ng-template>
+
+<!-- ONE CHIP's words — the same run inside the page's chip button and a
+     frame's plain chip. The whole sentence is a HIDDEN span, the visible
+     parts are decoration to a reader: an `aria-label` on a plain span is
+     forbidden by its generic role and ignored by most readers, and at the
+     disc tier nothing else would have been left to read (found in review,
+     2026-09-23). -->
+<ng-template #allDayChip let-entry>
+  <span uiVisuallyHidden class="staff-grid__allday-name">
+    {{ entry.accessibleName }}
+  </span>
+  <span
+    class="staff-grid__allday-disc"
+    uiText
+    uiFont="caption"
+    uiWeight="semibold"
+    aria-hidden="true"
+    >{{ entry.initial }}</span
+  >
+  <span
+    class="staff-grid__allday-word"
+    data-label="long"
+    uiText
+    uiFont="caption"
+    aria-hidden="true"
+    >{{ entry.label }}</span
+  >
+  <span
+    class="staff-grid__allday-word"
+    data-label="short"
+    uiText
+    uiFont="caption"
+    aria-hidden="true"
+    >{{ entry.shortLabel }}</span
+  >
+</ng-template>

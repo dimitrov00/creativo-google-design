@@ -1,0 +1,161 @@
+@layer sys-components {
+  /* The thumb's size is the one number the drawing and the native control
+     share: the native thumb is made this wide so a finger lands where the
+     eye looks, and every position below is measured from it. */
+  .ui-slider {
+    --ui-slider-thumb: calc(var(--sys-space-unit) * 7); /* 28px */
+    --ui-slider-tint: var(--sys-color-accent);
+    --ui-slider-fill: 0;
+    --ui-slider-quiet: color-mix(
+      in srgb,
+      var(--sys-color-secondary-label) 45%,
+      transparent
+    );
+
+    position: relative;
+    display: block;
+    inline-size: 100%;
+  }
+
+  /* The track is a regular control tall — the whole band is the target. */
+  .ui-slider__track {
+    position: relative;
+    display: block;
+    block-size: var(--control-size-regular);
+  }
+
+  /* THE RULER: the ticks sit between the thumb's two resting centres, so
+     the first is under the thumb at the floor and the last at the ceiling.
+     Two identical rows — the quiet one whole, the lit one clipped to the
+     fill — so no tick is ever coloured by arithmetic in a stylesheet. */
+  .ui-slider__ticks {
+    position: absolute;
+    inset-block: 0;
+    /* Half the thumb in, less half a tick, so a tick's CENTRE sits under
+       the thumb's centre at either end. */
+    inset-inline: calc(var(--ui-slider-thumb) / 2 - 1px);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    color: var(--ui-slider-quiet);
+  }
+  .ui-slider__ticks--lit {
+    color: var(--ui-slider-tint);
+    clip-path: inset(0 calc((1 - var(--ui-slider-fill)) * 100%) 0 0);
+  }
+  .ui-slider__tick {
+    inline-size: 2px;
+    block-size: calc(var(--sys-space-unit) * 3);
+    border-radius: 1px;
+    background: currentColor;
+  }
+  .ui-slider__tick[data-major] {
+    block-size: calc(var(--sys-space-unit) * 5);
+  }
+
+  /* THE RAIL, without ticks: the platform's own line, the lit part of it
+     ending under the thumb. */
+  .ui-slider__rail {
+    position: absolute;
+    inset-block-start: 50%;
+    inset-inline: calc(var(--ui-slider-thumb) / 2);
+    block-size: 4px;
+    translate: 0 -50%;
+    border-radius: 2px;
+    background: var(--ui-slider-quiet);
+  }
+  .ui-slider__rail--lit {
+    inset-inline-end: auto;
+    inline-size: calc(var(--ui-slider-fill) * (100% - var(--ui-slider-thumb)));
+    background: var(--ui-slider-tint);
+  }
+
+  /* THE THUMB — white in both appearances, as the platform's is, lifted a
+     hair off the track; it travels the track less its own width. */
+  .ui-slider__thumb {
+    position: absolute;
+    inset-block-start: 50%;
+    inset-inline-start: calc(
+      var(--ui-slider-fill) * (100% - var(--ui-slider-thumb))
+    );
+    inline-size: var(--ui-slider-thumb);
+    block-size: var(--ui-slider-thumb);
+    translate: 0 -50%;
+    border-radius: 50%;
+    background: #fff;
+    box-shadow:
+      0 1px 4px rgb(0 0 0 / 30%),
+      0 0 0 0.5px rgb(0 0 0 / 10%);
+    pointer-events: none;
+  }
+
+  /* THE NATIVE CONTROL lies over the track, unseen and in charge: it takes
+     the finger, the keys and the reader; its thumb is the drawn thumb's
+     size so the two agree on where the value is. */
+  .ui-slider__native {
+    position: absolute;
+    inset-block-start: 0;
+    inset-inline: 0;
+    inline-size: 100%;
+    block-size: var(--control-size-regular);
+    margin: 0;
+    padding: 0;
+    background: transparent;
+    opacity: 0;
+    appearance: none;
+    cursor: pointer;
+  }
+  .ui-slider__native::-webkit-slider-runnable-track {
+    block-size: var(--control-size-regular);
+    background: transparent;
+  }
+  .ui-slider__native::-webkit-slider-thumb {
+    appearance: none;
+    inline-size: var(--ui-slider-thumb);
+    block-size: var(--ui-slider-thumb);
+  }
+  .ui-slider__native::-moz-range-track {
+    block-size: var(--control-size-regular);
+    background: transparent;
+  }
+  .ui-slider__native::-moz-range-thumb {
+    inline-size: var(--ui-slider-thumb);
+    block-size: var(--ui-slider-thumb);
+    border: 0;
+  }
+  .ui-slider__native:focus {
+    outline: none;
+  }
+  .ui-slider__native:disabled {
+    cursor: not-allowed;
+  }
+
+  /* Focus is drawn on the thumb the eye sees. */
+  .ui-slider:has(.ui-slider__native:focus-visible) .ui-slider__thumb {
+    outline: var(--sys-focus-ring-width) solid var(--sys-color-accent);
+    outline-offset: 2px;
+  }
+
+  .ui-slider[data-disabled] .ui-slider__track {
+    opacity: var(--sys-opacity-disabled);
+  }
+
+  /* THE MARKS — a caption under each point that matters, centred on it,
+     measured on the same inner range the ticks use. */
+  .ui-slider__marks {
+    position: relative;
+    display: block;
+    block-size: calc(var(--sys-space-unit) * 4);
+    margin-inline: calc(var(--ui-slider-thumb) / 2);
+    font: var(--sys-font-caption);
+    font-variant-numeric: tabular-nums;
+    color: var(--sys-color-secondary-label);
+  }
+  .ui-slider__mark {
+    position: absolute;
+    inset-block-start: 0;
+    inset-inline-start: calc(var(--ui-slider-mark, 0) * 100%);
+    translate: -50% 0;
+    white-space: nowrap;
+  }
+}

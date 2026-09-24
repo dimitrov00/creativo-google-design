@@ -23,24 +23,31 @@
          sheet's header bar, opposite the ✕, drawn by the shell that owns the
          sheet — `depth()` and `pop()` are public for exactly that. -->
 
+    <!-- ONE HEAD FOR EVERY PAGE (2026-09-24): `ui-sheet-headline` — the
+         large title and at most one line under it, tight, subheadline in
+         secondary ink; it folds while a page's search is engaged. -->
     @switch (page.kind) { @case ('client') { @if (currentClient(); as client) {
-    <h2
-      uiSheetLargeTitle
-      id="staff-visit-page-title"
-      uiText
-      uiFont="largeTitle"
-    >
-      {{ client.label }}
-    </h2>
-    <p
-      class="staff-sheet__consequence"
-      uiText
-      uiFont="footnote"
-      uiForegroundStyle="tertiary"
-      data-testid="staff-visit-client-meta"
-    >
-      {{ clientLine(client) }}
-    </p>
+    <ui-sheet-headline>
+      <h2
+        uiSheetLargeTitle
+        id="staff-visit-page-title"
+        uiText
+        uiFont="largeTitle"
+      >
+        {{ client.label }}
+      </h2>
+      @if (clientLine(client); as line) {
+      <p
+        uiText
+        uiFont="subheadline"
+        uiForegroundStyle="secondary"
+        class="staff-visit__figures"
+        data-testid="staff-visit-client-meta"
+      >
+        {{ line }}
+      </p>
+      }
+    </ui-sheet-headline>
     @if (client.phone; as phone) {
     <ul uiListGroup [attr.aria-label]="t('staff.visit.clients')">
       <li>
@@ -66,87 +73,260 @@
            carry, and inventing it in the template is how a catalogue and a
            surface start disagreeing. -->
     } } @case ('clientSearch') {
-    <h2
-      uiSheetLargeTitle
-      id="staff-visit-page-title"
-      uiText
-      uiFont="largeTitle"
+    <!-- THE TITLE FOLDS WHILE A SEARCH IS ENGAGED (2026-09-22): the field
+         rises under the bar and the compact title lands there — the
+         UISearchController grammar. Folded, not scrolled: the sheet's own
+         collapse is told by the shell (`titleCollapsed`). -->
+    <ui-sheet-headline
+      [uiFolded]="searchEngaged()"
+      data-testid="staff-visit-client-headline"
     >
-      {{ t('staff.visit.addClient') }}
-    </h2>
+      <h2
+        uiSheetLargeTitle
+        id="staff-visit-page-title"
+        uiText
+        uiFont="largeTitle"
+      >
+        {{ t('staff.visit.addClient') }}
+      </h2>
+    </ui-sheet-headline>
     <!-- THE SEARCH, PINNED (owner, 2026-09-09): it sticks under the bar
          while the list scrolls — the sheet's `.searchable` grammar — and
          leads with the glyph that says what it is. The sheet's accessory
          slot belongs to the shell, not to this content; a sticky band with
          the same material is the same thing from the inside. -->
-    <div class="staff-visit__search" uiMaterial="regular">
-      <ui-icon
-        uiName="action.search"
-        class="staff-visit__search-icon"
-        aria-hidden="true"
-      />
-      <input
-        uiTextField
-        type="search"
-        class="staff-visit__search-field"
-        [value]="query()"
-        [attr.placeholder]="t('staff.visit.searchClient')"
-        [attr.aria-label]="t('staff.visit.searchClient')"
-        data-testid="staff-visit-client-query"
-        (input)="onQuery($any($event.target).value)"
-      />
-    </div>
-    <ul uiListGroup [attr.aria-label]="t('staff.visit.clients')">
-      @for (option of clientResults(); track option.id) {
+    <!-- THE SEARCH, PINNED (owner, 2026-09-09): the DS search field
+         (2026-09-24) sticks under the bar while the list scrolls — the
+         sheet's `.searchable` grammar — and its glyph says what the field
+         took the typing for: the magnifier for a name, the handset for a
+         number, the envelope for a mail — detection the desk can see,
+         never a mode to pick. -->
+    <ui-search-field
+      uiPinned
+      [uiValue]="query()"
+      [uiPlaceholder]="t('staff.visit.searchClient')"
+      [uiIcon]="searchGlyph()"
+      [uiIconKind]="parsedQuery().kind"
+      uiAutocapitalize="words"
+      [uiBusy]="uiClientSearching()"
+      uiBusyTestId="staff-visit-client-searching"
+      uiTestId="staff-visit-client-query"
+      [uiClearLabel]="t('staff.day.searchClear')"
+      (uiInput)="onQuery($event)"
+      (uiFocusChange)="searchFocused.set($event)"
+      (uiSubmit)="onSearchEnter($event)"
+      (uiNavigate)="focusFirstResult($event)"
+    />
+    <!-- THE PICKED, AS A GROUP OF THEIR OWN (the HIG revisit, 2026-09-22):
+         «На посещението» — the same person rows the suggestions are made
+         of, selected, first under the field — the sheet's own «Клиенти»
+         group in the page's dress, Calendar's invitee list. One control
+         for both directions: a row's tap moves a person between the
+         groups. The chips it replaces were tokens — a text field's
+         grammar (Mail, Messages) — and at 44 pt with a face and a ✕ they
+         wrapped to one per line and read as a list drawn wrong. -->
+    @if (pickedRows().length > 0) {
+    <ui-stack uiSpacing="compact" data-testid="staff-visit-picked">
+      <span uiText uiFont="footnote" uiForegroundStyle="secondary">
+        {{ t('staff.visit.onVisit') }}
+      </span>
+      <ul
+        uiListGroup
+        class="staff-visit__group"
+        [attr.aria-label]="t('staff.visit.onVisit')"
+      >
+        @for (option of pickedRows(); track option.id) {
+        <ng-container
+          *ngTemplateOutlet="
+            clientRow;
+            context: { option: option, prefix: 'staff-visit-picked-' }
+          "
+        />
+        }
+      </ul>
+    </ui-stack>
+    }
+    <!-- A PERSON ROW, once: the small face, the name over the line, the
+         accent check when they are on the visit (owner, 2026-09-09: "no
+         indication it was added"). The trailing rail is STATIC; only the
+         glyph comes and goes. -->
+    <ng-template #clientRow let-option="option" let-prefix="prefix">
       <li>
         <button
           uiListRow
-          uiSize="large"
+          uiSize="regular"
           uiAlignment="leading"
           type="button"
           role="checkbox"
           [uiInteractive]="true"
           [uiSelected]="option.selected"
           [attr.aria-checked]="option.selected"
-          [attr.data-testid]="'staff-visit-client-' + option.id"
+          [attr.data-testid]="(prefix ?? 'staff-visit-client-') + option.id"
           (click)="toggleClient(option)"
         >
           <span uiLeading>
-            <ui-avatar [uiName]="option.label" uiControlSize="small" />
+            <ui-avatar
+              [uiSrc]="option.avatarSrc ?? null"
+              [uiName]="option.label"
+              uiControlSize="small"
+            />
           </span>
-          <ui-stack uiSpacing="none">
-            <span uiText uiFont="callout" uiWeight="medium"
-              >{{ option.label }}</span
+          <!-- THE EVENT'S HEAD (owner, 2026-09-22): the name, then the mail,
+               the number and the last visit each on its own glyph-led line
+               — the agenda card's recipe, so a person reads the same on
+               every staff surface. The typed run is marked in the name and
+               in the lines (Spotlight's grammar: what matched is primary). -->
+          <lib-staff-event-head
+            size="regular"
+            [truncate]="true"
+            [title]="option.label"
+            [titleParts]="option.titleParts"
+            [lines]="option.lines"
+            class="staff-visit__client-head"
+          />
+          <span uiTrailing class="staff-visit__client-trailing">
+            @if (option.exact && !option.selected) {
+            <span
+              uiBadge
+              uiTone="neutral"
+              [attr.data-testid]="'staff-visit-client-exact-' + option.id"
+              >{{ t('staff.visit.exactMatch') }}</span
             >
-            <span uiText uiFont="footnote" uiForegroundStyle="secondary"
-              >{{ clientLine(option) }}</span
-            >
-          </ui-stack>
-          <!-- THE CHECK (owner, 2026-09-09: "no indication it was added"):
-               the same accent check every chosen row in the app carries.
-               The trailing rail is STATIC; only the glyph comes and goes. -->
-          <span uiTrailing>
-            @if (option.selected) {
+            } @if (option.selected) {
             <ui-icon uiName="checklist.done" uiForegroundStyle="accent" />
             }
           </span>
         </button>
       </li>
-      } @empty {
-      <li uiListRow uiSize="regular">{{ t('staff.visit.noMatch') }}</li>
-      }
-      <!-- «Нов клиент» is NOT a row here (owner, 2026-09-09): it lives in
-           the dock, always reachable, whatever was typed. -->
-    </ul>
-    } @case ('clientNew') {
-    <h2
-      uiSheetLargeTitle
-      id="staff-visit-page-title"
-      uiText
-      uiFont="largeTitle"
+    </ng-template>
+    <!-- THE CREATE ROW SAYS WHAT IT WILL ASSIGN (2026-09-18; owner: "auto
+         detect phone or name or email and auto assign it"): «Нов клиент»
+         over every detected part with its glyph — the name as typed, the
+         number printed the profile's way once whole, the mail. -->
+    <ng-template #createRow>
+      <li>
+        <button
+          uiListRow
+          uiSize="regular"
+          uiAlignment="leading"
+          type="button"
+          [uiInteractive]="true"
+          [attr.aria-label]="createRowName()"
+          data-testid="staff-visit-new-client"
+          (click)="openNewClient()"
+        >
+          <!-- A PERSON-ROW DISC where the face would go (2026-09-22; owner:
+               "small and not well designed compared to the others"): the
+               row takes the people's own anatomy — the same disc, the same
+               height — with the companion glyph in the accent, WhatsApp's
+               and Telegram's «New contact» row. -->
+          <span uiLeading>
+            <ui-avatar
+              uiIcon="party.addGuest"
+              uiControlSize="small"
+              class="staff-visit__create-disc"
+              aria-hidden="true"
+            />
+          </span>
+          <!-- The same head: «Нов клиент» over every detected part on its
+               own line — the form it will open, read before opening it. -->
+          <lib-staff-event-head
+            size="regular"
+            [truncate]="true"
+            [title]="t('staff.visit.newClient')"
+            [lines]="createLines()"
+            class="staff-visit__client-head"
+          />
+        </button>
+      </li>
+    </ng-template>
+    <!-- THE RESULTS, with the CREATE ROW ALWAYS AMONG THEM while a search is
+         on (owner ruling 2026-09-22: "the new user should always be
+         visible") — FIRST, so it is on screen whatever the list runs to,
+         with every typed part already in the new person's fields; the dock
+         is under the keyboard at this moment, and a row is the one place
+         the desk can reach. It yields only to an exact number or mail:
+         then THEY lead, badged, and the row follows — a duplicate is the
+         one mistake this page can help the desk not make. Before anything
+         is typed the dock's ＋ is the way in, and the sections start
+         where the row would have been. -->
+    <!-- ITS OWN GROUP (owner, 2026-09-22: "new client should be separate,
+         not part of the list group"): an act, not a person, so it never
+         fuses with the people's segments — a segment of its own, the
+         ladder's one comfortable space between. -->
+    <ng-template #createGroup>
+      <ul
+        uiListGroup
+        class="staff-visit__group"
+        [attr.aria-label]="t('staff.visit.newClient')"
+        data-testid="staff-visit-create-group"
+      >
+        <ng-container *ngTemplateOutlet="createRow" />
+      </ul>
+    </ng-template>
+    @if (createRowShown() && !exactMatch()) {
+    <ng-container *ngTemplateOutlet="createGroup" />
+    } @if (clientResults().length > 0) {
+    <ul
+      uiListGroup
+      class="staff-visit__group"
+      [attr.aria-label]="t('staff.visit.clients')"
+      data-testid="staff-visit-client-results"
     >
-      {{ t('staff.visit.newClientTitle') }}
-    </h2>
+      @for (option of clientResults(); track option.id) {
+      <ng-container
+        *ngTemplateOutlet="clientRow; context: { option: option }"
+      />
+      }
+    </ul>
+    } @if (createRowShown() && exactMatch()) {
+    <ng-container *ngTemplateOutlet="createGroup" />
+    }
+    <!-- BEFORE A SEARCH: the owner's sections — «Днес», «Скорошни» — each a
+         run of person rows under its footnote; with nothing to suggest, a
+         quiet hint rather than a "no match" for a search nobody ran. -->
+    @if (!searchActive()) { @for (section of clientSections(); track section.id)
+    {
+    <ui-stack
+      uiSpacing="compact"
+      [attr.data-testid]="'staff-visit-clients-' + section.id"
+    >
+      <span uiText uiFont="footnote" uiForegroundStyle="secondary">
+        {{ section.title }}
+      </span>
+      <ul
+        uiListGroup
+        class="staff-visit__group"
+        [attr.aria-label]="section.title"
+      >
+        @for (option of section.clients; track option.id) {
+        <ng-container
+          *ngTemplateOutlet="clientRow; context: { option: option }"
+        />
+        }
+      </ul>
+    </ui-stack>
+    } @empty {
+    <figure
+      class="staff-visit__search-empty"
+      data-testid="staff-visit-search-hint"
+    >
+      <ui-icon uiName="action.search" aria-hidden="true" />
+      <figcaption uiText uiFont="footnote" uiForegroundStyle="secondary">
+        {{ t('staff.visit.searchHint') }}
+      </figcaption>
+    </figure>
+    } } } @case ('clientNew') {
+    <ui-sheet-headline>
+      <h2
+        uiSheetLargeTitle
+        id="staff-visit-page-title"
+        uiText
+        uiFont="largeTitle"
+      >
+        {{ t('staff.visit.newClientTitle') }}
+      </h2>
+    </ui-sheet-headline>
     <!-- The same three fields the client's own contact sheet asks for, in
          the same order, with the DS's composite phone control — so the
          number the desk types obeys the same E.164 contract as one a client
@@ -200,6 +380,698 @@
         </ui-stack>
       </label>
     </ui-stack>
+    } @case ('service') {
+    <!-- THE SERVICE PAGE (owner, 2026-09-17: "adding a service → push sheet
+         / page"): the catalogue under its name, the search PINNED under
+         the bar as the client page pins its own — not focused until
+         touched, a catalogue this size is scanned first, but a letter
+         typed anywhere lands in it — and the rows beneath, each the
+         service over its variant, minutes and price, a tap PICKING it (the
+         row selects, its stepper unfolds); the DOCK's «Добави …» seats
+         every pick and pops the page. Nothing is marked as already on the
+         visit (owner, 2026-09-10): a service may be wanted twice, and a
+         check reads as "done" — the stepper counts instead. Opens on the
+         whole catalogue every time, nothing picked. -->
+    <!-- The client search's own grammar (2026-09-24): the title folds
+         while the search is engaged and the field rises under the bar. -->
+    <ui-sheet-headline [uiFolded]="searchEngaged()">
+      <h2
+        uiSheetLargeTitle
+        id="staff-visit-page-title"
+        uiText
+        uiFont="largeTitle"
+      >
+        {{ t('staff.visit.addService') }}
+      </h2>
+      @if (serviceFor(); as name) {
+      <!-- FOR WHOM (owner, 2026-09-24): the catalogue pushed for a person
+           without a service names them under its title, and its picks seat
+           for them — no chip to move afterwards. -->
+      <p
+        uiText
+        uiFont="subheadline"
+        uiForegroundStyle="secondary"
+        data-testid="staff-visit-services-for"
+      >
+        {{ t('staff.visit.servicesFor', { name }) }}
+      </p>
+      }
+    </ui-sheet-headline>
+    <ui-search-field
+      uiPinned
+      [uiValue]="query()"
+      [uiPlaceholder]="t('staff.visit.searchService')"
+      uiTestId="staff-visit-service-query"
+      [uiClearLabel]="t('staff.day.searchClear')"
+      (uiInput)="onQuery($event)"
+      (uiFocusChange)="searchFocused.set($event)"
+      (uiSubmit)="leaveSearch($event)"
+      (uiNavigate)="focusFirstResult($event)"
+    />
+    @if (serviceResults().length === 0) {
+    <!-- NOTHING MATCHED: the client search's own quiet figure — the
+         glyph over one line — never a bare footnote at a row's inset. -->
+    <figure
+      class="staff-visit__search-empty"
+      data-testid="staff-visit-service-empty"
+    >
+      <ui-icon uiName="action.search" aria-hidden="true" />
+      <figcaption uiText uiFont="footnote" uiForegroundStyle="secondary">
+        {{ t('staff.visit.noService') }}
+      </figcaption>
+    </figure>
+    } @else {
+    <ul
+      uiListGroup
+      [attr.aria-label]="t('staff.visit.addService')"
+      data-testid="staff-visit-service-list"
+    >
+      @for (option of serviceResults(); track option.id) {
+      <!-- A ROW WITH TWO CONTROLS (owner, 2026-09-17: "animated like
+           select — in place of a check, a stepper should animate, expand"):
+           the PICK, a checkbox button that IS the row's label, and the DS
+           count stepper trailing. The tap picks — the row takes the
+           selection wash, the stepper's square turns to a ✓ and unfolds
+           into «− 1 +» — and the foot seats what is picked. -->
+      <li>
+        <ui-list-row
+          uiSize="large"
+          uiAlignment="leading"
+          class="staff-visit__service-row"
+          [uiInteractive]="true"
+          [uiSelected]="serviceCount(option.id) > 0"
+        >
+          <button
+            type="button"
+            role="checkbox"
+            class="staff-visit__service-pick"
+            [attr.aria-checked]="serviceCount(option.id) > 0"
+            [attr.data-testid]="'staff-visit-service-' + option.id"
+            (click)="pickService(option)"
+          >
+            <!-- The variant is a description here too (owner, 2026-09-10) —
+                 the row's second line, ahead of the minutes and the price,
+                 never welded to the name. -->
+            <ui-stack uiSpacing="none">
+              <span uiText uiFont="callout" uiWeight="medium"
+                >{{ option.serviceLabel ?? option.label }}</span
+              >
+              <span
+                uiText
+                uiFont="footnote"
+                uiForegroundStyle="secondary"
+                class="staff-visit__figures"
+              >
+                @if (option.variantLabel) { {{ option.variantLabel }} · }{{
+                t('staff.visit.minutes', { minutes: option.minutes }) }}@if
+                (option.priceLabel) { · {{ option.priceLabel }} }
+              </span>
+            </ui-stack>
+          </button>
+          <span uiTrailing class="staff-visit__service-count">
+            <ui-count-stepper
+              [uiValue]="serviceCount(option.id)"
+              [uiLabel]="option.serviceLabel ?? option.label"
+              [uiAddLabel]="t('staff.visit.serviceMore')"
+              [uiRemoveLabel]="t('staff.visit.serviceLess')"
+              [attr.data-testid]="'staff-visit-service-' + option.id + '-count'"
+              (uiValueChange)="countService(option, $event)"
+            />
+          </span>
+        </ui-list-row>
+      </li>
+      }
+    </ul>
+    } } @case ('discount') {
+    <!-- THE DISCOUNT PAGE (owner, 2026-09-17: "adding a discount → push
+         sheet / page; the bottom toolbar for applying goes to the main
+         sheet; applied discounts live in the push sheet"; then: "it
+         appears above the type row and shifts the layout … even
+         duplicating"; then: "no indication that some discounts are
+         applied when you switch the type … no way to jump and see all";
+         then: "if shown expanded I expect the coupon card, not just list
+         rows"): «Приложени» first — ONE row reading the whole bill, and
+         under it, folded until tapped, every line as its ticket with
+         «Премахни»; «Вид» beneath — HIG's pop-up button in a form row,
+         plain — and under the group what the kind needs: the shop's live
+         codes as cards in a frame, applied IN PLACE; a voucher's or
+         coupon's code typed or scanned, with the client's own coupons as
+         cards beneath the field; a percent or a sum for money roles. A
+         card applies on its «Използвай»; a typed figure or code is
+         applied by the DOCK's «Приложи …», the ✓ standing while there is
+         nothing to; the page stays for the next line, the row reads it at
+         once, and nothing above «Вид» moves. -->
+    <ui-sheet-headline>
+      <h2
+        uiSheetLargeTitle
+        id="staff-visit-page-title"
+        uiText
+        uiFont="largeTitle"
+      >
+        {{ t('staff.visit.discount') }}
+      </h2>
+    </ui-sheet-headline>
+    <!-- TWO GROUPS, NOT ONE (owner, 2026-09-17: "grouping them doesn't seem
+         right as an Apple HIG guide"): what is applied is CONTENT — the
+         bill's lines — and «Вид» with its door is the FORM; HIG's inset
+         grouped list keeps one concern to a group, the page's own gap
+         between them. -->
+    <ul
+      uiListGroup
+      class="staff-visit__group"
+      [attr.aria-label]="t('staff.visit.appliedRow')"
+      data-testid="staff-visit-discount-lines-group"
+    >
+      <!-- «ПРИЛОЖЕНИ» (owner, 2026-09-17: "if you switch the type there is
+           no indication that some discounts are applied — only the bottom
+           price — and no way to jump and see all applied"; then: "if
+           shown expanded I expect the coupon card, not just list rows"):
+           the bill's whole discount on ONE row, whatever kind is in force
+           — and, on the tap, THE TICKETS unfolding out of the row (the
+           tip row's own fold): every line as the coupon card it is,
+           «Премахни» on each, the vouchers after — the one place the
+           applied lines live. Always here — «Няма», asleep, on a clean
+           bill — so a new line changes its text and moves nothing. -->
+      <li>
+        <div
+          class="staff-visit__extend"
+          [attr.data-open]="linesOpen() ? '' : null"
+        >
+          <button
+            uiListRow
+            uiSize="large"
+            type="button"
+            [uiInteractive]="true"
+            [disabled]="!linesRowValue().applied"
+            [attr.aria-label]="t('staff.visit.appliedRow') + ': ' + linesRowValue().label"
+            [attr.aria-expanded]="linesOpen()"
+            aria-controls="staff-visit-discount-lines"
+            data-testid="staff-visit-discount-lines-row"
+            (click)="toggleLines()"
+          >
+            {{ t('staff.visit.appliedRow') }}
+            <span uiTrailing class="staff-visit__row-value">
+              <span
+                class="staff-visit__figures"
+                [uiForegroundStyle]="linesRowValue().applied ? 'promo' : 'secondary'"
+                data-testid="staff-visit-discount-lines-value"
+                >{{ linesRowValue().label }}</span
+              >
+              <ui-icon
+                uiName="field.expand"
+                class="staff-visit__disclosure"
+                aria-hidden="true"
+              />
+            </span>
+          </button>
+          <div class="staff-visit__fold">
+            <div
+              class="staff-visit__fold-section"
+              id="staff-visit-discount-lines"
+              data-testid="staff-visit-discount-lines"
+              [attr.inert]="linesOpen() ? null : ''"
+              [attr.aria-hidden]="linesOpen() ? null : 'true'"
+            >
+              <div class="staff-visit__fold-body">
+                <!-- THE TICKETS: the same card the frame and the field use,
+                     the applied dress — never a list of rows (owner). -->
+                <ui-stack
+                  uiSpacing="compact"
+                  data-testid="staff-visit-discount-applied"
+                >
+                  @for (line of discountLines(); track line.key) {
+                  <ng-container
+                    *ngTemplateOutlet="lineTicket; context: { $implicit: line }"
+                  />
+                  } @for (line of voucherLines(); track line.voucher.voucherId)
+                  {
+                  <ng-container
+                    *ngTemplateOutlet="voucherTicket; context: { $implicit: line }"
+                  />
+                  }
+                </ui-stack>
+              </div>
+            </div>
+          </div>
+        </div>
+      </li>
+    </ul>
+    <ul
+      uiListGroup
+      class="staff-visit__group"
+      [attr.aria-label]="t('staff.visit.discountKind')"
+      data-testid="staff-visit-discount-add-group"
+    >
+      <!-- «ВИД» — HIG's pop-up button in a form row: "a flat list of
+           mutually exclusive options … a choice that affects the
+           surrounding view", predictable from "an introductory label", with
+           "a useful default selection". The label leads; the VALUE is the
+           trigger, plain, the root's own «Времетраене» grammar (owner,
+           2026-09-16). What the kind needs appears in place, beneath. -->
+      <li uiListRow uiSize="large">
+        {{ t('staff.visit.discountKind') }} @if (discountKinds().length > 1) {
+        <span uiTrailing>
+          <ui-choice-menu
+            uiAlignment="trailing"
+            [uiOptions]="discountKinds()"
+            [uiSelectedId]="discountKind()"
+            [uiLabel]="t('staff.visit.discountKind')"
+            [(uiPresented)]="discountKindMenu"
+            (uiPicked)="pickDiscountKind($event)"
+          >
+            <button
+              type="button"
+              uiInteractive
+              uiRadius="capsule"
+              uiMenuTrigger
+              class="staff-visit__row-title staff-visit__row-choice"
+              [attr.aria-label]="t('staff.visit.discountKind') + ': ' + discountKindLabel()"
+              data-testid="staff-visit-discount-kind"
+              (click)="discountKindMenu.set(true)"
+            >
+              <span data-testid="staff-visit-discount-kind-value"
+                >{{ discountKindLabel() }}</span
+              >
+              <ui-icon uiName="field.popUp" />
+            </button>
+          </ui-choice-menu>
+        </span>
+        } @else {
+        <!-- One kind on offer is a fact, not a choice: said, not opened
+             (HIG: a pop-up needs options). -->
+        <span
+          uiTrailing
+          uiForegroundStyle="secondary"
+          data-testid="staff-visit-discount-kind-value"
+          >{{ discountKindLabel() }}</span
+        >
+        }
+      </li>
+      <!-- WHAT THE KIND NEEDS stands under the group, on the page — never
+           a field in a row: the shop's codes as cards, a voucher's code as
+           the signup form's field, the percent as tiles, the sum written
+           large. The row is the choice; the page is the answer. -->
+    </ul>
+    @if (discountKind() === 'coupon') {
+    <!-- THE CODE — the DS code field in its bordered dress, the field the
+         signup flow types a name into, on the page under the kind that
+         names it: no label, no hint, «Вид · Ваучер / Купон» already said
+         it. The scan glyph lives INSIDE the frame at its trailing edge
+         where the engine can read a code (Wallet's own arrangement), the
+         verdict beneath (Apple Pay's coupon line). Typing only readies the
+         dock's «Приложи GIFT2025»; Return or the CTA asks, and a hit
+         empties the field. Keystrokes only: Return fires the engine's
+         `change` as well, a beat AFTER the ask it triggers, and a leave
+         event fed back as typing would unsettle the check it started. -->
+    <ui-stack uiSpacing="tight" data-testid="staff-visit-discount-code-block">
+      <ui-code-field
+        uiControlSize="large"
+        uiId="staff-visit-discount-code"
+        [uiValue]="discountCodeFigure()"
+        [uiInvalid]="codeRefused()"
+        [uiPlaceholder]="t('staff.visit.voucherCodePlaceholder')"
+        [uiLabel]="t('staff.visit.kindCoupon')"
+        uiTestId="staff-visit-discount-code"
+        (uiInput)="typeCode($event)"
+        (uiSubmit)="applyDiscount()"
+      >
+        @if (scanAvailable()) {
+        <button
+          type="button"
+          uiCodeFieldAction
+          uiButton
+          uiButtonStyle="plain"
+          uiTint="neutral"
+          uiControlSize="small"
+          [uiIconOnly]="true"
+          [attr.aria-label]="t('staff.visit.scan')"
+          data-testid="staff-visit-discount-scan"
+          (click)="openScanner()"
+        >
+          <ui-icon uiName="action.scan" />
+        </button>
+        }
+      </ui-code-field>
+      @if (codeNote(); as note) {
+      <span
+        uiText
+        uiFont="footnote"
+        [uiForegroundStyle]="codeRefused() ? 'destructive' : 'secondary'"
+        [attr.role]="codeRefused() ? 'alert' : null"
+        data-testid="staff-visit-discount-code-note"
+        >{{ note }}</span
+      >
+      }
+    </ui-stack>
+    } @if (discountKind() === 'percent') {
+    <!-- THE PERCENT, ON A RULER (owner, 2026-09-16: "not tiles — a slider
+         or something like that, but catchy and creative"): the figure
+         written large — the DS amount field on a whole count with no
+         stepper, a tap types it — and under it what it takes off THIS bill
+         on the dock, the old price struck; then the DS slider
+         as a ruler of five-percent ticks lit in the promo ink up to the
+         thumb, the quarters taller and named (the Mobbin sweep: Acorns'
+         portfolio percent over a ruler, Rocket Money's lit savings ticks,
+         Google Photos' edit sliders, Binance's target-ROI marks). A move
+         drafts, and the dock's «Приложи −15%» keeps it; a hundred and more,
+         typed, snaps to a hundred. -->
+    <ui-stack
+      uiSpacing="regular"
+      class="staff-visit__dial"
+      data-testid="staff-visit-discount-percent-block"
+    >
+      <ui-stack uiSpacing="tight" uiAlignment="center">
+        <ui-amount-field
+          uiId="staff-visit-discount-percent"
+          [uiValue]="percentValue()"
+          uiUnit="%"
+          uiReserve="000"
+          [uiFractionDigits]="0"
+          [uiMax]="100"
+          [uiStepper]="false"
+          [uiLabel]="t('staff.visit.discountPercent')"
+          uiTestId="staff-visit-discount-percent"
+          (uiInput)="typeFigure($event)"
+          (uiValueChange)="setPercentFromEntry($event)"
+          (uiSubmit)="applyDiscount()"
+        />
+        <!-- What the figure does is said by the DOCK — the old price struck,
+             the new one beside it (owner: "no need of this label; edit the
+             bottom toolbar price, add a strikethrough"). Nothing to refuse
+             either: a figure past the ceiling snaps to it as it is typed. -->
+      </ui-stack>
+      <ui-slider
+        [uiValue]="percentSliderValue()"
+        [uiMin]="0"
+        [uiMax]="100"
+        [uiStep]="5"
+        [uiTickEvery]="5"
+        [uiMajorEvery]="25"
+        [uiMarks]="percentMarks"
+        [uiLabel]="t('staff.visit.discountPercent')"
+        [uiValueText]="percentValueText()"
+        uiTestId="staff-visit-discount-percent-slider"
+        class="staff-visit__dial-slider"
+        (uiValueChange)="slidePercent($event)"
+      />
+    </ui-stack>
+    } @if (discountKind() === 'amount') {
+    <!-- THE SUM, the same instrument: the figure written large on «0,00 €»
+         with what is left beneath, and the ruler from nothing to the bill
+         in half-euro steps, a euro a tick, five the taller; a sum typed
+         past the bill snaps to the bill. -->
+    <ui-stack
+      uiSpacing="regular"
+      class="staff-visit__dial"
+      data-testid="staff-visit-discount-amount-block"
+    >
+      <ui-stack uiSpacing="tight" uiAlignment="center">
+        <ui-amount-field
+          uiId="staff-visit-discount-amount"
+          [uiValue]="amountValue()"
+          [uiUnit]="t('staff.visit.currencySymbol')"
+          uiReserve="00,00"
+          [uiMax]="amountCap()"
+          [uiStepper]="false"
+          [uiLabel]="t('staff.visit.discountAmount')"
+          uiTestId="staff-visit-discount-amount"
+          (uiInput)="typeFigure($event)"
+          (uiValueChange)="setAmountFromEntry($event)"
+          (uiSubmit)="applyDiscount()"
+        />
+      </ui-stack>
+      @if (amountSliderMax(); as max) {
+      <ui-slider
+        [uiValue]="amountSliderValue()"
+        [uiMin]="0"
+        [uiMax]="max"
+        [uiStep]="amountSliderStep"
+        [uiTickEvery]="amountSliderTick"
+        [uiMajorEvery]="amountSliderMajor"
+        [uiMarks]="amountMarks()"
+        [uiLabel]="t('staff.visit.discountAmount')"
+        [uiValueText]="amountValueText()"
+        uiTestId="staff-visit-discount-amount-slider"
+        class="staff-visit__dial-slider"
+        (uiValueChange)="slideAmount($event)"
+      />
+      }
+    </ui-stack>
+    } @if (discountKind() === 'promo') {
+    <!-- THE FRAME (owner, 2026-09-16: "vertical, but in a scrollable area
+         / frame"): every live code as a card, stacked, inside the DS scroll
+         column capped at two cards and a half — the cut card is HIG's cue
+         that there is more; with one or two cards the frame hugs them and
+         nothing scrolls. Proximity snap settles the frame on a card; when
+         the frame is done, the swipe carries on to the page. «Използвай»
+         applies; the page stays for more. -->
+    <ui-scroll-column
+      uiSnap="start"
+      uiSpacing="compact"
+      role="group"
+      class="staff-visit__coupons"
+      [attr.aria-label]="t('staff.visit.kindPromo')"
+      data-testid="staff-visit-discount-promo-list"
+    >
+      @for (offer of promoChoices(); track offer.id) {
+      <ng-container
+        *ngTemplateOutlet="offerCard; context: { $implicit: offer }"
+      />
+      }
+    </ui-scroll-column>
+    } @if (discountKind() === 'coupon' && grantChoices().length > 0) {
+    <!-- THE CLIENT'S OWN COUPONS — theirs to burn, so they need no code:
+         the same cards in the same frame, under the field a stranger's
+         voucher goes in by. -->
+    <ui-stack uiSpacing="tight">
+      <span
+        uiText
+        uiFont="footnote"
+        uiForegroundStyle="secondary"
+        class="staff-visit__page-label"
+        >{{ t('staff.visit.kindGrant') }}</span
+      >
+      <ui-scroll-column
+        uiSnap="start"
+        uiSpacing="compact"
+        role="group"
+        class="staff-visit__coupons"
+        [attr.aria-label]="t('staff.visit.kindGrant')"
+        data-testid="staff-visit-discount-grant-list"
+      >
+        @for (offer of grantChoices(); track offer.id) {
+        <ng-container
+          *ngTemplateOutlet="offerCard; context: { $implicit: offer }"
+        />
+        }
+      </ui-scroll-column>
+    </ui-stack>
+    } } @case ('photo') { @if (currentPhoto(); as photo) {
+    <!-- THE PHOTO AS A VIEWER (owner, 2026-09-17: "full sheet screen, no
+         title — the image at its original ratio, centered"; then: "make
+         the information shown by default … the people as user rows"): the
+         picture full-bleed in its own shape, centred in the space above the
+         dock, no large title — the header names the moment, as Photos'
+         bar does. Under it, the facts as ROWS, always: the people first,
+         each a person row with a face — the chair's portrait with its
+         legend, the client's initials — then when it was taken, and which
+         of the shop's pictures it is. «Изтрий снимката» stays the dock's. -->
+    <h2 uiVisuallyHidden id="staff-visit-page-title">{{ photoWhen(photo) }}</h2>
+    <figure
+      class="staff-visit__photo-hero"
+      data-testid="staff-visit-photo-page"
+    >
+      <ui-async-image
+        [uiSrc]="photo.url"
+        [uiAlt]="t('staff.visit.photoOpen', { when: photoWhen(photo) })"
+        [uiRatio]="photoRatio(photo)"
+      />
+    </figure>
+    <ul
+      uiListGroup
+      class="staff-visit__group"
+      [attr.aria-label]="t('staff.visit.photo')"
+      data-testid="staff-visit-photo-info"
+    >
+      @if (photoChairRow(photo); as chair) {
+      <li
+        uiListRow
+        uiSize="large"
+        uiAlignment="leading"
+        data-testid="staff-visit-photo-chair-row"
+      >
+        <span uiLeading class="staff-visit__face">
+          <ui-avatar
+            [uiSrc]="chair.avatarSrc"
+            [uiName]="chair.label"
+            uiControlSize="regular"
+            data-testid="staff-visit-photo-chair-face"
+          />
+          @if (chair.tone !== null) {
+          <span
+            class="staff-visit__swatch"
+            [attr.data-barber-tone]="chair.tone"
+            aria-hidden="true"
+          ></span>
+          }
+        </span>
+        <ui-stack uiSpacing="none">
+          <span data-testid="staff-visit-photo-chair">{{ chair.label }}</span>
+          <span uiText uiFont="footnote" uiForegroundStyle="secondary"
+            >{{ t('staff.visit.photoChair') }}</span
+          >
+        </ui-stack>
+      </li>
+      }
+      <li
+        uiListRow
+        uiSize="large"
+        uiAlignment="leading"
+        data-testid="staff-visit-photo-client-row"
+      >
+        <span uiLeading class="staff-visit__face">
+          <ui-avatar
+            [uiSrc]="null"
+            [uiName]="photo.clientLabel"
+            uiControlSize="regular"
+            data-testid="staff-visit-photo-client-face"
+          />
+        </span>
+        <ui-stack uiSpacing="none">
+          <span data-testid="staff-visit-photo-client"
+            >{{ photo.clientLabel }}</span
+          >
+          <span uiText uiFont="footnote" uiForegroundStyle="secondary"
+            >{{ t('staff.visit.photoClient') }}</span
+          >
+        </ui-stack>
+      </li>
+      <li uiListRow uiSize="large">
+        {{ t('staff.visit.photoTakenAt') }}
+        <span
+          uiTrailing
+          uiForegroundStyle="secondary"
+          class="staff-visit__figures"
+          data-testid="staff-visit-photo-when"
+          >{{ photoWhen(photo) }}</span
+        >
+      </li>
+      @if (photo.origin === 'library' && photo.label; as name) {
+      <li uiListRow uiSize="large">
+        {{ t('staff.visit.photoSystem') }}
+        <span
+          uiTrailing
+          uiForegroundStyle="secondary"
+          data-testid="staff-visit-photo-source"
+          >{{ name }}</span
+        >
+      </li>
+      }
+    </ul>
+    } } @case ('camera') {
+    <!-- THE SHUTTER'S PAGE (owner, 2026-09-17: "take a photo doesn't open
+         the camera"): the DS viewfinder, asked for at the moment of use,
+         showing exactly what the shutter takes; the shutter is the dock's.
+         A refusal is said in words, and «От устройството» takes the
+         dock's place as the way in. -->
+    <ui-sheet-headline>
+      <h2
+        uiSheetLargeTitle
+        id="staff-visit-page-title"
+        uiText
+        uiFont="largeTitle"
+      >
+        {{ t('staff.visit.photoTake') }}
+      </h2>
+    </ui-sheet-headline>
+    <ui-camera-capture
+      #camera
+      class="staff-visit__camera"
+      [uiStarting]="t('staff.visit.cameraStarting')"
+      [uiReady]="t('staff.visit.cameraReady')"
+      [uiDenied]="t('staff.visit.cameraDenied')"
+      [uiUnsupported]="t('staff.visit.cameraUnsupported')"
+      data-testid="staff-visit-camera"
+      (uiCaptured)="shot($event)"
+      (uiStateChange)="cameraState.set($event)"
+    />
+    } @case ('library') {
+    <!-- THE SHOP'S OWN PICTURES (owner, 2026-09-17: "assign an image that
+         is already in our system"): the catalogue's covers and work shots
+         as a grid, each named; a tap assigns it to the visit as it stands
+         — pointed at, never copied — and comes back. -->
+    <ui-sheet-headline>
+      <h2
+        uiSheetLargeTitle
+        id="staff-visit-page-title"
+        uiText
+        uiFont="largeTitle"
+      >
+        {{ t('staff.visit.photoSystem') }}
+      </h2>
+      <p uiText uiFont="subheadline" uiForegroundStyle="secondary">
+        {{ t('staff.visit.photoSystemHint') }}
+      </p>
+    </ui-sheet-headline>
+    @if (uiLibrary().length > 0) {
+    <!-- THE SHOP'S GALLERY, exactly as the barber's and the service's own
+         sheets draw it (owner, 2026-09-17: "just images, exactly the
+         same"): the shared showcase gallery, full-bleed with its own
+         gutters — the mosaic only, no strip and no toggle (owner: "it
+         should be only a grid") — picking many, as Photos does: a tap
+         marks a tile, the dock counts and adds them all. -->
+    <div class="staff-visit__gallery">
+      <cr-showcase-gallery
+        [images]="libraryUrls()"
+        [imageAlt]="t('staff.visit.photoSystem')"
+        [ariaLabel]="t('staff.visit.photoSystem')"
+        [gridViewLabel]="t('marketing.gallery.gridView')"
+        [carouselViewLabel]="t('marketing.gallery.carouselView')"
+        [showToggle]="false"
+        [expanded]="true"
+        [selectable]="true"
+        [selected]="librarySelected()"
+        data-testid="staff-visit-library"
+        (picked)="toggleLibraryImage($event)"
+      />
+    </div>
+    } @else {
+    <figure
+      class="staff-visit__search-empty"
+      data-testid="staff-visit-library-empty"
+    >
+      <ui-icon uiName="media.library" aria-hidden="true" />
+      <figcaption uiText uiFont="footnote" uiForegroundStyle="secondary">
+        {{ t('staff.visit.photoSystemEmpty') }}
+      </figcaption>
+    </figure>
+    } } @case ('scan') {
+    <!-- THE CAMERA, in place of the discount page: the viewfinder reads the
+         first QR or barcode it sees and the field gets it, asked at once.
+         The camera is asked for here, at the moment of use, and a refusal
+         is said in words; «Въведи на ръка» is the honest way back. -->
+    <ui-sheet-headline>
+      <h2
+        uiSheetLargeTitle
+        id="staff-visit-page-title"
+        uiText
+        uiFont="largeTitle"
+      >
+        {{ t('staff.visit.scanTitle') }}
+      </h2>
+      <p uiText uiFont="subheadline" uiForegroundStyle="secondary">
+        {{ t('staff.visit.scanHint') }}
+      </p>
+    </ui-sheet-headline>
+    <ui-code-scanner
+      class="staff-visit__scanner"
+      [uiStarting]="t('staff.visit.scanStarting')"
+      [uiScanning]="t('staff.visit.scanScanning')"
+      [uiDenied]="t('staff.visit.scanDenied')"
+      [uiUnsupported]="t('staff.visit.scanUnsupported')"
+      data-testid="staff-visit-scanner"
+      (uiDetected)="scanned($event)"
+    />
     } }
   </section>
   } @else {
@@ -410,7 +1282,7 @@
             </span>
             {{ barber.label }}
             <span uiTrailing>
-              <ui-icon uiName="field.expand" aria-hidden="true" />
+              <ui-icon uiName="field.popUp" aria-hidden="true" />
             </span>
           </button>
           <ng-template uiChoiceLeading let-option>
@@ -587,125 +1459,42 @@
         </button>
       </li>
       } }
-      <!-- THE DROPDOWN (owner, 2026-09-10: "like the country code dropdown
-           — one tap and hide, no check, no page"). A `ui-menu` on the row,
-           in the top layer, with the search pinned at its top and the
-           catalogue as one-tap rows: a tap seats the service and the menu
-           closes. Nothing is marked as already on the visit (owner, same
-           day): a service may be wanted twice, and a check reads as "done". No
-           keyboard until the field is touched — a catalogue this size is
-           scanned, not searched — but a letter typed while a row has focus
-           lands in the field, so a keyboard reaches it too. Opens on the
-           whole catalogue every time. -->
+      <!-- THE ADD ROW (owner, 2026-09-17: "make add service an action sheet
+           too") — the ladder's own «＋ Добави услуга», the plus leading, no
+           value, no chevron, exactly the money rows': it raises the
+           catalogue's CARD, declared at the foot with the other cards. The
+           dropdown of 2026-09-10 (a `ui-menu` on the row) is retired: the
+           three cards are one grammar. -->
       @if (!gone()) {
       <li>
-        <ui-menu
-          uiAlignment="leading"
-          [uiPresented]="serviceMenu()"
-          [uiLabel]="t('staff.visit.addService')"
-          (uiDismissed)="serviceMenu.set(false)"
+        <button
+          uiListRow
+          uiSize="large"
+          type="button"
+          [uiInteractive]="true"
+          data-testid="staff-visit-add-service"
+          (click)="openServicePage()"
         >
-          <button
-            uiListRow
-            uiSize="large"
-            type="button"
-            uiMenuTrigger
-            [uiInteractive]="true"
-            data-testid="staff-visit-add-service"
-            (click)="openServiceMenu()"
-          >
-            <span uiLeading>
-              <ui-icon uiName="action.add" aria-hidden="true" />
-            </span>
-            {{ t('staff.visit.addService') }}
-          </button>
-          <div class="staff-visit__picker">
-            <div class="staff-visit__search" uiMaterial="regular">
-              <ui-icon
-                uiName="action.search"
-                class="staff-visit__search-icon"
-                aria-hidden="true"
-              />
-              <input
-                uiTextField
-                type="search"
-                class="staff-visit__search-field"
-                [value]="query()"
-                [attr.placeholder]="t('staff.visit.searchService')"
-                [attr.aria-label]="t('staff.visit.searchService')"
-                data-testid="staff-visit-service-query"
-                (input)="onQuery($any($event.target).value)"
-              />
-            </div>
-            @if (serviceResults().length === 0) {
-            <p
-              uiText
-              uiFont="footnote"
-              uiForegroundStyle="secondary"
-              class="staff-visit__picker-empty"
-            >
-              {{ t('staff.visit.noService') }}
-            </p>
-            } @else {
-            <ui-list-group>
-              @for (option of serviceResults(); track option.id) {
-              <button
-                type="button"
-                uiMenuItem
-                uiListRow
-                uiAlignment="leading"
-                [uiInteractive]="true"
-                class="staff-visit__service-row"
-                [attr.data-testid]="'staff-visit-service-' + option.id"
-                (click)="quickAdd(option)"
-              >
-                <!-- The variant is a description here too (owner,
-                     2026-09-10) — the row's second line, ahead of the
-                     minutes and the price, never welded to the name. -->
-                <ui-stack uiSpacing="none">
-                  <span uiText uiFont="callout" uiWeight="medium"
-                    >{{ option.serviceLabel ?? option.label }}</span
-                  >
-                  <span
-                    uiText
-                    uiFont="footnote"
-                    uiForegroundStyle="secondary"
-                    class="staff-visit__figures"
-                  >
-                    @if (option.variantLabel) { {{ option.variantLabel }} · }{{
-                    t('staff.visit.minutes', { minutes: option.minutes }) }}@if
-                    (option.priceLabel) { · {{ option.priceLabel }} }
-                  </span>
-                </ui-stack>
-              </button>
-              }
-            </ui-list-group>
-            }
-          </div>
-        </ui-menu>
+          <span uiLeading>
+            <ui-icon uiName="action.add" aria-hidden="true" />
+          </span>
+          {{ t('staff.visit.addService') }}
+        </button>
       </li>
       }
     </ul>
 
-    @if (!everyoneServed()) {
-    <p
-      uiText
-      uiFont="footnote"
-      uiForegroundStyle="secondary"
-      class="staff-visit__group--services-note"
-      data-testid="staff-visit-needs-service"
-    >
-      {{ t('staff.visit.needsService') }}
-    </p>
-    }
-
     <!-- ── НАЧАЛО + ВРЕМЕТРАЕНЕ ────────────────────────────────────
-           ABOVE the frame (owner, 2026-09-09), and unconditional: the typed
-           pair is the truth and the picture beneath it is the check — and
-           while a thumb drags the block, the figures it moves sit above the
-           hand rather than under it. There is no `До` field: the end is a
-           computation and it is stored nowhere, so `До ≤ От` is
-           unrepresentable rather than validated. -->
+           ONE GROUP, THREE SEGMENTS: the frame FIRST — the chair's day as a
+           picture, the day pill in its head — and the typed pair beneath it
+           (owner, 2026-09-10: "the frame first and the timings below";
+           this comment said the reverse until 2026-09-18). Unconditional:
+           the frame is the tool of the shop's commonest correction and is
+           never collapsed. A finished drag or resize in it WRITES on
+           release, on the day it draws (the sheet's one immediate gesture,
+           with its own «Върни»); the typed figures draft. There is no `До`
+           field: the end is a computation and it is stored nowhere, so
+           `До ≤ От` is unrepresentable rather than validated. -->
     <ul
       uiListGroup
       class="staff-visit__group"
@@ -922,7 +1711,7 @@
             >
               {{ t(timingMode() === 'end' ? 'staff.visit.end' :
               'staff.visit.duration') }}
-              <ui-icon uiName="field.expand" />
+              <ui-icon uiName="field.popUp" />
             </button>
           </ui-choice-menu>
           @if (visitCatalogNote(); as note) {
@@ -990,13 +1779,70 @@
       class="staff-visit__group staff-visit__group--clients"
       [attr.aria-label]="t('staff.visit.clients')"
     >
-      @for (client of draft().clients; track client.id) {
-      <!-- TWO targets in one row, and that is legal precisely because both
-             clear 44x44 and their accessible names differ: the row pushes
-             the person's page, the `☎` dials. The anchor is a SIBLING of the
-             row rather than a child of it — an `<a>` inside a `<button>` is
-             not markup, so the peer is positioned over the row's trailing
-             end instead of nested inside its target. -->
+      @for (client of draft().clients; track client.id) { @if
+      (clientsRemovable()) {
+      <!-- A PARTY'S PERSON COMES OFF THE WAY A SERVICE DOES (owner,
+           2026-09-24: "having multiple clients should be possible to remove
+           one of them"): the service rows' own grammar — a swipe, and the
+           trailing «−» that is the visible way HIG asks a swipe to have.
+           They leave with their services (a seat IS a service for a
+           person); the last person is the visit's and offers no «−». -->
+      <li
+        class="staff-visit__swipe"
+        libSwipeToDelete
+        [attr.data-testid]="'staff-visit-client-' + client.id + '-swipe'"
+        (deleted)="removeClient(client.id)"
+      >
+        <ui-list-row
+          uiSize="large"
+          class="staff-visit__swipe-content"
+          [uiInteractive]="true"
+        >
+          <span uiLeading>
+            <ui-avatar [uiName]="client.label" uiControlSize="regular" />
+          </span>
+          <button
+            type="button"
+            class="staff-visit__row-press"
+            [attr.data-testid]="'staff-visit-client-row-' + client.id"
+            (click)="
+              push('client', client.id, 'staff-visit-client-row-' + client.id)
+            "
+          >
+            <ng-container
+              *ngTemplateOutlet="clientLines; context: { $implicit: client }"
+            />
+          </button>
+          <span uiTrailing>
+            <button
+              type="button"
+              uiButton
+              uiButtonStyle="bordered"
+              uiTint="neutral"
+              uiControlSize="small"
+              [uiIconOnly]="true"
+              class="staff-visit__leg-remove"
+              [attr.aria-label]="t('staff.visit.removeClient') + ': ' + client.label"
+              [attr.data-testid]="'staff-visit-remove-client-' + client.id"
+              (click)="removeClient(client.id)"
+            >
+              <ui-icon uiName="action.remove" />
+            </button>
+          </span>
+        </ui-list-row>
+        <!-- The act a swipe reveals — a real button, always in the DOM. -->
+        <button
+          type="button"
+          class="staff-visit__swipe-action"
+          [attr.aria-label]="t('staff.visit.removeClient') + ': ' + client.label"
+          [attr.data-testid]="'staff-visit-swipe-client-' + client.id"
+          (click)="removeClient(client.id)"
+        >
+          <ui-icon uiName="booking.removeLine" />
+        </button>
+      </li>
+      } @else {
+      <!-- THE ONE PERSON: the whole row is the door to their page. -->
       <li class="staff-visit__peer">
         <!-- CENTRED, not `leading`. The leading accessory here is a FACE, and
              a face rides the whole two-line label the way Contacts and
@@ -1020,25 +1866,12 @@
                  kinds of person. -->
             <ui-avatar [uiName]="client.label" uiControlSize="regular" />
           </span>
-          <ui-stack uiSpacing="none">
-            <span uiText uiFont="callout" uiWeight="medium"
-              >{{ client.label }}</span
-            >
-            <span uiText uiFont="footnote" uiForegroundStyle="secondary">
-              {{ client.phone }}@if (client.phone && client.meta) { · } @if
-              (client.meta) {
-              <span uiBadge uiTone="neutral" uiProminence="decreased"
-                >{{ client.meta }}</span
-              >
-              }
-            </span>
-          </ui-stack>
-          <!-- No trailing `›` and no `☎` (owner, 2026-09-09): the call is
-               the dock's, where the thumb already is; the row's own press
-               is the affordance and the number is read here. -->
+          <ng-container
+            *ngTemplateOutlet="clientLines; context: { $implicit: client }"
+          />
         </button>
       </li>
-      }
+      } }
       <!-- NOBODY seated IS the walk-in (owner, 2026-09-09): a visit saved
            with no client rides as a guest seat under «Случаен клиент», so
            there is nothing to choose — only a person to add, when there is
@@ -1064,6 +1897,23 @@
       </li>
       }
     </ul>
+
+    <!-- THE CLIENT'S OWN WORDS, UNDER THE CLIENT (2026-09-18, the order
+         review): «ще закъснея», «с дете», «алергия» are read BEFORE the cut,
+         never edited — they sat after the money, a screen and a half down.
+         Still a figure outside every group (someone else's words, never a
+         control), still never merged with the team's note. -->
+    @if (vm().note; as clientNote) {
+    <!-- Someone else's words, so the markup says so: a bare blockquote
+           OUTSIDE every group. A `ui-list-row` would dress prose as a
+           control, and overwriting it destroys evidence. -->
+    <figure class="staff-visit__quote" data-testid="staff-visit-client-note">
+      <figcaption uiText uiFont="caption" uiForegroundStyle="tertiary">
+        {{ t('staff.visit.clientNoteFrom') }}
+      </figcaption>
+      <blockquote>{{ clientNote }}</blockquote>
+    </figure>
+    }
 
     <!-- ── ОСТАНАЛИТЕ ОТ РЕЗЕРВАЦИЯТА ──────────────────────────────────
          Present only on a party, which is the point: this sheet frames ONE
@@ -1121,379 +1971,236 @@
     </ui-stack>
     }
 
-    <!-- ── ПЛАЩАНЕ — THE RECEIPT (owner, 2026-09-10: "no price on the
-         services, the price belongs to the payment section"). One line per
-         seat with what it costs — text for a barber, a pill for whoever may
-         reprice — then the tip once a tip can exist, and, when the
-         engagement wiring lands, the promotion's pill and the discount arm
-         with its role. The total stays in the dock, the one place it is
-         read; a single line's figure equals it, and that is two answers to
-         two questions — what the service costs, what is owed — not one
-         number twice. Absent on a cancelled visit and on a draft with no
-         seat yet. -->
-    @if (moneyShown()) {
+    <!-- ── САЛОН — UNDER THE PEOPLE ────────────────────────────────────
+         (owner, 2026-09-18: "not one of the first items … maybe under the
+         client section is best"): after the client, the client's own note
+         and, on a party, the other chairs — before the shop's notes and
+         the bill. The shop changes once or twice a week, so it has no
+         claim on screen one. One value row — «Салон» over the shop's name,
+         nothing trailing but the disclosure — that UNFOLDS the tip's way
+         into the
+         DS map (every shop pinned, this one filled, the camera on it at
+         street level) and a tile per shop beneath; a tile or a pin is the
+         answer, the map flies to it, and «Запази» carries it. Only where
+         there is a choice: one shop is a fact nobody needs told. -->
+    @if (uiShops().length > 1) { @if (gone()) {
+    <!-- Settled: the place is a fact, not a choice — an `li`, nothing to tap. -->
     <ul
       uiListGroup
       class="staff-visit__group"
-      [attr.aria-label]="t('staff.visit.money')"
-      data-testid="staff-visit-money"
+      [attr.aria-label]="t('staff.visit.shop')"
+      data-testid="staff-visit-shop-group"
     >
-      @for (leg of draft().legs; track leg.seatId) {
       <li
         uiListRow
-        uiSize="regular"
-        class="staff-visit__receipt-row"
-        [attr.data-testid]="'staff-visit-price-row-' + leg.seatId"
+        uiSize="large"
+        uiAlignment="leading"
+        data-testid="staff-visit-shop"
       >
         <ui-stack uiSpacing="none">
-          <span>{{ legService(leg) }}</span>
-          <!-- The variant as a description, the row's own footnote. -->
-          @if (legVariant(leg); as variant) {
+          <span>{{ t('staff.visit.shop') }}</span>
           <span
             uiText
             uiFont="footnote"
             uiForegroundStyle="secondary"
-            [attr.data-testid]="'staff-visit-price-variant-' + leg.seatId"
-            >{{ variant }}</span
+            class="staff-visit__row-line"
+            data-testid="staff-visit-shop-value"
+            >{{ shopReadout() }}</span
           >
-          } @if (draft().clients.length > 1) {
-          <span uiText uiFont="footnote" uiForegroundStyle="secondary"
-            >{{ legClientLabel(leg) }}</span
-          >
-          }
         </ui-stack>
-        <span uiTrailing>
-          @if (showsPricePill(leg)) {
-          <span class="staff-sheet__pill staff-visit__figures">
-            <ui-unit-field
-              [uiValue]="priceFigure(leg)"
-              [uiUnit]="t('staff.visit.currencySymbol')"
-              uiPlaceholder="0,00"
-              uiInputMode="decimal"
-              [uiLabel]="t('staff.visit.price') + ': ' + legTitle(leg)"
-              [uiTestId]="'staff-visit-leg-price-' + leg.seatId"
-              (uiValueChange)="setLegPrice(leg.seatId, $event)"
-            />
-          </span>
-          } @else {
-          <span
-            class="staff-visit__figures"
-            [attr.data-testid]="'staff-visit-price-' + leg.seatId"
-            >{{ leg.priceLabel ?? '—' }}</span
-          >
-          }
-        </span>
       </li>
-      }
-      <!-- THE BILL'S LINES (2026-09-10): what the shop takes off, then what
-           vouchers pay — each a receipt line with its actual amount, in the
-           order the evaluator applies them, removed by a swipe like a seat.
-           A value gets a pill; a list gets a ladder. -->
-      @for (line of discountLines(); track line.key) {
-      <li
-        class="staff-visit__swipe"
-        libSwipeToDelete
-        [attr.data-testid]="'staff-visit-discount-' + line.key"
-        (deleted)="removeDiscount(line.key)"
-      >
-        <ui-list-row
-          uiSize="regular"
-          class="staff-visit__swipe-content staff-visit__receipt-row"
-        >
-          <ui-stack uiSpacing="none">
-            <span>{{ line.title }}</span>
-            <!-- The RULE beneath, where the amount alone would not say it:
-                 a code, a share, a free service. -->
-            @if (line.footnote) {
-            <span
-              uiText
-              uiFont="footnote"
-              uiForegroundStyle="secondary"
-              class="staff-visit__figures"
-              >{{ line.footnote }}</span
-            >
-            }
-          </ui-stack>
-          <span
-            uiTrailing
-            uiForegroundStyle="promo"
-            class="staff-visit__figures"
-            [attr.data-testid]="'staff-visit-discount-amount-' + line.key"
-            >{{ line.amountLabel }}</span
-          >
-        </ui-list-row>
-        <button
-          type="button"
-          class="staff-visit__swipe-action"
-          [attr.aria-label]="t('staff.visit.removeDiscount') + ': ' + line.title"
-          [attr.data-testid]="'staff-visit-swipe-discount-' + line.key"
-          (click)="removeDiscount(line.key)"
-        >
-          <ui-icon uiName="booking.removeLine" />
-        </button>
-      </li>
-      } @for (line of voucherLines(); track line.voucher.voucherId) {
-      <!-- A VOUCHER PAYS; it does not discount. Primary ink, the code and
-           what the voucher has left beneath, the way a card receipt prints
-           the balance. -->
-      <li
-        class="staff-visit__swipe"
-        libSwipeToDelete
-        [attr.data-testid]="'staff-visit-voucher-' + line.voucher.voucherId"
-        (deleted)="removeVoucher(line.voucher.voucherId)"
-      >
-        <ui-list-row
-          uiSize="regular"
-          class="staff-visit__swipe-content staff-visit__receipt-row"
-        >
-          <ui-stack uiSpacing="none">
-            <span>{{ t('staff.visit.voucher') }}</span>
-            <span
-              uiText
-              uiFont="footnote"
-              uiForegroundStyle="secondary"
-              class="staff-visit__figures"
-              [attr.data-testid]="'staff-visit-voucher-line-' + line.voucher.voucherId"
-              >{{ line.footnote }}</span
-            >
-          </ui-stack>
-          <span
-            uiTrailing
-            class="staff-visit__figures"
-            [attr.data-testid]="'staff-visit-voucher-amount-' + line.voucher.voucherId"
-            >{{ line.amountLabel }}</span
-          >
-        </ui-list-row>
-        <button
-          type="button"
-          class="staff-visit__swipe-action"
-          [attr.aria-label]="t('staff.visit.removeVoucher') + ': ' + line.voucher.code"
-          [attr.data-testid]="'staff-visit-swipe-voucher-' + line.voucher.voucherId"
-          (click)="removeVoucher(line.voucher.voucherId)"
-        >
-          <ui-icon uiName="booking.removeLine" />
-        </button>
-      </li>
-      } @if (discountAddShown()) {
-      <!-- THE ADD ROW — one for everything the bill can take (2026-09-10):
-           the client's coupons as picks, and typed in the menu's second
-           group a code (a coupon's or a voucher's — the shop works out
-           which), and for whoever handles the shop's money a sum or a
-           percent. The same `li > ui-choice-menu > row` chain the chair row
-           uses, so the segment keeps its fill and corners. -->
+    </ul>
+    } @else {
+    <ul
+      uiListGroup
+      class="staff-visit__group"
+      [attr.aria-label]="t('staff.visit.shop')"
+      data-testid="staff-visit-shop-group"
+    >
       <li>
-        <ui-choice-menu
-          uiAlignment="leading"
-          [uiOptions]="discountChoices()"
-          [uiSelectedId]="null"
-          [uiLabel]="t('staff.visit.discountAdd')"
-          [(uiPresented)]="discountMenu"
-          (uiPicked)="pickDiscount($event)"
+        <div
+          class="staff-visit__extend"
+          [attr.data-open]="shopOpen() ? '' : null"
         >
           <button
             uiListRow
             uiSize="large"
+            uiAlignment="leading"
             type="button"
-            uiMenuTrigger
             [uiInteractive]="true"
-            data-testid="staff-visit-add-discount"
-            (click)="discountMenu.set(true)"
+            [attr.aria-label]="shopRowName()"
+            [attr.aria-expanded]="shopOpen()"
+            aria-controls="staff-visit-shop-section"
+            data-testid="staff-visit-shop"
+            (click)="toggleShop()"
           >
-            <span uiLeading>
-              <ui-icon uiName="action.add" aria-hidden="true" />
+            <!-- The shop's NAME is the row's own second line (owner,
+                 2026-09-18: "the location name doesn't make sense there —
+                 make it the description"); nothing trails but the
+                 disclosure. The address lives on the list's rows and on
+                 the map. -->
+            <ui-stack uiSpacing="none">
+              <span>{{ t('staff.visit.shop') }}</span>
+              <span
+                uiText
+                uiFont="footnote"
+                uiForegroundStyle="secondary"
+                class="staff-visit__row-line"
+                data-testid="staff-visit-shop-value"
+                >{{ shopReadout() }}</span
+              >
+            </ui-stack>
+            <span uiTrailing class="staff-visit__row-value">
+              <ui-icon
+                uiName="field.expand"
+                class="staff-visit__disclosure"
+                aria-hidden="true"
+              />
             </span>
-            {{ t('staff.visit.discountAdd') }}
           </button>
-          <ul
-            uiListGroup
-            class="staff-visit__discount-typed"
-            [attr.aria-label]="t('staff.visit.discountCode')"
-          >
-            <li uiListRow data-testid="staff-visit-discount-code-row">
-              <ui-stack uiSpacing="none">
-                <label for="staff-visit-discount-code"
-                  >{{ t('staff.visit.discountCode') }}</label
-                >
-                @if (codeNote(); as note) {
-                <span
-                  uiText
-                  uiFont="footnote"
-                  [uiForegroundStyle]="codeRefused() ? 'destructive' : 'secondary'"
-                  [attr.role]="codeRefused() ? 'alert' : null"
-                  data-testid="staff-visit-discount-code-note"
-                  >{{ note }}</span
-                >
-                }
-              </ui-stack>
-              <span uiTrailing>
-                <input
-                  uiTextField
-                  uiControlSize="small"
-                  id="staff-visit-discount-code"
-                  class="staff-visit__code-field"
-                  type="text"
-                  autocomplete="off"
-                  autocapitalize="characters"
-                  spellcheck="false"
-                  enterkeyhint="done"
-                  [value]="discountCodeFigure()"
-                  [uiInvalid]="codeRefused()"
-                  [attr.placeholder]="t('staff.visit.discountCodePlaceholder')"
-                  data-testid="staff-visit-discount-code"
-                  (change)="commitCode($any($event.target).value)"
-                />
-              </span>
-            </li>
-            @if (uiMayDiscount()) {
-            <li uiListRow data-testid="staff-visit-discount-amount-row">
-              <label for="staff-visit-discount-amount"
-                >{{ t('staff.visit.discountAmount') }}</label
-              >
-              <span uiTrailing>
-                <span class="staff-sheet__pill staff-visit__figures">
-                  <ui-unit-field
-                    uiId="staff-visit-discount-amount"
-                    uiValue=""
-                    [uiUnit]="t('staff.visit.currencySymbol')"
-                    uiPlaceholder="0,00"
-                    uiInputMode="decimal"
-                    [uiLabel]="t('staff.visit.discountAmount')"
-                    uiTestId="staff-visit-discount-amount"
-                    (uiValueChange)="commitDiscountAmount($event)"
-                  />
-                </span>
-              </span>
-            </li>
-            <li uiListRow data-testid="staff-visit-discount-percent-row">
-              <label for="staff-visit-discount-percent"
-                >{{ t('staff.visit.discountPercent') }}</label
-              >
-              <span uiTrailing>
-                <span class="staff-sheet__pill staff-visit__figures">
-                  <ui-unit-field
-                    uiId="staff-visit-discount-percent"
-                    uiValue=""
-                    uiUnit="%"
-                    uiPlaceholder="0"
-                    uiInputMode="numeric"
-                    [uiLabel]="t('staff.visit.discountPercent')"
-                    uiTestId="staff-visit-discount-percent"
-                    (uiValueChange)="commitDiscountPercent($event)"
-                  />
-                </span>
-              </span>
-            </li>
-            }
-          </ul>
-        </ui-choice-menu>
-      </li>
-      } @if (tipRowShown()) {
-      <!-- THE TIP — A CHOICE (owner, 2026-09-10: "rethink the use of
-           choice instead"): the value pill opens the shares — «Няма», 5 ·
-           10 · 15 % of the visit's total, each already a figure — and
-           «Друго» for the sum the client actually left, typed in the unit
-           field that appears beside it. The repeat row's own grammar: the
-           value is the choice. Every pick writes STRAIGHT THROUGH, unlike
-           the rest of this sheet, and the row says so: it is money that has
-           already changed hands, and the whole point of recording it is the
-           barber's running total for the day. -->
-      <!-- One word, no sentence under it (owner, 2026-09-10: "the
-           description under the tip does not make sense"): that it writes
-           straight through is the dock's plus to show, not a row's to say. -->
-      <li
-        uiListRow
-        uiSize="regular"
-        class="staff-visit__tip-row"
-        data-testid="staff-visit-tip"
-      >
-        <span>{{ t('staff.visit.tip') }}</span>
-        <span uiTrailing>
-          <ui-choice-menu
-            uiAlignment="trailing"
-            [uiOptions]="tipChoices()"
-            [uiSelectedId]="tipChoiceId()"
-            [uiLabel]="t('staff.visit.tip')"
-            [(uiPresented)]="tipMenu"
-            (uiPicked)="pickTip($event)"
-          >
-            <button
-              type="button"
-              uiButton
-              uiButtonStyle="bordered"
-              uiTint="neutral"
-              uiControlSize="small"
-              uiMenuTrigger
-              [attr.aria-label]="t('staff.visit.tip') + ': ' + tipChoiceName()"
-              data-testid="staff-visit-tip-choice"
-              (click)="tipMenu.set(true)"
+          <div class="staff-visit__fold">
+            <div
+              class="staff-visit__fold-section"
+              id="staff-visit-shop-section"
+              data-testid="staff-visit-shop-section"
+              [attr.inert]="shopOpen() ? null : ''"
+              [attr.aria-hidden]="shopOpen() ? null : 'true'"
             >
-              <!-- The share, then its figure in the secondary tone — the
-                   menu row's own grammar, and the same SMALL size as the
-                   typed pills beside it (owner, 2026-09-10). -->
-              <span data-testid="staff-visit-tip-value"
-                >{{ tipChoiceLabel() }}@if (tipChoiceDetail()) {<span
-                  class="staff-visit__tip-amount"
-                  uiForegroundStyle="secondary"
-                  >{{ tipChoiceDetail() }}</span
-                >}</span
-              >
-              <ui-icon uiTrailing uiName="field.expand" />
-            </button>
-            <!-- «ДРУГО» IS TYPED RIGHT HERE (owner, 2026-09-10: "or other to
-                 be directly written in the dropdown"): the menu's second
-                 group, the sum in the unit field — so the row outside never
-                 changes shape, and the pill reads it back as «Друго» with
-                 the figure, the shares' own grammar. The word is a label
-                 for the field: a tap on it lands in the figure. -->
-            <ul
-              uiListGroup
-              class="staff-visit__tip-other"
-              [attr.aria-label]="t('staff.visit.tipOther')"
-            >
-              <li
-                uiListRow
-                [uiSelected]="tipChoice() === 'other'"
-                data-testid="staff-visit-tip-other"
-              >
-                <label for="staff-visit-tip"
-                  >{{ t('staff.visit.tipOther') }}</label
-                >
-                <span uiTrailing>
-                  <span class="staff-sheet__pill staff-visit__figures">
-                    <ui-unit-field
-                      uiId="staff-visit-tip"
-                      [uiValue]="tipOtherFigure()"
-                      [uiUnit]="t('staff.visit.currencySymbol')"
-                      uiPlaceholder="0,00"
-                      uiInputMode="decimal"
-                      [uiLabel]="t('staff.visit.tipOther')"
-                      uiTestId="staff-visit-tip-field"
-                      (uiValueChange)="commitTip($event)"
+              <div class="staff-visit__fold-body">
+                <!-- THE VIEWS, one on top of the other, and the VIEW PILL
+                     OVER them (owner, 2026-09-18: "a segmented control for
+                     toggling map or list view — a toolbar pill with two
+                     icons … I expected this to overlay over the map"): the
+                     icon-only capsule at the top-trailing corner, where Maps
+                     keeps its own floating controls, in thick material so it
+                     reads over tiles (the owner's ruling for chrome over a
+                     map). It stays put when the view changes; the list
+                     starts beneath it. -->
+                <div class="staff-visit__views" [attr.data-view]="shopView()">
+                  <ui-segmented-control
+                    class="staff-visit__view-pill"
+                    uiShape="capsule"
+                    uiMaterial="thick"
+                    [uiSegments]="shopViews()"
+                    [uiSelectedId]="shopView()"
+                    [uiLabel]="t('staff.visit.shopView')"
+                    data-testid="staff-visit-shop-view"
+                    (uiPicked)="setShopView($event)"
+                  />
+                  <!-- THE MAP, by default (owner: "map only", then "a bit
+                     larger / higher") — the booking flow's own `ui-map` in
+                     the review card's dress, taller: every shop a pin, the
+                     drafted one filled and centred at street level in the
+                     part of the map under the pill's band (the camera's
+                     top inset is the pill's height — the location step's
+                     own toolbar grammar), the other shop's edge arrow kept
+                     under that band too; a pin or an arrow picks. Kept
+                     mounted behind the list, so a toggle never rebuilds
+                     it. Cooperative gestures stay on: this map lives in a
+                     scrolling sheet, and a swipe must scroll. -->
+                  <div
+                    class="staff-visit__map"
+                    [hidden]="shopView() !== 'map'"
+                    data-testid="staff-visit-shop-map"
+                  >
+                    @if (shopMapMounted()) {
+                    <ui-map
+                      [uiPins]="shopPins()"
+                      [uiSelectedPinId]="draft().locationId"
+                      [uiColorScheme]="theme.theme()"
+                      [uiSelectedZoom]="14.5"
+                      [uiTopInsetPx]="mapChromeInset"
+                      (uiPinSelect)="pickShop($event)"
                     />
-                  </span>
-                </span>
-              </li>
-            </ul>
-          </ui-choice-menu>
-        </span>
+                    }
+                  </div>
+                  <!-- THE PLACE LINE under the map (owner, 2026-09-18: "you
+                     could still include the location under the map when
+                     expanded"): the chosen shop's street, with the same
+                     storefront the list's rows and the pin wear — the
+                     review card's place row, minus the name the row above
+                     already says. Map view only; the list has its own. -->
+                  @if (shop(); as chosen) {
+                  <p
+                    class="staff-visit__place"
+                    uiText
+                    uiFont="footnote"
+                    uiForegroundStyle="secondary"
+                    [hidden]="shopView() !== 'map'"
+                    data-testid="staff-visit-shop-place"
+                  >
+                    <ui-icon uiName="location.pin" aria-hidden="true" />
+                    <span>{{ chosen.address }}</span>
+                  </p>
+                  }
+                  <!-- THE LIST: the shops as rows, the location step's own
+                     grammar — the storefront at the name, the address under
+                     it, the accent check on the chosen one. A row IS the
+                     answer; the list stays up so the check is seen. -->
+                  @if (shopView() === 'list') {
+                  <ul
+                    uiListGroup
+                    class="staff-visit__shop-list"
+                    role="radiogroup"
+                    [attr.aria-label]="t('staff.visit.shop')"
+                    data-testid="staff-visit-shop-list"
+                  >
+                    @for (shop of uiShops(); track shop.id) {
+                    <li>
+                      <button
+                        uiListRow
+                        uiSize="large"
+                        uiAlignment="leading"
+                        type="button"
+                        role="radio"
+                        [uiInteractive]="true"
+                        [uiSelected]="shop.id === draft().locationId"
+                        [attr.aria-checked]="shop.id === draft().locationId"
+                        [attr.data-testid]="'staff-visit-shop-' + shop.id"
+                        (click)="pickShop(shop.id)"
+                      >
+                        <ui-icon
+                          uiLeading
+                          uiName="location.pin"
+                          [uiForegroundStyle]="
+                          shop.id === draft().locationId ? 'accent' : 'secondary'
+                        "
+                        />
+                        <ui-stack uiSpacing="none">
+                          <span uiText uiFont="body">{{ shop.label }}</span>
+                          <span
+                            uiText
+                            uiFont="footnote"
+                            uiForegroundStyle="secondary"
+                            >{{ shop.address }}</span
+                          >
+                        </ui-stack>
+                        @if (shop.id === draft().locationId) {
+                        <ui-icon
+                          uiTrailing
+                          uiName="checklist.done"
+                          uiForegroundStyle="accent"
+                        />
+                        }
+                      </button>
+                    </li>
+                    }
+                  </ul>
+                  }
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
       </li>
-      }
     </ul>
-    }
+    } }
 
-    <!-- ── БЕЛЕЖКИ — two of them, never merged ─────────────────────── -->
-    @if (vm().note; as clientNote) {
-    <!-- Someone else's words, so the markup says so: a bare blockquote
-           OUTSIDE every group. A `ui-list-row` would dress prose as a
-           control, and overwriting it destroys evidence. -->
-    <figure class="staff-visit__quote" data-testid="staff-visit-client-note">
-      <figcaption uiText uiFont="caption" uiForegroundStyle="tertiary">
-        {{ t('staff.visit.clientNoteFrom') }}
-      </figcaption>
-      <blockquote>{{ clientNote }}</blockquote>
-    </figure>
-    }
-
+    <!-- ── БЕЛЕЖКА ЗА ЕКИПА ────────────────────────────────────────────
+         The shop's own words, after the cut; the CLIENT's note lives under
+         the client (2026-09-18, the order review). Never merged; not drawn
+         hollow on a gone visit. -->
+    @if (noteOpen() || draft().note || !gone()) {
     <ul
       uiListGroup
       class="staff-visit__group"
@@ -1537,6 +2244,260 @@
       </li>
       } }
     </ul>
+
+    }
+
+    <!-- Photos are the barber's after-the-cut record; none to draw on a
+         gone visit without them. -->
+    @if (!isNew() && (vm().photos?.length || !gone())) {
+    <!-- THE SHOP'S PHOTOS OF THE VISIT (owner, 2026-09-17: "attach / take
+         pictures to an appointment, with meta on them: who — barber,
+         client, appointment"): the pictures taken, as a grid, each a door
+         to its page; and «＋ Добави снимка», the note's own grammar, which
+         opens TWO NAMED DOORS (owner, 2026-09-17: "add image should show
+         up from the system camera or upload from the phone") and commits
+         on pick: a photo is not a draft. The facts are stamped where the
+         bytes are written; the row only turns its ring while one is on
+         its way. A visit the server has not seen has nothing to hang a
+         photo on. -->
+    <ul
+      uiListGroup
+      class="staff-visit__group"
+      [attr.aria-label]="t('staff.visit.photos')"
+      data-testid="staff-visit-photos"
+    >
+      @if (vm().photos?.length) {
+      <li uiListRow uiSize="large" uiAlignment="leading">
+        <ul
+          class="staff-visit__photo-grid"
+          [attr.aria-label]="t('staff.visit.photos')"
+          data-testid="staff-visit-photo-grid"
+        >
+          @for (photo of vm().photos; track photo.photoId) {
+          <li>
+            <button
+              type="button"
+              class="staff-visit__photo"
+              [attr.aria-label]="t('staff.visit.photoOpen', { when: photoWhen(photo) })"
+              [attr.data-testid]="'staff-visit-photo-' + photo.photoId"
+              (click)="openPhoto(photo.photoId)"
+            >
+              <ui-async-image [uiSrc]="photo.url" uiRatio="1 / 1" />
+            </button>
+          </li>
+          }
+        </ul>
+      </li>
+      } @if (!gone()) {
+      <!-- THE DOORS — the DS choice menu, the chair's and «Вид»'s own
+           (owner, 2026-09-17): «Снимай», the DS viewfinder as a page;
+           «От устройството», the phone's picker, as many as it likes;
+           «От галерията», the shop's own pictures as a page. -->
+      <li>
+        <ui-choice-menu
+          uiAlignment="leading"
+          [uiOptions]="photoDoors()"
+          [uiLabel]="t('staff.visit.photoMenu')"
+          [(uiPresented)]="photoMenuOpen"
+          (uiPicked)="openPhotoDoor($event)"
+        >
+          <button
+            uiListRow
+            uiSize="large"
+            type="button"
+            uiMenuTrigger
+            [uiInteractive]="true"
+            [disabled]="vm().photoBusy === true"
+            [attr.aria-busy]="vm().photoBusy === true ? 'true' : null"
+            data-testid="staff-visit-add-photo"
+            (click)="photoMenuOpen.set(true)"
+          >
+            <span uiLeading>
+              <ui-icon uiName="action.add" aria-hidden="true" />
+            </span>
+            {{ t('staff.visit.addPhoto') }} @if (vm().photoBusy === true) {
+            <span uiTrailing>
+              <ui-progress-view uiControlSize="small" />
+            </span>
+            }
+          </button>
+        </ui-choice-menu>
+      </li>
+      }
+    </ul>
+    }
+
+    <!-- ── ПЛАЩАНЕ — THE BILL (owner, 2026-09-16: "the price and service
+         row should be removed from there"). «Отстъпка» and «Бакшиш», and
+         nothing else: the seat lines that stood here repeated the ladder's
+         names with a figure each, and the dock already sums them — one
+         number twice. What a seat costs, and repricing it for whoever may,
+         belong to the service page when it exists (design record, Pass 17).
+         The total stays in the dock, the one place it is read. Absent on a
+         cancelled visit and on a draft with no seat yet.
+         DIRECTLY ABOVE THE EXITS (2026-09-18, the order review): tip and
+         discount happen at the counter, when the thumb is already at the
+         foot reading «В салона» — one flick lands «Бакшиш» beside the dock
+         and its tiles unfold into the thumb zone, Apple Pay's own order of
+         line items, tip, total, confirm. -->
+    @if (moneyShown()) {
+    <ul
+      uiListGroup
+      class="staff-visit__group"
+      [attr.aria-label]="t('staff.visit.money')"
+      data-testid="staff-visit-money"
+    >
+      <!-- THE BILL, MINIMAL (owner, 2026-09-17): two value rows. «Отстъпка»
+           reads the bill in one line — «Няма ›», «FIRST10 (2,80 €) ›», «2
+           приложени (8,50 €) ›» — and pushes its page, where the applied
+           tickets live with the ways to add one; the coupon the client
+           holds is whispered under it while nothing is on the bill.
+           «Бакшиш» reads the tip — «Без ⌄», «2,00 € ⌄» — and UNFOLDS its
+           tiles in place, beneath the row, the section it had on its card;
+           a tile is the answer, and the row reads it at once. -->
+      @if (discountRowShown()) {
+      <li>
+        <button
+          uiListRow
+          uiSize="large"
+          type="button"
+          [uiInteractive]="true"
+          [uiAlignment]="discountWhisper() ? 'leading' : 'center'"
+          [attr.aria-label]="discountRowName()"
+          data-testid="staff-visit-discount-row"
+          (click)="openDiscountPage()"
+        >
+          <ui-stack uiSpacing="none">
+            <span>{{ t('staff.visit.discount') }}</span>
+            @if (discountWhisper(); as note) {
+            <span
+              uiText
+              uiFont="footnote"
+              uiForegroundStyle="promo"
+              class="staff-visit__figures"
+              data-testid="staff-visit-discount-row-note"
+              >{{ note }}</span
+            >
+            }
+          </ui-stack>
+          <span uiTrailing class="staff-visit__row-value">
+            <span
+              class="staff-visit__figures"
+              [uiForegroundStyle]="discountRowValue().applied ? 'promo' : 'secondary'"
+              data-testid="staff-visit-discount-row-value"
+              >{{ discountRowValue().label }}</span
+            >
+            <ui-icon uiName="nav.disclosure" aria-hidden="true" />
+          </span>
+        </button>
+      </li>
+      } @if (tipRowShown()) {
+      <!-- THE ROW THAT EXTENDS (owner, 2026-09-17: "the tip body should be
+           in a wrapper of the tip row being extended — on click it should
+           extend, animate beautifully, the tip body inside the row's own
+           body"): ONE segment holds the row and, beneath it, the section
+           it unfolds — the one line of explanation, the bento of tiles,
+           the sum written large under «Друга сума» — growing out of the
+           row on the tap and folding back into it. The section stays in
+           the tree, inert while folded, so the fold animates too. A tile
+           writes the draft on the tap; Return in the entry folds. -->
+      <li>
+        <div
+          class="staff-visit__extend"
+          [attr.data-open]="tipOpen() ? '' : null"
+        >
+          <button
+            uiListRow
+            uiSize="large"
+            uiAlignment="leading"
+            type="button"
+            [uiInteractive]="true"
+            [attr.aria-label]="tipRowName()"
+            [attr.aria-expanded]="tipOpen()"
+            aria-controls="staff-visit-tip-section"
+            data-testid="staff-visit-tip"
+            (click)="toggleTip()"
+          >
+            <!-- The one line of explanation is the ROW'S, under its name
+                 (owner, 2026-09-17: "part of the label itself, under it, in
+                 the whole row") — the discount row's own two-line grammar. -->
+            <ui-stack uiSpacing="none">
+              <span>{{ t('staff.visit.tip') }}</span>
+              <span
+                uiText
+                uiFont="footnote"
+                uiForegroundStyle="secondary"
+                data-testid="staff-visit-tip-description"
+                >{{ t('staff.visit.tipPageDescription') }}</span
+              >
+            </ui-stack>
+            <span uiTrailing class="staff-visit__row-value">
+              <span
+                class="staff-visit__figures"
+                [uiForegroundStyle]="tipMinor() === null ? 'secondary' : 'success'"
+                data-testid="staff-visit-tip-value"
+                >{{ tipReadout() }}</span
+              >
+              <ui-icon
+                uiName="field.expand"
+                class="staff-visit__disclosure"
+                aria-hidden="true"
+              />
+            </span>
+          </button>
+          <!-- The fold: one grid track that goes from nothing to as tall as
+               the section needs, the row above it never in the sum. -->
+          <div class="staff-visit__fold">
+            <div
+              class="staff-visit__fold-section"
+              id="staff-visit-tip-section"
+              data-testid="staff-visit-tip-section"
+              [attr.inert]="tipOpen() ? null : ''"
+              [attr.aria-hidden]="tipOpen() ? null : 'true'"
+            >
+              <div class="staff-visit__fold-body">
+                <ui-choice-tiles
+                  [uiTiles]="tipTiles()"
+                  [uiSelectedId]="tipTileId()"
+                  [uiColumns]="tipTileColumns"
+                  [uiLabel]="t('staff.visit.tip')"
+                  data-testid="staff-visit-tip-tiles"
+                  (uiPicked)="pickTip($event)"
+                />
+                @if (tipCustomShown()) {
+                <!-- THE SUM, WRITTEN LARGE (owner, 2026-09-16: "in the center a muted
+                   placeholder 0,00 in a big font, and a stepper for quick add and
+                   remove"): the DS amount field — the figure at the large-title tier,
+                   its unit beside it, a −/+ pair stepping by a 0,50 € coin, the
+                   keypad on a tap — ATTACHED to the «Друга сума» tile it answers,
+                   with «00,00» reserved so the pair stays put as digits come and go.
+                   Its answer is money in minor units; zero and empty both read
+                   «Без». The tile keeps its name: the sum is read here, on the dock
+                   and on the row. -->
+                <ui-amount-field
+                  uiId="staff-visit-tip"
+                  [uiValue]="tipCustomMinor()"
+                  [uiUnit]="t('staff.visit.currencySymbol')"
+                  uiReserve="00,00"
+                  [uiStep]="50"
+                  [uiLabel]="t('staff.visit.tipPageAmount')"
+                  [uiDecreaseLabel]="t('staff.visit.tipStepDown')"
+                  [uiIncreaseLabel]="t('staff.visit.tipStepUp')"
+                  uiTestId="staff-visit-tip-field"
+                  class="staff-visit__entry"
+                  data-testid="staff-visit-tip-entry"
+                  (uiValueChange)="setTipFromEntry($event)"
+                  (uiSubmit)="foldTip()"
+                />
+                }
+              </div>
+            </div>
+          </div>
+        </div>
+      </li>
+      }
+    </ul>
+    }
 
     <!-- ── THE EXITS — LAST (owner, 2026-09-09) ───────────────────────
          What the sheet can still do that is not an edit, at its foot — the
@@ -1599,75 +2560,34 @@
     uiAnchor="scroll"
     class="staff-visit__dock"
   >
-    @let dockPage = currentPage()?.kind ?? null; @if (dockPage === null) {
-    <!-- NOTHING IS DUE ON A VISIT THAT IS GONE (owner, 2026-09-11). «В
-         салона · 9,00 €» reads "to be paid at the shop", and on a cancelled
-         or no-showed visit that is untrue — nor struck through, which is
-         the "was" price of a sale tag and asks what it is now. The dock
-         carries the sheet's one write: «Запази» while there is something
-         to save, and the NEXT visit once there is not — Wallet's "Buy
-         Again", on the thumb rail where «Запази» lives, hugging the call.
-         The receipt survives in the ladder, where every service row still
-         shows its own price. The foot loses its duplicate row; a no-show's
-         «Върни часа» stays there, a correction rather than a forward act. -->
-    @if (!gone()) {
+    @let dockPage = currentPage()?.kind ?? null;
+    <!-- THE BILL READS AT THE ROOT, AND ON THE DISCOUNT PAGE where the
+         price moves (owner, 2026-09-17: "the bottom toolbar for applying
+         should go to the main sheet"): the old figure struck beside what
+         is due, the tip as a green plus. NOTHING IS DUE ON A VISIT THAT IS
+         GONE (owner, 2026-09-11). «В салона · 9,00 €» reads "to be paid at
+         the shop", and on a cancelled or no-showed visit that is untrue —
+         nor struck through, which is the "was" price of a sale tag and
+         asks what it is now. The dock carries the sheet's one write:
+         «Запази» while there is something to save, and the NEXT visit once
+         there is not — Wallet's "Buy Again", on the thumb rail where
+         «Запази» lives, hugging the call. The receipt survives in the
+         ladder, where every service row still shows its own price. -->
+    @if ((dockPage === null || dockPage === 'discount') && !gone()) {
     <ui-stack
       uiSpacing="none"
       uiAlignment="leading"
       class="staff-visit__total"
       data-testid="staff-visit-total"
     >
-      <span uiText uiFont="footnote" uiForegroundStyle="secondary"
-        >{{ t('staff.visit.atShop') }}</span
-      >
-      <span
-        uiText
-        uiFont="headline"
-        uiWeight="semibold"
-        class="staff-visit__figures"
-        data-testid="staff-visit-total-figure"
-        >{{ dockTotalLabel() }}</span
-      >
-      <!-- THE DISCOUNTS, AS A MINUS (2026-09-10): what the shop took off,
-           under the bill, in the promo ink — the tip's plus, mirrored. Then
-           what vouchers PAID, quieter: money already in the till. -->
-      @if (dockDiscountAmount(); as off) {
-      <span
-        uiText
-        uiFont="footnote"
-        uiWeight="semibold"
-        uiForegroundStyle="promo"
-        class="staff-visit__figures staff-visit__dock-plus"
-        data-testid="staff-visit-dock-discount"
-        >{{ t(dockDiscountKey(), { amount: off }) }}</span
-      >
-      } @if (dockVoucherAmount(); as paid) {
-      <span
-        uiText
-        uiFont="footnote"
-        uiWeight="semibold"
-        uiForegroundStyle="secondary"
-        class="staff-visit__figures staff-visit__dock-plus"
-        data-testid="staff-visit-dock-voucher"
-        >{{ t(dockVoucherKey(), { amount: paid }) }}</span
-      >
-      }
-      <!-- THE TIP, AS A PLUS (owner, 2026-09-10: "reflected in some cool
-           way with a green plus in the action bar"): the extra the client
-           left, under the bill, in the success tone; it rises in. -->
-      @if (vm().tipLabel; as tip) {
-      <span
-        uiText
-        uiFont="footnote"
-        uiWeight="semibold"
-        uiForegroundStyle="success"
-        class="staff-visit__figures staff-visit__dock-plus"
-        data-testid="staff-visit-dock-tip"
-        >{{ t('staff.visit.tipInDock', { amount: tip }) }}</span
-      >
-      }
+      <ng-container
+        *ngTemplateOutlet="
+          billTotal;
+          context: { prefix: 'staff-visit-total', tipId: 'staff-visit-dock-tip' }
+        "
+      />
     </ui-stack>
-    }
+    } @if (dockPage === null) {
     <!-- THE CALL — docked (owner, 2026-09-09: "the most common action you
          do when you open the appointment"). Reversal of the 2026-09-08
          ruling that put it on the client row: a row target is read, a dock
@@ -1675,7 +2595,7 @@
          It hugs «Запази» on the thumb rail; the visit's own number. -->
     @if (vm().phone; as phone) {
     <a
-      class="staff-visit__dock-call"
+      class="staff-visit__dock-aside"
       uiButton
       uiButtonStyle="bordered"
       uiTint="neutral"
@@ -1710,19 +2630,63 @@
     >
       {{ t('staff.visit.save') }}
     </button>
+    } @else if (serviceWanted()) {
+    <!-- The withheld save says why and takes you there: a party client
+         with no service (2026-09-18). Enabled — a control that answers a
+         tap never wears the disabled dress. -->
+    <button
+      type="button"
+      uiButton
+      uiButtonStyle="bordered"
+      uiControlSize="large"
+      data-testid="staff-visit-choose-service"
+      (click)="goToServices()"
+    >
+      {{ t('staff.visit.chooseService') }}
+    </button>
     } } @else if (dockPage === 'clientSearch') {
+    <!-- THE COUNT of the picked (2026-09-18), in the bill's own dress —
+         the gallery page's grammar — leading; «Нов клиент» hugs the ✓ on
+         the thumb rail (owner ruling 2026-09-22, back from the list's first
+         row where Pass 28 had put it): the root docks its call beside
+         «Запази» the same way, and Contacts keeps its «+» in the bar. -->
+    @if (pickedClients().length > 0) {
+    <ui-stack
+      uiSpacing="none"
+      uiAlignment="leading"
+      class="staff-visit__total"
+      data-testid="staff-visit-clients-count"
+    >
+      <span uiText uiFont="footnote" uiForegroundStyle="secondary"
+        >{{ t('staff.visit.photosSelected') }}</span
+      >
+      <span class="staff-visit__total-line">
+        <span
+          uiText
+          uiFont="headline"
+          uiWeight="semibold"
+          class="staff-visit__figures"
+          data-testid="staff-visit-clients-count-figure"
+          >{{ pickedClients().length }}</span
+        >
+      </span>
+    </ui-stack>
+    }
     <button
       type="button"
       uiButton
       uiButtonStyle="bordered"
       uiTint="neutral"
       uiControlSize="large"
-      data-testid="staff-visit-new-client"
+      [uiIconOnly]="true"
+      class="staff-visit__dock-aside"
+      [attr.aria-label]="createRowName()"
+      data-testid="staff-visit-new-client-dock"
       (click)="openNewClient()"
     >
-      <ui-icon uiLeading uiName="action.add" />
-      {{ t('staff.visit.newClient') }}
+      <ui-icon uiName="party.addGuest" />
     </button>
+    <!-- The ✓ beside it comes from the every-page fallback below. -->
     } @if (dockPage === 'clientNew') {
     <button
       type="button"
@@ -1737,7 +2701,179 @@
     >
       <ui-icon uiName="checklist.done" />
     </button>
-    } @else if (dockPage !== null) {
+    } @else if (dockPage === 'camera') {
+    <!-- THE SHUTTER — prominent, the camera's glyph, where «Запази»
+         stands; while the camera cannot be had, «От устройството» takes
+         its place as the honest way in. -->
+    @if (cameraState() === 'denied' || cameraState() === 'unsupported') {
+    <button
+      type="button"
+      uiButton
+      uiButtonStyle="bordered"
+      uiTint="neutral"
+      uiControlSize="large"
+      data-testid="staff-visit-camera-upload"
+      (click)="pop(); openPhotoDoor('upload')"
+    >
+      <ui-icon uiLeading uiName="media.library" />
+      {{ t('staff.visit.photoUpload') }}
+    </button>
+    } @else {
+    <button
+      type="button"
+      uiButton
+      uiButtonStyle="borderedProminent"
+      uiControlSize="large"
+      [uiIconOnly]="true"
+      [disabled]="cameraState() !== 'ready'"
+      [uiLoading]="shutterBusy()"
+      [attr.aria-label]="t('staff.visit.photoShutter')"
+      data-testid="staff-visit-shutter"
+      (click)="shoot()"
+    >
+      <ui-icon uiName="media.camera" />
+    </button>
+    } } @else if (dockPage === 'library') {
+    <!-- SELECTING, AS PHOTOS DOES (owner, 2026-09-17): the count at the
+         leading edge, «Добави» for them all on the thumb rail — or the ✓
+         back while nothing is picked. -->
+    @if (librarySelected().length > 0) {
+    <!-- The count wears the BILL's own dress (owner, 2026-09-17: "the same
+         font sizes and styles as the main sheet's total"): the caption in
+         the footnote over the figure in the headline, tabular. -->
+    <ui-stack
+      uiSpacing="none"
+      uiAlignment="leading"
+      class="staff-visit__total"
+      data-testid="staff-visit-library-count"
+    >
+      <span uiText uiFont="footnote" uiForegroundStyle="secondary"
+        >{{ t('staff.visit.photosSelected') }}</span
+      >
+      <span class="staff-visit__total-line">
+        <span
+          uiText
+          uiFont="headline"
+          uiWeight="semibold"
+          class="staff-visit__figures"
+          data-testid="staff-visit-library-count-figure"
+          >{{ librarySelected().length }}</span
+        >
+      </span>
+    </ui-stack>
+    <button
+      type="button"
+      uiButton
+      uiButtonStyle="borderedProminent"
+      uiControlSize="large"
+      [uiLoading]="vm().photoBusy === true"
+      data-testid="staff-visit-library-add"
+      (click)="adoptSelected()"
+    >
+      {{ t('staff.visit.photosAdd') }}
+    </button>
+    } @else {
+    <ng-container *ngTemplateOutlet="pageDone" />
+    } } @else if (dockPage === 'photo') {
+    <!-- THE ONE THING A PHOTO'S PAGE CAN DO — take the picture down. Red,
+         where «Запази» stands; the shell's ‹ is the way back without. -->
+    <button
+      type="button"
+      uiButton
+      uiButtonStyle="bordered"
+      uiRole="destructive"
+      uiControlSize="large"
+      [uiLoading]="vm().photoBusy === true"
+      data-testid="staff-visit-photo-remove"
+      (click)="removePhoto()"
+    >
+      {{ t('staff.visit.photoRemove') }}
+    </button>
+    } @else if (dockPage === 'scan') {
+    <!-- THE CAMERA'S ONE WAY BACK — «Въведи на ръка», where the search
+         page's «Нов клиент» stands: the page has nothing to confirm, and
+         the shell's ‹ is the same road. -->
+    <button
+      type="button"
+      uiButton
+      uiButtonStyle="bordered"
+      uiTint="neutral"
+      uiControlSize="large"
+      data-testid="staff-visit-scan-type"
+      (click)="pop()"
+    >
+      {{ t('staff.visit.scanTypeInstead') }}
+    </button>
+    } @else if (dockPage === 'discount') {
+    <!-- THE PROMISE, IN THE DOCK (owner, 2026-09-16: "the bottom CTA
+         should say what it applies and switch"; 2026-09-17: in the main
+         sheet's toolbar): «Приложи −10%», «Приложи FIRST10» — the one act
+         the page exists for, in its own words, on the thumb rail. It
+         appears once there is something to apply and gives the dock its
+         ✓ back when there is not; a code being checked holds it. -->
+    @if (discountApply(); as apply) {
+    <button
+      type="button"
+      uiButton
+      uiButtonStyle="borderedProminent"
+      uiControlSize="large"
+      [disabled]="apply.disabled"
+      [uiLoading]="codeState() === 'checking'"
+      data-testid="staff-visit-discount-apply"
+      (click)="applyDiscount()"
+    >
+      {{ apply.label }}
+    </button>
+    } @else {
+    <ng-container *ngTemplateOutlet="pageDone" />
+    } } @else if (dockPage === 'service') {
+    <!-- «Добави», «Добави 3 услуги» — every pick seated at once — while
+         something is picked; the ✓ while the page is only read. -->
+    @if (serviceApply(); as apply) {
+    <button
+      type="button"
+      uiButton
+      uiButtonStyle="borderedProminent"
+      uiControlSize="large"
+      data-testid="staff-visit-service-apply"
+      (click)="applyServices()"
+    >
+      {{ apply.label }}
+    </button>
+    } @else {
+    <ng-container *ngTemplateOutlet="pageDone" />
+    } } @else if (dockPage !== null) {
+    <ng-container *ngTemplateOutlet="pageDone" />
+    }
+  </ui-sheet-action-bar>
+
+  <!-- A PERSON ON THE VISIT, as the sheet's client rows word them — one
+       template for the lone person's row and a party's removable rows. The
+       face stays in each row: a list row projects its leading slot by
+       selector, and content arriving through an outlet lands in the
+       default slot. -->
+  <ng-template #clientLines let-client>
+    <ui-stack uiSpacing="none">
+      <span uiText uiFont="callout" uiWeight="medium">{{ client.label }}</span>
+      <!-- The number, or that there is none. No last-visit badge here
+           (owner, 2026-09-24): the search needs it to tell two people
+           apart; once chosen, the row is a fact about THIS visit, and the
+           person's page keeps the line. -->
+      <span uiText uiFont="footnote" uiForegroundStyle="secondary">
+        @if (client.phone) { {{ client.phone }} } @else {
+        <span
+          uiForegroundStyle="tertiary"
+          [attr.data-testid]="'staff-visit-client-no-phone-' + client.id"
+          >{{ t('staff.day.visitNoPhone') }}</span
+        >
+        }
+      </span>
+    </ui-stack>
+  </ng-template>
+
+  <!-- THE ✓ on a page — the draft already holds the edits; back to the
+       ladder. One template, every page that has nothing else to say. -->
+  <ng-template #pageDone>
     <button
       type="button"
       uiButton
@@ -1750,6 +2886,210 @@
     >
       <ui-icon uiName="checklist.done" />
     </button>
+  </ng-template>
+
+  <!-- ── THE BILL, ONCE — read by the dock at the root and on the discount page ──
+       The price as it was struck beside what is due once something has
+       come off it, and WHILE a figure is being written on the discount
+       page, previewed (owner, 2026-09-16: "edit the bottom toolbar price,
+       add a strikethrough — for all discount addition"): the sale tag's
+       grammar. Under it the tip as a green plus (owner, 2026-09-10: "in
+       some cool way with a green plus in the action bar"); it rises in. -->
+  <ng-template #billTotal let-prefix="prefix" let-tipId="tipId">
+    <span uiText uiFont="footnote" uiForegroundStyle="secondary"
+      >{{ isNew() ? t('staff.visit.byCatalogue') : t('staff.visit.atShop')
+      }}</span
+    >
+    <span class="staff-visit__total-line">
+      @if (dockWasLabel(); as was) {
+      <s
+        uiText
+        uiFont="subheadline"
+        uiForegroundStyle="secondary"
+        class="staff-visit__figures staff-visit__total-was"
+        [attr.data-testid]="prefix + '-was'"
+        >{{ was }}</s
+      >
+      }
+      <span
+        uiText
+        uiFont="headline"
+        uiWeight="semibold"
+        class="staff-visit__figures"
+        [attr.data-testid]="prefix + '-figure'"
+        >{{ dockTotalLabel() }}</span
+      >
+    </span>
+    @if (tipDockLabel(); as tip) {
+    <span
+      uiText
+      uiFont="footnote"
+      uiWeight="semibold"
+      uiForegroundStyle="success"
+      class="staff-visit__figures staff-visit__dock-plus"
+      [attr.data-testid]="tipId"
+      >{{ t('staff.visit.tipInDock', { amount: tip }) }}</span
+    >
     }
-  </ui-sheet-action-bar>
+  </ng-template>
+
+  <!-- ── A LINE ON THE BILL, as a ticket — where it was made ─────────────
+       (owner, 2026-09-17: no list of its own above the controls, nothing
+       shown twice): a typed or scanned code and a voucher under the
+       field, a figure under its dial; an offer's line is its own card in
+       its frame. The same applied ticket the offer wears, «Премахни»
+       where the call stood. -->
+  <!-- THE PHONE'S PICKER — one hidden input at the root, outside every
+       page, so the «От устройството» door reaches it from the row and
+       from the camera page alike. -->
+  <input
+    #photoLibrary
+    type="file"
+    accept="image/*"
+    multiple
+    hidden
+    data-testid="staff-visit-photo-library"
+    (change)="pickPhotos($event)"
+  />
+
+  <ng-template #lineTicket let-line>
+    <article
+      uiCouponCard
+      [uiApplied]="true"
+      [uiTitle]="line.title"
+      [uiValue]="line.value"
+      [uiCode]="line.code"
+      [uiDetail]="line.detail"
+      [uiTestId]="line.testId"
+      class="staff-visit__line"
+      [attr.data-testid]="line.testId"
+      [attr.aria-label]="line.name"
+    >
+      <ui-icon uiCouponGlyph [uiName]="line.glyph" />
+      <ui-icon uiCouponBadge uiName="checklist.done" />
+      <button
+        type="button"
+        uiCouponAction
+        uiButton
+        uiButtonStyle="plain"
+        uiTint="neutral"
+        uiControlSize="small"
+        [attr.aria-label]="t('staff.visit.removeDiscount') + ': ' + line.title"
+        [attr.data-testid]="'staff-visit-remove-discount-' + line.key"
+        (click)="removeDiscount(line.key)"
+      >
+        {{ t('staff.visit.remove') }}
+      </button>
+    </article>
+  </ng-template>
+  <ng-template #voucherTicket let-line>
+    <article
+      uiCouponCard
+      [uiApplied]="true"
+      [uiTitle]="t('staff.visit.voucher')"
+      [uiValue]="line.amountLabel"
+      [uiCode]="line.voucher.code"
+      [uiDetail]="line.left"
+      [uiTestId]="line.testId"
+      class="staff-visit__line"
+      [attr.data-testid]="line.testId"
+      [attr.aria-label]="line.name"
+    >
+      <ui-icon uiCouponGlyph uiName="promo.voucher" />
+      <ui-icon uiCouponBadge uiName="checklist.done" />
+      <button
+        type="button"
+        uiCouponAction
+        uiButton
+        uiButtonStyle="plain"
+        uiTint="neutral"
+        uiControlSize="small"
+        [attr.aria-label]="t('staff.visit.removeVoucher') + ': ' + line.voucher.code"
+        [attr.data-testid]="'staff-visit-remove-voucher-' + line.voucher.voucherId"
+        (click)="removeVoucher(line.voucher.voucherId)"
+      >
+        {{ t('staff.visit.remove') }}
+      </button>
+    </article>
+  </ng-template>
+
+  <!-- ── AN OFFER ON THE DISCOUNT PAGE, in one of three states ──────────
+       (owner, 2026-09-16, evening: "click a code to use it — it stays where
+       it is and its button changes to remove; the ones that cannot combine
+       should be instantly recognisable as unusable"). The same ticket in
+       its place in the catalogue's order whatever happens to it: ON OFFER,
+       the whole card «Използвай»; APPLIED, an article stamped with the
+       check and «Премахни» where the call stood, the line itself on the
+       ladder; BLOCKED by what is on the bill, muted with the "cannot
+       combine" glyph in the same corner slot (HIG: mute the whole thing,
+       never a warning capsule). The figure is the offer's RULE — «−10%»,
+       «−5,00 €» — never what it would take off this bill, which two offers
+       previewed side by side do not add up to once stacked (owner:
+       "confusion = bad UX"); the chip says only whether it stacks. -->
+  <ng-template #offerCard let-offer>
+    @if (offer.applied) {
+    <article
+      uiCouponCard
+      [uiApplied]="true"
+      [uiTitle]="offer.label"
+      [uiValue]="offer.value"
+      [uiCode]="offer.code"
+      [uiDetail]="offer.line"
+      [uiTestId]="offer.testId"
+      [attr.data-testid]="offer.testId"
+      [attr.aria-label]="offerName(offer)"
+    >
+      <ui-icon uiCouponGlyph uiName="promo.coupon" />
+      <ui-icon uiCouponBadge uiName="checklist.done" />
+      <button
+        type="button"
+        uiCouponAction
+        uiButton
+        uiButtonStyle="plain"
+        uiTint="neutral"
+        uiControlSize="small"
+        [attr.aria-label]="t('staff.visit.removeDiscount') + ': ' + offer.label"
+        [attr.data-testid]="offer.testId + '-remove'"
+        (click)="removeDiscount(offer.key)"
+      >
+        {{ t('staff.visit.remove') }}
+      </button>
+    </article>
+    } @else if (offer.blocked) {
+    <button
+      type="button"
+      uiCouponCard
+      uiInteractive
+      [uiUnavailable]="true"
+      [uiTitle]="offer.label"
+      [uiValue]="offer.value"
+      [uiCode]="offer.code"
+      [uiDetail]="offer.line"
+      [uiAction]="t('staff.visit.couponBlocked')"
+      [uiTestId]="offer.testId"
+      [attr.data-testid]="offer.testId"
+      [attr.aria-label]="offerName(offer) + ', ' + t('staff.visit.couponBlocked')"
+    >
+      <ui-icon uiCouponGlyph uiName="promo.coupon" />
+      <ui-icon uiCouponBadge uiName="booking.blocked" />
+    </button>
+    } @else {
+    <button
+      type="button"
+      uiCouponCard
+      uiInteractive
+      [uiTitle]="offer.label"
+      [uiValue]="offer.value"
+      [uiCode]="offer.code"
+      [uiDetail]="offer.line"
+      [uiAction]="t('staff.visit.useNow')"
+      [uiTestId]="offer.testId"
+      [attr.data-testid]="offer.testId"
+      [attr.aria-label]="offerName(offer)"
+      (click)="applyOffer(offer)"
+    >
+      <ui-icon uiCouponGlyph uiName="promo.coupon" />
+    </button>
+    }
+  </ng-template>
 </ng-container>

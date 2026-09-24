@@ -48,6 +48,15 @@ export interface UiSheetBehaviorOptions {
   /** Media query gating drag-to-dismiss (default: the mobile bottom
    *  sheet, `(max-width: 760px)`) — centered desktop dialogs don't drag. */
   readonly dragMedia?: string;
+  /**
+   * Lock the document's scroll while the sheet is up (the default). A sheet
+   * presented INSIDE another sheet — a card over the visit editor — leaves
+   * the lock to its host: two locks restoring one `body` in any order would
+   * hand the page back frozen, or unfreeze it under the host. Read at
+   * activation, so a sheet that learns where it stands once the tree is
+   * built may answer then.
+   */
+  readonly lockScroll?: boolean | (() => boolean);
 }
 
 const FOCUSABLE_SELECTOR =
@@ -80,6 +89,7 @@ export class UiSheetBehavior {
   private readonly options = signal<UiSheetBehaviorOptions | null>(null);
   private previousBodyOverflow = '';
   private previousBodyPaddingRight = '';
+  private scrollLocked = false;
   private inertedElements: HTMLElement[] = [];
   private previousFocus: HTMLElement | null = null;
   private environmentActive = false;
@@ -176,14 +186,22 @@ export class UiSheetBehavior {
     });
   }
 
-  /** Attach to the dialog's `(keydown)`: Escape dismisses, Tab is trapped. */
+  /**
+   * Attach to the dialog's `(keydown)`: Escape dismisses, Tab is trapped —
+   * and both STOP HERE. A sheet stacked inside another sheet's surface is
+   * inside its DOM too: an Escape that went on bubbling would close both,
+   * and a Tab the inner trap did not wrap would be wrapped by the outer's
+   * — out of the dialog that has the focus.
+   */
   onKeydown(event: KeyboardEvent): void {
     if (event.key === 'Escape') {
       event.preventDefault();
+      event.stopPropagation();
       this.requestDismiss();
       return;
     }
     if (event.key !== 'Tab') return;
+    event.stopPropagation();
 
     const dialog = event.currentTarget as HTMLElement;
     const focusable = Array.from(
@@ -242,11 +260,13 @@ export class UiSheetBehavior {
 
     const elapsed = Math.max(1, performance.now() - this.dragStartTime);
     const velocity = this.dragOffset / elapsed;
-    if (this.dragOffset > 110 || velocity > 0.65) {
-      this.requestDismiss();
-      return;
-    }
+    // The gesture is over either way: the surface goes back to rest. A
+    // dismissal is only REQUESTED, and an owner may refuse it (a guard over
+    // a dirty draft asks first) — left sunk by the drag, the sheet stayed
+    // displaced for as long as the answer took (found in review,
+    // 2026-09-23). An accepted dismissal plays its own exit from rest.
     this.dialogElement()?.style.setProperty(this.dragVar(), '0px');
+    if (this.dragOffset > 110 || velocity > 0.65) this.requestDismiss();
   }
 
   private dragVar(): string {
@@ -262,18 +282,25 @@ export class UiSheetBehavior {
   private activateEnvironment(options: UiSheetBehaviorOptions): void {
     this.environmentActive = true;
     this.previousFocus = this.document.activeElement as HTMLElement | null;
-    this.previousBodyOverflow = this.document.body.style.overflow;
-    // Compensate the vanished scrollbar so the page doesn't shift sideways
-    // while locked (scrollbar-gutter can't help here: the lock removes the
-    // scroll container's scrollbar entirely).
-    const scrollbarWidth =
-      (this.document.defaultView?.innerWidth ?? 0) -
-      this.document.documentElement.clientWidth;
-    this.previousBodyPaddingRight = this.document.body.style.paddingRight;
-    if (scrollbarWidth > 0) {
-      this.document.body.style.paddingRight = `${scrollbarWidth}px`;
+    const lockScroll =
+      typeof options.lockScroll === 'function'
+        ? options.lockScroll()
+        : (options.lockScroll ?? true);
+    if (lockScroll) {
+      this.scrollLocked = true;
+      this.previousBodyOverflow = this.document.body.style.overflow;
+      // Compensate the vanished scrollbar so the page doesn't shift sideways
+      // while locked (scrollbar-gutter can't help here: the lock removes the
+      // scroll container's scrollbar entirely).
+      const scrollbarWidth =
+        (this.document.defaultView?.innerWidth ?? 0) -
+        this.document.documentElement.clientWidth;
+      this.previousBodyPaddingRight = this.document.body.style.paddingRight;
+      if (scrollbarWidth > 0) {
+        this.document.body.style.paddingRight = `${scrollbarWidth}px`;
+      }
+      this.document.body.style.overflow = 'hidden';
     }
-    this.document.body.style.overflow = 'hidden';
     // Inert each target — but NEVER a subtree that contains the sheet
     // itself (a sheet rendered INSIDE the targeted shell would otherwise
     // freeze its own controls — the landing menu's exact failure mode) or
@@ -311,14 +338,22 @@ export class UiSheetBehavior {
   private deactivateEnvironment(): void {
     if (!this.environmentActive) return;
     this.environmentActive = false;
-    this.document.body.style.overflow = this.previousBodyOverflow;
-    this.document.body.style.paddingRight = this.previousBodyPaddingRight;
+    if (this.scrollLocked) {
+      this.scrollLocked = false;
+      this.document.body.style.overflow = this.previousBodyOverflow;
+      this.document.body.style.paddingRight = this.previousBodyPaddingRight;
+    }
     for (const element of this.inertedElements) {
       element.removeAttribute('inert');
     }
     this.inertedElements = [];
     this.dialogElement()?.style.removeProperty(this.dragVar());
-    requestAnimationFrame(() => this.previousFocus?.focus());
+    // Captured BEFORE the field is cleared: the callback runs a frame later,
+    // and reading the field then found it already null — focus never went
+    // back to the control that opened the sheet (found 2026-09-16 by the
+    // action sheet's spec).
+    const previous = this.previousFocus;
     this.previousFocus = null;
+    requestAnimationFrame(() => previous?.focus());
   }
 }
