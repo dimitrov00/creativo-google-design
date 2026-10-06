@@ -334,3 +334,223 @@ describe('UiMenu', () => {
     expect(Number.parseFloat(cap)).toBeLessThan(window.innerHeight);
   });
 });
+
+/*
+ * ── A SURFACE THAT IS NOT A MENU (2026-10-06) ─────────────────────────
+ * The staff day pills hang a month off a capsule. Announced as a `menu`
+ * that is an empty menu to a reader (axe: aria-required-children,
+ * critical) and the arrow-key model fought the grid. `uiRole="dialog"`
+ * presents the same popover as a non-modal dialog.
+ */
+@Component({
+  imports: [UiMenu, UiMenuTrigger],
+  template: `
+    <button type="button" id="before">Before</button>
+    <ui-menu
+      uiRole="dialog"
+      [uiPresented]="open()"
+      uiLabel="Октомври 2026 г."
+      (uiDismissed)="dismissed = dismissed + 1; open.set(false)"
+    >
+      <button uiMenuTrigger type="button" (click)="open.set(true)">
+        вт, 6.10
+      </button>
+      <div class="month">
+        <button type="button" class="day" (click)="picked = picked + 1">
+          6
+        </button>
+        <button type="button" class="day">7</button>
+      </div>
+    </ui-menu>
+    <button type="button" id="after">After</button>
+  `,
+})
+class DialogHost {
+  readonly open = signal(false);
+  dismissed = 0;
+  picked = 0;
+}
+
+async function renderDialog() {
+  await TestBed.configureTestingModule({
+    imports: [DialogHost],
+  }).compileComponents();
+  const fixture = TestBed.createComponent(DialogHost);
+  fixture.detectChanges();
+  await fixture.whenStable();
+  fixture.detectChanges();
+  const host = fixture.nativeElement as HTMLElement;
+  fixture.componentInstance.open.set(true);
+  fixture.detectChanges();
+  await fixture.whenStable();
+  fixture.detectChanges();
+  const trigger = host.querySelector<HTMLElement>('[uiMenuTrigger]');
+  if (!trigger) throw new Error('the dialog host has no trigger');
+  return { fixture, host, trigger };
+}
+
+describe('UiMenu as a dialog surface', () => {
+  it('presents a non-modal dialog, not a menu — and the trigger says what it opens', async () => {
+    const { host, trigger } = await renderDialog();
+
+    expect(surface(host).getAttribute('role')).toBe('dialog');
+    expect(surface(host).getAttribute('aria-modal')).toBe('false');
+    expect(surface(host).getAttribute('aria-label')).toBe('Октомври 2026 г.');
+    expect(trigger.getAttribute('aria-haspopup')).toBe('dialog');
+    expect(trigger.getAttribute('aria-expanded')).toBe('true');
+    // Nothing in it is a menuitem: the days are the content's own buttons.
+    expect(items(host)).toEqual([]);
+  });
+
+  it('takes focus as a container on open, and hands it back to the trigger on Escape', async () => {
+    const { fixture, host, trigger } = await renderDialog();
+
+    expect(document.activeElement).toBe(surface(host));
+
+    surface(host).dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+    );
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance.dismissed).toBe(1);
+    expect(document.activeElement).toBe(trigger);
+  });
+
+  it('leaves the arrow keys and Tab to its content', async () => {
+    const { fixture, host } = await renderDialog();
+
+    const arrow = new KeyboardEvent('keydown', {
+      key: 'ArrowDown',
+      bubbles: true,
+      cancelable: true,
+    });
+    surface(host).dispatchEvent(arrow);
+    expect(arrow.defaultPrevented).toBe(false);
+    expect(document.activeElement).toBe(surface(host));
+
+    surface(host).dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Tab', bubbles: true }),
+    );
+    expect(fixture.componentInstance.dismissed).toBe(0);
+  });
+
+  it('dismisses when focus leaves it for somewhere outside, not for the trigger', async () => {
+    const { fixture, host, trigger } = await renderDialog();
+    const leave = (relatedTarget: EventTarget | null) =>
+      surface(host).dispatchEvent(
+        new FocusEvent('focusout', { bubbles: true, relatedTarget }),
+      );
+
+    leave(trigger);
+    expect(fixture.componentInstance.dismissed).toBe(0);
+    // A blur to nowhere is not a move: the pointer listener owns that case.
+    leave(null);
+    expect(fixture.componentInstance.dismissed).toBe(0);
+
+    leave(host.querySelector('#after'));
+    expect(fixture.componentInstance.dismissed).toBe(1);
+  });
+
+  it('keeps open on a press inside: a day is not a one-shot command', async () => {
+    const { fixture, host } = await renderDialog();
+
+    host.querySelector<HTMLElement>('.day')?.click();
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance.picked).toBe(1);
+    expect(fixture.componentInstance.dismissed).toBe(0);
+    expect(surface(host).hasAttribute('data-open')).toBe(true);
+  });
+});
+
+/*
+ * ── THE DOCK (2026-10-06) ─────────────────────────────────────────────
+ * A sheet's action bar floats over the body's last rows and the window
+ * knows nothing of it: the block sheet's month fitted "below" its pill and
+ * landed under «Запази». The bars of the sheet the trigger lives in raise
+ * the window's floor; a sheet stacked over it and the page's own bar are
+ * not this surface's business.
+ */
+@Component({
+  imports: [UiMenu, UiMenuItem, UiMenuTrigger],
+  template: `
+    <div class="ui-sheet__surface">
+      <ui-menu
+        [uiPresented]="open()"
+        uiLabel="Sort"
+        (uiDismissed)="open.set(false)"
+      >
+        <button uiMenuTrigger type="button" (click)="open.set(true)">
+          Sort by
+        </button>
+        <button uiMenuItem type="button">Newest</button>
+      </ui-menu>
+      <div class="ui-sheet__surface">
+        <div class="ui-sheet-action-bar" data-visible id="stacked"></div>
+      </div>
+      <div class="ui-sheet-action-bar" data-visible id="dock"></div>
+      <div class="ui-sheet-action-bar" id="hidden"></div>
+    </div>
+    <div class="ui-page-action-bar" id="page"></div>
+  `,
+})
+class DockedHost {
+  readonly open = signal(false);
+}
+
+/** A bar's box, as `getBoundingClientRect` reports it — jsdom reports zero. */
+function dockAt(element: HTMLElement | null, top: number): void {
+  if (!element) throw new Error('no such bar');
+  element.getBoundingClientRect = () =>
+    ({
+      top,
+      bottom: top + 68,
+      left: 0,
+      right: 390,
+      width: 390,
+      height: 68,
+      x: 0,
+      y: top,
+      toJSON: () => ({}),
+    }) as DOMRect;
+}
+
+describe('UiMenu beside a docked bar', () => {
+  async function renderDocked() {
+    await TestBed.configureTestingModule({
+      imports: [DockedHost],
+    }).compileComponents();
+    const fixture = TestBed.createComponent(DockedHost);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    const host = fixture.nativeElement as HTMLElement;
+    const openIt = async () => {
+      fixture.componentInstance.open.set(true);
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+      return Number.parseFloat(
+        surface(host).style.getPropertyValue('--ui-menu-max-block'),
+      );
+    };
+    return { fixture, host, openIt };
+  }
+
+  it('raises the window’s floor to its own sheet’s bar', async () => {
+    const { host, openIt } = await renderDocked();
+    // jsdom: the anchor's box is zero and the screen is 768 tall, so the
+    // cap is the 55 % ceiling either way — of the screen without a dock
+    // (422), of the room above the bar with one from 300 down (165).
+    dockAt(host.querySelector('#dock'), 300);
+    expect(await openIt()).toBe(Math.round(300 * 0.55));
+  });
+
+  it('ignores a stacked sheet’s bar, a hidden bar and the page’s bar', async () => {
+    const { host, openIt } = await renderDocked();
+    dockAt(host.querySelector('#stacked'), 200);
+    dockAt(host.querySelector('#hidden'), 220);
+    dockAt(host.querySelector('#page'), 250);
+    expect(await openIt()).toBe(Math.round(window.innerHeight * 0.55));
+  });
+});

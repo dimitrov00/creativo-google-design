@@ -1,0 +1,72 @@
+:host {
+  display: block;
+}
+
+.quick-actions__mono {
+  font-family: var(--sys-font-family-mono);
+}
+
+/* A stand-in for the sheet a run sits on: the sheet's own surface, a 390 pt
+   phone wide, the page's gutter at its sides (the column is 356). */
+.quick-actions__sheet {
+  box-sizing: border-box;
+  inline-size: 100%;
+  max-inline-size: calc(var(--sys-space-unit) * 97.5);
+  padding: var(--sys-space-loose) var(--sys-space-regular);
+  border: 1px solid var(--sys-color-separator);
+  border-radius: var(--control-radius-hero);
+  background: var(--sys-color-surface);
+}
+
+/* The narrowest phone the app supports: 330 (the column is 296). */
+.quick-actions__sheet--narrow {
+  max-inline-size: calc(var(--sys-space-unit) * 82.5);
+}
+
+/* ON A PHONE the demo canvas is narrower than any phone's sheet (its own
+   padding and the page's gutters come off the viewport), and a run drawn
+   in what is left would cut words the app never cuts. So the stand-in
+   takes the canvas's padding back, edge to edge: 340 of a 390 pt
+   viewport, where the 330 sheet is drawn at its true width. */
+@media (max-width: 30rem) {
+  .quick-actions__sheet {
+    inline-size: auto;
+    margin-inline: calc(var(--sys-space-comfortable) * -1);
+  }
+}
+
+.quick-actions__caption {
+  margin: 0;
+  text-align: center;
+}
+
+/* A demo's own switch keeps its width: on a phone the note beside it
+   wraps, the button's word never does. */
+.quick-actions__toggle {
+  flex: none;
+}
+
+/* THE NEUTRAL FILL, through the run's own properties: the discs on the
+   translucent control fill with their glyphs in the primary ink, and the
+   promoted verb in the accent wash with its glyph in the one orange. No
+   input and no rule of the DS: four custom properties on the run, which
+   paint discs and the marks on them, never a word. */
+.quick-actions__neutral {
+  --ui-quick-action-fill: var(--sys-color-fill);
+  --ui-quick-action-ink: var(--sys-color-foreground);
+  --ui-quick-action-promoted-fill: color-mix(
+    in srgb,
+    var(--sys-color-accent) var(--sys-alpha-tint),
+    transparent
+  );
+  --ui-quick-action-promoted-ink: var(--sys-color-accent);
+}
+
+/* On a 330 pt viewport what is left is 280, narrower than the app's own
+   sheet at that width (330): the stand-in gives its gutter to the run, so
+   the four columns keep 68 and the words the app shows are shown whole. */
+@media (max-width: 22.5rem) {
+  .quick-actions__sheet {
+    padding-inline: var(--sys-space-tight);
+  }
+}

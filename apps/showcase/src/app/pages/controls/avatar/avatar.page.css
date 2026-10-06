@@ -5,3 +5,8 @@
 .avatar__mono {
   font-family: var(--sys-font-family-mono);
 }
+
+/* The quiet rung: the one secondary ink cut for words ON a fill. */
+.avatar__quiet {
+  --ui-avatar-ink: var(--sys-color-secondary-label-on-fill);
+}

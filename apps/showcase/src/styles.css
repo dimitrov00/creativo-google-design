@@ -113,14 +113,20 @@
   }
 
   /* Bare content links only — never anchors acting as DS controls
-     (uiButton, uiCard, uiListRow, anything uiInteractive), carrying an
-     explicit uiForegroundStyle stamp, or riding the uiLink inline-link
-     recipe (owner ruling: DS-control anchors never take the global link
-     color; mirrors apps/web styles.css). */
-  a:not(.ui-button):not([data-foreground-style]):not([data-interactive]):not(
-      [data-link]
-    ) {
-    color: var(--sys-color-accent);
+     (uiButton, uiCard, uiListRow, anything uiInteractive: every DS host
+     wears a `ui-*` class), carrying an explicit uiForegroundStyle stamp, or
+     riding the uiLink inline-link recipe (owner ruling: DS-control anchors
+     never take the global link color; mirrors apps/web styles.css).
+     THE ACCENT LAW (2026-09-29): a prose link is the ink around it on an
+     accent underline; the orange is the rule under the word. */
+  a:not(.ui-button):not([class*='ui-']):not([data-foreground-style]):not(
+      [data-interactive]
+    ):not([data-link]) {
+    color: inherit;
+    text-decoration: underline;
+    text-decoration-color: var(--sys-color-accent);
+    text-decoration-thickness: var(--sys-stroke-mark);
+    text-underline-offset: 0.2em;
   }
 }
 

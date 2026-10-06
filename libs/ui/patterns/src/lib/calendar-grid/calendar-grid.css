@@ -78,7 +78,10 @@
   /* ── Large: the grid IS the screen ──────────────────────────────────
      The badge sizes itself from `--ui-date-badge-size`, so a month scales by
      publishing that here rather than by every consumer passing a size to
-     every cell.
+     every cell. The TYPE is not published: a date badge draws at the
+     picker's 20px in every grid (its own rule says why — the chosen day's
+     white number on the solid accent clears only as large text), so the
+     two sizes differ in the cell, never in the numeral.
 
      The cell is a square (`aspect-ratio`) and the badge fills it EXACTLY —
      no cell padding. That is not a spacing preference: the cell is the tap
@@ -93,7 +96,6 @@
     column-gap: var(--sys-space-tight);
     row-gap: var(--sys-space-compact);
     --ui-date-badge-size: 100%;
-    --ui-date-badge-font: var(--sys-font-title3);
   }
 
   .ui-calendar-grid[data-size='large'] > button[uiday],

@@ -20,15 +20,343 @@
   .ui-sheet-headline__body {
     display: flex;
     flex-direction: column;
-    gap: var(--sys-space-tight);
     min-block-size: 0;
     overflow: clip;
     transition: opacity var(--sys-motion-duration-deliberate)
       var(--sys-motion-ease-standard);
   }
 
-  .ui-sheet-headline__body > * {
+  /* The title and its lines (two at the most) — the body's own recipe
+     before the face arrived, moved one box in, so a head without media is
+     the same pixels it always was. */
+  .ui-sheet-headline__text {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sys-space-tight);
+  }
+
+  .ui-sheet-headline__text > * {
     margin: 0;
+  }
+
+  /* ── The face (2026-09-28) ─────────────────────────────────────────────
+     Absent unless the head KNOWS it holds one (`data-media`, stamped only
+     through the imported directive — see `UI_SHEET_HEADLINE`). */
+  .ui-sheet-headline:not([data-media]) .ui-sheet-headline__media {
+    display: none;
+  }
+
+  /* Title column, then the face at the trailing edge: the leading edge
+     stays the one every other sheet page's title starts on. `start`, so a
+     title that wraps grows DOWNWARD and the disc stays on its first line
+     (the Revolut Business profile head). */
+  .ui-sheet-headline[data-media] .ui-sheet-headline__body {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    column-gap: var(--sys-space-regular);
+    align-items: start;
+  }
+
+  /* The disc's height is the text column's floor, and the text centres in
+     it: a one-line title and its line (24 × 1.1 + 4 + 13 × 1.4 ≈ 48.6)
+     sits balanced beside the 52 disc. CSS only — nothing measures text. */
+  .ui-sheet-headline[data-media] .ui-sheet-headline__text {
+    min-block-size: var(--control-size-large);
+    justify-content: center;
+  }
+
+  .ui-sheet-headline__media {
+    position: relative;
+    display: flex;
+    border-radius: var(--control-radius-capsule);
+  }
+
+  /* The ring is drawn INSET, over the face's own edge: the body clips
+     (`overflow: clip`, above), so an outset ring would be cut. The tone
+     ring, then a gap in the surface colour between it and the face — the
+     paused-account ring (≙ a Contacts photo's status ring). A head on
+     another ground says so with `--ui-sheet-headline-media-gap`. */
+  .ui-sheet-headline[data-media-tone='warning']
+    .ui-sheet-headline__media::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: var(--control-radius-capsule);
+    box-shadow:
+      inset 0 0 0 var(--sys-stroke-emphasis) var(--sys-color-warning),
+      inset 0 0 0 calc(var(--sys-stroke-emphasis) * 2)
+        var(--ui-sheet-headline-media-gap, var(--sys-color-surface));
+    pointer-events: none;
+  }
+
+  /* ── THE HERO (revision 3, R2-C) ───────────────────────────────────────
+     `uiHeadlineStyle="hero"`: you are in somebody's profile, and the head
+     says so. One centred column — the face on top, `extraLarge` (112) in
+     its ring box, the name under it, the quiet lines under the name. The
+     trailing layout above is untouched; every rule here is scoped by the
+     style and comes after it.
+
+     The hooks:
+
+     --ui-sheet-headline-rise   the consumer's: how far the head rises
+                                into the bar's row            0px
+
+     THE RING BOX is the gauge's `extraLarge` diameter, said with the
+     gauge's own sum (the face and a rim each side: the stroke's 6 and a
+     gap of 2) — the gauge declares its diameter on ITSELF, where its
+     parent cannot read it (gauge.css). The box is kept with a ring or
+     without: nothing moves when a flag flips.
+
+     THE PLATE is the badge's capsule, 24 tall. */
+  .ui-sheet-headline[data-headline-style='hero'] {
+    --ui-sheet-headline-ring-box: calc(
+      var(--control-size-extraLarge) + var(--sys-space-unit) * 4
+    );
+    --ui-sheet-headline-plate: calc(var(--sys-space-unit) * 6);
+
+    /* THE RISE: the head climbs into the bar's row, between ‹ and ✕ (the
+       chrome is transparent at rest and rides above it). */
+    margin-block-start: calc(-1 * var(--ui-sheet-headline-rise, 0px));
+  }
+
+  /* One column, everything on its axis. 16 from the face to the name. */
+  .ui-sheet-headline[data-headline-style='hero'] .ui-sheet-headline__body {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    justify-items: center;
+    row-gap: var(--sys-space-regular);
+    text-align: center;
+  }
+
+  /* The name and its lines: no floor (the 52 belonged to the disc beside
+     it), each centred, the line 4 under the name. */
+  .ui-sheet-headline[data-headline-style='hero'] .ui-sheet-headline__text {
+    box-sizing: border-box;
+    min-inline-size: 0;
+    max-inline-size: 100%;
+    min-block-size: 0;
+    align-items: center;
+    justify-content: flex-start;
+  }
+
+  /* A line that wraps, wraps in balanced lines: a centred «Клиент от март
+     2025 г. · идва през» over a lone «4 седмици» reads as a mistake. (The
+     title is balanced already, sheet-header.css.) */
+  .ui-sheet-headline[data-headline-style='hero'] .ui-sheet-headline__text > * {
+    text-wrap: balance;
+  }
+
+  /* THE MEDIA — above the name for the eye, after it in the DOM (it is
+     `aria-hidden`: a reader meets the name first). ONE cell, the ring box:
+     the stage's spot, the ring, the face and the plate share it and paint
+     in that order, none of them positioned (the gauge's own rule: what is
+     written after the ring stands over it).
+
+     `pointer-events: none`: risen into the bar's row the face lies under
+     the sheet's drag handle, and below it a drag that starts on the face
+     must still move the sheet. A face is a picture, never a control. */
+  .ui-sheet-headline[data-headline-style='hero'] .ui-sheet-headline__media {
+    order: -1;
+    display: grid;
+    grid-template: minmax(0, 1fr) / minmax(0, 1fr);
+    place-items: center;
+    box-sizing: border-box;
+    inline-size: var(--ui-sheet-headline-ring-box);
+    block-size: var(--ui-sheet-headline-ring-box);
+    border-radius: 0;
+    pointer-events: none;
+  }
+
+  .ui-sheet-headline[data-headline-style='hero'] .ui-sheet-headline__media > * {
+    grid-area: 1 / 1;
+  }
+
+  /* THE RING is the gauge's, whole: track, arc, stroke 6, a gap of 2 to the
+     face, from 12 o'clock. The WARNING ring (a paused client) is the same
+     ring, full, in the warning tone — so the trailing layout's inset ring,
+     drawn over the face's own edge, steps aside here. */
+  .ui-sheet-headline__ring[data-tone='warning'] {
+    --ui-gauge-tint: var(--sys-color-warning);
+  }
+
+  .ui-sheet-headline[data-headline-style='hero'][data-media-tone='warning']
+    .ui-sheet-headline__media::after {
+    content: none;
+  }
+
+  /* THE PLATE — centred ON the ring box's bottom edge, half over it: the
+     cell's centre, then half a ring box down (the same point on the stage,
+     whose cell is taller than the box). A grid item, so a word wider than
+     the box overhangs it evenly on both sides, in either direction of
+     text. It carries the raised lift: a white capsule on a white sheet is
+     a hole in the ring until it casts a shadow. */
+  .ui-sheet-headline[data-headline-style='hero']
+    .ui-sheet-headline__media
+    > .ui-headline-plate {
+    place-self: center;
+    box-sizing: border-box;
+    min-block-size: var(--ui-sheet-headline-plate);
+    translate: 0 calc(var(--ui-sheet-headline-ring-box) / 2);
+    white-space: nowrap;
+    box-shadow: var(--sys-elevation-raised);
+  }
+
+  /* The plate's lower half hangs under the box: the name keeps its 16
+     from the PLATE, not from the ring it covers. On the stage the plate
+     ends inside the panel and the name keeps its 16 from the panel. */
+  .ui-sheet-headline[data-headline-style='hero'][data-plate]:not(
+      [data-media-stage]
+    )
+    .ui-sheet-headline__media {
+    margin-block-end: calc(var(--ui-sheet-headline-plate) / 2);
+  }
+
+  /* A plate is the hero's. On the trailing layout it has no rim to stand
+     on (development says so, sheet-headline.ts). */
+  .ui-sheet-headline:not([data-headline-style='hero']) .ui-headline-plate {
+    display: none;
+  }
+
+  /* ── THE STAGE (`uiMediaStage`) ────────────────────────────────────────
+     A medal's page, not a person's: the face gets a panel of its own, the
+     column wide and the ring box plus 24 above and under it tall (176) —
+     an accent WASH, never the solid (the page's one slab is somebody
+     else's).
+
+     Its own query container: the motif is dropped where the panel is too
+     narrow to hold it beside the spot. `isolation` keeps the motif's
+     negative layer inside the panel, over its wash. */
+  .ui-sheet-headline[data-headline-style='hero'][data-media-stage]
+    .ui-sheet-headline__media {
+    position: relative;
+    justify-self: stretch;
+    inline-size: auto;
+    block-size: calc(
+      var(--ui-sheet-headline-ring-box) + 2 * var(--sys-space-comfortable)
+    );
+    border-radius: var(--control-radius-prominent);
+    background: color-mix(
+      in srgb,
+      var(--sys-color-accent) var(--sys-alpha-tint),
+      transparent
+    );
+    overflow: clip;
+    isolation: isolate;
+    container-type: inline-size;
+    /* What stands on the stage stands on the SPOT: a medal cuts its rim
+       numeral out of its ring with a ring of the ground, and the ground
+       here is the spot's white, not the sheet (they part in dark). */
+    --ui-medal-stack-ring: var(--sys-color-surface-elevated);
+  }
+
+  /* THE SPOT — a white disc under the ring, 12 wider all round (152): on
+     the wash alone the accent arc measures 2.62:1; on the spot it is read
+     on white, 3.04:1. In the cell, before the ring, so it paints under
+     it and over the motif. */
+  .ui-sheet-headline__spot {
+    inline-size: calc(
+      var(--ui-sheet-headline-ring-box) + var(--sys-space-unit) * 6
+    );
+    block-size: calc(
+      var(--ui-sheet-headline-ring-box) + var(--sys-space-unit) * 6
+    );
+    border-radius: var(--control-radius-capsule);
+    background: var(--sys-color-surface-elevated);
+  }
+
+  /* THE MOTIF — the pass's two discs (220 and 140), in the accent at 10 %
+     over the wash, in the panel's trailing 40 %: each disc's leading edge
+     stands at 62 % of the panel or past it, the larger over the top
+     corner, the smaller rising from the bottom edge. Where they overlap
+     the ink doubles, which is the whole of the effect. Clipped by the
+     panel's radius. No gradient, no motion. */
+  .ui-sheet-headline__motif {
+    position: absolute;
+    z-index: -1;
+    border-radius: var(--control-radius-capsule);
+    background: color-mix(in srgb, var(--sys-color-accent) 10%, transparent);
+  }
+
+  .ui-sheet-headline__motif[data-disc='major'] {
+    inset-inline-start: 62%;
+    inset-block-start: calc(var(--sys-space-unit) * -27);
+    inline-size: calc(var(--sys-space-unit) * 55);
+    block-size: calc(var(--sys-space-unit) * 55);
+  }
+
+  .ui-sheet-headline__motif[data-disc='minor'] {
+    inset-inline-start: 70%;
+    inset-block-end: calc(var(--sys-space-unit) * -10);
+    inline-size: calc(var(--sys-space-unit) * 35);
+    block-size: calc(var(--sys-space-unit) * 35);
+  }
+
+  /* Under 20rem (the 330 pt phone's panel is 295) the discs would stand
+     against the spot: the spot alone. */
+  @container (inline-size < 20rem) {
+    .ui-sheet-headline__motif {
+      display: none;
+    }
+  }
+
+  /* ── THE MEDIA'S OWN EXIT (hero only) ──────────────────────────────────
+     The header fades a headline's media on the TITLE's timeline
+     (sheet-header.css), which is right for a disc beside the title and
+     wrong for one above it: a 112 face passed under the bar at full ink,
+     behind the grabber, for 128 px of scroll before the title under it
+     began to leave. So the hero's media is the subject of a timeline of
+     its OWN. This rule is more specific than the header's and leaves its
+     selector and its `animation` alone: it only re-aims the timeline and
+     the range.
+
+     The inset is the chrome LESS the rise: `exit 0%` is the box's top
+     reaching the bar's bottom edge, or, for a head that rose, the line
+     that far above it. Gone by 55 %: the face is out before the compact
+     title is in. The ring, the plate and the stage are INSIDE the media,
+     so at no scroll position does one of them stand at full ink under a
+     name in the bar. */
+  @supports (animation-timeline: view()) {
+    @media (prefers-reduced-motion: no-preference) {
+      .ui-sheet-headline[data-headline-style='hero'][data-media]
+        .ui-sheet-headline__media {
+        view-timeline-name: --ui-sheet-headline-media;
+        view-timeline-inset: calc(
+            var(--modal-sheet-chrome-height, var(--control-size-large)) -
+              var(--ui-sheet-headline-rise, 0px)
+          )
+          auto;
+        animation-timeline: --ui-sheet-headline-media;
+        animation-range: exit 0% exit 55%;
+      }
+    }
+  }
+
+  /* THE FALLBACK — no scroll-driven animations, or reduced motion: the
+     media leaves with the header's flip. The trailing layout never needed
+     this (the chrome's fade covers a 52 disc); here the object is 128.
+     Where the timeline runs, its animation holds the same zero by then. */
+  .ui-sheet__surface:has(.ui-sheet-header[data-collapsed])
+    .ui-sheet-headline[data-headline-style='hero']
+    .ui-sheet-headline__media {
+    opacity: 0;
+  }
+
+  /* …and where the flip is all there is and motion is allowed, it is the
+     bar's own flip, not a blink: the compact title fades in (sheet-header
+     .css), the face fades out. Never beside the timeline, which needs no
+     help. */
+  @supports not (animation-timeline: view()) {
+    @media (prefers-reduced-motion: no-preference) {
+      .ui-sheet-headline[data-headline-style='hero'] .ui-sheet-headline__media {
+        transition: opacity var(--sys-motion-duration-deliberate)
+          var(--sys-motion-ease-standard);
+      }
+    }
+  }
+
+  /* A folded hero gives the rise back: there is no head left to lift. */
+  .ui-sheet-headline[data-headline-style='hero'][data-folded] {
+    margin-block-start: 0;
   }
 
   .ui-sheet-headline[data-folded] {

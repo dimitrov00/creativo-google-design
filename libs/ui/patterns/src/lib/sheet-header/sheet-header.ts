@@ -10,6 +10,7 @@ import {
   input,
   signal,
 } from '@angular/core';
+import { nearestScroller } from '@creativo/ui/layout';
 
 /**
  * DOM form of the large-title sentinel marker (the HTML parser lowercases
@@ -56,7 +57,11 @@ const LARGE_TITLE_SELECTOR = '[uisheetlargetitle]';
  *    names the sentinel's view-timeline `--ui-sheet-headline` (consumers
  *    may equally name it via their own CSS), and in browsers with
  *    scroll-driven animations the compact title + chrome bind per-frame to
- *    the large title's exit instead of the binary flip.
+ *    the large title's exit instead of the binary flip. The timeline is
+ *    inset by the chrome's height, so it starts at the BAR's bottom — the
+ *    same edge this observer's rootMargin measures — and it drives a
+ *    cross-fade: the large title leaves over the first half of its exit,
+ *    the compact one arrives over the second, never two names at once.
  * 4. Legacy fallback: the owner stamps `data-visible` on its `[uiTitle]`
  *    element — the title shows and the chrome follows (`:has()`).
  *
@@ -124,7 +129,9 @@ export class UiSheetHeader {
     // IntersectionObserver — the header then keeps its resting chrome
     // (owners can still drive `uiCollapsed` / `data-visible`).
     if (typeof IntersectionObserver === 'undefined') return;
-    const scroller = this.findScroller();
+    // The sheet's own scroller: the nearest ancestor that actually
+    // scrolls. One walk, shared with the visits browser (ui/layout).
+    const scroller = nearestScroller(this.elementRef.nativeElement);
     if (!scroller) return;
     this.scroller = scroller;
 
@@ -176,18 +183,5 @@ export class UiSheetHeader {
     );
     observer.observe(sentinel);
     this.intersectionObserver = observer;
-  }
-
-  /** Nearest ancestor that actually scrolls — the sheet's own scroller. */
-  private findScroller(): HTMLElement | null {
-    for (
-      let node = this.elementRef.nativeElement.parentElement;
-      node !== null;
-      node = node.parentElement
-    ) {
-      const { overflowY } = getComputedStyle(node);
-      if (overflowY === 'auto' || overflowY === 'scroll') return node;
-    }
-    return null;
   }
 }

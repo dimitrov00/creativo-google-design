@@ -5,3 +5,13 @@
 .badge__mono {
   font-family: var(--sys-font-family-mono);
 }
+
+/* Caption legibility on the dark media canvas. */
+.badge__mono--on-media {
+  color: var(--sys-color-on-media-muted);
+}
+
+/* A photo-rail tile: the width the client card's rail gives one (≈102 pt). */
+.badge__tile {
+  inline-size: 6.4rem;
+}

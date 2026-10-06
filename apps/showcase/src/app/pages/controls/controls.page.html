@@ -15,7 +15,7 @@
     <ui-grid [uiAdaptiveMinimum]="'13.75rem'" uiSpacing="comfortable">
       @for (link of group.links; track link.slug) {
       <a
-        [routerLink]="['/controls', link.slug]"
+        [routerLink]="['/', link.section ?? 'controls', link.slug]"
         uiCard
         uiTone="plain"
         [uiInteractive]="true"
@@ -28,7 +28,7 @@
             uiForegroundStyle="secondary"
             class="controls__mono"
           >
-            /controls/{{ link.slug }}
+            /{{ link.section ?? 'controls' }}/{{ link.slug }}
           </p>
         </ui-stack>
       </a>

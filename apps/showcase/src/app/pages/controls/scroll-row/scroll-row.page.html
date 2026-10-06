@@ -80,4 +80,84 @@
       </ui-stack>
     </ui-stack>
   </sc-demo>
+
+  <sc-demo scTitle="In a sheet">
+    <ng-container scAbout>
+      <code>uiFullBleed="container"</code> breaks the strip out of a SHEET's
+      column instead of the viewport: it cancels the parent's inline padding
+      (<code>--ui-sheet-inset</code>, or <code>--ui-scroll-row-gutter</code>),
+      so the shelf runs to the sheet's edges while its first item — and every
+      snap — still sits on the column's edge. The box below stands in for a
+      sheet; its padding is the sheet inset.
+    </ng-container>
+    <ui-stack uiSpacing="tight" uiAlignment="leading">
+      <div class="scroll-row__sheet" uiFrame [uiFrameWidth]="'22rem'">
+        <ui-stack uiSpacing="compact" uiAlignment="stretch">
+          <p uiText [uiFont]="'headline'">Услуги</p>
+          <ui-scroll-row uiFullBleed="container" uiSpacing="compact">
+            @for (card of cards; track card.title) {
+            <div
+              class="scroll-row__thumb scroll-row__thumb--strip"
+              uiFrame
+              [uiFrameWidth]="'6rem'"
+            ></div>
+            }
+          </ui-scroll-row>
+          <p uiText [uiFont]="'footnote'" uiForegroundStyle="secondary">
+            The first tile starts on this line's edge.
+          </p>
+        </ui-stack>
+      </div>
+      <p uiText [uiFont]="'caption'" class="scroll-row__mono">
+        uiFullBleed=container · uiSpacing=compact
+      </p>
+    </ui-stack>
+  </sc-demo>
+
+  <sc-demo scTitle="Peek 3.5">
+    <ng-container scAbout>
+      ≙ <code>containerRelativeFrame(.horizontal, count: 7, span: 2)</code>:
+      every item is two of seven columns across the column, the gaps counted —
+      three and a half across, and the half says there is more. The client
+      card's photo rail: 4 / 5 tiles, the date a
+      <code>span[uiBadge] uiOnMedia</code> label, never a button look inside the
+      tappable tile.
+    </ng-container>
+    <ui-stack uiSpacing="tight" uiAlignment="leading">
+      <div class="scroll-row__sheet" uiFrame [uiFrameWidth]="'22rem'">
+        <ui-scroll-row
+          uiFullBleed="container"
+          uiSnap="start"
+          uiSpacing="compact"
+          [uiContainerRelativeCount]="7"
+          [uiContainerRelativeSpan]="2"
+          role="group"
+          aria-label="Снимки от предишни посещения"
+        >
+          @for (photo of photos; track photo.date) {
+          <button
+            type="button"
+            class="scroll-row__tile"
+            uiInteractive
+            [attr.aria-label]="photo.label"
+          >
+            <ui-media-card
+              [uiSrc]="null"
+              uiRatio="4 / 5"
+              uiRadius="regular"
+              [uiScrim]="false"
+            >
+              <span uiCaption>
+                <span uiBadge [uiOnMedia]="true">{{ photo.date }}</span>
+              </span>
+            </ui-media-card>
+          </button>
+          }
+        </ui-scroll-row>
+      </div>
+      <p uiText [uiFont]="'caption'" class="scroll-row__mono">
+        uiContainerRelativeCount=7 · uiContainerRelativeSpan=2 · in a sheet
+      </p>
+    </ui-stack>
+  </sc-demo>
 </sc-page>

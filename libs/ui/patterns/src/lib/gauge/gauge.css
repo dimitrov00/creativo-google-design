@@ -1,0 +1,656 @@
+@layer sys-components {
+  /* The meter owns no space around itself. `--ui-gauge-tint` is the fill
+     every meter in the system uses; a frozen owner sets it to the
+     secondary ink, and the stamps stay stamps (frozen never erases). */
+  .ui-gauge {
+    --ui-gauge-tint: var(--sys-color-accent);
+    /* THE INK ON THE TINT'S WASH (revision 3: colour is a shape, words are
+       ink): the current step node's numeral is the PRIMARY ink, ≥ 4.6:1 on
+       the wash over every ground; its ring carries the colour. White on the
+       raw tint is 3.04:1, under AA, so no word is ever set on the solid
+       tint; only a mark (a check, a reward glyph), which needs 3:1. */
+    --ui-gauge-ink: var(--sys-color-foreground);
+    --ui-gauge-track: var(--sys-color-fill);
+    /* THE EXTENT'S INK (2026-09-28). The control fill alone measured
+       1.06–1.08:1 on the card (1.21 in dark) — the prototype's grey on
+       grey: 23/24 read as a full bar, the catalogue's far end and a
+       season's III–V vanished. What is still ahead is drawn as the empty
+       slot's ring is: a stroke in the secondary ink, ≥ 3:1 (SC 1.4.11) on
+       the surface and on the muted card in both themes (gauge.spec
+       measures it). */
+    --ui-gauge-rim: var(--sys-color-secondary-label);
+
+    display: block;
+    min-inline-size: 0;
+  }
+
+  /* ── linearCapacity ─────────────────────────────────────────────────
+     A capsule track in the control fill, ringed in the extent's ink so its
+     far end shows, the tint laid over it to the value. The fill is CLIPPED
+     rather than scaled, so its leading end stays round at every value. */
+  .ui-gauge__track {
+    position: relative;
+    display: block;
+    block-size: var(--sys-size-dot);
+    border-radius: var(--control-radius-capsule);
+    background: var(--ui-gauge-track);
+    box-shadow: inset 0 0 0 var(--sys-stroke-mark) var(--ui-gauge-rim);
+    overflow: clip;
+  }
+
+  .ui-gauge[data-control-size='small'] .ui-gauge__track {
+    block-size: calc(var(--sys-size-dot) / 2);
+  }
+
+  .ui-gauge__fill {
+    position: absolute;
+    inset: 0;
+    background: var(--ui-gauge-tint);
+    clip-path: inset(
+      0 calc((1 - var(--ui-gauge-value, 0)) * 100%) 0 0 round
+        var(--control-radius-capsule)
+    );
+  }
+
+  /* A meter that is NOT full never draws full: whatever is left keeps at
+     least a tight rung of ringed track, so 23/24 on a 44 pt medal meter
+     (1.8 pt left) still shows its end. */
+  .ui-gauge:not([data-complete]) .ui-gauge__fill {
+    clip-path: inset(
+      0 max(calc((1 - var(--ui-gauge-value, 0)) * 100%), var(--sys-space-tight))
+        0 0 round var(--control-radius-capsule)
+    );
+  }
+
+  /* A threshold is a CUT across the track in the card's own fill —
+     readable on the tint and on the track alike. */
+  .ui-gauge__notch {
+    position: absolute;
+    inset-block: 0;
+    inset-inline-start: calc(var(--ui-gauge-mark, 0) * 100%);
+    inline-size: var(--sys-stroke-emphasis);
+    translate: -50% 0;
+    background: var(--sys-color-surface-secondary);
+  }
+
+  .ui-gauge__scale {
+    margin-block-start: var(--sys-space-tight);
+  }
+
+  /* ── discreteCapacity ───────────────────────────────────────────────
+     Whole slots, `--ui-gauge-columns` to a row (5 lays ten out as 5 × 2),
+     each at most the step node's rung (six units, 24) and never under a
+     dot: slots shrink on a narrow card and never overflow it, and never
+     stretch on a wide one. */
+  .ui-gauge__slots {
+    display: grid;
+    grid-template-columns: repeat(
+      var(--ui-gauge-columns, var(--ui-gauge-slots, 1)),
+      minmax(var(--sys-size-dot), calc(var(--sys-space-unit) * 6))
+    );
+    gap: var(--sys-space-compact);
+    /* A card too narrow for its full slots shrinks the gaps WITH them — a
+       third of a slot, the full card's 24 : 8 (N·d + (N − 1)·d/3 fills the
+       row) — so a half tile on a phone draws the page's card smaller
+       instead of pinching its discs between fixed gaps. */
+    column-gap: min(
+      var(--sys-space-compact),
+      calc(100% / (4 * var(--ui-gauge-columns, var(--ui-gauge-slots, 1)) - 1))
+    );
+    align-items: start;
+  }
+
+  .ui-gauge__slot {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--sys-space-tight);
+    min-inline-size: 0;
+  }
+
+  /* An empty slot is a ring in the secondary ink — not tertiary, which a
+     mark this size could not be read in; how many are left is the point. */
+  .ui-gauge__disc {
+    display: grid;
+    place-items: center;
+    box-sizing: border-box;
+    inline-size: 100%;
+    aspect-ratio: 1;
+    border-radius: var(--control-radius-capsule);
+    box-shadow: inset 0 0 0 var(--sys-stroke-mark)
+      var(--sys-color-secondary-label);
+    color: var(--ui-gauge-tint);
+  }
+
+  .ui-gauge__slot[data-filled] .ui-gauge__disc {
+    background: var(--ui-gauge-tint);
+    box-shadow: none;
+    color: var(--sys-color-on-accent);
+  }
+
+  /* THE REWARD — told apart by its ring and its glyph, not its colour. */
+  .ui-gauge__slot[data-reward]:not([data-filled]) .ui-gauge__disc {
+    box-shadow: inset 0 0 0 var(--sys-stroke-mark) var(--ui-gauge-tint);
+  }
+
+  /* The glyph takes the icon ladder's floor, 16 — never a share of the
+     slot (2026-09-28: `min(1rem, 66cqi)` minted 14.5 in the glance tile's
+     22 pt slot and 12–13 at 330, the streak track's «mark × 0.66» defect). */
+  .ui-gauge__reward {
+    font-size: var(--ui-icon-small);
+  }
+
+  /* THE REWARD NEVER DROPS ITS GLYPH (2026-09-28, wave D r4). A 16 glyph
+     needs the 20 rung inside its ring, and five slots in a half tile at
+     330 come out ≈ 18: hiding the glyph there left the reward a bare
+     accent ring — an empty slot told apart by hue alone, and the rhythm
+     track's open period beside it. So the reward disc alone never goes
+     under 20: where its column is narrower it overhangs it by a point
+     each way — into the gap, never onto a neighbour (the gap is a third
+     of a slot) — centred on the row's line by the negative margins (a
+     margin's percentage is of the slot's width, as the disc's is), so the
+     row stays the others' height. A reward half again as wide is already
+     the small card's grammar; this is the same cue, a notch smaller. */
+  .ui-gauge[data-control-size='regular']
+    .ui-gauge__slot[data-reward]
+    .ui-gauge__disc {
+    inline-size: max(100%, var(--ui-icon-medium));
+    margin-block: min(0px, calc((100% - var(--ui-icon-medium)) / 2));
+  }
+
+  .ui-gauge__slot-caption {
+    font: var(--sys-font-caption);
+    font-variant-numeric: tabular-nums;
+    color: var(--sys-color-secondary-label);
+    white-space: nowrap;
+  }
+
+  /* SMALL — dots in a row that hugs them; the reward a ring half again as
+     wide. */
+  .ui-gauge[data-control-size='small'] .ui-gauge__slots {
+    grid-template-columns: repeat(
+      var(--ui-gauge-columns, var(--ui-gauge-slots, 1)),
+      auto
+    );
+    justify-content: start;
+    align-items: center;
+    gap: var(--sys-space-tight);
+  }
+
+  .ui-gauge[data-control-size='small'] .ui-gauge__disc {
+    inline-size: var(--sys-size-dot);
+  }
+
+  .ui-gauge[data-control-size='small']
+    .ui-gauge__slot[data-reward]
+    .ui-gauge__disc {
+    inline-size: calc(var(--sys-size-dot) * 1.5);
+  }
+
+  /* LARGE — THE WALLET'S STAMP CARD (2026-10-06, revision 3 §2.2.2 WC3:
+     «stamps 44 · filled: solid accent, white mark · empty: ring,
+     numeral»). The review measured the regular rung there as 24 pt dots
+     at a 32 pitch, bunched in the leading third of a 355 card. Here the
+     stamps are the regular control's 44, spread across the card's inner
+     width — the first and last on the content edges, as the step nodes
+     are — in rows a regular rung apart. A STAMP prints the check in the
+     on-accent ink and an EMPTY slot its ordinal in the secondary ink, so
+     which stamp is next is read without counting; the reward keeps its
+     glyph, at the 24 rung — one glyph size on the card, the ticket's.
+     Where the card cannot hold five 44s (the ≥ 761 dialog's 2-up
+     holdings, 208 inside) the stamps shrink together, the gaps never
+     under a tight rung. */
+  .ui-gauge[data-control-size='large'] .ui-gauge__slots {
+    grid-template-columns: repeat(
+      var(--ui-gauge-columns, var(--ui-gauge-slots, 1)),
+      minmax(0, var(--control-size-regular))
+    );
+    justify-content: space-between;
+    gap: var(--sys-space-regular) var(--sys-space-tight);
+  }
+
+  .ui-gauge[data-control-size='large'] .ui-gauge__slot .ui-gauge__check,
+  .ui-gauge[data-control-size='large'] .ui-gauge__reward {
+    font-size: var(--ui-icon-large);
+  }
+
+  /* The ordinal: the tile title's role, tabular, in the plain secondary
+     ink (on the surface, never on a fill). */
+  .ui-gauge__numeral {
+    font: var(--sys-font-callout);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    line-height: 1;
+    color: var(--sys-color-secondary-label);
+  }
+
+  /* ── steps ──────────────────────────────────────────────────────────
+     Evenly spaced nodes — ranks, not distances — the node on top, its
+     word and its detail lines under it. THE FIRST AND LAST NODES SIT ON
+     THE CONTENT EDGES (2026-09-28, the Apple step-indicator grammar): as
+     one equal column each, the first node's inset hung on the node count
+     (13–27 pt inside the text above it), so cards side by side had three
+     leading edges. Each step is now its node's width, spread from edge to
+     edge; its words are centred under the node and overhang it — up to
+     the pitch (centre to centre) in the middle, clamped to the edge at
+     either end. The pitch is measured in the row's own width (it is the
+     query container), so no node count has to be known twice. The link
+     INTO a node is drawn by that node's step, from the previous node's
+     edge to its own, stopping short of both discs. */
+  .ui-gauge__steps {
+    --ui-gauge-node: calc(var(--sys-space-unit) * 6);
+    /* The current node's ring and the gap of ground inside it, both drawn
+       INSIDE the node's box (see the current node below). */
+    --ui-gauge-ring-gap: var(--sys-stroke-emphasis);
+    --ui-gauge-link-gap: calc(var(--sys-stroke-emphasis) * 3);
+    --ui-gauge-link-weight: calc(var(--sys-stroke-mark) * 2);
+    --ui-gauge-pitch: calc(
+      (100cqi - var(--ui-gauge-node)) / max(var(--ui-gauge-slots, 1) - 1, 1)
+    );
+    /* The link's full length: a pitch less a node and a gap either side. */
+    --ui-gauge-link-length: calc(
+      var(--ui-gauge-pitch) - var(--ui-gauge-node) - 2 *
+        var(--ui-gauge-link-gap)
+    );
+
+    container-type: inline-size;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+  }
+
+  .ui-gauge__step {
+    position: relative;
+    display: flex;
+    flex: none;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--sys-space-tight);
+    inline-size: var(--ui-gauge-node);
+    text-align: center;
+  }
+
+  /* The ends: the words start (end) on the content edge, never past it,
+     and may reach a whole pitch inward, as the middle words may either
+     way (2026-10-06: clamped to half a pitch past the node's centre, the
+     last caption on the status card at 330 — «Платина», 50 pt in the
+     caption, in a box of 49 — broke inside the word as «Платин / а»).
+     The words hug their text, so two neighbours meet only when both run
+     to the cap. */
+  .ui-gauge__step:first-child {
+    align-items: flex-start;
+    text-align: start;
+  }
+
+  .ui-gauge__step:last-child {
+    align-items: flex-end;
+    text-align: end;
+  }
+
+  .ui-gauge__step:not(:first-child)::before,
+  .ui-gauge__step:not(:first-child)::after {
+    content: '';
+    position: absolute;
+    inset-block-start: calc(
+      var(--ui-gauge-node) / 2 - var(--ui-gauge-link-weight) / 2
+    );
+    inset-inline-start: calc(
+      var(--ui-gauge-node) + var(--ui-gauge-link-gap) - var(--ui-gauge-pitch)
+    );
+    block-size: var(--ui-gauge-link-weight);
+    border-radius: var(--control-radius-capsule);
+  }
+
+  .ui-gauge__step:not(:first-child)::before {
+    inline-size: var(--ui-gauge-link-length);
+    background: var(--ui-gauge-track);
+  }
+
+  /* The lit part: whole behind a reached node, proportional into the next
+     one, nothing further on. */
+  .ui-gauge__step:not(:first-child)::after {
+    inline-size: calc(var(--ui-gauge-link-length) * var(--ui-gauge-link, 0));
+    background: var(--ui-gauge-tint);
+  }
+
+  .ui-gauge__node {
+    display: grid;
+    place-items: center;
+    box-sizing: border-box;
+    inline-size: var(--ui-gauge-node);
+    block-size: var(--ui-gauge-node);
+    border-radius: var(--control-radius-capsule);
+    background: var(--ui-gauge-track);
+    /* A node still AHEAD is a numeral on the track's fill: the secondary
+       ink made for a fill (the plain one read 3.70:1 on the fill over a
+       dark card, 2026-09-28). */
+    color: var(--sys-color-secondary-label-on-fill);
+    font: var(--sys-font-caption);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    line-height: 1;
+    /* The node's words start a compact rung (8) under it: the step's tight
+       gap plus this. */
+    margin-block-end: var(--sys-space-tight);
+  }
+
+  /* THE STATES, STRONGEST FIRST (2026-09-28, wave D r4): passed ≥ current
+     > next > ahead, by FORM, and accent strokes on what is earned only.
+     Round 3 moved every numbered reached node to the tint's wash (a white
+     «II» on the accent read 3.04:1 at 11 px), which drew earned I–IV as
+     the faintest discs on the track (1.17:1 on the card) while the next,
+     unearned node wore a crisp accent ring — a finished ladder read as
+     unreached, and a tier track drew «reached» the other way.
+
+     A REACHED node — the current one too — is the solid tint, as the lit
+     links into it are: ≥ 3:1 as a graphic on the page and the card in
+     both themes (gauge.spec measures it). */
+  .ui-gauge__step:is([data-state='reached'], [data-state='current'])
+    .ui-gauge__node {
+    background-color: var(--ui-gauge-tint);
+  }
+
+  /* A level PASSED prints no word on it: it draws the check, a mark in the
+     on-accent ink — 3.04:1 on the tint, a graphic's 3:1 (SC 1.4.11), so
+     the state holds by form on the muted card too, where the light fill's
+     edge is 2.84:1. Which level it was stays in the owner's hidden level
+     list and in the words under the node. The icon ladder's floor, 16. */
+  .ui-gauge__check {
+    font-size: var(--ui-icon-small);
+    color: var(--sys-color-on-accent);
+  }
+
+  /* The current node — the highest reached — wears a ring, a gap of the
+     real ground between (the fill clipped short of the ring, so no painted
+     patch pretends to be the card behind it). INSIDE ITS OWN BOX
+     (2026-09-28): drawn as an outline it stood 4 pt proud of the node, so
+     a current first or last node — the steps run edge to edge — hung past
+     the content column. Every node's edge is now its box's. Blank (a
+     tier), it is a solid dot in its ring. */
+  .ui-gauge__step[data-state='current'] .ui-gauge__node {
+    border: var(--sys-stroke-emphasis) solid var(--ui-gauge-tint);
+    padding: var(--ui-gauge-ring-gap);
+    background-clip: content-box;
+  }
+
+  /* …and where it prints its numeral — the one word the track sets on a
+     reached node — it takes the upcoming date tile's pairing: the tint's
+     WASH under the PRIMARY ink, inside its accent ring (the ring is the
+     colour, the numeral is ink). ≥ 4.6:1 on the page, the card, the muted
+     card and a dark elevated card (accent-rule.spec and gauge.spec measure
+     it). Only while a level is still under way: on a FINISHED track (the
+     current node is the last) the node prints no numeral — it draws the
+     check on the solid tint inside its ring (gauge.ts, wave D r5), so a
+     done ladder never ends on its faintest filled node. */
+  .ui-gauge__step[data-state='current'] .ui-gauge__node[data-numeral] {
+    background-color: color-mix(
+      in srgb,
+      var(--ui-gauge-tint) var(--sys-alpha-tint),
+      transparent
+    );
+    color: var(--ui-gauge-ink);
+  }
+
+  /* What is not yet earned is ringed in the EXTENT'S ink, never the tint,
+     as the track and an empty slot are — the fill alone was 1.08:1, and a
+     season's III–V were bare numerals. The NEXT node — the one the lit
+     link runs into — sets its numeral in the primary ink; one still AHEAD
+     keeps the node's secondary ink made for a fill. One stroke for both:
+     at the emphasis weight a dark ring beside the current node's accent
+     one read as a second «you are here». */
+  .ui-gauge__step:is([data-state='next'], [data-state='ahead'])
+    .ui-gauge__node {
+    box-shadow: inset 0 0 0 var(--sys-stroke-mark) var(--ui-gauge-rim);
+  }
+
+  .ui-gauge__step[data-state='next'] .ui-gauge__node {
+    color: var(--sys-color-foreground);
+  }
+
+  /* The words size to themselves (the step is only a node wide), capped
+     at the pitch (`--ui-gauge-words`, an owner's narrower cap), and wrap
+     past it. */
+  .ui-gauge__step-label,
+  .ui-gauge__step-detail {
+    inline-size: max-content;
+    max-inline-size: var(--ui-gauge-words, var(--ui-gauge-pitch));
+  }
+
+  /* A NAME IS NEVER CUT: the caption wraps between words and never
+     inside one, and a single word wider than the cap WIDENS ITS BOX
+     instead of spilling out of it (2026-10-06, the revision 3 review: as
+     an overflow, the last caption hung PAST the content edge — «Платина»,
+     51 in a 48 box at 167, the track beside a 64 medal on the 330 phone —
+     and a long word on a middle node spilled toward one neighbour only).
+     The box is at least its longest word; the ends are anchored on the
+     content edge, so an end caption that overhangs does so INWARD, over
+     its link, and a middle one evenly to either side. */
+  .ui-gauge__step-label {
+    min-inline-size: min-content;
+    font: var(--sys-font-caption);
+    font-variant-numeric: tabular-nums;
+    color: var(--sys-color-foreground);
+    overflow-wrap: normal;
+  }
+
+  .ui-gauge__step-detail {
+    margin-block-start: calc(var(--sys-space-tight) * -1);
+    font: var(--sys-font-caption);
+    font-variant-numeric: tabular-nums;
+    color: var(--sys-color-secondary-label);
+    overflow-wrap: anywhere;
+  }
+
+  /* SMALL steps: bare nodes on their links, no words — the current one a
+     solid dot in its ring. */
+  .ui-gauge[data-control-size='small'] .ui-gauge__steps {
+    --ui-gauge-node: calc(var(--sys-space-unit) * 4);
+    --ui-gauge-link-gap: var(--sys-stroke-emphasis);
+  }
+
+  /* ── circularCapacity ───────────────────────────────────────────────
+     A RING (≙ `.accessoryCircularCapacity`): a quiet track and the tint's
+     arc over it, from 12 o'clock, clockwise, round caps. THE SIZE NAMES
+     THE DISC THE RING WRAPS, so a medal and its ring share one word: the
+     box is the disc and a rim each side — the stroke and a gap of the real
+     ground —
+
+       regular     44 + 2 × (3 + 1) =  52
+       large       52 + 2 × (4 + 2) =  64
+       extraLarge 112 + 2 × (6 + 2) = 128
+
+     The gauge draws the ring alone; the disc is its composer's, centred in
+     the same box (`--ui-gauge-diameter`, read on the gauge or inside it).
+     The stroke is 5.8 %, 6.3 % and 4.7 % of the diameter: at 2 / 3 / 5 the
+     arc read as a border, the thin rim the rejected build wore. A ring
+     that stands ALONE round a figure is `large` with the stroke at five
+     (`--ui-gauge-stroke`, set on the gauge): 7.8 %, the family of the
+     account page's ring. The box never changes with the stroke — it grows
+     inward — so nothing beside a ring moves when one is re-weighted. */
+  .ui-gauge[data-gauge-style='circularCapacity'] {
+    --ui-gauge-diameter: calc(
+      var(--control-size-regular) + var(--sys-space-unit) * 2
+    );
+    --ui-gauge-stroke: calc(var(--sys-space-unit) * 0.75);
+
+    /* NOT positioned, and no layer of its own: in a composer's cell the
+       ring paints in source order, so a disc or a rim chip written after
+       it stands over it. */
+    display: inline-grid;
+    flex: none;
+    /* ONE cell, the box itself: the drawing and the centre share it. */
+    grid-template: minmax(0, 1fr) / minmax(0, 1fr);
+    place-items: center;
+    inline-size: var(--ui-gauge-diameter);
+    block-size: var(--ui-gauge-diameter);
+    vertical-align: middle;
+  }
+
+  .ui-gauge[data-gauge-style='circularCapacity'][data-control-size='large'] {
+    --ui-gauge-diameter: calc(
+      var(--control-size-large) + var(--sys-space-unit) * 3
+    );
+    --ui-gauge-stroke: var(--sys-space-unit);
+  }
+
+  .ui-gauge[data-gauge-style='circularCapacity'][data-control-size='extraLarge'] {
+    --ui-gauge-diameter: calc(
+      var(--control-size-extraLarge) + var(--sys-space-unit) * 4
+    );
+    --ui-gauge-stroke: calc(var(--sys-space-unit) * 1.5);
+  }
+
+  /* No viewBox: the drawing is laid out in the page's own points, so the
+     stroke is the token's and an owner's heavier one needs no scale. Sized
+     by the diameter itself, never a percentage: an `svg` with no definite
+     height falls back to its intrinsic 150 and draws the ring under its
+     box. A circle's path starts at 3 o'clock; a quarter turn back starts
+     it at 12. Clockwise in both directions of text, as a clock is. */
+  .ui-gauge__ring {
+    display: block;
+    grid-area: 1 / 1;
+    inline-size: var(--ui-gauge-diameter);
+    block-size: var(--ui-gauge-diameter);
+    overflow: visible;
+    rotate: -90deg;
+  }
+
+  .ui-gauge__ring-track,
+  .ui-gauge__ring-arc {
+    r: calc((var(--ui-gauge-diameter) - var(--ui-gauge-stroke)) / 2);
+    fill: none;
+    stroke-width: var(--ui-gauge-stroke);
+  }
+
+  /* The track is the hairline's ink, the account ring's: quiet under the
+     arc, and translucent, so it holds on a card, the sheet and a white
+     spotlight in both themes. */
+  .ui-gauge__ring-track {
+    stroke: var(--ui-gauge-track-ring, var(--sys-color-separator));
+  }
+
+  .ui-gauge__ring-arc {
+    --ui-gauge-circumference: calc(
+      3.14159265 * (var(--ui-gauge-diameter) - var(--ui-gauge-stroke))
+    );
+
+    stroke: var(--ui-gauge-tint);
+    stroke-linecap: round;
+    stroke-dasharray: calc(
+        var(--ui-gauge-value, 0) * var(--ui-gauge-circumference)
+      )
+      var(--ui-gauge-circumference);
+  }
+
+  /* A ring that is NOT full never draws full, as the bar never does: the
+     round caps reach half a stroke past either end of the arc, so from
+     ≈ 96 % the two met and 24/25 read as a finished medal. Whatever is
+     left keeps a stroke's width of track between the caps. */
+  .ui-gauge:not([data-complete]) .ui-gauge__ring-arc {
+    stroke-dasharray: min(
+        calc(var(--ui-gauge-value, 0) * var(--ui-gauge-circumference)),
+        calc(var(--ui-gauge-circumference) - 2 * var(--ui-gauge-stroke))
+      )
+      var(--ui-gauge-circumference);
+  }
+
+  /* A zero value draws the track alone: a round cap would still paint a
+     dot at 12 o'clock. Hidden, never removed, so a rise from nothing can
+     glide. */
+  .ui-gauge[data-empty] .ui-gauge__ring-arc {
+    opacity: 0;
+  }
+
+  /* NOT STARTED (`data-extent="dashed"`, stamped by the composer): the
+     track alone, dashed, in the extent's ink — the form an empty slot and
+     a node still ahead already wear, never the tint. «2 on, 3 off» in the
+     track's own units (gauge.ts sets its `pathLength` to a whole number of
+     dashes, so the ring closes on one).
+
+     ONE LINE AT EVERY SIZE: the regular ring's three points, on the box's
+     outer edge. The extent's ink is ≥ 3:1 where the solid track is a
+     hairline's 4 %, so at the large ring's four and the hero's six the
+     dashes drew a cog — what is NOT begun outweighing every ring that is.
+     An outline says "not yet"; the weight belongs to the arc. */
+  .ui-gauge[data-extent='dashed'] .ui-gauge__ring-track {
+    --ui-gauge-dash-stroke: min(
+      var(--ui-gauge-stroke),
+      calc(var(--sys-space-unit) * 0.75)
+    );
+
+    r: calc((var(--ui-gauge-diameter) - var(--ui-gauge-dash-stroke)) / 2);
+    stroke: var(--ui-gauge-rim);
+    stroke-width: var(--ui-gauge-dash-stroke);
+    stroke-dasharray: 2 3;
+  }
+
+  .ui-gauge[data-extent='dashed'] .ui-gauge__ring-arc {
+    display: none;
+  }
+
+  /* THE CENTRE (`[uiCurrentValueLabel]`): one number or one check, always
+     the headline role — a ring never sets two sizes of figure, and never a
+     fraction («7», not «7/10»: the arc is the other half). Primary ink;
+     the ring carries the colour. */
+  .ui-gauge__current {
+    display: grid;
+    grid-area: 1 / 1;
+    place-items: center;
+    font: var(--sys-font-headline);
+    font-variant-numeric: tabular-nums;
+    line-height: 1;
+    color: var(--sys-color-foreground);
+  }
+
+  /* A check in the centre is on the icon ladder — its 24 rung, the weight
+     of the numerals beside it — never the role's 18, which is no rung. */
+  .ui-gauge__current > .ui-icon {
+    font-size: var(--ui-icon-large);
+  }
+
+  /* ── motion — only a LIVE change after the first frame ──────────────── */
+  @media (prefers-reduced-motion: no-preference) {
+    /* A rise glides the bar and the links. */
+    .ui-gauge[data-direction='up'] .ui-gauge__fill {
+      transition: clip-path var(--sys-motion-duration-deliberate)
+        var(--sys-motion-ease-emphasized);
+    }
+
+    .ui-gauge[data-direction='up'] .ui-gauge__step::after {
+      transition: inline-size var(--sys-motion-duration-deliberate)
+        var(--sys-motion-ease-emphasized);
+    }
+
+    /* …and the ring's arc. */
+    .ui-gauge[data-direction='up'] .ui-gauge__ring-arc {
+      transition: stroke-dasharray var(--sys-motion-duration-deliberate)
+        var(--sys-motion-ease-emphasized);
+    }
+
+    /* A new stamp lands. */
+    .ui-gauge[data-settled] .ui-gauge__slot[data-punched] .ui-gauge__disc {
+      animation: ui-gauge-punch var(--sys-motion-duration-regular)
+        var(--sys-motion-ease-emphasized);
+    }
+
+    /* A completed card starts again: every slot fades back to empty. */
+    .ui-gauge[data-direction='reset'] .ui-gauge__disc {
+      transition:
+        background-color var(--sys-motion-duration-deliberate)
+          var(--sys-motion-ease-standard),
+        box-shadow var(--sys-motion-duration-deliberate)
+          var(--sys-motion-ease-standard);
+    }
+  }
+
+  @keyframes ui-gauge-punch {
+    from {
+      opacity: 0;
+      scale: 0.6;
+    }
+    to {
+      opacity: 1;
+      scale: 1;
+    }
+  }
+}

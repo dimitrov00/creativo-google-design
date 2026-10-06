@@ -1,0 +1,108 @@
+<sc-page scTitle="Mark scale">
+  <ng-container scLede>
+    <code>UiMark</code> + <code>ui-mark-scale</code> — one mark grammar for
+    every drawn range: the slider's named points, a gauge's notches and words,
+    the nodes of a <code>steps</code> track. A mark is a <code>value</code>, a
+    <code>label</code> (<code>null</code> = a notch without words), an optional
+    <code>short</code> for inside a node and up to two <code>detail</code>
+    lines. The scale writes the words under a range, each at its point.
+  </ng-container>
+
+  <sc-demo scTitle="Under a meter">
+    <ng-container scAbout>
+      The loyalty page's catalogue: <code>ui-gauge</code> cuts a notch at each
+      cost and hands its labelled marks to the scale — the word, then the detail
+      line under it.
+    </ng-container>
+    <ui-stack
+      uiSpacing="tight"
+      uiAlignment="stretch"
+      class="mark-scale__column"
+    >
+      <ui-gauge
+        [uiValue]="308"
+        [uiMax]="400"
+        [uiMarks]="catalogue"
+        uiLabel="Каталог"
+        uiValueText="308 точки, стигат за 2 от 3 награди"
+      />
+      <p uiText [uiFont]="'caption'" class="mark-scale__mono">
+        marks 120 · 250 · 400 on 0 … 400
+      </p>
+    </ui-stack>
+  </sc-demo>
+
+  <sc-demo scTitle="The ends hug the track">
+    <ng-container scAbout>
+      A word at ratio <i>r</i> steps back <i>r</i> of its own width: the first
+      starts where the range starts, the last ends where it ends, a middle one
+      centres on its point. Nothing hangs past the track, and nothing is
+      measured in script.
+    </ng-container>
+    <ui-stack
+      uiSpacing="tight"
+      uiAlignment="stretch"
+      class="mark-scale__column"
+    >
+      <span class="mark-scale__rule" aria-hidden="true"></span>
+      <ui-mark-scale [uiMarks]="ends" [uiMin]="0" [uiMax]="28" />
+    </ui-stack>
+  </sc-demo>
+
+  <sc-demo scTitle="Crowded words drop">
+    <ng-container scAbout>
+      <code>uiMinGap</code> (a share of the range, 0.12 by default): a word
+      closer than that to the previous one SHOWN is dropped, so the scale never
+      overprints. The same pure rule is exported as <code>visibleMarks()</code>;
+      the owner's value text still says every value.
+    </ng-container>
+    <ui-stack
+      uiSpacing="regular"
+      uiAlignment="stretch"
+      class="mark-scale__column"
+    >
+      <ui-mark-scale
+        [uiMarks]="crowded"
+        [uiMin]="0"
+        [uiMax]="100"
+        [uiMinGap]="gap()"
+      />
+      <ui-slider
+        [uiValue]="gapPercent()"
+        [uiMin]="0"
+        [uiMax]="30"
+        [uiStep]="1"
+        uiLabel="Minimum gap"
+        [uiValueText]="gap() + ' of the range'"
+        (uiValueChange)="gapPercent.set($event)"
+      />
+      <p uiText [uiFont]="'caption'" class="mark-scale__mono">
+        uiMinGap={{ gap() }} · {{ shownCount() }} of {{ crowded.length }} words
+        shown
+      </p>
+    </ui-stack>
+  </sc-demo>
+
+  <sc-demo scTitle="Pulled in from the ends">
+    <ng-container scAbout>
+      <code>--ui-mark-scale-inset</code> moves both ends in — the slider sets it
+      to half its thumb, so a point's word sits under the thumb's centre.
+    </ng-container>
+    <ui-stack
+      uiSpacing="tight"
+      uiAlignment="stretch"
+      class="mark-scale__column"
+    >
+      <span
+        class="mark-scale__rule mark-scale__rule--inset"
+        aria-hidden="true"
+      ></span>
+      <ui-mark-scale
+        class="mark-scale__inset"
+        [uiMarks]="ends"
+        [uiMin]="0"
+        [uiMax]="28"
+      />
+    </ui-stack>
+  </sc-demo>
+</sc-page>

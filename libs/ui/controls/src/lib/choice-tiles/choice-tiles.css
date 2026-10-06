@@ -6,14 +6,17 @@
   /* A fixed number of cells across (the consumer's `uiColumns`), rows of
      one tile height, and DENSE packing so a two-by-two tile and the
      regular tiles around it lock together without holes — the bento the
-     iOS Home Screen's widgets draw (small beside medium). */
+     iOS Home Screen's widgets draw (small beside medium). The row is the
+     TILE rung (64), one step past the large control: a tile stacks its
+     figure over its detail, and the 52 rung has room for one of them. The
+     rung is a token, read here and by nothing that is not a tile. */
   .ui-choice-tiles__grid {
     display: grid;
     grid-template-columns: repeat(
       var(--ui-choice-tiles-columns, 3),
       minmax(0, 1fr)
     );
-    grid-auto-rows: calc(var(--sys-space-unit) * 16);
+    grid-auto-rows: var(--control-size-tile);
     grid-auto-flow: dense;
     gap: var(--sys-space-compact);
   }

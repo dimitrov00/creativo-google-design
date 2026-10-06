@@ -52,8 +52,12 @@
     margin: 0;
   }
 
+  /* The same quiet word as the unit, on the same fill (below). */
   .ui-unit-field__native::placeholder {
-    color: var(--sys-color-secondary-label);
+    color: var(
+      --ui-unit-field-unit-ink,
+      var(--sys-color-secondary-label-on-fill)
+    );
     opacity: 1;
   }
 
@@ -65,10 +69,21 @@
   }
 
   /* The unit is a word on the figure, quieter by a role — the time field's
-     glyph, in letters. */
+     glyph, in letters. It is never a word on a bare surface: the field
+     carries no surface of its own, and its owner is a fill (a bordered form
+     field) or a value pill (the bordered button's rest fill), both of which
+     LIFT the ground under it — so its ink is the on-fill rung, not the plain
+     secondary ink, which read 3.28:1 on a dark pill (axe, the admin page,
+     2026-10-06). An owner that wants the unit at ITS ink — a pill that
+     reads «14 дни» as one figure — sets `--ui-unit-field-unit-ink` (to
+     `currentColor`, say) the way it hands over the ring, and names no DS
+     part. */
   .ui-unit-field__unit {
     grid-column: 2;
-    color: var(--sys-color-secondary-label);
+    color: var(
+      --ui-unit-field-unit-ink,
+      var(--sys-color-secondary-label-on-fill)
+    );
     white-space: nowrap;
   }
 

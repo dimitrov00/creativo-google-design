@@ -46,6 +46,15 @@
     display: none;
   }
 
+  /* A capsule HUGS its label (2026-09-28). A grid item stretches across
+     its track by default, so a badge projected straight into the caption
+     (the photo rail's «7.08») was blockified to the tile's whole width. The
+     copy lines keep the track; a capsule sits at the leading edge at its
+     own width. */
+  .ui-media-card__caption > .ui-badge {
+    justify-self: start;
+  }
+
   /* A wrapped overlay title has to cohere as ONE block. The text scale's
      reading leading (callout is 1.45 → 20.3px) puts MORE air between a
      title's own two lines than the 4px separating the title from its meta,
@@ -82,5 +91,22 @@
 
   .ui-media-card > [uioverlaytrailing] {
     inset-inline-end: var(--sys-space-compact);
+  }
+
+  /* THE TAP TARGET (2026-09-28). The card is never the control — the
+     consumer wraps it — and a `button`/`a` whose one child is the card IS
+     that control: the picture is the whole face, so the UA chrome goes
+     here, once, instead of a reset hand-copied round every thumb (the
+     client card's photo rail and the shared visit row had one each). The
+     wrapper's shape and press ride `uiRadius` + `uiInteractive`; its size
+     is the consumer's layout. */
+  :is(button, a):has(> .ui-media-card:only-child) {
+    display: block;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: inherit;
+    font: inherit;
+    text-decoration: none;
   }
 }

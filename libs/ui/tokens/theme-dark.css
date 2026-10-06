@@ -33,17 +33,37 @@
     --sys-color-on-primary: #0d0d0d;
     --sys-color-secondary-label: #8c8c8c;
     --sys-color-tertiary-label: #6b6b6b; /* ≙ .tertiary — one step quieter than secondary */
+    /* ONE ORANGE (the accent law, client card revision 3 §1; the owner
+       answered for the calendars on 2026-10-06): the same value as in
+       light, and in dark it also carries a DISPLAY FIGURE (24px, or
+       18.66px at weight 700) on every opaque ground — 6.90:1 on the page,
+       5.89 on a card, 5.10 on the grouped segment, 4.97 on an elevated
+       card. Words are --sys-color-foreground, or the secondary ink where
+       they are quiet; the lifted cut for words (`--sys-color-accent-label`,
+       #fb7735) is DELETED with its light twin. accent-rule.spec.ts holds
+       the law; accent-label.spec.ts holds the calendars' marks. */
     --sys-color-accent: #f26b22;
-
-    /* Dark needs no darkening: #f26b22 measures 6.9:1 on the page ground. */
-    --sys-color-accent-label: var(--sys-color-accent);
 
     /* The same lift `-label` performs for the accent, for the destructive
        tone: `--sys-color-destructive` is 3.12:1 on the dark card, so an
        error rendered in it is less legible than the fact it is about.
        Fills and icons keep --sys-color-destructive; this is for INK. */
     --sys-color-destructive-label: #f4796f; /* 5.78:1 on #242424 */
+    /* ON THE SOLID ACCENT: MARKS AND DISPLAY FIGURES ONLY. White on
+       #f26b22 is 3.04:1 in both themes, which carries a glyph, a check or
+       a figure of 24px and over (18.66px in bold — a date picker's chosen
+       day, 20px at weight 700) and never small words. A small fact that
+       belongs to an orange object stands in ink on the object's own
+       surface (the pass's foot, the ticket's body). Every rule that inks
+       in this token is recorded with its reason in accent-rule.spec.ts
+       (`ON_ACCENT_ALLOWED`, guard 7). */
     --sys-color-on-accent: #ffffff;
+    /* THE ONE SMALL FIGURE ON THE SOLID ACCENT: the staff week strip's
+       chosen today (2026-10-06), a 13px numeral on the accent disc. The
+       same near-black as in light — the accent is one value in both
+       themes, so its ink is too; this theme's foreground (#ededed) would
+       read 2.6:1 on it. 6.16:1; accent-label.spec.ts holds the ratio. */
+    --sys-color-on-accent-ink: #121212;
     /* INK ON A TONE FILL. White on the destructive red clears AA; white on
        the warning amber does not (2.9:1 dark, 4.2:1 light), so amber takes
        dark ink — the way every yellow badge does. Anything painted in a
@@ -53,14 +73,20 @@
     --sys-color-destructive: #d32f2f;
     --sys-color-success: #3fa56e;
     --sys-color-warning: #d08a2c;
-    /* THE PROMO INK IS THE ACCENT (owner, 2026-09-16, at the discount
-       card: "what is that yellow — use our accent colour"). Money taken
-       off a bill reads in the one tint the app has; the semantic name
-       stays so a discount line, a coupon's figure and a promo ruler ask
-       for the same thing. */
+    /* THE PROMO HUE IS THE ACCENT (owner, 2026-09-16, at the discount
+       card: "what is that yellow — use our accent colour"). The semantic
+       name stays, so a discount's slider, a coupon's figure and a promo
+       glyph ask for the same thing, and the accent law binds it as it
+       binds the accent: a fill, a wash, a glyph or a display figure,
+       never small words. Money taken off a bill is primary ink carried
+       by its weight, beside a promo glyph.
+
+       ONE TOKEN, NO COMPANIONS (2026-09-29). Its ink cut
+       (`--sys-color-promo-label`, an alias of the label ink above) lost
+       its last reader to the law, and its on-colour
+       (`--sys-color-on-promo`) never had one. Both are deleted in both
+       themes; accent-rule.spec.ts (guard 1) keeps them unread. */
     --sys-color-promo: var(--sys-color-accent);
-    --sys-color-promo-label: var(--sys-color-accent-label);
-    --sys-color-on-promo: #241a00;
 
     /* ── Identity tones — WHOSE chair, never what state ────────────────
        Five slots a schedule assigns to barbers so a mixed run can be read

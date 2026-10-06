@@ -1,0 +1,670 @@
+<sc-page scTitle="Sheet Headline">
+  <ng-container scLede>
+    <code>ui-sheet-headline</code>: a sheet page's ONE head. The large title
+    (<code>uiSheetLargeTitle</code>, the sheet header's collapse sentinel) and
+    at most two quiet lines under it. <code>uiHeadlineStyle="hero"</code> is a
+    PROFILE: the face on top, centred and <code>extraLarge</code>, in a ring
+    that shows progress, a plate on its rim, the name under it. The
+    <code>standard</code> head keeps the title on the leading edge and can seat
+    a <code>large</code> face at the trailing one. It folds while a search is
+    engaged (<code>uiFolded</code>). Import <code>UI_SHEET_HEADLINE</code>: the
+    head only learns of a face, or of a plate, through the imported directive.
+  </ng-container>
+
+  <!-- THE BAR of a stand-in sheet: the real `ui-sheet-header`, at rest, with
+       the two chips the visit sheet's pages carry (decorative here). -->
+  <ng-template #bar let-title>
+    <ui-sheet-header [uiCollapsed]="false">
+      <span
+        uiLeading
+        uiButton
+        uiButtonStyle="bordered"
+        uiTint="neutral"
+        uiControlSize="regular"
+        [uiIconOnly]="true"
+        aria-hidden="true"
+      >
+        <ui-icon uiName="nav.back" />
+      </span>
+      <div uiTitle aria-hidden="true">{{ title }}</div>
+      <span
+        uiTrailing
+        uiButton
+        uiButtonStyle="bordered"
+        uiTint="neutral"
+        uiControlSize="regular"
+        [uiIconOnly]="true"
+        aria-hidden="true"
+      >
+        <ui-icon uiName="sheet.close" />
+      </span>
+    </ui-sheet-header>
+  </ng-template>
+
+  <!-- ONE HEAD, drawn on a stand-in for the sheet's top: the real bar (the
+       grabber, ‹ and ✕), the page's inset, and the rise the glance sets. -->
+  <ng-template #head let-sample let-narrow="narrow">
+    <div
+      class="sheet-headline__sheet"
+      [class.sheet-headline__sheet--narrow]="narrow"
+      [attr.data-testid]="'sheet-headline-sheet-' + sample.id"
+    >
+      <ng-container
+        *ngTemplateOutlet="bar; context: { $implicit: sample.name }"
+      />
+      <div class="sheet-headline__page">
+        <ui-sheet-headline
+          class="sheet-headline__risen"
+          uiHeadlineStyle="hero"
+          [uiMediaTone]="sample.tone"
+          [uiMediaValue]="sample.value"
+          [attr.data-testid]="'sheet-headline-head-' + sample.id"
+        >
+          <h2
+            uiSheetLargeTitle
+            [id]="'sheet-headline-' + sample.id"
+            uiText
+            uiFont="title"
+          >
+            {{ sample.name }}
+          </h2>
+          <p uiText uiFont="callout" uiForegroundStyle="secondary">
+            @for (part of sample.line; track $index) {
+            <span
+              [uiForegroundStyle]="part.fact ? 'primary' : undefined"
+              [uiWeight]="part.fact ? 'medium' : undefined"
+              [class.sheet-headline__fact]="part.fact"
+              >{{ part.text }}</span
+            >
+            }
+          </p>
+          @if (sample.second; as second) {
+          <p uiText uiFont="subheadline" uiForegroundStyle="secondary">
+            @for (part of second; track $index) {
+            <span
+              [uiForegroundStyle]="part.fact ? 'primary' : undefined"
+              [uiWeight]="part.fact ? 'medium' : undefined"
+              [class.sheet-headline__fact]="part.fact"
+              >{{ part.text }}</span
+            >
+            }
+          </p>
+          } @if (sample.words; as words) {
+          <span uiVisuallyHidden>{{ words }}</span>
+          }
+          <ui-avatar
+            uiHeadlineMedia
+            uiControlSize="extraLarge"
+            [uiName]="sample.name"
+          />
+          @if (sample.plate; as plate) {
+          <span uiHeadlinePlate uiBadge [uiOnMedia]="true" uiIcon="loyalty.tier"
+            >{{ plate }}</span
+          >
+          }
+        </ui-sheet-headline>
+        <ui-quick-actions uiLabel="Връзка" [uiColumns]="4">
+          <button uiQuickAction uiIcon="contact.phone">Обади се</button>
+          <button uiQuickAction uiIcon="contact.sms">SMS</button>
+          <button uiQuickAction uiIcon="contact.viber">Viber</button>
+          <button uiQuickAction uiIcon="visit.repeat" uiProminence="accent">
+            Повтори
+          </button>
+        </ui-quick-actions>
+      </div>
+    </div>
+  </ng-template>
+
+  <sc-demo scTitle="Hero: a ring and a plate">
+    <ng-container scAbout>
+      The staff client card's head. The face is <code>ui-avatar</code>
+      <code>extraLarge</code> (112) in a ring box of 128; the ring
+      (<code>uiMediaValue</code>, 0 … 1) is the circular <code>ui-gauge</code>,
+      stroke 6, a gap of 2 to the face, from 12 o'clock. The plate
+      (<code>[uiHeadlinePlate]</code>, a <code>span[uiBadge]</code> with
+      <code>uiOnMedia</code>) stands on the ring box's bottom edge. The name is
+      <code>title</code> 28/700, the page's one 28; the line
+      <code>callout</code> 14 in the quiet ink, its FACTS in the primary ink at
+      500. The head rises into the bar's row
+      (<code>--ui-sheet-headline-rise</code>, the consumer's), between ‹ and ✕;
+      32 to the verbs.
+    </ng-container>
+    <ui-stack uiSpacing="compact" uiAlignment="stretch">
+      <ng-container
+        *ngTemplateOutlet="head; context: { $implicit: georgi, narrow: false }"
+      />
+      <p uiText [uiFont]="'caption'" class="sheet-headline__mono">
+        {{ georgi.caption }}
+      </p>
+    </ui-stack>
+  </sc-demo>
+
+  <sc-demo scTitle="Hero: the states of the ring">
+    <ng-container scAbout>
+      <code>uiMediaTone="warning"</code> wins over the value: a paused client
+      wears a FULL ring in the warning tone, and the line says why in words. At
+      the top tier the ring is full; at zero it is the track alone. With no
+      value (<code>null</code>: the tiers are off, a guest) no ring is drawn and
+      the box stays, so nothing moves when a flag flips.
+    </ng-container>
+    <div class="sheet-headline__grid">
+      @for (sample of states; track sample.id) {
+      <ui-stack uiSpacing="compact" uiAlignment="stretch">
+        <ng-container
+          *ngTemplateOutlet="
+              head;
+              context: { $implicit: sample, narrow: false }
+            "
+        />
+        <p uiText [uiFont]="'caption'" class="sheet-headline__mono">
+          {{ sample.caption }}
+        </p>
+      </ui-stack>
+      }
+    </div>
+  </sc-demo>
+
+  <sc-demo scTitle="Hero: a medal on the stage">
+    <ng-container scAbout>
+      <code>uiMediaStage</code>: a medal's page, not a person's. The face gets a
+      panel of its own, the column wide and 176 tall: an accent WASH, a white
+      spotlight under the ring (so the arc is read on white), the loyalty pass's
+      two discs in its trailing part. The head draws no ring (<code
+        >uiMediaValue</code
+      >
+      stays <code>null</code>): a <code>ui-medal</code> wears its own. It does
+      not rise.
+    </ng-container>
+    <ui-stack uiSpacing="compact" uiAlignment="stretch">
+      <div
+        class="sheet-headline__sheet"
+        data-testid="sheet-headline-sheet-stage"
+      >
+        <ng-container *ngTemplateOutlet="bar; context: { $implicit: 'Фейд' }" />
+        <div class="sheet-headline__page">
+          <ui-sheet-headline
+            uiHeadlineStyle="hero"
+            uiMediaStage
+            data-testid="sheet-headline-head-stage"
+          >
+            <h2
+              uiSheetLargeTitle
+              id="sheet-headline-stage"
+              uiText
+              uiFont="title"
+            >
+              Фейд
+            </h2>
+            <p uiText uiFont="callout" uiForegroundStyle="secondary">
+              <span>Майсторство · Ниво II · от </span
+              ><span
+                uiForegroundStyle="primary"
+                uiWeight="medium"
+                class="sheet-headline__fact"
+                >24.09.2025 г.</span
+              >
+            </p>
+            <ui-medal
+              uiHeadlineMedia
+              uiState="earned"
+              uiIcon="loyalty.badge"
+              uiLevel="II"
+              uiControlSize="extraLarge"
+              [uiValue]="0.87"
+              uiValueText="23 от 25 до ниво III"
+              uiLabel="Фейд, ниво II спечелено на 24 септември 2025 г., 23 от 25 до ниво III"
+            />
+          </ui-sheet-headline>
+          <ui-card
+            uiTone="elevated"
+            uiPadding="comfortable"
+            role="group"
+            aria-label="Напредък"
+          >
+            <ui-stack uiSpacing="compact" uiAlignment="leading">
+              <ui-metric
+                uiValue="23"
+                uiUnit="от 25"
+                uiCaption="посещения с фейд"
+                uiControlSize="extraLarge"
+              />
+              <p uiText uiFont="callout" uiWeight="semibold">
+                Още 2 до ниво III
+              </p>
+            </ui-stack>
+          </ui-card>
+        </div>
+      </div>
+      <p uiText [uiFont]="'caption'" class="sheet-headline__mono">
+        uiHeadlineStyle=hero · uiMediaStage · ui-medal extraLarge
+      </p>
+    </ui-stack>
+  </sc-demo>
+
+  <sc-demo scTitle="Hero: two quiet lines">
+    <ng-container scAbout>
+      A head takes two quiet lines at the most, 4 apart: the line belongs to the
+      name. The first is <code>callout</code> 14, the second
+      <code>subheadline</code> 13, so no two neighbours share a size and a tone.
+      What a reader hears for the ring and the plate is a visually hidden
+      <code>span</code> after them: the media is <code>aria-hidden</code>.
+    </ng-container>
+    <ui-stack uiSpacing="compact" uiAlignment="stretch">
+      <ng-container
+        *ngTemplateOutlet="
+          head;
+          context: { $implicit: twoLines, narrow: false }
+        "
+      />
+      <p uiText [uiFont]="'caption'" class="sheet-headline__mono">
+        {{ twoLines.caption }}
+      </p>
+    </ui-stack>
+  </sc-demo>
+
+  <sc-demo scTitle="Hero at 330: a three-line name">
+    <ng-container scAbout>
+      The narrowest phone: the column is 295. The ring box clears ‹ and ✕ by 39
+      each side. A long name wraps, centred and balanced, to three lines of 28
+      and is never cut (the bar truncates its compact copy); the quiet line
+      wraps in two balanced lines. On the stage the two discs are dropped under
+      20rem: the spotlight alone.
+    </ng-container>
+    <div class="sheet-headline__grid">
+      <ui-stack uiSpacing="compact" uiAlignment="stretch">
+        <ng-container
+          *ngTemplateOutlet="head; context: { $implicit: long, narrow: true }"
+        />
+        <p uiText [uiFont]="'caption'" class="sheet-headline__mono">
+          {{ long.caption }}
+        </p>
+      </ui-stack>
+      <ui-stack uiSpacing="compact" uiAlignment="stretch">
+        <div
+          class="sheet-headline__sheet sheet-headline__sheet--narrow"
+          data-testid="sheet-headline-sheet-stage-narrow"
+        >
+          <ng-container
+            *ngTemplateOutlet="bar; context: { $implicit: 'Оформяне на брада' }"
+          />
+          <div class="sheet-headline__page">
+            <ui-sheet-headline
+              uiHeadlineStyle="hero"
+              uiMediaStage
+              data-testid="sheet-headline-head-stage-narrow"
+            >
+              <h2
+                uiSheetLargeTitle
+                id="sheet-headline-stage-narrow"
+                uiText
+                uiFont="title"
+              >
+                Оформяне на брада
+              </h2>
+              <p uiText uiFont="callout" uiForegroundStyle="secondary">
+                Майсторство · още не е започнато
+              </p>
+              <ui-medal
+                uiHeadlineMedia
+                uiState="notStarted"
+                uiIcon="loyalty.badge"
+                uiControlSize="extraLarge"
+                uiLabel="Оформяне на брада, още не е започнато, 0 от 3 до ниво I"
+              />
+            </ui-sheet-headline>
+          </div>
+        </div>
+        <p uiText [uiFont]="'caption'" class="sheet-headline__mono">
+          330 · the stage without its discs · a medal not started
+        </p>
+      </ui-stack>
+    </div>
+  </sc-demo>
+
+  <sc-demo scTitle="Hero in a sheet: the face leaves first">
+    <ng-container scAbout>
+      Open the sheet and scroll. The face, its ring and its plate are ONE box
+      (the media) on a view-timeline of their own: they start to leave as the
+      box reaches the bar and are gone before the compact title arrives, so a
+      face never stands at full ink under a name in the bar. Without
+      scroll-driven animations, or with reduced motion, the media leaves with
+      the header's flip. A drag that starts on the face still moves the sheet:
+      the media takes no pointer.
+    </ng-container>
+    <ui-stack uiSpacing="compact" uiAlignment="leading">
+      <button
+        type="button"
+        uiButton
+        uiButtonStyle="bordered"
+        data-testid="sheet-headline-open"
+        (click)="sheetOpen.set(true)"
+      >
+        Open the client's sheet
+      </button>
+      <p uiText [uiFont]="'caption'" class="sheet-headline__mono">
+        ui-modal-sheet · --ui-sheet-headline-rise: chrome − 24
+      </p>
+    </ui-stack>
+  </sc-demo>
+
+  <sc-demo scTitle="Standard: plain, and two quiet lines">
+    <ng-container scAbout>
+      The head every other sheet page wears: the title (<code>largeTitle</code>
+      36/800) on the leading edge and its quiet lines, tight. The history's head
+      takes two: the count and the cadence (<code>callout</code> 14), then what
+      only staff see (<code>subheadline</code> 13), the figures in the primary
+      ink at 500. No media, no column for it.
+    </ng-container>
+    <div class="sheet-headline__grid">
+      <ui-stack uiSpacing="compact" uiAlignment="stretch">
+        <div
+          class="sheet-headline__sheet"
+          data-testid="sheet-headline-sheet-plain"
+        >
+          <ng-container
+            *ngTemplateOutlet="bar; context: { $implicit: 'Добави услуга' }"
+          />
+          <div class="sheet-headline__page">
+            <ui-sheet-headline data-testid="sheet-headline-head-plain">
+              <h2
+                uiSheetLargeTitle
+                id="sheet-headline-plain"
+                uiText
+                uiFont="largeTitle"
+              >
+                Добави услуга
+              </h2>
+              <p uiText uiFont="subheadline" uiForegroundStyle="secondary">
+                За Кирил Тодоров
+              </p>
+            </ui-sheet-headline>
+          </div>
+        </div>
+        <p uiText [uiFont]="'caption'" class="sheet-headline__mono">
+          h2 uiSheetLargeTitle + p subheadline · no media
+        </p>
+      </ui-stack>
+      <ui-stack uiSpacing="compact" uiAlignment="stretch">
+        <div
+          class="sheet-headline__sheet"
+          data-testid="sheet-headline-sheet-history"
+        >
+          <ng-container
+            *ngTemplateOutlet="bar; context: { $implicit: 'Посещения' }"
+          />
+          <div class="sheet-headline__page">
+            <ui-sheet-headline data-testid="sheet-headline-head-history">
+              <h2
+                uiSheetLargeTitle
+                id="sheet-headline-history"
+                uiText
+                uiFont="largeTitle"
+              >
+                Посещения
+              </h2>
+              <p uiText uiFont="callout" uiForegroundStyle="secondary">
+                <span uiForegroundStyle="primary" uiWeight="medium">23</span
+                ><span> посещения · през </span
+                ><span uiForegroundStyle="primary" uiWeight="medium">4</span
+                ><span> седмици</span>
+              </p>
+              <p uiText uiFont="subheadline" uiForegroundStyle="secondary">
+                <span>Без неявявания и откази · похарчени общо </span
+                ><span uiForegroundStyle="primary" uiWeight="medium"
+                  >492,50&nbsp;€</span
+                >
+              </p>
+            </ui-sheet-headline>
+          </div>
+        </div>
+        <p uiText [uiFont]="'caption'" class="sheet-headline__mono">
+          h2 largeTitle + p callout + p subheadline
+        </p>
+      </ui-stack>
+    </div>
+  </sc-demo>
+
+  <sc-demo scTitle="Standard: a trailing face">
+    <ng-container scAbout>
+      One <code>large</code> (52) <code>[uiHeadlineMedia]</code> control at the
+      trailing edge, an avatar or a medal. The text column's floor is the disc's
+      height and the text centres in it, so a one-line name and its line sit
+      balanced beside the disc; a longer title grows DOWNWARD while the disc
+      stays on its first line. <code>uiMediaTone="warning"</code> rings the
+      face, drawn INSET over a gap in the surface colour, because the head
+      clips. Still in the system; no page of the client stack uses it: a
+      person's page and a medal's page are the hero, where a rim numeral and a
+      plate have the room to hang under the ring.
+    </ng-container>
+    <div class="sheet-headline__grid">
+      <ui-stack uiSpacing="compact" uiAlignment="stretch">
+        <div
+          class="sheet-headline__sheet"
+          data-testid="sheet-headline-sheet-trailing"
+        >
+          <ng-container
+            *ngTemplateOutlet="bar; context: { $implicit: 'Георги Петров' }"
+          />
+          <div class="sheet-headline__page">
+            <ui-sheet-headline data-testid="sheet-headline-head-trailing">
+              <h2
+                uiSheetLargeTitle
+                id="sheet-headline-avatar"
+                uiText
+                uiFont="title2"
+              >
+                Георги Петров
+              </h2>
+              <p uiText uiFont="subheadline" uiForegroundStyle="secondary">
+                Клиент от март 2025 г.
+              </p>
+              <ui-avatar
+                uiHeadlineMedia
+                uiControlSize="large"
+                uiName="Георги Петров"
+              />
+            </ui-sheet-headline>
+          </div>
+        </div>
+        <p uiText [uiFont]="'caption'" class="sheet-headline__mono">
+          ui-avatar uiHeadlineMedia uiControlSize=large
+        </p>
+      </ui-stack>
+      <ui-stack uiSpacing="compact" uiAlignment="stretch">
+        <div
+          class="sheet-headline__sheet"
+          data-testid="sheet-headline-sheet-trailing-paused"
+        >
+          <ng-container
+            *ngTemplateOutlet="bar; context: { $implicit: 'Мартин Илиев' }"
+          />
+          <div class="sheet-headline__page">
+            <ui-sheet-headline
+              uiMediaTone="warning"
+              data-testid="sheet-headline-head-trailing-paused"
+            >
+              <h2
+                uiSheetLargeTitle
+                id="sheet-headline-paused"
+                uiText
+                uiFont="title2"
+              >
+                Мартин Илиев
+              </h2>
+              <p uiText uiFont="subheadline" uiForegroundStyle="secondary">
+                Онлайн записването е спряно до 12.10
+              </p>
+              <ui-avatar
+                uiHeadlineMedia
+                uiControlSize="large"
+                uiName="Мартин Илиев"
+              />
+            </ui-sheet-headline>
+          </div>
+        </div>
+        <p uiText [uiFont]="'caption'" class="sheet-headline__mono">
+          uiMediaTone=warning
+        </p>
+      </ui-stack>
+      <ui-stack uiSpacing="compact" uiAlignment="stretch">
+        <div
+          class="sheet-headline__sheet"
+          data-testid="sheet-headline-sheet-trailing-long"
+        >
+          <ng-container
+            *ngTemplateOutlet="
+              bar;
+              context: { $implicit: 'Александра-Мария Константинова' }
+            "
+          />
+          <div class="sheet-headline__page">
+            <ui-sheet-headline data-testid="sheet-headline-head-trailing-long">
+              <h2
+                uiSheetLargeTitle
+                id="sheet-headline-long"
+                uiText
+                uiFont="title2"
+              >
+                Александра-Мария Константинова
+              </h2>
+              <p uiText uiFont="subheadline" uiForegroundStyle="secondary">
+                Първо посещение
+              </p>
+              <ui-avatar
+                uiHeadlineMedia
+                uiControlSize="large"
+                uiName="Александра-Мария Константинова"
+              />
+            </ui-sheet-headline>
+          </div>
+        </div>
+        <p uiText [uiFont]="'caption'" class="sheet-headline__mono">
+          two lines · the disc holds the first
+        </p>
+      </ui-stack>
+      <ui-stack uiSpacing="compact" uiAlignment="stretch">
+        <div
+          class="sheet-headline__sheet"
+          data-testid="sheet-headline-sheet-trailing-medal"
+        >
+          <ng-container
+            *ngTemplateOutlet="bar; context: { $implicit: 'Фейд' }"
+          />
+          <div class="sheet-headline__page">
+            <ui-sheet-headline data-testid="sheet-headline-head-trailing-medal">
+              <h2
+                uiSheetLargeTitle
+                id="sheet-headline-medal"
+                uiText
+                uiFont="title2"
+              >
+                Фейд
+              </h2>
+              <p uiText uiFont="subheadline" uiForegroundStyle="secondary">
+                2 от 3 до ниво I
+              </p>
+              <ui-medal
+                uiHeadlineMedia
+                uiState="inProgress"
+                uiIcon="loyalty.badge"
+                uiControlSize="large"
+                [uiValue]="0.66"
+                uiValueText="2 от 3 до ниво I"
+                uiLabel="Фейд, 2 от 3 до ниво I"
+              />
+            </ui-sheet-headline>
+          </div>
+        </div>
+        <p uiText [uiFont]="'caption'" class="sheet-headline__mono">
+          ui-medal uiHeadlineMedia uiControlSize=large
+        </p>
+      </ui-stack>
+    </div>
+  </sc-demo>
+</sc-page>
+
+<!-- THE LIVE SHEET: the real shell, so the rise, the media's own exit, the
+     title's cross-fade and the chrome's fade are the app's, not a drawing. -->
+@if (sheetOpen()) {
+<ui-modal-sheet
+  sheetId="sheet-headline-live"
+  labelledBy="sheet-headline-live-title"
+  closeLabel="Затвори"
+  uiPresentationSizing="automatic"
+  [open]="true"
+  data-testid="sheet-headline-live"
+  (dismissed)="sheetOpen.set(false)"
+>
+  <span sheet-title>{{ georgi.name }}</span>
+  <button
+    sheet-leading
+    type="button"
+    uiButton
+    uiButtonStyle="bordered"
+    uiTint="neutral"
+    uiControlSize="regular"
+    [uiIconOnly]="true"
+    aria-label="Назад"
+    (click)="sheetOpen.set(false)"
+  >
+    <ui-icon uiName="nav.back" />
+  </button>
+  <div class="sheet-headline__live">
+    <ui-sheet-headline
+      class="sheet-headline__risen"
+      uiHeadlineStyle="hero"
+      [uiMediaValue]="georgi.value"
+      data-testid="sheet-headline-live-head"
+    >
+      <h2
+        uiSheetLargeTitle
+        id="sheet-headline-live-title"
+        uiText
+        uiFont="title"
+      >
+        {{ georgi.name }}
+      </h2>
+      <p uiText uiFont="callout" uiForegroundStyle="secondary">
+        @for (part of georgi.line; track $index) {
+        <span
+          [uiForegroundStyle]="part.fact ? 'primary' : undefined"
+          [uiWeight]="part.fact ? 'medium' : undefined"
+          [class.sheet-headline__fact]="part.fact"
+          >{{ part.text }}</span
+        >
+        }
+      </p>
+      <span uiVisuallyHidden>{{ georgi.words }}</span>
+      <ui-avatar
+        uiHeadlineMedia
+        uiControlSize="extraLarge"
+        [uiName]="georgi.name"
+      />
+      <span uiHeadlinePlate uiBadge [uiOnMedia]="true" uiIcon="loyalty.tier"
+        >{{ georgi.plate }}</span
+      >
+    </ui-sheet-headline>
+    <ui-quick-actions uiLabel="Връзка" [uiColumns]="4">
+      <button uiQuickAction uiIcon="contact.phone">Обади се</button>
+      <button uiQuickAction uiIcon="contact.sms">SMS</button>
+      <button uiQuickAction uiIcon="contact.viber">Viber</button>
+      <button uiQuickAction uiIcon="visit.repeat" uiProminence="accent">
+        Повтори
+      </button>
+    </ui-quick-actions>
+    @for (module of modules; track module.label) {
+    <ui-card uiTone="elevated" uiPadding="comfortable">
+      <ui-stack uiSpacing="tight" uiAlignment="leading">
+        <p uiText uiFont="subheadline" uiForegroundStyle="secondary">
+          {{ module.label }}
+        </p>
+        <p uiText uiFont="headline">{{ module.headline }}</p>
+        <p uiText uiFont="callout" uiForegroundStyle="secondary">
+          {{ module.line }}
+        </p>
+      </ui-stack>
+    </ui-card>
+    }
+  </div>
+</ui-modal-sheet>
+}

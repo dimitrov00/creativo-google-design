@@ -71,8 +71,10 @@ export class UiModalSheet {
   /**
    * Inline-title mode (utility pickers): the bar title stays visible from
    * the start instead of landing only once content scrolls under the bar.
-   * Content-rich set pieces (landing sheets) keep the default large-title
-   * collapse.
+   * The TITLE only: the chrome's fade still rises once content scrolls
+   * under the bar (the header's any-scroll collapse), so nothing at the
+   * page's top is veiled at rest. Content-rich set pieces (landing sheets)
+   * keep the default large-title collapse.
    */
   readonly titleAlwaysVisible = input(false);
   /**

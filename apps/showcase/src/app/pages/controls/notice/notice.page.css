@@ -1,0 +1,16 @@
+:host {
+  display: block;
+}
+
+.notice__mono {
+  font-family: var(--sys-font-family-mono);
+}
+
+/* A phone's content column (390 − 2 × 16). */
+.notice__column {
+  max-inline-size: calc(var(--sys-space-unit) * 90);
+}
+
+.notice__hug {
+  align-self: flex-start;
+}

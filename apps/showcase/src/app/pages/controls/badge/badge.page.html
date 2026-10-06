@@ -72,4 +72,86 @@
       }
     </ui-flow>
   </sc-demo>
+
+  <sc-demo scTitle="Leading glyph">
+    <ng-container scAbout>
+      <code>uiIcon</code> — the ONE grammar for a glyph on a capsule (≙ a
+      <code>Label</code> in a badge): it leads, it is decorative, and it rides
+      the caption's size and the tone's ink at every size tier. Never project a
+      <code>ui-icon</code> into a badge by hand.
+    </ng-container>
+    <ui-flow uiSpacing="comfortable" uiAlignment="trailing">
+      @for (sample of glyphs; track sample.label) {
+      <ui-stack uiSpacing="tight" uiAlignment="leading">
+        <span
+          uiBadge
+          [uiTone]="sample.tone"
+          [uiSize]="sample.size"
+          [uiIcon]="sample.icon"
+          >{{ sample.label }}</span
+        >
+        <p uiText [uiFont]="'caption'" class="badge__mono">
+          uiIcon={{ sample.icon }} · {{ sample.size }}
+        </p>
+      </ui-stack>
+      }
+    </ui-flow>
+  </sc-demo>
+
+  <sc-demo scTitle="On media" scTone="media">
+    <ng-container scAbout>
+      <code>uiOnMedia</code> — a LABEL over a photo: the white capsule in the
+      caption face, in both themes, whatever the tone. It keeps "a label over
+      media" apart from "a control over media": a date on a tappable photo tile
+      is a label, and a button look there would be a second, smaller target
+      inside the tile.
+    </ng-container>
+    <ui-flow uiSpacing="comfortable" uiAlignment="trailing">
+      <ui-stack uiSpacing="tight" uiAlignment="leading">
+        <span uiBadge [uiOnMedia]="true">12.08</span>
+        <p
+          uiText
+          [uiFont]="'caption'"
+          class="badge__mono badge__mono--on-media"
+        >
+          uiOnMedia
+        </p>
+      </ui-stack>
+      <ui-stack uiSpacing="tight" uiAlignment="leading">
+        <span uiBadge uiTone="accent" uiIcon="media.camera" [uiOnMedia]="true"
+          >3</span
+        >
+        <p
+          uiText
+          [uiFont]="'caption'"
+          class="badge__mono badge__mono--on-media"
+        >
+          uiOnMedia · uiIcon
+        </p>
+      </ui-stack>
+    </ui-flow>
+  </sc-demo>
+
+  <sc-demo scTitle="In a photo tile">
+    <ng-container scAbout>
+      A capsule HUGS its label on every width. Projected straight into a
+      <code>ui-media-card</code>'s <code>[uiCaption]</code> — the client card's
+      photo rail — it sits at the caption's leading edge at its own width; the
+      caption is a grid, and a grid item would otherwise stretch across the
+      tile.
+    </ng-container>
+    <ui-flow uiSpacing="comfortable" uiAlignment="leading">
+      @for (date of photoDates; track date) {
+      <ui-media-card
+        class="badge__tile"
+        uiRatio="4 / 5"
+        uiRadius="regular"
+        [uiSrc]="null"
+        [uiScrim]="false"
+      >
+        <span uiBadge uiCaption [uiOnMedia]="true">{{ date }}</span>
+      </ui-media-card>
+      }
+    </ui-flow>
+  </sc-demo>
 </sc-page>

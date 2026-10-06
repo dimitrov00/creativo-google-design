@@ -20,17 +20,28 @@ import {
   type MenuBox,
   type MenuSide,
   resolveMenuGeometry,
+  windowClearOf,
 } from './menu-geometry';
 
 export type UiMenuPlacement = 'automatic' | 'bottom' | 'top';
 export type UiMenuAlignment = 'leading' | 'trailing' | 'center';
 export type UiMenuItemRole = 'default' | 'destructive';
+/**
+ * What the surface IS to assistive tech. `menu` is the APG menu button: a
+ * list of `[uiMenuItem]` commands with the arrow-key model. `dialog` is a
+ * popover that holds something else — a calendar, a form — presented as a
+ * non-modal dialog: no `menuitem` children are owed, the arrow keys and Tab
+ * belong to its content, and focus lands on the surface itself.
+ */
+export type UiMenuRole = 'menu' | 'dialog';
 
 /**
  * The control that opens a `ui-menu` — projected into the menu's trigger
  * slot so the surface can anchor to it. Stamps the APG menu-button
  * relationship (`aria-haspopup` / `aria-expanded`); the consumer keeps
- * ownership of the control's own look and its `(click)`.
+ * ownership of the control's own look and its `(click)`. The parent
+ * restates `aria-haspopup` from its `uiRole`, so a trigger that opens a
+ * dialog surface says so.
  */
 @Directive({
   selector: '[uiMenuTrigger]',
@@ -103,6 +114,25 @@ export class UiMenuItem {
  * both the entrance and the exit ride one CSS transition with no
  * open/closing dance in consumers (`visibility: hidden` also takes the
  * items out of the tab order while closed).
+ *
+ * ### A surface that is not a menu (`uiRole="dialog"`, 2026-10-06)
+ * The same anchoring, the same top layer and light dismissal carry a
+ * CALENDAR as well as a command list — the staff day pills hang a
+ * `ui-month-picker` off a tinted capsule. Announced as `role="menu"` that
+ * is an empty menu to a screen reader (axe: `aria-required-children`,
+ * critical), and the arrow-key model fights the grid. `uiRole="dialog"`
+ * makes the surface a non-modal dialog (`aria-modal="false"`, named by
+ * `uiLabel`), the trigger says `aria-haspopup="dialog"`, focus moves onto
+ * the surface as a container (its first control is one Tab away), Escape
+ * still closes and hands focus back, and the menu dismisses when focus
+ * leaves it instead of on the Tab key itself.
+ *
+ * ```html
+ * <ui-menu uiRole="dialog" [uiPresented]="open()" [uiLabel]="month()" …>
+ *   <button uiMenuTrigger …>ср, 9.09</button>
+ *   <ui-month-picker … />
+ * </ui-menu>
+ * ```
  */
 /** The breathing room a surface keeps between itself and the window's edge. */
 const SURFACE_GUTTER_PX = 12;
@@ -121,6 +151,15 @@ const SURFACE_MAX_VIEWPORT_FRACTION = 0.55;
 const SURFACE_ANCHOR_GAP_PX = 4;
 /** How long the exit fade is given before the surface leaves the top layer, when the token cannot be read. */
 const SURFACE_EXIT_MS = 150;
+/**
+ * The bars a surface must not land under: a sheet's docked action bar while
+ * it shows, and a page's. Both float over the last rows of what scrolls
+ * beneath them, and a popover opened low in the body ran under «Запази» —
+ * its last week of days behind the button (the block sheet, 2026-10-06).
+ */
+const DOCK_SELECTOR = '.ui-sheet-action-bar[data-visible], .ui-page-action-bar';
+/** The surface of the sheet a trigger lives in — the scope its docks are found in. */
+const SHEET_SURFACE_SELECTOR = '.ui-sheet__surface';
 
 @Component({
   selector: 'ui-menu',
@@ -130,9 +169,10 @@ const SURFACE_EXIT_MS = 150;
     <div
       #surface
       class="ui-menu__surface"
-      role="menu"
       tabindex="-1"
       popover="manual"
+      [attr.role]="uiRole()"
+      [attr.aria-modal]="uiRole() === 'dialog' ? 'false' : null"
       [attr.aria-label]="uiLabel() || null"
       [attr.data-alignment]="uiAlignment()"
       (keydown)="onKeydown($event)"
@@ -163,6 +203,8 @@ export class UiMenu {
   readonly uiAlignment = input<UiMenuAlignment>('leading');
   /** Accessible name for the menu itself — describe the thing being acted on. */
   readonly uiLabel = input('');
+  /** `dialog` for a surface that holds a calendar or a form rather than commands. */
+  readonly uiRole = input<UiMenuRole>('menu');
   readonly uiDismissed = output<void>();
 
   private readonly surface =
@@ -184,6 +226,8 @@ export class UiMenu {
   /** The anchor gap and the safe areas, read once per measure — not per frame. */
   private gapPx = SURFACE_ANCHOR_GAP_PX;
   private safe = { top: 0, right: 0, bottom: 0, left: 0 };
+  /** The docked bars of the sheet (or the page) the trigger lives in, found once per measure. */
+  private docks: readonly HTMLElement[] = [];
   private contentObserver: ResizeObserver | null = null;
   private lowerTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly onExitEnd = (event: TransitionEvent): void => {
@@ -194,7 +238,7 @@ export class UiMenu {
     effect(() => {
       if (!isPlatformBrowser(this.platformId)) return;
       const presented = this.uiPresented();
-      this.syncTriggerExpanded(presented);
+      this.syncTrigger(presented, this.uiRole());
       if (presented) {
         this.onOpened();
       } else {
@@ -245,6 +289,16 @@ export class UiMenu {
    * and what a notch hides. A menu opened beside a field that raises the
    * keyboard is pushed up into view rather than left under the keys.
    *
+   * ### The dock (2026-10-06)
+   * The window knows nothing of a bar INSIDE the page: a sheet's docked
+   * action bar floats over the body's last rows, and a surface that fitted
+   * below its trigger by the window's measure landed under «Запази» — the
+   * month's last week behind the button, showing through the material. On
+   * every measure the bars of the sheet the trigger lives in (or of the
+   * page, outside any sheet) are found; on every frame their boxes raise
+   * the window's floor (`windowClearOf`), so the room below is the room
+   * above the dock and the side is chosen against that.
+   *
    * ### Modal to the page behind it
    * A menu on the platform is modal: the content behind it does not scroll
    * while it is open, and the touch that dismisses it goes to nothing else.
@@ -268,7 +322,7 @@ export class UiMenu {
         this.raise();
         this.remeasure();
         this.reveal();
-        this.focusItem(0);
+        this.focusInitial();
         this.follow();
       },
       { injector: this.injector },
@@ -378,6 +432,7 @@ export class UiMenu {
       bottom: this.tokenPx('--ui-menu-safe-bottom', 0),
       left: this.tokenPx('--ui-menu-safe-left', 0),
     };
+    this.docks = this.findDocks();
     const window = this.reachableWindow();
     style.setProperty(
       '--ui-menu-window-inline',
@@ -475,7 +530,8 @@ export class UiMenu {
   /**
    * The part of the viewport a finger can reach: the VISUAL viewport (which
    * a keyboard shrinks and a zoom pans, while `innerHeight` says nothing of
-   * either), less the safe areas the stylesheet resolves from `env()`.
+   * either), less the safe areas the stylesheet resolves from `env()` —
+   * and less the band a docked bar floats over.
    */
   private reachableWindow(): MenuBox {
     const safe = this.safe;
@@ -494,12 +550,38 @@ export class UiMenu {
             width: window.innerWidth,
             height: window.innerHeight,
           };
-    return {
-      top: base.top + safe.top,
-      left: base.left + safe.left,
-      width: Math.max(0, base.width - safe.left - safe.right),
-      height: Math.max(0, base.height - safe.top - safe.bottom),
-    };
+    return windowClearOf(
+      {
+        top: base.top + safe.top,
+        left: base.left + safe.left,
+        width: Math.max(0, base.width - safe.left - safe.right),
+        height: Math.max(0, base.height - safe.top - safe.bottom),
+      },
+      this.docks.map((dock) => {
+        const rect = dock.getBoundingClientRect();
+        return {
+          top: rect.top,
+          left: rect.left,
+          width: rect.width,
+          height: rect.height,
+        };
+      }),
+      SURFACE_MIN_BLOCK_PX,
+    );
+  }
+
+  /**
+   * The docked bars this surface must stay clear of: those of the sheet the
+   * trigger lives in — not a sheet stacked over it, whose bar is its own —
+   * or, outside any sheet, the page's.
+   */
+  private findDocks(): HTMLElement[] {
+    const host = this.hostRef.nativeElement;
+    const sheet = host.closest<HTMLElement>(SHEET_SURFACE_SELECTOR);
+    const scope: ParentNode = sheet ?? host.ownerDocument;
+    return Array.from(
+      scope.querySelectorAll<HTMLElement>(DOCK_SELECTOR),
+    ).filter((dock) => dock.closest(SHEET_SURFACE_SELECTOR) === sheet);
   }
 
   /**
@@ -579,6 +661,12 @@ export class UiMenu {
     host.addEventListener('click', this.onHostClickWhileOpen, {
       capture: true,
     });
+    // A DIALOG surface lets Tab walk its own controls, so focus LEAVING it
+    // is what light-dismisses — the move itself is the user's intent.
+    this.surface().nativeElement.addEventListener(
+      'focusout',
+      this.onSurfaceFocusOut,
+    );
     // The WINDOW changes — a rotation, a keyboard, a toolbar collapsing —
     // are the one thing that may re-decide the side. Scrolling is not
     // listened for: it cannot happen behind an open menu, and what moves
@@ -616,6 +704,10 @@ export class UiMenu {
     host.removeEventListener('click', this.onHostClickWhileOpen, {
       capture: true,
     });
+    this.surface().nativeElement.removeEventListener(
+      'focusout',
+      this.onSurfaceFocusOut,
+    );
     window.removeEventListener('resize', this.onWindowChange);
     window.visualViewport?.removeEventListener('resize', this.onWindowChange);
     window.visualViewport?.removeEventListener('scroll', this.onWindowChange);
@@ -652,6 +744,19 @@ export class UiMenu {
     this.dismissToTrigger();
   };
 
+  /**
+   * Focus left a DIALOG surface for somewhere outside the menu. A blur to
+   * nowhere (`relatedTarget` null — a press on plain text, the surface
+   * concealing) is not a move and is left to the pointer listener.
+   */
+  private readonly onSurfaceFocusOut = (event: FocusEvent): void => {
+    if (this.uiRole() === 'menu') return;
+    const next = event.relatedTarget;
+    if (!(next instanceof Node)) return;
+    if (this.hostRef.nativeElement.contains(next)) return;
+    this.uiDismissed.emit();
+  };
+
   /*
    * ── THE KEYBOARD MODEL ───────────────────────────────────────────────
    */
@@ -662,6 +767,23 @@ export class UiMenu {
         '.ui-menu__item:not([disabled])',
       ),
     );
+  }
+
+  /**
+   * Where focus lands on open. A MENU: its first item, so Escape and the
+   * arrow keys have a home. A DIALOG: the surface itself, as a container
+   * (APG allows it for a dialog whose first control is not the point of
+   * it): a reader announces the dialog by its name, its first control is
+   * one Tab away, and Escape on the surface closes it. Pointer users see no
+   * ring either way — the items style `:focus-visible` only, and the
+   * surface draws none (menu.css).
+   */
+  private focusInitial(): void {
+    if (this.uiRole() === 'menu') {
+      this.focusItem(0);
+      return;
+    }
+    this.surface().nativeElement.focus({ preventScroll: true });
   }
 
   /**
@@ -683,15 +805,19 @@ export class UiMenu {
   }
 
   protected onKeydown(event: KeyboardEvent): void {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      // The menu is the topmost transient thing: Escape closes IT, and
+      // must not travel on to a sheet or dialog around it, which would
+      // dismiss on the same press (staff visit sheet, 2026-09-09).
+      event.stopPropagation();
+      this.dismissToTrigger();
+      return;
+    }
+    // Every other key is the MENU model's. A dialog surface's content owns
+    // its arrows (a grid of days, a field's caret) and its Tab order.
+    if (this.uiRole() !== 'menu') return;
     switch (event.key) {
-      case 'Escape':
-        event.preventDefault();
-        // The menu is the topmost transient thing: Escape closes IT, and
-        // must not travel on to a sheet or dialog around it, which would
-        // dismiss on the same press (staff visit sheet, 2026-09-09).
-        event.stopPropagation();
-        this.dismissToTrigger();
-        return;
       case 'ArrowDown':
         event.preventDefault();
         this.focusItem(this.activeIndex() + 1);
@@ -752,9 +878,11 @@ export class UiMenu {
       ?.focus({ preventScroll: true });
   }
 
-  private syncTriggerExpanded(expanded: boolean): void {
+  /** The trigger's half of the relationship: what it opens, and whether it is open. */
+  private syncTrigger(expanded: boolean, role: UiMenuRole): void {
     const trigger = this.hostRef.nativeElement.querySelector('[uiMenuTrigger]');
     trigger?.setAttribute('aria-expanded', String(expanded));
+    trigger?.setAttribute('aria-haspopup', role);
   }
 }
 

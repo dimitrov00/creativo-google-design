@@ -11,14 +11,34 @@
     font: var(--sys-font-eyebrow);
     letter-spacing: var(--sys-tracking-eyebrow);
     text-transform: uppercase;
-    /* Ink, not fill — 11px uppercase in the raw accent is 3.04:1 on the
-       light page. Dark is unchanged (the label token aliases to the
-       accent there). */
-    color: var(--sys-color-accent-label);
+    /* WORDS ARE INK (the accent law, 2026-09-29). An 11 px word is never
+       tinted: the raw accent reads 3.04:1 on the light page, and the cut
+       dark enough to pass is rust, not the brand's orange. The eyebrow is
+       set in primary ink and the orange is a THING in front of it (the
+       dot below). */
+    color: var(--sys-color-foreground);
+  }
+
+  /* The accent eyebrow's orange: the status dot, in the one accent, leading
+     the words. It is the line's own inline box, so a centred eyebrow
+     centres dot and words as one run, and it sits on the capitals' middle
+     (the line is uppercase: half of what the cap height leaves of the dot
+     lifts it off the baseline). A browser without the `cap` unit keeps the
+     dot on the baseline, a quarter of a pixel lower at this size. */
+  .ui-section-header[data-eyebrow-tone='accent'] > [uieyebrow]::before {
+    content: '';
+    display: inline-block;
+    inline-size: var(--sys-size-dot);
+    block-size: var(--sys-size-dot);
+    margin-inline-end: var(--sys-space-compact);
+    border-radius: var(--control-radius-capsule);
+    background: var(--sys-color-accent);
+    vertical-align: baseline;
+    vertical-align: calc((1cap - var(--sys-size-dot)) / 2);
   }
 
   /* Status-qualifier eyebrows (uiEyebrowTone="secondary") — quiet
-     secondary ink, never tint: color signals importance, and a status
+     secondary ink and no dot: color signals importance, and a status
      marker ("Optional") is the least important word on its screen. */
   .ui-section-header[data-eyebrow-tone='secondary'] > [uieyebrow] {
     color: var(--sys-color-secondary-label);
@@ -66,5 +86,202 @@
   }
   .ui-section-header[data-on-media] > [uilede] {
     color: var(--sys-color-on-media-muted);
+  }
+
+  /* ── Sheet-sized headings (2026-09-28) ≙ `.headerProminence` ──────────
+     One row: glyph · title · detail · action, the title taking what is
+     left. Flex, not a grid of fixed tracks: a heading without a glyph or an
+     action must not keep an empty track's gap at its edge, and flex gaps
+     only sit between the items that are there. Never uppercase, never
+     tracked: the trio's display type is a landing's voice, not a sheet's. */
+  .ui-section-header[data-header-prominence] {
+    display: flex;
+    align-items: center;
+    column-gap: var(--sys-space-compact);
+  }
+
+  .ui-section-header[data-header-prominence] > [uititle] {
+    flex: 1 1 0;
+    min-inline-size: 0;
+    margin: 0;
+    letter-spacing: normal;
+  }
+
+  .ui-section-header[data-header-prominence] > [uisectiondetail],
+  .ui-section-header[data-header-prominence] > [uisectionaction] {
+    flex: none;
+    margin: 0;
+  }
+
+  /* THE ACTION STAYS INSIDE THE COLUMN (2026-09-29; owner, at «Всички ›»:
+     "on hover it is visible that they don't respect the padding /
+     container"). The action used to hang its own padding into the gutter
+     and fold its 44 box out of the row: the TARGET was meant to overhang,
+     and the PAINT is the same box, so hover, press and the focus ring
+     overhung with it (16 past the column, 2.3 over the card below, the
+     ring cut by the sheet's edge). Now nothing is negative on either axis.
+
+     Any button in the slot is the anchor of its own hit slop and paints
+     above what follows the heading: the focus ring (2 + 2 round the box)
+     reaches into the compact rung under the row, and the card there must
+     not cover it. */
+  .ui-section-header[data-header-prominence] > [uisectionaction].ui-button {
+    position: relative;
+    z-index: 1;
+  }
+
+  /* A plain action hugs its label INSIDE the column: the trailing glyph's
+     own side bearing is its trailing padding, so the capsule ends on the
+     edge the cards end on and nothing paints in the gutter. At rest the
+     words and the chevron stand where they stood. */
+  .ui-section-header[data-header-prominence]
+    > [uisectionaction].ui-button[data-button-style='plain'] {
+    margin: 0;
+  }
+
+  .ui-section-header[data-header-prominence]
+    > [uisectionaction].ui-button[data-button-style='plain']:has(
+      > .ui-icon:last-child
+    ) {
+    padding-inline-end: 0;
+  }
+
+  /* The 44 floor is a TARGET, never paint: the small rung (36) is what
+     shows, and the slop either side of it on the block axis makes up the
+     difference. It stays inside the column on the inline one. */
+  .ui-section-header[data-header-prominence]
+    > [uisectionaction].ui-button::before {
+    content: '';
+    position: absolute;
+    inset: calc((var(--control-size-small) - var(--control-size-regular)) / 2) 0;
+  }
+
+  /* `increased` — a module heading in a sheet: the title3 role (20/600),
+     one rung over the 18/600 headline of the card under it, so a heading
+     outranks what it heads; the glyph a quiet 20 px lead in secondary ink
+     (it names the module; the words carry it), the detail a subheadline. */
+  .ui-section-header[data-header-prominence='increased'] > [uititle] {
+    font: var(--sys-font-title3);
+    font-variant-numeric: tabular-nums;
+    color: var(--sys-color-foreground);
+  }
+
+  .ui-section-header[data-header-prominence='increased']
+    > .ui-section-header__glyph {
+    flex: none;
+    color: var(--sys-color-secondary-label);
+  }
+
+  .ui-section-header[data-header-prominence='increased'] > [uisectiondetail] {
+    font: var(--sys-font-subheadline);
+    font-variant-numeric: tabular-nums;
+    color: var(--sys-color-secondary-label);
+  }
+
+  /* EVERY `increased` HEADING IS THE SMALL RUNG TALL (2026-09-29), action
+     or not: one rhythm, and nothing has to overhang to keep it. «Посещения
+     24 ›» and «Снимки» stand the same 36 over their bodies, the stack's one
+     compact rung under both; the action is the `small` button, whose box
+     IS the row's height. A taller action still renders, inside the column,
+     and grows its own row (the component says so in development). */
+  .ui-section-header[data-header-prominence='increased'] {
+    min-block-size: var(--control-size-small);
+  }
+
+  /* `standard` — a list-section label: one footnote line in secondary
+     ink, flush with the group's OUTER edge (the edge the sheet's group
+     labels already use); a host on another edge says so with
+     `--ui-section-header-inset`. */
+  .ui-section-header[data-header-prominence='standard'] {
+    padding-inline: var(--ui-section-header-inset, 0);
+  }
+
+  .ui-section-header[data-header-prominence='standard'] > [uititle],
+  .ui-section-header[data-header-prominence='standard'] > [uisectiondetail] {
+    font: var(--sys-font-footnote);
+    font-variant-numeric: tabular-nums;
+    color: var(--sys-color-secondary-label);
+    white-space: nowrap;
+  }
+
+  .ui-section-header[data-header-prominence='standard'] > [uititle] {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* Pinned ≙ a plain List's section header: it sticks under the sheet's
+     chrome (the height ui-modal-sheet publishes) on the sheet's surface,
+     so the rows pass beneath it. A REAL BAND (2026-09-28): the tight rung
+     left the rows cut 4 pt under the label — a half-sliced «19» and
+     «17,50 €» against «2026 · 10 посещения». The compact rung either side
+     centres the footnote line in a solid 32 pt band (≥ 28); one more
+     compact rung under it is the RAMP the rows fade in through (the cover
+     below paints both). The ramp is the head's own box, so in flow it lies
+     over nothing but the sheet — never over the first row's press, hover
+     or focus ring, which a ramp hung past the head would wash. */
+  .ui-section-header[data-header-prominence='standard'][data-pinned] {
+    position: sticky;
+    inset-block-start: var(--modal-sheet-chrome-height, 0);
+    z-index: 1;
+    padding-block: var(--sys-space-compact) calc(var(--sys-space-compact) * 2);
+  }
+
+  /* THE REGION ABOVE A PINNED HEAD IS THE BAR'S (2026-09-28). Stuck at the
+     chrome's bottom edge, the head still let the row that had scrolled past
+     it show above it — through the chrome's fade, cut in half by the band,
+     under the compact title and the ‹/✕ chips. A plain List's pinned header
+     hides what of its section went up under it, so the head paints the
+     surface up to the scroller's top: a cover from the chrome's height
+     above the band down through the band, the sheet's full width (a plain
+     row's glyphs and bleed reach into the gutter beside the band), under
+     the head's own words (−1 inside the head's layer) and under the chrome
+     (`--sys-layer-header`), so only the bar and its controls sit above a
+     pinned head. Hit-testable on purpose: a hidden row is not a target.
+     IT ENDS IN THE HOUSE FADE, NEVER A CUT (2026-09-28): solid through the
+     band, then the chrome's quintic smootherstep (the same stops as
+     modal-sheet.css's fade) over the ramp rung under it — the rows pass
+     under a short ramp below the band, as they pass under the bar's,
+     instead of being sliced at its edge. In flow the rung lies over
+     nothing but the sheet's own surface, so an unpinned head only stands
+     a rung further from its first row. */
+  .ui-section-header[data-header-prominence='standard'][data-pinned]::before {
+    content: '';
+    position: absolute;
+    z-index: -1;
+    inset-inline: calc(-1 * var(--ui-sheet-inset, 0px));
+    inset-block: calc(-1 * var(--modal-sheet-chrome-height, 0px)) 0;
+    background: linear-gradient(
+      to bottom,
+      var(--sys-color-surface) calc(100% - var(--sys-space-compact)),
+      color-mix(in srgb, var(--sys-color-surface) 98%, transparent)
+        calc(100% - var(--sys-space-compact) * 0.875),
+      color-mix(in srgb, var(--sys-color-surface) 90%, transparent)
+        calc(100% - var(--sys-space-compact) * 0.75),
+      color-mix(in srgb, var(--sys-color-surface) 73%, transparent)
+        calc(100% - var(--sys-space-compact) * 0.625),
+      color-mix(in srgb, var(--sys-color-surface) 50%, transparent)
+        calc(100% - var(--sys-space-compact) * 0.5),
+      color-mix(in srgb, var(--sys-color-surface) 27%, transparent)
+        calc(100% - var(--sys-space-compact) * 0.375),
+      color-mix(in srgb, var(--sys-color-surface) 10%, transparent)
+        calc(100% - var(--sys-space-compact) * 0.25),
+      color-mix(in srgb, var(--sys-color-surface) 2%, transparent)
+        calc(100% - var(--sys-space-compact) * 0.125),
+      transparent 100%
+    );
+  }
+
+  /* …and only what went up under it. The head's parent is its SECTION (the
+     box it sticks inside), and the section clips its own TOP edge: in flow,
+     with the previous section's last row right above the head, the cover
+     lies wholly outside the clip and hides nothing; pinned, it shows exactly
+     the section's part that scrolled above the band. The other three sides
+     reach far out, so the rows' bleed, their focus rings and whatever
+     follows keep painting. `:where()` holds it at zero specificity, for a
+     host that clips for reasons of its own. */
+  :where(
+    :has(> .ui-section-header[data-header-prominence='standard'][data-pinned])
+  ) {
+    clip-path: inset(0 -100vmax -100vmax);
   }
 }

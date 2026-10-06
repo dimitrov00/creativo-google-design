@@ -14,3 +14,79 @@
 .section-header__mono--on-media {
   color: var(--sys-color-on-media-muted);
 }
+
+/* A stand-in for a sheet's page: the sheet's surface, a phone wide at the
+   most, with the sheet's own inline inset either side of the column — the
+   gutter an action must not paint in. The hairline is the sheet's edge. */
+.section-header__sheet {
+  --ui-sheet-inset: 1.1rem;
+  box-sizing: border-box;
+  inline-size: 100%;
+  max-inline-size: 24.375rem;
+  padding: var(--sys-space-comfortable) var(--ui-sheet-inset);
+  border: 1px solid var(--sys-color-separator);
+  border-radius: var(--control-radius-prominent);
+  background: var(--sys-color-surface);
+}
+
+/* What each heading of the sheet above shows, in the sheet's order. */
+.section-header__legend {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sys-space-tight);
+  max-inline-size: 24.375rem;
+  margin: 0;
+  padding-inline-start: var(--sys-space-comfortable);
+  color: var(--sys-color-secondary-label);
+}
+
+/* A list's column: the width of a phone's sheet where there is room, the
+   canvas's own where there is not (a fixed 22rem ran under the canvas's
+   edge at 330 and cut the detail off). */
+.section-header__column {
+  inline-size: 100%;
+  max-inline-size: 22rem;
+}
+
+/* TWO STATES HELD STILL, for a page that is read as a picture: what the
+   plain button paints under the pointer (and under a finger), and what it
+   paints for the keyboard. The values are the button's own, read from the
+   tokens it reads; the first heading of the demo is the live one. */
+.section-header__held-hover {
+  background: color-mix(
+    in srgb,
+    currentColor var(--sys-alpha-fill-hover),
+    transparent
+  );
+}
+
+.section-header__held-focus {
+  outline: var(--sys-focus-ring-width) solid var(--sys-color-ring);
+  outline-offset: var(--sys-focus-ring-offset);
+}
+
+/* A stand-in for the sheet's scroller: a short box on the sheet surface,
+   so the pinned labels have somewhere to stick. Its plain rows pad their
+   text in by the regular rung, so the labels move to that edge through
+   the header's own custom property. */
+.section-header__scroller {
+  --ui-section-header-inset: var(--sys-space-regular);
+  block-size: calc(var(--sys-space-unit) * 64);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border-radius: var(--control-radius-prominent);
+  background: var(--sys-color-surface);
+}
+
+.section-header__year {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sys-space-tight);
+  padding-block-end: var(--sys-space-regular);
+}
+
+.section-header__year > ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}

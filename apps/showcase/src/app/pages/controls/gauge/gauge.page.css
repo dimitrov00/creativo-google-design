@@ -1,0 +1,92 @@
+:host {
+  display: block;
+}
+
+/* A phone's content column (390 − 2 × 16). */
+.gauge__column {
+  max-inline-size: calc(var(--sys-space-unit) * 90);
+}
+
+/* A glance half tile's inner width. */
+.gauge__narrow {
+  max-inline-size: calc(var(--sys-space-unit) * 36);
+}
+
+/* The half tile at 330: (330 − 2 × 16 − 8) / 2 = 145, its interior 113. */
+.gauge__half-330 {
+  inline-size: calc(var(--sys-space-unit) * 36.25);
+}
+
+/* A 2-up holding in the ≥ 761 dialog: (528 − 16) / 2 = 256, its interior
+   208 under the comfortable inset. */
+.gauge__holding-2up {
+  inline-size: calc(var(--sys-space-unit) * 64);
+}
+
+/* The 330 phone's card: its column is 295, the interior 247 under the
+   comfortable inset (a cap, so the canvas of a narrower phone holds it). */
+.gauge__column-330 {
+  max-inline-size: calc(var(--sys-space-unit) * 73.75);
+}
+
+/* The track beside a 64 medal in that card: 247 − 64 − 16 = 167. */
+.gauge__track-330 {
+  max-inline-size: calc(var(--sys-space-unit) * 41.75);
+}
+
+/* ── the ring ─────────────────────────────────────────────────────────── */
+
+/* THE SHEET'S COLUMN ON A PHONE. The demo canvas pads 24 each side, so a
+   card inside it is 293 wide at 390 where the sheet's is 354: a quiet line
+   that fits the real card wrapped here. On a phone the ring's cards take
+   16 of the canvas's padding back each side (325: «13 посещения за 12
+   месеца» on one line, as in the wallet). */
+@media (max-width: 30rem) {
+  .gauge__sheet {
+    margin-inline: calc(var(--sys-space-regular) * -1);
+  }
+}
+
+/* Samples stand in the middle of their card, as a hero does. */
+.gauge__centred {
+  justify-content: center;
+}
+
+/* A RING ROUND A DISC, as a composer mounts it (the medal, the headline):
+   one cell, the disc centred in the ring's own box. The ring is drawn
+   first and the disc over it, so nothing of the disc is ever under the
+   stroke; the gap between them is the real ground. */
+.gauge__round {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+}
+
+.gauge__round > * {
+  grid-area: 1 / 1;
+}
+
+/* A family not started: the emblem as a grey silhouette. */
+.gauge__silhouette {
+  --ui-avatar-ink: var(--sys-color-secondary-label);
+}
+
+/* A RING THAT STANDS ALONE round a figure is `large` with the stroke at
+   five: 7.8 % of its 64, the family of the account page's ring (5.25 on
+   72). Set on the gauge itself; the box stays 64. */
+.gauge__alone {
+  --ui-gauge-stroke: calc(var(--sys-space-unit) * 1.25);
+}
+
+/* Beside a ring: the ring never shrinks, its two lines take the rest and wrap. */
+.gauge__lines {
+  flex: 1;
+  min-inline-size: 0;
+}
+
+/* A sample and the words under it. */
+.gauge__sample {
+  display: grid;
+  justify-items: center;
+  gap: var(--sys-space-compact);
+}

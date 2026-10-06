@@ -118,6 +118,17 @@ export const UI_ICON_REGISTRY = {
    *  diverge. */
   'contact.email': 'mail',
   'contact.phone': 'call',
+  /** Text this client — the client card's `sms:` tile. */
+  'contact.sms': 'sms',
+  /**
+   * Message this client on Viber — the card's `viber://` tile.
+   *
+   * Two bubbles, not a brand mark: Material carries no Viber glyph, and a
+   * hand-drawn logo would be a vector entry to keep in step with someone
+   * else's brand book. `forum` is told apart from `contact.sms` by SHAPE (one
+   * bubble against two), so the pair still reads without their captions.
+   */
+  'contact.viber': 'forum',
   /** The person themselves — the third part an omnibox can detect. */
   'contact.person': 'person',
   /** "Resend code" affordance on the OTP screen. */
@@ -138,6 +149,10 @@ export const UI_ICON_REGISTRY = {
   'nav.back': 'chevron_left',
   /** Trailing disclosure on interactive list rows (iOS chevron). */
   'nav.disclosure': 'chevron_right',
+  /** The menu's admin entry for the loyalty programme's rules («Ритъм»).
+   *  Shares `loyalty` with `loyalty.program` (the programme as the client
+   *  card shows it): this one is the place an admin MANAGES it from. */
+  'admin.loyalty': 'loyalty',
   /** Marker on links that leave the site (footer external links). */
   'link.external': 'arrow_forward',
   /** Apply-via-Instagram CTA on the hiring section. */
@@ -295,6 +310,24 @@ export const UI_ICON_REGISTRY = {
   /** Take a no-show back — the lifecycle's one correction edge. */
   'visit.reopen': 'undo',
 
+  /* ── A client, as the staff sees them (the client card) ─────────── */
+  /** Take this person off THIS visit — the card's destructive row. Not
+   *  `party.removeGuest` (a ✕ on a row still being assembled): this undoes a
+   *  seat that is already booked, so it names the person it removes. */
+  'client.remove': 'person_remove',
+  /** A client's past cuts — the card's photo rail heading AND the history
+   *  row's photo mark. One concept, one key: the two must never disagree.
+   *  Shares `photo_library` with `media.library` (the phone's own photos)
+   *  and `nav.work` (the shop's portfolio) today; the intents differ. */
+  'client.photos': 'photo_library',
+  /** A client's birthday, as the staff meets it: the disc on the occasion
+   *  band («Рожден ден днес») and the notice of one coming up. Shares
+   *  `cake` with `loyalty.badge.birthday`, the birthday MEDAL's face: that
+   *  one is an achievement, this one is a day. */
+  'client.birthday': 'cake',
+  /* `client.visits` is an ALIAS of `account.reservations` — see
+     UI_ICON_ALIASES. */
+
   /* ── Calendars / paging ─────────────────────────────────────────── */
   'calendar.previous': 'chevron_left',
   'calendar.next': 'chevron_right',
@@ -378,6 +411,216 @@ export const UI_ICON_REGISTRY = {
    *  and the ligature font rendered it as the WORD in capitals on the visit
    *  editor's photo door. The glyph generator now refuses such a name. */
   'media.gallery': 'photo_album',
+
+  /* ── Connection ─────────────────────────────────────────────────── */
+  /** What the reader sees is the last copy this device saved, not a live
+   *  read — the offline notice on a page that could not reach the server. */
+  'connection.offline': 'cloud_off',
+
+  /* ── Loyalty: the programme, its currency, its rhythm ───────────── */
+  /**
+   * The loyalty module as a whole — its row and its page.
+   *
+   * The house bans three marks here, and a new key must not reach for them:
+   * `local_fire_department` (a streak is a rhythm, not a flame to keep
+   * alive), `crown` (it ranks PEOPLE; the programme ranks nothing but a
+   * client's own history) and `auto_awesome` (its path at the pin sits on a
+   * 24-unit viewBox, which the generator refuses — the prototype's blank
+   * glyphs came from it).
+   */
+  'loyalty.program': 'loyalty',
+  /** The points balance — the figure beside the gauge. */
+  'loyalty.points': 'stars',
+  /* No `loyalty.streak`: the «Лоялност» page's «Ритъм» section is titled
+     with the achievements shelf's own `loyalty.category.rhythm` — one name,
+     one glyph — and `event_repeat` stays the «В ритъм» medal's face
+     (`loyalty.badge.streak`), never a heading's (wave D r4). */
+  /** A period the streak is protected over, or frozen through. */
+  'loyalty.freeze': 'ac_unit',
+  /** The tier capsule on the balance. */
+  'loyalty.tier': 'workspace_premium',
+  /** Something the points buy. Shares `redeem` with `account.rewards` (the
+   *  client's own menu row) and `promo.voucher`; the staff card's catalogue
+   *  row is its own intent. */
+  'loyalty.reward': 'redeem',
+  /**
+   * A reward the balance cannot buy yet — ONLY on an unaffordable catalogue
+   * row.
+   *
+   * Never on a medal: one not started yet is its own emblem, greyed inside a
+   * dashed ring — nothing is locked, it is simply not done. Shares `lock`
+   * with `auth.locked`, which gates a guest out of a feature — a different
+   * question.
+   */
+  'loyalty.locked': 'lock',
+  /** The stamp cards — «every tenth visit», counted by stamps. */
+  'loyalty.stampCard': 'approval',
+  /** The points activity — what was earned and spent, line by line. */
+  'loyalty.ledger': 'receipt_long',
+  /** The wallet's «Код»: type or scan a code, which opens the discount
+   *  page. Shares `qr_code_scanner` with `action.scan`, the scan button
+   *  there; this one is a verb on the wallet, not the scanner's own mark. */
+  'loyalty.enterCode': 'qr_code_scanner',
+
+  /* ── Loyalty: records ───────────────────────────────────────────── */
+  /**
+   * «Рекорди» — a client's own bests and habits. The first four are the
+   * record CARDS' emblems (one per `PersonalRecord` kind), the rest the
+   * rows of the records page.
+   *
+   * A record is not a medal: none of these keys sits under
+   * `loyalty.badge.`, so a record may share a glyph with a medal's face
+   * (`event_repeat`, `waving_hand`, `content_cut`) without cloning it on a
+   * shelf — the two are never drawn in one row.
+   */
+  'loyalty.record.longestRhythm': 'event_repeat',
+  'loyalty.record.mostVisitsInYear': 'calendar_month',
+  /** Drawn only when the favourite service has no cover of its own. */
+  'loyalty.record.favouriteService': 'favorite',
+  'loyalty.record.firstVisit': 'waving_hand',
+  'loyalty.record.currentRhythm': 'event_repeat',
+  'loyalty.record.totalVisits': 'event_available',
+  'loyalty.record.last12Months': 'history',
+  /** The row's disc when the barber has no picture. */
+  'loyalty.record.preferredBarber': 'person',
+  /** The row's disc when the service has no cover. */
+  'loyalty.record.usualServices': 'content_cut',
+
+  /* ── Loyalty: the activity feed («Движение») ────────────────────── */
+  /**
+   * One key per `ActivityKind`: the glyph on a row of the wallet's
+   * activity and of the ledger page. They replace the first cut's
+   * borrowed marks (`visit.completed`, `loyalty.badge`, `visit.reopen`),
+   * so a row's glyph names what HAPPENED to the balance and can change
+   * without touching a visit's own states.
+   */
+  'loyalty.activity.visit': 'content_cut',
+  'loyalty.activity.level': 'military_tech',
+  'loyalty.activity.redeemed': 'redeem',
+  'loyalty.activity.granted': 'confirmation_number',
+  'loyalty.activity.tier': 'workspace_premium',
+  'loyalty.activity.adjusted': 'tune',
+  /** Points or a grant that ran out: the sand is at the bottom. Not
+   *  `hourglass_top` (`visit.pending`, `loyalty.soon`), which is waiting. */
+  'loyalty.activity.expired': 'hourglass_bottom',
+  'loyalty.activity.reversed': 'undo',
+
+  /* ── Loyalty: achievements, seasons and events ──────────────────── */
+  /** Achievements as a whole — the medal strip and its page. */
+  'loyalty.badge': 'military_tech',
+  /** The «Скоро» heading: the levels closest to being earned. Shares
+   *  `hourglass_top` with `visit.pending`; a heading, not a state. */
+  'loyalty.soon': 'hourglass_top',
+  /** The «Последни» heading: the levels earned most recently. Shares
+   *  `history` with `visit.last`. */
+  'loyalty.latest': 'history',
+  /**
+   * The current season — the «Есен 2026» heading, «Още от …» on a season
+   * family's detail. A time-boxed stretch of the calendar, never the
+   * season track medal's face right under it (a heading that wore the face
+   * of the medal it heads cloned it, wave D r4).
+   */
+  'loyalty.season': 'calendar_clock',
+  /** A limited-time event — the «Събития» heading. Not `celebration`, the event medals' own face. */
+  'loyalty.event': 'festival',
+  /** Past seasons — the archive row at the foot of the achievements page. */
+  'loyalty.archive': 'inventory_2',
+
+  /**
+   * The achievement shelves — one heading per `BadgeCategoryKind`.
+   *
+   * Their own keys AND their own glyphs, never an emblem below: a shelf
+   * names a KIND of achievement and a medal names one family, so a heading
+   * that wore its leading family's face (the first cut's `flag`,
+   * `event_repeat`, `content_cut`, `person_heart`) cloned the first medal
+   * under it — and the art-less medals of other shelves too. The spec pins
+   * the two glyph sets disjoint, and every other heading of the pages
+   * (`loyalty.soon` · `.latest` · `.season` · `.event` · `.archive`) off
+   * the emblems too.
+   *
+   * `barbers` is `groups` because that glyph already means «the barbers»
+   * here (`booking.anyBarber`). `milestones` is `signpost`, an open mark
+   * like its neighbours: FILL 1's `stairs` is a solid rounded tile with
+   * the steps knocked out, an app badge among open glyphs (wave D r4);
+   * never a flag, the visits family's face.
+   */
+  'loyalty.category.milestones': 'signpost',
+  'loyalty.category.mastery': 'design_services',
+  'loyalty.category.barbers': 'groups',
+  'loyalty.category.rhythm': 'timeline',
+  'loyalty.category.special': 'star_shine',
+  'loyalty.category.records': 'trophy',
+
+  /**
+   * The medal emblems — one key per `BadgeEmblem` in the engagement domain.
+   *
+   * A closed map in the client-card lib (`BADGE_EMBLEM_ICONS:
+   * Record<BadgeEmblem, UiIconName>`) turns each emblem into one of these,
+   * with no fallback, so a new emblem is a compile error until it has a key
+   * here. The service, barber and shop families usually draw ART instead;
+   * their keys are the fallback when no art was supplied.
+   *
+   * `visits` is `flag`, not the scissors the first draft gave it: the
+   * scissors now mean a SERVICE (`service`), and a count of visits is a
+   * milestone.
+   */
+  'loyalty.badge.visits': 'flag',
+  'loyalty.badge.streak': 'event_repeat',
+  'loyalty.badge.referral': 'group_add',
+  'loyalty.badge.selfService': 'touch_app',
+  'loyalty.badge.birthday': 'cake',
+  'loyalty.badge.welcome': 'waving_hand',
+  'loyalty.badge.service': 'content_cut',
+  'loyalty.badge.barber': 'person_heart',
+  'loyalty.badge.shop': 'storefront',
+  'loyalty.badge.anniversary': 'hotel_class',
+  'loyalty.badge.earlyBird': 'wb_twilight',
+  'loyalty.badge.weekend': 'weekend',
+  'loyalty.badge.onTime': 'alarm_on',
+  'loyalty.badge.waitlist': 'notifications_active',
+  'loyalty.badge.profile': 'person_check',
+  'loyalty.badge.party': 'group',
+  'loyalty.badge.explorer': 'explore',
+  /*
+   * A shelf's or a season's families each wear their own glyph: the
+   * rhythm shelf is `event_repeat` · `cycle` · `u_turn_left`, never three
+   * calendars, and a season's families never repeat its track's face.
+   */
+  /** «Цяла година» — a visit in each month of a year: the year's cycle. */
+  'loyalty.badge.yearRound': 'cycle',
+  /** «Завръщане» — back in rhythm after a break: the turn back. */
+  'loyalty.badge.comeback': 'u_turn_left',
+  /** An event — its row in the archive. */
+  'loyalty.badge.event': 'celebration',
+  /*
+   * Seasons and events wear faces of their own (wave D r6): a season its
+   * season of the year — so «Лято 2026» III in the archive is never the
+   * running «Есен 2026», where both wore one rosette (`award_star`,
+   * retired with `season`) — and a season's or an event's family a glyph
+   * no perennial family wears, never the sunrise, the sofa or the
+   * service's cover it counts like (`date_range`, «every month» of every
+   * season, retired with `seasonMonthly`).
+   */
+  'loyalty.badge.summer': 'sunny',
+  'loyalty.badge.autumn': 'eco',
+  /** «Преди отпуска» — visits before the holidays. */
+  'loyalty.badge.vacation': 'luggage',
+  /** «Всеки летен месец». */
+  'loyalty.badge.sailing': 'sailing',
+  /** «Лятна събота». */
+  'loyalty.badge.icecream': 'icecream',
+  /** «Всеки есенен месец» — rain or shine. */
+  'loyalty.badge.umbrella': 'umbrella',
+  /** «Есенно утро» — the morning mist. */
+  'loyalty.badge.fog': 'foggy',
+  /** «Приятел наесен». */
+  'loyalty.badge.handshake': 'handshake',
+  /** «Есенна брада» — the mirror and the comb. */
+  'loyalty.badge.grooming': 'self_care',
+  /** «Брада на седмицата» — the oil and the comb. */
+  'loyalty.badge.beardOil': 'health_and_beauty',
+  /** «Пълна грижа на седмицата». */
+  'loyalty.badge.spa': 'spa',
 } as const satisfies Record<string, string>;
 
 /* ── Vector icons — marks Material Symbols does not carry ────────────── */
@@ -434,6 +677,9 @@ export const UI_ICON_VECTORS = {
 export const UI_ICON_ALIASES = {
   /** The showcase gallery's grid toggle IS the generic list/grid toggle. */
   'gallery.grid': 'layout.grid',
+  /** A client's visits, as the staff card lists them, ARE their reservations:
+   *  if the client's own «Моите резервации» mark changes, this one follows. */
+  'client.visits': 'account.reservations',
 } as const satisfies Record<string, keyof typeof UI_ICON_REGISTRY>;
 
 /**

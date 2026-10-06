@@ -1,0 +1,617 @@
+<sc-page scTitle="Medal">
+  <ng-container scLede>
+    <code>ui-medal</code> / <code>button[uiMedal]</code>: one achievement family
+    at a glance. A disc with its art inside a progress RING (the gauge's
+    <code>circularCapacity</code>), the highest level WON on the ring's rim, and
+    in grids its title and one caption. Four states, told apart by form: a
+    dashed ring, an arc, a filled disc, a full ring. Never a padlock, never by
+    hue alone. The orange is a fill and an arc; every word is ink. One sentence
+    (<code>uiLabel</code>) names it. It stands on a white or elevated card, on
+    the sheet or on a stage, never on grey.
+  </ng-container>
+
+  <sc-demo scTitle="Four states, three sizes">
+    <ng-container scAbout>
+      <code>notStarted</code>: the real emblem as a grey silhouette in a dashed
+      ring. <code>inProgress</code>: the arc round an unfilled disc.
+      <code>earned</code>: the filled disc, the rim numeral, the arc towards the
+      NEXT level. <code>complete</code>: the filled disc in a full ring. The
+      size names the disc: <code>regular</code> 44 in a ring of 52,
+      <code>large</code> 52 in 64, <code>extraLarge</code> 112 in 128. «Фейд» at
+      23 visits, from level II at 10 to level III at 25: 87 %.
+    </ng-container>
+    <ui-stack
+      uiSpacing="regular"
+      uiAlignment="stretch"
+      class="medal__column medal__sheet"
+    >
+      @for (size of sizes; track size) {
+      <ui-card
+        uiTone="elevated"
+        uiPadding="regular"
+        [attr.data-testid]="'medal-states-' + size"
+      >
+        <ui-stack uiSpacing="regular" uiAlignment="stretch">
+          <p
+            uiText
+            [uiFont]="'caption'"
+            uiForegroundStyle="secondary"
+            class="medal__mono"
+          >
+            {{ size }}
+          </p>
+          <ui-grid
+            [uiColumns]="stateColumns()"
+            uiSpacing="compact"
+            uiRowSpacing="regular"
+          >
+            @for (sample of states; track sample.state) {
+            <ui-medal
+              uiFrame
+              uiFrameMaxWidth="infinity"
+              [uiState]="sample.state"
+              [uiIcon]="emblem"
+              [uiLevel]="sample.level"
+              uiTitle="Фейд"
+              [uiCaption]="sample.caption"
+              [uiValue]="sample.value"
+              [uiValueText]="sample.valueText"
+              [uiControlSize]="size"
+              [uiLabel]="sample.label"
+            />
+            }
+          </ui-grid>
+        </ui-stack>
+      </ui-card>
+      }
+      <ui-card
+        uiTone="elevated"
+        uiPadding="regular"
+        data-testid="medal-states-extraLarge"
+      >
+        <ui-stack uiSpacing="regular" uiAlignment="stretch">
+          <p
+            uiText
+            [uiFont]="'caption'"
+            uiForegroundStyle="secondary"
+            class="medal__mono"
+          >
+            extraLarge
+          </p>
+          <ui-grid
+            uiAdaptiveMinimum="8.5rem"
+            uiSpacing="compact"
+            uiRowSpacing="comfortable"
+          >
+            @for (sample of states; track sample.state) {
+            <ui-medal
+              uiFrame
+              uiFrameMaxWidth="infinity"
+              [uiState]="sample.state"
+              [uiIcon]="emblem"
+              [uiLevel]="sample.level"
+              uiTitle="Фейд"
+              [uiCaption]="sample.caption"
+              [uiValue]="sample.value"
+              [uiValueText]="sample.valueText"
+              uiControlSize="extraLarge"
+              [uiLabel]="sample.label"
+            />
+            }
+          </ui-grid>
+        </ui-stack>
+      </ui-card>
+    </ui-stack>
+  </sc-demo>
+
+  <sc-demo scTitle="Beside the ring that stands alone">
+    <ng-container scAbout>
+      The arc, judged against a filled disc. First the gauge standing alone
+      round a figure (64, stroke 5), then an <code>earned</code> medal at each
+      size, all at 87 %. Round a disc the stroke is 3, 4 and 6, with a gap of
+      the real ground between the arc and the fill.
+    </ng-container>
+    <ui-card
+      uiTone="elevated"
+      uiPadding="comfortable"
+      class="medal__column medal__sheet"
+      data-testid="medal-beside-ring"
+    >
+      <ui-flow uiSpacing="regular" uiAlignment="center" class="medal__centred">
+        <ui-gauge
+          class="medal__alone"
+          uiGaugeStyle="circularCapacity"
+          uiControlSize="large"
+          [uiValue]="23"
+          [uiMin]="10"
+          [uiMax]="25"
+          uiLabel="Фейд"
+          uiValueText="23 от 25 до ниво III, остават 2"
+        >
+          <span uiCurrentValueLabel>2</span>
+        </ui-gauge>
+        @for (size of allSizes; track size) {
+        <ui-medal
+          [uiState]="earned.state"
+          [uiIcon]="emblem"
+          [uiLevel]="earned.level"
+          [uiValue]="earned.value"
+          [uiValueText]="earned.valueText"
+          [uiControlSize]="size"
+          [uiLabel]="earned.label"
+          class="medal__bare"
+        />
+        }
+      </ui-flow>
+    </ui-card>
+  </sc-demo>
+
+  <sc-demo scTitle="A grid of mixed states">
+    <ng-container scAbout>
+      A category as «Постижения» draws it: an elevated card, three columns,
+      <code>button[uiMedal]</code> at <code>large</code>. With a title or a
+      caption (the tile form, <code>data-tile</code>) every state keeps the rim
+      numeral's room under its ring, so a row of mixed states sets every title
+      on one line, and a row's captions share a line under its tallest title. A
+      long word breaks at a hyphenation point: the language's where the engine
+      knows it, the title's own soft hyphen where it does not. «Ново» stands
+      over the ring in a band that only ITS row pays for. The state layer is a
+      rounded rectangle over the whole tile. On a 330 pt phone the card pads 12
+      and its columns stand a tight step apart, as in the sheet.
+    </ng-container>
+    <!-- The words are Bulgarian, as in the app (whose <html lang> follows the
+         active language): hyphenation reads the language from here. -->
+    <ui-stack
+      lang="bg"
+      uiSpacing="regular"
+      uiAlignment="stretch"
+      class="medal__column medal__sheet"
+    >
+      <ui-card uiTone="elevated" [uiPadding]="narrow() ? 'compact' : 'regular'">
+        <ui-grid
+          role="list"
+          aria-label="Майсторство"
+          [uiColumns]="3"
+          [uiSpacing]="narrow() ? 'tight' : 'compact'"
+          uiRowSpacing="regular"
+          data-testid="medal-grid"
+        >
+          @for (tile of mastery; track tile.key) {
+          <div role="listitem" class="medal__slot">
+            <button
+              uiMedal
+              uiFrame
+              uiFrameMaxWidth="infinity"
+              [uiState]="tile.state"
+              [uiIcon]="tile.icon"
+              [uiMonogram]="tile.monogram"
+              [uiSrc]="tile.src"
+              [uiLevel]="tile.level"
+              [uiTitle]="tile.title"
+              [uiCaption]="tile.caption"
+              [uiValue]="tile.value"
+              [uiValueText]="tile.valueText"
+              [uiLabel]="tile.label"
+              [attr.data-testid]="'medal-grid-' + tile.key"
+              (click)="tileOpened.set(tile.title)"
+            >
+              @if (tile.isNew) {
+              <span uiMedalMarker uiBadge uiTone="accent" aria-hidden="true"
+                >Ново</span
+              >
+              }
+            </button>
+          </div>
+          }
+        </ui-grid>
+      </ui-card>
+      <p uiText [uiFont]="'footnote'" uiForegroundStyle="secondary">
+        {{ tileOpened() ? 'Opened: ' + tileOpened() : 'Every tile opens its
+        family.' }}
+      </p>
+    </ui-stack>
+  </sc-demo>
+
+  <sc-demo scTitle="A season's families: regular, four across">
+    <ng-container scAbout>
+      Inside a season's or an event's card the families are
+      <code>regular</code> medals in a four-up grid: the title in the footnote
+      at 600, the caption a rung under it. A one-off that is won is
+      <code>complete</code> and wears no numeral; its caption is its date.
+    </ng-container>
+    <ui-card
+      lang="bg"
+      uiTone="elevated"
+      uiPadding="comfortable"
+      class="medal__column medal__sheet"
+    >
+      <ui-grid
+        role="list"
+        aria-label="Есен 2026"
+        [uiColumns]="4"
+        uiSpacing="tight"
+        data-testid="medal-season"
+      >
+        <div role="listitem" class="medal__slot">
+          <ui-medal
+            uiFrame
+            uiFrameMaxWidth="infinity"
+            uiState="inProgress"
+            uiIcon="loyalty.badge.autumn"
+            uiControlSize="regular"
+            uiTitle="Топъл"
+            uiCaption="1/2"
+            [uiValue]="1 / 2"
+            uiValueText="1 от 2"
+            uiLabel="Топъл, 1 от 2"
+          />
+        </div>
+        <div role="listitem" class="medal__slot">
+          <ui-medal
+            uiFrame
+            uiFrameMaxWidth="infinity"
+            uiState="inProgress"
+            uiIcon="loyalty.badge.weekend"
+            uiControlSize="regular"
+            uiTitle="Есенен"
+            uiCaption="2/3"
+            [uiValue]="2 / 3"
+            uiValueText="2 от 3"
+            uiLabel="Есенен, 2 от 3"
+          />
+        </div>
+        <div role="listitem" class="medal__slot">
+          <ui-medal
+            uiFrame
+            uiFrameMaxWidth="infinity"
+            uiState="complete"
+            uiIcon="loyalty.badge.welcome"
+            uiControlSize="regular"
+            uiTitle="Първи"
+            uiCaption="5.09"
+            uiLabel="Първи, спечелено на 5 септември"
+          />
+        </div>
+        <div role="listitem" class="medal__slot">
+          <ui-medal
+            uiFrame
+            uiFrameMaxWidth="infinity"
+            uiState="notStarted"
+            uiIcon="loyalty.badge.party"
+            uiControlSize="regular"
+            uiTitle="Двойка"
+            uiCaption="0/1"
+            uiLabel="Двойка, не е започнато, 0 от 1"
+          />
+        </div>
+      </ui-grid>
+    </ui-card>
+  </sc-demo>
+
+  <sc-demo scTitle="A ladder of five">
+    <ng-container scAbout>
+      A family's levels are a list of medals, <code>regular</code>, the medal
+      alone beside its words. A level passed is <code>complete</code> with ITS
+      numeral; the next one and those after it are dashed silhouettes, the next
+      said in the primary ink. The medal alone is the ring's box and nothing
+      more: the chip hangs half its height under it, and the row leaves that
+      room.
+    </ng-container>
+    <ui-card
+      uiTone="elevated"
+      uiPadding="comfortable"
+      class="medal__column medal__sheet"
+      data-testid="medal-ladder"
+    >
+      <ol class="medal__ladder" aria-label="Нива">
+        @for (row of ladder; track row.level) {
+        <li class="medal__rung" [attr.aria-label]="row.label">
+          <ui-medal
+            [uiState]="row.state"
+            [uiIcon]="emblem"
+            [uiLevel]="row.state === 'complete' ? row.level : null"
+            uiControlSize="regular"
+            [uiLabel]="row.label"
+            aria-hidden="true"
+          />
+          <span class="medal__rung-words" aria-hidden="true">
+            <span
+              uiText
+              [uiFont]="'body'"
+              [uiWeight]="'medium'"
+              [uiForegroundStyle]="row.quiet ? 'secondary' : 'primary'"
+              class="medal__rung-title"
+              >{{ row.title }}</span
+            >
+            <span uiText [uiFont]="'subheadline'" uiForegroundStyle="secondary"
+              >{{ row.reward }}</span
+            >
+            @if (row.earned; as earned) {
+            <span
+              uiText
+              [uiFont]="'footnote'"
+              uiForegroundStyle="secondary"
+              class="medal__rung-date"
+              >{{ earned }}</span
+            >
+            }
+          </span>
+        </li>
+        }
+      </ol>
+    </ui-card>
+  </sc-demo>
+
+  <sc-demo scTitle="The face: art, monogram, emblem">
+    <ng-container scAbout>
+      First found wins: <code>uiSrc</code> (a barber's face, a service or shop
+      cover), then <code>uiMonogram</code>, then the registry emblem. FULL
+      COLOUR MEANS EARNED: art is a faint grey while not started, grey while in
+      progress, and in its own colour once a level is won. A cover is rarely
+      square (the seed's are 1100 × 1400): the art is pinned to the disc's own
+      box and cropped, a circle in every state.
+    </ng-container>
+    <ui-stack
+      lang="bg"
+      uiSpacing="regular"
+      uiAlignment="stretch"
+      class="medal__column medal__sheet"
+    >
+      <ui-card
+        uiTone="elevated"
+        uiPadding="regular"
+        data-testid="medal-portrait"
+      >
+        <ui-grid
+          [uiColumns]="stateColumns()"
+          uiSpacing="compact"
+          uiRowSpacing="regular"
+        >
+          @for (sample of states; track sample.state) {
+          <ui-medal
+            uiFrame
+            uiFrameMaxWidth="infinity"
+            [uiState]="sample.state"
+            [uiSrc]="portraitArt"
+            [uiLevel]="sample.level"
+            uiTitle="Фейд"
+            [uiCaption]="sample.caption"
+            [uiValue]="sample.value"
+            [uiValueText]="sample.valueText"
+            [uiLabel]="sample.label"
+          />
+          }
+        </ui-grid>
+      </ui-card>
+      <ui-card uiTone="elevated" uiPadding="regular" data-testid="medal-faces">
+        <ui-grid [uiColumns]="3" uiSpacing="compact">
+          <ui-medal
+            uiFrame
+            uiFrameMaxWidth="infinity"
+            uiState="earned"
+            [uiSrc]="art"
+            uiLevel="I"
+            uiTitle="Център"
+            uiCaption="4/10 до II"
+            [uiValue]="1 / 7"
+            uiValueText="4 от 10 до ниво II"
+            uiLabel="Център, ниво I спечелено на 4 септември, 4 от 10 до ниво II"
+          />
+          <ui-medal
+            uiFrame
+            uiFrameMaxWidth="infinity"
+            uiState="earned"
+            uiMonogram="Ф"
+            uiLevel="III"
+            uiTitle="Фризура"
+            uiCaption="31/50 до IV"
+            [uiValue]="6 / 25"
+            uiValueText="31 от 50 до ниво IV"
+            uiLabel="Фризура, ниво III, 31 от 50 до ниво IV"
+          />
+          <ui-medal
+            uiFrame
+            uiFrameMaxWidth="infinity"
+            uiState="inProgress"
+            uiIcon="loyalty.badge.earlyBird"
+            uiTitle="Ранобудник"
+            uiCaption="1/3 до I"
+            [uiValue]="1 / 3"
+            uiValueText="1 от 3 до ниво I"
+            uiLabel="Ранобудник, 1 от 3 до ниво I"
+          />
+        </ui-grid>
+      </ui-card>
+      <ui-card
+        uiTone="elevated"
+        uiPadding="comfortable"
+        data-testid="medal-faces-hero"
+      >
+        <ui-flow
+          uiSpacing="regular"
+          uiAlignment="center"
+          class="medal__centred"
+        >
+          <ui-medal
+            uiState="earned"
+            [uiSrc]="art"
+            uiLevel="I"
+            uiControlSize="extraLarge"
+            [uiValue]="1 / 7"
+            uiValueText="4 от 10 до ниво II"
+            uiLabel="Център, ниво I, 4 от 10 до ниво II"
+            class="medal__bare"
+          />
+          <ui-medal
+            uiState="notStarted"
+            uiMonogram="П"
+            uiControlSize="extraLarge"
+            uiLabel="Подстрижка с ножица, не е започнато"
+            class="medal__bare"
+          />
+        </ui-flow>
+      </ui-card>
+    </ui-stack>
+  </sc-demo>
+
+  <sc-demo scTitle="A row of three, the medal alone">
+    <ng-container scAbout>
+      Three <code>button[uiMedal]</code> at <code>regular</code>, no words: each
+      opens its family. A bare button holds the chip inside its own box, won or
+      not, so the state layer never cuts a numeral and the row is one height.
+      «Ново» is the consumer's <code>span[uiBadge] [uiMedalMarker]</code>; the
+      DS reserves its band for a grid by itself, and any other row says it is
+      one with <code>data-medal-row</code>.
+    </ng-container>
+    <ui-card
+      uiTone="elevated"
+      uiPadding="regular"
+      class="medal__column medal__sheet"
+      data-testid="medal-row"
+    >
+      <ui-stack uiSpacing="compact" uiAlignment="leading">
+        <ui-stack
+          uiAxis="horizontal"
+          uiSpacing="compact"
+          uiAlignment="leading"
+          data-medal-row
+        >
+          <button
+            uiMedal
+            uiState="earned"
+            uiIcon="loyalty.badge.autumn"
+            uiLevel="II"
+            uiControlSize="regular"
+            [uiValue]="1 / 3"
+            uiValueText="още 2 посещения до ниво III"
+            uiLabel="Есен 2026, ниво II спечелено на 20 септември, ново"
+            (click)="opened.set('Есен 2026')"
+          >
+            <span uiMedalMarker uiBadge uiTone="accent" aria-hidden="true"
+              >Ново</span
+            >
+          </button>
+          <button
+            uiMedal
+            uiState="earned"
+            uiMonogram="Ф"
+            uiLevel="II"
+            uiControlSize="regular"
+            [uiValue]="13 / 15"
+            uiValueText="23 от 25 до ниво III"
+            uiLabel="Фейд, ниво II спечелено на 24 септември, 23 от 25 до ниво III"
+            (click)="opened.set('Фейд')"
+          ></button>
+          <button
+            uiMedal
+            uiState="inProgress"
+            uiIcon="loyalty.badge.weekend"
+            uiControlSize="regular"
+            [uiValue]="2 / 3"
+            uiValueText="2 от 3 до ниво I"
+            uiLabel="Съботен, 2 от 3 до ниво I"
+            (click)="opened.set('Съботен')"
+          ></button>
+        </ui-stack>
+        <p uiText [uiFont]="'footnote'" uiForegroundStyle="secondary">
+          {{ opened() ? 'Opened: ' + opened() : 'Ново: Есен 2026, ниво II' }}
+        </p>
+      </ui-stack>
+    </ui-card>
+  </sc-demo>
+
+  <sc-demo scTitle="A stack">
+    <ng-container scAbout>
+      <code>uiStacked</code> draws several medals as one item (a day's levels, a
+      tap that opens their scope rather than one family's detail): a second
+      medal peeks out behind, a disc of the ring's size cut out by a ring of the
+      ground (<code>--ui-medal-stack-ring</code>; the DS names an elevated
+      card's colour itself). It wears the front disc's fill; short of a level
+      won, the extent's ink. A day's levels have no next level of their own, so
+      their ring is the track alone. Form, never a count: how many stays in the
+      caption and the sentence.
+    </ng-container>
+    <ui-card
+      lang="bg"
+      uiTone="elevated"
+      uiPadding="regular"
+      class="medal__column medal__sheet"
+      data-testid="medal-stack"
+    >
+      <ui-grid [uiColumns]="3" uiSpacing="compact">
+        <ui-medal
+          uiFrame
+          uiFrameMaxWidth="infinity"
+          uiState="earned"
+          uiIcon="loyalty.badge.summer"
+          uiLevel="III"
+          uiTitle="7.08"
+          uiCaption="2 нива"
+          uiStacked
+          uiLabel="Спечелени на 7 август: 2 нива"
+        />
+        <ui-medal
+          uiFrame
+          uiFrameMaxWidth="infinity"
+          uiState="complete"
+          uiIcon="loyalty.badge.visits"
+          uiLevel="V"
+          uiTitle="3.08"
+          uiCaption="3 нива"
+          uiStacked
+          uiLabel="Спечелени на 3 август: 3 нива"
+        />
+        <ui-medal
+          uiFrame
+          uiFrameMaxWidth="infinity"
+          uiState="inProgress"
+          uiIcon="loyalty.badge.autumn"
+          uiTitle="Сезони"
+          uiCaption="2 започнати"
+          [uiValue]="1 / 2"
+          uiValueText="1 от 2 до първото ниво"
+          uiStacked
+          uiLabel="Сезони: 2 започнати"
+        />
+      </ui-grid>
+    </ui-card>
+  </sc-demo>
+
+  <sc-demo scTitle="A live earn">
+    <ng-container scAbout>
+      Nothing performs on mount: forty medals are drawn settled. After the first
+      frame, a medal turning <code>earned</code> fills its disc over the
+      deliberate beat while the gauge glides its arc; reduced motion swaps.
+    </ng-container>
+    <ui-card
+      uiTone="elevated"
+      uiPadding="comfortable"
+      class="medal__column medal__sheet"
+      data-testid="medal-live"
+    >
+      <ui-stack uiAxis="horizontal" uiSpacing="regular" uiAlignment="center">
+        <ui-medal
+          [uiState]="earnedLive() ? 'earned' : 'inProgress'"
+          uiIcon="loyalty.badge.visits"
+          [uiLevel]="earnedLive() ? 'I' : null"
+          uiTitle="Посещения"
+          [uiCaption]="earnedLive() ? '3/10 до II' : '2/3 до I'"
+          [uiValue]="earnedLive() ? 0 : 2 / 3"
+          [uiValueText]="earnedLive() ? '3 от 10 до ниво II' : '2 от 3 до ниво I'"
+          [uiLabel]="earnedLive() ? 'Посещения, ниво I, с това посещение' : 'Посещения, 2 от 3 до ниво I'"
+          class="medal__tile"
+        />
+        <button
+          uiButton
+          uiButtonStyle="bordered"
+          uiTint="neutral"
+          uiControlSize="small"
+          type="button"
+          (click)="earnedLive.set(!earnedLive())"
+        >
+          {{ earnedLive() ? 'Undo' : 'Earn level I' }}
+        </button>
+      </ui-stack>
+    </ui-card>
+  </sc-demo>
+</sc-page>

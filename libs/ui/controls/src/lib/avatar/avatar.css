@@ -45,10 +45,12 @@
     font: var(--sys-font-title3);
   }
   .ui-avatar[data-control-size='extraLarge'] {
-    /* Profile-portrait tier (avatar-only, see UiAvatarSize): 28 units =
-       112px at density 1 — no shared --control-size token since no other
-       control renders at portrait scale. */
-    --ui-avatar-disc: calc(var(--sys-space-unit) * 28);
+    /* The PORTRAIT rung: 112, the disc a page is about. It was this rule's
+       own literal (28 units) while the avatar alone drew at that scale;
+       the medal's page wears the same disc now (revision 3), so the rung
+       is a token and the two read it: a hero that swaps a face for a medal
+       does not move. */
+    --ui-avatar-disc: var(--control-size-extraLarge);
     inline-size: var(--ui-avatar-disc);
     block-size: var(--ui-avatar-disc);
     font: var(--sys-font-largeTitle);
@@ -76,6 +78,29 @@
    * a pale disc and reads as broken rather than quiet (owner-reported
    * 2026-07-31). It is already quieter than the label beside it by being
    * smaller; alpha was doing a job that size and the tier ladder already do.
+   *
+   * AND IT IS HELD TO AA (2026-10-06). The film under it is that same ink
+   * at the fill alpha, so wherever a page, a card or a row hands the avatar
+   * the foreground — nearly everywhere — this is the control fill under the
+   * primary ink: 17.3:1 on the light page, 15.3:1 on the dark surface.
+   * Three inks are sanctioned for a monogram, and avatar.spec.ts reads the
+   * theme files and holds each to 4.6:1 on every opaque ground, both themes:
+   *   · the foreground — `currentColor`, the default
+   *   · the quiet rung — `--ui-avatar-ink: var(--sys-color-secondary-label-on-fill)`;
+   *     the PLAIN secondary label is not one (4.13:1 on this film over the
+   *     dark grouped segment — the reason the on-fill cut exists)
+   *   · the on-primary ink a selected chip or list row hands it, which the
+   *     film follows for free (the ruling above)
+   * The 112 portrait draws a 36px monogram that WCAG would let claim 3:1;
+   * it is held to 4.5 like the rest.
+   *
+   * The one lever this cannot answer is an ANCESTOR'S OPACITY: a parent at
+   * .55 multiplies the foreground to 4.14:1 on the light page (5.49 dark),
+   * and no ink the theme owns clears AA through it — the darkest light ink
+   * IS the foreground. A row that recedes does it by form or by the
+   * foreground role, never by opacity (list-row.css says the same of its
+   * detail): axe flags the monogram as visible text although it is
+   * aria-hidden (the img's alt carries the name; the letters are decoration).
    */
   .ui-avatar__fallback {
     color: var(--ui-avatar-ink, currentColor);

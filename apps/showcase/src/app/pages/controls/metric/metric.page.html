@@ -1,0 +1,414 @@
+<sc-page scTitle="Metric">
+  <ng-container scLede>
+    <code>ui-metric</code> — one labelled quantity read at a glance: glyph,
+    value, unit and delta on one baseline, the visible
+    <code>uiCaption</code> under it, and an accessory slot for a meter that
+    belongs to the figure. The value arrives formatted; <code>uiLabel</code> is
+    the group's accessible name (by default value + unit + caption). All spans,
+    so it sits inside a <code>button[uiCard]</code>.
+  </ng-container>
+
+  <sc-demo scTitle="Sizes">
+    <ng-container scAbout>
+      Three rungs. <code>regular</code>: value title3 20/600, unit subheadline,
+      caption caption — a tile. <code>large</code>: value title 28/700, unit
+      callout, caption footnote — a page's summary. <code>extraLarge</code>:
+      value largeTitle 36/800, unit title3 20/600 in the quiet ink, caption
+      callout — the one figure a page is about. The glyph snaps to the 20 / 24 /
+      24 rung (the icon ladder ends at 24).
+    </ng-container>
+    <ui-stack uiSpacing="comfortable" uiAlignment="leading">
+      <ui-flow uiSpacing="loose" uiAlignment="leading">
+        <ui-stack uiSpacing="compact" uiAlignment="leading">
+          <ui-metric
+            uiIcon="loyalty.points"
+            uiValue="308"
+            uiUnit="т."
+            uiCaption="за размяна"
+          />
+          <p
+            uiText
+            [uiFont]="'caption'"
+            uiForegroundStyle="secondary"
+            class="metric__mono"
+          >
+            uiControlSize=regular
+          </p>
+        </ui-stack>
+        <ui-stack uiSpacing="compact" uiAlignment="leading">
+          <ui-metric
+            uiIcon="loyalty.points"
+            uiValue="12 450"
+            uiUnit="т."
+            uiCaption="за размяна"
+            uiControlSize="large"
+          />
+          <p
+            uiText
+            [uiFont]="'caption'"
+            uiForegroundStyle="secondary"
+            class="metric__mono"
+          >
+            uiControlSize=large
+          </p>
+        </ui-stack>
+        <ui-stack uiSpacing="compact" uiAlignment="leading">
+          <ui-metric
+            uiValue="23"
+            uiUnit="от 25"
+            uiCaption="посещения с фейд"
+            uiControlSize="extraLarge"
+            data-testid="metric-rung-extra-large"
+          />
+          <p
+            uiText
+            [uiFont]="'caption'"
+            uiForegroundStyle="secondary"
+            class="metric__mono"
+          >
+            uiControlSize=extraLarge
+          </p>
+        </ui-stack>
+      </ui-flow>
+      <ui-stack uiSpacing="compact" uiAlignment="leading">
+        <ui-metric uiValue="24" uiCaption="посещения" uiAlignment="center" />
+        <p
+          uiText
+          [uiFont]="'caption'"
+          uiForegroundStyle="secondary"
+          class="metric__mono"
+        >
+          uiAlignment=center
+        </p>
+      </ui-stack>
+    </ui-stack>
+  </sc-demo>
+
+  <sc-demo scTitle="The page's figure (extraLarge)">
+    <ng-container scAbout>
+      The medal page's progress card, the only place the count is printed: an
+      elevated card, padding 24, the metric and ONE line under it. The figure is
+      primary ink at 36/800, «от 25» the same phrase a tone quieter, the caption
+      says what is counted. The figure never takes the accent: colour is the
+      ring's, on the hero above. At most one <code>extraLarge</code>
+      per screen, never a tile in a grid.
+    </ng-container>
+    <ui-stack
+      uiSpacing="regular"
+      uiAlignment="stretch"
+      class="metric__column metric__sheet"
+    >
+      <ui-card
+        uiTone="elevated"
+        uiPadding="comfortable"
+        role="group"
+        aria-label="Напредък"
+        data-testid="metric-progress"
+      >
+        <ui-stack uiSpacing="compact" uiAlignment="leading">
+          <ui-metric
+            uiValue="23"
+            uiUnit="от 25"
+            uiCaption="посещения с фейд"
+            uiControlSize="extraLarge"
+          />
+          <p uiText [uiFont]="'callout'" [uiWeight]="'semibold'">
+            Още 2 до ниво III
+          </p>
+        </ui-stack>
+      </ui-card>
+      <ui-card
+        uiTone="elevated"
+        uiPadding="comfortable"
+        role="group"
+        aria-label="Напредък"
+        data-testid="metric-progress-counted"
+      >
+        <ui-stack uiSpacing="compact" uiAlignment="leading">
+          <ui-metric
+            uiValue="23"
+            uiUnit="от 25"
+            uiCaption="посещения с фейд"
+            uiControlSize="extraLarge"
+          />
+          <ui-stack uiSpacing="none" uiAlignment="leading">
+            <p uiText [uiFont]="'callout'" [uiWeight]="'semibold'">
+              Още 2 до ниво III
+            </p>
+            <p uiText [uiFont]="'callout'" uiForegroundStyle="secondary">
+              Това посещение се брои: 24 от 25 след него
+            </p>
+          </ui-stack>
+        </ui-stack>
+      </ui-card>
+    </ui-stack>
+  </sc-demo>
+
+  <sc-demo scTitle="extraLarge: the states of the figure">
+    <ng-container scAbout>
+      Each card is a page's one figure in another state; a page draws one of
+      them. Not started: «0 от 3», a real zero, because the count is known.
+      Complete: the last threshold with no unit. No value: «—», and the fact
+      named in words.
+    </ng-container>
+    <ui-stack
+      uiSpacing="regular"
+      uiAlignment="stretch"
+      class="metric__column metric__sheet"
+    >
+      <ui-card
+        uiTone="elevated"
+        uiPadding="comfortable"
+        role="group"
+        aria-label="Напредък"
+      >
+        <ui-stack uiSpacing="compact" uiAlignment="leading">
+          <ui-metric
+            uiValue="0"
+            uiUnit="от 3"
+            uiCaption="посещения с фейд"
+            uiControlSize="extraLarge"
+          />
+          <p uiText [uiFont]="'callout'" [uiWeight]="'semibold'">
+            Още 3 до ниво I
+          </p>
+        </ui-stack>
+      </ui-card>
+      <ui-card
+        uiTone="elevated"
+        uiPadding="comfortable"
+        role="group"
+        aria-label="Напредък"
+      >
+        <ui-stack uiSpacing="compact" uiAlignment="leading">
+          <ui-metric
+            uiValue="100"
+            uiCaption="посещения с фейд"
+            uiControlSize="extraLarge"
+          />
+          <p uiText [uiFont]="'callout'" [uiWeight]="'semibold'">Всички нива</p>
+        </ui-stack>
+      </ui-card>
+      <ui-card
+        uiTone="elevated"
+        uiPadding="comfortable"
+        role="group"
+        aria-label="Напредък"
+      >
+        <ui-metric
+          [uiValue]="null"
+          uiCaption="посещения с фейд"
+          uiLabel="Посещения с фейд: няма данни"
+          uiControlSize="extraLarge"
+        />
+      </ui-card>
+    </ui-stack>
+  </sc-demo>
+
+  <sc-demo scTitle="extraLarge: every part">
+    <ng-container scAbout>
+      The glyph (24, the icon ladder's top), a grouped figure, the unit and a
+      live delta on ONE baseline. The delta wears the unit's role and the quiet
+      ink; its sign tells it apart. Where the card is narrower than the line,
+      the line breaks between its parts and the rest drops under the figure:
+      nothing is cut and nothing leaves the card (the second card is a half
+      column).
+    </ng-container>
+    <ui-stack
+      uiSpacing="regular"
+      uiAlignment="stretch"
+      class="metric__column metric__sheet"
+    >
+      <ui-card uiTone="elevated" uiPadding="comfortable">
+        <ui-metric
+          uiIcon="loyalty.points"
+          uiValue="12 450"
+          uiUnit="т."
+          uiDelta="+25"
+          uiTrend="up"
+          uiCaption="за размяна"
+          uiControlSize="extraLarge"
+          data-testid="metric-extra-large-full"
+        />
+      </ui-card>
+      <ui-card uiTone="elevated" uiPadding="comfortable" class="metric__half">
+        <ui-metric
+          uiIcon="loyalty.points"
+          uiValue="12 450"
+          uiUnit="т."
+          uiDelta="+25"
+          uiTrend="up"
+          uiCaption="за размяна"
+          uiControlSize="extraLarge"
+          data-testid="metric-extra-large-narrow"
+        />
+      </ui-card>
+    </ui-stack>
+  </sc-demo>
+
+  <sc-demo scTitle="extraLarge, centred">
+    <ng-container scAbout>
+      <code>uiAlignment="center"</code> centres the figure line and its caption
+      on one axis, for a card that stands under a centred hero.
+    </ng-container>
+    <ui-stack
+      uiSpacing="regular"
+      uiAlignment="stretch"
+      class="metric__column metric__sheet"
+    >
+      <ui-card uiTone="elevated" uiPadding="comfortable">
+        <ui-stack uiSpacing="compact" uiAlignment="center">
+          <ui-metric
+            uiValue="23"
+            uiUnit="от 25"
+            uiCaption="посещения с фейд"
+            uiControlSize="extraLarge"
+            uiAlignment="center"
+          />
+          <p uiText [uiFont]="'callout'" [uiWeight]="'semibold'">
+            Още 2 до ниво III
+          </p>
+        </ui-stack>
+      </ui-card>
+    </ui-stack>
+  </sc-demo>
+
+  <sc-demo scTitle="Counters on muted tiles">
+    <ng-container scAbout>
+      The history's stats band: neutral counters. The value never takes a
+      sentiment colour — no-shows are never red.
+    </ng-container>
+    <ui-grid [uiColumns]="3" uiSpacing="compact" class="metric__column">
+      <ui-card uiTone="muted" uiPadding="regular">
+        <ui-metric uiValue="24" uiCaption="посещения" />
+      </ui-card>
+      <ui-card uiTone="muted" uiPadding="regular">
+        <ui-metric uiValue="1" uiCaption="отменени" />
+      </ui-card>
+      <ui-card uiTone="muted" uiPadding="regular">
+        <ui-metric uiValue="2" uiCaption="неявявания" />
+      </ui-card>
+    </ui-grid>
+  </sc-demo>
+
+  <sc-demo scTitle="No value">
+    <ng-container scAbout>
+      <code>null</code> draws «—», never a made-up 0, and stamps
+      <code>data-empty</code>. A dash reads as "dash", so the owner names it in
+      words.
+    </ng-container>
+    <ui-metric
+      [uiValue]="null"
+      uiCaption="интервал"
+      uiLabel="Интервал: няма данни"
+    />
+  </sc-demo>
+
+  <sc-demo scTitle="A hidden caption and an accessory">
+    <ng-container scAbout>
+      <code>uiCaptionHidden</code> keeps the caption in the name where the tile
+      already says it; <code>[uiMetricAccessory]</code> carries the meter that
+      belongs to the figure.
+    </ng-container>
+    <button
+      uiCard
+      uiTone="muted"
+      uiPadding="regular"
+      [uiInteractive]="true"
+      type="button"
+      class="metric__column"
+    >
+      <ui-metric
+        uiIcon="loyalty.points"
+        uiValue="308"
+        uiUnit="т."
+        uiCaption="точки"
+        uiCaptionHidden
+      >
+        <ui-gauge
+          uiMetricAccessory
+          uiControlSize="small"
+          [uiValue]="308"
+          [uiMax]="400"
+          [uiMarks]="[
+            { value: 120, label: null },
+            { value: 250, label: null },
+          ]"
+          uiLabel="Точки"
+          uiValueText="308 от 400 точки"
+        />
+      </ui-metric>
+    </button>
+  </sc-demo>
+
+  <sc-demo scTitle="A live change">
+    <ng-container scAbout>
+      A rise re-enters the value and raises its delta; a fall swaps in place,
+      silently, and its «−» stays on screen. Nothing moves on the first frame.
+    </ng-container>
+    <ui-stack uiSpacing="regular" uiAlignment="leading">
+      <ui-metric
+        uiIcon="loyalty.points"
+        [uiValue]="formatted(balance())"
+        uiUnit="т."
+        uiCaption="за размяна"
+        [uiDelta]="delta()"
+        [uiTrend]="trend()"
+        uiControlSize="large"
+      />
+      <ui-flow uiSpacing="compact" uiAlignment="leading">
+        <button
+          uiButton
+          uiButtonStyle="bordered"
+          uiTint="neutral"
+          uiControlSize="small"
+          type="button"
+          (click)="earn(25)"
+        >
+          Earn 25
+        </button>
+        <button
+          uiButton
+          uiButtonStyle="bordered"
+          uiTint="neutral"
+          uiControlSize="small"
+          type="button"
+          (click)="spend(50)"
+        >
+          Spend 50
+        </button>
+      </ui-flow>
+    </ui-stack>
+  </sc-demo>
+
+  <sc-demo scTitle="Count-up (the client's own view)">
+    <ng-container scAbout>
+      <code>uiCountFrom</code> counts an integer up over the deliberate beat on
+      the platform's clock; the first touch, key or scroll jumps to the end, and
+      reduced motion shows it at once. The accessible name is final from the
+      first frame. Staff surfaces never set it.
+    </ng-container>
+    <ui-stack uiSpacing="regular" uiAlignment="leading">
+      @for (run of [countUpRun()]; track run) {
+      <ui-metric
+        uiIcon="loyalty.points"
+        uiValue="12 450"
+        uiUnit="т."
+        uiCaption="за размяна"
+        uiControlSize="large"
+        [uiCountFrom]="0"
+      />
+      }
+      <button
+        uiButton
+        uiButtonStyle="bordered"
+        uiTint="neutral"
+        uiControlSize="small"
+        type="button"
+        (click)="countUpRun.set(countUpRun() + 1)"
+      >
+        Replay
+      </button>
+    </ui-stack>
+  </sc-demo>
+</sc-page>

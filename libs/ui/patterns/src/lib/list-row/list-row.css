@@ -120,6 +120,22 @@
     color: var(--sys-color-foreground);
   }
 
+  /* ≙ `Button(role: .destructive)` in a List (2026-09-28, promoted from the
+     visit sheet's exits so every sheet reaches it). The destructive INK —
+     the `-label` lift, legible on the segment fill in both themes — never a
+     fill; the leading glyph inherits it. Declared after the variants, so a
+     role outranks a variant's ink on equal specificity. */
+  .ui-list-row[data-role='destructive'] {
+    color: var(--sys-color-destructive-label);
+  }
+
+  /* ARMED — the row has become the confirm (the block sheet's day-wide
+     lift): the consumer stamps `data-armed`, the row weighs more, and the
+     second tap reads as the decision it is. */
+  .ui-list-row[data-role='destructive'][data-armed] {
+    font-weight: 600;
+  }
+
   /* Native-element forms (a/button rows) — strip the UA chrome; row
      typography comes from the host rule above, interaction feedback from
      the shared [data-interactive] grammar (libs/ui/modifiers). */
@@ -140,6 +156,17 @@
     align-items: center;
     justify-content: center;
     flex-shrink: 0;
+  }
+
+  /* A bare leading GLYPH takes the ladder's control rung, 20 (≙ a List
+     row's SF Symbol at .body), the way button tiers stamp theirs — not the
+     callout's 14 it inherited (2026-09-28: a catalogue row's gift measured
+     ≈12 px of ink beside a 20 pt section glyph). An explicit `uiScale` on
+     the glyph still wins. The wrapped form (`span[uiLeading] > ui-icon`,
+     the visit sheet's exits) is the same glyph. */
+  .ui-list-row > .ui-icon[uileading],
+  .ui-list-row > [uileading] > .ui-icon:only-child {
+    font-size: var(--ui-icon-medium);
   }
 
   .ui-list-row__label {
@@ -175,5 +202,60 @@
      de-emphasised; controls are not. */
   .ui-list-row > [uitrailing]:not(.ui-button):not([data-foreground-style]) {
     color: var(--sys-color-secondary-label);
+  }
+
+  /* `uiTrailingProminence="primary"` — the trailing value is the row's
+     FIGURE (a price charged, a cost the balance covers, a signed amount):
+     it keeps the label's ink. An element that asks for its own style
+     (`uiForegroundStyle="secondary"`) keeps it; a control owns its ink. */
+  .ui-list-row[data-trailing-prominence='primary']
+    > [uitrailing]:not(.ui-button):not([data-foreground-style]) {
+    color: inherit;
+  }
+
+  /* `uiLabelWraps` ≙ `.lineLimit(nil)` — the label's words wrap onto more
+     lines instead of ending in an ellipsis (a reward's name beside its
+     cost on a 330 phone; a ledger line naming a medal); only a word too
+     long for the whole line breaks inside itself. */
+  .ui-list-row[data-label-wraps] > .ui-list-row__label {
+    white-space: normal;
+    overflow-wrap: break-word;
+    text-wrap: pretty;
+  }
+
+  /* `uiTrailingWraps` ≙ LabeledContent's VALUE in a Form (2026-09-28) — a
+     VALUE ROW, whose label is one word and whose value is the long part:
+     the value gives way, the label never. The run — the value, then the
+     mark that says what the row does (a disclosure, a chevron) — takes at
+     most three fifths of the row and lays its parts on one line at the
+     tight gap; its words wrap at the trailing edge, balanced, two lines at
+     most and an ellipsis after (a 330 phone never shows a third line); the
+     glyph never shrinks. A bare-text value clamps on itself. Short values
+     never reach the cap, so a row reads as before. */
+  .ui-list-row[data-trailing-wraps] > [uitrailing] {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--sys-space-tight);
+    flex-shrink: 1;
+    min-inline-size: 0;
+    max-inline-size: 60%;
+    text-align: end;
+  }
+
+  .ui-list-row[data-trailing-wraps] > [uitrailing] > :not(.ui-icon),
+  .ui-list-row[data-trailing-wraps] > [uitrailing]:not(:has(> *)) {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    min-inline-size: 0;
+    overflow: hidden;
+    white-space: normal;
+    overflow-wrap: break-word;
+    text-wrap: balance;
+  }
+
+  .ui-list-row[data-trailing-wraps] > [uitrailing] > .ui-icon {
+    flex-shrink: 0;
   }
 }

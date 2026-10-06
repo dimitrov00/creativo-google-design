@@ -1,0 +1,156 @@
+<sc-page scTitle="Notice">
+  <ng-container scLede>
+    <code>ui-notice</code> — a standing fact in the flow of a page: a pause in
+    force, a pinned note, data read offline, a module that failed with its
+    retry, a refusal. A sibling of the list segments (their fill, their corner,
+    no border, no shadow); the tone is carried by the glyph and a wash at
+    <code>--sys-alpha-tint</code>, never by the title's ink. Slots:
+    <code>[uiNoticeTitle]</code>, the facts, <code>[uiNoticeActions]</code>.
+  </ng-container>
+
+  <sc-demo scTitle="Tones">
+    <ng-container scAbout>
+      Title and facts stay in the foreground ink in every tone — a tone's own
+      text cut drops under AA on its own wash. Each notice is a
+      <code>role="note"</code> named by its title.
+    </ng-container>
+    <ui-stack
+      uiSpacing="comfortable"
+      uiAlignment="stretch"
+      class="notice__column"
+    >
+      @for (sample of tones; track sample.tone) {
+      <ui-stack uiSpacing="tight" uiAlignment="stretch">
+        <ui-notice [uiTone]="sample.tone" [uiIcon]="sample.icon">
+          <h3 uiNoticeTitle tabindex="-1">{{ sample.title }}</h3>
+          @for (fact of sample.facts; track fact) {
+          <p>{{ fact }}</p>
+          }
+        </ui-notice>
+        <p uiText [uiFont]="'caption'" class="notice__mono">
+          uiTone={{ sample.tone }} · {{ sample.use }}
+        </p>
+      </ui-stack>
+      }
+    </ui-stack>
+  </sc-demo>
+
+  <sc-demo scTitle="With actions">
+    <ng-container scAbout>
+      The consumer's buttons — bordered, neutral, regular (44, never small: the
+      barber reads this one-handed mid-cut). A notice with nothing left to do
+      shows its facts alone, never a disabled button.
+    </ng-container>
+    <div class="notice__column">
+      <ui-notice uiTone="warning" uiIcon="loyalty.freeze">
+        <h3 uiNoticeTitle tabindex="-1">Онлайн записването е спряно</h3>
+        <p>до 12.10 · 3 неявявания за 60 дни</p>
+        <button
+          uiNoticeActions
+          uiButton
+          uiButtonStyle="bordered"
+          uiTint="neutral"
+          uiControlSize="regular"
+          type="button"
+        >
+          Промени
+        </button>
+        <button
+          uiNoticeActions
+          uiButton
+          uiButtonStyle="bordered"
+          uiTint="neutral"
+          uiControlSize="regular"
+          type="button"
+        >
+          Възстанови записването
+        </button>
+      </ui-notice>
+    </div>
+  </sc-demo>
+
+  <sc-demo scTitle="Compact">
+    <ng-container scAbout>
+      No title: one line of facts, the glyph centred on it, named by
+      <code>uiLabel</code>. A module that failed keeps its heading and shows
+      this, its «Опитай пак» hugged at the end of the line — the one retry
+      grammar of the stack.
+    </ng-container>
+    <ui-stack uiSpacing="regular" uiAlignment="stretch" class="notice__column">
+      <ui-notice uiIcon="visit.note" uiLabel="Закачена бележка">
+        <p>Само при Иван · иска час сутрин</p>
+      </ui-notice>
+      <ui-notice uiIcon="connection.offline" uiLabel="Без връзка">
+        <p>Без връзка · запазени данни</p>
+      </ui-notice>
+      @if (loyaltyLoaded()) {
+      <ui-stack uiSpacing="tight" uiAlignment="leading">
+        <p uiText [uiFont]="'subheadline'">Лоялността се зареди.</p>
+        <button
+          uiButton
+          uiButtonStyle="bordered"
+          uiTint="neutral"
+          uiControlSize="small"
+          type="button"
+          (click)="resetRetry()"
+        >
+          Again
+        </button>
+      </ui-stack>
+      } @else {
+      <ui-notice uiLabel="Лоялността не се зареди">
+        <p>Лоялността не се зареди.</p>
+        <button
+          uiNoticeActions
+          uiButton
+          uiButtonStyle="bordered"
+          uiTint="neutral"
+          uiControlSize="regular"
+          type="button"
+          (click)="retry()"
+        >
+          Опитай пак
+        </button>
+      </ui-notice>
+      }
+      <p uiText [uiFont]="'caption'" class="notice__mono">
+        retries={{ retries() }} (the first retry fails, the second loads)
+      </p>
+    </ui-stack>
+  </sc-demo>
+
+  <sc-demo scTitle="Announced">
+    <ng-container scAbout>
+      Static by default. <code>uiAnnounce="polite"</code> makes a notice that
+      lands live a <code>status</code>; <code>assertive</code> (a composer's
+      refusal only) an <code>alert</code>. The notice never dismisses itself.
+    </ng-container>
+    <ui-stack uiSpacing="regular" uiAlignment="stretch" class="notice__column">
+      <button
+        uiButton
+        uiButtonStyle="bordered"
+        uiTint="neutral"
+        uiControlSize="small"
+        type="button"
+        class="notice__hug"
+        (click)="liveStatus.set(!liveStatus())"
+      >
+        {{ liveStatus() ? 'Clear' : 'Land a status' }}
+      </button>
+      @if (liveStatus()) {
+      <ui-notice uiTone="accent" uiIcon="visit.pending" uiAnnounce="polite">
+        <h3 uiNoticeTitle tabindex="-1">Изпратено за одобрение</h3>
+        <p>Управителят ще го види в своя списък.</p>
+      </ui-notice>
+      }
+      <ui-notice
+        uiTone="destructive"
+        uiIcon="booking.blocked"
+        uiAnnounce="assertive"
+      >
+        <h3 uiNoticeTitle tabindex="-1">Корекцията не мина</h3>
+        <p>Балансът би станал под −100 т.</p>
+      </ui-notice>
+    </ui-stack>
+  </sc-demo>
+</sc-page>

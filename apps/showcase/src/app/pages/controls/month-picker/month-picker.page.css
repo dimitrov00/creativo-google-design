@@ -1,0 +1,27 @@
+:host {
+  display: block;
+}
+
+.month-picker__mono {
+  font-family: var(--sys-font-family-mono);
+}
+
+/* A phone's card: the month fills what it is given and stops at the standing
+   control size, as the review step's does. */
+.month-picker__card {
+  max-inline-size: calc(var(--sys-space-unit) * 90);
+}
+
+/* A picker is at least its head wide (256); the showcase canvas at 330 is
+   not, so the demo scrolls sideways rather than clipping the seventh day. */
+.month-picker__wide {
+  max-inline-size: 100%;
+  overflow-x: auto;
+  padding-block-end: var(--sys-space-tight);
+}
+
+/* The key, as the picker writes it. */
+.month-picker__weekday {
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}

@@ -1,0 +1,47 @@
+@layer sys-components {
+  /* One grid cell holds every word, so the scale is exactly as tall as its
+     tallest label (a label with two detail lines grows it; nobody sets a
+     height). The inset is the owner's: the slider pulls both ends in by
+     half its thumb. */
+  .ui-mark-scale {
+    display: grid;
+    /* One track the scale's width, never widened by a long word. */
+    grid-template-columns: minmax(0, 1fr);
+    margin-inline: var(--ui-mark-scale-inset, 0);
+    font: var(--sys-font-caption);
+    font-variant-numeric: tabular-nums;
+    color: var(--sys-color-secondary-label);
+  }
+
+  /* A word at ratio r starts r along the scale and steps back r of its own
+     width: start-aligned at the start, end-aligned at the end, centred in
+     between — never past the track. `margin-inline-start` resolves against
+     the grid area, i.e. the whole scale. */
+  .ui-mark-scale__mark {
+    grid-area: 1 / 1;
+    justify-self: start;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    inline-size: max-content;
+    max-inline-size: 100%;
+    margin-inline-start: calc(var(--ui-mark-scale-ratio, 0) * 100%);
+    translate: calc(var(--ui-mark-scale-ratio, 0) * -100%) 0;
+    white-space: nowrap;
+  }
+
+  .ui-mark-scale__mark[data-align='start'] {
+    align-items: flex-start;
+  }
+
+  .ui-mark-scale__mark[data-align='end'] {
+    align-items: flex-end;
+  }
+
+  .ui-mark-scale__label,
+  .ui-mark-scale__detail {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-inline-size: 100%;
+  }
+}

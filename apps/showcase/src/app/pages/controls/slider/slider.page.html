@@ -5,9 +5,14 @@
     VoiceOver's adjustable — with the drawing on top: a RULER of ticks every
     <code>uiTickEvery</code>, the taller ones every <code>uiMajorEvery</code>,
     lit in <code>--ui-slider-tint</code> up to the thumb, and
-    <code>uiMarks</code> naming the points that matter. Without ticks it is the
-    plain rail. <code>uiValueChange</code> reports every move live, so a readout
-    can follow the finger; <code>uiValueText</code> is what a reader hears.
+    <code>uiMarks</code> naming the points that matter — written by
+    <code>ui-mark-scale</code>, the mark grammar the gauge draws with too (<code
+      >UiSliderMark</code
+    >
+    is a <code>UiMark</code> that always has its word). Without ticks it is the
+    plain rail. <code>uiValueChange</code>
+    reports every move live, so a readout can follow the finger;
+    <code>uiValueText</code> is what a reader hears.
   </ng-container>
 
   <sc-demo scTitle="A percent on a ruler">
@@ -64,6 +69,33 @@
       />
       <p uiText [uiFont]="'caption'" class="slider__mono">
         uiValue={{ plain() }} · uiStep=1
+      </p>
+    </ui-stack>
+  </sc-demo>
+
+  <sc-demo scTitle="Words that stay on the track">
+    <ng-container scAbout>
+      The sum's ruler: the ends named «0,00 €» and the bill. The first word
+      starts where the range starts and the last ends where it ends — they no
+      longer hang half a word past the track. A word that would overprint its
+      neighbour («1,00 €» beside «0,00 €») is dropped; the value text still says
+      every value.
+    </ng-container>
+    <ui-stack uiSpacing="tight" uiAlignment="stretch">
+      <ui-slider
+        [uiValue]="sum()"
+        [uiMin]="0"
+        [uiMax]="bill"
+        [uiStep]="50"
+        [uiTickEvery]="100"
+        [uiMajorEvery]="500"
+        [uiMarks]="sumMarks"
+        uiLabel="Sum off"
+        [uiValueText]="'−' + euros(sum())"
+        (uiValueChange)="sum.set($event)"
+      />
+      <p uiText [uiFont]="'caption'" class="slider__mono">
+        uiMarks: 0,00 € · 1,00 € (dropped: 0.04 of the range) · 28,00 €
       </p>
     </ui-stack>
   </sc-demo>

@@ -1,6 +1,11 @@
 import { ChangeDetectionStrategy, Component } from '@angular/core';
-import type { UiBadgeProminence, UiBadgeTone } from '@creativo/ui/controls';
-import { UiBadge } from '@creativo/ui/controls';
+import type {
+  UiBadgeProminence,
+  UiBadgeSize,
+  UiBadgeTone,
+  UiIconName,
+} from '@creativo/ui/controls';
+import { UiBadge, UiMediaCard } from '@creativo/ui/controls';
 import { UiFlow, UiStack } from '@creativo/ui/layout';
 import {
   UiForegroundStyleDirective,
@@ -23,6 +28,7 @@ interface BadgeSample {
     UiBadge,
     UiFlow,
     UiForegroundStyleDirective,
+    UiMediaCard,
     UiStack,
     UiTextDirective,
   ],
@@ -50,5 +56,30 @@ export class BadgePage {
     },
     { prominence: 'standard', note: 'tinted fill (default)' },
     { prominence: 'increased', note: 'solid fill — act on it, the iOS badge' },
+  ];
+
+  /** The photo rail's dates: a short and a longer label, each capsule its own width. */
+  protected readonly photoDates: readonly string[] = ['7.08', '11.07'];
+
+  /** The glyph grammar across tones and both size tiers. */
+  protected readonly glyphs: readonly {
+    readonly tone: UiBadgeTone;
+    readonly size: UiBadgeSize;
+    readonly icon: UiIconName;
+    readonly label: string;
+  }[] = [
+    { tone: 'accent', size: 'regular', icon: 'loyalty.tier', label: 'Злато' },
+    {
+      tone: 'warning',
+      size: 'regular',
+      icon: 'loyalty.freeze',
+      label: 'Пауза',
+    },
+    {
+      tone: 'neutral',
+      size: 'large',
+      icon: 'service.variant.length',
+      label: 'Дълга коса',
+    },
   ];
 }

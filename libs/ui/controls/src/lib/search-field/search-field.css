@@ -87,14 +87,19 @@
   /* PINNED: the band sticks exactly under the sheet's chrome while the list
      scrolls, full-bleed across the sheet's inset — the `.searchable`
      grammar from inside the content, on the material the shell's own
-     accessory wears (stamped by the host). */
+     accessory wears (stamped by the host). It rides the chrome's own layer
+     (2026-09-28): later in the tree than ui-modal-sheet's chrome, it paints
+     OVER the chrome's fade, whose densest part is exactly where the band
+     sticks — the pill stays crisp while the rows that pass behind the
+     band's gutters fade out under the bar. The band never reaches the bar
+     itself (it sticks at the chrome's bottom edge). */
   .ui-search-field[data-pinned] {
     position: sticky;
     inset-block-start: var(
       --modal-sheet-chrome-height,
       var(--control-size-large)
     );
-    z-index: 1;
+    z-index: var(--sys-layer-header);
     margin-inline: calc(-1 * var(--ui-sheet-inset, var(--sys-space-regular)));
     padding: var(--sys-space-tight)
       var(--ui-sheet-inset, var(--sys-space-regular));

@@ -1,0 +1,99 @@
+:host {
+  display: block;
+}
+
+.sheet-headline__mono {
+  font-family: var(--sys-font-family-mono);
+}
+
+/* A FACT IS ONE WORD to the line breaker: balanced, a quiet line would
+   otherwise part «март 2025» from its «г.». With the no-break space before
+   each «·» (the page's data), a line that wraps ends on a whole fact and
+   its separator. The consumer's, as the ink and the weight are. */
+.sheet-headline__fact {
+  white-space: nowrap;
+}
+
+/* A STAND-IN FOR THE SHEET'S TOP: the sheet's surface, a 390 pt phone
+   wide, its top corners, the real bar, and the sheet's own inline inset
+   either side of the column (the column is 354.8, as in the app). It
+   publishes what `ui-modal-sheet` measures and writes on its scroller, the
+   chrome's height: a 44 chip, the bar's padding of 8 above and under it,
+   and its hairline (61).
+
+   EVERY head of the page stands on one, the standard ones too: a large
+   title rides a view-timeline inset by the bar's height (sheet-header
+   .css), so a title set flush at the top of a demo canvas is already
+   under a bar that is not there, and fades. */
+.sheet-headline__sheet {
+  --ui-sheet-inset: 1.1rem;
+  --modal-sheet-chrome-height: calc(
+    var(--control-size-regular) + var(--sys-space-compact) * 2 + 1px
+  );
+
+  /* What the DS surface declares for a real sheet (sheet-header.css): the
+     bar reads the large title's timeline across this box. Without it the
+     bar's scroll-linked reveal has no timeline and draws its END state, a
+     landed bar over the face. */
+  timeline-scope: --ui-sheet-headline;
+
+  position: relative;
+  box-sizing: border-box;
+  inline-size: 100%;
+  max-inline-size: calc(var(--sys-space-unit) * 97.5);
+  border: 1px solid var(--sys-color-separator);
+  border-radius: var(--control-radius-prominent);
+  background: var(--sys-color-surface);
+  overflow: clip;
+}
+
+/* The narrowest phone the app supports: 330 (the column is 294.8). */
+.sheet-headline__sheet--narrow {
+  max-inline-size: calc(var(--sys-space-unit) * 82.5);
+}
+
+/* The page under the bar: it starts 16 under it, its modules 32 apart
+   (the client stack's own gap), and ends on the same 32. */
+.sheet-headline__page,
+.sheet-headline__live {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sys-space-loose);
+  padding: var(--sys-space-regular) var(--ui-sheet-inset) var(--sys-space-loose);
+}
+
+/* THE GLANCE'S RISE: the chrome less 24, so the ring's top stands 35
+   under the grabber (37 of the bar's 61). */
+.sheet-headline__risen {
+  --ui-sheet-headline-rise: calc(
+    var(--modal-sheet-chrome-height) - var(--sys-space-comfortable)
+  );
+}
+
+/* The live sheet's page clears the sheet's bottom edge. */
+.sheet-headline__live {
+  padding-block-end: var(--sys-space-spacious);
+}
+
+/* Several sheets side by side where there is room, one under the other
+   on a phone. */
+.sheet-headline__grid {
+  display: grid;
+  grid-template-columns: repeat(
+    auto-fit,
+    minmax(min(100%, calc(var(--sys-space-unit) * 82.5)), 1fr)
+  );
+  gap: var(--sys-space-loose) var(--sys-space-comfortable);
+  align-items: start;
+}
+
+/* ON A PHONE the demo canvas is narrower than any phone's sheet (its own
+   padding and the page's gutters come off the viewport), and a head drawn
+   in what is left would wrap a name the app never wraps. So the stand-in
+   takes the canvas's padding back, edge to edge. */
+@media (max-width: 30rem) {
+  .sheet-headline__sheet {
+    inline-size: auto;
+    margin-inline: calc(var(--sys-space-comfortable) * -1);
+  }
+}

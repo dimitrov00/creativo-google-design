@@ -171,8 +171,10 @@
   font-weight: 600;
 }
 
+/* The destructive INK — the `-label` lift both themes declare; never the
+   tone's fill as a word (accent-label.spec.ts holds every reader). */
 .ui-alert__action[data-role='destructive'] {
-  color: var(--sys-color-destructive-label, var(--sys-color-destructive));
+  color: var(--sys-color-destructive-label);
 }
 
 /* Hover and press are the modifier's (`uiInteractive` paints the state

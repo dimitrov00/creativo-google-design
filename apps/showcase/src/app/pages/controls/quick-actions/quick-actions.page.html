@@ -1,0 +1,326 @@
+<sc-page scTitle="Quick actions">
+  <ng-container scLede>
+    <code>ui-quick-actions</code> + <code>a[uiQuickAction]</code> /
+    <code>button[uiQuickAction]</code>: the verbs a person reaches for first, as
+    Apple Contacts and Revolut draw them. A glyph on a round disc (52), its word
+    under it on one line, equal columns at one pitch (88), centred. One column
+    per PRESENT verb (<code>uiColumns</code>); <code>uiLabel</code>
+    names the group. Every disc wears the accent wash, its glyph in the one
+    orange; ONE verb of a run may be promoted to the solid disc with a white
+    glyph (<code>uiProminence="accent"</code>). Colour is the disc's: the word
+    is always ink.
+  </ng-container>
+
+  <sc-demo scTitle="Four verbs">
+    <ng-container scAbout>
+      The staff client card's run on a 390 pt phone. Links hand off to the OS
+      (<code>tel:</code>, <code>sms:</code>, <code>viber:</code>); the button
+      acts at once. The whole column is the target and the DISC answers: the
+      hover and press layer, the press scale and the focus ring are drawn on it.
+      Each verb's accessible name begins with its visible word.
+    </ng-container>
+    <ui-stack uiSpacing="compact" uiAlignment="stretch">
+      <div class="quick-actions__sheet">
+        <ui-quick-actions uiLabel="Връзка" [uiColumns]="4">
+          <a
+            uiQuickAction
+            uiIcon="contact.phone"
+            href="tel:+359881234567"
+            aria-label="Обади се на Георги Петров, +359 88 123 4567"
+            (click)="act('Обади се', $event)"
+            >Обади се</a
+          >
+          <a
+            uiQuickAction
+            uiIcon="contact.sms"
+            href="sms:+359881234567"
+            aria-label="SMS до Георги Петров"
+            (click)="act('SMS', $event)"
+            >SMS</a
+          >
+          <a
+            uiQuickAction
+            uiIcon="contact.viber"
+            href="viber://chat?number=%2B359881234567"
+            aria-label="Viber до Георги Петров"
+            (click)="act('Viber', $event)"
+            >Viber</a
+          >
+          <button
+            uiQuickAction
+            uiIcon="visit.repeat"
+            uiProminence="accent"
+            aria-label="Повтори посещението от 5 септември: фейд, оформяне на брада"
+            (click)="act('Повтори', $event)"
+          >
+            Повтори
+          </button>
+        </ui-quick-actions>
+      </div>
+      <p uiText [uiFont]="'caption'" class="quick-actions__mono">
+        uiColumns=4 · pitch 88 · disc 52 · glyph 24 · footnote 12/500{{
+        lastAct() ? ' · acted: ' + lastAct() : '' }}
+      </p>
+    </ui-stack>
+  </sc-demo>
+
+  <sc-demo scTitle="Three verbs: absent, never dimmed">
+    <ng-container scAbout>
+      A verb this person cannot use leaves the run, and the run closes up round
+      it at the same pitch, centred. There is never a hole, never a disabled
+      disc, and three verbs never stretch across the page.
+    </ng-container>
+    <ui-stack uiSpacing="compact" uiAlignment="stretch">
+      <div class="quick-actions__sheet">
+        <ui-quick-actions uiLabel="Връзка" [uiColumns]="presentVerbs().length">
+          @for (verb of presentVerbs(); track verb.id) { @if (verb.href) {
+          <a
+            uiQuickAction
+            [uiIcon]="verb.icon"
+            [uiProminence]="verb.promoted ? 'accent' : 'standard'"
+            [href]="verb.href"
+            [attr.aria-label]="verb.name"
+            (click)="act(verb.label, $event)"
+            >{{ verb.label }}</a
+          >
+          } @else {
+          <button
+            uiQuickAction
+            [uiIcon]="verb.icon"
+            [uiProminence]="verb.promoted ? 'accent' : 'standard'"
+            [attr.aria-label]="verb.name"
+            (click)="act(verb.label, $event)"
+          >
+            {{ verb.label }}
+          </button>
+          } }
+        </ui-quick-actions>
+      </div>
+      <ui-stack uiAxis="horizontal" uiSpacing="compact" uiAlignment="center">
+        <button
+          uiButton
+          uiButtonStyle="bordered"
+          uiTint="neutral"
+          uiControlSize="small"
+          type="button"
+          class="quick-actions__toggle"
+          (click)="hasViber.set(!hasViber())"
+        >
+          {{ hasViber() ? 'Remove Viber' : 'Give back Viber' }}
+        </button>
+        <p uiText [uiFont]="'caption'" class="quick-actions__mono">
+          uiColumns={{ presentVerbs().length }}
+        </p>
+      </ui-stack>
+    </ui-stack>
+  </sc-demo>
+
+  <sc-demo scTitle="A promoted verb, and its count">
+    <ng-container scAbout>
+      The wallet's run. <code>uiProminence="accent"</code> gives ONE verb the
+      solid accent disc and a white glyph: a mark (52), never a slab. A second
+      promoted verb in a run warns in development. A count that belongs to the
+      verb is a badge projected onto the disc's corner
+      (<code>[uiQuickActionBadge]</code>), in the primary fill so it reads on
+      the orange, and the verb's accessible name says it.
+    </ng-container>
+    <ui-stack uiSpacing="compact" uiAlignment="stretch">
+      <div class="quick-actions__sheet">
+        <ui-quick-actions uiLabel="Действия" [uiColumns]="walletVerbs.length">
+          @for (verb of walletVerbs; track verb.id) {
+          <button
+            uiQuickAction
+            [uiIcon]="verb.icon"
+            [uiProminence]="verb.promoted ? 'accent' : 'standard'"
+            [attr.aria-label]="
+                verb.promoted && tickets() > 1
+                  ? verb.label + ': ' + tickets() + ' награди'
+                  : verb.name
+              "
+            (click)="act(verb.label, $event)"
+          >
+            {{ verb.label }} @if (verb.promoted && tickets() > 1) {
+            <span
+              uiQuickActionBadge
+              uiBadge
+              uiTone="accent"
+              uiProminence="increased"
+              >{{ tickets() }}</span
+            >
+            }
+          </button>
+          }
+        </ui-quick-actions>
+      </div>
+      <ui-stack uiAxis="horizontal" uiSpacing="compact" uiAlignment="center">
+        <button
+          uiButton
+          uiButtonStyle="bordered"
+          uiTint="neutral"
+          uiControlSize="small"
+          type="button"
+          class="quick-actions__toggle"
+          (click)="tickets.set(tickets() > 1 ? 1 : 2)"
+        >
+          {{ tickets() > 1 ? 'One ticket' : 'Two tickets' }}
+        </button>
+        <p uiText [uiFont]="'caption'" class="quick-actions__mono">
+          {{ tickets() }} ready · a badge from 2
+        </p>
+      </ui-stack>
+    </ui-stack>
+  </sc-demo>
+
+  <sc-demo scTitle="On a 330 pt phone">
+    <ng-container scAbout>
+      The narrowest phone the app supports. Four columns share the page equally
+      (74 each) and the discs keep their 52: the pitch gives way, the disc never
+      does. Both runs of the client card fit with air between their words.
+    </ng-container>
+    <ui-stack uiSpacing="compact" uiAlignment="stretch">
+      <div class="quick-actions__sheet quick-actions__sheet--narrow">
+        <ui-stack uiSpacing="comfortable" uiAlignment="stretch">
+          <ui-quick-actions uiLabel="Връзка" [uiColumns]="contactVerbs.length">
+            @for (verb of contactVerbs; track verb.id) {
+            <button
+              uiQuickAction
+              [uiIcon]="verb.icon"
+              [uiProminence]="verb.promoted ? 'accent' : 'standard'"
+              [attr.aria-label]="verb.name"
+              (click)="act(verb.label, $event)"
+            >
+              {{ verb.label }}
+            </button>
+            }
+          </ui-quick-actions>
+          <ui-quick-actions uiLabel="Действия" [uiColumns]="walletVerbs.length">
+            @for (verb of walletVerbs; track verb.id) {
+            <button
+              uiQuickAction
+              [uiIcon]="verb.icon"
+              [uiProminence]="verb.promoted ? 'accent' : 'standard'"
+              [attr.aria-label]="verb.name"
+              (click)="act(verb.label, $event)"
+            >
+              {{ verb.label }}
+            </button>
+            }
+          </ui-quick-actions>
+        </ui-stack>
+      </div>
+      <p uiText [uiFont]="'caption'" class="quick-actions__mono">
+        330 − 2 × 17 = 296 · 4 × 74
+      </p>
+    </ui-stack>
+  </sc-demo>
+
+  <sc-demo scTitle="A word too long for its column">
+    <ng-container scAbout>
+      A word stays on ONE line, so every disc of a run keeps one baseline under
+      it; a word wider than its column ends in an ellipsis and never leans on
+      its neighbour. The cure is the copy: at 330 a column holds about 72, which
+      is «Използвай» and «Навигация» and is not «Добави в календара». The
+      accessible name still says the whole verb.
+    </ng-container>
+    <ui-stack uiSpacing="compact" uiAlignment="stretch">
+      <div class="quick-actions__sheet quick-actions__sheet--narrow">
+        <ui-quick-actions
+          uiLabel="Действия с часа"
+          [uiColumns]="visitVerbs.length"
+        >
+          @for (verb of visitVerbs; track verb.id) {
+          <button
+            uiQuickAction
+            [uiIcon]="verb.icon"
+            [attr.aria-label]="verb.name"
+            (click)="act(verb.label, $event)"
+          >
+            {{ verb.label }}
+          </button>
+          }
+        </ui-quick-actions>
+      </div>
+      <p uiText [uiFont]="'caption'" class="quick-actions__mono">
+        white-space: nowrap · text-overflow: ellipsis
+      </p>
+    </ui-stack>
+  </sc-demo>
+
+  <sc-demo scTitle="The two fills">
+    <ng-container scAbout>
+      The first row is what a run wears by default: every disc in the accent
+      wash with its glyph in the one orange, the promoted verb a solid accent
+      disc with a white glyph. The second is the NEUTRAL fill, still within
+      reach for a run that must stay quiet beside something louder: four custom
+      properties set on the run (<code>--ui-quick-action-fill</code>,
+      <code>--ui-quick-action-ink</code> for its discs,
+      <code>--ui-quick-action-promoted-fill</code>,
+      <code>--ui-quick-action-promoted-ink</code> for its promoted verb), no
+      input and no second rule. The words are ink in both.
+    </ng-container>
+    <ui-stack uiSpacing="compact" uiAlignment="stretch">
+      <div class="quick-actions__sheet" data-testid="quick-actions-fills">
+        <ui-stack uiSpacing="loose" uiAlignment="stretch">
+          <ui-stack uiSpacing="regular" uiAlignment="stretch">
+            <p
+              uiText
+              uiFont="subheadline"
+              uiForegroundStyle="secondary"
+              class="quick-actions__caption"
+            >
+              Оцветени (по подразбиране)
+            </p>
+            <ui-quick-actions
+              uiLabel="Връзка, оцветени"
+              [uiColumns]="contactVerbs.length"
+              data-testid="quick-actions-tinted"
+            >
+              @for (verb of contactVerbs; track verb.id) {
+              <button
+                uiQuickAction
+                [uiIcon]="verb.icon"
+                [uiProminence]="verb.promoted ? 'accent' : 'standard'"
+                [attr.aria-label]="verb.name"
+                (click)="act(verb.label, $event)"
+              >
+                {{ verb.label }}
+              </button>
+              }
+            </ui-quick-actions>
+          </ui-stack>
+          <ui-stack uiSpacing="regular" uiAlignment="stretch">
+            <p
+              uiText
+              uiFont="subheadline"
+              uiForegroundStyle="secondary"
+              class="quick-actions__caption"
+            >
+              Неутрални (през свойствата)
+            </p>
+            <ui-quick-actions
+              uiLabel="Връзка, неутрални"
+              [uiColumns]="contactVerbs.length"
+              class="quick-actions__neutral"
+              data-testid="quick-actions-neutral"
+            >
+              @for (verb of contactVerbs; track verb.id) {
+              <button
+                uiQuickAction
+                [uiIcon]="verb.icon"
+                [uiProminence]="verb.promoted ? 'accent' : 'standard'"
+                [attr.aria-label]="verb.name"
+                (click)="act(verb.label, $event)"
+              >
+                {{ verb.label }}
+              </button>
+              }
+            </ui-quick-actions>
+          </ui-stack>
+        </ui-stack>
+      </div>
+      <p uiText [uiFont]="'caption'" class="quick-actions__mono">
+        --ui-quick-action-fill · -ink · --ui-quick-action-promoted-fill · -ink
+      </p>
+    </ui-stack>
+  </sc-demo>
+</sc-page>

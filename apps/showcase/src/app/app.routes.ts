@@ -181,4 +181,89 @@ export const appRoutes: Route[] = [
         (m) => m.StepperPage,
       ),
   },
+  {
+    path: 'controls/sheet-headline',
+    loadComponent: () =>
+      import('./pages/controls/sheet-headline/sheet-headline.page').then(
+        (m) => m.SheetHeadlinePage,
+      ),
+  },
+  {
+    path: 'controls/quick-actions',
+    loadComponent: () =>
+      import('./pages/controls/quick-actions/quick-actions.page').then(
+        (m) => m.QuickActionsPage,
+      ),
+  },
+  {
+    path: 'controls/notice',
+    loadComponent: () =>
+      import('./pages/controls/notice/notice.page').then((m) => m.NoticePage),
+  },
+  {
+    path: 'controls/metric',
+    loadComponent: () =>
+      import('./pages/controls/metric/metric.page').then((m) => m.MetricPage),
+  },
+  {
+    path: 'controls/mark-scale',
+    loadComponent: () =>
+      import('./pages/controls/mark-scale/mark-scale.page').then(
+        (m) => m.MarkScalePage,
+      ),
+  },
+  {
+    path: 'controls/gauge',
+    loadComponent: () =>
+      import('./pages/controls/gauge/gauge.page').then((m) => m.GaugePage),
+  },
+  {
+    path: 'controls/streak-track',
+    loadComponent: () =>
+      import('./pages/controls/streak-track/streak-track.page').then(
+        (m) => m.StreakTrackPage,
+      ),
+  },
+  {
+    path: 'controls/medal',
+    loadComponent: () =>
+      import('./pages/controls/medal/medal.page').then((m) => m.MedalPage),
+  },
+  {
+    path: 'controls/date-tile',
+    loadComponent: () =>
+      import('./pages/controls/date-tile/date-tile.page').then(
+        (m) => m.DateTilePage,
+      ),
+  },
+  {
+    path: 'controls/month-picker',
+    loadComponent: () =>
+      import('./pages/controls/month-picker/month-picker.page').then(
+        (m) => m.MonthPickerPage,
+      ),
+  },
+  {
+    path: 'controls/coupon-card',
+    loadComponent: () =>
+      import('./pages/controls/coupon-card/coupon-card.page').then(
+        (m) => m.CouponCardPage,
+      ),
+  },
+  {
+    path: 'controls/pass-card',
+    loadComponent: () =>
+      import('./pages/controls/pass-card/pass-card.page').then(
+        (m) => m.PassCardPage,
+      ),
+  },
+  /* Compositions — DS pieces put together the way a page puts them, for a
+     look at real pixels. Listed on the controls index, in its own group. */
+  {
+    path: 'compositions/client-card',
+    loadComponent: () =>
+      import('./pages/compositions/client-card/client-card.page').then(
+        (m) => m.ClientCardCompositionPage,
+      ),
+  },
 ];

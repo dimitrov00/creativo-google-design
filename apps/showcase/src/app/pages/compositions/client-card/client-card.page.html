@@ -1,0 +1,1063 @@
+<sc-page scTitle="Client card">
+  <ng-container scLede>
+    The staff client card, composed from the design system before a page is
+    built: the person first, one orange used as a shape, every word in ink,
+    white lifted surfaces with room round them. Each sheet below is a stand-in
+    for the visit sheet on a 390 pt phone; the pieces on it are the real
+    <code>&#64;creativo/ui</code> pieces, the people are samples.
+  </ng-container>
+
+  <!-- THE BAR of a stand-in sheet: the real `ui-sheet-header` with the two
+       chips every page of the visit sheet carries (decorative here). A page
+       without a large title is titled from rest (`landed`). -->
+  <ng-template #bar let-title let-landed="landed">
+    <ui-sheet-header [uiCollapsed]="landed === true">
+      <span
+        uiLeading
+        uiButton
+        uiButtonStyle="bordered"
+        uiTint="neutral"
+        uiControlSize="regular"
+        [uiIconOnly]="true"
+        aria-hidden="true"
+      >
+        <ui-icon uiName="nav.back" />
+      </span>
+      <div uiTitle aria-hidden="true">{{ title }}</div>
+      <span
+        uiTrailing
+        uiButton
+        uiButtonStyle="bordered"
+        uiTint="neutral"
+        uiControlSize="regular"
+        [uiIconOnly]="true"
+        aria-hidden="true"
+      >
+        <ui-icon uiName="sheet.close" />
+      </span>
+    </ui-sheet-header>
+  </ng-template>
+
+  <!-- THE HEAD: the face in its ring, the tier on its rim, the name, one
+       quiet line whose facts are ink. It rises into the bar's row. -->
+  <ng-template #head let-person let-key="key">
+    <ui-sheet-headline
+      class="client-card__risen"
+      uiHeadlineStyle="hero"
+      [uiMediaValue]="person.ring"
+    >
+      <h3
+        uiSheetLargeTitle
+        [id]="'client-card-name-' + key"
+        uiText
+        uiFont="title"
+      >
+        {{ person.name }}
+      </h3>
+      <p uiText uiFont="callout" uiForegroundStyle="secondary">
+        @for (part of person.line; track $index) {
+        <span
+          [uiForegroundStyle]="part.fact ? 'primary' : undefined"
+          [uiWeight]="part.fact ? 'medium' : undefined"
+          [class.client-card__fact]="part.fact"
+          >{{ part.text }}</span
+        >
+        }
+      </p>
+      <span uiVisuallyHidden>{{ person.words }}</span>
+      <ui-avatar
+        uiHeadlineMedia
+        uiControlSize="extraLarge"
+        [uiSrc]="person.src"
+        [uiName]="person.name"
+      />
+      <span uiHeadlinePlate uiBadge [uiOnMedia]="true" uiIcon="loyalty.tier"
+        >{{ person.tier }}</span
+      >
+    </ui-sheet-headline>
+  </ng-template>
+
+  <!-- A RUN OF DISCS. `tinted` is the owner's "before": two custom
+       properties on the run, and the promoted verb a solid mark. -->
+  <ng-template #discs let-verbs let-label="label" let-tinted="tinted">
+    <ui-quick-actions
+      [uiLabel]="label"
+      [uiColumns]="verbs.length"
+      [class.client-card__tinted]="tinted"
+    >
+      @for (verb of verbs; track verb.id) {
+      <button
+        type="button"
+        uiQuickAction
+        [uiIcon]="verb.icon"
+        [uiProminence]="verb.promoted && !tinted ? 'accent' : 'standard'"
+        [class.client-card__solid]="verb.promoted && tinted"
+        [attr.aria-label]="verb.name"
+        (click)="act(verb.label)"
+      >
+        {{ verb.label }}
+      </button>
+      }
+    </ui-quick-actions>
+  </ng-template>
+
+  <!-- ═══ 1 · THE HEAD OVER ITS DISCS ═══════════════════════════════════ -->
+  <section class="client-card__plate" aria-labelledby="client-card-plate-head">
+    <header class="client-card__lead">
+      <h2 uiText uiFont="title2" id="client-card-plate-head">
+        The person, then how to reach him
+      </h2>
+      <p uiText uiFont="callout" uiForegroundStyle="secondary">
+        A profile opens on its person: the face at 112 in a ring that shows the
+        way to the next tier, the tier on its rim, the name at 28, one quiet
+        line whose facts are ink. 32 under it, the verbs as round discs with
+        their word beneath. The same head twice, so the two fills of the discs
+        can be judged side by side.
+      </p>
+    </header>
+    <div class="client-card__stage">
+      @for (sample of heads; track sample.id) {
+      <figure class="client-card__figure">
+        <div
+          class="client-card__sheet"
+          [attr.data-testid]="'composition-head-' + sample.id"
+        >
+          <ng-container
+            *ngTemplateOutlet="bar; context: { $implicit: georgi.name }"
+          />
+          <div class="client-card__page">
+            <ng-container
+              *ngTemplateOutlet="
+                head;
+                context: { $implicit: georgi, key: sample.id }
+              "
+            />
+            <ng-container
+              *ngTemplateOutlet="
+                discs;
+                context: {
+                  $implicit: contactVerbs,
+                  label: 'Връзка: ' + sample.caption,
+                  tinted: sample.tinted
+                }
+              "
+            />
+          </div>
+        </div>
+        <figcaption class="client-card__caption">
+          <span uiText uiFont="callout" uiWeight="semibold"
+            >{{ sample.caption }}</span
+          >
+          <span uiText uiFont="footnote" uiForegroundStyle="secondary"
+            >{{ sample.note }}</span
+          >
+        </figcaption>
+      </figure>
+      }
+    </div>
+  </section>
+
+  <!-- ═══ 2 · A MOMENT: THE BIRTHDAY ════════════════════════════════════ -->
+  <section
+    class="client-card__plate"
+    aria-labelledby="client-card-plate-birthday"
+  >
+    <header class="client-card__lead">
+      <h2 uiText uiFont="title2" id="client-card-plate-birthday">
+        A birthday is a card, not a capsule
+      </h2>
+      <p uiText uiFont="callout" uiForegroundStyle="secondary">
+        Directly under the head and before the verbs: a solid band nobody can
+        miss, the page's one orange slab. When the client holds the salon's gift
+        the band is the head of its ticket and the whole card is the control;
+        with nothing to use it stands alone, a statement.
+      </p>
+    </header>
+    <div class="client-card__stage">
+      <figure class="client-card__figure">
+        <div class="client-card__sheet" data-testid="composition-birthday-gift">
+          <ng-container
+            *ngTemplateOutlet="bar; context: { $implicit: martin.name }"
+          />
+          <div class="client-card__page">
+            <ng-container
+              *ngTemplateOutlet="
+                head;
+                context: { $implicit: martin, key: 'martin' }
+              "
+            />
+            <button
+              type="button"
+              uiCouponCard
+              uiInteractive
+              uiTitle="Подарък от салона"
+              uiValue="−20 %"
+              uiDetail="до 28.10"
+              aria-label="Рожден ден днес, навършва 34 години. Подарък: −20 %, използвай"
+              data-testid="composition-birthday-card"
+              (click)="act('Подарък за рожден ден')"
+            >
+              <ui-occasion-band uiTitle="Рожден ден · 34 г.">
+                <ui-icon uiOccasionGlyph uiName="client.birthday" />
+              </ui-occasion-band>
+              <span
+                uiCouponAction
+                uiButton
+                uiButtonStyle="borderedProminent"
+                uiControlSize="small"
+                aria-hidden="true"
+                >Използвай</span
+              >
+            </button>
+            <ng-container
+              *ngTemplateOutlet="
+                discs;
+                context: {
+                  $implicit: reachVerbs,
+                  label: 'Връзка с Мартин Илиев',
+                  tinted: false
+                }
+              "
+            />
+          </div>
+        </div>
+        <figcaption class="client-card__caption">
+          <span uiText uiFont="callout" uiWeight="semibold">With the gift</span>
+          <span uiText uiFont="footnote" uiForegroundStyle="secondary"
+            >The tear sits on the seam; the figure is the accent on white.</span
+          >
+        </figcaption>
+      </figure>
+
+      <figure class="client-card__figure">
+        <div class="client-card__sheet" data-testid="composition-birthday-band">
+          <ng-container
+            *ngTemplateOutlet="bar; context: { $implicit: stefan.name }"
+          />
+          <div class="client-card__page">
+            <ng-container
+              *ngTemplateOutlet="
+                head;
+                context: { $implicit: stefan, key: 'stefan' }
+              "
+            />
+            <ui-occasion-band
+              role="note"
+              uiTitle="Рожден ден днес"
+              data-testid="composition-birthday-alone"
+            >
+              <ui-icon uiOccasionGlyph uiName="client.birthday" />
+            </ui-occasion-band>
+            <ng-container
+              *ngTemplateOutlet="
+                discs;
+                context: {
+                  $implicit: contactVerbs,
+                  label: 'Връзка със Стефан Димов',
+                  tinted: false
+                }
+              "
+            />
+          </div>
+        </div>
+        <figcaption class="client-card__caption">
+          <span uiText uiFont="callout" uiWeight="semibold"
+            >Without a gift</span
+          >
+          <span uiText uiFont="footnote" uiForegroundStyle="secondary"
+            >The band alone; at the top tier the ring is full.</span
+          >
+        </figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <!-- ═══ 3 · WHAT HE HOLDS ═════════════════════════════════════════════ -->
+  <section class="client-card__plate" aria-labelledby="client-card-plate-hold">
+    <header class="client-card__lead">
+      <h2 uiText uiFont="title2" id="client-card-plate-hold">
+        What he holds, and what we did
+      </h2>
+      <p uiText uiFont="callout" uiForegroundStyle="secondary">
+        Loyalty reads as a wallet: the card he carries, the verbs under it, then
+        every thing held as a ticket on white paper. On the glance a module is a
+        heading over a white card; its action ends on the edge the cards end on,
+        at rest and under the pointer.
+      </p>
+    </header>
+    <div class="client-card__stage">
+      <figure class="client-card__figure">
+        <div class="client-card__sheet" data-testid="composition-wallet">
+          <ng-container
+            *ngTemplateOutlet="
+              bar;
+              context: { $implicit: 'Лоялност', landed: true }
+            "
+          />
+          <!-- The wallet has no large title: the bar shows the name from
+               rest, and the page keeps it as a heading for a reader. -->
+          <h3 uiVisuallyHidden id="client-card-wallet-name">Лоялност</h3>
+          <div class="client-card__page">
+            <ui-stack uiSpacing="comfortable" uiAlignment="stretch">
+              <ui-pass-card
+                uiFigure="371"
+                uiUnit="точки"
+                uiHolder="Георги Петров"
+                uiDetail="Клиент от март 2025 г."
+                uiState="40 т. изтичат на 31.12"
+                uiLabel="Карта за лоялност: Георги Петров, Злато, 371 точки за размяна, клиент от март 2025 г."
+                data-testid="composition-pass"
+              >
+                <ui-logo uiPassMark />
+                <span
+                  uiPassBadge
+                  uiBadge
+                  [uiOnMedia]="true"
+                  uiIcon="loyalty.tier"
+                  >Злато</span
+                >
+              </ui-pass-card>
+              <ng-container
+                *ngTemplateOutlet="
+                  discs;
+                  context: {
+                    $implicit: walletVerbs,
+                    label: 'Действия',
+                    tinted: false
+                  }
+                "
+              />
+            </ui-stack>
+
+            <ui-stack
+              uiSpacing="compact"
+              uiAlignment="stretch"
+              data-testid="composition-holdings"
+            >
+              <ui-section-header uiHeaderProminence="increased">
+                <h4 uiTitle id="client-card-wallet">В портфейла</h4>
+                <span uiSectionDetail>2</span>
+              </ui-section-header>
+              <ui-stack uiSpacing="regular" uiAlignment="stretch">
+                <article
+                  uiCouponCard
+                  uiTitle="Ваучер за подарък"
+                  uiValue="25,00 €"
+                  uiDetail="от 50,00 € · до 31.12"
+                  aria-label="Ваучер за подарък: 25,00 € от 50,00 €, важи до 31 декември"
+                  data-testid="composition-voucher"
+                >
+                  <ui-icon uiCouponGlyph uiName="promo.voucher" />
+                </article>
+                <!-- In the wallet a ticket is read, not pressed: the disc
+                     above is the verb, said once on the page. -->
+                <article
+                  uiCouponCard
+                  uiTitle="Безплатно подстригване"
+                  [uiValue]="null"
+                  uiDetail="до 28.10"
+                  aria-label="Награда: безплатно подстригване, важи до 28 октомври"
+                  data-testid="composition-wallet-ticket"
+                >
+                  <ui-icon uiCouponGlyph uiName="promo.coupon" />
+                </article>
+              </ui-stack>
+            </ui-stack>
+          </div>
+        </div>
+        <figcaption class="client-card__caption">
+          <span uiText uiFont="callout" uiWeight="semibold">«Лоялност»</span>
+          <span uiText uiFont="footnote" uiForegroundStyle="secondary"
+            >The pass, its verbs, a voucher and a ticket to read.</span
+          >
+        </figcaption>
+      </figure>
+
+      <figure class="client-card__figure">
+        <div
+          class="client-card__sheet client-card__sheet--cut"
+          data-testid="composition-modules"
+        >
+          <!-- A cut of a page has no head in sight: it is still named. -->
+          <h3 uiVisuallyHidden id="client-card-glance-name">
+            Георги Петров, под действията
+          </h3>
+          <div class="client-card__page">
+            <!-- The reward to use now: on the glance the whole ticket is
+                 the control and the pill is its dress. -->
+            <button
+              type="button"
+              uiCouponCard
+              uiInteractive
+              uiTitle="Безплатно подстригване"
+              [uiValue]="null"
+              uiDetail="до 28.10"
+              aria-label="Награда: безплатно подстригване, важи до 28 октомври. Използвай"
+              data-testid="composition-ticket"
+              (click)="act('Безплатно подстригване')"
+            >
+              <ui-icon uiCouponGlyph uiName="promo.coupon" />
+              <span
+                uiCouponAction
+                uiButton
+                uiButtonStyle="borderedProminent"
+                uiControlSize="small"
+                aria-hidden="true"
+                >Използвай</span
+              >
+            </button>
+
+            <ui-stack uiSpacing="compact" uiAlignment="stretch">
+              <ui-section-header
+                uiHeaderProminence="increased"
+                data-testid="composition-heading-visits"
+              >
+                <h4 uiTitle id="client-card-visits">Посещения</h4>
+                <button
+                  uiSectionAction
+                  type="button"
+                  uiButton
+                  uiButtonStyle="plain"
+                  uiControlSize="small"
+                  aria-label="Всички посещения, 23"
+                  data-testid="composition-action-visits"
+                  (click)="act('Всички посещения')"
+                >
+                  23
+                  <ui-icon uiName="nav.disclosure" />
+                </button>
+              </ui-section-header>
+              <ui-stack uiSpacing="regular" uiAlignment="stretch">
+                <ui-card
+                  uiTone="elevated"
+                  uiPadding="comfortable"
+                  role="group"
+                  aria-label="Последно посещение: фейд и оформяне на брада, 5 септември, при Иван в Център, 27,50 €"
+                  data-testid="composition-visit-last"
+                >
+                  <div class="client-card__visit" aria-hidden="true">
+                    <div class="client-card__visit-head">
+                      <div class="client-card__visit-titles">
+                        <span
+                          uiText
+                          uiFont="subheadline"
+                          uiForegroundStyle="secondary"
+                          >Последно посещение</span
+                        >
+                        <span uiText uiFont="headline"
+                          >Фейд · Оформяне на брада</span
+                        >
+                      </div>
+                      <ui-avatar
+                        uiControlSize="regular"
+                        [uiSrc]="barberFace"
+                        uiName="Иван Колев"
+                      />
+                    </div>
+                    <div class="client-card__visit-facts">
+                      <span
+                        class="client-card__visit-figure"
+                        uiText
+                        uiFont="callout"
+                        uiWeight="semibold"
+                        >27,50&nbsp;€</span
+                      >
+                      <span
+                        uiText
+                        uiFont="callout"
+                        uiForegroundStyle="secondary"
+                        ><span uiForegroundStyle="primary" uiWeight="medium"
+                          >5.09</span
+                        >
+                        · Иван · Център</span
+                      >
+                    </div>
+                    <span uiText uiFont="callout"
+                      >„Къса отстрани, по-дълго отгоре“</span
+                    >
+                  </div>
+                </ui-card>
+                <ui-card
+                  uiTone="elevated"
+                  uiPadding="comfortable"
+                  role="group"
+                  aria-label="Следващ час: фейд, петък, 23 октомври, 10:00, при Иван, потвърден"
+                  data-testid="composition-visit-next"
+                >
+                  <div class="client-card__visit" aria-hidden="true">
+                    <div class="client-card__visit-head">
+                      <div class="client-card__visit-titles">
+                        <span
+                          uiText
+                          uiFont="subheadline"
+                          uiForegroundStyle="secondary"
+                          >Следващ час</span
+                        >
+                        <span uiText uiFont="headline">Фейд</span>
+                      </div>
+                      <ui-avatar
+                        uiControlSize="regular"
+                        [uiSrc]="barberFace"
+                        uiName="Иван Колев"
+                      />
+                    </div>
+                    <div class="client-card__visit-facts">
+                      <span
+                        uiText
+                        uiFont="callout"
+                        uiForegroundStyle="secondary"
+                        >пт, 23.10 ·
+                        <span uiForegroundStyle="primary" uiWeight="medium"
+                          >10:00</span
+                        >
+                        · Иван</span
+                      >
+                    </div>
+                    <span
+                      class="client-card__visit-capsule"
+                      uiBadge
+                      uiTone="accent"
+                      >Потвърден</span
+                    >
+                  </div>
+                </ui-card>
+              </ui-stack>
+            </ui-stack>
+
+            <ui-stack uiSpacing="compact" uiAlignment="stretch">
+              <ui-section-header
+                uiHeaderProminence="increased"
+                data-testid="composition-heading-loyalty"
+              >
+                <h4 uiTitle id="client-card-loyalty">Лоялност</h4>
+                <button
+                  uiSectionAction
+                  type="button"
+                  uiButton
+                  uiButtonStyle="plain"
+                  uiControlSize="small"
+                  aria-label="Лоялност: всички подробности"
+                  data-testid="composition-action-loyalty"
+                  (click)="act('Лоялност')"
+                >
+                  Всички
+                  <ui-icon uiName="nav.disclosure" />
+                </button>
+              </ui-section-header>
+              <button
+                type="button"
+                uiCard
+                uiTone="elevated"
+                uiPadding="comfortable"
+                [uiInteractive]="true"
+                class="client-card__points"
+                aria-label="Лоялност: 371 точки. Стигат за безплатно оформяне на брада. Ваучер 25,00 €, печати 3 от 10, ритъм 9 посещения."
+                data-testid="composition-loyalty"
+                (click)="act('Лоялност')"
+              >
+                <span
+                  class="client-card__points-disc"
+                  aria-hidden="true"
+                ></span>
+                <span
+                  class="client-card__points-disc"
+                  aria-hidden="true"
+                ></span>
+                <span class="client-card__points-words" aria-hidden="true">
+                  <span class="client-card__points-figure">
+                    <span uiText uiFont="title2" uiForegroundStyle="accent"
+                      >371</span
+                    >
+                    <span uiText uiFont="callout" uiForegroundStyle="secondary"
+                      >точки</span
+                    >
+                  </span>
+                  <span uiText uiFont="callout"
+                    >Стигат за безплатно оформяне на брада</span
+                  >
+                  <span
+                    class="client-card__points-holdings"
+                    uiText
+                    uiFont="subheadline"
+                    uiForegroundStyle="secondary"
+                    >Ваучер
+                    <span
+                      class="client-card__fact"
+                      uiForegroundStyle="primary"
+                      uiWeight="medium"
+                      >25,00&nbsp;€</span
+                    >
+                    · Печати
+                    <span
+                      class="client-card__fact"
+                      uiForegroundStyle="primary"
+                      uiWeight="medium"
+                      >3 от 10</span
+                    >
+                    · Ритъм
+                    <span
+                      class="client-card__fact"
+                      uiForegroundStyle="primary"
+                      uiWeight="medium"
+                      >9</span
+                    ></span
+                  >
+                </span>
+              </button>
+            </ui-stack>
+          </div>
+        </div>
+        <figcaption class="client-card__caption">
+          <span uiText uiFont="callout" uiWeight="semibold"
+            >The glance, under the verbs</span
+          >
+          <span uiText uiFont="footnote" uiForegroundStyle="secondary"
+            >A ticket to press; hover «23» or «Всички»: the capsule stays inside
+            the column.</span
+          >
+        </figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <!-- ═══ 4 · RECORDS FIRST, THEN A GRID ════════════════════════════════ -->
+  <section
+    class="client-card__plate"
+    aria-labelledby="client-card-plate-medals"
+  >
+    <header class="client-card__lead">
+      <h2 uiText uiFont="title2" id="client-card-plate-medals">
+        Records first, medals in a grid
+      </h2>
+      <p uiText uiFont="callout" uiForegroundStyle="secondary">
+        «Постижения» opens on the records, two by two, each with its emblem and
+        its figure. Medals stand in a grid of three, never a rail: nothing is
+        hidden past an edge. Progress is a ring round the medal, of one family
+        with the ring of the account page, and the four states differ by form.
+      </p>
+    </header>
+    <div class="client-card__stage">
+      <figure class="client-card__figure">
+        <div class="client-card__sheet" data-testid="composition-achievements">
+          <ng-container
+            *ngTemplateOutlet="bar; context: { $implicit: 'Постижения' }"
+          />
+          <div class="client-card__page">
+            <ui-sheet-headline>
+              <h3
+                uiSheetLargeTitle
+                id="client-card-achievements"
+                uiText
+                uiFont="largeTitle"
+              >
+                Постижения
+              </h3>
+              <p uiText uiFont="callout" uiForegroundStyle="secondary">
+                Георги Петров
+              </p>
+            </ui-sheet-headline>
+
+            <ui-stack uiSpacing="compact" uiAlignment="stretch">
+              <ui-section-header uiHeaderProminence="increased">
+                <h4 uiTitle id="client-card-records">Рекорди</h4>
+                <button
+                  uiSectionAction
+                  type="button"
+                  uiButton
+                  uiButtonStyle="plain"
+                  uiControlSize="small"
+                  aria-label="Всички рекорди"
+                  (click)="act('Всички рекорди')"
+                >
+                  Всички
+                  <ui-icon uiName="nav.disclosure" />
+                </button>
+              </ui-section-header>
+              <ui-grid
+                role="list"
+                aria-labelledby="client-card-records"
+                [uiColumns]="2"
+                uiSpacing="regular"
+                data-testid="composition-records"
+              >
+                @for (record of records; track record.id) {
+                <div role="listitem" class="client-card__slot">
+                  <button
+                    type="button"
+                    uiCard
+                    uiTone="elevated"
+                    uiPadding="regular"
+                    [uiInteractive]="true"
+                    class="client-card__record"
+                    [attr.aria-label]="record.name"
+                    [attr.data-testid]="'composition-record-' + record.id"
+                    (click)="act(record.label)"
+                  >
+                    <span class="client-card__record-top" aria-hidden="true">
+                      <ui-avatar
+                        class="client-card__emblem"
+                        uiControlSize="large"
+                        [uiSrc]="record.src"
+                        [uiIcon]="record.icon"
+                      />
+                      @if (record.isNew) {
+                      <span
+                        class="client-card__record-new"
+                        uiBadge
+                        uiTone="accent"
+                        >Нов рекорд</span
+                      >
+                      }
+                    </span>
+                    <span class="client-card__record-words" aria-hidden="true">
+                      <span uiText uiFont="callout" uiWeight="semibold"
+                        >{{ record.label }}</span
+                      >
+                      <span uiText uiFont="title2">{{ record.figure }}</span>
+                      <span
+                        uiText
+                        uiFont="footnote"
+                        uiForegroundStyle="secondary"
+                        >{{ record.detail }}</span
+                      >
+                    </span>
+                  </button>
+                </div>
+                }
+              </ui-grid>
+            </ui-stack>
+
+            <div
+              class="client-card__ring-row"
+              data-testid="composition-collection"
+            >
+              <ui-gauge
+                class="client-card__alone"
+                uiGaugeStyle="circularCapacity"
+                uiControlSize="large"
+                [uiValue]="18"
+                [uiMax]="42"
+                uiLabel="Колекция"
+                uiValueText="18 от 42 медала, 38 спечелени нива"
+              >
+                <span uiCurrentValueLabel>18</span>
+              </ui-gauge>
+              <div class="client-card__ring-lines" aria-hidden="true">
+                <span uiText uiFont="callout" uiWeight="semibold"
+                  >от 42 медала</span
+                >
+                <span uiText uiFont="subheadline" uiForegroundStyle="secondary"
+                  >38 спечелени нива</span
+                >
+              </div>
+            </div>
+          </div>
+        </div>
+        <figcaption class="client-card__caption">
+          <span uiText uiFont="callout" uiWeight="semibold">«Постижения»</span>
+          <span uiText uiFont="footnote" uiForegroundStyle="secondary"
+            >The records, then the collection as one ring.</span
+          >
+        </figcaption>
+      </figure>
+
+      <div class="client-card__column">
+        <figure class="client-card__figure">
+          <div
+            class="client-card__sheet client-card__sheet--cut"
+            lang="bg"
+            data-testid="composition-medals"
+          >
+            <h3 uiVisuallyHidden id="client-card-medals-name">
+              Постижения, една категория
+            </h3>
+            <div class="client-card__page">
+              <ui-stack uiSpacing="compact" uiAlignment="stretch">
+                <ui-section-header uiHeaderProminence="increased">
+                  <h4 uiTitle id="client-card-milestones">Етапи</h4>
+                  <span uiSectionDetail>3 от 6</span>
+                </ui-section-header>
+                <ui-card
+                  uiTone="elevated"
+                  [uiPadding]="narrow() ? 'compact' : 'regular'"
+                >
+                  <ui-grid
+                    role="list"
+                    aria-labelledby="client-card-milestones"
+                    [uiColumns]="3"
+                    [uiSpacing]="narrow() ? 'tight' : 'compact'"
+                    uiRowSpacing="regular"
+                    data-testid="composition-medal-grid"
+                  >
+                    @for (medal of medals; track medal.id) {
+                    <div role="listitem" class="client-card__slot">
+                      <button
+                        type="button"
+                        uiMedal
+                        uiFrame
+                        uiFrameMaxWidth="infinity"
+                        [uiState]="medal.state"
+                        [uiIcon]="medal.icon"
+                        [uiLevel]="medal.level"
+                        [uiTitle]="medal.title"
+                        [uiCaption]="medal.caption"
+                        [uiValue]="medal.value"
+                        [uiValueText]="medal.valueText"
+                        [uiLabel]="medal.name"
+                        (click)="act(medal.title)"
+                      >
+                        @if (medal.isNew) {
+                        <span
+                          uiMedalMarker
+                          uiBadge
+                          uiTone="accent"
+                          aria-hidden="true"
+                          >Ново</span
+                        >
+                        }
+                      </button>
+                    </div>
+                    }
+                  </ui-grid>
+                </ui-card>
+              </ui-stack>
+            </div>
+          </div>
+          <figcaption class="client-card__caption">
+            <span uiText uiFont="callout" uiWeight="semibold"
+              >Three by two, mixed states</span
+            >
+            <span uiText uiFont="footnote" uiForegroundStyle="secondary"
+              >Earned, new, complete, under way, not started.</span
+            >
+          </figcaption>
+        </figure>
+
+        <figure class="client-card__figure">
+          <div
+            class="client-card__reference"
+            data-testid="composition-account-ring"
+          >
+            <ui-card uiTone="elevated" uiPadding="comfortable">
+              <div class="client-card__ring-row">
+                <ui-progress-ring
+                  [uiValue]="2 / 4"
+                  uiFrame
+                  uiFrameWidth="4.5rem"
+                  uiLabel="Профил"
+                  uiValueText="2 от 4 завършени"
+                >
+                  <span uiText uiFont="headline">2/4</span>
+                </ui-progress-ring>
+                <div class="client-card__ring-lines">
+                  <span uiText uiFont="headline">Завършете профила си</span>
+                  <span uiText uiFont="footnote" uiForegroundStyle="secondary"
+                    >2 от 4 завършени</span
+                  >
+                </div>
+              </div>
+            </ui-card>
+          </div>
+          <figcaption class="client-card__caption">
+            <span uiText uiFont="callout" uiWeight="semibold"
+              >The ring of /account</span
+            >
+            <span uiText uiFont="footnote" uiForegroundStyle="secondary"
+              >The reference: the same track, arc and caps.</span
+            >
+          </figcaption>
+        </figure>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══ 5 · A MEDAL'S PAGE, AND EVERY RECORD ══════════════════════════ -->
+  <section
+    class="client-card__plate"
+    aria-labelledby="client-card-plate-detail"
+  >
+    <header class="client-card__lead">
+      <h2 uiText uiFont="title2" id="client-card-plate-detail">
+        One medal, and every record
+      </h2>
+      <p uiText uiFont="callout" uiForegroundStyle="secondary">
+        A medal's page is a hero too: the medal at 128 on a stage, then where he
+        stands in one figure. «Рекорди» leads with the newest record, the page's
+        one 36, and lists the rest as rows.
+      </p>
+    </header>
+    <div class="client-card__stage">
+      <figure class="client-card__figure">
+        <div class="client-card__sheet" data-testid="composition-medal-page">
+          <ng-container
+            *ngTemplateOutlet="bar; context: { $implicit: 'Фейд' }"
+          />
+          <div class="client-card__page">
+            <ui-sheet-headline uiHeadlineStyle="hero" uiMediaStage>
+              <h3
+                uiSheetLargeTitle
+                id="client-card-medal"
+                uiText
+                uiFont="title"
+              >
+                Фейд
+              </h3>
+              <p uiText uiFont="callout" uiForegroundStyle="secondary">
+                <span>Майсторство · Ниво II · от </span
+                ><span
+                  class="client-card__fact"
+                  uiForegroundStyle="primary"
+                  uiWeight="medium"
+                  >24.09.2025 г.</span
+                >
+              </p>
+              <ui-medal
+                uiHeadlineMedia
+                uiState="earned"
+                uiIcon="loyalty.badge.service"
+                uiLevel="II"
+                uiControlSize="extraLarge"
+                [uiValue]="13 / 15"
+                uiValueText="23 от 25 до ниво III"
+                uiLabel="Фейд, ниво II спечелено на 24 септември 2025 г., 23 от 25 до ниво III"
+              />
+            </ui-sheet-headline>
+            <ui-card
+              uiTone="elevated"
+              uiPadding="comfortable"
+              role="group"
+              aria-label="Напредък"
+              data-testid="composition-progress"
+            >
+              <ui-stack uiSpacing="compact" uiAlignment="leading">
+                <ui-metric
+                  uiValue="23"
+                  uiUnit="от 25"
+                  uiCaption="посещения с фейд"
+                  uiControlSize="extraLarge"
+                />
+                <p uiText uiFont="callout" uiWeight="semibold">
+                  Още 2 до ниво III
+                </p>
+              </ui-stack>
+            </ui-card>
+          </div>
+        </div>
+        <figcaption class="client-card__caption">
+          <span uiText uiFont="callout" uiWeight="semibold">«Фейд»</span>
+          <span uiText uiFont="footnote" uiForegroundStyle="secondary"
+            >The stage, the medal in its ring, the progress.</span
+          >
+        </figcaption>
+      </figure>
+
+      <figure class="client-card__figure">
+        <div class="client-card__sheet" data-testid="composition-records-page">
+          <ng-container
+            *ngTemplateOutlet="bar; context: { $implicit: 'Рекорди' }"
+          />
+          <div class="client-card__page">
+            <ui-sheet-headline>
+              <h3
+                uiSheetLargeTitle
+                id="client-card-records-page"
+                uiText
+                uiFont="largeTitle"
+              >
+                Рекорди
+              </h3>
+              <p uiText uiFont="callout" uiForegroundStyle="secondary">
+                Георги Петров
+              </p>
+            </ui-sheet-headline>
+
+            <ui-card
+              uiTone="elevated"
+              uiPadding="comfortable"
+              role="group"
+              aria-label="Най-дълъг ритъм: 9 поредни посещения, септември 2026 г., нов рекорд"
+              data-testid="composition-record-featured"
+            >
+              <div class="client-card__featured" aria-hidden="true">
+                <span class="client-card__record-top">
+                  <ui-avatar
+                    class="client-card__emblem"
+                    uiControlSize="large"
+                    uiIcon="loyalty.record.longestRhythm"
+                  />
+                  <span class="client-card__record-new" uiBadge uiTone="accent"
+                    >Нов рекорд</span
+                  >
+                </span>
+                <span class="client-card__featured-words">
+                  <span uiText uiFont="largeTitle">9</span>
+                  <span uiText uiFont="body">поредни посещения в ритъм</span>
+                  <span
+                    uiText
+                    uiFont="subheadline"
+                    uiForegroundStyle="secondary"
+                    >септември 2026 г.</span
+                  >
+                </span>
+              </div>
+            </ui-card>
+
+            <ui-stack uiSpacing="compact" uiAlignment="stretch">
+              <ui-section-header uiHeaderProminence="increased">
+                <h4 uiTitle id="client-card-record-visits">Посещения</h4>
+              </ui-section-header>
+              <ul
+                uiListGroup
+                aria-labelledby="client-card-record-visits"
+                data-testid="composition-record-rows"
+              >
+                @for (row of recordRows; track row.id) {
+                <li uiListRow uiSize="regular" uiTrailingProminence="primary">
+                  <ui-avatar
+                    uiLeading
+                    class="client-card__emblem client-card__emblem--paper"
+                    uiControlSize="regular"
+                    [uiIcon]="row.icon"
+                    aria-hidden="true"
+                  />
+                  <span class="client-card__row-words">
+                    <span uiText uiFont="body" uiWeight="medium"
+                      >{{ row.label }}</span
+                    >
+                    @if (row.detail; as detail) {
+                    <span uiText uiFont="footnote" uiForegroundStyle="secondary"
+                      >{{ detail }}</span
+                    >
+                    }
+                  </span>
+                  <span uiTrailing uiText uiFont="headline"
+                    >{{ row.figure }}</span
+                  >
+                </li>
+                }
+              </ul>
+            </ui-stack>
+          </div>
+        </div>
+        <figcaption class="client-card__caption">
+          <span uiText uiFont="callout" uiWeight="semibold">«Рекорди»</span>
+          <span uiText uiFont="footnote" uiForegroundStyle="secondary"
+            >The newest record, then the facts as rows.</span
+          >
+        </figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <!-- Nothing on this page leaves it: a press is said here, once. -->
+  <p
+    class="client-card__last"
+    uiText
+    uiFont="footnote"
+    uiForegroundStyle="secondary"
+    role="status"
+    data-testid="composition-last"
+  >
+    {{ lastWords() }}
+  </p>
+</sc-page>

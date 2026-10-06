@@ -117,6 +117,163 @@
     </ui-stack>
   </sc-demo>
 
+  <sc-demo scTitle="A dialog surface">
+    <ng-container scAbout>
+      <code>uiRole="dialog"</code> — the same anchored popover holding something
+      that is not a list of commands: the staff day pills hang the DS month off
+      a tinted capsule. Announced as a <code>menu</code> that was an EMPTY menu
+      to a reader (axe: <code>aria-required-children</code>, critical) and the
+      arrow keys fought the grid. As a dialog the surface is a non-modal
+      <code>role="dialog"</code> named by <code>uiLabel</code>, the trigger says
+      <code>aria-haspopup="dialog"</code>, focus lands on the surface (its first
+      control one Tab away), Escape closes and hands focus back, and Tab walks
+      the days — focus LEAVING the surface is what dismisses it.
+    </ng-container>
+    <ui-stack uiSpacing="comfortable" uiAlignment="center">
+      <ui-menu
+        uiRole="dialog"
+        class="menu__month-host"
+        [uiPresented]="monthOpen()"
+        uiLabel="Избор на ден"
+        (uiDismissed)="monthOpen.set(false)"
+      >
+        <button
+          uiMenuTrigger
+          type="button"
+          uiButton
+          uiButtonStyle="bordered"
+          uiTint="neutral"
+          data-testid="sc-menu-dialog-trigger"
+          (click)="monthOpen.set(true)"
+        >
+          {{ dayLabel() }}
+          <ui-icon uiName="field.expand" />
+        </button>
+        @if (monthOpen()) {
+        <ui-month-picker
+          class="menu__month"
+          [uiSelected]="day()"
+          [uiToday]="today"
+          uiLocale="bg"
+          uiPreviousLabel="Предишен месец"
+          uiNextLabel="Следващ месец"
+          data-testid="sc-menu-dialog-month"
+          (uiPicked)="pickDay($event)"
+        />
+        }
+      </ui-menu>
+      <p uiText uiFont="caption" class="menu__mono">
+        role=dialog · aria-modal=false · picked: {{ day() }}
+      </p>
+    </ui-stack>
+  </sc-demo>
+
+  <sc-demo scTitle="Clear of a docked bar">
+    <ng-container scAbout>
+      A sheet's action bar floats over the body's last rows and the viewport
+      knows nothing of it: a month opened from a pill low in the block sheet
+      fitted "below" by the window's measure and landed under «Запази», its last
+      week showing through the material. On every measure the surface finds the
+      docked bars of the sheet its trigger lives in (<code
+        >ui-sheet-action-bar</code
+      >
+      while visible, or a page's <code>ui-page-action-bar</code>) and raises the
+      window's floor to the highest one, so the room below is the room above the
+      dock — and a month that no longer fits there flips above its pill.
+    </ng-container>
+    <button
+      uiButton
+      uiButtonStyle="strokedBorder"
+      data-testid="sc-menu-docked-open"
+      (click)="dockedOpen.set(true)"
+    >
+      Open the sheet
+    </button>
+    <ui-modal-sheet
+      sheetId="sc-menu-docked"
+      labelledBy="sc-menu-docked-title"
+      closeLabel="Затвори"
+      [open]="dockedOpen()"
+      [titleAlwaysVisible]="true"
+      uiPresentationSizing="automatic"
+      (dismissed)="closeDocked()"
+    >
+      <span sheet-title id="sc-menu-docked-title">Нов блок</span>
+      <ui-stack uiSpacing="loose" class="menu__docked-body">
+        <p uiText uiFont="subheadline" uiForegroundStyle="secondary">
+          The rows of a form, then the frame's day pill near the bottom — where
+          the month used to run under the dock.
+        </p>
+        <ul uiListGroup>
+          @for (row of dockedRows; track row.label) {
+          <li uiListRow uiSize="regular">
+            {{ row.label }}
+            <span
+              uiTrailing
+              uiText
+              uiFont="callout"
+              uiForegroundStyle="secondary"
+            >
+              {{ row.value }}
+            </span>
+          </li>
+          }
+          <li uiListRow uiSize="regular">
+            Ден
+            <span uiTrailing>
+              <ui-menu
+                uiRole="dialog"
+                uiAlignment="trailing"
+                class="menu__month-host"
+                [uiPresented]="dockedMonthOpen()"
+                uiLabel="Избор на ден"
+                (uiDismissed)="dockedMonthOpen.set(false)"
+              >
+                <button
+                  uiMenuTrigger
+                  type="button"
+                  uiButton
+                  uiButtonStyle="bordered"
+                  uiTint="neutral"
+                  uiControlSize="small"
+                  data-testid="sc-menu-docked-trigger"
+                  (click)="dockedMonthOpen.set(true)"
+                >
+                  {{ dayLabel() }}
+                  <ui-icon uiName="field.expand" />
+                </button>
+                @if (dockedMonthOpen()) {
+                <ui-month-picker
+                  class="menu__month"
+                  [uiSelected]="day()"
+                  [uiToday]="today"
+                  uiLocale="bg"
+                  uiPreviousLabel="Предишен месец"
+                  uiNextLabel="Следващ месец"
+                  data-testid="sc-menu-docked-month"
+                  (uiPicked)="pickDockedDay($event)"
+                />
+                }
+              </ui-menu>
+            </span>
+          </li>
+        </ul>
+      </ui-stack>
+      <ui-sheet-action-bar sheet-overlay [uiVisible]="true">
+        <button
+          type="button"
+          uiButton
+          uiButtonStyle="borderedProminent"
+          uiControlSize="large"
+          data-testid="sc-menu-docked-save"
+          (click)="closeDocked()"
+        >
+          Запази
+        </button>
+      </ui-sheet-action-bar>
+    </ui-modal-sheet>
+  </sc-demo>
+
   <sc-demo scTitle="Keyboard">
     <ng-container scAbout>
       The APG menu-button model: focus moves into the menu on open (no visible
@@ -124,7 +281,9 @@
       ↑/↓ cycle with wraparound, Home/End jump to the ends, Escape closes and
       returns focus to the trigger, and tabbing out light-dismisses. While
       closed the surface is <code>visibility: hidden</code>, which keeps every
-      item out of the tab order without any <code>inert</code> bookkeeping.
+      item out of the tab order without any <code>inert</code> bookkeeping. A
+      <code>dialog</code> surface keeps Escape and the focus return, and leaves
+      the arrows and Tab to its content.
     </ng-container>
   </sc-demo>
 </sc-page>

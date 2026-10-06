@@ -86,6 +86,18 @@
     --sys-size-dot: 0.5rem;
     --control-size-regular: calc(var(--sys-space-unit) * 11);
     --control-size-large: calc(var(--sys-space-unit) * 13);
+    /* The TILE FACE — a square action or choice tile (ui-quick-actions,
+       ui-choice-tiles): 64, one step past `large`, because a tile stacks
+       its glyph over its word and the 52pt button rung has room for only
+       one of them. Promoted from choice-tiles' `* 16` row literal so the
+       two tile families cannot drift apart. */
+    --control-size-tile: calc(var(--sys-space-unit) * 16);
+    /* The PORTRAIT rung: 112, the disc a page is ABOUT (a profile's face,
+       a medal on its own detail page). Promoted from the avatar's
+       `extraLarge` literal (`* 28`), so the avatar and the medal share one
+       rung and a hero that swaps one for the other does not move. Never a
+       control's height: nothing pressable is this tall. */
+    --control-size-extraLarge: calc(var(--sys-space-unit) * 28);
 
     /* ── Radii (v2: --radius 0.75rem × --radius-scale 0.85) ──
        Naming note: SwiftUI publishes NO radius token ladder — its only
@@ -157,6 +169,38 @@
       transparent
     );
 
+    /* ── Secondary ink ON A FILL (2026-09-28; a third of the way since
+       2026-10-06) — the quiet word inside a filled mark or a value pill: a
+       past date tile's caption, a step node still ahead, a coupon's detail
+       chip, a unit field's «дни» / «мин» / «€». A fill LIFTS its ground,
+       and in dark the plain secondary ink (#8c8c8c) fell to 3.70:1 on the
+       fill over a grouped segment and 4.38:1 on the fill over the sheet
+       (axe, the client card). A VALUE PILL lifts further: it paints the
+       bordered button's rest fill — the foreground at
+       --sys-alpha-interactive, one grey across a row (owner, 2026-09-09) —
+       #3c3c3c over a segment in dark, where the plain ink read 3.27:1 and a
+       quarter of the way to the foreground still only 4.43 (axe, the admin
+       page). A THIRD of the way clears the house 4.6:1 floor on both lifts
+       over every ground in both themes (dark: 4.85 on the pill over a
+       segment, 4.72 on the pill over an elevated card, 5.48 on the fill
+       over a segment; light: 7.13 at the worst) while it still reads a step
+       under the primary ink (7.9:1 against the primary's 15.3:1 on the dark
+       surface). Guarded by accent-label.spec.ts. Never for text on a bare
+       surface: there the plain secondary ink is the rung. */
+    --sys-color-secondary-label-on-fill: color-mix(
+      in srgb,
+      var(--sys-color-secondary-label) 67%,
+      var(--sys-color-foreground)
+    );
+
+    /* ── Tone wash — the ONE tint behind a toned mark (a badge's capsule,
+       a notice's card): the tone colour at this alpha over whatever sits
+       behind it. Theme-independent, unlike the fill ladder in the theme
+       files: the wash carries a hue, not a lift, and the tone inks are
+       already paired per theme. Promoted from badge.css's four 14%
+       literals, so a migrated badge is pixel-identical. */
+    --sys-alpha-tint: 14%;
+
     /* ── Interaction states (SwiftUI parity: .hoverEffect(.highlight)) ──
        One state-layer grammar for every interactive surface: hover/press
        fills mix currentColor at the theme's alpha ladder; press scales are
@@ -189,6 +233,15 @@
     --sys-focus-glow-width: 3px;
     --sys-focus-glow-alpha: 25%;
 
+    /* ── Strokes — two weights for drawn marks (never for dividers, which
+       are `ui-divider`, nor for focus, above). `mark` outlines a quiet
+       shape: a ring, a dashed halo, an empty slot, a hollow date tile.
+       `emphasis` draws the one stroke meant to be seen first: a notch, the
+       current node on a track, a paused ring. Two rungs, so "a bit
+       heavier" is a decision and not a fresh literal per component. */
+    --sys-stroke-mark: 1.5px;
+    --sys-stroke-emphasis: 2px;
+
     /* ── Materials (SwiftUI parity: .ultraThinMaterial / .regularMaterial /
        .thickMaterial) — one glass grammar. Blur tiers consolidate the
        landing's divergent recipes (sheet scrim 14, chrome 20, map toolbar
@@ -209,6 +262,11 @@
     /* ── Elevation ── */
     --sys-elevation-raised:
       0 1px 2px rgb(0 0 0 / 0.06), 0 2px 8px rgb(0 0 0 / 0.04);
+    /* `raised` for a MASKED silhouette (the ticket and its notches). A
+       `box-shadow` is clipped away with the mask, and `filter:
+       drop-shadow()` takes ONE shadow where `raised` is a list of two, so
+       this is the same lift said once. Only ever inside `drop-shadow()`. */
+    --sys-elevation-raised-drop: 0 2px 8px rgb(0 0 0 / 0.08);
     --sys-elevation-overlay: 0 8px 30px rgb(0 0 0 / 0.12);
     /* Floating set-pieces (modal sheets over a media scrim): deliberately
        heavier than `overlay` — deep offset + wide soft blur so the surface

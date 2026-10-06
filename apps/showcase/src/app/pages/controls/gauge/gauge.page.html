@@ -1,0 +1,737 @@
+<sc-page scTitle="Gauge">
+  <ng-container scLede>
+    <code>ui-gauge</code> ≙ SwiftUI <code>Gauge</code> — a METER
+    (<code>role="meter"</code>, never a progress bar): where a value stands in a
+    range that persists. <code>uiGaugeStyle</code> is
+    <code>linearCapacity</code>, <code>discreteCapacity</code>, the house
+    <code>steps</code> or the ring, <code>circularCapacity</code>;
+    <code>uiMarks</code> are notches and words, slot captions, or nodes. The
+    tint is <code>--ui-gauge-tint</code> (the one orange: a fill, an arc, a
+    ring); every word the gauge prints is ink. The owner always prints the value
+    beside it, and states differ by form. <code>uiLabel</code> and
+    <code>uiValueText</code> are required. Nothing draws itself on mount.
+  </ng-container>
+
+  <sc-demo scTitle="A ring round a figure">
+    <ng-container scAbout>
+      <code>circularCapacity</code> ≙ <code>.accessoryCircularCapacity</code>: a
+      quiet track and the accent arc, from 12 o'clock, clockwise, round caps.
+      Standing alone it is <code>large</code> (64) with
+      <code>--ui-gauge-stroke</code> at five points. The centre,
+      <code>[uiCurrentValueLabel]</code>, is ONE number in the headline role
+      (18/600, tabular): what remains, or what is held. Never a fraction: the
+      arc is the other half. The two lines beside it are the owner's.
+    </ng-container>
+    <ui-stack
+      uiSpacing="regular"
+      uiAlignment="stretch"
+      class="gauge__column gauge__sheet"
+    >
+      <ui-card uiTone="elevated" uiPadding="comfortable">
+        <ui-stack uiAxis="horizontal" uiSpacing="regular" uiAlignment="center">
+          <ui-gauge
+            class="gauge__alone"
+            uiGaugeStyle="circularCapacity"
+            uiControlSize="large"
+            [uiValue]="13"
+            [uiMin]="10"
+            [uiMax]="20"
+            uiLabel="Статус"
+            uiValueText="Злато, 13 посещения за 12 месеца, още 7 до Платина"
+          >
+            <span uiCurrentValueLabel>7</span>
+          </ui-gauge>
+          <ui-stack uiSpacing="none" class="gauge__lines">
+            <p uiText [uiFont]="'callout'" [uiWeight]="'semibold'">
+              до Платина
+            </p>
+            <p uiText [uiFont]="'subheadline'" uiForegroundStyle="secondary">
+              13 посещения за 12 месеца
+            </p>
+          </ui-stack>
+        </ui-stack>
+      </ui-card>
+      <ui-card uiTone="elevated" uiPadding="comfortable">
+        <ui-stack uiAxis="horizontal" uiSpacing="regular" uiAlignment="center">
+          <ui-gauge
+            class="gauge__alone"
+            uiGaugeStyle="circularCapacity"
+            uiControlSize="large"
+            [uiValue]="18"
+            [uiMax]="42"
+            uiLabel="Колекция"
+            uiValueText="18 от 42 медала, 38 спечелени нива"
+          >
+            <span uiCurrentValueLabel>18</span>
+          </ui-gauge>
+          <ui-stack uiSpacing="none" class="gauge__lines">
+            <p uiText [uiFont]="'callout'" [uiWeight]="'semibold'">
+              от 42 медала
+            </p>
+            <p uiText [uiFont]="'subheadline'" uiForegroundStyle="secondary">
+              38 спечелени нива
+            </p>
+          </ui-stack>
+        </ui-stack>
+      </ui-card>
+    </ui-stack>
+  </sc-demo>
+
+  <sc-demo scTitle="Beside the account page's ring">
+    <ng-container scAbout>
+      The owner's reference: above, <code>ui-progress-ring</code> as
+      <code>/account</code> mounts it (72, stroke 5.25, 7.3 %; it draws itself
+      on mount and is a progress bar). Below, the gauge standing alone (64,
+      stroke 5, 7.8 %; a meter, settled from the first frame). One family: the
+      same track, the same arc, the same caps, the same figure.
+    </ng-container>
+    <ui-stack
+      uiSpacing="regular"
+      uiAlignment="stretch"
+      class="gauge__column gauge__sheet"
+    >
+      <ui-card uiTone="elevated" uiPadding="comfortable">
+        <ui-stack uiAxis="horizontal" uiSpacing="regular" uiAlignment="center">
+          <ui-progress-ring [uiValue]="2 / 4" uiFrame uiFrameWidth="4.5rem">
+            <span uiText [uiFont]="'headline'">2/4</span>
+          </ui-progress-ring>
+          <ui-stack uiSpacing="tight" class="gauge__lines">
+            <p uiText [uiFont]="'headline'">Завършете профила си</p>
+            <p uiText [uiFont]="'footnote'" uiForegroundStyle="secondary">
+              2 от 4 завършени
+            </p>
+          </ui-stack>
+        </ui-stack>
+      </ui-card>
+      <ui-card uiTone="elevated" uiPadding="comfortable">
+        <ui-stack uiAxis="horizontal" uiSpacing="regular" uiAlignment="center">
+          <ui-gauge
+            class="gauge__alone"
+            uiGaugeStyle="circularCapacity"
+            uiControlSize="large"
+            [uiValue]="2"
+            [uiMax]="4"
+            uiLabel="Профил"
+            uiValueText="2 от 4 завършени"
+          >
+            <span uiCurrentValueLabel>2</span>
+          </ui-gauge>
+          <ui-stack uiSpacing="none" class="gauge__lines">
+            <p uiText [uiFont]="'callout'" [uiWeight]="'semibold'">
+              от 4 стъпки
+            </p>
+            <p uiText [uiFont]="'subheadline'" uiForegroundStyle="secondary">
+              Остават дата на раждане и снимка
+            </p>
+          </ui-stack>
+        </ui-stack>
+      </ui-card>
+    </ui-stack>
+  </sc-demo>
+
+  <sc-demo scTitle="Round a disc: three sizes">
+    <ng-container scAbout>
+      The size names the DISC the ring wraps, so a medal and its ring share one
+      word: <code>regular</code> 44 in 52 (stroke 3, gap 1),
+      <code>large</code> 52 in 64 (stroke 4, gap 2), <code>extraLarge</code> 112
+      in 128 (stroke 6, gap 2). The gauge draws the ring alone; its composer
+      centres the disc in the same box (<code>--ui-gauge-diameter</code>).
+      Inside a medal or a head the ring is presentational and the container's
+      name carries the words. Here «Фейд» at 23 of 25, from level II at 10: 87
+      %.
+    </ng-container>
+    <ui-card
+      uiTone="elevated"
+      uiPadding="comfortable"
+      class="gauge__column gauge__sheet"
+    >
+      <ui-flow
+        uiSpacing="regular"
+        uiAlignment="trailing"
+        class="gauge__centred"
+      >
+        @for (size of rings; track size) {
+        <span class="gauge__sample">
+          <span class="gauge__round">
+            <ui-gauge
+              uiGaugeStyle="circularCapacity"
+              [uiControlSize]="size"
+              [uiValue]="23"
+              [uiMin]="10"
+              [uiMax]="25"
+              uiLabel="Фейд"
+              uiValueText="Ниво II, 23 от 25 до ниво III"
+            />
+            <ui-avatar uiIcon="service.placeholder" [uiControlSize]="size" />
+          </span>
+          <span uiText [uiFont]="'caption'" uiForegroundStyle="secondary"
+            >{{ size }}</span
+          >
+        </span>
+        }
+      </ui-flow>
+    </ui-card>
+  </sc-demo>
+
+  <sc-demo scTitle="Round a face">
+    <ng-container scAbout>
+      The client's head: the avatar in the <code>extraLarge</code> ring, the arc
+      the way to the next status. A top status is a full ring.
+    </ng-container>
+    <ui-card
+      uiTone="elevated"
+      uiPadding="comfortable"
+      class="gauge__column gauge__sheet"
+    >
+      <ui-flow uiSpacing="regular" uiAlignment="center" class="gauge__centred">
+        <span class="gauge__round">
+          <ui-gauge
+            uiGaugeStyle="circularCapacity"
+            uiControlSize="extraLarge"
+            [uiValue]="13"
+            [uiMin]="10"
+            [uiMax]="20"
+            uiLabel="Статус"
+            uiValueText="Злато, още 7 посещения до Платина"
+          />
+          <ui-avatar uiName="Георги Петров" uiControlSize="extraLarge" />
+        </span>
+        <span class="gauge__round">
+          <ui-gauge
+            uiGaugeStyle="circularCapacity"
+            uiControlSize="extraLarge"
+            [uiValue]="20"
+            [uiMin]="10"
+            [uiMax]="20"
+            uiLabel="Статус"
+            uiValueText="Платина, най-високият статус"
+          />
+          <ui-avatar uiName="Мартин Илиев" uiControlSize="extraLarge" />
+        </span>
+      </ui-flow>
+    </ui-card>
+  </sc-demo>
+
+  <sc-demo scTitle="Not started: dashed">
+    <ng-container scAbout>
+      <code>data-extent="dashed"</code>, stamped by the composer (the medal, for
+      a family with nothing earned): the track alone, dashed 2 on 3 off, in the
+      extent's ink (≥ 3:1), never the tint. One quiet line at every size, the
+      regular ring's three points on the box's outer edge, closed on a whole
+      dash. An outline says "not yet"; the weight belongs to the arc.
+    </ng-container>
+    <ui-card
+      uiTone="elevated"
+      uiPadding="comfortable"
+      class="gauge__column gauge__sheet"
+    >
+      <ui-flow
+        uiSpacing="regular"
+        uiAlignment="trailing"
+        class="gauge__centred"
+      >
+        @for (size of rings; track size) {
+        <span class="gauge__sample">
+          <span class="gauge__round">
+            <ui-gauge
+              uiGaugeStyle="circularCapacity"
+              [uiControlSize]="size"
+              data-extent="dashed"
+              [uiValue]="0"
+              [uiMax]="3"
+              uiLabel="Бръснене"
+              uiValueText="Не е започнато, 0 от 3 до ниво I"
+            />
+            <ui-avatar
+              class="gauge__silhouette"
+              uiIcon="service.placeholder"
+              [uiControlSize]="size"
+            />
+          </span>
+          <span uiText [uiFont]="'caption'" uiForegroundStyle="secondary"
+            >0/3 до I</span
+          >
+        </span>
+        }
+      </ui-flow>
+    </ui-card>
+  </sc-demo>
+
+  <sc-demo scTitle="Zero, a start, nearly full, complete">
+    <ng-container scAbout>
+      A zero value draws the track alone: no dot at 12 o'clock. A first visit is
+      a short arc. A ring short of full never draws full: from ≈ 96 % the round
+      caps would meet, so a stroke's width of track always stays between them
+      (24 of 25 below). <code>data-complete</code> at the end of the range is
+      the full ring; its centre may be one check.
+    </ng-container>
+    <ui-card
+      uiTone="elevated"
+      uiPadding="comfortable"
+      class="gauge__column gauge__sheet"
+    >
+      <ui-stack uiSpacing="comfortable" uiAlignment="stretch">
+        <ui-grid [uiColumns]="2" uiSpacing="comfortable">
+          <span class="gauge__sample">
+            <ui-gauge
+              class="gauge__alone"
+              uiGaugeStyle="circularCapacity"
+              uiControlSize="large"
+              [uiValue]="0"
+              [uiMax]="25"
+              uiLabel="Фейд"
+              uiValueText="0 от 25"
+            >
+              <span uiCurrentValueLabel>0</span>
+            </ui-gauge>
+            <span uiText [uiFont]="'caption'" uiForegroundStyle="secondary"
+              >0 от 25</span
+            >
+          </span>
+          <span class="gauge__sample">
+            <ui-gauge
+              class="gauge__alone"
+              uiGaugeStyle="circularCapacity"
+              uiControlSize="large"
+              [uiValue]="1"
+              [uiMax]="25"
+              uiLabel="Фейд"
+              uiValueText="1 от 25"
+            >
+              <span uiCurrentValueLabel>1</span>
+            </ui-gauge>
+            <span uiText [uiFont]="'caption'" uiForegroundStyle="secondary"
+              >1 от 25</span
+            >
+          </span>
+          <span class="gauge__sample">
+            <ui-gauge
+              class="gauge__alone"
+              uiGaugeStyle="circularCapacity"
+              uiControlSize="large"
+              [uiValue]="24"
+              [uiMax]="25"
+              uiLabel="Фейд"
+              uiValueText="24 от 25"
+            >
+              <span uiCurrentValueLabel>24</span>
+            </ui-gauge>
+            <span uiText [uiFont]="'caption'" uiForegroundStyle="secondary"
+              >24 от 25</span
+            >
+          </span>
+          <span class="gauge__sample">
+            <ui-gauge
+              class="gauge__alone"
+              uiGaugeStyle="circularCapacity"
+              uiControlSize="large"
+              [uiValue]="25"
+              [uiMax]="25"
+              uiLabel="Фейд"
+              uiValueText="Всички 25"
+            >
+              <ui-icon uiCurrentValueLabel uiName="checklist.done" />
+            </ui-gauge>
+            <span uiText [uiFont]="'caption'" uiForegroundStyle="secondary"
+              >25 от 25</span
+            >
+          </span>
+        </ui-grid>
+        <ui-grid [uiColumns]="2" uiSpacing="comfortable">
+          @for (size of tiles; track size) {
+          <span class="gauge__sample">
+            <span class="gauge__round">
+              <ui-gauge
+                uiGaugeStyle="circularCapacity"
+                [uiControlSize]="size"
+                [uiValue]="0"
+                [uiMax]="5"
+                uiLabel="Бръснене"
+                uiValueText="0 от 5 до ниво I"
+              />
+              <ui-avatar uiIcon="service.placeholder" [uiControlSize]="size" />
+            </span>
+            <span uiText [uiFont]="'caption'" uiForegroundStyle="secondary"
+              >0/5 до I</span
+            >
+          </span>
+          <span class="gauge__sample">
+            <span class="gauge__round">
+              <ui-gauge
+                uiGaugeStyle="circularCapacity"
+                [uiControlSize]="size"
+                [uiValue]="5"
+                [uiMax]="5"
+                uiLabel="Бръснене"
+                uiValueText="Всички нива"
+              />
+              <ui-avatar uiIcon="service.placeholder" [uiControlSize]="size" />
+            </span>
+            <span uiText [uiFont]="'caption'" uiForegroundStyle="secondary"
+              >Всички нива</span
+            >
+          </span>
+          }
+        </ui-grid>
+      </ui-stack>
+    </ui-card>
+  </sc-demo>
+
+  <sc-demo scTitle="Points with notches">
+    <ng-container scAbout>
+      The glance tile: <code>linearCapacity</code>, <code>small</code>, the
+      catalogue's costs as notches with no words — each a cut across the track
+      in the card's own fill. The track is ringed in the secondary ink (≥ 3:1),
+      and a meter short of full always leaves a tight rung of it showing.
+    </ng-container>
+    <ui-card uiTone="muted" uiPadding="regular" class="gauge__column">
+      <ui-stack uiSpacing="compact" uiAlignment="stretch">
+        <p uiText [uiFont]="'title3'">{{ balance() }} т.</p>
+        <ui-gauge
+          uiControlSize="small"
+          [uiValue]="balance()"
+          [uiMax]="400"
+          [uiMarks]="costNotches"
+          uiLabel="Точки"
+          [uiValueText]="balance() + ' от 400 точки'"
+        />
+        <p uiText [uiFont]="'footnote'" uiForegroundStyle="secondary">
+          Стига за Безплатно подстригване
+        </p>
+      </ui-stack>
+    </ui-card>
+  </sc-demo>
+
+  <sc-demo scTitle="A labelled catalogue">
+    <ng-container scAbout>
+      <code>regular</code>: a dot-high track and the costs written under it by
+      <code>ui-mark-scale</code>, the ends hugging the track.
+    </ng-container>
+    <div class="gauge__column">
+      <ui-gauge
+        [uiValue]="balance()"
+        [uiMax]="400"
+        [uiMarks]="costs"
+        uiLabel="Каталог"
+        [uiValueText]="balance() + ' точки'"
+      />
+    </div>
+  </sc-demo>
+
+  <sc-demo scTitle="A stamp card, 5 × 2">
+    <ng-container scAbout>
+      <code>discreteCapacity</code>: whole slots only, <code>uiColumns</code> to
+      a row, each at most 1.5rem; the reward is the LAST slot, told apart by its
+      ring and <code>uiRewardIcon</code>. Empty slots ring in the secondary ink.
+      More than twelve slots draws a bar instead.
+    </ng-container>
+    <ui-grid [uiColumns]="2" uiSpacing="compact" class="gauge__column">
+      <ui-card uiTone="elevated" uiPadding="regular">
+        <ui-stack uiSpacing="compact" uiAlignment="leading">
+          <p uiText [uiFont]="'subheadline'" [uiWeight]="'semibold'">
+            Карта с печати · {{ stamps() }}/10
+          </p>
+          <ui-gauge
+            uiGaugeStyle="discreteCapacity"
+            uiControlSize="small"
+            [uiValue]="stamps()"
+            [uiMax]="10"
+            [uiColumns]="5"
+            uiRewardIcon="loyalty.reward"
+            uiLabel="Карта с печати"
+            [uiValueText]="stampsText()"
+          />
+        </ui-stack>
+      </ui-card>
+      <ui-card uiTone="elevated" uiPadding="regular">
+        <ui-gauge
+          uiGaugeStyle="discreteCapacity"
+          [uiValue]="stamps()"
+          [uiMax]="10"
+          [uiColumns]="5"
+          uiRewardIcon="loyalty.reward"
+          uiLabel="Безплатно подстригване"
+          [uiValueText]="stampsText()"
+        />
+      </ui-card>
+    </ui-grid>
+  </sc-demo>
+
+  <sc-demo scTitle="The wallet's stamp card: large">
+    <ng-container scAbout>
+      <code>uiControlSize="large"</code> (revision 3 §2.2.2 WC3): the stamps at
+      44, spread across the card — the first and last on the content edges — in
+      rows a regular rung apart. A stamp prints the check, an empty slot its
+      ordinal in the secondary ink, the reward its glyph at 24. The first card
+      is the 390 phone's (355, its interior 307); the second a 2-up holding in
+      the ≥ 761 dialog (256, its interior 208), where five 44s do not fit and
+      the stamps shrink together.
+    </ng-container>
+    <ui-stack uiSpacing="regular" uiAlignment="stretch" class="gauge__column">
+      <ui-card uiTone="elevated" uiPadding="comfortable">
+        <ui-stack uiSpacing="regular" uiAlignment="stretch">
+          <ui-stack uiSpacing="tight" uiAlignment="leading">
+            <p uiText [uiFont]="'callout'" [uiWeight]="'semibold'">
+              Карта с печати
+            </p>
+            <p uiText [uiFont]="'subheadline'" uiForegroundStyle="secondary">
+              10 печата за безплатно подстригване
+            </p>
+          </ui-stack>
+          <ui-gauge
+            uiGaugeStyle="discreteCapacity"
+            uiControlSize="large"
+            [uiValue]="stamps()"
+            [uiMax]="10"
+            [uiColumns]="5"
+            uiRewardIcon="loyalty.reward"
+            uiLabel="Карта с печати"
+            [uiValueText]="stampsText()"
+          />
+        </ui-stack>
+      </ui-card>
+      <ui-card
+        uiTone="elevated"
+        uiPadding="comfortable"
+        class="gauge__holding-2up"
+      >
+        <ui-stack uiSpacing="regular" uiAlignment="stretch">
+          <p uiText [uiFont]="'callout'" [uiWeight]="'semibold'">
+            Карта с печати
+          </p>
+          <ui-gauge
+            uiGaugeStyle="discreteCapacity"
+            uiControlSize="large"
+            [uiValue]="stamps()"
+            [uiMax]="10"
+            [uiColumns]="5"
+            uiRewardIcon="loyalty.reward"
+            uiLabel="Карта с печати"
+            [uiValueText]="stampsText()"
+          />
+        </ui-stack>
+      </ui-card>
+    </ui-stack>
+  </sc-demo>
+
+  <sc-demo scTitle="Tier steps">
+    <ng-container scAbout>
+      <code>steps</code>: one node per mark, EVENLY spaced — ranks, not
+      distances — the first and last on the content edges, so the track shares
+      the text's leading edge; their words clamp to it. Strongest first: a level
+      passed is the solid tint with the check (no word ever sits on the solid
+      tint); the current one wears a tint ring inside its own box — a solid dot
+      when blank, its numeral in the PRIMARY ink on the tint's wash (the ring is
+      the colour, the numeral is ink) — and, on a FINISHED track (the current
+      node is the last), the check on the solid tint inside that ring; what is
+      not yet earned is ringed in the secondary ink, the next node's numeral in
+      the primary ink. Accent strokes mark what is earned only; the link into
+      the next node lights by the share covered.
+    </ng-container>
+    <ui-card uiTone="elevated" uiPadding="comfortable" class="gauge__column">
+      <ui-stack uiSpacing="regular" uiAlignment="stretch">
+        <ui-gauge
+          uiGaugeStyle="steps"
+          [uiValue]="14"
+          [uiMax]="20"
+          [uiMarks]="tiers"
+          uiLabel="Ниво"
+          uiValueText="Злато, 14 посещения за 12 месеца, още 6 до Платина"
+        />
+        <p uiText [uiFont]="'footnote'" uiForegroundStyle="secondary">
+          14 посещения за 12 месеца
+        </p>
+      </ui-stack>
+    </ui-card>
+  </sc-demo>
+
+  <sc-demo scTitle="Tier steps on the 330 phone">
+    <ng-container scAbout>
+      A caption is never cut inside a word. The status card at 330 (295, its
+      interior 247): «Платина», 51 in a pitch of 74, on one line. A track beside
+      a 64 medal (167): a caption wider than its pitch widens its box instead of
+      spilling past the content edge — anchored on the edge, the last one hangs
+      INWARD over its link, a middle one evenly to either side — and «+100 т.»
+      wraps at its space.
+    </ng-container>
+    <ui-stack uiSpacing="regular" uiAlignment="stretch" class="gauge__column">
+      <ui-card
+        uiTone="elevated"
+        uiPadding="comfortable"
+        class="gauge__column-330"
+      >
+        <ui-gauge
+          uiGaugeStyle="steps"
+          [uiValue]="14"
+          [uiMax]="20"
+          [uiMarks]="tiers"
+          uiLabel="Ниво"
+          uiValueText="Злато, 14 посещения за 12 месеца, още 6 до Платина"
+        />
+      </ui-card>
+      <ui-card
+        uiTone="elevated"
+        uiPadding="comfortable"
+        class="gauge__column-330"
+      >
+        <div class="gauge__track-330">
+          <ui-gauge
+            uiGaugeStyle="steps"
+            [uiValue]="24"
+            [uiMax]="100"
+            [uiMarks]="ladder"
+            uiLabel="Посещения"
+            uiValueText="Ниво II от V, 24 от 25 до ниво III"
+          />
+        </div>
+      </ui-card>
+    </ui-stack>
+  </sc-demo>
+
+  <sc-demo scTitle="Season steps">
+    <ng-container scAbout>
+      A season's levels I–V: the numerals inside the nodes (<code>short</code>),
+      no words under them.
+    </ng-container>
+    <div class="gauge__column">
+      <ui-gauge
+        uiGaugeStyle="steps"
+        [uiValue]="4"
+        [uiMin]="0"
+        [uiMax]="12"
+        [uiMarks]="seasonLevels"
+        uiLabel="Есен 2026"
+        uiValueText="Ниво II, още 1 посещение до III"
+      />
+    </div>
+  </sc-demo>
+
+  <sc-demo scTitle="A medal ladder">
+    <ng-container scAbout>
+      A family's detail: the threshold under each node, then when it was won
+      (this year «3.06», earlier years the year) or what it pays («+50 т.»).
+    </ng-container>
+    <div class="gauge__column">
+      <ui-gauge
+        uiGaugeStyle="steps"
+        [uiValue]="24"
+        [uiMax]="100"
+        [uiMarks]="ladder"
+        uiLabel="Посещения"
+        uiValueText="Ниво II от V, 24 от 25 до ниво III"
+      />
+    </div>
+  </sc-demo>
+
+  <sc-demo scTitle="A stamp card in a half tile at 330">
+    <ng-container scAbout>
+      The glance tile on the narrowest phone: five slots in ≈ 113 pt come out ≈
+      18, under the 20 a 16 glyph needs inside its ring. The reward disc alone
+      keeps the 20 rung — overhanging its column by a point each way, centred on
+      the row — so it never drops its glyph and is never told from an empty slot
+      by hue alone.
+    </ng-container>
+    <ui-card uiTone="muted" uiPadding="regular" class="gauge__half-330">
+      <ui-gauge
+        uiGaugeStyle="discreteCapacity"
+        [uiValue]="stamps()"
+        [uiMax]="10"
+        [uiColumns]="5"
+        uiRewardIcon="loyalty.reward"
+        uiLabel="Карта с печати"
+        [uiValueText]="stampsText()"
+      />
+    </ui-card>
+  </sc-demo>
+
+  <sc-demo scTitle="Small">
+    <ng-container scAbout>
+      Half a dot high, dots for stamps, bare nodes — the medal's thin meter, the
+      glance tiles.
+    </ng-container>
+    <ui-stack uiSpacing="regular" uiAlignment="stretch" class="gauge__narrow">
+      <ui-gauge
+        uiControlSize="small"
+        [uiValue]="0.4"
+        uiLabel="Фейд"
+        uiValueText="24 от 25 до ниво III"
+      />
+      <ui-gauge
+        uiGaugeStyle="discreteCapacity"
+        uiControlSize="small"
+        [uiValue]="7"
+        [uiMax]="10"
+        uiRewardIcon="loyalty.reward"
+        uiLabel="Карта с печати"
+        uiValueText="7 от 10"
+      />
+      <ui-gauge
+        uiGaugeStyle="steps"
+        uiControlSize="small"
+        [uiValue]="4"
+        [uiMax]="12"
+        [uiMarks]="seasonLevels"
+        uiLabel="Есен 2026"
+        uiValueText="Ниво II"
+      />
+    </ui-stack>
+  </sc-demo>
+
+  <sc-demo scTitle="A live change">
+    <ng-container scAbout>
+      Nothing moves on the first frame. A rise glides the bar and the ring's arc
+      and lands the new stamp; a full card that starts again fades back to
+      empty; a fall swaps. Reduced motion draws the value.
+    </ng-container>
+    <ui-stack uiSpacing="regular" uiAlignment="leading">
+      <ui-stack uiAxis="horizontal" uiSpacing="regular" uiAlignment="center">
+        <ui-gauge
+          class="gauge__alone"
+          uiGaugeStyle="circularCapacity"
+          uiControlSize="large"
+          [uiValue]="visits()"
+          [uiMin]="10"
+          [uiMax]="20"
+          uiLabel="Статус"
+          [uiValueText]="visitsText()"
+        >
+          @if (visitsLeft() > 0) {
+          <span uiCurrentValueLabel>{{ visitsLeft() }}</span>
+          } @else {
+          <ui-icon uiCurrentValueLabel uiName="checklist.done" />
+          }
+        </ui-gauge>
+        <ui-stack uiSpacing="none" class="gauge__lines">
+          <p uiText [uiFont]="'callout'" [uiWeight]="'semibold'">
+            {{ visitsLeft() > 0 ? 'до Платина' : 'Платина' }}
+          </p>
+          <p uiText [uiFont]="'subheadline'" uiForegroundStyle="secondary">
+            {{ visits() }} посещения за 12 месеца
+          </p>
+        </ui-stack>
+      </ui-stack>
+      <ui-flow uiSpacing="compact" uiAlignment="leading">
+        <button
+          uiButton
+          uiButtonStyle="bordered"
+          uiTint="neutral"
+          uiControlSize="small"
+          type="button"
+          (click)="earn()"
+        >
+          A visit (+40 т., +1 stamp)
+        </button>
+        <button
+          uiButton
+          uiButtonStyle="bordered"
+          uiTint="neutral"
+          uiControlSize="small"
+          type="button"
+          (click)="spend()"
+        >
+          Redeem (−120 т.)
+        </button>
+      </ui-flow>
+    </ui-stack>
+  </sc-demo>
+</sc-page>

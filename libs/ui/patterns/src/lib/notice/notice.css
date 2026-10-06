@@ -1,0 +1,129 @@
+@layer sys-components {
+  /* A SIBLING OF THE LIST SEGMENTS: their fill, their prominent corner, no
+     border, no shadow. The tone lives in `--ui-notice-tone` — the glyph's
+     ink and the wash's hue — and nowhere else. */
+  .ui-notice {
+    --ui-notice-tone: var(--sys-color-secondary-label);
+
+    display: flex;
+    align-items: flex-start;
+    gap: var(--sys-space-compact);
+    box-sizing: border-box;
+    padding: var(--sys-space-compact) var(--sys-space-regular);
+    border-radius: var(--control-radius-prominent);
+    background: var(--sys-color-surface-secondary);
+    color: var(--sys-color-foreground);
+  }
+
+  .ui-notice[data-tone='accent'] {
+    --ui-notice-tone: var(--sys-color-accent);
+  }
+
+  .ui-notice[data-tone='warning'] {
+    --ui-notice-tone: var(--sys-color-warning);
+  }
+
+  .ui-notice[data-tone='destructive'] {
+    --ui-notice-tone: var(--sys-color-destructive);
+  }
+
+  /* The ONE tone wash, mixed into the segment's fill rather than laid over
+     it: the notice stays opaque on any ground, and its title and facts are
+     measured against exactly this colour. */
+  .ui-notice:not([data-tone='neutral']) {
+    background: color-mix(
+      in srgb,
+      var(--ui-notice-tone) var(--sys-alpha-tint),
+      var(--sys-color-surface-secondary)
+    );
+  }
+
+  .ui-notice__glyph {
+    flex: none;
+    color: var(--ui-notice-tone);
+  }
+
+  .ui-notice__content {
+    flex: 1 1 auto;
+    min-inline-size: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--sys-space-tight);
+  }
+
+  /* The title is owned HERE, so every notice's title matches whatever
+     element the consumer's outline made it: foreground in every tone. */
+  .ui-notice__content > [uiNoticeTitle] {
+    margin: 0;
+    font: var(--sys-font-subheadline);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    color: var(--sys-color-foreground);
+  }
+
+  .ui-notice__content > [uiNoticeTitle]:focus {
+    outline: none;
+  }
+
+  /* Fact lines in the PRIMARY ink in every tone: the secondary label on
+     the dark warning wash measures under AA. */
+  .ui-notice__facts {
+    display: flex;
+    flex-direction: column;
+    /* The half-unit seam (list-group.css), never a literal. */
+    gap: calc(var(--sys-space-unit) / 2);
+    font: var(--sys-font-footnote);
+    font-variant-numeric: tabular-nums;
+    color: var(--sys-color-foreground);
+    overflow-wrap: anywhere;
+  }
+
+  .ui-notice__facts > * {
+    margin: 0;
+  }
+
+  .ui-notice__actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--sys-space-compact);
+    margin-block-start: var(--sys-space-tight);
+  }
+
+  .ui-notice__facts:empty,
+  .ui-notice__actions:empty {
+    display: none;
+  }
+
+  /* COMPACT — no title: one line of facts, its glyph centred on it, and
+     an action (a module's «Опитай пак») hugged at the trailing end of the
+     same line, wrapping under the facts only when the line is full. */
+  .ui-notice:not(:has(> .ui-notice__content > [uiNoticeTitle])) {
+    align-items: center;
+  }
+
+  .ui-notice:not(:has(> .ui-notice__content > [uiNoticeTitle]))
+    .ui-notice__content {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    column-gap: var(--sys-space-compact);
+  }
+
+  /* The facts' basis — how wide the line is before the action wraps
+     under it — is a unit multiple, 48 (192 at the base density): room for
+     a short fact line beside a hugged «Опитай пак» on a 330 phone. */
+  .ui-notice:not(:has(> .ui-notice__content > [uiNoticeTitle]))
+    .ui-notice__facts {
+    --ui-notice-facts-basis: calc(var(--sys-space-unit) * 48);
+
+    flex: 1 1 var(--ui-notice-facts-basis);
+    min-inline-size: 0;
+  }
+
+  .ui-notice:not(:has(> .ui-notice__content > [uiNoticeTitle]))
+    .ui-notice__actions {
+    margin-block-start: 0;
+  }
+}

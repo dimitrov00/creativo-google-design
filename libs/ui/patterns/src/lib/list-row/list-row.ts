@@ -2,6 +2,7 @@ import {
   ChangeDetectionStrategy,
   Component,
   ViewEncapsulation,
+  booleanAttribute,
   input,
 } from '@angular/core';
 
@@ -27,6 +28,26 @@ export type UiListRowVariant = 'plain' | 'neutral' | 'prominent';
  * belongs to.
  */
 export type UiListRowAlignment = 'leading' | 'center';
+
+/**
+ * ≙ SwiftUI `ButtonRole` on a row — the same name and value `uiButton`
+ * takes (`Button(role: .destructive)` inside a `List`). The row reads in
+ * the destructive INK, never a fill: a red row is a row that reads red,
+ * not a button pretending to be one. A row that has become its own
+ * confirm (the block sheet's arm) stamps `data-armed` itself and weighs
+ * more, so the second tap reads as the decision it is.
+ */
+export type UiListRowRole = 'destructive';
+
+/**
+ * ≙ the `.foregroundStyle` of a List row's value. `secondary` (default) is
+ * a detail — LabeledContent's grey. `primary` is a FIGURE the row exists
+ * to show — a price charged, a cost the balance covers, a signed amount —
+ * and keeps the label's ink. Either way a trailing element that asks for
+ * its own style (`uiForegroundStyle="secondary"`, a struck amount) keeps
+ * it, and a control in the slot owns its ink.
+ */
+export type UiListRowTrailingProminence = 'secondary' | 'primary';
 
 /**
  * List row — the leading-glyph / label / trailing-detail shape of a
@@ -97,6 +118,11 @@ export type UiListRowAlignment = 'leading' | 'center';
     '[attr.data-variant]': 'uiVariant()',
     '[attr.data-interactive]': "uiInteractive() ? '' : null",
     '[attr.data-selected]': "uiSelected() ? '' : null",
+    '[attr.data-role]': 'uiRole()',
+    '[attr.data-trailing-prominence]':
+      "uiTrailingProminence() === 'primary' ? 'primary' : null",
+    '[attr.data-label-wraps]': "uiLabelWraps() ? '' : null",
+    '[attr.data-trailing-wraps]': "uiTrailingWraps() ? '' : null",
   },
 })
 export class UiListRow {
@@ -108,4 +134,27 @@ export class UiListRow {
    *  "today" row, a picked option). Visual only: rows that need AT to hear
    *  the state carry their own SR text or aria on the host element. */
   readonly uiSelected = input(false);
+  /** The destructive exit's ink (the leading glyph inherits it). */
+  readonly uiRole = input<UiListRowRole | null>(null);
+  /** The trailing value's ink: a detail (secondary) or the row's figure (primary). */
+  readonly uiTrailingProminence =
+    input<UiListRowTrailingProminence>('secondary');
+  /**
+   * ≙ `.lineLimit(nil)` on the label: its words wrap onto more lines
+   * instead of ending in an ellipsis — a reward's name beside its cost on a
+   * 330 phone, a ledger line that names a medal. Pair with
+   * `uiAlignment="leading"` so the accessories ride the first line.
+   */
+  readonly uiLabelWraps = input(false, { transform: booleanAttribute });
+  /**
+   * ≙ LabeledContent's VALUE in a Form: a long value gives way, the label
+   * never. For a VALUE ROW — a one-word label beside the long part
+   * («Приложени» · «Безплатно подстригване (17,50 €)») — where the default
+   * (the label ellipsizes, the trailing run never shrinks) cut the label to
+   * «Пр…». The trailing run shrinks to three fifths of the row; its words
+   * wrap at the trailing edge, two lines at most, then an ellipsis; a glyph
+   * in it (the disclosure, the chevron) never shrinks. Short values never
+   * reach the cap.
+   */
+  readonly uiTrailingWraps = input(false, { transform: booleanAttribute });
 }

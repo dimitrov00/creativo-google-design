@@ -8,6 +8,8 @@ import { ScPage } from '../../shared/page';
 interface ControlLink {
   readonly slug: string;
   readonly name: string;
+  /** Where the page lives; a control's spec page unless it says otherwise. */
+  readonly section?: 'compositions';
 }
 
 interface ControlGroup {
@@ -66,6 +68,7 @@ export class ControlsPage {
         { slug: 'otp-field', name: 'OTP Field' },
         { slug: 'phone-field', name: 'Phone Field' },
         { slug: 'date-field', name: 'Date Field' },
+        { slug: 'month-picker', name: 'MonthPicker' },
         { slug: 'icon', name: 'Icon' },
         { slug: 'async-image', name: 'AsyncImage' },
       ],
@@ -79,7 +82,33 @@ export class ControlsPage {
         { slug: 'list-row', name: 'ListRow' },
         { slug: 'menu', name: 'Menu' },
         { slug: 'section-header', name: 'SectionHeader' },
+        { slug: 'sheet-headline', name: 'SheetHeadline' },
         { slug: 'stepper', name: 'Stepper' },
+        { slug: 'quick-actions', name: 'QuickActions' },
+        { slug: 'notice', name: 'Notice' },
+        { slug: 'date-tile', name: 'DateTile' },
+        { slug: 'coupon-card', name: 'CouponCard' },
+        { slug: 'pass-card', name: 'PassCard' },
+      ],
+    },
+    {
+      eyebrow: 'Meters · Marks · Medals',
+      title: 'Progress and standing',
+      lede: 'How far along something persistent stands — a balance, a card, a rhythm, a level — read at a glance and said in words.',
+      links: [
+        { slug: 'metric', name: 'Metric' },
+        { slug: 'gauge', name: 'Gauge' },
+        { slug: 'mark-scale', name: 'MarkScale' },
+        { slug: 'streak-track', name: 'StreakTrack' },
+        { slug: 'medal', name: 'Medal' },
+      ],
+    },
+    {
+      eyebrow: 'Pieces · Put together',
+      title: 'Compositions',
+      lede: 'The primitives composed the way a page composes them — real pixels to judge a design by, before a feature is built on it.',
+      links: [
+        { slug: 'client-card', name: 'Client card', section: 'compositions' },
       ],
     },
   ];

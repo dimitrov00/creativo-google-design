@@ -1,0 +1,86 @@
+@layer sys-components {
+  /* A square on the control ladder (44, or 52 for the featured visit), the
+     subtle corner, the word over the day. */
+  .ui-date-tile {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    /* A quarter unit between the word and the day — the tile's own
+       leading does the rest (1 at the base density). */
+    gap: calc(var(--sys-space-unit) / 4);
+    flex: none;
+    box-sizing: border-box;
+    inline-size: var(--control-size-regular);
+    block-size: var(--control-size-regular);
+    border-radius: var(--control-radius-subtle);
+    background: var(--sys-color-fill);
+    color: var(--sys-color-secondary-label);
+    text-align: center;
+  }
+
+  .ui-date-tile[data-control-size='large'] {
+    inline-size: var(--control-size-large);
+    block-size: var(--control-size-large);
+  }
+
+  /* HAPPENED — the fill, the day in the primary ink (it is the figure, as
+     on a Calendar stamp) and its word in the secondary ink made for a fill:
+     the plain secondary sank to 3.70:1 on the fill over a dark card and
+     4.38:1 over the dark sheet (axe, 2026-09-28). */
+  .ui-date-tile[data-tone='past'] {
+    color: var(--sys-color-secondary-label-on-fill);
+  }
+
+  .ui-date-tile[data-tone='past'] .ui-date-tile__day {
+    color: var(--sys-color-foreground);
+  }
+
+  /* …and on a MUTED CARD it keeps its square as a CHIP, never a ring
+     (2026-09-28): the fill over the card's own grey is 1.08:1 in light,
+     and the hairline once drawn there was the hollow tile's «did not
+     happen» ring on a visit that did — a fill says it happened, a ring
+     says it did not. The opaque surface stands off the card instead, the
+     rim numeral's chip recipe (medal.css). The ring is `hollow`'s alone. */
+  .ui-card[data-tone='muted'] .ui-date-tile[data-tone='past'] {
+    background: var(--sys-color-surface);
+  }
+
+  /* STILL AHEAD — the accent's wash, its rung unchanged from the client
+     visit list's stamp, under INK (the accent law, 2026-09-29: the wash is
+     the colour, words are ink). The day is the figure, in the primary ink
+     (14.81:1 at the worst in light, 10.35:1 in dark); its word is the
+     secondary ink made for a fill (6.27:1 at the worst in light, 4.87:1 in
+     dark, on an elevated card). The same two inks a past stamp prints, so
+     the wash alone says «ahead». `accent-rule.spec.ts` reads this rung. */
+  .ui-date-tile[data-tone='upcoming'] {
+    background: color-mix(in srgb, var(--sys-color-accent) 16%, transparent);
+    color: var(--sys-color-secondary-label-on-fill);
+  }
+
+  .ui-date-tile[data-tone='upcoming'] .ui-date-tile__day {
+    color: var(--sys-color-foreground);
+  }
+
+  /* DID NOT HAPPEN — no fill, a hairline ring. */
+  .ui-date-tile[data-tone='hollow'] {
+    background: none;
+    box-shadow: inset 0 0 0 var(--sys-stroke-mark) var(--sys-color-separator);
+  }
+
+  .ui-date-tile__caption {
+    max-inline-size: 100%;
+    font: var(--sys-font-caption);
+    font-variant-numeric: tabular-nums;
+    line-height: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .ui-date-tile__day {
+    font: var(--sys-font-headline);
+    font-variant-numeric: tabular-nums;
+    line-height: 1.1;
+  }
+}

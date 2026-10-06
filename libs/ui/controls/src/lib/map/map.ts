@@ -15,21 +15,17 @@ import {
   untracked,
 } from '@angular/core';
 import type { Map as MapLibreMap, Marker as MapLibreMarker } from 'maplibre-gl';
-
-/**
- * The UMD namespace the dynamic import actually resolves to at RUNTIME.
- *
- * The published types declare named exports, but the bundle builds its exports
- * object inside a factory, so only `.default` is populated — see `initialise`.
- * Typed structurally against the one constructor this component needs from it.
- */
-interface MapLibreModule {
-  readonly Marker: new (options: {
-    element: HTMLElement;
-    anchor: 'bottom';
-  }) => MapLibreMarker;
-}
 import { UI_ICON_OVERRIDES, UiIconRegistry } from '@creativo/ui/icons';
+import { MapLibreLoader, type MapLibreNamespace } from './maplibre-loader';
+
+// Every map in the app loads MapLibre — library and stylesheet — through the
+// one loader; the landing's locations section takes it from here.
+export {
+  MAPLIBRE_SOURCES,
+  MapLibreLoader,
+  type MapLibreNamespace,
+  type MapLibreSources,
+} from './maplibre-loader';
 
 /** One place on the map. `id` is what selection and the output are keyed by. */
 export interface UiMapPin {
@@ -62,7 +58,8 @@ const BOTTOM_EDGE_PADDING = 56;
  * pin transforms must never be transitioned.
  *
  * **Fails soft.** No WebGL — an old browser, a locked-down environment, a CSP
- * blocking MapLibre's worker — leaves an empty pane and logs. Every consumer
+ * blocking MapLibre's worker — or MapLibre's chunks failing to load leaves an
+ * empty pane and logs, never an unhandled rejection. Every consumer
  * must therefore keep a non-map path to the same information; on `/book` that
  * is the list in the sheet, which is the primary surface anyway.
  *
@@ -97,6 +94,7 @@ export class UiMap {
   private readonly iconOverrides = inject(UI_ICON_OVERRIDES, {
     optional: true,
   });
+  private readonly mapLibre = inject(MapLibreLoader);
 
   readonly uiPins = input<readonly UiMapPin[]>([]);
   readonly uiSelectedPinId = input<string | null>(null);
@@ -142,7 +140,7 @@ export class UiMap {
   readonly uiPinSelect = output<string>();
 
   private map: MapLibreMap | null = null;
-  private maplibre: MapLibreModule | null = null;
+  private maplibre: MapLibreNamespace | null = null;
   private markers = new Map<
     string,
     { marker: MapLibreMarker; element: HTMLElement }
@@ -236,21 +234,18 @@ export class UiMap {
     );
     if (!container) return;
 
-    // maplibre-gl ships a UMD bundle, not a real ESM module (it builds its
-    // exports object dynamically inside a factory, so esbuild cannot detect
-    // named exports) — the dynamic import's named properties come back
-    // undefined and only `.default` is populated. Confirmed live: using
-    // `maplibregl.Map` off the named import threw "not a constructor".
-    const { default: maplibregl } = await import('maplibre-gl');
-    if (this.destroyed) return;
-    this.maplibre = maplibregl;
-
-    const pins = this.uiPins();
-
     try {
+      // The library AND its stylesheet (off the initial path since
+      // 2026-09-26), with the UMD `.default` already unwrapped — see
+      // `MapLibreLoader`. Inside the try: chunks that cannot be fetched
+      // (offline, a deploy that replaced them) fail as soft as no WebGL.
+      const maplibregl = await this.mapLibre.load();
+      if (this.destroyed) return;
+      this.maplibre = maplibregl;
+
+      const pins = this.uiPins();
       const map = new maplibregl.Map({
         container,
-        // eslint-disable-next-line security/detect-object-injection -- closed union.
         style: STYLE_URLS[this.uiColorScheme()],
         // Framed here only if the pins are already known; otherwise `syncPins`
         // frames them the moment they arrive.
@@ -289,8 +284,9 @@ export class UiMap {
         this.ready.set(true);
       });
     } catch (error) {
-      // No WebGL, or a CSP blocking the worker. Logged rather than swallowed:
-      // it can also mask a real, fixable bug. Consumers keep a list.
+      // MapLibre's chunks failed to load, no WebGL, or a CSP blocking the
+      // worker. Logged rather than swallowed: it can also mask a real,
+      // fixable bug. Consumers keep a list.
       console.error('[ui-map] failed to initialise:', error);
     }
   }

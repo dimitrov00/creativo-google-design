@@ -1,0 +1,69 @@
+<sc-page scTitle="Date tile">
+  <ng-container scLede>
+    <code>ui-date-tile</code> — a visit's stamp: the day under the word the
+    section above does not already say («пт» under a month section, «септ.»
+    under a year one), on the control ladder (44, or 52 for the featured visit).
+    Decorative: the row's own name carries the date in words. Not
+    <code>ui-date-badge</code>, which is a calendar grid's day.
+  </ng-container>
+
+  <sc-demo scTitle="Tones and sizes">
+    <ng-container scAbout>
+      <code>upcoming</code> is the accent's wash under ink: the day in the
+      primary ink, its word in the secondary ink made for a fill (one orange;
+      colour is a shape, words are ink, held by
+      <code>accent-rule.spec.ts</code>). <code>past</code> prints the same two
+      inks on the control fill; <code>hollow</code> marks a cancellation or a
+      no-show.
+    </ng-container>
+    <ui-stack uiSpacing="comfortable" uiAlignment="leading">
+      @for (size of sizes; track size) {
+      <ui-flow uiSpacing="loose" uiAlignment="leading">
+        @for (sample of tones; track sample.tone) {
+        <ui-stack uiSpacing="tight" uiAlignment="leading">
+          <ui-date-tile
+            uiCaption="септ."
+            [uiDay]="4"
+            [uiTone]="sample.tone"
+            [uiControlSize]="size"
+          />
+          <p uiText [uiFont]="'caption'" class="date-tile__mono">
+            {{ sample.tone }} · {{ size }}
+          </p>
+          <p uiText [uiFont]="'caption'" uiForegroundStyle="secondary">
+            {{ sample.note }}
+          </p>
+        </ui-stack>
+        }
+      </ui-flow>
+      }
+    </ui-stack>
+  </sc-demo>
+
+  <sc-demo scTitle="At the head of a row">
+    <ng-container scAbout>
+      The staff history under a year head: the tile says the month and the day,
+      so the facts line never repeats the date.
+    </ng-container>
+    <ul role="list" class="date-tile__list">
+      @for (visit of visits; track visit.caption) {
+      <li uiListRow>
+        <ui-date-tile
+          uiLeading
+          [uiCaption]="visit.caption"
+          [uiDay]="visit.day"
+          [uiTone]="visit.tone"
+        />
+        <ui-stack uiSpacing="none" uiAlignment="leading">
+          <span uiText [uiFont]="'callout'" [uiWeight]="'semibold'"
+            >{{ visit.title }}</span
+          >
+          <span uiText [uiFont]="'footnote'" uiForegroundStyle="secondary"
+            >{{ visit.facts }}</span
+          >
+        </ui-stack>
+      </li>
+      }
+    </ul>
+  </sc-demo>
+</sc-page>

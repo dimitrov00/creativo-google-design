@@ -1,0 +1,78 @@
+:host {
+  display: block;
+}
+
+.pass-card__mono {
+  font-family: var(--sys-font-family-mono);
+}
+
+/* A stand-in for the sheet the pass sits on: the sheet's own surface, a
+   390 pt phone wide, the page's gutter at its sides (the column is 356). */
+.pass-card__sheet {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sys-space-comfortable);
+  inline-size: 100%;
+  max-inline-size: calc(var(--sys-space-unit) * 97.5);
+  padding: var(--sys-space-loose) var(--sys-space-regular);
+  border: 1px solid var(--sys-color-separator);
+  border-radius: var(--control-radius-hero);
+  background: var(--sys-color-surface);
+}
+
+/* The narrowest phone the app supports: 330 (the column is 296). */
+.pass-card__sheet--narrow {
+  max-inline-size: calc(var(--sys-space-unit) * 82.5);
+}
+
+/* ON A PHONE the viewport is the phone, and the demo canvas is narrower
+   than any phone's sheet (its own padding and the page's gutters come off
+   the viewport): a card drawn inside a sheet drawn inside that would be a
+   card the app never draws. So the stand-in drops its dress and takes the
+   canvas's padding back, less a hair of gutter: the card is 330 on a
+   390 pt viewport (the app's is 355) and 270 on a 330 pt one (295), each
+   in the form the app gives it there. */
+@media (max-width: 30rem) {
+  .pass-card__sheet {
+    inline-size: auto;
+    margin-inline: calc(var(--sys-space-tight) - var(--sys-space-comfortable));
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: none;
+  }
+
+  /* The 330 pt sheet's card, where the viewport has room for it: 295. */
+  .pass-card__sheet--narrow {
+    max-inline-size: calc(var(--sys-space-unit) * 73.75);
+  }
+
+  .pass-card__wide {
+    margin-inline: calc(var(--sys-space-tight) - var(--sys-space-comfortable));
+  }
+}
+
+/* A wide column: the cards side by side, each capped by its consumer. */
+.pass-card__wide {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sys-space-comfortable);
+}
+
+/* 355: the card of a 390 pt sheet, kept in the wide dialog. */
+.pass-card__capped {
+  max-inline-size: calc(var(--sys-space-unit) * 88.75);
+}
+
+/* The hooks: an ink field with the orange as its motif (owner question
+   Q8's second alternative), through the card's own custom properties. */
+.pass-card__hooked {
+  --ui-pass-card-surface: var(--sys-color-media-canvas);
+  --ui-pass-card-ink: var(--sys-color-on-media);
+  --ui-pass-card-motif: color-mix(
+    in srgb,
+    var(--sys-color-accent) 40%,
+    transparent
+  );
+}

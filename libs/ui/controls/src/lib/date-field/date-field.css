@@ -122,6 +122,7 @@
     margin: 0;
     font: var(--sys-font-footnote);
     font-weight: 400;
-    color: var(--sys-color-destructive);
+    /* Words: the `-label` lift, legible on the dark card (theme-dark.css). */
+    color: var(--sys-color-destructive-label);
   }
 }

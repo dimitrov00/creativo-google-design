@@ -25,7 +25,8 @@
             "output": "assets/flags/1x1"
           }
         ],
-        "styles": ["apps/showcase/src/styles.css"]
+        "styles": ["apps/showcase/src/styles.css"],
+        "allowedCommonJsDependencies": ["maplibre-gl"]
       },
       "configurations": {
         "production": {
@@ -37,8 +38,8 @@
             },
             {
               "type": "anyComponentStyle",
-              "maximumWarning": "4kb",
-              "maximumError": "8kb"
+              "maximumWarning": "10kb",
+              "maximumError": "20kb"
             }
           ],
           "outputHashing": "all",
@@ -55,6 +56,11 @@
       "continuous": true,
       "executor": "@angular/build:dev-server",
       "defaultConfiguration": "development",
+      "options": {
+        "prebundle": {
+          "exclude": ["maplibre-gl"]
+        }
+      },
       "configurations": {
         "production": {
           "buildTarget": "showcase:build:production"

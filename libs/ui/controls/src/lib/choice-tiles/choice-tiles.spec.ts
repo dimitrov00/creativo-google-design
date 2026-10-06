@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { Component, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { describe, expect, it } from 'vitest';
@@ -86,6 +88,15 @@ describe('UiChoiceTiles', () => {
     expect(q('tile-other')?.getAttribute('data-size')).toBe('wide');
     const grid = host.querySelector<HTMLElement>('[role="radiogroup"]');
     expect(grid?.style.getPropertyValue('--ui-choice-tiles-columns')).toBe('3');
+  });
+
+  it('rows one TILE rung tall, on the regular corner and the control fill: the tile face, read from its token', () => {
+    const css = readFileSync(resolve(__dirname, 'choice-tiles.css'), 'utf8');
+    const grid = /\.ui-choice-tiles__grid\s*\{([^}]*)\}/.exec(css)?.[1] ?? '';
+    expect(grid).toContain('grid-auto-rows: var(--control-size-tile)');
+    const tile = /\.ui-choice-tile\s*\{([^}]*)\}/.exec(css)?.[1] ?? '';
+    expect(tile).toContain('border-radius: var(--control-radius-regular)');
+    expect(tile).toContain('background: var(--sys-color-fill)');
   });
 
   it('moves the check with the arrow keys, like native radios, skipping what is disabled', async () => {

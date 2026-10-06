@@ -2,7 +2,11 @@ import { ChangeDetectionStrategy, Component, input } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { UiIcon } from '@creativo/ui/icons';
 import { UiStack } from '@creativo/ui/layout';
-import { UiFrameDirective, UiTextDirective } from '@creativo/ui/modifiers';
+import {
+  UiForegroundStyleDirective,
+  UiFrameDirective,
+  UiTextDirective,
+} from '@creativo/ui/modifiers';
 
 /**
  * Spec-page shell — one shared frame for every showcase page: back link,
@@ -12,7 +16,14 @@ import { UiFrameDirective, UiTextDirective } from '@creativo/ui/modifiers';
  */
 @Component({
   selector: 'sc-page',
-  imports: [RouterLink, UiIcon, UiStack, UiFrameDirective, UiTextDirective],
+  imports: [
+    RouterLink,
+    UiIcon,
+    UiStack,
+    UiForegroundStyleDirective,
+    UiFrameDirective,
+    UiTextDirective,
+  ],
   template: `
     <ui-stack
       uiSpacing="loose"
@@ -22,14 +33,18 @@ import { UiFrameDirective, UiTextDirective } from '@creativo/ui/modifiers';
     >
       <ui-stack uiSpacing="regular" uiAlignment="leading">
         @if (scBack(); as back) {
+          <!-- Words are ink (the accent law): the back link is the
+               primary ink at weight 600, led by the orange chevron. -->
           <a
             [routerLink]="back"
             uiText
             uiFont="callout"
-            uiForegroundStyle="accent"
+            uiWeight="semibold"
+            uiForegroundStyle="primary"
             class="sc-page__back"
           >
-            <ui-icon uiName="nav.back" /> {{ scBackLabel() }}
+            <ui-icon uiName="nav.back" uiForegroundStyle="accent" />
+            {{ scBackLabel() }}
           </a>
         }
         <ui-stack uiSpacing="tight">
@@ -51,6 +66,10 @@ import { UiFrameDirective, UiTextDirective } from '@creativo/ui/modifiers';
   `,
   styles: `
     .sc-page__back {
+      display: inline-flex;
+      align-items: center;
+      gap: var(--sys-space-tight);
+      min-block-size: var(--control-size-small);
       text-decoration: none;
     }
     .sc-page__lede {

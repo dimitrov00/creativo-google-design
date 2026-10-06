@@ -18,3 +18,24 @@
 .scroll-row__thumb--strip {
   block-size: 4.5rem;
 }
+
+/* A stand-in for a sheet: a raised box whose inline padding IS the sheet
+   inset, the value `uiFullBleed="container"` cancels. */
+.scroll-row__sheet {
+  --ui-sheet-inset: var(--sys-space-regular);
+  padding: var(--sys-space-regular) var(--ui-sheet-inset);
+  border-radius: var(--control-radius-prominent);
+  background: var(--sys-color-surface-secondary);
+  overflow: clip;
+}
+
+/* The rail's tap target: a bare button around the picture, rounded so the
+   shared state layer follows the tile's corner. */
+.scroll-row__tile {
+  display: block;
+  padding: 0;
+  border: 0;
+  border-radius: var(--control-radius-regular);
+  background: none;
+  color: inherit;
+}

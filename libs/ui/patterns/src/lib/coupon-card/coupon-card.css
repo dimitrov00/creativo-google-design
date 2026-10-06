@@ -1,49 +1,87 @@
 @layer sys-components {
-  /* A TICKET, on a button. The list row's own fill (owner, 2026-09-16: the
-     card must "match the row background" — in light the elevated surface
-     was white against grey rows), no hairline, the group's corner — and
-     two notches cut into its edges where the tear line runs, a foot's
-     height from the bottom, so the top may grow with a long name and the
-     notches stay put. The notches are a MASK, not paint: the card sits on
-     any ground.
+  /* A TICKET, on a button. WHITE PAPER, LIFTED (client card, revision 3
+     §3.4; owner, 2026-09-29: the cards he likes are `/account`'s, white
+     and raised, and the grey ticket with its brown figure read cheap): the
+     elevated surface, no hairline, the group's corner, and two notches cut
+     into its edges where the tear runs. The notches are a MASK, not paint:
+     the card sits on any ground.
 
-     THE SURFACE IS A HOOK (`--ui-coupon-card-surface`, 2026-09-16): on a
-     page the ticket is the row's own opaque fill; on a RAISED surface — an
-     action sheet's card — that fill is the same dark as the ground in the
-     dark theme and the ticket reads as a hole. The raised owner sets the
-     hook a fill step above its own surface, and the badge's ring, which
-     must cut the badge out of the glyph in the ticket's exact colour,
-     follows it. */
+     TWO LAYERS, because a mask and a shadow cannot share a box. The PAPER
+     (`.ui-coupon-card__paper`) lies behind the content and takes the fill,
+     the corner and the notch mask. The HOST takes the lift as
+     `filter: drop-shadow()`, which is cast by what was painted, so it
+     follows the notched silhouette; a `box-shadow` on a masked box is cut
+     away with the notches, and a mask on the host would cut the shadow
+     away whole.
+
+     THE SURFACE IS A HOOK (`--ui-coupon-card-surface`, 2026-09-16), by
+     default the elevated surface: white in light, a step above the sheet
+     in dark, so a ticket is never a hole in its ground. An owner that
+     stands the ticket on something else sets the hook, and the badge's
+     ring, which must cut the badge out of the glyph's disc in the paper's
+     exact colour, follows it.
+
+     THE TEAR (`--ui-coupon-card-tear`) is where the notches and the dashed
+     line run, measured from the TOP: a foot's height from the bottom, so
+     the top may grow with a long name and the notches stay put; under the
+     band when the ticket holds an occasion. */
   .ui-coupon-card {
-    --ui-coupon-card-foot: calc(var(--sys-space-unit) * 11); /* 44px */
+    --ui-coupon-card-foot: var(--control-size-large); /* 52px */
     --ui-coupon-card-notch: calc(var(--sys-space-unit) * 2.5); /* 10px */
+    --ui-coupon-card-tear: calc(100% - var(--ui-coupon-card-foot));
 
+    position: relative;
+    /* The paper sits UNDER the content and never under the ground. */
+    isolation: isolate;
     display: flex;
     flex-direction: column;
+    box-sizing: border-box;
     inline-size: 100%;
+    /* A TICKET HUGS ITS CONTENT (2026-10-06, the revision 3 review): laid
+       beside a taller neighbour — the wallet's holdings two to a row in the
+       ≥ 761 dialog — a grid stretches its cell to the row, and the foot,
+       pinned to the paper's bottom, left a blank band under the head. The
+       ticket keeps its own height; the row's spare room stays under it. */
+    align-self: start;
     margin: 0;
     padding: 0;
     border: 0;
     /* The list group's own outer corner, so a ticket and the group above it
-       are one silhouette in the column. */
+       are one silhouette in the column. The paper, the ring and the press
+       layer inherit it. */
     border-radius: var(--control-radius-prominent);
-    background: var(
-      --ui-coupon-card-surface,
-      var(--sys-color-surface-secondary)
-    );
+    background: none;
     color: var(--sys-color-foreground);
     font: inherit;
     text-align: start;
     appearance: none;
-    cursor: pointer;
+    filter: drop-shadow(
+      var(--ui-coupon-card-shadow, var(--sys-elevation-raised-drop))
+    );
+  }
+
+  /* WITH AN OCCASION the tear is the seam under the band. The band's
+     height is read here with the band's own default: a custom property
+     set on the band is invisible to its parent, so the height the two
+     share is set on the ticket (or above it) and the band inherits it. */
+  .ui-coupon-card[data-occasion] {
+    --ui-coupon-card-tear: var(--ui-occasion-band-height, 6rem);
+  }
+
+  /* THE PAPER, and the two layers that must keep its silhouette: the
+     focus ring (`::before`) and the house press layer (`::after`, the
+     `uiInteractive` grammar's own). One mask, three wearers. */
+  .ui-coupon-card__paper,
+  .ui-coupon-card::before,
+  .ui-coupon-card::after {
     mask-image:
       radial-gradient(
-        circle at 0 calc(100% - var(--ui-coupon-card-foot)),
+        circle at 0 var(--ui-coupon-card-tear),
         transparent var(--ui-coupon-card-notch),
         #000 calc(var(--ui-coupon-card-notch) + 1px)
       ),
       radial-gradient(
-        circle at 100% calc(100% - var(--ui-coupon-card-foot)),
+        circle at 100% var(--ui-coupon-card-tear),
         transparent var(--ui-coupon-card-notch),
         #000 calc(var(--ui-coupon-card-notch) + 1px)
       );
@@ -51,31 +89,119 @@
     mask-composite: intersect;
   }
 
-  /* An outline would be masked away with the notches: the ring is inside. */
-  .ui-coupon-card:focus-visible {
+  .ui-coupon-card__paper {
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    border-radius: inherit;
+    background: var(
+      --ui-coupon-card-surface,
+      var(--sys-color-surface-elevated)
+    );
+    pointer-events: none;
+  }
+
+  /* The tear: a dashed line running between the two notches. On white
+     paper the separator's own strength is lost, so the line is the ink at
+     the wash's strength: quiet, and there. */
+  .ui-coupon-card__paper::before {
+    content: '';
+    position: absolute;
+    inset-block-start: var(--ui-coupon-card-tear);
+    inset-inline: calc(var(--ui-coupon-card-notch) + var(--sys-space-tight));
+    border-block-start: var(--sys-stroke-mark) dashed
+      color-mix(
+        in srgb,
+        var(--sys-color-foreground) var(--sys-alpha-tint),
+        transparent
+      );
+  }
+
+  /* An outline would cross the notches: the ring is drawn INSIDE the box,
+     over the content, in the paper's silhouette. It outranks the shared
+     outline of the interactive grammar, which has the same weight as a
+     class and a state.
+
+     ON THE BUTTON FORM ONLY (2026-10-06, the revision 3 review). An
+     article is a ticket READ, and when it takes the focus it is a LANDING
+     — ‹ from the discount page sets the focus on the stamped ticket it
+     came from, as it lands on a page's heading — and a landing is not a
+     control: no ring, as the page's anchors draw none. The outline is
+     dropped for both forms; the ring is drawn for the one that is
+     pressed. */
+  .ui-coupon-card::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    border-radius: inherit;
+    pointer-events: none;
+  }
+
+  .ui-coupon-card:is(button, article):focus-visible {
     outline: none;
+  }
+
+  .ui-coupon-card:where(button):focus-visible::before {
     box-shadow: inset 0 0 0 var(--sys-focus-ring-width) var(--sys-color-ring);
   }
 
-  /* THE HEAD — the glyph at the leading edge, the name over the value. */
+  /* THE BAND INSIDE A TICKET: the top corners only, no lift of its own
+     (the ticket's shadow is the one shadow), and the ticket's notches cut
+     into its foot, where the seam runs. */
+  .ui-coupon-card > .ui-occasion-band {
+    flex: none;
+    border-end-start-radius: 0;
+    border-end-end-radius: 0;
+    box-shadow: none;
+    mask-image:
+      radial-gradient(
+        circle at 0 100%,
+        transparent var(--ui-coupon-card-notch),
+        #000 calc(var(--ui-coupon-card-notch) + 1px)
+      ),
+      radial-gradient(
+        circle at 100% 100%,
+        transparent var(--ui-coupon-card-notch),
+        #000 calc(var(--ui-coupon-card-notch) + 1px)
+      );
+    -webkit-mask-composite: source-in;
+    mask-composite: intersect;
+  }
+
+  /* THE HEAD — the glyph's disc at the leading edge, the figure over the
+     name. The card's own inset above it, a step less under it: the tear
+     is the head's floor. */
   .ui-coupon-card__head {
+    position: relative;
     display: flex;
     align-items: center;
-    gap: var(--sys-space-regular);
-    padding: calc(var(--sys-space-unit) * 3) var(--sys-space-regular)
-      var(--sys-space-compact);
+    gap: calc(var(--sys-space-unit) * 3);
+    padding: var(--sys-space-regular) var(--sys-space-regular)
+      calc(var(--sys-space-unit) * 3);
     min-inline-size: 0;
   }
 
-  /* The offer's own colour — the promo ink — on a glyph two rows tall, so
-     the card is told apart from a row at a glance. Icons inherit their
-     size in this system. */
+  /* THE GLYPH — the one orange, as a shape: a 44 disc in the accent's
+     wash, the glyph the host gave at 24 in the accent itself (the accent
+     law: colour is a shape, words are ink). Icons inherit their size in
+     this system. */
   .ui-coupon-card__glyph {
     position: relative;
-    flex: 0 0 auto;
+    flex: none;
     display: inline-flex;
-    font-size: calc(var(--sys-space-unit) * 9);
-    color: var(--sys-color-promo-label);
+    align-items: center;
+    justify-content: center;
+    inline-size: var(--control-size-regular);
+    block-size: var(--control-size-regular);
+    border-radius: var(--control-radius-capsule);
+    background: color-mix(
+      in srgb,
+      var(--sys-color-promo) var(--sys-alpha-tint),
+      transparent
+    );
+    font-size: calc(var(--sys-space-unit) * 6);
+    color: var(--sys-color-promo);
   }
 
   .ui-coupon-card__glyph:has(> :only-child:empty),
@@ -83,14 +209,14 @@
     display: none;
   }
 
-  /* THE BADGE — stamped on the glyph's corner, the way a presence dot sits
-     on a portrait: a small disc in the success ink, ringed in the card's
+  /* THE BADGE — stamped on the disc's rim, the way a presence dot sits
+     on a portrait: a small disc in the success ink, ringed in the paper's
      own fill so it reads as laid on top, holding whatever the host
      projects (a check). Nothing projected, nothing drawn. */
   .ui-coupon-card__badge {
     position: absolute;
-    inset-inline-end: calc(var(--sys-space-unit) * -1);
-    inset-block-end: calc(var(--sys-space-unit) * -1);
+    inset-inline-end: calc(var(--sys-space-unit) * -0.5);
+    inset-block-end: calc(var(--sys-space-unit) * -0.5);
     display: inline-flex;
     padding: 2px;
     border-radius: var(--control-radius-capsule);
@@ -98,26 +224,39 @@
     color: #fff;
     font-size: calc(var(--sys-space-unit) * 3);
     box-shadow: 0 0 0 2px
-      var(--ui-coupon-card-surface, var(--sys-color-surface-secondary));
+      var(--ui-coupon-card-surface, var(--sys-color-surface-elevated));
   }
 
   .ui-coupon-card__badge:empty {
     display: none;
   }
 
-  /* ON THE BILL: an article, pressed nowhere but on what it projects. */
-  .ui-coupon-card[data-applied] {
+  /* AN OFFER is pressed whole. A ticket that is only READ (an article: a
+     voucher, a ticket in the wallet, one on the bill) is pressed nowhere
+     but on what it projects, and says so under the pointer. Both at a
+     class's weight, so the shared disabled cursor is not outranked. */
+  .ui-coupon-card:where(button) {
+    cursor: pointer;
+  }
+
+  .ui-coupon-card:where(article) {
     cursor: default;
   }
 
   /* CANNOT BE USED with what is on the bill: muted whole — desaturated,
-     faded, the offer's ink gone to secondary — so it is told from the
-     usable ones at a glance and never reads as a warning. The badge slot
-     holds the "cannot combine" glyph the host projects, in the secondary
-     ink where the check wears the success ink: one slot, three states.
-     The cursor comes from the shared disabled recipe. */
+     faded, the offer's colour gone to the secondary ink — so it is told
+     from the usable ones at a glance and never reads as a warning. The
+     badge slot holds the "cannot combine" glyph the host projects, in the
+     secondary ink where the check wears the success ink: one slot, three
+     states. The cursor comes from the shared disabled recipe.
+
+     `filter` is ONE property: the muted ticket restates the lift beside
+     its own function, or the shadow would go the moment it is muted. */
   .ui-coupon-card[data-unavailable] {
-    filter: saturate(0.35);
+    filter: drop-shadow(
+        var(--ui-coupon-card-shadow, var(--sys-elevation-raised-drop))
+      )
+      saturate(0.35);
     opacity: 0.55;
   }
 
@@ -126,15 +265,12 @@
     color: var(--sys-color-secondary-label);
   }
 
-  .ui-coupon-card[data-unavailable] .ui-coupon-card__badge {
-    background: var(--sys-color-secondary-label);
+  .ui-coupon-card[data-unavailable] .ui-coupon-card__glyph {
+    background: var(--sys-color-fill);
   }
 
-  /* The projected action stands where the written call stood, its own
-     padding hanging past the inset so the word lands on the inset line. */
-  .ui-coupon-card__foot > [uiCouponAction] {
-    flex: 0 0 auto;
-    margin-inline-end: calc(var(--sys-space-compact) * -1);
+  .ui-coupon-card[data-unavailable] .ui-coupon-card__badge {
+    background: var(--sys-color-secondary-label);
   }
 
   .ui-coupon-card__lines {
@@ -145,37 +281,136 @@
     gap: var(--sys-space-tight);
   }
 
+  /* THE NAME — ink. Under a figure it is the figure's caption; alone it
+     is the ticket's headline, a step larger. */
   .ui-coupon-card__title {
     font: var(--sys-font-callout);
-    font-weight: 500;
+    font-weight: 600;
     font-variant-numeric: tabular-nums;
     overflow-wrap: anywhere;
   }
 
-  /* THE VALUE, and the code beside it: the figure at the headline tier in
-     the promo ink — the same ink the applied line will show it in — the
-     code a role quieter, in the mono face an identifier wears. */
+  .ui-coupon-card:not([data-valued]) .ui-coupon-card__title {
+    font: var(--sys-font-headline);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* THE FIGURE, and the code beside it. The figure LEADS: drawn above the
+     name, which stays first for a reader. A line with a code and no
+     figure stays under the name. */
   .ui-coupon-card__figures {
     display: flex;
+    flex-wrap: wrap;
     align-items: baseline;
-    gap: var(--sys-space-compact);
+    gap: 0 var(--sys-space-compact);
     min-inline-size: 0;
   }
 
+  .ui-coupon-card[data-valued] .ui-coupon-card__figures {
+    order: -1;
+  }
+
+  /* A DISPLAY FIGURE in the accent itself (the accent law, rule 3: 24/700
+     is large text, 3.04:1 on the white paper, 4.97:1 and more in dark).
+     Only on the paper: never on a grey fill. */
   .ui-coupon-card__value {
-    font: var(--sys-font-headline);
-    font-weight: 700;
+    order: -1;
+    font: var(--sys-font-title2);
     font-variant-numeric: tabular-nums;
-    color: var(--sys-color-promo-label);
+    color: var(--sys-color-promo);
     white-space: nowrap;
   }
 
+  /* A code too long for the figure's line goes under it, and one too
+     long for the ticket ends in an ellipsis: it never widens the card. */
   .ui-coupon-card__code {
+    min-inline-size: 0;
+    max-inline-size: 100%;
     font-family: var(--sys-font-family-mono);
     font-size: 0.8125rem;
     font-variant-numeric: tabular-nums;
     color: var(--sys-color-secondary-label);
     white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* WITH AN OCCASION the body has no disc: the band's disc carries the
+     glyph. The head is the figure over the name from the card's inset,
+     and the badge, when the host projects one, stands beside the figure
+     (beside the name when there is no figure) as a stamp of its own. No
+     tear runs under this head, so it keeps no floor of its own: the
+     foot's air is the gap to the chip and the call. */
+  .ui-coupon-card[data-occasion] .ui-coupon-card__head {
+    flex-wrap: wrap;
+    gap: var(--sys-space-tight) var(--sys-space-compact);
+    padding-block-end: var(--sys-space-tight);
+  }
+
+  .ui-coupon-card[data-occasion] .ui-coupon-card__lines,
+  .ui-coupon-card[data-occasion] .ui-coupon-card__figures {
+    display: contents;
+  }
+
+  .ui-coupon-card[data-occasion] .ui-coupon-card__glyph {
+    order: 2;
+    inline-size: auto;
+    block-size: auto;
+    background: none;
+  }
+
+  .ui-coupon-card[data-occasion] .ui-coupon-card__glyph > [uiCouponGlyph] {
+    display: none;
+  }
+
+  .ui-coupon-card[data-occasion] .ui-coupon-card__badge {
+    position: static;
+    box-shadow: none;
+  }
+
+  .ui-coupon-card[data-occasion]
+    .ui-coupon-card__glyph:has(> .ui-coupon-card__badge:empty) {
+    display: none;
+  }
+
+  .ui-coupon-card[data-occasion] .ui-coupon-card__value {
+    order: 1;
+  }
+
+  .ui-coupon-card[data-occasion] .ui-coupon-card__code {
+    order: 3;
+  }
+
+  .ui-coupon-card[data-occasion] .ui-coupon-card__title {
+    order: 4;
+    flex: 1 0 100%;
+  }
+
+  .ui-coupon-card[data-occasion]:not([data-valued]) .ui-coupon-card__title {
+    order: 1;
+    flex: 0 1 auto;
+    min-inline-size: 0;
+  }
+
+  .ui-coupon-card[data-occasion]:not([data-valued]) .ui-coupon-card__code {
+    flex: 1 0 100%;
+  }
+
+  /* The perforation on the seam: the paper's own colour, dashed along
+     the band's foot, so the orange ends in a torn edge. The line under
+     it, which would be grey on white beside an edge of colour, goes. */
+  .ui-coupon-card[data-occasion] .ui-coupon-card__paper::before {
+    content: none;
+  }
+
+  .ui-coupon-card[data-occasion] .ui-coupon-card__head::before {
+    content: '';
+    position: absolute;
+    inset-block-start: calc(var(--sys-stroke-emphasis) * -1);
+    inset-inline: calc(var(--ui-coupon-card-notch) + var(--sys-space-tight));
+    border-block-start: var(--sys-stroke-emphasis) dashed
+      var(--ui-coupon-card-surface, var(--sys-color-surface-elevated));
+    pointer-events: none;
   }
 
   /* THE FOOT — a fixed height, so the tear above it and the notches at
@@ -192,13 +427,19 @@
     min-inline-size: 0;
   }
 
-  /* The tear: a dashed hairline running between the two notches. */
-  .ui-coupon-card__foot::before {
-    content: '';
-    position: absolute;
-    inset-block-start: 0;
-    inset-inline: calc(var(--ui-coupon-card-notch) + var(--sys-space-tight));
-    border-block-start: 1px dashed var(--sys-color-separator);
+  /* The projected call stands at the trailing edge even with no chip
+     before it (its own margin, not a placeholder: an empty span in the
+     foot would read as content to the bare-ticket rule below). */
+  .ui-coupon-card__foot > [uiCouponAction] {
+    flex: 0 0 auto;
+    margin-inline-start: auto;
+  }
+
+  /* A PLAIN button has no fill to stand on the inset: its own padding
+     hangs past it, so the WORD lands on the inset line. A filled pill
+     stands on the line itself. */
+  .ui-coupon-card__foot > [uiCouponAction][data-button-style='plain'] {
+    margin-inline-end: calc(var(--sys-space-compact) * -1);
   }
 
   .ui-coupon-card__detail {
@@ -208,22 +449,47 @@
     background: var(--sys-color-fill);
     font: var(--sys-font-caption);
     font-variant-numeric: tabular-nums;
-    color: var(--sys-color-secondary-label);
+    /* Words on the chip's fill: the secondary ink made for a fill (the
+       plain one read 3.70:1 on a dark card, 2026-09-28). */
+    color: var(--sys-color-secondary-label-on-fill);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
   }
 
-  .ui-coupon-card__detail--none {
-    padding: 0;
-    background: none;
+  /* A TICKET WITHOUT CONDITIONS (2026-10-06, the revision 3 review: the
+     wallet's «Безплатно подстригване» and a voucher with no expiry ended
+     in a tear over a blank 52 pt band). Nothing in the foot — no chip,
+     nothing projected into `[uiCouponAction]` — and the
+     foot goes, the tear and the notches with it: a plain lifted paper,
+     the head on the card's inset all round. Read from the foot itself
+     (`:has()`, as the glyph's empty disc already is), since what a host
+     projects is not the ticket's to know. The same weight as the
+     occasion's head rule, so it stands after it. */
+  .ui-coupon-card:not(:has(> .ui-coupon-card__foot > *)) .ui-coupon-card__foot {
+    display: none;
   }
 
-  .ui-coupon-card__action {
-    flex: 0 0 auto;
-    font: var(--sys-font-callout);
-    font-weight: 600;
-    color: var(--sys-color-foreground);
-    white-space: nowrap;
+  .ui-coupon-card:not(:has(> .ui-coupon-card__foot > *)) .ui-coupon-card__head {
+    padding-block-end: var(--sys-space-regular);
+  }
+
+  /* …and the silhouette is whole: no notch on the paper, the ring or the
+     press layer, no dashed line. UNDER A BAND the seam stays — the band is
+     still torn off the paper, and its notches sit on the band's own mask. */
+  .ui-coupon-card:not([data-occasion]):not(:has(> .ui-coupon-card__foot > *))
+    .ui-coupon-card__paper,
+  .ui-coupon-card:not([data-occasion]):not(
+      :has(> .ui-coupon-card__foot > *)
+    )::before,
+  .ui-coupon-card:not([data-occasion]):not(
+      :has(> .ui-coupon-card__foot > *)
+    )::after {
+    mask-image: none;
+  }
+
+  .ui-coupon-card:not([data-occasion]):not(:has(> .ui-coupon-card__foot > *))
+    .ui-coupon-card__paper::before {
+    content: none;
   }
 }

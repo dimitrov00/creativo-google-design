@@ -4,6 +4,7 @@ import {
   ViewEncapsulation,
   input,
 } from '@angular/core';
+import { UiIcon, type UiIconName } from '@creativo/ui/icons';
 
 export type UiBadgeTone =
   'neutral' | 'accent' | 'success' | 'warning' | 'destructive';
@@ -27,10 +28,29 @@ export type UiBadgeSize = 'regular' | 'large';
  */
 export type UiBadgeProminence = 'decreased' | 'standard' | 'increased';
 
-/** Native `<span>` element — a static status token, non-interactive. */
+/**
+ * Native `<span>` element — a static status token, non-interactive.
+ *
+ * `uiIcon` is the ONE grammar for a glyph on a capsule (≙ `Label` in a
+ * badge, 2026-09-28): it leads, decorative, and rides the caption's size
+ * and the tone's ink, so a tier capsule («★ Злато») and a variant capsule
+ * say it the same way — never a hand-projected `ui-icon`.
+ *
+ * `uiOnMedia` is a LABEL over media — the white capsule in the caption
+ * face, the white-on-media pair a `uiButton uiOnMedia` wears. It exists so
+ * the system keeps "a label over media" apart from "a control over media":
+ * a date on a photo tile is a label, and a button look on it would be a
+ * second, smaller target inside the tappable tile.
+ */
 @Component({
   selector: 'span[uiBadge]',
-  template: `<ng-content />`,
+  imports: [UiIcon],
+  template: `
+    @if (uiIcon(); as icon) {
+      <ui-icon class="ui-badge__glyph" [uiName]="icon" />
+    }
+    <ng-content />
+  `,
   styleUrl: './badge.css',
   changeDetection: ChangeDetectionStrategy.OnPush,
   // Unscoped: bare `.ui-*`/`[data-*]` selectors never match a component's
@@ -42,10 +62,15 @@ export type UiBadgeProminence = 'decreased' | 'standard' | 'increased';
     '[attr.data-tone]': 'uiTone()',
     '[attr.data-size]': 'uiSize()',
     '[attr.data-prominence]': 'uiProminence()',
+    '[attr.data-on-media]': "uiOnMedia() ? '' : null",
   },
 })
 export class UiBadge {
   readonly uiTone = input<UiBadgeTone>('neutral');
   readonly uiSize = input<UiBadgeSize>('regular');
   readonly uiProminence = input<UiBadgeProminence>('standard');
+  /** Leading glyph (registry key): caption-sized, the tone's ink. */
+  readonly uiIcon = input<UiIconName | null>(null);
+  /** A label over media: the white capsule, both themes. */
+  readonly uiOnMedia = input(false);
 }

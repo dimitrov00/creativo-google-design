@@ -5,3 +5,26 @@
 .menu__mono {
   font-family: var(--sys-font-family-mono);
 }
+
+/* THE SAME MONTH AT THE SAME SIZE as the staff day pills draw it: the
+   surface is what the grid fills, so the surface is where the width is
+   said (staff-day-pill.css). */
+.menu__month-host {
+  --ui-menu-min-width: 20rem;
+}
+
+/* The popover's padding and the licence to be narrow — a month is fluid
+   by construction (its columns are `minmax(0, 1fr)`). */
+.menu__month {
+  padding: var(--sys-space-compact);
+  max-inline-size: min(100%, calc(100vw - 2rem));
+}
+
+.menu__month ui-calendar-grid {
+  inline-size: 100%;
+}
+
+/* The docked sheet's body: the rows, then the dock's clearance under them. */
+.menu__docked-body {
+  padding-block-end: var(--ui-sheet-action-bar-clearance);
+}

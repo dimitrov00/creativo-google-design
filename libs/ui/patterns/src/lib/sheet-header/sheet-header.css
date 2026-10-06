@@ -145,6 +145,28 @@
      the consumer. Consumers may equally name the timeline themselves. */
   [uisheetlargetitle] {
     view-timeline-name: --ui-sheet-headline;
+    /* ONE TIMELINE, MEASURED FROM THE BAR'S BOTTOM EDGE (2026-09-28). The
+       timeline used to run against the scroller's TOP, while the sentinel
+       (and with it the top fade) flips at the BAR's bottom — so from ≈40 to
+       ≈110 px of scroll the big title ghosted through the fade behind the
+       chips under an empty bar. Insetting the start by the chrome's height
+       (published on the scroller by ui-modal-sheet; the 52 bar elsewhere)
+       puts `exit 0%` at the title's top reaching the bar's bottom and
+       `exit 100%` at its bottom reaching it — the sentinel's own crossing
+       (`sheet-header.ts`: rootMargin minus the bar). */
+    view-timeline-inset: var(
+        --modal-sheet-chrome-height,
+        var(--control-size-large)
+      )
+      auto;
+    /* A LONG TITLE WRAPS IN BALANCED LINES (2026-09-28, wave D r5): a 36/800
+       «Минали сезони и» / «събития» ended its first line on a one-letter
+       word; balanced it breaks «Минали сезони» / «и събития». And it is
+       never cut on the page (the bar truncates its compact copy): a word
+       wider than the column — a long name — breaks rather than overflow.
+       Every sheet page's title, here once; no feature restates it. */
+    text-wrap: balance;
+    overflow-wrap: break-word;
   }
 
   /* Scroll-linked compact-title reveal (Apple large-title collapse): the
@@ -164,19 +186,49 @@
 
   @supports (animation-timeline: view()) {
     @media (prefers-reduced-motion: no-preference) {
+      /* A CROSS-FADE, NOT TWO FADES (2026-09-28). Aligning the ranges alone
+         still showed two names at once — at exit 50% the compact title was
+         half in while half the large title showed through the light top
+         fade. iOS never does: the large title is gone before the inline one
+         appears. So the large title (and the headline's face, which must
+         not ghost behind the chips either) leaves over the first half of
+         the exit… */
+      [uisheetlargetitle],
+      .ui-sheet-headline[data-media] .ui-sheet-headline__media {
+        animation: ui-sheet-headline-out linear both;
+        animation-timeline: --ui-sheet-headline;
+        animation-range: exit 0% exit 50%;
+      }
+
+      /* …and the compact title arrives over the second half: at every
+         scroll position at most one name is visible. */
       .ui-sheet-header > [uititle] {
         animation: ui-sheet-header-title-in linear both;
         animation-timeline: --ui-sheet-headline;
-        animation-range: exit 20% exit 100%;
+        animation-range: exit 50% exit 100%;
       }
 
-      /* The bar 'lands' — fill + hairline — as the headline tucks under
-         it (UINavigationBar behavior). */
+      /* The bar 'lands' — fill + hairline — across the whole exit
+         (UINavigationBar behavior), the same span the modal shell's top
+         fade takes. Outside that shell only: inside it the fade owns the
+         separation and the bar's own chrome is off (above). */
       .ui-sheet-header {
         animation: ui-sheet-header-chrome-in linear both;
         animation-timeline: --ui-sheet-headline;
-        animation-range: exit 20% exit 100%;
+        animation-range: exit 0% exit 100%;
       }
+    }
+  }
+
+  /* The large title's exit. Where the timeline is inactive — a folded
+     headline, an always-titled bar, no scroll-driven animations, reduced
+     motion — the animation is inert and the title simply stays. */
+  @keyframes ui-sheet-headline-out {
+    from {
+      opacity: 1;
+    }
+    to {
+      opacity: 0;
     }
   }
 

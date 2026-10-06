@@ -287,4 +287,108 @@
       }
     </ui-stack>
   </sc-demo>
+
+  <sc-demo scTitle="uiRole">
+    <ng-container scAbout>
+      ≙ <code>Button(role: .destructive)</code> in a <code>List</code> — the
+      same <code>uiRole</code> <code>uiButton</code> takes. The row reads in the
+      destructive INK (the <code>-label</code> lift, legible on the segment),
+      never a fill; the leading glyph inherits it. A row that has become its own
+      confirm carries the consumer's <code>data-armed</code> and weighs more —
+      tap the second row to arm it.
+    </ng-container>
+    <ui-stack uiSpacing="tight" uiAlignment="leading">
+      <ul
+        uiListGroup
+        aria-label="Действия с клиента"
+        uiFrame
+        [uiFrameWidth]="'24rem'"
+      >
+        <li>
+          <button
+            uiListRow
+            type="button"
+            uiRole="destructive"
+            [uiInteractive]="true"
+          >
+            <ui-icon uiLeading uiName="client.remove" uiScale="medium" />
+            Махни от посещението
+          </button>
+        </li>
+        <li>
+          <button
+            uiListRow
+            type="button"
+            uiRole="destructive"
+            [uiInteractive]="true"
+            [attr.data-armed]="armed() ? '' : null"
+            [attr.aria-pressed]="armed()"
+            (click)="armed.set(!armed())"
+          >
+            <ui-icon uiLeading uiName="staff.off" uiScale="medium" />
+            {{ armed() ? 'Да, освободи целия ден' : 'Освободи целия ден' }}
+          </button>
+        </li>
+      </ul>
+      <p uiText [uiFont]="'caption'" class="list-row__mono">
+        uiRole=destructive · data-armed{{ armed() ? ' (armed)' : '' }}
+      </p>
+    </ui-stack>
+  </sc-demo>
+
+  <sc-demo scTitle="A figure, and words that wrap">
+    <ng-container scAbout>
+      <code>uiTrailingProminence="primary"</code> ≙ a List row whose value is
+      its FIGURE — a cost the balance covers, an amount charged — in the label's
+      ink; a trailing element that asks for
+      <code>uiForegroundStyle="secondary"</code> (a reward out of reach) keeps
+      it. <code>uiLabelWraps</code> ≙ <code>.lineLimit(nil)</code>: the label
+      wraps instead of ending in an ellipsis. A bare leading glyph takes the
+      ladder's 20. <code>uiTrailingWraps</code> ≙ LabeledContent's value in a
+      Form: on a VALUE row the long value gives way, the one-word label never —
+      the run shrinks to three fifths of the row, its words wrap at the trailing
+      edge (two lines, then an ellipsis) and its glyph keeps its size.
+    </ng-container>
+    <ul uiListGroup aria-label="Награди" uiFrame [uiFrameWidth]="'20rem'">
+      <li uiListRow uiTrailingProminence="primary" uiLabelWraps>
+        <ui-icon uiLeading uiName="loyalty.reward" aria-hidden="true" />
+        Безплатно подстригване с измиване
+        <span uiTrailing uiText uiFont="subheadline">250 т.</span>
+      </li>
+      <li uiListRow uiTrailingProminence="primary" uiLabelWraps>
+        <ui-icon uiLeading uiName="loyalty.reward" aria-hidden="true" />
+        Оформяне на брада
+        <span
+          uiTrailing
+          uiText
+          uiFont="subheadline"
+          uiForegroundStyle="secondary"
+          >400 т.</span
+        >
+      </li>
+    </ul>
+    <ul uiListGroup aria-label="Отстъпка" uiFrame [uiFrameWidth]="'20rem'">
+      <li uiListRow uiTrailingWraps>
+        Приложени
+        <!-- An applied value is INK, carried by weight (the accent law):
+             small figures are never tinted. -->
+        <span uiTrailing
+          ><span
+            uiText
+            uiFont="callout"
+            uiWeight="semibold"
+            uiForegroundStyle="primary"
+            >Безплатно подстригване (17,50 €)</span
+          ><ui-icon uiName="field.expand" aria-hidden="true"
+        /></span>
+      </li>
+      <li uiListRow uiTrailingWraps>
+        Бакшиш
+        <span uiTrailing
+          ><span uiForegroundStyle="secondary">Без</span
+          ><ui-icon uiName="field.expand" aria-hidden="true"
+        /></span>
+      </li>
+    </ul>
+  </sc-demo>
 </sc-page>

@@ -1,0 +1,204 @@
+@layer sys-components {
+  /* THE RUN: one equal column per PRESENT verb, at one pitch (88), centred
+     in the page's column. The pitch is the rhythm, so there is no gap: the
+     air between two discs is what the pitch leaves round them. Three verbs
+     sit in the middle of the page and never stretch across it; where the
+     page is narrower than the run every column gives up the same share
+     (four verbs on a 330 pt phone: 73 each) and the discs keep their size.
+     The run never scrolls and never leaves a hole: an absent verb is one
+     fewer column, not an empty cell. A run told to wrap (four verbs in two
+     columns, beside a pass in the wide dialog) parts its rows by the
+     regular step. */
+  .ui-quick-actions {
+    display: grid;
+    grid-template-columns: repeat(
+      var(--ui-quick-actions-columns, 4),
+      minmax(0, var(--ui-quick-actions-pitch, calc(var(--sys-space-unit) * 22)))
+    );
+    justify-content: center;
+    row-gap: var(--sys-space-regular);
+  }
+
+  /* THE VERB: a column, the disc over its word. The whole column is the
+     target (88 × 84 at rest) and it paints nothing itself: no fill, no
+     corner, no state layer. What answers the hand is the disc. */
+  .ui-quick-action {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--sys-space-compact);
+    box-sizing: border-box;
+    min-inline-size: 0;
+    margin: 0;
+    padding: var(--sys-space-tight) 0;
+    border: 0;
+    background: none;
+    color: var(--sys-color-foreground);
+    font: var(--sys-font-footnote);
+    font-variant-numeric: tabular-nums;
+    text-align: center;
+    text-decoration: none;
+    appearance: none;
+    cursor: pointer;
+  }
+
+  /* THE DISC: the large rung of the control ladder (52), round. TINTED at
+     rest (the owner's ruling, G1-1): the accent wash, the one tint behind
+     every toned mark, so a run reads as alive on a white sheet, on a card
+     and in dark alike, and never as a row of disabled controls. The wash
+     is translucent: it lifts whatever it landed on. Its ink is said here
+     and not inherited: a verb is often an anchor, and an anchor's own
+     colour must never reach what the disc holds. */
+  .ui-quick-action__disc {
+    position: relative;
+    display: grid;
+    flex: none;
+    place-items: center;
+    inline-size: var(--ui-quick-action-disc, var(--control-size-large));
+    block-size: var(--ui-quick-action-disc, var(--control-size-large));
+    border-radius: var(--control-radius-capsule);
+    background: var(
+      --ui-quick-action-fill,
+      color-mix(
+        in srgb,
+        var(--sys-color-accent) var(--sys-alpha-tint),
+        transparent
+      )
+    );
+    color: var(--sys-color-foreground);
+    /* The state layer and the badge stack inside the disc, nowhere else. */
+    isolation: isolate;
+    transition: transform var(--sys-motion-duration-instant)
+      var(--sys-motion-ease-standard);
+  }
+
+  /* The state layer: the hover and press grammar of the system, drawn on
+     the disc and driven by the column. */
+  .ui-quick-action__disc::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    pointer-events: none;
+    background: transparent;
+    transition: background-color var(--sys-motion-duration-regular)
+      var(--sys-motion-ease-standard);
+  }
+
+  /* THE GLYPH, in the one orange. Colour is a shape: the word under it
+     stays ink. The glyph on its own wash is 2.62:1 in light, which is
+     legal because the word names the verb (SC 1.4.11 binds a graphic that
+     is the only carrier). The disc's two hooks are read by the disc's
+     fill, by this ink and by the state layer, and by nothing else:
+     whatever a run sets, it paints a disc and the mark on it, never a
+     word. */
+  .ui-quick-action__glyph {
+    flex: none;
+    color: var(--ui-quick-action-ink, var(--sys-color-accent));
+  }
+
+  /* THE PROMOTED VERB, one per run: the SOLID disc, its glyph white. A
+     mark (52), never a slab, and white on the orange is a mark's ink
+     alone (3.04:1). It is drawn by re-pointing the disc's own two hooks
+     on the verb, so the disc and the glyph keep ONE rule each; what a
+     run says for its standard discs never reaches it, and it has its own
+     pair (`--ui-quick-action-promoted-fill`, `-ink`) for a run that wants
+     it drawn otherwise. */
+  .ui-quick-action[data-prominence='accent'] {
+    --ui-quick-action-fill: var(
+      --ui-quick-action-promoted-fill,
+      var(--sys-color-accent)
+    );
+    --ui-quick-action-ink: var(
+      --ui-quick-action-promoted-ink,
+      var(--sys-color-on-accent)
+    );
+  }
+
+  /* A COUNT on the disc's corner (two tickets behind «Използвай»): the
+     consumer's badge, centred on the rim at the top trailing 45°, above
+     the state layer so a hover never tints it. Empty, it has no box. */
+  .ui-quick-action__badge {
+    position: absolute;
+    z-index: 1;
+    inset-block-start: calc(var(--sys-space-tight) * -0.5);
+    inset-inline-end: calc(var(--sys-space-tight) * -0.5);
+    display: flex;
+    pointer-events: none;
+  }
+
+  /* THE WORD: one line, always the primary ink. A word longer than its
+     column ends in an ellipsis; it never takes a second line, so every
+     disc of a run keeps one baseline under it. */
+  .ui-quick-action__label {
+    display: block;
+    max-inline-size: 100%;
+    overflow: hidden;
+    color: var(--sys-color-foreground);
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+
+  /* STATES. Hover is a pointer's; press is ungated, so a thumb sees it too
+     (mobile press parity). Both are gated on the verb being alive:
+     feedback is a promise, and a dead control must not make it.
+
+     The layer mixes the MARK's ink at the theme's own ladder (the rungs
+     of `--sys-state-layer-hover` and `-press`), so a disc deepens in its
+     own hue: the wash a step further into the orange, as the bordered
+     button's does; the solid disc lifts under its white; a neutral disc
+     goes a step greyer. The primary ink over the wash would turn it to
+     mud. */
+  @media (hover: hover) {
+    .ui-quick-action:not(:disabled, [aria-disabled='true']):hover
+      .ui-quick-action__disc::after {
+      background: color-mix(
+        in srgb,
+        var(--ui-quick-action-ink, var(--sys-color-accent))
+          var(--sys-alpha-fill-hover),
+        transparent
+      );
+    }
+  }
+
+  .ui-quick-action:not(:disabled, [aria-disabled='true']):active
+    .ui-quick-action__disc::after {
+    background: color-mix(
+      in srgb,
+      var(--ui-quick-action-ink, var(--sys-color-accent)) var(--sys-alpha-press),
+      transparent
+    );
+    transition-duration: var(--sys-motion-duration-instant);
+  }
+
+  .ui-quick-action:not(:disabled, [aria-disabled='true']):active
+    .ui-quick-action__disc {
+    transform: scale(var(--sys-press-scale-control));
+  }
+
+  /* The ring of the system, round the DISC: the column's own outline would
+     box a word and a circle together. */
+  .ui-quick-action:focus-visible {
+    outline: none;
+  }
+
+  .ui-quick-action:focus-visible .ui-quick-action__disc {
+    outline: var(--sys-focus-ring-width) solid var(--sys-color-ring);
+    outline-offset: var(--sys-focus-ring-offset);
+  }
+
+  /* A verb that cannot be used is ABSENT (the run closes up). One that is
+     disabled all the same reads as the system's disabled controls do. */
+  .ui-quick-action:is(:disabled, [aria-disabled='true']) {
+    opacity: var(--sys-opacity-disabled);
+  }
+
+  /* The press rule's own selector, so this one wins on order and not on
+     luck: a shorter selector here would lose to it. */
+  @media (prefers-reduced-motion: reduce) {
+    .ui-quick-action:not(:disabled, [aria-disabled='true']):active
+      .ui-quick-action__disc {
+      transform: none;
+    }
+  }
+}

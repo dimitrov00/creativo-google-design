@@ -10,6 +10,14 @@
     display: none;
   }
 
+  /* A row the keyboard scrolls (scroll-row.ts stamps the stop only while
+     it overflows with nothing focusable inside) wears the house ring —
+     inset, because a bled row runs to the sheet's clipped edges. */
+  .ui-scroll-row[data-keyboard-stop]:focus-visible {
+    outline: var(--sys-focus-ring-width) solid var(--sys-color-ring);
+    outline-offset: calc(-1 * var(--sys-focus-ring-width));
+  }
+
   /* Carousel children keep their intrinsic size — no shrinking. */
   .ui-scroll-row > * {
     flex: 0 0 auto;
@@ -28,34 +36,48 @@
     scroll-snap-align: center;
   }
 
+  /* The gap is also published as `--ui-scroll-row-gap`: the
+     container-relative width below counts the spacing between items, as
+     `containerRelativeFrame(spacing:)` does. */
   .ui-scroll-row[data-spacing='none'] {
-    gap: var(--sys-space-none);
+    /* The token is a bare `0`; typed as a length, or `100% - 0` below
+       would be an invalid calc and the width would drop. */
+    --ui-scroll-row-gap: calc(var(--sys-space-none) * 1px);
+    gap: var(--ui-scroll-row-gap);
   }
   .ui-scroll-row[data-spacing='tight'] {
-    gap: var(--sys-space-tight);
+    --ui-scroll-row-gap: var(--sys-space-tight);
+    gap: var(--ui-scroll-row-gap);
   }
   .ui-scroll-row[data-spacing='compact'] {
-    gap: var(--sys-space-compact);
+    --ui-scroll-row-gap: var(--sys-space-compact);
+    gap: var(--ui-scroll-row-gap);
   }
   .ui-scroll-row[data-spacing='regular'] {
-    gap: var(--sys-space-regular);
+    --ui-scroll-row-gap: var(--sys-space-regular);
+    gap: var(--ui-scroll-row-gap);
   }
   .ui-scroll-row[data-spacing='comfortable'] {
-    gap: var(--sys-space-comfortable);
+    --ui-scroll-row-gap: var(--sys-space-comfortable);
+    gap: var(--ui-scroll-row-gap);
   }
   .ui-scroll-row[data-spacing='loose'] {
-    gap: var(--sys-space-loose);
+    --ui-scroll-row-gap: var(--sys-space-loose);
+    gap: var(--ui-scroll-row-gap);
   }
   .ui-scroll-row[data-spacing='spacious'] {
-    gap: var(--sys-space-spacious);
+    --ui-scroll-row-gap: var(--sys-space-spacious);
+    gap: var(--ui-scroll-row-gap);
   }
 
   /* Full bleed — break out of the centered column to the viewport edges;
      padding + scroll-padding keep items aligned to the page gutter
      (override --ui-scroll-row-gutter to match the page's own gutter).
      Sanctioned negative-margin full-bleed cancellation — no DS equivalent
-     exists for escaping the centered column. */
-  .ui-scroll-row[data-full-bleed] {
+     exists for escaping the centered column. The VALUE is matched, not the
+     attribute's presence: the container bleed below must never also take
+     the viewport's. */
+  .ui-scroll-row[data-full-bleed=''] {
     inline-size: 100vw;
     margin-inline: calc(50% - 50vw);
     padding-inline: var(--ui-scroll-row-gutter, var(--sys-space-regular));
@@ -63,5 +85,48 @@
       --ui-scroll-row-gutter,
       var(--sys-space-regular)
     );
+  }
+
+  /* Container bleed (2026-09-28) — a shelf inside a SHEET: cancel the
+     parent's inline padding (the sheet's `--ui-sheet-inset` unless the
+     consumer names its own gutter), so the row runs to the sheet's edges,
+     and pad it back so the first item still starts on the column's edge
+     and snaps there. Same sanctioned cancellation as the viewport bleed. */
+  .ui-scroll-row[data-full-bleed='container'] {
+    margin-inline: calc(
+      -1 *
+        var(
+          --ui-scroll-row-gutter,
+          var(--ui-sheet-inset, var(--sys-space-regular))
+        )
+    );
+    padding-inline: var(
+      --ui-scroll-row-gutter,
+      var(--ui-sheet-inset, var(--sys-space-regular))
+    );
+    scroll-padding-inline: var(
+      --ui-scroll-row-gutter,
+      var(--ui-sheet-inset, var(--sys-space-regular))
+    );
+  }
+
+  /* ≙ containerRelativeFrame(.horizontal, count:span:spacing:) — each item
+     is `span` of `count` columns across the row's content box (the column,
+     under either bleed: the padding gives it back), spacing counted: the
+     `count − 1` gaps come off the width first, and an item spanning more
+     than one column takes the gaps it covers. The width is published as
+     `--ui-scroll-row-item` (its `100%` is the row's content box wherever
+     it is used), so a row that lays its items on tracks sizes its columns
+     by the same share (medal.css, a rail of medal tiles). */
+  .ui-scroll-row[data-relative] {
+    --ui-scroll-row-item: calc(
+      (100% - (var(--ui-scroll-row-count) - 1) * var(--ui-scroll-row-gap)) /
+        var(--ui-scroll-row-count) * var(--ui-scroll-row-span) +
+        (var(--ui-scroll-row-span) - 1) * var(--ui-scroll-row-gap)
+    );
+  }
+
+  .ui-scroll-row[data-relative] > * {
+    inline-size: var(--ui-scroll-row-item);
   }
 }

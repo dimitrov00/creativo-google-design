@@ -1,0 +1,15 @@
+:host {
+  display: block;
+}
+
+.date-tile__mono {
+  font-family: var(--sys-font-family-mono);
+}
+
+/* A plain list (no group fill): the rows are the DS list rows. */
+.date-tile__list {
+  max-inline-size: calc(var(--sys-space-unit) * 90);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}

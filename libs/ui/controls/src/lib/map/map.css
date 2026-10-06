@@ -191,8 +191,8 @@
 }
 
 /* ── The canvas container's own box ─────────────────────────────────────
-   UNLAYERED, and it has to be: `maplibre-gl/dist/maplibre-gl.css` is imported
-   unlayered in each app's styles.css, and unlayered author CSS beats ALL
+   UNLAYERED, and it has to be: `maplibre-gl/dist/maplibre-gl.css` is loaded
+   unlayered (by `MapLibreLoader`), and unlayered author CSS beats ALL
    layered CSS regardless of specificity. MapLibre stamps `.maplibregl-map` on
    this very element and sets `position: relative` there, so an
    `@layer sys-components` rule can never move it — the container stays
@@ -209,8 +209,9 @@
 
 /* ── MapLibre stacking containment ──────────────────────────────────────
    Also UNLAYERED, and for the same reason as the glyph block above:
-   `maplibre-gl/dist/maplibre-gl.css` is imported unlayered in each app's
-   styles.css, so a rule inside @layer sys-components can never outrank it.
+   `maplibre-gl/dist/maplibre-gl.css` is loaded unlayered (by
+   `MapLibreLoader`, with the map — off the initial path since 2026-09-26),
+   so a rule inside @layer sys-components can never outrank it.
 
    MapLibre's cooperative-gesture veil (the "use two fingers to move the
    map" panel) ships at `z-index: 99999`, and its container is only

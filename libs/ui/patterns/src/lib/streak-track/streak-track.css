@@ -1,0 +1,242 @@
+@layer sys-components {
+  /* The tint is the accent every meter fills with; frozen, it is the
+     secondary ink — the run is held, not lost, and nothing is erased. */
+  .ui-streak-track {
+    --ui-streak-tint: var(--sys-color-accent);
+    /* The mark is the step node's rung (gauge.css), 24 at the base
+       density — a unit multiple, never a literal. */
+    --ui-streak-mark: calc(var(--sys-space-unit) * 6);
+    --ui-streak-link-weight: calc(var(--sys-stroke-mark) * 2);
+
+    display: block;
+    min-inline-size: 0;
+  }
+
+  .ui-streak-track[data-frozen] {
+    --ui-streak-tint: var(--sys-color-secondary-label);
+  }
+
+  /* A small track in a taller host (the glance tile beside the stamp
+     card) keeps its count on top and sets its marks on the floor, so the
+     two half tiles' drawings end on one line and the tile never reads as
+     a missing row. A host of its own height — every other use — changes
+     nothing: the free space is zero. */
+  .ui-streak-track[data-control-size='small'] {
+    --ui-streak-mark: calc(var(--sys-size-dot) * 2);
+
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* The count over the periods. The count is a `ui-metric` at both sizes
+     (title3 over caption), styled by the metric alone — nothing here
+     reaches into it. */
+  .ui-streak-track__figure {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sys-space-compact);
+  }
+
+  /* THE PERIODS — the mark on top, its caption under it, the first and
+     last marks ON THE CONTENT EDGES (2026-09-28, gauge.css's step grammar):
+     as one equal column each, the first mark's inset hung on the period
+     count, 13 pt inside the figure above it. Each period is its mark's
+     width, spread from edge to edge; its caption is centred under the
+     mark and overhangs it — up to the pitch in the middle, clamped to the
+     edge at either end. The pitch is measured in the row's own width (the
+     query container) over the count the track publishes. The connector
+     INTO a period is drawn by that period, from the previous mark's edge
+     to its own. */
+  .ui-streak-track__periods {
+    --ui-streak-pitch: calc(
+      (100cqi - var(--ui-streak-mark)) / max(var(--ui-streak-periods, 1) - 1, 1)
+    );
+
+    container-type: inline-size;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+  }
+
+  /* The small track in a taller host: its figure takes the height, its
+     marks the floor (the host rule above says why). */
+  .ui-streak-track[data-control-size='small'] .ui-streak-track__figure {
+    flex: 1 1 auto;
+  }
+
+  .ui-streak-track[data-control-size='small'] .ui-streak-track__periods {
+    margin-block-start: auto;
+  }
+
+  .ui-streak-track__period {
+    position: relative;
+    display: flex;
+    flex: none;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--sys-space-tight);
+    inline-size: var(--ui-streak-mark);
+    text-align: center;
+  }
+
+  .ui-streak-track__period:first-child {
+    --ui-streak-words: calc(
+      (var(--ui-streak-pitch) + var(--ui-streak-mark)) / 2
+    );
+
+    align-items: flex-start;
+    text-align: start;
+  }
+
+  .ui-streak-track__period:last-child {
+    --ui-streak-words: calc(
+      (var(--ui-streak-pitch) + var(--ui-streak-mark)) / 2
+    );
+
+    align-items: flex-end;
+    text-align: end;
+  }
+
+  .ui-streak-track__period[data-connector]::before {
+    content: '';
+    position: absolute;
+    inset-block-start: calc(
+      var(--ui-streak-mark) / 2 - var(--ui-streak-link-weight) / 2
+    );
+    inset-inline-start: calc(var(--ui-streak-mark) - var(--ui-streak-pitch));
+    inline-size: calc(var(--ui-streak-pitch) - var(--ui-streak-mark));
+    block-size: var(--ui-streak-link-weight);
+    transform-origin: left center;
+  }
+
+  .ui-streak-track__period[data-connector='tint']::before {
+    background: var(--ui-streak-tint);
+  }
+
+  .ui-streak-track__period[data-connector='quiet']::before {
+    background: var(--sys-color-secondary-label);
+  }
+
+  /* Into the open period: a dotted run in the tint — not yet kept. */
+  .ui-streak-track__period[data-connector='dotted']::before {
+    block-size: 0;
+    inset-block-start: calc(
+      var(--ui-streak-mark) / 2 - var(--ui-streak-link-weight) / 2
+    );
+    border-block-start: var(--ui-streak-link-weight) dotted
+      var(--ui-streak-tint);
+  }
+
+  /* THE MARKS — by shape first. */
+  .ui-streak-track__mark {
+    display: grid;
+    place-items: center;
+    box-sizing: border-box;
+    inline-size: var(--ui-streak-mark);
+    block-size: var(--ui-streak-mark);
+    border-radius: var(--control-radius-capsule);
+    color: var(--sys-color-secondary-label);
+  }
+
+  .ui-streak-track__period[data-mark='kept'] .ui-streak-track__mark,
+  .ui-streak-track__period[data-mark='repaired'] .ui-streak-track__mark {
+    background: var(--ui-streak-tint);
+  }
+
+  /* Repaired: the kept disc and a dashed halo — the run continues, and
+     it shows that it was mended. */
+  .ui-streak-track__period[data-mark='repaired'] .ui-streak-track__mark {
+    outline: var(--sys-stroke-mark) dashed var(--ui-streak-tint);
+    outline-offset: var(--sys-stroke-emphasis);
+  }
+
+  .ui-streak-track__period[data-mark='protected'] .ui-streak-track__mark {
+    box-shadow: inset 0 0 0 var(--sys-stroke-mark)
+      var(--sys-color-secondary-label);
+  }
+
+  /* Missed: a DASHED ring in the secondary ink — the dash says it, not a
+     paler colour, and never red. */
+  .ui-streak-track__period[data-mark='missed'] .ui-streak-track__mark {
+    border: var(--sys-stroke-mark) dashed var(--sys-color-secondary-label);
+  }
+
+  /* The open period: hollow, ringed in the tint. */
+  .ui-streak-track__period[data-mark='current'] .ui-streak-track__mark {
+    box-shadow: inset 0 0 0 var(--sys-stroke-emphasis) var(--ui-streak-tint);
+  }
+
+  /* The freeze glyph takes the icon ladder's floor, 16, in the 24 mark
+     (2026-09-28: `mark × 0.66` minted 15.8). The small track's 16 mark
+     has no rung under it — a 16 glyph would run into its ring — so there
+     the glyph stays the mark's two-thirds: a detail of a 16 pt drawing,
+     read by its shape, never a control glyph. */
+  .ui-streak-track__glyph {
+    font-size: var(--ui-icon-small);
+  }
+
+  .ui-streak-track[data-control-size='small'] .ui-streak-track__glyph {
+    font-size: calc(var(--ui-streak-mark) * 0.66);
+  }
+
+  .ui-streak-track__caption {
+    max-inline-size: var(--ui-streak-words, var(--ui-streak-pitch));
+    font: var(--sys-font-caption);
+    font-variant-numeric: tabular-nums;
+    color: var(--sys-color-secondary-label);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* The due date is the one caption that must be read whole: rather than
+     lose its day to an ellipsis it breaks at its space («до» over «26.10»)
+     inside its own room — spilling past the clamp instead ran it into the
+     caption before it once the marks sat on the edges — and a word wider
+     than that room overhangs rather than break. */
+  .ui-streak-track__period[data-mark='current'] .ui-streak-track__caption {
+    /* One line while it fits the room (the period itself is only a mark
+       wide); the cap above is the room. */
+    inline-size: max-content;
+    overflow: visible;
+    white-space: normal;
+    text-wrap: balance;
+    font-weight: 600;
+    color: var(--sys-color-foreground);
+  }
+
+  /* THE HIDDEN LIST — spans, so the track stays phrasing content inside a
+     button; each item still breaks its own line for a reader that walks
+     the text (braille, a copy). The clip recipe is uiVisuallyHidden's. */
+  .ui-streak-track__item {
+    display: block;
+  }
+
+  /* ── motion — only a LIVE change after the first frame ──────────────
+     A mark that changes kind cross-fades; the open period turning kept
+     draws its connector in from the run. A break swaps. */
+  @media (prefers-reduced-motion: no-preference) {
+    .ui-streak-track[data-settled] .ui-streak-track__mark {
+      transition:
+        background-color var(--sys-motion-duration-regular)
+          var(--sys-motion-ease-standard),
+        box-shadow var(--sys-motion-duration-regular)
+          var(--sys-motion-ease-standard);
+    }
+
+    .ui-streak-track[data-settled]
+      .ui-streak-track__period[data-extended]::before {
+      animation: ui-streak-extend var(--sys-motion-duration-regular)
+        var(--sys-motion-ease-emphasized);
+    }
+  }
+
+  @keyframes ui-streak-extend {
+    from {
+      scale: 0 1;
+    }
+    to {
+      scale: 1 1;
+    }
+  }
+}

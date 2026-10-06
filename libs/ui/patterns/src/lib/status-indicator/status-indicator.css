@@ -7,7 +7,9 @@
     font: var(--sys-font-footnote);
   }
 
-  /* Dot and label share the tone ink (dot fills with currentColor). */
+  /* Dot and label share the tone ink (dot fills with currentColor). The
+     destructive tone is a WORD first, so it reads the `-label` lift — the
+     fill's red is 3.12:1 on the dark card — and the dot takes the same. */
   .ui-status-indicator[data-tone='success'] {
     color: var(--sys-color-success);
   }
@@ -15,7 +17,7 @@
     color: var(--sys-color-warning);
   }
   .ui-status-indicator[data-tone='destructive'] {
-    color: var(--sys-color-destructive);
+    color: var(--sys-color-destructive-label);
   }
 
   /* ONE dot geometry — replaces the diverging 0.4rem/0.55rem hand-rolled

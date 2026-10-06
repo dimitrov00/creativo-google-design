@@ -58,15 +58,26 @@
   .ui-button[data-button-style='bordered'] {
     /* v2 "soft" */
     background: color-mix(in srgb, var(--sys-color-accent) 12%, transparent);
-    /* INK, not fill. The raw accent as a label on this button's own 12% wash
-       measures 2.67:1 on light — the worst accent-text pairing in the system.
-       The label cut takes it to 4.3:1.
-       IT DOES NOT REACH 4.5. Closing the last 0.2 needs the wash lightened
-       from 12% to 8% (which lands it exactly on 4.5) — a visible paling of
-       every bordered button in the app, and a design call rather than a
-       conformance one. Left for that decision; the ink is fixed either way,
-       and dark is unaffected. */
-    color: var(--sys-color-accent-label);
+    /* THE ACCENT LAW (2026-09-29): the wash is the colour, the label is
+       ink. 12% is this style's identity and does not move; the label is
+       the primary ink on it (16.46:1 on a light page or card, 15.45:1 on
+       a grouped segment; 11.00:1 at the worst in dark, on an elevated
+       card), so the wash is free to deepen under the pointer and when
+       selected on any ground. The label's darker cut of the accent
+       (#b04100) is gone. accent-rule.spec.ts in libs/ui/tokens reads this
+       rule's rungs and holds the ink to 4.6:1 on every one of them. */
+    color: var(--sys-color-foreground);
+  }
+  /* …and the GLYPH beside the label is the orange (2.67:1 on its own wash
+     in light: legal because the label names the verb, SC 1.4.11 binds a
+     graphic that is the only carrier). So an ICON-ONLY bordered button
+     keeps the foreground glyph: nothing else names it. The neutral tint
+     and the destructive role keep their own ink, glyph included. */
+  .ui-button[data-button-style='bordered']:not([data-tint]):not(
+      [data-icon-only]
+    ):not([data-role])
+    .ui-icon {
+    color: var(--sys-color-accent);
   }
   .ui-button[data-button-style='plain'] {
     color: var(--sys-color-secondary-label);
@@ -84,9 +95,11 @@
   }
   /* Role — ≙ Button(role: .destructive): recolors ANY style, exactly like
      SwiftUI. Filled style swaps its fill; quiet styles swap their ink;
-     bordered swaps its tint. */
+     bordered swaps its tint. The INK is the `-label` lift (legible on the
+     dark card and on the role's own wash); the fill and the wash keep the
+     tone. */
   .ui-button[data-role='destructive'] {
-    color: var(--sys-color-destructive);
+    color: var(--sys-color-destructive-label);
   }
   .ui-button[data-button-style='bordered'][data-role='destructive'] {
     background: color-mix(
@@ -142,7 +155,7 @@
   /* A `destructive` glass control keeps its role's ink — the white fill used
      to swallow it, so the remove button read as an ordinary one. */
   .ui-button[data-button-style='glass'][data-role='destructive'] {
-    color: var(--sys-color-destructive);
+    color: var(--sys-color-destructive-label);
   }
 
   /*
@@ -406,7 +419,8 @@
   /* Selected (toggle isOn) — the open/pressed resting state for triggers
      and layout toggles. Each quiet variant deepens along its OWN hover
      grammar: tinted to its press-tier 18% accent fill, bordered/plain to
-     the segment-selected rung of the alpha ladder. */
+     the segment-selected rung of the alpha ladder. The label is the
+     primary ink, so the selected accent wash may sit on any ground. */
   .ui-button[data-button-style='bordered'][data-selected] {
     background: color-mix(in srgb, var(--sys-color-accent) 18%, transparent);
   }

@@ -1,0 +1,386 @@
+/*
+ * THE CLIENT CARD, COMPOSED — layout only. Every surface, ink and type
+ * role on the sheets is a DS piece's own; these rules place the pieces
+ * and set the air between them, on the space tokens. No `font:` shorthand
+ * is written here (the app's tabular figures are never reset) and no
+ * `color:`: where a disc takes the orange it is a `background`, and its
+ * glyph's ink goes through the piece's own custom property.
+ */
+
+:host {
+  display: block;
+}
+
+/* ── the page: a plate is its words over a stage of sheets ───────────── */
+
+.client-card__plate {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sys-space-comfortable);
+}
+
+.client-card__lead {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sys-space-compact);
+  max-inline-size: 42rem;
+}
+
+.client-card__lead > * {
+  margin: 0;
+  text-wrap: pretty;
+}
+
+/* THE STAGE: a quiet ground a step off the page, so a white sheet reads as
+   a sheet in light and a lifted one in dark. Sheets stand side by side at
+   a phone's width where there is room, one under the other where not. */
+.client-card__stage {
+  display: grid;
+  grid-template-columns: repeat(
+    auto-fit,
+    minmax(
+      min(100%, calc(var(--sys-space-unit) * 82.5)),
+      calc(var(--sys-space-unit) * 97.5 + 2px)
+    )
+  );
+  justify-content: center;
+  align-items: start;
+  gap: var(--sys-space-loose) var(--sys-space-comfortable);
+  padding: var(--sys-space-loose) var(--sys-space-comfortable);
+  border-radius: var(--control-radius-hero);
+  background: var(--sys-color-fill);
+}
+
+.client-card__column {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sys-space-loose);
+  min-inline-size: 0;
+}
+
+.client-card__figure {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sys-space-regular);
+  min-inline-size: 0;
+  margin: 0;
+}
+
+.client-card__caption {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+/* ── a stand-in for the visit sheet ──────────────────────────────────── */
+
+/* The sheet's surface at a 390 pt phone's width, with the sheet's own
+   inline inset either side of the column (354.8, as in the app). It
+   publishes what `ui-modal-sheet` measures and writes on its scroller, the
+   chrome's height: a 44 chip, the bar's padding of 8 above and under it,
+   and its hairline (61).
+
+   It is a scroll container that never scrolls (`overflow: hidden`): the
+   bar sticks to IT and a large title's view-timeline is measured in IT,
+   so a head stays at rest while the showcase page moves. `timeline-scope`
+   is what the DS surface declares for a real sheet (sheet-header.css). */
+.client-card__sheet {
+  --ui-sheet-inset: 1.1rem;
+  --modal-sheet-chrome-height: calc(
+    var(--control-size-regular) + var(--sys-space-compact) * 2 + 1px
+  );
+
+  timeline-scope: --ui-sheet-headline;
+
+  position: relative;
+  box-sizing: border-box;
+  inline-size: 100%;
+  border: 1px solid var(--sys-color-separator);
+  border-radius: var(--control-radius-hero);
+  background: var(--sys-color-surface);
+  box-shadow: var(--sys-elevation-raised);
+  overflow: hidden;
+}
+
+/* The page under the bar: it starts 16 under it, its modules 32 apart (the
+   client stack's own gap), and ends on the same 32. */
+.client-card__page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sys-space-loose);
+  padding: var(--sys-space-regular) var(--ui-sheet-inset) var(--sys-space-loose);
+}
+
+/* A CUT of a page, further down: no bar, the same 32 above as under. */
+.client-card__sheet--cut > .client-card__page {
+  padding-block-start: var(--sys-space-comfortable);
+}
+
+/* THE GLANCE'S RISE: the chrome less 24, so the ring's top stands 35 under
+   the grabber (37 of the bar's 61). */
+.client-card__risen {
+  --ui-sheet-headline-rise: calc(
+    var(--modal-sheet-chrome-height) - var(--sys-space-comfortable)
+  );
+}
+
+/* A FACT IS ONE WORD to the line breaker: with the no-break space before
+   each «·», a quiet line that wraps ends on a whole fact. */
+.client-card__fact {
+  white-space: nowrap;
+}
+
+/* A list item holding one tile: the tile takes the slot's width. */
+.client-card__slot {
+  display: grid;
+  min-inline-size: 0;
+}
+
+/* ── the discs' second fill (owner question Q2) ──────────────────────── */
+
+/* The two properties of the run are the whole difference: every disc
+   takes the accent wash and its glyph the one orange… */
+.client-card__tinted {
+  --ui-quick-action-fill: color-mix(
+    in srgb,
+    var(--sys-color-accent) var(--sys-alpha-tint),
+    transparent
+  );
+  --ui-quick-action-ink: var(--sys-color-accent);
+}
+
+/* …and the promoted verb is a solid disc with a white glyph: a mark. */
+.client-card__solid {
+  --ui-quick-action-fill: var(--sys-color-accent);
+  --ui-quick-action-ink: var(--sys-color-on-accent);
+}
+
+/* ── a visit, in the card `/account` draws ───────────────────────────── */
+
+/* One block of words, `tight` apart: each line belongs to the one over
+   it. The face hangs from the top-trailing corner; the money ends the
+   facts' first line. */
+.client-card__visit {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sys-space-tight);
+  min-inline-size: 0;
+}
+
+.client-card__visit-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  column-gap: var(--sys-space-regular);
+}
+
+.client-card__visit-titles {
+  display: grid;
+  row-gap: var(--sys-space-tight);
+  min-inline-size: 0;
+  text-wrap: balance;
+}
+
+.client-card__visit-facts {
+  display: flow-root;
+}
+
+.client-card__visit-figure {
+  float: inline-end;
+  margin-inline-start: var(--sys-space-regular);
+  white-space: nowrap;
+}
+
+/* The capsule hugs its word, a compact step under the facts. */
+.client-card__visit-capsule {
+  align-self: flex-start;
+  margin-block-start: var(--sys-space-tight);
+}
+
+/* ── the loyalty card of the glance ──────────────────────────────────── */
+
+/* The pass's two discs as a wash: a cap in the trailing corner over the
+   figure's line (a disc of 140), and a crescent down the trailing edge, in
+   the card's own padding (a disc of 88). No word of the card lies over
+   them.
+
+   Each is a BOX INSIDE the card with the circle cut into it, the pass's
+   own recipe: a round element hung half outside and clipped leaves its box
+   over what stands round the card (the heading's action above it), and a
+   contrast check then reads the wash behind words it is nowhere near. */
+.client-card__points {
+  --points-unit: var(--sys-space-unit);
+
+  position: relative;
+  overflow: clip;
+}
+
+.client-card__points-disc {
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline-end: 0;
+  inline-size: calc(var(--points-unit) * 27);
+  block-size: calc(var(--points-unit) * 13);
+  background: color-mix(
+    in srgb,
+    var(--sys-color-accent) var(--sys-alpha-tint),
+    transparent
+  );
+  clip-path: circle(
+    calc(var(--points-unit) * 17.5) at calc(var(--points-unit) * 17.5)
+      calc(var(--points-unit) * -4.5)
+  );
+  pointer-events: none;
+}
+
+.client-card__points-disc + .client-card__points-disc {
+  inset-block: calc(var(--points-unit) * 10) 0;
+  inline-size: var(--sys-space-comfortable);
+  block-size: auto;
+  clip-path: circle(
+    calc(var(--points-unit) * 11) at calc(var(--points-unit) * 11)
+      calc(var(--points-unit) * 11)
+  );
+}
+
+.client-card__points-words {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--sys-space-tight);
+  text-align: start;
+}
+
+.client-card__points-figure {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sys-space-compact);
+}
+
+.client-card__points-holdings {
+  margin-block-start: var(--sys-space-tight);
+}
+
+/* ── records ─────────────────────────────────────────────────────────── */
+
+/* THE EMBLEM is the DS disc that stands for something other than a person
+   (`ui-avatar` with `uiIcon`): solid, a white glyph, a mark of 52. On a
+   grey segment it is the PAPER disc instead: white, the glyph orange. */
+.client-card__emblem {
+  --ui-avatar-ink: var(--sys-color-on-accent);
+
+  background: var(--sys-color-accent);
+}
+
+.client-card__emblem--paper {
+  --ui-avatar-ink: var(--sys-color-accent);
+
+  background: var(--sys-color-surface-elevated);
+}
+
+/* A record card: the emblem, 12 of air, then the label, the figure and
+   the detail as one block. Every card of a row is the row's height. */
+.client-card__record {
+  gap: calc(var(--sys-space-unit) * 3);
+  block-size: 100%;
+  text-align: start;
+}
+
+.client-card__record-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  row-gap: var(--sys-space-compact);
+}
+
+/* «Нов рекорд» is one word to the line breaker: beside the emblem where
+   the card holds both (52 and 84 of the 137 a 390 pt phone gives), on a
+   line of its own under it where it does not (330). */
+.client-card__record-new {
+  flex: none;
+  white-space: nowrap;
+}
+
+.client-card__record-words,
+.client-card__featured-words {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sys-space-tight);
+  min-inline-size: 0;
+}
+
+/* The words stand on the card's foot, so the figures of a row share a
+   line whatever a label wraps to. */
+.client-card__record-words {
+  margin-block-start: auto;
+}
+
+.client-card__featured {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sys-space-regular);
+}
+
+.client-card__row-words {
+  display: flex;
+  flex-direction: column;
+  min-inline-size: 0;
+}
+
+/* ── rings ───────────────────────────────────────────────────────────── */
+
+/* A ring and its two lines: the ring never shrinks, the lines wrap. */
+.client-card__ring-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sys-space-regular);
+}
+
+.client-card__ring-lines {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-inline-size: 0;
+}
+
+/* A RING THAT STANDS ALONE round a figure is `large` with the stroke at
+   five: the family of the account page's ring. Set on the gauge itself. */
+.client-card__alone {
+  --ui-gauge-stroke: calc(var(--sys-space-unit) * 1.25);
+}
+
+/* What the last press did, under the last plate. */
+.client-card__last {
+  margin: 0;
+  text-align: center;
+}
+
+/* ── on a phone the page is the phone ────────────────────────────────── */
+
+/* The stage gives the page's gutter back and the sheet takes the whole
+   viewport, as the visit sheet does: the column is the app's own (354.8
+   at 390, 294.8 at 330), so nothing wraps here that the app never wraps.
+   The sheet keeps its top corners and runs off at the foot. */
+@media (max-width: 30rem) {
+  .client-card__stage {
+    grid-template-columns: minmax(0, 1fr);
+    margin-inline: calc(var(--sys-space-comfortable) * -1);
+    padding: var(--sys-space-comfortable) 0;
+    border-radius: 0;
+  }
+
+  .client-card__sheet {
+    border-inline: 0;
+    border-block-end: 0;
+    border-end-start-radius: 0;
+    border-end-end-radius: 0;
+  }
+
+  .client-card__caption,
+  .client-card__reference {
+    padding-inline: var(--sys-space-regular);
+  }
+}

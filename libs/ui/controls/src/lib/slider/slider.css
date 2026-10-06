@@ -140,22 +140,12 @@
     opacity: var(--sys-opacity-disabled);
   }
 
-  /* THE MARKS — a caption under each point that matters, centred on it,
-     measured on the same inner range the ticks use. */
+  /* THE MARKS — `ui-mark-scale` under the track, measured on the same inner
+     range the ticks use (half the thumb in at each end), on the line height
+     the marks always had so the control does not change height. */
   .ui-slider__marks {
-    position: relative;
-    display: block;
-    block-size: calc(var(--sys-space-unit) * 4);
-    margin-inline: calc(var(--ui-slider-thumb) / 2);
-    font: var(--sys-font-caption);
-    font-variant-numeric: tabular-nums;
-    color: var(--sys-color-secondary-label);
-  }
-  .ui-slider__mark {
-    position: absolute;
-    inset-block-start: 0;
-    inset-inline-start: calc(var(--ui-slider-mark, 0) * 100%);
-    translate: -50% 0;
-    white-space: nowrap;
+    --ui-mark-scale-inset: calc(var(--ui-slider-thumb) / 2);
+
+    min-block-size: calc(var(--sys-space-unit) * 4);
   }
 }

@@ -1,0 +1,29 @@
+:host {
+  display: block;
+}
+
+.mark-scale__mono {
+  font-family: var(--sys-font-family-mono);
+}
+
+/* A phone's content column (390 − 2 × 16). */
+.mark-scale__column {
+  max-inline-size: calc(var(--sys-space-unit) * 90);
+}
+
+/* A stand-in range for the scale to sit under — the extent it measures. */
+.mark-scale__rule {
+  display: block;
+  block-size: var(--sys-size-dot);
+  border-radius: var(--control-radius-capsule);
+  background: var(--sys-color-fill);
+}
+
+.mark-scale__rule--inset,
+.mark-scale__inset {
+  --ui-mark-scale-inset: calc(var(--sys-space-unit) * 3.5);
+}
+
+.mark-scale__rule--inset {
+  margin-inline: var(--ui-mark-scale-inset);
+}

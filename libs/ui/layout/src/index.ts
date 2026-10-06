@@ -8,3 +8,4 @@ export * from './lib/spacer/spacer';
 export * from './lib/grid/grid';
 export * from './lib/scroll-row/scroll-row';
 export * from './lib/scroll-column/scroll-column';
+export * from './lib/scroll/nearest-scroller';

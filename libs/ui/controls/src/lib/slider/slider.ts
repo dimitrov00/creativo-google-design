@@ -6,12 +6,14 @@ import {
   input,
   output,
 } from '@angular/core';
+import { UiMarkScale, type UiMark } from '@creativo/ui/patterns';
 
-/** A word under a point of the range — «0%», «100%», «14,50 €». */
-export interface UiSliderMark {
-  readonly value: number;
-  readonly label: string;
-}
+/**
+ * A word under a point of the range — «0%», «100%», «14,50 €». The DS's
+ * one mark grammar (`UiMark`, shared with `ui-gauge`), narrowed: a slider's
+ * point always has its word.
+ */
+export type UiSliderMark = UiMark & { readonly label: string };
 
 /**
  * THE SLIDER — SwiftUI parity: `Slider(value:in:step:)`.
@@ -33,6 +35,12 @@ export interface UiSliderMark {
  * screen reader says for the value («−15% · −2,63 €»), the owner's words.
  * The tint is `--ui-slider-tint` (the accent unless the owner says), and
  * the control owns no space around itself but the marks' own line.
+ *
+ * The words are `ui-mark-scale`'s, the grammar the gauge draws with too:
+ * the first starts where the range starts and the last ends where it ends
+ * (they used to hang half a word past the track), and a word that would
+ * overprint its neighbour is dropped — the owner's `uiValueText` still
+ * says every value.
  */
 @Component({
   selector: 'ui-slider',
@@ -77,17 +85,15 @@ export interface UiSliderMark {
       (input)="uiValueChange.emit(native.valueAsNumber)"
     />
     @if (uiMarks().length > 0) {
-      <span class="ui-slider__marks" aria-hidden="true">
-        @for (mark of uiMarks(); track mark.value) {
-          <span
-            class="ui-slider__mark"
-            [style.--ui-slider-mark]="ratio(mark.value)"
-            >{{ mark.label }}</span
-          >
-        }
-      </span>
+      <ui-mark-scale
+        class="ui-slider__marks"
+        [uiMarks]="uiMarks()"
+        [uiMin]="uiMin()"
+        [uiMax]="uiMax()"
+      />
     }
   `,
+  imports: [UiMarkScale],
   styleUrl: './slider.css',
   changeDetection: ChangeDetectionStrategy.OnPush,
   // Unscoped, like every DS control: `.ui-*` is the styling contract.

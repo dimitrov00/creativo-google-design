@@ -1,0 +1,102 @@
+:host {
+  display: block;
+}
+
+.medal__mono {
+  font-family: var(--sys-font-family-mono);
+}
+
+/* A phone's content column (390 − 2 × 16). */
+.medal__column {
+  max-inline-size: calc(var(--sys-space-unit) * 90);
+}
+
+/* THE SHEET'S COLUMN ON A PHONE. The demo canvas pads 24 each side, so a
+   card inside it is 293 wide at 390 where the sheet's is 354, and a grid
+   of three is drawn narrower than the page will ever draw it. On a phone
+   the cards take 16 of the canvas's padding back each side (325: tiles of
+   92, between the sheet's 87 at 330 and its 102 at 390). */
+@media (max-width: 30rem) {
+  .medal__sheet {
+    margin-inline: calc(var(--sys-space-regular) * -1);
+  }
+}
+
+/* …and on a 330 pt phone all of it (281, where the sheet's card is 298):
+   with the grid's own tighter metrics there a tile is 86 wide, the
+   sheet's 87. */
+@media (max-width: 23.5rem) {
+  .medal__sheet {
+    margin-inline: calc(var(--sys-space-comfortable) * -1);
+  }
+}
+
+/* A list item holding one tile: the tile takes the slot's width. */
+.medal__slot {
+  min-inline-size: 0;
+}
+
+/* A tile that stands alone: wide enough for a two-line title. */
+.medal__tile {
+  inline-size: calc(var(--sys-space-unit) * 24);
+}
+
+/* Samples stand in the middle of their card, as a hero does. */
+.medal__centred {
+  justify-content: center;
+}
+
+/* THE MEDAL ALONE is its ring's box: the chip hangs half its height under
+   it. Whoever mounts it leaves that room; here, a compact step and a
+   half, the portrait rung's fourteen. */
+.medal__bare {
+  margin-block-end: calc(var(--sys-space-unit) * 3.5);
+}
+
+/* A RING THAT STANDS ALONE round a figure is `large` with the stroke at
+   five (the gauge page's own sample), set on the gauge itself. */
+.medal__alone {
+  --ui-gauge-stroke: calc(var(--sys-space-unit) * 1.25);
+
+  margin-block-end: calc(var(--sys-space-unit) * 3.5);
+}
+
+/* ── the ladder ───────────────────────────────────────────────────────── */
+
+/* A list of medals, a level a row: the medal and its two lines, the date
+   it was won on the second line's trailing edge (the demo canvas is
+   narrower than the sheet, where it rides the first). Rows of 68 a compact
+   step apart: the 52 ring stands in the middle, so the chip under it (8)
+   ends on the row's own foot. */
+.medal__ladder {
+  display: grid;
+  gap: var(--sys-space-compact);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.medal__rung {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  column-gap: var(--sys-space-regular);
+  align-items: center;
+  min-block-size: calc(var(--sys-space-unit) * 17);
+}
+
+.medal__rung-words {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: var(--sys-space-compact);
+  align-items: baseline;
+  min-inline-size: 0;
+}
+
+.medal__rung-title {
+  grid-column: 1 / -1;
+}
+
+.medal__rung-date {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}

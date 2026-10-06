@@ -71,22 +71,25 @@
   overflow-wrap: anywhere;
 }
 
-/* The one action: the plain-button recipe at the small rung, accent ink,
-   hugging its label. `uiInteractive` supplies hover and the ungated press. */
+/* The one action: the plain-button recipe at the small rung, hugging its
+   label, in the primary ink at weight 600 (the accent law, 2026-09-29:
+   words are ink). A toast holds one action; its weight finds it, against
+   the sentence at 400 and the quiet ✕. `uiInteractive` supplies hover and
+   the ungated press. */
 .ui-toast__action {
   flex: none;
   min-block-size: var(--control-size-small);
   padding-inline: var(--sys-space-compact);
   border: 0;
   background: none;
-  color: var(--sys-color-accent-label, var(--sys-color-accent));
+  color: var(--sys-color-foreground);
   font: inherit;
   font-weight: 600;
 }
 
 /* THE DISMISS — a ✕ inside the clock's ring, at the small rung, a circle
    (`uiRadius="capsule"` on a square is one). Quiet ink: it is the way out,
-   not the way back, which the accent action beside it already is. */
+   not the way back, which the action beside it already is. */
 .ui-toast__dismiss {
   flex: none;
   display: grid;

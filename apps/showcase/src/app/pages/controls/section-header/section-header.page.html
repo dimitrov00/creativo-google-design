@@ -5,13 +5,16 @@
     Slots are attribute-marked (<code>uiEyebrow</code>, <code>uiTitle</code>,
     <code>uiLede</code>), take any heading level, and every slot is optional —
     the trio's internal rhythm is art-directed and collapses cleanly when slots
-    are omitted.
+    are omitted. Inside a sheet the same element is a module heading or a list
+    label (<code>uiHeaderProminence</code>), with one trailing action that stays
+    inside the column.
   </ng-container>
 
   <sc-demo scTitle="Anatomy">
     <ng-container scAbout>
       The full trio, and a title-only form — omitted slots collapse without
-      leaving stray rhythm.
+      leaving stray rhythm. The eyebrow's words are ink; its orange is the dot
+      in front of them.
     </ng-container>
     <ui-stack uiSpacing="loose" uiAlignment="leading">
       <ui-stack uiSpacing="tight" uiAlignment="leading">
@@ -78,10 +81,42 @@
     </ui-stack>
   </sc-demo>
 
+  <sc-demo scTitle="uiEyebrowTone">
+    <ng-container scAbout>
+      One orange: colour is a shape, words are ink.
+      <code>accent</code> (default) is the brand moment over a landing section —
+      the words in primary ink, led by the status dot in
+      <code>--sys-color-accent</code>; an 11 px word is never tinted.
+      <code>secondary</code> is a STATUS qualifier («По избор»): quiet secondary
+      ink and no dot, so the least important word on the screen carries no mark.
+    </ng-container>
+    <ui-stack uiSpacing="loose" uiAlignment="leading">
+      <ui-stack uiSpacing="tight" uiAlignment="leading">
+        <ui-section-header uiEyebrowTone="accent">
+          <p uiEyebrow>Услуги</p>
+          <h3 uiTitle>Подстригване и брада</h3>
+        </ui-section-header>
+        <p uiText [uiFont]="'caption'" class="section-header__mono">
+          uiEyebrowTone=accent (default) · dot + primary ink
+        </p>
+      </ui-stack>
+      <ui-stack uiSpacing="tight" uiAlignment="leading">
+        <ui-section-header uiEyebrowTone="secondary">
+          <p uiEyebrow>По избор</p>
+          <h3 uiTitle>Рожден ден</h3>
+        </ui-section-header>
+        <p uiText [uiFont]="'caption'" class="section-header__mono">
+          uiEyebrowTone=secondary · no dot
+        </p>
+      </ui-stack>
+    </ui-stack>
+  </sc-demo>
+
   <sc-demo scTitle="On media" scTone="media">
     <ng-container scAbout>
       <code>uiOnMedia</code> flips the ink to the theme-independent
-      white-overlay ramp — for headers over video or photography.
+      white-overlay ramp — for headers over video or photography. The dot keeps
+      the accent: the same orange in both themes and over footage.
     </ng-container>
     <ui-stack uiSpacing="tight" uiAlignment="leading">
       <ui-section-header [uiOnMedia]="true">
@@ -98,6 +133,234 @@
         class="section-header__mono section-header__mono--on-media"
       >
         uiOnMedia
+      </p>
+    </ui-stack>
+  </sc-demo>
+
+  <sc-demo scTitle="In a sheet · increased">
+    <ng-container scAbout>
+      ≙ SwiftUI <code>.headerProminence(.increased)</code> — a module heading
+      inside a sheet. The title is <code>title3</code> (20/600), one rung over
+      the headline of the card it heads. EVERY heading is the small rung (36)
+      tall — with an action, with a detail or alone — and stands one compact
+      rung (8) over its body, so a page of modules keeps one rhythm. The cards
+      carry the glyphs; a heading takes <code>uiIcon</code> only where no card
+      follows. Never uppercase, never tracked.
+    </ng-container>
+    <ui-stack uiSpacing="tight" uiAlignment="stretch">
+      <div class="section-header__sheet">
+        <ui-stack uiSpacing="loose" uiAlignment="stretch">
+          <ui-stack uiSpacing="compact" uiAlignment="stretch">
+            <ui-section-header uiHeaderProminence="increased">
+              <h3 uiTitle id="section-header-visits">Посещения</h3>
+              <button
+                uiSectionAction
+                type="button"
+                uiButton
+                uiButtonStyle="plain"
+                uiControlSize="small"
+                aria-label="Всички посещения, 24"
+              >
+                24
+                <ui-icon uiName="nav.disclosure" />
+              </button>
+            </ui-section-header>
+            <ui-card uiTone="elevated">
+              <ui-stack uiSpacing="tight" uiAlignment="leading">
+                <p uiText [uiFont]="'headline'">Фейд и брада</p>
+                <p uiText [uiFont]="'callout'" uiForegroundStyle="secondary">
+                  пт, 4.09 · 10:00 · Иван
+                </p>
+              </ui-stack>
+            </ui-card>
+          </ui-stack>
+
+          <ui-stack uiSpacing="compact" uiAlignment="stretch">
+            <ui-section-header uiHeaderProminence="increased">
+              <h3 uiTitle id="section-header-season">Есен 2026</h3>
+              <span uiSectionDetail>2.09 – 1.12</span>
+            </ui-section-header>
+            <ui-card uiTone="elevated">
+              <ui-stack uiSpacing="tight" uiAlignment="leading">
+                <p uiText [uiFont]="'headline'">Ниво II</p>
+                <p uiText [uiFont]="'callout'" uiForegroundStyle="secondary">
+                  още 2 посещения до III
+                </p>
+              </ui-stack>
+            </ui-card>
+          </ui-stack>
+
+          <ui-stack uiSpacing="compact" uiAlignment="stretch">
+            <ui-section-header uiHeaderProminence="increased">
+              <h3 uiTitle id="section-header-photos">Снимки</h3>
+            </ui-section-header>
+            <ui-card uiTone="elevated">
+              <ui-stack uiSpacing="tight" uiAlignment="leading">
+                <p uiText [uiFont]="'headline'">3 снимки</p>
+                <p uiText [uiFont]="'callout'" uiForegroundStyle="secondary">
+                  последната от 4.09
+                </p>
+              </ui-stack>
+            </ui-card>
+          </ui-stack>
+        </ui-stack>
+      </div>
+      <p uiText [uiFont]="'caption'" class="section-header__mono">
+        increased · [uiSectionAction] / [uiSectionDetail] / title alone · row 36
+        · 8 to the body · 32 between modules
+      </p>
+    </ui-stack>
+  </sc-demo>
+
+  <sc-demo scTitle="In a sheet · the action">
+    <ng-container scAbout>
+      At most ONE trailing action, projected as
+      <code>[uiSectionAction]</code>: a <code>uiButton</code> in the
+      <code>plain</code> style, on the <code>small</code> rung, that names where
+      it goes. It hugs its label INSIDE the column — the trailing glyph's own
+      side bearing is its trailing padding — so hover, press and the focus ring
+      end on the edge the cards end on, and no margin is negative on either
+      axis. The 44 floor is a target that paints nothing: 4 of slop over and
+      under the 36 box. The ring paints above the card that follows. A
+      <code>regular</code> or <code>large</code> plain action still renders
+      inside the column, grows its row, and warns in development.
+    </ng-container>
+    <ui-stack uiSpacing="compact" uiAlignment="stretch">
+      <div class="section-header__sheet">
+        <ui-stack uiSpacing="loose" uiAlignment="stretch">
+          @for (sample of actions; track sample.id) {
+          <ui-stack uiSpacing="compact" uiAlignment="stretch">
+            <ui-section-header uiHeaderProminence="increased">
+              <h3 uiTitle [id]="'section-header-action-' + sample.id">
+                {{ sample.title }}
+              </h3>
+              <button
+                uiSectionAction
+                type="button"
+                uiButton
+                uiButtonStyle="plain"
+                uiControlSize="small"
+                [class.section-header__held-hover]="sample.held === 'hover'"
+                [class.section-header__held-focus]="sample.held === 'focus'"
+                [attr.aria-label]="sample.name"
+              >
+                {{ sample.label }} @if (sample.glyph) {
+                <ui-icon uiName="nav.disclosure" />
+                }
+              </button>
+            </ui-section-header>
+            <ui-card uiTone="elevated">
+              <ui-stack uiSpacing="tight" uiAlignment="leading">
+                <p uiText [uiFont]="'headline'">{{ sample.headline }}</p>
+                <p uiText [uiFont]="'callout'" uiForegroundStyle="secondary">
+                  {{ sample.line }}
+                </p>
+              </ui-stack>
+            </ui-card>
+          </ui-stack>
+          }
+
+          <ui-stack uiSpacing="compact" uiAlignment="stretch">
+            <ui-section-header uiHeaderProminence="increased">
+              <h3 uiTitle id="section-header-action-loading">Снимки</h3>
+              <ui-skeleton
+                uiSectionAction
+                uiRadius="subtle"
+                uiFrame
+                [uiFrameWidth]="'2.5rem'"
+                [uiFrameHeight]="'1.25rem'"
+              />
+            </ui-section-header>
+            <ui-skeleton
+              uiRadius="prominent"
+              uiFrame
+              [uiFrameHeight]="'6rem'"
+            />
+          </ui-stack>
+        </ui-stack>
+      </div>
+      <ol class="section-header__legend">
+        @for (sample of actions; track sample.id) {
+        <li uiText [uiFont]="'caption'" class="section-header__mono">
+          {{ sample.title }} · {{ sample.caption }}
+        </li>
+        }
+        <li uiText [uiFont]="'caption'" class="section-header__mono">
+          Снимки · ui-skeleton[uiSectionAction], before the figure is known
+        </li>
+      </ol>
+    </ui-stack>
+  </sc-demo>
+
+  <sc-demo scTitle="In a sheet · standard">
+    <ng-container scAbout>
+      <code>.headerProminence(.standard)</code> — a list-section label: one
+      footnote line in secondary ink, the detail at the trailing edge, flush
+      with the group's outer edge (<code>--ui-section-header-inset</code> moves
+      it). A label carries no glyph.
+    </ng-container>
+    <ui-stack uiSpacing="comfortable" uiAlignment="stretch">
+      <ui-stack
+        uiSpacing="compact"
+        uiAlignment="stretch"
+        class="section-header__column"
+      >
+        <ui-section-header uiHeaderProminence="standard">
+          <h3 uiTitle id="section-header-hair">Коса</h3>
+          <span uiSectionDetail>2 от 5</span>
+        </ui-section-header>
+        <ul uiListGroup aria-labelledby="section-header-hair">
+          <li uiListRow>Фейд</li>
+          <li uiListRow>Класическа</li>
+        </ul>
+        <p uiText [uiFont]="'caption'" class="section-header__mono">
+          standard · [uiSectionDetail] · labels its group
+        </p>
+      </ui-stack>
+    </ui-stack>
+  </sc-demo>
+
+  <sc-demo scTitle="In a sheet · pinned">
+    <ng-container scAbout>
+      <code>[uiPinned]="true"</code> (standard only) sticks the label under the
+      sheet's bar — the height <code>ui-modal-sheet</code> publishes as
+      <code>--modal-sheet-chrome-height</code>, the box's top here — on the
+      sheet's surface, so the rows pass beneath it (≙ a plain
+      <code>List</code>'s section header). Scroll the box.
+    </ng-container>
+    <ui-stack
+      uiSpacing="tight"
+      uiAlignment="stretch"
+      class="section-header__column"
+    >
+      <div
+        class="section-header__scroller"
+        tabindex="0"
+        aria-label="История по години"
+      >
+        @for (year of years; track year.label) {
+        <section class="section-header__year">
+          <ui-section-header uiHeaderProminence="standard" [uiPinned]="true">
+            <h3 uiTitle [id]="'section-header-year-' + year.label">
+              {{ year.label }}
+            </h3>
+            @if (year.detail) {
+            <span uiSectionDetail>{{ year.detail }}</span>
+            }
+          </ui-section-header>
+          <ul
+            role="list"
+            [attr.aria-labelledby]="'section-header-year-' + year.label"
+          >
+            @for (visit of year.visits; track visit) {
+            <li uiListRow>{{ visit }}</li>
+            }
+          </ul>
+        </section>
+        }
+      </div>
+      <p uiText [uiFont]="'caption'" class="section-header__mono">
+        standard · uiPinned
       </p>
     </ui-stack>
   </sc-demo>

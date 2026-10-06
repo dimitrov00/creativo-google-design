@@ -1,0 +1,181 @@
+@layer sys-components {
+  /* THE OCCASION BAND (client card, revision 3 §3.4) — a moment said in
+     colour. A SOLID accent band, the same orange in both themes; on it a
+     white disc holding the occasion's glyph, the title as a white display
+     figure, and a static scatter of flecks in white and near-black.
+
+     The accent law, rule 4: on the solid accent stand white MARKS and
+     white DISPLAY figures, nothing else. The title is 24/700 (3.04:1,
+     large text); the band prints no small word.
+
+     The hooks, each read with its default AT THE USE SITE, never declared
+     on the host, so an ancestor may set them:
+
+     --ui-occasion-band-height    the band's block size    6rem
+     --ui-occasion-band-surface   the band's fill          var(--sys-color-accent)
+
+     ⚠ Inside a ticket the TICKET places its tear at the band's height,
+     and a custom property set on the band is invisible to its parent: the
+     height the two share is set on the ticket and inherited here. */
+  .ui-occasion-band {
+    position: relative;
+    display: flex;
+    align-items: center;
+    box-sizing: border-box;
+    block-size: var(--ui-occasion-band-height, 6rem);
+    padding: var(--sys-space-regular);
+    /* STANDALONE: a card of its own, the ticket's corner and the card's
+       lift. The ticket squares its foot (coupon-card.css). */
+    border-radius: var(--control-radius-prominent);
+    background: var(--ui-occasion-band-surface, var(--sys-color-accent));
+    box-shadow: var(--sys-elevation-raised);
+    /* The flecks end at the band's edge, and the map is answered by the
+       band's own width, wherever it is mounted. */
+    overflow: clip;
+    container-type: inline-size;
+    text-align: start;
+  }
+
+  /* THE FLECKS — a layer under the text column, over the whole band. */
+  .ui-occasion-band__flecks {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+  }
+
+  /* One mark: placed by its CENTRE on the map, so a turned bar and a dot
+     keep the place the map gave them. */
+  .ui-occasion-band__fleck {
+    position: absolute;
+    inset-inline-start: var(--ui-occasion-fleck-x);
+    inset-block-start: var(--ui-occasion-fleck-y);
+    translate: -50% -50%;
+    rotate: var(--ui-occasion-fleck-turn, 0deg);
+  }
+
+  /* In a right-to-left band the map mirrors with the edge it is measured
+     from; the centring has to follow it. */
+  .ui-occasion-band:dir(rtl) .ui-occasion-band__fleck {
+    translate: 50% -50%;
+  }
+
+  /* Two inks, both at FULL strength: tone-on-tone flecks read as stains
+     (critique T8). */
+  .ui-occasion-band__fleck[data-ink='light'] {
+    background: var(--sys-color-on-accent);
+  }
+
+  .ui-occasion-band__fleck[data-ink='dark'] {
+    background: var(--sys-color-media-canvas);
+  }
+
+  /* 6 pt. */
+  .ui-occasion-band__fleck[data-shape='dot'] {
+    inline-size: calc(var(--sys-space-unit) * 1.5);
+    block-size: calc(var(--sys-space-unit) * 1.5);
+    border-radius: var(--control-radius-capsule);
+  }
+
+  /* 4 × 12, its ends rounded. */
+  .ui-occasion-band__fleck[data-shape='bar'] {
+    inline-size: var(--sys-space-unit);
+    block-size: calc(var(--sys-space-unit) * 3);
+    border-radius: var(--control-radius-capsule);
+  }
+
+  /* 12 pt, four points: a square cut to a star. */
+  .ui-occasion-band__fleck[data-shape='spark'] {
+    inline-size: calc(var(--sys-space-unit) * 3);
+    block-size: calc(var(--sys-space-unit) * 3);
+    clip-path: polygon(
+      50% 0,
+      61% 39%,
+      100% 50%,
+      61% 61%,
+      50% 100%,
+      39% 61%,
+      0 50%,
+      39% 39%
+    );
+  }
+
+  /* THE TEXT COLUMN — the disc and the title, one row, centred in the
+     band. It paints the band's own colour behind its box, so whatever a
+     long title reaches is covered and the title's row is always solid;
+     the air after it keeps a fleck off the last letter. */
+  .ui-occasion-band__lead {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: calc(var(--sys-space-unit) * 3);
+    min-inline-size: 0;
+    max-inline-size: 100%;
+    padding-inline-end: var(--sys-space-compact);
+    background: var(--ui-occasion-band-surface, var(--sys-color-accent));
+  }
+
+  /* THE DISC — white in BOTH themes, the glyph cut from the band's own
+     colour at 24. Icons inherit their size in this system. */
+  .ui-occasion-band__glyph {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    inline-size: var(--control-size-regular);
+    block-size: var(--control-size-regular);
+    border-radius: var(--control-radius-capsule);
+    background: var(--sys-color-on-accent);
+    font-size: calc(var(--sys-space-unit) * 6);
+    color: var(--ui-occasion-band-surface, var(--sys-color-accent));
+  }
+
+  /* No glyph given, no disc drawn. */
+  .ui-occasion-band__glyph:empty {
+    display: none;
+  }
+
+  .ui-occasion-band__lines {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--sys-space-tight);
+    min-inline-size: 0;
+  }
+
+  /* THE TITLE — the one text on the orange, a display figure. ONE line.
+     The display face sets its line tighter than its ink (a «Й» stands
+     0.8 over a 26.4 line), and what clips the overflow would clip the
+     accent: the box grows by an eighth of an em each way and gives it
+     back as margin, so nothing moves. */
+  .ui-occasion-band__title {
+    max-inline-size: 100%;
+    margin-block: -0.125em;
+    padding-block: 0.125em;
+    font: var(--sys-font-title2);
+    font-variant-numeric: tabular-nums;
+    color: var(--sys-color-on-accent);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* A NARROW BAND. The spec's line is a sheet narrower than 22.5rem (the
+     330 pt phone); the band answers by its OWN width, wherever it is
+     mounted. A container is measured by its CONTENT box: a sheet of
+     22.5rem leaves the band 20.3rem and, inside its padding, 18.3rem.
+     Under that the map keeps eight marks (the corners' and the four
+     nearest the trailing edge), never none, and the title steps down one
+     rung, to the smallest that is still a display figure (20/700), so
+     the longest title the app prints stays whole beside the disc. */
+  @container (inline-size < 18.25rem) {
+    .ui-occasion-band__fleck:not([data-kept]) {
+      display: none;
+    }
+
+    .ui-occasion-band__title {
+      font: var(--sys-font-title3);
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+    }
+  }
+}

@@ -1,0 +1,29 @@
+:host {
+  display: block;
+}
+
+.metric__mono {
+  font-family: var(--sys-font-family-mono);
+}
+
+/* A phone's content column (390 − 2 × 16). */
+.metric__column {
+  max-inline-size: calc(var(--sys-space-unit) * 90);
+}
+
+/* THE SHEET'S COLUMN ON A PHONE. The demo canvas pads 24 each side, so a
+   card inside it is 293 wide at 390 where the sheet's is 354. On a phone
+   the cards take 16 of the canvas's padding back each side, so the figure
+   is judged in a card as wide as the page will draw it. */
+@media (max-width: 30rem) {
+  .metric__sheet {
+    margin-inline: calc(var(--sys-space-regular) * -1);
+  }
+}
+
+/* A half column, narrower than the longest figure line. */
+.metric__half {
+  align-self: flex-start;
+  inline-size: calc(var(--sys-space-unit) * 55);
+  max-inline-size: 100%;
+}

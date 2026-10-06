@@ -1,0 +1,125 @@
+<sc-page scTitle="Month picker">
+  <ng-container scLede>
+    <code>ui-month-picker</code> — the DS's month: the title, the two steps, the
+    optional shortcuts and a <code>ui-calendar-grid</code> of
+    <code>ui-date-badge</code> days. Every calendar in the app is one of these
+    three pieces, and since 2026-10-06 they stand under the accent law:
+    <em>one orange; colour is a shape, words are ink</em>. The chosen day is the
+    SOLID accent disc under a white bold number, today is the accent itself as a
+    bold number, and a date badge draws at 20px wherever it stands — the one
+    size the chosen day's white number clears (3.04:1 is large text's bar, so no
+    grid may draw a month smaller).
+  </ng-container>
+
+  <sc-demo scTitle="The day's marks">
+    <ng-container scAbout>
+      One badge per state. <code>uiToday</code> is a flag beside the state, not
+      a state of its own, so a chosen today still says it is today to a reader —
+      and wears the chosen disc. The dot means EVENTS and takes the number's own
+      ink on the chosen day (white on the solid disc). Nothing here is the
+      darker accent cut: the brown-red label ink is gone from the tree.
+    </ng-container>
+    <ui-flow uiSpacing="loose" uiAlignment="leading">
+      @for (sample of badges; track sample.label) {
+      <ui-stack uiSpacing="tight" uiAlignment="center">
+        <ui-date-badge
+          [uiDay]="sample.day"
+          [uiState]="sample.state"
+          [uiToday]="sample.today"
+          [uiMarker]="sample.marker"
+        />
+        <p uiText [uiFont]="'caption'" class="month-picker__mono">
+          {{ sample.label }}
+        </p>
+      </ui-stack>
+      }
+    </ui-flow>
+  </sc-demo>
+
+  <sc-demo scTitle="The picker, on the page">
+    <ng-container scAbout>
+      The staff day pill's month and the visit sheet's frame: regular cells, the
+      Reminders-style shortcuts, a series' days dotted. Browsing with ‹ › never
+      moves the selection; picking a day does.
+    </ng-container>
+    <ui-month-picker
+      [uiSelected]="selected()"
+      [uiToday]="today"
+      uiLocale="bg"
+      [uiRelatives]="relatives"
+      [uiMarked]="marked"
+      uiPreviousLabel="Предишен месец"
+      uiNextLabel="Следващ месец"
+      data-testid="sc-month-picker-regular"
+      (uiPicked)="selected.set($event)"
+    />
+  </sc-demo>
+
+  <sc-demo scTitle="The picker, large, on a sheet">
+    <ng-container scAbout>
+      The admin rhythm sheet's day picker: <code>uiSize="large"</code> — the
+      grid is the screen, cells are generous tap targets — with
+      <code>uiMin</code> holding back the days before the earliest start. Today
+      is chosen here, so the one disc says both. A picker is never narrower than
+      its head (the month and its two steps, 256), which every sheet gives it;
+      this canvas at 330 does not, so the picker scrolls here.
+    </ng-container>
+    <div class="month-picker__wide">
+      <ui-month-picker
+        [uiSelected]="largeSelected()"
+        [uiToday]="today"
+        uiLocale="bg"
+        uiSize="large"
+        uiMin="2026-10-01"
+        uiPreviousLabel="Предишен месец"
+        uiNextLabel="Следващ месец"
+        data-testid="sc-month-picker-large"
+        (uiPicked)="largeSelected.set($event)"
+      />
+    </div>
+  </sc-demo>
+
+  <sc-demo scTitle="A stated month, in a card">
+    <ng-container scAbout>
+      The booking review's calendar: a read-only
+      <code>ui-calendar-grid</code> at the regular size, <code>span</code> cells
+      rather than buttons, the booked day the only mark. The same 20px numbers
+      as the picker — a regular grid used to draw its days at 15px, where a
+      chosen day's white number cannot pass. This canvas is narrower than a
+      phone's page (200 inside the card at 330, against the review card's 266),
+      so the month sits tighter here than in the app.
+    </ng-container>
+    <ui-card uiPadding="regular" class="month-picker__card">
+      <!-- No leading alignment on this stack: a regular grid is a FLEX item
+           that takes its width from the cross-axis stretch, and an aligned
+           stack switches that off (calendar-grid.css says why) — the month
+           would shrink-wrap to its digits and the numbers would overlap. -->
+      <ui-stack uiSpacing="compact">
+        <span uiText uiFont="headline">Октомври 2026 г.</span>
+        <ui-calendar-grid uiSize="regular" data-testid="sc-review-calendar">
+          @for (label of weekdays; track $index) {
+          <span
+            uiWeekday
+            uiText
+            uiFont="footnote"
+            uiWeight="semibold"
+            uiForegroundStyle="secondary"
+            class="month-picker__weekday"
+            >{{ label }}</span
+          >
+          } @for (week of reviewWeeks; track $index) { @for (day of week; track
+          $index) { @if (day === null) {
+          <span uiDay aria-hidden="true"></span>
+          } @else {
+          <span uiDay>
+            <ui-date-badge
+              [uiDay]="day"
+              [uiState]="day === reviewDay ? 'selected' : 'plain'"
+            />
+          </span>
+          } } }
+        </ui-calendar-grid>
+      </ui-stack>
+    </ui-card>
+  </sc-demo>
+</sc-page>

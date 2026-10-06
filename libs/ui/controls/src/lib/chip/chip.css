@@ -53,12 +53,21 @@
   }
 
   /* The tinted selection — a chip that carries an ANSWER rather than a
-     filter. `--sys-color-on-accent` (white in both themes), never
-     `--sys-color-on-primary`, which flips to near-black in dark and would
-     render dark text on orange. */
+     filter. THE ACCENT LAW (2026-09-29): the accent's selected wash under
+     the primary ink (15.13:1 at the worst in light, 9.72:1 in dark), where
+     a solid accent under a white 13px label read 3.04:1. A glyph the chip
+     leads with is the orange; its label names it. The untinted selection
+     above (primary fill, on-primary ink) is unchanged. */
   .ui-chip[data-tint='accent'][data-selected] {
-    background: var(--sys-color-accent);
-    color: var(--sys-color-on-accent);
+    background: color-mix(
+      in srgb,
+      var(--sys-color-accent) var(--sys-alpha-segment-selected),
+      transparent
+    );
+    color: var(--sys-color-foreground);
+  }
+  .ui-chip[data-tint='accent'][data-selected] > .ui-icon:first-child {
+    color: var(--sys-color-accent);
   }
 
   .ui-chip:focus-visible {

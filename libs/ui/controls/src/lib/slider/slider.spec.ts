@@ -80,7 +80,7 @@ describe('UiSlider', () => {
 
   it('places the marks along the range', () => {
     const marks = [
-      ...host().querySelectorAll('.ui-slider__mark'),
+      ...host().querySelectorAll('.ui-slider__marks .ui-mark-scale__mark'),
     ] as HTMLElement[];
     expect(marks.map((mark) => mark.textContent?.trim())).toEqual([
       '0%',
@@ -88,8 +88,28 @@ describe('UiSlider', () => {
       '100%',
     ]);
     expect(
-      marks.map((mark) => mark.style.getPropertyValue('--ui-slider-mark')),
+      marks.map((mark) => mark.style.getPropertyValue('--ui-mark-scale-ratio')),
     ).toEqual(['0', '0.5', '1']);
+  });
+
+  it('draws the marks with the shared mark scale: the end words hug the ends of the track, and the scale is decoration', () => {
+    const scale = host().querySelector('ui-mark-scale.ui-slider__marks');
+    expect(scale?.getAttribute('aria-hidden')).toBe('true');
+    const aligns = [
+      ...host().querySelectorAll<HTMLElement>('.ui-mark-scale__mark'),
+    ].map((mark) => mark.dataset['align']);
+    expect(aligns).toEqual(['start', 'center', 'end']);
+  });
+
+  it('draws no scale without marks', () => {
+    @Component({
+      imports: [UiSlider],
+      template: `<ui-slider [uiValue]="10" uiLabel="Bare" />`,
+    })
+    class BareHost {}
+    const bare = TestBed.createComponent(BareHost);
+    bare.detectChanges();
+    expect(bare.nativeElement.querySelector('ui-mark-scale')).toBeNull();
   });
 
   it('reports every move live, and follows the owner back', () => {

@@ -12,8 +12,18 @@
   .ui-stack[data-axis='z'] {
     display: grid;
   }
+  /* ZStack parity: a later layer paints over an earlier one, whatever
+     either layer is. Grid items in one cell paint in source order only
+     among their own kind — a positioned layer (`ui-ambient-video`, every
+     `[uiOverlay]`) or one with opacity < 1 paints AFTER every plain one, so
+     the hero's copy sat under its half-strength film wherever no running
+     animation happened to lift it (reduced motion; browsers without
+     scroll-driven animations). `z-index: 0` puts every layer on the same
+     footing (a grid item needs no `position` for it), so source order is
+     the whole rule again. */
   .ui-stack[data-axis='z'] > * {
     grid-area: 1 / 1;
+    z-index: 0;
   }
 
   .ui-stack[data-alignment='leading'] {

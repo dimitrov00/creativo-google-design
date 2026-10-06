@@ -29,7 +29,10 @@ export interface MenuGeometryRequest {
   readonly anchor: MenuBox;
   /** The surface's NATURAL size — uncapped, as it would be with room to spare. */
   readonly surface: { readonly width: number; readonly height: number };
-  /** The reachable part of the viewport: visual viewport less safe areas. */
+  /**
+   * The reachable part of the viewport: visual viewport less safe areas —
+   * and less a docked bar's band, through `windowClearOf`.
+   */
   readonly window: MenuBox;
   readonly placement: 'automatic' | MenuSide;
   readonly alignment: MenuAlignmentKind;
@@ -71,6 +74,42 @@ export interface MenuGeometry {
   /** The height and width the surface takes under that cap. */
   readonly height: number;
   readonly width: number;
+}
+
+/**
+ * The window with a DOCK taken off its bottom.
+ *
+ * A sheet's action bar — or a page's — floats over the body's last rows,
+ * and the visual-viewport clamp knows nothing of it: a surface that fitted
+ * "below" landed under «Запази», its last week of days behind the button
+ * (the block sheet's day pill, 2026-10-06). The bars are measured by the
+ * component and handed here as boxes; the window's floor rises to the
+ * highest one that reaches into it, so the room below the anchor is the
+ * room ABOVE the dock and the side is chosen against that.
+ *
+ * A bar wholly below the window (a dock that yielded to a stacked sheet
+ * slides out by its own height) or wholly above it changes nothing. A bar
+ * that would leave less than a readable surface under the window's top is
+ * ignored rather than obeyed: the surface then shifts over it as it shifts
+ * over any anchor, and the stylesheet's cap holds the rest.
+ *
+ * The window returned IS the reachable window from here on: the ceiling
+ * (`maxFraction`) follows it, so a long list over a docked body takes its
+ * share of the room above the dock, not of the screen.
+ */
+export function windowClearOf(
+  window: MenuBox,
+  docks: readonly MenuBox[],
+  minBlock: number,
+): MenuBox {
+  let floor = window.top + window.height;
+  for (const dock of docks) {
+    if (dock.width <= 0 || dock.height <= 0) continue;
+    if (dock.top >= floor || dock.top + dock.height <= window.top) continue;
+    if (dock.top - window.top < minBlock) continue;
+    floor = dock.top;
+  }
+  return { ...window, height: Math.max(0, floor - window.top) };
 }
 
 export function resolveMenuGeometry(

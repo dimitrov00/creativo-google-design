@@ -47,7 +47,8 @@
     font: var(--sys-font-footnote);
     font-weight: 400;
     letter-spacing: normal;
-    color: var(--sys-color-destructive);
+    /* Words: the `-label` lift, legible on the dark card (theme-dark.css). */
+    color: var(--sys-color-destructive-label);
   }
 
   /* ── The single control frame ─────────────────────────────────────

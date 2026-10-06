@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { Component, signal } from '@angular/core';
 import { vi } from 'vitest';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
@@ -168,5 +170,38 @@ describe('UiToast', () => {
     fixture.componentInstance.presented.set(false);
     fixture.detectChanges();
     expect(surface()).toBeNull();
+  });
+});
+
+/*
+ * THE ACTION'S INK, READ FROM THE STYLESHEET. The accent law (2026-09-29):
+ * words are ink. A toast holds one action, and its weight finds it.
+ */
+describe('toast.css', () => {
+  const css = readFileSync(resolve(__dirname, 'toast.css'), 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/\s+/g, ' ');
+  const rule = (selector: string): string => {
+    const start = css.indexOf(`${selector} {`);
+    if (start < 0) throw new Error(`toast.css has no «${selector}» rule`);
+    return css.slice(css.indexOf('{', start) + 1, css.indexOf('}', start));
+  };
+
+  it('prints the one action in the primary ink at weight 600, on the small rung', () => {
+    const action = rule('.ui-toast__action');
+    expect(action).toContain('color: var(--sys-color-foreground);');
+    expect(action).toContain('font-weight: 600;');
+    expect(action).toContain('min-block-size: var(--control-size-small);');
+  });
+
+  it('keeps the way out quieter than the way back', () => {
+    expect(rule('.ui-toast__dismiss')).toContain(
+      'color: var(--sys-color-secondary-label);',
+    );
+  });
+
+  it('tints no word: the sheet names neither the accent’s label cut nor the accent as an ink', () => {
+    expect(css).not.toContain('--sys-color-accent-label');
+    expect(css).not.toMatch(/(?<![\w-])color: var\(--sys-color-accent\)/);
   });
 });

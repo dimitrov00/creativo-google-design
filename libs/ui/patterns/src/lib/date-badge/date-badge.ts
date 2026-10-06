@@ -77,8 +77,10 @@ export class UiDateBadge {
 
   /**
    * This day is today — orthogonal to {@link uiState}, so a selected today
-   * still says so. Renders as the ACCENT-COLOURED number, and as an
-   * accent-FILLED disc once the day is also selected.
+   * still says so. Renders as the ACCENT-COLOURED bold number (a display
+   * figure at the badge's 20px); a chosen day is the solid accent disc
+   * under a white number whether or not it is today, so a chosen today
+   * keeps the attribute for the reader and the spec, not for a second mark.
    */
   readonly uiToday = input(false);
 

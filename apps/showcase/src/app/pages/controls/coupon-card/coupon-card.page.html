@@ -1,0 +1,574 @@
+<sc-page scTitle="Coupon card">
+  <ng-container scLede>
+    <code>button[uiCouponCard]</code> / <code>article[uiCouponCard]</code>: a
+    ticket. White paper, lifted; the offer's glyph on an accent-wash disc; its
+    value as the one orange figure (24/700) over its name; a tear with a notch
+    cut into each edge; the conditions in a chip against one call. With
+    <code>ui-occasion-band</code> as its first child it becomes a moment: a
+    solid accent band over the paper, the tear on the seam. Colour is a shape
+    here, and every word is ink.
+  </ng-container>
+
+  <sc-demo scTitle="Three things a client holds">
+    <ng-container scAbout>
+      An OFFER is a <code>button</code>: the whole ticket is the control
+      (<code>uiInteractive</code>) and the pill is its dress, a decorative
+      <code>span[uiButton]</code> in <code>[uiCouponAction]</code>. A name that
+      already says its rule prints no figure and becomes the headline. A VOUCHER
+      offers nothing to press where it stands: an <code>article</code>, no call.
+    </ng-container>
+    <ui-stack uiSpacing="compact" uiAlignment="stretch">
+      <div class="coupon-card__sheet">
+        <button
+          type="button"
+          uiCouponCard
+          uiInteractive
+          uiTitle="Първо посещение"
+          uiValue="−10 %"
+          uiCode="FIRST10"
+          uiDetail="комбинира се"
+          aria-label="Първо посещение: −10 %, код FIRST10, комбинира се. Използвай"
+          (click)="act('Първо посещение')"
+        >
+          <ui-icon uiCouponGlyph uiName="promo.coupon" />
+          <span
+            uiCouponAction
+            uiButton
+            uiButtonStyle="borderedProminent"
+            uiControlSize="small"
+            aria-hidden="true"
+            >Използвай</span
+          >
+        </button>
+
+        <button
+          type="button"
+          uiCouponCard
+          uiInteractive
+          uiTitle="Безплатно подстригване"
+          [uiValue]="null"
+          uiDetail="до 28.10"
+          aria-label="Награда: безплатно подстригване, важи до 28 октомври. Използвай"
+          (click)="act('Безплатно подстригване')"
+        >
+          <ui-icon uiCouponGlyph uiName="promo.coupon" />
+          <span
+            uiCouponAction
+            uiButton
+            uiButtonStyle="borderedProminent"
+            uiControlSize="small"
+            aria-hidden="true"
+            >Използвай</span
+          >
+        </button>
+
+        <article
+          uiCouponCard
+          uiTitle="Ваучер за подарък"
+          uiValue="25,00 €"
+          uiDetail="от 50,00 € · до 31.12"
+          aria-label="Ваучер за подарък: 25,00 € от 50,00 €, важи до 31 декември"
+        >
+          <ui-icon uiCouponGlyph uiName="promo.voucher" />
+        </article>
+      </div>
+      <p uiText [uiFont]="'caption'" class="coupon-card__mono">
+        paper elevated · disc 44 · glyph 24 · figure title2 · name callout 600 /
+        headline · foot 52 · last press: {{ last() ?? '—' }}
+      </p>
+    </ui-stack>
+  </sc-demo>
+
+  <sc-demo scTitle="Without conditions: no foot">
+    <ng-container scAbout>
+      Nothing in the foot — no <code>uiDetail</code>, no written call, nothing
+      projected into <code>[uiCouponAction]</code> — and the foot goes, the tear
+      and the notches with it: a plain lifted paper (a reward held with no
+      validity, a voucher that never expires). The ticket reads its own foot, so
+      a host projects nothing to get this. Beside them, the same reward WITH a
+      validity keeps its tear.
+    </ng-container>
+    <div class="coupon-card__sheet">
+      <article
+        uiCouponCard
+        uiTitle="Безплатно подстригване"
+        [uiValue]="null"
+        aria-label="Награда: безплатно подстригване"
+      >
+        <ui-icon uiCouponGlyph uiName="promo.coupon" />
+      </article>
+
+      <article
+        uiCouponCard
+        uiTitle="Ваучер за подарък"
+        uiValue="25,00 €"
+        aria-label="Ваучер за подарък: 25,00 €"
+      >
+        <ui-icon uiCouponGlyph uiName="promo.voucher" />
+      </article>
+
+      <article
+        uiCouponCard
+        uiTitle="Безплатно подстригване"
+        [uiValue]="null"
+        uiDetail="до 28.10"
+        aria-label="Награда: безплатно подстригване, важи до 28 октомври"
+      >
+        <ui-icon uiCouponGlyph uiName="promo.coupon" />
+      </article>
+    </div>
+  </sc-demo>
+
+  <sc-demo scTitle="Two across: a ticket hugs its content">
+    <ng-container scAbout>
+      The ≥ 761 dialog lays the wallet's holdings two to a row (528: two of
+      256). A grid stretches its cells to the row, and the foot is pinned to the
+      paper's bottom: a shorter ticket beside a taller one wore a blank band
+      under its head. The ticket keeps its own height —
+      <code>align-self: start</code>, its own — and the row's spare room stays
+      under it. Nothing here is set by the grid.
+    </ng-container>
+    <div class="coupon-card__sheet coupon-card__sheet--dialog">
+      <div class="coupon-card__two">
+        <article
+          uiCouponCard
+          uiTitle="Ваучер за подарък"
+          uiValue="25,00 €"
+          uiDetail="от 50,00 € · до 31.12"
+          aria-label="Ваучер за подарък: 25,00 € от 50,00 €, важи до 31 декември"
+        >
+          <ui-icon uiCouponGlyph uiName="promo.voucher" />
+        </article>
+
+        <article
+          uiCouponCard
+          uiTitle="Безплатно подстригване"
+          [uiValue]="null"
+          aria-label="Награда: безплатно подстригване"
+        >
+          <ui-icon uiCouponGlyph uiName="promo.coupon" />
+        </article>
+
+        <button
+          type="button"
+          uiCouponCard
+          uiInteractive
+          uiTitle="Подарък от салона"
+          uiValue="−20 %"
+          uiDetail="до 28.10"
+          aria-label="Рожден ден днес, навършва 34 години. Подарък: −20 %, използвай"
+          (click)="act('Подарък, 2-up')"
+        >
+          <ui-occasion-band uiTitle="Рожден ден · 34 г.">
+            <ui-icon uiOccasionGlyph uiName="client.birthday" />
+          </ui-occasion-band>
+          <span
+            uiCouponAction
+            uiButton
+            uiButtonStyle="borderedProminent"
+            uiControlSize="small"
+            aria-hidden="true"
+            >Използвай</span
+          >
+        </button>
+
+        <article
+          uiCouponCard
+          [uiApplied]="true"
+          uiTitle="Брада"
+          uiValue="−5,00 €"
+          uiDetail="комбинира се"
+          aria-label="Приложено: Брада, −5,00 €"
+        >
+          <ui-icon uiCouponGlyph uiName="promo.coupon" />
+          <ui-icon uiCouponBadge uiName="checklist.done" />
+          <button
+            type="button"
+            uiCouponAction
+            uiButton
+            uiButtonStyle="plain"
+            uiTint="neutral"
+            uiControlSize="small"
+            aria-label="Премахни отстъпката: Брада"
+            (click)="act('Премахни: Брада, 2-up')"
+          >
+            Премахни
+          </button>
+        </article>
+      </div>
+    </div>
+  </sc-demo>
+
+  <sc-demo scTitle="A landing takes the focus without a ring">
+    <ng-container scAbout>
+      The button form is a control and wears the inset focus ring (Tab to it).
+      The article form is a ticket READ; when it takes the focus — ‹ from the
+      discount page lands on the stamped ticket it came from, as it lands on a
+      page's heading — it is a landing, not a control: no ring, as the page's
+      anchors draw none. The ring is the ticket's own; a consumer sets nothing.
+    </ng-container>
+    <ui-stack uiSpacing="compact" uiAlignment="stretch">
+      <div class="coupon-card__sheet">
+        <button
+          type="button"
+          uiCouponCard
+          uiInteractive
+          uiTitle="Първо посещение"
+          uiValue="−10 %"
+          uiCode="FIRST10"
+          uiDetail="комбинира се"
+          aria-label="Първо посещение: −10 %, код FIRST10, комбинира се. Използвай"
+          (click)="act('Първо посещение, landing demo')"
+        >
+          <ui-icon uiCouponGlyph uiName="promo.coupon" />
+          <span
+            uiCouponAction
+            uiButton
+            uiButtonStyle="borderedProminent"
+            uiControlSize="small"
+            aria-hidden="true"
+            >Използвай</span
+          >
+        </button>
+
+        <article
+          #landing
+          uiCouponCard
+          [uiApplied]="true"
+          tabindex="-1"
+          uiTitle="Първо посещение"
+          uiValue="−10 %"
+          uiCode="FIRST10"
+          uiDetail="комбинира се"
+          aria-label="Приложено: Първо посещение, −10 %, код FIRST10"
+        >
+          <ui-icon uiCouponGlyph uiName="promo.coupon" />
+          <ui-icon uiCouponBadge uiName="checklist.done" />
+          <button
+            type="button"
+            uiCouponAction
+            uiButton
+            uiButtonStyle="plain"
+            uiTint="neutral"
+            uiControlSize="small"
+            aria-label="Премахни отстъпката: Първо посещение"
+            (click)="act('Премахни: Първо посещение')"
+          >
+            Премахни
+          </button>
+        </article>
+      </div>
+      <div>
+        <button
+          uiButton
+          uiButtonStyle="bordered"
+          uiTint="neutral"
+          uiControlSize="small"
+          type="button"
+          (click)="land()"
+        >
+          Land on the stamped ticket (‹)
+        </button>
+      </div>
+    </ui-stack>
+  </sc-demo>
+
+  <sc-demo scTitle="On the bill, and out of reach">
+    <ng-container scAbout>
+      APPLIED (<code>uiApplied</code>, an <code>article</code>): the check
+      stamped on the disc's rim, a real «Премахни» where the pill stood, so a
+      whole card never removes a discount by accident. UNAVAILABLE
+      (<code>uiUnavailable</code>): muted whole and still LIFTED. The shadow and
+      the desaturation are two functions of one <code>filter</code>.
+    </ng-container>
+    <div class="coupon-card__sheet">
+      <article
+        uiCouponCard
+        [uiApplied]="true"
+        uiTitle="Брада"
+        uiValue="−5,00 €"
+        uiCode="BEARD5"
+        uiDetail="комбинира се"
+        aria-label="Приложено: Брада, −5,00 €, код BEARD5"
+      >
+        <ui-icon uiCouponGlyph uiName="promo.coupon" />
+        <ui-icon uiCouponBadge uiName="checklist.done" />
+        <button
+          type="button"
+          uiCouponAction
+          uiButton
+          uiButtonStyle="plain"
+          uiTint="neutral"
+          uiControlSize="small"
+          aria-label="Премахни отстъпката: Брада"
+          (click)="act('Премахни: Брада')"
+        >
+          Премахни
+        </button>
+      </article>
+
+      <button
+        type="button"
+        uiCouponCard
+        uiInteractive
+        [uiUnavailable]="true"
+        uiTitle="Лоялен клиент"
+        uiValue="−15 %"
+        uiCode="LOYAL15"
+        uiDetail="само този"
+        aria-label="Лоялен клиент: −15 %, не се комбинира"
+      >
+        <ui-icon uiCouponGlyph uiName="promo.coupon" />
+        <ui-icon uiCouponBadge uiName="booking.blocked" />
+        <span
+          uiCouponAction
+          uiText
+          uiFont="callout"
+          uiForegroundStyle="secondary"
+          >Не се комбинира</span
+        >
+      </button>
+    </div>
+  </sc-demo>
+
+  <sc-demo scTitle="A moment: the occasion band">
+    <ng-container scAbout>
+      <code>ui-occasion-band</code> as the ticket's first child. The band is the
+      page's ONE orange slab: a white disc, the title as a white display figure,
+      fourteen static flecks in white and near-black over the whole band, the
+      title's row kept solid. The tear and the notches move to the seam; the
+      body has no disc of its own. Press the ticket: applied, the check stands
+      beside the figure and the call is a real «Премахни».
+    </ng-container>
+    <ui-stack uiSpacing="compact" uiAlignment="stretch">
+      <div class="coupon-card__sheet">
+        @if (giftApplied()) {
+        <article
+          uiCouponCard
+          [uiApplied]="true"
+          uiTitle="Подарък от салона"
+          uiValue="−20 %"
+          uiDetail="до 28.10"
+          aria-label="Рожден ден днес, навършва 34 години. Подаръкът −20 % е приложен"
+        >
+          <ui-occasion-band uiTitle="Рожден ден · 34 г.">
+            <ui-icon uiOccasionGlyph uiName="client.birthday" />
+          </ui-occasion-band>
+          <ui-icon uiCouponBadge uiName="checklist.done" />
+          <button
+            type="button"
+            uiCouponAction
+            uiButton
+            uiButtonStyle="plain"
+            uiTint="neutral"
+            uiControlSize="small"
+            aria-label="Премахни подаръка за рожден ден"
+            (click)="removeGift()"
+          >
+            Премахни
+          </button>
+        </article>
+        } @else {
+        <button
+          type="button"
+          uiCouponCard
+          uiInteractive
+          uiTitle="Подарък от салона"
+          uiValue="−20 %"
+          uiDetail="до 28.10"
+          aria-label="Рожден ден днес, навършва 34 години. Подарък: −20 %, използвай"
+          (click)="useGift()"
+        >
+          <ui-occasion-band uiTitle="Рожден ден · 34 г.">
+            <ui-icon uiOccasionGlyph uiName="client.birthday" />
+          </ui-occasion-band>
+          <span
+            uiCouponAction
+            uiButton
+            uiButtonStyle="borderedProminent"
+            uiControlSize="small"
+            aria-hidden="true"
+            >Използвай</span
+          >
+        </button>
+        }
+
+        <button
+          type="button"
+          uiCouponCard
+          uiInteractive
+          uiTitle="Безплатно подстригване"
+          [uiValue]="null"
+          uiDetail="до 28.10"
+          aria-label="Рожден ден днес. Подарък: безплатно подстригване, използвай"
+          (click)="act('Безплатно подстригване')"
+        >
+          <ui-occasion-band uiTitle="Рожден ден днес">
+            <ui-icon uiOccasionGlyph uiName="client.birthday" />
+          </ui-occasion-band>
+          <span
+            uiCouponAction
+            uiButton
+            uiButtonStyle="borderedProminent"
+            uiControlSize="small"
+            aria-hidden="true"
+            >Използвай</span
+          >
+        </button>
+      </div>
+      <p uiText [uiFont]="'caption'" class="coupon-card__mono">
+        band 96 · disc 44 white · title title2 on-accent · 14 flecks · tear =
+        band height · last press: {{ last() ?? '—' }}
+      </p>
+    </ui-stack>
+  </sc-demo>
+
+  <sc-demo scTitle="The band alone">
+    <ng-container scAbout>
+      No gift to use: the band is a card of its own, fully rounded and lifted, a
+      statement and not a control. The consumer gives it
+      <code>role="note"</code>. <code>[uiOccasionDetail]</code> holds ONE
+      <code>span[uiBadge uiOnMedia]</code> under the title for a consumer that
+      needs it.
+    </ng-container>
+    <div class="coupon-card__sheet">
+      <ui-occasion-band role="note" uiTitle="Рожден ден · 34 г.">
+        <ui-icon uiOccasionGlyph uiName="client.birthday" />
+      </ui-occasion-band>
+
+      <ui-occasion-band role="note" uiTitle="Имен ден">
+        <ui-icon uiOccasionGlyph uiName="client.birthday" />
+        <span uiOccasionDetail uiBadge [uiOnMedia]="true">Георгьовден</span>
+      </ui-occasion-band>
+    </div>
+  </sc-demo>
+
+  <sc-demo scTitle="On the 330 pt phone">
+    <ng-container scAbout>
+      The column is 296. A band narrower than 22.5rem keeps EIGHT flecks (the
+      corners' and the four nearest the trailing edge), never none; its title
+      stays on one line, and one the band cannot hold ends in an ellipsis. A
+      long name wraps above the tear, which never moves.
+    </ng-container>
+    <div class="coupon-card__sheet coupon-card__sheet--narrow">
+      <button
+        type="button"
+        uiCouponCard
+        uiInteractive
+        uiTitle="Подарък от салона"
+        uiValue="−20 %"
+        uiDetail="до 28.10"
+        aria-label="Рожден ден днес, навършва 34 години. Подарък: −20 %, използвай"
+        (click)="act('Подарък, 330')"
+      >
+        <ui-occasion-band uiTitle="Рожден ден · 34 г.">
+          <ui-icon uiOccasionGlyph uiName="client.birthday" />
+        </ui-occasion-band>
+        <span
+          uiCouponAction
+          uiButton
+          uiButtonStyle="borderedProminent"
+          uiControlSize="small"
+          aria-hidden="true"
+          >Използвай</span
+        >
+      </button>
+
+      <ui-occasion-band role="note" uiTitle="Годишнина от първото посещение">
+        <ui-icon uiOccasionGlyph uiName="client.birthday" />
+      </ui-occasion-band>
+
+      <button
+        type="button"
+        uiCouponCard
+        uiInteractive
+        uiTitle="Безплатно оформяне на брада с гореща кърпа"
+        uiValue="−12,50 €"
+        uiCode="BEARDHOT2026"
+        uiDetail="комбинира се · до 31.12"
+        aria-label="Безплатно оформяне на брада с гореща кърпа: −12,50 €. Използвай"
+        (click)="act('Дълго име, 330')"
+      >
+        <ui-icon uiCouponGlyph uiName="promo.coupon" />
+        <span
+          uiCouponAction
+          uiButton
+          uiButtonStyle="borderedProminent"
+          uiControlSize="small"
+          aria-hidden="true"
+          >Използвай</span
+        >
+      </button>
+    </div>
+  </sc-demo>
+
+  <sc-demo scTitle="On another ground, and the hooks">
+    <ng-container scAbout>
+      The notches are a mask, so they show the ground itself: here the grouped
+      segment's grey. In the dark theme the paper is the elevated surface, a
+      step above its sheet, and the orange is the same orange.
+      <code>--ui-coupon-card-surface</code> and
+      <code>--ui-coupon-card-shadow</code> restate the paper and its lift (the
+      second ticket: a fill step above the segment, flat);
+      <code>--ui-occasion-band-height</code>, set on the ticket or above it,
+      moves the band and the tear together (the third: 5rem).
+    </ng-container>
+    <div class="coupon-card__sheet coupon-card__sheet--segment">
+      <button
+        type="button"
+        uiCouponCard
+        uiInteractive
+        uiTitle="Рожден ден"
+        uiValue="−20 %"
+        uiDetail="до 28.10"
+        aria-label="Рожден ден: −20 %, важи до 28 октомври. Използвай"
+        (click)="act('Рожден ден')"
+      >
+        <ui-icon uiCouponGlyph uiName="promo.coupon" />
+        <span
+          uiCouponAction
+          uiButton
+          uiButtonStyle="borderedProminent"
+          uiControlSize="small"
+          aria-hidden="true"
+          >Използвай</span
+        >
+      </button>
+
+      <article
+        uiCouponCard
+        class="coupon-card__hooked"
+        uiTitle="Ваучер за подарък"
+        uiValue="25,00 €"
+        uiDetail="от 50,00 € · до 31.12"
+        aria-label="Ваучер за подарък: 25,00 € от 50,00 €, важи до 31 декември"
+      >
+        <ui-icon uiCouponGlyph uiName="promo.voucher" />
+      </article>
+
+      <button
+        type="button"
+        uiCouponCard
+        uiInteractive
+        class="coupon-card__short"
+        uiTitle="Подарък от салона"
+        uiValue="−20 %"
+        uiDetail="до 28.10"
+        aria-label="Рожден ден днес. Подарък: −20 %, използвай"
+        (click)="act('Подарък, 5rem')"
+      >
+        <ui-occasion-band uiTitle="Рожден ден днес">
+          <ui-icon uiOccasionGlyph uiName="client.birthday" />
+        </ui-occasion-band>
+        <span
+          uiCouponAction
+          uiButton
+          uiButtonStyle="borderedProminent"
+          uiControlSize="small"
+          aria-hidden="true"
+          >Използвай</span
+        >
+      </button>
+    </div>
+  </sc-demo>
+</sc-page>

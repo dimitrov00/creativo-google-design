@@ -1,0 +1,163 @@
+<sc-page scTitle="Streak track">
+  <ng-container scLede>
+    <code>ui-streak-track</code> — «Посещения в ритъм»: the count of the shop's
+    rhythm periods kept in a row, over the last few periods (a cadence of weeks,
+    never a day calendar). The count is a <code>ui-metric</code> at both sizes —
+    the figure with its unit (<code>uiCountUnit</code>) at title3 over what it
+    counts (<code>uiCountLabel</code>) at caption, the page's one figure recipe.
+    A reader hears one sentence (<code>uiLabel</code>, <code>role="img"</code>)
+    and then a hidden list of the periods in the owner's words.
+  </ng-container>
+
+  <sc-demo scTitle="Regular">
+    <ng-container scAbout>
+      The loyalty page: the count's metric over 1.5rem marks, a caption under
+      each, the open period's due DATE in the foreground. Kept periods join in
+      the tint; the open one is a hollow ring, reached by a dotted run.
+    </ng-container>
+    <ui-card uiTone="muted" uiPadding="regular" class="streak-track__column">
+      <ui-streak-track
+        [uiPeriods]="keptRun"
+        [uiCount]="24"
+        uiCountUnit="посещения"
+        uiCountLabel="в ритъм"
+        uiLabel="24 посещения в ритъм, следващото до 26 октомври"
+        uiProtectedIcon="loyalty.freeze"
+      />
+    </ui-card>
+  </sc-demo>
+
+  <sc-demo scTitle="Every kind of period">
+    <ng-container scAbout>
+      Protected holds the run (the freeze glyph, quiet connectors); a miss is a
+      DASHED ring with no connector either side — the break reads by shape, and
+      nothing is ever red; repaired is the kept disc with a dashed halo.
+    </ng-container>
+    <ui-card uiTone="muted" uiPadding="regular" class="streak-track__column">
+      <ui-streak-track
+        [uiPeriods]="everyKind"
+        [uiCount]="2"
+        uiCountUnit="посещения"
+        uiCountLabel="в ритъм"
+        uiLabel="2 посещения в ритъм, най-много 9, следващото до 12 октомври"
+        uiProtectedIcon="loyalty.freeze"
+      />
+    </ui-card>
+  </sc-demo>
+
+  <sc-demo scTitle="Frozen">
+    <ng-container scAbout>
+      A paused client: the tint goes secondary and the open period shows the
+      freeze glyph — frozen, never zeroed.
+    </ng-container>
+    <ui-card uiTone="muted" uiPadding="regular" class="streak-track__column">
+      <ui-streak-track
+        [uiPeriods]="keptRun"
+        [uiCount]="24"
+        uiCountUnit="посещения"
+        uiCountLabel="в ритъм"
+        uiLabel="24 посещения в ритъм, замразено, докато записването е спряно"
+        uiProtectedIcon="loyalty.freeze"
+        uiFrozen
+      />
+    </ui-card>
+  </sc-demo>
+
+  <sc-demo scTitle="Small, in a half tile">
+    <ng-container scAbout>
+      The glance tile: marks two dots wide, no captions, and the count is a
+      <code>ui-metric</code> — the figure at title3 over «в ритъм» — the same
+      part the stamp card beside it mounts. The first is the glance's own form,
+      a <code>button[uiCard]</code> that opens the rhythm: the track is all
+      spans (its hidden period list is <code>span[role=list]</code>), so it is
+      valid inside a button, whose name then speaks for it.
+    </ng-container>
+    <ui-stack
+      uiSpacing="compact"
+      uiAlignment="stretch"
+      class="streak-track__column"
+    >
+      <ui-grid [uiColumns]="2" uiSpacing="compact">
+        <button
+          type="button"
+          uiCard
+          uiTone="muted"
+          uiPadding="regular"
+          [uiInteractive]="true"
+          aria-label="Ритъм: 24 посещения в ритъм, следващото до 26 октомври"
+          (click)="tileOpened.set(true)"
+        >
+          <ui-streak-track
+            uiControlSize="small"
+            [uiPeriods]="keptRun"
+            [uiCount]="24"
+            uiCountUnit="посещения"
+            uiCountLabel="в ритъм"
+            uiLabel="Ритъм: 24 посещения в ритъм"
+            uiProtectedIcon="loyalty.freeze"
+          />
+        </button>
+        <ui-card uiTone="muted" uiPadding="regular">
+          <ui-streak-track
+            uiControlSize="small"
+            [uiPeriods]="everyKind"
+            [uiCount]="2"
+            uiCountUnit="посещения"
+            uiCountLabel="в ритъм"
+            uiLabel="Ритъм: 2 посещения в ритъм"
+            uiProtectedIcon="loyalty.freeze"
+          />
+        </ui-card>
+      </ui-grid>
+      <p uiText uiFont="footnote" uiForegroundStyle="secondary">
+        {{ tileOpened() ? 'Opened: the rhythm' : 'Tap the first tile to open the
+        rhythm.' }}
+      </p>
+    </ui-stack>
+  </sc-demo>
+
+  <sc-demo scTitle="A live change">
+    <ng-container scAbout>
+      After the first frame, the open period turning kept draws its connector in
+      from the run, and its mark cross-fades.
+    </ng-container>
+    <ui-stack
+      uiSpacing="regular"
+      uiAlignment="stretch"
+      class="streak-track__column"
+    >
+      <ui-card uiTone="muted" uiPadding="regular">
+        <ui-streak-track
+          [uiPeriods]="liveRun()"
+          [uiCount]="liveCount()"
+          uiCountUnit="посещения"
+          uiCountLabel="в ритъм"
+          [uiLabel]="liveCount() + ' посещения в ритъм'"
+          uiProtectedIcon="loyalty.freeze"
+        />
+      </ui-card>
+      <ui-stack uiAxis="horizontal" uiSpacing="compact" uiAlignment="center">
+        <button
+          uiButton
+          uiButtonStyle="bordered"
+          uiTint="neutral"
+          uiControlSize="small"
+          type="button"
+          (click)="keepPeriod()"
+        >
+          A visit on time
+        </button>
+        <button
+          uiButton
+          uiButtonStyle="bordered"
+          uiTint="neutral"
+          uiControlSize="small"
+          type="button"
+          (click)="reset()"
+        >
+          Reset
+        </button>
+      </ui-stack>
+    </ui-stack>
+  </sc-demo>
+</sc-page>

@@ -1,0 +1,275 @@
+@layer sys-components {
+  /* THE PASS CARD (client card, revision 3 §3.5) — a loyalty card as the
+     thing a client holds: a SOLID accent field over a white foot, inside
+     one radius. The page's one orange slab.
+
+     The accent law, rule 4: on the solid accent stand white MARKS and
+     white DISPLAY figures, nothing else. The field prints the balance at
+     36/800 and its unit at 20/700 (3.04:1, large text); every small word
+     of the card stands in ink on the foot.
+
+     The hooks, each read with its default AT THE USE SITE
+     (`var(--hook, default)`), never declared on the host, so they can be
+     set on the card or on anything above it:
+
+     --ui-pass-card-surface   the field          var(--sys-color-accent)
+     --ui-pass-card-ink       the field's ink    var(--sys-color-on-accent)
+     --ui-pass-card-foot      the foot           var(--sys-color-surface-elevated)
+     --ui-pass-card-motif     the two discs      the field's ink at 10 %
+
+     ⚠ The HOST paints nothing. The field is the slab; a second accent
+     background on the box round it would be a second slab to anything
+     that counts them (the capture's guard, §1.5, 8), and an orange fringe
+     round the foot's corners. */
+  .ui-pass-card {
+    display: flex;
+    flex-direction: column;
+    box-sizing: border-box;
+    inline-size: 100%;
+    border-radius: var(--control-radius-prominent);
+    box-shadow: var(--sys-elevation-raised);
+    /* One radius for both parts. */
+    overflow: clip;
+    /* THE CARD MEASURES ITSELF: the two parts take their heights from its
+       width (`cqi`), so the ISO ratio holds in a 390 pt sheet, a 330 pt
+       one and the wide dialog without a number from the consumer. */
+    container-type: inline-size;
+    text-align: start;
+  }
+
+  /* THE FIELD — 62 % of an ISO card's height (139 of 224 at 355), as a
+     FLOOR: the ratio never cuts a balance that needs a second line. */
+  .ui-pass-card__field {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    gap: var(--sys-space-compact);
+    box-sizing: border-box;
+    min-block-size: calc(100cqi / 1.586 * 0.62);
+    padding: var(--sys-space-comfortable);
+    background: var(--ui-pass-card-surface, var(--sys-color-accent));
+  }
+
+  /* THE MOTIF — two discs of the field's ink at 10 %, in the trailing
+     40 %: each disc's leading edge stands at 62 % of the card or past it,
+     and the balance keeps to the leading 60 %. Sized and placed in the
+     card's own width, so the drawing is the same drawing at every width:
+     220 and 140 on the 355 card of a 390 pt sheet. Where the two overlap
+     the ink doubles, which is the whole of the effect. No gradient.
+
+     ⚠ A disc is a BOX INSIDE THE FIELD with the circle cut into it
+     (`clip-path`), never a round element hung half outside and clipped.
+     The part of such an element that is clipped away still has a box: it
+     lay over the foot's state line and, above the card, over the sheet's
+     bar, and an audit that reads boxes (axe) could no longer tell what
+     those words stand on. */
+  .ui-pass-card__motif {
+    position: absolute;
+    inset-inline-end: 0;
+    background: var(
+      --ui-pass-card-motif,
+      color-mix(
+        in srgb,
+        var(--ui-pass-card-ink, var(--sys-color-on-accent)) 10%,
+        transparent
+      )
+    );
+    pointer-events: none;
+  }
+
+  /* 220: over the top trailing corner, behind the plate. The disc rises
+     30 % of the card's width past the field's top edge, so its centre
+     lies a hair under that edge and its box ends where the disc does. */
+  .ui-pass-card__motif[data-disc='major'] {
+    inset-inline-start: 62cqi;
+    inset-block-start: 0;
+    block-size: calc(100cqi * 220 / 355 - 30cqi);
+    clip-path: circle(
+      calc(100cqi * 110 / 355) at calc(100cqi * 110 / 355)
+        calc(100cqi * 110 / 355 - 30cqi)
+    );
+  }
+
+  /* 140: rising from the seam, under the first. */
+  .ui-pass-card__motif[data-disc='minor'] {
+    inset-inline-start: 70cqi;
+    inset-block: 21cqi 0;
+    clip-path: circle(
+      calc(100cqi * 70 / 355) at calc(100cqi * 70 / 355) calc(100cqi * 70 / 355)
+    );
+  }
+
+  /* A circle is cut from the box's LEFT edge whatever the direction: in a
+     right-to-left card the boxes stand at the other end, and the centres
+     are measured back from their far edge (38 and 30 wide). */
+  .ui-pass-card__motif[data-disc='major']:dir(rtl) {
+    clip-path: circle(
+      calc(100cqi * 110 / 355) at calc(38cqi - 100cqi * 110 / 355)
+        calc(100cqi * 110 / 355 - 30cqi)
+    );
+  }
+
+  .ui-pass-card__motif[data-disc='minor']:dir(rtl) {
+    clip-path: circle(
+      calc(100cqi * 70 / 355) at calc(30cqi - 100cqi * 70 / 355)
+        calc(100cqi * 70 / 355)
+    );
+  }
+
+  /* THE TOP ROW — the mark against the plate, centred on one line. 24
+     tall with a plate or without, so a card with `loyalty.tiers` off
+     keeps its figure where every other card has it. */
+  .ui-pass-card__top {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--sys-space-regular);
+    min-block-size: var(--sys-space-comfortable);
+  }
+
+  /* THE MARK — the shop's wordmark, 20 tall, in the field's ink: a mark
+     on the solid accent. The logo draws in `currentColor`. */
+  .ui-pass-card__mark {
+    display: inline-flex;
+    align-items: center;
+    min-inline-size: 0;
+    color: var(--ui-pass-card-ink, var(--sys-color-on-accent));
+  }
+
+  .ui-pass-card__mark > .ui-logo {
+    --ui-logo-size: calc(var(--sys-space-unit) * 5);
+  }
+
+  /* THE PLATE — one, the consumer's white capsule. It may lie over the
+     discs: its face is white and its ink near-black on any ground. */
+  .ui-pass-card__badge {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    margin-inline-start: auto;
+  }
+
+  .ui-pass-card__mark:empty,
+  .ui-pass-card__badge:empty {
+    display: none;
+  }
+
+  /* THE BALANCE — the figure and its unit on one baseline, in the leading
+     60 % of the card. A balance too long for that puts its unit under
+     the figure; the field grows by the line. */
+  .ui-pass-card__balance {
+    position: relative;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    column-gap: var(--sys-space-compact);
+    box-sizing: border-box;
+    max-inline-size: calc(60cqi - var(--sys-space-comfortable));
+  }
+
+  /* The page's one 36. A display figure: white on the solid accent. */
+  .ui-pass-card__figure {
+    font: var(--sys-font-largeTitle);
+    letter-spacing: var(--sys-tracking-largeTitle);
+    font-variant-numeric: tabular-nums;
+    color: var(--ui-pass-card-ink, var(--sys-color-on-accent));
+    white-space: nowrap;
+  }
+
+  /* `title3` at weight 700: the smallest cut that is still a display
+     figure (20 px bold is large text). Never lighter, never smaller. */
+  .ui-pass-card__unit {
+    font: var(--sys-font-title3);
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    color: var(--ui-pass-card-ink, var(--sys-color-on-accent));
+    white-space: nowrap;
+  }
+
+  /* THE FOOT — 38 % of an ISO card's height (85 of 224 at 355), as a
+     FLOOR. Ordinary card text on the elevated surface. The holder's lines
+     lead and the state trails on the holder's baseline; when the holder
+     and the state do not fit one line the state wraps UNDER the lines,
+     which is under the quiet line. The content is centred in what height
+     is left. */
+  .ui-pass-card__foot {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    align-content: center;
+    justify-content: space-between;
+    column-gap: var(--sys-space-regular);
+    row-gap: var(--sys-space-tight);
+    box-sizing: border-box;
+    min-block-size: calc(100cqi / 1.586 * 0.38);
+    padding: var(--sys-space-regular) var(--sys-space-comfortable);
+    background: var(--ui-pass-card-foot, var(--sys-color-surface-elevated));
+    color: var(--sys-color-foreground);
+  }
+
+  .ui-pass-card__lines {
+    display: flex;
+    flex-direction: column;
+    min-inline-size: 0;
+    max-inline-size: 100%;
+  }
+
+  /* `callout` 14 at 600, primary. A long name wraps; it is never cut. */
+  .ui-pass-card__holder {
+    font: var(--sys-font-callout);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    color: var(--sys-color-foreground);
+    overflow-wrap: anywhere;
+  }
+
+  /* `footnote` 12, quiet. The quiet line runs UNDER the holder and the
+     state, so it must not decide whether the two share a line: its box
+     is no wider than nothing (it adds nothing to the width of the lines)
+     and its words stand in a line of their own, as wide as the foot's
+     column, which is where they wrap. */
+  .ui-pass-card__detail {
+    display: block;
+    inline-size: 0;
+    font: var(--sys-font-footnote);
+    font-variant-numeric: tabular-nums;
+    color: var(--sys-color-secondary-label);
+  }
+
+  .ui-pass-card__detail-line {
+    display: block;
+    inline-size: calc(100cqi - 2 * var(--sys-space-comfortable));
+    overflow-wrap: anywhere;
+  }
+
+  /* `footnote` 12 at 500, PRIMARY: what the card owes, what expires, that
+     it is frozen. Ink, never a tone: a debt is not painted red. */
+  .ui-pass-card__state {
+    max-inline-size: 100%;
+    font: var(--sys-font-footnote);
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+    color: var(--sys-color-foreground);
+    overflow-wrap: anywhere;
+  }
+
+  /* A NARROW CARD — the 295 card of a 330 pt sheet (a 390 pt sheet's is
+     355). The foot is one column: the holder, the quiet line, the state
+     under it, whatever their lengths. */
+  @container (inline-size < 20rem) {
+    .ui-pass-card__foot {
+      flex-direction: column;
+      flex-wrap: nowrap;
+      align-items: flex-start;
+      justify-content: center;
+    }
+  }
+
+  /* FROZEN — the field loses its colour and nothing else changes: the
+     values stay where they were, the foot is ink on white already. */
+  .ui-pass-card[data-frozen] .ui-pass-card__field {
+    filter: saturate(0.35);
+  }
+}

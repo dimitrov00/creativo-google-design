@@ -28,4 +28,14 @@ export class SliderPage {
     ((this.bill * this.percent()) / 100 / 100).toFixed(2).replace('.', ','),
   );
   protected readonly plain = signal(40);
+
+  /** The sum's ruler, in cents: the ends named, one word too close to keep. */
+  protected readonly sum = signal(1450);
+  protected readonly sumMarks: readonly UiSliderMark[] = [0, 100, 2800].map(
+    (value) => ({ value, label: this.euros(value) }),
+  );
+
+  protected euros(cents: number): string {
+    return `${(cents / 100).toFixed(2).replace('.', ',')} €`;
+  }
 }

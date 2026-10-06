@@ -1,0 +1,94 @@
+:host {
+  display: block;
+}
+
+.coupon-card__mono {
+  font-family: var(--sys-font-family-mono);
+}
+
+/* A stand-in for the sheet a ticket sits on: the sheet's own surface, a
+   390 pt phone wide, the page's gutter at its sides (the column is 356). */
+.coupon-card__sheet {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sys-space-regular);
+  inline-size: 100%;
+  max-inline-size: calc(var(--sys-space-unit) * 97.5);
+  padding: var(--sys-space-loose) var(--sys-space-regular);
+  border: 1px solid var(--sys-color-separator);
+  border-radius: var(--control-radius-hero);
+  background: var(--sys-color-surface);
+}
+
+/* The narrowest phone the app supports: 330 (the column is 296). */
+.coupon-card__sheet--narrow {
+  max-inline-size: calc(var(--sys-space-unit) * 82.5);
+}
+
+/* The ≥ 761 dialog's column, 528, and the wallet's holdings two to a row
+   on it (256 each): the stand-in widens to hold them. On a phone — where
+   the app never lays tickets two across — the pairs stack: a column under
+   224 is narrower than any ticket the app draws. */
+.coupon-card__sheet--dialog {
+  max-inline-size: calc(var(--sys-space-unit) * 140);
+}
+
+.coupon-card__two {
+  display: grid;
+  grid-template-columns: repeat(
+    auto-fit,
+    minmax(calc(var(--sys-space-unit) * 56), 1fr)
+  );
+  gap: var(--sys-space-regular);
+}
+
+/* A GROUND THAT IS NOT THE SHEET'S: the grouped segment's grey. The
+   ticket is cut by a mask, so the notches show the ground itself. */
+.coupon-card__sheet--segment {
+  background: var(--sys-color-surface-secondary);
+}
+
+/* A consumer's own paper and lift, through the ticket's two hooks: flat,
+   and a fill step above the segment it lies on (the visit editor's
+   folded group does this), so it is never a hole in its ground. */
+.coupon-card__hooked {
+  --ui-coupon-card-surface: color-mix(
+    in srgb,
+    var(--sys-color-foreground) var(--sys-alpha-fill),
+    var(--sys-color-surface-secondary)
+  );
+  --ui-coupon-card-shadow: 0 0 0 transparent;
+}
+
+/* The band's two hooks, set where a ticket can read them too. */
+.coupon-card__short {
+  --ui-occasion-band-height: 5rem;
+}
+
+/* ON A PHONE the page is itself the phone: a stand-in inside the canvas
+   inside the page's gutter would leave the ticket 258 wide on a 390 pt
+   screen, narrower than it ever is in the app, and the band would show
+   its narrow map. The stand-in drops its frame and takes the canvas from
+   edge to edge, so the ticket is as wide here as on the sheet it is made
+   for (340 of the sheet's 355). */
+@media (max-width: 30rem) {
+  .coupon-card__sheet {
+    inline-size: calc(100% + var(--sys-space-comfortable) * 2);
+    max-inline-size: none;
+    margin-inline: calc(var(--sys-space-comfortable) * -1);
+    padding: var(--sys-space-regular) 0;
+    border: 0;
+    border-radius: 0;
+    background: none;
+  }
+
+  /* The 330 pt phone's column, on any phone. */
+  .coupon-card__sheet--narrow {
+    max-inline-size: calc(var(--sys-space-unit) * 74);
+  }
+
+  .coupon-card__sheet--segment {
+    background: var(--sys-color-surface-secondary);
+  }
+}

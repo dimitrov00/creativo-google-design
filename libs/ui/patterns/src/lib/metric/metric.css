@@ -1,0 +1,190 @@
+@layer sys-components {
+  /* The figure over its caption over its accessory, hugging the leading
+     edge (or centred). The metric owns no space around itself. */
+  .ui-metric {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: flex-start;
+    /* The half-unit seam (list-group.css), never a literal. */
+    gap: calc(var(--sys-space-unit) / 2);
+    min-inline-size: 0;
+    max-inline-size: 100%;
+    text-align: start;
+  }
+
+  .ui-metric[data-alignment='center'] {
+    align-items: center;
+    text-align: center;
+  }
+
+  /* THE FIGURE LINE — glyph, value, unit and delta on one baseline. */
+  .ui-metric__figure {
+    display: inline-flex;
+    align-items: baseline;
+    gap: var(--sys-space-tight);
+    max-inline-size: 100%;
+    white-space: nowrap;
+  }
+
+  .ui-metric__glyph {
+    flex: none;
+    align-self: center;
+  }
+
+  /* The value is `currentColor`: the container decides, and no sentiment
+     ever paints it. While a count-up paints its frames, the FINAL figure
+     sits in the same cell unseen, so the value is exactly as wide as it
+     will end — the frames never shove the unit, and nothing is measured. */
+  .ui-metric__value {
+    display: inline-grid;
+    font: var(--sys-font-title3);
+    font-variant-numeric: tabular-nums;
+    color: currentColor;
+  }
+
+  .ui-metric__digits,
+  .ui-metric__ghost {
+    grid-area: 1 / 1;
+    justify-self: end;
+  }
+
+  .ui-metric__ghost {
+    visibility: hidden;
+  }
+
+  .ui-metric__unit {
+    font: var(--sys-font-subheadline);
+    font-variant-numeric: tabular-nums;
+    color: var(--sys-color-secondary-label);
+  }
+
+  /* The sign carries the direction; the ink only stays quiet, up or down —
+     a fall is never painted red. */
+  .ui-metric__delta {
+    font: var(--sys-font-subheadline);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    color: var(--sys-color-secondary-label);
+  }
+
+  .ui-metric__caption {
+    font: var(--sys-font-caption);
+    letter-spacing: var(--sys-tracking-caption);
+    font-variant-numeric: tabular-nums;
+    color: var(--sys-color-secondary-label);
+  }
+
+  .ui-metric__accessory {
+    display: block;
+    align-self: stretch;
+    margin-block-start: var(--sys-space-tight);
+  }
+
+  .ui-metric__accessory:empty {
+    display: none;
+  }
+
+  /* LARGE — the summary figure: title over footnote. */
+  .ui-metric[data-control-size='large'] .ui-metric__value {
+    font: var(--sys-font-title);
+    letter-spacing: var(--sys-tracking-title);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .ui-metric[data-control-size='large'] .ui-metric__unit,
+  .ui-metric[data-control-size='large'] .ui-metric__delta {
+    font: var(--sys-font-callout);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .ui-metric[data-control-size='large'] .ui-metric__delta {
+    font-weight: 600;
+  }
+
+  .ui-metric[data-control-size='large'] .ui-metric__caption {
+    font: var(--sys-font-footnote);
+    letter-spacing: normal;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* EXTRA LARGE — the ONE figure a page is about («23 от 25» on a medal's
+     page): largeTitle over callout, the unit a title3 in the quiet ink, so
+     the pair reads as one phrase in two tones. At most one per screen,
+     never a tile in a grid.
+
+     The display figure sets its own seams, both on the space scale: a word
+     space before the unit (the tight step would glue «23» to «от 25»), and
+     the tight step over the caption, because largeTitle's leading (0.96)
+     gives the line under it no air of its own.
+
+     A figure this wide can meet a card narrower than itself, so its line
+     may BREAK between its parts (each part stays whole): the unit or the
+     delta drops under the figure, on the leading edge or centred with it,
+     and nothing ever leaves the card. */
+  .ui-metric[data-control-size='extraLarge'] {
+    gap: var(--sys-space-tight);
+  }
+
+  .ui-metric[data-control-size='extraLarge'] .ui-metric__figure {
+    flex-wrap: wrap;
+    gap: 0 var(--sys-space-compact);
+  }
+
+  .ui-metric[data-control-size='extraLarge'][data-alignment='center']
+    .ui-metric__figure {
+    justify-content: center;
+  }
+
+  .ui-metric[data-control-size='extraLarge'] .ui-metric__value {
+    font: var(--sys-font-largeTitle);
+    letter-spacing: var(--sys-tracking-largeTitle);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .ui-metric[data-control-size='extraLarge'] .ui-metric__unit,
+  .ui-metric[data-control-size='extraLarge'] .ui-metric__delta {
+    font: var(--sys-font-title3);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .ui-metric[data-control-size='extraLarge'] .ui-metric__caption {
+    font: var(--sys-font-callout);
+    letter-spacing: normal;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* MOTION — only a LIVE rise moves: the new value fades back in, the new
+     delta rises into place. A fall swaps in place (no rule), and nothing
+     here matches before the first frame has settled. */
+  @media (prefers-reduced-motion: no-preference) {
+    .ui-metric[data-settled] .ui-metric__value[data-enter] {
+      animation: ui-metric-value-enter var(--sys-motion-duration-instant)
+        var(--sys-motion-ease-standard);
+    }
+
+    .ui-metric[data-settled] .ui-metric__delta[data-enter] {
+      animation: ui-metric-delta-rise var(--sys-motion-duration-regular)
+        var(--sys-motion-ease-emphasized);
+    }
+  }
+
+  @keyframes ui-metric-value-enter {
+    from {
+      opacity: 0.35;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  @keyframes ui-metric-delta-rise {
+    from {
+      opacity: 0;
+      translate: 0 var(--sys-space-tight);
+    }
+    to {
+      opacity: 1;
+      translate: 0 0;
+    }
+  }
+}

@@ -1,6 +1,6 @@
 import { ChangeDetectionStrategy, Component } from '@angular/core';
 import type { UiAvatarSize, UiControlSize } from '@creativo/ui/controls';
-import { UiAvatar, UiAvatarGroup } from '@creativo/ui/controls';
+import { UiAvatar, UiAvatarGroup, UiChip } from '@creativo/ui/controls';
 import { UiFlow, UiStack } from '@creativo/ui/layout';
 import { UiTextDirective } from '@creativo/ui/modifiers';
 import { ScDemo } from '../../../shared/demo';
@@ -19,6 +19,7 @@ interface AvatarImageSample {
     ScPage,
     UiAvatar,
     UiAvatarGroup,
+    UiChip,
     UiFlow,
     UiStack,
     UiTextDirective,

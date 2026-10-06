@@ -1,0 +1,8 @@
+:host {
+  display: block;
+}
+
+/* A phone's content column (390 − 2 × 16). */
+.streak-track__column {
+  max-inline-size: calc(var(--sys-space-unit) * 90);
+}

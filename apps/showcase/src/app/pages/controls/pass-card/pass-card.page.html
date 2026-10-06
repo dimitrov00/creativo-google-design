@@ -1,0 +1,312 @@
+<sc-page scTitle="Pass card">
+  <ng-container scLede>
+    <code>ui-pass-card</code>: what a client holds with the shop, drawn as the
+    card in their wallet. A solid accent field with the balance as its one
+    display figure, over a white foot with the holder in ordinary ink, inside
+    one radius. One per page, and the page's one orange slab. Static: a
+    <code>group</code> with one name (<code>uiLabel</code>). Slots:
+    <code>[uiPassMark]</code>, <code>[uiPassBadge]</code>.
+  </ng-container>
+
+  <sc-demo scTitle="The pass">
+    <ng-container scAbout>
+      On a 390 pt phone the card is 355 wide and an ISO card tall (1.586): the
+      field takes 62 % of the height, the foot 38 %. Only display sizes stand on
+      the orange: the figure at 36/800 and its unit at 20/700, on one baseline.
+      The mark is the shop's <code>ui-logo</code>; the ONE plate is a
+      <code>span[uiBadge]</code> with <code>uiOnMedia</code>, the tier.
+    </ng-container>
+    <ui-stack uiSpacing="compact" uiAlignment="stretch">
+      <div class="pass-card__sheet">
+        <ui-pass-card
+          uiFigure="371"
+          uiUnit="точки"
+          uiHolder="Георги Петров"
+          uiDetail="Клиент от март 2025 г."
+          uiLabel="Карта за лоялност: Георги Петров, Злато, 371 точки за размяна, клиент от март 2025 г."
+          uiTestId="pass"
+        >
+          <ui-logo uiPassMark />
+          <span uiPassBadge uiBadge [uiOnMedia]="true" uiIcon="loyalty.tier"
+            >Злато</span
+          >
+        </ui-pass-card>
+      </div>
+      <p uiText [uiFont]="'caption'" class="pass-card__mono">
+        on a 390 pt sheet: 355 × 224 · field 139 · foot 85 · radius prominent ·
+        figure largeTitle · unit title3 700 · holder callout 600 · detail
+        footnote
+      </p>
+    </ui-stack>
+  </sc-demo>
+
+  <sc-demo scTitle="With a state line">
+    <ng-container scAbout>
+      <code>uiState</code> trails on the holder's baseline, in primary ink at
+      12/500. It is there only when it says something: points that expire, a
+      debt, a freeze. It is the one part of the card a screen reader hears after
+      the name, because the name does not carry it. Only the holder decides
+      whether the two share a line: the quiet line runs under both, however long
+      its month.
+    </ng-container>
+    <ui-stack uiSpacing="compact" uiAlignment="stretch">
+      <div class="pass-card__sheet">
+        <ui-pass-card
+          uiFigure="371"
+          uiUnit="точки"
+          uiHolder="Георги Петров"
+          uiDetail="Клиент от март 2025 г."
+          uiState="40 т. изтичат на 31.12"
+          uiLabel="Карта за лоялност: Георги Петров, Злато, 371 точки за размяна, клиент от март 2025 г."
+        >
+          <ui-logo uiPassMark />
+          <span uiPassBadge uiBadge [uiOnMedia]="true" uiIcon="loyalty.tier"
+            >Злато</span
+          >
+        </ui-pass-card>
+        <ui-pass-card
+          uiFigure="1 250"
+          uiUnit="точки"
+          uiHolder="Мартин Илиев"
+          uiDetail="Клиент от септември 2019 г."
+          uiState="120 т. изтичат на 31.12"
+          uiLabel="Карта за лоялност: Мартин Илиев, Платина, 1 250 точки за размяна, клиент от септември 2019 г."
+        >
+          <ui-logo uiPassMark />
+          <span uiPassBadge uiBadge [uiOnMedia]="true" uiIcon="loyalty.tier"
+            >Платина</span
+          >
+        </ui-pass-card>
+      </div>
+      <p uiText [uiFont]="'caption'" class="pass-card__mono">
+        state footnote 500 · primary ink · on the holder's line
+      </p>
+    </ui-stack>
+  </sc-demo>
+
+  <sc-demo scTitle="Frozen">
+    <ng-container scAbout>
+      A paused client. <code>uiFrozen</code> desaturates the FIELD and changes
+      nothing else: the values are never zeroed, the foot is ink on white
+      already, and the consumer's state line says why.
+    </ng-container>
+    <ui-stack uiSpacing="compact" uiAlignment="stretch">
+      <div class="pass-card__sheet">
+        <ui-pass-card
+          uiFigure="371"
+          uiUnit="точки"
+          uiHolder="Георги Петров"
+          uiDetail="Клиент от март 2025 г."
+          [uiState]="frozen() ? 'Замразено' : null"
+          [uiFrozen]="frozen()"
+          uiLabel="Карта за лоялност: Георги Петров, Злато, 371 точки за размяна, клиент от март 2025 г."
+        >
+          <ui-logo uiPassMark />
+          <span uiPassBadge uiBadge [uiOnMedia]="true" uiIcon="loyalty.tier"
+            >Злато</span
+          >
+        </ui-pass-card>
+      </div>
+      <ui-stack uiAxis="horizontal" uiSpacing="compact" uiAlignment="center">
+        <button
+          uiButton
+          uiButtonStyle="bordered"
+          uiTint="neutral"
+          uiControlSize="small"
+          type="button"
+          (click)="frozen.set(!frozen())"
+        >
+          {{ frozen() ? 'Thaw' : 'Freeze' }}
+        </button>
+        <p uiText [uiFont]="'caption'" class="pass-card__mono">
+          uiFrozen={{ frozen() }} · filter: saturate(0.35) on the field
+        </p>
+      </ui-stack>
+    </ui-stack>
+  </sc-demo>
+
+  <sc-demo scTitle="A two-line holder">
+    <ng-container scAbout>
+      The ratio is a floor. A name the foot cannot hold on one line wraps, the
+      state steps under the quiet line, and the card grows by what the foot
+      needs. The field never gives way, and nothing is cut.
+    </ng-container>
+    <ui-stack uiSpacing="compact" uiAlignment="stretch">
+      <div class="pass-card__sheet">
+        <ui-pass-card
+          uiFigure="1 250"
+          uiUnit="точки"
+          uiHolder="Александър-Константин Димитров-Станиславов"
+          uiDetail="Клиент от септември 2019 г."
+          uiState="120 т. изтичат на 31.12"
+          uiLabel="Карта за лоялност: Александър-Константин Димитров-Станиславов, Платина, 1 250 точки за размяна, клиент от септември 2019 г."
+        >
+          <ui-logo uiPassMark />
+          <span uiPassBadge uiBadge [uiOnMedia]="true" uiIcon="loyalty.tier"
+            >Платина</span
+          >
+        </ui-pass-card>
+      </div>
+      <p uiText [uiFont]="'caption'" class="pass-card__mono">
+        field 139, as ever · the foot grows · the state under the quiet line
+      </p>
+    </ui-stack>
+  </sc-demo>
+
+  <sc-demo scTitle="Owing points">
+    <ng-container scAbout>
+      A balance under zero keeps its sign on the figure (the typographic minus),
+      and the state line says what is owed. Primary ink, never red: the sign
+      carries the direction.
+    </ng-container>
+    <ui-stack uiSpacing="compact" uiAlignment="stretch">
+      <div class="pass-card__sheet">
+        <ui-pass-card
+          uiFigure="−40"
+          uiUnit="точки"
+          uiHolder="Георги Петров"
+          uiDetail="Клиент от март 2025 г."
+          uiState="дължи 40 точки"
+          uiLabel="Карта за лоялност: Георги Петров, Сребро, дължи 40 точки, клиент от март 2025 г."
+        >
+          <ui-logo uiPassMark />
+          <span uiPassBadge uiBadge [uiOnMedia]="true" uiIcon="loyalty.tier"
+            >Сребро</span
+          >
+        </ui-pass-card>
+      </div>
+    </ui-stack>
+  </sc-demo>
+
+  <sc-demo scTitle="At 330">
+    <ng-container scAbout>
+      The narrowest phone: the card is 295 wide, the field 115, the foot 71 at
+      the least. The drawing is the same drawing (the discs are measured in the
+      card's own width), the balance keeps the leading 60 %, and the foot is one
+      column: the state always sits under the quiet line.
+    </ng-container>
+    <ui-stack uiSpacing="compact" uiAlignment="stretch">
+      <div class="pass-card__sheet pass-card__sheet--narrow">
+        <ui-pass-card
+          uiFigure="371"
+          uiUnit="точки"
+          uiHolder="Георги Петров"
+          uiDetail="Клиент от март 2025 г."
+          uiLabel="Карта за лоялност: Георги Петров, Злато, 371 точки за размяна, клиент от март 2025 г."
+        >
+          <ui-logo uiPassMark />
+          <span uiPassBadge uiBadge [uiOnMedia]="true" uiIcon="loyalty.tier"
+            >Злато</span
+          >
+        </ui-pass-card>
+        <ui-pass-card
+          uiFigure="371"
+          uiUnit="точки"
+          uiHolder="Георги Петров"
+          uiDetail="Клиент от март 2025 г."
+          uiState="40 т. изтичат на 31.12"
+          uiLabel="Карта за лоялност: Георги Петров, Злато, 371 точки за размяна, клиент от март 2025 г."
+        >
+          <ui-logo uiPassMark />
+          <span uiPassBadge uiBadge [uiOnMedia]="true" uiIcon="loyalty.tier"
+            >Злато</span
+          >
+        </ui-pass-card>
+        <ui-pass-card
+          uiFigure="12 500"
+          uiUnit="точки"
+          uiHolder="Александър-Константин Димитров"
+          uiDetail="Клиент от септември 2019 г."
+          uiLabel="Карта за лоялност: Александър-Константин Димитров, Платина, 12 500 точки за размяна, клиент от септември 2019 г."
+        >
+          <ui-logo uiPassMark />
+          <span uiPassBadge uiBadge [uiOnMedia]="true" uiIcon="loyalty.tier"
+            >Платина</span
+          >
+        </ui-pass-card>
+      </div>
+      <p uiText [uiFont]="'caption'" class="pass-card__mono">
+        on a 330 pt sheet: 295 × 186 · a state line grows the foot · a balance
+        past the leading 60 % puts its unit under the figure
+      </p>
+    </ui-stack>
+  </sc-demo>
+
+  <sc-demo scTitle="What a flag takes off">
+    <ng-container scAbout>
+      A part that has nothing to say is absent, and the card keeps its form:
+      without a plate the figure stays where every other card has it; with the
+      points off the tier's count is the figure; a client with no worked visit
+      has no quiet line yet.
+    </ng-container>
+    <div class="pass-card__sheet">
+      @for (pass of quieter; track pass.id) {
+      <ui-stack uiSpacing="compact" uiAlignment="stretch">
+        <ui-pass-card
+          [uiFigure]="pass.figure"
+          [uiUnit]="pass.unit"
+          [uiHolder]="pass.holder"
+          [uiDetail]="pass.since"
+          [uiState]="pass.state"
+          [uiLabel]="pass.name"
+        >
+          <ui-logo uiPassMark />
+          @if (pass.tier; as tier) {
+          <span uiPassBadge uiBadge [uiOnMedia]="true" uiIcon="loyalty.tier"
+            >{{ tier }}</span
+          >
+          }
+        </ui-pass-card>
+        <p uiText [uiFont]="'caption'" class="pass-card__mono">
+          {{ pass.caption }}
+        </p>
+      </ui-stack>
+      }
+    </div>
+  </sc-demo>
+
+  <sc-demo scTitle="In a wide column, and the hooks">
+    <ng-container scAbout>
+      The card is as wide as its column; a consumer with a wide one caps it (the
+      dialog keeps 355). Four custom properties, each read with its default
+      where it is used, so they may be set on the card or above it:
+      <code>--ui-pass-card-surface</code>, <code>--ui-pass-card-ink</code>,
+      <code>--ui-pass-card-foot</code>, <code>--ui-pass-card-motif</code>.
+      Below, the same card on an ink field.
+    </ng-container>
+    <ui-stack uiSpacing="compact" uiAlignment="stretch">
+      <div class="pass-card__wide">
+        <ui-pass-card
+          class="pass-card__capped"
+          uiFigure="371"
+          uiUnit="точки"
+          uiHolder="Георги Петров"
+          uiDetail="Клиент от март 2025 г."
+          uiLabel="Карта за лоялност: Георги Петров, Злато, 371 точки за размяна, клиент от март 2025 г."
+        >
+          <ui-logo uiPassMark />
+          <span uiPassBadge uiBadge [uiOnMedia]="true" uiIcon="loyalty.tier"
+            >Злато</span
+          >
+        </ui-pass-card>
+        <ui-pass-card
+          class="pass-card__capped pass-card__hooked"
+          uiFigure="371"
+          uiUnit="точки"
+          uiHolder="Георги Петров"
+          uiDetail="Клиент от март 2025 г."
+          uiLabel="Карта за лоялност: Георги Петров, Злато, 371 точки за размяна, клиент от март 2025 г."
+        >
+          <ui-logo uiPassMark />
+          <span uiPassBadge uiBadge [uiOnMedia]="true" uiIcon="loyalty.tier"
+            >Злато</span
+          >
+        </ui-pass-card>
+      </div>
+      <p uiText [uiFont]="'caption'" class="pass-card__mono">
+        max-inline-size 355, the consumer's · --ui-pass-card-surface:
+        media-canvas · --ui-pass-card-motif: the accent at 40 %
+      </p>
+    </ui-stack>
+  </sc-demo>
+</sc-page>

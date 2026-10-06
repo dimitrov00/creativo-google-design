@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { type MenuGeometryRequest, resolveMenuGeometry } from './menu-geometry';
+import {
+  type MenuBox,
+  type MenuGeometryRequest,
+  resolveMenuGeometry,
+  windowClearOf,
+} from './menu-geometry';
 
 /** A phone: 390 × 664 of reachable window, no safe areas. */
 const PHONE = { top: 0, left: 0, width: 390, height: 664 };
@@ -151,6 +156,72 @@ describe('resolveMenuGeometry', () => {
     );
     expect(g.top).toBeGreaterThanOrEqual(200 + 12);
     expect(g.top + g.height).toBeLessThanOrEqual(200 + 360 - 12);
+  });
+
+  /*
+   * ── THE DOCK (2026-10-06) ─────────────────────────────────────────────
+   * The block sheet's day pill at 390 × 844: the pill's box 476–520, a
+   * 320 × 299 month, the sheet's «Запази» bar from 776 down. The surface
+   * fitted "below" by the window (308 of room) and landed under the bar —
+   * its last week of days behind the button. With the floor raised to the
+   * dock the room below is 240, the month flips above the pill and ends
+   * well clear of the bar.
+   */
+  describe('with a docked bar', () => {
+    const pill = { top: 476, left: 184, width: 131, height: 44 };
+    const month = { width: 320, height: 299 };
+    const bar: MenuBox = { top: 776, left: 0, width: 390, height: 68 };
+    const phone = { top: 0, left: 0, width: 390, height: 844 };
+
+    it('raises the window’s floor to the dock’s top', () => {
+      expect(windowClearOf(phone, [bar], 160)).toEqual({
+        ...phone,
+        height: 776,
+      });
+    });
+
+    it('flips the surface above the anchor once the room below is the room above the dock', () => {
+      const under = resolveMenuGeometry(
+        request({ anchor: pill, surface: month, window: phone }),
+      );
+      expect(under.side).toBe('bottom');
+      expect(under.top + under.height).toBeGreaterThan(bar.top);
+
+      const clear = resolveMenuGeometry(
+        request({
+          anchor: pill,
+          surface: month,
+          window: windowClearOf(phone, [bar], 160),
+        }),
+      );
+      expect(clear.side).toBe('top');
+      expect(clear.top).toBe(476 - 4 - 299);
+      expect(clear.top + clear.height).toBeLessThanOrEqual(bar.top);
+    });
+
+    it('ignores a dock wholly outside the window, and one that would leave no room', () => {
+      // Slid out by its own height — a dock yielding to a stacked sheet.
+      expect(windowClearOf(phone, [{ ...bar, top: 844 }], 160).height).toBe(
+        844,
+      );
+      // Above the window: a bar the viewport has panned past.
+      expect(windowClearOf({ ...phone, top: 900 }, [bar], 160).height).toBe(
+        844,
+      );
+      // A bar so high that less than a readable surface would be left.
+      expect(windowClearOf(phone, [{ ...bar, top: 100 }], 160).height).toBe(
+        844,
+      );
+      // A bar that is not drawn at all.
+      expect(windowClearOf(phone, [{ ...bar, height: 0 }], 160).height).toBe(
+        844,
+      );
+    });
+
+    it('takes the highest of several bars that reach into the window', () => {
+      const lower = { ...bar, top: 800 };
+      expect(windowClearOf(phone, [lower, bar], 160).height).toBe(776);
+    });
   });
 
   it('honours a fixed placement whatever the room', () => {

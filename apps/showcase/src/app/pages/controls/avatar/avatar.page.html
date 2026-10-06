@@ -24,6 +24,45 @@
     </ui-flow>
   </sc-demo>
 
+  <sc-demo scTitle="Inks">
+    <ng-container scAbout>
+      The monogram is text at the host's ink, on a film of that same ink at the
+      fill alpha — the control fill under the primary ink wherever a page or a
+      card hands it the foreground. Three inks are sanctioned for it, each read
+      from the tokens and held to 4.6:1 on every ground in both themes
+      (<code>avatar.spec.ts</code>): the foreground, the quiet rung
+      <code>--ui-avatar-ink: var(--sys-color-secondary-label-on-fill)</code>
+      (the plain secondary label falls under AA on a dark segment), and the
+      on-primary ink a selected chip hands it. Never recede one by opacity: an
+      ancestor at 0.55 takes the foreground to 4.1:1 in light.
+    </ng-container>
+    <ui-flow uiSpacing="comfortable" uiAlignment="trailing">
+      <ui-stack uiAxis="vertical" uiSpacing="compact" uiAlignment="leading">
+        <ui-avatar uiName="Ada Lovelace" uiControlSize="large" />
+        <p uiText [uiFont]="'caption'" class="avatar__mono">foreground</p>
+      </ui-stack>
+      <ui-stack uiAxis="vertical" uiSpacing="compact" uiAlignment="leading">
+        <ui-avatar
+          class="avatar__quiet"
+          uiName="Ada Lovelace"
+          uiControlSize="large"
+        />
+        <p uiText [uiFont]="'caption'" class="avatar__mono">
+          secondary-label-on-fill
+        </p>
+      </ui-stack>
+      <ui-stack uiAxis="vertical" uiSpacing="compact" uiAlignment="leading">
+        <button uiChip [uiSelected]="true" type="button">
+          <ui-avatar uiName="Ada Lovelace" uiControlSize="small" />
+          Ada Lovelace
+        </button>
+        <p uiText [uiFont]="'caption'" class="avatar__mono">
+          on-primary · selected chip
+        </p>
+      </ui-stack>
+    </ui-flow>
+  </sc-demo>
+
   <sc-demo scTitle="With image">
     <ng-container scAbout>
       A resolvable <code>uiSrc</code> fades the photo in over the monogram once

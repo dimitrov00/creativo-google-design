@@ -1,0 +1,515 @@
+@layer sys-components {
+  /* Clearance contract — the band a marker stands in over the ring (see
+     THE MARKER): the badge's box (one caption line, 14.3, in its tight
+     padding: 22.3) and the tight step that parts it from the ring — a
+     comfortable step plus a tight one, 28. */
+  :root {
+    --ui-medal-marker-clearance: calc(
+      var(--sys-space-comfortable) + var(--sys-space-tight)
+    );
+  }
+
+  /* THE ROW RESERVES IT (2026-09-28): while any medal of a row carries a
+     marker, every medal in it, marked or not, holds the band at its top,
+     so the rings keep one top line. The DS writes this `:has()` once, for
+     the rows it owns — a rail (`ui-scroll-row`) and a grid (`ui-grid`) —
+     and for any other row that says it is one (`data-medal-row`, e.g. a
+     row of three medals alone); no consumer copies it, nor names a medal
+     part. Zero specificity: a host that needs otherwise overrides it.
+     TILES in a rail or a grid need none of it (see ONE ROW, SHARED
+     TRACKS): the track they share makes the room, in the marker's own row
+     and in no other. */
+  :where(
+    :is(.ui-scroll-row, .ui-grid, [data-medal-row]):has(
+      .ui-medal__marker:not(:empty)
+    )
+  ) {
+    --ui-medal-marker-room: var(--ui-medal-marker-clearance);
+  }
+
+  /* THE GROUND (revision 3). The rim chip and the stack are cut out of
+     what is behind them by a ring of the ground's own colour,
+     `--ui-medal-stack-ring`: the surface where nothing says otherwise. An
+     elevated card and a headline's stage are a LIGHTER surface in dark, and
+     the medals of revision 3 stand on them, so the DS names their colour
+     once, here; any other ground is its consumer's to name. Zero
+     specificity, and set on the ground, not on the medal: whatever a
+     consumer sets, there or nearer the medal, wins. */
+  :where(.ui-card[data-tone='elevated'], .ui-sheet-headline[data-media-stage]) {
+    --ui-medal-stack-ring: var(--sys-color-surface-elevated);
+  }
+
+  /* THE MEDAL — three tracks, all centred on the ring: the ring with its
+     disc (and the marker's band over it), the title, the caption. The
+     tracks touch: the room between them is each part's own.
+     `--ui-medal-disc` is the rung; the rim is what the ring adds each side
+     of it (the gauge's stroke and its gap of the ground: 3 + 1, 4 + 2,
+     6 + 2, gauge.css), and the chip the rim numeral's height. */
+  .ui-medal {
+    --ui-medal-tint: var(--sys-color-accent);
+    --ui-medal-disc: var(--control-size-large);
+    --ui-medal-rim: calc(var(--sys-space-unit) * 1.5);
+    --ui-medal-chip: calc(var(--sys-space-unit) * 4.5);
+
+    display: inline-grid;
+    grid-template-columns: minmax(0, 1fr);
+    row-gap: 0;
+    justify-items: center;
+    align-items: start;
+    align-content: start;
+    box-sizing: border-box;
+    min-inline-size: 0;
+    max-inline-size: 100%;
+    color: var(--sys-color-foreground);
+    text-align: center;
+    vertical-align: top;
+  }
+
+  .ui-medal[data-control-size='regular'] {
+    --ui-medal-disc: var(--control-size-regular);
+    --ui-medal-rim: var(--sys-space-unit);
+    --ui-medal-chip: calc(var(--sys-space-unit) * 4);
+  }
+
+  .ui-medal[data-control-size='extraLarge'] {
+    --ui-medal-disc: var(--control-size-extraLarge);
+    --ui-medal-rim: calc(var(--sys-space-unit) * 2);
+    --ui-medal-chip: calc(var(--sys-space-unit) * 7);
+  }
+
+  /* THE BUTTON FORM — a plain tile carrying the state layer and the ring
+     of the one hover/press grammar, round the whole tile: a compact step
+     over the ring and under the words, a tight one beside the ring. The
+     WORDS may take that tight step back (see THE WORDS): it is the ring's
+     air, and a title needs the tile's whole width on a 330 pt phone. */
+  button.ui-medal {
+    --ui-medal-gutter: var(--sys-space-tight);
+
+    margin: 0;
+    padding: var(--sys-space-compact) var(--ui-medal-gutter);
+    border: 0;
+    border-radius: var(--control-radius-prominent);
+    background: none;
+    font: inherit;
+    appearance: none;
+    /* The state layer of [data-interactive] rounds with the tile. */
+    isolation: isolate;
+  }
+
+  /* A button with no words holds the chip inside its own box, won or not:
+     the state layer never cuts a numeral, and a row of bare buttons is one
+     height whatever each has won. Even above and under, so the ring stays
+     in the middle of what lights up. */
+  button.ui-medal:not([data-tile]) {
+    padding-block: calc(var(--ui-medal-chip) / 2 + var(--sys-space-tight));
+  }
+
+  /* THE FIGURE — the ring's box (52 · 64 · 128), kept in every state. ONE
+     cell: the ring is drawn first and the disc over it, so nothing of the
+     disc is ever under the stroke and the gap between them is the real
+     ground. The chip hangs on this box. It stands on the FOOT of its
+     track, under the band of a marker: its own, or the one its row keeps
+     (see THE MARKER). */
+  .ui-medal__figure {
+    grid-area: 1 / 1;
+    align-self: end;
+    margin-block-start: var(--ui-medal-marker-room, 0px);
+    display: grid;
+    grid-template: minmax(0, 1fr) / minmax(0, 1fr);
+    place-items: center;
+    flex: none;
+    box-sizing: border-box;
+    inline-size: calc(var(--ui-medal-disc) + 2 * var(--ui-medal-rim));
+    block-size: calc(var(--ui-medal-disc) + 2 * var(--ui-medal-rim));
+  }
+
+  .ui-medal__figure > * {
+    grid-area: 1 / 1;
+  }
+
+  /* THE RING — the gauge's, whole: its track, its arc, its stroke and its
+     dashes. The medal hands it the tint and nothing else. */
+  .ui-medal__ring {
+    --ui-gauge-tint: var(--ui-medal-tint);
+  }
+
+  /* THE DISC — the control fill until something is won. */
+  .ui-medal__disc {
+    position: relative;
+    display: grid;
+    place-items: center;
+    flex: none;
+    box-sizing: border-box;
+    inline-size: var(--ui-medal-disc);
+    block-size: var(--ui-medal-disc);
+    border-radius: var(--control-radius-capsule);
+    background: var(--sys-color-fill);
+    color: var(--sys-color-foreground);
+    transition-property: background-color, color;
+    transition-duration: 0s;
+  }
+
+  /* THE ART IS PINNED TO THE DISC'S BOX (2026-09-28). As a grid item its
+     `block-size: 100%` resolved against an auto row sized by the picture's
+     own ratio, so a 1100×1400 portrait drew a 52×66 egg below the ring.
+     Absolutely inset, it is the disc — any ratio, cropped by `cover`. The
+     disc itself never clips: the stack's second medal is drawn from it. */
+  .ui-medal__art {
+    position: absolute;
+    inset: 0;
+    box-sizing: border-box;
+    inline-size: 100%;
+    block-size: 100%;
+    border-radius: inherit;
+    object-fit: cover;
+  }
+
+  /* …and it alone reaches the disc's edge. Under a picture the disc's own
+     fill stops a stroke short of it: the tint of a medal won drew an
+     orange hairline round the photograph, where the two edges meet. (The
+     stack's second medal inherits the fill whole: it has no padding.) */
+  .ui-medal__disc:has(> .ui-medal__art) {
+    padding: var(--sys-stroke-emphasis);
+    background-clip: content-box;
+  }
+
+  /* The emblem sits on the icon ladder (16 · 20 · 24), never a fraction of
+     the disc: 20 in the 44 disc, 24 in the 52 one — the rungs the button
+     glyph tiers use at those sizes. */
+  .ui-medal__glyph {
+    font-size: var(--ui-icon-large);
+  }
+
+  .ui-medal[data-control-size='regular'] .ui-medal__glyph {
+    font-size: var(--ui-icon-medium);
+  }
+
+  /* …but the PORTRAIT rung is past the ladder's top: a 24 glyph is a speck
+     on a 112 disc. There the emblem is drawn at the disc's scale, the
+     monogram's — 56, the face of a page. */
+  .ui-medal[data-control-size='extraLarge'] .ui-medal__glyph {
+    font-size: calc(var(--control-size-extraLarge) * 0.5);
+  }
+
+  /* A monogram is TYPE, not a glyph: it is sized by the disc — half of it,
+     the avatar fallback's rule. */
+  .ui-medal__monogram {
+    font-size: calc(var(--ui-medal-disc) * 0.5);
+    font-family: var(--sys-font-family-display);
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  /* NOT STARTED — the real art as a grey silhouette; its ring is the
+     gauge's dashed track (`data-extent`, stamped by the medal). */
+  .ui-medal[data-state='notStarted'] .ui-medal__disc {
+    color: var(--sys-color-secondary-label);
+  }
+
+  .ui-medal[data-state='notStarted'] .ui-medal__art {
+    filter: grayscale(1);
+    opacity: 0.45;
+  }
+
+  /* IN PROGRESS — the arc round an unfilled disc, its glyph in the primary
+     ink, and art still grey inside it (2026-09-28, wave D r5): FULL COLOUR
+     MEANS EARNED for art as the filled disc does for a glyph. The real art
+     stays whole and legible (the requirement is never locked away), a step
+     up from not started's faint silhouette. */
+  .ui-medal[data-state='inProgress'] .ui-medal__art {
+    filter: grayscale(1);
+    opacity: 0.75;
+  }
+
+  /* EARNED — the filled disc, its glyph in the ink every accent-filled
+     control uses (a mark on the solid tint); art in its own colour. */
+  .ui-medal[data-state='earned'] .ui-medal__disc {
+    background: var(--ui-medal-tint);
+    color: var(--sys-color-on-accent);
+  }
+
+  /* COMPLETE — the face of a medal won, in a FULL ring. */
+  .ui-medal[data-state='complete'] .ui-medal__disc {
+    background: var(--ui-medal-tint);
+    color: var(--sys-color-on-accent);
+  }
+
+  /* THE STACK — several medals as one item (`uiStacked`, a day's levels):
+     a second medal behind this one, a compact step to the trailing side,
+     cut out of the front one by a ring of the ground — the avatar group's
+     grammar, `--ui-medal-stack-ring`. The medal in front is whole, ring
+     and disc, so what stands behind is a disc of the RING's size, and the
+     ground under the front ring is the ring's own box (its track is
+     translucent: it needs the ground, never the medal behind). A compact
+     step, where the bare disc took a tight one: beside a ring a thinner
+     crescent read as a second arc, not as a second medal. The disc behind wears the front one's own fill, so a stack
+     won is a pile of medals won; short of that it takes the extent's ink,
+     the fill ringed in the extent's stroke (the fill alone is 1.08:1 on
+     the card). `isolation` keeps it inside the medal: behind the ring,
+     never behind the ground under the medal. */
+  .ui-medal[data-stacked] {
+    isolation: isolate;
+  }
+
+  .ui-medal[data-stacked] .ui-medal__ring {
+    border-radius: var(--control-radius-capsule);
+    background: var(--ui-medal-stack-ring, var(--sys-color-surface));
+    box-shadow: 0 0 0 var(--sys-stroke-emphasis)
+      var(--ui-medal-stack-ring, var(--sys-color-surface));
+  }
+
+  /* The fill is translucent, so short of earned the front disc lays it on
+     the ground's colour: the disc behind takes that fill whole. */
+  .ui-medal[data-stacked]:not([data-state='earned']) .ui-medal__disc {
+    background: linear-gradient(var(--sys-color-fill), var(--sys-color-fill))
+      var(--ui-medal-stack-ring, var(--sys-color-surface));
+  }
+
+  .ui-medal[data-stacked] .ui-medal__disc::before {
+    content: '';
+    position: absolute;
+    inset-block: calc(var(--ui-medal-rim) * -1);
+    inset-inline-start: calc(var(--sys-space-compact) - var(--ui-medal-rim));
+    z-index: -1;
+    box-sizing: border-box;
+    inline-size: calc(100% + 2 * var(--ui-medal-rim));
+    border-radius: inherit;
+    background: inherit;
+    pointer-events: none;
+  }
+
+  .ui-medal[data-stacked]:not([data-state='earned']) .ui-medal__disc::before {
+    box-shadow: inset 0 0 0 var(--sys-stroke-mark)
+      var(--sys-color-secondary-label);
+  }
+
+  /* A complete stack is a pile of medals won, as an earned one is. */
+  .ui-medal[data-stacked][data-state='complete'] .ui-medal__disc {
+    background: var(--ui-medal-tint);
+  }
+
+  .ui-medal[data-stacked][data-state='complete'] .ui-medal__disc::before {
+    box-shadow: none;
+  }
+
+  /* THE RIM NUMERAL — a chip at 6 o'clock, centred ON the ring box's bottom
+     edge, half over it (the headline plate's rule): it covers the ring
+     where it stands and is cut out of it by a ring of the ground. A grid
+     item of the figure's cell, so a wide numeral overhangs evenly in
+     either direction of text; lifted over the disc, whose foot it
+     covers. */
+  .ui-medal__level {
+    position: relative;
+    z-index: 1;
+    place-self: end center;
+    translate: 0 50%;
+    display: grid;
+    place-items: center;
+    box-sizing: border-box;
+    min-inline-size: var(--ui-medal-chip);
+    block-size: var(--ui-medal-chip);
+    padding: 0 var(--sys-space-tight);
+    border-radius: var(--control-radius-capsule);
+    background: var(--ui-medal-stack-ring, var(--sys-color-surface));
+    box-shadow:
+      inset 0 0 0 var(--sys-stroke-mark) var(--sys-color-separator),
+      0 0 0 var(--sys-stroke-emphasis)
+        var(--ui-medal-stack-ring, var(--sys-color-surface));
+    color: var(--sys-color-foreground);
+    font: var(--sys-font-caption);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    line-height: 1;
+    white-space: nowrap;
+  }
+
+  .ui-medal[data-control-size='extraLarge'] .ui-medal__level {
+    padding: 0 var(--sys-space-compact);
+    font: var(--sys-font-subheadline);
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    line-height: 1;
+  }
+
+  /* THE MARKER — the consumer's «Ново» stands OVER the ring, never on it,
+     its trailing edge on the ring's, so a word chip as wide as the medal
+     covers neither the glyph nor a neighbour in a row. A LABEL'S GRAMMAR,
+     a tight step (4) above the ring (2026-09-28, wave D r4: its bottom ON
+     the edge measured ≈ 1 pt apart, neither attached nor spaced, a
+     floating eyebrow). Not pinned onto the disc like the rim numeral: the
+     tinted capsule is unreadable over a filled disc in dark, and it would
+     cover a portrait's head.
+
+     THE BAND (the clearance contract above) is the head of the ring's own
+     track: in flow, inside the medal's box, so a tile's state layer and
+     focus ring take the marker in and a rail (which clips what overflows
+     it) never cuts it. A medal that carries a marker sets its ring under
+     the band; one that carries none sets it under the band its row keeps,
+     if it keeps one. */
+  .ui-medal__marker {
+    grid-area: 1 / 1;
+    align-self: start;
+    display: flex;
+    justify-content: flex-end;
+    align-items: flex-end;
+    box-sizing: border-box;
+    inline-size: calc(var(--ui-medal-disc) + 2 * var(--ui-medal-rim));
+    block-size: var(--ui-medal-marker-clearance);
+    padding-block-end: var(--sys-space-tight);
+  }
+
+  .ui-medal__marker:empty {
+    display: none;
+  }
+
+  .ui-medal:has(> .ui-medal__marker:not(:empty)) > .ui-medal__figure {
+    margin-block-start: var(--ui-medal-marker-clearance);
+  }
+
+  /* THE WORDS, by the medal's size: a grid's `large` medal is named in the
+     subheadline and captioned in the footnote; the `regular` one of a
+     season's families a rung under each; the portrait one a rung over. Two
+     lines at most; a one-line title takes one (see ONE ROW, SHARED TRACKS
+     for how a row's captions still share a line).
+
+     AS WIDE AS THE TILE: in the button form the words run over the
+     gutter beside the ring, evenly on both sides (they are centred). In a
+     column of 87 that is 87 for the title, not 79: «Ранобудник» on one
+     line, «Подстриж-» on its first. */
+  .ui-medal__title {
+    grid-area: 2 / 1;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    max-inline-size: calc(100% + 2 * var(--ui-medal-gutter, 0px));
+    overflow: hidden;
+    font: var(--sys-font-subheadline);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    /* A long word breaks at a hyphenation point: the page's language's
+       where the engine knows it, a soft hyphen of the title's own where
+       it does not («Изследо-вател»), and mid-word only when it has none
+       that fits. */
+    hyphens: auto;
+    overflow-wrap: break-word;
+  }
+
+  .ui-medal[data-control-size='regular'] .ui-medal__title {
+    font: var(--sys-font-footnote);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .ui-medal[data-control-size='extraLarge'] .ui-medal__title {
+    font: var(--sys-font-headline);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .ui-medal__caption {
+    grid-area: 3 / 1;
+    max-inline-size: calc(100% + 2 * var(--ui-medal-gutter, 0px));
+    /* Half a tight step under the title: one object, two lines. */
+    margin-block-start: calc(var(--sys-space-tight) / 2);
+    font: var(--sys-font-footnote);
+    font-variant-numeric: tabular-nums;
+    color: var(--sys-color-secondary-label);
+    hyphens: auto;
+    overflow-wrap: break-word;
+  }
+
+  .ui-medal[data-control-size='regular'] .ui-medal__caption {
+    font: var(--sys-font-caption);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .ui-medal[data-control-size='extraLarge'] .ui-medal__caption {
+    font: var(--sys-font-callout);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* THE CHIP'S ROOM — under the ring of EVERY tile, won or not: the half
+     of the chip that hangs under the box, and a tight step to the words.
+     So a medal with no level yet sets its title on the same line as its
+     earned neighbours. The medal alone reserves nothing: it is the ring's
+     box, centred as one in a headline and in a ladder's row. */
+  .ui-medal[data-tile] > .ui-medal__figure {
+    margin-block-end: calc(var(--ui-medal-chip) / 2 + var(--sys-space-tight));
+  }
+
+  /* ONE ROW, SHARED TRACKS (2026-09-28) — a row of tiles aligns per ROW,
+     not per tile. Each title held two lines of its own, so a row where
+     none wraps («21.08», «14.07», «Години с нас») showed a blank line in
+     every tile. In a rail or a grid a tile takes its three tracks — ring,
+     title, caption — from the row (`subgrid`), so every track is as tall
+     as the row's tallest: a row where one title wraps sets every caption
+     under it, a row where none does sets them straight under their
+     titles, and a two-line caption never pushes its neighbours' words
+     apart. Alone, a tile's tracks are its own. Every part is placed — its
+     own track, the medal's one column — so a tile without a title never
+     moves its caption up into the titles' line, and the marker never opens
+     a column beside the ring it shares a track with.
+
+     THE BAND, PER ROW (revision 3): a grid is many rows now, and the row
+     with «Ново» in it is the only one that makes room for it. The marked
+     tile makes its ring's track taller by the band, and its neighbours in
+     that row stand their rings on the track's foot: one top line, no
+     reservation. So the grid-wide room is switched off for tiles.
+     (Reserved over every row, three rows of medals carried 56 pt of air
+     for one marker.) */
+  .ui-medal[data-tile] {
+    grid-row: span 3;
+    grid-template-rows: subgrid;
+  }
+
+  :is(.ui-scroll-row, .ui-grid) > .ui-medal[data-tile],
+  :is(.ui-scroll-row, .ui-grid) > * > .ui-medal[data-tile] {
+    --ui-medal-marker-room: 0px;
+  }
+
+  /* The rows hand the tracks down. A tile wrapped in a list item (a
+     component host, a `div[role=listitem]`) passes them on: the wrapper
+     spans the three tracks and subgrids them too. */
+  :is(.ui-scroll-row, .ui-grid) > :has(> .ui-medal[data-tile]) {
+    display: grid;
+    grid-row: span 3;
+    grid-template-rows: subgrid;
+    row-gap: 0;
+  }
+
+  /* A grid of tiles (`ui-grid`) lays each one over three of its rows as it
+     is. A rail (`ui-scroll-row`, a flex row) of tiles becomes ONE band of
+     the three tracks, its columns the width the row gives its items
+     (`--ui-scroll-row-item`, scroll-row.css), so the peek is unchanged. */
+  .ui-scroll-row:has(> .ui-medal[data-tile], > * > .ui-medal[data-tile]) {
+    display: grid;
+    grid-auto-flow: column;
+    grid-template-rows: repeat(3, auto);
+    row-gap: 0;
+  }
+
+  .ui-scroll-row[data-relative]:has(
+      > .ui-medal[data-tile],
+      > * > .ui-medal[data-tile]
+    ) {
+    grid-auto-columns: var(--ui-scroll-row-item);
+  }
+
+  .ui-scroll-row[data-relative]:has(
+      > .ui-medal[data-tile],
+      > * > .ui-medal[data-tile]
+    )
+    > * {
+    inline-size: auto;
+  }
+
+  /* M16 — a live change to earned cross-fades the disc to its fill, as the
+     gauge glides the arc. The first frame has no "before", so nothing
+     plays on mount. Reduced motion swaps. */
+  @media (prefers-reduced-motion: no-preference) {
+    .ui-medal__disc {
+      transition-duration: var(--sys-motion-duration-deliberate);
+      transition-timing-function: var(--sys-motion-ease-standard);
+    }
+  }
+}

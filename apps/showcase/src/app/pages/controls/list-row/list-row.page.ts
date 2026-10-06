@@ -1,9 +1,9 @@
-import { ChangeDetectionStrategy, Component } from '@angular/core';
+import { ChangeDetectionStrategy, Component, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { UiAvatar, UiIcon } from '@creativo/ui/controls';
 import { UiDivider, UiStack } from '@creativo/ui/layout';
 import type { UiListRowAlignment, UiListRowSize } from '@creativo/ui/patterns';
-import { UiCard, UiListRow } from '@creativo/ui/patterns';
+import { UiCard, UiListGroup, UiListRow } from '@creativo/ui/patterns';
 import {
   UiForegroundStyleDirective,
   UiFrameDirective,
@@ -25,6 +25,7 @@ import { ScPage } from '../../../shared/page';
     UiFrameDirective,
     UiIcon,
     UiForegroundStyleDirective,
+    UiListGroup,
     UiListRow,
     UiStack,
     UiTextDirective,
@@ -40,4 +41,6 @@ export class ListRowPage {
   ];
   /** Both rungs on a stacked label — the picker row and the settings row. */
   protected readonly sizes: readonly UiListRowSize[] = ['regular', 'large'];
+  /** The destructive demo's second row, armed as its own confirm. */
+  protected readonly armed = signal(false);
 }

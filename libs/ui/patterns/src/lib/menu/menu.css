@@ -190,6 +190,26 @@
     opacity: 1;
     transform: scale(1);
     pointer-events: auto;
+    /* The ENTRANCE shows the surface at once; only the exit keeps it
+       visible for the length of its fade (the base rule's list). Focus
+       moves in right after the reveal (menu.ts), and an element still
+       `hidden` at that instant refuses it: with `visibility` in the
+       entrance's transition the first frame of hidden → visible is hidden
+       still, and the keyboard model opened dead, focus stranded on the
+       trigger (seen on the showcase, 2026-10-06). */
+    transition:
+      opacity var(--sys-motion-duration-instant) var(--sys-motion-ease-standard),
+      transform var(--sys-motion-duration-instant)
+        var(--sys-motion-ease-standard),
+      visibility 0s,
+      overlay var(--sys-motion-duration-instant) allow-discrete;
+  }
+
+  /* A DIALOG surface takes focus as a container on open (menu.ts). The
+     agent's ring would outline the whole popover; the first control inside
+     is one Tab away and wears its own. */
+  .ui-menu__surface:focus-visible {
+    outline: none;
   }
 
   /* Where it grows FROM: the corner it hangs off — the side the component
@@ -260,15 +280,18 @@
      (an action sheet is the opposite — destructive first). */
   /* Destructive stays red in BOTH presentations. Scoping this out along with
      the command-row look silently dropped the one thing HIG is unambiguous
-     about for menus: a destructive item is red, and belongs last. */
+     about for menus: a destructive item is red, and belongs last. The red
+     is the `-label` lift — a command is WORDS, and the fill's red reads
+     3.1:1 on the dark material (theme-dark.css); the glyph beside the word
+     inherits it. */
   .ui-menu__item[data-role='destructive'],
   .ui-menu__item[data-role='destructive'] > [uileading],
   .ui-menu__item[data-role='destructive'] .ui-list-row__label {
-    color: var(--sys-color-destructive);
+    color: var(--sys-color-destructive-label);
   }
 
   .ui-menu__item:not(.ui-list-row)[data-role='destructive'] {
-    color: var(--sys-color-destructive);
+    color: var(--sys-color-destructive-label);
   }
 
   /* Hover is pointer-gated; press is NOT — a tap has to show the same
