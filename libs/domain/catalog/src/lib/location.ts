@@ -47,6 +47,11 @@ export interface LocationGeo {
 export interface LocationProps {
   id: string;
   name: LocalizedTextProps;
+  /**
+   * What a line that already knows the business calls the shop: «Център»
+   * for «Креативо · Център». Optional: absent, the shop goes by its name.
+   */
+  shortName?: LocalizedTextProps;
   address: LocalizedTextProps;
   phone: VenuePhoneProps;
   geo: LocationGeo;
@@ -72,6 +77,13 @@ export class Location {
   private constructor(
     readonly id: LocationId,
     readonly name: LocalizedText,
+    /**
+     * The shop without the tenant's brand that every shop carries. A visit
+     * row's fact line names the shop by it, so the one part that varies
+     * down a history is not the part an ellipsis cuts. It is the name
+     * itself when the catalogue gives none.
+     */
+    readonly shortName: LocalizedText,
     readonly address: LocalizedText,
     readonly phone: VenuePhone,
     readonly geo: LocationGeo,
@@ -124,6 +136,13 @@ export class Location {
     if (nameResult.isFailure()) {
       errors.push(...nameResult.error);
     }
+    const shortNameResult =
+      props.shortName === undefined
+        ? null
+        : LocalizedText.create(props.shortName);
+    if (shortNameResult?.isFailure()) {
+      errors.push(...shortNameResult.error);
+    }
     const addressResult = LocalizedText.create(props.address);
     if (addressResult.isFailure()) {
       errors.push(...addressResult.error);
@@ -140,6 +159,7 @@ export class Location {
       combined.isFailure() ||
       phoneResult.isFailure() ||
       nameResult.isFailure() ||
+      (shortNameResult !== null && shortNameResult.isFailure()) ||
       addressResult.isFailure() ||
       hoursResult.isFailure()
     ) {
@@ -154,6 +174,7 @@ export class Location {
       new Location(
         id,
         nameResult.value,
+        shortNameResult?.value ?? nameResult.value,
         addressResult.value,
         phoneResult.value,
         geo,

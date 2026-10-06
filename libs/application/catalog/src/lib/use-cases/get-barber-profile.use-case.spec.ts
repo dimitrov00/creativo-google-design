@@ -1,11 +1,18 @@
 import { describe, expect, it } from 'vitest';
-import { Result, ok } from '@creativo/domain/kernel';
+import { Result, fail, ok } from '@creativo/domain/kernel';
 import { Barber, BarberId, MediaRef } from '@creativo/domain/catalog';
 import { RepositoryError } from '@creativo/application/shared';
 import { CatalogReader } from '../ports/catalog-reader.port';
 import { MediaReader, MediaVariant } from '../ports/media-reader.port';
+import {
+  MediaReadError,
+  MediaUnavailableError,
+} from '../ports/media-reader.errors';
 import { GetBarberProfileUseCase } from './get-barber-profile.use-case';
-import { BarberNotFoundError } from './get-barber-profile.errors';
+import {
+  BarberNotFoundError,
+  GetBarberProfileRepositoryFailure,
+} from './get-barber-profile.errors';
 
 function requiredValue<T, E>(result: Result<T, E>): T {
   if (result.isFailure()) throw new Error('unexpected failure in test fixture');
@@ -71,6 +78,14 @@ function fakeMedia(variants: readonly MediaVariant[]): MediaReader {
   };
 }
 
+function failingMedia(error: MediaReadError): MediaReader {
+  return {
+    async resolve(): Promise<Result<readonly MediaVariant[], MediaReadError>> {
+      return fail(error);
+    },
+  };
+}
+
 describe('GetBarberProfileUseCase', () => {
   it('resolves the barber profile with their avatar variants', async () => {
     const useCase = new GetBarberProfileUseCase(
@@ -102,6 +117,49 @@ describe('GetBarberProfileUseCase', () => {
     expect(result.isSuccess()).toBe(true);
     if (result.isSuccess()) {
       expect(result.value.avatar).toHaveLength(0);
+    }
+  });
+
+  it.each([
+    ['missing', new MediaUnavailableError('not_found', 'avatars/jane.jpg')],
+    ['forbidden', new MediaUnavailableError('forbidden', 'avatars/jane.jpg')],
+  ])(
+    'still resolves the profile, on the placeholder, when the avatar is %s',
+    async (_label, error) => {
+      const useCase = new GetBarberProfileUseCase(
+        fakeCatalog(barber(true)),
+        failingMedia(error),
+      );
+
+      const result = await useCase.execute(
+        requiredValue(BarberId.create('barber_1')),
+      );
+
+      expect(result.isSuccess()).toBe(true);
+      if (result.isSuccess()) {
+        expect(result.value.barber.handle).toBe('jane');
+        expect(result.value.avatar).toEqual([]);
+      }
+    },
+  );
+
+  it('fails the lookup on a transient media failure', async () => {
+    const cause = new RepositoryError('storage/retry-limit-exceeded');
+    const useCase = new GetBarberProfileUseCase(
+      fakeCatalog(barber(true)),
+      failingMedia(cause),
+    );
+
+    const result = await useCase.execute(
+      requiredValue(BarberId.create('barber_1')),
+    );
+
+    expect(result.isFailure()).toBe(true);
+    if (result.isFailure()) {
+      expect(result.error).toBeInstanceOf(GetBarberProfileRepositoryFailure);
+      expect((result.error as GetBarberProfileRepositoryFailure).cause).toBe(
+        cause,
+      );
     }
   });
 

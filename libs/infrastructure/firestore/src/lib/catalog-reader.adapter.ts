@@ -213,6 +213,7 @@ function locationFromDoc(
   const reconstituted = Location.reconstitute({
     id,
     name: data['name'],
+    shortName: data['shortName'] ?? undefined,
     address: data['address'],
     phone: data['phone'],
     geo: data['geo'],

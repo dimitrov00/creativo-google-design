@@ -1,4 +1,5 @@
 export * from './lib/ports/appointment-document';
+export * from './lib/ports/applied-operations-document';
 export * from './lib/ports/appointment-repository.port';
 export * from './lib/ports/appointment-notes.port';
 export * from './lib/ports/appointment-photos.port';
@@ -10,6 +11,11 @@ export * from './lib/ports/capacity-document';
 export * from './lib/ports/schedule-exception-document';
 export * from './lib/ports/schedule-exception-writer.port';
 export * from './lib/ports/booking-policy-reader.port';
+export * from './lib/ports/client-stats-document';
+export * from './lib/ports/client-stats-reader.port';
+export * from './lib/ports/client-stats-directory.port';
+export * from './lib/ports/client-history-reader.port';
+export * from './lib/ports/client-photos-reader.port';
 export * from './lib/ports/waitlist-document';
 export * from './lib/ports/waitlist-gateway.port';
 export * from './lib/ports/booking-draft-store.errors';
@@ -19,6 +25,7 @@ export * from './lib/use-cases/create-booking.errors';
 export * from './lib/use-cases/create-booking.use-case';
 export * from './lib/use-cases/observe-availability.use-case';
 export * from './lib/use-cases/observe-upcoming.use-case';
+export * from './lib/use-cases/party-shops';
 export * from './lib/flow/booking-flow.errors';
 export * from './lib/flow/booking-flow';
 

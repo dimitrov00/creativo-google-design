@@ -10,8 +10,8 @@ import {
 import { UserId } from '@creativo/domain/accounts';
 import { FirestoreImpersonationAdapter } from './impersonation.adapter';
 
-const setMock = vi.fn();
-const commitMock = vi.fn().mockResolvedValue(undefined);
+const setDocMock = vi.fn().mockResolvedValue(undefined);
+const writeBatchMock = vi.fn();
 const getDocMock = vi.fn();
 const getDocsMock = vi.fn();
 
@@ -25,10 +25,8 @@ vi.mock('firebase/firestore', () => ({
   query: vi.fn((ref) => ref),
   where: vi.fn((field, op, value) => ({ field, op, value })),
   limit: vi.fn((n) => ({ limit: n })),
-  writeBatch: vi.fn(() => ({
-    set: setMock,
-    commit: commitMock,
-  })),
+  setDoc: (...args: unknown[]) => setDocMock(...args),
+  writeBatch: (...args: unknown[]) => writeBatchMock(...args),
 }));
 
 function buildSession(): ImpersonationSession {
@@ -64,37 +62,42 @@ describe('FirestoreImpersonationAdapter', () => {
   const fakeDb = {} as Firestore;
 
   beforeEach(() => {
-    setMock.mockClear();
-    commitMock.mockClear();
+    setDocMock.mockClear();
+    writeBatchMock.mockClear();
     getDocMock.mockReset();
     getDocsMock.mockReset();
   });
 
-  it('save() batches the session write with an audit log entry', async () => {
+  it('save() writes the session document and nothing else', async () => {
     const adapter = createAdapter(fakeDb);
     const session = buildSession();
 
     const result = await adapter.save(session);
 
     expect(result.isSuccess()).toBe(true);
-    expect(setMock).toHaveBeenCalledTimes(2);
-    expect(commitMock).toHaveBeenCalledTimes(1);
-
-    const [, sessionDoc] = setMock.mock.calls[0] ?? [];
+    expect(setDocMock).toHaveBeenCalledTimes(1);
+    const [ref, sessionDoc] = setDocMock.mock.calls[0] ?? [];
+    expect(ref).toEqual({ path: `impersonationSessions/${session.id.value}` });
     expect(sessionDoc).toMatchObject({
       adminUserId: session.adminUserId.value,
       targetUserId: session.targetUserId.value,
       scope: 'write',
       status: { kind: 'active' },
     });
+  });
 
-    const [, auditDoc] = setMock.mock.calls[1] ?? [];
-    expect(auditDoc).toMatchObject({
-      action: 'impersonation.started',
-      targetUserId: session.targetUserId.value,
-      resourceId: session.id.value,
-      actor: { kind: 'admin', adminUserId: session.adminUserId.value },
-    });
+  // FIX 1: no client creates audit rows — the rules refuse every one, so a
+  // batch carrying one would fail the session write with it.
+  it('save() writes no audit row from the browser', async () => {
+    const adapter = createAdapter(fakeDb);
+
+    await adapter.save(buildSession());
+
+    expect(writeBatchMock).not.toHaveBeenCalled();
+    const paths = setDocMock.mock.calls.map(
+      ([ref]) => (ref as { path: string }).path,
+    );
+    expect(paths.some((path) => path.startsWith('auditLog'))).toBe(false);
   });
 
   it('findById() returns null for a missing document', async () => {
@@ -147,8 +150,8 @@ describe('FirestoreImpersonationAdapter', () => {
     }
   });
 
-  it('surfaces a RepositoryError when the batch commit rejects', async () => {
-    commitMock.mockRejectedValueOnce(new Error('offline'));
+  it('surfaces a RepositoryError when the session write rejects', async () => {
+    setDocMock.mockRejectedValueOnce(new Error('offline'));
     const adapter = createAdapter(fakeDb);
 
     const result = await adapter.save(buildSession());

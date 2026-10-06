@@ -12,7 +12,12 @@ import {
   SCHEDULE_EXCEPTIONS_COLLECTION,
   exceptionFromDocument,
 } from '@creativo/application/booking';
-import { toSchedule } from '../../adapters/firestore-booking-store';
+import {
+  type StoredShop,
+  toSchedule,
+  toShop,
+} from '../../adapters/firestore-booking-store';
+import { shopListed } from '../../use-cases/party-admission';
 import { adminFirestore } from '../firebase-admin';
 import {
   dayKeysBetween,
@@ -20,6 +25,7 @@ import {
   planBarberCapacity,
 } from './capacity-plan';
 import { loadBookingPolicy } from './load-booking-policy';
+import { TENANT_ZONE } from './tenant-zone';
 
 /**
  * Keep `capacity/{YYYY-MM}` equal to what the geometry says.
@@ -138,7 +144,7 @@ export const rebuildCapacityOnSettingsChange = onDocumentWritten(
 export const sweepCapacityDaily = onSchedule(
   {
     schedule: 'every day 03:00',
-    timeZone: 'Europe/Sofia',
+    timeZone: TENANT_ZONE,
     // The sweep is the self-repair path; a transient policy read failing at
     // 03:00 must not cost the whole day's repair window.
     retryCount: 3,
@@ -177,8 +183,6 @@ function splitDayDocId(
     dayKey: docId.slice(separator + 2),
   };
 }
-
-const TENANT_ZONE = 'Europe/Sofia';
 
 /**
  * Today through the policy horizon, extended to the LAST DAY of the month
@@ -269,12 +273,18 @@ export async function rebuildBarberCapacity(
         ),
       ]);
 
-    // Deterministic zone: sorted by doc id, so adding a shop cannot flip
-    // which zone the computation happens in between two runs.
-    const locationDocs = [...locationsSnap.docs].sort((a, b) =>
-      a.id.localeCompare(b.id),
-    );
-    const zone = String(locationDocs[0]?.data()['timezone'] ?? TENANT_ZONE);
+    // Each shop read the way the commit reads it (`toShop`, the one parser
+    // of a location document) and counted by the rule every new-booking
+    // surface asks (`shopListed`): the query only narrows what is billed.
+    // Sorted by doc id for a deterministic zone, so adding a shop cannot
+    // flip which zone the computation happens in between two runs.
+    const shops = [...locationsSnap.docs]
+      .sort((a, b) => a.id.localeCompare(b.id))
+      .flatMap((doc): { readonly id: string; readonly shop: StoredShop }[] => {
+        const shop = toShop(doc.data());
+        return shopListed(shop) ? [{ id: doc.id, shop }] : [];
+      });
+    const zone = shops[0]?.shop.zone ?? TENANT_ZONE;
     const scheduleData = scheduleSnap.data();
     const schedule = scheduleData
       ? toSchedule(scheduleData as DocumentData, zone)
@@ -286,10 +296,7 @@ export async function rebuildBarberCapacity(
       zone,
       schedule,
       hoursByLocation: new Map<string, readonly LocationDayHours[]>(
-        locationDocs.map((doc) => [
-          doc.id,
-          (doc.data()['hours'] ?? []) as readonly LocationDayHours[],
-        ]),
+        shops.map(({ id, shop }) => [id, shop.hours]),
       ),
       busyByDay: new Map<string, readonly PersistedSlot[]>(
         busySnap.docs.map((doc) => [

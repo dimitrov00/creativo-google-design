@@ -14,252 +14,39 @@ import { Result, fail, ok } from '@creativo/domain/kernel';
 import {
   Appointment,
   AppointmentId,
-  AppointmentStatus,
-  Seat,
-  SeatId,
-  SeatLabel,
-  SeatSubject,
-  TimeSlot,
   isSettled,
 } from '@creativo/domain/scheduling';
 import { UserId } from '@creativo/domain/accounts';
-import {
-  BarberId,
-  ServiceId,
-  ServiceTerms,
-  ServiceVariantId,
-} from '@creativo/domain/catalog';
-import { Money } from '@creativo/domain/kernel';
+import { BarberId } from '@creativo/domain/catalog';
 import {
   AppointmentRepository,
+  appointmentFromDocument,
   appointmentToDocument,
-  arrivedAtFromDocument,
-  barberPrefFromDocument,
-  bookedAtFromDocument,
   busyDocumentId,
-  catalogTermsFromDocument,
-  contactFromDocument,
-  discountsFromDocument,
-  seatOutcomeFromDocument,
-  seatTipFromDocument,
-  voucherRedemptionsFromDocument,
 } from '@creativo/application/booking';
 import { RepositoryError } from '@creativo/application/shared';
 import { FIREBASE_FIRESTORE } from '@creativo/infrastructure/firebase-app';
 import { appointmentDocRef, appointmentsCollection } from './firestore-paths';
 import { subscribeWithRetry } from './subscribe-with-retry';
 
-function buildSeats(
-  raw: unknown,
-  /** The root status, so a seat with no stored outcome on a finished visit can
-   *  be derived rather than read back as still open. */
-  rootStatus: AppointmentStatus | undefined,
-): Result<Seat[], RepositoryError> {
-  if (!Array.isArray(raw)) {
-    return fail(
-      new RepositoryError(
-        'Malformed appointment document: seats is not an array',
-      ),
-    );
-  }
-  const seats: Seat[] = [];
-  for (const entry of raw as DocumentData[]) {
-    const seatIdResult = SeatId.create(entry['id']);
-    const serviceIdResult = ServiceId.create(entry['serviceId']);
-    if (seatIdResult.isFailure()) {
-      return fail(
-        new RepositoryError(
-          'Malformed appointment seat id',
-          seatIdResult.error,
-        ),
-      );
-    }
-    if (serviceIdResult.isFailure()) {
-      return fail(
-        new RepositoryError(
-          'Malformed appointment seat serviceId',
-          serviceIdResult.error,
-        ),
-      );
-    }
-
-    const subjectData = entry['subject'] as DocumentData;
-    let subject: SeatSubject;
-    if (subjectData['kind'] === 'account') {
-      const userIdResult = UserId.create(subjectData['userId']);
-      if (userIdResult.isFailure()) {
-        return fail(
-          new RepositoryError(
-            'Malformed appointment seat subject userId',
-            userIdResult.error,
-          ),
-        );
-      }
-      subject = SeatSubject.account(
-        userIdResult.value,
-        subjectData['relationship'],
-      );
-    } else {
-      const labelResult = SeatLabel.create(subjectData['label']);
-      if (labelResult.isFailure()) {
-        return fail(
-          new RepositoryError(
-            'Malformed appointment seat label',
-            labelResult.error,
-          ),
-        );
-      }
-      subject = SeatSubject.anonymous(labelResult.value);
-    }
-
-    const barberIdResult = BarberId.create(entry['barberId']);
-    if (barberIdResult.isFailure()) {
-      return fail(
-        new RepositoryError(
-          'Malformed appointment seat barberId',
-          barberIdResult.error,
-        ),
-      );
-    }
-
-    let variantId: ServiceVariantId | null = null;
-    if (entry['variantId'] != null) {
-      const variantIdResult = ServiceVariantId.create(entry['variantId']);
-      if (variantIdResult.isFailure()) {
-        return fail(
-          new RepositoryError(
-            'Malformed appointment seat variantId',
-            variantIdResult.error,
-          ),
-        );
-      }
-      variantId = variantIdResult.value;
-    }
-
-    const termsData = entry['terms'] as DocumentData | undefined;
-    const priceResult = Money.fromMinorUnitsAndCode(
-      termsData?.['priceMinorUnits'],
-      termsData?.['currencyCode'],
-    );
-    if (priceResult.isFailure()) {
-      return fail(
-        new RepositoryError(
-          'Malformed appointment seat price',
-          priceResult.error,
-        ),
-      );
-    }
-    const termsResult = ServiceTerms.create(
-      priceResult.value,
-      termsData?.['durationMinutes'],
-    );
-    if (termsResult.isFailure()) {
-      return fail(
-        new RepositoryError(
-          'Malformed appointment seat terms',
-          termsResult.error,
-        ),
-      );
-    }
-
-    const slotData = entry['slot'] as DocumentData | undefined;
-    const slotResult = TimeSlot.create({
-      startIso: slotData?.['startIso'],
-      endIso: slotData?.['endIso'],
-      zone: slotData?.['zone'],
-    });
-    if (slotResult.isFailure()) {
-      return fail(
-        new RepositoryError(
-          'Malformed appointment seat slot',
-          slotResult.error,
-        ),
-      );
-    }
-
-    seats.push(
-      Seat.of({
-        id: seatIdResult.value,
-        subject,
-        serviceId: serviceIdResult.value,
-        variantId,
-        barberId: barberIdResult.value,
-        terms: termsResult.value,
-        // Only the START is read back: the seat derives its end from the
-        // snapshotted duration, so a persisted end that disagreed with the
-        // terms can never become the answer.
-        startsAt: slotResult.value.start,
-        outcome: seatOutcomeFromDocument(
-          entry['outcome'],
-          rootStatus,
-          slotResult.value.end.toMillis(),
-        ),
-        pref: barberPrefFromDocument(entry['barberPref'], barberIdResult.value),
-        // The catalogue's answer at the time of the last write, when staff
-        // overrode it. Read back so a SECOND staff edit cannot lose the
-        // provenance the first one recorded.
-        catalogTerms: catalogTermsFromDocument(
-          entry['terms'],
-          termsResult.value,
-        ),
-        // In the seat's own currency — a tip is settled in the money the
-        // seat was priced in. Absent reads back as "not recorded", never
-        // as zero.
-        tip: seatTipFromDocument(
-          entry['tipMinorUnits'],
-          termsResult.value.price.currencyCode(),
-        ),
-      }),
-    );
-  }
-  return ok(seats);
-}
-
+/**
+ * Document → `Appointment`, through THE shared reader.
+ *
+ * This adapter used to carry its own copy of the mapping, and the copy had
+ * drifted: it dropped the seat pads, trusted a stored relationship
+ * unchecked, and — the one that bit — handed a missing seat id straight to
+ * the id factories, whose `trim()` then threw a TypeError out of the
+ * snapshot callback. The listener never emitted again, so one legacy-shaped
+ * booking left `/account` on a loading card that read as "no upcoming
+ * appointments" and blanked the staff day it sat on. `appointmentFromDocument`
+ * is what `commitBooking` and the stats trigger read with; every malformed
+ * shape fails its `Result` instead of throwing.
+ */
 function toDomain(
   id: string,
   data: DocumentData,
 ): Result<Appointment, RepositoryError> {
-  // The stored `timeSlot`/`barberIds` are deliberately NOT read back: they
-  // are write-time mirrors for querying, and `Appointment` derives both
-  // from the seats. Reading them would create a second, drift-prone answer
-  // to "when is this, and who is working it".
-  const status = data['status'] as AppointmentStatus | undefined;
-  const seatsResult = buildSeats(data['seats'], status);
-  if (seatsResult.isFailure()) {
-    return fail(seatsResult.error);
-  }
-
-  const reconstituted = Appointment.reconstitute({
-    id,
-    locationId: data['locationId'],
-    seats: seatsResult.value,
-    status: data['status'],
-    // Best-effort: a contact that does not parse reads as absent rather than
-    // failing the appointment (see `contactFromDocument`).
-    contact: contactFromDocument(data),
-    // `null` for every row written before booking time was captured — which
-    // is the flag reports use to exclude a row from lead-time statistics.
-    bookedAt: bookedAtFromDocument(data),
-    arrivedAt: arrivedAtFromDocument(data),
-    bookedFromAppointmentId:
-      typeof data['bookedFromAppointmentId'] === 'string'
-        ? data['bookedFromAppointmentId']
-        : null,
-    // What was taken off the bill, and what vouchers paid of it — snapshots,
-    // read back so the receipt and the sheet's ladder say what the server
-    // agreed to.
-    discounts: discountsFromDocument(data),
-    voucherRedemptions: voucherRedemptionsFromDocument(data),
-  });
-  if (reconstituted.isFailure()) {
-    return fail(
-      new RepositoryError(
-        'Malformed appointment document',
-        reconstituted.error,
-      ),
-    );
-  }
-  return ok(reconstituted.value);
+  return appointmentFromDocument(id, data);
 }
 
 @Injectable()

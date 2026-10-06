@@ -5,13 +5,11 @@ import {
 } from '@angular/core';
 import { FirebaseApp, FirebaseOptions, initializeApp } from 'firebase/app';
 import { Auth, connectAuthEmulator, getAuth } from 'firebase/auth';
-import {
-  Firestore,
-  connectFirestoreEmulator,
-  initializeFirestore,
-  persistentLocalCache,
-  persistentMultipleTabManager,
-} from 'firebase/firestore';
+// TYPE-ONLY, and it must stay that way: this file is in the initial chunk,
+// and a value import of firebase/firestore puts the whole SDK there. The
+// instance is created lazily by `provideFirestoreDb()` in
+// `@creativo/infrastructure/firestore`'s lazily imported adapter module.
+import type { Firestore } from 'firebase/firestore';
 import {
   Functions,
   connectFunctionsEmulator,
@@ -26,6 +24,14 @@ import {
  */
 export const FIREBASE_APP = new InjectionToken<FirebaseApp>('FIREBASE_APP');
 export const FIREBASE_AUTH = new InjectionToken<Auth>('FIREBASE_AUTH');
+/**
+ * Provided only inside the lazy data scope's injector (see
+ * `provideFirestoreDb()` in `@creativo/infrastructure/firestore`), never at
+ * the root: only the Firestore adapters inject it, and each is created in
+ * its own injector beneath that one. The scope creates the instance as it
+ * loads (it is in the scope's `instances`), so a throw there fails the load
+ * rather than an adapter (`./lazy-port.ts`).
+ */
 export const FIREBASE_FIRESTORE = new InjectionToken<Firestore>(
   'FIREBASE_FIRESTORE',
 );
@@ -35,10 +41,10 @@ export const FIREBASE_FUNCTIONS = new InjectionToken<Functions>(
 
 /**
  * Only registers the Firebase App instance. Compose with
- * `provideFirebaseAuth()`/`provideFirestoreDb()`/`provideFirebaseFunctions()`
- * below so an app only pulls in the Firebase services it actually uses —
- * e.g. a marketing-only route tree has zero direct Firebase SDK usage and
- * provides none of these.
+ * `provideFirebaseAuth()`/`provideFirebaseFunctions()` below — the services
+ * the session needs at boot — so an app only pulls in the Firebase services
+ * it actually uses. Firestore and Storage are not here: they load with their
+ * adapters on the first data-port call (`provideLazyPort`, `./lazy-port.ts`).
  */
 export function provideFirebaseApp(options: FirebaseOptions) {
   return makeEnvironmentProviders([
@@ -70,38 +76,6 @@ export function provideFirebaseAuth(emulator?: FirebaseEmulatorConfig) {
           });
         }
         return auth;
-      },
-    },
-  ]);
-}
-
-export function provideFirestoreDb(emulator?: FirebaseEmulatorConfig) {
-  return makeEnvironmentProviders([
-    {
-      provide: FIREBASE_FIRESTORE,
-      useFactory: () => {
-        // Persistent IndexedDB cache, NOT the default memory cache. The
-        // default is memory with EAGER GC: every listener teardown discards
-        // its docs and resume tokens, so each remount of a page re-bills its
-        // whole result set. Persistent cache serves unchanged docs locally
-        // and resumes listeners from tokens — the single biggest read-cost
-        // lever in the app (~150-200k reads/month at current scale). The
-        // multi-tab manager keeps two open tabs from fighting over the
-        // IndexedDB lease; where IndexedDB is unavailable (private mode) the
-        // SDK falls back to memory on its own.
-        const firestore = initializeFirestore(inject(FIREBASE_APP), {
-          localCache: persistentLocalCache({
-            tabManager: persistentMultipleTabManager(),
-          }),
-        });
-        if (emulator?.firestoreHost && emulator.firestorePort) {
-          connectFirestoreEmulator(
-            firestore,
-            emulator.firestoreHost,
-            emulator.firestorePort,
-          );
-        }
-        return firestore;
       },
     },
   ]);

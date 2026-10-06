@@ -1,0 +1,365 @@
+/* «Ритъм», the admin page (client-card revision 3 §2.6). Everything with a
+   DS answer rides the DS: the cards, the groups, the rows, the rulers, the
+   headings, the dock. What is the page's own: the column that floors the
+   dock, the modules' rhythm (32 between them, §2.0), the value trigger of a
+   choice row (the root's «Времетраене» grammar), the readouts over the
+   rulers, and the wide layout where the rule and the preview stand beside
+   the form. */
+
+lib-admin-rhythm {
+  display: block;
+  /* The receipt rides above the dock. */
+  --ui-toast-clearance: calc(
+    var(--control-size-large) + var(--sys-space-comfortable)
+  );
+}
+
+/* A COLUMN that fills the viewport, so the dock's own auto margin floors it
+   on a short page (page-action-bar.css says why); the content measure from
+   761 (§2.6.5), widened from 1024 by the aside's column. */
+.admin-rhythm {
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  inline-size: 100%;
+  max-inline-size: var(--sys-container-content);
+  min-block-size: 100dvh;
+  margin-inline: auto;
+  padding-block-start: var(--sys-space-regular);
+}
+
+/* The back chip's row: the bar's height, nothing else in it. */
+.admin-rhythm__bar {
+  display: flex;
+  align-items: center;
+  min-block-size: var(--control-size-large);
+  margin-block-end: var(--sys-space-regular);
+}
+
+/* THE MODULES: 32 apart (§2.0), and one clear screen under the last so the
+   dock's scrim never covers a row at scroll end. */
+.admin-rhythm__modules {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sys-space-loose);
+  padding-block-end: var(--sys-space-spacious);
+}
+
+/* Heading → body is `compact` (8) under the small-rung heading row (§2.0). */
+.admin-rhythm__module {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sys-space-compact);
+  min-inline-size: 0;
+}
+
+/* The head: title over its lede, the name's `tight` step. */
+.admin-rhythm__module--head {
+  gap: var(--sys-space-tight);
+}
+
+/* Their place in the column on a phone — the aside is transparent to the
+   flow (`display: contents`) so the rule and the preview take their own
+   order among the modules. */
+.admin-rhythm__module--head {
+  order: 0;
+}
+.admin-rhythm__module--notice {
+  order: 1;
+}
+.admin-rhythm__module--rule {
+  order: 2;
+}
+.admin-rhythm__module--counts {
+  order: 3;
+}
+.admin-rhythm__module--interval {
+  order: 4;
+}
+.admin-rhythm__module--grace {
+  order: 5;
+}
+.admin-rhythm__module--more {
+  order: 6;
+}
+.admin-rhythm__module--effective {
+  order: 7;
+}
+.admin-rhythm__module--preview {
+  order: 8;
+}
+.admin-rhythm__module--history {
+  order: 9;
+}
+
+.admin-rhythm__aside {
+  display: contents;
+}
+
+/* The loading state: a heading's bar over a group's block. */
+.admin-rhythm__skeleton {
+  gap: var(--sys-space-compact);
+}
+
+/* A card's first row: the headline and its control (a switch, a capsule),
+   apart. The headline keeps its line; a capsule that does not fit beside
+   it drops under it rather than breaking the words. */
+.admin-rhythm__rule-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sys-space-compact) var(--sys-space-regular);
+}
+
+.admin-rhythm__rule-row > h2 {
+  flex: 1 1 auto;
+  margin: 0;
+  white-space: nowrap;
+}
+
+/* The capsule row under the rule: left, as the wireframe draws it. */
+.admin-rhythm__capsules {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sys-space-compact);
+}
+
+/* THE SAMPLE is an illustration of the draft, not a statistic (review 2):
+   a footnote caption «Пример» over the track, 8 apart (the track's own
+   figure → periods step), the figure as wide as the card. The DS track's
+   count («7 / в ритъм», a `ui-metric` at title3) is hidden here — the
+   page's one live count is the preview's — and the track keeps its
+   sentence for a reader (`uiLabel`). `.ui-streak-track__*` is the
+   pattern's styling contract; a figure-less mode of the track is asked of
+   the DS in the round's deltas. */
+.admin-rhythm__sample {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sys-space-compact);
+  margin: 0;
+  inline-size: 100%;
+}
+
+.admin-rhythm__sample-caption {
+  margin: 0;
+}
+
+.admin-rhythm__sample-track {
+  inline-size: 100%;
+}
+
+.admin-rhythm__sample .ui-streak-track__figure > .ui-metric {
+  display: none;
+}
+
+/* THE READOUT over a ruler: the `title` rung (28/700), centred, tabular —
+   re-asserted after the shorthand, which resets the app's tabular figures. */
+.admin-rhythm__readout {
+  margin: 0;
+  font: var(--sys-font-title);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: var(--sys-tracking-title, normal);
+  text-align: center;
+  color: var(--sys-color-foreground);
+}
+
+.admin-rhythm__example {
+  text-align: center;
+  text-wrap: balance;
+}
+
+/* A VALUE ROW at a narrow width (§2.6.5): a label and a value that do not
+   share a line put the value UNDER the label, still trailing-aligned. The
+   row wraps instead of clamping the value — the label keeps its words,
+   the value keeps its line. This is the grammar of a row whose VALUE is
+   the long part (a choice's reading, a sheet's value, a history line); a
+   TYPED figure's row — a long label beside a short pill — is the DS's
+   own `uiLabelWraps` instead: the label wraps beside the pill, centred on
+   it, and the row keeps one grammar at 390 as at 330. */
+.admin-rhythm__row.ui-list-row {
+  flex-wrap: wrap;
+  row-gap: var(--sys-space-tight);
+}
+
+.admin-rhythm__row.ui-list-row > .ui-list-row__label {
+  flex: 1 1 auto;
+  white-space: normal;
+  text-wrap: pretty;
+}
+
+.admin-rhythm__row.ui-list-row > [uitrailing] {
+  margin-inline-start: auto;
+  white-space: nowrap;
+}
+
+/* THE PILL around a typed figure — the visit editor's «Времетраене»
+   grammar (`staff-sheet-pill.css`): a value-bearing capsule in the row's
+   trailing slot, so the figure reads as something an admin can CHANGE and
+   not as the static value of the row above it. The same fill the DS
+   `bordered` / `neutral` button paints (currentColor at the interactive
+   alpha), the `small` rung's height inside the `regular` row, the figure
+   in the primary ink (`uiForegroundStyle="primary"` keeps the DS row from
+   greying the slot), the unit at the same ink (below). The DS field
+   inside owns its input; the pill styles nothing in it but the unit's ink. */
+.admin-rhythm__pill {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  min-block-size: var(--control-size-small);
+  padding-inline: var(--sys-space-compact);
+  border-radius: var(--control-radius-capsule);
+  background: color-mix(
+    in srgb,
+    currentColor var(--sys-alpha-interactive),
+    transparent
+  );
+  /* The ring is the pill's, not the input's inside it (the DS hook). */
+  --ui-field-ring: none;
+  transition: background-color var(--sys-motion-duration-regular)
+    var(--sys-motion-ease-standard);
+}
+
+/* Being edited: the open wash the pills of the visit editor wear, and the
+   ungated `:active` mirror every hover-only effect needs on a phone. */
+.admin-rhythm__pill:focus-within,
+.admin-rhythm__pill:active {
+  background: color-mix(in srgb, var(--sys-color-accent) 18%, transparent);
+}
+
+.admin-rhythm__pill:has(.ui-unit-field__native:focus-visible) {
+  outline: var(--sys-focus-ring-width) solid var(--sys-color-accent);
+  outline-offset: 2px;
+}
+
+/* THE UNIT reads at the pill's ink, not at the field's quieter rung. The
+   DS field greys its unit by the secondary rung — right on a bare surface,
+   wrong on the pill, which LIFTS its ground: there the secondary ink fell
+   to 3.28:1 in dark (axe, review 2: «14 дни», a grey word on the grey
+   capsule), and the on-fill rung would reach 4.42, still under the floor.
+   The primary ink clears it on every ground the pill stands on (9.4:1 in
+   dark, 15.2:1 in light; 10.3 and 14.5 over the open wash), and «14 дни»
+   reads as ONE figure with its unit, as the switch beside it is one
+   control. The DS field hands its owner the ring (`--ui-field-ring`) but
+   not yet its unit's ink; until that hook exists the part is named here
+   (asked in the round's deltas). */
+.admin-rhythm__pill .ui-unit-field__unit {
+  color: inherit;
+}
+
+/* The rule card's digest: one `·`-joined line that wraps as prose. */
+.admin-rhythm__digest {
+  text-wrap: pretty;
+}
+
+/* THE VALUE TRIGGER of a choice row — the label leads, the value is the
+   control (the visit editor's «Времетраене» grammar): a quiet run with the
+   pop-up glyph, the row's own 44 target, its focus ring inside the row.
+   The trailing padding is folded into the row's inset so the glyph ends
+   where the segment's content ends. */
+.admin-rhythm__choice {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sys-space-tight);
+  min-block-size: var(--control-size-small);
+  max-inline-size: 100%;
+  margin-inline-end: calc(-1 * var(--sys-space-compact));
+  padding-inline: var(--sys-space-compact);
+  border: 0;
+  background: transparent;
+  color: var(--sys-color-secondary-label);
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  text-align: end;
+  cursor: pointer;
+}
+
+.admin-rhythm__choice > span {
+  white-space: nowrap;
+}
+
+/* A value row's trailing: the value and the disclosure as one quiet run. */
+.admin-rhythm__value {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sys-space-tight);
+}
+
+/* A footnote under a group sits on the group's inset. */
+.admin-rhythm__footnote {
+  margin: 0;
+  padding-inline: var(--sys-space-regular);
+  text-wrap: pretty;
+}
+
+/* The preview's last line reads at the primary ink on the wash. */
+.admin-rhythm__summary {
+  text-wrap: balance;
+}
+
+/* The history row: the version `callout` 14/500, its by-line `footnote`. */
+.admin-rhythm__history-title {
+  font: var(--sys-font-callout);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  white-space: normal;
+}
+
+.admin-rhythm__history-by {
+  font: var(--sys-font-footnote);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* A version called off before its day stands quiet among the rest. */
+.admin-rhythm .ui-list-row[data-withdrawn] .admin-rhythm__history-title {
+  color: var(--sys-color-secondary-label);
+  text-decoration: line-through;
+  text-decoration-color: color-mix(
+    in srgb,
+    var(--sys-color-secondary-label) 60%,
+    transparent
+  );
+}
+
+/* The armed exit weighs more (the block sheet's grammar). */
+.admin-rhythm .ui-list-row[data-armed] {
+  font-weight: 600;
+}
+
+/* ≥ 1024: the rule and the preview stand beside the form and stay in view
+   while it scrolls (§2.6.5). The aside becomes a box of its own, sticky,
+   in the second column; the form modules keep the first. */
+@media (min-width: 64rem) {
+  .admin-rhythm {
+    max-inline-size: calc(
+      var(--sys-container-content) + 21rem + var(--sys-space-loose)
+    );
+  }
+
+  .admin-rhythm__modules {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 21rem;
+    column-gap: var(--sys-space-loose);
+    row-gap: var(--sys-space-loose);
+    align-items: start;
+  }
+
+  .admin-rhythm__module {
+    grid-column: 1;
+  }
+
+  .admin-rhythm__aside {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sys-space-loose);
+    position: sticky;
+    inset-block-start: var(--sys-space-regular);
+    grid-column: 2;
+    grid-row: 1 / span 12;
+  }
+
+  .admin-rhythm__aside > .admin-rhythm__module {
+    grid-column: auto;
+  }
+}

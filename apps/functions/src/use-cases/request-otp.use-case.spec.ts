@@ -1,8 +1,8 @@
 import { Otp } from '@creativo/domain/models';
 import {
-  OtpCode,
   OtpDestination,
   OtpRepositoryPort,
+  RawOtpCode,
   otpDestinationValue,
 } from '@creativo/application/identity';
 import { RepositoryError } from '@creativo/application/shared';
@@ -14,6 +14,7 @@ import {
 } from '@creativo/domain/identity';
 import { describe, expect, it } from 'vitest';
 import { SystemClock } from '../adapters/system-clock';
+import { FixedClock } from '../test-support/fixed-clock';
 import { RequestOtpUseCase } from './request-otp.use-case';
 import {
   InvalidInputError,
@@ -67,22 +68,15 @@ function fakeRepository(): OtpRepositoryPort & { saved: Otp[] } {
       const isRecent = !!lastCreated && lastCreated >= since.toISO();
       return ok(isRecent);
     },
+    async update(): Promise<Result<Otp | null, RepositoryError>> {
+      throw new Error('not used by RequestOtpUseCase');
+    },
   };
 }
 
-class FixedClock {
-  constructor(private iso: string) {}
-  now(zone: string) {
-    return ZonedDateTime.fromISO(this.iso, zone);
-  }
-  advance(iso: string) {
-    this.iso = iso;
-  }
-}
-
 class FakeSender {
-  sent: Array<{ destination: OtpDestination; code: OtpCode }> = [];
-  async send(destination: OtpDestination, code: OtpCode) {
+  sent: Array<{ destination: OtpDestination; code: RawOtpCode }> = [];
+  async send(destination: OtpDestination, code: RawOtpCode) {
     this.sent.push({ destination, code });
     return ok(undefined);
   }
@@ -116,7 +110,7 @@ describe('RequestOtpUseCase', () => {
       expect(result.value.rawCode).toBe('123456');
     }
     expect(sender.sent).toHaveLength(1);
-    expect(sender.sent[0].code).toBe('123456');
+    expect(sender.sent[0]?.code).toBe('123456');
     expect(repo.saved).toHaveLength(1);
   });
 
@@ -244,10 +238,10 @@ describe('RequestOtpUseCase', () => {
 
     expect(result.isSuccess()).toBe(true);
     expect(repo.saved).toHaveLength(1);
-    expect(repo.saved[0].maxAttempts).toBe(2);
+    expect(repo.saved[0]?.maxAttempts).toBe(2);
     const issuedAt = ZonedDateTime.fromISO('2026-01-01T00:00:00.000Z', 'UTC');
     if (issuedAt.isFailure()) throw new Error('fixture instant invalid');
-    expect(repo.saved[0].expiresAt.toISO()).toBe(
+    expect(repo.saved[0]?.expiresAt.toISO()).toBe(
       issuedAt.value.plusMinutes(7).toISO(),
     );
   });

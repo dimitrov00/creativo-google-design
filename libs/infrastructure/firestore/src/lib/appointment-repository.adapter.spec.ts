@@ -81,6 +81,7 @@ vi.mock('firebase/firestore', () => ({
     value,
   })),
   orderBy: vi.fn((field: string) => ({ field })),
+  limit: vi.fn((max: number) => ({ limit: max })),
   onSnapshot: vi.fn(
     (
       q: FakeQuery,
@@ -220,6 +221,161 @@ describe('FirestoreAppointmentRepository', () => {
       'barber-1',
     ]);
     expect(found.value?.timeSlot.start.toISO()).toContain('2030-01-01');
+  });
+
+  describe('a seat stored without a currency code', () => {
+    function withoutCurrency(): Record<string, unknown> {
+      const doc = appointmentToDocument(buildAppointment());
+      const [seat] = doc['seats'] as Record<string, unknown>[];
+      const terms = { ...(seat?.['terms'] as Record<string, unknown>) };
+      delete terms['currencyCode'];
+      return { ...doc, seats: [{ ...seat, terms }] };
+    }
+
+    it('fails the read as a malformed seat, never as a thrown TypeError', async () => {
+      const repo = createRepo();
+      store.set('appointments/appt-1', withoutCurrency());
+
+      const found = await repo.findById(unwrap(AppointmentId.create('appt-1')));
+
+      expect(found.isFailure()).toBe(true);
+      if (found.isFailure()) {
+        expect(found.error.message).toBe(
+          'Malformed appointment seat price: no currency',
+        );
+        expect(found.error.cause).not.toBeInstanceOf(TypeError);
+      }
+    });
+
+    it('costs the history only that visit, not the whole snapshot', () => {
+      const repo = createRepo();
+      const emitted: Result<readonly Appointment[], unknown>[] = [];
+      const subscription = repo
+        .observeHistoryFor(unwrap(UserId.create('user-1')), 10)
+        .subscribe((result) => emitted.push(result));
+      const settled = {
+        ...appointmentToDocument(buildAppointment()),
+        status: { kind: 'cancelled', reason: 'no longer needed' },
+      };
+
+      expect(() =>
+        lastOnSnapshotArgs?.onNext({
+          docs: [
+            { id: 'appt-broken', data: () => withoutCurrency() },
+            { id: 'appt-1', data: () => settled },
+          ],
+        }),
+      ).not.toThrow();
+
+      expect(emitted).toHaveLength(1);
+      const [result] = emitted;
+      expect(
+        result?.isSuccess() && result.value.map((a) => a.id.value),
+      ).toEqual(['appt-1']);
+      subscription.unsubscribe();
+    });
+  });
+
+  describe('a legacy seat with no barber, terms or slot', () => {
+    // The shape the first booking slice wrote: the barber at the root, the
+    // seat holding only an id, a service and a subject.
+    function legacy(): Record<string, unknown> {
+      return {
+        barberId: 'barber-1',
+        locationId: 'location-1',
+        ownerUserId: 'user-1',
+        timeSlot: {
+          startIso: '2030-01-01T10:00:00.000+02:00',
+          endIso: '2030-01-01T10:30:00.000+02:00',
+          zone: 'Europe/Sofia',
+        },
+        seats: [
+          {
+            id: 'seat-1',
+            serviceId: 'service-1',
+            subject: {
+              kind: 'account',
+              userId: 'user-1',
+              relationship: 'self',
+            },
+          },
+        ],
+        status: { kind: 'confirmed' },
+      };
+    }
+
+    it('surfaces a failed upcoming list the page can show, instead of a listener that never emits', () => {
+      const repo = createRepo();
+      const emitted: Result<readonly Appointment[], unknown>[] = [];
+      const subscription = repo
+        .observeUpcomingFor(unwrap(UserId.create('user-1')))
+        .subscribe((result) => emitted.push(result));
+
+      // It used to throw a TypeError out of here (`BarberId.create(undefined)`
+      // → `trim()`), and the page sat on "loading" for good.
+      expect(() =>
+        lastOnSnapshotArgs?.onNext({
+          docs: [{ id: 'appt-legacy', data: () => legacy() }],
+        }),
+      ).not.toThrow();
+
+      expect(emitted).toHaveLength(1);
+      expect(emitted[0]?.isFailure()).toBe(true);
+      subscription.unsubscribe();
+    });
+
+    it('costs the staff day only that booking, not the whole day', () => {
+      const repo = createRepo();
+      const emitted: Result<readonly Appointment[], unknown>[] = [];
+      const subscription = repo
+        .observeBarberDay(unwrap(BarberId.create('barber-1')), '2030-01-01')
+        .subscribe((result) => emitted.push(result));
+
+      expect(() =>
+        lastOnSnapshotArgs?.onNext({
+          docs: [
+            { id: 'appt-legacy', data: () => legacy() },
+            {
+              id: 'appt-1',
+              data: () => appointmentToDocument(buildAppointment()),
+            },
+          ],
+        }),
+      ).not.toThrow();
+
+      expect(emitted).toHaveLength(1);
+      const [result] = emitted;
+      expect(
+        result?.isSuccess() && result.value.map((a) => a.id.value),
+      ).toEqual(['appt-1']);
+      subscription.unsubscribe();
+    });
+
+    it('reads the seat pads the canonical shape stores', async () => {
+      // The adapter's own copy of the mapper dropped them; the shared reader
+      // keeps what `commitBooking` wrote.
+      const repo = createRepo();
+      const doc = appointmentToDocument(buildAppointment());
+      const [seat] = doc['seats'] as Record<string, unknown>[];
+      store.set('appointments/appt-1', {
+        ...doc,
+        seats: [
+          {
+            ...seat,
+            terms: {
+              ...(seat?.['terms'] as Record<string, unknown>),
+              setupMinutes: 5,
+              cleanupMinutes: 10,
+            },
+          },
+        ],
+      });
+
+      const found = await repo.findById(unwrap(AppointmentId.create('appt-1')));
+      if (found.isFailure()) throw found.error;
+      expect(found.value?.seats[0]?.terms.setupMinutes).toBe(5);
+      expect(found.value?.seats[0]?.terms.cleanupMinutes).toBe(10);
+    });
   });
 
   it('observeUpcomingFor filters out terminal-status appointments from the live snapshot', async () => {

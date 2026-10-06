@@ -75,4 +75,82 @@ export interface BookingDraft {
    * someone deliberately gave a different one.
    */
   readonly contact?: BookingContactProps | null;
+  /**
+   * The visit this booking was made FROM («Запиши пак»), and the account it
+   * was read for. The rebooking edge is the one fact about a booking nothing
+   * can rebuild later, and the review step's sign-in round trip returns
+   * without the `?repeat=` that set it — so it rides in the draft, bound to
+   * its reader: a restored draft that a DIFFERENT account then claims drops
+   * it rather than linking one person's booking to another's visit.
+   */
+  readonly bookedFrom?: BookingDraftSource | null;
+  /** The appointment being MOVED, bound to its reader the same way. */
+  readonly rescheduleOf?: BookingDraftMove | null;
+}
+
+/** An appointment the draft points at, and whose read it came from. */
+export interface BookingDraftSource {
+  readonly appointmentId: string;
+  /** The account the repository returned the appointment to. */
+  readonly ownerId: string;
+}
+
+/**
+ * The appointment being moved — and who moves WITH it that the cart cannot
+ * name.
+ *
+ * `riders` are the visit's seats the server carries forward on a move (a
+ * companion account the shop seated beside the booker): they never enter the
+ * cart, so without this the review step would move a person the client was
+ * never shown, and the grid's rider check would offer times the server
+ * refuses for them. Persisted beside the source because a restored move
+ * starts from them before its re-read lands (`BookingFlowStore.rereadMove`).
+ * The server re-reads the stored visit and never trusts any of this.
+ *
+ * All or nothing: a stored move whose riders or chairs do not parse, or are
+ * missing (a draft written before they existed), is not restored, and the
+ * move link lands it again from the live visit.
+ */
+export interface BookingDraftMove extends BookingDraftSource {
+  readonly riders: readonly BookingDraftRider[];
+  /**
+   * The chair time the visit holds NOW (`Appointment.chairTimes`), which the
+   * schedule step hands back on every day query so the visit's own seats
+   * never block its own move. Persisted for the same reason as the riders.
+   */
+  readonly chairTimes: readonly BookingDraftChairTime[];
+}
+
+/** One seat's chair time, as instants — see `BookingDraftMove.chairTimes`. */
+export interface BookingDraftChairTime {
+  readonly barberId: string;
+  readonly startMs: number;
+  readonly endMs: number;
+}
+
+/**
+ * One carried seat — what the review step shows, and what the schedule step
+ * asks the day query to keep room for, at a shop that offers its service
+ * (`MoveRider`).
+ */
+export interface BookingDraftRider {
+  readonly serviceId: string;
+  readonly variantId: string | null;
+  readonly barberId: string;
+  /**
+   * Minutes from the earliest seat the cart stands in for to this one's
+   * start, negative when it starts first (`carriedOffsetMinutes`). The new
+   * start is the cart's new earliest start plus this (`carriedStartMs`),
+   * which is the domain's one shift and the server's too.
+   */
+  readonly offsetMinutes: number;
+  /**
+   * The chair time the seat was SOLD at — service, setup and cleanup. The
+   * server re-checks a carried seat on these stored terms, never on today's
+   * catalogue, so the grid has to measure it the same way to offer only the
+   * times the server will accept.
+   */
+  readonly durationMinutes: number;
+  readonly setupMinutes: number;
+  readonly cleanupMinutes: number;
 }

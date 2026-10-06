@@ -30,6 +30,7 @@ import {
 import { RepositoryError } from '@creativo/application/shared';
 import { Result, fail, ok } from '@creativo/domain/kernel';
 import { FIREBASE_STORAGE } from './storage.provider';
+import { storageErrorCode } from './storage-error-code';
 
 const MAX_PHOTO_BYTES = 8 * 1024 * 1024;
 
@@ -178,11 +179,7 @@ export class FirebaseAppointmentPhotos implements AppointmentPhotos {
       } catch (error) {
         // Bytes already gone are gone: the document was the record, and it
         // is deleted. Only a REAL storage failure is one.
-        if (
-          typeof error !== 'object' ||
-          error === null ||
-          (error as { code?: string }).code !== 'storage/object-not-found'
-        ) {
+        if (storageErrorCode(error) !== 'storage/object-not-found') {
           throw error;
         }
       }
@@ -193,8 +190,13 @@ export class FirebaseAppointmentPhotos implements AppointmentPhotos {
   }
 }
 
-/** A document read back — or nothing, for one that does not say what a photo must. */
-function toPhoto(
+/**
+ * A document read back — or nothing, for one that does not say what a photo must.
+ *
+ * Exported for this lib's other photo reader (`FirebaseClientPhotosReader`)
+ * so both read a photo one way; not on the lib's public barrel.
+ */
+export function toPhoto(
   photoId: string,
   data: Record<string, unknown> | undefined,
 ): AppointmentPhoto | null {

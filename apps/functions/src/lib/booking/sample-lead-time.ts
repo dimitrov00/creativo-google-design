@@ -10,8 +10,7 @@ import {
 } from '@creativo/application/booking';
 import { adminFirestore } from '../firebase-admin';
 import { loadBookingPolicy } from './load-booking-policy';
-
-const TENANT_ZONE = 'Europe/Sofia';
+import { TENANT_ZONE } from './tenant-zone';
 
 /** Staff-only. One row per (barber, sample day) — see the writer's doc. */
 export const LEAD_TIME_SAMPLES_COLLECTION = 'barberLeadTimeSamples';

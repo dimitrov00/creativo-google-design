@@ -31,6 +31,18 @@ import {
   InvitationId,
   RewardProgramId,
 } from '@creativo/domain/engagement';
+import {
+  BADGE_CATEGORIES_COLLECTION,
+  BADGE_PROGRESS_COLLECTION,
+  BADGE_SERIES_COLLECTION,
+  CLIENT_JOURNAL_COLLECTION,
+  LOYALTY_ACCOUNTS_COLLECTION,
+  REWARDS_CATALOG_COLLECTION,
+  SEASONS_COLLECTION,
+  SEASON_PROGRESS_COLLECTION,
+  STREAK_DEFINITIONS_COLLECTION,
+  TIER_DEFINITIONS_COLLECTION,
+} from '@creativo/application/engagement';
 import { ImpersonationSessionId } from '@creativo/domain/governance';
 import { CourseId, PositionId, ShopEventId } from '@creativo/domain/programs';
 
@@ -41,7 +53,9 @@ import { CourseId, PositionId, ShopEventId } from '@creativo/domain/programs';
  * workspace's own bounded-context vocabulary and orphaned v2 concepts
  * (`referralRules`, `discountGrants`, the never-wired `achievementDefinitions`/
  * per-user `achievements` subcollection) are dropped entirely — see
- * `docs/architecture/domain-deviations.md`.
+ * `docs/architecture/domain-deviations.md`. A client's achievements live
+ * at `loyaltyAccounts/{uid}/badgeProgress/{seriesId}` instead, one document
+ * per medal family started (client-card-redesign §4.5).
  *
  * Every doc id is the entity's own branded id `.value` — never an
  * auto-generated Firestore id — so `reconstitute()` always has an id to
@@ -109,6 +123,20 @@ export const Collections = {
   Settings: SETTINGS_COLLECTION,
   /** Server-only (Admin SDK, `apps/functions`) — closed to every client SDK by rule. */
   Otps: 'otps',
+  // ── The loyalty read model (client-card-redesign §4.5). The names are
+  // the port module's, shared with the functions and the dev seed. The
+  // catalogue is any signed-in person's to read; accounts and the journal
+  // are the book's. Every write is the server's.
+  BadgeCategories: BADGE_CATEGORIES_COLLECTION,
+  BadgeSeries: BADGE_SERIES_COLLECTION,
+  Seasons: SEASONS_COLLECTION,
+  TierDefinitions: TIER_DEFINITIONS_COLLECTION,
+  RewardsCatalog: REWARDS_CATALOG_COLLECTION,
+  StreakDefinitions: STREAK_DEFINITIONS_COLLECTION,
+  /** `loyaltyAccounts/{uid}` — one per client. */
+  LoyaltyAccounts: LOYALTY_ACCOUNTS_COLLECTION,
+  /** `clientJournal/{uid}_{seq:06}` — append-only; `userId` in the body for the ledger query. */
+  ClientJournal: CLIENT_JOURNAL_COLLECTION,
 } as const;
 
 export const Subcollections = {
@@ -118,6 +146,10 @@ export const Subcollections = {
    * referee's `UserId`, so "has this user already redeemed this invitation"
    * is a doc-existence check, never a query. */
   Redemptions: 'redemptions',
+  /** `loyaltyAccounts/{uid}/badgeProgress/{seriesId}` — absent = not started. */
+  BadgeProgress: BADGE_PROGRESS_COLLECTION,
+  /** `loyaltyAccounts/{uid}/seasonProgress/{seasonId}` — a season's track. */
+  SeasonProgress: SEASON_PROGRESS_COLLECTION,
 } as const;
 
 // ── Top-level collections ──────────────────────────────────────────────
@@ -451,4 +483,43 @@ export function giftVouchersCollection(
   db: Firestore,
 ): CollectionReference<DocumentData> {
   return collection(db, Collections.GiftVouchers);
+}
+
+// ── The loyalty read model ─────────────────────────────────────────────
+
+export function loyaltyAccountDocRef(
+  db: Firestore,
+  userId: UserId,
+): DocumentReference<DocumentData> {
+  return doc(db, Collections.LoyaltyAccounts, userId.value);
+}
+
+export function badgeProgressCollection(
+  db: Firestore,
+  userId: UserId,
+): CollectionReference<DocumentData> {
+  return collection(
+    db,
+    Collections.LoyaltyAccounts,
+    userId.value,
+    Subcollections.BadgeProgress,
+  );
+}
+
+export function seasonProgressCollection(
+  db: Firestore,
+  userId: UserId,
+): CollectionReference<DocumentData> {
+  return collection(
+    db,
+    Collections.LoyaltyAccounts,
+    userId.value,
+    Subcollections.SeasonProgress,
+  );
+}
+
+export function clientJournalCollection(
+  db: Firestore,
+): CollectionReference<DocumentData> {
+  return collection(db, Collections.ClientJournal);
 }

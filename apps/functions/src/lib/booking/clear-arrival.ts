@@ -1,7 +1,7 @@
 import { HttpsError, onCall } from 'firebase-functions/v2/https';
 import { adminFirestore } from '../firebase-admin';
-import { appendAudit } from './audit';
-import { callerWorksTheBook } from './caller-roles';
+import { type AuditSubject, appendAudit, seatSubjectsOf } from './audit';
+import { callerActor, callerWorksTheBook } from './caller-roles';
 
 /**
  * The inverse of `markArrived` — the desk takes a stamp back.
@@ -40,7 +40,9 @@ export const clearArrival = onCall(async (request) => {
 
   const db = adminFirestore();
   let alreadyClear = false;
-  let ownerUserId: string | null = null;
+  let subjects: readonly AuditSubject[] = [];
+  /** The stamp the committed attempt took back — the audit row's change key. */
+  let clearedIso = '';
 
   await db.runTransaction(async (tx) => {
     const ref = db.collection('appointments').doc(appointmentId);
@@ -51,8 +53,8 @@ export const clearArrival = onCall(async (request) => {
         code: 'booking.arrived.not_found',
       });
     }
-    ownerUserId =
-      typeof data['ownerUserId'] === 'string' ? data['ownerUserId'] : null;
+    // Arrival is the party's, so is its undo: every person on the visit.
+    subjects = seatSubjectsOf(data);
     const status = (data['status'] ?? {}) as Record<string, unknown>;
     if (!LIVE.includes(String(status['kind']))) {
       throw new HttpsError(
@@ -68,16 +70,22 @@ export const clearArrival = onCall(async (request) => {
       alreadyClear = true;
       return;
     }
+    clearedIso = String(
+      (data['arrivedAt'] as Record<string, unknown>)['iso'] ?? '',
+    );
     tx.update(ref, { arrivedAt: null });
   });
 
   if (!alreadyClear) {
-    void appendAudit({
-      actorUserId: uid,
+    await appendAudit({
+      actor: callerActor(request),
       action: 'booking.staff_unarrived',
       resourceId: appointmentId,
-      targetUserId: ownerUserId ?? undefined,
+      subjects,
       atIso: new Date().toISOString(),
+      // Each arrival can be taken back once, so the stamp being cleared names
+      // this change — and the next arrival's undo has a stamp of its own.
+      changeKey: `unarrived:${clearedIso}`,
     });
   }
   return { appointmentId, alreadyClear };

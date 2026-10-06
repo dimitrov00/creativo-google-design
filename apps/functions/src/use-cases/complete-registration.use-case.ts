@@ -13,7 +13,7 @@ import {
   UserRepositoryPort,
   otpDestinationFromRaw,
 } from '@creativo/application/identity';
-import { ClockPort } from '@creativo/application/shared';
+import { ClockPort, RepositoryError } from '@creativo/application/shared';
 import { DEFAULT_TENANT_ID } from '../lib/otp/tenant';
 import {
   ClaimsPromotionFailure,
@@ -172,25 +172,55 @@ export class CompleteRegistrationUseCase {
       return fail(new RegistrationForbiddenError());
     }
 
+    // A re-run KEEPS what the server granted. This callable is idempotent
+    // (a client whose first response was lost calls it again), so it can
+    // land on a document that already holds roles and a status — both
+    // written only by the Admin SDK: a staff grant, and from P2 a pause
+    // projected onto `status`. Resetting them here would let any signed-in
+    // client lift their own pause with one call. A stub has neither and
+    // lands as the self-registration default: `active`, plain `client`.
+    // An unreadable status refuses rather than guess `active`.
+    if (user.status.kind === 'unreadable') {
+      return fail(
+        new RepositoryFailure(
+          new RepositoryError('Malformed user document: bad status'),
+        ),
+      );
+    }
+    const status =
+      user.status.kind === 'stored'
+        ? user.status.status
+        : AccountStatus.active();
+    const roles = user.roles.length > 0 ? [...user.roles] : ['client'];
+    // …and so do its contact channels. On a first registration the form
+    // supplies the channel the login did not verify; once registered, a
+    // phone or email changes only through the OTP contact-change callables
+    // (the `users` owner allowlist, FIX 2), never through a re-run's form.
+    const keepContacts = user.registered;
+
     // The registered profile is the REAL `domain/accounts` `User` — the
     // exact aggregate (and, through `saveRegistered`, the exact document
     // shape) the web's `FirestoreProfileAdapter` reconstitutes. `phone`/
     // `firstName`/`lastName` are guaranteed present by the strategy check
     // above (`required` always includes all three); the `?? ''` fallbacks
     // only narrow types, with the domain VOs rejecting an empty value as
-    // defense-in-depth. Self-registration always lands as an `active`,
-    // plain-`client` account — every other role/status is granted
-    // out-of-band (Admin SDK), mirroring `firestore.rules`' create rule.
-    const email = effectiveFields['email']?.trim() || (user.email ?? undefined);
+    // defense-in-depth.
+    const email = keepContacts
+      ? (user.email ?? undefined)
+      : effectiveFields['email']?.trim() || (user.email ?? undefined);
+    const phone =
+      keepContacts && user.phone
+        ? user.phone
+        : (effectiveFields['phone']?.trim() ?? '');
     const birthDate = birthDateIso ?? user.birthDate ?? undefined;
     const registeredResult = User.create(
       {
         id: user.id.value,
-        phone: effectiveFields['phone']?.trim() ?? '',
+        phone,
         firstName: effectiveFields['firstName']?.trim() ?? '',
         lastName: effectiveFields['lastName']?.trim() ?? '',
-        roles: ['client'],
-        status: AccountStatus.active(),
+        roles,
+        status,
         ...(email !== undefined && { email }),
         ...(birthDate !== undefined && { birthDate }),
       },
@@ -223,9 +253,12 @@ export class CompleteRegistrationUseCase {
       return fail(new InvalidInputError('invalid tenant'));
     }
 
-    const claimsResult = activeClaims([roleFromPrimitive('client')]);
+    // The same claims `verifyOtpChallenge` mints for a registered user: the
+    // stored roles, never a hardcoded `client` that would demote staff. The
+    // status is never a claim (spec R: callables read it live).
+    const claimsResult = activeClaims(roles.map(roleFromPrimitive));
     if (claimsResult.isFailure()) {
-      // Unreachable — the literal roles array above is never empty.
+      // Unreachable — `roles` falls back to `client`, so it is never empty.
       return fail(new InvalidInputError('empty roles'));
     }
 

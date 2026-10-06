@@ -20,6 +20,7 @@ import {
   BookingPolicy,
   SEAT_SCHEDULED,
   Seat,
+  type SeatIdPair,
   type SeatOutcome,
   VoucherRedemption,
 } from '@creativo/domain/scheduling';
@@ -29,16 +30,21 @@ import type {
   StaffEditCommand,
 } from '@creativo/application/booking';
 import {
+  type AppliedOperation,
+  AppliedOperations,
   arrivedAtFromDocument,
   bookedAtFromDocument,
   contactFromDocument,
   discountsFromDocument,
+  isClientOperationId,
+  liveStoodSeatPairs,
   type PersistedDocument,
   preservedAppointmentFields,
   revisionOf,
   seatOutcomeFromDocument,
   seatTipFromDocument,
   voucherRedemptionsFromDocument,
+  withStoodSeatPairs,
 } from '@creativo/application/booking';
 import { FirestoreBookingStore } from '../adapters/firestore-booking-store';
 import {
@@ -54,16 +60,19 @@ import {
   type RequestedSeat,
   type StaffTermsOverride,
   decideBooking,
+  standingDoubleSeatingsOf,
 } from './decide-booking';
 import {
   type StaffEditError,
   StaffEditBeforeArrivalError,
   StaffEditForbiddenError,
   StaffEditInvalidCommandError,
+  StaffEditInvariantError,
   StaffEditOverlapError,
   StaffEditStaleError,
   StaffEditUnauthenticatedError,
 } from './staff-edit-appointment.errors';
+import { operationDigest } from './staff-edit-appointment.operations';
 
 /*
  * THE COMMAND LIVES IN THE PORT, and is re-exported here.
@@ -104,19 +113,44 @@ export interface StaffEditAppointmentInput {
    */
   readonly acknowledgedOverlap?: boolean;
   /**
-   * The revision the sheet was drawn from, when it has one.
+   * The revision the intent was made on — the staff sheet sends the one its
+   * draft was drawn from on every save and every undo (round 5), so a
+   * colleague's save since is refused (`StaffEditStaleError`) instead of
+   * overwritten by an older screen.
    *
-   * Absent means the caller makes no claim about what it read and is not
-   * refused for it — a chip that pushes a running-late visit by ten minutes
-   * has no draft to be stale.
+   * Absent (`undefined` or `null`) means the caller makes no claim about
+   * what it read and is not refused for it — a copy whose reader did not
+   * say (`Appointment.revision` null). Present, it must be a whole number
+   * ≥ 0 or the edit is refused by name: dropping a malformed claim would
+   * quietly switch the guard off, the way a dropped `operationId` would
+   * switch off the dedupe.
    */
   readonly expectedVersion?: number | null;
+  /**
+   * The client's name for this ONE intent, the same on every re-send of it
+   * — see the port's `operationId`. Absent (`undefined` or `null`) is an
+   * older client, whose every send is its own change. Present, it must be
+   * `isClientOperationId`-shaped or the edit is refused by name: dropping a
+   * malformed one would quietly switch the dedupe off, and a re-sent batch
+   * would then apply twice.
+   */
+  readonly operationId?: string | null;
 }
 
 export interface StaffEditResult {
   readonly appointmentId: string;
-  /** What the sheet should send as `expectedVersion` on its next save. */
+  /**
+   * What the sheet should send as `expectedVersion` on its next save — on
+   * a replay, the revision the ORIGINAL send stamped.
+   */
   readonly revision: number;
+  /**
+   * The intent had already been applied (its `operationId` is in the
+   * visit's ledger), so this call wrote NOTHING and answered with what the
+   * first send committed. Its audit rows are keyed by the operation, so
+   * re-attempting them fills a gap and never doubles a row.
+   */
+  readonly replayed: boolean;
 }
 
 /**
@@ -297,8 +331,19 @@ function readSeat(
 
   let requested: RequestedSeat['subject'];
   if (subject['kind'] === 'account') {
-    if (subject['relationship'] !== 'self') return null;
-    requested = { kind: 'self' };
+    // The owner's seat binds to the owner again; a companion keeps their own
+    // account. Reading only `self` here refused every edit of a visit with a
+    // companion on it, the seeded father-and-son party included.
+    if (subject['relationship'] === 'self') {
+      requested = { kind: 'self' };
+    } else if (
+      subject['relationship'] === 'companion' &&
+      typeof subject['userId'] === 'string'
+    ) {
+      requested = { kind: 'companion', userId: subject['userId'] };
+    } else {
+      return null;
+    }
   } else {
     requested = { kind: 'guest', label: String(subject['label'] ?? '') };
   }
@@ -394,6 +439,17 @@ export class StaffEditAppointmentUseCase {
     if (input.appointmentId.length === 0) {
       return fail(new StaffEditInvalidCommandError('appointmentId'));
     }
+    const operationId = input.operationId ?? null;
+    if (operationId !== null && !isClientOperationId(operationId)) {
+      return fail(new StaffEditInvalidCommandError('operationId'));
+    }
+    const expectedVersion = input.expectedVersion ?? null;
+    if (
+      expectedVersion !== null &&
+      !(Number.isInteger(expectedVersion) && expectedVersion >= 0)
+    ) {
+      return fail(new StaffEditInvalidCommandError('expectedVersion'));
+    }
 
     /*
      * ONE COMMAND OR SEVERAL, validated the same way and applied in order.
@@ -427,6 +483,11 @@ export class StaffEditAppointmentUseCase {
     const pendingDiscounts = await this.resolveDiscounts(commands);
     if (pendingDiscounts.isFailure()) return fail(pendingDiscounts.error);
     const pendingVouchers = pendingVouchersOf(commands);
+    /** This intent's name and fingerprint, when the client named it. */
+    const operation =
+      operationId === null
+        ? null
+        : { id: operationId, digest: operationDigest(commands) };
 
     /**
      * What `plan` worked out, read back by `decide`.
@@ -437,6 +498,13 @@ export class StaffEditAppointmentUseCase {
      */
     let planned: PlannedEdit | null = null;
     let nextRevision = 0;
+    /**
+     * The applied intent this call re-sends, when it is one. A holder, like
+     * `RescheduleBookingUseCase`'s: it is read after the transaction, and an
+     * assignment made inside a callback is invisible to the compiler's
+     * narrowing of a bare `let`. Reset on every attempt.
+     */
+    const attempt: { replayOf: AppliedOperation | null } = { replayOf: null };
     /** The vouchers `decide` settled, for the ledger to write after the visit. */
     let settledVouchers: readonly GiftVoucher[] = [];
 
@@ -451,11 +519,24 @@ export class StaffEditAppointmentUseCase {
       // ANYONE, a state nothing ever decided on purpose.
       () => true,
       (current) => {
+        /*
+         * A RE-SENT INTENT IS ANSWERED, NOT APPLIED — and before anything
+         * else is checked. The first send moved the revision on, so the
+         * re-send's own `expectedVersion` is exactly the stale claim the
+         * next check refuses; and whatever the visit went through since,
+         * this intent has already happened. `null` tells the store that
+         * nothing is to be written.
+         */
+        const replay = replayOf(current, operation);
+        if (replay.isFailure()) return fail(replay.error);
+        attempt.replayOf = replay.value;
+        if (replay.value !== null) return ok(null);
+
         const result = this.plan(
           input.appointmentId,
           current,
           commands,
-          input.expectedVersion,
+          expectedVersion,
           pendingDiscounts.value,
           input.actorRoles,
         );
@@ -469,7 +550,7 @@ export class StaffEditAppointmentUseCase {
         // or fails the attempt. Checked rather than asserted because a
         // silently-null plan would decide the WRONG geometry.
         if (planned === null) {
-          return fail(new CommitBookingInvalidInputError('command'));
+          return fail(new StaffEditInvariantError('plan'));
         }
         const decided = this.decide(
           snapshot,
@@ -484,10 +565,35 @@ export class StaffEditAppointmentUseCase {
         settledVouchers = decided.value.touched;
         return ok(decided.value.decision);
       },
-      (current) => ({
-        ...preservedAppointmentFields(current),
-        revision: revisionOf(current) + 1,
-      }),
+      (current) =>
+        withStoodSeatPairs(
+          {
+            ...preservedAppointmentFields(current),
+            revision: revisionOf(current) + 1,
+            // The intent's name, stamped by the SAME write that applies it:
+            // the ledger can never say "applied" about an edit that did not
+            // land, nor miss one that did. An unnamed send leaves the ledger
+            // as it was — `preservedAppointmentFields` already carries it.
+            ...(operation === null
+              ? {}
+              : AppliedOperations.fromDocument(current)
+                  .record({
+                    id: operation.id,
+                    revision: revisionOf(current) + 1,
+                    digest: operation.digest,
+                  })
+                  .toFields()),
+          },
+          /*
+           * THE PAIRS THIS SAVE BROKE, remembered for its undo (round 6)
+           * under the revision this write stamps: the next write, made on
+           * it, may put them back (`liveStoodSeatPairs`). A save that broke
+           * none drops whatever an older save remembered.
+           */
+          planned === null || planned.broken.length === 0
+            ? null
+            : { revision: revisionOf(current) + 1, pairs: planned.broken },
+        ),
       {
         // Every voucher the batch could touch: the ones it names, and the
         // ones the visit already drew on (to give back, or to re-settle).
@@ -510,7 +616,24 @@ export class StaffEditAppointmentUseCase {
     );
 
     if (written.isFailure()) return fail(written.error);
-    return ok({ appointmentId: input.appointmentId, revision: nextRevision });
+    if (written.value.kind === 'replayed') {
+      const original = attempt.replayOf;
+      // Unreachable: the store reports a replay only when the plan step
+      // answered `null`, which it does only after finding the intent.
+      if (original === null) {
+        return fail(new StaffEditInvariantError('replay'));
+      }
+      return ok({
+        appointmentId: input.appointmentId,
+        revision: original.revision,
+        replayed: true,
+      });
+    }
+    return ok({
+      appointmentId: input.appointmentId,
+      revision: nextRevision,
+      replayed: false,
+    });
   }
 
   /**
@@ -598,9 +721,12 @@ export class StaffEditAppointmentUseCase {
      * caller's, which is the only place that knows what the barber did.
      */
     let next: readonly StoredSeat[] = stored;
-    // A seat added to a FINISHED visit was worked, not scheduled: the sheet
-    // is being filled in after the cut (owner, 2026-09-09).
-    const finished = rootStatus?.kind === 'completed';
+    const fold: FoldContext = {
+      // A seat added to a FINISHED visit was worked, not scheduled: the
+      // sheet is being filled in after the cut (owner, 2026-09-09).
+      finished: rootStatus?.kind === 'completed',
+      held: idsOf(stored),
+    };
     for (const command of commands) {
       // Discounts and vouchers are facts about the BILL, and a relocation
       // about the PLACE — settled elsewhere; the seats do not change under
@@ -612,7 +738,7 @@ export class StaffEditAppointmentUseCase {
       ) {
         continue;
       }
-      const applied = applyCommand(next, command, finished);
+      const applied = applyCommand(next, command, fold);
       if (applied.isFailure()) return fail(applied.error);
       next = applied.value;
     }
@@ -681,6 +807,13 @@ export class StaffEditAppointmentUseCase {
       nextRevision: revision + 1,
       commands,
       discounts: discounts.value,
+      stood: liveStoodSeatPairs(current),
+      // Counted as the decision counts people (`standingDoubleSeatingsOf`):
+      // the seats as stored, against the seats as the batch leaves them. A
+      // seat the batch adds is a new id and can break nothing.
+      broken: standingDoubleSeatingsOf(stored)
+        .brokenBy(standingDoubleSeatingsOf(next))
+        .toPairs(),
     });
   }
 
@@ -1011,6 +1144,24 @@ export class StaffEditAppointmentUseCase {
       // Acknowledged, and only acknowledged.
       allowOverlap: input.acknowledgedOverlap === true,
       termsOverrides: planned.overrides,
+      // …AND THE PAIRS ITS LAST SAVE BROKE, while this edit is the write that
+      // follows that save (round 6): «Отмени» puts back exactly what the
+      // save changed — a seat of a legacy pair re-added under its old id, a
+      // pair moved back together — and is not refused for restoring what
+      // the visit already held. Off the document, never the payload.
+      stood: planned.stood,
+      // THE VISIT AS IT STOOD, read off the document before the batch. A
+      // double seating the visit already held (two walk-ins under the old
+      // shared label, a companion entered twice by hand) is known by its
+      // SEAT IDS, which `nextId` re-mints in order, so it stands through
+      // any edit of it: a whole-visit drag, a chair-wide resize, a restaff
+      // (owner decision, round 5; round 4 matched positions and refused the
+      // drag). A pair that did not overlap, or a seat the batch adds, is
+      // judged in full: staff can always save a visit they did not make
+      // worse, and never make one worse. A `StoredSeat` is a `StandingSeat`
+      // as it is (id, person, start, sold minutes), and it comes from the
+      // document, never the payload.
+      standing: planned.stored,
     });
     if (decided.isFailure()) {
       return fail(translateRefusal(decided.error, planned.commands));
@@ -1018,18 +1169,12 @@ export class StaffEditAppointmentUseCase {
 
     // Per-seat outcomes are restored by INDEX, which is exact: the decision
     // consumed `request.seats` in order and `request.seats` was built from
-    // `planned.next` in order.
+    // `planned.next` in order. Every other field is the decided seat's own,
+    // spread from `toProps()` so a field SeatProps gains later is carried,
+    // not silently dropped by a hand-written copy.
     const seats = decided.value.appointment.seats.map((seat, index) =>
       Seat.of({
-        id: seat.id,
-        subject: seat.subject,
-        serviceId: seat.serviceId,
-        variantId: seat.variantId,
-        barberId: seat.barberId,
-        terms: seat.terms,
-        catalogTerms: seat.catalogTerms,
-        startsAt: seat.startsAt,
-        pref: seat.pref,
+        ...seat.toProps(),
         // eslint-disable-next-line security/detect-object-injection -- `index` is the array index this very `map` produced, over an array the decision built from `planned.next` in order.
         outcome: planned.next[index]?.outcome ?? SEAT_SCHEDULED,
         // Restored by the same index and for the same reason: the decision
@@ -1084,6 +1229,25 @@ export class StaffEditAppointmentUseCase {
   }
 }
 
+/**
+ * Has the visit already applied this intent? `null` when there is no name
+ * or the name is new; the applied entry when it is a re-send; a refusal
+ * when the name is known but the batch is not the one it applied — a
+ * reused name, which answering "saved" would turn into a silent loss.
+ */
+function replayOf(
+  current: PersistedDocument,
+  operation: { readonly id: string; readonly digest: string } | null,
+): Result<AppliedOperation | null, StaffEditError> {
+  if (operation === null) return ok(null);
+  const applied = AppliedOperations.fromDocument(current).find(operation.id);
+  if (applied === null) return ok(null);
+  if (applied.digest !== operation.digest) {
+    return fail(new StaffEditInvalidCommandError('operationId'));
+  }
+  return ok(applied);
+}
+
 interface PlannedEdit {
   readonly request: DecideBookingRequest;
   readonly stored: readonly StoredSeat[];
@@ -1094,6 +1258,17 @@ interface PlannedEdit {
   readonly commands: readonly StaffEditCommand[];
   /** The bill's discounts after the batch — see `settleDiscount`. */
   readonly discounts: readonly AppliedDiscount[];
+  /**
+   * The pairs the visit's LAST save broke, when this edit is the write that
+   * follows it (`liveStoodSeatPairs`) — they stand for this edit only.
+   */
+  readonly stood: readonly SeatIdPair[];
+  /**
+   * The pairs THIS batch breaks: stood in the stored visit, not in the
+   * batch's result — a seat of the pair removed, or the two moved apart.
+   * Remembered on the document for this save's undo.
+   */
+  readonly broken: readonly SeatIdPair[];
 }
 
 /** The batch's last word on the vouchers, normalised; `keep` when it said nothing. */
@@ -1302,6 +1477,22 @@ function validateCommand(
   }
 }
 
+/** What every command of one batch's fold reads besides the running seats. */
+interface FoldContext {
+  /** The visit is finished: a seat it gains was worked, not scheduled. */
+  readonly finished: boolean;
+  /**
+   * Every seat id the STORED visit held before the batch — never the
+   * running list. A seat id is a seat's identity: a pair the visit already
+   * held stands by it (`StandingDoubleSeatings`), and so does every open
+   * per-seat action on the sheet. A batch that removes a seat and adds one
+   * under the same id would hand a NEW seat that identity — and with it the
+   * standing of a pair it was never in — so an id the visit held is never
+   * minted again by the batch that dropped it (round 6).
+   */
+  readonly held: ReadonlySet<string>;
+}
+
 /**
  * The command, applied to the stored seats.
  *
@@ -1322,7 +1513,7 @@ function validateCommand(
 function applyCommand(
   stored: readonly StoredSeat[],
   command: StaffEditCommand,
-  finished = false,
+  fold: FoldContext,
 ): Result<readonly StoredSeat[], StaffEditError> {
   switch (command.kind) {
     case 'move': {
@@ -1393,7 +1584,13 @@ function applyCommand(
         barberId: command.barberId,
       }));
     case 'addSeat': {
-      if (stored.some((seat) => seat.id === command.seatId)) {
+      // Neither a seat the batch still holds, nor one the stored visit held
+      // and an earlier command of this batch removed: an added seat is
+      // NEW, judged by the rule in full, and has no history to borrow.
+      if (
+        fold.held.has(command.seatId) ||
+        stored.some((seat) => seat.id === command.seatId)
+      ) {
         return fail(new StaffEditInvalidCommandError('seatId'));
       }
       // The zone and currency are the appointment's, read off any seat it
@@ -1417,7 +1614,7 @@ function applyCommand(
           cleanupMinutes: 0,
           // On a finished visit the new seat is history the moment it is
           // written — worked, stamped at its own end.
-          outcome: finished
+          outcome: fold.finished
             ? {
                 kind: 'worked',
                 atMs: Date.parse(command.startIso) + command.minutes * 60_000,

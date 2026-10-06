@@ -1,6 +1,6 @@
-import { UserId } from '@creativo/domain/accounts';
+import { type UserRole, UserId } from '@creativo/domain/accounts';
 import { describe, expect, it } from 'vitest';
-import { Actor } from './actor';
+import { Actor, actorForCaller } from './actor';
 import { ImpersonationSessionId } from './ids';
 
 function userId(raw: string): UserId {
@@ -34,6 +34,22 @@ describe('Actor — constructors and predicates', () => {
     expect(Actor.apparentUserId(a)).toBe(adminId);
     expect(Actor.isImpersonating(a)).toBe(false);
     expect(Actor.canMutate(a)).toBe(true);
+  });
+
+  it('Actor.staff carries its roles snapshot and exposes the staff member as apparent', () => {
+    const a = Actor.staff(adminId, ['barber', 'receptionist']);
+    expect(a.kind).toBe('staff');
+    expect(a.roles).toEqual(['barber', 'receptionist']);
+    expect(Actor.apparentUserId(a)).toBe(adminId);
+    expect(Actor.isImpersonating(a)).toBe(false);
+    expect(Actor.canMutate(a)).toBe(true);
+  });
+
+  it('Actor.staff copies the roles, so a later edit of the source cannot rewrite it', () => {
+    const roles: UserRole[] = ['barber'];
+    const a = Actor.staff(adminId, roles);
+    roles.push('receptionist');
+    expect(a.roles).toEqual(['barber']);
   });
 
   it('Actor.system has no apparent user', () => {
@@ -91,6 +107,18 @@ describe('Actor.isSelfOrSystem — consent-required mutations gate', () => {
     );
   });
 
+  it('returns true for a staff member acting for themselves', () => {
+    expect(
+      Actor.isSelfOrSystem(Actor.staff(targetId, ['barber']), targetId),
+    ).toBe(true);
+  });
+
+  it('returns false for a staff member acting for a client', () => {
+    expect(
+      Actor.isSelfOrSystem(Actor.staff(adminId, ['receptionist']), targetId),
+    ).toBe(false);
+  });
+
   it('returns false for admin (admin should not fill registration on behalf)', () => {
     expect(Actor.isSelfOrSystem(Actor.admin(adminId), targetId)).toBe(false);
   });
@@ -113,5 +141,53 @@ describe('Actor.isSelfOrSystem — consent-required mutations gate', () => {
       scope: 'read',
     });
     expect(Actor.isSelfOrSystem(reader, targetId)).toBe(false);
+  });
+});
+
+describe('actorForCaller — attribution from verified claims', () => {
+  it('attributes a plain client as a user', () => {
+    expect(actorForCaller(targetId, ['client'])).toEqual(Actor.user(targetId));
+  });
+
+  it('attributes a caller with no roles at all as a user', () => {
+    expect(actorForCaller(targetId, [])).toEqual(Actor.user(targetId));
+  });
+
+  it('attributes a barber as staff with a snapshot of their roles', () => {
+    expect(actorForCaller(targetId, ['barber'])).toEqual(
+      Actor.staff(targetId, ['barber']),
+    );
+  });
+
+  it('keeps every staff role in the snapshot and drops the client role', () => {
+    expect(
+      actorForCaller(targetId, ['client', 'receptionist', 'content_manager']),
+    ).toEqual(Actor.staff(targetId, ['receptionist', 'content_manager']));
+  });
+
+  it('attributes an admin as admin, even when they also cut hair', () => {
+    expect(actorForCaller(adminId, ['barber', 'admin'])).toEqual(
+      Actor.admin(adminId),
+    );
+  });
+
+  // model.ts: admin only when the role set holds `admin`. The vendor's
+  // sysadmin is not the shop's owner, and its rows must not look like one.
+  it('attributes a sysadmin as staff, the role kept in the snapshot', () => {
+    expect(actorForCaller(adminId, ['sysadmin'])).toEqual(
+      Actor.staff(adminId, ['sysadmin']),
+    );
+    expect(actorForCaller(adminId, ['sysadmin', 'admin'])).toEqual(
+      Actor.admin(adminId),
+    );
+  });
+
+  it('ignores claims that are not roles — they grant nothing and are not recorded', () => {
+    expect(actorForCaller(targetId, ['superuser', 'barber'])).toEqual(
+      Actor.staff(targetId, ['barber']),
+    );
+    expect(actorForCaller(targetId, ['superuser'])).toEqual(
+      Actor.user(targetId),
+    );
   });
 });

@@ -3,7 +3,9 @@ import { UserId } from '@creativo/domain/accounts';
 import { GuestId } from './ids';
 import {
   BookingPartyError,
+  type BookingPartyLabelError,
   BookingPartyRemoveGuestError,
+  DuplicateGuestLabelError,
   GuestNotFoundError,
   InvalidGuestSequenceError,
 } from './booking-party.errors';
@@ -12,6 +14,37 @@ import { SeatLabel } from './seat-label';
 export interface BookingPartyGuest {
   readonly id: GuestId;
   readonly label: SeatLabel;
+}
+
+/**
+ * ONE LABEL, ONE GUEST, detected: a label two DIFFERENT guests answer to,
+ * or `null`.
+ *
+ * `key` is whatever tells the guests apart where the caller stands, opaque
+ * here: the party's own `GuestId` in the flow (`BookingParty.sharedLabel`),
+ * the cart's seat key on the wire (the server's `decideBooking`). Two
+ * entries under one label and one key are ONE guest with two services, not
+ * a clash. Labels compare as they are stored (`SeatLabel`, trimmed): the
+ * same comparison the server counts people by, so this finds precisely what
+ * would be merged.
+ *
+ * The rule's ONE implementation — the flow keeps such a party on the
+ * services step and the server refuses such a cart by the same function, so
+ * the two can never disagree about what "shared" means.
+ */
+export function labelSharedByTwoGuests(
+  guests: Iterable<{ readonly key: string; readonly label: SeatLabel }>,
+): SeatLabel | null {
+  const keyByLabel = new Map<string, string>();
+  for (const guest of guests) {
+    const known = keyByLabel.get(guest.label.value);
+    if (known === undefined) {
+      keyByLabel.set(guest.label.value, guest.key);
+    } else if (known !== guest.key) {
+      return guest.label;
+    }
+  }
+  return null;
 }
 
 export interface CreateBookingPartyProps {
@@ -146,6 +179,9 @@ export class BookingParty {
    * Re-claiming an already-claimed party is a no-op rather than an error:
    * the auth round-trip can legitimately replay (a restored draft, a
    * double-resolved redirect), and the second call carries the same id.
+   * A DIFFERENT id re-binds the party to that account, roster and counter
+   * intact — the party belongs to whoever is signed in now (a restored tab
+   * whose session changed hands; see `BookingFlowStore.claim`).
    */
   claim(rawOwnerId: string): Result<BookingParty, BookingPartyError[]> {
     const ownerIdResult = UserId.create(rawOwnerId);
@@ -157,9 +193,13 @@ export class BookingParty {
     );
   }
 
-  /** Add a guest — mints a fresh `GuestId` from the monotonic counter, which always advances. */
-  addGuest(labelRaw: string): Result<BookingParty, BookingPartyError[]> {
-    const labelResult = SeatLabel.create(labelRaw);
+  /**
+   * Add a guest — mints a fresh `GuestId` from the monotonic counter, which
+   * always advances. Refuses a label another guest already answers to
+   * (`DuplicateGuestLabelError`): see {@link labelFor}.
+   */
+  addGuest(labelRaw: string): Result<BookingParty, BookingPartyLabelError[]> {
+    const labelResult = this.labelFor(labelRaw, null);
     if (labelResult.isFailure()) {
       return fail([labelResult.error]);
     }
@@ -190,16 +230,22 @@ export class BookingParty {
    * first-class edit rather than a correction — but it keeps the guest's
    * IDENTITY, so anything already keyed to that `GuestId` (their cart lines)
    * survives the rename untouched.
+   *
+   * Refuses the label another guest holds (`DuplicateGuestLabelError`) —
+   * never their own current one, which is a rename to where they already are.
    */
   renameGuest(
     guestId: GuestId,
     labelRaw: string,
-  ): Result<BookingParty, BookingPartyError[] | BookingPartyRemoveGuestError> {
+  ): Result<
+    BookingParty,
+    BookingPartyLabelError[] | BookingPartyRemoveGuestError
+  > {
     const existing = this.guestsById.get(guestId.toString());
     if (!existing) {
       return fail(new GuestNotFoundError(guestId.toString()));
     }
-    const labelResult = SeatLabel.create(labelRaw);
+    const labelResult = this.labelFor(labelRaw, existing.id);
     if (labelResult.isFailure()) {
       return fail([labelResult.error]);
     }
@@ -209,6 +255,55 @@ export class BookingParty {
       label: labelResult.value,
     });
     return ok(new BookingParty(this.ownerId, guestsById, this.nextSequence));
+  }
+
+  /**
+   * A label two guests of this party answer to, or `null` — the party's
+   * own report on "one label, one guest".
+   *
+   * `null` for every party the commands built, because `addGuest` and
+   * `renameGuest` refuse to make one. Only `reconstitute` can hold a
+   * duplicate: a draft saved before the rule. The flow reads this to keep
+   * such a party on the services step, where one rename fixes it, and never
+   * sends it on to the grid or the server.
+   */
+  sharedLabel(): SeatLabel | null {
+    return labelSharedByTwoGuests(
+      [...this.guestsById.values()].map((guest) => ({
+        key: guest.id.toString(),
+        label: guest.label,
+      })),
+    );
+  }
+
+  /**
+   * `labelRaw` as a label a guest of THIS party may take: a real label, and
+   * not the one any OTHER guest answers to (`except` is the guest being
+   * renamed, whose own label is theirs to keep).
+   *
+   * ONE LABEL, ONE GUEST, enforced by the commands that could break it. A
+   * guest's label is their identity on the wire (the server counts people
+   * by it), so two guests under one would be merged into one person.
+   * `reconstitute` does NOT refuse a party that already holds a duplicate:
+   * it rebuilds what was persisted, and a draft from before this rule is a
+   * party the booker can still fix with one rename. Until they do, the flow
+   * will not leave the services step with it (`sharedLabel`). The server
+   * refuses it as well (`booking.commit.invalid_input`, field
+   * `guest_label`), but only when the request carries the guests' keys.
+   */
+  private labelFor(
+    labelRaw: string,
+    except: GuestId | null,
+  ): Result<SeatLabel, BookingPartyLabelError> {
+    const labelResult = SeatLabel.create(labelRaw);
+    if (labelResult.isFailure()) return fail(labelResult.error);
+    const label = labelResult.value;
+    const taken = [...this.guestsById.values()].some(
+      (guest) =>
+        (except === null || !guest.id.equals(except)) &&
+        guest.label.equals(label),
+    );
+    return taken ? fail(new DuplicateGuestLabelError(label.value)) : ok(label);
   }
 
   private static validateSequence(

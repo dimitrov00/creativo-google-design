@@ -23,9 +23,14 @@ export interface ConfirmContactChangeInput {
 
 /**
  * Confirms the pending change with the backend (`ContactChangePort`), then
- * rebuilds and saves the local `User` snapshot (`ProfilePort`) so the
- * client's own cached profile reflects the new contact immediately,
- * without waiting on a separate live-read to catch up.
+ * rebuilds the `User` with the new contact and returns it.
+ *
+ * The confirmed phone or e-mail must be written to `users/{uid}`
+ * SERVER-SIDE, by the confirming callable: the owner's own profile save
+ * carries only the names and birth date (the FIX 2 allowlist), so the
+ * `saveProfile` below cannot store the new contact — it re-saves the
+ * owner-editable fields unchanged. The live profile listener shows the
+ * server's write once it lands.
  */
 export class ConfirmContactChangeUseCase {
   constructor(

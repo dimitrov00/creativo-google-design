@@ -18,6 +18,13 @@ export function serializeActor(actor: Actor): Record<string, unknown> {
       return { kind: 'system', source: actor.source };
     case 'user':
       return { kind: 'user', userId: actor.userId.value };
+    case 'staff':
+      // The roles AS THEY WERE: a copy, never a live reference to users/{uid}.
+      return {
+        kind: 'staff',
+        userId: actor.userId.value,
+        roles: [...actor.roles],
+      };
     case 'admin':
       return { kind: 'admin', adminUserId: actor.adminUserId.value };
     case 'impersonator':

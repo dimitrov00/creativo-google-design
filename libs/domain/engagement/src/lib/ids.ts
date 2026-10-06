@@ -102,3 +102,39 @@ export class GiftVoucherId extends Id<'GiftVoucher'> {
     return new GiftVoucherId(crypto.randomUUID());
   }
 }
+
+// ── The loyalty catalogue (client-card-redesign §4.1) ─────────────────────
+// Author-chosen slugs (`cat-mastery`, `series-svc-fade`, `season-2026-autumn`),
+// not generated: a family's progress document and every season's list are
+// keyed by them, so they have to stay stable across edits — hence no
+// `generate()`, the `ServiceVariantId` precedent.
+
+/** A shelf of «Постижения» (`badgeCategories/{id}`). */
+export class BadgeCategoryId extends Id<'BadgeCategory'> {
+  private constructor(value: string) {
+    super(value);
+  }
+  static create(raw: string): Result<BadgeCategoryId, EmptyIdError> {
+    return createId('BadgeCategoryId', raw, (v) => new BadgeCategoryId(v));
+  }
+}
+
+/** One medal family (`badgeSeries/{id}`). */
+export class BadgeSeriesId extends Id<'BadgeSeries'> {
+  private constructor(value: string) {
+    super(value);
+  }
+  static create(raw: string): Result<BadgeSeriesId, EmptyIdError> {
+    return createId('BadgeSeriesId', raw, (v) => new BadgeSeriesId(v));
+  }
+}
+
+/** A season or an event (`seasons/{id}`). */
+export class SeasonId extends Id<'Season'> {
+  private constructor(value: string) {
+    super(value);
+  }
+  static create(raw: string): Result<SeasonId, EmptyIdError> {
+    return createId('SeasonId', raw, (v) => new SeasonId(v));
+  }
+}

@@ -4,12 +4,14 @@ import { BarberId, LocationId } from '@creativo/domain/catalog';
 import {
   type AvailabilityLine,
   type AvailabilityOption,
+  type AvailabilityRider,
   type BarberDayAvailability,
   availableOptions,
   availableStarts,
   candidateStarts,
   distinctStarts,
   hasAnyOption,
+  paddedBusy,
 } from './availability';
 import { BarberPref } from './barber-pref';
 import { BookingPolicy } from './booking-policy';
@@ -366,6 +368,180 @@ describe('availableOptions — the collision invariant', () => {
         'b',
       ]);
     }
+  });
+});
+
+/*
+ * ── ONE PERSON, ONE CHAIR AT A TIME (owner decision, 2026-09-25) ─────────
+ * The engine used to be person-blind: a client with a cut and a beard, both
+ * «any barber», was offered both at 09:00 in two chairs. Lines naming one
+ * person (`personKey`) now never overlap on their SOLD slots.
+ */
+describe('availableOptions — one person, one chair at a time', () => {
+  const person = (
+    lineId: string,
+    durationMinutes: number,
+    personKey: string | undefined,
+    pads: { before?: number; after?: number } = {},
+  ): AvailabilityLine => ({
+    ...line(lineId, durationMinutes, BarberPref.any(), pads),
+    ...(personKey === undefined ? {} : { personKey }),
+  });
+
+  /** Does any option seat one person in two chairs at once? */
+  function seatsSomebodyTwice(
+    lines: readonly AvailabilityLine[],
+    option: AvailabilityOption,
+  ): boolean {
+    const keyOf = new Map(
+      lines.map((entry) => [entry.lineId, entry.personKey]),
+    );
+    return option.assignments.some((a, i) =>
+      option.assignments.some(
+        (b, j) =>
+          j > i &&
+          keyOf.get(a.lineId) !== undefined &&
+          keyOf.get(a.lineId) === keyOf.get(b.lineId) &&
+          Interval.overlaps(a.slot, b.slot),
+      ),
+    );
+  }
+
+  it('never offers one person’s two lines side by side, even with two free chairs', () => {
+    const lines = [person('cut', 45, 'self'), person('beard', 30, 'self')];
+    const options = solve(lines, [barber(IVAN), barber(NIKO)], {
+      maxOptions: 2_000,
+    });
+
+    expect(options.length).toBeGreaterThan(0);
+    for (const option of options) {
+      expect(seatsSomebodyTwice(lines, option)).toBe(false);
+    }
+    // The first offer is the cut, then the beard straight after — in either
+    // chair — never both at 09:00.
+    expect(describeOption(options[0] as AvailabilityOption)).toEqual([
+      'cut@09:00/ivan',
+      'beard@09:45/ivan',
+    ]);
+  });
+
+  it('seats the person back to back across two chairs — walking over is not sitting twice', () => {
+    // Ivan only has the morning up to 09:45, Niko only from 09:45: the cut
+    // with one, the beard with the other, abutting.
+    const lines = [person('cut', 45, 'self'), person('beard', 30, 'self')];
+    const options = solve(
+      lines,
+      [
+        barber(IVAN, { windows: [Interval.of(H(9), H(9, 45))] }),
+        barber(NIKO, { windows: [Interval.of(H(9, 45), H(11))] }),
+      ],
+      { maxOptions: 200 },
+    );
+    expect(options.map(describeOption)).toContainEqual([
+      'cut@09:00/ivan',
+      'beard@09:45/niko',
+    ]);
+  });
+
+  it('judges the SOLD slots — a barber’s cleanup does not keep the person in the chair', () => {
+    // The cut is sold 09:00–09:45 and Ivan sweeps up until 10:00; the person
+    // is free at 09:45, so Niko's beard may start then.
+    const lines = [
+      person('cut', 45, 'self', { after: 15 }),
+      person('beard', 30, 'self'),
+    ];
+    const options = solve(lines, [barber(IVAN), barber(NIKO)], {
+      maxOptions: 2_000,
+    });
+    expect(options.map(describeOption)).toContainEqual([
+      'cut@09:00/ivan',
+      'beard@09:45/niko',
+    ]);
+  });
+
+  it('still seats two DIFFERENT people side by side', () => {
+    const lines = [person('father', 45, 'self'), person('son', 30, 'guest-0')];
+    const [first] = solve(lines, [barber(IVAN), barber(NIKO)]);
+    expect(describeOption(first as AvailabilityOption)).toEqual([
+      'father@09:00/ivan',
+      'son@09:00/niko',
+    ]);
+  });
+
+  it('treats a line that names nobody as a person of its own — the search it always was', () => {
+    const lines = [person('a', 45, undefined), person('b', 30, undefined)];
+    const [first] = solve(lines, [barber(IVAN), barber(NIKO)]);
+    expect(describeOption(first as AvailabilityOption)).toEqual([
+      'a@09:00/ivan',
+      'b@09:00/niko',
+    ]);
+  });
+
+  it('gives the grid the person’s real earliest start — a sequence, not a pair', () => {
+    const options = availableStarts({
+      lines: [person('cut', 45, 'self'), person('beard', 30, 'self')],
+      barbers: [barber(IVAN), barber(NIKO)],
+      policy: POLICY,
+      notBeforeMs: 0,
+    });
+    // 09:00–10:15, never the side-by-side 09:00–09:45.
+    expect(options[0]?.envelope).toEqual(Interval.of(H(9), H(10, 15)));
+  });
+
+  it('removes exactly the arrangements that seat somebody twice, and nothing else (property)', () => {
+    const anyDrafts = fc.array(
+      fc.record({
+        minutes: fc.integer({ min: 1, max: 4 }).map((q) => q * 15),
+        person: fc.constantFrom('self', 'guest-0', 'guest-1'),
+      }),
+      { minLength: 1, maxLength: 3 },
+    );
+
+    fc.assert(
+      fc.property(
+        anyDrafts,
+        fc.integer({ min: 9, max: 11 }),
+        fc.boolean(),
+        (drafts, busyHour, nikoWorks) => {
+          const lines = drafts.map((draft, index) =>
+            person(`l${index}`, draft.minutes, draft.person),
+          );
+          // The same lines, naming nobody — the person-blind search.
+          const blind = drafts.map((draft, index) =>
+            person(`l${index}`, draft.minutes, undefined),
+          );
+          // A short day keeps the search exhaustive (no cap is reached), so
+          // the two answers can be compared option for option.
+          const barbers = [
+            barber(IVAN, {
+              windows: [iv(9, 12)],
+              busy: [Interval.of(H(busyHour), H(busyHour, 30))],
+            }),
+            ...(nikoWorks ? [barber(NIKO, { windows: [iv(9, 12)] })] : []),
+          ];
+          const everything = solve(blind, barbers, { maxOptions: 1_000_000 });
+          const kept = solve(lines, barbers, { maxOptions: 1_000_000 });
+
+          const render = (options: readonly AvailabilityOption[]) =>
+            options.map((option) => JSON.stringify(describeOption(option)));
+          expect(render(kept)).toEqual(
+            render(
+              everything.filter((option) => !seatsSomebodyTwice(lines, option)),
+            ),
+          );
+          // …and the grid's one-per-start answer never seats anybody twice.
+          for (const option of availableStarts({
+            lines,
+            barbers,
+            policy: POLICY,
+            notBeforeMs: 0,
+          })) {
+            expect(seatsSomebodyTwice(lines, option)).toBe(false);
+          }
+        },
+      ),
+      { numRuns: 60 },
+    );
   });
 });
 
@@ -785,5 +961,306 @@ describe('availableOptions — withinMs', () => {
     expect(options.map((option) => option.envelope.startMs / H(1))).toEqual([
       10,
     ]);
+  });
+});
+
+describe('availableStarts — riders pinned to the party (a client move’s carried seats)', () => {
+  const PETAR = barberId('petar');
+
+  function rider(
+    barber: BarberId,
+    offsetMinutes: number,
+    durationMinutes = 30,
+    pads: { before?: number; after?: number } = {},
+  ): AvailabilityRider {
+    return {
+      barberId: barber,
+      offsetMinutes,
+      terms: {
+        durationMinutes,
+        padBeforeMinutes: pads.before ?? 0,
+        padAfterMinutes: pads.after ?? 0,
+      },
+    };
+  }
+
+  function starts(
+    lines: readonly AvailabilityLine[],
+    barbers: readonly BarberDayAvailability[],
+    riders: readonly AvailabilityRider[] | undefined,
+    overrides: { notBeforeMs?: number; withinMs?: readonly Interval[] } = {},
+  ): readonly number[] {
+    return availableStarts({
+      lines,
+      barbers,
+      policy: POLICY,
+      notBeforeMs: overrides.notBeforeMs ?? 0,
+      withinMs: overrides.withinMs,
+      riders,
+    }).map((option) => option.envelope.startMs / H(1));
+  }
+
+  it('never offers a start whose side-by-side rider’s barber is busy then', () => {
+    // The client with Ivan; the son beside him for an hour with Petar, who is
+    // taken 11:00–12:00. 10:15 would put the son 10:15–11:15 — into Petar's
+    // booking — and so would every start up to 11:45.
+    const found = starts(
+      [line('me', 30, BarberPref.specific(IVAN))],
+      [
+        barber(IVAN, { windows: [iv(10, 13)] }),
+        barber(PETAR, { busy: [iv(11, 12)] }),
+      ],
+      [rider(PETAR, 0, 60)],
+    );
+    expect(found).toEqual([10, 12, 12.25, 12.5]);
+  });
+
+  it('keeps a sequential rider sequential — straight after the client, on the same chair', () => {
+    // The son follows 30 minutes after the client, same barber: every start
+    // must leave Ivan the hour for both, before his 12:00 booking.
+    const found = starts(
+      [line('me', 30, BarberPref.specific(IVAN))],
+      [barber(IVAN, { windows: [iv(10, 13)], busy: [iv(12, 13)] })],
+      [rider(IVAN, 30, 30)],
+    );
+    expect(found).toEqual([10, 10.25, 10.5, 10.75, 11]);
+  });
+
+  it('refuses the arrangement that sits the client on the rider’s chair — and finds the one that does not', () => {
+    // "Anyone" could be Ivan or Petar; Petar is the son's. The tightest
+    // arrangement is not the only one: the walk goes on to Ivan.
+    const options = availableStarts({
+      lines: [line('me', 30)],
+      barbers: [
+        barber(IVAN, { windows: [iv(10, 11)] }),
+        barber(PETAR, { windows: [iv(10, 11)] }),
+      ],
+      policy: POLICY,
+      notBeforeMs: 0,
+      riders: [rider(PETAR, 0, 30)],
+    });
+    expect(options.length).toBeGreaterThan(0);
+    for (const option of options) {
+      expect(option.assignments.map((a) => a.barberId.value)).toEqual(['ivan']);
+    }
+  });
+
+  it('refuses a start that would put a rider who goes FIRST inside the lead time', () => {
+    // The son starts an hour before the client; nothing may start before 10:00.
+    const found = starts(
+      [line('me', 30, BarberPref.specific(IVAN))],
+      [barber(IVAN), barber(PETAR)],
+      [rider(PETAR, -60, 30)],
+      { notBeforeMs: H(10), withinMs: [iv(10, 12)] },
+    );
+    expect(found[0]).toBe(11);
+    expect(found.every((start) => start >= 11)).toBe(true);
+  });
+
+  it('charges the rider’s own setup and cleanup to their barber', () => {
+    // A 30-minute trim with 10 minutes of cleanup needs 40 minutes of Petar,
+    // who is gone at 11:00.
+    const found = starts(
+      [line('me', 30, BarberPref.specific(IVAN))],
+      [
+        barber(IVAN, { windows: [iv(10, 11)] }),
+        barber(PETAR, { windows: [iv(10, 11)] }),
+      ],
+      [rider(PETAR, 0, 30, { after: 10 })],
+    );
+    expect(found).toEqual([10, 10.25]);
+  });
+
+  it('offers nothing when the rider’s barber is not rostered here at all', () => {
+    expect(
+      starts(
+        [line('me', 30, BarberPref.specific(IVAN))],
+        [barber(IVAN)],
+        [rider(PETAR, 0, 30)],
+      ),
+    ).toEqual([]);
+  });
+
+  it('does not narrow a rider by the client’s declared window — that window is about the client', () => {
+    // The client asked for 10:00–10:30 only; the son straight after them is
+    // outside it, and still fine.
+    const found = starts(
+      [line('me', 30, BarberPref.specific(IVAN))],
+      [barber(IVAN)],
+      [rider(IVAN, 30, 30)],
+      { withinMs: [iv(10, 10.5)] },
+    );
+    expect(found).toEqual([10]);
+  });
+
+  it('keeps two riders on one barber apart from each other', () => {
+    // Two carried seats on Petar, back to back at +0 and +30: Petar is free
+    // 10:00–11:00 only, so the party can start at 10:00 and nowhere later.
+    const found = starts(
+      [line('me', 30, BarberPref.specific(IVAN))],
+      [barber(IVAN), barber(PETAR, { windows: [iv(10, 11)] })],
+      [rider(PETAR, 0, 30), rider(PETAR, 30, 30)],
+    );
+    expect(found).toEqual([10]);
+  });
+
+  it('leaves the option the CLIENT’s — riders change which starts exist, never what a start holds', () => {
+    const [withRider] = availableStarts({
+      lines: [line('me', 30, BarberPref.specific(IVAN))],
+      barbers: [barber(IVAN), barber(PETAR)],
+      policy: POLICY,
+      notBeforeMs: 0,
+      riders: [rider(PETAR, -15, 60)],
+    });
+    expect(withRider?.envelope).toEqual(iv(9.25, 9.75));
+    expect(withRider?.assignments.map((a) => a.lineId)).toEqual(['me']);
+  });
+
+  it('is the plain search when there are no riders, and only ever removes starts (property)', () => {
+    fc.assert(
+      fc.property(
+        fc.integer({ min: 1, max: 6 }).map((quarters) => quarters * 15),
+        fc.integer({ min: -8, max: 8 }).map((quarters) => quarters * 15),
+        fc.integer({ min: 1, max: 4 }).map((quarters) => quarters * 15),
+        fc.boolean(),
+        fc.integer({ min: 9, max: 16 }),
+        (lineMinutes, offset, riderMinutes, sameChair, busyHour) => {
+          const lines = [line('me', lineMinutes)];
+          const barbers = [
+            barber(IVAN, { busy: [iv(busyHour, busyHour + 1)] }),
+            barber(PETAR, { busy: [iv(busyHour + 1, busyHour + 2)] }),
+          ];
+          const riders = [
+            rider(sameChair ? IVAN : PETAR, offset, riderMinutes),
+          ];
+          const plain = starts(lines, barbers, undefined);
+          expect(starts(lines, barbers, [])).toEqual(plain);
+
+          const pinned = availableStarts({
+            lines,
+            barbers,
+            policy: POLICY,
+            notBeforeMs: 0,
+            riders,
+          });
+          for (const option of pinned) {
+            // Removes, never adds…
+            expect(plain).toContain(option.envelope.startMs / H(1));
+            // …and every offered start leaves the rider in its barber's free
+            // time, clear of the client's own chair.
+            const [only] = riders;
+            if (!only) throw new Error('bad fixture');
+            const riderStart =
+              option.envelope.startMs + only.offsetMinutes * 60_000;
+            const riderSlot = Interval.of(
+              riderStart,
+              riderStart + only.terms.durationMinutes * 60_000,
+            );
+            const owner = barbers.find((candidate) =>
+              candidate.barberId.equals(only.barberId),
+            ) as BarberDayAvailability;
+            const free = Interval.subtract(
+              owner.windows.map((window) => window.interval),
+              owner.busy,
+            );
+            expect(free.some((gap) => Interval.contains(gap, riderSlot))).toBe(
+              true,
+            );
+            for (const assignment of option.assignments) {
+              if (assignment.barberId.equals(only.barberId)) {
+                expect(Interval.overlaps(assignment.slot, riderSlot)).toBe(
+                  false,
+                );
+              }
+            }
+          }
+        },
+      ),
+    );
+  });
+});
+
+describe('paddedBusy — the busy a placement is checked against', () => {
+  const M = (minutes: number) => minutes * 60_000;
+
+  it('pads every stored span by the barber’s turnaround, merging what then touches', () => {
+    expect(
+      paddedBusy({
+        barberId: IVAN,
+        spans: [iv(10, 11), Interval.of(H(11, 30), H(12))],
+        turnaroundMinutes: 15,
+      }),
+    ).toEqual([Interval.of(H(9, 45), H(12, 15))]);
+  });
+
+  it('hands a moved visit’s own chair back BEFORE padding, so a neighbour keeps its turnaround', () => {
+    // The visit being moved holds Ivan 10:00–11:00; somebody else follows at
+    // 11:00. Stored merged, they read as one 10:00–12:00 span.
+    const released = paddedBusy({
+      barberId: IVAN,
+      spans: [iv(10, 12)],
+      turnaroundMinutes: 15,
+      release: [{ barberId: IVAN, occupied: iv(10, 11) }],
+    });
+    // The neighbour's own turnaround survives: 10:45, not 11:15. Subtracting
+    // the PADDED own span instead would free 10:45–11:15, and the grid would
+    // offer a 10:30 half-hour the server refuses.
+    expect(released).toEqual([Interval.of(H(10, 45), H(12, 15))]);
+  });
+
+  it('ignores chair time on other barbers — a whole visit can be released for everyone', () => {
+    expect(
+      paddedBusy({
+        barberId: IVAN,
+        spans: [iv(10, 11)],
+        turnaroundMinutes: 0,
+        release: [{ barberId: NIKO, occupied: iv(10, 11) }],
+      }),
+    ).toEqual([iv(10, 11)]);
+  });
+
+  it('answers exactly what the server decides a move against: the projection minus the visit, padded (property)', () => {
+    // Back-to-back and spaced seats on one chair, each either the moved
+    // visit's or somebody else's — never overlapping, as the book guarantees.
+    const seat = fc.record({
+      gap: fc.integer({ min: 0, max: 8 }).map((steps) => steps * 15),
+      length: fc.integer({ min: 1, max: 8 }).map((steps) => steps * 15),
+      own: fc.boolean(),
+    });
+    fc.assert(
+      fc.property(
+        fc.array(seat, { minLength: 1, maxLength: 8 }),
+        fc.integer({ min: 0, max: 30 }),
+        (seats, turnaround) => {
+          const own: Interval[] = [];
+          const others: Interval[] = [];
+          let cursor = H(9);
+          for (const entry of seats) {
+            const span = Interval.of(
+              cursor + M(entry.gap),
+              cursor + M(entry.gap + entry.length),
+            );
+            (entry.own ? own : others).push(span);
+            cursor = span.endMs;
+          }
+          // The projection stores the merged union — who is who is gone.
+          const stored = Interval.normalize([...own, ...others]);
+          expect(
+            paddedBusy({
+              barberId: IVAN,
+              spans: stored,
+              turnaroundMinutes: turnaround,
+              release: own.map((occupied) => ({ barberId: IVAN, occupied })),
+            }),
+          ).toEqual(
+            paddedBusy({
+              barberId: IVAN,
+              spans: others,
+              turnaroundMinutes: turnaround,
+            }),
+          );
+        },
+      ),
+    );
   });
 });

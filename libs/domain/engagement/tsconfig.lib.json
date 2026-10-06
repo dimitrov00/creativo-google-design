@@ -19,6 +19,7 @@
   ],
   "references": [
     { "path": "../kernel/tsconfig.lib.json" },
-    { "path": "../accounts/tsconfig.lib.json" }
+    { "path": "../accounts/tsconfig.lib.json" },
+    { "path": "../catalog/tsconfig.lib.json" }
   ]
 }

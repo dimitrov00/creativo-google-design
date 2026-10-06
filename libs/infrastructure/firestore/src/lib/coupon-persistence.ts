@@ -23,6 +23,12 @@ import { RepositoryError } from '@creativo/application/shared';
  * and its vocabulary (`percent_off` / `fixed_amount` / `free_service`, an
  * amount in minor units beside its currency) is the same one an
  * appointment's `discounts[].value` is written in.
+ *
+ * The write half (`couponToPersistence`) sits beside the reader so a field
+ * added to one cannot be forgotten by the other: what it writes reads back
+ * into an equal coupon, the OCCASION included (client-card-revision-3.md
+ * §4.6). An admin may write `coupons/*`; a save that dropped the occasion
+ * would quietly undress the birthday gift.
  */
 
 // ── CouponValue ─────────────────────────────────────────────────────────
@@ -93,6 +99,36 @@ export function couponValueFromPersistence(
 
 // ── Coupon mapper ───────────────────────────────────────────────────────
 
+function couponExpiryToPersistence(expiry: CouponExpiry): DocumentData {
+  switch (expiry.kind) {
+    case 'never':
+      return { kind: 'never' };
+    case 'days':
+      return { kind: 'days', days: expiry.days };
+    case 'fixed_date':
+      return { kind: 'fixed_date', atIso: expiry.at.toISO() };
+  }
+}
+
+/**
+ * A coupon → `coupons/{id}`, EVERY field written, the ones that say
+ * "none" included (`code`, `usageLimit` and `occasion` are `null`, never
+ * absent): a save replaces the document, and a field left out of it is a
+ * field deleted. The id is the document's, not a field.
+ */
+export function couponToPersistence(coupon: Coupon): DocumentData {
+  return {
+    name: coupon.name,
+    code: coupon.code,
+    value: couponValueToPersistence(coupon.value),
+    combinability: { kind: coupon.combinability.kind },
+    expiry: couponExpiryToPersistence(coupon.expiry),
+    usageLimit: coupon.usageLimit,
+    enabled: coupon.enabled,
+    occasion: coupon.occasion,
+  };
+}
+
 function couponExpiryFromPersistence(
   data: DocumentData,
 ): Result<CouponExpiry, RepositoryError> {
@@ -137,6 +173,12 @@ export function couponFromPersistence(
     // A shareable code, when the coupon has one; absent on grant-only ones
     // and on every document written before codes existed.
     code: typeof data['code'] === 'string' ? data['code'] : null,
+    // What the coupon is given for, handed over AS IT IS WRITTEN: a missing
+    // field and `null` both read as "no occasion" (every coupon written
+    // before occasions existed), and a word the domain does not know is
+    // REFUSED there. Filtering it to `null` here would let a typo pass as
+    // "none" and undress the gift without anyone being told.
+    occasion: data['occasion'],
   });
   if (reconstituted.isFailure()) {
     return fail(

@@ -66,7 +66,28 @@ describe('Location.create', () => {
       expect(result.value.mapUrl).toBeNull();
       expect(result.value.cover).toBeNull();
       expect(result.value.photos).toEqual([]);
+      // No short name: the shop goes by its name.
+      expect(result.value.shortName.equals(result.value.name)).toBe(true);
     }
+  });
+
+  it('keeps a short name without the brand every shop carries, and rejects an empty one', () => {
+    const result = Location.create({
+      ...validProps(),
+      shortName: { en: 'Center', bg: 'Център' },
+    });
+    expect(result.isSuccess()).toBe(true);
+    if (result.isSuccess()) {
+      expect(result.value.shortName.bg).toBe('Център');
+      expect(result.value.shortName.en).toBe('Center');
+      expect(result.value.name.bg).toBe('Креативо · Център');
+    }
+    expect(
+      Location.create({
+        ...validProps(),
+        shortName: { en: 'Center', bg: '' },
+      }).isFailure(),
+    ).toBe(true);
   });
 
   it('rejects an empty id', () => {

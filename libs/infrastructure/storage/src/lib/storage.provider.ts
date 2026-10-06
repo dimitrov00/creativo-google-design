@@ -17,8 +17,9 @@ import {
  * `libs/infrastructure/firebase-app` only provides the App/Auth/Firestore/
  * Functions tokens every app needs — Storage is heavier and only a handful
  * of features (avatar upload, media resolution) touch it, so this lib owns
- * its own bootstrapping token, composed in separately by whichever app
- * config actually needs it.
+ * its own bootstrapping token. Reached only through `loadStorageAdapters()`:
+ * the web app hands `provideFirebaseStorage()` to its lazy data scope, whose
+ * injector creates the instance once, on the first data-port call.
  */
 export const FIREBASE_STORAGE = new InjectionToken<FirebaseStorage>(
   'FIREBASE_STORAGE',

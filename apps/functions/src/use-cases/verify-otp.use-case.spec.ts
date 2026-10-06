@@ -6,9 +6,10 @@ import {
   otpDestinationValue,
 } from '@creativo/application/identity';
 import { RepositoryError } from '@creativo/application/shared';
-import { Result, ZonedDateTime, ok } from '@creativo/domain/kernel';
+import { Result, ok } from '@creativo/domain/kernel';
 import { describe, expect, it } from 'vitest';
 import { SystemClock } from '../adapters/system-clock';
+import { FixedClock } from '../test-support/fixed-clock';
 import {
   IncorrectCodeError,
   OtpAlreadyConsumedError,
@@ -32,16 +33,6 @@ function fakeCrypto(code = '123456') {
     verify: (c: string, s: string, expectedHash: string) =>
       `hash(${c},${s})` === expectedHash,
   };
-}
-
-class FixedClock {
-  constructor(private iso: string) {}
-  now(zone: string) {
-    return ZonedDateTime.fromISO(this.iso, zone);
-  }
-  advance(iso: string) {
-    this.iso = iso;
-  }
 }
 
 function fakeOtpRepository(): OtpRepositoryPort & { store: Map<string, Otp> } {
@@ -113,6 +104,9 @@ function fakeUserRepository(): UserRepositoryPort & {
             phone: doc.phone,
             birthDate: doc.birthDate ?? null,
             roles: doc.roles ?? [],
+            // The status never keys a login's claims; only the registration
+            // re-run carries it forward.
+            status: { kind: 'absent' },
             registered: !!doc.firstName,
           });
         }
@@ -148,6 +142,9 @@ function fakeAuthToken() {
       if (idResult.isFailure())
         throw new Error('unexpected failure in test fixture');
       return ok(idResult.value);
+    },
+    async setDisplayName() {
+      throw new Error('not used by VerifyOtpUseCase');
     },
   };
 }
@@ -198,10 +195,10 @@ describe('VerifyOtpUseCase', () => {
       expect(result.value.sessionKind).toBe('new');
     }
     const minted = authToken.mintedTokens[0];
-    expect((minted.tenantId as { value: string }).value).toBe('creativo');
+    expect((minted?.tenantId as { value: string }).value).toBe('creativo');
     // A freshly provisioned user has no registered profile yet — claims
     // stay `onboarding` until `completeRegistration` writes one.
-    expect(minted.claims).toEqual({ stage: 'onboarding' });
+    expect(minted?.claims).toEqual({ stage: 'onboarding' });
     expect(users.store.size).toBe(1);
     expect(users.store.get('uid_1')).toEqual({
       email: 'client@example.com',
@@ -261,7 +258,7 @@ describe('VerifyOtpUseCase', () => {
     }
     expect(users.store.size).toBe(1); // still just one user
     expect(authToken.mintedTokens).toHaveLength(2);
-    expect(authToken.mintedTokens[0].uid).toBe(authToken.mintedTokens[1].uid);
+    expect(authToken.mintedTokens[0]?.uid).toBe(authToken.mintedTokens[1]?.uid);
   });
 
   it('rejects an incorrect code and increments attemptCount on the stored OTP', async () => {
@@ -405,7 +402,7 @@ describe('VerifyOtpUseCase', () => {
     const result = await useCase.execute({ otpId: 'otp_1', code: '123456' });
 
     expect(result.isSuccess()).toBe(true);
-    const claims = authToken.mintedTokens[0].claims as {
+    const claims = authToken.mintedTokens[0]?.claims as {
       stage: string;
       roles: string[];
     };
@@ -442,7 +439,7 @@ describe('VerifyOtpUseCase', () => {
     if (result.isSuccess()) {
       expect(result.value.sessionKind).toBe('returning');
     }
-    const claims = authToken.mintedTokens[0].claims as {
+    const claims = authToken.mintedTokens[0]?.claims as {
       stage: string;
       roles: string[];
     };

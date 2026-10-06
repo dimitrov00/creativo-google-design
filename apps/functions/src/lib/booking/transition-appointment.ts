@@ -1,8 +1,11 @@
+import type { Firestore } from 'firebase-admin/firestore';
+import { logger } from 'firebase-functions';
 import { HttpsError, onCall } from 'firebase-functions/v2/https';
 import {
   type AppointmentStatus,
   type AppointmentStatusKind,
   type CancellationReason,
+  type CancellationWindow,
   cancellationReasonOf,
   canTransition,
   outcomeForStatus,
@@ -15,8 +18,10 @@ import {
   seatOutcomeToDocument,
 } from '@creativo/application/booking';
 import { adminFirestore } from '../firebase-admin';
-import { appendAudit } from './audit';
-import { callerWorksTheBook } from './caller-roles';
+import { type AuditSubject, appendAudit, seatSubjectsOf } from './audit';
+import { callerActor, callerWorksTheBook } from './caller-roles';
+import { loadBookingPolicy } from './load-booking-policy';
+import { TENANT_ZONE } from './tenant-zone';
 import { applyVoucherRestore, planVoucherRestore } from './voucher-restore';
 
 /**
@@ -46,6 +51,18 @@ import { applyVoucherRestore, planVoucherRestore } from './voucher-restore';
  * `BookingPolicy.mayCancelAt` is a CLIENT-fairness rule — the shop refusing
  * late cancellations from clients. The shop itself may always move its own
  * book: a barber calling in sick at 08:00 must be able to clear the day.
+ *
+ * The window is still READ by a cancel, before the transaction — every
+ * cancel, `staff_*` reasons included — because it is STAMPED on the seats
+ * it closes (2026-09-25): the desk files clients' phoned-in cancels here,
+ * and those are judged by the rule of their day. That read is the one
+ * dependency a shop cancel has on the policy, and it is deliberately soft
+ * (business decision, 2026-09-25, round 2): if the policy cannot be read,
+ * the cancel goes through with the window stamped UNKNOWN (`null`) and a
+ * warning is logged — see `windowInForce`. Unknown is what every
+ * cancellation before the stamp already says, and the stats judge it by the
+ * current window, so the cost is one possibly re-judged verdict; refusing
+ * would make clearing a sick barber's day depend on tuning data.
  *
  * ### Freeing time is the point, not a side effect
  * `rebuildBusy` counts only `pending`/`confirmed` as live, so transitioning
@@ -99,18 +116,50 @@ function seatEndMs(seat: Record<string, unknown>): number {
   return Number.isNaN(parsed) ? 0 : parsed;
 }
 
-/** The audit row's `context`, or nothing when there is nothing to record. */
-function auditContext(
+/**
+ * The audit row's `context`, or nothing when there is nothing to record.
+ *
+ * The reason CODE only. The note of an `other` stays on the seat, where the
+ * visit's own readers see it; the log is ids and codes (T5, R36), because a
+ * sentence typed at the desk about a client is personal data the log would
+ * then keep for good, beyond the reach of any correction or erasure.
+ */
+export function auditContext(
   reason: CancellationReason | null,
   seatId: string,
 ): { context?: Record<string, string> } {
   const context: Record<string, string> = {};
-  if (reason) {
-    context['reason'] = reason.kind;
-    if (reason.kind === 'other') context['note'] = reason.note;
-  }
+  if (reason) context['reason'] = reason.kind;
   if (seatId) context['seatId'] = seatId;
   return Object.keys(context).length > 0 ? { context } : {};
+}
+
+/**
+ * The free-cancellation window in force, for a SHOP cancel to stamp — or
+ * `null`, unknown, when the policy cannot be read (see "No cancellation
+ * window here").
+ *
+ * Every cancel reads it, whatever the reason: one rule ("a cancellation
+ * since 2026-09-25 carries its window") keeps `null` meaning only unknown,
+ * rather than a second copy of `clientCaused` deciding which cancels are
+ * worth a stamp. A MISSING policy document is not a failure — it parses to
+ * the defaults, which is the window in force; only a read that throws lands
+ * here as unknown.
+ */
+async function windowInForce(
+  db: Firestore,
+  appointmentId: string,
+): Promise<CancellationWindow | null> {
+  try {
+    return (await loadBookingPolicy(db)).cancellationWindow;
+  } catch (error) {
+    logger.warn('cancellation window unread; stamped unknown', {
+      code: 'booking.transition.window_unread',
+      resourceId: appointmentId,
+      error: String(error),
+    });
+    return null;
+  }
 }
 
 /** A seat whose story is already over — re-stamping it would rewrite history. */
@@ -167,11 +216,22 @@ export const transitionAppointment = onCall(async (request) => {
   }
 
   const db = adminFirestore();
-  let ownerUserId: string | null = null;
+  // The window IN FORCE, stamped on every seat a cancel closes — never used
+  // to refuse one (see "No cancellation window here"). A staff cancel is
+  // often the client's own, phoned in (`client_*` reasons), and it must be
+  // judged by the rule of the day it was made, whatever the owner sets the
+  // window to later (2026-09-25). Read outside the transaction, like every
+  // policy read, and only by the verb that stamps it; a failed read stamps
+  // unknown rather than refusing the shop's cancel.
+  const stampedWindow =
+    to === 'cancelled' ? await windowInForce(db, appointmentId) : null;
+  let subjects: readonly AuditSubject[] = [];
   // Reported separately in the audit trail: "confirmed a pending booking" and
   // "took a no-show back" are different acts, and a shop reviewing who
   // reverses stamps must be able to count the second without the first.
   let reopenedFrom: AppointmentStatusKind | null = null;
+  /** The committed attempt's instant — the one its seat outcomes carry. */
+  let decidedAtMs = 0;
 
   await db.runTransaction(async (tx) => {
     const ref = db.collection('appointments').doc(appointmentId);
@@ -184,8 +244,9 @@ export const transitionAppointment = onCall(async (request) => {
     }
 
     const status = data['status'] as AppointmentStatus;
-    ownerUserId =
-      typeof data['ownerUserId'] === 'string' ? data['ownerUserId'] : null;
+    // A seat's verb names that seat's person — a companion's no-show is
+    // theirs, not the booker's; a party verb names everyone on the visit.
+    subjects = seatSubjectsOf(data, seatId.length > 0 ? seatId : undefined);
 
     const seats = Array.isArray(data['seats'])
       ? (data['seats'] as Record<string, unknown>[])
@@ -201,15 +262,20 @@ export const transitionAppointment = onCall(async (request) => {
             zone: String(
               (data['timeSlot'] as Record<string, unknown> | undefined)?.[
                 'zone'
-              ] ?? 'Europe/Sofia',
+              ] ?? TENANT_ZONE,
             ),
           })
         : null;
 
+    // ONE instant per attempt: the seats are stamped with it and the audit
+    // row is keyed by it, so the row names the change that was written.
+    const atMs = Date.now();
+    decidedAtMs = atMs;
     const seatOutcome = outcomeForStatus(
       to,
-      Date.now(),
+      atMs,
       reason ?? { kind: 'other', note: '' },
+      stampedWindow,
     );
 
     if (seatId.length > 0) {
@@ -302,7 +368,7 @@ export const transitionAppointment = onCall(async (request) => {
     if (reopeningSettled) {
       const zone = String(
         (data['timeSlot'] as Record<string, unknown> | undefined)?.['zone'] ??
-          'Europe/Sofia',
+          TENANT_ZONE,
       );
       const endMs = Math.max(0, ...seats.map(seatEndMs));
       const nowMs = Date.now();
@@ -425,11 +491,11 @@ export const transitionAppointment = onCall(async (request) => {
     if (reopening) reopenedFrom = 'no_show';
   });
 
-  // After the commit, never inside it — see `appendAudit`. The TARGET is
-  // the appointment's owner: "who did what TO WHOM" must name the client,
-  // not default to the staff actor.
-  void appendAudit({
-    actorUserId: uid,
+  // After the commit, never inside it — see `appendAudit`. The TARGETS are
+  // the people the verb touched: "who did what TO WHOM" must name the client,
+  // not default to the staff actor or to whoever booked the party.
+  await appendAudit({
+    actor: callerActor(request),
     action:
       reopenedFrom === 'no_show'
         ? 'booking.staff_reopen_no_show'
@@ -439,14 +505,16 @@ export const transitionAppointment = onCall(async (request) => {
             ? 'booking.staff_reinstate'
             : `booking.staff_${to}`,
     resourceId: appointmentId,
-    targetUserId: ownerUserId ?? undefined,
+    subjects,
     atIso: new Date().toISOString(),
-    // The CODE plus the note, not a bare sentence — the audit row is the only
-    // durable record of who called this off and why, and a groupable field
-    // there is what lets "who cancels most" be answered at all. One object:
-    // a per-seat cancellation carries BOTH facts and two spreads would drop
-    // whichever came first.
+    // The CODE, not a sentence — a groupable field is what lets "who cancels
+    // most, and why" be answered at all. One object: a per-seat cancellation
+    // carries BOTH facts and two spreads would drop whichever came first.
     ...auditContext(reason, seatId),
+    // A retry of the same verb is refused by the graph (or the resolved-seat
+    // guard) before it gets here; a later reopen-and-redo is a new instant.
+    // The seat is in the key because one person can hold two seats.
+    changeKey: `transition:${seatId.length > 0 ? seatId : 'party'}:${decidedAtMs}`,
   });
 
   return { appointmentId, to };

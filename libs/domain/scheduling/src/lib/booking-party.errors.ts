@@ -40,6 +40,29 @@ export class BookingPartyUnclaimedError extends DomainError {
   }
 }
 
+/**
+ * Another guest of the party already answers to this label.
+ *
+ * A guest is nothing but their label until they have an account — to the
+ * shop, and to the server, which counts people by it (`personKey`). Two
+ * guests under one label would travel as ONE person: counted once, their
+ * services judged together, one of them in two chairs. So a label another
+ * guest holds is refused at the source, when it is typed or added, rather
+ * than discovered when the booking is sent.
+ *
+ * Exact, as the label is stored (`SeatLabel`, trimmed): the same comparison
+ * the server makes, so the party refuses precisely what would be merged.
+ */
+export class DuplicateGuestLabelError extends DomainError {
+  override readonly code = 'scheduling.booking_party.duplicate_label' as const;
+  constructor(public readonly label: string) {
+    super(`Another guest is already called "${label}"`, { label });
+  }
+}
+
+/** Why a label cannot be a guest's: not a label at all, or someone else's. */
+export type BookingPartyLabelError = SeatLabelError | DuplicateGuestLabelError;
+
 /** Errors `BookingParty.create`/`reconstitute` can produce. */
 export type BookingPartyError =
   | AccountsEmptyIdError

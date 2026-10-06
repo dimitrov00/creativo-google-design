@@ -15,7 +15,11 @@ import { SystemClock } from '../../adapters/system-clock';
 import { adminFirestore } from '../firebase-admin';
 import { loadBookingPolicy } from './load-booking-policy';
 import { loadDayAvailability } from './load-day-availability';
-import { matchWaitlist } from '../../use-cases/match-waitlist';
+import { TENANT_ZONE } from './tenant-zone';
+import {
+  type MatchWaitlistSnapshot,
+  matchWaitlist,
+} from '../../use-cases/match-waitlist';
 
 /**
  * How long a notification suppresses the next one for the same request.
@@ -65,7 +69,7 @@ export const matchWaitlistOnBusyChange = onDocumentWritten(
     // read the same off either side of the write.
     const data = event.data?.after?.data() ?? event.data?.before?.data() ?? {};
     const dayKey = String(data['dayKey'] ?? '');
-    const zone = String(data['zone'] ?? 'Europe/Sofia');
+    const zone = String(data['zone'] ?? TENANT_ZONE);
     if (dayKey.length === 0) return;
 
     const db = adminFirestore();
@@ -85,9 +89,10 @@ export const matchWaitlistOnBusyChange = onDocumentWritten(
 
     // Loaded ONCE for the day and shared across every request that named it:
     // ten people waiting on the same Saturday is one read of the roster, not
-    // ten. The engine is pure, so the same snapshot answers all of them.
+    // ten. The engine is pure, so the same snapshot answers all of them. A
+    // day with nothing to search is an EMPTY snapshot, never a missing one,
+    // so every request below still has its lapse read.
     const snapshot = await loadDayAvailability(db, day.value, zone);
-    if (!snapshot) return;
 
     const since = ZonedDateTime.fromMillis(
       now.toMillis() - NOTIFY_COOLDOWN_HOURS * 3_600_000,
@@ -121,7 +126,7 @@ export const matchWaitlistOnBusyChange = onDocumentWritten(
 async function notifyIfMatched(input: {
   readonly request: WaitlistRequest;
   readonly day: CalendarDay;
-  readonly snapshot: Awaited<ReturnType<typeof loadDayAvailability>>;
+  readonly snapshot: MatchWaitlistSnapshot;
   readonly now: ZonedDateTime;
   readonly since: ZonedDateTime;
   readonly policy: BookingPolicy;
@@ -130,7 +135,6 @@ async function notifyIfMatched(input: {
 }): Promise<void> {
   const { request, day, snapshot, now, since, policy, store, notifications } =
     input;
-  if (!snapshot) return;
 
   // A request whose days have all passed stops being watched rather than being
   // re-evaluated forever.

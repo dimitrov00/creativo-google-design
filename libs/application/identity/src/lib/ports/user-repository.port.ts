@@ -1,6 +1,6 @@
 import { Result } from '@creativo/domain/kernel';
 import { UserId } from '@creativo/domain/models';
-import type { User } from '@creativo/domain/accounts';
+import type { AccountStatus, User } from '@creativo/domain/accounts';
 import { RepositoryError } from '@creativo/application/shared';
 import { OtpDestination } from './otp-destination';
 
@@ -15,6 +15,18 @@ export interface ProvisionedUser {
   readonly email: string | null;
   readonly phone: string | null;
 }
+
+/**
+ * What `users/{uid}.status` holds at lookup time. A stub has none; a
+ * registered document has one, written only by the Admin SDK (registration,
+ * and from P2 a pause projection). An unreadable one is kept apart instead of
+ * failing the lookup, so a login never breaks on it, while a write that must
+ * carry the status forward can refuse to guess.
+ */
+export type StoredAccountStatus =
+  | { readonly kind: 'absent' }
+  | { readonly kind: 'stored'; readonly status: AccountStatus }
+  | { readonly kind: 'unreadable' };
 
 /**
  * What a destination lookup reads back off `users/{uid}` — deliberately
@@ -36,6 +48,13 @@ export interface UserRecordSnapshot extends ProvisionedUser {
    * SDK — the documented out-of-band grant path.
    */
   readonly roles: readonly string[];
+  /**
+   * The stored status, verbatim — carried forward by a `completeRegistration`
+   * re-run, which must never reset a server-written status (a pause) to
+   * `active`. Trusted for the same reason as `roles`: no owner write reaches
+   * it (`firestore.rules` owner-update allowlist).
+   */
+  readonly status: StoredAccountStatus;
   /**
    * Whether `completeRegistration` has written the full accounts-shape
    * profile — the activation key `verifyOtpChallenge` mints claims off

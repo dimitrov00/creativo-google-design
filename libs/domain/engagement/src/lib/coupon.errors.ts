@@ -24,3 +24,13 @@ export class CouponInvalidUsageLimitError extends DomainError {
     });
   }
 }
+
+/** A coupon's occasion is a closed set (`COUPON_OCCASIONS`); this value is not in it. */
+export class CouponOccasionUnknownError extends DomainError {
+  override readonly code = 'engagement.coupon.occasion_unknown' as const;
+  constructor(public readonly attempted: unknown) {
+    super(`Coupon occasion is not one the shop knows: ${String(attempted)}`, {
+      attempted,
+    });
+  }
+}

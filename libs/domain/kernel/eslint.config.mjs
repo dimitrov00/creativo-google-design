@@ -1,4 +1,35 @@
-import baseConfig from '../../../eslint.config.mjs';
+import baseConfig, {
+  TESTING_ENTRY_POINT_RESTRICTION,
+} from '../../../eslint.config.mjs';
+
+/**
+ * This project's import restrictions (the layer rule minus the half this
+ * project is allowed), shared by its production rule and its spec rule.
+ */
+const IMPORT_RESTRICTIONS = {
+  patterns: [
+    {
+      group: ['firebase', 'firebase/*', 'firebase-admin', 'firebase-admin/*'],
+      message:
+        'firebase/* and firebase-admin may only be imported from libs/infrastructure/** or apps/functions/** — go through a port instead.',
+    },
+  ],
+};
+
+/**
+ * Production code also may not import a testing entry point of a @creativo lib
+ * (test support); a rule's options replace, never merge, so the root
+ * config's testing half is restated here, and the spec block below drops it.
+ */
+function withTestingRestriction(restrictions) {
+  return {
+    ...restrictions,
+    patterns: [
+      ...(restrictions.patterns ?? []),
+      TESTING_ENTRY_POINT_RESTRICTION,
+    ],
+  };
+}
 
 export default [
   ...baseConfig,
@@ -13,21 +44,15 @@ export default [
     rules: {
       'no-restricted-imports': [
         'error',
-        {
-          patterns: [
-            {
-              group: [
-                'firebase',
-                'firebase/*',
-                'firebase-admin',
-                'firebase-admin/*',
-              ],
-              message:
-                'firebase/* and firebase-admin may only be imported from libs/infrastructure/** or apps/functions/** — go through a port instead.',
-            },
-          ],
-        },
+        withTestingRestriction(IMPORT_RESTRICTIONS),
       ],
+    },
+  },
+  {
+    // Specs are what the testing entry points are for.
+    files: ['**/*.spec.ts'],
+    rules: {
+      'no-restricted-imports': ['error', IMPORT_RESTRICTIONS],
     },
   },
 ];

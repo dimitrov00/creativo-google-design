@@ -109,6 +109,9 @@
     "booking.gateway.failed": "Нещо се обърка. Пробвай пак.",
     "booking.commit.unauthenticated": "Влез, за да завършиш резервацията.",
     "booking.commit.invalid_input": "Нещо в резервацията не е наред. Пробвай пак.",
+    "booking.commit.invalid_input.person_overlap": "Един човек не може да е на два стола по едно и също време. Избери друг час.",
+    "booking.commit.invalid_input.guest_label": "Двама души в групата са с едно и също име. Върни се и преименувай единия.",
+    "booking.commit.invalid_input.locationId": "Този салон в момента не приема онлайн резервации.",
     "booking.commit.unknown_service": "Тази услуга вече не е налична.",
     "booking.commit.service_not_at_location": "Тази услуга не се предлага в този салон.",
     "booking.commit.conflicting_services": "Тези услуги не се комбинират.",
@@ -121,10 +124,17 @@
     "booking.commit.store_failed": "Не успяхме да запишем резервацията. Пробвай пак.",
     "booking.staffEdit.overlaps": "Часът се застъпва с друга резервация.",
     "booking.staffEdit.invalid_command": "Заявката не е валидна за това посещение.",
-    "booking.staffEdit.stale": "Посещението беше променено междувременно — отвори го отново.",
+    "booking.staffEdit.stale": "Някой друг току-що промени посещението — ето го, както е сега.",
     "booking.staffEdit.before_arrival": "Посещението не може да свърши преди клиентът да е дошъл.",
     "booking.staffEdit.forbidden": "Нямаш право за тази промяна.",
-    "booking.cancel.window_closed": "Безплатното отказване е до {{windowHours}} ч. преди часа — обади се в салона.",
+    "booking.cancel.window_closed": "Безплатното отказване е до {{windowHours}} ч. преди часа — {{reach}}.",
+    "booking.cancel.policy_unavailable": "Не успяхме да проверим условията за отказ. Пробвай пак след малко.",
+    "booking.reschedule.carried_seat_unplaceable": "Някой друг от посещението не може да дойде в този час. За да преместим всички заедно, {{reach}}.",
+    "booking.reschedule.carried_seat_unplaceable.barber_unavailable": "Човекът, който идва с теб, не може в този час — бръснарят му е зает. Избери друг час или {{reach}} и ще преместим всички заедно.",
+    "booking.reschedule.carried_seat_unplaceable.outside_booking_window": "В този час човекът, който идва с теб, попада извън времето, в което приемаме записвания. Избери друг час или {{reach}}.",
+    "booking.reschedule.carried_seat_unplaceable.party_conflict": "Този час не става за всички от посещението. Избери друг час или {{reach}} и ще преместим всички заедно.",
+    "booking.reschedule.carried_seat_unplaceable.service_unavailable": "Салонът вече не предлага услугата на човека, който идва с теб, затова това посещение може да премести само салонът — {{reach}} и ще го уредим заедно.",
+    "booking.reschedule.carried_seat_unplaceable.shop_only": "Това посещение мести салонът, защото в него е само човек, когото салонът добави за теб — {{reach}} и ще го преместим заедно.",
     "booking.contact.empty_name": "Въведи име за резервацията.",
     "booking.contact.invalid_phone": "Този номер не изглежда валиден.",
     "booking.contact.invalid_email": "„{{rawValue}}“ не е валиден имейл адрес.",
@@ -136,6 +146,9 @@
     "booking.transition.invalid_input": "Заявката не е валидна.",
     "booking.transition.unauthenticated": "Влез отново, за да продължиш.",
     "scheduling": {
+      "booking_party": {
+        "duplicate_label": "В групата вече има «{{label}}». Дай друго име, за да не ги объркаме."
+      },
       "recurrence": {
         "invalid_interval": "Повтаря се на всеки от 1 до {{max}} периода.",
         "no_weekdays": "Изберете поне един ден от седмицата.",
@@ -330,6 +343,20 @@
       "slotTaken": {
         "title": "Този час току-що се зае.",
         "body": "Избери друг — това е свободното в момента."
+      },
+      "shopScope": {
+        "elsewhere": {
+          "title": "{{shop}} не предлага всичко от това посещение.",
+          "body": "{{target}} предлага всичко от посещението.",
+          "bodyAny": "Други салони предлагат всичко — търси във всички.",
+          "switch": "Към {{target}}",
+          "switchAny": "Всеки салон"
+        },
+        "nowhere": {
+          "title": "Нито един салон не предлага всичко от това посещение заедно.",
+          "body": "Промени услугите, за да търсиш в салон, който ги предлага.",
+          "change": "Промени услугите"
+        }
       }
     },
     "review": {
@@ -350,7 +377,30 @@
       "noteTitle": "Бележка към салона",
       "noteLede": "Нещо, което бръснарят да знае преди часа.",
       "noteEdit": "Промени бележката",
-      "notePlaceholder": "Добави бележка (по желание)"
+      "notePlaceholder": "Добави бележка (по желание)",
+      "riders": "Идват с теб",
+      "ridersNote": "Салонът ги добави към посещението. Местим ги заедно с теб.",
+      "riderService": "Услуга от салона"
+    },
+    "moveRefused": {
+      "companions_only": {
+        "title": "Този час мести салонът",
+        "body": "В посещението е само човек, когото салонът добави за теб. Само салонът може да го премести — {{reach}} и ще го направим заедно."
+      },
+      "unavailable": {
+        "title": "Този час не може да се премести тук",
+        "body": "Не успяхме да го отворим за преместване. Виж го в «Часове»."
+      },
+      "carried_out_of_reach": {
+        "title": "Този час може да премести само салонът",
+        "body": "Бръснарят или услугата на човека, когото салонът добави за теб, вече не са налични. Само салонът може да го премести — {{reach}} и ще го направим заедно."
+      },
+      "call": "Обади се",
+      "appointments": "Към часовете"
+    },
+    "reach": {
+      "call": "обади се в салона",
+      "contact": "свържи се със салона"
     },
     "configure": {
       "variant": "Вариант",
@@ -403,8 +453,8 @@
       "save": "Готово",
       "close": "Затвори",
       "profileFailed": "Резервацията е наред, но профилът не се запази. Пробвай пак от профила си.",
-      "saveToProfile": "Запази промените в профила ми",
-      "loginUnchanged": "Данните за вход в приложението не се променят оттук."
+      "saveToProfile": "Запази името в профила ми",
+      "contactThisBookingOnly": "Телефонът и имейлът важат само за този час."
     }
   },
   "account": {
@@ -503,7 +553,8 @@
       "notifications": "Известия",
       "openPositions": "Отворени позиции",
       "signOut": "Изход",
-      "staffDay": "График"
+      "staffDay": "График",
+      "loyaltyAdmin": "Лоялност"
     },
     "prefs": {
       "language": "Език",
@@ -867,7 +918,7 @@
       "confirm": "Откажи часа",
       "dismiss": "Запази го",
       "deadline": "Безплатен отказ до {{deadline}}",
-      "windowClosed": "Прозорецът за безплатен отказ изтече — обади се в салона."
+      "windowClosed": "Прозорецът за безплатен отказ изтече — {{reach}}."
     },
     "count": "{{count}} посещения",
     "sections": {
@@ -885,18 +936,11 @@
       "note": "Бележка към салона",
       "atTheShop": "В салона",
       "bookAgain": "Пак същото",
-      "reschedule": "Премести"
+      "reschedule": "Премести",
+      "shopMoves": "Този час мести салонът — {{reach}}, ако искаш друг.",
+      "actions": "Действия с посещението"
     },
-    "countOne": "1 посещение",
-    "filter": {
-      "label": "Филтър",
-      "all": "Всички",
-      "upcoming": "Предстоящи",
-      "completed": "Минали",
-      "cancelled": "Отказани",
-      "no_show": "Пропуснати",
-      "clear": "Покажи всички"
-    }
+    "countOne": "1 посещение"
   },
   "staff": {
     "day": {
@@ -1226,6 +1270,7 @@
       "rebook": "Запиши пак",
       "newTitle": "Нов час",
       "walkIn": "Случаен клиент",
+      "walkInNumbered": "Случаен клиент {{number}}",
       "createFailed": "Часът не се записа. Опитай пак.",
       "custom": "по договорка",
       "addClient": "Добави клиент",
@@ -1268,7 +1313,7 @@
       "overlapShort": "Застъпва {{name}} {{time}}",
       "priceUnchanged": "Промяната на времето не променя цената.",
       "removeService": "Премахни услугата",
-      "removeClient": "Махни",
+      "removeClient": "Махни от посещението",
       "searchClient": "Име, телефон или имейл",
       "exactMatch": "Вече е клиент",
       "newClientParts": "Нов клиент: {{parts}}",
@@ -1323,7 +1368,7 @@
       "discountPercent": "Процент",
       "discountUnknownCode": "Няма такъв код.",
       "discountChecking": "Проверявам…",
-      "discountFree": "Безплатно",
+      "discountFree": "Безплатна услуга",
       "addDiscount": "Добави отстъпка",
       "discountNone": "Няма",
       "discountApplied": "{{count}} приложени",
@@ -1384,7 +1429,919 @@
       "discard": "Отхвърли",
       "keepEditing": "Продължи редакцията",
       "clientNoteFrom": "От клиента",
-      "addAnotherClient": "Добави още един клиент"
+      "addAnotherClient": "Добави още един клиент",
+      "client": {
+        "actions": "Действия с клиента",
+        "announce": {
+          "sameAsLast": "Взехме услугите от {{date}}."
+        }
+      }
+    }
+  },
+  "clientCard": {
+    "head": {
+      "since": "Клиент от {{since}}",
+      "firstVisit": "Първо посещение",
+      "guest": "Гост · без профил",
+      "pausedUntil": "Онлайн записването е спряно до {{date}}",
+      "pausedPermanent": "Онлайн записването е спряно за постоянно",
+      "sinceCadence": "Клиент от {{since}} · идва през {{cadence}}",
+      "cadence": {
+        "one": "{{count}} седмица",
+        "other": "{{count}} седмици"
+      },
+      "tierName": "{{tier}}, още {{remaining}} до {{next}}",
+      "tierTopName": "{{tier}}, най-високият статус"
+    },
+    "capsules": {
+      "label": "За клиента"
+    },
+    "capsule": {
+      "noShows": {
+        "one": "{{count}} неявяване",
+        "other": "{{count}} неявявания"
+      }
+    },
+    "plusCount": "+{{count}}",
+    "offline": "Без връзка · запазени данни",
+    "actions": {
+      "label": "Връзка",
+      "sms": "SMS",
+      "viber": "Viber",
+      "repeat": "Повтори",
+      "callName": "Обади се на {{name}}, {{phone}}",
+      "smsName": "SMS до {{name}}",
+      "viberName": "Viber до {{name}}",
+      "againName": "Повтори посещението от {{date}}: {{services}}"
+    },
+    "reward": {
+      "until": "до {{date}}",
+      "more": "· още {{count}}",
+      "name": "{{title}}, {{value}}, използвай",
+      "nameBare": "{{title}}, използвай",
+      "appliedName": "{{title}}, {{value}}, с това посещение",
+      "appliedNameBare": "{{title}}, с това посещение",
+      "stack": "×{{count}}"
+    },
+    "visits": {
+      "title": "Посещения",
+      "allName": "Всички посещения, {{count}}",
+      "waitlist": "Чака свободен час",
+      "waitlistName": "{{services}}, чака свободен час: {{when}}",
+      "daypart": {
+        "morning": "сутрин",
+        "afternoon": "следобед",
+        "evening": "вечер"
+      },
+      "waitlistMoreDays": "и още {{count}}",
+      "waitlistMoreRequests": "· още {{count}}"
+    },
+    "loyalty": {
+      "title": "Лоялност",
+      "all": "Всички",
+      "allName": "Лоялност: всички подробности",
+      "rhythmUnit": {
+        "one": "посещение",
+        "other": "посещения"
+      },
+      "rhythmLabel": "в ритъм",
+      "points": {
+        "one": "{{count}} точка",
+        "other": "{{count}} точки"
+      },
+      "pointsWord": {
+        "one": "точка",
+        "other": "точки"
+      },
+      "enoughForPoints": "Стигат за {{reward}}",
+      "moreTo": "Още {{points}} до {{reward}}",
+      "holding": {
+        "voucher": "Ваучер",
+        "stamps": "Печати",
+        "rhythm": "Ритъм"
+      },
+      "stampsOf": "{{filled}} от {{size}}",
+      "cardName": "Лоялност: {{points}}. {{sentence}} {{holdings}}"
+    },
+    "achievements": {
+      "title": "Постижения",
+      "levels": {
+        "one": "{{count}} ниво",
+        "other": "{{count}} нива"
+      },
+      "allName": {
+        "one": "Всички постижения, {{count}} ниво",
+        "other": "Всички постижения, {{count}} нива"
+      },
+      "cueWithThisVisit": "С това посещение: {{title}}, ниво\u00a0{{level}}",
+      "cueNew": "Ново: {{title}}, ниво\u00a0{{level}}",
+      "cueClose": "Близо: {{title}}, {{value}} от {{target}} до ниво\u00a0{{level}}",
+      "summaryName": {
+        "one": "{{count}} спечелено ниво",
+        "other": "{{count}} спечелени нива"
+      },
+      "seasonFact": "{{season}}: ниво {{level}}",
+      "eventsFact": {
+        "one": "{{count}} събитие сега",
+        "other": "{{count}} събития сега"
+      },
+      "events": "Събития",
+      "records": "Рекорди",
+      "archive": "Минали сезони и събития",
+      "toLevel": "{{value}}/{{target}} до {{level}}",
+      "toLevelOn": "{{level}}\u00a0на {{date}}",
+      "complete": "Всички нива",
+      "withThisVisit": "с това посещение",
+      "nextWithThisVisit": "Ниво\u00a0{{level}} с това посещение",
+      "dayGroupName": {
+        "one": "Спечелено на {{date}}: {{count}} ниво",
+        "other": "Спечелени на {{date}}: {{count}} нива"
+      },
+      "dayTitle": "Спечелени на {{date}}",
+      "seasonNext": {
+        "one": "Още {{count}} посещение до {{level}}",
+        "other": "Още {{count}} посещения до {{level}}"
+      },
+      "seasonFamilies": "Сезонни: {{earned}} от {{total}}",
+      "familyCount": "{{earned}} от {{total}}",
+      "eventUntil": "до {{date}}",
+      "eventAnnounced": "от {{date}}",
+      "scopeSubline": "{{name}} · {{started}} от {{total}} започнати",
+      "sectionGeneral": "Общи",
+      "sectionBarbers": "Бръснари",
+      "sectionShops": "Салони",
+      "firstHint": "Първото постижение идва с първото посещение.",
+      "seasonEnded": "Сезонът приключи.",
+      "seasonEndedAt": "Сезонът приключи на ниво\u00a0{{level}}.",
+      "record": {
+        "longestRhythm": "най-дълъг ритъм",
+        "mostVisitsInYear": "най-много за година",
+        "favouriteService": "любима услуга",
+        "firstVisit": "първо посещение",
+        "favouriteValue": "{{service}} ×{{count}}",
+        "favouriteCount": "×{{count}}"
+      },
+      "recordsAllName": "Всички рекорди",
+      "recordName": "{{caption}}: {{value}}{{detail}}{{new}}",
+      "newRecord": "Нов рекорд",
+      "newRecordSuffix": ", нов рекорд",
+      "recordsLineName": "Рекорди: {{facts}}",
+      "chips": {
+        "label": "Категории",
+        "seasons": "Сезони"
+      },
+      "chipName": "{{category}}, {{earned}} от {{total}} спечелени",
+      "close": "Почти спечелени",
+      "collectionOf": {
+        "one": "от {{total}} медал",
+        "other": "от {{total}} медала"
+      },
+      "collectionName": "Колекция: {{earned}} {{of}}, {{levels}}",
+      "showAll": "Покажи всички {{count}}",
+      "categorySummary": "{{category}} · {{earned}} от {{total}} спечелени"
+    },
+    "photos": {
+      "label": "Снимки от предишни посещения"
+    },
+    "new": "Ново",
+    "frozen": "Замразено, докато записването е спряно",
+    "failed": {
+      "profile": "Данните за клиента не се заредиха.",
+      "loyalty": "Лоялността не се зареди.",
+      "achievements": "Постиженията не се заредиха.",
+      "visits": "Посещенията не се заредиха.",
+      "photos": "Снимките не се заредиха.",
+      "some": "Част от данните не се заредиха.",
+      "vouchers": "Ваучерите не се заредиха.",
+      "activity": "Движението не се зареди."
+    },
+    "loyaltyPage": {
+      "rhythm": "Ритъм",
+      "tier": "Статус",
+      "moreToGo": "още {{points}} т.",
+      "rewardName": {
+        "one": "{{title}}, {{count}} точка{{state}}",
+        "other": "{{title}}, {{count}} точки{{state}}"
+      },
+      "rewardMoreSuffix": ", още {{points}}",
+      "stampsToNext": {
+        "one": "Още {{count}} посещение",
+        "other": "Още {{count}} посещения"
+      },
+      "rhythmBest": "Най-много: {{count}}",
+      "tierQualifying": {
+        "one": "{{count}} посещение за 12 месеца",
+        "other": "{{count}} посещения за 12 месеца"
+      },
+      "tierTop": {
+        "one": "Най-високият статус · запазва се с {{count}} посещение за 12 месеца",
+        "other": "Най-високият статус · запазва се с {{count}} посещения за 12 месеца"
+      },
+      "tierName": {
+        "one": "{{tier}}, {{count}} посещение за 12 месеца, още {{remaining}} до {{next}}",
+        "other": "{{tier}}, {{count}} посещения за 12 месеца, още {{remaining}} до {{next}}"
+      },
+      "passName": {
+        "one": "Карта за лоялност: {{name}}{{tier}}, {{points}} точка за размяна{{since}}",
+        "other": "Карта за лоялност: {{name}}{{tier}}, {{points}} точки за размяна{{since}}"
+      },
+      "passTierSuffix": ", {{tier}}",
+      "passSinceSuffix": ", клиент от {{since}}",
+      "expiring": {
+        "one": "{{points}} т. изтича на {{date}}",
+        "other": "{{points}} т. изтичат на {{date}}"
+      },
+      "passFrozen": "Замразено",
+      "actions": {
+        "label": "Действия",
+        "code": "Код",
+        "catalog": "Награди",
+        "history": "История",
+        "useName": "Използвай награда на това посещение",
+        "codeName": "Код: въведи или сканирай",
+        "catalogName": "Награди за точки",
+        "historyName": "История на движението"
+      },
+      "wallet": "В портфейла",
+      "walletName": "В портфейла, {{count}}",
+      "walletSum": "{{count}} · {{money}}",
+      "walletEmpty": "Портфейлът е празен.",
+      "voucherDetail": "от {{money}}{{until}}",
+      "voucherUntil": " · до {{date}}",
+      "voucherFullName": "Ваучер за подарък: {{balance}} от {{value}}{{until}}",
+      "voucher": "Ваучер за подарък",
+      "ticketName": "Награда: {{title}}{{until}}",
+      "ticketUntilSuffix": ", важи до {{date}}",
+      "stampCard": "Карта с печати",
+      "stampsFor": {
+        "one": "{{size}} печат за {{reward}}",
+        "other": "{{size}} печата за {{reward}}"
+      },
+      "stampsName": {
+        "one": "{{filled}} от {{size}} печат, още {{left}} до {{reward}}",
+        "other": "{{filled}} от {{size}} печата, още {{left}} до {{reward}}"
+      },
+      "owes": "дължи {{points}}",
+      "useCount": {
+        "one": "{{count}} награда",
+        "other": "{{count}} награди"
+      },
+      "tierTo": "до {{next}}",
+      "tierHighest": "Най-високият статус",
+      "inRhythm": {
+        "one": "посещение в ритъм",
+        "other": "посещения в ритъм"
+      },
+      "ledgerAllName": "Движение: всички записи",
+      "catalogTitle": "Награди за точки",
+      "catalogListName": {
+        "one": "Награди за точки: {{points}}, стигат за {{affordable}} от {{total}} награда",
+        "other": "Награди за точки: {{points}}, стигат за {{affordable}} от {{total}} награди"
+      }
+    },
+    "rhythm": {
+      "label": {
+        "one": "{{count}} посещение в ритъм{{best}}{{next}}",
+        "other": "{{count}} посещения в ритъм{{best}}{{next}}"
+      },
+      "bestSuffix": ", най-много {{count}}",
+      "nextSuffix": ", следващото до {{date}}",
+      "dueBy": "до {{date}}",
+      "mark": {
+        "kept": "{{period}} · посещение {{date}}",
+        "protected": "{{period}} · защита: {{reason}}",
+        "repaired": "{{period}} · възстановено",
+        "missed": "{{period}} · без посещение",
+        "current": "текущ период · до {{date}}"
+      },
+      "reason": {
+        "freeze": "използвана защита",
+        "pause": "записването беше спряно",
+        "staffCancelled": "салонът отмени часа",
+        "barberAbsence": "бръснарят отсъстваше",
+        "shopClosure": "салонът беше затворен",
+        "closedDays": "почивни дни",
+        "clientPause": "пауза по желание на клиента"
+      },
+      "state": {
+        "active": "Следващото посещение до {{date}} пази ритъма.",
+        "atRisk": {
+          "one": "Последно преди {{weeks}} седмица · посещение до {{date}} пази ритъма.",
+          "other": "Последно преди {{weeks}} седмици · посещение до {{date}} пази ритъма."
+        },
+        "inGrace": "В гратисния период до {{date}}.",
+        "frozenFreeze": "Пропускът е покрит автоматично.",
+        "broken": "Ритъмът започва отначало · посещение до {{date}} го възстановява.",
+        "none": "Първото посещение започва ритъма.",
+        "held": "Записан е за {{date}} · срокът се пази.",
+        "frozenExcuse": "Пропускът е за сметка на салона."
+      },
+      "protections": "Автоматични защити: {{count}}",
+      "phase": {
+        "atRisk": "До {{date}}",
+        "inGrace": "Гратис до {{date}}",
+        "frozen": "Защитен",
+        "held": "Записан за {{date}}",
+        "broken": "Прекъснат"
+      },
+      "ruleMore": "Цялото правило"
+    },
+    "ledger": {
+      "verb": {
+        "earned": "Спечелени",
+        "bonus": "Бонус",
+        "spent": "Използвани",
+        "adjusted": "Корекция",
+        "reversed": "Анулирано",
+        "expired": "Изтекли",
+        "debtCleared": "Изчистен дълг",
+        "voided": "Отменено",
+        "received": "Получена награда",
+        "status": "Нов статус"
+      },
+      "source": {
+        "visit": "Посещение",
+        "visitOf": "Посещение: {{services}}",
+        "welcome": "Добре дошъл",
+        "level": "Постижение: {{title}} {{level}}",
+        "redemption": "Размяна: {{reward}}",
+        "goodwill": "Бонус от салона",
+        "serviceIssue": "Компенсация от салона",
+        "correction": "Корекция от салона",
+        "reverses": "отменя запис от {{date}}",
+        "tier": "Статус: {{to}}",
+        "tierFrom": "от {{from}}",
+        "rewardGranted": "получена награда",
+        "rewardRevoked": "отнета награда",
+        "redeemed": "размяна",
+        "achievement": "постижение"
+      }
+    },
+    "achievement": {
+      "stateToNext": "{{value}} от {{target}} до ниво {{level}}",
+      "stateToNextOn": "Ниво\u00a0{{level}} на {{date}}",
+      "repeated": {
+        "one": "Спечелено веднъж · на {{date}}",
+        "other": "Спечелено {{count}} пъти · последно на {{date}}"
+      },
+      "oneOffEarned": "Спечелено на {{date}}",
+      "oneOffNotYet": "Още не е спечелено",
+      "notStarted": "Още не е започнато",
+      "retired": "Вече не се присъжда.",
+      "more": "Още от {{scope}}",
+      "ladderName": "Ниво {{level}} от {{max}}, {{value}} от {{target}} до ниво {{next}}",
+      "levelName": "Ниво {{level}}: {{requirement}}{{earned}}{{award}}",
+      "earnedOn": ", спечелено на {{date}}",
+      "gavePoints": {
+        "one": ", донесе {{points}} точка",
+        "other": ", донесе {{points}} точки"
+      },
+      "gaveCoupon": ", донесе {{title}}",
+      "gaveFreeze": {
+        "one": ", донесе {{count}} защита",
+        "other": ", донесе {{count}} защити"
+      },
+      "awardShort": "+{{points}} т.",
+      "medalEarnedName": "{{title}}, ниво {{level}}, спечелено на {{date}}{{next}}{{new}}",
+      "medalProgressName": "{{title}}, {{value}} от {{target}} до ниво {{level}}",
+      "medalNotStartedName": "{{title}}, още не е започнато: {{requirement}}",
+      "newSuffix": ", ново",
+      "nextSuffix": ", {{value}} от {{target}} до ниво {{level}}",
+      "nextOnSuffix": ", ниво {{level}} на {{date}}",
+      "levelSince": "Ниво {{level}} · от {{date}}",
+      "completeSince": "Всички нива · последното на {{date}}",
+      "progressOf": "от {{target}}",
+      "remaining": {
+        "one": "Още {{count}} до ниво {{level}}",
+        "other": "Още {{count}} до ниво {{level}}"
+      },
+      "thisVisitCounts": "С това посещение: {{value}} от {{target}}",
+      "addToVisit": "Добави {{service}}",
+      "addToVisitName": "Добави {{service}} към посещението",
+      "added": "Добавихме {{service}} към посещението.",
+      "howTitle": "Как се печели",
+      "levels": "Нива",
+      "visits": "Броени посещения",
+      "excluded": "Отменени часове и неявявания не се броят.",
+      "stateWithCategory": "{{category}} · {{state}}",
+      "stateNotStarted": "още не е започнато",
+      "who": {
+        "anyBarberAnyShop": "При всеки бръснар · във всеки салон",
+        "anyServiceAnyShop": "Всяка услуга · във всеки салон",
+        "anyBarberAnyService": "При всеки бръснар · всяка услуга"
+      },
+      "how": {
+        "visitsService": "Всяко посещение с {{service}} се брои, щом приключи.",
+        "visitsBarber": "Всяко посещение при {{barber}} се брои, щом приключи.",
+        "visitsShop": "Всяко посещение в {{shop}} се брои, щом приключи.",
+        "visits": "Всяко завършено посещение се брои.",
+        "earlyBird": "Брои се всяко посещение, започнало до 10:00.",
+        "weekend": "Брои се всяко посещение в събота или неделя.",
+        "onTime": "Брои се всяко посещение, за което клиентът е дошъл навреме.",
+        "party": "Брои се всяко посещение с компания.",
+        "selfService": "Брои се всеки час, запазен през сайта или приложението.",
+        "waitlist": "Брои се всеки час, запазен от списъка на чакащите.",
+        "referrals": "Брои се всеки приятел, дошъл на първото си посещение по препоръка.",
+        "services": "Брои се всяка различна услуга.",
+        "barbers": "Брои се всеки различен бръснар.",
+        "shops": "Брои се всеки различен салон.",
+        "months": "Брои се всеки месец с посещение.",
+        "spend": "Брои се всяко евро, платено в салона.",
+        "points": "Броят се точките от посещения и постижения.",
+        "tenure": "Брои се времето от първото посещение.",
+        "shopBookings": "Брои се всеки час, записан в салона."
+      },
+      "moreCount": "+{{count}}",
+      "levelRowName": "Ниво {{level}}, {{requirement}}{{reward}}{{earned}}",
+      "levelEarnedSuffix": ", спечелено на {{date}}",
+      "levelRow": "Ниво {{level}} · {{requirement}}",
+      "award": {
+        "points": {
+          "one": "{{points}} точка",
+          "other": "{{points}} точки"
+        },
+        "badge": "Значка в профила",
+        "oneOff": "Награда"
+      },
+      "what": {
+        "visits": {
+          "one": "завършено посещение",
+          "other": "завършени посещения"
+        },
+        "earlyBird": {
+          "one": "посещение до 10:00",
+          "other": "посещения до 10:00"
+        },
+        "weekend": {
+          "one": "посещение в събота или неделя",
+          "other": "посещения в събота или неделя"
+        },
+        "onTime": {
+          "one": "посещение без закъснение",
+          "other": "посещения без закъснение"
+        },
+        "party": {
+          "one": "посещение с компания",
+          "other": "посещения с компания"
+        },
+        "selfService": {
+          "one": "час, запазен онлайн",
+          "other": "часа, запазени онлайн"
+        },
+        "waitlist": {
+          "one": "час от списъка на чакащите",
+          "other": "часа от списъка на чакащите"
+        },
+        "referrals": {
+          "one": "приятел, дошъл по препоръка",
+          "other": "приятели, дошли по препоръка"
+        },
+        "services": {
+          "one": "различна услуга",
+          "other": "различни услуги"
+        },
+        "barbers": {
+          "one": "различен бръснар",
+          "other": "различни бръснари"
+        },
+        "shops": {
+          "one": "различен салон",
+          "other": "различни салона"
+        },
+        "months": {
+          "one": "месец с посещение",
+          "other": "месеца с посещение"
+        },
+        "spend": {
+          "one": "евро, платено в салона",
+          "other": "евро, платени в салона"
+        },
+        "points": {
+          "one": "точка от посещения и постижения",
+          "other": "точки от посещения и постижения"
+        },
+        "tenure": {
+          "one": "ден от първото посещение",
+          "other": "дни от първото посещение"
+        },
+        "shopBookings": {
+          "one": "час, записан в салона",
+          "other": "часа, записани в салона"
+        },
+        "visitsBarber": {
+          "one": "посещение при {{barber}}",
+          "other": "посещения при {{barber}}"
+        },
+        "visitsShop": {
+          "one": "посещение в {{shop}}",
+          "other": "посещения в {{shop}}"
+        }
+      }
+    },
+    "history": {
+      "stats": {
+        "visits": {
+          "one": "посещение",
+          "other": "посещения"
+        },
+        "noShows": {
+          "one": "неявяване",
+          "other": "неявявания"
+        },
+        "cancelled": {
+          "one": "отказ от клиента",
+          "other": "отказа от клиента"
+        },
+        "interval": "интервал",
+        "intervalValue": "~{{weeks}}",
+        "intervalUnit": "седм."
+      },
+      "statsName": "Общо: {{visits}}{{interval}}{{risk}}",
+      "statsInterval": {
+        "one": ", средно на {{count}} седмица",
+        "other": ", средно на {{count}} седмици"
+      },
+      "noRisk": "Без неявявания и откази от клиента",
+      "spend": "Похарчени общо {{money}}",
+      "end": "Това е всичко · първото посещение е на {{date}}.",
+      "onlyThisVisit": "Това е първото посещение.",
+      "endAll": "Това е всичко.",
+      "line": "{{visits}} · през {{cadence}}",
+      "spendInline": "похарчени общо {{money}}",
+      "first": "Първо посещение: {{date}}"
+    },
+    "birthday": {
+      "today": "Рожден ден днес",
+      "todayAge": "Рожден ден · {{age}} г.",
+      "gift": "Подарък от салона",
+      "upcoming": "Рожден ден · {{weekday}}, {{date}}",
+      "upcomingAge": " · {{age}} г.",
+      "name": "Рожден ден днес{{age}}",
+      "ageSuffix": {
+        "one": ", навършва {{age}} година",
+        "other": ", навършва {{age}} години"
+      },
+      "giftName": "Рожден ден днес{{age}}. Подарък: {{value}}, използвай",
+      "giftAppliedName": "Рожден ден днес{{age}}. Подарък: {{value}}, с това посещение"
+    },
+    "ledgerPage": {
+      "title": "Движение",
+      "subline": "{{name}} · {{points}}",
+      "filter": {
+        "label": "Вид",
+        "points": "Точки",
+        "rewards": "Награди"
+      },
+      "signed": {
+        "one": "{{sign}}{{points}} т.",
+        "other": "{{sign}}{{points}} т."
+      },
+      "empty": "Още няма движение.",
+      "emptyFiltered": "Няма записи от този вид."
+    },
+    "records": {
+      "group": {
+        "favourites": "Любими",
+        "rhythm": "Ритъм",
+        "visits": "Посещения"
+      },
+      "byYear": "По години",
+      "row": {
+        "currentRhythm": "Ритъм сега",
+        "totalVisits": "Общо посещения",
+        "last12Months": "Последните 12 месеца",
+        "preferredBarber": "Бръснар по избор",
+        "usualServices": "Обичайни услуги"
+      },
+      "label": {
+        "longestRhythm": "Най-дълъг ритъм",
+        "mostVisitsInYear": "Най-много за година",
+        "favouriteService": "Любима услуга",
+        "firstVisit": "Първо посещение"
+      },
+      "times": {
+        "one": "{{count}} път",
+        "other": "{{count}} пъти"
+      },
+      "yearValue": "{{year}} г.",
+      "since": "от {{since}}",
+      "yearName": {
+        "one": "{{year}}: {{count}} посещение{{record}}",
+        "other": "{{year}}: {{count}} посещения{{record}}"
+      },
+      "recordSuffix": ", рекорд",
+      "sentence": {
+        "longestRhythm": {
+          "one": "посещение в ритъм",
+          "other": "поредни посещения в ритъм"
+        },
+        "mostVisitsInYear": {
+          "one": "посещение за една година",
+          "other": "посещения за една година"
+        },
+        "favouriteService": {
+          "one": "посещение с {{service}}",
+          "other": "посещения с {{service}}"
+        },
+        "firstVisit": "първо посещение"
+      },
+      "empty": "Рекордите идват с първите посещения."
+    }
+  },
+  "visits": {
+    "filter": {
+      "label": "Филтър",
+      "all": "Всички",
+      "upcoming": "Предстоящи",
+      "completed": "Минали",
+      "cancelled": "Отказани",
+      "no_show": "Пропуснати",
+      "no_show_staff": "Неявявания",
+      "clear": "Покажи всички"
+    },
+    "today": "днес",
+    "thisVisit": "Този час",
+    "tile": {
+      "month": {
+        "1": "яну.",
+        "2": "фев.",
+        "3": "март",
+        "4": "апр.",
+        "5": "май",
+        "6": "юни",
+        "7": "юли",
+        "8": "авг.",
+        "9": "септ.",
+        "10": "окт.",
+        "11": "ноем.",
+        "12": "дек."
+      }
+    },
+    "withPeers": {
+      "one": "с още {{count}}",
+      "other": "с още {{count}}"
+    },
+    "marks": {
+      "photos": {
+        "one": "{{count}} снимка",
+        "other": "{{count}} снимки"
+      },
+      "discount": "с отстъпка",
+      "voucher": "платено с ваучер"
+    },
+    "quote": "„{{text}}“",
+    "quoteName": ", от клиента: „{{text}}“",
+    "rowName": "{{title}}, {{when}}, {{barber}}{{outcome}}{{price}}{{marks}}{{quote}}",
+    "more": "Покажи още",
+    "moreFailed": "Още посещения не се заредиха.",
+    "retry": "Опитай пак",
+    "card": {
+      "last": "Последно посещение",
+      "next": "Следващ час",
+      "name": "{{label}}: {{sentence}}"
+    },
+    "pills": {
+      "label": "Месеци"
+    },
+    "section": {
+      "visits": {
+        "one": "{{count}} посещение",
+        "other": "{{count}} посещения"
+      }
+    }
+  },
+  "rhythmRule": {
+    "fixed": "Посещение на всеки {{interval}} пази ритъма.",
+    "personal": "Идва на около {{habit}}, срокът му е {{interval}}.",
+    "fallback": "Срокът е {{interval}}, докато опознаем навика му.",
+    "grace": "{{days}} гратис след срока.",
+    "protections": "До {{max}} защити покриват пропуснат срок; нова на всеки {{n}} посещения в ритъм.",
+    "excuses": "Час, отменен от салона, не се брои за пропуск.",
+    "hold": "Записан час до {{days}} след срока пази ритъма.",
+    "repair": "След прекъсване посещение до {{days}} връща ритъма.",
+    "holdCount": "Пропускът не нулира броя.",
+    "services": "Броят се посещения с: {{services}}.",
+    "upcoming": "От {{date}}: {{rule}}",
+    "short": "На всеки {{interval}} · {{grace}} гратис",
+    "shortNoGrace": "На всеки {{interval}}",
+    "off": "Изключено. Картата на клиента не показва ритъм. Натрупаното се пази.",
+    "weeks": {
+      "one": "{{count}} седмица",
+      "other": "{{count}} седмици"
+    },
+    "weeksHalf": "{{count}}½ седмици",
+    "days": {
+      "one": "{{count}} ден",
+      "other": "{{count}} дни"
+    }
+  },
+  "admin": {
+    "rhythm": {
+      "title": "Ритъм",
+      "lede": "Кога едно посещение пази ритъма на клиента.",
+      "back": "Към администрацията",
+      "enabled": "Следи ритъма",
+      "inForce": "В сила от {{date}}",
+      "scheduled": "От {{date}}",
+      "sample": "Пример",
+      "counts": {
+        "title": "Какво се брои",
+        "label": "Брои се",
+        "any": "Всяко завършено посещение",
+        "services": "Посещение с избрани услуги",
+        "servicesRow": "Услуги, които се броят",
+        "servicesCount": {
+          "one": "{{count}} услуга",
+          "other": "{{count}} услуги"
+        },
+        "hold": "Записан час пази срока",
+        "holdDays": "До колко дни след срока",
+        "minGap": "Близки посещения са едно",
+        "seat": "Брои се посещението на човека на стола, не на този, който е записал."
+      },
+      "interval": {
+        "title": "Интервал",
+        "label": "Срок",
+        "fixed": "Еднакъв за всички",
+        "personal": "Според навика на клиента",
+        "tolerance": "+{{percent}} %",
+        "example": "Клиент, който идва на {{habit}}, има срок {{interval}}.",
+        "min": "Не по-малко от",
+        "max": "Не повече от",
+        "fallback": "За нови клиенти"
+      },
+      "grace": {
+        "title": "Гратисен период",
+        "lead": "Подсети екипа преди срока",
+        "leadNone": "Без подсещане"
+      },
+      "protections": {
+        "title": "Защити",
+        "enabled": "Автоматични защити",
+        "max": "В запас най-много",
+        "every": "Нова защита",
+        "everyValue": {
+          "one": "на всяко посещение",
+          "other": "на всеки {{count}} посещения"
+        },
+        "first": "Първа защита с първото посещение",
+        "note": "Защитата покрива един пропуснат срок. Прилага се сама и е безплатна."
+      },
+      "excuses": {
+        "title": "Извинени пропуски",
+        "staffCancelled": "Час, отменен от салона",
+        "barberAbsence": "Отсъствие на бръснаря",
+        "shopClosure": "Затворен салон",
+        "closedDays": "Почивни дни без записан час",
+        "offWarning": "Клиентът ще губи ритъм по вина на салона."
+      },
+      "pause": {
+        "enabled": "Пауза по желание на клиента",
+        "days": "До колко дни годишно"
+      },
+      "afterMiss": {
+        "title": "След пропуск"
+      },
+      "more": {
+        "title": "Още правила"
+      },
+      "row": {
+        "protections": "До {{count}} в запас",
+        "protectionsOff": "Изключени",
+        "excuses": "{{on}} от {{all}}",
+        "excusesPause": "{{on}} от {{all}} · пауза до {{days}}"
+      },
+      "sheet": {
+        "services": "Услуги",
+        "servicesSearch": "Търси услуга",
+        "done": "Готово"
+      },
+      "onBreak": {
+        "label": "Ритъмът",
+        "restart": "Започва отначало",
+        "hold": "Продължава оттам"
+      },
+      "repair": {
+        "enabled": "Връщане с посещение",
+        "window": "В рамките на",
+        "perYear": "Пъти годишно"
+      },
+      "effective": {
+        "title": "Влизане в сила",
+        "from": "От",
+        "tomorrow": "От утре",
+        "firstOfMonth": "От 1-во число",
+        "pick": "Избери ден",
+        "picked": "от {{date}}"
+      },
+      "transition": {
+        "label": "Досегашните ритми",
+        "grandfather": "Запазват се",
+        "note": "Натрупаното остава. Никой срок не става по-ранен."
+      },
+      "preview": {
+        "title": "Какво ще се промени",
+        "estimate": "приблизително",
+        "clients": {
+          "one": "{{count}} клиент с посещение за 12 месеца",
+          "other": "{{count}} клиенти с посещение за 12 месеца"
+        },
+        "inRhythm": "В ритъм",
+        "inGrace": "Гратис",
+        "broken": "Прекъснати",
+        "delta": "{{from}} → {{to}}",
+        "summary": "{{back}} · {{out}}",
+        "nobodyOut": "никой не излиза от ритъм",
+        "unavailable": "Прегледът не е наличен за избрани услуги.",
+        "capped": "от първите {{count}} клиенти",
+        "back": {
+          "one": "{{count}} се връща в ритъм",
+          "other": "{{count}} се връщат в ритъм"
+        },
+        "out": {
+          "one": "{{count}} излиза от ритъм",
+          "other": "{{count}} излизат от ритъм"
+        },
+        "nobodyBack": "никой не се връща"
+      },
+      "history": {
+        "title": "История",
+        "row": "От {{date}} · {{change}}",
+        "first": "първо правило",
+        "by": "{{name}} · {{date}}",
+        "system": "системата",
+        "withdraw": "Отмени предстоящата промяна",
+        "withdrawn": "оттеглена",
+        "change": {
+          "name": "ново име",
+          "enabled": {
+            "on": "ритъмът е включен",
+            "off": "ритъмът е изключен"
+          },
+          "qualifier": {
+            "anyVisit": "брои се всяко посещение",
+            "services": "броят се избрани услуги",
+            "categories": "броят се избрани категории"
+          },
+          "minGapDays": "близки посещения {{days}}",
+          "bookingHold": {
+            "on": "записан час пази {{days}}",
+            "off": "записан час не пази"
+          },
+          "interval": {
+            "fixed": "интервал {{interval}}",
+            "personal": "интервал по навика"
+          },
+          "graceDays": {
+            "days": "гратис {{days}}",
+            "none": "без гратис"
+          },
+          "riskLeadDays": {
+            "days": "подсещане {{days}}",
+            "none": "без подсещане"
+          },
+          "protections": {
+            "on": "защити до {{count}} в запас",
+            "off": "без защити"
+          },
+          "excuses": "извинения {{on}} от {{all}}",
+          "clientPause": {
+            "on": "пауза до {{days}}",
+            "off": "без пауза"
+          },
+          "repair": {
+            "on": "връщане до {{days}}",
+            "off": "без връщане"
+          },
+          "onBreak": {
+            "restart": "пропускът нулира броя",
+            "hold": "пропускът пази броя"
+          }
+        },
+        "more": "{{change}} и още {{count}}"
+      },
+      "save": "Запази",
+      "confirm": {
+        "stricter": "Запази по-строго правило?",
+        "switchOff": "Изключи ритъма?",
+        "switchOffMessage": "Картата на клиента спира да го показва. Натрупаното се пази.",
+        "switchOn": "Включи ритъма?",
+        "discard": "Отхвърли промените?",
+        "discardYes": "Отхвърли",
+        "discardKeep": "Продължи редакцията"
+      },
+      "receipt": "Правилото е запазено · от {{date}}",
+      "undo": "Отмени",
+      "empty": "Още няма правило. Това са препоръчаните стойности.",
+      "flagOff": "Ритъмът още не е включен за приложението.",
+      "failed": "Правилото не се зареди.",
+      "refused": {
+        "stale": "Правилото беше променено от друг. Виж новото.",
+        "tooEarly": "Най-ранният възможен ден е {{date}}.",
+        "invalid": "Поправи: {{field}}.",
+        "notAdmin": "Само администратор може да променя правилото."
+      },
+      "offline": "Без връзка · правилото не може да се запази."
     }
   }
 }

@@ -6,6 +6,7 @@ import {
   ServiceTerms,
 } from '@creativo/domain/catalog';
 import { UserId } from '@creativo/domain/accounts';
+import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import { Appointment } from './appointment';
 import {
@@ -17,7 +18,10 @@ import {
   cancelled,
 } from './appointment-status';
 import { BookingContact } from './booking-contact';
+import { BookingPolicy } from './booking-policy';
+import { CancellationWindow } from './cancellation-window';
 import { SeatId } from './ids';
+import { SeatLabel } from './seat-label';
 import { Seat, SeatSubject } from './seat';
 import { seatCancelled, seatNoShow, seatWorked } from './seat-outcome';
 
@@ -25,6 +29,15 @@ const zone = 'Europe/Sofia';
 
 /** The instant a lifecycle verb is taken. Fixed so outcomes are comparable. */
 const RESOLVED_AT_MS = Date.UTC(2026, 7, 5, 9, 0, 0);
+
+/** The policy in force when a spec cancels — the shipping 24 h window. */
+const POLICY = BookingPolicy.default();
+
+function windowOf(hours: number): CancellationWindow {
+  const result = CancellationWindow.create(hours);
+  if (result.isFailure()) throw new Error('bad fixture');
+  return result.value;
+}
 
 function at(iso: string): ZonedDateTime {
   const r = ZonedDateTime.fromISO(iso, zone);
@@ -34,6 +47,8 @@ function at(iso: string): ZonedDateTime {
 
 interface SeatOverrides {
   readonly relationship?: 'self' | 'companion';
+  /** The account the seat is for — a fresh one per seat when omitted. */
+  readonly userId?: UserId;
   readonly barberId?: BarberId;
   readonly startIso?: string;
   readonly priceMinorUnits?: number;
@@ -57,7 +72,7 @@ function seat(overrides: SeatOverrides = {}): Seat {
   return Seat.of({
     id: SeatId.generate(),
     subject: SeatSubject.account(
-      UserId.generate(),
+      overrides.userId ?? UserId.generate(),
       overrides.relationship ?? 'self',
     ),
     serviceId: ServiceId.generate(),
@@ -66,6 +81,14 @@ function seat(overrides: SeatOverrides = {}): Seat {
     terms: seatTerms.value,
     startsAt: at(overrides.startIso ?? '2026-06-01T10:00:00'),
   });
+}
+
+/** `2026-06-01`, `quarter` quarter-hours after 10:00 — as a local ISO. */
+function quarterPast10(quarter: number): string {
+  const minutes = 10 * 60 + quarter * 15;
+  const hh = String(Math.floor(minutes / 60)).padStart(2, '0');
+  const mm = String(minutes % 60).padStart(2, '0');
+  return `2026-06-01T${hh}:${mm}:00`;
 }
 
 function oneSeat(): Seat[] {
@@ -117,14 +140,80 @@ describe('Appointment.create', () => {
     expect(result.isFailure()).toBe(true);
   });
 
-  it('rejects more than one "self" seat', () => {
+  it('rejects the booker in two chairs at once — two overlapping `self` seats for ONE account', () => {
+    const booker = UserId.generate();
     const result = Appointment.create({
       id: 'appointment-1',
       locationId: LocationId.generate().toString(),
-      seats: [...oneSeat(), ...oneSeat()],
+      seats: [seat({ userId: booker }), seat({ userId: booker })],
       now: at('2026-05-01T00:00:00'),
     });
     expect(result.isFailure()).toBe(true);
+    if (result.isFailure()) {
+      expect(result.error.map((e) => e.code)).toContain(
+        'scheduling.appointment.multiple_self_seats',
+      );
+    }
+  });
+
+  it('seats two `self` accounts side by side — the person is the account, not the relationship', () => {
+    // A stored `self` seat bound to ANOTHER account is somebody else (see
+    // `Seat.isMovableByBooker`), so beside the booker's own seat it is two
+    // people in two chairs. A client move that carries it and lands the
+    // booker next to it must not be refused as one person in both.
+    const result = Appointment.create({
+      id: 'appointment-1',
+      locationId: LocationId.generate().toString(),
+      seats: [seat(), seat()],
+      now: at('2026-05-01T00:00:00'),
+    });
+    expect(result.isSuccess()).toBe(true);
+  });
+
+  it('refuses overlapping `self` seats exactly when ONE account holds both (property)', () => {
+    const accounts = [UserId.generate(), UserId.generate(), UserId.generate()];
+    // Up to four `self` seats, each on its own barber (so the barber rule
+    // stays out of it), on a quarter-hour grid that makes overlaps common.
+    const anySeat = fc.record({
+      account: fc.nat({ max: accounts.length - 1 }),
+      quarter: fc.nat({ max: 8 }),
+      minutes: fc.constantFrom(15, 30, 45, 60),
+    });
+    fc.assert(
+      fc.property(
+        fc.array(anySeat, { minLength: 1, maxLength: 4 }),
+        (drawn) => {
+          const seats = drawn.map((entry) => ({
+            ...entry,
+            seat: seat({
+              userId: accounts.at(entry.account),
+              startIso: quarterPast10(entry.quarter),
+              durationMinutes: entry.minutes,
+            }),
+          }));
+          const onePersonTwoChairs = seats.some((a, i) =>
+            seats.some(
+              (b, j) =>
+                j > i &&
+                a.account === b.account &&
+                a.seat.slot.overlaps(b.seat.slot),
+            ),
+          );
+          const result = Appointment.create({
+            id: 'appointment-1',
+            locationId: LocationId.generate().toString(),
+            seats: seats.map((entry) => entry.seat),
+            now: at('2026-05-01T00:00:00'),
+          });
+          const refused =
+            result.isFailure() &&
+            result.error.some(
+              (e) => e.code === 'scheduling.appointment.multiple_self_seats',
+            );
+          expect(refused).toBe(onePersonTwoChairs);
+        },
+      ),
+    );
   });
 
   it('rejects an empty id', () => {
@@ -300,6 +389,61 @@ describe('Appointment.reconstitute — past appointments are legitimate', () => 
   });
 });
 
+/*
+ * THE REVISION A COPY WAS READ AT (round 5): what a staff sheet drawn from
+ * this copy claims on its next save, so a colleague's save since is refused
+ * as stale rather than overwritten. A fact about the copy, not the visit.
+ */
+describe('Appointment.revision — the stored revision this copy was read at', () => {
+  function read(revision: number | null | undefined): Appointment {
+    const result = Appointment.reconstitute({
+      id: 'appointment-1',
+      locationId: LocationId.generate().toString(),
+      seats: oneSeat(),
+      status: CONFIRMED,
+      ...(revision === undefined ? {} : { revision }),
+    });
+    if (result.isFailure()) throw new Error('bad fixture');
+    return result.value;
+  }
+
+  it('keeps what the reader found, zero included', () => {
+    expect(read(4).revision).toBe(4);
+    expect(read(0).revision).toBe(0);
+  });
+
+  it('is null when the reader said nothing — a claim of nothing', () => {
+    expect(read(undefined).revision).toBeNull();
+    expect(read(null).revision).toBeNull();
+    const created = Appointment.create({
+      id: 'appointment-1',
+      locationId: LocationId.generate().toString(),
+      seats: oneSeat(),
+      now: at('2026-05-01T00:00:00'),
+    });
+    expect(created.isSuccess() && created.value.revision).toBeNull();
+  });
+
+  it('claims nothing rather than a number the store never wrote', () => {
+    for (const malformed of [-1, 1.5, Number.NaN, Infinity]) {
+      expect(read(malformed).revision).toBeNull();
+    }
+  });
+
+  it('survives every in-memory transition — none of them is a write', () => {
+    const copy = read(7);
+    const arrived = copy.markArrived(at('2026-06-01T09:55:00'));
+    if (arrived.isFailure()) throw new Error('bad fixture');
+    expect(arrived.value.revision).toBe(7);
+    expect(arrived.value.withDiscounts([]).revision).toBe(7);
+    expect(arrived.value.withVoucherRedemptions([]).revision).toBe(7);
+    const cleared = arrived.value.clearArrival();
+    expect(cleared.isSuccess() && cleared.value.revision).toBe(7);
+    const completed = copy.complete(RESOLVED_AT_MS);
+    expect(completed.isSuccess() && completed.value.revision).toBe(7);
+  });
+});
+
 describe('Appointment status transition matrix (goal condition item)', () => {
   const LEGAL: Record<string, readonly string[]> = {
     pending: ['confirmed', 'cancelled'],
@@ -323,7 +467,7 @@ describe('Appointment status transition matrix (goal condition item)', () => {
   > = {
     confirmed: (a) => a.confirm(),
     completed: (a) => a.complete(RESOLVED_AT_MS),
-    cancelled: (a) => a.cancel('customer request', RESOLVED_AT_MS),
+    cancelled: (a) => a.cancel('customer request', RESOLVED_AT_MS, POLICY),
     no_show: (a) => a.markNoShow(RESOLVED_AT_MS),
   };
 
@@ -342,17 +486,48 @@ describe('Appointment status transition matrix (goal condition item)', () => {
 describe('Appointment.cancel', () => {
   it('rejects an empty cancellation reason', () => {
     const appointment = reconstituteWithStatus(PENDING);
-    const result = appointment.cancel('   ', RESOLVED_AT_MS);
+    const result = appointment.cancel('   ', RESOLVED_AT_MS, POLICY);
     expect(result.isFailure()).toBe(true);
   });
 
   it('carries the reason structurally on the cancelled status', () => {
     const appointment = reconstituteWithStatus(PENDING);
-    const result = appointment.cancel('no longer needed', RESOLVED_AT_MS);
+    const result = appointment.cancel(
+      'no longer needed',
+      RESOLVED_AT_MS,
+      POLICY,
+    );
     expect(result.isSuccess()).toBe(true);
     if (result.isSuccess() && result.value.status.kind === 'cancelled') {
       expect(result.value.status.reason).toBe('no longer needed');
     }
+  });
+
+  it('stamps the window in force on the seats it closes — the rule it is judged by', () => {
+    const sixHours = BookingPolicy.create({
+      maxPartySize: POLICY.maxPartySize,
+      slotStepMinutes: POLICY.slotStepMinutes,
+      minLeadMinutes: POLICY.minLeadMinutes,
+      horizonMonths: POLICY.horizonMonths,
+      cancellationWindowHours: 6,
+      maxFlexibleDays: POLICY.maxFlexibleDays,
+      autoConfirm: POLICY.autoConfirm,
+    });
+    if (sixHours.isFailure()) throw new Error('bad fixture');
+    const result = reconstituteWithStatus(CONFIRMED).cancel(
+      'phoned in',
+      RESOLVED_AT_MS,
+      sixHours.value,
+      'client',
+    );
+    if (!result.isSuccess()) throw new Error('unexpected failure');
+    expect(result.value.seats[0]!.outcome).toEqual({
+      kind: 'cancelled',
+      atMs: RESOLVED_AT_MS,
+      by: 'client',
+      reason: { kind: 'other', note: 'phoned in' },
+      window: windowOf(6),
+    });
   });
 });
 
@@ -486,12 +661,22 @@ describe('Appointment seat outcomes', () => {
     const appointment = party();
     const first = appointment.markSeatOutcome(
       appointment.seats[0]!.id,
-      seatCancelled(RESOLVED_AT_MS, 'client', { kind: 'client_unwell' }),
+      seatCancelled(
+        RESOLVED_AT_MS,
+        'client',
+        { kind: 'client_unwell' },
+        windowOf(24),
+      ),
     );
     if (!first.isSuccess()) throw new Error('unexpected failure');
     const second = first.value.markSeatOutcome(
       first.value.seats[1]!.id,
-      seatCancelled(RESOLVED_AT_MS, 'client', { kind: 'client_changed_plans' }),
+      seatCancelled(
+        RESOLVED_AT_MS,
+        'client',
+        { kind: 'client_changed_plans' },
+        windowOf(24),
+      ),
     );
     expect(second.isSuccess()).toBe(true);
     if (second.isSuccess() && second.value.status.kind === 'cancelled') {
@@ -523,9 +708,31 @@ describe('Appointment seat outcomes', () => {
     expect(again.isFailure()).toBe(true);
   });
 
+  it('a party cancel stamps only the seats it closes; one called off earlier keeps its own window', () => {
+    const appointment = party();
+    const first = appointment.markSeatOutcome(
+      appointment.seats[0]!.id,
+      seatCancelled(
+        RESOLVED_AT_MS,
+        'client',
+        { kind: 'client_unwell' },
+        windowOf(48),
+      ),
+    );
+    if (!first.isSuccess()) throw new Error('unexpected failure');
+    const done = first.value.cancel('shop closed', RESOLVED_AT_MS + 1, POLICY);
+    if (!done.isSuccess()) throw new Error('unexpected failure');
+    const windows = done.value.seats.map((seat) =>
+      seat.outcome.kind === 'cancelled'
+        ? seat.outcome.window?.hours
+        : undefined,
+    );
+    expect(windows).toEqual([48, POLICY.cancellationWindowHours]);
+  });
+
   it('refuses to resolve a seat on a terminal appointment', () => {
     const appointment = party();
-    const done = appointment.cancel('shop closed', RESOLVED_AT_MS);
+    const done = appointment.cancel('shop closed', RESOLVED_AT_MS, POLICY);
     if (!done.isSuccess()) throw new Error('unexpected failure');
     const result = done.value.markSeatOutcome(
       done.value.seats[0]!.id,
@@ -583,7 +790,12 @@ describe('Appointment seat outcomes', () => {
     const base = party();
     const withSeatCancelled = base.markSeatOutcome(
       base.seats[0]!.id,
-      seatCancelled(RESOLVED_AT_MS, 'client', { kind: 'client_unwell' }),
+      seatCancelled(
+        RESOLVED_AT_MS,
+        'client',
+        { kind: 'client_unwell' },
+        windowOf(24),
+      ),
     );
     if (!withSeatCancelled.isSuccess()) throw new Error('unexpected failure');
     const marked = withSeatCancelled.value.markNoShow(RESOLVED_AT_MS + 1_000);
@@ -630,6 +842,7 @@ describe('Appointment seat outcomes', () => {
     const cancelled = reconstituteWithStatus(CONFIRMED).cancel(
       'mis-tap',
       RESOLVED_AT_MS,
+      POLICY,
     );
     if (!cancelled.isSuccess()) throw new Error('unexpected failure');
     const back = cancelled.value.reopenSettled(cancelled.value.timeSlot.end);
@@ -708,5 +921,137 @@ describe('Appointment seat outcomes', () => {
     if (confirmed.isSuccess()) {
       expect(confirmed.value.contact?.name).toBe('Ivan Petrov');
     }
+  });
+});
+
+describe('Appointment — which seats the booker can move', () => {
+  const OWNER = UserId.create('user-owner');
+  const SON = UserId.create('user-son');
+  if (OWNER.isFailure() || SON.isFailure()) throw new Error('bad fixture');
+  const owner = OWNER.value;
+
+  function visitOf(...subjects: SeatSubject[]): Appointment {
+    const built = Appointment.reconstitute({
+      id: 'appointment-move',
+      locationId: 'location-1',
+      // An hour apart, so the party is valid whoever sits where — even two
+      // `self` seats, which may not overlap.
+      seats: subjects.map((subject, index) =>
+        Seat.of({
+          ...seat({ startIso: `2026-06-01T1${index}:00:00` }).toProps(),
+          subject,
+        }),
+      ),
+      status: CONFIRMED,
+    });
+    if (built.isFailure()) throw new Error('bad fixture');
+    return built.value;
+  }
+
+  function guest(label: string): SeatSubject {
+    const parsed = SeatLabel.create(label);
+    if (parsed.isFailure()) throw new Error('bad fixture');
+    return SeatSubject.anonymous(parsed.value);
+  }
+
+  it('names the booker’s own seat and every anonymous guest, in seat order — never the companion', () => {
+    const visit = visitOf(
+      SeatSubject.account(owner, 'self'),
+      SeatSubject.account(SON.value, 'companion'),
+      guest('Мария'),
+    );
+
+    const movable = visit.seatsTheBookerCanMove(owner);
+    expect(movable.map((entry) => entry.subject.kind)).toEqual([
+      'account',
+      'anonymous',
+    ]);
+    expect(visit.hasSeatTheBookerCanMove(owner)).toBe(true);
+  });
+
+  it('has nothing for the booker once only a companion is left — the shop moves that visit', () => {
+    const visit = visitOf(SeatSubject.account(SON.value, 'companion'));
+
+    expect(visit.seatsTheBookerCanMove(owner)).toEqual([]);
+    expect(visit.hasSeatTheBookerCanMove(owner)).toBe(false);
+  });
+
+  it('does not hand the booker a `self` seat that belongs to another account', () => {
+    const visit = visitOf(SeatSubject.account(SON.value, 'self'));
+
+    expect(visit.hasSeatTheBookerCanMove(owner)).toBe(false);
+  });
+
+  it('measures a move from the booker’s EARLIEST seat — a companion going first does not move the anchor', () => {
+    // Seats an hour apart: the son at 10:00, the booker at 11:00, a guest at
+    // 12:00. The move is measured from 11:00.
+    const visit = visitOf(
+      SeatSubject.account(SON.value, 'companion'),
+      SeatSubject.account(owner, 'self'),
+      guest('Мария'),
+    );
+    expect(visit.moveAnchor(owner)?.toMillis()).toBe(
+      at('2026-06-01T11:00:00').toMillis(),
+    );
+  });
+
+  it('has no anchor when nothing is the booker’s', () => {
+    const visit = visitOf(SeatSubject.account(SON.value, 'companion'));
+    expect(visit.moveAnchor(owner)).toBeNull();
+  });
+
+  it('agrees with the per-seat rule, seat for seat', () => {
+    const visit = visitOf(
+      SeatSubject.account(owner, 'self'),
+      SeatSubject.account(SON.value, 'self'),
+      SeatSubject.account(SON.value, 'companion'),
+      guest('Гост 1'),
+    );
+    expect(visit.seatsTheBookerCanMove(owner)).toEqual(
+      visit.seats.filter((entry) => entry.isMovableByBooker(owner)),
+    );
+  });
+});
+
+describe('Appointment.chairTimes — what a move hands back before it re-places the visit', () => {
+  it('holds each seat’s barber for setup, the service and cleanup — the span the busy projection records', () => {
+    const ivan = BarberId.generate();
+    const niko = BarberId.generate();
+    const padded = ServiceTerms.create(
+      (() => {
+        const price = Money.fromMinorUnitsAndCode(2500, 'EUR');
+        if (price.isFailure()) throw new Error('bad fixture');
+        return price.value;
+      })(),
+      45,
+      { setupMinutes: 5, cleanupMinutes: 10 },
+    );
+    if (padded.isFailure()) throw new Error('bad fixture');
+    const built = Appointment.reconstitute({
+      id: 'appointment-chairs',
+      locationId: 'location-1',
+      seats: [
+        Seat.of({
+          ...seat({ barberId: ivan }).toProps(),
+          terms: padded.value,
+        }),
+        seat({ barberId: niko, startIso: '2026-06-01T10:30:00' }),
+      ],
+      status: CONFIRMED,
+    });
+    if (built.isFailure()) throw new Error('bad fixture');
+
+    const chairs = built.value.chairTimes();
+    expect(chairs.map((chair) => chair.barberId)).toEqual([ivan, niko]);
+    expect(chairs[0]?.occupied).toEqual({
+      // 10:00 − 5 of setup … 10:45 + 10 of cleanup.
+      startMs: at('2026-06-01T09:55:00').toMillis(),
+      endMs: at('2026-06-01T10:55:00').toMillis(),
+    });
+    // No pads: the chair is held for exactly what was sold.
+    expect(chairs[1]?.occupied).toEqual({
+      startMs: at('2026-06-01T10:30:00').toMillis(),
+      endMs: at('2026-06-01T11:00:00').toMillis(),
+    });
   });
 });

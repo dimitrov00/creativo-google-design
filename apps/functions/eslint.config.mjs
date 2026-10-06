@@ -1,4 +1,45 @@
-import baseConfig from '../../eslint.config.mjs';
+import baseConfig, {
+  TESTING_ENTRY_POINT_RESTRICTION,
+} from '../../eslint.config.mjs';
+
+/**
+ * This project's import restrictions (the layer rule minus the half this
+ * project is allowed), shared by its production rule and its spec rule.
+ */
+const IMPORT_RESTRICTIONS = {
+  paths: [
+    {
+      name: 'dinero.js',
+      message:
+        'dinero.js may only be imported from libs/domain/kernel/** — use Money instead.',
+    },
+    {
+      name: 'luxon',
+      message:
+        'luxon may only be imported from libs/domain/kernel/** — use ZonedDateTime instead.',
+    },
+    {
+      name: 'libphonenumber-js',
+      message:
+        'libphonenumber-js may only be imported from libs/domain/kernel/** — use PhoneNumber instead.',
+    },
+  ],
+};
+
+/**
+ * Production code also may not import a testing entry point of a @creativo lib
+ * (test support); a rule's options replace, never merge, so the root
+ * config's testing half is restated here, and the spec block below drops it.
+ */
+function withTestingRestriction(restrictions) {
+  return {
+    ...restrictions,
+    patterns: [
+      ...(restrictions.patterns ?? []),
+      TESTING_ENTRY_POINT_RESTRICTION,
+    ],
+  };
+}
 
 export default [
   ...baseConfig,
@@ -14,26 +55,15 @@ export default [
     rules: {
       'no-restricted-imports': [
         'error',
-        {
-          paths: [
-            {
-              name: 'dinero.js',
-              message:
-                'dinero.js may only be imported from libs/domain/kernel/** — use Money instead.',
-            },
-            {
-              name: 'luxon',
-              message:
-                'luxon may only be imported from libs/domain/kernel/** — use ZonedDateTime instead.',
-            },
-            {
-              name: 'libphonenumber-js',
-              message:
-                'libphonenumber-js may only be imported from libs/domain/kernel/** — use PhoneNumber instead.',
-            },
-          ],
-        },
+        withTestingRestriction(IMPORT_RESTRICTIONS),
       ],
+    },
+  },
+  {
+    // Specs are what the testing entry points are for.
+    files: ['**/*.spec.ts'],
+    rules: {
+      'no-restricted-imports': ['error', IMPORT_RESTRICTIONS],
     },
   },
 ];

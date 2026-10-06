@@ -1,6 +1,9 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import fc from 'fast-check';
 import { Result, ZonedDateTime } from '@creativo/domain/kernel';
-import { Service } from '@creativo/domain/catalog';
+import { BarberId, Service } from '@creativo/domain/catalog';
 import {
   BookingPolicy,
   CalendarDay,
@@ -16,6 +19,10 @@ import {
   type RequestedSeat,
   decideBooking,
 } from './decide-booking';
+import {
+  CommitBookingDuplicateGuestLabelError,
+  CommitBookingPersonDoubleBookedError,
+} from './decide-booking.errors';
 
 const ZONE = 'Europe/Sofia';
 const OWNER = 'user-1';
@@ -297,6 +304,62 @@ describe('decideBooking — availability is re-checked, not trusted', () => {
     if (result.isFailure()) {
       expect(result.error.code).toBe('booking.commit.slot_unavailable');
     }
+  });
+
+  describe('a rebuilt visit’s own chairs (`BookingSnapshot.release`)', () => {
+    // Stored: the visit being moved (10:00–11:00) merged with a neighbour
+    // (11:00–12:00), and a 15-minute reset. Ivan's fade holds the chair 40
+    // minutes (30 + 10 of cleanup).
+    const ownChair = Interval.of(at(10).toMillis(), at(11).toMillis());
+    const moved = (release: BookingSnapshot['release']) =>
+      snapshot({
+        busy: new Map([
+          [
+            'ivan__2026-08-03',
+            [Interval.of(at(10).toMillis(), at(12).toMillis())],
+          ],
+        ]),
+        schedules: new Map([['ivan', schedule({ turnaroundMinutes: 15 })]]),
+        release,
+      });
+    const startingAt = (hour: number, minute = 0) =>
+      request([seat({ startIso: at(hour, minute).toISO() })]);
+
+    it('never lets them block where the visit goes next', () => {
+      const own = [
+        { barberId: unwrap(BarberId.create('ivan')), occupied: ownChair },
+      ];
+
+      expect(
+        decideBooking(startingAt(10), moved(undefined), deps()).isFailure(),
+      ).toBe(true);
+      expect(
+        decideBooking(startingAt(10), moved(own), deps()).isSuccess(),
+      ).toBe(true);
+    });
+
+    it('hands them back BEFORE padding, so the neighbour keeps its reset', () => {
+      // 10:15–10:55 ends inside the neighbour's reset (10:45–11:00). Released
+      // after padding, that reset would have been freed with the visit.
+      const own = [
+        { barberId: unwrap(BarberId.create('ivan')), occupied: ownChair },
+      ];
+      const result = decideBooking(startingAt(10, 15), moved(own), deps());
+
+      expect(result.isFailure()).toBe(true);
+      if (result.isFailure()) {
+        expect(result.error.code).toBe('booking.commit.slot_unavailable');
+      }
+    });
+
+    it('frees nothing of another barber’s', () => {
+      const theirs = [
+        { barberId: unwrap(BarberId.create('niko')), occupied: ownChair },
+      ];
+      expect(
+        decideBooking(startingAt(10), moved(theirs), deps()).isFailure(),
+      ).toBe(true);
+    });
   });
 
   it('refuses a time outside the barber’s rostered window', () => {
@@ -608,6 +671,44 @@ describe('decideBooking — the shop places its own book', () => {
     expect(decision.isSuccess()).toBe(true);
   });
 
+  it('keeps a carried companion on their OWN account, never the owner’s', () => {
+    const decision = unwrap(
+      decideBooking(
+        request([
+          seat(),
+          seat({
+            lineId: 'line-2',
+            startIso: at(13).toISO(),
+            subject: { kind: 'companion', userId: 'son-1' },
+          }),
+        ]),
+        snapshot(),
+        { ...deps(), allowOutsideWindow: true },
+      ),
+    );
+    const [booker, companion] = decision.appointment.seats.map(
+      (decided) => decided.subject,
+    );
+    expect(booker?.kind === 'account' && booker.userId.value).toBe(OWNER);
+    expect(
+      companion?.kind === 'account' && [
+        companion.userId.value,
+        companion.relationship,
+      ],
+    ).toEqual(['son-1', 'companion']);
+  });
+
+  it('refuses a carried companion whose id is not a user id', () => {
+    const decision = decideBooking(
+      request([seat({ subject: { kind: 'companion', userId: '' } })]),
+      snapshot(),
+      { ...deps(), allowOutsideWindow: true },
+    );
+    expect(decision.isFailure() && decision.error.code).toBe(
+      'booking.commit.invalid_input',
+    );
+  });
+
   it('still refuses a self seat with nobody to bind it to', () => {
     const decision = decideBooking(request(), snapshot(), {
       ...deps(),
@@ -630,5 +731,547 @@ describe('decideBooking — the shop places its own book', () => {
     expect(subject?.kind === 'account' && subject.userId.value).toBe(
       'client-7',
     );
+  });
+});
+
+/*
+ * §11.2 #6: the preference is what somebody asked for, never a default. An
+ * omitted one used to be stored as `specific`, so a «Всеки» the payload lost,
+ * a phone booking into the free chair and a staff drag of a legacy seat all
+ * read as a request for whoever did the cut.
+ */
+describe('decideBooking — the barber preference is recorded, never guessed', () => {
+  const prefOf = (requested: Partial<RequestedSeat>) =>
+    unwrap(decideBooking(request([seat(requested)]), snapshot(), deps()))
+      .appointment.seats[0]?.pref ?? null;
+
+  it('stores «Всеки» as any and a named barber as specific', () => {
+    expect(prefOf({ barberPref: 'any' })?.kind).toBe('any');
+    expect(prefOf({ barberPref: 'specific' })?.kind).toBe('specific');
+  });
+
+  it('stores an omitted preference as unknown, not as a request', () => {
+    expect(prefOf({})).toBeNull();
+  });
+});
+
+/*
+ * ── ONE PERSON, ONE CHAIR AT A TIME (owner decision, 2026-09-25) ─────────
+ * The grid keeps one person out of two chairs (`AvailabilityLine.personKey`);
+ * the decision refuses a cart that asks for it anyway, on every path.
+ */
+describe('decideBooking — one person is never in two chairs at once', () => {
+  /** Ivan and Petar both work the day; Petar is on the catalogue's base terms. */
+  const twoChairs = () =>
+    snapshot({
+      schedules: new Map([
+        ['ivan', schedule()],
+        ['petar', schedule()],
+      ]),
+    });
+
+  const refusal = (result: ReturnType<typeof decideBooking>) =>
+    result.isFailure() ? result.error : null;
+
+  it('refuses the booker’s cut and beard side by side in two chairs', () => {
+    const result = decideBooking(
+      request([
+        seat(),
+        seat({ lineId: 'line-2', serviceId: 'svc-beard', barberId: 'petar' }),
+      ]),
+      twoChairs(),
+      deps(),
+    );
+    const error = refusal(result);
+    expect(error).toBeInstanceOf(CommitBookingPersonDoubleBookedError);
+    expect(error?.code).toBe('booking.commit.invalid_input');
+    // The reason rides on the wire as the field — never the person's key,
+    // which can name somebody else's account.
+    expect(error?.params).toEqual({ field: 'person_overlap' });
+  });
+
+  it('seats the same person back to back across two chairs', () => {
+    // Ivan's fade is sold 12:00–12:30 and he sweeps up until 12:40; the
+    // person is free at 12:30, so Petar's beard may start then.
+    const result = decideBooking(
+      request([
+        seat(),
+        seat({
+          lineId: 'line-2',
+          serviceId: 'svc-beard',
+          barberId: 'petar',
+          startIso: at(12, 30).toISO(),
+        }),
+      ]),
+      twoChairs(),
+      deps(),
+    );
+    expect(result.isSuccess()).toBe(true);
+  });
+
+  it('still seats two different people side by side', () => {
+    const result = decideBooking(
+      request([
+        seat(),
+        seat({
+          lineId: 'line-2',
+          serviceId: 'svc-beard',
+          barberId: 'petar',
+          subject: { kind: 'guest', label: 'Maria' },
+        }),
+      ]),
+      twoChairs(),
+      deps(),
+    );
+    expect(result.isSuccess()).toBe(true);
+  });
+
+  it('reads one label as one guest — two of its seats may not overlap either', () => {
+    const maria = { kind: 'guest', label: 'Maria' } as const;
+    const result = decideBooking(
+      request([
+        seat({ subject: maria }),
+        seat({
+          lineId: 'line-2',
+          serviceId: 'svc-beard',
+          barberId: 'petar',
+          startIso: at(12, 15).toISO(),
+          subject: { kind: 'guest', label: ' Maria ' },
+        }),
+      ]),
+      twoChairs(),
+      deps(),
+    );
+    expect(refusal(result)).toBeInstanceOf(
+      CommitBookingPersonDoubleBookedError,
+    );
+  });
+
+  it('holds on the shop’s own paths too — no acknowledgement seats a person twice', () => {
+    const result = decideBooking(
+      request([
+        seat({ subject: { kind: 'guest', label: 'Случаен клиент' } }),
+        seat({
+          lineId: 'line-2',
+          serviceId: 'svc-beard',
+          barberId: 'petar',
+          subject: { kind: 'guest', label: 'Случаен клиент' },
+        }),
+      ]),
+      twoChairs(),
+      {
+        ...deps(),
+        ownerUserId: null,
+        allowOutsideWindow: true,
+        allowConflictingServices: true,
+        allowOverlap: true,
+      },
+    );
+    expect(refusal(result)).toBeInstanceOf(
+      CommitBookingPersonDoubleBookedError,
+    );
+  });
+
+  it('refuses exactly the carts that seat somebody twice (property)', () => {
+    /** One barber per seat — `b0`…`b4`, as many as the cart can hold. */
+    const BARBERS = ['b0', 'b1', 'b2', 'b3', 'b4'];
+    const MINUTES = { 'svc-fade': 60, 'svc-beard': 20 } as const;
+    const anySeat = fc.record({
+      person: fc.constantFrom('self', 'Maria', 'Petko'),
+      quarter: fc.integer({ min: 0, max: 8 }),
+      serviceId: fc.constantFrom('svc-fade', 'svc-beard'),
+    });
+    fc.assert(
+      fc.property(
+        fc.array(anySeat, { minLength: 1, maxLength: 5 }),
+        (drafts) => {
+          // Every seat on its own barber, so only the PERSON can collide.
+          const seats = drafts.map((draft, index) =>
+            seat({
+              lineId: `line-${index}`,
+              serviceId: draft.serviceId,
+              barberId: `b${index}`,
+              startIso: at(12)
+                .plusMinutes(draft.quarter * 15)
+                .toISO(),
+              subject:
+                draft.person === 'self'
+                  ? { kind: 'self' }
+                  : { kind: 'guest', label: draft.person },
+            }),
+          );
+          const twice = drafts.some((a, i) =>
+            drafts.some((b, j) => {
+              if (j <= i || a.person !== b.person) return false;
+              const aStart = a.quarter * 15;
+              const bStart = b.quarter * 15;
+              return (
+                aStart < bStart + MINUTES[b.serviceId] &&
+                bStart < aStart + MINUTES[a.serviceId]
+              );
+            }),
+          );
+
+          const result = decideBooking(
+            request(seats),
+            snapshot({
+              schedules: new Map(BARBERS.map((id) => [id, schedule()])),
+            }),
+            deps(),
+          );
+          if (twice) {
+            expect(refusal(result)).toBeInstanceOf(
+              CommitBookingPersonDoubleBookedError,
+            );
+          } else {
+            expect(result.isSuccess()).toBe(true);
+          }
+        },
+      ),
+    );
+  });
+});
+
+/*
+ * ── A PAIR THE VISIT ALREADY HELD ────────────────────────────────────────
+ * A rebuild (a staff edit, a client's move) names the visit as it stands.
+ * Only a NEW overlap is refused (owner decision, round 5): a pair of seats
+ * that already seated one person twice is identified by SEAT ID and may
+ * keep overlapping wherever the edit puts it; a pair that did not overlap,
+ * or a seat the edit adds, is judged in full.
+ *
+ * The pairs are GUESTS (and companions in the property): the booker's own
+ * double seating never reaches a store, because the aggregate refuses it
+ * (`AppointmentMultipleSelfSeatsError`). Two walk-ins under the staff
+ * sheet's old shared label are the real case: one person to the server.
+ *
+ * `deps().nextId` mints `id-0`, `id-1`, … in request order, which is how a
+ * rebuild re-mints its stored seat ids — so a standing seat `id-N` IS the
+ * request's seat N.
+ */
+describe('decideBooking — a double seating the visit already held stands', () => {
+  const chairs = () =>
+    snapshot({
+      schedules: new Map([
+        ['ivan', schedule()],
+        ['petar', schedule()],
+        ['georgi', schedule()],
+      ]),
+    });
+  const refusal = (result: ReturnType<typeof decideBooking>) =>
+    result.isFailure() ? result.error : null;
+
+  const walkIn = { kind: 'guest', label: 'Случаен клиент' } as const;
+  /** A 30-minute fade with Ivan beside a 20-minute beard with Petar, one label. */
+  const heldPair = [
+    {
+      id: 'id-0',
+      subject: walkIn,
+      startMs: at(12).toMillis(),
+      durationMinutes: 30,
+    },
+    {
+      id: 'id-1',
+      subject: walkIn,
+      startMs: at(12).toMillis(),
+      durationMinutes: 20,
+    },
+  ] as const;
+  const fade = (overrides: Partial<RequestedSeat> = {}) =>
+    seat({ subject: walkIn, ...overrides });
+  const beard = (overrides: Partial<RequestedSeat> = {}) =>
+    seat({
+      lineId: 'line-2',
+      serviceId: 'svc-beard',
+      barberId: 'petar',
+      subject: walkIn,
+      ...overrides,
+    });
+  const held = () => ({ ...deps(), standing: heldPair });
+
+  it('carries the pair while the edit leaves both seats where they stood', () => {
+    // A discount, a tip, somebody else's seat: nothing about the pair moves.
+    const result = decideBooking(request([fade(), beard()]), chairs(), held());
+    expect(result.isSuccess()).toBe(true);
+  });
+
+  it('refuses the same pair from a write that does not name it as history', () => {
+    expect(
+      refusal(decideBooking(request([fade(), beard()]), chairs(), deps())),
+    ).toBeInstanceOf(CommitBookingPersonDoubleBookedError);
+  });
+
+  // The round-3 regression: the grandfather matched on the exact chair,
+  // start and minutes, so moving the pair TOGETHER — which leaves the visit
+  // no worse — was refused with "pick another time", and no time worked.
+  it('lets the whole visit be dragged, the pair moving together', () => {
+    const result = decideBooking(
+      request([
+        fade({ startIso: at(14).toISO() }),
+        beard({ startIso: at(14).toISO() }),
+      ]),
+      chairs(),
+      held(),
+    );
+    expect(result.isSuccess()).toBe(true);
+  });
+
+  it('lets one seat of the pair move, stretch or change chair and still overlap', () => {
+    for (const edited of [
+      beard({ startIso: at(12, 5).toISO() }),
+      beard({ barberId: 'georgi' }),
+    ]) {
+      expect(
+        decideBooking(request([fade(), edited]), chairs(), held()).isSuccess(),
+      ).toBe(true);
+    }
+  });
+
+  it('refuses a NEW seat beside a seat that stood, whichever comes first', () => {
+    const lone = heldPair.slice(0, 1);
+    for (const seats of [
+      [fade(), beard()],
+      [beard(), fade()],
+    ]) {
+      expect(
+        refusal(
+          decideBooking(request(seats), chairs(), {
+            ...deps(),
+            standing: lone,
+          }),
+        ),
+      ).toBeInstanceOf(CommitBookingPersonDoubleBookedError);
+    }
+  });
+
+  it('refuses a seat the edit adds beside a pair that stands', () => {
+    const result = decideBooking(
+      request([
+        fade(),
+        beard(),
+        seat({
+          lineId: 'line-3',
+          serviceId: 'svc-beard',
+          barberId: 'georgi',
+          startIso: at(12, 10).toISO(),
+          subject: walkIn,
+        }),
+      ]),
+      chairs(),
+      held(),
+    );
+    expect(refusal(result)).toBeInstanceOf(
+      CommitBookingPersonDoubleBookedError,
+    );
+  });
+
+  it('knows the pair by seat IDENTITY — the same seats under other ids are new', () => {
+    const result = decideBooking(request([fade(), beard()]), chairs(), {
+      ...deps(),
+      standing: heldPair.map((stood, index) => ({
+        ...stood,
+        id: `seat-${index}`,
+      })),
+    });
+    expect(refusal(result)).toBeInstanceOf(
+      CommitBookingPersonDoubleBookedError,
+    );
+  });
+
+  it('lets a separating move through: the pair no longer overlaps', () => {
+    const result = decideBooking(
+      request([fade(), beard({ startIso: at(12, 30).toISO() })]),
+      chairs(),
+      held(),
+    );
+    expect(result.isSuccess()).toBe(true);
+  });
+
+  it('refuses exactly the edits that seat somebody twice ANEW (property)', () => {
+    const MINUTES = { 'svc-fade': 60, 'svc-beard': 20 } as const;
+    const anySeat = fc.record({
+      person: fc.constantFrom('companion', 'Maria', 'Petko'),
+      quarter: fc.integer({ min: 0, max: 8 }),
+      serviceId: fc.constantFrom('svc-fade', 'svc-beard'),
+      /** Quarters this edit moves the seat by; 0 leaves it where it stood. */
+      shift: fc.constantFrom(0, 0, 1, 2, 4),
+    });
+    fc.assert(
+      fc.property(
+        fc.array(anySeat, { minLength: 1, maxLength: 5 }),
+        fc.boolean(),
+        (drafts, wholeVisit) => {
+          // A whole-visit drag moves every seat by the first one's shift.
+          const shiftOf = (index: number) =>
+            wholeVisit ? (drafts[0]?.shift ?? 0) : (drafts[index]?.shift ?? 0);
+          const subjectOf = (person: string): RequestedSeat['subject'] =>
+            person === 'companion'
+              ? { kind: 'companion', userId: 'user-2' }
+              : { kind: 'guest', label: person };
+          const startOf = (quarter: number) => at(12).plusMinutes(quarter * 15);
+          // The visit as it stood: every seat on its own barber, so only
+          // the PERSON can collide.
+          const standing = drafts.map((draft, index) => ({
+            id: `id-${index}`,
+            subject: subjectOf(draft.person),
+            startMs: startOf(draft.quarter).toMillis(),
+            durationMinutes: MINUTES[draft.serviceId],
+          }));
+          const seats = drafts.map((draft, index) =>
+            seat({
+              lineId: `line-${index}`,
+              serviceId: draft.serviceId,
+              barberId: `b${index}`,
+              startIso: startOf(draft.quarter + shiftOf(index)).toISO(),
+              subject: subjectOf(draft.person),
+            }),
+          );
+          const overlaps = (
+            a: (typeof drafts)[number],
+            b: (typeof drafts)[number],
+            aShift: number,
+            bShift: number,
+          ) => {
+            const aStart = (a.quarter + aShift) * 15;
+            const bStart = (b.quarter + bShift) * 15;
+            return (
+              a.person === b.person &&
+              aStart < bStart + MINUTES[b.serviceId] &&
+              bStart < aStart + MINUTES[a.serviceId]
+            );
+          };
+          const refused = drafts.some((a, i) =>
+            drafts.some(
+              (b, j) =>
+                j > i &&
+                overlaps(a, b, shiftOf(i), shiftOf(j)) &&
+                !overlaps(a, b, 0, 0),
+            ),
+          );
+
+          const result = decideBooking(
+            request(seats),
+            snapshot({
+              schedules: new Map(drafts.map((_, i) => [`b${i}`, schedule()])),
+            }),
+            { ...deps(), standing },
+          );
+          if (refused) {
+            expect(refusal(result)).toBeInstanceOf(
+              CommitBookingPersonDoubleBookedError,
+            );
+          } else {
+            // A whole-visit drag always lands here: every overlap after it
+            // is one the visit already held.
+            expect(result.isSuccess()).toBe(true);
+          }
+        },
+      ),
+    );
+  });
+});
+
+/*
+ * ── TWO GUESTS, ONE LABEL ────────────────────────────────────────────────
+ * A guest is nothing but their label to the server, so two different guests
+ * under one would be merged into one person. The client names its guests
+ * (`guestKey`) so the decision can tell them apart and refuse.
+ */
+describe('decideBooking — two different guests may not share a label', () => {
+  const guest = (label: string, guestKey?: string) =>
+    ({
+      kind: 'guest',
+      label,
+      ...(guestKey === undefined ? {} : { guestKey }),
+    }) as const;
+
+  it('refuses two named guests under one label, wherever they sit', () => {
+    const result = decideBooking(
+      request([
+        seat({ subject: guest('Гост 2', 'guest-1') }),
+        seat({
+          lineId: 'line-2',
+          serviceId: 'svc-beard',
+          startIso: at(14).toISO(),
+          subject: guest('Гост 2', 'guest-4'),
+        }),
+      ]),
+      snapshot(),
+      deps(),
+    );
+    expect(result.isFailure()).toBe(true);
+    if (result.isFailure()) {
+      expect(result.error).toBeInstanceOf(
+        CommitBookingDuplicateGuestLabelError,
+      );
+      expect(result.error.code).toBe('booking.commit.invalid_input');
+      expect(result.error.params).toEqual({ field: 'guest_label' });
+    }
+  });
+
+  it('compares the labels as they will be stored — trimmed', () => {
+    const result = decideBooking(
+      request([
+        seat({ subject: guest('Мария', 'guest-1') }),
+        seat({
+          lineId: 'line-2',
+          serviceId: 'svc-beard',
+          startIso: at(14).toISO(),
+          subject: guest('  Мария ', 'guest-2'),
+        }),
+      ]),
+      snapshot(),
+      deps(),
+    );
+    expect(result.isFailure() && result.error).toBeInstanceOf(
+      CommitBookingDuplicateGuestLabelError,
+    );
+  });
+
+  it('takes ONE guest with two services — one key, one label', () => {
+    const result = decideBooking(
+      request([
+        seat({ subject: guest('Мария', 'guest-1') }),
+        seat({
+          lineId: 'line-2',
+          serviceId: 'svc-beard',
+          startIso: at(14).toISO(),
+          subject: guest('Мария', 'guest-1'),
+        }),
+      ]),
+      snapshot(),
+      deps(),
+    );
+    expect(result.isSuccess()).toBe(true);
+  });
+
+  // Round 5: "one label, one guest" had a second, private implementation
+  // here beside the domain's `BookingParty.sharedLabel`. The decision now
+  // asks the domain's function (whose own spec pins it against the party's
+  // report), and this guard keeps a copy from growing back.
+  it('asks the domain’s label rule — never a copy of it', () => {
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- this spec's sibling source, located from its own directory.
+    const source = readFileSync(join(__dirname, 'decide-booking.ts'), 'utf8');
+    expect(source).toMatch(
+      /\blabelSharedByTwoGuests,[^;]*from '@creativo\/domain\/scheduling'/,
+    );
+    expect(source).not.toMatch(/function labelSharedByTwoGuests\b/);
+  });
+
+  it('reads one label as one person when the client names nobody — as it always has', () => {
+    const result = decideBooking(
+      request([
+        seat({ subject: guest('Мария') }),
+        seat({
+          lineId: 'line-2',
+          serviceId: 'svc-beard',
+          startIso: at(14).toISO(),
+          subject: guest('Мария'),
+        }),
+      ]),
+      snapshot(),
+      deps(),
+    );
+    expect(result.isSuccess()).toBe(true);
   });
 });

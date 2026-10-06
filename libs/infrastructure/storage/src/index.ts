@@ -1,5 +1,6 @@
-export * from './lib/storage.provider';
-export * from './lib/avatar-uploader.adapter';
-export * from './lib/media-reader.adapter';
-export * from './lib/appointment-photos.adapter';
+// EAGER exports only — nothing here may import firebase/storage as a value.
+// The Storage SDK, `provideFirebaseStorage` and the Storage adapters are one
+// lazy chunk behind `loadStorageAdapters()` (./lib/storage.lazy.ts); bind
+// their ports with `provideLazyPort` (@creativo/infrastructure/firebase-app).
+export * from './lib/storage.lazy';
 export * from './lib/downscale-image';

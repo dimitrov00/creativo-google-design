@@ -2,6 +2,7 @@ import { DomainError } from '@creativo/domain/kernel';
 import {
   BookingCartError,
   BookingPartyError,
+  DuplicateGuestLabelError,
 } from '@creativo/domain/scheduling';
 
 /**
@@ -126,6 +127,9 @@ export class InvalidCartOperationError extends DomainError {
 export type BookingFlowError =
   | InvalidBookingFlowTransitionError
   | InvalidGuestError
+  // The domain's own refusal, passed through: its `code`
+  // (`scheduling.booking_party.duplicate_label`) has its own copy.
+  | DuplicateGuestLabelError
   | GuestNotFoundInFlowError
   | PartyFullError
   | EmptyCartError

@@ -109,6 +109,9 @@
     "booking.gateway.failed": "Something went wrong. Please try again.",
     "booking.commit.unauthenticated": "Sign in to finish your booking.",
     "booking.commit.invalid_input": "Something about this booking is off. Please try again.",
+    "booking.commit.invalid_input.person_overlap": "One person can't be in two chairs at the same time. Pick another time.",
+    "booking.commit.invalid_input.guest_label": "Two people in the party have the same name. Go back and rename one of them.",
+    "booking.commit.invalid_input.locationId": "This shop isn't taking online bookings right now.",
     "booking.commit.unknown_service": "That service is no longer available.",
     "booking.commit.service_not_at_location": "That service is not offered at this shop.",
     "booking.commit.conflicting_services": "Those services cannot be combined.",
@@ -121,10 +124,17 @@
     "booking.commit.store_failed": "We could not save the booking. Please try again.",
     "booking.staffEdit.overlaps": "That time overlaps another booking.",
     "booking.staffEdit.invalid_command": "That request isn't valid for this visit.",
-    "booking.staffEdit.stale": "The visit changed in the meantime — open it again.",
+    "booking.staffEdit.stale": "Someone else just changed this visit — here it is as it stands now.",
     "booking.staffEdit.before_arrival": "The visit can't end before the client arrived.",
     "booking.staffEdit.forbidden": "You aren't allowed to make that change.",
-    "booking.cancel.window_closed": "Free cancellation ends {{windowHours}} h before the appointment — call the shop.",
+    "booking.cancel.window_closed": "Free cancellation ends {{windowHours}} h before the appointment — {{reach}}.",
+    "booking.cancel.policy_unavailable": "We couldn't check the cancellation terms. Try again in a moment.",
+    "booking.reschedule.carried_seat_unplaceable": "Someone else on this visit can't come at that time. To move everyone together, {{reach}}.",
+    "booking.reschedule.carried_seat_unplaceable.barber_unavailable": "Someone coming with you can't make that time — their barber isn't free then. Pick another time, or {{reach}} and we'll move everyone together.",
+    "booking.reschedule.carried_seat_unplaceable.outside_booking_window": "At that time, someone coming with you would fall outside the hours we take bookings for. Pick another time, or {{reach}}.",
+    "booking.reschedule.carried_seat_unplaceable.party_conflict": "That time doesn't work for everyone on this visit. Pick another time, or {{reach}} and we'll move everyone together.",
+    "booking.reschedule.carried_seat_unplaceable.service_unavailable": "The shop no longer offers the service booked for someone coming with you, so only the shop can move this visit — {{reach}} and we'll sort it out together.",
+    "booking.reschedule.carried_seat_unplaceable.shop_only": "The shop moves this visit because it only holds someone the shop added for you — {{reach}} and we'll move it together.",
     "booking.contact.empty_name": "Enter a name for the booking.",
     "booking.contact.invalid_phone": "That number doesn't look valid.",
     "booking.contact.invalid_email": "\"{{rawValue}}\" is not a valid email address.",
@@ -136,6 +146,9 @@
     "booking.transition.invalid_input": "That request is not valid.",
     "booking.transition.unauthenticated": "Sign in again to continue.",
     "scheduling": {
+      "booking_party": {
+        "duplicate_label": "Someone in the party is already called “{{label}}”. Pick another name so we can tell them apart."
+      },
       "recurrence": {
         "invalid_interval": "Repeats every 1 to {{max}} periods.",
         "no_weekdays": "Choose at least one day of the week.",
@@ -330,6 +343,20 @@
       "slotTaken": {
         "title": "That time just went.",
         "body": "Pick another — this is what is free right now."
+      },
+      "shopScope": {
+        "elsewhere": {
+          "title": "{{shop}} doesn't offer everything on this visit.",
+          "body": "{{target}} offers everything on this visit.",
+          "bodyAny": "Other shops do — search them all.",
+          "switch": "Go to {{target}}",
+          "switchAny": "Any shop"
+        },
+        "nowhere": {
+          "title": "No shop offers everything on this visit together.",
+          "body": "Change the services to search a shop that offers them.",
+          "change": "Change services"
+        }
       }
     },
     "review": {
@@ -350,7 +377,30 @@
       "noteTitle": "Note for the shop",
       "noteLede": "Anything the barber should know before your visit.",
       "noteEdit": "Edit the note",
-      "notePlaceholder": "Add a note (optional)"
+      "notePlaceholder": "Add a note (optional)",
+      "riders": "Coming with you",
+      "ridersNote": "The shop added them to this visit. They move with you.",
+      "riderService": "A service the shop added"
+    },
+    "moveRefused": {
+      "companions_only": {
+        "title": "The shop moves this visit",
+        "body": "This visit only holds someone the shop added for you. Only the shop can move them — {{reach}} and we'll do it together."
+      },
+      "unavailable": {
+        "title": "This visit can't be moved here",
+        "body": "We couldn't open it for a move. Check it under Appointments."
+      },
+      "carried_out_of_reach": {
+        "title": "Only the shop can move this visit",
+        "body": "The barber or the service of someone the shop added for you is no longer available. Only the shop can move them — {{reach}} and we'll do it together."
+      },
+      "call": "Call the shop",
+      "appointments": "Go to appointments"
+    },
+    "reach": {
+      "call": "call the shop",
+      "contact": "get in touch with the shop"
     },
     "configure": {
       "variant": "Option",
@@ -403,8 +453,8 @@
       "save": "Done",
       "close": "Close",
       "profileFailed": "The booking details are set, but your profile didn't save. Try again from your profile.",
-      "saveToProfile": "Save the changes to my profile",
-      "loginUnchanged": "Your sign-in details are not changed from here."
+      "saveToProfile": "Save the name to my profile",
+      "contactThisBookingOnly": "The phone and email apply to this booking only."
     }
   },
   "account": {
@@ -503,7 +553,8 @@
       "notifications": "Notifications",
       "openPositions": "Open positions",
       "signOut": "Sign out",
-      "staffDay": "Schedule"
+      "staffDay": "Schedule",
+      "loyaltyAdmin": "Loyalty"
     },
     "prefs": {
       "language": "Language",
@@ -867,7 +918,7 @@
       "confirm": "Cancel appointment",
       "dismiss": "Keep it",
       "deadline": "Free cancellation until {{deadline}}",
-      "windowClosed": "The free-cancellation window has closed — call the shop."
+      "windowClosed": "The free-cancellation window has closed — {{reach}}."
     },
     "count": "{{count}} visits",
     "sections": {
@@ -885,18 +936,11 @@
       "note": "Note for the shop",
       "atTheShop": "At the shop",
       "bookAgain": "Book again",
-      "reschedule": "Reschedule"
+      "reschedule": "Reschedule",
+      "shopMoves": "The shop moves this visit — {{reach}} for another time.",
+      "actions": "Visit actions"
     },
-    "countOne": "1 visit",
-    "filter": {
-      "label": "Filter",
-      "all": "All",
-      "upcoming": "Upcoming",
-      "completed": "Past",
-      "cancelled": "Cancelled",
-      "no_show": "No-shows",
-      "clear": "Show all"
-    }
+    "countOne": "1 visit"
   },
   "staff": {
     "day": {
@@ -1223,6 +1267,7 @@
       "rebook": "Book again",
       "newTitle": "New appointment",
       "walkIn": "Walk-in",
+      "walkInNumbered": "Walk-in {{number}}",
       "createFailed": "The appointment did not save. Try again.",
       "custom": "as agreed",
       "addClient": "Add a client",
@@ -1265,7 +1310,7 @@
       "overlapShort": "Overlaps {{name}} {{time}}",
       "priceUnchanged": "Changing the time does not change the price.",
       "removeService": "Remove the service",
-      "removeClient": "Remove",
+      "removeClient": "Remove from visit",
       "searchClient": "Name, phone or email",
       "exactMatch": "Already a client",
       "newClientParts": "New client: {{parts}}",
@@ -1320,7 +1365,7 @@
       "discountPercent": "Percent",
       "discountUnknownCode": "No such code.",
       "discountChecking": "Checking…",
-      "discountFree": "Free",
+      "discountFree": "Free service",
       "addDiscount": "Add a discount",
       "discountNone": "None",
       "discountApplied": "{{count}} applied",
@@ -1381,7 +1426,919 @@
       "discard": "Discard",
       "keepEditing": "Keep Editing",
       "clientNoteFrom": "From the client",
-      "addAnotherClient": "Add another client"
+      "addAnotherClient": "Add another client",
+      "client": {
+        "actions": "Client actions",
+        "announce": {
+          "sameAsLast": "Took the services from {{date}}."
+        }
+      }
+    }
+  },
+  "clientCard": {
+    "head": {
+      "since": "Client since {{since}}",
+      "firstVisit": "First visit",
+      "guest": "Guest · no profile",
+      "pausedUntil": "Online booking paused until {{date}}",
+      "pausedPermanent": "Online booking paused permanently",
+      "sinceCadence": "Client since {{since}} · comes every {{cadence}}",
+      "cadence": {
+        "one": "{{count}} week",
+        "other": "{{count}} weeks"
+      },
+      "tierName": "{{tier}}, {{remaining}} more to {{next}}",
+      "tierTopName": "{{tier}}, the highest status"
+    },
+    "capsules": {
+      "label": "About the client"
+    },
+    "capsule": {
+      "noShows": {
+        "one": "{{count}} no-show",
+        "other": "{{count}} no-shows"
+      }
+    },
+    "plusCount": "+{{count}}",
+    "offline": "Offline · saved data",
+    "actions": {
+      "label": "Contact",
+      "sms": "SMS",
+      "viber": "Viber",
+      "repeat": "Repeat",
+      "callName": "Call {{name}}, {{phone}}",
+      "smsName": "SMS {{name}}",
+      "viberName": "Viber {{name}}",
+      "againName": "Repeat the visit from {{date}}: {{services}}"
+    },
+    "reward": {
+      "until": "until {{date}}",
+      "more": "· {{count}} more",
+      "name": "{{title}}, {{value}}, use",
+      "nameBare": "{{title}}, use",
+      "appliedName": "{{title}}, {{value}}, with this visit",
+      "appliedNameBare": "{{title}}, with this visit",
+      "stack": "×{{count}}"
+    },
+    "visits": {
+      "title": "Visits",
+      "allName": "All visits, {{count}}",
+      "waitlist": "Waiting for a free slot",
+      "waitlistName": "{{services}}, waiting for a free slot: {{when}}",
+      "daypart": {
+        "morning": "morning",
+        "afternoon": "afternoon",
+        "evening": "evening"
+      },
+      "waitlistMoreDays": "and {{count}} more",
+      "waitlistMoreRequests": "· {{count}} more"
+    },
+    "loyalty": {
+      "title": "Loyalty",
+      "all": "All",
+      "allName": "Loyalty: all details",
+      "rhythmUnit": {
+        "one": "visit",
+        "other": "visits"
+      },
+      "rhythmLabel": "in rhythm",
+      "points": {
+        "one": "{{count}} point",
+        "other": "{{count}} points"
+      },
+      "pointsWord": {
+        "one": "point",
+        "other": "points"
+      },
+      "enoughForPoints": "Enough for {{reward}}",
+      "moreTo": "{{points}} more to {{reward}}",
+      "holding": {
+        "voucher": "Voucher",
+        "stamps": "Stamps",
+        "rhythm": "Rhythm"
+      },
+      "stampsOf": "{{filled}} of {{size}}",
+      "cardName": "Loyalty: {{points}}. {{sentence}} {{holdings}}"
+    },
+    "achievements": {
+      "title": "Achievements",
+      "levels": {
+        "one": "{{count}} level",
+        "other": "{{count}} levels"
+      },
+      "allName": {
+        "one": "All achievements, {{count}} level",
+        "other": "All achievements, {{count}} levels"
+      },
+      "cueWithThisVisit": "With this visit: {{title}}, level\u00a0{{level}}",
+      "cueNew": "New: {{title}}, level\u00a0{{level}}",
+      "cueClose": "Close: {{title}}, {{value}} of {{target}} to level\u00a0{{level}}",
+      "summaryName": {
+        "one": "{{count}} level earned",
+        "other": "{{count}} levels earned"
+      },
+      "seasonFact": "{{season}}: level {{level}}",
+      "eventsFact": {
+        "one": "{{count}} event now",
+        "other": "{{count}} events now"
+      },
+      "events": "Events",
+      "records": "Records",
+      "archive": "Past seasons and events",
+      "toLevel": "{{value}}/{{target}} to {{level}}",
+      "toLevelOn": "{{level}}\u00a0on {{date}}",
+      "complete": "Every level",
+      "withThisVisit": "with this visit",
+      "nextWithThisVisit": "Level\u00a0{{level}} with this visit",
+      "dayGroupName": {
+        "one": "Earned on {{date}}: {{count}} level",
+        "other": "Earned on {{date}}: {{count}} levels"
+      },
+      "dayTitle": "Earned on {{date}}",
+      "seasonNext": {
+        "one": "{{count}} more visit to {{level}}",
+        "other": "{{count}} more visits to {{level}}"
+      },
+      "seasonFamilies": "Seasonal: {{earned}} of {{total}}",
+      "familyCount": "{{earned}} of {{total}}",
+      "eventUntil": "until {{date}}",
+      "eventAnnounced": "from {{date}}",
+      "scopeSubline": "{{name}} · {{started}} of {{total}} started",
+      "sectionGeneral": "General",
+      "sectionBarbers": "Barbers",
+      "sectionShops": "Shops",
+      "firstHint": "The first achievement comes with the first visit.",
+      "seasonEnded": "The season has ended.",
+      "seasonEndedAt": "The season ended at level\u00a0{{level}}.",
+      "record": {
+        "longestRhythm": "longest rhythm",
+        "mostVisitsInYear": "most in a year",
+        "favouriteService": "favourite service",
+        "firstVisit": "first visit",
+        "favouriteValue": "{{service}} ×{{count}}",
+        "favouriteCount": "×{{count}}"
+      },
+      "recordsAllName": "All records",
+      "recordName": "{{caption}}: {{value}}{{detail}}{{new}}",
+      "newRecord": "New record",
+      "newRecordSuffix": ", a new record",
+      "recordsLineName": "Records: {{facts}}",
+      "chips": {
+        "label": "Categories",
+        "seasons": "Seasons"
+      },
+      "chipName": "{{category}}, {{earned}} of {{total}} earned",
+      "close": "Almost earned",
+      "collectionOf": {
+        "one": "of {{total}} medal",
+        "other": "of {{total}} medals"
+      },
+      "collectionName": "Collection: {{earned}} {{of}}, {{levels}}",
+      "showAll": "Show all {{count}}",
+      "categorySummary": "{{category}} · {{earned}} of {{total}} earned"
+    },
+    "photos": {
+      "label": "Photos from past visits"
+    },
+    "new": "New",
+    "frozen": "Frozen while booking is paused",
+    "failed": {
+      "profile": "The client's details didn't load.",
+      "loyalty": "Loyalty didn't load.",
+      "achievements": "Achievements didn't load.",
+      "visits": "Visits didn't load.",
+      "photos": "The photos didn't load.",
+      "some": "Some data didn't load.",
+      "vouchers": "The vouchers did not load.",
+      "activity": "The activity did not load."
+    },
+    "loyaltyPage": {
+      "rhythm": "Rhythm",
+      "tier": "Tier",
+      "moreToGo": "{{points}} more pts",
+      "rewardName": {
+        "one": "{{title}}, {{count}} point{{state}}",
+        "other": "{{title}}, {{count}} points{{state}}"
+      },
+      "rewardMoreSuffix": ", {{points}} more",
+      "stampsToNext": {
+        "one": "{{count}} more visit",
+        "other": "{{count}} more visits"
+      },
+      "rhythmBest": "Best: {{count}}",
+      "tierQualifying": {
+        "one": "{{count}} visit in 12 months",
+        "other": "{{count}} visits in 12 months"
+      },
+      "tierTop": {
+        "one": "The top tier · kept with {{count}} visit in 12 months",
+        "other": "The top tier · kept with {{count}} visits in 12 months"
+      },
+      "tierName": {
+        "one": "{{tier}}, {{count}} visit in 12 months, {{remaining}} more to {{next}}",
+        "other": "{{tier}}, {{count}} visits in 12 months, {{remaining}} more to {{next}}"
+      },
+      "passName": {
+        "one": "Loyalty card: {{name}}{{tier}}, {{points}} point to spend{{since}}",
+        "other": "Loyalty card: {{name}}{{tier}}, {{points}} points to spend{{since}}"
+      },
+      "passTierSuffix": ", {{tier}}",
+      "passSinceSuffix": ", a client since {{since}}",
+      "expiring": {
+        "one": "{{points}} pt expires on {{date}}",
+        "other": "{{points}} pts expire on {{date}}"
+      },
+      "passFrozen": "Frozen",
+      "actions": {
+        "label": "Actions",
+        "code": "Code",
+        "catalog": "Rewards",
+        "history": "History",
+        "useName": "Use a reward on this visit",
+        "codeName": "Code: enter or scan",
+        "catalogName": "Rewards for points",
+        "historyName": "The activity's history"
+      },
+      "wallet": "In the wallet",
+      "walletName": "In the wallet, {{count}}",
+      "walletSum": "{{count}} · {{money}}",
+      "walletEmpty": "The wallet is empty.",
+      "voucherDetail": "of {{money}}{{until}}",
+      "voucherUntil": " · until {{date}}",
+      "voucherFullName": "Gift voucher: {{balance}} of {{value}}{{until}}",
+      "voucher": "Gift voucher",
+      "ticketName": "Reward: {{title}}{{until}}",
+      "ticketUntilSuffix": ", valid until {{date}}",
+      "stampCard": "Stamp card",
+      "stampsFor": {
+        "one": "{{size}} stamp for {{reward}}",
+        "other": "{{size}} stamps for {{reward}}"
+      },
+      "stampsName": {
+        "one": "{{filled}} of {{size}} stamp, {{left}} more to {{reward}}",
+        "other": "{{filled}} of {{size}} stamps, {{left}} more to {{reward}}"
+      },
+      "owes": "owes {{points}}",
+      "useCount": {
+        "one": "{{count}} reward",
+        "other": "{{count}} rewards"
+      },
+      "tierTo": "to {{next}}",
+      "tierHighest": "The highest status",
+      "inRhythm": {
+        "one": "visit in rhythm",
+        "other": "visits in rhythm"
+      },
+      "ledgerAllName": "Activity: all entries",
+      "catalogTitle": "Rewards for points",
+      "catalogListName": {
+        "one": "Rewards for points: {{points}}, enough for {{affordable}} of {{total}} reward",
+        "other": "Rewards for points: {{points}}, enough for {{affordable}} of {{total}} rewards"
+      }
+    },
+    "rhythm": {
+      "label": {
+        "one": "{{count}} visit in rhythm{{best}}{{next}}",
+        "other": "{{count}} visits in rhythm{{best}}{{next}}"
+      },
+      "bestSuffix": ", best {{count}}",
+      "nextSuffix": ", the next by {{date}}",
+      "dueBy": "by {{date}}",
+      "mark": {
+        "kept": "{{period}} · visit on {{date}}",
+        "protected": "{{period}} · protected: {{reason}}",
+        "repaired": "{{period}} · restored",
+        "missed": "{{period}} · no visit",
+        "current": "current period · by {{date}}"
+      },
+      "reason": {
+        "freeze": "a protection was used",
+        "pause": "booking was paused",
+        "staffCancelled": "the shop cancelled the visit",
+        "barberAbsence": "the barber was away",
+        "shopClosure": "the shop was closed",
+        "closedDays": "days off",
+        "clientPause": "a pause at the client's wish"
+      },
+      "state": {
+        "active": "A visit by {{date}} keeps the rhythm.",
+        "atRisk": {
+          "one": "Last visit {{weeks}} week ago · a visit by {{date}} keeps the rhythm.",
+          "other": "Last visit {{weeks}} weeks ago · a visit by {{date}} keeps the rhythm."
+        },
+        "inGrace": "In the grace period until {{date}}.",
+        "frozenFreeze": "The gap was covered automatically.",
+        "broken": "The rhythm starts over · a visit by {{date}} restores it.",
+        "none": "The first visit starts the rhythm.",
+        "held": "Booked for {{date}} · the due date holds.",
+        "frozenExcuse": "The miss is on the shop."
+      },
+      "protections": "Automatic protections: {{count}}",
+      "phase": {
+        "atRisk": "By {{date}}",
+        "inGrace": "Grace until {{date}}",
+        "frozen": "Protected",
+        "held": "Booked for {{date}}",
+        "broken": "Broken"
+      },
+      "ruleMore": "The whole rule"
+    },
+    "ledger": {
+      "verb": {
+        "earned": "Earned",
+        "bonus": "Bonus",
+        "spent": "Spent",
+        "adjusted": "Adjustment",
+        "reversed": "Cancelled",
+        "expired": "Expired",
+        "debtCleared": "Debt cleared",
+        "voided": "Reversed",
+        "received": "Reward received",
+        "status": "New status"
+      },
+      "source": {
+        "visit": "Visit",
+        "visitOf": "Visit: {{services}}",
+        "welcome": "Welcome",
+        "level": "Achievement: {{title}} {{level}}",
+        "redemption": "Redeemed: {{reward}}",
+        "goodwill": "Bonus from the shop",
+        "serviceIssue": "Compensation from the shop",
+        "correction": "Adjusted by the shop",
+        "reverses": "reverses the entry of {{date}}",
+        "tier": "Status: {{to}}",
+        "tierFrom": "from {{from}}",
+        "rewardGranted": "a reward received",
+        "rewardRevoked": "a reward taken back",
+        "redeemed": "an exchange",
+        "achievement": "an achievement"
+      }
+    },
+    "achievement": {
+      "stateToNext": "{{value}} of {{target}} to level {{level}}",
+      "stateToNextOn": "Level\u00a0{{level}} on {{date}}",
+      "repeated": {
+        "one": "Earned once · on {{date}}",
+        "other": "Earned {{count}} times · last on {{date}}"
+      },
+      "oneOffEarned": "Earned on {{date}}",
+      "oneOffNotYet": "Not earned yet",
+      "notStarted": "Not started yet",
+      "retired": "No longer awarded.",
+      "more": "More in {{scope}}",
+      "ladderName": "Level {{level}} of {{max}}, {{value}} of {{target}} to level {{next}}",
+      "levelName": "Level {{level}}: {{requirement}}{{earned}}{{award}}",
+      "earnedOn": ", earned on {{date}}",
+      "gavePoints": {
+        "one": ", gave {{points}} point",
+        "other": ", gave {{points}} points"
+      },
+      "gaveCoupon": ", gave {{title}}",
+      "gaveFreeze": {
+        "one": ", gave {{count}} protection",
+        "other": ", gave {{count}} protections"
+      },
+      "awardShort": "+{{points}} pts",
+      "medalEarnedName": "{{title}}, level {{level}}, earned on {{date}}{{next}}{{new}}",
+      "medalProgressName": "{{title}}, {{value}} of {{target}} to level {{level}}",
+      "medalNotStartedName": "{{title}}, not started: {{requirement}}",
+      "newSuffix": ", new",
+      "nextSuffix": ", {{value}} of {{target}} to level {{level}}",
+      "nextOnSuffix": ", level {{level}} on {{date}}",
+      "levelSince": "Level {{level}} · since {{date}}",
+      "completeSince": "All levels · the last on {{date}}",
+      "progressOf": "of {{target}}",
+      "remaining": {
+        "one": "{{count}} more to level {{level}}",
+        "other": "{{count}} more to level {{level}}"
+      },
+      "thisVisitCounts": "With this visit: {{value}} of {{target}}",
+      "addToVisit": "Add {{service}}",
+      "addToVisitName": "Add {{service}} to the visit",
+      "added": "{{service}} was added to the visit.",
+      "howTitle": "How it is earned",
+      "levels": "Levels",
+      "visits": "Visits that counted",
+      "excluded": "Cancelled visits and no-shows do not count.",
+      "stateWithCategory": "{{category}} · {{state}}",
+      "stateNotStarted": "not started yet",
+      "who": {
+        "anyBarberAnyShop": "With any barber · at any shop",
+        "anyServiceAnyShop": "Any service · at any shop",
+        "anyBarberAnyService": "With any barber · any service"
+      },
+      "how": {
+        "visitsService": "Every visit with {{service}} counts once it is over.",
+        "visitsBarber": "Every visit with {{barber}} counts once it is over.",
+        "visitsShop": "Every visit at {{shop}} counts once it is over.",
+        "visits": "Every completed visit counts.",
+        "earlyBird": "Every visit that starts by 10:00 counts.",
+        "weekend": "Every visit on a Saturday or a Sunday counts.",
+        "onTime": "Every visit the client was on time for counts.",
+        "party": "Every visit with company counts.",
+        "selfService": "Every visit booked through the site or the app counts.",
+        "waitlist": "Every visit booked from the waiting list counts.",
+        "referrals": "Every friend who came to a first visit by referral counts.",
+        "services": "Every different service counts.",
+        "barbers": "Every different barber counts.",
+        "shops": "Every different shop counts.",
+        "months": "Every month with a visit counts.",
+        "spend": "Every euro paid at the shop counts.",
+        "points": "The points from visits and achievements count.",
+        "tenure": "The time since the first visit counts.",
+        "shopBookings": "Every visit booked at the shop counts."
+      },
+      "moreCount": "+{{count}}",
+      "levelRowName": "Level {{level}}, {{requirement}}{{reward}}{{earned}}",
+      "levelEarnedSuffix": ", earned on {{date}}",
+      "levelRow": "Level {{level}} · {{requirement}}",
+      "award": {
+        "points": {
+          "one": "{{points}} point",
+          "other": "{{points}} points"
+        },
+        "badge": "A badge on the profile",
+        "oneOff": "Reward"
+      },
+      "what": {
+        "visits": {
+          "one": "completed visit",
+          "other": "completed visits"
+        },
+        "earlyBird": {
+          "one": "visit started by 10:00",
+          "other": "visits started by 10:00"
+        },
+        "weekend": {
+          "one": "visit on a Saturday or a Sunday",
+          "other": "visits on a Saturday or a Sunday"
+        },
+        "onTime": {
+          "one": "visit on time",
+          "other": "visits on time"
+        },
+        "party": {
+          "one": "visit with company",
+          "other": "visits with company"
+        },
+        "selfService": {
+          "one": "visit booked online",
+          "other": "visits booked online"
+        },
+        "waitlist": {
+          "one": "visit from the waiting list",
+          "other": "visits from the waiting list"
+        },
+        "referrals": {
+          "one": "friend who came by referral",
+          "other": "friends who came by referral"
+        },
+        "services": {
+          "one": "different service",
+          "other": "different services"
+        },
+        "barbers": {
+          "one": "different barber",
+          "other": "different barbers"
+        },
+        "shops": {
+          "one": "different shop",
+          "other": "different shops"
+        },
+        "months": {
+          "one": "month with a visit",
+          "other": "months with a visit"
+        },
+        "spend": {
+          "one": "euro paid at the shop",
+          "other": "euros paid at the shop"
+        },
+        "points": {
+          "one": "point from visits and achievements",
+          "other": "points from visits and achievements"
+        },
+        "tenure": {
+          "one": "day since the first visit",
+          "other": "days since the first visit"
+        },
+        "shopBookings": {
+          "one": "visit booked at the shop",
+          "other": "visits booked at the shop"
+        },
+        "visitsBarber": {
+          "one": "visit with {{barber}}",
+          "other": "visits with {{barber}}"
+        },
+        "visitsShop": {
+          "one": "visit at {{shop}}",
+          "other": "visits at {{shop}}"
+        }
+      }
+    },
+    "history": {
+      "stats": {
+        "visits": {
+          "one": "visit",
+          "other": "visits"
+        },
+        "noShows": {
+          "one": "no-show",
+          "other": "no-shows"
+        },
+        "cancelled": {
+          "one": "client cancellation",
+          "other": "client cancellations"
+        },
+        "interval": "apart",
+        "intervalValue": "~{{weeks}}",
+        "intervalUnit": "wk"
+      },
+      "statsName": "In total: {{visits}}{{interval}}{{risk}}",
+      "statsInterval": {
+        "one": ", every {{count}} week on average",
+        "other": ", every {{count}} weeks on average"
+      },
+      "noRisk": "No no-shows or client cancellations",
+      "spend": "Spent in total {{money}}",
+      "end": "That's all · first visit on {{date}}.",
+      "onlyThisVisit": "This is the first visit.",
+      "endAll": "That's all.",
+      "line": "{{visits}} · every {{cadence}}",
+      "spendInline": "{{money}} spent in all",
+      "first": "First visit: {{date}}"
+    },
+    "birthday": {
+      "today": "Birthday today",
+      "todayAge": "Birthday · {{age}}",
+      "gift": "A gift from the shop",
+      "upcoming": "Birthday · {{weekday}}, {{date}}",
+      "upcomingAge": " · {{age}}",
+      "name": "Birthday today{{age}}",
+      "ageSuffix": {
+        "one": ", turning {{age}}",
+        "other": ", turning {{age}}"
+      },
+      "giftName": "Birthday today{{age}}. Gift: {{value}}, use",
+      "giftAppliedName": "Birthday today{{age}}. Gift: {{value}}, with this visit"
+    },
+    "ledgerPage": {
+      "title": "Activity",
+      "subline": "{{name}} · {{points}}",
+      "filter": {
+        "label": "Kind",
+        "points": "Points",
+        "rewards": "Rewards"
+      },
+      "signed": {
+        "one": "{{sign}}{{points}} pt",
+        "other": "{{sign}}{{points}} pts"
+      },
+      "empty": "No activity yet.",
+      "emptyFiltered": "No entries of this kind."
+    },
+    "records": {
+      "group": {
+        "favourites": "Favourites",
+        "rhythm": "Rhythm",
+        "visits": "Visits"
+      },
+      "byYear": "By year",
+      "row": {
+        "currentRhythm": "The rhythm now",
+        "totalVisits": "Visits in all",
+        "last12Months": "The last 12 months",
+        "preferredBarber": "The barber of choice",
+        "usualServices": "The usual services"
+      },
+      "label": {
+        "longestRhythm": "Longest rhythm",
+        "mostVisitsInYear": "Most in a year",
+        "favouriteService": "Favourite service",
+        "firstVisit": "First visit"
+      },
+      "times": {
+        "one": "{{count}} time",
+        "other": "{{count}} times"
+      },
+      "yearValue": "{{year}}",
+      "since": "since {{since}}",
+      "yearName": {
+        "one": "{{year}}: {{count}} visit{{record}}",
+        "other": "{{year}}: {{count}} visits{{record}}"
+      },
+      "recordSuffix": ", the record",
+      "sentence": {
+        "longestRhythm": {
+          "one": "visit in rhythm",
+          "other": "visits in rhythm in a row"
+        },
+        "mostVisitsInYear": {
+          "one": "visit in one year",
+          "other": "visits in one year"
+        },
+        "favouriteService": {
+          "one": "visit with {{service}}",
+          "other": "visits with {{service}}"
+        },
+        "firstVisit": "the first visit"
+      },
+      "empty": "Records come with the first visits."
+    }
+  },
+  "visits": {
+    "filter": {
+      "label": "Filter",
+      "all": "All",
+      "upcoming": "Upcoming",
+      "completed": "Past",
+      "cancelled": "Cancelled",
+      "no_show": "No-shows",
+      "no_show_staff": "No-shows",
+      "clear": "Show all"
+    },
+    "today": "today",
+    "thisVisit": "This visit",
+    "tile": {
+      "month": {
+        "1": "Jan",
+        "2": "Feb",
+        "3": "Mar",
+        "4": "Apr",
+        "5": "May",
+        "6": "Jun",
+        "7": "Jul",
+        "8": "Aug",
+        "9": "Sep",
+        "10": "Oct",
+        "11": "Nov",
+        "12": "Dec"
+      }
+    },
+    "withPeers": {
+      "one": "with {{count}} more",
+      "other": "with {{count}} more"
+    },
+    "marks": {
+      "photos": {
+        "one": "{{count}} photo",
+        "other": "{{count}} photos"
+      },
+      "discount": "discounted",
+      "voucher": "paid with a voucher"
+    },
+    "quote": "“{{text}}”",
+    "quoteName": ", from the client: “{{text}}”",
+    "rowName": "{{title}}, {{when}}, {{barber}}{{outcome}}{{price}}{{marks}}{{quote}}",
+    "more": "Show more",
+    "moreFailed": "More visits didn't load.",
+    "retry": "Try again",
+    "card": {
+      "last": "Last visit",
+      "next": "Next visit",
+      "name": "{{label}}: {{sentence}}"
+    },
+    "pills": {
+      "label": "Months"
+    },
+    "section": {
+      "visits": {
+        "one": "{{count}} visit",
+        "other": "{{count}} visits"
+      }
+    }
+  },
+  "rhythmRule": {
+    "fixed": "A visit every {{interval}} keeps the rhythm.",
+    "personal": "Comes about every {{habit}}; the due date is {{interval}}.",
+    "fallback": "The due date is {{interval}} until we know the habit.",
+    "grace": "{{days}} of grace after the due date.",
+    "protections": "Up to {{max}} protections cover a missed due date; a new one every {{n}} visits in rhythm.",
+    "excuses": "A visit the shop cancelled is never a miss.",
+    "hold": "A booked visit up to {{days}} past due keeps the rhythm.",
+    "repair": "After a break, a visit within {{days}} restores the rhythm.",
+    "holdCount": "A miss does not reset the count.",
+    "services": "Visits count with: {{services}}.",
+    "upcoming": "From {{date}}: {{rule}}",
+    "short": "Every {{interval}} · {{grace}} of grace",
+    "shortNoGrace": "Every {{interval}}",
+    "off": "Off. The client card shows no rhythm. What was earned is kept.",
+    "weeks": {
+      "one": "{{count}} week",
+      "other": "{{count}} weeks"
+    },
+    "weeksHalf": "{{count}}½ weeks",
+    "days": {
+      "one": "{{count}} day",
+      "other": "{{count}} days"
+    }
+  },
+  "admin": {
+    "rhythm": {
+      "title": "Rhythm",
+      "lede": "When a visit keeps a client's rhythm.",
+      "back": "Back to the admin",
+      "enabled": "Track the rhythm",
+      "inForce": "In force since {{date}}",
+      "scheduled": "From {{date}}",
+      "sample": "Example",
+      "counts": {
+        "title": "What counts",
+        "label": "Counts",
+        "any": "Any completed visit",
+        "services": "A visit with chosen services",
+        "servicesRow": "Services that count",
+        "servicesCount": {
+          "one": "{{count}} service",
+          "other": "{{count}} services"
+        },
+        "hold": "A booked visit holds the due date",
+        "holdDays": "Up to how many days past due",
+        "minGap": "Close visits count once",
+        "seat": "The visit counts for the person in the chair, not for who booked."
+      },
+      "interval": {
+        "title": "Interval",
+        "label": "Due",
+        "fixed": "The same for everyone",
+        "personal": "By the client's own habit",
+        "tolerance": "+{{percent}} %",
+        "example": "A client who comes every {{habit}} is due in {{interval}}.",
+        "min": "Not less than",
+        "max": "Not more than",
+        "fallback": "For new clients"
+      },
+      "grace": {
+        "title": "Grace",
+        "lead": "Cue the team before the due date",
+        "leadNone": "No reminder"
+      },
+      "protections": {
+        "title": "Protections",
+        "enabled": "Automatic protections",
+        "max": "At most in reserve",
+        "every": "A new protection",
+        "everyValue": {
+          "one": "every visit",
+          "other": "every {{count}} visits"
+        },
+        "first": "A first protection with the first visit",
+        "note": "A protection covers one missed due date. It applies itself and is free."
+      },
+      "excuses": {
+        "title": "Excused misses",
+        "staffCancelled": "A visit the shop cancelled",
+        "barberAbsence": "The barber's absence",
+        "shopClosure": "The shop closed",
+        "closedDays": "Days off with no visit booked",
+        "offWarning": "The client will lose the rhythm through the shop's fault."
+      },
+      "pause": {
+        "enabled": "A pause at the client's wish",
+        "days": "Up to how many days a year"
+      },
+      "afterMiss": {
+        "title": "After a miss"
+      },
+      "more": {
+        "title": "More rules"
+      },
+      "row": {
+        "protections": "Up to {{count}} in reserve",
+        "protectionsOff": "Off",
+        "excuses": "{{on}} of {{all}}",
+        "excusesPause": "{{on}} of {{all}} · a pause up to {{days}}"
+      },
+      "sheet": {
+        "services": "Services",
+        "servicesSearch": "Search a service",
+        "done": "Done"
+      },
+      "onBreak": {
+        "label": "The rhythm",
+        "restart": "Starts over",
+        "hold": "Continues from there"
+      },
+      "repair": {
+        "enabled": "A way back with a visit",
+        "window": "Within",
+        "perYear": "Times a year"
+      },
+      "effective": {
+        "title": "Taking effect",
+        "from": "From",
+        "tomorrow": "From tomorrow",
+        "firstOfMonth": "From the 1st",
+        "pick": "Pick a day",
+        "picked": "from {{date}}"
+      },
+      "transition": {
+        "label": "Existing runs",
+        "grandfather": "Are kept",
+        "note": "What was earned stays. No due date moves earlier."
+      },
+      "preview": {
+        "title": "What will change",
+        "estimate": "estimated",
+        "clients": {
+          "one": "{{count}} client with a visit in 12 months",
+          "other": "{{count}} clients with a visit in 12 months"
+        },
+        "inRhythm": "In rhythm",
+        "inGrace": "In grace",
+        "broken": "Broken",
+        "delta": "{{from}} → {{to}}",
+        "summary": "{{back}} · {{out}}",
+        "nobodyOut": "nobody leaves the rhythm",
+        "unavailable": "The preview is not available for chosen services.",
+        "capped": "of the first {{count}} clients",
+        "back": {
+          "one": "{{count}} returns to the rhythm",
+          "other": "{{count}} return to the rhythm"
+        },
+        "out": {
+          "one": "{{count}} leaves the rhythm",
+          "other": "{{count}} leave the rhythm"
+        },
+        "nobodyBack": "nobody returns"
+      },
+      "history": {
+        "title": "History",
+        "row": "From {{date}} · {{change}}",
+        "first": "the first rule",
+        "by": "{{name}} · {{date}}",
+        "system": "the system",
+        "withdraw": "Withdraw the coming change",
+        "withdrawn": "withdrawn",
+        "change": {
+          "name": "a new name",
+          "enabled": {
+            "on": "the rhythm switched on",
+            "off": "the rhythm switched off"
+          },
+          "qualifier": {
+            "anyVisit": "every visit counts",
+            "services": "chosen services count",
+            "categories": "chosen categories count"
+          },
+          "minGapDays": "close visits {{days}}",
+          "bookingHold": {
+            "on": "a booking holds {{days}}",
+            "off": "a booking holds nothing"
+          },
+          "interval": {
+            "fixed": "interval {{interval}}",
+            "personal": "interval by habit"
+          },
+          "graceDays": {
+            "days": "grace {{days}}",
+            "none": "no grace"
+          },
+          "riskLeadDays": {
+            "days": "a cue {{days}} ahead",
+            "none": "no cue"
+          },
+          "protections": {
+            "on": "protections, up to {{count}}",
+            "off": "no protections"
+          },
+          "excuses": "excuses {{on}} of {{all}}",
+          "clientPause": {
+            "on": "a pause up to {{days}}",
+            "off": "no pause"
+          },
+          "repair": {
+            "on": "a way back in {{days}}",
+            "off": "no way back"
+          },
+          "onBreak": {
+            "restart": "a miss resets the count",
+            "hold": "a miss keeps the count"
+          }
+        },
+        "more": "{{change}} and {{count}} more"
+      },
+      "save": "Save",
+      "confirm": {
+        "stricter": "Save a stricter rule?",
+        "switchOff": "Switch the rhythm off?",
+        "switchOffMessage": "The client card stops showing it. What was earned is kept.",
+        "switchOn": "Switch the rhythm on?",
+        "discard": "Discard the changes?",
+        "discardYes": "Discard",
+        "discardKeep": "Keep editing"
+      },
+      "receipt": "Rule saved · from {{date}}",
+      "undo": "Undo",
+      "empty": "No rule yet. These are the recommended values.",
+      "flagOff": "The rhythm is not switched on for the app yet.",
+      "failed": "The rule did not load.",
+      "refused": {
+        "stale": "Someone else changed the rule. See the new one.",
+        "tooEarly": "The earliest possible day is {{date}}.",
+        "invalid": "Fix: {{field}}.",
+        "notAdmin": "Only an admin can change the rule."
+      },
+      "offline": "Offline · the rule cannot be saved."
     }
   }
 }

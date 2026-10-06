@@ -2,6 +2,7 @@ import { Result, fail, ok } from '@creativo/domain/kernel';
 import { Barber, BarberId } from '@creativo/domain/catalog';
 import { CatalogReader } from '../ports/catalog-reader.port';
 import { MediaReader, MediaVariant } from '../ports/media-reader.port';
+import { MediaUnavailableError } from '../ports/media-reader.errors';
 import {
   BarberNotFoundError,
   GetBarberProfileError,
@@ -37,6 +38,12 @@ export class GetBarberProfileUseCase {
 
     const avatarResult = await this.media.resolve(barber.avatar);
     if (avatarResult.isFailure()) {
+      // A missing or unreadable avatar is a permanent answer about the
+      // PICTURE, not the barber: the profile still renders, on the
+      // placeholder. Only a transient failure fails the lookup.
+      if (avatarResult.error instanceof MediaUnavailableError) {
+        return ok({ barber, avatar: [] });
+      }
       return fail(new GetBarberProfileRepositoryFailure(avatarResult.error));
     }
 

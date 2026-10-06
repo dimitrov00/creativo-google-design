@@ -1,3 +1,4 @@
+import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
   BarberId,
@@ -282,5 +283,94 @@ describe('BookingCart.reconstitute', () => {
 
     expect(result.value.lineCount()).toBe(1);
     expect(result.value.linesFor(SELF)[0]!.serviceId.value).toBe('svc-fade');
+  });
+});
+
+describe('BookingCart.acceptedBarbers', () => {
+  const POOL = ['ivan', 'niko', 'stefan'].map(barberId);
+  const ids = (barbers: readonly BarberId[]) => barbers.map((id) => id.value);
+
+  function pinned(cart: BookingCart, key: typeof SELF, id: string) {
+    const line = cart.linesFor(key).at(-1);
+    if (!line) throw new Error('bad fixture');
+    const result = cart.setBarberPref(
+      key,
+      line.id,
+      BarberPref.specific(barberId(id)),
+    );
+    if (result.isFailure()) throw new Error('bad fixture');
+    return result.value;
+  }
+
+  // The repeat flow's bag: the barber who did the visit, as a specific
+  // preference. A day only other chairs have room on is not a day for it.
+  it('narrows the pool to the barber a single pinned line wants', () => {
+    const cart = pinned(added(BookingCart.empty(), SELF, CUT), SELF, 'ivan');
+    expect(ids(cart.acceptedBarbers(POOL))).toEqual(['ivan']);
+  });
+
+  it('keeps every barber a party pins, in the pool’s order', () => {
+    const withGuest = added(
+      pinned(added(BookingCart.empty(), SELF, CUT), SELF, 'stefan'),
+      GUEST,
+      BEARD,
+    );
+    const cart = pinned(withGuest, GUEST, 'ivan');
+    expect(ids(cart.acceptedBarbers(POOL))).toEqual(['ivan', 'stefan']);
+  });
+
+  it('accepts the whole pool as soon as one line takes anyone', () => {
+    const cart = added(
+      pinned(added(BookingCart.empty(), SELF, CUT), SELF, 'ivan'),
+      SELF,
+      BEARD,
+    );
+    expect(ids(cart.acceptedBarbers(POOL))).toEqual(['ivan', 'niko', 'stefan']);
+  });
+
+  it('accepts nobody for an empty cart, and nobody outside the pool', () => {
+    expect(BookingCart.empty().acceptedBarbers(POOL)).toEqual([]);
+    const cart = pinned(added(BookingCart.empty(), SELF, CUT), SELF, 'ivo');
+    expect(cart.acceptedBarbers(POOL)).toEqual([]);
+  });
+
+  // The invariant the calendar leans on: narrowing never drops a barber the
+  // engine could seat on some line (`BarberPref.matches`), and never adds one.
+  it('is exactly the pool barbers some line’s preference matches', () => {
+    const pref = fc.option(fc.constantFrom('ivan', 'niko', 'stefan', 'ivo'), {
+      nil: null,
+    });
+    const seat = fc.array(pref, { minLength: 1, maxLength: 3 });
+    fc.assert(
+      fc.property(
+        fc.array(seat, { maxLength: 3 }),
+        fc.subarray(['ivan', 'niko', 'stefan', 'ivo']),
+        (seats, poolIds) => {
+          const restored = BookingCart.reconstitute({
+            seats: seats.map((prefs, index) => ({
+              seatKey: index === 0 ? 'self' : `guest-${index}`,
+              lines: prefs.map((barber, line) => ({
+                id: `line-${index}-${line}`,
+                serviceId: `svc-${line}`,
+                variantId: null,
+                barberId: barber,
+              })),
+            })),
+            nextSequence: 99,
+          });
+          if (restored.isFailure()) throw new Error('bad fixture');
+          const pool = poolIds.map(barberId);
+          const prefs = restored.value
+            .entries()
+            .flatMap(([, lines]) => lines.map((line) => line.barberPref));
+
+          const accepted = ids(restored.value.acceptedBarbers(pool));
+          const expected = pool
+            .filter((id) => prefs.some((p) => BarberPref.matches(p, id)))
+            .map((id) => id.value);
+          expect(accepted).toEqual(expected);
+        },
+      ),
+    );
   });
 });

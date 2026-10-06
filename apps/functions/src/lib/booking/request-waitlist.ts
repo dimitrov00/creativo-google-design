@@ -1,12 +1,24 @@
 import { createHash } from 'node:crypto';
+import type { Firestore } from 'firebase-admin/firestore';
 import { HttpsError, onCall } from 'firebase-functions/v2/https';
 import { match } from '@creativo/domain/kernel';
-import { CalendarDay, WaitlistRequest } from '@creativo/domain/scheduling';
+import type { Service } from '@creativo/domain/catalog';
+import {
+  CalendarDay,
+  type ReconstituteBookingCartProps,
+  WaitlistRequest,
+} from '@creativo/domain/scheduling';
+import {
+  type StoredShop,
+  toService,
+  toShop,
+} from '../../adapters/firestore-booking-store';
 import { FirestoreWaitlistStore } from '../../adapters/firestore-waitlist-store';
 import { SystemClock } from '../../adapters/system-clock';
 import { CryptoIdGenerator } from '../../adapters/crypto-id-generator';
 import { adminFirestore } from '../firebase-admin';
 import { loadBookingPolicy } from './load-booking-policy';
+import { TENANT_ZONE } from './tenant-zone';
 import {
   RequestWaitlistDuplicateError,
   type RequestWaitlistError,
@@ -15,15 +27,6 @@ import {
   type RequestedDay,
   decideWaitlist,
 } from '../../use-cases/decide-waitlist';
-
-/**
- * The tenant's zone.
- *
- * A single-city tenant, so a constant is honest today. It becomes a read of
- * the chosen `Location.timezone` the day a shop opens in another zone — the
- * same day `decideBooking`'s own zone lookup stops being one shop's.
- */
-const TENANT_ZONE = 'Europe/Sofia';
 
 export function toWaitlistHttpsError(error: RequestWaitlistError): HttpsError {
   const details = { code: error.code, params: error.params };
@@ -99,6 +102,97 @@ function toCart(raw: unknown): {
 }
 
 /**
+ * Could `id` name a document? A payload's id that could not (a path, `.`,
+ * a reserved `__…__` name) names no service: it is not read — the SDK would
+ * throw on the path — and is refused as `unknown_service` like any other.
+ */
+function isDocumentId(id: string): boolean {
+  return (
+    id.length > 0 &&
+    !id.includes('/') &&
+    id !== '.' &&
+    id !== '..' &&
+    !/^__.*__$/.test(id)
+  );
+}
+
+/**
+ * The ACTIVE catalogue rows of the services `cart` names — what the waitlist
+ * admits a request against (`decideWaitlist`, `cartAdmissible`).
+ *
+ * Read the way the commit reads them (`FirestoreBookingStore.load`): by id,
+ * distinct, in one batched round trip, through the commit's own parser
+ * (`toService`), so a retired or unreadable service is ABSENT here exactly
+ * as it is there, and refused as `unknown_service` by the same check. A
+ * second reading of the catalogue would be a second opinion about what the
+ * commit accepts.
+ */
+export async function loadCartServices(
+  db: Firestore,
+  cart: ReconstituteBookingCartProps,
+): Promise<readonly Service[]> {
+  const ids = [
+    ...new Set(
+      cart.seats.flatMap((seat) => seat.lines.map((line) => line.serviceId)),
+    ),
+  ].filter(isDocumentId);
+  if (ids.length === 0) return [];
+  const snaps = await db.getAll(
+    ...ids.map((id) => db.collection('services').doc(id)),
+  );
+  return snaps.flatMap((snap) => {
+    const data = snap.data();
+    const service = data ? toService(snap.id, data) : null;
+    return service ? [service] : [];
+  });
+}
+
+/**
+ * The shop a request names, as the commit reads it (`toShop`, the commit's
+ * own reading of a location document) — or `null` when there is no such
+ * shop, which `decideWaitlist` refuses as the commit refuses it.
+ *
+ * One document read. An id that could not name a document is refused
+ * unread, like a service id (`isDocumentId`): the SDK would throw on the
+ * path, and a shop nobody can name is a shop that is not there.
+ */
+export async function loadNamedShop(
+  db: Firestore,
+  locationId: string,
+): Promise<StoredShop | null> {
+  if (!isDocumentId(locationId)) return null;
+  const snap = await db.collection('locations').doc(locationId).get();
+  return toShop(snap.data());
+}
+
+/**
+ * How many distinct services one allowed person's lines may name before the
+ * cart is refused UNREAD. A read bound, not a booking rule: every cart inside
+ * it is still decided by the commit's own checks (`cartAdmissible`). Without
+ * it an authenticated caller could name thousands of service ids and cost
+ * the shop that many document reads per call.
+ */
+export const MAX_SERVICES_PER_PERSON = 8;
+
+/**
+ * May the callable read the catalogue for this cart? One seat is one person,
+ * so a cart with more seats than the party cap is refused by the admission
+ * as `party_too_large` without a read; one naming more distinct services than
+ * the party could plausibly ask for is refused as naming services the
+ * catalogue does not hold (none were looked up), also without a read.
+ */
+export function cartWithinReadBounds(
+  cart: ReconstituteBookingCartProps,
+  maxPartySize: number,
+): boolean {
+  if (cart.seats.length > maxPartySize) return false;
+  const distinct = new Set(
+    cart.seats.flatMap((seat) => seat.lines.map((line) => line.serviceId)),
+  );
+  return distinct.size <= maxPartySize * MAX_SERVICES_PER_PERSON;
+}
+
+/**
  * Record a standing request to be told when these days open up.
  *
  * Server-side for the same reason `commitBooking` is: the owner comes from
@@ -119,12 +213,27 @@ export const requestWaitlist = onCall(async (request) => {
   const now = nowResult.value;
 
   const payload = (request.data ?? {}) as Record<string, unknown>;
+  const cart = toCart(payload['cart']);
+  const locationId =
+    payload['locationId'] == null ? null : String(payload['locationId']);
+
+  // Read for a caller who can be notified at all: an anonymous request is
+  // refused before the cart or the shop is looked at, and costs no reads. A
+  // cart past the read bound costs none either; the admission refuses it.
+  // The shop and the catalogue rows in one go — neither read needs the other.
+  const signedIn = Boolean(request.auth?.uid);
+  const [services, shop] = await Promise.all([
+    signedIn && cartWithinReadBounds(cart, policy.maxPartySize)
+      ? loadCartServices(db, cart)
+      : [],
+    signedIn && locationId !== null ? loadNamedShop(db, locationId) : null,
+  ]);
+
   const decided = decideWaitlist(
     {
-      locationId:
-        payload['locationId'] == null ? null : String(payload['locationId']),
+      locationId,
       days: toDays((payload['when'] as Record<string, unknown>)?.['days']),
-      cart: toCart(payload['cart']),
+      cart,
     },
     {
       now,
@@ -133,6 +242,14 @@ export const requestWaitlist = onCall(async (request) => {
       horizonEnd: policy.horizonEndFrom(CalendarDay.fromZonedDateTime(now)),
       nextId: () => new CryptoIdGenerator().next(),
       ownerUserId: request.auth?.uid ?? null,
+      // What the commit would admit whatever the time (round 6): the cart
+      // is refused now rather than watched for a booking no slot could make.
+      policy,
+      services,
+      // A shop the commit would not find, or one the public surface no
+      // longer lists, is refused now rather than watched for a slot the
+      // matcher never searches.
+      shop,
     },
   );
 

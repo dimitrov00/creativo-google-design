@@ -105,11 +105,11 @@ describe('TenantConfig.withFeatureFlags', () => {
       throw new Error('unexpected failure in test fixture');
     const original = result.value;
     const updated = original.withFeatureFlags(
-      FeatureFlags.defaults().withFlag('rewards.points', true),
+      FeatureFlags.defaults().withFlag('loyalty.points', true),
     );
 
-    expect(original.featureFlags.isEnabled('rewards.points')).toBe(false);
-    expect(updated.featureFlags.isEnabled('rewards.points')).toBe(true);
+    expect(original.featureFlags.isEnabled('loyalty.points')).toBe(false);
+    expect(updated.featureFlags.isEnabled('loyalty.points')).toBe(true);
     expect(updated).not.toBe(original);
   });
 });

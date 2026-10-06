@@ -6,6 +6,7 @@ import {
   fail,
   ok,
 } from '@creativo/domain/kernel';
+import type { UserId } from '@creativo/domain/accounts';
 import {
   BarberId,
   LocationId,
@@ -42,7 +43,10 @@ import {
   isTerminal,
 } from './appointment-status';
 import { BookingContact } from './booking-contact';
+import { BookingPolicy } from './booking-policy';
 import { CalendarDay } from './calendar-day';
+import type { CancellationWindow } from './cancellation-window';
+import type { ChairTime } from './availability';
 import { AppointmentId, SeatId } from './ids';
 import { EmptyIdError } from './ids.errors';
 import { Seat } from './seat';
@@ -106,6 +110,12 @@ export interface ReconstituteAppointmentProps {
   discounts?: readonly AppliedDiscount[];
   /** Absent for every appointment written before vouchers could be redeemed. */
   voucherRedemptions?: readonly VoucherRedemption[];
+  /**
+   * The stored revision this visit was READ at — see `Appointment.revision`.
+   * Absent (or anything but a whole number ≥ 0) is `null`: the reader did
+   * not say, which claims nothing.
+   */
+  revision?: number | null;
 }
 
 /**
@@ -193,6 +203,20 @@ export class Appointment {
      * `balanceDue()` is what still changes hands at the counter.
      */
     readonly voucherRedemptions: readonly VoucherRedemption[] = [],
+    /**
+     * THE REVISION THIS VISIT WAS READ AT — the stored document's
+     * optimistic-concurrency counter, as the reader found it, or `null`
+     * when the reader did not say (a visit being built, not read).
+     *
+     * Not a fact about the visit: a fact about the COPY. It is what a staff
+     * sheet drawn from this copy claims on its next save
+     * (`StaffEditAppointmentRequest.expectedVersion`), so a colleague's save
+     * since is refused as stale instead of silently overwritten. Carried
+     * unchanged through every in-memory transition, because none of them is
+     * a write: the copy still rests on the revision it was read at until the
+     * store stamps a new one. `null` claims nothing and is never refused.
+     */
+    readonly revision: number | null = null,
   ) {}
 
   /**
@@ -220,6 +244,7 @@ export class Appointment {
         at,
         this.discounts,
         this.voucherRedemptions,
+        this.revision,
       ),
     );
   }
@@ -248,6 +273,7 @@ export class Appointment {
         null,
         this.discounts,
         this.voucherRedemptions,
+        this.revision,
       ),
     );
   }
@@ -339,6 +365,7 @@ export class Appointment {
     arrivedAt?: ZonedDateTime | null;
     discounts?: readonly AppliedDiscount[];
     voucherRedemptions?: readonly VoucherRedemption[];
+    revision?: number | null;
   }): Result<Appointment, AppointmentError[]> {
     const idResult = AppointmentId.create(props.id);
     const locationIdResult = LocationId.create(props.locationId);
@@ -375,8 +402,20 @@ export class Appointment {
         props.arrivedAt ?? null,
         props.discounts ?? [],
         props.voucherRedemptions ?? [],
+        Appointment.revisionOf(props.revision),
       ),
     );
+  }
+
+  /**
+   * A revision as a copy may claim it: a whole number ≥ 0, else `null`. A
+   * malformed counter claims nothing rather than a number the store never
+   * wrote — a wrong claim would refuse every save of the visit as stale.
+   */
+  private static revisionOf(raw: number | null | undefined): number | null {
+    return typeof raw === 'number' && Number.isInteger(raw) && raw >= 0
+      ? raw
+      : null;
   }
 
   private static validateSeats(seats: Seat[]): AppointmentError[] {
@@ -394,11 +433,25 @@ export class Appointment {
     // service ladder. The invariant that was actually being protected is
     // narrower: the booker cannot sit in two chairs at once. Sequential self
     // seats are one visit with two services; overlapping ones are a mistake.
-    const selfSeats = seats.filter(
-      (s) => s.subject.kind === 'account' && s.subject.relationship === 'self',
-    );
-    const selfOverlaps = selfSeats.some((a, i) =>
-      selfSeats.some((b, j) => j > i && a.slot.overlaps(b.slot)),
+    //
+    // The PERSON is the account, not the relationship (2026-09-25): a `self`
+    // seat bound to some other account is somebody else — the same reading
+    // `Seat.isMovableByBooker` gives it — so it may sit beside the booker's
+    // own seat. Judged per account, a client move that carries such a seat
+    // and lands the booker's rebuilt seat next to it is two people in two
+    // chairs, not one person in both.
+    const selfSeatsByAccount = new Map<string, Seat[]>();
+    for (const s of seats) {
+      if (s.subject.kind !== 'account' || s.subject.relationship !== 'self') {
+        continue;
+      }
+      const key = s.subject.userId.value;
+      selfSeatsByAccount.set(key, [...(selfSeatsByAccount.get(key) ?? []), s]);
+    }
+    const selfOverlaps = [...selfSeatsByAccount.values()].some((selfSeats) =>
+      selfSeats.some((a, i) =>
+        selfSeats.some((b, j) => j > i && a.slot.overlaps(b.slot)),
+      ),
     );
     if (selfOverlaps) {
       errors.push(new AppointmentMultipleSelfSeatsError());
@@ -540,6 +593,7 @@ export class Appointment {
       this.arrivedAt,
       this.discounts,
       voucherRedemptions,
+      this.revision,
     );
   }
 
@@ -567,6 +621,7 @@ export class Appointment {
       this.arrivedAt,
       discounts,
       this.voucherRedemptions,
+      this.revision,
     );
   }
 
@@ -640,9 +695,16 @@ export class Appointment {
     return ok(this.withSeats(seats, CONFIRMED));
   }
 
+  /**
+   * Call the whole party off. `policy` is the booking policy IN FORCE as it
+   * is cancelled: its free-cancellation window is stamped on every seat this
+   * closes, so the cancellation is later judged by the rule it was made
+   * under, never by whatever the window says by then (2026-09-25).
+   */
   cancel(
     reason: string,
     atMs: number,
+    policy: BookingPolicy,
     by: 'client' | 'staff' = 'staff',
   ): Result<
     Appointment,
@@ -664,6 +726,7 @@ export class Appointment {
         note: trimmed,
       },
       by,
+      policy.cancellationWindow,
     );
   }
 
@@ -729,6 +792,62 @@ export class Appointment {
   }
 
   /**
+   * The seats the booker's own cart can name, in seat order — the ones a
+   * client move rebuilds from the cart (`Seat.isMovableByBooker`). The rest
+   * are the shop's: a move carries them along, it never re-seats them.
+   */
+  seatsTheBookerCanMove(ownerUserId: UserId | null): readonly Seat[] {
+    return this.seats.filter((seat) => seat.isMovableByBooker(ownerUserId));
+  }
+
+  /**
+   * Can the booker move this visit at all?
+   *
+   * `false` when nothing on it is theirs to name — their own seat was
+   * removed and only somebody the shop seated is left. A move follows the
+   * booker's seats, so with none there is nothing for the rest to follow:
+   * the web flow does not offer the move, and the server refuses it
+   * (`shop_only`). Only the shop can move such a visit.
+   */
+  hasSeatTheBookerCanMove(ownerUserId: UserId | null): boolean {
+    return this.seats.some((seat) => seat.isMovableByBooker(ownerUserId));
+  }
+
+  /**
+   * The instant a client move is measured FROM: the earliest start among the
+   * seats the booker can move.
+   *
+   * A move shifts every seat it carries by exactly as far as the cart's
+   * earliest seat lands from here, so a carried seat's distance from this
+   * instant is the thing a move keeps — side by side stays side by side,
+   * straight after stays straight after. The server shifts by it, and the web
+   * flow shows (and keeps grid room for) the carried seats by it; one
+   * definition, so the minute on the review card is the minute written.
+   *
+   * `null` when the booker has no seat to anchor to — a visit only the shop
+   * can move.
+   */
+  moveAnchor(ownerUserId: UserId | null): ZonedDateTime | null {
+    return Appointment.earliestStart(this.seatsTheBookerCanMove(ownerUserId));
+  }
+
+  /**
+   * Every chair this visit holds, seat by seat: what it contributes to the
+   * busy projection (`Seat.chairTime`).
+   *
+   * A MOVE hands exactly this back before it places the same visit again, so
+   * its own seats never block its own move. The server decides a move with
+   * the visit's contribution subtracted, and the grid releases the same chair
+   * time before it offers a start (`paddedBusy`).
+   */
+  chairTimes(): readonly ChairTime[] {
+    return this.seats.map((seat) => ({
+      barberId: seat.barberId,
+      occupied: seat.chairTime(),
+    }));
+  }
+
+  /**
    * How far ahead this booking was made, in minutes — the metric `bookedAt`
    * exists for. `null` when the appointment predates the field.
    */
@@ -743,13 +862,15 @@ export class Appointment {
     atMs: number | null,
     reason: CancellationReason = { kind: 'other', note: '' },
     by: 'client' | 'staff' = 'staff',
+    /** The free-cancellation window in force — only a cancellation stamps it. */
+    window: CancellationWindow | null = null,
   ): Result<Appointment, AppointmentInvalidTransitionError> {
     if (!canTransition(this.status, to)) {
       return fail(new AppointmentInvalidTransitionError(this.status.kind, to));
     }
 
     const seatOutcome =
-      atMs === null ? null : outcomeForStatus(to, atMs, reason);
+      atMs === null ? null : outcomeForStatus(to, atMs, reason, window);
     const seats =
       seatOutcome === null
         ? this.seats
@@ -793,6 +914,9 @@ export class Appointment {
       // still paid the way it was paid.
       this.discounts,
       this.voucherRedemptions,
+      // And the revision it was read at: a transition in memory is not a
+      // write, so the copy still rests on the same stored revision.
+      this.revision,
     );
   }
 }

@@ -198,6 +198,24 @@ export class BookingCart {
     return [...this.linesBySeat.entries()];
   }
 
+  /**
+   * The barbers of `pool`, in `pool`'s order, that some line of this cart
+   * would accept (`BarberPref.matches`, the engine's own eligibility rule).
+   *
+   * Who can take this visit at all: a line that wants Ivan is never served
+   * by anyone else, so a chair the cart accepts on no line cannot make a day
+   * bookable for it. One `any` line accepts the whole pool; an empty cart
+   * accepts nobody.
+   */
+  acceptedBarbers(pool: readonly BarberId[]): readonly BarberId[] {
+    const prefs = [...this.linesBySeat.values()].flatMap((lines) =>
+      lines.map((line) => line.barberPref),
+    );
+    return pool.filter((barberId) =>
+      prefs.some((pref) => BarberPref.matches(pref, barberId)),
+    );
+  }
+
   isEmpty(): boolean {
     return this.lineCount() === 0;
   }

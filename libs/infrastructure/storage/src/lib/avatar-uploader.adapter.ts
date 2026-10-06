@@ -13,6 +13,7 @@ import {
   AvatarUploadError,
 } from '@creativo/application/accounts';
 import { FIREBASE_STORAGE } from './storage.provider';
+import { storageErrorCode } from './storage-error-code';
 
 const MAX_AVATAR_BYTES = 5 * 1024 * 1024;
 
@@ -65,11 +66,7 @@ export class FirebaseStorageAvatarUploader implements AvatarUploader {
     } catch (error) {
       // Absence is an ANSWER, not a failure — the single-object convention
       // means "no such object" simply reads as "no avatar yet".
-      if (
-        typeof error === 'object' &&
-        error !== null &&
-        (error as { code?: string }).code === 'storage/object-not-found'
-      ) {
+      if (storageErrorCode(error) === 'storage/object-not-found') {
         return ok(null);
       }
       return fail(new AvatarUploadError('Failed to look up avatar', error));
@@ -85,11 +82,7 @@ export class FirebaseStorageAvatarUploader implements AvatarUploader {
       // Idempotent by the port's contract: deleting an avatar that isn't
       // there already achieved what the caller wanted. Only a REAL storage
       // failure (permissions, network) is an error.
-      if (
-        typeof error === 'object' &&
-        error !== null &&
-        (error as { code?: string }).code === 'storage/object-not-found'
-      ) {
+      if (storageErrorCode(error) === 'storage/object-not-found') {
         return ok(undefined);
       }
       return fail(new AvatarUploadError('Failed to remove avatar', error));

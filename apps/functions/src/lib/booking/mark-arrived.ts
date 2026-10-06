@@ -1,7 +1,8 @@
 import { HttpsError, onCall } from 'firebase-functions/v2/https';
 import { adminFirestore } from '../firebase-admin';
-import { appendAudit } from './audit';
-import { callerWorksTheBook } from './caller-roles';
+import { type AuditSubject, appendAudit, seatSubjectsOf } from './audit';
+import { callerActor, callerWorksTheBook } from './caller-roles';
+import { TENANT_ZONE } from './tenant-zone';
 
 /**
  * Record that the party walked in.
@@ -50,7 +51,9 @@ export const markArrived = onCall(async (request) => {
 
   const db = adminFirestore();
   let alreadyArrived = false;
-  let ownerUserId: string | null = null;
+  let subjects: readonly AuditSubject[] = [];
+  /** The stamp the committed attempt wrote — the audit row's change key. */
+  let stampIso = '';
 
   await db.runTransaction(async (tx) => {
     const ref = db.collection('appointments').doc(appointmentId);
@@ -62,8 +65,10 @@ export const markArrived = onCall(async (request) => {
       });
     }
 
-    ownerUserId =
-      typeof data['ownerUserId'] === 'string' ? data['ownerUserId'] : null;
+    // From the DOCUMENT, never the payload — "who did what to whom" must
+    // name the real people on the visit, not whoever the caller claimed. The
+    // whole party walked in, so every person on it gets the row.
+    subjects = seatSubjectsOf(data);
 
     const status = (data['status'] ?? {}) as Record<string, unknown>;
     if (!ARRIVABLE.includes(String(status['kind']))) {
@@ -89,26 +94,28 @@ export const markArrived = onCall(async (request) => {
     // Stored as `{iso, zone}` like `bookedAt`, so a staff surface can render
     // it in shop time rather than the reader's.
     const now = new Date();
+    stampIso = now.toISOString();
     tx.update(ref, {
       arrivedAt: {
-        iso: now.toISOString(),
+        iso: stampIso,
         zone: String(
           (data['timeSlot'] as Record<string, unknown> | undefined)?.['zone'] ??
-            'Europe/Sofia',
+            TENANT_ZONE,
         ),
       },
     });
   });
 
   if (!alreadyArrived) {
-    void appendAudit({
-      actorUserId: uid,
+    await appendAudit({
+      actor: callerActor(request),
       action: 'booking.staff_arrived',
       resourceId: appointmentId,
-      // From the DOCUMENT, never the payload — "who did what to whom" must
-      // name the real owner, not whoever the caller claimed.
-      targetUserId: ownerUserId ?? undefined,
+      subjects,
       atIso: new Date().toISOString(),
+      // One arrival, one stamp; a second tap finds the stamp and writes
+      // neither a new one nor a row.
+      changeKey: `arrived:${stampIso}`,
     });
   }
 

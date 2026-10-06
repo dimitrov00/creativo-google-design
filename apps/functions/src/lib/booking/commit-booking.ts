@@ -1,16 +1,16 @@
 import { HttpsError, onCall } from 'firebase-functions/v2/https';
-import { match } from '@creativo/domain/kernel';
 import { FirestoreBookingStore } from '../../adapters/firestore-booking-store';
 import { SystemClock } from '../../adapters/system-clock';
 import { CryptoIdGenerator } from '../../adapters/crypto-id-generator';
 import { adminFirestore } from '../firebase-admin';
 import { loadBookingPolicy } from './load-booking-policy';
-import { appendAudit } from './audit';
-import { callerWorksTheBook } from './caller-roles';
+import { appendAudit, requestedSeatSubjects } from './audit';
+import { callerActor, callerWorksTheBook } from './caller-roles';
 import type { CommitBookingError } from '../../use-cases/commit-booking.errors';
 import { CommitBookingUseCase } from '../../use-cases/commit-booking.use-case';
 import type { RequestedSeat } from '../../use-cases/decide-booking';
 import type { BookingContactProps } from '@creativo/domain/scheduling';
+import { isClientOperationId, isGuestKey } from '@creativo/application/booking';
 
 /**
  * Domain failure → wire error.
@@ -84,15 +84,14 @@ function toContact(raw: unknown): BookingContactProps | undefined {
 }
 
 /**
- * The client's idempotency key, shape-checked because it becomes a DOC ID:
- * UUID-ish charset, bounded length. Anything else is dropped (the server
- * mints instead) rather than refused — an old client without the field must
- * keep booking.
+ * The client's idempotency key, shape-checked because it becomes a DOC ID
+ * and an audit key (`isClientOperationId` — the one definition the client
+ * mints against). Anything else is dropped rather than refused: an old
+ * client without the field must keep booking (the server mints instead),
+ * and a move without one is logged the way it always was.
  */
-function toAttemptId(raw: unknown): string | undefined {
-  return typeof raw === 'string' && /^[A-Za-z0-9_-]{16,64}$/.test(raw)
-    ? raw
-    : undefined;
+export function toAttemptId(raw: unknown): string | undefined {
+  return isClientOperationId(raw) ? raw : undefined;
 }
 
 /**
@@ -121,15 +120,31 @@ export function toSeats(raw: unknown): readonly RequestedSeat[] {
   return raw.map((entry): RequestedSeat => {
     const seat = (entry ?? {}) as Record<string, unknown>;
     const subject = (seat['subject'] ?? {}) as Record<string, unknown>;
+    const pref = seat['barberPref'];
     return {
       lineId: String(seat['lineId'] ?? ''),
       serviceId: String(seat['serviceId'] ?? ''),
       variantId: seat['variantId'] == null ? null : String(seat['variantId']),
       barberId: String(seat['barberId'] ?? ''),
+      // What the client ASKED for — «Всеки» or a name. Anything else is
+      // absent, which the decision stores as unknown: a guess here would
+      // become a stored claim about what somebody wanted (§11.2 #6).
+      ...(pref === 'any' || pref === 'specific' ? { barberPref: pref } : {}),
       startIso: String(seat['startIso'] ?? ''),
       subject:
         subject['kind'] === 'guest'
-          ? { kind: 'guest', label: String(subject['label'] ?? '') }
+          ? {
+              kind: 'guest',
+              label: String(subject['label'] ?? ''),
+              // WHICH guest, among guests (the cart's seat key): without it
+              // two different guests under one label read as one person,
+              // and `decideBooking`'s refusal of that never fires. Kept only
+              // when it has the key's shape (`isGuestKey`); dropped, never
+              // refused, otherwise — the guest is then read by label alone.
+              ...(isGuestKey(subject['guestKey'])
+                ? { guestKey: subject['guestKey'] }
+                : {}),
+            }
           : { kind: 'self' },
     };
   });
@@ -172,31 +187,39 @@ export const commitBooking = onCall(async (request) => {
     /^[A-Za-z0-9_-]{1,128}$/.test(payload.onBehalfOfUserId)
       ? payload.onBehalfOfUserId
       : null;
+  const seats = toSeats(payload.seats);
+  const ownerUserId = staffPlacement ? onBehalfOf : (request.auth?.uid ?? null);
+  const attemptId = toAttemptId(payload.attemptId);
   const result = await useCase.execute({
     locationId: String(payload.locationId ?? ''),
-    seats: toSeats(payload.seats),
-    attemptId: toAttemptId(payload.attemptId),
+    seats,
+    attemptId,
     contact: toContact(payload.contact),
     bookedFromAppointmentId: toBookedFrom(payload.bookedFromAppointmentId),
-    ownerUserId: staffPlacement ? onBehalfOf : (request.auth?.uid ?? null),
+    ownerUserId,
     staffPlacement,
   });
 
-  return match(result, {
-    success: ({ appointmentId }) => {
-      // After the commit, never inside it — see `appendAudit`.
-      void appendAudit({
-        actorUserId: request.auth?.uid ?? '',
-        action: staffPlacement ? 'booking.staff_created' : 'booking.committed',
-        resourceId: appointmentId,
-        ...(onBehalfOf ? { targetUserId: onBehalfOf } : {}),
-        atIso: new Date().toISOString(),
-        context: { locationId: String(payload.locationId ?? '') },
-      });
-      return { appointmentId };
-    },
-    failure: (error) => {
-      throw toHttpsError(error);
-    },
+  if (result.isFailure()) throw toHttpsError(result.error);
+  const { appointmentId } = result.value;
+
+  // After the commit, never inside it — and awaited, so the row exists when
+  // the caller hears "booked". A failed write is logged by `appendAudit` and
+  // never fails the booking: it has already happened. One row per person
+  // booked; a walk-in of guests keeps one untargeted row.
+  //
+  // A REPLAYED attempt comes back here with the same appointment id, so the
+  // attempt is the change key: the retry finds its rows already written. A
+  // server-minted id (no attempt sent) is its own key — nothing can replay
+  // an id the caller never knew.
+  await appendAudit({
+    actor: callerActor(request),
+    action: staffPlacement ? 'booking.staff_created' : 'booking.committed',
+    resourceId: appointmentId,
+    subjects: requestedSeatSubjects(seats, ownerUserId),
+    atIso: new Date().toISOString(),
+    context: { locationId: String(payload.locationId ?? '') },
+    changeKey: `attempt:${attemptId ?? appointmentId}`,
   });
+  return { appointmentId };
 });

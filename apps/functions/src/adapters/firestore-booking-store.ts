@@ -16,15 +16,18 @@ import {
   type WeeklyPatternProps,
 } from '@creativo/domain/scheduling';
 import {
+  type AppointmentPlacement,
   type PersistedDocument,
   type PersistedSlot,
   SCHEDULE_EXCEPTIONS_COLLECTION,
+  appointmentFromDocument,
   appointmentToDocument,
-  busyContributionsOf,
   busyDocumentId,
   busyIntervalsOf,
   exceptionFromDocument,
   mergeBusy,
+  persistedChairTimesOf,
+  placementFromDocument,
 } from '@creativo/application/booking';
 import type {
   BookingDecision,
@@ -36,8 +39,11 @@ import type {
 import {
   type CommitBookingError,
   CommitBookingInvalidInputError,
+  CommitBookingShopUnavailableError,
   CommitBookingStoreError,
 } from '../use-cases/commit-booking.errors';
+import { shopListed } from '../use-cases/party-admission';
+import { TENANT_ZONE } from '../lib/booking/tenant-zone';
 
 /**
  * What one transaction attempt read: the snapshot the decision sees, plus the
@@ -54,6 +60,36 @@ import {
 interface LoadedAttempt {
   readonly snapshot: BookingSnapshot;
   readonly rawBusy: ReadonlyMap<string, readonly PersistedSlot[]>;
+  /**
+   * The shop the request names, as stored (`toShop`) — there, or the load
+   * refused it. Whether it may TAKE the booking is asked only where a
+   * booking arrives at it (`admitsArrival`): a new booking, or a visit moved
+   * in from another shop — never a visit moved or edited where it is.
+   */
+  readonly shop: StoredShop;
+}
+
+/**
+ * May `request` bring a booking to `shop` — one that is not there yet?
+ *
+ * THE LISTING RULE, asked wherever a booking ARRIVES at a shop: a new
+ * booking (`commit`) and a visit moved in from another shop
+ * (`reschedule`), which is a new booking there by another door. A shop
+ * `/book` lists (`shopListed`, the rule the grid, the waitlist's door and
+ * the matcher search by) takes any. One it does not list — hidden, or a
+ * status nobody modelled — takes only the shop's own placement
+ * (`placement: 'staff'`): listing is a rule about what the public surface
+ * OFFERS, and the desk is not bound by those (the bookable-window /
+ * valid-placement split, owner ruling 2026-07-29). A visit already AT the
+ * shop is never asked, so nobody booked there before it was hidden is
+ * stranded (team decision 2026-09-26). An absent `placement` is the
+ * client's: fail-closed.
+ */
+function admitsArrival(
+  shop: StoredShop,
+  request: DecideBookingRequest,
+): boolean {
+  return request.placement === 'staff' || shopListed(shop);
 }
 
 /**
@@ -101,10 +137,31 @@ export class FirestoreBookingStore {
         const loaded = await this.load(tx, request);
         if (loaded.isFailure()) return fail(loaded.error);
 
+        // A NEW booking arrives at its shop (`admitsArrival`): a client's
+        // only at a shop `/book` lists (team decision 2026-09-26), the
+        // shop's own placement at any. Asked here and not in `load`, which
+        // also serves `reschedule`, where only a visit ARRIVING from
+        // another shop is asked. After the replay above: an attempt that
+        // already committed keeps its answer whatever the shop became since.
+        if (!admitsArrival(loaded.value.shop, request)) {
+          return fail(
+            new CommitBookingShopUnavailableError(
+              request.locationId,
+              'unlisted',
+            ),
+          );
+        }
+
         const decision = decide(loaded.value.snapshot);
         if (decision.isFailure()) return fail(decision.error);
 
-        this.write(tx, decision.value, loaded.value);
+        this.write(
+          tx,
+          decision.value,
+          loaded.value,
+          {},
+          request.placement ?? null,
+        );
         return ok<CommitOutcome, CommitBookingError>({
           kind: 'committed',
           decision: decision.value,
@@ -146,13 +203,33 @@ export class FirestoreBookingStore {
    * unfreezes the walk-ins already in the collection, whose `ownerUserId` is
    * `null` and therefore equal to nobody's uid. They were unreschedulable by
    * ANYONE, which nothing ever decided and nobody ever wanted.
+   *
+   * ### A plan may conclude there is nothing to write
+   * `plan` answering `null` means the stored appointment ALREADY is what the
+   * caller asked for — a retried move whose first attempt committed and whose
+   * response was lost. That is the commit path's `replayed`, and it is
+   * answered the same way: the original outcome, nothing written, nothing
+   * re-decided. Re-deciding it would re-run rules against the NEW placement
+   * (a move into the cancellation window would refuse its own retry) and
+   * stamp a second revision for a change that happened once.
+   *
+   * ### A visit moved to ANOTHER shop arrives there
+   * Moving a visit where it already is — by its client or by staff — is
+   * never asked whether the shop is listed: a visit booked before its shop
+   * was hidden stays movable (team decision 2026-09-26). A request naming a
+   * shop the stored visit is NOT at is a booking arriving there, and is
+   * asked the commit's rule (`admitsArrival`): otherwise a client's move
+   * would be a second door to a new booking at a hidden shop. Who is moving
+   * it is the request's `placement` — `'staff'` for the shop's own desk,
+   * absent (the client's) otherwise. It only answers this question: the
+   * document keeps the placement it was first stamped with.
    */
   async reschedule<E = never, S = undefined>(
     appointmentId: string,
     canWrite: (current: PersistedDocument) => boolean,
     plan: (
       current: PersistedDocument,
-    ) => Result<DecideBookingRequest, CommitBookingError | E>,
+    ) => Result<DecideBookingRequest | null, CommitBookingError | E>,
     decide: (
       snapshot: BookingSnapshot,
       current: PersistedDocument,
@@ -202,11 +279,31 @@ export class FirestoreBookingStore {
           if (planned.isFailure()) {
             return fail<CommitOutcome, Failure>(planned.error);
           }
+          if (planned.value === null) {
+            return ok<CommitOutcome, Failure>({
+              kind: 'replayed',
+              appointmentId,
+            });
+          }
           const request = planned.value;
 
           const loaded = await this.load(tx, request);
           if (loaded.isFailure()) {
             return fail<CommitOutcome, Failure>(loaded.error);
+          }
+          // Moved IN from another shop: it arrives there, and is asked what
+          // a new booking is (see "A visit moved to ANOTHER shop" above).
+          // Before the side reads — a refused move reads nothing more.
+          if (
+            request.locationId !== String(current['locationId'] ?? '') &&
+            !admitsArrival(loaded.value.shop, request)
+          ) {
+            return fail<CommitOutcome, Failure>(
+              new CommitBookingShopUnavailableError(
+                request.locationId,
+                'unlisted',
+              ),
+            );
           }
 
           const sideRead = side
@@ -216,7 +313,11 @@ export class FirestoreBookingStore {
             return fail<CommitOutcome, Failure>(sideRead.error);
           }
 
-          const freed = this.withoutOwnContribution(loaded.value, current);
+          const freed = this.withoutOwnContribution(
+            loaded.value,
+            appointmentId,
+            current,
+          );
           const decision = decide(
             freed.snapshot,
             current,
@@ -227,7 +328,15 @@ export class FirestoreBookingStore {
             return fail<CommitOutcome, Failure>(decision.error);
           }
 
-          this.write(tx, decision.value, freed, extraFields(current));
+          // A move keeps the placement the commit stamped: who put the
+          // booking in the book does not change when it moves.
+          this.write(
+            tx,
+            decision.value,
+            freed,
+            extraFields(current),
+            placementFromDocument(current),
+          );
           side?.write(tx, decision.value, sideRead.value);
           return ok<CommitOutcome, Failure>({
             kind: 'committed',
@@ -241,26 +350,39 @@ export class FirestoreBookingStore {
   }
 
   /**
-   * The same loaded attempt, minus what THIS appointment already occupies.
+   * The same loaded attempt, with what THIS appointment already occupies
+   * handed back to the decision.
    *
-   * Only the decision's view is narrowed — `rawBusy` (what the write merges
+   * The chair time is the stored visit's own, read by the domain
+   * (`Appointment.chairTimes`), the source the booking grid releases by too
+   * (`BookingDraftMove.chairTimes`). The decision releases it by the same
+   * rule the grid does (`BookingSnapshot.release`, `paddedBusy`): before the
+   * turnaround pads what is left, so a neighbour's turnaround stays. One
+   * source and one rule on both sides, so a move is refused here only where
+   * the grid did not offer it.
+   *
+   * A stored visit the aggregate cannot read (a legacy document, a field the
+   * mapper refuses) still hands back what the busy projection holds for it,
+   * read straight off its stored seats (`persistedChairTimesOf`, the
+   * geometry the rebuild trigger projects). A client's move refuses such a
+   * visit in its plan anyway, but a staff edit rebuilds from the raw fields
+   * and never asks the mapper: releasing nothing there would make the
+   * visit's own chairs refuse its own edit (`slot_unavailable`).
+   *
+   * Only the decision's view changes — `rawBusy` (what the write merges
    * onto) is left exactly as read, because the write must not drop spans
    * that belong to other bookings.
    */
   private withoutOwnContribution(
     loaded: LoadedAttempt,
+    appointmentId: string,
     current: PersistedDocument,
   ): LoadedAttempt {
-    const own = busyContributionsOf(current);
-    if (own.size === 0) return loaded;
-
-    const busy = new Map(loaded.snapshot.busy);
-    for (const [key, contribution] of own) {
-      const existing = busy.get(key);
-      if (!existing) continue;
-      busy.set(key, Interval.subtract(existing, contribution.intervals));
-    }
-    return { ...loaded, snapshot: { ...loaded.snapshot, busy } };
+    const stored = appointmentFromDocument(appointmentId, current);
+    const release = stored.isSuccess()
+      ? stored.value.chairTimes()
+      : persistedChairTimesOf(current);
+    return { ...loaded, snapshot: { ...loaded.snapshot, release } };
   }
 
   /**
@@ -288,6 +410,17 @@ export class FirestoreBookingStore {
     ];
     const barberIds = [...new Set(request.seats.map((seat) => seat.barberId))];
 
+    // An id that could not name a document names no shop, and is refused
+    // UNREAD as one that is not there. Building its reference would throw
+    // (the Admin SDK refuses an empty id, or one holding a `/`), and the
+    // transaction would answer `store_failed` — "internal" — for a request
+    // that simply names no usable shop, the answer the waitlist's door
+    // gives the same spelling (`decideWaitlist`).
+    if (!isDocumentId(request.locationId)) {
+      return fail(
+        new CommitBookingShopUnavailableError(request.locationId, 'not_found'),
+      );
+    }
     const locationRef = this.db.collection('locations').doc(request.locationId);
     const serviceRefs = serviceIds.map((id) =>
       this.db.collection('services').doc(id),
@@ -301,15 +434,18 @@ export class FirestoreBookingStore {
       ...serviceRefs,
       ...scheduleRefs,
     );
-    const locationData = phaseOne[0]?.data();
-    if (!locationData) {
-      return fail(new CommitBookingInvalidInputError('locationId'));
+    // The shop, through the one reading of a location document (`toShop`).
+    // Refused here only when it is not there: this load also serves moves
+    // and staff edits, and a stored visit at a shop hidden since must stay
+    // movable. It is handed back, so a booking ARRIVING at it — a new one,
+    // or a visit moved in from another shop — is asked `admitsArrival`.
+    const shop = toShop(phaseOne[0]?.data());
+    if (!shop) {
+      return fail(
+        new CommitBookingShopUnavailableError(request.locationId, 'not_found'),
+      );
     }
-    // The SHOP's zone, from the shop's own document — never the client's and
-    // never a constant (§7.1).
-    const zone = String(locationData['timezone'] ?? 'Europe/Sofia');
-    const shopHours = (locationData['hours'] ??
-      []) as readonly LocationDayHours[];
+    const { zone, hours: shopHours } = shop;
 
     const services: Service[] = [];
     for (const [index, serviceId] of serviceIds.entries()) {
@@ -380,6 +516,7 @@ export class FirestoreBookingStore {
     return ok({
       snapshot: { zone, shopHours, services, schedules, busy, exceptions },
       rawBusy,
+      shop,
     });
   }
 
@@ -388,6 +525,7 @@ export class FirestoreBookingStore {
     decision: BookingDecision,
     loaded: LoadedAttempt,
     extraFields: Record<string, unknown> = {},
+    placement: AppointmentPlacement | null = null,
   ): void {
     const zone = loaded.snapshot.zone;
 
@@ -399,7 +537,10 @@ export class FirestoreBookingStore {
       // this mapper does not write — a `set()` replaces the document whole,
       // and a field the mapper has never heard of is a field a staff edit
       // would otherwise silently delete.
-      { ...extraFields, ...appointmentToDocument(decision.appointment) },
+      {
+        ...extraFields,
+        ...appointmentToDocument(decision.appointment, { placement }),
+      },
     );
 
     // Group by document FIRST: two seats for one barber on one day are one
@@ -445,6 +586,70 @@ export function busyPurgeAt(dayKey: string): Timestamp {
   return Timestamp.fromMillis(
     new Date(`${dayKey}T00:00:00Z`).getTime() + 30 * 24 * 3_600_000,
   );
+}
+
+/**
+ * Could `id` name a Firestore document? The Admin SDK throws on an empty id
+ * or one holding a `/` (a path, not a name) as the reference is built, and
+ * the server refuses `.`, `..` and a reserved `__…__` name. An id that
+ * could not is never read: it names nothing, and its reader answers "not
+ * there" (`FirestoreBookingStore.load` refuses the shop as `not_found`).
+ */
+export function isDocumentId(id: string): boolean {
+  return (
+    id.length > 0 &&
+    !id.includes('/') &&
+    id !== '.' &&
+    id !== '..' &&
+    !/^__.*__$/.test(id)
+  );
+}
+
+/**
+ * A `locations/{id}` document as the booking path reads it.
+ *
+ * Shared by every reader that must agree with the commit about a shop: the
+ * commit itself (`FirestoreBookingStore.load`), the waitlist's door
+ * (`loadNamedShop`), the matcher's day (`loadDayAvailability`) and the
+ * capacity rebuild (`rebuildBarberCapacity`). A second reading would be a
+ * second opinion about which shop a booking may name. Each caller then
+ * applies its own rule to the result:
+ * - a visit moved or edited where it already is
+ *   (`FirestoreBookingStore.reschedule`) asks only that the shop is there
+ *   (not `null`), so no visit is stranded;
+ * - a booking ARRIVING at the shop — a new one, or a visit moved in from
+ *   another shop — asks `admitsArrival`: listed, or placed by the shop;
+ * - everything that offers a NEW booking — the waitlist's door, the
+ *   matcher, the capacity rebuild — asks one rule, `shopListed`
+ *   (party-admission): there AND listed.
+ */
+export interface StoredShop {
+  /**
+   * The SHOP's zone, from the shop's own document — never the client's and
+   * never a constant (§7.1).
+   */
+  readonly zone: string;
+  readonly hours: readonly LocationDayHours[];
+  /**
+   * On the public surface (`status: 'active'`), which is the fact
+   * `shopListed` reads: `/book` lists it, the grid and the matcher search
+   * it, and a waitlist may name it. A `hidden` shop — or a status nobody
+   * authored — is not: fail-closed, as every public query
+   * (`where('status', '==', 'active')`) already reads it.
+   */
+  readonly active: boolean;
+}
+
+/** Firestore doc → `StoredShop`, or `null` when there is no such shop. */
+export function toShop(data: DocumentData | undefined): StoredShop | null {
+  if (!data) return null;
+  return {
+    // A shop that names no zone is in the tenant's (`TENANT_ZONE`, the one
+    // place the functions say it).
+    zone: String(data['timezone'] ?? TENANT_ZONE),
+    hours: (data['hours'] ?? []) as readonly LocationDayHours[],
+    active: data['status'] === 'active',
+  };
 }
 
 /** Firestore doc → `Service`, or `null` when it is unbookable. */

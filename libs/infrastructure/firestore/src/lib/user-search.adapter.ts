@@ -68,7 +68,7 @@ export class FirestoreUserSearchAdapter implements UserSearchPort {
       for (const docSnapshot of snapshot.docs) {
         const mapped = toSearchResult(docSnapshot);
         if (mapped.isFailure()) {
-          return mapped;
+          return fail(mapped.error);
         }
         results.push(mapped.value);
       }

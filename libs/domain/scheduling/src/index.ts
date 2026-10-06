@@ -19,6 +19,7 @@ export * from './lib/time-slot.errors';
 export * from './lib/weekday';
 export * from './lib/local-time-of-day';
 export * from './lib/local-time-of-day.errors';
+export * from './lib/daypart';
 export * from './lib/shift-segment';
 export * from './lib/shift-segment.errors';
 export * from './lib/weekly-pattern';
@@ -31,7 +32,11 @@ export * from './lib/recurrence-rule.errors';
 export * from './lib/roster-window';
 export * from './lib/booking-policy';
 export * from './lib/booking-policy.errors';
+export * from './lib/cancellation-window';
+export * from './lib/cancellation-window.errors';
 export * from './lib/availability';
+export * from './lib/person-slot';
+export * from './lib/move-shift';
 
 // ── Flexible "when" — days, and the spans within them ────────────────────
 export * from './lib/day-windows';
@@ -61,3 +66,8 @@ export * from './lib/voucher-redemption';
 export * from './lib/appointment-status';
 export * from './lib/appointment';
 export * from './lib/appointment.errors';
+
+// ── Per-client projection (R33) ──────────────────────────────────────────
+export * from './lib/client-stats';
+export * from './lib/client-stats-policy';
+export * from './lib/client-stats.errors';

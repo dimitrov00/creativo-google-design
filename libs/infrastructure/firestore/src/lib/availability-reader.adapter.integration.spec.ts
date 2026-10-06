@@ -7,8 +7,9 @@ import {
 import { assertFails, assertSucceeds } from '@firebase/rules-unit-testing';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { firstValueFrom } from 'rxjs';
+import { ZonedDateTime } from '@creativo/domain/kernel';
 import { BarberId, LocationId } from '@creativo/domain/catalog';
-import { CalendarDay, DateRange } from '@creativo/domain/scheduling';
+import { CalendarDay, DateRange, Interval } from '@creativo/domain/scheduling';
 import { FIREBASE_FIRESTORE } from '@creativo/infrastructure/firebase-app';
 import {
   createEmulatorTestEnv,
@@ -173,5 +174,107 @@ describe('FirestoreAvailabilityReader.observeRangeCapacity (emulator)', () => {
         days: { '2026-08-31': { b1: { 'loc-a': 9999 } } },
       }),
     );
+  });
+});
+
+/**
+ * The move's release against REAL documents: the stored shape of a roster,
+ * a busy day and a shop's hours, read the way `/book` reads them. The
+ * contract itself is pinned by the unit spec; this checks the documents.
+ */
+describe('FirestoreAvailabilityReader.observeDay (emulator) — a move', () => {
+  let testEnv: RulesTestEnvironment;
+  const DAY = '2026-08-03'; // a Monday
+  const at = (hour: number, minute = 0): number => {
+    const instant = ZonedDateTime.fromParts(
+      { year: 2026, month: 8, day: 3, hour, minute },
+      ZONE,
+    );
+    if (!instant.isSuccess()) throw new Error('bad instant');
+    return instant.value.toMillis();
+  };
+  const iso = (hour: number, minute = 0): string => {
+    const instant = ZonedDateTime.fromMillis(at(hour, minute), ZONE);
+    if (!instant.isSuccess()) throw new Error('bad instant');
+    return instant.value.toISO();
+  };
+
+  beforeAll(async () => {
+    testEnv = await createEmulatorTestEnv('demo-firestore-availability-day');
+  });
+
+  afterAll(async () => {
+    await testEnv.cleanup();
+  });
+
+  beforeEach(async () => {
+    await testEnv.clearFirestore();
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      const db = ctx.firestore();
+      await setDoc(doc(db, 'locations', 'loc-center'), {
+        status: 'active',
+        timezone: ZONE,
+        hours: Array.from({ length: 7 }, () => ({
+          kind: 'open',
+          opens: '08:00',
+          closes: '20:00',
+        })),
+      });
+      await setDoc(doc(db, 'barberSchedules', 'ivan'), {
+        barberId: 'ivan',
+        turnaroundMinutes: 15,
+        versions: [
+          {
+            seq: 1,
+            effectiveFrom: '2026-01-01',
+            effectiveTo: null,
+            weeklyPattern: {
+              monday: [
+                { start: '08:00', end: '18:00', locationId: 'loc-center' },
+              ],
+            },
+          },
+        ],
+      });
+      // The visit being moved (10:00–11:00) and its neighbour (11:00–12:00),
+      // merged by the projection into one span.
+      await setDoc(doc(db, 'barberBusy', `ivan__${DAY}`), {
+        barberId: 'ivan',
+        dayKey: DAY,
+        zone: ZONE,
+        busy: [{ startIso: iso(10), endIso: iso(12), zone: ZONE }],
+      });
+    });
+  });
+
+  it('hands the visit’s own chair back before padding — the neighbour keeps its turnaround', async () => {
+    const reader = readerFor(testEnv.unauthenticatedContext());
+
+    const result = await firstValueFrom(
+      reader.observeDay(
+        locationId('loc-center'),
+        day(DAY),
+        [barberId('ivan')],
+        [{ barberId: barberId('ivan'), occupied: Interval.of(at(10), at(11)) }],
+      ),
+    );
+
+    expect(result.isSuccess()).toBe(true);
+    if (!result.isSuccess()) return;
+    expect(result.value[0]?.busy).toEqual([
+      Interval.of(at(10, 45), at(12, 15)),
+    ]);
+  });
+
+  it('pads the whole stored span when nothing is handed back', async () => {
+    const reader = readerFor(testEnv.unauthenticatedContext());
+
+    const result = await firstValueFrom(
+      reader.observeDay(locationId('loc-center'), day(DAY), [barberId('ivan')]),
+    );
+
+    expect(result.isSuccess()).toBe(true);
+    if (!result.isSuccess()) return;
+    expect(result.value[0]?.busy).toEqual([Interval.of(at(9, 45), at(12, 15))]);
   });
 });

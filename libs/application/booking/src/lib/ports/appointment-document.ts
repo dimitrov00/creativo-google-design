@@ -1,5 +1,17 @@
-import { Money, ZonedDateTime } from '@creativo/domain/kernel';
-import { BarberId, ServiceTerms } from '@creativo/domain/catalog';
+import {
+  Money,
+  Result,
+  ZonedDateTime,
+  fail,
+  ok,
+} from '@creativo/domain/kernel';
+import { UserId } from '@creativo/domain/accounts';
+import {
+  BarberId,
+  ServiceId,
+  ServiceTerms,
+  ServiceVariantId,
+} from '@creativo/domain/catalog';
 import { CouponCombinability, CouponValue } from '@creativo/domain/engagement';
 import {
   AppliedDiscount,
@@ -9,11 +21,21 @@ import {
   BookingContact,
   CalendarDay,
   CancellationReason,
+  CancellationWindow,
+  type ChairTime,
   Interval,
   SEAT_SCHEDULED,
+  Seat,
+  SeatId,
+  SeatLabel,
+  type SeatIdPair,
+  type SeatRelationship,
   SeatOutcome,
+  SeatSubject,
+  TimeSlot,
   VoucherRedemption,
 } from '@creativo/domain/scheduling';
+import { RepositoryError } from '@creativo/application/shared';
 
 /**
  * The persisted shape of an appointment, and of the public busy projection —
@@ -35,18 +57,47 @@ export interface PersistedSlot {
 }
 
 /**
+ * Who put the booking in the book (R33): the client themselves, or the shop
+ * on their behalf. Stamped once at commit and carried through every later
+ * write, because nothing about the seats can say it afterwards. `null` is a
+ * row from before the field, which nobody may read as either.
+ *
+ * The stored `placement` field is the COMMIT'S OWN stamp and nothing else's.
+ * It is therefore also the mark of a row whose seat preferences the P0
+ * commit path recorded — an omitted preference stored as unknown, never as
+ * the old defaulted `specific` — which is what lets the preferred barber
+ * (§11.2 #6) take its `specific` seats as a request. An answer reconstructed
+ * later, from the audit trail, lives in `inferredPlacement` instead (see
+ * `inferredPlacementFromDocument`), so no inference can ever pass for it.
+ */
+export type AppointmentPlacement = 'self' | 'staff';
+
+/** What a write knows that the aggregate does not carry. */
+export interface AppointmentWriteContext {
+  /** The commit path's answer, or the stored one on every later write. */
+  readonly placement?: AppointmentPlacement | null;
+}
+
+/**
  * Appointment → document.
  *
- * `barberIds` and the top-level `timeSlot` are QUERY MIRRORS, not truth. The
- * seats are the truth and both are recomputed on read, so a corrupt mirror
- * cannot change what an appointment says — only which queries find it.
+ * `barberIds`, `subjectUserIds` and the top-level `timeSlot` are QUERY
+ * MIRRORS, not truth. The seats are the truth and all three are recomputed on
+ * read, so a corrupt mirror cannot change what an appointment says — only
+ * which queries find it.
  */
 export function appointmentToDocument(
   appointment: Appointment,
+  context: AppointmentWriteContext = {},
 ): PersistedDocument {
   return {
     locationId: appointment.locationId.value,
     ownerUserId: ownerUserIdOf(appointment),
+    // Every PERSON on the visit, not only the booker — a companion's visits
+    // are invisible to an `ownerUserId` query. One array behind one index is
+    // what lets the stats trigger read a client's whole history (R33).
+    subjectUserIds: subjectUserIdsOf(appointment),
+    placement: context.placement ?? null,
     barberIds: appointment.barberIds().map((id) => id.value),
     // The (barber, day) projection docs this appointment occupies — the
     // rebuild trigger's reverse index. `array-contains` on this plus a
@@ -352,6 +403,8 @@ export function couponValueFromDocument(raw: unknown): CouponValue | null {
 export const APPOINTMENT_DOCUMENT_FIELDS: readonly string[] = [
   'locationId',
   'ownerUserId',
+  'subjectUserIds',
+  'placement',
   'barberIds',
   'busyKeys',
   'timeSlot',
@@ -436,6 +489,110 @@ export function revisionOf(current: PersistedDocument): number {
 }
 
 /**
+ * THE PAIRS A STAFF SAVE BROKE, REMEMBERED FOR ITS UNDO (round 6) — the
+ * document field.
+ *
+ * «Отмени» restores exactly what the save changed. A save that removed one
+ * seat of a pair the visit already held (one person in two chairs, from
+ * before the rule), or moved the two apart, leaves a visit that no longer
+ * holds the pair — and the undo that puts the seat back, under its old id,
+ * would be judged a NEW double seating and refused. So the save remembers,
+ * by seat id, the pairs it broke, stamped with the revision it wrote; an
+ * edit made on that revision may stand by them (`liveStoodSeatPairs`).
+ *
+ * THE WINDOW is "until the next revision-stamping write": a staff edit or a
+ * client move. Writes that update in place and stamp no revision (arrival,
+ * clearing it, an outcome transition, a tip, a client cancel) leave the
+ * memory live. Deliberately so (BA ruling, 2026-09-26): an undo right after
+ * an arrival still works, and the most the memory can do is let a pair the
+ * visit held one save earlier stand again.
+ *
+ * NOT one of `APPOINTMENT_DOCUMENT_FIELDS`: the aggregate knows nothing of
+ * it. Every staff edit rewrites it (`withStoodSeatPairs`); a client move
+ * carries it forward through `preservedAppointmentFields` under a revision
+ * that has moved on, where it is inert.
+ */
+export const STOOD_SEAT_PAIRS_FIELD = 'stoodSeatPairs';
+
+/** What the field holds: the pairs, and the revision of the save that broke them. */
+export interface StoodSeatPairs {
+  /** The revision the breaking save STAMPED — the one the undo is made on. */
+  readonly revision: number;
+  /** Each pair by seat id, in id order. Never empty: an empty memory is no field. */
+  readonly pairs: readonly SeatIdPair[];
+}
+
+/**
+ * The stored memory, or `null` when there is none. Tolerant, like the
+ * ledger: a malformed pair costs that pair — its undo is then judged in
+ * full, as it would have been without the memory — never the edit.
+ */
+export function stoodSeatPairsFromDocument(
+  current: PersistedDocument,
+): StoodSeatPairs | null {
+  const raw = new Map(Object.entries(current)).get(STOOD_SEAT_PAIRS_FIELD);
+  if (raw === null || typeof raw !== 'object') return null;
+  const field = new Map(Object.entries(raw));
+  const revision = field.get('revision');
+  const rawPairs = field.get('pairs');
+  if (typeof revision !== 'number' || !Number.isInteger(revision)) return null;
+  if (!Array.isArray(rawPairs)) return null;
+  const pairs: SeatIdPair[] = [];
+  for (const item of rawPairs) {
+    if (item === null || typeof item !== 'object') continue;
+    const entry = new Map(Object.entries(item));
+    const seatId = entry.get('seatId');
+    const otherSeatId = entry.get('otherSeatId');
+    if (typeof seatId !== 'string' || seatId.length === 0) continue;
+    if (typeof otherSeatId !== 'string' || otherSeatId.length === 0) continue;
+    pairs.push([seatId, otherSeatId]);
+  }
+  return pairs.length === 0 ? null : { revision, pairs };
+}
+
+/**
+ * The remembered pairs an edit of `current` may stand by: the memory's,
+ * while the visit is still at the revision the breaking save stamped, so no
+ * staff edit or client move has landed since (in practice, the edit is the
+ * save's undo, sent on its stamp). In-place writes that stamp no revision
+ * do not close the window (see `STOOD_SEAT_PAIRS_FIELD`). After the next
+ * revision-stamping write, re-adding the seat is judged new.
+ */
+export function liveStoodSeatPairs(
+  current: PersistedDocument,
+): readonly SeatIdPair[] {
+  const memory = stoodSeatPairsFromDocument(current);
+  return memory !== null && memory.revision === revisionOf(current)
+    ? memory.pairs
+    : [];
+}
+
+/**
+ * `fields` with the memory a write leaves behind: `memory`'s pairs under
+ * its revision, or NO field at all — an older memory is dropped, never
+ * carried, so a save that broke nothing leaves nothing to stand by.
+ */
+export function withStoodSeatPairs(
+  fields: PersistedDocument,
+  memory: StoodSeatPairs | null,
+): PersistedDocument {
+  const kept = Object.fromEntries(
+    Object.entries(fields).filter(([key]) => key !== STOOD_SEAT_PAIRS_FIELD),
+  );
+  if (memory === null || memory.pairs.length === 0) return kept;
+  return {
+    ...kept,
+    [STOOD_SEAT_PAIRS_FIELD]: {
+      revision: memory.revision,
+      pairs: memory.pairs.map(([seatId, otherSeatId]) => ({
+        seatId,
+        otherSeatId,
+      })),
+    },
+  };
+}
+
+/**
  * Seat outcome → document. Explicit rather than a structural dump, so the
  * persisted vocabulary is reviewable in one place and a new union arm cannot
  * reach storage without someone deciding how it is written.
@@ -459,8 +616,34 @@ export function seatOutcomeToDocument(
           outcome.reason.kind === 'other'
             ? { kind: 'other', note: outcome.reason.note }
             : { kind: outcome.reason.kind },
+        // The window in force when it was called off (2026-09-25), as its
+        // whole hours. OMITTED when unknown, never written as `null`: absent
+        // is what every row before the stamp already says, so a legacy seat
+        // that a later edit rewrites keeps its exact bytes.
+        ...(outcome.window === null
+          ? {}
+          : { windowHours: outcome.window.hours }),
       };
   }
+}
+
+/**
+ * A cancellation's stamped window → a `CancellationWindow`, or `null` —
+ * "not recorded". Never throws.
+ *
+ * Absent on every cancellation written before the stamp (2026-09-25), and
+ * the stats judge those by the current policy instead. A value the domain
+ * refuses (`CancellationWindow.create` — the same rule `BookingPolicy`
+ * validates the setting by, so nothing a policy could have set is lost)
+ * reads as unrecorded too, rather than as a window nobody ever set. The
+ * seat is real either way; only the rule it was judged under is unknown.
+ */
+function cancellationWindowFromDocument(
+  raw: unknown,
+): CancellationWindow | null {
+  if (typeof raw !== 'number') return null;
+  const parsed = CancellationWindow.create(raw);
+  return parsed.isSuccess() ? parsed.value : null;
 }
 
 const CANCELLATION_REASON_KINDS: readonly CancellationReason['kind'][] = [
@@ -561,6 +744,7 @@ export function seatOutcomeFromDocument(
         atMs,
         by: data['by'] === 'client' ? 'client' : 'staff',
         reason: cancellationReasonFromDocument(data['reason']),
+        window: cancellationWindowFromDocument(data['windowHours']),
       };
     }
     if (kind === 'scheduled') return SEAT_SCHEDULED;
@@ -585,6 +769,8 @@ export function seatOutcomeFromDocument(
             ? 'client'
             : 'staff',
         reason: cancellationReasonFromRoot(rootStatus.reason),
+        // Older than the stamp by construction: judged by the current policy.
+        window: null,
       };
     default:
       return SEAT_SCHEDULED;
@@ -664,6 +850,180 @@ export function contactFromDocument(
   return result.isSuccess() ? result.value : null;
 }
 
+const SEAT_RELATIONSHIPS: readonly SeatRelationship[] = [
+  'self',
+  'companion',
+  'client',
+];
+
+/** A stored pad that is not a whole, non-negative minute count reads as none. */
+function padMinutes(raw: unknown): number {
+  return typeof raw === 'number' && Number.isInteger(raw) && raw >= 0 ? raw : 0;
+}
+
+function malformed(what: string, cause?: unknown): RepositoryError {
+  return new RepositoryError(`Malformed appointment ${what}`, cause);
+}
+
+/** One stored seat → `Seat`. Identity, subject, price and slot must parse; the rest degrades. */
+function seatFromDocument(
+  raw: unknown,
+  rootStatus: AppointmentStatus | undefined,
+): Result<Seat, RepositoryError> {
+  if (raw === null || typeof raw !== 'object') return fail(malformed('seat'));
+  const entry = raw as Record<string, unknown>;
+
+  const id = SeatId.create(String(entry['id'] ?? ''));
+  if (id.isFailure()) return fail(malformed('seat id', id.error));
+  const serviceId = ServiceId.create(String(entry['serviceId'] ?? ''));
+  if (serviceId.isFailure()) {
+    return fail(malformed('seat serviceId', serviceId.error));
+  }
+  const barberId = BarberId.create(String(entry['barberId'] ?? ''));
+  if (barberId.isFailure()) {
+    return fail(malformed('seat barberId', barberId.error));
+  }
+  let variantId: ServiceVariantId | null = null;
+  if (entry['variantId'] != null) {
+    const parsed = ServiceVariantId.create(String(entry['variantId']));
+    if (parsed.isFailure()) {
+      return fail(malformed('seat variantId', parsed.error));
+    }
+    variantId = parsed.value;
+  }
+
+  const subjectData = (entry['subject'] ?? {}) as Record<string, unknown>;
+  let subject: SeatSubject;
+  if (subjectData['kind'] === 'account') {
+    const userId = UserId.create(String(subjectData['userId'] ?? ''));
+    if (userId.isFailure()) {
+      return fail(malformed('seat subject userId', userId.error));
+    }
+    const relationship = subjectData['relationship'];
+    subject = SeatSubject.account(
+      userId.value,
+      // An unknown relationship is somebody the shop booked, never the owner:
+      // `self` is what authority hangs off, so it is not guessed into being.
+      SEAT_RELATIONSHIPS.includes(relationship as SeatRelationship)
+        ? (relationship as SeatRelationship)
+        : 'client',
+    );
+  } else {
+    const label = SeatLabel.create(String(subjectData['label'] ?? ''));
+    if (label.isFailure()) return fail(malformed('seat label', label.error));
+    subject = SeatSubject.anonymous(label.value);
+  }
+
+  const termsData = (entry['terms'] ?? {}) as Record<string, unknown>;
+  const priceMinor = termsData['priceMinorUnits'];
+  const currency = termsData['currencyCode'];
+  // Shape first: `Money` validates values, and a missing currency would throw
+  // inside it rather than fail. The currency is named on its own because it
+  // is the one a hand-written or legacy row most often lacks.
+  if (typeof currency !== 'string') {
+    return fail(malformed('seat price: no currency'));
+  }
+  if (typeof priceMinor !== 'number') return fail(malformed('seat price'));
+  const price = Money.fromMinorUnitsAndCode(priceMinor, currency);
+  if (price.isFailure()) return fail(malformed('seat price', price.error));
+  const terms = ServiceTerms.create(
+    price.value,
+    termsData['durationMinutes'] as number,
+    {
+      setupMinutes: padMinutes(termsData['setupMinutes']),
+      cleanupMinutes: padMinutes(termsData['cleanupMinutes']),
+    },
+  );
+  if (terms.isFailure()) return fail(malformed('seat terms', terms.error));
+
+  const slotData = (entry['slot'] ?? {}) as Record<string, unknown>;
+  const slot = TimeSlot.create({
+    startIso: String(slotData['startIso'] ?? ''),
+    endIso: String(slotData['endIso'] ?? ''),
+    zone: String(slotData['zone'] ?? ''),
+  });
+  if (slot.isFailure()) return fail(malformed('seat slot', slot.error));
+
+  return ok(
+    Seat.of({
+      id: id.value,
+      subject,
+      serviceId: serviceId.value,
+      variantId,
+      barberId: barberId.value,
+      terms: terms.value,
+      // Only the START: the seat derives its end from the sold duration.
+      startsAt: slot.value.start,
+      outcome: seatOutcomeFromDocument(
+        entry['outcome'],
+        rootStatus,
+        slot.value.end.toMillis(),
+      ),
+      pref: barberPrefFromDocument(entry['barberPref'], barberId.value),
+      catalogTerms: catalogTermsFromDocument(entry['terms'], terms.value),
+      tip: seatTipFromDocument(
+        entry['tipMinorUnits'],
+        terms.value.price.currencyCode(),
+      ),
+    }),
+  );
+}
+
+/**
+ * Document → `Appointment`, for the readers that hold the whole aggregate —
+ * the functions' client-stats projection and backfill today.
+ *
+ * The inverse of `appointmentToDocument`, and in the port layer for the same
+ * reason the writer is: two SDKs read this shape. The mirrors (`timeSlot`,
+ * `barberIds`, `subjectUserIds`) are never read back — the seats are the
+ * truth. A seat that does not parse fails the whole appointment rather than
+ * silently shrinking the party; the side facts (contact, discounts,
+ * vouchers) degrade exactly as their own readers do.
+ */
+export function appointmentFromDocument(
+  id: string,
+  data: PersistedDocument,
+): Result<Appointment, RepositoryError> {
+  const status = data['status'] as AppointmentStatus | undefined;
+  if (status == null || typeof status !== 'object') {
+    return fail(malformed('status'));
+  }
+  const rawSeats = data['seats'];
+  if (!Array.isArray(rawSeats)) return fail(malformed('seats'));
+  const seats: Seat[] = [];
+  for (const raw of rawSeats) {
+    const seat = seatFromDocument(raw, status);
+    if (seat.isFailure()) return fail(seat.error);
+    seats.push(seat.value);
+  }
+
+  const appointment = Appointment.reconstitute({
+    id,
+    locationId: String(data['locationId'] ?? ''),
+    seats,
+    status,
+    contact: contactFromDocument(data),
+    bookedAt: bookedAtFromDocument(data),
+    arrivedAt: arrivedAtFromDocument(data),
+    bookedFromAppointmentId:
+      typeof data['bookedFromAppointmentId'] === 'string'
+        ? data['bookedFromAppointmentId']
+        : null,
+    discounts: discountsFromDocument(data),
+    voucherRedemptions: voucherRedemptionsFromDocument(data),
+    // THE REVISION THIS COPY WAS READ AT — what every staff intent drawn
+    // from it claims (`expectedVersion`). Read by the same `revisionOf` the
+    // server's stale check reads, so an absent counter is `0` on both sides
+    // and a sheet opened on a legacy row claims exactly what the server
+    // holds. Left out, every copy read `null`, every staff save claimed
+    // nothing, and the stale-screen guard never refused an older sheet.
+    revision: revisionOf(data),
+  });
+  return appointment.isFailure()
+    ? fail(malformed('document', appointment.error))
+    : ok(appointment.value);
+}
+
 /**
  * The booker, denormalized so "my appointments" is one indexed query rather
  * than a scan. Taken from the `self` seat — the one seat whose subject is the
@@ -680,6 +1040,83 @@ export function ownerUserIdOf(appointment: Appointment): string | null {
     }
   }
   return null;
+}
+
+/**
+ * Every account on the visit, deduplicated and sorted — the `busyKeys`
+ * precedent: one array mirror, one `array-contains` index. Sorted so the
+ * same seats always write the same bytes; guests have no account and no
+ * history to find.
+ */
+export function subjectUserIdsOf(appointment: Appointment): readonly string[] {
+  const ids = new Set<string>();
+  for (const seat of appointment.seats) {
+    if (seat.subject.kind === 'account') ids.add(seat.subject.userId.value);
+  }
+  return [...ids].sort();
+}
+
+/**
+ * The same set read off a STORED document's seats, tolerant of any shape —
+ * for the paths that hold raw data: the trigger's before/after, and the
+ * backfill stamping rows written before the mirror existed.
+ */
+export function subjectUserIdsFromDocument(
+  data: PersistedDocument | undefined,
+): readonly string[] {
+  const seats = Array.isArray(data?.['seats'])
+    ? (data['seats'] as readonly unknown[])
+    : [];
+  const ids = new Set<string>();
+  for (const raw of seats) {
+    if (raw === null || typeof raw !== 'object') continue;
+    const subject = (raw as Record<string, unknown>)['subject'];
+    if (subject === null || typeof subject !== 'object') continue;
+    const fields = subject as Record<string, unknown>;
+    const userId = fields['userId'];
+    if (
+      fields['kind'] === 'account' &&
+      typeof userId === 'string' &&
+      userId.trim().length > 0
+    ) {
+      ids.add(userId);
+    }
+  }
+  return [...ids].sort();
+}
+
+function placementOf(raw: unknown): AppointmentPlacement | null {
+  return raw === 'self' || raw === 'staff' ? raw : null;
+}
+
+/**
+ * The placement the COMMIT stamped, or `null` for a row it did not — one
+ * written before the field, whatever the backfill has since inferred. Read
+ * as evidence that the row's seat preferences were recorded, not defaulted.
+ */
+export function placementFromDocument(
+  data: PersistedDocument | undefined,
+): AppointmentPlacement | null {
+  return placementOf(data?.['placement']);
+}
+
+/**
+ * The placement the backfill reconstructed from a pre-P0 row's commit audit
+ * row (§12.5.1), or `null` when there is none. A statement of who most
+ * likely placed the booking — never evidence about its seats: the commit
+ * that wrote them stored an omitted barber preference as `specific`, so a
+ * phone booking into whichever chair was free reads exactly like a request.
+ *
+ * `inferredPlacement` is deliberately NOT a field `appointmentToDocument`
+ * owns: the mapper writes what the aggregate and the commit know, and this
+ * is neither. Left out of `APPOINTMENT_DOCUMENT_FIELDS`, it rides every
+ * rewrite through `preservedAppointmentFields` (a staff edit) or `update()`
+ * (every other write), so no edit can erase it or promote it to a stamp.
+ */
+export function inferredPlacementFromDocument(
+  data: PersistedDocument | undefined,
+): AppointmentPlacement | null {
+  return placementOf(data?.['inferredPlacement']);
 }
 
 /**
@@ -749,39 +1186,80 @@ export function busyContributionsOf(
   data: PersistedDocument,
 ): ReadonlyMap<string, BusyContribution> {
   const byKey = new Map<string, { zone: string; intervals: Interval[] }>();
+  for (const chair of persistedChairs(data)) {
+    const key = busyDocumentId(chair.barberId, chair.dayKey);
+    const entry = byKey.get(key) ?? { zone: chair.zone, intervals: [] };
+    entry.intervals.push(chair.occupied);
+    byKey.set(key, entry);
+  }
+  return byKey;
+}
+
+/**
+ * Every chair a PERSISTED appointment holds, read straight off its stored
+ * seats: the same geometry `busyContributionsOf` projects, as the chair time
+ * a move hands back (`BookingSnapshot.release`).
+ *
+ * For a visit the aggregate reads, `Appointment.chairTimes()` is the source
+ * and says the same. This is for one it cannot (a legacy document, a field
+ * the mapper refuses): its chairs are still in the busy projection, because
+ * the rebuild trigger projects exactly this, so they are still its own to
+ * hand back. A seat that does not parse holds no chair here either, as in
+ * the projection.
+ */
+export function persistedChairTimesOf(
+  data: PersistedDocument,
+): readonly ChairTime[] {
+  return persistedChairs(data).flatMap((chair): readonly ChairTime[] => {
+    const barberId = BarberId.create(chair.barberId);
+    return barberId.isSuccess()
+      ? [{ barberId: barberId.value, occupied: chair.occupied }]
+      : [];
+  });
+}
+
+/**
+ * The stored seats' chairs: setup + service + cleanup around each sold
+ * slot, the envelope `decideBooking` writes. ONE reading of the raw seat
+ * geometry, for the projection and the release alike.
+ */
+function persistedChairs(data: PersistedDocument): readonly {
+  readonly barberId: string;
+  readonly zone: string;
+  /** The sold slot's start day — what the busy doc is keyed by. */
+  readonly dayKey: string;
+  readonly occupied: Interval;
+}[] {
   const seats = Array.isArray(data['seats'])
     ? (data['seats'] as readonly Record<string, unknown>[])
     : [];
-
-  for (const seat of seats) {
+  return seats.flatMap((seat) => {
     const slot = (seat['slot'] ?? {}) as Record<string, unknown>;
     const terms = (seat['terms'] ?? {}) as Record<string, unknown>;
     const zone = String(slot['zone'] ?? '');
     const barberId = String(seat['barberId'] ?? '');
-    if (zone.length === 0 || barberId.length === 0) continue;
+    if (zone.length === 0 || barberId.length === 0) return [];
 
     const start = ZonedDateTime.fromISO(String(slot['startIso'] ?? ''), zone);
     const end = ZonedDateTime.fromISO(String(slot['endIso'] ?? ''), zone);
-    if (start.isFailure() || end.isFailure()) continue;
+    if (start.isFailure() || end.isFailure()) return [];
 
     const setup = Number(terms['setupMinutes'] ?? 0);
     const cleanup = Number(terms['cleanupMinutes'] ?? 0);
-
-    const key = busyDocumentId(
-      barberId,
-      CalendarDay.fromZonedDateTime(start.value).key(),
-    );
-    const entry = byKey.get(key) ?? { zone, intervals: [] };
-    entry.intervals.push(
-      Interval.of(
-        start.value.toMillis() - (Number.isFinite(setup) ? setup : 0) * 60_000,
-        end.value.toMillis() +
-          (Number.isFinite(cleanup) ? cleanup : 0) * 60_000,
-      ),
-    );
-    byKey.set(key, entry);
-  }
-  return byKey;
+    return [
+      {
+        barberId,
+        zone,
+        dayKey: CalendarDay.fromZonedDateTime(start.value).key(),
+        occupied: Interval.of(
+          start.value.toMillis() -
+            (Number.isFinite(setup) ? setup : 0) * 60_000,
+          end.value.toMillis() +
+            (Number.isFinite(cleanup) ? cleanup : 0) * 60_000,
+        ),
+      },
+    ];
+  });
 }
 
 /** Stored slots → intervals. An unparseable entry is skipped, never guessed at. */

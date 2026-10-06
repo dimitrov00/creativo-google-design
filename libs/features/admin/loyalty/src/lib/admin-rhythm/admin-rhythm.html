@@ -1,0 +1,963 @@
+<ng-container *transloco="let t">
+  <!-- A ROUTED PAGE, not a sheet (§2.6): one column at the content measure,
+       the modules 32 apart, the dock floored by the column. The back chip
+       is icon-only (quiet HIG chrome) and leads to /admin. -->
+  <main
+    class="admin-rhythm"
+    uiPaddingHorizontal="regular"
+    data-testid="admin-rhythm"
+    [attr.data-state]="state()"
+  >
+    <div class="admin-rhythm__bar">
+      <a
+        uiButton
+        routerLink="/admin"
+        uiButtonStyle="bordered"
+        uiTint="neutral"
+        uiControlSize="regular"
+        [uiIconOnly]="true"
+        [attr.aria-label]="t('admin.rhythm.back')"
+        data-testid="admin-rhythm-back"
+      >
+        <ui-icon uiName="nav.back" />
+      </a>
+    </div>
+
+    <div class="admin-rhythm__modules">
+      <!-- MA · MB -->
+      <header class="admin-rhythm__module admin-rhythm__module--head">
+        <h1 uiText uiFont="largeTitle" data-testid="admin-rhythm-title">
+          {{ t('admin.rhythm.title') }}
+        </h1>
+        <p
+          uiText
+          uiFont="callout"
+          uiForegroundStyle="secondary"
+          data-testid="admin-rhythm-lede"
+        >
+          {{ t('admin.rhythm.lede') }}
+        </p>
+      </header>
+
+      @switch (state()) { @case ('loading') {
+      <!-- MC as one block; each group as its rows' skeleton. -->
+      <div
+        class="admin-rhythm__module admin-rhythm__module--rule admin-rhythm__skeleton"
+        data-testid="admin-rhythm-skeleton"
+        aria-busy="true"
+      >
+        <ui-skeleton uiFrame uiFrameHeight="13rem" />
+      </div>
+      @for (group of [2, 3, 4]; track group) {
+      <div class="admin-rhythm__module admin-rhythm__skeleton">
+        <ui-skeleton uiFrame uiFrameHeight="1.5rem" uiFrameWidth="8rem" />
+        <ui-skeleton uiFrame uiFrameHeight="7.5rem" />
+      </div>
+      } } @case ('failed') {
+      <ui-notice
+        class="admin-rhythm__module admin-rhythm__module--rule"
+        uiTone="destructive"
+        uiAnnounce="polite"
+        data-testid="admin-rhythm-failed"
+      >
+        {{ t('admin.rhythm.failed') }}
+        <button
+          uiNoticeActions
+          type="button"
+          uiButton
+          uiButtonStyle="bordered"
+          uiControlSize="small"
+          data-testid="admin-rhythm-retry"
+          (click)="retry()"
+        >
+          {{ t('visits.retry') }}
+        </button>
+      </ui-notice>
+      } @default { @let draft = current();
+
+      <!-- What a refused «Запази», the rule moving under the draft, or
+               the lost connection says: one notice under the head. -->
+      @if (offlineNotice(); as line) {
+      <ui-notice
+        class="admin-rhythm__module admin-rhythm__module--notice"
+        uiTone="neutral"
+        uiIcon="connection.offline"
+        uiAnnounce="polite"
+        data-testid="admin-rhythm-offline"
+      >
+        {{ line }}
+      </ui-notice>
+      } @if (refusalNotice(); as line) {
+      <ui-notice
+        class="admin-rhythm__module admin-rhythm__module--notice"
+        uiTone="destructive"
+        uiAnnounce="assertive"
+        data-testid="admin-rhythm-refusal"
+      >
+        {{ line }}
+      </ui-notice>
+      }
+
+      <!-- MC and MK stand beside the form from 1024 (sticky); on a phone
+               they take their own place in the column. -->
+      <div class="admin-rhythm__aside">
+        <!-- MC · THE RULE -->
+        <section
+          class="admin-rhythm__module admin-rhythm__module--rule"
+          [attr.aria-labelledby]="id('rule')"
+        >
+          <ui-card
+            uiTone="elevated"
+            uiPadding="comfortable"
+            data-testid="admin-rhythm-rule"
+          >
+            <ui-stack uiSpacing="regular">
+              <div class="admin-rhythm__rule-row">
+                <h2 uiText uiFont="headline" [id]="id('rule')">
+                  {{ t('admin.rhythm.enabled') }}
+                </h2>
+                <button
+                  uiSwitch
+                  [uiOn]="draft.enabled"
+                  [attr.aria-label]="t('admin.rhythm.enabled')"
+                  data-testid="admin-rhythm-enabled"
+                  (uiOnChange)="patch({ enabled: $event })"
+                ></button>
+              </div>
+              @if (!store.streaksOn) {
+              <ui-notice uiTone="neutral" data-testid="admin-rhythm-flag-off">
+                {{ t('admin.rhythm.flagOff') }}
+              </ui-notice>
+              } @if (!store.published()) {
+              <p
+                uiText
+                uiFont="callout"
+                uiForegroundStyle="secondary"
+                data-testid="admin-rhythm-empty"
+              >
+                {{ t('admin.rhythm.empty') }}
+              </p>
+              } @if (store.rule(); as rule) {
+              <ui-stack uiSpacing="tight">
+                <p
+                  uiText
+                  uiFont="body"
+                  aria-live="polite"
+                  data-testid="admin-rhythm-sentence"
+                >
+                  {{ rule.sentence }}
+                </p>
+                <!-- The DIGEST, not the rule's seven clauses (§2.6.1 MC):
+                     grace · protections · excuses on one callout line; the
+                     whole rule lives behind the value rows and the sheets. -->
+                @if (digest(); as digest) {
+                <p
+                  uiText
+                  uiFont="callout"
+                  uiForegroundStyle="secondary"
+                  class="admin-rhythm__digest"
+                  data-testid="admin-rhythm-digest"
+                >
+                  {{ digest }}
+                </p>
+                } @if (upcomingLine(); as line) {
+                <p
+                  uiText
+                  uiFont="callout"
+                  uiForegroundStyle="secondary"
+                  data-testid="admin-rhythm-upcoming"
+                >
+                  {{ line }}
+                </p>
+                }
+              </ui-stack>
+              } @if (sample(); as sample) {
+              <!-- The sample run is an ILLUSTRATION of the draft, never a
+                   statistic (review 2: «7 / в ритъм» read as a live count
+                   beside the preview's «В ритъм 9»). A figure with a quiet
+                   caption «Пример» over the track; the track's own figure
+                   is hidden by the page (admin-rhythm.css), so the one live
+                   count on the page is the preview's. A reader still gets
+                   the track's sentence. -->
+              <figure class="admin-rhythm__sample">
+                <figcaption
+                  uiText
+                  uiFont="footnote"
+                  uiForegroundStyle="secondary"
+                  class="admin-rhythm__sample-caption"
+                  data-testid="admin-rhythm-sample-caption"
+                >
+                  {{ t('admin.rhythm.sample') }}
+                </figcaption>
+                <ui-streak-track
+                  class="admin-rhythm__sample-track"
+                  uiControlSize="small"
+                  uiProtectedIcon="loyalty.freeze"
+                  [uiPeriods]="sample.periods"
+                  [uiCount]="sample.count"
+                  [uiCountLabel]="sample.unit"
+                  [uiLabel]="sample.label"
+                  data-testid="admin-rhythm-sample"
+                />
+              </figure>
+              } @if (capsule(); as capsule) {
+              <div class="admin-rhythm__capsules">
+                <span
+                  uiBadge
+                  uiTone="accent"
+                  data-testid="admin-rhythm-in-force"
+                  >{{ capsule }}</span
+                >
+              </div>
+              }
+            </ui-stack>
+          </ui-card>
+        </section>
+
+        <!-- MK · THE PREVIEW, only with a draft that changes the rule. -->
+        @if (store.preview(); as previewSlice) {
+        <section
+          class="admin-rhythm__module admin-rhythm__module--preview"
+          [attr.aria-labelledby]="id('preview')"
+          [attr.aria-busy]="store.previewBusy() ? true : null"
+          data-testid="admin-rhythm-preview"
+        >
+          <ui-card uiTone="accent" uiPadding="comfortable">
+            <ui-stack uiSpacing="regular">
+              <div class="admin-rhythm__rule-row">
+                <h2 uiText uiFont="headline" [id]="id('preview')">
+                  {{ t('admin.rhythm.preview.title') }}
+                </h2>
+                <span uiBadge uiTone="neutral"
+                  >{{ t('admin.rhythm.preview.estimate') }}</span
+                >
+              </div>
+              @switch (previewSlice.status) { @case ('loading') {
+              <ui-skeleton
+                uiFrame
+                uiFrameHeight="5.5rem"
+                data-testid="admin-rhythm-preview-skeleton"
+              />
+              } @case ('failed') {
+              <ui-notice
+                uiTone="destructive"
+                data-testid="admin-rhythm-preview-failed"
+              >
+                {{ t('admin.rhythm.failed') }}
+                <button
+                  uiNoticeActions
+                  type="button"
+                  uiButton
+                  uiButtonStyle="bordered"
+                  uiControlSize="small"
+                  data-testid="admin-rhythm-preview-retry"
+                  (click)="retry()"
+                >
+                  {{ t('visits.retry') }}
+                </button>
+              </ui-notice>
+              } @case ('ready') { @if (preview(); as words) { @if (words.kind
+              === 'unavailable') {
+              <p
+                uiText
+                uiFont="callout"
+                uiForegroundStyle="secondary"
+                data-testid="admin-rhythm-preview-unavailable"
+              >
+                {{ words.reason }}
+              </p>
+              } @else {
+              <p
+                uiText
+                uiFont="callout"
+                uiForegroundStyle="secondary"
+                data-testid="admin-rhythm-preview-clients"
+              >
+                {{ words.clients }}@if (words.capped; as capped) { · {{ capped
+                }} }
+              </p>
+              @if (words.metrics.length > 0) {
+              <ui-grid [uiColumns]="3" uiSpacing="regular">
+                @for (metric of words.metrics; track metric.id) {
+                <ui-metric
+                  uiControlSize="regular"
+                  [uiValue]="metric.value"
+                  [uiDelta]="metric.delta"
+                  [uiCaption]="metric.caption"
+                  [uiLabel]="metric.label"
+                  [attr.data-testid]="
+                                      'admin-rhythm-preview-' + metric.id
+                                    "
+                />
+                }
+              </ui-grid>
+              }
+              <p
+                uiText
+                uiFont="callout"
+                class="admin-rhythm__summary"
+                data-testid="admin-rhythm-preview-summary"
+              >
+                {{ words.summary }}
+              </p>
+              } } } }
+            </ui-stack>
+          </ui-card>
+        </section>
+        }
+      </div>
+
+      @if (draft.enabled) {
+      <!-- MD · WHAT COUNTS -->
+      <section
+        class="admin-rhythm__module admin-rhythm__module--counts"
+        [attr.aria-labelledby]="id('counts')"
+      >
+        <ui-section-header uiHeaderProminence="increased">
+          <h2 uiTitle [id]="id('counts')">
+            {{ t('admin.rhythm.counts.title') }}
+          </h2>
+        </ui-section-header>
+        <ui-stack uiSpacing="compact">
+          <ul uiListGroup>
+            <!-- P2 «Брои се» — the label leads; the VALUE is the trigger. -->
+            <li uiListRow uiSize="regular" class="admin-rhythm__row">
+              <span [id]="id('qualifier')"
+                >{{ t('admin.rhythm.counts.label') }}</span
+              >
+              <span uiTrailing>
+                <ui-choice-menu
+                  uiAlignment="trailing"
+                  [uiOptions]="qualifierOptions()"
+                  [uiSelectedId]="draft.qualifier.kind === 'anyVisit' ? 'anyVisit' : 'services'"
+                  [uiLabel]="t('admin.rhythm.counts.label')"
+                  [uiPresented]="qualifierMenu()"
+                  (uiPresentedChange)="qualifierMenu.set($event)"
+                  (uiPicked)="pickQualifier($event)"
+                >
+                  <button
+                    type="button"
+                    uiInteractive
+                    uiRadius="capsule"
+                    uiMenuTrigger
+                    class="admin-rhythm__choice"
+                    [attr.aria-label]="t('admin.rhythm.counts.label') + ': ' + qualifierLabel()"
+                    data-testid="admin-rhythm-qualifier"
+                    (click)="qualifierMenu.set(true)"
+                  >
+                    <span>{{ qualifierLabel() }}</span>
+                    <ui-icon uiName="field.popUp" />
+                  </button>
+                </ui-choice-menu>
+              </span>
+            </li>
+            <!-- P2a, only with «избрани услуги» -->
+            @if (draft.qualifier.kind !== 'anyVisit') {
+            <button
+              type="button"
+              uiListRow
+              uiSize="regular"
+              [uiInteractive]="true"
+              data-testid="admin-rhythm-services"
+              (click)="openSheet('services')"
+            >
+              {{ t('admin.rhythm.counts.servicesRow') }}
+              <span uiTrailing class="admin-rhythm__value">
+                <span data-testid="admin-rhythm-services-value"
+                  >{{ servicesValue() }}</span
+                >
+                <ui-icon uiName="nav.disclosure" />
+              </span>
+            </button>
+            }
+            <!-- P4. The label wraps beside the switch (the typed rows' grammar
+                 below): «Записан час пази срока» outruns a 330 phone's row. -->
+            <li uiListRow uiSize="regular" uiLabelWraps>
+              <span [id]="id('hold')">{{ t('admin.rhythm.counts.hold') }}</span>
+              <button
+                uiSwitch
+                uiTrailing
+                [uiOn]="draft.bookingHold.enabled"
+                [attr.aria-label]="t('admin.rhythm.counts.hold')"
+                data-testid="admin-rhythm-hold"
+                (uiOnChange)="patch({ bookingHold: { enabled: $event } })"
+              ></button>
+            </li>
+            <!-- P4a, only while the hold is on. A TYPED figure's row: the
+                 label wraps beside the pill (the DS's own `uiLabelWraps`),
+                 the pill keeps the trailing edge and the row's line. -->
+            @if (draft.bookingHold.enabled) {
+            <li uiListRow uiSize="regular" uiLabelWraps>
+              <span [id]="id('hold-days')"
+                >{{ t('admin.rhythm.counts.holdDays') }}</span
+              >
+              <span
+                uiTrailing
+                uiForegroundStyle="primary"
+                class="admin-rhythm__pill"
+              >
+                <ui-unit-field
+                  uiControlSize="small"
+                  uiInputMode="numeric"
+                  [uiValue]="text(draft.bookingHold.maxDaysPastDue)"
+                  [uiUnit]="units()?.days(draft.bookingHold.maxDaysPastDue) ?? ''"
+                  [uiMin]="0"
+                  [uiLabel]="t('admin.rhythm.counts.holdDays')"
+                  uiTestId="admin-rhythm-hold-days"
+                  (uiValueChange)="setHoldDays($event)"
+                />
+              </span>
+            </li>
+            }
+            <!-- P3 -->
+            <li uiListRow uiSize="regular" uiLabelWraps>
+              <span [id]="id('min-gap')"
+                >{{ t('admin.rhythm.counts.minGap') }}</span
+              >
+              <span
+                uiTrailing
+                uiForegroundStyle="primary"
+                class="admin-rhythm__pill"
+              >
+                <ui-unit-field
+                  uiControlSize="small"
+                  uiInputMode="numeric"
+                  [uiValue]="text(draft.minGapDays)"
+                  [uiUnit]="units()?.days(draft.minGapDays) ?? ''"
+                  [uiMin]="0"
+                  [uiLabel]="t('admin.rhythm.counts.minGap')"
+                  uiTestId="admin-rhythm-min-gap"
+                  (uiValueChange)="setMinGap($event)"
+                />
+              </span>
+            </li>
+          </ul>
+          <p
+            uiText
+            uiFont="footnote"
+            uiForegroundStyle="secondary"
+            class="admin-rhythm__footnote"
+            data-testid="admin-rhythm-seat"
+          >
+            {{ t('admin.rhythm.counts.seat') }}
+          </p>
+        </ui-stack>
+      </section>
+
+      <!-- ME · THE INTERVAL -->
+      <section
+        class="admin-rhythm__module admin-rhythm__module--interval"
+        [attr.aria-labelledby]="id('interval')"
+      >
+        <ui-section-header uiHeaderProminence="increased">
+          <h2 uiTitle [id]="id('interval')">
+            {{ t('admin.rhythm.interval.title') }}
+          </h2>
+        </ui-section-header>
+        <ui-stack uiSpacing="regular">
+          <ul uiListGroup>
+            <!-- P5 -->
+            <li uiListRow uiSize="regular" class="admin-rhythm__row">
+              <span>{{ t('admin.rhythm.interval.label') }}</span>
+              <span uiTrailing>
+                <ui-choice-menu
+                  uiAlignment="trailing"
+                  [uiOptions]="intervalOptions()"
+                  [uiSelectedId]="draft.interval.kind"
+                  [uiLabel]="t('admin.rhythm.interval.label')"
+                  [uiPresented]="intervalMenu()"
+                  (uiPresentedChange)="intervalMenu.set($event)"
+                  (uiPicked)="pickInterval($event)"
+                >
+                  <button
+                    type="button"
+                    uiInteractive
+                    uiRadius="capsule"
+                    uiMenuTrigger
+                    class="admin-rhythm__choice"
+                    [attr.aria-label]="t('admin.rhythm.interval.label') + ': ' + intervalLabel()"
+                    data-testid="admin-rhythm-interval-kind"
+                    (click)="intervalMenu.set(true)"
+                  >
+                    <span>{{ intervalLabel() }}</span>
+                    <ui-icon uiName="field.popUp" />
+                  </button>
+                </ui-choice-menu>
+              </span>
+            </li>
+          </ul>
+
+          @if (personal(); as personal) {
+          <!-- P5b · the tolerance, and one habit as an example -->
+          <ui-card
+            uiTone="elevated"
+            uiPadding="comfortable"
+            data-testid="admin-rhythm-tolerance-card"
+          >
+            <ui-stack uiSpacing="regular">
+              <ui-stack uiSpacing="tight" uiAlignment="center">
+                <p
+                  class="admin-rhythm__readout"
+                  aria-hidden="true"
+                  data-testid="admin-rhythm-tolerance-readout"
+                >
+                  {{ toleranceText() }}
+                </p>
+                <p
+                  uiText
+                  uiFont="callout"
+                  uiForegroundStyle="secondary"
+                  class="admin-rhythm__example"
+                  data-testid="admin-rhythm-tolerance-example"
+                >
+                  {{ toleranceExample() }}
+                </p>
+              </ui-stack>
+              <ui-slider
+                [uiValue]="personal.tolerancePct"
+                [uiMin]="0"
+                [uiMax]="100"
+                [uiStep]="5"
+                [uiTickEvery]="5"
+                [uiMajorEvery]="25"
+                [uiMarks]="toleranceMarks"
+                [uiLabel]="t('admin.rhythm.interval.personal')"
+                [uiValueText]="toleranceText()"
+                uiTestId="admin-rhythm-tolerance"
+                (uiValueChange)="setTolerance($event)"
+              />
+            </ui-stack>
+          </ui-card>
+          <!-- P5c · the clamp, in weeks: typed figures' rows, as P3's -->
+          <ul uiListGroup>
+            <li uiListRow uiSize="regular" uiLabelWraps>
+              <span>{{ t('admin.rhythm.interval.min') }}</span>
+              <span
+                uiTrailing
+                uiForegroundStyle="primary"
+                class="admin-rhythm__pill"
+              >
+                <ui-unit-field
+                  uiControlSize="small"
+                  uiInputMode="numeric"
+                  [uiValue]="text(weeksOf(personal.minDays))"
+                  [uiUnit]="units()?.weeks(weeksOf(personal.minDays)) ?? ''"
+                  [uiMin]="2"
+                  [uiLabel]="t('admin.rhythm.interval.min')"
+                  uiTestId="admin-rhythm-clamp-min"
+                  (uiValueChange)="setClamp('minDays', $event)"
+                />
+              </span>
+            </li>
+            <li uiListRow uiSize="regular" uiLabelWraps>
+              <span>{{ t('admin.rhythm.interval.max') }}</span>
+              <span
+                uiTrailing
+                uiForegroundStyle="primary"
+                class="admin-rhythm__pill"
+              >
+                <ui-unit-field
+                  uiControlSize="small"
+                  uiInputMode="numeric"
+                  [uiValue]="text(weeksOf(personal.maxDays))"
+                  [uiUnit]="units()?.weeks(weeksOf(personal.maxDays)) ?? ''"
+                  [uiMin]="2"
+                  [uiLabel]="t('admin.rhythm.interval.max')"
+                  uiTestId="admin-rhythm-clamp-max"
+                  (uiValueChange)="setClamp('maxDays', $event)"
+                />
+              </span>
+            </li>
+            <li uiListRow uiSize="regular" uiLabelWraps>
+              <span>{{ t('admin.rhythm.interval.fallback') }}</span>
+              <span
+                uiTrailing
+                uiForegroundStyle="primary"
+                class="admin-rhythm__pill"
+              >
+                <ui-unit-field
+                  uiControlSize="small"
+                  uiInputMode="numeric"
+                  [uiValue]="text(weeksOf(personal.fallbackDays))"
+                  [uiUnit]="units()?.weeks(weeksOf(personal.fallbackDays)) ?? ''"
+                  [uiMin]="2"
+                  [uiLabel]="t('admin.rhythm.interval.fallback')"
+                  uiTestId="admin-rhythm-fallback"
+                  (uiValueChange)="setClamp('fallbackDays', $event)"
+                />
+              </span>
+            </li>
+          </ul>
+          } @else {
+          <!-- P5a · the readout and the ruler, 2–26 weeks -->
+          <ui-card
+            uiTone="elevated"
+            uiPadding="comfortable"
+            data-testid="admin-rhythm-interval-card"
+          >
+            <ui-stack uiSpacing="regular">
+              <p
+                class="admin-rhythm__readout"
+                aria-hidden="true"
+                data-testid="admin-rhythm-interval-readout"
+              >
+                {{ weeksText() }}
+              </p>
+              <ui-slider
+                [uiValue]="weeks()"
+                [uiMin]="2"
+                [uiMax]="26"
+                [uiStep]="1"
+                [uiTickEvery]="1"
+                [uiMajorEvery]="2"
+                [uiMarks]="weekMarks"
+                [uiLabel]="t('admin.rhythm.interval.label')"
+                [uiValueText]="weeksText()"
+                uiTestId="admin-rhythm-interval-weeks"
+                (uiValueChange)="setWeeks($event)"
+              />
+            </ui-stack>
+          </ui-card>
+          }
+        </ui-stack>
+      </section>
+
+      <!-- MF · THE GRACE -->
+      <section
+        class="admin-rhythm__module admin-rhythm__module--grace"
+        [attr.aria-labelledby]="id('grace')"
+      >
+        <ui-section-header uiHeaderProminence="increased">
+          <h2 uiTitle [id]="id('grace')">
+            {{ t('admin.rhythm.grace.title') }}
+          </h2>
+        </ui-section-header>
+        <ui-stack uiSpacing="regular">
+          <ui-card
+            uiTone="elevated"
+            uiPadding="comfortable"
+            data-testid="admin-rhythm-grace-card"
+          >
+            <ui-stack uiSpacing="regular">
+              <p
+                class="admin-rhythm__readout"
+                aria-hidden="true"
+                data-testid="admin-rhythm-grace-readout"
+              >
+                {{ graceText() }}
+              </p>
+              <ui-slider
+                [uiValue]="draft.graceDays"
+                [uiMin]="0"
+                [uiMax]="graceMax()"
+                [uiStep]="1"
+                [uiTickEvery]="1"
+                [uiMajorEvery]="7"
+                [uiMarks]="graceMarks()"
+                [uiLabel]="t('admin.rhythm.grace.title')"
+                [uiValueText]="graceText()"
+                uiTestId="admin-rhythm-grace"
+                (uiValueChange)="patch({ graceDays: $event })"
+              />
+            </ui-stack>
+          </ui-card>
+          <ul uiListGroup>
+            <!-- P7 -->
+            <li uiListRow uiSize="regular" class="admin-rhythm__row">
+              <span>{{ t('admin.rhythm.grace.lead') }}</span>
+              <span uiTrailing>
+                <ui-choice-menu
+                  uiAlignment="trailing"
+                  [uiOptions]="riskLeadOptions()"
+                  [uiSelectedId]="text(draft.riskLeadDays)"
+                  [uiLabel]="t('admin.rhythm.grace.lead')"
+                  [uiPresented]="riskLeadMenu()"
+                  (uiPresentedChange)="riskLeadMenu.set($event)"
+                  (uiPicked)="pickRiskLead($event)"
+                >
+                  <button
+                    type="button"
+                    uiInteractive
+                    uiRadius="capsule"
+                    uiMenuTrigger
+                    class="admin-rhythm__choice"
+                    [attr.aria-label]="t('admin.rhythm.grace.lead') + ': ' + riskLeadLabel()"
+                    data-testid="admin-rhythm-risk-lead"
+                    (click)="riskLeadMenu.set(true)"
+                  >
+                    <span>{{ riskLeadLabel() }}</span>
+                    <ui-icon uiName="field.popUp" />
+                  </button>
+                </ui-choice-menu>
+              </span>
+            </li>
+          </ul>
+        </ui-stack>
+      </section>
+
+      <!-- MG · MORE RULES: three value rows, each opens a sheet -->
+      <section
+        class="admin-rhythm__module admin-rhythm__module--more"
+        [attr.aria-labelledby]="id('more')"
+      >
+        <ui-section-header uiHeaderProminence="increased">
+          <h2 uiTitle [id]="id('more')">{{ t('admin.rhythm.more.title') }}</h2>
+        </ui-section-header>
+        <ui-list-group>
+          <button
+            type="button"
+            uiListRow
+            uiSize="regular"
+            [uiInteractive]="true"
+            class="admin-rhythm__row"
+            data-testid="admin-rhythm-row-protections"
+            (click)="openSheet('protections')"
+          >
+            {{ t('admin.rhythm.protections.title') }}
+            <span uiTrailing class="admin-rhythm__value">
+              <span data-testid="admin-rhythm-row-protections-value"
+                >{{ protectionsValue() }}</span
+              >
+              <ui-icon uiName="nav.disclosure" />
+            </span>
+          </button>
+          <button
+            type="button"
+            uiListRow
+            uiSize="regular"
+            [uiInteractive]="true"
+            class="admin-rhythm__row"
+            data-testid="admin-rhythm-row-excuses"
+            (click)="openSheet('excuses')"
+          >
+            {{ t('admin.rhythm.excuses.title') }}
+            <span uiTrailing class="admin-rhythm__value">
+              <span data-testid="admin-rhythm-row-excuses-value"
+                >{{ excusesValue() }}</span
+              >
+              <ui-icon uiName="nav.disclosure" />
+            </span>
+          </button>
+          <button
+            type="button"
+            uiListRow
+            uiSize="regular"
+            [uiInteractive]="true"
+            class="admin-rhythm__row"
+            data-testid="admin-rhythm-row-afterMiss"
+            (click)="openSheet('afterMiss')"
+          >
+            {{ t('admin.rhythm.afterMiss.title') }}
+            <span uiTrailing class="admin-rhythm__value">
+              <span data-testid="admin-rhythm-row-afterMiss-value"
+                >{{ afterMissValue() }}</span
+              >
+              <ui-icon uiName="nav.disclosure" />
+            </span>
+          </button>
+        </ui-list-group>
+      </section>
+      }
+
+      <!-- MJ · TAKING EFFECT, only with a draft -->
+      @if (store.dirty()) {
+      <section
+        class="admin-rhythm__module admin-rhythm__module--effective"
+        [attr.aria-labelledby]="id('effective')"
+        data-testid="admin-rhythm-effective"
+      >
+        <ui-section-header uiHeaderProminence="increased">
+          <h2 uiTitle [id]="id('effective')">
+            {{ t('admin.rhythm.effective.title') }}
+          </h2>
+        </ui-section-header>
+        <ui-stack uiSpacing="compact">
+          <ul uiListGroup>
+            <!-- P13 -->
+            <li uiListRow uiSize="regular" class="admin-rhythm__row">
+              <span>{{ t('admin.rhythm.effective.from') }}</span>
+              <span uiTrailing>
+                <ui-choice-menu
+                  uiAlignment="trailing"
+                  [uiOptions]="effectiveOptions()"
+                  [uiSelectedId]="effective().choice"
+                  [uiLabel]="t('admin.rhythm.effective.from')"
+                  [uiPresented]="effectiveMenu()"
+                  (uiPresentedChange)="effectiveMenu.set($event)"
+                  (uiPicked)="pickEffective($event)"
+                >
+                  <button
+                    type="button"
+                    uiInteractive
+                    uiRadius="capsule"
+                    uiMenuTrigger
+                    class="admin-rhythm__choice"
+                    [attr.aria-label]="t('admin.rhythm.effective.from') + ': ' + effective().label"
+                    data-testid="admin-rhythm-effective-from"
+                    (click)="effectiveMenu.set(true)"
+                  >
+                    <span data-testid="admin-rhythm-effective-from-value"
+                      >{{ effective().label }}</span
+                    >
+                    <ui-icon uiName="field.popUp" />
+                  </button>
+                </ui-choice-menu>
+              </span>
+            </li>
+            <!-- P14 · a value, not a menu, in this round -->
+            <li
+              uiListRow
+              uiSize="regular"
+              class="admin-rhythm__row"
+              data-testid="admin-rhythm-transition"
+            >
+              {{ t('admin.rhythm.transition.label') }}
+              <span uiTrailing
+                >{{ t('admin.rhythm.transition.grandfather') }}</span
+              >
+            </li>
+          </ul>
+          <p
+            uiText
+            uiFont="footnote"
+            uiForegroundStyle="secondary"
+            class="admin-rhythm__footnote"
+          >
+            {{ t('admin.rhythm.transition.note') }}
+          </p>
+        </ui-stack>
+      </section>
+      }
+
+      <!-- ML · HISTORY -->
+      <section
+        class="admin-rhythm__module admin-rhythm__module--history"
+        [attr.aria-labelledby]="id('history')"
+      >
+        <ui-section-header uiHeaderProminence="increased">
+          <h2 uiTitle [id]="id('history')">
+            {{ t('admin.rhythm.history.title') }}
+          </h2>
+        </ui-section-header>
+        <ui-stack uiSpacing="regular">
+          @if (store.upcoming()) {
+          <!-- A scheduled version can be called off: arm, then confirm, inline. -->
+          <button
+            type="button"
+            uiListRow
+            uiSize="regular"
+            uiVariant="neutral"
+            uiRole="destructive"
+            [uiInteractive]="true"
+            [disabled]="store.withdrawing()"
+            [attr.data-armed]="withdrawArmed() ? '' : null"
+            [attr.aria-busy]="store.withdrawing() ? true : null"
+            data-testid="admin-rhythm-withdraw"
+            (click)="tapWithdraw()"
+          >
+            {{ t('admin.rhythm.history.withdraw') }} @if (withdrawArmed()) {
+            <span
+              uiTrailing
+              uiText
+              uiFont="callout"
+              uiWeight="semibold"
+              uiForegroundStyle="primary"
+              >{{ t('staff.visit.confirm') }}</span
+            >
+            }
+          </button>
+          } @switch (store.versions().status) { @case ('loading') {
+          <ui-skeleton
+            uiFrame
+            uiFrameHeight="7.5rem"
+            data-testid="admin-rhythm-history-skeleton"
+          />
+          } @case ('failed') {
+          <ui-notice
+            uiTone="destructive"
+            data-testid="admin-rhythm-history-failed"
+          >
+            {{ t('admin.rhythm.failed') }}
+            <button
+              uiNoticeActions
+              type="button"
+              uiButton
+              uiButtonStyle="bordered"
+              uiControlSize="small"
+              data-testid="admin-rhythm-history-retry"
+              (click)="retry()"
+            >
+              {{ t('visits.retry') }}
+            </button>
+          </ui-notice>
+          } @case ('ready') { @if (history().length > 0) {
+          <ul uiListGroup data-testid="admin-rhythm-history">
+            @for (row of history(); track row.version) {
+            <li
+              uiListRow
+              uiSize="regular"
+              uiAlignment="leading"
+              uiLabelWraps
+              class="admin-rhythm__row admin-rhythm__history-row"
+              [attr.data-withdrawn]="row.withdrawn ? '' : null"
+              [attr.data-testid]="'admin-rhythm-version-' + row.version"
+            >
+              <span class="admin-rhythm__history-title">{{ row.title }}</span>
+              <span uiTrailing class="admin-rhythm__history-by"
+                >{{ row.by }}</span
+              >
+            </li>
+            }
+          </ul>
+          } } }
+        </ui-stack>
+      </section>
+      } }
+    </div>
+
+    <!-- MM · the dock: hugged, trailing; present only with a valid draft that differs. -->
+    @if (store.canSave()) {
+    <ui-page-action-bar data-testid="admin-rhythm-dock">
+      <button
+        type="button"
+        uiButton
+        uiButtonStyle="borderedProminent"
+        uiControlSize="large"
+        [uiLoading]="store.saving()"
+        data-testid="admin-rhythm-save"
+        (click)="save()"
+      >
+        {{ t('admin.rhythm.save') }}
+      </button>
+    </ui-page-action-bar>
+    }
+  </main>
+
+  <lib-admin-rhythm-sheet
+    [kind]="sheetKind()"
+    [services]="serviceGroups()"
+    (closed)="closeSheet()"
+  />
+
+  <!-- A yes/no question is `ui-alert`: a stricter rule, a flip of the switch, a leave with a draft. -->
+  <ui-alert
+    [uiPresented]="confirm() !== null"
+    [uiTitle]="confirmTitle()"
+    [uiMessage]="confirmMessage()"
+    [uiActions]="confirmActions()"
+    data-testid="admin-rhythm-alert"
+    (uiPicked)="onConfirmPick($event)"
+    (uiDismissed)="onConfirmDismiss()"
+  />
+
+  <!-- The receipt («Правилото е запазено · от 30.09» with «Отмени»), or a refusal said in passing. -->
+  <ui-toast
+    [uiPresented]="toast() !== null"
+    [uiLabel]="toast()?.label ?? ''"
+    [uiActionLabel]="toast()?.undo ? t('admin.rhythm.undo') : ''"
+    [uiDismissLabel]="t('staff.day.undo.dismiss')"
+    data-testid="admin-rhythm-toast"
+    (uiAction)="undo()"
+    (uiDismissed)="toast.set(null)"
+  />
+</ng-container>

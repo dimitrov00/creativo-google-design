@@ -6,7 +6,9 @@
  * `@ts-expect-error` IS the test.
  */
 import { ServiceId } from '@creativo/domain/catalog';
+import { ClientStatsPolicy } from './client-stats-policy';
 import { AppointmentId, GuestId, SeatId } from './ids';
+import { type CancellationReason, seatCancelled } from './seat-outcome';
 
 function takesAppointmentId(_id: AppointmentId): void {
   // no-op — signature-only fixture
@@ -33,3 +35,19 @@ takesAppointmentId(serviceId);
 declare const guestId: GuestId;
 // @ts-expect-error — GuestId cannot substitute where SeatId is required
 takesSeatId(guestId);
+
+// (d) a cancellation's window is a validated `CancellationWindow` or unknown
+// (`null`) — never a raw number, and never a look-alike object, which is
+// what lets every reader trust a stamp without re-checking it.
+declare const reason: CancellationReason;
+// @ts-expect-error — a raw number of hours is not a CancellationWindow
+seatCancelled(0, 'staff', reason, 24);
+// @ts-expect-error — a look-alike object is not a CancellationWindow (the class is nominal)
+seatCancelled(0, 'staff', reason, {
+  hours: 24,
+  deadlineMs: (startMs: number) => startMs,
+  allowsFreeCancelAt: () => true,
+  equals: () => true,
+});
+// @ts-expect-error — the stats take the same type as the stamp
+ClientStatsPolicy.default().isLateCancellation(0, 0, 24);

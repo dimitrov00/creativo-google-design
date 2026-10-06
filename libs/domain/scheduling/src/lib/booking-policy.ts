@@ -1,6 +1,7 @@
 import { Result, fail, ok } from '@creativo/domain/kernel';
 import { CalendarDay } from './calendar-day';
 import { InvalidBookingPolicyError } from './booking-policy.errors';
+import { CancellationWindow } from './cancellation-window';
 
 export interface BookingPolicyProps {
   /** People per booking, the booker included. */
@@ -19,7 +20,10 @@ export interface BookingPolicyProps {
    * explanation. A month horizon ends where a month ends.
    */
   readonly horizonMonths: number;
-  /** Free cancellation window. */
+  /**
+   * Free cancellation window, in whole hours — validated by
+   * `CancellationWindow.create`, the one rule for the number.
+   */
   readonly cancellationWindowHours: number;
   /**
    * How many days one flexible request may span.
@@ -58,7 +62,11 @@ export class BookingPolicy {
     readonly slotStepMinutes: number,
     readonly minLeadMinutes: number,
     readonly horizonMonths: number,
-    readonly cancellationWindowHours: number,
+    /**
+     * The free-cancellation window as a value — what a cancel stamps on the
+     * seats it closes (`Appointment.cancel`, the cancel callables).
+     */
+    readonly cancellationWindow: CancellationWindow,
     readonly maxFlexibleDays: number,
     readonly autoConfirm: boolean,
   ) {}
@@ -82,7 +90,20 @@ export class BookingPolicy {
     positiveInt(props.slotStepMinutes, 'slotStepMinutes');
     nonNegativeInt(props.minLeadMinutes, 'minLeadMinutes');
     positiveInt(props.horizonMonths, 'horizonMonths');
-    nonNegativeInt(props.cancellationWindowHours, 'cancellationWindowHours');
+    // The window's rule is the value object's, never re-encoded here: the
+    // stamp a cancelled seat carries and the setting it was read from must
+    // accept exactly the same numbers.
+    const cancellationWindow = CancellationWindow.create(
+      props.cancellationWindowHours,
+    );
+    if (cancellationWindow.isFailure()) {
+      errors.push(
+        new InvalidBookingPolicyError(
+          'cancellationWindowHours',
+          props.cancellationWindowHours,
+        ),
+      );
+    }
     positiveInt(props.maxFlexibleDays, 'maxFlexibleDays');
 
     // A step that does not divide the hour produces a grid that drifts
@@ -98,14 +119,16 @@ export class BookingPolicy {
       );
     }
 
-    if (errors.length > 0) return fail(errors);
+    if (errors.length > 0 || cancellationWindow.isFailure()) {
+      return fail(errors);
+    }
     return ok(
       new BookingPolicy(
         props.maxPartySize,
         props.slotStepMinutes,
         props.minLeadMinutes,
         props.horizonMonths,
-        props.cancellationWindowHours,
+        cancellationWindow.value,
         props.maxFlexibleDays,
         props.autoConfirm,
       ),
@@ -144,19 +167,29 @@ export class BookingPolicy {
     return result.value;
   }
 
+  /** The window in whole hours — the number the settings document holds. */
+  get cancellationWindowHours(): number {
+    return this.cancellationWindow.hours;
+  }
+
   /**
    * The last instant a client may still cancel for free — the appointment's
-   * start minus the window. Defined HERE, once, because two consumers must
-   * agree to the millisecond: the `cancelAppointment` callable refuses past
-   * it, and the appointments page disables its button and names the deadline.
-   * A rule enforced in one place and displayed from another is two rules.
+   * start minus the window. Drawn by `CancellationWindow.deadlineMs`, once,
+   * because three consumers must agree to the millisecond: the
+   * `cancelAppointment` callable refuses past it, the appointments page
+   * disables its button and names the deadline, and the stats judge a past
+   * cancellation against the window it stamped. A rule enforced in one place
+   * and displayed from another is two rules.
    */
   cancellationDeadlineMs(appointmentStartMs: number): number {
-    return appointmentStartMs - this.cancellationWindowHours * 3_600_000;
+    return this.cancellationWindow.deadlineMs(appointmentStartMs);
   }
 
   mayCancelAt(appointmentStartMs: number, nowMs: number): boolean {
-    return nowMs <= this.cancellationDeadlineMs(appointmentStartMs);
+    return this.cancellationWindow.allowsFreeCancelAt(
+      appointmentStartMs,
+      nowMs,
+    );
   }
 
   /** Field-wise equality — what "the policy changed" actually means. */
@@ -166,7 +199,7 @@ export class BookingPolicy {
       this.slotStepMinutes === other.slotStepMinutes &&
       this.minLeadMinutes === other.minLeadMinutes &&
       this.horizonMonths === other.horizonMonths &&
-      this.cancellationWindowHours === other.cancellationWindowHours &&
+      this.cancellationWindow.equals(other.cancellationWindow) &&
       this.maxFlexibleDays === other.maxFlexibleDays
     );
   }

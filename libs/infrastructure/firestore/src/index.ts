@@ -1,24 +1,12 @@
-export * from './lib/firestore-paths';
+// EAGER exports only — this barrel is in the web app's initial chunk, so
+// nothing here may import firebase/firestore as a value (a type import is
+// fine). The Firestore SDK, `provideFirestoreDb` and every Firestore adapter
+// are one lazy chunk behind `loadFirestoreAdapters()` (./lib/firestore.lazy.ts);
+// bind their ports with `provideLazyPort` (@creativo/infrastructure/firebase-app).
+export * from './lib/firestore.lazy';
 export * from './lib/subscribe-with-retry';
-export * from './lib/appointment-repository.adapter';
-export * from './lib/appointment-notes.adapter';
-export * from './lib/availability-reader.adapter';
+// The callable adapters only need firebase/functions, which the session
+// loads at boot anyway.
 export * from './lib/booking-gateway.adapter';
-export * from './lib/booking-policy-reader.adapter';
-export * from './lib/notification-reader.adapter';
-export * from './lib/schedule-exception-writer.adapter';
 export * from './lib/waitlist-gateway.adapter';
-export * from './lib/waitlist-reader.adapter';
-export * from './lib/catalog-reader.adapter';
 export * from './lib/contact-change.adapter';
-export * from './lib/coupon-grant-repository.adapter';
-export * from './lib/coupon-reader.adapter';
-export * from './lib/gift-voucher-reader.adapter';
-export * from './lib/impersonation.adapter';
-export * from './lib/invitation.adapter';
-export * from './lib/profile.adapter';
-export * from './lib/reward-progress-reader.adapter';
-export * from './lib/user-search.adapter';
-export * from './lib/position-repository.adapter';
-export * from './lib/course-repository.adapter';
-export * from './lib/event-repository.adapter';

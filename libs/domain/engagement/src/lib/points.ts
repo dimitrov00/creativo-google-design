@@ -1,11 +1,16 @@
 import { Result, fail, ok } from '@creativo/domain/kernel';
-import { InvalidPointsError } from './points.errors';
+import { InsufficientPointsError, InvalidPointsError } from './points.errors';
 
 /**
  * Non-negative integer reward points. Ports v2's `primitives/Points.ts`
  * Opaque-type rule into a class + Result factory (this repo's VO
- * template, blueprint §2.3) — `Points` can never go negative;
- * `subtract` clamps to zero so accidental over-spend is unrepresentable.
+ * template, blueprint §2.3) — `Points` can never go negative.
+ *
+ * `subtract` REFUSES an over-spend rather than clamping it (T2, R27). A clamp
+ * makes the shortfall vanish, and a ledger whose entries no longer sum to its
+ * balance cannot be audited or reversed. A system cascade that genuinely
+ * leaves a client in debt records that as an explicit owed balance on the
+ * account, never as a `Points` value.
  */
 export class Points {
   private constructor(private readonly _amount: number) {}
@@ -35,9 +40,12 @@ export class Points {
     return new Points(this._amount + other._amount);
   }
 
-  /** Subtract `other` from this, clamping at zero — over-spend is unrepresentable. */
-  subtract(other: Points): Points {
-    return new Points(Math.max(0, this._amount - other._amount));
+  /** Take `other` from this balance, or refuse when it is more than the balance holds. */
+  subtract(other: Points): Result<Points, InsufficientPointsError> {
+    if (other._amount > this._amount) {
+      return fail(new InsufficientPointsError(other._amount, this._amount));
+    }
+    return ok(new Points(this._amount - other._amount));
   }
 
   equals(other: Points): boolean {

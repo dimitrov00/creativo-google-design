@@ -1,0 +1,2861 @@
+{
+  "badgeCategories": {
+    "cat-milestones": {
+      "kind": "milestones",
+      "title": {
+        "bg": "Етапи",
+        "en": "Milestones"
+      },
+      "order": 1
+    },
+    "cat-mastery": {
+      "kind": "mastery",
+      "title": {
+        "bg": "Майсторство",
+        "en": "Mastery"
+      },
+      "order": 2
+    },
+    "cat-barbers": {
+      "kind": "barbers",
+      "title": {
+        "bg": "Бръснари и салони",
+        "en": "Barbers & shops"
+      },
+      "order": 3
+    },
+    "cat-rhythm": {
+      "kind": "rhythm",
+      "title": {
+        "bg": "Ритъм",
+        "en": "Rhythm"
+      },
+      "order": 4
+    },
+    "cat-special": {
+      "kind": "special",
+      "title": {
+        "bg": "Специални",
+        "en": "Special"
+      },
+      "order": 5
+    },
+    "cat-records": {
+      "kind": "records",
+      "title": {
+        "bg": "Рекорди",
+        "en": "Records"
+      },
+      "order": 6
+    }
+  },
+  "badgeSeries": {
+    "series-visits": {
+      "categoryId": "cat-milestones",
+      "seasonId": null,
+      "title": {
+        "bg": "Посещения",
+        "en": "Visits"
+      },
+      "requirement": {
+        "bg": "Завършени посещения",
+        "en": "Completed visits"
+      },
+      "emblem": "visits",
+      "subject": null,
+      "metric": {
+        "metric": "client.visits.completed"
+      },
+      "art": null,
+      "levels": [
+        {
+          "level": 1,
+          "ruleId": "rule-visits-1",
+          "target": 1,
+          "requirement": {
+            "bg": "1 посещение",
+            "en": "1 visit"
+          },
+          "awards": []
+        },
+        {
+          "level": 2,
+          "ruleId": "rule-visits-2",
+          "target": 5,
+          "requirement": {
+            "bg": "5 посещения",
+            "en": "5 visits"
+          },
+          "awards": [
+            {
+              "kind": "points",
+              "points": 20
+            }
+          ]
+        },
+        {
+          "level": 3,
+          "ruleId": "rule-visits-3",
+          "target": 10,
+          "requirement": {
+            "bg": "10 посещения",
+            "en": "10 visits"
+          },
+          "awards": [
+            {
+              "kind": "points",
+              "points": 50
+            }
+          ]
+        },
+        {
+          "level": 4,
+          "ruleId": "rule-visits-4",
+          "target": 25,
+          "requirement": {
+            "bg": "25 посещения",
+            "en": "25 visits"
+          },
+          "awards": [
+            {
+              "kind": "points",
+              "points": 100
+            }
+          ]
+        },
+        {
+          "level": 5,
+          "ruleId": "rule-visits-5",
+          "target": 50,
+          "requirement": {
+            "bg": "50 посещения",
+            "en": "50 visits"
+          },
+          "awards": [
+            {
+              "kind": "points",
+              "points": 200
+            }
+          ]
+        }
+      ],
+      "repeatable": false,
+      "order": 1,
+      "retiredAt": null,
+      "version": 1
+    },
+    "series-tenure": {
+      "categoryId": "cat-milestones",
+      "seasonId": null,
+      "title": {
+        "bg": "Години с нас",
+        "en": "Years with us"
+      },
+      "requirement": {
+        "bg": "Години с нас",
+        "en": "Years with us"
+      },
+      "emblem": "anniversary",
+      "subject": null,
+      "metric": {
+        "metric": "client.tenure.days"
+      },
+      "art": null,
+      "levels": [
+        {
+          "level": 1,
+          "ruleId": "rule-tenure-1",
+          "target": 365,
+          "requirement": {
+            "bg": "1 година с нас",
+            "en": "1 year with us"
+          },
+          "awards": [
+            {
+              "kind": "points",
+              "points": 50
+            }
+          ]
+        },
+        {
+          "level": 2,
+          "ruleId": "rule-tenure-2",
+          "target": 730,
+          "requirement": {
+            "bg": "2 години с нас",
+            "en": "2 years with us"
+          },
+          "awards": [
+            {
+              "kind": "points",
+              "points": 50
+            }
+          ]
+        },
+        {
+          "level": 3,
+          "ruleId": "rule-tenure-3",
+          "target": 1095,
+          "requirement": {
+            "bg": "3 години с нас",
+            "en": "3 years with us"
+          },
+          "awards": [
+            {
+              "kind": "points",
+              "points": 50
+            }
+          ]
+        },
+        {
+          "level": 4,
+          "ruleId": "rule-tenure-4",
+          "target": 1825,
+          "requirement": {
+            "bg": "5 години с нас",
+            "en": "5 years with us"
+          },
+          "awards": [
+            {
+              "kind": "points",
+              "points": 50
+            }
+          ]
+        },
+        {
+          "level": 5,
+          "ruleId": "rule-tenure-5",
+          "target": 3650,
+          "requirement": {
+            "bg": "10 години с нас",
+            "en": "10 years with us"
+          },
+          "awards": [
+            {
+              "kind": "points",
+              "points": 50
+            }
+          ]
+        }
+      ],
+      "repeatable": false,
+      "order": 2,
+      "retiredAt": null,
+      "version": 1
+    },
+    "series-self-service": {
+      "categoryId": "cat-milestones",
+      "seasonId": null,
+      "title": {
+        "bg": "Онлайн записване",
+        "en": "Booked online"
+      },
+      "requirement": {
+        "bg": "Часове, записани онлайн",
+        "en": "Visits booked online"
+      },
+      "emblem": "selfService",
+      "subject": null,
+      "metric": {
+        "metric": "client.bookings.selfService"
+      },
+      "art": null,
+      "levels": [
+        {
+          "level": 1,
+          "ruleId": "rule-self-service-1",
+          "target": 1,
+          "requirement": {
+            "bg": "1 час, записан онлайн",
+            "en": "1 visit booked online"
+          },
+          "awards": []
+        },
+        {
+          "level": 2,
+          "ruleId": "rule-self-service-2",
+          "target": 5,
+          "requirement": {
+            "bg": "5 часа, записани онлайн",
+            "en": "5 visits booked online"
+          },
+          "awards": []
+        },
+        {
+          "level": 3,
+          "ruleId": "rule-self-service-3",
+          "target": 10,
+          "requirement": {
+            "bg": "10 часа, записани онлайн",
+            "en": "10 visits booked online"
+          },
+          "awards": []
+        },
+        {
+          "level": 4,
+          "ruleId": "rule-self-service-4",
+          "target": 25,
+          "requirement": {
+            "bg": "25 часа, записани онлайн",
+            "en": "25 visits booked online"
+          },
+          "awards": []
+        },
+        {
+          "level": 5,
+          "ruleId": "rule-self-service-5",
+          "target": 50,
+          "requirement": {
+            "bg": "50 часа, записани онлайн",
+            "en": "50 visits booked online"
+          },
+          "awards": []
+        }
+      ],
+      "repeatable": false,
+      "order": 3,
+      "retiredAt": null,
+      "version": 1
+    },
+    "series-referrals": {
+      "categoryId": "cat-milestones",
+      "seasonId": null,
+      "title": {
+        "bg": "Препоръки",
+        "en": "Referrals"
+      },
+      "requirement": {
+        "bg": "Доведени приятели",
+        "en": "Friends you brought"
+      },
+      "emblem": "referral",
+      "subject": null,
+      "metric": {
+        "metric": "client.referrals.completed"
+      },
+      "art": null,
+      "levels": [
+        {
+          "level": 1,
+          "ruleId": "rule-referrals-1",
+          "target": 1,
+          "requirement": {
+            "bg": "1 доведен приятел",
+            "en": "1 friend brought"
+          },
+          "awards": [
+            {
+              "kind": "points",
+              "points": 30
+            }
+          ]
+        },
+        {
+          "level": 2,
+          "ruleId": "rule-referrals-2",
+          "target": 3,
+          "requirement": {
+            "bg": "3 доведени приятели",
+            "en": "3 friends brought"
+          },
+          "awards": []
+        },
+        {
+          "level": 3,
+          "ruleId": "rule-referrals-3",
+          "target": 5,
+          "requirement": {
+            "bg": "5 доведени приятели",
+            "en": "5 friends brought"
+          },
+          "awards": []
+        },
+        {
+          "level": 4,
+          "ruleId": "rule-referrals-4",
+          "target": 10,
+          "requirement": {
+            "bg": "10 доведени приятели",
+            "en": "10 friends brought"
+          },
+          "awards": []
+        },
+        {
+          "level": 5,
+          "ruleId": "rule-referrals-5",
+          "target": 20,
+          "requirement": {
+            "bg": "20 доведени приятели",
+            "en": "20 friends brought"
+          },
+          "awards": []
+        }
+      ],
+      "repeatable": false,
+      "order": 4,
+      "retiredAt": null,
+      "version": 1
+    },
+    "series-waitlist": {
+      "categoryId": "cat-milestones",
+      "seasonId": null,
+      "title": {
+        "bg": "Хванат час",
+        "en": "Caught a slot"
+      },
+      "requirement": {
+        "bg": "Часове от листата на чакащите",
+        "en": "Slots from the waitlist"
+      },
+      "emblem": "waitlist",
+      "subject": null,
+      "metric": {
+        "metric": "client.waitlist.booked"
+      },
+      "art": null,
+      "levels": [
+        {
+          "level": 1,
+          "ruleId": "rule-waitlist-1",
+          "target": 1,
+          "requirement": {
+            "bg": "1 час от листата на чакащите",
+            "en": "1 slot from the waitlist"
+          },
+          "awards": []
+        },
+        {
+          "level": 2,
+          "ruleId": "rule-waitlist-2",
+          "target": 3,
+          "requirement": {
+            "bg": "3 часа от листата на чакащите",
+            "en": "3 slots from the waitlist"
+          },
+          "awards": []
+        },
+        {
+          "level": 3,
+          "ruleId": "rule-waitlist-3",
+          "target": 5,
+          "requirement": {
+            "bg": "5 часа от листата на чакащите",
+            "en": "5 slots from the waitlist"
+          },
+          "awards": []
+        }
+      ],
+      "repeatable": false,
+      "order": 5,
+      "retiredAt": null,
+      "version": 1
+    },
+    "series-svc-classic-cut": {
+      "categoryId": "cat-mastery",
+      "seasonId": null,
+      "title": {
+        "bg": "Класическа подстрижка",
+        "en": "Classic cut"
+      },
+      "requirement": {
+        "bg": "Посещения с класическа подстрижка",
+        "en": "Visits with a classic cut"
+      },
+      "emblem": "service",
+      "subject": {
+        "kind": "service",
+        "serviceId": "svc-classic-cut"
+      },
+      "metric": {
+        "metric": "client.visits.completed",
+        "where": {
+          "serviceId": "svc-classic-cut"
+        }
+      },
+      "art": null,
+      "levels": [
+        {
+          "level": 1,
+          "ruleId": "rule-svc-classic-cut-1",
+          "target": 3,
+          "requirement": {
+            "bg": "3 посещения с класическа подстрижка",
+            "en": "3 visits with a classic cut"
+          },
+          "awards": []
+        },
+        {
+          "level": 2,
+          "ruleId": "rule-svc-classic-cut-2",
+          "target": 10,
+          "requirement": {
+            "bg": "10 посещения с класическа подстрижка",
+            "en": "10 visits with a classic cut"
+          },
+          "awards": []
+        },
+        {
+          "level": 3,
+          "ruleId": "rule-svc-classic-cut-3",
+          "target": 25,
+          "requirement": {
+            "bg": "25 посещения с класическа подстрижка",
+            "en": "25 visits with a classic cut"
+          },
+          "awards": []
+        },
+        {
+          "level": 4,
+          "ruleId": "rule-svc-classic-cut-4",
+          "target": 50,
+          "requirement": {
+            "bg": "50 посещения с класическа подстрижка",
+            "en": "50 visits with a classic cut"
+          },
+          "awards": []
+        },
+        {
+          "level": 5,
+          "ruleId": "rule-svc-classic-cut-5",
+          "target": 100,
+          "requirement": {
+            "bg": "100 посещения с класическа подстрижка",
+            "en": "100 visits with a classic cut"
+          },
+          "awards": []
+        }
+      ],
+      "repeatable": false,
+      "order": 1,
+      "retiredAt": null,
+      "version": 1
+    },
+    "series-svc-fade": {
+      "categoryId": "cat-mastery",
+      "seasonId": null,
+      "title": {
+        "bg": "Фейд",
+        "en": "Skin fade"
+      },
+      "requirement": {
+        "bg": "Посещения с фейд",
+        "en": "Visits with a skin fade"
+      },
+      "emblem": "service",
+      "subject": {
+        "kind": "service",
+        "serviceId": "svc-fade"
+      },
+      "metric": {
+        "metric": "client.visits.completed",
+        "where": {
+          "serviceId": "svc-fade"
+        }
+      },
+      "art": null,
+      "levels": [
+        {
+          "level": 1,
+          "ruleId": "rule-svc-fade-1",
+          "target": 3,
+          "requirement": {
+            "bg": "3 посещения с фейд",
+            "en": "3 visits with a skin fade"
+          },
+          "awards": []
+        },
+        {
+          "level": 2,
+          "ruleId": "rule-svc-fade-2",
+          "target": 10,
+          "requirement": {
+            "bg": "10 посещения с фейд",
+            "en": "10 visits with a skin fade"
+          },
+          "awards": []
+        },
+        {
+          "level": 3,
+          "ruleId": "rule-svc-fade-3",
+          "target": 25,
+          "requirement": {
+            "bg": "25 посещения с фейд",
+            "en": "25 visits with a skin fade"
+          },
+          "awards": []
+        },
+        {
+          "level": 4,
+          "ruleId": "rule-svc-fade-4",
+          "target": 50,
+          "requirement": {
+            "bg": "50 посещения с фейд",
+            "en": "50 visits with a skin fade"
+          },
+          "awards": []
+        },
+        {
+          "level": 5,
+          "ruleId": "rule-svc-fade-5",
+          "target": 100,
+          "requirement": {
+            "bg": "100 посещения с фейд",
+            "en": "100 visits with a skin fade"
+          },
+          "awards": []
+        }
+      ],
+      "repeatable": false,
+      "order": 2,
+      "retiredAt": null,
+      "version": 1
+    },
+    "series-svc-beard": {
+      "categoryId": "cat-mastery",
+      "seasonId": null,
+      "title": {
+        "bg": "Оформяне на брада",
+        "en": "Beard trim"
+      },
+      "requirement": {
+        "bg": "Посещения с оформяне на брада",
+        "en": "Visits with a beard trim"
+      },
+      "emblem": "service",
+      "subject": {
+        "kind": "service",
+        "serviceId": "svc-beard"
+      },
+      "metric": {
+        "metric": "client.visits.completed",
+        "where": {
+          "serviceId": "svc-beard"
+        }
+      },
+      "art": null,
+      "levels": [
+        {
+          "level": 1,
+          "ruleId": "rule-svc-beard-1",
+          "target": 3,
+          "requirement": {
+            "bg": "3 посещения с оформяне на брада",
+            "en": "3 visits with a beard trim"
+          },
+          "awards": []
+        },
+        {
+          "level": 2,
+          "ruleId": "rule-svc-beard-2",
+          "target": 10,
+          "requirement": {
+            "bg": "10 посещения с оформяне на брада",
+            "en": "10 visits with a beard trim"
+          },
+          "awards": []
+        },
+        {
+          "level": 3,
+          "ruleId": "rule-svc-beard-3",
+          "target": 25,
+          "requirement": {
+            "bg": "25 посещения с оформяне на брада",
+            "en": "25 visits with a beard trim"
+          },
+          "awards": []
+        },
+        {
+          "level": 4,
+          "ruleId": "rule-svc-beard-4",
+          "target": 50,
+          "requirement": {
+            "bg": "50 посещения с оформяне на брада",
+            "en": "50 visits with a beard trim"
+          },
+          "awards": []
+        },
+        {
+          "level": 5,
+          "ruleId": "rule-svc-beard-5",
+          "target": 100,
+          "requirement": {
+            "bg": "100 посещения с оформяне на брада",
+            "en": "100 visits with a beard trim"
+          },
+          "awards": []
+        }
+      ],
+      "repeatable": false,
+      "order": 3,
+      "retiredAt": null,
+      "version": 1
+    },
+    "series-svc-scissor-trim": {
+      "categoryId": "cat-mastery",
+      "seasonId": null,
+      "title": {
+        "bg": "Подстрижка с ножица",
+        "en": "Scissor trim"
+      },
+      "requirement": {
+        "bg": "Посещения с подстрижка с ножица",
+        "en": "Visits with a scissor trim"
+      },
+      "emblem": "service",
+      "subject": {
+        "kind": "service",
+        "serviceId": "svc-scissor-trim"
+      },
+      "metric": {
+        "metric": "client.visits.completed",
+        "where": {
+          "serviceId": "svc-scissor-trim"
+        }
+      },
+      "art": null,
+      "levels": [
+        {
+          "level": 1,
+          "ruleId": "rule-svc-scissor-trim-1",
+          "target": 3,
+          "requirement": {
+            "bg": "3 посещения с подстрижка с ножица",
+            "en": "3 visits with a scissor trim"
+          },
+          "awards": []
+        },
+        {
+          "level": 2,
+          "ruleId": "rule-svc-scissor-trim-2",
+          "target": 10,
+          "requirement": {
+            "bg": "10 посещения с подстрижка с ножица",
+            "en": "10 visits with a scissor trim"
+          },
+          "awards": []
+        },
+        {
+          "level": 3,
+          "ruleId": "rule-svc-scissor-trim-3",
+          "target": 25,
+          "requirement": {
+            "bg": "25 посещения с подстрижка с ножица",
+            "en": "25 visits with a scissor trim"
+          },
+          "awards": []
+        },
+        {
+          "level": 4,
+          "ruleId": "rule-svc-scissor-trim-4",
+          "target": 50,
+          "requirement": {
+            "bg": "50 посещения с подстрижка с ножица",
+            "en": "50 visits with a scissor trim"
+          },
+          "awards": []
+        },
+        {
+          "level": 5,
+          "ruleId": "rule-svc-scissor-trim-5",
+          "target": 100,
+          "requirement": {
+            "bg": "100 посещения с подстрижка с ножица",
+            "en": "100 visits with a scissor trim"
+          },
+          "awards": []
+        }
+      ],
+      "repeatable": false,
+      "order": 4,
+      "retiredAt": null,
+      "version": 1
+    },
+    "series-svc-modern-cut": {
+      "categoryId": "cat-mastery",
+      "seasonId": null,
+      "title": {
+        "bg": "Модерна визия",
+        "en": "Modern restyle"
+      },
+      "requirement": {
+        "bg": "Посещения с модерна визия",
+        "en": "Visits with a modern restyle"
+      },
+      "emblem": "service",
+      "subject": {
+        "kind": "service",
+        "serviceId": "svc-modern-cut"
+      },
+      "metric": {
+        "metric": "client.visits.completed",
+        "where": {
+          "serviceId": "svc-modern-cut"
+        }
+      },
+      "art": null,
+      "levels": [
+        {
+          "level": 1,
+          "ruleId": "rule-svc-modern-cut-1",
+          "target": 3,
+          "requirement": {
+            "bg": "3 посещения с модерна визия",
+            "en": "3 visits with a modern restyle"
+          },
+          "awards": []
+        },
+        {
+          "level": 2,
+          "ruleId": "rule-svc-modern-cut-2",
+          "target": 10,
+          "requirement": {
+            "bg": "10 посещения с модерна визия",
+            "en": "10 visits with a modern restyle"
+          },
+          "awards": []
+        },
+        {
+          "level": 3,
+          "ruleId": "rule-svc-modern-cut-3",
+          "target": 25,
+          "requirement": {
+            "bg": "25 посещения с модерна визия",
+            "en": "25 visits with a modern restyle"
+          },
+          "awards": []
+        },
+        {
+          "level": 4,
+          "ruleId": "rule-svc-modern-cut-4",
+          "target": 50,
+          "requirement": {
+            "bg": "50 посещения с модерна визия",
+            "en": "50 visits with a modern restyle"
+          },
+          "awards": []
+        },
+        {
+          "level": 5,
+          "ruleId": "rule-svc-modern-cut-5",
+          "target": 100,
+          "requirement": {
+            "bg": "100 посещения с модерна визия",
+            "en": "100 visits with a modern restyle"
+          },
+          "awards": []
+        }
+      ],
+      "repeatable": false,
+      "order": 5,
+      "retiredAt": null,
+      "version": 1
+    },
+    "series-svc-finish": {
+      "categoryId": "cat-mastery",
+      "seasonId": null,
+      "title": {
+        "bg": "Освежаване",
+        "en": "Finishing touch"
+      },
+      "requirement": {
+        "bg": "Посещения с освежаване",
+        "en": "Visits with a finishing touch"
+      },
+      "emblem": "service",
+      "subject": {
+        "kind": "service",
+        "serviceId": "svc-finish"
+      },
+      "metric": {
+        "metric": "client.visits.completed",
+        "where": {
+          "serviceId": "svc-finish"
+        }
+      },
+      "art": null,
+      "levels": [
+        {
+          "level": 1,
+          "ruleId": "rule-svc-finish-1",
+          "target": 3,
+          "requirement": {
+            "bg": "3 посещения с освежаване",
+            "en": "3 visits with a finishing touch"
+          },
+          "awards": []
+        },
+        {
+          "level": 2,
+          "ruleId": "rule-svc-finish-2",
+          "target": 10,
+          "requirement": {
+            "bg": "10 посещения с освежаване",
+            "en": "10 visits with a finishing touch"
+          },
+          "awards": []
+        },
+        {
+          "level": 3,
+          "ruleId": "rule-svc-finish-3",
+          "target": 25,
+          "requirement": {
+            "bg": "25 посещения с освежаване",
+            "en": "25 visits with a finishing touch"
+          },
+          "awards": []
+        },
+        {
+          "level": 4,
+          "ruleId": "rule-svc-finish-4",
+          "target": 50,
+          "requirement": {
+            "bg": "50 посещения с освежаване",
+            "en": "50 visits with a finishing touch"
+          },
+          "awards": []
+        },
+        {
+          "level": 5,
+          "ruleId": "rule-svc-finish-5",
+          "target": 100,
+          "requirement": {
+            "bg": "100 посещения с освежаване",
+            "en": "100 visits with a finishing touch"
+          },
+          "awards": []
+        }
+      ],
+      "repeatable": false,
+      "order": 6,
+      "retiredAt": null,
+      "version": 1
+    },
+    "series-svc-full-care": {
+      "categoryId": "cat-mastery",
+      "seasonId": null,
+      "title": {
+        "bg": "Пълна грижа",
+        "en": "Full care"
+      },
+      "requirement": {
+        "bg": "Посещения с пълна грижа",
+        "en": "Visits with full care"
+      },
+      "emblem": "service",
+      "subject": {
+        "kind": "service",
+        "serviceId": "svc-full-care"
+      },
+      "metric": {
+        "metric": "client.visits.completed",
+        "where": {
+          "serviceId": "svc-full-care"
+        }
+      },
+      "art": null,
+      "levels": [
+        {
+          "level": 1,
+          "ruleId": "rule-svc-full-care-1",
+          "target": 3,
+          "requirement": {
+            "bg": "3 посещения с пълна грижа",
+            "en": "3 visits with full care"
+          },
+          "awards": []
+        },
+        {
+          "level": 2,
+          "ruleId": "rule-svc-full-care-2",
+          "target": 10,
+          "requirement": {
+            "bg": "10 посещения с пълна грижа",
+            "en": "10 visits with full care"
+          },
+          "awards": []
+        },
+        {
+          "level": 3,
+          "ruleId": "rule-svc-full-care-3",
+          "target": 25,
+          "requirement": {
+            "bg": "25 посещения с пълна грижа",
+            "en": "25 visits with full care"
+          },
+          "awards": []
+        },
+        {
+          "level": 4,
+          "ruleId": "rule-svc-full-care-4",
+          "target": 50,
+          "requirement": {
+            "bg": "50 посещения с пълна грижа",
+            "en": "50 visits with full care"
+          },
+          "awards": []
+        },
+        {
+          "level": 5,
+          "ruleId": "rule-svc-full-care-5",
+          "target": 100,
+          "requirement": {
+            "bg": "100 посещения с пълна грижа",
+            "en": "100 visits with full care"
+          },
+          "awards": []
+        }
+      ],
+      "repeatable": false,
+      "order": 7,
+      "retiredAt": null,
+      "version": 1
+    },
+    "series-svc-father-son": {
+      "categoryId": "cat-mastery",
+      "seasonId": null,
+      "title": {
+        "bg": "Баща и син",
+        "en": "Father & son"
+      },
+      "requirement": {
+        "bg": "Посещения с „Баща и син“",
+        "en": "Visits with Father & son"
+      },
+      "emblem": "service",
+      "subject": {
+        "kind": "service",
+        "serviceId": "svc-father-son"
+      },
+      "metric": {
+        "metric": "client.visits.completed",
+        "where": {
+          "serviceId": "svc-father-son"
+        }
+      },
+      "art": null,
+      "levels": [
+        {
+          "level": 1,
+          "ruleId": "rule-svc-father-son-1",
+          "target": 3,
+          "requirement": {
+            "bg": "3 посещения с „Баща и син“",
+            "en": "3 visits with Father & son"
+          },
+          "awards": []
+        },
+        {
+          "level": 2,
+          "ruleId": "rule-svc-father-son-2",
+          "target": 10,
+          "requirement": {
+            "bg": "10 посещения с „Баща и син“",
+            "en": "10 visits with Father & son"
+          },
+          "awards": []
+        },
+        {
+          "level": 3,
+          "ruleId": "rule-svc-father-son-3",
+          "target": 25,
+          "requirement": {
+            "bg": "25 посещения с „Баща и син“",
+            "en": "25 visits with Father & son"
+          },
+          "awards": []
+        },
+        {
+          "level": 4,
+          "ruleId": "rule-svc-father-son-4",
+          "target": 50,
+          "requirement": {
+            "bg": "50 посещения с „Баща и син“",
+            "en": "50 visits with Father & son"
+          },
+          "awards": []
+        },
+        {
+          "level": 5,
+          "ruleId": "rule-svc-father-son-5",
+          "target": 100,
+          "requirement": {
+            "bg": "100 посещения с „Баща и син“",
+            "en": "100 visits with Father & son"
+          },
+          "awards": []
+        }
+      ],
+      "repeatable": false,
+      "order": 8,
+      "retiredAt": null,
+      "version": 1
+    },
+    "series-explorer": {
+      "categoryId": "cat-mastery",
+      "seasonId": null,
+      "title": {
+        "bg": "Изследовател",
+        "en": "Explorer"
+      },
+      "requirement": {
+        "bg": "Различни услуги",
+        "en": "Different services"
+      },
+      "emblem": "explorer",
+      "subject": null,
+      "metric": {
+        "metric": "client.services.distinct"
+      },
+      "art": null,
+      "levels": [
+        {
+          "level": 1,
+          "ruleId": "rule-explorer-1",
+          "target": 2,
+          "requirement": {
+            "bg": "2 различни услуги",
+            "en": "2 different services"
+          },
+          "awards": []
+        },
+        {
+          "level": 2,
+          "ruleId": "rule-explorer-2",
+          "target": 4,
+          "requirement": {
+            "bg": "4 различни услуги",
+            "en": "4 different services"
+          },
+          "awards": []
+        },
+        {
+          "level": 3,
+          "ruleId": "rule-explorer-3",
+          "target": 6,
+          "requirement": {
+            "bg": "6 различни услуги",
+            "en": "6 different services"
+          },
+          "awards": []
+        },
+        {
+          "level": 4,
+          "ruleId": "rule-explorer-4",
+          "target": 8,
+          "requirement": {
+            "bg": "8 различни услуги",
+            "en": "8 different services"
+          },
+          "awards": []
+        }
+      ],
+      "repeatable": false,
+      "order": 9,
+      "retiredAt": null,
+      "version": 1
+    },
+    "series-barber-ivan": {
+      "categoryId": "cat-barbers",
+      "seasonId": null,
+      "title": {
+        "bg": "С Иван",
+        "en": "With Ivan"
+      },
+      "requirement": {
+        "bg": "Посещения при Иван",
+        "en": "Visits with Ivan"
+      },
+      "emblem": "barber",
+      "subject": {
+        "kind": "barber",
+        "barberId": "ivan"
+      },
+      "metric": {
+        "metric": "client.visits.completed",
+        "where": {
+          "barberId": "ivan"
+        }
+      },
+      "art": null,
+      "levels": [
+        {
+          "level": 1,
+          "ruleId": "rule-barber-ivan-1",
+          "target": 1,
+          "requirement": {
+            "bg": "1 посещение при Иван",
+            "en": "1 visit with Ivan"
+          },
+          "awards": []
+        },
+        {
+          "level": 2,
+          "ruleId": "rule-barber-ivan-2",
+          "target": 5,
+          "requirement": {
+            "bg": "5 посещения при Иван",
+            "en": "5 visits with Ivan"
+          },
+          "awards": []
+        },
+        {
+          "level": 3,
+          "ruleId": "rule-barber-ivan-3",
+          "target": 10,
+          "requirement": {
+            "bg": "10 посещения при Иван",
+            "en": "10 visits with Ivan"
+          },
+          "awards": []
+        },
+        {
+          "level": 4,
+          "ruleId": "rule-barber-ivan-4",
+          "target": 25,
+          "requirement": {
+            "bg": "25 посещения при Иван",
+            "en": "25 visits with Ivan"
+          },
+          "awards": []
+        },
+        {
+          "level": 5,
+          "ruleId": "rule-barber-ivan-5",
+          "target": 50,
+          "requirement": {
+            "bg": "50 посещения при Иван",
+            "en": "50 visits with Ivan"
+          },
+          "awards": []
+        }
+      ],
+      "repeatable": false,
+      "order": 1,
+      "retiredAt": null,
+      "version": 1
+    },
+    "series-barber-niko": {
+      "categoryId": "cat-barbers",
+      "seasonId": null,
+      "title": {
+        "bg": "С Нико",
+        "en": "With Niko"
+      },
+      "requirement": {
+        "bg": "Посещения при Нико",
+        "en": "Visits with Niko"
+      },
+      "emblem": "barber",
+      "subject": {
+        "kind": "barber",
+        "barberId": "niko"
+      },
+      "metric": {
+        "metric": "client.visits.completed",
+        "where": {
+          "barberId": "niko"
+        }
+      },
+      "art": null,
+      "levels": [
+        {
+          "level": 1,
+          "ruleId": "rule-barber-niko-1",
+          "target": 1,
+          "requirement": {
+            "bg": "1 посещение при Нико",
+            "en": "1 visit with Niko"
+          },
+          "awards": []
+        },
+        {
+          "level": 2,
+          "ruleId": "rule-barber-niko-2",
+          "target": 5,
+          "requirement": {
+            "bg": "5 посещения при Нико",
+            "en": "5 visits with Niko"
+          },
+          "awards": []
+        },
+        {
+          "level": 3,
+          "ruleId": "rule-barber-niko-3",
+          "target": 10,
+          "requirement": {
+            "bg": "10 посещения при Нико",
+            "en": "10 visits with Niko"
+          },
+          "awards": []
+        },
+        {
+          "level": 4,
+          "ruleId": "rule-barber-niko-4",
+          "target": 25,
+          "requirement": {
+            "bg": "25 посещения при Нико",
+            "en": "25 visits with Niko"
+          },
+          "awards": []
+        },
+        {
+          "level": 5,
+          "ruleId": "rule-barber-niko-5",
+          "target": 50,
+          "requirement": {
+            "bg": "50 посещения при Нико",
+            "en": "50 visits with Niko"
+          },
+          "awards": []
+        }
+      ],
+      "repeatable": false,
+      "order": 2,
+      "retiredAt": null,
+      "version": 1
+    },
+    "series-barber-stefan": {
+      "categoryId": "cat-barbers",
+      "seasonId": null,
+      "title": {
+        "bg": "Със Стефан",
+        "en": "With Stefan"
+      },
+      "requirement": {
+        "bg": "Посещения при Стефан",
+        "en": "Visits with Stefan"
+      },
+      "emblem": "barber",
+      "subject": {
+        "kind": "barber",
+        "barberId": "stefan"
+      },
+      "metric": {
+        "metric": "client.visits.completed",
+        "where": {
+          "barberId": "stefan"
+        }
+      },
+      "art": null,
+      "levels": [
+        {
+          "level": 1,
+          "ruleId": "rule-barber-stefan-1",
+          "target": 1,
+          "requirement": {
+            "bg": "1 посещение при Стефан",
+            "en": "1 visit with Stefan"
+          },
+          "awards": []
+        },
+        {
+          "level": 2,
+          "ruleId": "rule-barber-stefan-2",
+          "target": 5,
+          "requirement": {
+            "bg": "5 посещения при Стефан",
+            "en": "5 visits with Stefan"
+          },
+          "awards": []
+        },
+        {
+          "level": 3,
+          "ruleId": "rule-barber-stefan-3",
+          "target": 10,
+          "requirement": {
+            "bg": "10 посещения при Стефан",
+            "en": "10 visits with Stefan"
+          },
+          "awards": []
+        },
+        {
+          "level": 4,
+          "ruleId": "rule-barber-stefan-4",
+          "target": 25,
+          "requirement": {
+            "bg": "25 посещения при Стефан",
+            "en": "25 visits with Stefan"
+          },
+          "awards": []
+        },
+        {
+          "level": 5,
+          "ruleId": "rule-barber-stefan-5",
+          "target": 50,
+          "requirement": {
+            "bg": "50 посещения при Стефан",
+            "en": "50 visits with Stefan"
+          },
+          "awards": []
+        }
+      ],
+      "repeatable": false,
+      "order": 3,
+      "retiredAt": null,
+      "version": 1
+    },
+    "series-shop-center": {
+      "categoryId": "cat-barbers",
+      "seasonId": null,
+      "title": {
+        "bg": "Център",
+        "en": "Center"
+      },
+      "requirement": {
+        "bg": "Посещения в Център",
+        "en": "Visits at Center"
+      },
+      "emblem": "shop",
+      "subject": {
+        "kind": "location",
+        "locationId": "loc-center"
+      },
+      "metric": {
+        "metric": "client.visits.completed",
+        "where": {
+          "locationId": "loc-center"
+        }
+      },
+      "art": null,
+      "levels": [
+        {
+          "level": 1,
+          "ruleId": "rule-shop-center-1",
+          "target": 1,
+          "requirement": {
+            "bg": "1 посещение в Център",
+            "en": "1 visit at Center"
+          },
+          "awards": []
+        },
+        {
+          "level": 2,
+          "ruleId": "rule-shop-center-2",
+          "target": 5,
+          "requirement": {
+            "bg": "5 посещения в Център",
+            "en": "5 visits at Center"
+          },
+          "awards": []
+        },
+        {
+          "level": 3,
+          "ruleId": "rule-shop-center-3",
+          "target": 10,
+          "requirement": {
+            "bg": "10 посещения в Център",
+            "en": "10 visits at Center"
+          },
+          "awards": []
+        },
+        {
+          "level": 4,
+          "ruleId": "rule-shop-center-4",
+          "target": 25,
+          "requirement": {
+            "bg": "25 посещения в Център",
+            "en": "25 visits at Center"
+          },
+          "awards": []
+        },
+        {
+          "level": 5,
+          "ruleId": "rule-shop-center-5",
+          "target": 50,
+          "requirement": {
+            "bg": "50 посещения в Център",
+            "en": "50 visits at Center"
+          },
+          "awards": []
+        }
+      ],
+      "repeatable": false,
+      "order": 4,
+      "retiredAt": null,
+      "version": 1
+    },
+    "series-shop-mladost": {
+      "categoryId": "cat-barbers",
+      "seasonId": null,
+      "title": {
+        "bg": "Младост",
+        "en": "Mladost"
+      },
+      "requirement": {
+        "bg": "Посещения в Младост",
+        "en": "Visits at Mladost"
+      },
+      "emblem": "shop",
+      "subject": {
+        "kind": "location",
+        "locationId": "loc-mladost"
+      },
+      "metric": {
+        "metric": "client.visits.completed",
+        "where": {
+          "locationId": "loc-mladost"
+        }
+      },
+      "art": null,
+      "levels": [
+        {
+          "level": 1,
+          "ruleId": "rule-shop-mladost-1",
+          "target": 1,
+          "requirement": {
+            "bg": "1 посещение в Младост",
+            "en": "1 visit at Mladost"
+          },
+          "awards": []
+        },
+        {
+          "level": 2,
+          "ruleId": "rule-shop-mladost-2",
+          "target": 5,
+          "requirement": {
+            "bg": "5 посещения в Младост",
+            "en": "5 visits at Mladost"
+          },
+          "awards": []
+        },
+        {
+          "level": 3,
+          "ruleId": "rule-shop-mladost-3",
+          "target": 10,
+          "requirement": {
+            "bg": "10 посещения в Младост",
+            "en": "10 visits at Mladost"
+          },
+          "awards": []
+        },
+        {
+          "level": 4,
+          "ruleId": "rule-shop-mladost-4",
+          "target": 25,
+          "requirement": {
+            "bg": "25 посещения в Младост",
+            "en": "25 visits at Mladost"
+          },
+          "awards": []
+        },
+        {
+          "level": 5,
+          "ruleId": "rule-shop-mladost-5",
+          "target": 50,
+          "requirement": {
+            "bg": "50 посещения в Младост",
+            "en": "50 visits at Mladost"
+          },
+          "awards": []
+        }
+      ],
+      "repeatable": false,
+      "order": 5,
+      "retiredAt": null,
+      "version": 1
+    },
+    "series-all-barbers": {
+      "categoryId": "cat-barbers",
+      "seasonId": null,
+      "title": {
+        "bg": "При всеки бръснар",
+        "en": "Every barber"
+      },
+      "requirement": {
+        "bg": "Посещения при различни бръснари",
+        "en": "Visits with different barbers"
+      },
+      "emblem": "barber",
+      "subject": null,
+      "metric": {
+        "metric": "client.barbers.distinct"
+      },
+      "art": null,
+      "levels": [
+        {
+          "level": 1,
+          "ruleId": "rule-all-barbers-1",
+          "target": 2,
+          "requirement": {
+            "bg": "При 2 различни бръснари",
+            "en": "With 2 different barbers"
+          },
+          "awards": []
+        },
+        {
+          "level": 2,
+          "ruleId": "rule-all-barbers-2",
+          "target": 3,
+          "requirement": {
+            "bg": "При 3 различни бръснари",
+            "en": "With 3 different barbers"
+          },
+          "awards": []
+        }
+      ],
+      "repeatable": false,
+      "order": 6,
+      "retiredAt": null,
+      "version": 1
+    },
+    "series-both-shops": {
+      "categoryId": "cat-barbers",
+      "seasonId": null,
+      "title": {
+        "bg": "И двата салона",
+        "en": "Both shops"
+      },
+      "requirement": {
+        "bg": "Посещения и в двата салона",
+        "en": "Visits at both shops"
+      },
+      "emblem": "shop",
+      "subject": null,
+      "metric": {
+        "metric": "client.locations.distinct"
+      },
+      "art": null,
+      "levels": [
+        {
+          "level": 1,
+          "ruleId": "rule-both-shops-1",
+          "target": 2,
+          "requirement": {
+            "bg": "Посещения и в двата салона",
+            "en": "Visits at both shops"
+          },
+          "awards": []
+        }
+      ],
+      "repeatable": false,
+      "order": 7,
+      "retiredAt": null,
+      "version": 1
+    },
+    "series-rhythm": {
+      "categoryId": "cat-rhythm",
+      "seasonId": null,
+      "title": {
+        "bg": "В ритъм",
+        "en": "In rhythm"
+      },
+      "requirement": {
+        "bg": "Посещения в ритъм",
+        "en": "Visits in rhythm"
+      },
+      "emblem": "streak",
+      "subject": null,
+      "metric": null,
+      "art": null,
+      "levels": [
+        {
+          "level": 1,
+          "ruleId": "rule-rhythm-1",
+          "target": 3,
+          "requirement": {
+            "bg": "3 посещения в ритъм",
+            "en": "3 visits in rhythm"
+          },
+          "awards": []
+        },
+        {
+          "level": 2,
+          "ruleId": "rule-rhythm-2",
+          "target": 6,
+          "requirement": {
+            "bg": "6 посещения в ритъм",
+            "en": "6 visits in rhythm"
+          },
+          "awards": [
+            {
+              "kind": "freeze",
+              "count": 1
+            }
+          ]
+        },
+        {
+          "level": 3,
+          "ruleId": "rule-rhythm-3",
+          "target": 12,
+          "requirement": {
+            "bg": "12 посещения в ритъм",
+            "en": "12 visits in rhythm"
+          },
+          "awards": []
+        },
+        {
+          "level": 4,
+          "ruleId": "rule-rhythm-4",
+          "target": 18,
+          "requirement": {
+            "bg": "18 посещения в ритъм",
+            "en": "18 visits in rhythm"
+          },
+          "awards": []
+        },
+        {
+          "level": 5,
+          "ruleId": "rule-rhythm-5",
+          "target": 24,
+          "requirement": {
+            "bg": "24 посещения в ритъм",
+            "en": "24 visits in rhythm"
+          },
+          "awards": []
+        }
+      ],
+      "repeatable": false,
+      "order": 1,
+      "retiredAt": null,
+      "version": 1
+    },
+    "series-twelve-months": {
+      "categoryId": "cat-rhythm",
+      "seasonId": null,
+      "title": {
+        "bg": "Цяла година",
+        "en": "All year"
+      },
+      "requirement": {
+        "bg": "Месеци с посещение за година",
+        "en": "Months with a visit within a year"
+      },
+      "emblem": "yearRound",
+      "subject": null,
+      "metric": {
+        "metric": "client.months.distinct",
+        "window": {
+          "lastDays": 365
+        }
+      },
+      "art": null,
+      "levels": [
+        {
+          "level": 1,
+          "ruleId": "rule-twelve-months-1",
+          "target": 4,
+          "requirement": {
+            "bg": "4 месеца с посещение за година",
+            "en": "4 months with a visit within a year"
+          },
+          "awards": []
+        },
+        {
+          "level": 2,
+          "ruleId": "rule-twelve-months-2",
+          "target": 8,
+          "requirement": {
+            "bg": "8 месеца с посещение за година",
+            "en": "8 months with a visit within a year"
+          },
+          "awards": []
+        },
+        {
+          "level": 3,
+          "ruleId": "rule-twelve-months-3",
+          "target": 12,
+          "requirement": {
+            "bg": "12 месеца с посещение за година",
+            "en": "12 months with a visit within a year"
+          },
+          "awards": []
+        }
+      ],
+      "repeatable": false,
+      "order": 2,
+      "retiredAt": null,
+      "version": 1
+    },
+    "series-comeback": {
+      "categoryId": "cat-rhythm",
+      "seasonId": null,
+      "title": {
+        "bg": "Завръщане",
+        "en": "Back in rhythm"
+      },
+      "requirement": {
+        "bg": "Отново в ритъм след прекъсване",
+        "en": "Back in rhythm after a break"
+      },
+      "emblem": "comeback",
+      "subject": null,
+      "metric": null,
+      "art": null,
+      "levels": [
+        {
+          "level": 1,
+          "ruleId": "rule-comeback-1",
+          "target": null,
+          "requirement": {
+            "bg": "Отново в ритъм след прекъсване",
+            "en": "Back in rhythm after a break"
+          },
+          "awards": []
+        }
+      ],
+      "repeatable": false,
+      "order": 3,
+      "retiredAt": null,
+      "version": 1
+    },
+    "series-welcome": {
+      "categoryId": "cat-special",
+      "seasonId": null,
+      "title": {
+        "bg": "Добре дошъл",
+        "en": "Welcome"
+      },
+      "requirement": {
+        "bg": "Първо посещение в салона",
+        "en": "Your first visit"
+      },
+      "emblem": "welcome",
+      "subject": null,
+      "metric": null,
+      "art": null,
+      "levels": [
+        {
+          "level": 1,
+          "ruleId": "rule-welcome-1",
+          "target": null,
+          "requirement": {
+            "bg": "Първо посещение в салона",
+            "en": "Your first visit"
+          },
+          "awards": [
+            {
+              "kind": "points",
+              "points": 20
+            }
+          ]
+        }
+      ],
+      "repeatable": false,
+      "order": 1,
+      "retiredAt": null,
+      "version": 1
+    },
+    "series-birthday": {
+      "categoryId": "cat-special",
+      "seasonId": null,
+      "title": {
+        "bg": "Рожден ден в салона",
+        "en": "Birthday visit"
+      },
+      "requirement": {
+        "bg": "Посещение на рождения ден",
+        "en": "A visit on your birthday"
+      },
+      "emblem": "birthday",
+      "subject": null,
+      "metric": null,
+      "art": null,
+      "levels": [
+        {
+          "level": 1,
+          "ruleId": "rule-birthday-1",
+          "target": null,
+          "requirement": {
+            "bg": "Посещение на рождения ден",
+            "en": "A visit on your birthday"
+          },
+          "awards": []
+        }
+      ],
+      "repeatable": true,
+      "order": 2,
+      "retiredAt": null,
+      "version": 1
+    },
+    "series-early-bird": {
+      "categoryId": "cat-special",
+      "seasonId": null,
+      "title": {
+        "bg": "Ранобудник",
+        "en": "Early bird"
+      },
+      "requirement": {
+        "bg": "Посещения до 10:00",
+        "en": "Visits starting by 10:00"
+      },
+      "emblem": "earlyBird",
+      "subject": null,
+      "metric": {
+        "metric": "client.visits.earlyBird"
+      },
+      "art": null,
+      "levels": [
+        {
+          "level": 1,
+          "ruleId": "rule-early-bird-1",
+          "target": 1,
+          "requirement": {
+            "bg": "1 посещение до 10:00",
+            "en": "1 visit starting by 10:00"
+          },
+          "awards": []
+        },
+        {
+          "level": 2,
+          "ruleId": "rule-early-bird-2",
+          "target": 5,
+          "requirement": {
+            "bg": "5 посещения до 10:00",
+            "en": "5 visits starting by 10:00"
+          },
+          "awards": []
+        },
+        {
+          "level": 3,
+          "ruleId": "rule-early-bird-3",
+          "target": 10,
+          "requirement": {
+            "bg": "10 посещения до 10:00",
+            "en": "10 visits starting by 10:00"
+          },
+          "awards": []
+        },
+        {
+          "level": 4,
+          "ruleId": "rule-early-bird-4",
+          "target": 25,
+          "requirement": {
+            "bg": "25 посещения до 10:00",
+            "en": "25 visits starting by 10:00"
+          },
+          "awards": []
+        }
+      ],
+      "repeatable": false,
+      "order": 3,
+      "retiredAt": null,
+      "version": 1
+    },
+    "series-weekend": {
+      "categoryId": "cat-special",
+      "seasonId": null,
+      "title": {
+        "bg": "Съботен",
+        "en": "Saturday regular"
+      },
+      "requirement": {
+        "bg": "Посещения в събота",
+        "en": "Saturday visits"
+      },
+      "emblem": "weekend",
+      "subject": null,
+      "metric": {
+        "metric": "client.visits.weekend"
+      },
+      "art": null,
+      "levels": [
+        {
+          "level": 1,
+          "ruleId": "rule-weekend-1",
+          "target": 3,
+          "requirement": {
+            "bg": "3 посещения в събота",
+            "en": "3 Saturday visits"
+          },
+          "awards": []
+        },
+        {
+          "level": 2,
+          "ruleId": "rule-weekend-2",
+          "target": 10,
+          "requirement": {
+            "bg": "10 посещения в събота",
+            "en": "10 Saturday visits"
+          },
+          "awards": []
+        },
+        {
+          "level": 3,
+          "ruleId": "rule-weekend-3",
+          "target": 25,
+          "requirement": {
+            "bg": "25 посещения в събота",
+            "en": "25 Saturday visits"
+          },
+          "awards": []
+        }
+      ],
+      "repeatable": false,
+      "order": 4,
+      "retiredAt": null,
+      "version": 1
+    },
+    "series-on-time": {
+      "categoryId": "cat-special",
+      "seasonId": null,
+      "title": {
+        "bg": "Точен",
+        "en": "On time"
+      },
+      "requirement": {
+        "bg": "Посещения, на които дойде навреме",
+        "en": "Visits you arrived on time for"
+      },
+      "emblem": "onTime",
+      "subject": null,
+      "metric": {
+        "metric": "client.visits.onTime"
+      },
+      "art": null,
+      "levels": [
+        {
+          "level": 1,
+          "ruleId": "rule-on-time-1",
+          "target": 5,
+          "requirement": {
+            "bg": "5 посещения навреме",
+            "en": "5 visits on time"
+          },
+          "awards": []
+        },
+        {
+          "level": 2,
+          "ruleId": "rule-on-time-2",
+          "target": 10,
+          "requirement": {
+            "bg": "10 посещения навреме",
+            "en": "10 visits on time"
+          },
+          "awards": []
+        },
+        {
+          "level": 3,
+          "ruleId": "rule-on-time-3",
+          "target": 25,
+          "requirement": {
+            "bg": "25 посещения навреме",
+            "en": "25 visits on time"
+          },
+          "awards": []
+        }
+      ],
+      "repeatable": false,
+      "order": 5,
+      "retiredAt": null,
+      "version": 1
+    },
+    "series-profile": {
+      "categoryId": "cat-special",
+      "seasonId": null,
+      "title": {
+        "bg": "Пълен профил",
+        "en": "Complete profile"
+      },
+      "requirement": {
+        "bg": "Имейл, рожден ден и снимка в профила",
+        "en": "Email, birthday and photo in your profile"
+      },
+      "emblem": "profile",
+      "subject": null,
+      "metric": null,
+      "art": null,
+      "levels": [
+        {
+          "level": 1,
+          "ruleId": "rule-profile-1",
+          "target": null,
+          "requirement": {
+            "bg": "Имейл, рожден ден и снимка в профила",
+            "en": "Email, birthday and photo in your profile"
+          },
+          "awards": []
+        }
+      ],
+      "repeatable": false,
+      "order": 6,
+      "retiredAt": null,
+      "version": 1
+    },
+    "series-party": {
+      "categoryId": "cat-special",
+      "seasonId": null,
+      "title": {
+        "bg": "В компания",
+        "en": "In company"
+      },
+      "requirement": {
+        "bg": "Посещения с компания",
+        "en": "Visits with company"
+      },
+      "emblem": "party",
+      "subject": null,
+      "metric": {
+        "metric": "client.visits.party"
+      },
+      "art": null,
+      "levels": [
+        {
+          "level": 1,
+          "ruleId": "rule-party-1",
+          "target": 1,
+          "requirement": {
+            "bg": "1 посещение с компания",
+            "en": "1 visit with company"
+          },
+          "awards": []
+        },
+        {
+          "level": 2,
+          "ruleId": "rule-party-2",
+          "target": 5,
+          "requirement": {
+            "bg": "5 посещения с компания",
+            "en": "5 visits with company"
+          },
+          "awards": []
+        },
+        {
+          "level": 3,
+          "ruleId": "rule-party-3",
+          "target": 10,
+          "requirement": {
+            "bg": "10 посещения с компания",
+            "en": "10 visits with company"
+          },
+          "awards": []
+        }
+      ],
+      "repeatable": false,
+      "order": 7,
+      "retiredAt": null,
+      "version": 1
+    },
+    "series-2026-autumn-track": {
+      "categoryId": null,
+      "seasonId": "season-2026-autumn",
+      "title": {
+        "bg": "Есен 2026",
+        "en": "Autumn 2026"
+      },
+      "requirement": {
+        "bg": "Посещения през сезона",
+        "en": "Visits during the season"
+      },
+      "emblem": "autumn",
+      "subject": null,
+      "metric": {
+        "metric": "client.visits.completed"
+      },
+      "art": null,
+      "levels": [
+        {
+          "level": 1,
+          "ruleId": "rule-2026-autumn-track-1",
+          "target": 1,
+          "requirement": {
+            "bg": "1 посещение през сезона",
+            "en": "1 visit during the season"
+          },
+          "awards": []
+        },
+        {
+          "level": 2,
+          "ruleId": "rule-2026-autumn-track-2",
+          "target": 2,
+          "requirement": {
+            "bg": "2 посещения през сезона",
+            "en": "2 visits during the season"
+          },
+          "awards": []
+        },
+        {
+          "level": 3,
+          "ruleId": "rule-2026-autumn-track-3",
+          "target": 3,
+          "requirement": {
+            "bg": "3 посещения през сезона",
+            "en": "3 visits during the season"
+          },
+          "awards": []
+        },
+        {
+          "level": 4,
+          "ruleId": "rule-2026-autumn-track-4",
+          "target": 4,
+          "requirement": {
+            "bg": "4 посещения през сезона",
+            "en": "4 visits during the season"
+          },
+          "awards": []
+        },
+        {
+          "level": 5,
+          "ruleId": "rule-2026-autumn-track-5",
+          "target": 5,
+          "requirement": {
+            "bg": "5 посещения през сезона",
+            "en": "5 visits during the season"
+          },
+          "awards": [
+            {
+              "kind": "points",
+              "points": 100
+            }
+          ]
+        }
+      ],
+      "repeatable": false,
+      "order": 1,
+      "retiredAt": null,
+      "version": 1
+    },
+    "series-2026-autumn-each-month": {
+      "categoryId": null,
+      "seasonId": "season-2026-autumn",
+      "title": {
+        "bg": "Всеки есенен месец",
+        "en": "Every autumn month"
+      },
+      "requirement": {
+        "bg": "Посещение във всеки есенен месец",
+        "en": "A visit in every autumn month"
+      },
+      "emblem": "umbrella",
+      "subject": null,
+      "metric": {
+        "metric": "client.months.distinct"
+      },
+      "art": null,
+      "levels": [
+        {
+          "level": 1,
+          "ruleId": "rule-2026-autumn-each-month-1",
+          "target": 3,
+          "requirement": {
+            "bg": "3 есенни месеца с посещение",
+            "en": "3 autumn months with a visit"
+          },
+          "awards": []
+        }
+      ],
+      "repeatable": false,
+      "order": 2,
+      "retiredAt": null,
+      "version": 1
+    },
+    "series-2026-autumn-beard": {
+      "categoryId": null,
+      "seasonId": "season-2026-autumn",
+      "title": {
+        "bg": "Есенна брада",
+        "en": "Autumn beard"
+      },
+      "requirement": {
+        "bg": "Оформяне на брада през есента",
+        "en": "Beard trims this autumn"
+      },
+      "emblem": "grooming",
+      "subject": {
+        "kind": "service",
+        "serviceId": "svc-beard"
+      },
+      "metric": {
+        "metric": "client.visits.completed",
+        "where": {
+          "serviceId": "svc-beard"
+        }
+      },
+      "art": null,
+      "levels": [
+        {
+          "level": 1,
+          "ruleId": "rule-2026-autumn-beard-1",
+          "target": 2,
+          "requirement": {
+            "bg": "2 оформяния на брада през есента",
+            "en": "2 beard trims this autumn"
+          },
+          "awards": []
+        }
+      ],
+      "repeatable": false,
+      "order": 3,
+      "retiredAt": null,
+      "version": 1
+    },
+    "series-2026-autumn-referral": {
+      "categoryId": null,
+      "seasonId": "season-2026-autumn",
+      "title": {
+        "bg": "Приятел наесен",
+        "en": "An autumn friend"
+      },
+      "requirement": {
+        "bg": "Приятел, доведен през есента",
+        "en": "A friend brought this autumn"
+      },
+      "emblem": "handshake",
+      "subject": null,
+      "metric": {
+        "metric": "client.referrals.completed"
+      },
+      "art": null,
+      "levels": [
+        {
+          "level": 1,
+          "ruleId": "rule-2026-autumn-referral-1",
+          "target": 1,
+          "requirement": {
+            "bg": "1 доведен приятел през есента",
+            "en": "1 friend brought this autumn"
+          },
+          "awards": []
+        }
+      ],
+      "repeatable": false,
+      "order": 4,
+      "retiredAt": null,
+      "version": 1
+    },
+    "series-2026-autumn-early": {
+      "categoryId": null,
+      "seasonId": "season-2026-autumn",
+      "title": {
+        "bg": "Есенно утро",
+        "en": "Autumn morning"
+      },
+      "requirement": {
+        "bg": "Есенни посещения до 10:00",
+        "en": "Autumn visits starting by 10:00"
+      },
+      "emblem": "fog",
+      "subject": null,
+      "metric": {
+        "metric": "client.visits.earlyBird"
+      },
+      "art": null,
+      "levels": [
+        {
+          "level": 1,
+          "ruleId": "rule-2026-autumn-early-1",
+          "target": 2,
+          "requirement": {
+            "bg": "2 есенни посещения до 10:00",
+            "en": "2 autumn visits starting by 10:00"
+          },
+          "awards": []
+        }
+      ],
+      "repeatable": false,
+      "order": 5,
+      "retiredAt": null,
+      "version": 1
+    },
+    "series-2026-beard-week-beard": {
+      "categoryId": null,
+      "seasonId": "event-2026-beard-week",
+      "title": {
+        "bg": "Брада на седмицата",
+        "en": "Beard of the week"
+      },
+      "requirement": {
+        "bg": "Оформяне на брада през седмицата",
+        "en": "A beard trim during the week"
+      },
+      "emblem": "beardOil",
+      "subject": {
+        "kind": "service",
+        "serviceId": "svc-beard"
+      },
+      "metric": {
+        "metric": "client.visits.completed",
+        "where": {
+          "serviceId": "svc-beard"
+        }
+      },
+      "art": null,
+      "levels": [
+        {
+          "level": 1,
+          "ruleId": "rule-2026-beard-week-beard-1",
+          "target": 1,
+          "requirement": {
+            "bg": "1 оформяне на брада през седмицата",
+            "en": "1 beard trim during the week"
+          },
+          "awards": []
+        }
+      ],
+      "repeatable": false,
+      "order": 1,
+      "retiredAt": null,
+      "version": 1
+    },
+    "series-2026-beard-week-full": {
+      "categoryId": null,
+      "seasonId": "event-2026-beard-week",
+      "title": {
+        "bg": "Пълна грижа на седмицата",
+        "en": "Full care of the week"
+      },
+      "requirement": {
+        "bg": "Коса и брада в едно посещение през седмицата",
+        "en": "Hair and beard in one visit during the week"
+      },
+      "emblem": "spa",
+      "subject": null,
+      "metric": null,
+      "art": null,
+      "levels": [
+        {
+          "level": 1,
+          "ruleId": "rule-2026-beard-week-full-1",
+          "target": null,
+          "requirement": {
+            "bg": "Коса и брада в едно посещение през седмицата",
+            "en": "Hair and beard in one visit during the week"
+          },
+          "awards": []
+        }
+      ],
+      "repeatable": false,
+      "order": 2,
+      "retiredAt": null,
+      "version": 1
+    },
+    "series-2026-summer-track": {
+      "categoryId": null,
+      "seasonId": "season-2026-summer",
+      "title": {
+        "bg": "Лято 2026",
+        "en": "Summer 2026"
+      },
+      "requirement": {
+        "bg": "Посещения през сезона",
+        "en": "Visits during the season"
+      },
+      "emblem": "summer",
+      "subject": null,
+      "metric": {
+        "metric": "client.visits.completed"
+      },
+      "art": null,
+      "levels": [
+        {
+          "level": 1,
+          "ruleId": "rule-2026-summer-track-1",
+          "target": 1,
+          "requirement": {
+            "bg": "1 посещение през сезона",
+            "en": "1 visit during the season"
+          },
+          "awards": []
+        },
+        {
+          "level": 2,
+          "ruleId": "rule-2026-summer-track-2",
+          "target": 2,
+          "requirement": {
+            "bg": "2 посещения през сезона",
+            "en": "2 visits during the season"
+          },
+          "awards": []
+        },
+        {
+          "level": 3,
+          "ruleId": "rule-2026-summer-track-3",
+          "target": 3,
+          "requirement": {
+            "bg": "3 посещения през сезона",
+            "en": "3 visits during the season"
+          },
+          "awards": []
+        },
+        {
+          "level": 4,
+          "ruleId": "rule-2026-summer-track-4",
+          "target": 4,
+          "requirement": {
+            "bg": "4 посещения през сезона",
+            "en": "4 visits during the season"
+          },
+          "awards": []
+        },
+        {
+          "level": 5,
+          "ruleId": "rule-2026-summer-track-5",
+          "target": 5,
+          "requirement": {
+            "bg": "5 посещения през сезона",
+            "en": "5 visits during the season"
+          },
+          "awards": [
+            {
+              "kind": "points",
+              "points": 100
+            }
+          ]
+        }
+      ],
+      "repeatable": false,
+      "order": 1,
+      "retiredAt": null,
+      "version": 1
+    },
+    "series-2026-summer-each-month": {
+      "categoryId": null,
+      "seasonId": "season-2026-summer",
+      "title": {
+        "bg": "Всеки летен месец",
+        "en": "Every summer month"
+      },
+      "requirement": {
+        "bg": "Посещение във всеки летен месец",
+        "en": "A visit in every summer month"
+      },
+      "emblem": "sailing",
+      "subject": null,
+      "metric": {
+        "metric": "client.months.distinct"
+      },
+      "art": null,
+      "levels": [
+        {
+          "level": 1,
+          "ruleId": "rule-2026-summer-each-month-1",
+          "target": 3,
+          "requirement": {
+            "bg": "3 летни месеца с посещение",
+            "en": "3 summer months with a visit"
+          },
+          "awards": []
+        }
+      ],
+      "repeatable": false,
+      "order": 2,
+      "retiredAt": null,
+      "version": 1
+    },
+    "series-2026-summer-saturday": {
+      "categoryId": null,
+      "seasonId": "season-2026-summer",
+      "title": {
+        "bg": "Лятна събота",
+        "en": "Summer Saturday"
+      },
+      "requirement": {
+        "bg": "Посещение в събота през лятото",
+        "en": "A Saturday visit in summer"
+      },
+      "emblem": "icecream",
+      "subject": null,
+      "metric": {
+        "metric": "client.visits.weekend"
+      },
+      "art": null,
+      "levels": [
+        {
+          "level": 1,
+          "ruleId": "rule-2026-summer-saturday-1",
+          "target": 1,
+          "requirement": {
+            "bg": "1 посещение в събота през лятото",
+            "en": "1 Saturday visit in summer"
+          },
+          "awards": []
+        }
+      ],
+      "repeatable": false,
+      "order": 3,
+      "retiredAt": null,
+      "version": 1
+    },
+    "series-2026-summer-before-leave": {
+      "categoryId": null,
+      "seasonId": "season-2026-summer",
+      "title": {
+        "bg": "Преди отпуска",
+        "en": "Before the holidays"
+      },
+      "requirement": {
+        "bg": "2 посещения в рамките на 21 дни през лятото",
+        "en": "2 visits within 21 days in summer"
+      },
+      "emblem": "vacation",
+      "subject": null,
+      "metric": null,
+      "art": null,
+      "levels": [
+        {
+          "level": 1,
+          "ruleId": "rule-2026-summer-before-leave-1",
+          "target": null,
+          "requirement": {
+            "bg": "2 посещения в рамките на 21 дни през лятото",
+            "en": "2 visits within 21 days in summer"
+          },
+          "awards": []
+        }
+      ],
+      "repeatable": false,
+      "order": 4,
+      "retiredAt": null,
+      "version": 1
+    }
+  },
+  "seasons": {
+    "season-2026-summer": {
+      "kind": "season",
+      "title": {
+        "bg": "Лято 2026",
+        "en": "Summer 2026"
+      },
+      "emblem": "summer",
+      "window": {
+        "from": "2026-06-01",
+        "until": "2026-08-31"
+      },
+      "trackSeriesId": "series-2026-summer-track",
+      "seriesIds": [
+        "series-2026-summer-each-month",
+        "series-2026-summer-saturday",
+        "series-2026-summer-before-leave"
+      ],
+      "announcedAt": "2026-05-01T06:00:00.000Z",
+      "version": 1
+    },
+    "season-2026-autumn": {
+      "kind": "season",
+      "title": {
+        "bg": "Есен 2026",
+        "en": "Autumn 2026"
+      },
+      "emblem": "autumn",
+      "window": {
+        "from": "2026-09-01",
+        "until": "2026-11-30"
+      },
+      "trackSeriesId": "series-2026-autumn-track",
+      "seriesIds": [
+        "series-2026-autumn-each-month",
+        "series-2026-autumn-beard",
+        "series-2026-autumn-referral",
+        "series-2026-autumn-early"
+      ],
+      "announcedAt": "2026-08-01T06:00:00.000Z",
+      "version": 1
+    },
+    "event-2026-beard-week": {
+      "kind": "event",
+      "title": {
+        "bg": "Седмица на брадата",
+        "en": "Beard Week"
+      },
+      "emblem": "event",
+      "window": {
+        "from": "2026-09-22",
+        "until": "2026-10-05"
+      },
+      "trackSeriesId": null,
+      "seriesIds": [
+        "series-2026-beard-week-beard",
+        "series-2026-beard-week-full"
+      ],
+      "announcedAt": "2026-08-22T06:00:00.000Z",
+      "version": 1
+    }
+  },
+  "tierDefinitions": {
+    "bronze": {
+      "name": {
+        "bg": "Бронз",
+        "en": "Bronze"
+      },
+      "rank": 0,
+      "benefits": [],
+      "version": 1,
+      "effectiveFrom": "2025-03-01T07:00:00.000Z",
+      "qualify": {
+        "metric": "client.visits.completed",
+        "atLeast": 0,
+        "window": {
+          "lastDays": 365
+        }
+      }
+    },
+    "silver": {
+      "name": {
+        "bg": "Сребро",
+        "en": "Silver"
+      },
+      "rank": 1,
+      "benefits": [],
+      "version": 1,
+      "effectiveFrom": "2025-03-01T07:00:00.000Z",
+      "qualify": {
+        "metric": "client.visits.completed",
+        "atLeast": 6,
+        "window": {
+          "lastDays": 365
+        }
+      }
+    },
+    "gold": {
+      "name": {
+        "bg": "Злато",
+        "en": "Gold"
+      },
+      "rank": 2,
+      "benefits": ["perk.priorityWaitlist"],
+      "version": 1,
+      "effectiveFrom": "2025-03-01T07:00:00.000Z",
+      "qualify": {
+        "metric": "client.visits.completed",
+        "atLeast": 12,
+        "window": {
+          "lastDays": 365
+        }
+      }
+    },
+    "platinum": {
+      "name": {
+        "bg": "Платина",
+        "en": "Platinum"
+      },
+      "rank": 3,
+      "benefits": [
+        "perk.priorityWaitlist",
+        "perk.bookFurtherAhead",
+        "perk.freeReschedule"
+      ],
+      "version": 1,
+      "effectiveFrom": "2025-03-01T07:00:00.000Z",
+      "qualify": {
+        "metric": "client.visits.completed",
+        "atLeast": 20,
+        "window": {
+          "lastDays": 365
+        }
+      }
+    }
+  },
+  "rewardsCatalog": {
+    "reward-beard": {
+      "name": {
+        "bg": "Безплатно оформяне на брада",
+        "en": "Free beard trim"
+      },
+      "cost": 120,
+      "enabled": true,
+      "order": 1,
+      "grants": {
+        "kind": "coupon",
+        "couponId": "coupon-free-beard"
+      },
+      "available": {
+        "from": null,
+        "until": null
+      },
+      "limits": {
+        "perClient": {
+          "count": 1,
+          "windowDays": 30
+        },
+        "total": null
+      },
+      "redeemedCount": 1
+    },
+    "reward-cut": {
+      "name": {
+        "bg": "Безплатно подстригване",
+        "en": "Free haircut"
+      },
+      "cost": 250,
+      "enabled": true,
+      "order": 2,
+      "grants": {
+        "kind": "coupon",
+        "couponId": "coupon-punch-free-cut"
+      },
+      "available": {
+        "from": null,
+        "until": null
+      },
+      "limits": {
+        "perClient": {
+          "count": 1,
+          "windowDays": 30
+        },
+        "total": null
+      },
+      "redeemedCount": 1
+    },
+    "reward-product": {
+      "name": {
+        "bg": "Продукт по избор",
+        "en": "Product of your choice"
+      },
+      "cost": 400,
+      "enabled": true,
+      "order": 3,
+      "grants": {
+        "kind": "voucher",
+        "amountMinor": 2000,
+        "expiresInDays": 90
+      },
+      "available": {
+        "from": null,
+        "until": null
+      },
+      "limits": {
+        "perClient": {
+          "count": 1,
+          "windowDays": 90
+        },
+        "total": null
+      },
+      "redeemedCount": 0
+    }
+  },
+  "streakDefinitions": {
+    "cadence": {
+      "name": {
+        "bg": "Посещения в ритъм",
+        "en": "Visits in rhythm"
+      },
+      "current": {
+        "version": 1,
+        "effectiveFrom": "2025-03-01",
+        "enabled": true,
+        "qualifier": {
+          "kind": "anyVisit"
+        },
+        "minGapDays": 7,
+        "bookingHold": {
+          "enabled": true,
+          "maxDaysPastDue": 14
+        },
+        "interval": {
+          "kind": "fixed",
+          "days": 42
+        },
+        "graceDays": 7,
+        "riskLeadDays": 7,
+        "protections": {
+          "enabled": true,
+          "maxBanked": 2,
+          "earnEvery": 5,
+          "startWith": 0
+        },
+        "excuses": ["shopClosure", "barberAbsence", "staffCancelled"],
+        "clientPause": {
+          "enabled": false,
+          "maxDaysPerYear": 90
+        },
+        "repair": {
+          "enabled": true,
+          "windowDays": 14,
+          "perYear": 1
+        },
+        "onBreak": "restart"
+      },
+      "scheduled": null,
+      "updatedAt": "2025-03-01T07:00:00.000Z"
+    }
+  }
+}

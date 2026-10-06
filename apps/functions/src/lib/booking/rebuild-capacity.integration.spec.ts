@@ -14,8 +14,9 @@ import { rebuildBarberCapacity } from './rebuild-capacity';
  */
 const PROJECT_ID = 'demo-functions-capacity';
 
-process.env.FIRESTORE_EMULATOR_HOST ??= '127.0.0.1:8080';
-if (!process.env.FIRESTORE_EMULATOR_HOST.includes('127.0.0.1')) {
+const EMULATOR_HOST = (process.env['FIRESTORE_EMULATOR_HOST'] ??=
+  '127.0.0.1:8080');
+if (!EMULATOR_HOST.includes('127.0.0.1')) {
   throw new Error('Refusing to run outside the local emulators.');
 }
 
@@ -73,7 +74,7 @@ describe('rebuildBarberCapacity (emulator)', () => {
   beforeEach(async () => {
     // The REST wipe endpoint clears exactly this demo project.
     await fetch(
-      `http://${process.env.FIRESTORE_EMULATOR_HOST}/emulator/v1/projects/${PROJECT_ID}/databases/(default)/documents`,
+      `http://${EMULATOR_HOST}/emulator/v1/projects/${PROJECT_ID}/databases/(default)/documents`,
       { method: 'DELETE' },
     );
     await db.collection('locations').doc('loc-a').set({

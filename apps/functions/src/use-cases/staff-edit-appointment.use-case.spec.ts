@@ -17,9 +17,11 @@ import {
 } from '@creativo/domain/scheduling';
 import {
   type PersistedDocument,
+  appointmentFromDocument,
   appointmentToDocument,
 } from '@creativo/application/booking';
 import type { FirestoreBookingStore } from '../adapters/firestore-booking-store';
+import { FixedClock } from '../test-support/fixed-clock';
 import type {
   BookingDecision,
   BookingSnapshot,
@@ -38,6 +40,8 @@ import {
 const ZONE = 'Europe/Sofia';
 const OWNER = 'user-1';
 const APPOINTMENT = 'appt-1';
+/** A staff intent's client-minted name (`isClientOperationId`-shaped). */
+const OPERATION = 'operation-0123456789abcdef';
 
 function unwrap<T, E>(result: Result<T, E>): T {
   if (result.isFailure()) {
@@ -144,19 +148,12 @@ function fadeWithVariants(): Service {
       cleanupMinutes: 10,
       locationIds: ['loc-center'],
       conflictsWith: [],
+      // A variant is an id and a name: what it costs and takes lives on
+      // each barber's OFFERING, and this regression needs neither — the
+      // seat's own terms travel with it.
       variants: [
-        {
-          id: 'short',
-          name: { bg: 'Къса', en: 'Short' },
-          priceMinorUnits: 4000,
-          durationMinutes: 45,
-        },
-        {
-          id: 'long',
-          name: { bg: 'Дълга', en: 'Long' },
-          priceMinorUnits: 5000,
-          durationMinutes: 60,
-        },
+        { id: 'short', name: { bg: 'Къса', en: 'Short' } },
+        { id: 'long', name: { bg: 'Дълга', en: 'Long' } },
       ],
       offerings: [],
       composition: { kind: 'single' },
@@ -291,7 +288,7 @@ function makeStore(
       canWrite: (doc: PersistedDocument) => boolean,
       plan: (
         doc: PersistedDocument,
-      ) => Result<DecideBookingRequest, StaffEditError>,
+      ) => Result<DecideBookingRequest | null, StaffEditError>,
       decide: (
         view: BookingSnapshot,
         doc: PersistedDocument,
@@ -315,6 +312,11 @@ function makeStore(
       }
       const planned = plan(current);
       if (planned.isFailure()) return fail(planned.error);
+      // The real store's answer to a plan of `null`: nothing loaded, decided
+      // or written.
+      if (planned.value === null) {
+        return ok({ kind: 'replayed' as const, appointmentId: _appointmentId });
+      }
       captured.request = planned.value;
 
       // The same order the real transaction keeps: the side reads after the
@@ -336,7 +338,7 @@ function makeStore(
   return { store: store as unknown as FirestoreBookingStore, captured };
 }
 
-const CLOCK = { now: () => ok(at(9)) };
+const CLOCK = new FixedClock(at(9).toISO());
 
 /** The fake's transaction handle — the ledger stub below never reads it. */
 const TX = {} as never;
@@ -348,7 +350,7 @@ function useCase(
 ): StaffEditAppointmentUseCase {
   return new StaffEditAppointmentUseCase(
     store,
-    CLOCK as never,
+    CLOCK,
     BookingPolicy.default(),
     resolver,
     ledger,
@@ -364,6 +366,7 @@ async function edit(
     readonly actorUserId?: string | null;
     readonly acknowledgedOverlap?: boolean;
     readonly expectedVersion?: number | null;
+    readonly operationId?: string | null;
     readonly resolver?: DiscountResolver;
     readonly ledger?: VoucherLedger;
   } = {},
@@ -385,6 +388,9 @@ async function edit(
       ...(options.expectedVersion === undefined
         ? {}
         : { expectedVersion: options.expectedVersion }),
+      ...(options.operationId === undefined
+        ? {}
+        : { operationId: options.operationId }),
     },
   );
   return { result, captured };
@@ -419,7 +425,7 @@ describe("staffEditAppointment — a seat older than its service's variants", ()
     expect(result.isSuccess()).toBe(true);
     // And it stays null: a `move` carries no variant to supply, so inventing
     // one would be the write making up a fact the document never held.
-    expect(written(captured).seats[0]?.['variantId']).toBeNull();
+    expect(seatsOf(captured)[0]?.['variantId']).toBeNull();
   });
 });
 
@@ -520,6 +526,48 @@ describe('staffEditAppointment — move', () => {
       (seat) => (seat['slot'] as Record<string, string>)['startIso'],
     );
     expect(starts).toEqual([at(12).toISO(), at(12, 45).toISO()]);
+  });
+
+  it('moves a party with a companion on their OWN account, keeping who sits where', async () => {
+    // A father books, his son sits in the next chair on his own profile —
+    // the seeded `appt-dev-party`. Reading only `self` seats used to refuse
+    // every edit of such a visit as malformed.
+    const party = document({ barberIds: ['ivan', 'petar'] }, [
+      seatDoc({ id: 'seat-1', startIso: at(10).toISO() }),
+      seatDoc({
+        id: 'seat-2',
+        barberId: 'petar',
+        startIso: at(10).toISO(),
+        subject: {
+          kind: 'account',
+          userId: 'son-1',
+          relationship: 'companion',
+        },
+      }),
+    ]);
+    const { result, captured } = await edit(
+      { kind: 'move', startIso: at(12).toISO() },
+      { current: party },
+    );
+    expect(result.isSuccess()).toBe(true);
+    expect(seatsOf(captured).map((seat) => seat['subject'])).toEqual([
+      { kind: 'account', userId: OWNER, relationship: 'self' },
+      { kind: 'account', userId: 'son-1', relationship: 'companion' },
+    ]);
+    expect(written(captured)['subjectUserIds']).toEqual(['son-1', OWNER]);
+  });
+
+  it('still refuses a stored account seat with no relationship it can carry', async () => {
+    const party = document({}, [
+      seatDoc({
+        subject: { kind: 'account', userId: 'son-1', relationship: 'cousin' },
+      }),
+    ]);
+    const { result } = await edit(
+      { kind: 'move', startIso: at(12).toISO() },
+      { current: party },
+    );
+    expect(code(result)).toBe('booking.commit.invalid_input');
   });
 
   /*
@@ -651,6 +699,17 @@ describe('staffEditAppointment — move', () => {
   it('keeps `barberPref` — the fact that decides whether staff may phone', async () => {
     const { captured } = await edit({ kind: 'move', startIso: at(11).toISO() });
     expect(seatsOf(captured)[0]?.['barberPref']).toBe('specific');
+  });
+
+  // §11.2 #6: a drag of a legacy seat must not invent a request the client
+  // never made — it used to come back `specific`, for whoever did the cut.
+  it('keeps an unknown `barberPref` unknown', async () => {
+    const legacy = { ...seatDoc(), barberPref: null };
+    const { captured } = await edit(
+      { kind: 'move', startIso: at(11).toISO() },
+      { current: document({}, [legacy]) },
+    );
+    expect(seatsOf(captured)[0]?.['barberPref']).toBeNull();
   });
 
   it('keeps the status, the contact and the booking instant', async () => {
@@ -881,6 +940,419 @@ describe('staffEditAppointment — services added and removed', () => {
         (seat) => (seat['terms'] as Record<string, unknown>)['durationMinutes'],
       ),
     ).toEqual([45, 45]);
+  });
+});
+
+/*
+ * ONE PERSON, ONE CHAIR — AND THE PAIR A VISIT ALREADY HELD (round 4,
+ * 2026-09-25; by seat identity since round 5). The rule is decided in
+ * `decideBooking`; what this path owes it is the visit AS IT STOOD
+ * (`DecideBookingDeps.standing`), read off the document. Without it every
+ * save of a visit that already seats one person twice (two walk-ins under
+ * the old shared «Случаен клиент», booked before the sheet numbered them)
+ * was refused, a price, a discount or another guest's seat included. Round
+ * 4 let the pair stand only while both seats stayed exactly in place, so a
+ * whole-visit drag or a chair-wide resize — which leave the visit no worse
+ * — was refused with the client's "pick another time", and no time would
+ * do. Only a NEW overlap is refused now. Staff may always save a visit they
+ * did not make worse, and may never make one worse.
+ */
+describe('staffEditAppointment — a double seating the visit already held', () => {
+  const WALK_IN = 'Случаен клиент';
+  const guest = (label: string) => ({ kind: 'anonymous', label });
+  /** Two walk-ins under ONE label, side by side at 10:00 — one person, two chairs. */
+  const heldPair = () =>
+    document({}, [
+      seatDoc({ id: 'seat-1', barberId: 'ivan', subject: guest(WALK_IN) }),
+      seatDoc({ id: 'seat-2', barberId: 'petar', subject: guest(WALK_IN) }),
+    ]);
+  const refusalOf = (result: Result<unknown, StaffEditError>) => {
+    if (result.isSuccess()) throw new Error('expected a refusal');
+    return { code: result.error.code, params: result.error.params };
+  };
+  const PERSON_OVERLAP = {
+    code: 'booking.commit.invalid_input',
+    params: { field: 'person_overlap' },
+  };
+
+  it('saves a batch that leaves the pair where it stood — a price, a discount, another guest', async () => {
+    const repriced = await edit(
+      { kind: 'reprice', seatId: 'seat-1', priceMinorUnits: 3000 },
+      { current: heldPair() },
+    );
+    expect(repriced.result.isSuccess()).toBe(true);
+    // The pair is carried as it was: same chairs, same start, same person.
+    expect(
+      seatsOf(repriced.captured).map((seat) => [
+        seat['barberId'],
+        (seat['slot'] as Record<string, unknown>)['startIso'],
+        (seat['subject'] as Record<string, unknown>)['label'],
+      ]),
+    ).toEqual([
+      ['ivan', at(10).toISO(), WALK_IN],
+      ['petar', at(10).toISO(), WALK_IN],
+    ]);
+
+    const discounted = await edit(
+      {
+        kind: 'discounts',
+        discounts: [
+          { source: 'manual', value: { kind: 'percent_off', percent: 10 } },
+        ],
+      },
+      { current: heldPair(), roles: ['receptionist'] },
+    );
+    expect(discounted.result.isSuccess()).toBe(true);
+    expect(
+      (written(discounted.captured)['discounts'] as readonly unknown[]).length,
+    ).toBe(1);
+
+    const joined = await edit(
+      {
+        kind: 'addSeat',
+        seatId: 'seat-3',
+        serviceId: 'svc-fade',
+        barberId: 'ivan',
+        startIso: at(11).toISO(),
+        minutes: 45,
+        subject: { kind: 'guest', label: 'Мария' },
+      },
+      { current: heldPair() },
+    );
+    expect(joined.result.isSuccess()).toBe(true);
+    expect(seatsOf(joined.captured)).toHaveLength(3);
+  });
+
+  it('saves a whole-visit drag of the pair — both seats move together', async () => {
+    const { result, captured } = await edit(
+      { kind: 'move', startIso: at(11).toISO() },
+      { current: heldPair() },
+    );
+    expect(result.isSuccess()).toBe(true);
+    expect(
+      seatsOf(captured).map((seat) => [
+        seat['id'],
+        seat['barberId'],
+        (seat['slot'] as Record<string, unknown>)['startIso'],
+      ]),
+    ).toEqual([
+      ['seat-1', 'ivan', at(11).toISO()],
+      ['seat-2', 'petar', at(11).toISO()],
+    ]);
+  });
+
+  it('saves a chair-wide resize of the pair, either edge', async () => {
+    const later = await edit(
+      { kind: 'resize', edge: 'end', atIso: at(11).toISO() },
+      { current: heldPair() },
+    );
+    expect(later.result.isSuccess()).toBe(true);
+    expect(
+      seatsOf(later.captured).map(
+        (seat) => (seat['terms'] as Record<string, unknown>)['durationMinutes'],
+      ),
+    ).toEqual([60, 60]);
+
+    const shorter = await edit(
+      { kind: 'resize', edge: 'start', atIso: at(10, 15).toISO() },
+      { current: heldPair() },
+    );
+    expect(shorter.result.isSuccess()).toBe(true);
+  });
+
+  it('saves a move of ONE seat of the pair that still overlaps — no worse than it was', async () => {
+    const { result } = await edit(
+      { kind: 'move', seatIds: ['seat-2'], startIso: at(10, 15).toISO() },
+      { current: heldPair() },
+    );
+    expect(result.isSuccess()).toBe(true);
+  });
+
+  it('refuses a pair that did not overlap and does after the batch', async () => {
+    const apart = document({}, [
+      seatDoc({ id: 'seat-1', barberId: 'ivan', subject: guest(WALK_IN) }),
+      seatDoc({
+        id: 'seat-2',
+        barberId: 'petar',
+        subject: guest(WALK_IN),
+        startIso: at(11).toISO(),
+      }),
+    ]);
+    const { result, captured } = await edit(
+      { kind: 'move', seatIds: ['seat-2'], startIso: at(10, 15).toISO() },
+      { current: apart },
+    );
+    expect(refusalOf(result)).toEqual(PERSON_OVERLAP);
+    expect(captured.decision).toBeUndefined();
+  });
+
+  it('separating the pair is always allowed — the move that makes the visit better', async () => {
+    const { result } = await edit(
+      { kind: 'move', seatIds: ['seat-2'], startIso: at(10, 45).toISO() },
+      { current: heldPair() },
+    );
+    expect(result.isSuccess()).toBe(true);
+  });
+
+  it('refuses a NEW double seating beside a held one, and on a visit that had none', async () => {
+    const newPair = (seatId: string, barberId: string) => ({
+      kind: 'addSeat' as const,
+      seatId,
+      serviceId: 'svc-fade',
+      barberId,
+      startIso: at(11).toISO(),
+      minutes: 45,
+      subject: { kind: 'guest' as const, label: 'Мария' },
+    });
+    const beside = await edit(
+      [newPair('seat-3', 'ivan'), newPair('seat-4', 'petar')],
+      { current: heldPair() },
+    );
+    expect(refusalOf(beside.result)).toEqual(PERSON_OVERLAP);
+
+    // The owner, already in Ivan's chair at 10:00, given Petar's at 10:00.
+    const owner = await edit({
+      kind: 'addSeat',
+      seatId: 'seat-2',
+      serviceId: 'svc-fade',
+      barberId: 'petar',
+      startIso: at(10).toISO(),
+      minutes: 45,
+      subject: { kind: 'self' },
+    });
+    expect(refusalOf(owner.result)).toEqual(PERSON_OVERLAP);
+  });
+
+  it('never lets a new seat pass as history by copying a held one', async () => {
+    // A THIRD same-label seat laid exactly over seat-1 (same chair, same
+    // minutes): a pair stands by seat ID, so the copy is new and judged.
+    const { result } = await edit(
+      {
+        kind: 'addSeat',
+        seatId: 'seat-3',
+        serviceId: 'svc-fade',
+        barberId: 'ivan',
+        startIso: at(10).toISO(),
+        minutes: 45,
+        subject: { kind: 'guest', label: WALK_IN },
+      },
+      { current: heldPair() },
+    );
+    expect(refusalOf(result)).toEqual(PERSON_OVERLAP);
+  });
+
+  it('never hands a new seat a removed seat’s id — the batch that drops seat-2 cannot mint it again', async () => {
+    // seat-2 stands beside seat-1 (one person, two chairs, since before the
+    // rule). Removing it and adding a NEW seat under its id, same label, same
+    // 10:00, another chair, would borrow the pair's standing for a seat the
+    // edit adds — which the rule judges in full. Only a crafted payload can
+    // send it (the sheet never sends a net-zero remove and add).
+    const { result, captured } = await edit(
+      [
+        { kind: 'removeSeat', seatId: 'seat-2' },
+        {
+          kind: 'addSeat',
+          seatId: 'seat-2',
+          serviceId: 'svc-fade',
+          barberId: 'georgi',
+          startIso: at(10).toISO(),
+          minutes: 45,
+          subject: { kind: 'guest', label: WALK_IN },
+        },
+      ],
+      {
+        current: heldPair(),
+        view: snapshot({
+          schedules: new Map([
+            ['ivan', schedule()],
+            ['petar', schedule()],
+            ['georgi', schedule()],
+          ]),
+        }),
+      },
+    );
+    // Refused at the fold, before any placement: nothing is written.
+    expect(refusalOf(result)).toEqual({
+      code: 'booking.staffEdit.invalid_command',
+      params: { field: 'seatId' },
+    });
+    expect(captured.decision).toBeUndefined();
+  });
+});
+
+/*
+ * «ОТМЕНИ» RESTORES EXACTLY WHAT THE SAVE CHANGED (BA decision, round 6).
+ * The sheet undoes a save by sending the way back as one batch — a seat the
+ * save removed is re-added under its OLD id (pinned in the dashboard's own
+ * spec). When that seat was one half of a pair the visit already held, the
+ * visit after the save no longer holds the pair, and the re-added seat was
+ * judged a NEW double seating: «Отмени» reported a refusal for restoring
+ * the state the barber saved over. The save now remembers the pairs it
+ * broke, under the revision it stamps, and the write that follows it — the
+ * undo, made on that stamp — may put them back. Anything written in between
+ * moves the revision on, and the seat is new again.
+ */
+describe('staffEditAppointment — the undo of a save that broke a held pair', () => {
+  const WALK_IN = 'Случаен клиент';
+  const walkIn = { kind: 'anonymous', label: WALK_IN };
+  /** Two walk-ins under ONE label, side by side at 10:00, stored at revision 3. */
+  const heldPair = () =>
+    document({}, [
+      seatDoc({ id: 'seat-1', barberId: 'ivan', subject: walkIn }),
+      seatDoc({ id: 'seat-2', barberId: 'petar', subject: walkIn }),
+    ]);
+  /** The document a landed edit leaves, as the real store writes it. */
+  const landed = (captured: {
+    decision?: BookingDecision;
+    extra?: Record<string, unknown>;
+  }): PersistedDocument => ({ ...captured.extra, ...written(captured) });
+  /** The undo's re-add: seat-2 as it was, under its old id. */
+  const readd: StaffEditCommand = {
+    kind: 'addSeat',
+    seatId: 'seat-2',
+    serviceId: 'svc-fade',
+    barberId: 'petar',
+    startIso: at(10).toISO(),
+    minutes: 45,
+    subject: { kind: 'guest', label: WALK_IN },
+  };
+  const PERSON_OVERLAP = {
+    code: 'booking.commit.invalid_input',
+    params: { field: 'person_overlap' },
+  };
+  const refusalOf = (result: Result<unknown, StaffEditError>) => {
+    if (result.isSuccess()) throw new Error('expected a refusal');
+    return { code: result.error.code, params: result.error.params };
+  };
+  const placed = (captured: { decision?: BookingDecision }) =>
+    seatsOf(captured).map((seat) => [
+      seat['id'],
+      seat['barberId'],
+      (seat['slot'] as Record<string, unknown>)['startIso'],
+    ]);
+
+  it('remembers the pair a removal broke, under the revision the save stamps', async () => {
+    const save = await edit(
+      { kind: 'removeSeat', seatId: 'seat-2' },
+      { current: heldPair(), expectedVersion: 3 },
+    );
+
+    expect(save.result.isSuccess()).toBe(true);
+    expect(save.captured.extra?.['stoodSeatPairs']).toEqual({
+      revision: 4,
+      pairs: [{ seatId: 'seat-1', otherSeatId: 'seat-2' }],
+    });
+  });
+
+  it('remembers nothing for a save that broke no pair — and drops an older memory', async () => {
+    const { captured } = await edit(
+      { kind: 'reprice', seatId: 'seat-1', priceMinorUnits: 3000 },
+      {
+        current: document(
+          {
+            stoodSeatPairs: {
+              revision: 2,
+              pairs: [{ seatId: 'seat-1', otherSeatId: 'seat-9' }],
+            },
+          },
+          heldPair()['seats'] as Record<string, unknown>[],
+        ),
+      },
+    );
+
+    expect(captured.extra).not.toHaveProperty('stoodSeatPairs');
+  });
+
+  it('lets «Отмени» put back the seat the save removed — exactly what the save changed', async () => {
+    const save = await edit(
+      { kind: 'removeSeat', seatId: 'seat-2' },
+      { current: heldPair(), expectedVersion: 3 },
+    );
+    const after = landed(save.captured);
+    expect(after['revision']).toBe(4);
+
+    // The undo, made on the save's own stamp.
+    const undo = await edit(readd, { current: after, expectedVersion: 4 });
+
+    expect(undo.result.isSuccess()).toBe(true);
+    expect(placed(undo.captured)).toEqual([
+      ['seat-1', 'ivan', at(10).toISO()],
+      ['seat-2', 'petar', at(10).toISO()],
+    ]);
+    // The pair is held again, so the undo broke nothing and remembers none.
+    expect(undo.captured.extra).not.toHaveProperty('stoodSeatPairs');
+  });
+
+  it('lets «Отмени» move the pair back together after a save moved it apart', async () => {
+    const save = await edit(
+      { kind: 'move', seatIds: ['seat-2'], startIso: at(10, 45).toISO() },
+      { current: heldPair(), expectedVersion: 3 },
+    );
+    expect(save.result.isSuccess()).toBe(true);
+
+    const undo = await edit(
+      { kind: 'move', seatIds: ['seat-2'], startIso: at(10).toISO() },
+      { current: landed(save.captured), expectedVersion: 4 },
+    );
+
+    expect(undo.result.isSuccess()).toBe(true);
+    expect(placed(undo.captured)).toEqual([
+      ['seat-1', 'ivan', at(10).toISO()],
+      ['seat-2', 'petar', at(10).toISO()],
+    ]);
+  });
+
+  it('judges the seat NEW once anything else was written after the save', async () => {
+    const save = await edit(
+      { kind: 'removeSeat', seatId: 'seat-2' },
+      { current: heldPair(), expectedVersion: 3 },
+    );
+    // Somebody's reprice lands on top of the save: revision 5, and it broke
+    // nothing, so it remembers nothing.
+    const between = await edit(
+      { kind: 'reprice', seatId: 'seat-1', priceMinorUnits: 3000 },
+      { current: landed(save.captured), expectedVersion: 4 },
+    );
+    const later = landed(between.captured);
+    expect(later['revision']).toBe(5);
+    expect(later).not.toHaveProperty('stoodSeatPairs');
+
+    const { result, captured } = await edit(readd, {
+      current: later,
+      expectedVersion: 5,
+    });
+
+    expect(refusalOf(result)).toEqual(PERSON_OVERLAP);
+    expect(captured.decision).toBeUndefined();
+  });
+
+  it('judges it new when the memory rides a write that moved the revision on', async () => {
+    const save = await edit(
+      { kind: 'removeSeat', seatId: 'seat-2' },
+      { current: heldPair(), expectedVersion: 3 },
+    );
+    // A client's move carries the unknown field forward
+    // (`preservedAppointmentFields`) and stamps the next revision: the
+    // memory is still there, and inert.
+    const moved = { ...landed(save.captured), revision: 5 };
+
+    const { result } = await edit(readd, { current: moved });
+
+    expect(refusalOf(result)).toEqual(PERSON_OVERLAP);
+  });
+
+  it('stands nothing for a seat the memory does not name', async () => {
+    const save = await edit(
+      { kind: 'removeSeat', seatId: 'seat-2' },
+      { current: heldPair(), expectedVersion: 3 },
+    );
+
+    const { result } = await edit(
+      { ...readd, seatId: 'seat-3' },
+      { current: landed(save.captured), expectedVersion: 4 },
+    );
+
+    expect(refusalOf(result)).toEqual(PERSON_OVERLAP);
   });
 });
 
@@ -1170,6 +1642,347 @@ describe('staffEditAppointment — the revision', () => {
       { expectedVersion: null },
     );
     expect(result.isSuccess()).toBe(true);
+  });
+
+  // Round 6: the claim the sheet sends is what the PRODUCTION mapper read
+  // off the document (`appointmentFromDocument` → `Appointment.revision`),
+  // and this is the check it meets — both sides read the counter the same
+  // way (`revisionOf`), a legacy row with none included.
+  it('takes the claim the mapper reads off the document, and refuses it once a colleague saved', async () => {
+    const claimOf = (current: PersistedDocument): number | null => {
+      const read = appointmentFromDocument(APPOINTMENT, current);
+      if (read.isFailure()) throw new Error('the fixture does not read');
+      return read.value.revision;
+    };
+    const drawn = document({ revision: 4 });
+    const legacy = document();
+    delete (legacy as Record<string, unknown>)['revision'];
+
+    expect(claimOf(drawn)).toBe(4);
+    expect(
+      (
+        await edit(
+          { kind: 'move', startIso: at(11).toISO() },
+          { current: drawn, expectedVersion: claimOf(drawn) },
+        )
+      ).result.isSuccess(),
+    ).toBe(true);
+    expect(claimOf(legacy)).toBe(0);
+    expect(
+      (
+        await edit(
+          { kind: 'move', startIso: at(11).toISO() },
+          { current: legacy, expectedVersion: claimOf(legacy) },
+        )
+      ).result.isSuccess(),
+    ).toBe(true);
+
+    // A colleague's save moved the visit to 5 after the sheet read 4.
+    const { result, captured } = await edit(
+      { kind: 'move', startIso: at(11).toISO() },
+      { current: document({ revision: 5 }), expectedVersion: claimOf(drawn) },
+    );
+    expect(code(result)).toBe('booking.staffEdit.stale');
+    expect(result.isFailure() && result.error.params).toEqual({
+      expected: '4',
+      actual: '5',
+    });
+    expect(captured.decision).toBeUndefined();
+  });
+
+  // Round 5: the sheet now sends its claim on every save, so a claim that
+  // is not a revision must not quietly switch the guard off.
+  it.each([[-1], [1.5], [Number.NaN]])(
+    'refuses a malformed claim (%j) by name, applying nothing',
+    async (expectedVersion) => {
+      const { result, captured } = await edit(
+        { kind: 'move', startIso: at(11).toISO() },
+        { expectedVersion },
+      );
+      expect(code(result)).toBe('booking.staffEdit.invalid_command');
+      expect(result.isFailure() && result.error.params).toEqual({
+        field: 'expectedVersion',
+      });
+      expect(captured.decision).toBeUndefined();
+    },
+  );
+
+  it('takes a claim of revision 0 — every visit written before the counter', async () => {
+    // `revisionOf` reads an absent counter as 0, and so does the sheet's
+    // copy of it: the first save of an old visit is not stale.
+    const current = Object.fromEntries(
+      Object.entries(document()).filter(([key]) => key !== 'revision'),
+    );
+    const { result } = await edit(
+      { kind: 'move', startIso: at(11).toISO() },
+      { current, expectedVersion: 0 },
+    );
+    expect(result.isSuccess() && result.value.revision).toBe(1);
+  });
+
+  /*
+   * ── A RE-SENT EDIT, RUN FOR REAL ──────────────────────────────────────
+   *
+   * An UNNAMED staff edit's audit row is keyed by the revision it STAMPED
+   * (`revision:${n}`), so "logged once" is exactly "committed once". These
+   * two run the use case twice over the book the first run left behind and
+   * pin what a re-sent unnamed edit is on the server — the fact that key
+   * rests on. A named one is the next block's.
+   */
+  it('refuses a re-sent save that still names the revision it was drawn from — one commit, one row', async () => {
+    const command = { kind: 'move', startIso: at(11).toISO() } as const;
+    const first = await edit(command, { expectedVersion: 3 });
+    expect(first.result.isSuccess()).toBe(true);
+
+    // The book after the first send landed: the visit it wrote, plus the
+    // fields the store writes beside it (the bumped revision among them).
+    const after = { ...written(first.captured), ...first.captured.extra };
+    const resent = await edit(command, { current: after, expectedVersion: 3 });
+
+    expect(code(resent.result)).toBe('booking.staffEdit.stale');
+    expect(resent.captured.decision).toBeUndefined();
+  });
+
+  it('commits a re-sent gesture that makes no claim a SECOND time, under its own revision', async () => {
+    // No `expectedVersion` (a running-late chip, a drag): the server cannot
+    // tell a lost-response retry from the barber doing it again, so it is a
+    // second committed change with a revision of its own — and a second
+    // audit row, truthfully. Collapsing the two is what the operation id is
+    // for (below): it dedupes the WRITE, not just its log line.
+    const command = { kind: 'move', startIso: at(11).toISO() } as const;
+    const first = await edit(command);
+    const after = { ...written(first.captured), ...first.captured.extra };
+    const resent = await edit(command, { current: after });
+
+    expect(first.result.isSuccess() && first.result.value.revision).toBe(4);
+    expect(resent.result.isSuccess() && resent.result.value.revision).toBe(5);
+  });
+
+  /*
+   * ── ONE NAMED INTENT, ONE CHANGE ──────────────────────────────────────
+   *
+   * The sheet names each intent (`operationId`) and re-sends it under the
+   * same name after a lost response. The visit remembers the names it
+   * applied, stamped by the same write that applied them, so a re-send is
+   * answered with what the first send committed and applies nothing twice.
+   */
+  it('answers a re-sent intent from the ledger — nothing applied twice, ahead of the stale check', async () => {
+    const command = { kind: 'move', startIso: at(11).toISO() } as const;
+    const first = await edit(command, {
+      expectedVersion: 3,
+      operationId: OPERATION,
+    });
+    expect(first.result.isSuccess() && first.result.value).toEqual({
+      appointmentId: APPOINTMENT,
+      revision: 4,
+      replayed: false,
+    });
+    expect(first.captured.extra?.['appliedOperations']).toEqual([
+      { id: OPERATION, revision: 4, digest: expect.any(String) },
+    ]);
+
+    // The same save again, still claiming revision 3 — which the first
+    // send itself moved past. Without the name this is `stale`.
+    const after = { ...written(first.captured), ...first.captured.extra };
+    const resent = await edit(command, {
+      current: after,
+      expectedVersion: 3,
+      operationId: OPERATION,
+    });
+
+    expect(resent.result.isSuccess() && resent.result.value).toEqual({
+      appointmentId: APPOINTMENT,
+      revision: 4,
+      replayed: true,
+    });
+    expect(resent.captured.request).toBeUndefined();
+    expect(resent.captured.decision).toBeUndefined();
+    expect(resent.captured.extra).toBeUndefined();
+  });
+
+  it('still answers the re-send with ITS revision after another intent has landed', async () => {
+    const move = { kind: 'move', startIso: at(11).toISO() } as const;
+    const first = await edit(move, { operationId: OPERATION });
+    const afterFirst = { ...written(first.captured), ...first.captured.extra };
+    const second = await edit(
+      { kind: 'move', startIso: at(12).toISO() },
+      { current: afterFirst, operationId: 'operation-second-0000000' },
+    );
+    const afterSecond = {
+      ...written(second.captured),
+      ...second.captured.extra,
+    };
+    expect(
+      (afterSecond['appliedOperations'] as { id: string }[]).map(
+        (entry) => entry.id,
+      ),
+    ).toEqual([OPERATION, 'operation-second-0000000']);
+
+    const resent = await edit(move, {
+      current: afterSecond,
+      operationId: OPERATION,
+    });
+
+    // Not re-applied over the colleague's 12:00, and not a fresh revision.
+    expect(resent.result.isSuccess() && resent.result.value).toEqual({
+      appointmentId: APPOINTMENT,
+      revision: 4,
+      replayed: true,
+    });
+    expect(resent.captured.decision).toBeUndefined();
+  });
+
+  it('refuses a known name on a DIFFERENT batch rather than answering "saved"', async () => {
+    const first = await edit(
+      { kind: 'move', startIso: at(11).toISO() },
+      { operationId: OPERATION },
+    );
+    const after = { ...written(first.captured), ...first.captured.extra };
+    const reused = await edit(
+      { kind: 'move', startIso: at(12).toISO() },
+      { current: after, operationId: OPERATION },
+    );
+
+    expect(code(reused.result)).toBe('booking.staffEdit.invalid_command');
+    expect(reused.result.isFailure() && reused.result.error.params).toEqual({
+      field: 'operationId',
+    });
+    expect(reused.captured.decision).toBeUndefined();
+  });
+
+  /*
+   * THE BACKSTOP the sheet's name-keeping leans on (round 4, 2026-09-25).
+   * The ledger keeps the last CAP applied intents, so once CAP others have
+   * landed a lost-but-committed intent's name is forgotten, and its re-send
+   * is applied as NEW. The batch itself keeps that from doubling anything:
+   * a seat it added is refused by id, a seat it removed is gone, and every
+   * other arm restates a target that is already the visit.
+   */
+  it('applies a re-send the ledger has forgotten as new — and the batch cannot double anything', async () => {
+    const added = {
+      kind: 'addSeat' as const,
+      seatId: 'seat-2',
+      serviceId: 'svc-fade',
+      barberId: 'ivan',
+      startIso: at(10, 45).toISO(),
+      minutes: 45,
+      subject: { kind: 'self' as const },
+    };
+    const first = await edit(added, { operationId: OPERATION });
+    expect(first.result.isSuccess()).toBe(true);
+    // The first send's write, with a ledger that no longer names it.
+    const forgotten = {
+      ...written(first.captured),
+      ...first.captured.extra,
+      appliedOperations: [],
+    };
+
+    const addAgain = await edit(added, {
+      current: forgotten,
+      operationId: OPERATION,
+    });
+    expect(code(addAgain.result)).toBe('booking.staffEdit.invalid_command');
+    expect(addAgain.result.isFailure() && addAgain.result.error.params).toEqual(
+      { field: 'seatId' },
+    );
+
+    // THE REMOVAL, replayed literally (round 5): seat-2 removed under a
+    // name, the ledger then forgetting it, and the SAME removal re-sent. The
+    // seat its first send removed is gone, so the re-send is refused by id
+    // and writes nothing — it cannot remove a second seat.
+    const REMOVAL = 'operation-removal-0123456789';
+    const removal = { kind: 'removeSeat' as const, seatId: 'seat-2' };
+    const removed = await edit(removal, {
+      current: forgotten,
+      operationId: REMOVAL,
+    });
+    expect(removed.result.isSuccess()).toBe(true);
+    expect(seatsOf(removed.captured).map((seat) => seat['id'])).toEqual([
+      'seat-1',
+    ]);
+    const afterRemoval = {
+      ...written(removed.captured),
+      ...removed.captured.extra,
+    };
+    // While the ledger remembers it, the re-send is answered, not applied…
+    const remembered = await edit(removal, {
+      current: afterRemoval,
+      operationId: REMOVAL,
+    });
+    expect(
+      remembered.result.isSuccess() && remembered.result.value.replayed,
+    ).toBe(true);
+    // …and once it has forgotten, the batch itself refuses the double.
+    const removeAgain = await edit(removal, {
+      current: { ...afterRemoval, appliedOperations: [] },
+      operationId: REMOVAL,
+    });
+    expect(code(removeAgain.result)).toBe('booking.staffEdit.invalid_command');
+    expect(
+      removeAgain.result.isFailure() && removeAgain.result.error.params,
+    ).toEqual({ field: 'seatId' });
+    expect(removeAgain.captured.decision).toBeUndefined();
+
+    const moveAgain = await edit(
+      { kind: 'move', startIso: at(10).toISO() },
+      { current: forgotten, operationId: OPERATION },
+    );
+    expect(moveAgain.result.isSuccess()).toBe(true);
+    expect(seatsOf(moveAgain.captured)).toEqual(seatsOf(first.captured));
+  });
+
+  it.each([['short'], [''], ['has spaces in it, sixteen+'], ['x'.repeat(65)]])(
+    'refuses a malformed name (%j) by name, applying nothing',
+    async (operationId) => {
+      const { result, captured } = await edit(
+        { kind: 'move', startIso: at(11).toISO() },
+        { operationId },
+      );
+      expect(code(result)).toBe('booking.staffEdit.invalid_command');
+      expect(result.isFailure() && result.error.params).toEqual({
+        field: 'operationId',
+      });
+      expect(captured.decision).toBeUndefined();
+    },
+  );
+
+  // The branch the store's contract makes unreachable, pinned anyway: were
+  // a store ever to report a replay the plan step never found, the refusal
+  // is the staff family's own internal invariant — never the commit path's
+  // `booking.commit.invalid_input`, which the sheet reads as "your request".
+  it('fails a replay nobody found with the staff family’s invariant, not a commit code', async () => {
+    const lying = {
+      reschedule: async () =>
+        ok({ kind: 'replayed' as const, appointmentId: APPOINTMENT }),
+    } as unknown as FirestoreBookingStore;
+    const result = await useCase(lying).execute({
+      appointmentId: APPOINTMENT,
+      actorUserId: 'staff-1',
+      actorRoles: ['barber'],
+      command: { kind: 'move', startIso: at(11).toISO() },
+      operationId: OPERATION,
+    });
+    expect(code(result)).toBe('booking.staffEdit.invariant_violated');
+    expect(result.isFailure() && result.error.params).toEqual({
+      what: 'replay',
+    });
+  });
+
+  it('treats a null name as an older client: applied, and the ledger carried as found', async () => {
+    const ledger = [{ id: OPERATION, revision: 2, digest: '0123456789abcdef' }];
+    const { result, captured } = await edit(
+      { kind: 'move', startIso: at(11).toISO() },
+      {
+        current: document({ appliedOperations: ledger }),
+        operationId: null,
+      },
+    );
+    expect(result.isSuccess() && result.value).toEqual({
+      appointmentId: APPOINTMENT,
+      revision: 4,
+      replayed: false,
+    });
+    expect(captured.extra?.['appliedOperations']).toEqual(ledger);
   });
 
   /*

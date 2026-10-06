@@ -232,6 +232,12 @@ export class VerifyOtpUseCase {
       return fail(new RepositoryFailure(saveUserResult.error));
     }
 
-    return ok({ ...stub, birthDate: null, roles: [], registered: false });
+    return ok({
+      ...stub,
+      birthDate: null,
+      roles: [],
+      status: { kind: 'absent' },
+      registered: false,
+    });
   }
 }

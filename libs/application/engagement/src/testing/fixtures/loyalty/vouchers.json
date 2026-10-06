@@ -1,0 +1,90 @@
+{
+  "giftVouchers": {
+    "voucher-dev-georgi": {
+      "code": "GIFT50",
+      "initialValueMinorUnits": 5000,
+      "balanceMinorUnits": 2500,
+      "currencyCode": "EUR",
+      "issuedAt": {
+        "iso": "2026-06-13T10:45:00.000+03:00",
+        "zone": "Europe/Sofia"
+      },
+      "expiresAt": {
+        "iso": "2026-12-31T23:59:59.999+02:00",
+        "zone": "Europe/Sofia"
+      },
+      "issuedToUserId": "dev-client-1",
+      "state": {
+        "kind": "active"
+      }
+    },
+    "voucher-dev-georgi-spent": {
+      "code": "SPENT20",
+      "initialValueMinorUnits": 2000,
+      "balanceMinorUnits": 0,
+      "currencyCode": "EUR",
+      "issuedAt": {
+        "iso": "2025-12-08T10:45:00.000+02:00",
+        "zone": "Europe/Sofia"
+      },
+      "expiresAt": null,
+      "issuedToUserId": "dev-client-1",
+      "state": {
+        "kind": "active"
+      }
+    },
+    "voucher-dev-georgi-void": {
+      "code": "VOID30",
+      "initialValueMinorUnits": 3000,
+      "balanceMinorUnits": 3000,
+      "currencyCode": "EUR",
+      "issuedAt": {
+        "iso": "2026-06-13T10:40:00.000+03:00",
+        "zone": "Europe/Sofia"
+      },
+      "expiresAt": {
+        "iso": "2026-12-31T23:59:59.999+02:00",
+        "zone": "Europe/Sofia"
+      },
+      "issuedToUserId": "dev-client-1",
+      "state": {
+        "kind": "void",
+        "voidedAt": {
+          "iso": "2026-06-13T10:44:00.000+03:00",
+          "zone": "Europe/Sofia"
+        },
+        "reason": "Издаден с грешна стойност"
+      }
+    },
+    "voucher-dev-martin": {
+      "code": "GIFT2025",
+      "initialValueMinorUnits": 2500,
+      "balanceMinorUnits": 2500,
+      "currencyCode": "EUR",
+      "issuedAt": {
+        "iso": "2026-08-19T13:00:00.000+03:00",
+        "zone": "Europe/Sofia"
+      },
+      "expiresAt": null,
+      "issuedToUserId": "dev-client-2",
+      "state": {
+        "kind": "active"
+      }
+    },
+    "voucher-dev-five": {
+      "code": "GIFT5",
+      "initialValueMinorUnits": 500,
+      "balanceMinorUnits": 500,
+      "currencyCode": "EUR",
+      "issuedAt": {
+        "iso": "2026-08-19T13:00:00.000+03:00",
+        "zone": "Europe/Sofia"
+      },
+      "expiresAt": null,
+      "issuedToUserId": null,
+      "state": {
+        "kind": "active"
+      }
+    }
+  }
+}

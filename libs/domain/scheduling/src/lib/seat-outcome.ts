@@ -5,6 +5,7 @@ import {
   NO_SHOW,
   cancelled as cancelledStatus,
 } from './appointment-status';
+import type { CancellationWindow } from './cancellation-window';
 
 /**
  * Why a seat was called off.
@@ -135,6 +136,33 @@ export type SeatOutcome =
       readonly atMs: number;
       readonly by: 'client' | 'staff';
       readonly reason: CancellationReason;
+      /**
+       * The free-cancellation window IN FORCE when the seat was called off —
+       * `BookingPolicy.cancellationWindow` as the cancel path read it.
+       *
+       * Stamped, never looked up (2026-09-25): the owner may move the window
+       * at any time, and a cancellation is judged by the rule the client
+       * cancelled under. Someone who cancelled 30 h ahead under a 24 h window
+       * cancelled on time whatever the window says today, and a real late
+       * cancel stays late when the window shrinks. With the lead time
+       * (`atMs` against the start) and the line it was held against both on
+       * the seat, "late" is auditable and reproducible.
+       *
+       * A `CancellationWindow`, never a raw number (2026-09-25, round 2): a
+       * stamp is a window the policy itself could have set, or nothing. A
+       * number here let a caller stamp `NaN` or `-1` that the mapper wrote
+       * and then read back as unknown, so the stats quietly judged that
+       * cancellation by today's window instead.
+       *
+       * `null` is UNKNOWN: a cancellation recorded before the stamp existed,
+       * or a shop cancel whose policy read failed (`transitionAppointment`
+       * stamps unknown rather than refusing the shop's own cancel). Nothing
+       * can recover the rule it was made under, so the stats judge it by the
+       * CURRENT policy (`ClientStatsPolicy.isLateCancellation`), which is why
+       * the policy-change recompute still runs. Stored as the whole hours
+       * under `windowHours`, omitted when unknown (`appointment-document.ts`).
+       */
+      readonly window: CancellationWindow | null;
     };
 
 export type SeatOutcomeKind = SeatOutcome['kind'];
@@ -150,12 +178,20 @@ export function seatNoShow(atMs: number): SeatOutcome {
   return { kind: 'no_show', atMs };
 }
 
+/**
+ * A seat called off at `atMs`. `window` is the free-cancellation window in
+ * force at that instant — required, and already validated (it is a
+ * `CancellationWindow`, so no caller can stamp a number the policy would
+ * refuse), so every cancel path has to say which rule it cancelled under;
+ * `null` only when that rule is unknown.
+ */
 export function seatCancelled(
   atMs: number,
   by: 'client' | 'staff',
   reason: CancellationReason,
+  window: CancellationWindow | null,
 ): SeatOutcome {
-  return { kind: 'cancelled', atMs, by, reason };
+  return { kind: 'cancelled', atMs, by, reason, window };
 }
 
 /** Anything but `scheduled` — a seat whose story is over. */
@@ -241,11 +277,16 @@ function partyCancellationReason(
   return codes.join('+');
 }
 
-/** The seat outcome a party-level lifecycle verb stamps on every open seat. */
+/**
+ * The seat outcome a party-level lifecycle verb stamps on every open seat.
+ * `window` is the free-cancellation window in force (`null` when unknown),
+ * stamped on a cancellation and ignored by every other verb.
+ */
 export function outcomeForStatus(
   to: AppointmentStatusKind,
   atMs: number,
   reason: CancellationReason,
+  window: CancellationWindow | null,
 ): SeatOutcome | null {
   switch (to) {
     case 'completed':
@@ -253,7 +294,7 @@ export function outcomeForStatus(
     case 'no_show':
       return seatNoShow(atMs);
     case 'cancelled':
-      return seatCancelled(atMs, 'staff', reason);
+      return seatCancelled(atMs, 'staff', reason, window);
     // `pending`/`confirmed` say nothing about the work — a confirmed seat is
     // still `scheduled`.
     default:

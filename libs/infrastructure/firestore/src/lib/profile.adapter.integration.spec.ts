@@ -1,12 +1,16 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { TestBed } from '@angular/core/testing';
 import { RulesTestEnvironment } from '@firebase/rules-unit-testing';
+import { filter, firstValueFrom, shareReplay } from 'rxjs';
 import type { Firestore } from 'firebase/firestore';
-import { doc, setDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
 import { FIREBASE_FIRESTORE } from '@creativo/infrastructure/firebase-app';
 import { AccountStatus, User } from '@creativo/domain/accounts';
 import { ZonedDateTime } from '@creativo/domain/kernel';
-import { createEmulatorTestEnv } from '../testing/emulator-test-env';
+import {
+  createEmulatorTestEnv,
+  modularFirestore,
+} from '../testing/emulator-test-env';
 import { FirestoreProfileAdapter } from './profile.adapter';
 
 function createAdapter(db: Firestore): FirestoreProfileAdapter {
@@ -26,15 +30,19 @@ function today(): ZonedDateTime {
   return result.value;
 }
 
-function buildUser(id: string, roles: string[] = ['client']): User {
+function buildUser(
+  id: string,
+  overrides: Partial<Parameters<typeof User.create>[0]> = {},
+): User {
   const created = User.create(
     {
       id,
       phone: '+359888123456',
       firstName: 'Ivan',
       lastName: 'Petrov',
-      roles,
+      roles: ['client'],
       status: AccountStatus.active(),
+      ...overrides,
     },
     today(),
   );
@@ -45,6 +53,19 @@ function buildUser(id: string, roles: string[] = ['client']): User {
   }
   return created.value;
 }
+
+/** A registered `users/{uid}`, as registration (Admin SDK) writes it. */
+const REGISTERED = {
+  phone: '+359888123456',
+  firstName: 'Ivan',
+  lastName: 'Petrov',
+  roles: ['client'],
+  status: { kind: 'active' },
+  email: null,
+  birthDate: null,
+  searchName: 'ivan petrov',
+  searchPrefixes: ['i', 'iv', 'ivan'],
+};
 
 describe('FirestoreProfileAdapter (emulator)', () => {
   let testEnv: RulesTestEnvironment;
@@ -61,43 +82,61 @@ describe('FirestoreProfileAdapter (emulator)', () => {
     await testEnv.clearFirestore();
   });
 
-  it('round-trips saveProfile/getProfile for the owner', async () => {
-    const uid = 'user-1';
-    const owner = testEnv.authenticatedContext(uid, { roles: ['client'] });
-    const adapter = createAdapter(owner.firestore() as unknown as Firestore);
+  async function seed(
+    uid: string,
+    data: Record<string, unknown>,
+  ): Promise<void> {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(modularFirestore(ctx), 'users', uid), data);
+    });
+  }
 
-    const saveResult = await adapter.saveProfile(buildUser(uid));
+  async function stored(uid: string): Promise<Record<string, unknown>> {
+    let data: Record<string, unknown> = {};
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      data =
+        (await getDoc(doc(modularFirestore(ctx), 'users', uid))).data() ?? {};
+    });
+    return data;
+  }
+
+  function ownerAdapter(uid: string): FirestoreProfileAdapter {
+    return createAdapter(
+      modularFirestore(
+        testEnv.authenticatedContext(uid, { roles: ['client'] }),
+      ),
+    );
+  }
+
+  it('round-trips an owner name edit through saveProfile/getProfile', async () => {
+    const uid = 'user-1';
+    await seed(uid, REGISTERED);
+    const adapter = ownerAdapter(uid);
+
+    const saveResult = await adapter.saveProfile(
+      buildUser(uid, { firstName: 'Georgi', birthDate: '1990-05-17' }),
+    );
     expect(saveResult.isSuccess()).toBe(true);
 
     const getResult = await adapter.getProfile(buildUser(uid).id);
     expect(getResult.isSuccess()).toBe(true);
     if (getResult.isSuccess()) {
-      expect(getResult.value?.fullName()).toBe('Ivan Petrov');
+      expect(getResult.value?.fullName()).toBe('Georgi Petrov');
+      expect(getResult.value?.birthDate?.toISODate()).toBe('1990-05-17');
     }
+    expect((await stored(uid))['searchPrefixes']).toEqual(
+      expect.arrayContaining(['georgi', 'petrov', '359888123456']),
+    );
   });
 
   it('lets staff read a client profile they do not own', async () => {
     const uid = 'user-2';
-    await testEnv.withSecurityRulesDisabled(async (ctx) => {
-      await setDoc(doc(ctx.firestore(), 'users', uid), {
-        phone: '+359888123456',
-        firstName: 'Ivan',
-        lastName: 'Petrov',
-        roles: ['client'],
-        status: { kind: 'active' },
-        email: null,
-        birthDate: null,
-        searchName: 'ivan petrov',
-        searchPrefixes: ['i', 'iv', 'ivan'],
-      });
-    });
+    await seed(uid, REGISTERED);
 
     const receptionist = testEnv.authenticatedContext('staff-1', {
       roles: ['receptionist'],
     });
-    const adapter = createAdapter(
-      receptionist.firestore() as unknown as Firestore,
-    );
+    const adapter = createAdapter(modularFirestore(receptionist));
 
     const result = await adapter.getProfile(buildUser(uid).id);
 
@@ -107,29 +146,112 @@ describe('FirestoreProfileAdapter (emulator)', () => {
     }
   });
 
-  it('rejects a client trying to self-grant an extra role via saveProfile', async () => {
+  it('never carries roles, phone or email from the passed User to the document', async () => {
     const uid = 'user-3';
+    await seed(uid, REGISTERED);
+    const adapter = ownerAdapter(uid);
+
+    const result = await adapter.saveProfile(
+      buildUser(uid, {
+        roles: ['client', 'admin'],
+        phone: '+359877000111',
+        email: 'someone-else@example.com',
+      }),
+    );
+
+    // The save succeeds because none of those keys is sent at all.
+    expect(result.isSuccess()).toBe(true);
+    const data = await stored(uid);
+    expect(data['roles']).toEqual(['client']);
+    expect(data['phone']).toBe('+359888123456');
+    expect(data['email']).toBeNull();
+  });
+
+  it("leaves a server-written status untouched by the owner's name save", async () => {
+    const uid = 'user-4';
+    // Richer than the web mapper round-trips: a whole-document set would
+    // have to re-send (and could only drop) the extra key.
+    const status = {
+      kind: 'blocked',
+      reason: 'manual',
+      untilIso: null,
+      pauseId: 'pause-1',
+    };
+    await seed(uid, { ...REGISTERED, status });
+    const adapter = ownerAdapter(uid);
+
+    const result = await adapter.saveProfile(
+      buildUser(uid, { firstName: 'Georgi' }),
+    );
+
+    expect(result.isSuccess()).toBe(true);
+    const data = await stored(uid);
+    expect(data['firstName']).toBe('Georgi');
+    expect(data['status']).toEqual(status);
+  });
+
+  it('never creates the document: saving a missing profile fails', async () => {
+    const uid = 'user-5';
+    const adapter = ownerAdapter(uid);
+
+    const result = await adapter.saveProfile(buildUser(uid));
+
+    expect(result.isFailure()).toBe(true);
+    let exists = true;
     await testEnv.withSecurityRulesDisabled(async (ctx) => {
-      await setDoc(doc(ctx.firestore(), 'users', uid), {
-        phone: '+359888123456',
-        firstName: 'Ivan',
-        lastName: 'Petrov',
-        roles: ['client'],
-        status: { kind: 'active' },
-        email: null,
-        birthDate: null,
-        searchName: 'ivan petrov',
-        searchPrefixes: ['i', 'iv', 'ivan'],
+      exists = (
+        await getDoc(doc(modularFirestore(ctx), 'users', uid))
+      ).exists();
+    });
+    expect(exists).toBe(false);
+  });
+
+  it('observeProfile delivers a server-side status change live', async () => {
+    const uid = 'user-6';
+    await seed(uid, REGISTERED);
+    // ONE listener for the whole test, so the change must arrive on it — a
+    // second subscription's first snapshot would prove nothing about "live".
+    const live = ownerAdapter(uid)
+      .observeProfile(buildUser(uid).id)
+      .pipe(shareReplay({ bufferSize: 1, refCount: true }));
+    const keepAlive = live.subscribe();
+
+    const first = await firstValueFrom(live);
+    expect(first.isSuccess() && first.value?.status.kind).toBe('active');
+
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await updateDoc(doc(modularFirestore(ctx), 'users', uid), {
+        status: { kind: 'blocked', reason: 'manual', untilIso: null },
       });
     });
 
-    const owner = testEnv.authenticatedContext(uid, { roles: ['client'] });
-    const adapter = createAdapter(owner.firestore() as unknown as Firestore);
+    const result = await firstValueFrom(
+      live.pipe(
+        filter(
+          (next) => next.isSuccess() && next.value?.status.kind === 'blocked',
+        ),
+      ),
+    );
+    keepAlive.unsubscribe();
+    expect(result.isSuccess()).toBe(true);
+    if (result.isSuccess()) {
+      expect(result.value?.status).toEqual(
+        AccountStatus.blocked({ reason: 'manual' }),
+      );
+    }
+  });
 
-    const result = await adapter.saveProfile(
-      buildUser(uid, ['client', 'admin']),
+  it('observeProfile reads the pre-registration stub as no profile yet', async () => {
+    const uid = 'user-7';
+    await seed(uid, { phone: '+359888123456', email: null });
+
+    const result = await firstValueFrom(
+      ownerAdapter(uid).observeProfile(buildUser(uid).id),
     );
 
-    expect(result.isFailure()).toBe(true);
+    expect(result.isSuccess()).toBe(true);
+    if (result.isSuccess()) {
+      expect(result.value).toBeNull();
+    }
   });
 });

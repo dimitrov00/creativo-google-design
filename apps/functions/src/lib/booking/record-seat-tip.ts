@@ -1,7 +1,7 @@
 import { HttpsError, onCall } from 'firebase-functions/v2/https';
 import { adminFirestore } from '../firebase-admin';
-import { appendAudit } from './audit';
-import { callerWorksTheBook } from './caller-roles';
+import { type AuditSubject, appendAudit, seatSubjectsOf } from './audit';
+import { callerActor, callerWorksTheBook } from './caller-roles';
 
 /**
  * `recordSeatTip` — what the client left, against ONE seat.
@@ -71,6 +71,11 @@ export const recordSeatTip = onCall(async (request) => {
   }
 
   const db = adminFirestore();
+  let subjects: readonly AuditSubject[] = [];
+  /** The stored figure already was this one — nothing written, nothing logged. */
+  let unchanged = false;
+  /** The committed attempt's own instant — with the seat, the audit key. */
+  let recordedAtMs = 0;
 
   await db.runTransaction(async (tx) => {
     const ref = db.collection('appointments').doc(appointmentId);
@@ -95,6 +100,20 @@ export const recordSeatTip = onCall(async (request) => {
       });
     }
 
+    // THE SAME FIGURE AGAIN is not a change. A retried call (the SDK's, or a
+    // second tap on «Запази») used to rewrite the seat and log a second
+    // "recorded" row for one act; like `markArrived`'s second tap, it now
+    // writes nothing. Absent and `null` are the same "not recorded".
+    const stored = (seats.at(index) as Record<string, unknown> | undefined)?.[
+      'tipMinorUnits'
+    ];
+    if ((stored ?? null) === amount) {
+      unchanged = true;
+      return;
+    }
+    unchanged = false;
+    recordedAtMs = Date.now();
+
     /*
      * ⚠ The WHOLE seats array is rewritten, with one field changed.
      *
@@ -115,18 +134,27 @@ export const recordSeatTip = onCall(async (request) => {
     );
 
     tx.update(ref, { seats: next });
+    // The tip is the SEAT's, so the row names that seat's person — never the
+    // barber who typed it in, never the booker of a companion's cut.
+    subjects = seatSubjectsOf(data, seatId);
   });
 
-  void appendAudit({
-    actorUserId: uid,
-    // The ACT, not the amount — "who recorded tips" and "how much" are
-    // different questions, and the second one belongs to the booking rather
-    // than to the log.
-    action: amount === null ? 'booking.tip_cleared' : 'booking.tip_recorded',
-    resourceId: appointmentId,
-    atIso: new Date().toISOString(),
-    context: { seatId },
-  });
+  if (!unchanged) {
+    await appendAudit({
+      actor: callerActor(request),
+      // The ACT, not the amount — "who recorded tips" and "how much" are
+      // different questions, and the second one belongs to the booking
+      // rather than to the log.
+      action: amount === null ? 'booking.tip_cleared' : 'booking.tip_recorded',
+      resourceId: appointmentId,
+      subjects,
+      atIso: new Date().toISOString(),
+      context: { seatId },
+      // The seat AND the instant: two seats of one guest tipped in the same
+      // millisecond are still two acts.
+      changeKey: `tip:${seatId}:${recordedAtMs}`,
+    });
+  }
 
-  return { appointmentId, seatId };
+  return { appointmentId, seatId, unchanged };
 });

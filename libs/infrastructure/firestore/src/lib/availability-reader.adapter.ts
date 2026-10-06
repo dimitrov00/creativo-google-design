@@ -16,8 +16,10 @@ import {
 import {
   type BarberDayAvailability,
   CalendarDay,
+  type ChairTime,
   DateRange,
   Interval,
+  type RosterWindow,
   type ShiftSegmentProps,
   type ShopDayHours,
   StaffScheduleHistory,
@@ -26,6 +28,7 @@ import {
   type WeeklyPatternProps,
   buildDayCarveOuts,
   buildDayWindows,
+  paddedBusy,
   shopDayHours,
   windowsAt,
 } from '@creativo/domain/scheduling';
@@ -42,6 +45,7 @@ import {
   barberBusyDocRef,
   barberScheduleDocRef,
   capacityMonthDocRef,
+  locationDocRef,
   locationsCollection,
   scheduleExceptionDocRef,
 } from './firestore-paths';
@@ -128,27 +132,43 @@ function toSchedule(data: DocumentData, zone: string): ParsedSchedule | null {
 }
 
 /**
- * Stored busy geometry → intervals, PADDED by the barber's turnaround.
+ * Stored busy geometry → the `busy` the port promises: the spans with the
+ * moved visit's own chair time handed back, then PADDED by the barber's
+ * turnaround — `paddedBusy`, the one rule `decideBooking` checks a
+ * placement by, so the grid offers exactly what the server accepts.
  *
  * Padding happens here, at the read boundary, and nowhere else: the engine has
  * no turnaround of its own precisely so it cannot be applied a second time.
+ * And the release can only happen here, because only here are the spans
+ * still unpadded: released after padding, a neighbour's turnaround would be
+ * freed along with the visit.
  */
 function toPaddedBusy(
   data: DocumentData | undefined,
   zone: string,
   turnaroundMinutes: number,
+  barberId: BarberId,
+  release: readonly ChairTime[] | undefined,
 ): readonly Interval[] {
-  const raw = ((data?.['busy'] ?? []) as DocumentData[]).flatMap((entry) => {
+  const spans = ((data?.['busy'] ?? []) as DocumentData[]).flatMap((entry) => {
     const start = ZonedDateTime.fromISO(String(entry['startIso'] ?? ''), zone);
     const end = ZonedDateTime.fromISO(String(entry['endIso'] ?? ''), zone);
     if (start.isFailure() || end.isFailure()) return [];
     return [Interval.of(start.value.toMillis(), end.value.toMillis())];
   });
-  return Interval.normalize(
-    raw.map((interval) =>
-      Interval.pad(interval, turnaroundMinutes, turnaroundMinutes),
-    ),
-  );
+  return paddedBusy({ barberId, spans, turnaroundMinutes, release });
+}
+
+/**
+ * The windows (or carve-outs) worked at a shop the day may offer — one
+ * whose hours `observeOfferedShops` holds: a listed shop, or a moved
+ * visit's own.
+ */
+function atOfferedShops(
+  windows: readonly RosterWindow[],
+  offered: ReadonlyMap<string, ShopDayHours | null>,
+): readonly RosterWindow[] {
+  return windows.filter((window) => offered.has(window.locationId.value));
 }
 
 /**
@@ -178,12 +198,22 @@ export class FirestoreAvailabilityReader implements AvailabilityReader {
   }
 
   /**
-   * Every shop's published hours for `day`, keyed by `LocationId.value`.
+   * Every LISTED shop's published hours for `day`, keyed by
+   * `LocationId.value` — the grid's whole set of shops: a shop missing from
+   * it is never offered (`atOfferedShops`), but for a moved visit's own
+   * (`observeOfferedShops`).
    *
    * The whole collection, not just the shop being booked: a barber's day can
    * span two shops, and each segment has to be clipped to the hours of the
    * shop it is worked at. Clipping a Mladost afternoon against Center's hours
    * is how a client gets offered a time at a locked door.
+   *
+   * Listed is the rule the commit takes a new client booking by, and the
+   * waitlist's door and the matcher search by (`shopListed` in the
+   * functions): the shop's document is there AND its `status` is
+   * `active`. The query only narrows what is listened to; each document is
+   * still judged by the rule, fail-closed — `hidden`, a status nobody
+   * modelled, or none at all is not listed.
    */
   private observeShopHours(
     day: CalendarDay,
@@ -193,12 +223,11 @@ export class FirestoreAvailabilityReader implements AvailabilityReader {
     return subscribeWithRetry<ReadonlyMap<string, ShopDayHours | null>>(
       (onNext, onError) =>
         onSnapshot(
-          // Active shops only — an archived location's hours must not keep
-          // feeding windows into the grid.
           query(locationsCollection(this.db), where('status', '==', 'active')),
           (snapshot) => {
             const byLocation = new Map<string, ShopDayHours | null>();
             for (const doc of snapshot.docs) {
+              if (doc.data()['status'] !== 'active') continue;
               const locationId = LocationId.create(doc.id);
               if (locationId.isFailure()) continue;
               byLocation.set(
@@ -217,10 +246,84 @@ export class FirestoreAvailabilityReader implements AvailabilityReader {
     );
   }
 
+  /**
+   * The shops a day may offer: every LISTED one (`observeShopHours`) — and,
+   * for a visit being MOVED at a named shop, that shop too, listed or not.
+   *
+   * A hidden shop takes no NEW client booking, but a visit already booked
+   * there is still moved by its client (team decision 2026-09-26), and the
+   * server takes such a move where the visit already is
+   * (`FirestoreBookingStore.reschedule`). The move names the visit's own
+   * shop and hands back its chairs (`release`), so that pair is what earns
+   * the exception: the shop is read by id, whatever its status, and still
+   * CLAMPED to its own hours — never offered unbounded. Without it the time
+   * sheet of such a move is empty and nobody booked there can move.
+   *
+   * Only the DAY question: the calendar's other days come from the
+   * capacity rollup, which counts listed shops alone
+   * (`observeRangeCapacity`, `rebuildBarberCapacity`), so such a move is
+   * offered the days the schedule step asks this method about directly —
+   * today and the visit's own day.
+   *
+   * Nothing else changes: "any shop" (`null`) and a new booking (no
+   * release) still see listed shops only, a shop with no document is still
+   * never offered, and a hidden shop named for a move from ANOTHER shop is
+   * refused by the server (`admitsArrival`) — the grid is an offer, the
+   * store is the authority.
+   */
+  private observeOfferedShops(
+    locationId: LocationId | null,
+    day: CalendarDay,
+    release: readonly ChairTime[] | undefined,
+  ): Observable<
+    Result<ReadonlyMap<string, ShopDayHours | null>, RepositoryError>
+  > {
+    const listed = this.observeShopHours(day);
+    if (locationId === null || (release ?? []).length === 0) return listed;
+
+    return combineLatest([
+      listed,
+      this.observeDoc(locationDocRef(this.db, locationId)),
+    ]).pipe(
+      map(([listedResult, namedResult]) => {
+        if (listedResult.isFailure()) return listedResult;
+        if (namedResult.isFailure()) {
+          return fail<
+            ReadonlyMap<string, ShopDayHours | null>,
+            RepositoryError
+          >(namedResult.error);
+        }
+        const named = namedResult.value;
+        if (!named) return listedResult;
+        const shops = new Map(listedResult.value);
+        shops.set(
+          locationId.value,
+          shopDayHours(
+            day,
+            locationId,
+            (named['hours'] ?? []) as readonly LocationDayHours[],
+          ),
+        );
+        return ok<ReadonlyMap<string, ShopDayHours | null>, RepositoryError>(
+          shops,
+        );
+      }),
+    );
+  }
+
+  /**
+   * See the port. `release` is the chair time of a visit being MOVED, handed
+   * back from each barber's stored spans before their turnaround pads them
+   * (`toPaddedBusy`); the port's busy contract
+   * (`availabilityReaderBusyCases`) is run against this method in its spec.
+   * A move is also offered its own shop when `/book` no longer lists it
+   * (`observeOfferedShops`).
+   */
   observeDay(
     locationId: LocationId | null,
     day: CalendarDay,
     barberIds: readonly BarberId[],
+    release?: readonly ChairTime[],
   ): Observable<Result<readonly BarberDayAvailability[], RepositoryError>> {
     if (barberIds.length === 0) {
       return of(ok<readonly BarberDayAvailability[], RepositoryError>([]));
@@ -246,7 +349,10 @@ export class FirestoreAvailabilityReader implements AvailabilityReader {
       ),
     );
 
-    return combineLatest([this.observeShopHours(day), perBarber]).pipe(
+    return combineLatest([
+      this.observeOfferedShops(locationId, day, release),
+      perBarber,
+    ]).pipe(
       map(([hoursResult, barberResults]) => {
         if (hoursResult.isFailure()) {
           return fail<readonly BarberDayAvailability[], RepositoryError>(
@@ -295,11 +401,25 @@ export class FirestoreAvailabilityReader implements AvailabilityReader {
             exceptions: exception ? [exception] : [],
             shopHours: hoursResult.value,
           };
-          const allWindows = buildDayWindows(buildInput);
+          // Only at a shop the day may offer: one the grid lists, or a
+          // moved visit's own (`observeOfferedShops`). `buildDayWindows`
+          // reads a shop absent from `shopHours` as one that "publishes no
+          // bound" — right for a shop that never authored hours, wrong for
+          // one hidden since or a roster typo: its chair would reach the
+          // engine UNCLAMPED, and "any shop" (or a deep link naming it)
+          // offer a time at a shop `/book` does not list. Dropped here, as
+          // the matcher's day and the capacity plan drop them.
+          const allWindows = atOfferedShops(
+            buildDayWindows(buildInput),
+            hoursResult.value,
+          );
           // What the day HAD taken out of it. Same inputs, second question —
           // the windows say what is left, these say what was blocked, and a
           // calendar needs both or a break renders as the shop being shut.
-          const allBlocks = buildDayCarveOuts(buildInput);
+          const allBlocks = atOfferedShops(
+            buildDayCarveOuts(buildInput),
+            hoursResult.value,
+          );
 
           // Narrow to the shop being booked. `null` means the client has not
           // chosen one ("any shop"), and every window stays a candidate — the
@@ -324,6 +444,8 @@ export class FirestoreAvailabilityReader implements AvailabilityReader {
               busyResult.value,
               day.zone,
               parsed.turnaroundMinutes,
+              barberId,
+              release,
             ),
           });
         }

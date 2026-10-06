@@ -1,7 +1,10 @@
+import { logger } from 'firebase-functions';
 import { HttpsError, onCall } from 'firebase-functions/v2/https';
+import type { Firestore } from 'firebase-admin/firestore';
 import { ZonedDateTime } from '@creativo/domain/kernel';
 import {
   type AppointmentStatus,
+  type BookingPolicy,
   type CancellationReason,
   canTransition,
   rootCancellationReason,
@@ -10,8 +13,46 @@ import {
 import { seatOutcomeToDocument } from '@creativo/application/booking';
 import { adminFirestore } from '../firebase-admin';
 import { loadBookingPolicy } from './load-booking-policy';
-import { appendAudit } from './audit';
+import { TENANT_ZONE } from './tenant-zone';
+import { type AuditSubject, appendAudit, seatSubjectsOf } from './audit';
+import { callerActor } from './caller-roles';
 import { applyVoucherRestore, planVoucherRestore } from './voucher-restore';
+
+/**
+ * The tenant policy a CLIENT'S cancel is judged by — or the refusal that
+ * says it could not be read.
+ *
+ * `unavailable`, with its own code, rather than the bare `internal` a
+ * rejected read used to surface as: nothing is wrong with the request or
+ * the visit, the rule simply could not be consulted, and a retry in a
+ * moment is the honest advice (the web words it that way). Nothing has been
+ * written when this throws — the read happens before the transaction. The
+ * cause goes to the log, never to the caller.
+ *
+ * Only this path refuses on it. The shop's cancel (`transitionAppointment`)
+ * enforces no window and stamps UNKNOWN instead (business decision,
+ * 2026-09-25, round 2): clearing a sick barber's day must not depend on
+ * tuning data.
+ */
+export async function policyForCancel(
+  db: Firestore,
+  appointmentId: string,
+): Promise<BookingPolicy> {
+  try {
+    return await loadBookingPolicy(db);
+  } catch (error) {
+    logger.warn('cancellation policy unread; cancel refused', {
+      code: 'booking.cancel.policy_unavailable',
+      resourceId: appointmentId,
+      error: String(error),
+    });
+    throw new HttpsError(
+      'unavailable',
+      'The cancellation terms could not be checked — try again in a moment',
+      { code: 'booking.cancel.policy_unavailable' },
+    );
+  }
+}
 
 /**
  * The cancellation write path — a callable, like `commitBooking`, and for the
@@ -51,8 +92,17 @@ export const cancelAppointment = onCall(async (request) => {
 
   const db = adminFirestore();
   // The tenant's window, read OUTSIDE the transaction — policy is tuning
-  // data and must not widen the conflict set.
-  const policy = await loadBookingPolicy(db);
+  // data and must not widen the conflict set. A failed read FAILS the
+  // cancel, unlike the shop's (`transitionAppointment` stamps unknown and
+  // goes on): here the window is the rule being enforced, and without it
+  // nobody can say whether this client may still cancel for free. Falling
+  // open would let a late cancel through unjudged; a retry, or a call to the
+  // shop, loses nothing.
+  const policy = await policyForCancel(db, appointmentId);
+  let subjects: readonly AuditSubject[] = [];
+  let reasonCode: CancellationReason['kind'] = 'unspecified';
+  /** The instant the committed attempt stamped on the seats — the audit key. */
+  let cancelledAtMs = 0;
 
   await db.runTransaction(async (tx) => {
     const ref = db.collection('appointments').doc(appointmentId);
@@ -86,7 +136,7 @@ export const cancelAppointment = onCall(async (request) => {
     // any write, and written after the status below.
     const timeSlotZone = String(
       (data['timeSlot'] as Record<string, unknown> | undefined)?.['zone'] ??
-        'Europe/Sofia',
+        TENANT_ZONE,
     );
     const restore = await planVoucherRestore(tx, db, data, {
       iso: new Date().toISOString(),
@@ -102,7 +152,7 @@ export const cancelAppointment = onCall(async (request) => {
     const timeSlot = (data['timeSlot'] ?? {}) as Record<string, unknown>;
     const start = ZonedDateTime.fromISO(
       String(timeSlot['startIso'] ?? ''),
-      String(timeSlot['zone'] ?? 'Europe/Sofia'),
+      String(timeSlot['zone'] ?? TENANT_ZONE),
     );
     if (
       start.isSuccess() &&
@@ -131,8 +181,12 @@ export const cancelAppointment = onCall(async (request) => {
       reason.length > 0
         ? { kind: 'other', note: reason }
         : { kind: 'unspecified' };
+    const atMs = Date.now();
+    // Stamped with the window this cancel was just allowed under, so it is
+    // judged by that rule for good — a later change to the window must not
+    // turn an on-time cancel into a late one (2026-09-25).
     const outcome = seatOutcomeToDocument(
-      seatCancelled(Date.now(), 'client', cancellation),
+      seatCancelled(atMs, 'client', cancellation, policy.cancellationWindow),
     );
     const seats = Array.isArray(data['seats'])
       ? (data['seats'] as Record<string, unknown>[])
@@ -158,14 +212,26 @@ export const cancelAppointment = onCall(async (request) => {
       ...(restore ? { voucherRedemptions: restore.voucherRedemptions } : {}),
     });
     if (restore) applyVoucherRestore(tx, restore);
+    // The whole visit is called off, so everyone on it gets the row — filed
+    // under the CODE its seats were stamped with, never the client's own
+    // sentence: that stays on the visit, and the log is ids and codes (T5).
+    subjects = seatSubjectsOf(data);
+    reasonCode = cancellation.kind;
+    // Assigned by every attempt, so the one that COMMITTED is what is read.
+    cancelledAtMs = atMs;
   });
 
-  void appendAudit({
-    actorUserId: uid,
+  await appendAudit({
+    actor: callerActor(request),
     action: 'booking.cancelled',
     resourceId: appointmentId,
+    subjects,
     atIso: new Date().toISOString(),
-    context: reason ? { reason } : undefined,
+    context: { reason: reasonCode },
+    // One cancellation, one instant — and a reinstated visit cancelled again
+    // is a second cancellation with an instant of its own. A retry of this
+    // one is refused by the lifecycle graph before it gets here.
+    changeKey: `cancelled:${cancelledAtMs}`,
   });
 
   return { appointmentId };

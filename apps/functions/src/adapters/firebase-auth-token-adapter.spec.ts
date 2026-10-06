@@ -1,6 +1,7 @@
 import type { Auth } from 'firebase-admin/auth';
 import { Email, TenantId, UserId } from '@creativo/domain/models';
 import { OtpDestination } from '@creativo/application/identity';
+import { roleFromPrimitive } from '@creativo/domain/identity';
 import { PhoneNumber } from '@creativo/domain/kernel';
 import { describe, expect, it } from 'vitest';
 import { createFakeAuth } from '../test-support/fake-auth';
@@ -38,7 +39,7 @@ describe('FirebaseAuthTokenAdapter.createCustomToken', () => {
     if (result.isSuccess()) {
       expect(result.value).toContain('uid_1');
     }
-    expect(fakeAuth.customTokens[0].claims).toEqual({
+    expect(fakeAuth.customTokens[0]?.claims).toEqual({
       tenantId: 'creativo',
       stage: 'onboarding',
     });
@@ -56,9 +57,9 @@ describe('FirebaseAuthTokenAdapter.createCustomToken', () => {
 
     await adapter.createCustomToken(uidResult.value, tenantIdResult.value, {
       stage: 'active',
-      roles: ['client'],
+      roles: [roleFromPrimitive('client')],
     });
-    expect(fakeAuth.customTokens[0].claims).toEqual({
+    expect(fakeAuth.customTokens[0]?.claims).toEqual({
       tenantId: 'creativo',
       stage: 'active',
       roles: ['client'],
@@ -80,7 +81,7 @@ describe('FirebaseAuthTokenAdapter.setUserClaims', () => {
     const result = await adapter.setUserClaims(
       uidResult.value,
       tenantIdResult.value,
-      { stage: 'active', roles: ['client'] },
+      { stage: 'active', roles: [roleFromPrimitive('client')] },
     );
     expect(result.isSuccess()).toBe(true);
     expect(fakeAuth.claimsByUid.get('uid_3')).toEqual({

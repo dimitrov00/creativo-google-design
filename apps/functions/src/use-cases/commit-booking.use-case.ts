@@ -81,6 +81,9 @@ export class CommitBookingUseCase {
       attemptId: input.attemptId,
       contact: input.contact,
       bookedFromAppointmentId: input.bookedFromAppointmentId,
+      // The shop placing its own book is a staff placement whoever the seats
+      // are for; everything else is the client booking for themselves.
+      placement: input.staffPlacement === true ? 'staff' : 'self',
     };
 
     const result = await this.store.commit(request, (snapshot) => {

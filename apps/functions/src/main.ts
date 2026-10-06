@@ -23,3 +23,11 @@ export { sampleBarberLeadTimeDaily } from './lib/booking/sample-lead-time';
 export { requestWaitlist } from './lib/booking/request-waitlist';
 export { cancelWaitlist } from './lib/booking/cancel-waitlist';
 export { matchWaitlistOnBusyChange } from './lib/booking/match-waitlist';
+export { dispatchClientProjections } from './lib/clients/dispatch-client-projections';
+export {
+  continueClientStatsPolicyRecompute,
+  recomputeClientStatsOnPolicyChange,
+  sweepClientStatsPolicyDaily,
+} from './lib/clients/recompute-on-policy-change';
+export { runBackfill } from './lib/ops/run-backfill';
+export { publishStreakDefinition } from './lib/loyalty/publish-streak-definition';

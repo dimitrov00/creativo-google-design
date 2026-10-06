@@ -1,14 +1,19 @@
 import type { DocumentData, Firestore } from 'firebase-admin/firestore';
 import { UserId } from '@creativo/domain/models';
-import type { AccountStatus, User } from '@creativo/domain/accounts';
+import type { User } from '@creativo/domain/accounts';
 import {
   OtpDestination,
   ProvisionedUser,
+  StoredAccountStatus,
   UserRecordSnapshot,
   UserRepositoryPort,
   otpDestinationValue,
 } from '@creativo/application/identity';
-import { RepositoryError } from '@creativo/application/shared';
+import {
+  RepositoryError,
+  accountStatusFromDocument,
+  accountStatusToDocument,
+} from '@creativo/application/shared';
 import { Result, fail, ok } from '@creativo/domain/kernel';
 
 const COLLECTION = 'users';
@@ -24,7 +29,7 @@ function prefixesOf(token: string): string[] {
 /**
  * Standard Firestore "poor man's search" trick — every prefix of every
  * whitespace-split token in the full name, lowercased. MUST stay in
- * lockstep with the web's `FirestoreProfileAdapter.computeSearchFields`
+ * lockstep with the web's `computeSearchFields`
  * (`libs/infrastructure/firestore/src/lib/profile.adapter.ts`): both sides
  * write the same `users/{uid}` document, and `FirestoreUserSearchAdapter`
  * queries these fields regardless of which side last wrote them.
@@ -67,22 +72,13 @@ function computeSearchFields(
   return { searchName, searchPrefixes: [...prefixSet] };
 }
 
-function statusToPersistence(status: AccountStatus): DocumentData {
-  if (status.kind === 'active') {
-    return { kind: 'active' };
-  }
-  return {
-    kind: 'blocked',
-    reason: status.reason,
-    untilIso: status.until ? status.until.toISO() : null,
-  };
-}
-
 /**
- * The one persistence mapping for a REGISTERED user — field-for-field the
- * same document `FirestoreProfileAdapter.toPersistence` writes on the web
- * side (see `computeSearchFields`'s lockstep note above), so everything the
- * server registers reconstitutes cleanly through the web's profile door.
+ * The one persistence mapping for a REGISTERED user — the whole document
+ * the web's profile door (`FirestoreProfileAdapter`) reads back, so
+ * everything the server registers reconstitutes cleanly there. The web
+ * never writes this shape itself: it creates no `users` document and
+ * updates only the owner's allowlist (names, birth date, search keys — see
+ * `computeSearchFields`'s lockstep note above).
  */
 function registeredToPersistence(user: User): DocumentData {
   const { searchName, searchPrefixes } = computeSearchFields(
@@ -95,12 +91,21 @@ function registeredToPersistence(user: User): DocumentData {
     firstName: user.firstName.value,
     lastName: user.lastName.value,
     roles: [...user.roles],
-    status: statusToPersistence(user.status),
+    status: accountStatusToDocument(user.status),
     email: user.email ? user.email.value : null,
     birthDate: user.birthDate ? user.birthDate.toISODate() : null,
     searchName,
     searchPrefixes,
   };
+}
+
+/** `absent` on a stub; otherwise the shared mapper's verdict, never a guess. */
+function storedStatusOf(raw: unknown): StoredAccountStatus {
+  if (raw === undefined || raw === null) return { kind: 'absent' };
+  const parsed = accountStatusFromDocument(raw);
+  return parsed.isSuccess()
+    ? { kind: 'stored', status: parsed.value }
+    : { kind: 'unreadable' };
 }
 
 function toSnapshot(
@@ -120,13 +125,16 @@ function toSnapshot(
     // Empty means "stub or pre-roles doc" — the mint site falls back to
     // `client`, never to nothing.
     roles,
+    status: storedStatusOf(data['status']),
     email: typeof data['email'] === 'string' ? data['email'] : null,
     phone: typeof data['phone'] === 'string' ? data['phone'] : null,
     birthDate: typeof data['birthDate'] === 'string' ? data['birthDate'] : null,
     // Activation key: only `completeRegistration`'s accounts-shape write
-    // ever sets `firstName` (the stub has just contact channels), and the
-    // web profile editor can change but never blank it (`FirstName`'s
-    // non-empty invariant) — so presence == registration completed.
+    // ever sets `firstName` (the stub has just contact channels). The rules
+    // let the owner edit it only once the STORED document already has one,
+    // and never to fewer than `FIRST_NAME_MIN_LENGTH` characters — so
+    // presence == registration completed. Even a blanked name could not
+    // reset a pause: the registration re-run carries `status` forward.
     registered: typeof firstName === 'string' && firstName.trim().length > 0,
   });
 }

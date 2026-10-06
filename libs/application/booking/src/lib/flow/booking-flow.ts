@@ -4,9 +4,11 @@ import {
   BookingCart,
   BookingCartError,
   BookingParty,
+  type BookingPartyLabelError,
   CalendarDay,
   CartLineId,
   DayWindows,
+  DuplicateGuestLabelError,
   FlexibleWhen,
   GuestId,
   NewCartLine,
@@ -305,7 +307,7 @@ function advanceParty(
     }
     const result = state.party.addGuest(event.label);
     if (result.isFailure()) {
-      return fail(new InvalidGuestError(result.error));
+      return fail(guestLabelRefusal(result.error));
     }
     return ok({ ...state, party: result.value });
   }
@@ -330,13 +332,36 @@ function advanceParty(
       // `renameGuest` fails two ways: an array of label errors, or a single
       // not-found. The array check is the discriminator the domain gives us.
       return Array.isArray(result.error)
-        ? fail(new InvalidGuestError(result.error))
+        ? fail(guestLabelRefusal(result.error))
         : fail(new GuestNotFoundInFlowError(event.guestId.toString()));
     }
     return ok({ ...state, party: result.value });
   }
 
   return null;
+}
+
+/**
+ * A label the party refused, as the flow reports it. Somebody else's label
+ * is its OWN refusal (`DuplicateGuestLabelError`), with its own words —
+ * «enter a name» would tell a person who just typed one to type it again.
+ */
+function guestLabelRefusal(
+  errors: readonly BookingPartyLabelError[],
+): InvalidGuestError | DuplicateGuestLabelError {
+  const duplicate = errors.find(
+    (error): error is DuplicateGuestLabelError =>
+      error instanceof DuplicateGuestLabelError,
+  );
+  return (
+    duplicate ??
+    new InvalidGuestError(
+      errors.filter(
+        (error): error is Exclude<typeof error, DuplicateGuestLabelError> =>
+          !(error instanceof DuplicateGuestLabelError),
+      ),
+    )
+  );
 }
 
 /**
@@ -458,6 +483,14 @@ export function advanceBookingFlow(
         const bare = firstSeatWithoutService(state.party, state.cart);
         if (bare) {
           return fail(new SeatWithoutServiceError(seatKeyValue(bare)));
+        }
+        // One label, one guest. The commands already refuse a second guest
+        // under a taken label; only a restored draft can still hold one, and
+        // past this step the grid would seat them as two people while the
+        // server counts one. One rename, here, is the fix.
+        const shared = state.party.sharedLabel();
+        if (shared) {
+          return fail(new DuplicateGuestLabelError(shared.value));
         }
         return ok({
           kind: 'schedule',

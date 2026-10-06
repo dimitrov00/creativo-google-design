@@ -5,6 +5,7 @@ import { BarberId, LocationId } from '@creativo/domain/catalog';
 import {
   BarberDayAvailability,
   CalendarDay,
+  type ChairTime,
   DateRange,
 } from '@creativo/domain/scheduling';
 import { RepositoryError } from '@creativo/application/shared';
@@ -34,11 +35,25 @@ export interface AvailabilityReader {
    * optimising for time rather than place. `null` keeps every rostered window
    * a candidate; the use-case then runs the engine once per shop, because one
    * appointment cannot be split across two.
+   *
+   * `release` is the chair time of a visit being MOVED
+   * (`Appointment.chairTimes`). It is handed back from each barber's stored
+   * spans BEFORE they are padded by turnaround, which is exactly the view
+   * the server decides a move against. Each barber's `busy` is
+   * `paddedBusy` (domain) of their stored spans, this barber's turnaround and
+   * `release`: one rule, shared with `decideBooking`. Absent or empty ⇒
+   * nothing is released, the ordinary booking.
+   *
+   * The compiler cannot hold an implementation to this (one that declares
+   * fewer parameters still type-checks), so the contract is executable:
+   * every implementation that reads stored spans runs
+   * `availabilityReaderBusyCases` in its spec.
    */
   observeDay(
     locationId: LocationId | null,
     day: CalendarDay,
     barberIds: readonly BarberId[],
+    release?: readonly ChairTime[],
   ): Observable<Result<readonly BarberDayAvailability[], RepositoryError>>;
 
   /**

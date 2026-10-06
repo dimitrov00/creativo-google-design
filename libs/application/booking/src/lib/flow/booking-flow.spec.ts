@@ -174,6 +174,39 @@ describe('BookingFlow', () => {
     }
   });
 
+  it('refuses another guest’s label in its OWN words — not «enter a name» to someone who just did', () => {
+    let state = guestsState();
+    for (const label of ['Maria', 'Guest 2']) {
+      const added = advanceBookingFlow(state, { type: 'add_guest', label });
+      if (added.isFailure() || added.value.kind !== 'services') {
+        throw new Error('unexpected');
+      }
+      state = added.value;
+    }
+    const second = state.kind === 'services' ? state.party.guests[1] : null;
+    if (!second) throw new Error('unexpected');
+
+    const renamed = advanceBookingFlow(state, {
+      type: 'rename_guest',
+      guestId: second.id,
+      label: 'Maria',
+    });
+    const added = advanceBookingFlow(state, {
+      type: 'add_guest',
+      label: 'Maria',
+    });
+
+    for (const result of [renamed, added]) {
+      expect(result.isFailure()).toBe(true);
+      if (result.isFailure()) {
+        expect(result.error.code).toBe(
+          'scheduling.booking_party.duplicate_label',
+        );
+        expect(result.error.params).toEqual({ label: 'Maria' });
+      }
+    }
+  });
+
   // Ports v2's own documented `booking.machine.ts` regression comment
   // (migration-blueprint.md §7.7): a removed guest's id must never be
   // resurrected by a later add — GuestId only ever mints from
@@ -402,6 +435,56 @@ describe('BookingFlow', () => {
     const result = advanceBookingFlow(both.value, { type: 'next' });
     expect(result.isSuccess()).toBe(true);
     if (result.isSuccess()) expect(result.value.kind).toBe('schedule');
+  });
+
+  it('keeps a restored party with two guests under one label here, naming the label', () => {
+    // Only `reconstitute` can hold one (a draft saved before the rule); past
+    // this step the grid would seat two people the server counts as one.
+    const restored = requiredValue(
+      BookingParty.reconstitute({
+        ownerId: 'owner_1',
+        guests: [
+          { id: 'guest-0', label: 'Гост 1' },
+          { id: 'guest-1', label: 'Гост 1' },
+        ],
+        nextSequence: 2,
+      }),
+    );
+    let state: BookingFlowState = {
+      ...servicesStateWithOneLine(),
+      party: restored,
+    };
+    for (const guest of restored.guests) {
+      state = requiredValue(
+        advanceBookingFlow(state, {
+          type: 'add_line',
+          seatKey: SeatKey.guest(guest.id),
+          line: CUT,
+        }),
+      );
+    }
+
+    const refused = advanceBookingFlow(state, { type: 'next' });
+    expect(refused.isFailure()).toBe(true);
+    if (refused.isFailure()) {
+      expect(refused.error.code).toBe(
+        'scheduling.booking_party.duplicate_label',
+      );
+      expect(refused.error.params).toEqual({ label: 'Гост 1' });
+    }
+
+    // One rename, and the party moves on.
+    const second = restored.guests[1];
+    if (!second) throw new Error('bad fixture');
+    const renamed = requiredValue(
+      advanceBookingFlow(state, {
+        type: 'rename_guest',
+        guestId: second.id,
+        label: 'Мария',
+      }),
+    );
+    const moved = advanceBookingFlow(renamed, { type: 'next' });
+    expect(moved.isSuccess() && moved.value.kind).toBe('schedule');
   });
 
   // Removing the guest removes the reason to block — the rule is about people

@@ -60,7 +60,7 @@ describe('FirestoreImpersonationAdapter (emulator)', () => {
     await testEnv.clearFirestore();
   });
 
-  it('saves a session and its paired audit entry, then finds it by id', async () => {
+  it('saves a session, writes no audit row from the browser, then finds it by id', async () => {
     const adminUserId = UserId.generate();
     const targetUserId = UserId.generate();
     const session = buildSession(adminUserId, targetUserId);
@@ -79,11 +79,11 @@ describe('FirestoreImpersonationAdapter (emulator)', () => {
       expect(findResult.value?.id.value).toBe(session.id.value);
     }
 
+    // FIX 1: the rules refuse every client audit create, so the row moves
+    // server-side with the impersonation callable — none is written here.
     await testEnv.withSecurityRulesDisabled(async (ctx) => {
       const auditDocs = await ctx.firestore().collection('auditLog').get();
-      expect(auditDocs.empty).toBe(false);
-      const [firstAuditDoc] = auditDocs.docs;
-      expect(firstAuditDoc?.data()['action']).toBe('impersonation.started');
+      expect(auditDocs.empty).toBe(true);
     });
   });
 

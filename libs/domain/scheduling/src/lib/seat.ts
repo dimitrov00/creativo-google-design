@@ -8,6 +8,7 @@ import {
 } from '@creativo/domain/catalog';
 import { BarberPref } from './barber-pref';
 import { SeatId } from './ids';
+import { Interval } from './interval';
 import { SeatLabel } from './seat-label';
 import { SEAT_SCHEDULED, SeatOutcome, isSeatResolved } from './seat-outcome';
 import { TimeSlot } from './time-slot';
@@ -215,19 +216,7 @@ export class Seat {
    * yesterday's figure must not have to reopen a completed visit.
    */
   withTip(tip: Money | null): Seat {
-    return new Seat(
-      this.id,
-      this.subject,
-      this.serviceId,
-      this.variantId,
-      this.barberId,
-      this.terms,
-      this.startsAt,
-      this.outcome,
-      this.pref,
-      this.catalogTerms,
-      tip,
-    );
+    return this.copy({ tip });
   }
 
   /**
@@ -235,22 +224,41 @@ export class Seat {
    * holding a seat cannot have it mutated out from under a template.
    *
    * Placement is untouched on purpose: a no-show still occupied the chair,
-   * and its slot is what makes `noShowMinutes` separable from idle time.
+   * and its slot is what makes `noShowMinutes` separable from idle time. So
+   * is everything else — the preference, the tip and the override provenance
+   * are all facts the shop saying what happened does not change.
    */
   withOutcome(outcome: SeatOutcome): Seat {
-    return new Seat(
-      this.id,
-      this.subject,
-      this.serviceId,
-      this.variantId,
-      this.barberId,
-      this.terms,
-      this.startsAt,
-      outcome,
-      // The preference survives resolution: what the client asked for does
-      // not change because the shop said what happened.
-      this.pref,
-    );
+    return this.copy({ outcome });
+  }
+
+  /**
+   * Every field, spelled out — the one place a seat is read back into props.
+   *
+   * `Required` on purpose: the optional fields are exactly the ones a
+   * hand-listed copy forgets (`withOutcome` once dropped the tip and the
+   * override provenance), and a field added to `SeatProps` now fails to
+   * compile here until it is carried.
+   */
+  toProps(): Required<SeatProps> {
+    return {
+      id: this.id,
+      subject: this.subject,
+      serviceId: this.serviceId,
+      variantId: this.variantId,
+      barberId: this.barberId,
+      pref: this.pref,
+      terms: this.terms,
+      catalogTerms: this.catalogTerms,
+      startsAt: this.startsAt,
+      outcome: this.outcome,
+      tip: this.tip,
+    };
+  }
+
+  /** Every transition goes through here, so none can drop a field it does not touch. */
+  private copy(patch: Partial<SeatProps>): Seat {
+    return Seat.of({ ...this.toProps(), ...patch });
   }
 
   /** Has the shop said what happened to this seat yet? */
@@ -282,6 +290,37 @@ export class Seat {
   }
 
   /**
+   * Is this seat one the BOOKER's own cart can name — and so move?
+   *
+   * The client's cart says exactly two things: "me" and "a guest with this
+   * label". So a seat is the booker's to move when it is an anonymous guest,
+   * or when it is the booker's own seat — `self`, AND bound to the booker's
+   * account. The binding is not a formality: `self` is a relationship to the
+   * party, and a stored `self` seat naming some OTHER account is somebody
+   * the cart cannot speak for, exactly like a companion the shop seated.
+   * Every other seat is the shop's to move (a client move carries it along
+   * unchanged — `RescheduleBookingUseCase`).
+   *
+   * ONE rule, read by the web flow (what the bag rebuilds, what the
+   * appointments page offers) and by the server (what the cart replaces,
+   * what it carries) — two copies of it once disagreed about exactly that
+   * foreign `self` seat.
+   *
+   * `ownerUserId` is the booking's owner: the verified token on the server,
+   * the signed-in reader on the client. `null` names nobody, so no account
+   * seat is anybody's own and only the anonymous guests remain the cart's.
+   */
+  isMovableByBooker(ownerUserId: UserId | null): boolean {
+    const subject = this.subject;
+    if (subject.kind === 'anonymous') return true;
+    return (
+      subject.relationship === 'self' &&
+      ownerUserId !== null &&
+      subject.userId.equals(ownerUserId)
+    );
+  }
+
+  /**
    * Did somebody change what the catalogue said — a discount, a stretched
    * duration, or both?
    *
@@ -299,6 +338,30 @@ export class Seat {
 
   endsAt(): ZonedDateTime {
     return this.startsAt.plusMinutes(this.terms.durationMinutes);
+  }
+
+  /**
+   * What the barber's chair is held for: setup, the service, cleanup, as
+   * instants. The client is sold `slot` alone, but a placement is checked
+   * against this, and it is what the seat writes into the busy projection.
+   */
+  chairTime(): Interval {
+    return Interval.of(
+      this.startsAt.toMillis() - this.terms.setupMinutes * 60_000,
+      this.endsAt().toMillis() + this.terms.cleanupMinutes * 60_000,
+    );
+  }
+
+  /**
+   * What the CLIENT is sold — `slot`, as instants: the minutes the person
+   * sits in this chair, without the barber's setup and cleanup around them.
+   * It is what "one person, one chair at a time" is judged on
+   * (`PersonSlot`), the same span the availability engine seats a line by.
+   * Read off `slot`, so the sold span has one definition.
+   */
+  soldTime(): Interval {
+    const { startMs, endMs } = this.slot;
+    return Interval.of(startMs, endMs);
   }
 
   /** Would these two seats need the same barber in two chairs at once? */

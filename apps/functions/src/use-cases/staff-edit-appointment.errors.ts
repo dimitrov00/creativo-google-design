@@ -119,6 +119,25 @@ export class StaffEditStaleError extends DomainError {
   }
 }
 
+/**
+ * The edit path broke one of its OWN promises — a state its steps are built
+ * never to reach (a decide step with no plan, a replay the store reported
+ * without the plan step having found it). A server bug, never the caller's:
+ * it answers `internal`, and `what` names the broken promise for the log.
+ *
+ * Its own class rather than a borrowed commit refusal, so the wire never
+ * reports `booking.commit.invalid_input` about a staff edit — a code the
+ * sheet reads as "your request was malformed" and a reader of the logs
+ * would look for on the commit path.
+ */
+export class StaffEditInvariantError extends DomainError {
+  readonly code = 'booking.staffEdit.invariant_violated' as const;
+
+  constructor(readonly what: 'plan' | 'replay') {
+    super(`The staff edit reached an impossible state: ${what}`, { what });
+  }
+}
+
 export type StaffEditError =
   | CommitBookingError
   | StaffEditUnauthenticatedError
@@ -126,4 +145,5 @@ export type StaffEditError =
   | StaffEditInvalidCommandError
   | StaffEditBeforeArrivalError
   | StaffEditOverlapError
-  | StaffEditStaleError;
+  | StaffEditStaleError
+  | StaffEditInvariantError;

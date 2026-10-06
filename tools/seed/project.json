@@ -1,0 +1,28 @@
+{
+  "name": "seed-tools",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "tools/seed",
+  "projectType": "library",
+  "tags": ["scope:tooling", "type:util"],
+  "// inputs": "package.json's scripts and its firebase-tools pin sit outside every project, and settle-scripts.spec.mjs and emulator-cli.spec.mjs read them (the latter also the installed firebase-tools itself): a script edit, a new pin or a new install must re-run them and mark this project affected",
+  "targets": {
+    "test": {
+      "inputs": [
+        "...",
+        "{workspaceRoot}/package.json",
+        { "externalDependencies": ["firebase-tools"] }
+      ]
+    },
+    "test-ci--settle-scripts.spec.mjs": {
+      "inputs": ["...", "{workspaceRoot}/package.json"]
+    },
+    "test-ci--emulator-cli.spec.mjs": {
+      "inputs": [
+        "...",
+        "{workspaceRoot}/package.json",
+        { "externalDependencies": ["firebase-tools"] }
+      ]
+    }
+  },
+  "implicitDependencies": ["functions"]
+}

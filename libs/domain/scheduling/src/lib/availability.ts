@@ -2,6 +2,8 @@ import { BarberId } from '@creativo/domain/catalog';
 import { BarberPref } from './barber-pref';
 import { BookingPolicy } from './booking-policy';
 import { Interval } from './interval';
+import { carriedStartMs } from './move-shift';
+import { type PersonSlot, sitsTwiceAt } from './person-slot';
 import { RosterWindow } from './roster-window';
 
 /** How long a line takes, and the setup/cleanup that surrounds it. */
@@ -35,6 +37,19 @@ export interface AvailabilityLine extends LineTerms {
   readonly barberPref: BarberPref;
   /** Per-barber overrides, keyed by `BarberId.value`. Absent ⇒ the defaults. */
   readonly termsByBarber?: ReadonlyMap<string, LineTerms>;
+  /**
+   * WHO this line is for — lines sharing a key are one person
+   * (`cartToAvailabilityLines` gives it the cart's seat key).
+   *
+   * One person can never sit in two chairs at once (owner decision,
+   * 2026-09-25), so no arrangement gives two lines of one person overlapping
+   * SOLD slots (`sitsTwiceAt`). Without it the engine was person-blind: a
+   * client with a cut and a beard, both «any barber», was offered both at
+   * 10:00 in two chairs. Back to back stays fine, in one chair or two.
+   *
+   * Absent ⇒ a person of their own, which is what every line was before.
+   */
+  readonly personKey?: string;
 }
 
 /** The terms this line takes with THIS barber. */
@@ -83,6 +98,53 @@ export interface BarberDayAvailability {
   readonly blocks?: readonly RosterWindow[];
 }
 
+/**
+ * The chair time one barber is held for: a seat's setup, service and
+ * cleanup, as instants (`Seat.chairTime`). It is what a seat puts into the
+ * busy projection, and what a move hands back before it places the same
+ * visit again (`Appointment.chairTimes`).
+ */
+export interface ChairTime {
+  readonly barberId: BarberId;
+  readonly occupied: Interval;
+}
+
+/**
+ * A barber's stored busy spans → the `busy` a placement is checked against
+ * ({@link BarberDayAvailability.busy}): what is taken, padded by this
+ * barber's turnaround.
+ *
+ * ONE rule for both sides. The grid's read (`AvailabilityReader`) and the
+ * server's commit-time check (`decideBooking`) each used to pad on their own.
+ * A second copy is how the grid comes to offer a time the server refuses.
+ *
+ * `release` is chair time handed back FIRST: the visit being MOVED. Its own
+ * seats never block its own move, because the server decides a move with the
+ * visit's contribution subtracted (`FirestoreBookingStore.reschedule`). It is
+ * released BEFORE the padding, never after. The turnaround around a
+ * neighbour's span belongs to the neighbour and must survive, and only
+ * padding what is left gives the server's answer. Subtracting the padded
+ * geometry instead would free a neighbour's turnaround. Entries naming
+ * other barbers are ignored, so a whole visit's chair times can be passed
+ * for every barber.
+ */
+export function paddedBusy(input: {
+  readonly barberId: BarberId;
+  /** The spans as the projection stores them: UNPADDED. */
+  readonly spans: readonly Interval[];
+  readonly turnaroundMinutes: number;
+  readonly release?: readonly ChairTime[];
+}): readonly Interval[] {
+  const released = (input.release ?? [])
+    .filter((chair) => chair.barberId.equals(input.barberId))
+    .map((chair) => chair.occupied);
+  const taken = Interval.subtract(input.spans, released);
+  const turnaround = Math.max(0, input.turnaroundMinutes);
+  return Interval.normalize(
+    taken.map((span) => Interval.pad(span, turnaround, turnaround)),
+  );
+}
+
 export interface AvailabilityAssignment {
   readonly lineId: string;
   readonly barberId: BarberId;
@@ -102,6 +164,31 @@ export interface AvailabilityOption {
   readonly assignments: readonly AvailabilityAssignment[];
 }
 
+/**
+ * Somebody who comes WITH the party without being searched for: a seat the
+ * server carries forward when a client moves a visit (a companion the shop
+ * seated beside them — `RescheduleBookingUseCase`).
+ *
+ * Nothing about a rider is free. Their barber and their terms are the stored
+ * seat's, and so is their distance from the party: `offsetMinutes` from the
+ * party's earliest SOLD start to theirs, negative when they go first. It is
+ * placed by the same shift the server applies (`carriedStartMs`), so the
+ * rider lands where the server will put them. The engine therefore never
+ * places a rider; it refuses every
+ * arrangement that would strand one, and a start is offered only when some
+ * arrangement at it leaves every rider room.
+ *
+ * Riders are not in the option: the envelope and the assignments stay what
+ * the CLIENT chose, so the grid, the review and the commit are unchanged.
+ */
+export interface AvailabilityRider {
+  readonly barberId: BarberId;
+  /** Minutes from the party's earliest sold start to this rider's sold start. */
+  readonly offsetMinutes: number;
+  /** The terms the seat was sold at — its chair time is what must fit. */
+  readonly terms: LineTerms;
+}
+
 export interface AvailabilityQuery {
   readonly lines: readonly AvailabilityLine[];
   readonly barbers: readonly BarberDayAvailability[];
@@ -110,6 +197,12 @@ export interface AvailabilityQuery {
   readonly notBeforeMs: number;
   /** Cap on returned options, so a wide-open day cannot produce thousands. */
   readonly maxOptions?: number;
+  /**
+   * People pinned to the party's start — see {@link AvailabilityRider}.
+   * Absent or empty on every ordinary booking; only a client MOVE carries
+   * them.
+   */
+  readonly riders?: readonly AvailabilityRider[];
   /**
    * Only consider time inside these intervals — the client's own declared
    * windows ("the 26th, but only 08:00–12:00").
@@ -172,13 +265,68 @@ function freeFor(
   barber: BarberDayAvailability,
   withinMs: readonly Interval[] | undefined,
 ): readonly Interval[] {
-  const free = Interval.subtract(
-    barber.windows.map((window) => window.interval),
-    barber.busy,
-  );
+  const free = openFor(barber);
   // `undefined` is "unconstrained", NOT "nothing allowed" — an empty mask
   // would silently invert the caller's meaning into an empty grid.
   return withinMs === undefined ? free : Interval.intersect(free, withinMs);
+}
+
+/** A barber's rostered windows minus their (already padded) busy time. */
+function openFor(barber: BarberDayAvailability): readonly Interval[] {
+  return Interval.subtract(
+    barber.windows.map((window) => window.interval),
+    barber.busy,
+  );
+}
+
+/**
+ * Does every rider still fit once the party starts at `partyStartMs`?
+ *
+ * The questions the server asks of a carried seat, asked of the geometry the
+ * lines were searched on: is the rider's barber rostered and clear of
+ * everyone else for the rider's whole chair time (`busy` arrives padded by
+ * turnaround), is it clear of this arrangement's own picks and of the riders
+ * already placed, and does it start after the lead-time floor — measured from
+ * the chair time's start, exactly as a line's is.
+ *
+ * Checked against the barber's UNMASKED free time: a declared window is about
+ * when the CLIENT can come, and the server does not narrow a carried seat by
+ * it. A rider whose barber is not in the pool (not rostered at this shop that
+ * day) fits nowhere — the server would refuse that seat too.
+ */
+function ridersFit(
+  riders: readonly AvailabilityRider[],
+  partyStartMs: number,
+  openByBarber: ReadonlyMap<string, readonly Interval[]>,
+  picks: readonly {
+    readonly barberId: BarberId;
+    readonly occupied: Interval;
+  }[],
+  notBeforeMs: number,
+): boolean {
+  const placed = [...picks];
+  for (const rider of riders) {
+    const soldStartMs = carriedStartMs(partyStartMs, rider.offsetMinutes);
+    const occupied = Interval.of(
+      soldStartMs - rider.terms.padBeforeMinutes * 60_000,
+      soldStartMs +
+        (rider.terms.durationMinutes + rider.terms.padAfterMinutes) * 60_000,
+    );
+    if (occupied.startMs < notBeforeMs) return false;
+    const open = openByBarber.get(rider.barberId.value);
+    if (!open) return false;
+    const remaining = Interval.subtract(
+      open,
+      placed
+        .filter((pick) => pick.barberId.equals(rider.barberId))
+        .map((pick) => pick.occupied),
+    );
+    if (!remaining.some((gap) => Interval.contains(gap, occupied))) {
+      return false;
+    }
+    placed.push({ barberId: rider.barberId, occupied });
+  }
+  return true;
 }
 
 /**
@@ -232,10 +380,15 @@ function eligible(
  *    and ties break on data rather than on search order.
  *
  * ### Why one barber may appear twice
- * The only collision rule is that two assignments naming the SAME barber must
- * not overlap. Non-overlapping is explicitly allowed, which is what makes
- * "father and son, same barber, back to back" a first-class result rather
- * than an error — the case a "no barber twice" rule would have destroyed.
+ * Two assignments naming the SAME barber must not overlap. Non-overlapping is
+ * explicitly allowed, which is what makes "father and son, same barber, back
+ * to back" a first-class result rather than an error — the case a "no barber
+ * twice" rule would have destroyed.
+ *
+ * ### Why one person may not
+ * The other collision rule is its mirror: two lines of the SAME person
+ * (`AvailabilityLine.personKey`) must not overlap either, measured on the
+ * sold slots (`sitsTwiceAt`) — the server's decision refuses exactly that.
  */
 export function availableOptions(
   query: AvailabilityQuery,
@@ -278,6 +431,13 @@ function enumerateOptions(
       (barber) => [barber.barberId.value, freeFor(barber, withinMs)] as const,
     ),
   );
+  const riders = query.riders ?? [];
+  /** Riders' barbers' whole free time — see `ridersFit` for why unmasked. */
+  const openByBarber = new Map<string, readonly Interval[]>(
+    riders.length === 0
+      ? []
+      : barbers.map((barber) => [barber.barberId.value, openFor(barber)]),
+  );
 
   // Rule 1 — a stable, constraint-first line order.
   const ordered = lines.slice().sort((a, b) => {
@@ -312,6 +472,13 @@ function enumerateOptions(
   const chosen: { assignment: AvailabilityAssignment; occupied: Interval }[] =
     [];
 
+  /**
+   * The sold slots this branch has given each PERSON — a stack kept beside
+   * `chosen`, pushed and popped with it, holding only the lines that name
+   * their person (`AvailabilityLine.personKey`).
+   */
+  const seated: PersonSlot[] = [];
+
   const collides = (barberId: BarberId, occupied: Interval): boolean =>
     chosen.some(
       (pick) =>
@@ -328,6 +495,24 @@ function enumerateOptions(
       const starts = chosen.map((pick) => pick.assignment.slot.startMs);
       const ends = chosen.map((pick) => pick.assignment.slot.endMs);
       const envelope = Interval.of(Math.min(...starts), Math.max(...ends));
+      // A start that strands a rider is not an answer for THIS arrangement —
+      // but another one at the same start may still leave them room, so the
+      // walk goes on rather than pruning the start.
+      if (
+        riders.length > 0 &&
+        !ridersFit(
+          riders,
+          envelope.startMs,
+          openByBarber,
+          chosen.map((pick) => ({
+            barberId: pick.assignment.barberId,
+            occupied: pick.occupied,
+          })),
+          notBeforeMs,
+        )
+      ) {
+        return;
+      }
       const option: AvailabilityOption = {
         envelope,
         assignments: chosen
@@ -389,12 +574,21 @@ function enumerateOptions(
           serviceStart + terms.durationMinutes * 60_000,
         );
         if (collides(barber.barberId, occupied)) continue;
+        // …and the PERSON cannot be in another chair then: the same rule the
+        // server's decision refuses by, on the sold slots.
+        const person: PersonSlot | null =
+          line.personKey === undefined
+            ? null
+            : { personKey: line.personKey, slot };
+        if (person !== null && sitsTwiceAt(seated, person)) continue;
 
         chosen.push({
           assignment: { lineId: line.lineId, barberId: barber.barberId, slot },
           occupied,
         });
+        if (person !== null) seated.push(person);
         search(index + 1);
+        if (person !== null) seated.pop();
         chosen.pop();
         if (options.length >= maxOptions) return;
       }

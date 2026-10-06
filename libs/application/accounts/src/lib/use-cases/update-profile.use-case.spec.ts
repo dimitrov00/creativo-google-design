@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { of } from 'rxjs';
 import { Result, ZonedDateTime, ok } from '@creativo/domain/kernel';
 import { FirstName, LastName, User, UserId } from '@creativo/domain/accounts';
 import { RepositoryError } from '@creativo/application/shared';
@@ -41,6 +42,9 @@ function fakeProfiles(seed: User | null): ProfilePort & { saved: User[] } {
     saved,
     async getProfile(): Promise<Result<User | null, RepositoryError>> {
       return ok(current);
+    },
+    observeProfile() {
+      return of(ok(current));
     },
     async saveProfile(u): Promise<Result<void, RepositoryError>> {
       saved.push(u);

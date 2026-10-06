@@ -1,0 +1,1707 @@
+{
+  "account": {
+    "userId": "dev-client-1",
+    "balance": 358,
+    "lifetimeEarned": 608,
+    "lifetimeAdjusted": 0,
+    "lifetimeSpent": 250,
+    "tier": {
+      "current": "gold",
+      "definitionVersion": 1,
+      "since": "2025-11-11T08:45:00.000Z",
+      "qualifying": 14,
+      "next": "platinum",
+      "remaining": 6,
+      "override": null
+    },
+    "streaks": {
+      "cadence": {
+        "streakId": "cadence",
+        "definitionVersion": 1,
+        "phase": {
+          "kind": "active"
+        },
+        "current": 24,
+        "best": 24,
+        "lastQualifiedAt": "2026-09-28T07:00:00.000Z",
+        "dueBy": "2026-11-09",
+        "freezesBanked": 2,
+        "period": {
+          "intervalDays": 42,
+          "graceDays": 7,
+          "source": "fixed",
+          "habitDays": null
+        },
+        "periods": [
+          {
+            "mark": "kept",
+            "on": "2025-12-08",
+            "reason": null
+          },
+          {
+            "mark": "kept",
+            "on": "2026-01-05",
+            "reason": null
+          },
+          {
+            "mark": "kept",
+            "on": "2026-01-31",
+            "reason": null
+          },
+          {
+            "mark": "kept",
+            "on": "2026-02-26",
+            "reason": null
+          },
+          {
+            "mark": "kept",
+            "on": "2026-03-26",
+            "reason": null
+          },
+          {
+            "mark": "kept",
+            "on": "2026-04-22",
+            "reason": null
+          },
+          {
+            "mark": "kept",
+            "on": "2026-05-19",
+            "reason": null
+          },
+          {
+            "mark": "kept",
+            "on": "2026-06-15",
+            "reason": null
+          },
+          {
+            "mark": "kept",
+            "on": "2026-07-13",
+            "reason": null
+          },
+          {
+            "mark": "kept",
+            "on": "2026-08-06",
+            "reason": null
+          },
+          {
+            "mark": "kept",
+            "on": "2026-09-03",
+            "reason": null
+          },
+          {
+            "mark": "kept",
+            "on": "2026-09-28",
+            "reason": null
+          }
+        ],
+        "heldBy": null,
+        "runStartedOn": "2025-03-06"
+      }
+    },
+    "punchCards": [
+      {
+        "ruleId": "rule-every-10th-visit",
+        "filled": 4,
+        "size": 10,
+        "title": {
+          "bg": "Безплатно подстригване",
+          "en": "Free haircut"
+        }
+      }
+    ],
+    "records": [
+      {
+        "kind": "longestRhythm",
+        "value": 24,
+        "on": "2026-09-28",
+        "year": null,
+        "serviceId": null
+      },
+      {
+        "kind": "mostVisitsInYear",
+        "value": 13,
+        "on": null,
+        "year": 2025,
+        "serviceId": null
+      },
+      {
+        "kind": "favouriteService",
+        "value": 24,
+        "on": null,
+        "year": null,
+        "serviceId": "svc-fade"
+      },
+      {
+        "kind": "firstVisit",
+        "value": 1,
+        "on": "2025-03-06",
+        "year": null,
+        "serviceId": null
+      }
+    ],
+    "pointsExpiry": null,
+    "seq": 35,
+    "version": 26,
+    "updatedAt": "2026-09-28T07:45:00.000Z"
+  },
+  "badgeProgress": {
+    "series-visits": {
+      "value": 24,
+      "earned": [
+        {
+          "level": 1,
+          "earnedAt": "2025-03-06T08:45:00.000Z",
+          "via": "rule",
+          "count": 1
+        },
+        {
+          "level": 2,
+          "earnedAt": "2025-06-04T07:45:00.000Z",
+          "via": "rule",
+          "count": 1
+        },
+        {
+          "level": 3,
+          "earnedAt": "2025-09-22T07:45:00.000Z",
+          "via": "rule",
+          "count": 1
+        }
+      ]
+    },
+    "series-tenure": {
+      "value": 571,
+      "earned": [
+        {
+          "level": 1,
+          "earnedAt": "2026-03-06T04:00:00.000Z",
+          "via": "rule",
+          "count": 1
+        }
+      ]
+    },
+    "series-self-service": {
+      "value": 7,
+      "earned": [
+        {
+          "level": 1,
+          "earnedAt": "2025-03-25T18:35:00.000Z",
+          "via": "rule",
+          "count": 1
+        },
+        {
+          "level": 2,
+          "earnedAt": "2026-02-22T18:35:00.000Z",
+          "via": "rule",
+          "count": 1
+        }
+      ]
+    },
+    "series-svc-fade": {
+      "value": 24,
+      "earned": [
+        {
+          "level": 1,
+          "earnedAt": "2025-04-21T08:05:00.000Z",
+          "via": "rule",
+          "count": 1
+        },
+        {
+          "level": 2,
+          "earnedAt": "2025-09-22T07:45:00.000Z",
+          "via": "rule",
+          "count": 1
+        }
+      ]
+    },
+    "series-svc-beard": {
+      "value": 6,
+      "earned": [
+        {
+          "level": 1,
+          "earnedAt": "2025-10-15T08:05:00.000Z",
+          "via": "rule",
+          "count": 1
+        }
+      ]
+    },
+    "series-explorer": {
+      "value": 2,
+      "earned": [
+        {
+          "level": 1,
+          "earnedAt": "2025-04-21T08:05:00.000Z",
+          "via": "rule",
+          "count": 1
+        }
+      ]
+    },
+    "series-barber-ivan": {
+      "value": 24,
+      "earned": [
+        {
+          "level": 1,
+          "earnedAt": "2025-03-06T08:45:00.000Z",
+          "via": "rule",
+          "count": 1
+        },
+        {
+          "level": 2,
+          "earnedAt": "2025-06-04T07:45:00.000Z",
+          "via": "rule",
+          "count": 1
+        },
+        {
+          "level": 3,
+          "earnedAt": "2025-09-22T07:45:00.000Z",
+          "via": "rule",
+          "count": 1
+        }
+      ]
+    },
+    "series-shop-center": {
+      "value": 24,
+      "earned": [
+        {
+          "level": 1,
+          "earnedAt": "2025-03-06T08:45:00.000Z",
+          "via": "rule",
+          "count": 1
+        },
+        {
+          "level": 2,
+          "earnedAt": "2025-06-04T07:45:00.000Z",
+          "via": "rule",
+          "count": 1
+        },
+        {
+          "level": 3,
+          "earnedAt": "2025-09-22T07:45:00.000Z",
+          "via": "rule",
+          "count": 1
+        }
+      ]
+    },
+    "series-all-barbers": {
+      "value": 1,
+      "earned": []
+    },
+    "series-both-shops": {
+      "value": 1,
+      "earned": []
+    },
+    "series-rhythm": {
+      "value": 24,
+      "earned": [
+        {
+          "level": 1,
+          "earnedAt": "2025-04-21T08:05:00.000Z",
+          "via": "rule",
+          "count": 1
+        },
+        {
+          "level": 2,
+          "earnedAt": "2025-06-26T07:45:00.000Z",
+          "via": "rule",
+          "count": 1
+        },
+        {
+          "level": 3,
+          "earnedAt": "2025-11-11T08:45:00.000Z",
+          "via": "rule",
+          "count": 1
+        },
+        {
+          "level": 4,
+          "earnedAt": "2026-04-22T08:05:00.000Z",
+          "via": "rule",
+          "count": 1
+        },
+        {
+          "level": 5,
+          "earnedAt": "2026-09-28T07:45:00.000Z",
+          "via": "rule",
+          "count": 1
+        }
+      ]
+    },
+    "series-twelve-months": {
+      "value": 12,
+      "earned": [
+        {
+          "level": 1,
+          "earnedAt": "2025-06-04T07:45:00.000Z",
+          "via": "rule",
+          "count": 1
+        },
+        {
+          "level": 2,
+          "earnedAt": "2025-10-15T08:05:00.000Z",
+          "via": "rule",
+          "count": 1
+        },
+        {
+          "level": 3,
+          "earnedAt": "2026-02-26T08:45:00.000Z",
+          "via": "rule",
+          "count": 1
+        }
+      ]
+    },
+    "series-welcome": {
+      "value": 1,
+      "earned": [
+        {
+          "level": 1,
+          "earnedAt": "2025-03-06T08:45:00.000Z",
+          "via": "rule",
+          "count": 1
+        }
+      ]
+    },
+    "series-early-bird": {
+      "value": 24,
+      "earned": [
+        {
+          "level": 1,
+          "earnedAt": "2025-03-06T08:45:00.000Z",
+          "via": "rule",
+          "count": 1
+        },
+        {
+          "level": 2,
+          "earnedAt": "2025-06-04T07:45:00.000Z",
+          "via": "rule",
+          "count": 1
+        },
+        {
+          "level": 3,
+          "earnedAt": "2025-09-22T07:45:00.000Z",
+          "via": "rule",
+          "count": 1
+        }
+      ]
+    },
+    "series-weekend": {
+      "value": 2,
+      "earned": []
+    },
+    "series-on-time": {
+      "value": 24,
+      "earned": [
+        {
+          "level": 1,
+          "earnedAt": "2025-06-04T07:45:00.000Z",
+          "via": "rule",
+          "count": 1
+        },
+        {
+          "level": 2,
+          "earnedAt": "2025-09-22T07:45:00.000Z",
+          "via": "rule",
+          "count": 1
+        }
+      ]
+    },
+    "series-2026-autumn-track": {
+      "value": 2,
+      "earned": [
+        {
+          "level": 1,
+          "earnedAt": "2026-09-03T07:45:00.000Z",
+          "via": "rule",
+          "count": 1
+        },
+        {
+          "level": 2,
+          "earnedAt": "2026-09-28T07:45:00.000Z",
+          "via": "rule",
+          "count": 1
+        }
+      ]
+    },
+    "series-2026-autumn-each-month": {
+      "value": 1,
+      "earned": []
+    },
+    "series-2026-autumn-early": {
+      "value": 2,
+      "earned": [
+        {
+          "level": 1,
+          "earnedAt": "2026-09-28T07:45:00.000Z",
+          "via": "rule",
+          "count": 1
+        }
+      ]
+    },
+    "series-2026-summer-track": {
+      "value": 3,
+      "earned": [
+        {
+          "level": 1,
+          "earnedAt": "2026-06-15T07:45:00.000Z",
+          "via": "rule",
+          "count": 1
+        },
+        {
+          "level": 2,
+          "earnedAt": "2026-07-13T08:05:00.000Z",
+          "via": "rule",
+          "count": 1
+        },
+        {
+          "level": 3,
+          "earnedAt": "2026-08-06T07:45:00.000Z",
+          "via": "rule",
+          "count": 1
+        }
+      ]
+    },
+    "series-2026-summer-each-month": {
+      "value": 3,
+      "earned": [
+        {
+          "level": 1,
+          "earnedAt": "2026-08-06T07:45:00.000Z",
+          "via": "rule",
+          "count": 1
+        }
+      ]
+    }
+  },
+  "seasonProgress": {
+    "season-2026-summer": {
+      "trackValue": 3,
+      "trackLevel": 3
+    },
+    "season-2026-autumn": {
+      "trackValue": 2,
+      "trackLevel": 2
+    }
+  },
+  "clientJournal": {
+    "dev-client-1_000001": {
+      "userId": "dev-client-1",
+      "seq": 1,
+      "at": "2025-03-06T08:45:00.000Z",
+      "effect": {
+        "kind": "points",
+        "delta": 17
+      },
+      "source": {
+        "kind": "rule",
+        "rule": {
+          "ruleId": "rule-earn-per-euro",
+          "version": 1
+        },
+        "awardKey": "rule-earn-per-euro:dev-client-1:appt:appt-hist-c1-01:seat:appt-hist-c1-01-s1",
+        "eventId": "appt_appt-hist-c1-01_seat_appt-hist-c1-01-s1_worked_r1"
+      },
+      "actor": {
+        "kind": "system",
+        "source": "loyalty_engine"
+      },
+      "reverses": null,
+      "correlationId": "appt:appt-hist-c1-01:seat:appt-hist-c1-01-s1",
+      "idempotencyKey": "award:rule-earn-per-euro:dev-client-1:appt:appt-hist-c1-01:seat:appt-hist-c1-01-s1#0",
+      "visibility": "client",
+      "publicLabel": {
+        "code": "points.rule",
+        "params": {
+          "rule": "rule-earn-per-euro",
+          "points": 17,
+          "spendMinor": 1750
+        }
+      },
+      "balanceAfter": 17
+    },
+    "dev-client-1_000002": {
+      "userId": "dev-client-1",
+      "seq": 2,
+      "at": "2025-03-06T08:45:00.000Z",
+      "effect": {
+        "kind": "points",
+        "delta": 20
+      },
+      "source": {
+        "kind": "rule",
+        "rule": {
+          "ruleId": "rule-welcome-1",
+          "version": 1
+        },
+        "awardKey": "rule-welcome-1:dev-client-1:once",
+        "eventId": "appt_appt-hist-c1-01_seat_appt-hist-c1-01-s1_worked_r1"
+      },
+      "actor": {
+        "kind": "system",
+        "source": "loyalty_engine"
+      },
+      "reverses": null,
+      "correlationId": "appt:appt-hist-c1-01:seat:appt-hist-c1-01-s1",
+      "idempotencyKey": "award:rule-welcome-1:dev-client-1:once#0",
+      "visibility": "client",
+      "publicLabel": {
+        "code": "points.rule",
+        "params": {
+          "rule": "rule-welcome-1",
+          "points": 20,
+          "seriesId": "series-welcome",
+          "level": 1
+        }
+      },
+      "balanceAfter": 37
+    },
+    "dev-client-1_000003": {
+      "userId": "dev-client-1",
+      "seq": 3,
+      "at": "2025-03-29T08:45:00.000Z",
+      "effect": {
+        "kind": "points",
+        "delta": 17
+      },
+      "source": {
+        "kind": "rule",
+        "rule": {
+          "ruleId": "rule-earn-per-euro",
+          "version": 1
+        },
+        "awardKey": "rule-earn-per-euro:dev-client-1:appt:appt-hist-c1-02:seat:appt-hist-c1-02-s1",
+        "eventId": "appt_appt-hist-c1-02_seat_appt-hist-c1-02-s1_worked_r1"
+      },
+      "actor": {
+        "kind": "system",
+        "source": "loyalty_engine"
+      },
+      "reverses": null,
+      "correlationId": "appt:appt-hist-c1-02:seat:appt-hist-c1-02-s1",
+      "idempotencyKey": "award:rule-earn-per-euro:dev-client-1:appt:appt-hist-c1-02:seat:appt-hist-c1-02-s1#0",
+      "visibility": "client",
+      "publicLabel": {
+        "code": "points.rule",
+        "params": {
+          "rule": "rule-earn-per-euro",
+          "points": 17,
+          "spendMinor": 1750
+        }
+      },
+      "balanceAfter": 54
+    },
+    "dev-client-1_000004": {
+      "userId": "dev-client-1",
+      "seq": 4,
+      "at": "2025-04-21T08:05:00.000Z",
+      "effect": {
+        "kind": "points",
+        "delta": 17
+      },
+      "source": {
+        "kind": "rule",
+        "rule": {
+          "ruleId": "rule-earn-per-euro",
+          "version": 1
+        },
+        "awardKey": "rule-earn-per-euro:dev-client-1:appt:appt-hist-c1-03:seat:appt-hist-c1-03-s1",
+        "eventId": "appt_appt-hist-c1-03_seat_appt-hist-c1-03-s1_worked_r1"
+      },
+      "actor": {
+        "kind": "system",
+        "source": "loyalty_engine"
+      },
+      "reverses": null,
+      "correlationId": "appt:appt-hist-c1-03:seat:appt-hist-c1-03-s1",
+      "idempotencyKey": "award:rule-earn-per-euro:dev-client-1:appt:appt-hist-c1-03:seat:appt-hist-c1-03-s1#0",
+      "visibility": "client",
+      "publicLabel": {
+        "code": "points.rule",
+        "params": {
+          "rule": "rule-earn-per-euro",
+          "points": 17,
+          "spendMinor": 1750
+        }
+      },
+      "balanceAfter": 71
+    },
+    "dev-client-1_000005": {
+      "userId": "dev-client-1",
+      "seq": 5,
+      "at": "2025-04-21T08:05:00.000Z",
+      "effect": {
+        "kind": "points",
+        "delta": 10
+      },
+      "source": {
+        "kind": "rule",
+        "rule": {
+          "ruleId": "rule-earn-per-euro",
+          "version": 1
+        },
+        "awardKey": "rule-earn-per-euro:dev-client-1:appt:appt-hist-c1-03:seat:appt-hist-c1-03-s2",
+        "eventId": "appt_appt-hist-c1-03_seat_appt-hist-c1-03-s2_worked_r1"
+      },
+      "actor": {
+        "kind": "system",
+        "source": "loyalty_engine"
+      },
+      "reverses": null,
+      "correlationId": "appt:appt-hist-c1-03:seat:appt-hist-c1-03-s2",
+      "idempotencyKey": "award:rule-earn-per-euro:dev-client-1:appt:appt-hist-c1-03:seat:appt-hist-c1-03-s2#0",
+      "visibility": "client",
+      "publicLabel": {
+        "code": "points.rule",
+        "params": {
+          "rule": "rule-earn-per-euro",
+          "points": 10,
+          "spendMinor": 1000
+        }
+      },
+      "balanceAfter": 81
+    },
+    "dev-client-1_000006": {
+      "userId": "dev-client-1",
+      "seq": 6,
+      "at": "2025-05-13T07:45:00.000Z",
+      "effect": {
+        "kind": "points",
+        "delta": 17
+      },
+      "source": {
+        "kind": "rule",
+        "rule": {
+          "ruleId": "rule-earn-per-euro",
+          "version": 1
+        },
+        "awardKey": "rule-earn-per-euro:dev-client-1:appt:appt-hist-c1-04:seat:appt-hist-c1-04-s1",
+        "eventId": "appt_appt-hist-c1-04_seat_appt-hist-c1-04-s1_worked_r1"
+      },
+      "actor": {
+        "kind": "system",
+        "source": "loyalty_engine"
+      },
+      "reverses": null,
+      "correlationId": "appt:appt-hist-c1-04:seat:appt-hist-c1-04-s1",
+      "idempotencyKey": "award:rule-earn-per-euro:dev-client-1:appt:appt-hist-c1-04:seat:appt-hist-c1-04-s1#0",
+      "visibility": "client",
+      "publicLabel": {
+        "code": "points.rule",
+        "params": {
+          "rule": "rule-earn-per-euro",
+          "points": 17,
+          "spendMinor": 1750
+        }
+      },
+      "balanceAfter": 98
+    },
+    "dev-client-1_000007": {
+      "userId": "dev-client-1",
+      "seq": 7,
+      "at": "2025-06-04T07:45:00.000Z",
+      "effect": {
+        "kind": "points",
+        "delta": 17
+      },
+      "source": {
+        "kind": "rule",
+        "rule": {
+          "ruleId": "rule-earn-per-euro",
+          "version": 1
+        },
+        "awardKey": "rule-earn-per-euro:dev-client-1:appt:appt-hist-c1-05:seat:appt-hist-c1-05-s1",
+        "eventId": "appt_appt-hist-c1-05_seat_appt-hist-c1-05-s1_worked_r1"
+      },
+      "actor": {
+        "kind": "system",
+        "source": "loyalty_engine"
+      },
+      "reverses": null,
+      "correlationId": "appt:appt-hist-c1-05:seat:appt-hist-c1-05-s1",
+      "idempotencyKey": "award:rule-earn-per-euro:dev-client-1:appt:appt-hist-c1-05:seat:appt-hist-c1-05-s1#0",
+      "visibility": "client",
+      "publicLabel": {
+        "code": "points.rule",
+        "params": {
+          "rule": "rule-earn-per-euro",
+          "points": 17,
+          "spendMinor": 1750
+        }
+      },
+      "balanceAfter": 115
+    },
+    "dev-client-1_000008": {
+      "userId": "dev-client-1",
+      "seq": 8,
+      "at": "2025-06-04T07:45:00.000Z",
+      "effect": {
+        "kind": "points",
+        "delta": 20
+      },
+      "source": {
+        "kind": "rule",
+        "rule": {
+          "ruleId": "rule-visits-2",
+          "version": 1
+        },
+        "awardKey": "rule-visits-2:dev-client-1:once",
+        "eventId": "appt_appt-hist-c1-05_seat_appt-hist-c1-05-s1_worked_r1"
+      },
+      "actor": {
+        "kind": "system",
+        "source": "loyalty_engine"
+      },
+      "reverses": null,
+      "correlationId": "appt:appt-hist-c1-05:seat:appt-hist-c1-05-s1",
+      "idempotencyKey": "award:rule-visits-2:dev-client-1:once#0",
+      "visibility": "client",
+      "publicLabel": {
+        "code": "points.rule",
+        "params": {
+          "rule": "rule-visits-2",
+          "points": 20,
+          "seriesId": "series-visits",
+          "level": 2
+        }
+      },
+      "balanceAfter": 135
+    },
+    "dev-client-1_000009": {
+      "userId": "dev-client-1",
+      "seq": 9,
+      "at": "2025-06-26T07:45:00.000Z",
+      "effect": {
+        "kind": "points",
+        "delta": 17
+      },
+      "source": {
+        "kind": "rule",
+        "rule": {
+          "ruleId": "rule-earn-per-euro",
+          "version": 1
+        },
+        "awardKey": "rule-earn-per-euro:dev-client-1:appt:appt-hist-c1-06:seat:appt-hist-c1-06-s1",
+        "eventId": "appt_appt-hist-c1-06_seat_appt-hist-c1-06-s1_worked_r1"
+      },
+      "actor": {
+        "kind": "system",
+        "source": "loyalty_engine"
+      },
+      "reverses": null,
+      "correlationId": "appt:appt-hist-c1-06:seat:appt-hist-c1-06-s1",
+      "idempotencyKey": "award:rule-earn-per-euro:dev-client-1:appt:appt-hist-c1-06:seat:appt-hist-c1-06-s1#0",
+      "visibility": "client",
+      "publicLabel": {
+        "code": "points.rule",
+        "params": {
+          "rule": "rule-earn-per-euro",
+          "points": 17,
+          "spendMinor": 1750
+        }
+      },
+      "balanceAfter": 152
+    },
+    "dev-client-1_000010": {
+      "userId": "dev-client-1",
+      "seq": 10,
+      "at": "2025-07-17T08:05:00.000Z",
+      "effect": {
+        "kind": "points",
+        "delta": 17
+      },
+      "source": {
+        "kind": "rule",
+        "rule": {
+          "ruleId": "rule-earn-per-euro",
+          "version": 1
+        },
+        "awardKey": "rule-earn-per-euro:dev-client-1:appt:appt-hist-c1-07:seat:appt-hist-c1-07-s1",
+        "eventId": "appt_appt-hist-c1-07_seat_appt-hist-c1-07-s1_worked_r1"
+      },
+      "actor": {
+        "kind": "system",
+        "source": "loyalty_engine"
+      },
+      "reverses": null,
+      "correlationId": "appt:appt-hist-c1-07:seat:appt-hist-c1-07-s1",
+      "idempotencyKey": "award:rule-earn-per-euro:dev-client-1:appt:appt-hist-c1-07:seat:appt-hist-c1-07-s1#0",
+      "visibility": "client",
+      "publicLabel": {
+        "code": "points.rule",
+        "params": {
+          "rule": "rule-earn-per-euro",
+          "points": 17,
+          "spendMinor": 1750
+        }
+      },
+      "balanceAfter": 169
+    },
+    "dev-client-1_000011": {
+      "userId": "dev-client-1",
+      "seq": 11,
+      "at": "2025-07-17T08:05:00.000Z",
+      "effect": {
+        "kind": "points",
+        "delta": 10
+      },
+      "source": {
+        "kind": "rule",
+        "rule": {
+          "ruleId": "rule-earn-per-euro",
+          "version": 1
+        },
+        "awardKey": "rule-earn-per-euro:dev-client-1:appt:appt-hist-c1-07:seat:appt-hist-c1-07-s2",
+        "eventId": "appt_appt-hist-c1-07_seat_appt-hist-c1-07-s2_worked_r1"
+      },
+      "actor": {
+        "kind": "system",
+        "source": "loyalty_engine"
+      },
+      "reverses": null,
+      "correlationId": "appt:appt-hist-c1-07:seat:appt-hist-c1-07-s2",
+      "idempotencyKey": "award:rule-earn-per-euro:dev-client-1:appt:appt-hist-c1-07:seat:appt-hist-c1-07-s2#0",
+      "visibility": "client",
+      "publicLabel": {
+        "code": "points.rule",
+        "params": {
+          "rule": "rule-earn-per-euro",
+          "points": 10,
+          "spendMinor": 1000
+        }
+      },
+      "balanceAfter": 179
+    },
+    "dev-client-1_000012": {
+      "userId": "dev-client-1",
+      "seq": 12,
+      "at": "2025-08-11T07:45:00.000Z",
+      "effect": {
+        "kind": "points",
+        "delta": 17
+      },
+      "source": {
+        "kind": "rule",
+        "rule": {
+          "ruleId": "rule-earn-per-euro",
+          "version": 1
+        },
+        "awardKey": "rule-earn-per-euro:dev-client-1:appt:appt-hist-c1-08:seat:appt-hist-c1-08-s1",
+        "eventId": "appt_appt-hist-c1-08_seat_appt-hist-c1-08-s1_worked_r1"
+      },
+      "actor": {
+        "kind": "system",
+        "source": "loyalty_engine"
+      },
+      "reverses": null,
+      "correlationId": "appt:appt-hist-c1-08:seat:appt-hist-c1-08-s1",
+      "idempotencyKey": "award:rule-earn-per-euro:dev-client-1:appt:appt-hist-c1-08:seat:appt-hist-c1-08-s1#0",
+      "visibility": "client",
+      "publicLabel": {
+        "code": "points.rule",
+        "params": {
+          "rule": "rule-earn-per-euro",
+          "points": 17,
+          "spendMinor": 1750
+        }
+      },
+      "balanceAfter": 196
+    },
+    "dev-client-1_000013": {
+      "userId": "dev-client-1",
+      "seq": 13,
+      "at": "2025-09-01T07:45:00.000Z",
+      "effect": {
+        "kind": "points",
+        "delta": 17
+      },
+      "source": {
+        "kind": "rule",
+        "rule": {
+          "ruleId": "rule-earn-per-euro",
+          "version": 1
+        },
+        "awardKey": "rule-earn-per-euro:dev-client-1:appt:appt-hist-c1-09:seat:appt-hist-c1-09-s1",
+        "eventId": "appt_appt-hist-c1-09_seat_appt-hist-c1-09-s1_worked_r1"
+      },
+      "actor": {
+        "kind": "system",
+        "source": "loyalty_engine"
+      },
+      "reverses": null,
+      "correlationId": "appt:appt-hist-c1-09:seat:appt-hist-c1-09-s1",
+      "idempotencyKey": "award:rule-earn-per-euro:dev-client-1:appt:appt-hist-c1-09:seat:appt-hist-c1-09-s1#0",
+      "visibility": "client",
+      "publicLabel": {
+        "code": "points.rule",
+        "params": {
+          "rule": "rule-earn-per-euro",
+          "points": 17,
+          "spendMinor": 1750
+        }
+      },
+      "balanceAfter": 213
+    },
+    "dev-client-1_000014": {
+      "userId": "dev-client-1",
+      "seq": 14,
+      "at": "2025-09-22T07:45:00.000Z",
+      "effect": {
+        "kind": "points",
+        "delta": 17
+      },
+      "source": {
+        "kind": "rule",
+        "rule": {
+          "ruleId": "rule-earn-per-euro",
+          "version": 1
+        },
+        "awardKey": "rule-earn-per-euro:dev-client-1:appt:appt-hist-c1-10:seat:appt-hist-c1-10-s1",
+        "eventId": "appt_appt-hist-c1-10_seat_appt-hist-c1-10-s1_worked_r1"
+      },
+      "actor": {
+        "kind": "system",
+        "source": "loyalty_engine"
+      },
+      "reverses": null,
+      "correlationId": "appt:appt-hist-c1-10:seat:appt-hist-c1-10-s1",
+      "idempotencyKey": "award:rule-earn-per-euro:dev-client-1:appt:appt-hist-c1-10:seat:appt-hist-c1-10-s1#0",
+      "visibility": "client",
+      "publicLabel": {
+        "code": "points.rule",
+        "params": {
+          "rule": "rule-earn-per-euro",
+          "points": 17,
+          "spendMinor": 1750
+        }
+      },
+      "balanceAfter": 230
+    },
+    "dev-client-1_000015": {
+      "userId": "dev-client-1",
+      "seq": 15,
+      "at": "2025-09-22T07:45:00.000Z",
+      "effect": {
+        "kind": "points",
+        "delta": 50
+      },
+      "source": {
+        "kind": "rule",
+        "rule": {
+          "ruleId": "rule-visits-3",
+          "version": 1
+        },
+        "awardKey": "rule-visits-3:dev-client-1:once",
+        "eventId": "appt_appt-hist-c1-10_seat_appt-hist-c1-10-s1_worked_r1"
+      },
+      "actor": {
+        "kind": "system",
+        "source": "loyalty_engine"
+      },
+      "reverses": null,
+      "correlationId": "appt:appt-hist-c1-10:seat:appt-hist-c1-10-s1",
+      "idempotencyKey": "award:rule-visits-3:dev-client-1:once#0",
+      "visibility": "client",
+      "publicLabel": {
+        "code": "points.rule",
+        "params": {
+          "rule": "rule-visits-3",
+          "points": 50,
+          "seriesId": "series-visits",
+          "level": 3
+        }
+      },
+      "balanceAfter": 280
+    },
+    "dev-client-1_000016": {
+      "userId": "dev-client-1",
+      "seq": 16,
+      "at": "2025-10-15T08:05:00.000Z",
+      "effect": {
+        "kind": "points",
+        "delta": 17
+      },
+      "source": {
+        "kind": "rule",
+        "rule": {
+          "ruleId": "rule-earn-per-euro",
+          "version": 1
+        },
+        "awardKey": "rule-earn-per-euro:dev-client-1:appt:appt-hist-c1-11:seat:appt-hist-c1-11-s1",
+        "eventId": "appt_appt-hist-c1-11_seat_appt-hist-c1-11-s1_worked_r1"
+      },
+      "actor": {
+        "kind": "system",
+        "source": "loyalty_engine"
+      },
+      "reverses": null,
+      "correlationId": "appt:appt-hist-c1-11:seat:appt-hist-c1-11-s1",
+      "idempotencyKey": "award:rule-earn-per-euro:dev-client-1:appt:appt-hist-c1-11:seat:appt-hist-c1-11-s1#0",
+      "visibility": "client",
+      "publicLabel": {
+        "code": "points.rule",
+        "params": {
+          "rule": "rule-earn-per-euro",
+          "points": 17,
+          "spendMinor": 1750
+        }
+      },
+      "balanceAfter": 297
+    },
+    "dev-client-1_000017": {
+      "userId": "dev-client-1",
+      "seq": 17,
+      "at": "2025-10-15T08:05:00.000Z",
+      "effect": {
+        "kind": "points",
+        "delta": 10
+      },
+      "source": {
+        "kind": "rule",
+        "rule": {
+          "ruleId": "rule-earn-per-euro",
+          "version": 1
+        },
+        "awardKey": "rule-earn-per-euro:dev-client-1:appt:appt-hist-c1-11:seat:appt-hist-c1-11-s2",
+        "eventId": "appt_appt-hist-c1-11_seat_appt-hist-c1-11-s2_worked_r1"
+      },
+      "actor": {
+        "kind": "system",
+        "source": "loyalty_engine"
+      },
+      "reverses": null,
+      "correlationId": "appt:appt-hist-c1-11:seat:appt-hist-c1-11-s2",
+      "idempotencyKey": "award:rule-earn-per-euro:dev-client-1:appt:appt-hist-c1-11:seat:appt-hist-c1-11-s2#0",
+      "visibility": "client",
+      "publicLabel": {
+        "code": "points.rule",
+        "params": {
+          "rule": "rule-earn-per-euro",
+          "points": 10,
+          "spendMinor": 1000
+        }
+      },
+      "balanceAfter": 307
+    },
+    "dev-client-1_000018": {
+      "userId": "dev-client-1",
+      "seq": 18,
+      "at": "2025-11-11T08:45:00.000Z",
+      "effect": {
+        "kind": "points",
+        "delta": 17
+      },
+      "source": {
+        "kind": "rule",
+        "rule": {
+          "ruleId": "rule-earn-per-euro",
+          "version": 1
+        },
+        "awardKey": "rule-earn-per-euro:dev-client-1:appt:appt-hist-c1-12:seat:appt-hist-c1-12-s1",
+        "eventId": "appt_appt-hist-c1-12_seat_appt-hist-c1-12-s1_worked_r1"
+      },
+      "actor": {
+        "kind": "system",
+        "source": "loyalty_engine"
+      },
+      "reverses": null,
+      "correlationId": "appt:appt-hist-c1-12:seat:appt-hist-c1-12-s1",
+      "idempotencyKey": "award:rule-earn-per-euro:dev-client-1:appt:appt-hist-c1-12:seat:appt-hist-c1-12-s1#0",
+      "visibility": "client",
+      "publicLabel": {
+        "code": "points.rule",
+        "params": {
+          "rule": "rule-earn-per-euro",
+          "points": 17,
+          "spendMinor": 1750
+        }
+      },
+      "balanceAfter": 324
+    },
+    "dev-client-1_000019": {
+      "userId": "dev-client-1",
+      "seq": 19,
+      "at": "2025-12-08T08:45:00.000Z",
+      "effect": {
+        "kind": "points",
+        "delta": 17
+      },
+      "source": {
+        "kind": "rule",
+        "rule": {
+          "ruleId": "rule-earn-per-euro",
+          "version": 1
+        },
+        "awardKey": "rule-earn-per-euro:dev-client-1:appt:appt-hist-c1-13:seat:appt-hist-c1-13-s1",
+        "eventId": "appt_appt-hist-c1-13_seat_appt-hist-c1-13-s1_worked_r1"
+      },
+      "actor": {
+        "kind": "system",
+        "source": "loyalty_engine"
+      },
+      "reverses": null,
+      "correlationId": "appt:appt-hist-c1-13:seat:appt-hist-c1-13-s1",
+      "idempotencyKey": "award:rule-earn-per-euro:dev-client-1:appt:appt-hist-c1-13:seat:appt-hist-c1-13-s1#0",
+      "visibility": "client",
+      "publicLabel": {
+        "code": "points.rule",
+        "params": {
+          "rule": "rule-earn-per-euro",
+          "points": 17,
+          "spendMinor": 1750
+        }
+      },
+      "balanceAfter": 341
+    },
+    "dev-client-1_000020": {
+      "userId": "dev-client-1",
+      "seq": 20,
+      "at": "2026-01-05T09:05:00.000Z",
+      "effect": {
+        "kind": "points",
+        "delta": 17
+      },
+      "source": {
+        "kind": "rule",
+        "rule": {
+          "ruleId": "rule-earn-per-euro",
+          "version": 1
+        },
+        "awardKey": "rule-earn-per-euro:dev-client-1:appt:appt-hist-c1-14:seat:appt-hist-c1-14-s1",
+        "eventId": "appt_appt-hist-c1-14_seat_appt-hist-c1-14-s1_worked_r1"
+      },
+      "actor": {
+        "kind": "system",
+        "source": "loyalty_engine"
+      },
+      "reverses": null,
+      "correlationId": "appt:appt-hist-c1-14:seat:appt-hist-c1-14-s1",
+      "idempotencyKey": "award:rule-earn-per-euro:dev-client-1:appt:appt-hist-c1-14:seat:appt-hist-c1-14-s1#0",
+      "visibility": "client",
+      "publicLabel": {
+        "code": "points.rule",
+        "params": {
+          "rule": "rule-earn-per-euro",
+          "points": 17,
+          "spendMinor": 1750
+        }
+      },
+      "balanceAfter": 358
+    },
+    "dev-client-1_000021": {
+      "userId": "dev-client-1",
+      "seq": 21,
+      "at": "2026-01-05T09:05:00.000Z",
+      "effect": {
+        "kind": "points",
+        "delta": 10
+      },
+      "source": {
+        "kind": "rule",
+        "rule": {
+          "ruleId": "rule-earn-per-euro",
+          "version": 1
+        },
+        "awardKey": "rule-earn-per-euro:dev-client-1:appt:appt-hist-c1-14:seat:appt-hist-c1-14-s2",
+        "eventId": "appt_appt-hist-c1-14_seat_appt-hist-c1-14-s2_worked_r1"
+      },
+      "actor": {
+        "kind": "system",
+        "source": "loyalty_engine"
+      },
+      "reverses": null,
+      "correlationId": "appt:appt-hist-c1-14:seat:appt-hist-c1-14-s2",
+      "idempotencyKey": "award:rule-earn-per-euro:dev-client-1:appt:appt-hist-c1-14:seat:appt-hist-c1-14-s2#0",
+      "visibility": "client",
+      "publicLabel": {
+        "code": "points.rule",
+        "params": {
+          "rule": "rule-earn-per-euro",
+          "points": 10,
+          "spendMinor": 1000
+        }
+      },
+      "balanceAfter": 368
+    },
+    "dev-client-1_000022": {
+      "userId": "dev-client-1",
+      "seq": 22,
+      "at": "2026-01-31T08:45:00.000Z",
+      "effect": {
+        "kind": "points",
+        "delta": 17
+      },
+      "source": {
+        "kind": "rule",
+        "rule": {
+          "ruleId": "rule-earn-per-euro",
+          "version": 1
+        },
+        "awardKey": "rule-earn-per-euro:dev-client-1:appt:appt-hist-c1-15:seat:appt-hist-c1-15-s1",
+        "eventId": "appt_appt-hist-c1-15_seat_appt-hist-c1-15-s1_worked_r1"
+      },
+      "actor": {
+        "kind": "system",
+        "source": "loyalty_engine"
+      },
+      "reverses": null,
+      "correlationId": "appt:appt-hist-c1-15:seat:appt-hist-c1-15-s1",
+      "idempotencyKey": "award:rule-earn-per-euro:dev-client-1:appt:appt-hist-c1-15:seat:appt-hist-c1-15-s1#0",
+      "visibility": "client",
+      "publicLabel": {
+        "code": "points.rule",
+        "params": {
+          "rule": "rule-earn-per-euro",
+          "points": 17,
+          "spendMinor": 1750
+        }
+      },
+      "balanceAfter": 385
+    },
+    "dev-client-1_000023": {
+      "userId": "dev-client-1",
+      "seq": 23,
+      "at": "2026-02-26T08:45:00.000Z",
+      "effect": {
+        "kind": "points",
+        "delta": 17
+      },
+      "source": {
+        "kind": "rule",
+        "rule": {
+          "ruleId": "rule-earn-per-euro",
+          "version": 1
+        },
+        "awardKey": "rule-earn-per-euro:dev-client-1:appt:appt-hist-c1-16:seat:appt-hist-c1-16-s1",
+        "eventId": "appt_appt-hist-c1-16_seat_appt-hist-c1-16-s1_worked_r1"
+      },
+      "actor": {
+        "kind": "system",
+        "source": "loyalty_engine"
+      },
+      "reverses": null,
+      "correlationId": "appt:appt-hist-c1-16:seat:appt-hist-c1-16-s1",
+      "idempotencyKey": "award:rule-earn-per-euro:dev-client-1:appt:appt-hist-c1-16:seat:appt-hist-c1-16-s1#0",
+      "visibility": "client",
+      "publicLabel": {
+        "code": "points.rule",
+        "params": {
+          "rule": "rule-earn-per-euro",
+          "points": 17,
+          "spendMinor": 1750
+        }
+      },
+      "balanceAfter": 402
+    },
+    "dev-client-1_000024": {
+      "userId": "dev-client-1",
+      "seq": 24,
+      "at": "2026-03-06T04:00:00.000Z",
+      "effect": {
+        "kind": "points",
+        "delta": 50
+      },
+      "source": {
+        "kind": "rule",
+        "rule": {
+          "ruleId": "rule-tenure-1",
+          "version": 1
+        },
+        "awardKey": "rule-tenure-1:dev-client-1:once",
+        "eventId": "cal:2026-03-06:dev-client-1"
+      },
+      "actor": {
+        "kind": "system",
+        "source": "loyalty_engine"
+      },
+      "reverses": null,
+      "correlationId": "cal:2026-03-06:dev-client-1",
+      "idempotencyKey": "award:rule-tenure-1:dev-client-1:once#0",
+      "visibility": "client",
+      "publicLabel": {
+        "code": "points.rule",
+        "params": {
+          "rule": "rule-tenure-1",
+          "points": 50,
+          "seriesId": "series-tenure",
+          "level": 1
+        }
+      },
+      "balanceAfter": 452
+    },
+    "dev-client-1_000025": {
+      "userId": "dev-client-1",
+      "seq": 25,
+      "at": "2026-03-26T08:45:00.000Z",
+      "effect": {
+        "kind": "points",
+        "delta": 17
+      },
+      "source": {
+        "kind": "rule",
+        "rule": {
+          "ruleId": "rule-earn-per-euro",
+          "version": 1
+        },
+        "awardKey": "rule-earn-per-euro:dev-client-1:appt:appt-hist-c1-17:seat:appt-hist-c1-17-s1",
+        "eventId": "appt_appt-hist-c1-17_seat_appt-hist-c1-17-s1_worked_r1"
+      },
+      "actor": {
+        "kind": "system",
+        "source": "loyalty_engine"
+      },
+      "reverses": null,
+      "correlationId": "appt:appt-hist-c1-17:seat:appt-hist-c1-17-s1",
+      "idempotencyKey": "award:rule-earn-per-euro:dev-client-1:appt:appt-hist-c1-17:seat:appt-hist-c1-17-s1#0",
+      "visibility": "client",
+      "publicLabel": {
+        "code": "points.rule",
+        "params": {
+          "rule": "rule-earn-per-euro",
+          "points": 17,
+          "spendMinor": 1750
+        }
+      },
+      "balanceAfter": 469
+    },
+    "dev-client-1_000026": {
+      "userId": "dev-client-1",
+      "seq": 26,
+      "at": "2026-03-26T08:47:00.000Z",
+      "effect": {
+        "kind": "points",
+        "delta": -250
+      },
+      "source": {
+        "kind": "redemption",
+        "redemptionId": "rdm-dev-georgi-cut"
+      },
+      "actor": {
+        "kind": "admin",
+        "adminUserId": "dev-staff-ivan"
+      },
+      "reverses": null,
+      "correlationId": "rdm-dev-georgi-cut",
+      "idempotencyKey": "rdm:rdm-dev-georgi-cut#0",
+      "visibility": "client",
+      "publicLabel": {
+        "code": "points.redeemed",
+        "params": {
+          "reward": "reward-cut",
+          "points": 250
+        }
+      },
+      "balanceAfter": 219
+    },
+    "dev-client-1_000027": {
+      "userId": "dev-client-1",
+      "seq": 27,
+      "at": "2026-04-22T08:05:00.000Z",
+      "effect": {
+        "kind": "points",
+        "delta": 17
+      },
+      "source": {
+        "kind": "rule",
+        "rule": {
+          "ruleId": "rule-earn-per-euro",
+          "version": 1
+        },
+        "awardKey": "rule-earn-per-euro:dev-client-1:appt:appt-hist-c1-18:seat:appt-hist-c1-18-s1",
+        "eventId": "appt_appt-hist-c1-18_seat_appt-hist-c1-18-s1_worked_r1"
+      },
+      "actor": {
+        "kind": "system",
+        "source": "loyalty_engine"
+      },
+      "reverses": null,
+      "correlationId": "appt:appt-hist-c1-18:seat:appt-hist-c1-18-s1",
+      "idempotencyKey": "award:rule-earn-per-euro:dev-client-1:appt:appt-hist-c1-18:seat:appt-hist-c1-18-s1#0",
+      "visibility": "client",
+      "publicLabel": {
+        "code": "points.rule",
+        "params": {
+          "rule": "rule-earn-per-euro",
+          "points": 17,
+          "spendMinor": 1750
+        }
+      },
+      "balanceAfter": 236
+    },
+    "dev-client-1_000028": {
+      "userId": "dev-client-1",
+      "seq": 28,
+      "at": "2026-04-22T08:05:00.000Z",
+      "effect": {
+        "kind": "points",
+        "delta": 10
+      },
+      "source": {
+        "kind": "rule",
+        "rule": {
+          "ruleId": "rule-earn-per-euro",
+          "version": 1
+        },
+        "awardKey": "rule-earn-per-euro:dev-client-1:appt:appt-hist-c1-18:seat:appt-hist-c1-18-s2",
+        "eventId": "appt_appt-hist-c1-18_seat_appt-hist-c1-18-s2_worked_r1"
+      },
+      "actor": {
+        "kind": "system",
+        "source": "loyalty_engine"
+      },
+      "reverses": null,
+      "correlationId": "appt:appt-hist-c1-18:seat:appt-hist-c1-18-s2",
+      "idempotencyKey": "award:rule-earn-per-euro:dev-client-1:appt:appt-hist-c1-18:seat:appt-hist-c1-18-s2#0",
+      "visibility": "client",
+      "publicLabel": {
+        "code": "points.rule",
+        "params": {
+          "rule": "rule-earn-per-euro",
+          "points": 10,
+          "spendMinor": 1000
+        }
+      },
+      "balanceAfter": 246
+    },
+    "dev-client-1_000029": {
+      "userId": "dev-client-1",
+      "seq": 29,
+      "at": "2026-05-19T07:45:00.000Z",
+      "effect": {
+        "kind": "points",
+        "delta": 17
+      },
+      "source": {
+        "kind": "rule",
+        "rule": {
+          "ruleId": "rule-earn-per-euro",
+          "version": 1
+        },
+        "awardKey": "rule-earn-per-euro:dev-client-1:appt:appt-hist-c1-19:seat:appt-hist-c1-19-s1",
+        "eventId": "appt_appt-hist-c1-19_seat_appt-hist-c1-19-s1_worked_r1"
+      },
+      "actor": {
+        "kind": "system",
+        "source": "loyalty_engine"
+      },
+      "reverses": null,
+      "correlationId": "appt:appt-hist-c1-19:seat:appt-hist-c1-19-s1",
+      "idempotencyKey": "award:rule-earn-per-euro:dev-client-1:appt:appt-hist-c1-19:seat:appt-hist-c1-19-s1#0",
+      "visibility": "client",
+      "publicLabel": {
+        "code": "points.rule",
+        "params": {
+          "rule": "rule-earn-per-euro",
+          "points": 17,
+          "spendMinor": 1750
+        }
+      },
+      "balanceAfter": 263
+    },
+    "dev-client-1_000030": {
+      "userId": "dev-client-1",
+      "seq": 30,
+      "at": "2026-06-15T07:45:00.000Z",
+      "effect": {
+        "kind": "points",
+        "delta": 17
+      },
+      "source": {
+        "kind": "rule",
+        "rule": {
+          "ruleId": "rule-earn-per-euro",
+          "version": 1
+        },
+        "awardKey": "rule-earn-per-euro:dev-client-1:appt:appt-hist-c1-20:seat:appt-hist-c1-20-s1",
+        "eventId": "appt_appt-hist-c1-20_seat_appt-hist-c1-20-s1_worked_r1"
+      },
+      "actor": {
+        "kind": "system",
+        "source": "loyalty_engine"
+      },
+      "reverses": null,
+      "correlationId": "appt:appt-hist-c1-20:seat:appt-hist-c1-20-s1",
+      "idempotencyKey": "award:rule-earn-per-euro:dev-client-1:appt:appt-hist-c1-20:seat:appt-hist-c1-20-s1#0",
+      "visibility": "client",
+      "publicLabel": {
+        "code": "points.rule",
+        "params": {
+          "rule": "rule-earn-per-euro",
+          "points": 17,
+          "spendMinor": 1750
+        }
+      },
+      "balanceAfter": 280
+    },
+    "dev-client-1_000031": {
+      "userId": "dev-client-1",
+      "seq": 31,
+      "at": "2026-07-13T08:05:00.000Z",
+      "effect": {
+        "kind": "points",
+        "delta": 17
+      },
+      "source": {
+        "kind": "rule",
+        "rule": {
+          "ruleId": "rule-earn-per-euro",
+          "version": 1
+        },
+        "awardKey": "rule-earn-per-euro:dev-client-1:appt:appt-hist-c1-21:seat:appt-hist-c1-21-s1",
+        "eventId": "appt_appt-hist-c1-21_seat_appt-hist-c1-21-s1_worked_r1"
+      },
+      "actor": {
+        "kind": "system",
+        "source": "loyalty_engine"
+      },
+      "reverses": null,
+      "correlationId": "appt:appt-hist-c1-21:seat:appt-hist-c1-21-s1",
+      "idempotencyKey": "award:rule-earn-per-euro:dev-client-1:appt:appt-hist-c1-21:seat:appt-hist-c1-21-s1#0",
+      "visibility": "client",
+      "publicLabel": {
+        "code": "points.rule",
+        "params": {
+          "rule": "rule-earn-per-euro",
+          "points": 17,
+          "spendMinor": 1750
+        }
+      },
+      "balanceAfter": 297
+    },
+    "dev-client-1_000032": {
+      "userId": "dev-client-1",
+      "seq": 32,
+      "at": "2026-07-13T08:05:00.000Z",
+      "effect": {
+        "kind": "points",
+        "delta": 10
+      },
+      "source": {
+        "kind": "rule",
+        "rule": {
+          "ruleId": "rule-earn-per-euro",
+          "version": 1
+        },
+        "awardKey": "rule-earn-per-euro:dev-client-1:appt:appt-hist-c1-21:seat:appt-hist-c1-21-s2",
+        "eventId": "appt_appt-hist-c1-21_seat_appt-hist-c1-21-s2_worked_r1"
+      },
+      "actor": {
+        "kind": "system",
+        "source": "loyalty_engine"
+      },
+      "reverses": null,
+      "correlationId": "appt:appt-hist-c1-21:seat:appt-hist-c1-21-s2",
+      "idempotencyKey": "award:rule-earn-per-euro:dev-client-1:appt:appt-hist-c1-21:seat:appt-hist-c1-21-s2#0",
+      "visibility": "client",
+      "publicLabel": {
+        "code": "points.rule",
+        "params": {
+          "rule": "rule-earn-per-euro",
+          "points": 10,
+          "spendMinor": 1000
+        }
+      },
+      "balanceAfter": 307
+    },
+    "dev-client-1_000033": {
+      "userId": "dev-client-1",
+      "seq": 33,
+      "at": "2026-08-06T07:45:00.000Z",
+      "effect": {
+        "kind": "points",
+        "delta": 17
+      },
+      "source": {
+        "kind": "rule",
+        "rule": {
+          "ruleId": "rule-earn-per-euro",
+          "version": 1
+        },
+        "awardKey": "rule-earn-per-euro:dev-client-1:appt:appt-hist-c1-22:seat:appt-hist-c1-22-s1",
+        "eventId": "appt_appt-hist-c1-22_seat_appt-hist-c1-22-s1_worked_r1"
+      },
+      "actor": {
+        "kind": "system",
+        "source": "loyalty_engine"
+      },
+      "reverses": null,
+      "correlationId": "appt:appt-hist-c1-22:seat:appt-hist-c1-22-s1",
+      "idempotencyKey": "award:rule-earn-per-euro:dev-client-1:appt:appt-hist-c1-22:seat:appt-hist-c1-22-s1#0",
+      "visibility": "client",
+      "publicLabel": {
+        "code": "points.rule",
+        "params": {
+          "rule": "rule-earn-per-euro",
+          "points": 17,
+          "spendMinor": 1750
+        }
+      },
+      "balanceAfter": 324
+    },
+    "dev-client-1_000034": {
+      "userId": "dev-client-1",
+      "seq": 34,
+      "at": "2026-09-03T07:45:00.000Z",
+      "effect": {
+        "kind": "points",
+        "delta": 17
+      },
+      "source": {
+        "kind": "rule",
+        "rule": {
+          "ruleId": "rule-earn-per-euro",
+          "version": 1
+        },
+        "awardKey": "rule-earn-per-euro:dev-client-1:appt:appt-hist-c1-23:seat:appt-hist-c1-23-s1",
+        "eventId": "appt_appt-hist-c1-23_seat_appt-hist-c1-23-s1_worked_r1"
+      },
+      "actor": {
+        "kind": "system",
+        "source": "loyalty_engine"
+      },
+      "reverses": null,
+      "correlationId": "appt:appt-hist-c1-23:seat:appt-hist-c1-23-s1",
+      "idempotencyKey": "award:rule-earn-per-euro:dev-client-1:appt:appt-hist-c1-23:seat:appt-hist-c1-23-s1#0",
+      "visibility": "client",
+      "publicLabel": {
+        "code": "points.rule",
+        "params": {
+          "rule": "rule-earn-per-euro",
+          "points": 17,
+          "spendMinor": 1750
+        }
+      },
+      "balanceAfter": 341
+    },
+    "dev-client-1_000035": {
+      "userId": "dev-client-1",
+      "seq": 35,
+      "at": "2026-09-28T07:45:00.000Z",
+      "effect": {
+        "kind": "points",
+        "delta": 17
+      },
+      "source": {
+        "kind": "rule",
+        "rule": {
+          "ruleId": "rule-earn-per-euro",
+          "version": 1
+        },
+        "awardKey": "rule-earn-per-euro:dev-client-1:appt:appt-dev-1:seat:seat-1",
+        "eventId": "appt_appt-dev-1_seat_seat-1_worked_r1"
+      },
+      "actor": {
+        "kind": "system",
+        "source": "loyalty_engine"
+      },
+      "reverses": null,
+      "correlationId": "appt:appt-dev-1:seat:seat-1",
+      "idempotencyKey": "award:rule-earn-per-euro:dev-client-1:appt:appt-dev-1:seat:seat-1#0",
+      "visibility": "client",
+      "publicLabel": {
+        "code": "points.rule",
+        "params": {
+          "rule": "rule-earn-per-euro",
+          "points": 17,
+          "spendMinor": 1750
+        }
+      },
+      "balanceAfter": 358
+    }
+  }
+}

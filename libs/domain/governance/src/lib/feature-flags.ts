@@ -12,19 +12,30 @@ import {
  * trick v2 used to derive `FeatureFlagPath` isn't needed here: a flat
  * closed union does the same "adding a flag is a compile-time-visible
  * change" job with far less type-level machinery).
+ *
+ * Flags are build-time (R41): `config/feature-flags.json` holds one map per
+ * environment, compiled into the web bundle and written as functions params
+ * per deploy. The client-details keys are listed in rollout order (§12.1);
+ * `rewards.*` became `loyalty.*` while nothing read them yet.
  */
-export type FeatureFlagKey =
-  | 'referrals.invitations'
-  | 'rewards.points'
-  | 'rewards.achievements'
-  | 'discounts.grants';
-
-export const FEATURE_FLAG_KEYS: readonly FeatureFlagKey[] = [
+export const FEATURE_FLAG_KEYS = [
+  'client.profile',
+  'client.pause',
+  'loyalty.points',
+  'loyalty.streaks',
+  'loyalty.achievements',
+  'loyalty.tiers',
+  'client.support',
+  'loyalty.selfView',
+  'client.merge',
+  'support.bulk',
+  'client.privacy',
   'referrals.invitations',
-  'rewards.points',
-  'rewards.achievements',
   'discounts.grants',
-];
+] as const;
+
+/** Derived from the list, so a key can never be declared without also defaulting. */
+export type FeatureFlagKey = (typeof FEATURE_FLAG_KEYS)[number];
 
 export function isFeatureFlagKey(value: unknown): value is FeatureFlagKey {
   return (

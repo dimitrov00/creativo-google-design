@@ -1,0 +1,63 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "outDir": "../../../../dist/out-tsc",
+    "types": [
+      "vitest/globals",
+      "vitest/importMeta",
+      "vite/client",
+      "node",
+      "vitest"
+    ],
+    "declaration": true,
+    "rootDir": "../../../.."
+  },
+  "include": [
+    "vite.config.ts",
+    "vite.config.mts",
+    "vitest.config.ts",
+    "vitest.config.mts",
+    "src/**/*.test.ts",
+    "src/**/*.spec.ts",
+    "src/**/*.test.tsx",
+    "src/**/*.spec.tsx",
+    "src/**/*.test.js",
+    "src/**/*.spec.js",
+    "src/**/*.test.jsx",
+    "src/**/*.spec.jsx",
+    "src/**/*.d.ts"
+  ],
+  "files": ["src/test-setup.ts"],
+  "references": [
+    {
+      "path": "../../shared/visits/tsconfig.lib.json"
+    },
+    {
+      "path": "../../../application/booking/tsconfig.lib.json"
+    },
+    {
+      "path": "../../../application/engagement/tsconfig.lib.json"
+    },
+    {
+      "path": "../../../application/shared/tsconfig.lib.json"
+    },
+    {
+      "path": "../../../infrastructure/i18n/tsconfig.lib.json"
+    },
+    {
+      "path": "../../../ui/controls/tsconfig.lib.json"
+    },
+    {
+      "path": "../../../ui/icons/tsconfig.lib.json"
+    },
+    {
+      "path": "../../../ui/layout/tsconfig.lib.json"
+    },
+    {
+      "path": "../../../ui/modifiers/tsconfig.lib.json"
+    },
+    {
+      "path": "../../../ui/patterns/tsconfig.lib.json"
+    }
+  ]
+}

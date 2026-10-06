@@ -7,7 +7,7 @@
     "composite": true,
     "rootDir": "../../.."
   },
-  "include": ["src/**/*.ts"],
+  "include": ["src/**/*.ts", "src/**/*.json"],
   "exclude": [
     "vite.config.ts",
     "vite.config.mts",
@@ -35,6 +35,9 @@
     },
     {
       "path": "../../domain/engagement/tsconfig.lib.json"
+    },
+    {
+      "path": "../../domain/catalog/tsconfig.lib.json"
     }
   ]
 }

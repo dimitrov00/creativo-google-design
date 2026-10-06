@@ -16,6 +16,9 @@ import {
 } from '@creativo/application/booking';
 import { FIREBASE_FUNCTIONS } from '@creativo/infrastructure/firebase-app';
 
+/** A client move whose carried seat cannot come along — see below. */
+const CARRIED_SEAT_UNPLACEABLE = 'booking.reschedule.carried_seat_unplaceable';
+
 /**
  * Server error `code` → the gateway's own vocabulary.
  *
@@ -45,6 +48,18 @@ function toFailureCode(error: unknown): {
   // SPECIFIC message (the cancellation window has its own copy) while the
   // failure taxonomy below stays coarse.
   if (typeof code === 'string') params['serverCode'] = code;
+
+  // The carried seat's barber is taken at the new time. The grid only offers
+  // starts where every carried seat fits (`AvailabilityQuery.riders`), so this
+  // is a race the client lost: somebody took that chair between the offer
+  // and the confirm. It is answered like any lost slot: back to a freshly
+  // computed grid, with the lost-slot copy (owner decision, R2-5).
+  if (
+    code === CARRIED_SEAT_UNPLACEABLE &&
+    params['refusal'] === 'barber_unavailable'
+  ) {
+    return { failure: 'slot_unavailable', params };
+  }
 
   switch (code) {
     // A barber whose roster changed under a stale tab is the same situation as
@@ -79,6 +94,14 @@ function toFailureCode(error: unknown): {
     // variant, a party past the cap, a time outside the horizon. These used
     // to report as `unauthenticated`, which sent a signed-in barber looking
     // for a login problem that did not exist (2026-09-08).
+    //
+    // A move that would leave behind somebody the shop seated
+    // (`booking.reschedule.carried_seat_unplaceable`) is one of these when
+    // their service is gone, the time falls outside the window, or only the
+    // shop can move them (`params.refusal`). Re-picking cannot fix those, so
+    // they stay on review, worded through `serverCode` and `refusal`, with
+    // the call beside them. A BUSY chair is the exception, handled above the
+    // switch.
     case 'booking.commit.invalid_input':
     case 'booking.commit.invariant_violated':
     case 'booking.commit.conflicting_services':
@@ -98,8 +121,16 @@ function toFailureCode(error: unknown): {
     case 'booking.cancel.not_found':
     case 'booking.cancel.not_cancellable':
     case 'booking.cancel.window_closed':
+    case CARRIED_SEAT_UNPLACEABLE:
       return { failure: 'invalid_request', params };
     case 'booking.commit.store_failed':
+      return { failure: 'unavailable', params };
+    // The cancellation terms could not be READ, so the server refused rather
+    // than guess at the window (`policyForCancel`). Nothing about the visit
+    // or the request is wrong: the same tap a moment later is the fix, which
+    // is exactly what `unavailable` means — and the page words it from
+    // `serverCode` ("try again in a moment"), never "something went wrong".
+    case 'booking.cancel.policy_unavailable':
       return { failure: 'unavailable', params };
     default:
       return { failure: 'unknown', params };
@@ -268,13 +299,6 @@ export class CallableBookingGateway implements BookingGateway {
   }
 
   /**
-   * Calls `staffEditAppointment`.
-   *
-   * Returns the new revision rather than nothing, because the sheet's next
-   * save has to claim what it last read — a stale banner that cannot say
-   * which version it is stale against is a banner that fires forever.
-   */
-  /**
    * Calls `recordSeatTip` — a stamp, not an edit.
    *
    * Returns nothing: unlike `staffEdit` there is no revision to claim,
@@ -303,6 +327,17 @@ export class CallableBookingGateway implements BookingGateway {
     }
   }
 
+  /**
+   * Calls `staffEditAppointment`.
+   *
+   * Returns the revision the intent stamped rather than nothing, because
+   * the device's next claim is carried forward to it (`expectedVersion`) —
+   * a stale refusal that cannot say which revision it is stale against is a
+   * refusal that fires forever. The request, `expectedVersion` included,
+   * goes on the wire as it is; a stale refusal comes back as
+   * `invalid_request` with `serverCode: 'booking.staffEdit.stale'` and the
+   * server's `expected`/`actual`.
+   */
   async staffEdit(
     request: StaffEditAppointmentRequest,
   ): Promise<Result<StaffEditedAppointment, BookingGatewayError>> {

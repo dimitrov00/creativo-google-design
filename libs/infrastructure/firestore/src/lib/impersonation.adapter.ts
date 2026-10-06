@@ -5,8 +5,8 @@ import {
   getDocs,
   limit,
   query,
+  setDoc,
   where,
-  writeBatch,
 } from 'firebase/firestore';
 import { FIREBASE_FIRESTORE } from '@creativo/infrastructure/firebase-app';
 import { ImpersonationPort } from '@creativo/application/governance';
@@ -14,17 +14,12 @@ import { RepositoryError } from '@creativo/application/shared';
 import { Result, ZonedDateTime, fail, ok } from '@creativo/domain/kernel';
 import { UserId } from '@creativo/domain/accounts';
 import {
-  Actor,
-  AuditEntry,
-  AuditEntryId,
   ImpersonationEndReason,
   ImpersonationSession,
   ImpersonationSessionId,
   ImpersonationSessionStatus,
 } from '@creativo/domain/governance';
-import { auditEntryToDocument } from '@creativo/application/shared';
 import {
-  auditLogDocRef,
   impersonationSessionDocRef,
   impersonationSessionsCollection,
 } from './firestore-paths';
@@ -159,72 +154,13 @@ function toDomain(
 }
 
 /**
- * Who/what to attribute the paired `AuditEntry` to. `active` sessions are
- * always started by the admin themselves; an `ended` session's actor
- * depends on WHO closed it — the admin who ended it, whichever admin
- * revoked it for security reasons, or the system's own expiry watchdog —
- * so the audit trail names the actual responsible party, not just
- * `session.adminUserId` in every case.
- */
-function auditActorAndAction(session: ImpersonationSession): {
-  actor: Actor;
-  action: string;
-} {
-  if (session.status.kind === 'active') {
-    return {
-      actor: Actor.admin(session.adminUserId),
-      action: 'impersonation.started',
-    };
-  }
-  const reason = session.status.reason;
-  switch (reason.kind) {
-    case 'admin_ended':
-      return {
-        actor: Actor.admin(reason.endedBy),
-        action: 'impersonation.ended',
-      };
-    case 'expired':
-      return {
-        actor: Actor.system('impersonation_expiry_watchdog'),
-        action: 'impersonation.ended',
-      };
-    case 'revoked_by_security':
-      return {
-        actor: Actor.admin(reason.revokedBy),
-        action: 'impersonation.revoked',
-      };
-  }
-}
-
-function buildAuditEntry(session: ImpersonationSession) {
-  const { actor, action } = auditActorAndAction(session);
-  const at =
-    session.status.kind === 'ended'
-      ? session.status.endedAt
-      : session.startedAt;
-  return AuditEntry.create({
-    id: AuditEntryId.generate().value,
-    actor,
-    action,
-    atIso: at.toISO(),
-    targetUserId: session.targetUserId.value,
-    resourceId: session.id.value,
-  });
-}
-
-// The audit row's shape lives in the SHARED port module now — the booking
-// callables write the same collection through the admin SDK, and two copies
-// of one serializer is how shapes drift.
-function toAuditPersistence(entry: AuditEntry): DocumentData {
-  return auditEntryToDocument(entry) as DocumentData;
-}
-
-/**
- * Firestore-backed `ImpersonationPort`. `save()` also writes the session's
- * `AuditEntry` in the SAME batched write (`auditLog` collection) — there is
- * no separate application port for audit writes in this phase, so keeping
- * the two atomic is an infrastructure-only decision (see class doc for the
- * actor/action derivation).
+ * Firestore-backed `ImpersonationPort`. `save()` writes the session
+ * document and nothing else. The paired `auditLog` row it used to batch
+ * beside it is gone: no client creates audit rows (FIX 1, 2026-09-25 — a
+ * trail the people it records can write proves nothing), so that row moves
+ * server-side when impersonation ships as a callable. It must name whoever
+ * actually acted: the admin who started or ended the session, the admin
+ * who revoked it, or the expiry watchdog as a system actor.
  */
 @Injectable()
 export class FirestoreImpersonationAdapter implements ImpersonationPort {
@@ -233,27 +169,11 @@ export class FirestoreImpersonationAdapter implements ImpersonationPort {
   async save(
     session: ImpersonationSession,
   ): Promise<Result<void, RepositoryError>> {
-    const auditEntryResult = buildAuditEntry(session);
-    if (auditEntryResult.isFailure()) {
-      return fail(
-        new RepositoryError(
-          'Failed to build audit entry for impersonation session',
-          auditEntryResult.error,
-        ),
-      );
-    }
-
     try {
-      const batch = writeBatch(this.db);
-      batch.set(
+      await setDoc(
         impersonationSessionDocRef(this.db, session.id),
         toPersistence(session),
       );
-      batch.set(
-        auditLogDocRef(this.db, auditEntryResult.value.id.value),
-        toAuditPersistence(auditEntryResult.value),
-      );
-      await batch.commit();
       return ok(undefined);
     } catch (error) {
       return fail(

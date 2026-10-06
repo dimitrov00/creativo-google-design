@@ -1,0 +1,426 @@
+<ng-container *transloco="let t">
+  <!-- ONE sheet for the five secondary editors (§2.6.1a). It edits the
+       page's draft through the page's store; closing it discards nothing,
+       so ✕, the scrim, Escape and «Готово» are one and the same exit. -->
+  <ui-modal-sheet
+    sheetId="admin-rhythm-sheet"
+    [labelledBy]="titleId"
+    [closeLabel]="t('staff.day.undo.dismiss')"
+    [open]="open()"
+    [closing]="closing()"
+    uiPresentationSizing="automatic"
+    [fitted]="shown() !== 'services'"
+    (dismissed)="requestClose()"
+    (closeFinished)="finishClose()"
+  >
+    <span sheet-title>{{ title() }}</span>
+
+    @if (shown(); as kind) { @let draft = current(); @switch (kind) { @case
+    ('services') {
+    <!-- The house sheet-search grammar: the headline folds while the
+               search is engaged, the field stays pinned under the bar. -->
+    <div class="admin-rhythm-sheet__head">
+      <ui-sheet-headline [uiFolded]="searchEngaged()">
+        <h2 uiSheetLargeTitle [id]="titleId" uiText uiFont="largeTitle">
+          {{ title() }}
+        </h2>
+      </ui-sheet-headline>
+      <ui-search-field
+        uiPinned
+        [uiValue]="query()"
+        [uiPlaceholder]="t('admin.rhythm.sheet.servicesSearch')"
+        uiTestId="admin-rhythm-services-query"
+        [uiClearLabel]="t('staff.day.undo.dismiss')"
+        (uiInput)="query.set($event)"
+        (uiFocusChange)="searchFocused.set($event)"
+      />
+    </div>
+    <div
+      class="admin-rhythm-sheet__body"
+      data-testid="admin-rhythm-sheet-services"
+    >
+      @if (serviceGroups(); as groups) {
+      <ui-stack uiSpacing="comfortable">
+        @for (group of groups; track group.id) {
+        <ui-stack uiSpacing="compact">
+          <h3
+            uiText
+            uiFont="footnote"
+            uiForegroundStyle="secondary"
+            class="admin-rhythm-sheet__group-title"
+          >
+            {{ group.name }}
+          </h3>
+          <ui-list-group>
+            @for (service of group.services; track service.id) { @let chosen =
+            chosenServices().has(service.id);
+            <button
+              type="button"
+              uiListRow
+              uiSize="regular"
+              [uiInteractive]="true"
+              [uiSelected]="chosen"
+              [attr.aria-pressed]="chosen"
+              [attr.data-testid]="'admin-rhythm-service-' + service.id"
+              (click)="toggleService(service.id)"
+            >
+              {{ service.name }} @if (chosen) {
+              <ui-icon
+                uiTrailing
+                uiName="checklist.done"
+                uiForegroundStyle="accent"
+              />
+              }
+            </button>
+            }
+          </ui-list-group>
+        </ui-stack>
+        }
+      </ui-stack>
+      } @else {
+      <ui-notice
+        uiTone="neutral"
+        data-testid="admin-rhythm-services-unavailable"
+      >
+        {{ t('admin.rhythm.failed') }}
+      </ui-notice>
+      }
+    </div>
+    } @case ('protections') {
+    <div
+      class="admin-rhythm-sheet__body"
+      data-testid="admin-rhythm-sheet-protections"
+    >
+      <ui-stack uiSpacing="comfortable">
+        <h2 uiSheetLargeTitle [id]="titleId" uiText uiFont="largeTitle">
+          {{ title() }}
+        </h2>
+        <ui-stack uiSpacing="compact">
+          <ul uiListGroup>
+            <!-- P8. A row whose trailing is a FIXED control (a switch, a
+                 stepper) lets its label WRAP beside it — the DS's own
+                 `uiLabelWraps`, as the page's typed rows do — because a
+                 settings label is the only explanation of its control and
+                 never truncates (§2.6.5; «Първа защита с първото посеще…»
+                 at 390, review 2). The same on every such row below. -->
+            <li uiListRow uiSize="regular" uiLabelWraps>
+              <span [id]="titleId + '-protections'"
+                >{{ t('admin.rhythm.protections.enabled') }}</span
+              >
+              <button
+                uiSwitch
+                uiTrailing
+                [uiOn]="draft.protections.enabled"
+                [attr.aria-label]="t('admin.rhythm.protections.enabled')"
+                data-testid="admin-rhythm-protections"
+                (uiOnChange)="store.patch({ protections: { enabled: $event } })"
+              ></button>
+            </li>
+            @if (draft.protections.enabled) {
+            <!-- P8a -->
+            <li uiListRow uiSize="regular" uiLabelWraps>
+              {{ t('admin.rhythm.protections.max') }}
+              <ui-count-stepper
+                uiTrailing
+                [uiValue]="draft.protections.maxBanked"
+                [uiMax]="5"
+                [uiLabel]="t('admin.rhythm.protections.max')"
+                [uiAddLabel]="t('staff.visit.serviceMore')"
+                [uiRemoveLabel]="t('staff.visit.serviceLess')"
+                data-testid="admin-rhythm-protections-max"
+                (uiValueChange)="store.patch({ protections: { maxBanked: $event } })"
+              />
+            </li>
+            <!-- P8b -->
+            <li uiListRow uiSize="regular" class="admin-rhythm-sheet__row">
+              <span>{{ t('admin.rhythm.protections.every') }}</span>
+              <span uiTrailing>
+                <ui-choice-menu
+                  uiAlignment="trailing"
+                  [uiOptions]="earnEveryOptions()"
+                  [uiSelectedId]="text(draft.protections.earnEvery)"
+                  [uiLabel]="t('admin.rhythm.protections.every')"
+                  [uiPresented]="earnEveryMenu()"
+                  (uiPresentedChange)="earnEveryMenu.set($event)"
+                  (uiPicked)="store.patch({ protections: { earnEvery: +$event } })"
+                >
+                  <button
+                    type="button"
+                    uiInteractive
+                    uiRadius="capsule"
+                    uiMenuTrigger
+                    class="admin-rhythm-sheet__choice"
+                    [attr.aria-label]="t('admin.rhythm.protections.every') + ': ' + earnEveryLabel()"
+                    data-testid="admin-rhythm-protections-every"
+                    (click)="earnEveryMenu.set(true)"
+                  >
+                    <span>{{ earnEveryLabel() }}</span>
+                    <ui-icon uiName="field.popUp" />
+                  </button>
+                </ui-choice-menu>
+              </span>
+            </li>
+            <!-- P8c -->
+            <li uiListRow uiSize="regular" uiLabelWraps>
+              <span [id]="titleId + '-start'"
+                >{{ t('admin.rhythm.protections.first') }}</span
+              >
+              <button
+                uiSwitch
+                uiTrailing
+                [uiOn]="draft.protections.startWith > 0"
+                [uiDisabled]="draft.protections.maxBanked === 0"
+                [attr.aria-label]="t('admin.rhythm.protections.first')"
+                data-testid="admin-rhythm-protections-start"
+                (uiOnChange)="store.patch({ protections: { startWith: $event ? 1 : 0 } })"
+              ></button>
+            </li>
+            }
+          </ul>
+          <p
+            uiText
+            uiFont="footnote"
+            uiForegroundStyle="secondary"
+            class="admin-rhythm-sheet__footnote"
+          >
+            {{ t('admin.rhythm.protections.note') }}
+          </p>
+        </ui-stack>
+      </ui-stack>
+    </div>
+    } @case ('excuses') {
+    <div
+      class="admin-rhythm-sheet__body"
+      data-testid="admin-rhythm-sheet-excuses"
+    >
+      <ui-stack uiSpacing="comfortable">
+        <h2 uiSheetLargeTitle [id]="titleId" uiText uiFont="largeTitle">
+          {{ title() }}
+        </h2>
+        <ui-stack uiSpacing="compact">
+          <!-- P9 · four switches; the shop's three say what switching one off means -->
+          <ul uiListGroup>
+            @for (excuse of excuses; track excuse) {
+            <li uiListRow uiSize="regular" uiLabelWraps>
+              <span [id]="titleId + '-' + excuse"
+                >{{ t('admin.rhythm.excuses.' + excuse) }}</span
+              >
+              <button
+                uiSwitch
+                uiTrailing
+                [uiOn]="excused(excuse)"
+                [attr.aria-label]="t('admin.rhythm.excuses.' + excuse)"
+                [attr.data-testid]="'admin-rhythm-excuse-' + excuse"
+                (uiOnChange)="setExcuse(excuse, $event)"
+              ></button>
+            </li>
+            }
+          </ul>
+          @if (shopExcuseOff()) {
+          <ui-notice
+            uiTone="warning"
+            uiAnnounce="polite"
+            data-testid="admin-rhythm-excuses-warning"
+          >
+            {{ t('admin.rhythm.excuses.offWarning') }}
+          </ui-notice>
+          }
+        </ui-stack>
+        <!-- P10 · the client's pause -->
+        <ul uiListGroup>
+          <li uiListRow uiSize="regular" uiLabelWraps>
+            <span [id]="titleId + '-pause'"
+              >{{ t('admin.rhythm.pause.enabled') }}</span
+            >
+            <button
+              uiSwitch
+              uiTrailing
+              [uiOn]="draft.clientPause.enabled"
+              [attr.aria-label]="t('admin.rhythm.pause.enabled')"
+              data-testid="admin-rhythm-pause"
+              (uiOnChange)="store.patch({ clientPause: { enabled: $event } })"
+            ></button>
+          </li>
+          @if (draft.clientPause.enabled) {
+          <li uiListRow uiSize="regular" class="admin-rhythm-sheet__row">
+            <span>{{ t('admin.rhythm.pause.days') }}</span>
+            <span uiTrailing>
+              <ui-choice-menu
+                uiAlignment="trailing"
+                [uiOptions]="pauseDaysOptions()"
+                [uiSelectedId]="text(draft.clientPause.maxDaysPerYear)"
+                [uiLabel]="t('admin.rhythm.pause.days')"
+                [uiPresented]="pauseDaysMenu()"
+                (uiPresentedChange)="pauseDaysMenu.set($event)"
+                (uiPicked)="store.patch({ clientPause: { maxDaysPerYear: +$event } })"
+              >
+                <button
+                  type="button"
+                  uiInteractive
+                  uiRadius="capsule"
+                  uiMenuTrigger
+                  class="admin-rhythm-sheet__choice"
+                  [attr.aria-label]="t('admin.rhythm.pause.days') + ': ' + pauseDaysLabel()"
+                  data-testid="admin-rhythm-pause-days"
+                  (click)="pauseDaysMenu.set(true)"
+                >
+                  <span>{{ pauseDaysLabel() }}</span>
+                  <ui-icon uiName="field.popUp" />
+                </button>
+              </ui-choice-menu>
+            </span>
+          </li>
+          }
+        </ul>
+      </ui-stack>
+    </div>
+    } @case ('afterMiss') {
+    <div
+      class="admin-rhythm-sheet__body"
+      data-testid="admin-rhythm-sheet-afterMiss"
+    >
+      <ui-stack uiSpacing="comfortable">
+        <h2 uiSheetLargeTitle [id]="titleId" uiText uiFont="largeTitle">
+          {{ title() }}
+        </h2>
+        <!-- P12 -->
+        <ul uiListGroup>
+          <li uiListRow uiSize="regular" class="admin-rhythm-sheet__row">
+            <span>{{ t('admin.rhythm.onBreak.label') }}</span>
+            <span uiTrailing>
+              <ui-choice-menu
+                uiAlignment="trailing"
+                [uiOptions]="onBreakOptions()"
+                [uiSelectedId]="draft.onBreak"
+                [uiLabel]="t('admin.rhythm.onBreak.label')"
+                [uiPresented]="onBreakMenu()"
+                (uiPresentedChange)="onBreakMenu.set($event)"
+                (uiPicked)="store.patch({ onBreak: $event === 'hold' ? 'hold' : 'restart' })"
+              >
+                <button
+                  type="button"
+                  uiInteractive
+                  uiRadius="capsule"
+                  uiMenuTrigger
+                  class="admin-rhythm-sheet__choice"
+                  [attr.aria-label]="t('admin.rhythm.onBreak.label') + ': ' + onBreakLabel()"
+                  data-testid="admin-rhythm-on-break"
+                  (click)="onBreakMenu.set(true)"
+                >
+                  <span>{{ onBreakLabel() }}</span>
+                  <ui-icon uiName="field.popUp" />
+                </button>
+              </ui-choice-menu>
+            </span>
+          </li>
+        </ul>
+        <!-- P11 -->
+        <ul uiListGroup>
+          <li uiListRow uiSize="regular" uiLabelWraps>
+            <span [id]="titleId + '-repair'"
+              >{{ t('admin.rhythm.repair.enabled') }}</span
+            >
+            <button
+              uiSwitch
+              uiTrailing
+              [uiOn]="draft.repair.enabled"
+              [attr.aria-label]="t('admin.rhythm.repair.enabled')"
+              data-testid="admin-rhythm-repair"
+              (uiOnChange)="store.patch({ repair: { enabled: $event } })"
+            ></button>
+          </li>
+          @if (draft.repair.enabled) {
+          <li uiListRow uiSize="regular" class="admin-rhythm-sheet__row">
+            <span>{{ t('admin.rhythm.repair.window') }}</span>
+            <span uiTrailing>
+              <ui-choice-menu
+                uiAlignment="trailing"
+                [uiOptions]="repairWindowOptions()"
+                [uiSelectedId]="text(draft.repair.windowDays)"
+                [uiLabel]="t('admin.rhythm.repair.window')"
+                [uiPresented]="repairWindowMenu()"
+                (uiPresentedChange)="repairWindowMenu.set($event)"
+                (uiPicked)="store.patch({ repair: { windowDays: +$event } })"
+              >
+                <button
+                  type="button"
+                  uiInteractive
+                  uiRadius="capsule"
+                  uiMenuTrigger
+                  class="admin-rhythm-sheet__choice"
+                  [attr.aria-label]="t('admin.rhythm.repair.window') + ': ' + repairWindowLabel()"
+                  data-testid="admin-rhythm-repair-window"
+                  (click)="repairWindowMenu.set(true)"
+                >
+                  <span>{{ repairWindowLabel() }}</span>
+                  <ui-icon uiName="field.popUp" />
+                </button>
+              </ui-choice-menu>
+            </span>
+          </li>
+          <li uiListRow uiSize="regular" class="admin-rhythm-sheet__row">
+            <span>{{ t('admin.rhythm.repair.perYear') }}</span>
+            <span uiTrailing>
+              <ui-choice-menu
+                uiAlignment="trailing"
+                [uiOptions]="repairPerYearOptions()"
+                [uiSelectedId]="text(draft.repair.perYear)"
+                [uiLabel]="t('admin.rhythm.repair.perYear')"
+                [uiPresented]="repairPerYearMenu()"
+                (uiPresentedChange)="repairPerYearMenu.set($event)"
+                (uiPicked)="store.patch({ repair: { perYear: +$event } })"
+              >
+                <button
+                  type="button"
+                  uiInteractive
+                  uiRadius="capsule"
+                  uiMenuTrigger
+                  class="admin-rhythm-sheet__choice"
+                  [attr.aria-label]="t('admin.rhythm.repair.perYear') + ': ' + repairPerYearLabel()"
+                  data-testid="admin-rhythm-repair-per-year"
+                  (click)="repairPerYearMenu.set(true)"
+                >
+                  <span>{{ repairPerYearLabel() }}</span>
+                  <ui-icon uiName="field.popUp" />
+                </button>
+              </ui-choice-menu>
+            </span>
+          </li>
+          }
+        </ul>
+      </ui-stack>
+    </div>
+    } @case ('day') {
+    <!-- The day IS the answer: a tap chooses and closes; no dock. -->
+    <div class="admin-rhythm-sheet__body" data-testid="admin-rhythm-sheet-day">
+      <ui-stack uiSpacing="comfortable">
+        <h2 uiSheetLargeTitle [id]="titleId" uiText uiFont="largeTitle">
+          {{ title() }}
+        </h2>
+        <ui-month-picker
+          [uiSelected]="store.effectiveFrom()"
+          [uiToday]="store.days().today"
+          [uiMin]="store.earliestDay()"
+          [uiLocale]="lang()"
+          uiSize="large"
+          data-testid="admin-rhythm-day-picker"
+          (uiPicked)="pickDay($event)"
+        />
+      </ui-stack>
+    </div>
+    } } @if (kind !== 'day') {
+    <ui-sheet-action-bar sheet-overlay [uiVisible]="true">
+      <button
+        type="button"
+        uiButton
+        uiButtonStyle="borderedProminent"
+        uiControlSize="large"
+        data-testid="admin-rhythm-sheet-done"
+        (click)="requestClose()"
+      >
+        {{ t('admin.rhythm.sheet.done') }}
+      </button>
+    </ui-sheet-action-bar>
+    } }
+  </ui-modal-sheet>
+</ng-container>

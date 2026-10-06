@@ -2,7 +2,13 @@ import { Money, ZonedDateTime } from '@creativo/domain/kernel';
 import { describe, expect, it } from 'vitest';
 import { CouponCombinability } from './coupon-combinability';
 import { CouponValue } from './coupon-value';
-import { Coupon, CouponExpiry } from './coupon';
+import {
+  COUPON_OCCASIONS,
+  Coupon,
+  CouponExpiry,
+  CreateCouponProps,
+} from './coupon';
+import { CouponOccasionUnknownError } from './coupon.errors';
 
 function percentOff(percent: number) {
   const r = CouponValue.percentOff(percent);
@@ -71,6 +77,95 @@ describe('Coupon.create', () => {
   it('accepts a valid usage limit', () => {
     const result = Coupon.create({ ...baseProps, usageLimit: 100 });
     expect(result.isSuccess()).toBe(true);
+  });
+});
+
+describe('Coupon, the occasion', () => {
+  const baseProps: CreateCouponProps = {
+    id: 'coupon-birthday',
+    name: 'Рожден ден −20 %',
+    value: percentOff(20),
+    combinability: CouponCombinability.stackable(),
+    expiry: CouponExpiry.never(),
+    enabled: true,
+  };
+  /** A document is untrusted text: what a mapper hands over is not yet an occasion. */
+  const withOccasion = (occasion: unknown): CreateCouponProps =>
+    ({ ...baseProps, occasion }) as CreateCouponProps;
+
+  it('is none by default: a coupon written before occasions existed', () => {
+    for (const build of [Coupon.create, Coupon.reconstitute]) {
+      const result = build(baseProps);
+      expect(result.isSuccess()).toBe(true);
+      if (result.isSuccess()) expect(result.value.occasion).toBeNull();
+    }
+  });
+
+  it.each([[null], [undefined]])('reads %s as no occasion', (occasion) => {
+    const result = Coupon.reconstitute(withOccasion(occasion));
+    expect(result.isSuccess()).toBe(true);
+    if (result.isSuccess()) expect(result.value.occasion).toBeNull();
+  });
+
+  it.each(COUPON_OCCASIONS.map((occasion) => [occasion]))(
+    'keeps %s, created or read back',
+    (occasion) => {
+      for (const build of [Coupon.create, Coupon.reconstitute]) {
+        const result = build({ ...baseProps, occasion });
+        expect(result.isSuccess()).toBe(true);
+        if (result.isSuccess()) expect(result.value.occasion).toBe(occasion);
+      }
+    },
+  );
+
+  it('is a closed set of one', () => {
+    expect(COUPON_OCCASIONS).toEqual(['birthday']);
+  });
+
+  it.each([['nameday'], ['Birthday'], [' birthday'], [''], [0], [true], [{}]])(
+    'refuses %j: a word the card does not know is never "no occasion"',
+    (occasion) => {
+      const result = Coupon.reconstitute(withOccasion(occasion));
+      expect(result.isFailure()).toBe(true);
+      if (result.isFailure()) {
+        expect(result.error).toHaveLength(1);
+        const [error] = result.error;
+        expect(error).toBeInstanceOf(CouponOccasionUnknownError);
+        expect(error?.code).toBe('engagement.coupon.occasion_unknown');
+        expect(error?.params).toEqual({ attempted: occasion });
+      }
+    },
+  );
+
+  it('is one fault among the others, all reported at once', () => {
+    const result = Coupon.create({
+      ...withOccasion('nameday'),
+      id: '',
+      name: ' ',
+      usageLimit: 0,
+    });
+    expect(result.isFailure()).toBe(true);
+    if (result.isFailure()) {
+      expect(result.error.map((error) => error.code)).toEqual([
+        'engagement.id.empty',
+        'engagement.coupon.empty_name',
+        'engagement.coupon.invalid_usage_limit',
+        'engagement.coupon.occasion_unknown',
+      ]);
+    }
+  });
+
+  it('leaves the shareable code alone', () => {
+    const result = Coupon.create({
+      ...baseProps,
+      code: ' first10 ',
+      occasion: 'birthday',
+    });
+    expect(result.isSuccess()).toBe(true);
+    if (result.isSuccess()) {
+      expect(result.value.code).toBe('FIRST10');
+      expect(result.value.occasion).toBe('birthday');
+    }
   });
 });
 

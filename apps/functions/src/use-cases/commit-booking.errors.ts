@@ -24,6 +24,36 @@ export class CommitBookingInvalidInputError extends DomainError {
   }
 }
 
+/**
+ * THE BOOKING NAMES NO USABLE SHOP: an id no shop answers to (empty, blank,
+ * one that could not name a document, or no such document) — `not_found`;
+ * or a shop the public surface no longer lists that a client's booking
+ * would ARRIVE at, new or moved in from another shop — `unlisted`
+ * (`admitsArrival`, team decision 2026-09-26: a hidden shop takes no new
+ * client bookings, while the visits already there can still be moved and
+ * edited).
+ *
+ * One stable wire answer however it is spelled: `invalid_input` with
+ * `field: 'locationId'` (`FIELD`), which the waitlist's door names too
+ * (`decideWaitlist`), and which the client words from
+ * `booking.commit.invalid_input.locationId` (`bookingErrorMessage`). A
+ * subclass rather than a new code, like the decision's own party refusals
+ * (`decide-booking.errors.ts`), so every path that answers
+ * `CommitBookingError` carries it unchanged. `reason` stays OFF the wire:
+ * whether a shop is missing or hidden is the shop's business, and the
+ * sentence is the same either way.
+ */
+export class CommitBookingShopUnavailableError extends CommitBookingInvalidInputError {
+  static readonly FIELD = 'locationId';
+
+  constructor(
+    readonly locationId: string,
+    readonly reason: 'not_found' | 'unlisted',
+  ) {
+    super(CommitBookingShopUnavailableError.FIELD);
+  }
+}
+
 export class CommitBookingUnknownServiceError extends DomainError {
   readonly code = 'booking.commit.unknown_service' as const;
 

@@ -80,6 +80,21 @@ service cloud.firestore {
       return request.resource.data.diff(resource.data).affectedKeys();
     }
 
+    // The owner-editable values of `users/{uid}`, checked on the document
+    // as it would be after the write (the `FirstName`/`LastName` minimums,
+    // `BirthDate`'s ISO shape; the search keys' types).
+    function ownerProfileValuesValid(data) {
+      return data.get('firstName', null) is string
+        && data.firstName.trim().size() >= 2
+        && data.get('lastName', null) is string
+        && data.lastName.trim().size() >= 2
+        && (data.get('birthDate', null) == null
+          || (data.birthDate is string
+            && data.birthDate.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')))
+        && data.get('searchName', '') is string
+        && data.get('searchPrefixes', []) is list;
+    }
+
     // Default deny — every collection below must opt in explicitly.
     match /{document=**} {
       allow read, write: if false;
@@ -87,24 +102,54 @@ service cloud.firestore {
 
     // ── accounts ────────────────────────────────────────────────────────
     match /users/{uid} {
-      // A client sees their own doc; staff may GET any profile (a booking
-      // names its client). LISTING — the search surface over everyone's
-      // phone/email/birthDate — is front-desk and admin business only: a
-      // `content_manager` edits the catalog, not the clientele, and every
-      // role in `isStaff()` could previously dump the whole collection.
-      allow get: if isOwner(uid) || isStaff();
+      // A client sees their own doc; the roles that work the book may GET
+      // any profile (a booking names its client). NOT `isStaff()` (FIX 5,
+      // 2026-09-25): a `content_manager` edits the catalog, not the
+      // clientele, and reads no one's name, phone or birth date but its own.
+      // LISTING — the search surface over everyone's phone/email/birthDate —
+      // is front-desk and admin business only.
+      allow get: if isOwner(uid) || worksTheBook();
       allow list: if isOwner(uid)
         || hasAnyRole(['receptionist', 'admin', 'sysadmin']);
 
-      // Self-registration always starts as a plain `client` — every other
-      // role is granted server-side only (Admin SDK bypasses these rules).
-      allow create: if isOwner(uid) && request.resource.data.roles == ['client'];
+      // No client ever creates this document. `verifyOtp` writes the
+      // contact-only stub and `completeRegistration` the registered profile,
+      // both with the Admin SDK (which bypasses these rules), and the web's
+      // `saveProfile` only ever updates a document that already exists.
+      allow create: if false;
 
-      // A client may edit their own profile fields but can never grant
-      // themselves a role or change their own account status (block/unblock
-      // is staff/admin-only, done through a Cloud Function).
-      allow update: if isOwner(uid) && !affectedKeys().hasAny(['roles', 'status']);
-      allow update: if isAdmin();
+      // FIX 2 (2026-09-25): an ALLOWLIST, not the old `roles`/`status`
+      // denylist — with a denylist every field a later phase adds to this
+      // document is self-editable the day it lands. The owner edits their
+      // names and birth date (and the search keys derived from the name);
+      // phone and email change only through the OTP contact-change
+      // callables, roles and status only server-side.
+      // …and only once REGISTERED: the STORED document must already carry a
+      // first name. Without that, an onboarding user could write `firstName`
+      // onto `verifyOtp`'s `{email, phone}` stub themselves, and the
+      // server's registered check (`FirestoreUserRepository`: a non-blank
+      // `firstName`) would read them as registered without ever passing
+      // `completeRegistration`.
+      // …and the VALUES must still be a registered profile: names as long
+      // as the accounts domain requires (`FIRST_NAME_MIN_LENGTH` and
+      // `LAST_NAME_MIN_LENGTH`, both 2), an ISO calendar date or nothing
+      // for the birthday, a string and a list for the search keys. A
+      // blanked `firstName` would read as unregistered server-side and send
+      // the owner back through `completeRegistration`, and the web's
+      // profile door could no longer reconstitute the document at all.
+      allow update: if isOwner(uid)
+        && resource.data.get('firstName', null) is string
+        && resource.data.firstName.trim().size() > 0
+        && affectedKeys().hasOnly([
+          'firstName', 'lastName', 'birthDate', 'searchName', 'searchPrefixes'])
+        && ownerProfileValuesValid(request.resource.data);
+
+      // FIX 3 (2026-09-25): there is NO admin update here, on purpose.
+      // Overlapping allows are OR'd, so the blanket `allow update: if
+      // isAdmin()` that stood here skipped every field check above, and a
+      // client-side roles write would not even refresh the caller's claims.
+      // Roles and status are Admin-SDK writes; a staff correction of a
+      // client's names goes through a callable.
 
       allow delete: if false;
 
@@ -237,6 +282,106 @@ service cloud.firestore {
     // (`storage.rules`, `/appointmentPhotos`).
     match /appointmentPhotos/{photoId} {
       allow read, write: if worksTheBook();
+    }
+
+    // ── the client's visit statistics (2026-09-25) ───────────────────────
+    // Visits, no-shows, late cancels, cadence — materialised per subject by
+    // the appointments trigger and the backfill (Admin SDK), never by a
+    // client. The book reads them; the client they describe does not: the
+    // document carries the staff-only pause suggestion, and a client's own
+    // visits reach them through the journal instead.
+    match /clientStats/{uid} {
+      allow read: if worksTheBook();
+      allow write: if false;
+
+      // `restricted/money` — lifetime spend. Rules cannot hide a field, so
+      // money lives in its own document, and rules do not cascade, so this
+      // match needs its own allow. The shop's admin only: NOT sysadmin, a
+      // support role with no business in a client's spend, and not the
+      // front desk.
+      match /restricted/{docId} {
+        allow read: if hasAnyRole(['admin']);
+        allow write: if false;
+      }
+    }
+
+    // ── the loyalty read model (client-card-redesign §4.5, 2026-09-28) ──
+    // The catalogue — shelves, medal families, seasons and events, tiers,
+    // rewards, the rhythm — is presentation, not personal data: anyone
+    // signed in reads it (clients will, once they see their own loyalty).
+    // Nobody writes it from a client: it is published by the server.
+    match /badgeCategories/{categoryId} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+
+    match /badgeSeries/{seriesId} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+
+    match /seasons/{seasonId} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+
+    match /tierDefinitions/{tierId} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+
+    match /rewardsCatalog/{rewardId} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+
+    // THE RHYTHM'S RULE (client-card-revision-3 §4.3, 2026-09-29). The
+    // head holds the version in force and at most one that waits: staff
+    // read it now, clients will with their own loyalty view. Nobody writes
+    // it from a client, the admin included: a rule is published by the
+    // `publishStreakDefinition` callable, which checks the change, the day
+    // it may take effect and the caller, and writes the head, the version
+    // and the audit row in one transaction.
+    match /streakDefinitions/{streakId} {
+      allow read: if isSignedIn();
+      allow write: if false;
+
+      // Every publish, immutable: who changed the rule, when, and how. The
+      // history is the admin page's. Rules do not cascade, so the
+      // subcollection states its own allow.
+      match /versions/{version} {
+        allow read: if isAdmin();
+        allow write: if false;
+      }
+    }
+
+    // A client's account and progress: the book reads them, the server
+    // writes them. The client they describe does not read them yet — that
+    // joins with their own loyalty view. Rules do not cascade, so each
+    // subcollection states its own allow.
+    match /loyaltyAccounts/{uid} {
+      allow read: if worksTheBook();
+      allow write: if false;
+
+      match /badgeProgress/{seriesId} {
+        allow read: if worksTheBook();
+        allow write: if false;
+      }
+
+      match /seasonProgress/{seasonId} {
+        allow read: if worksTheBook();
+        allow write: if false;
+      }
+    }
+
+    // `clientJournal/{uid}_{seq:06}` — append-only, server-written. The book
+    // reads the client-visible rows only; a staff row (a pause, an outcome
+    // correction) is the front desk's business elsewhere. Rules are not
+    // filters: a query that could return a staff row is refused whole, so
+    // the ledger query names `visibility == 'client'`.
+    match /clientJournal/{entryId} {
+      allow read: if worksTheBook() && resource.data.visibility == 'client';
+      allow write: if false;
     }
 
     match /serviceCategories/{categoryId} {
@@ -421,9 +566,13 @@ service cloud.firestore {
     }
 
     match /auditLog/{entryId} {
-      // Append-only — admins can read and create, never update or delete.
-      allow read, create: if isAdmin();
-      allow update, delete: if false;
+      // Admins read; nobody writes from a client (FIX 1, 2026-09-25). An
+      // admin-side `create` let a browser append a row naming any actor at
+      // any time, and a trail the people it records can write proves
+      // nothing. Rows come from the callables and triggers (Admin SDK)
+      // only, and are never updated or deleted.
+      allow read: if isAdmin();
+      allow create, update, delete: if false;
     }
 
     // ── tenant settings ─────────────────────────────────────────────────

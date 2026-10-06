@@ -25,10 +25,10 @@ export interface CommitBookingSeatRequest {
   readonly variantId: string | null;
   readonly barberId: string;
   /**
-   * What the client ASKED for, beside the barber they were given. Absent
-   * reads as `specific` server-side — the conservative default, because it
-   * means staff phone before moving the booking rather than moving it
-   * silently. See `Seat.pref`.
+   * What the client ASKED for, beside the barber they were given. Absent is
+   * stored as unknown server-side — never as `specific`, which would record a
+   * request nobody made, and never as `any`. Staff read unknown the
+   * conservative way: phone before moving the booking. See `Seat.pref`.
    */
   readonly barberPref?: 'any' | 'specific';
   /** Wall-clock start with offset, in the shop's zone. */
@@ -37,10 +37,21 @@ export interface CommitBookingSeatRequest {
    * Whose seat it is. `self` is the booker — the server binds it to the auth
    * token and ignores anything sent here. A guest carries only a display
    * label, which is all a party member ever is until they have an account.
+   *
+   * `guestKey` is the cart's own name for that guest (`seatKeyValue`,
+   * `guest-3`) — identical on every seat of one guest, different between
+   * two. It gives the server nothing to store; it lets it tell two DIFFERENT
+   * guests who share a label from one guest with two services, and refuse
+   * the first (`booking.commit.invalid_input`, field `guest_label`) rather
+   * than merge them into one person.
    */
   readonly subject:
     | { readonly kind: 'self' }
-    | { readonly kind: 'guest'; readonly label: string };
+    | {
+        readonly kind: 'guest';
+        readonly label: string;
+        readonly guestKey?: string;
+      };
 }
 
 export interface CommitBookingRequest {
@@ -87,12 +98,56 @@ export interface CommitBookingRequest {
  * A move: the appointment being moved, plus the placement it is moving to.
  *
  * The seats are shaped exactly like a commit's — a reschedule IS the same
- * cart at a different time, and the server re-decides it from scratch.
+ * cart at a different time, and the server re-decides it from scratch. They
+ * name only who the cart CAN express (the booker and guests): anyone else on
+ * the visit — a companion account the shop seated — is carried by the server
+ * with their own seat, shifted by as much as the cart's first seat moved, and
+ * must NOT be sent again as a guest. If such a person cannot come to the new
+ * time the whole move is refused (`booking.reschedule.carried_seat_unplaceable`
+ * in the error's `serverCode`), never half-done — and so is a visit left
+ * holding NOBODY the cart can name (`refusal: 'shop_only'`), which only the
+ * shop can move; the booking flow says so before it builds a cart at all.
  */
 export interface RescheduleBookingRequest {
   readonly appointmentId: string;
   readonly locationId: string;
   readonly seats: readonly CommitBookingSeatRequest[];
+  /**
+   * Client-minted name for THIS move — one per armed selection, reused
+   * across retries of it, exactly like a commit's `attemptId` (the booking
+   * flow already holds one per selection). Shape: `isClientOperationId`.
+   *
+   * It keys the move's audit rows. A retry whose first attempt committed is
+   * answered without a second write, and with the name it re-attempts the
+   * row under the SAME key — so a row the first attempt lost (a transient
+   * audit failure, an instance that died after the commit) is filled in,
+   * and a row that exists is never written twice. Absent (an older client),
+   * the move is logged under its revision and a replay logs nothing.
+   */
+  readonly attemptId?: string;
+}
+
+/**
+ * The shape of every client-minted idempotency key on the wire — a commit's
+ * and a move's `attemptId`, a staff intent's `operationId`: a UUID-ish
+ * charset and a bounded length, because the server uses it as a document id
+ * (a commit) and inside audit keys. One definition for the client that mints
+ * and the server that checks, so the two cannot drift.
+ */
+export function isClientOperationId(raw: unknown): raw is string {
+  return typeof raw === 'string' && /^[A-Za-z0-9_-]{16,64}$/.test(raw);
+}
+
+/**
+ * The shape of a guest's `guestKey` on the wire (`CommitBookingSeatRequest`):
+ * the cart's seat key (`seatKeyValue`, `guest-3`). Charset and length are
+ * bounded because the server reads it from an untrusted payload; a key that
+ * does not fit is dropped there, never refused, and the guest is then read
+ * by label alone, as an older client's is. One definition for the client
+ * that sends it and the server that reads it.
+ */
+export function isGuestKey(raw: unknown): raw is string {
+  return typeof raw === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(raw);
 }
 
 export interface CommittedBooking {
@@ -130,6 +185,68 @@ export class BookingGatewayError extends DomainError {
   isSlotTaken(): boolean {
     return this.failure === 'slot_unavailable';
   }
+}
+
+/**
+ * An error in the most specific words the catalogue has for it — the ONE
+ * rule every surface that narrates a gateway failure follows (the review
+ * step, the appointments page's cancel).
+ *
+ * The gateway's own code (`booking.gateway.failed`) can only say "try
+ * again", and the server usually said more: the adapter carries its code as
+ * `params.serverCode`, and a code that names its REASON (`params.refusal` —
+ * a carried seat's; `params.field` — an invalid request's) is tried one
+ * level deeper first. So the codes are tried in order —
+ * `<serverCode>.<reason>`, `<serverCode>`, then the error's own — and the
+ * first one `translate` has copy for wins. Never a raw code on screen.
+ *
+ * `translate` answers the code ITSELF when the catalogue has no copy
+ * (`translateDomainError`'s contract), and keeps this layer free of any
+ * translation library.
+ */
+export function wordError(
+  error: {
+    readonly code: string;
+    readonly params: Readonly<Record<string, unknown>>;
+  },
+  translate: (code: string) => string,
+): string {
+  for (const code of serverCopyCodes(error.params)) {
+    const worded = translate(code);
+    if (worded !== code) return worded;
+  }
+  return translate(error.code);
+}
+
+/**
+ * The phrase a sentence sends the client to the shop with: the `{{reach}}`
+ * of every such sentence (the move-refused panel, the review step's
+ * carried-seat refusals, the appointments page's closed cancellation
+ * window, a visit only the shop moves). "Call the shop" only when the page
+ * puts the call one tap away (`callHref`); "get in touch with the shop"
+ * when it cannot, because the catalogue does not know the shop's number
+ * (yet, or at all). ONE choice for every surface that says it, fed by the
+ * same href that shows the button, so the copy and the button never
+ * disagree.
+ */
+export function shopReachKey(callHref: string | null): string {
+  return callHref === null ? 'booking.reach.contact' : 'booking.reach.call';
+}
+
+/** The server's codes to try, most specific first — see {@link wordError}. */
+function serverCopyCodes(
+  params: Readonly<Record<string, unknown>>,
+): readonly string[] {
+  const serverCode = params['serverCode'];
+  if (typeof serverCode !== 'string' || serverCode.length === 0) return [];
+  // WHY, one level down: a carried seat's refusal, or the field an invalid
+  // request names. Never both — they ride on different codes.
+  const reason = [params['refusal'], params['field']].find(
+    (value): value is string => typeof value === 'string' && value.length > 0,
+  );
+  return reason === undefined
+    ? [serverCode]
+    : [`${serverCode}.${reason}`, serverCode];
 }
 
 export interface CancelAppointmentRequest {
@@ -413,17 +530,47 @@ export interface StaffEditAppointmentRequest {
    */
   readonly acknowledgedOverlap?: boolean;
   /**
-   * The revision the sheet was drawn from.
+   * The revision the intent was made on — the stored revision the sheet's
+   * draft was drawn from (`Appointment.revision`).
    *
-   * Optional, and its absence is not a claim: a running-late chip has no
-   * draft to be stale. When it IS sent and the stored appointment has moved
-   * on, the write is refused rather than allowed to overwrite a colleague's
-   * save with a screen five minutes old.
+   * The staff dashboard sends it on every intent (round 5: its one funnel,
+   * `StaffDayStore.staffEdit`, requires it), carried forward across the
+   * device's own landed intents. When the stored appointment has moved on
+   * since — a colleague's save, a client's move — the write is refused
+   * (`booking.staffEdit.stale`, `failed-precondition`, with `expected` and
+   * `actual`) rather than allowed to overwrite it with an older screen, and
+   * the sheet reloads the visit. A re-send under the same `operationId` is
+   * answered from the ledger BEFORE this check, so a lost-response retry is
+   * never refused as stale. Absent or `null` claims nothing and is never
+   * refused; present, it must be a whole number ≥ 0 or the edit is refused
+   * by name (`invalid_command`, field `expectedVersion`).
    */
   readonly expectedVersion?: number | null;
+  /**
+   * The name of ONE staff intent — a gesture, a «Запази», an «Отмени» —
+   * minted by the client when the intent is first sent and sent UNCHANGED
+   * on every re-send of it (shape: `isClientOperationId`).
+   *
+   * A response lost in transit leaves the sheet unable to tell "it landed"
+   * from "it did not", and without a name the re-send is truthfully a
+   * second commit with a second audit row. With one, the server remembers
+   * the intents it applied to the visit: a re-send of one that already
+   * committed is answered with the revision it stamped and applied NOTHING
+   * twice — ahead of the `expectedVersion` check, which the first send has
+   * itself moved past — and its audit rows are keyed by the name, so a row
+   * the first send lost is filled in and none is ever doubled. The same
+   * name on a DIFFERENT batch is refused. Absent (an older client), every
+   * send is its own change, exactly as before.
+   */
+  readonly operationId?: string;
 }
 
-/** What the sheet sends as `expectedVersion` on its next save. */
+/**
+ * What a staff intent landed as. `revision` is the one it stamped (on a
+ * replay, the one the ORIGINAL send stamped) — what the device carries its
+ * next claim forward to, so its own saves are never stale against each
+ * other (`StaffDayStore.claimFor`).
+ */
 export interface StaffEditedAppointment {
   readonly appointmentId: string;
   readonly revision: number;

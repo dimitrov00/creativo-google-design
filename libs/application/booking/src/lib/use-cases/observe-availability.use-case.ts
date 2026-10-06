@@ -8,6 +8,7 @@ import {
   BookingCart,
   BookingPolicy,
   CalendarDay,
+  type ChairTime,
   DateRange,
   Interval,
   type LineTerms,
@@ -17,6 +18,12 @@ import {
 } from '@creativo/domain/scheduling';
 import { RepositoryError } from '@creativo/application/shared';
 import { AvailabilityReader } from '../ports/availability-reader.port';
+import {
+  type MoveRider,
+  type PartyServices,
+  partyServicesOf,
+  shopsServingParty,
+} from './party-shops';
 
 export interface ObserveDayAvailabilityInput {
   readonly cart: BookingCart;
@@ -36,6 +43,26 @@ export interface ObserveDayAvailabilityInput {
    * Absent ⇒ the whole day, which is what the normal single-day grid asks for.
    */
   readonly withinMs?: readonly Interval[];
+  /**
+   * Everybody a MOVE carries without searching for them: the visit's seats
+   * the cart cannot name, pinned to the party's start
+   * (`MoveRider`). A start where one of them could not sit is not offered,
+   * and neither is a shop that does not offer one of their services: the
+   * server would refuse both
+   * (`booking.reschedule.carried_seat_unplaceable`). Absent on every
+   * ordinary booking.
+   */
+  readonly riders?: readonly MoveRider[];
+  /**
+   * The chair time of the visit being MOVED (`Appointment.chairTimes`),
+   * handed back before anything is placed. Its own seats never block its
+   * own move: the server decides a move with the visit's contribution
+   * subtracted, so a grid that kept it would under-offer every short move.
+   * This applies to the cart's lines and the riders alike. The reader does
+   * the release, because only it holds the spans before their turnaround
+   * padding (`paddedBusy`). Absent on every ordinary booking.
+   */
+  readonly release?: readonly ChairTime[];
 }
 
 /**
@@ -78,7 +105,7 @@ export function cartToAvailabilityLines(
 ): readonly AvailabilityLine[] {
   const byId = new Map(services.map((service) => [service.id.value, service]));
 
-  return cart.entries().flatMap(([, lines]) =>
+  return cart.entries().flatMap(([seatKey, lines]) =>
     lines.flatMap((line): readonly AvailabilityLine[] => {
       const service = byId.get(line.serviceId.value);
       if (!service) return [];
@@ -96,6 +123,10 @@ export function cartToAvailabilityLines(
         {
           lineId: line.id.value,
           barberPref: line.barberPref,
+          // WHO: the seat is the person. Two lines of one seat never sit in
+          // two chairs at once — the engine keeps them apart, and the
+          // server's decision refuses a cart that does not.
+          personKey: seatKey,
           // The catalog terms, before anyone picks a barber.
           ...toTerms(null),
           // …and what each barber in the pool actually takes. Resolved for
@@ -148,7 +179,7 @@ export class ObserveDayAvailabilityUseCase {
       input.now.toMillis() + input.policy.minLeadMinutes * 60_000;
 
     return this.reader
-      .observeDay(input.locationId, input.day, input.barberIds)
+      .observeDay(input.locationId, input.day, input.barberIds, input.release)
       .pipe(
         map((result) => {
           if (result.isFailure()) {
@@ -156,11 +187,14 @@ export class ObserveDayAvailabilityUseCase {
           }
           const options = optionsForDay({
             lines,
+            services: input.services,
+            party: partyServicesOf(input.cart, input.riders),
             barbers: result.value,
             policy: input.policy,
             notBeforeMs,
             maxOptions: input.maxOptions,
             withinMs: input.withinMs,
+            riders: input.riders,
           });
           return ok<DayAvailability, RepositoryError>({
             day: input.day,
@@ -187,16 +221,39 @@ export class ObserveDayAvailabilityUseCase {
  *
  * BUSY is not partitioned: a barber booked at the other shop is not free here
  * either, so every shop's run sees their whole day.
+ *
+ * A SHOP IS RUN ONLY FOR A PARTY IT CAN SERVE WHOLE (`shopsServingParty`).
+ * The server checks `Service.servesLocation` for every seat it decides, the
+ * cart's and a move's carried ones alike, and refuses the booking at a shop
+ * that does not offer one of them. A time offered there is a time the
+ * client learns about only at review. A move's riders are then asked about
+ * a second time, by the engine: each one's barber must be rostered and free
+ * at the shifted time.
  */
 export function optionsForDay(query: {
   readonly lines: readonly AvailabilityLine[];
+  /** The catalog snapshot the party's services resolve against. */
+  readonly services: readonly Service[];
+  /**
+   * What the visit asks a shop to offer (`partyServicesOf` the cart and
+   * `riders`).
+   */
+  readonly party: PartyServices;
   readonly barbers: readonly BarberDayAvailability[];
   readonly policy: BookingPolicy;
   readonly notBeforeMs: number;
   readonly maxOptions?: number;
   /** The client's declared windows for this day, if they narrowed it. */
   readonly withinMs?: readonly Interval[];
+  /**
+   * A move's carried seats. They are checked against each shop's run: a
+   * rider's barber must be rostered at the shop the party is placed at, and
+   * the shop must offer the rider's service.
+   */
+  readonly riders?: readonly MoveRider[];
 }): readonly LocatedOption[] {
+  const riders = query.riders ?? [];
+
   const byLocation = new Map<
     string,
     {
@@ -228,12 +285,22 @@ export function optionsForDay(query: {
     }
   }
 
+  // A shop that cannot serve somebody on the visit has no time for this
+  // party, whatever the chairs say: the server refuses that seat there.
+  const serving = new Set(
+    shopsServingParty(
+      query.party,
+      query.services,
+      [...byLocation.values()].map((entry) => entry.locationId),
+    ).map((locationId) => locationId.value),
+  );
+
   const located: LocatedOption[] = [];
   // Sorted by shop id so two identical queries produce identical output —
   // `Map` iteration order would depend on which barber was read first.
   for (const key of [...byLocation.keys()].sort()) {
     const entry = byLocation.get(key);
-    if (!entry) continue;
+    if (!entry || !serving.has(key)) continue;
     // `availableStarts`, not `availableOptions`: the grid needs one arrangement
     // per time, and the exhaustive walk spends its whole budget enumerating the
     // morning nine ways over.
@@ -244,6 +311,7 @@ export function optionsForDay(query: {
       notBeforeMs: query.notBeforeMs,
       maxOptions: query.maxOptions,
       withinMs: query.withinMs,
+      riders,
     })) {
       located.push({ locationId: entry.locationId, option });
     }

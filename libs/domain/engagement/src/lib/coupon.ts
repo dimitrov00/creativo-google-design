@@ -11,6 +11,7 @@ import {
   CouponEmptyNameError,
   CouponInvalidExpiryDaysError,
   CouponInvalidUsageLimitError,
+  CouponOccasionUnknownError,
 } from './coupon.errors';
 import { CouponId } from './ids';
 import { EmptyIdError } from './ids.errors';
@@ -54,11 +55,21 @@ export const CouponExpiry = {
   },
 } as const;
 
+/**
+ * The occasion a coupon is given FOR, where it has one: a closed set, so
+ * the card that dresses a grant for the day reads a fact, never a name
+ * («Рожден ден −20 %» is copy an admin may reword). `birthday` is the
+ * gift a client holds on their birthday.
+ */
+export const COUPON_OCCASIONS = ['birthday'] as const;
+export type CouponOccasion = (typeof COUPON_OCCASIONS)[number];
+
 export type CouponError =
   | EmptyIdError
   | CouponEmptyNameError
   | CouponInvalidUsageLimitError
-  | VoucherCodeInvalidError;
+  | VoucherCodeInvalidError
+  | CouponOccasionUnknownError;
 
 export interface CreateCouponProps {
   id: string;
@@ -75,6 +86,12 @@ export interface CreateCouponProps {
    * the counter: stored and matched upper-case, whatever the flyer printed.
    */
   code?: string | null;
+  /**
+   * What the coupon is given for, one of {@link COUPON_OCCASIONS}; `null`
+   * (the default) for a coupon tied to no occasion, which is every coupon
+   * written before occasions existed.
+   */
+  occasion?: CouponOccasion | null;
 }
 
 /**
@@ -93,6 +110,8 @@ export class Coupon {
     readonly enabled: boolean,
     /** See `CreateCouponProps.code` — upper-case, or `null` for grant-only. */
     readonly code: string | null = null,
+    /** See `CreateCouponProps.occasion`: `null` for a coupon tied to none. */
+    readonly occasion: CouponOccasion | null = null,
   ) {}
 
   static create(props: CreateCouponProps): Result<Coupon, CouponError[]> {
@@ -110,17 +129,19 @@ export class Coupon {
     const nameResult = Coupon.validateName(props.name);
     const usageLimitResult = Coupon.validateUsageLimit(props.usageLimit);
     const codeResult = Coupon.validateCode(props.code);
+    const occasionResult = Coupon.validateOccasion(props.occasion);
 
     const combined = combineAll([
       idResult,
       nameResult,
       usageLimitResult,
       codeResult,
+      occasionResult,
     ] as const);
     if (combined.isFailure()) {
       return fail(combined.error);
     }
-    const [id, name, usageLimit, code] = combined.value;
+    const [id, name, usageLimit, code, occasion] = combined.value;
 
     return ok(
       new Coupon(
@@ -132,6 +153,7 @@ export class Coupon {
         usageLimit,
         props.enabled,
         code,
+        occasion,
       ),
     );
   }
@@ -152,6 +174,21 @@ export class Coupon {
     const normalized = Coupon.normalizeCode(raw);
     const parsed = VoucherCode.create(normalized);
     return parsed.isFailure() ? fail(parsed.error) : ok(parsed.value.value);
+  }
+
+  /**
+   * An occasion is one of the set or it is refused: a document is
+   * untrusted text, and a word the card does not know must not pass as
+   * "no occasion" and quietly undress a gift.
+   */
+  private static validateOccasion(
+    raw: unknown,
+  ): Result<CouponOccasion | null, CouponOccasionUnknownError> {
+    if (raw === undefined || raw === null) return ok(null);
+    const known = COUPON_OCCASIONS.find((occasion) => occasion === raw);
+    return known === undefined
+      ? fail(new CouponOccasionUnknownError(raw))
+      : ok(known);
   }
 
   /** Whether a grant from this coupon, granted `at`, is still within its expiry window at `now`. */
