@@ -1,0 +1,19 @@
+{
+  "name": "flag-tools",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "tools/flags",
+  "projectType": "library",
+  "tags": ["scope:tooling", "type:util"],
+  "// inputs": "config/feature-flags.json sits outside every project and these specs read it: a flag edit must re-run them and mark this project affected",
+  "targets": {
+    "test": {
+      "inputs": ["...", "{workspaceRoot}/config/feature-flags.json"]
+    },
+    "test-ci--feature-flags.manifest.spec.mjs": {
+      "inputs": ["...", "{workspaceRoot}/config/feature-flags.json"]
+    },
+    "test-ci--write-functions-env.spec.mjs": {
+      "inputs": ["...", "{workspaceRoot}/config/feature-flags.json"]
+    }
+  }
+}

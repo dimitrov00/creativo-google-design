@@ -103,7 +103,11 @@ creativo-google-design/
 │   │
 │   ├── infrastructure/                   # ══ ADAPTERS — the ONLY libs importing firebase/* ══
 │   │   ├── firebase-app/                 # (exists as adapters/firebase) FIREBASE_APP/AUTH/FIRESTORE/FUNCTIONS
-│   │   │                                 #   tokens + provideFirebaseApp/Auth/FirestoreDb/Functions()
+│   │   │                                 #   tokens + provideFirebaseApp/Auth/Functions() (eager), the lazy
+│   │   │                                 #   data-port mechanism (LazyAdapterScope, provideLazyPort) and the
+│   │   │                                 #   data layer's retry schedule; Firestore/Storage instances are
+│   │   │                                 #   provided by provideFirestoreDb/provideFirebaseStorage inside the
+│   │   │                                 #   lazy chunks of firestore/ and storage/, never at the root
 │   │   ├── firebase-auth/                # FirebaseAuthGateway (onIdTokenChanged → Principal signals),
 │   │   │                                 #   CallableOtpClient (requestChallenge/verifyChallenge)
 │   │   ├── firestore/                    # firestore-paths.ts (fresh schema, v2 as reference), converters/mappers
@@ -177,7 +181,7 @@ export const APPOINTMENT_REPOSITORY = new InjectionToken<AppointmentRepository>(
 ```
 
 ```ts
-// apps/web/src/app/app.config.ts
+// apps/web/src/app/app.config.ts (abridged)
 import {
   ApplicationConfig,
   provideBrowserGlobalErrorListeners,
@@ -191,12 +195,16 @@ import {
 import { provideServiceWorker } from '@angular/service-worker';
 
 import {
+  FIREBASE_FIRESTORE,
+  LazyAdapterScope,
+  LazyPortLoadError,
   provideFirebaseApp,
   provideFirebaseAuth,
-  provideFirestoreDb,
   provideFirebaseFunctions,
+  provideLazyPort,
 } from '@creativo/infrastructure/firebase-app';
 import { provideI18n } from '@creativo/infrastructure/i18n';
+import { fail } from '@creativo/domain/kernel';
 
 // Ports (application layer)
 import { AUTH_GATEWAY, OTP_CLIENT } from '@creativo/application/identity';
@@ -205,50 +213,59 @@ import {
   BOOKING_DRAFT_STORE,
 } from '@creativo/application/booking';
 import { CATALOG_READER, MEDIA_READER } from '@creativo/application/catalog';
+import { CONTACT_CHANGE_PORT } from '@creativo/application/accounts';
 import {
-  COUPON_GRANT_REPOSITORY,
-  REWARD_PROGRESS_READER,
-  INVITATION_PORT,
-} from '@creativo/application/engagement';
-import {
-  PROFILE_PORT,
-  CONTACT_CHANGE_PORT,
-  AVATAR_UPLOADER,
-} from '@creativo/application/accounts';
-import {
-  IMPERSONATION_PORT,
-  USER_SEARCH_PORT,
-} from '@creativo/application/governance';
-import { CLOCK, KEY_VALUE_STORE } from '@creativo/application/shared';
+  CLOCK,
+  KEY_VALUE_STORE,
+  RepositoryError,
+} from '@creativo/application/shared';
 
 // Adapters (infrastructure layer) — named ONLY here
 import {
   FirebaseAuthGateway,
   CallableOtpClient,
 } from '@creativo/infrastructure/firebase-auth';
+// The callables are eager (firebase/functions loads at boot anyway); every
+// Firestore and Storage adapter is picked out of the lazy chunks below.
 import {
-  FirestoreAppointmentRepository,
-  FirestoreCatalogReader,
-  FirestoreCouponGrantRepository,
-  FirestoreRewardProgressReader,
-  CallableProfileAdapter,
   CallableContactChangeAdapter,
-  CallableInvitationAdapter,
-  CallableImpersonationAdapter,
-  CallableUserSearchAdapter,
+  loadFirestoreAdapters,
 } from '@creativo/infrastructure/firestore';
-import {
-  FirebaseStorageAvatarUploader,
-  StorageMediaReader,
-} from '@creativo/infrastructure/storage';
+import { loadStorageAdapters } from '@creativo/infrastructure/storage';
 import {
   LocalStorageKeyValueStore,
   SessionStorageDraftStore,
 } from '@creativo/infrastructure/web-storage';
-import { systemClock } from '@creativo/infrastructure/clock';
+import { SystemClock } from '@creativo/infrastructure/clock';
 
 import { appRoutes } from './app.routes';
 import { environment } from '../environments/environment';
+
+const emulators = environment.emulators.enabled
+  ? environment.emulators
+  : undefined;
+
+// THE DATA LAYER LOADS ON ITS FIRST CALL, NOT AT BOOT: both SDK chunks, the
+// two instances and every adapter over them, as one lazy scope.
+export const firebaseData = new LazyAdapterScope('firebase-data', async () => {
+  const [firestore, storage] = await Promise.all([
+    loadFirestoreAdapters(),
+    loadStorageAdapters(),
+  ]);
+  return {
+    module: { firestore, storage },
+    providers: [
+      firestore.provideFirestoreDb(emulators),
+      storage.provideFirebaseStorage(emulators),
+    ],
+    // Created as the scope loads, Firestore last (see below).
+    instances: [storage.FIREBASE_STORAGE, FIREBASE_FIRESTORE],
+  };
+});
+
+// A failed load answers in the port's own failure shape, never a rejection.
+const dataUnavailable = (error: LazyPortLoadError) =>
+  fail(new RepositoryError('The data layer failed to load', error));
 
 export const appConfig: ApplicationConfig = {
   providers: [
@@ -262,41 +279,65 @@ export const appConfig: ApplicationConfig = {
     provideServiceWorker('ngsw-worker.js', { enabled: environment.production }),
     ...provideI18n(),
 
-    // Firebase SDK singletons (raw SDK stays behind these tokens)
+    // Firebase SDK singletons (raw SDK stays behind these tokens) — only the
+    // eager ones the session needs at boot. Firestore and Storage are NOT
+    // here: they are created inside `firebaseData`, on the first data call.
     provideFirebaseApp(environment.firebase),
-    provideFirebaseAuth(),
-    provideFirestoreDb(),
-    provideFirebaseFunctions(),
+    provideFirebaseAuth(emulators),
+    provideFirebaseFunctions(emulators),
 
     // ── Port → Adapter map (the hexagon's outer wiring) ──
     { provide: AUTH_GATEWAY, useClass: FirebaseAuthGateway },
     { provide: OTP_CLIENT, useClass: CallableOtpClient },
-    {
-      provide: APPOINTMENT_REPOSITORY,
-      useClass: FirestoreAppointmentRepository,
-    },
-    { provide: CATALOG_READER, useClass: FirestoreCatalogReader },
-    { provide: MEDIA_READER, useClass: StorageMediaReader },
-    {
-      provide: COUPON_GRANT_REPOSITORY,
-      useClass: FirestoreCouponGrantRepository,
-    },
-    {
-      provide: REWARD_PROGRESS_READER,
-      useClass: FirestoreRewardProgressReader,
-    },
-    { provide: INVITATION_PORT, useClass: CallableInvitationAdapter },
-    { provide: PROFILE_PORT, useClass: CallableProfileAdapter },
     { provide: CONTACT_CHANGE_PORT, useClass: CallableContactChangeAdapter },
-    { provide: AVATAR_UPLOADER, useClass: FirebaseStorageAvatarUploader },
-    { provide: IMPERSONATION_PORT, useClass: CallableImpersonationAdapter },
-    { provide: USER_SEARCH_PORT, useClass: CallableUserSearchAdapter },
     { provide: BOOKING_DRAFT_STORE, useClass: SessionStorageDraftStore },
     { provide: KEY_VALUE_STORE, useClass: LocalStorageKeyValueStore },
-    { provide: CLOCK, useValue: systemClock('Europe/Sofia') },
+    { provide: CLOCK, useClass: SystemClock },
+
+    // ── Lazy ports: every Firestore and Storage adapter ──
+    // Each binding classifies every method of its port; the compiler refuses
+    // a missing one, a wrong kind, a synchronous method, or an `onLoadError`
+    // answer that is not valid for every method.
+    provideLazyPort(APPOINTMENT_REPOSITORY, firebaseData, {
+      adapter: (m) => m.firestore.FirestoreAppointmentRepository,
+      methods: {
+        findById: 'promise',
+        save: 'promise',
+        observeUpcomingFor: 'observable',
+        observeHistoryFor: 'observable',
+        observeBarberDay: 'observable',
+        searchWindow: 'promise',
+      },
+      onLoadError: dataUnavailable,
+    }),
+    provideLazyPort(CATALOG_READER, firebaseData, {
+      adapter: (m) => m.firestore.FirestoreCatalogReader,
+      methods: {
+        listActiveServices: 'observable',
+        findServiceById: 'promise',
+        listServiceCategories: 'observable',
+        listActiveBarbers: 'observable',
+        findBarberById: 'promise',
+        listActiveLocations: 'observable',
+        findLocationById: 'promise',
+      },
+      onLoadError: dataUnavailable,
+    }),
+    provideLazyPort(MEDIA_READER, firebaseData, {
+      adapter: (m) => m.storage.StorageMediaReader,
+      methods: { resolve: 'promise' },
+      onLoadError: dataUnavailable,
+    }),
+    // … one binding per Firestore/Storage port (23 on 2026-09-26).
   ],
 };
 ```
+
+How the lazy wiring behaves (the mechanism is `libs/infrastructure/firebase-app/src/lib/lazy-port.ts`):
+
+- **Nothing loads at boot.** A lazy port is a frozen proxy; its first call (a promise method called, a stream subscribed) imports both chunks and builds the scope once, however many ports race for it. Each adapter is created once, on its first call, in its own injector under the scope's. `apps/web/src/app/app.config.spec.ts` injects every port bound to `firebaseData` under the real `appConfig` and proves the loader never ran and neither SDK instance resolves at the root; `tools/verify/bundle/check-initial-bundle.mjs` proves neither SDK is back in the initial chunk.
+- **A failed load is the port's own failure.** `onLoadError` answers in the port's shape (`fail(new RepositoryError(…))`); a promise method resolves to it and fails fast (the caller retries); a stream emits it once and then retries the load on the data layer's backoff schedule (`DATA_RETRY_DELAYS_MS`, 0.5 s → 10 s, the ceiling repeating) for as long as it is subscribed, switching to the adapter's stream when a load lands. The real cause goes to `ErrorHandler` once per failure.
+- **A creation that throws is a failed load, never NG0200.** Angular leaves a factory that threw marked "being created", so the thing that threw is thrown away with its injector and the next call builds it afresh: an SDK instance that throws fails the load (hence `instances`, created as the scope loads) and the half-built scope is destroyed; an adapter constructor that throws takes down only that adapter's injector. The SDK instances are never rebuilt after they succeed — a second `initializeFirestore` with the persistent cache throws `failed-precondition` — which is also why Firestore is listed last.
 
 Test configs swap the same tokens for in-memory fakes (`{ provide: APPOINTMENT_REPOSITORY, useClass: InMemoryAppointmentRepository }`) — no Firebase in component tests, ever.
 

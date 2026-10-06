@@ -1,0 +1,47 @@
+{
+  "development": {
+    "client.profile": true,
+    "client.pause": false,
+    "loyalty.points": true,
+    "loyalty.streaks": true,
+    "loyalty.achievements": true,
+    "loyalty.tiers": true,
+    "client.support": false,
+    "loyalty.selfView": false,
+    "client.merge": false,
+    "support.bulk": false,
+    "client.privacy": false,
+    "referrals.invitations": false,
+    "discounts.grants": false
+  },
+  "staging": {
+    "client.profile": false,
+    "client.pause": false,
+    "loyalty.points": false,
+    "loyalty.streaks": false,
+    "loyalty.achievements": false,
+    "loyalty.tiers": false,
+    "client.support": false,
+    "loyalty.selfView": false,
+    "client.merge": false,
+    "support.bulk": false,
+    "client.privacy": false,
+    "referrals.invitations": false,
+    "discounts.grants": false
+  },
+  "production": {
+    "client.profile": false,
+    "client.pause": false,
+    "loyalty.points": false,
+    "loyalty.streaks": false,
+    "loyalty.achievements": false,
+    "loyalty.tiers": false,
+    "client.support": false,
+    "loyalty.selfView": false,
+    "client.merge": false,
+    "support.bulk": false,
+    "client.privacy": false,
+    "referrals.invitations": false,
+    "discounts.grants": false
+  }
+}

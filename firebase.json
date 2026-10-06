@@ -8,7 +8,17 @@
   },
   "functions": {
     "source": "dist/apps/functions",
-    "predeploy": ["pnpm nx build functions"],
+    "ignore": [
+      "node_modules",
+      ".git",
+      "firebase-debug.log",
+      "firebase-debug.*.log",
+      ".env.local"
+    ],
+    "predeploy": [
+      "pnpm nx build functions",
+      "node tools/flags/write-functions-env.mjs"
+    ],
     "runtime": "nodejs22"
   },
   "hosting": [

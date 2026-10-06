@@ -1,0 +1,19 @@
+{
+  "name": "verify-tools",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "tools/verify",
+  "projectType": "library",
+  "tags": ["scope:tooling", "type:util"],
+  "// test": "The runners here (the initial-bundle guard, the P0 proofs) keep their pure parts in node:test specs, so `test` is node's own runner rather than vitest; the runners themselves need a build or the emulators and run as `pnpm run verify:bundle` and `pnpm run verify:p0`",
+  "targets": {
+    "test": {
+      "executor": "nx:run-commands",
+      "cache": true,
+      "inputs": ["default"],
+      "options": {
+        "command": "node --test \"tools/verify/**/*.spec.mjs\"",
+        "cwd": "{workspaceRoot}"
+      }
+    }
+  }
+}

@@ -5,10 +5,12 @@
   "scripts": {
     "prepare": "husky",
     "lint:styles": "stylelint \"apps/**/*.css\" \"libs/**/*.css\"",
-    "dev": "pnpm nx build functions && firebase emulators:exec --only firestore,auth,functions,storage --project demo-creativo-test --ui \"pnpm run seed:dev && node tools/dev-host.mjs && pnpm nx serve web --host 0.0.0.0 --allowedHosts\"",
+    "dev": "pnpm nx build functions && node tools/flags/write-functions-env.mjs --project demo-creativo-test && firebase emulators:exec --only firestore,auth,functions,storage --project demo-creativo-test --ui \"pnpm run seed:dev && node tools/dev-host.mjs && pnpm nx serve web --host 0.0.0.0 --allowedHosts\"",
     "seed:dev": "node tools/seed-dev-catalog.mjs",
     "test:emulator": "firebase emulators:exec --only firestore,auth --project demo-creativo-test \"pnpm nx run-many -t test-integration\"",
-    "e2e:web": "pnpm nx build functions && firebase emulators:exec --only firestore,auth,functions --project demo-creativo-test \"pnpm nx e2e web\"",
+    "e2e:web": "pnpm nx build functions && node tools/flags/write-functions-env.mjs --project demo-creativo-test && START_LOGGING_EMULATOR=true firebase emulators:exec --only firestore,auth,functions,storage --project demo-creativo-test \"pnpm nx e2e web\"",
+    "verify:p0": "pnpm nx build functions && node tools/flags/write-functions-env.mjs --project demo-creativo-test && START_LOGGING_EMULATOR=true firebase emulators:exec --only firestore,auth,functions,storage --project demo-creativo-test \"node tools/verify/p0/verify-p0.mjs\"",
+    "verify:bundle": "pnpm nx build web --skipSync -- --stats-json && node tools/verify/bundle/check-initial-bundle.mjs",
     "icons:glyphs": "node tools/icons/build-material-glyphs.mjs",
     "icons:check": "node tools/icons/check-icon-usage.mjs"
   },
@@ -21,16 +23,18 @@
     ]
   },
   "private": true,
+  "packageManager": "pnpm@9.15.9",
   "devDependencies": {
     "@analogjs/vite-plugin-angular": "~2.6.0",
     "@analogjs/vitest-angular": "~2.6.0",
-    "@angular-devkit/core": "~22.0.4",
-    "@angular-devkit/schematics": "~22.0.4",
-    "@angular/build": "~22.0.4",
-    "@angular/cli": "~22.0.4",
-    "@angular/compiler-cli": "~22.0.4",
-    "@angular/language-service": "~22.0.4",
-    "@angular/pwa": "^22.0.6",
+    "@angular-devkit/core": "~22.2.0",
+    "@angular-devkit/schematics": "~22.2.0",
+    "@angular/build": "~22.2.0",
+    "@angular/cli": "~22.2.0",
+    "@angular/compiler-cli": "~22.2.0",
+    "@angular/language-service": "~22.2.0",
+    "@angular/pwa": "^22.2.0",
+    "@axe-core/playwright": "4.13.0",
     "@eslint/js": "^9.8.0",
     "@firebase/rules-unit-testing": "5.0.1",
     "@nx/angular": "23.1.0",
@@ -46,7 +50,7 @@
     "@nx/web": "23.1.0",
     "@oxc-project/runtime": "^0.115.0",
     "@playwright/test": "^1.61.1",
-    "@schematics/angular": "~22.0.4",
+    "@schematics/angular": "~22.2.0",
     "@swc-node/register": "1.11.1",
     "@swc/core": "1.15.8",
     "@swc/helpers": "0.5.18",
@@ -66,11 +70,12 @@
     "eslint-plugin-playwright": "^1.6.2",
     "eslint-plugin-security": "^4.0.1",
     "fast-check": "^4.9.0",
+    "firebase-tools": "15.31.0",
     "husky": "^9.1.7",
     "jsdom": "^27.1.0",
     "jsonc-eslint-parser": "^2.1.0",
     "lint-staged": "^17.0.8",
-    "ng-packagr": "~22.0.0",
+    "ng-packagr": "~22.2.1",
     "nx": "23.1.0",
     "postcss": "^8.4.5",
     "prettier": "^3.8.1",
@@ -83,18 +88,18 @@
     "vitest": "^4.0.8"
   },
   "dependencies": {
-    "@angular-devkit/build-angular": "~22.0.4",
-    "@angular/aria": "~22.0.0",
-    "@angular/cdk": "~22.0.0",
-    "@angular/common": "~22.0.4",
-    "@angular/compiler": "~22.0.4",
-    "@angular/core": "~22.0.4",
-    "@angular/forms": "~22.0.4",
-    "@angular/platform-browser": "~22.0.4",
-    "@angular/platform-server": "~22.0.4",
-    "@angular/router": "~22.0.4",
-    "@angular/service-worker": "~22.0.4",
-    "@angular/ssr": "~22.0.4",
+    "@angular-devkit/build-angular": "~22.2.0",
+    "@angular/aria": "~22.2.0",
+    "@angular/cdk": "~22.2.0",
+    "@angular/common": "~22.2.0",
+    "@angular/compiler": "~22.2.0",
+    "@angular/core": "~22.2.0",
+    "@angular/forms": "~22.2.0",
+    "@angular/platform-browser": "~22.2.0",
+    "@angular/platform-server": "~22.2.0",
+    "@angular/router": "~22.2.0",
+    "@angular/service-worker": "~22.2.0",
+    "@angular/ssr": "~22.2.0",
     "@fontsource-variable/onest": "^5.3.0",
     "@fontsource/dm-sans": "^5.3.0",
     "@fontsource/geist-mono": "^5.3.0",
@@ -111,6 +116,11 @@
     "maplibre-gl": "^5",
     "rxjs": "~7.8.0"
   },
+  "//pnpm.overrides": {
+    "nx@23.1.0>axios": "GHSA-gcfj-64vw-6mp9 (high, axios >=1.15.2 <1.18.0): nx 23.1.0 pins axios 1.16.1 exactly. Scoped to that nx version so it retires with the next nx bump; nx 23.2.x pins 1.18.1.",
+    "nx@23.1.0>brace-expansion": "GHSA-3jxr-9vmj-r5cp, GHSA-mh99-v99m-4gvg, GHSA-rgw5-rvv9-x895 (high, brace-expansion >=4.0.0 <5.0.9): nx 23.1.0 pins brace-expansion 5.0.6 exactly.",
+    "nx@23.1.0>smol-toml": "GHSA-7w5x-hrqm-74c2 (high, smol-toml <=1.7.0): nx 23.1.0 pins smol-toml 1.6.1 exactly (nx 23.2.x still does; re-check on the next nx bump)."
+  },
   "pnpm": {
     "onlyBuiltDependencies": [
       "esbuild",
@@ -118,7 +128,12 @@
       "lmdb",
       "msgpackr-extract",
       "nx"
-    ]
+    ],
+    "overrides": {
+      "nx@23.1.0>axios": "^1.18.1",
+      "nx@23.1.0>brace-expansion": "^5.0.9",
+      "nx@23.1.0>smol-toml": "^1.7.1"
+    }
   },
   "engines": {
     "node": ">=22.22.3 <23",

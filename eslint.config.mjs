@@ -6,6 +6,54 @@ import creativo, {
   ICON_SYNTAX_RESTRICTIONS,
 } from './tools/lint-rules/index.mjs';
 
+/**
+ * The layer half of `no-restricted-imports` (blueprint §0.3/§1.2): Firebase
+ * only in infrastructure and the functions, the money/time/phone libraries
+ * only behind the kernel's value objects. Named so the spec override below
+ * can restate it without the testing half.
+ */
+const LAYER_IMPORT_RESTRICTIONS = {
+  patterns: [
+    {
+      group: ['firebase', 'firebase/*', 'firebase-admin', 'firebase-admin/*'],
+      message:
+        'firebase/* and firebase-admin may only be imported from libs/infrastructure/** or apps/functions/** — go through a port instead.',
+    },
+    {
+      group: ['libphonenumber-js', 'libphonenumber-js/*'],
+      message:
+        'libphonenumber-js may only be imported from libs/domain/kernel/** — use PhoneNumber instead.',
+    },
+  ],
+  paths: [
+    {
+      name: 'dinero.js',
+      message:
+        'dinero.js may only be imported from libs/domain/kernel/** — use Money instead.',
+    },
+    {
+      name: 'luxon',
+      message:
+        'luxon may only be imported from libs/domain/kernel/** — use ZonedDateTime instead.',
+    },
+  ],
+};
+
+/**
+ * `@creativo/<lib>/testing` entry points hold TEST SUPPORT — a port's
+ * executable contract, its in-memory reference adapter, fixtures — kept off
+ * the production barrels so a provider can never be handed one
+ * (`libs/application/booking/src/testing.ts`). Specs import them; nothing
+ * else may. Exported for the projects that restate `no-restricted-imports`
+ * for their own exempt zone (apps/functions, libs/infrastructure/*,
+ * libs/domain/kernel): a restated rule drops this half unless it lists it.
+ */
+export const TESTING_ENTRY_POINT_RESTRICTION = {
+  group: ['@creativo/**/testing'],
+  message:
+    '@creativo/**/testing entry points are test support (contracts, in-memory adapters, fixtures) — import them from specs (*.spec.ts) only, never from production code.',
+};
+
 export default [
   ...nx.configs['flat/base'],
   ...nx.configs['flat/typescript'],
@@ -27,7 +75,14 @@ export default [
         'error',
         {
           enforceBuildableLibDependency: true,
-          allow: ['^.*/eslint(\\.base)?\\.config\\.[cm]?[jt]s$'],
+          allow: [
+            '^.*/eslint(\\.base)?\\.config\\.[cm]?[jt]s$',
+            // The build-time flag manifest (R41, §12.1) sits outside every
+            // project on purpose: the web's environment files import their
+            // map from it, and tools/flags writes the functions params from
+            // the same file.
+            '^(\\.\\./)+config/feature-flags\\.json$',
+          ],
           depConstraints: [
             // Scope isolation: a project can only depend on its own scope
             // plus scope:shared. `domain`/`application`/`infrastructure`/`ui`
@@ -159,7 +214,8 @@ export default [
       ],
     },
   },
-  // Firebase/dinero/luxon/libphonenumber restrictions (blueprint §0.3/§1.2).
+  // Firebase/dinero/luxon/libphonenumber restrictions (blueprint §0.3/§1.2),
+  // plus the testing entry points outside specs (round 6, 2026-09-26).
   // Nx runs each project's `lint` target with `cwd` set to that project's
   // own directory (`eslint .`), so ESLint's basePath is the PROJECT root,
   // not the workspace root — a repo-root-relative `ignores` pattern like
@@ -170,7 +226,12 @@ export default [
   // for firebase) turn the relevant half off in their OWN eslint.config.mjs
   // instead — see the `rules: { 'no-restricted-imports': 'off' }` overrides
   // in kernel/eslint.config.mjs, apps/functions/eslint.config.mjs, and each
-  // libs/infrastructure/*/eslint.config.mjs.
+  // libs/infrastructure/*/eslint.config.mjs. The one exempt zone that is NOT
+  // a project — Playwright's Node-side tooling under `apps/*/e2e/` — has no
+  // config of its own and is linted under three different basePaths (the
+  // nx executor's workspace root, a direct `eslint apps/web/e2e` from the
+  // root, `eslint e2e` from the app), so its exemption lives here, as a
+  // basePath-independent pattern, right after the two rule blocks below.
   {
     files: ['**/*.ts', '**/*.tsx', '**/*.js', '**/*.jsx'],
     rules: {
@@ -178,36 +239,34 @@ export default [
         'error',
         {
           patterns: [
-            {
-              group: [
-                'firebase',
-                'firebase/*',
-                'firebase-admin',
-                'firebase-admin/*',
-              ],
-              message:
-                'firebase/* and firebase-admin may only be imported from libs/infrastructure/** or apps/functions/** — go through a port instead.',
-            },
-            {
-              group: ['libphonenumber-js', 'libphonenumber-js/*'],
-              message:
-                'libphonenumber-js may only be imported from libs/domain/kernel/** — use PhoneNumber instead.',
-            },
+            ...LAYER_IMPORT_RESTRICTIONS.patterns,
+            TESTING_ENTRY_POINT_RESTRICTION,
           ],
-          paths: [
-            {
-              name: 'dinero.js',
-              message:
-                'dinero.js may only be imported from libs/domain/kernel/** — use Money instead.',
-            },
-            {
-              name: 'luxon',
-              message:
-                'luxon may only be imported from libs/domain/kernel/** — use ZonedDateTime instead.',
-            },
-          ],
+          paths: LAYER_IMPORT_RESTRICTIONS.paths,
         },
       ],
+    },
+  },
+  {
+    // Specs are what the testing entry points are FOR. A rule's options are
+    // replaced, never merged, by a later block, so this restates the layer
+    // half without the testing one.
+    files: ['**/*.spec.ts'],
+    rules: {
+      'no-restricted-imports': ['error', LAYER_IMPORT_RESTRICTIONS],
+    },
+  },
+  {
+    // Playwright e2e tooling (apps/web/e2e/support) mints Firebase Admin
+    // custom tokens and seeds the emulators directly, and its fixtures come
+    // from the `@creativo/**/testing` entry points — it is test support that
+    // never ships in an app bundle, so neither half of the boundary applies
+    // (blueprint §1.2). `**/e2e/**` on purpose, not `apps/web/e2e/**`: a
+    // `files` pattern is resolved against ESLint's basePath, and this folder
+    // is linted under three of them (see the note above).
+    files: ['**/e2e/**/*.ts'],
+    rules: {
+      'no-restricted-imports': 'off',
     },
   },
   {
@@ -269,14 +328,23 @@ export default [
         {
           // The ONLY hand-drawn <svg>s outside libs/ui/icons, each a shape
           // rather than a glyph: a progress ring, the toast's countdown ring,
-          // and the reward moment's draw-on stroke whose geometry IS the
-          // animation. A new entry here is a design decision, not a shortcut.
+          // the reward moment's draw-on stroke whose geometry IS the
+          // animation, and the gauge's circular style (the arc round a medal
+          // or a face). A new entry here is a design decision, not a shortcut.
           allowInlineSvg: [
             'libs/ui/controls/src/lib/progress-ring/progress-ring.ts',
             'libs/ui/patterns/src/lib/toast/toast.ts',
             'libs/ui/patterns/src/lib/reward-moment/reward-moment.ts',
+            'libs/ui/patterns/src/lib/gauge/gauge.ts',
           ],
         },
+      ],
+      // `uiLabel` IS an accessible name: every DS control that takes it binds
+      // the host's `aria-label` (a medal or a quick action draws a glyph, not
+      // words). The rule merges this with its own safelist.
+      '@angular-eslint/template/elements-content': [
+        'error',
+        { allowList: ['uiLabel'] },
       ],
     },
   },

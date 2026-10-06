@@ -40,11 +40,17 @@
       "@creativo/application/booking": [
         "./libs/application/booking/src/index.ts"
       ],
+      "@creativo/application/booking/testing": [
+        "./libs/application/booking/src/testing.ts"
+      ],
       "@creativo/application/catalog": [
         "./libs/application/catalog/src/index.ts"
       ],
       "@creativo/application/engagement": [
         "./libs/application/engagement/src/index.ts"
+      ],
+      "@creativo/application/engagement/testing": [
+        "./libs/application/engagement/src/testing.ts"
       ],
       "@creativo/application/accounts": [
         "./libs/application/accounts/src/index.ts"
@@ -77,6 +83,9 @@
       ],
       "@creativo/features/staff/dashboard": [
         "./libs/features/staff/dashboard/src/index.ts"
+      ],
+      "@creativo/features/staff/client-card": [
+        "./libs/features/staff/client-card/src/index.ts"
       ],
       "@creativo/features/admin/impersonation": [
         "./libs/features/admin/impersonation/src/index.ts"
@@ -133,11 +142,17 @@
       "@creativo/features/admin/programs": [
         "./libs/features/admin/programs/src/index.ts"
       ],
+      "@creativo/features/admin/loyalty": [
+        "./libs/features/admin/loyalty/src/index.ts"
+      ],
       "@creativo/features/shared/catalog": [
         "./libs/features/shared/catalog/src/index.ts"
       ],
       "@creativo/features/shared/shell": [
         "./libs/features/shared/shell/src/index.ts"
+      ],
+      "@creativo/features/shared/visits": [
+        "./libs/features/shared/visits/src/index.ts"
       ],
       "@creativo/ui/icons": ["./libs/ui/icons/src/index.ts"]
     }

@@ -53,6 +53,18 @@
     "test": {
       "dependsOn": ["^build"]
     },
+    "e2e": {
+      "cache": false
+    },
+    "e2e-ci": {
+      "cache": false
+    },
+    "e2e-ci--**/*": {
+      "cache": false
+    },
+    "e2e-ci--merge-reports": {
+      "cache": false
+    },
     "@angular/build:application": {
       "cache": true,
       "dependsOn": ["^build"],
