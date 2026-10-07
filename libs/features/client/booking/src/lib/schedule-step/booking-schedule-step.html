@@ -42,6 +42,70 @@
           <p uiLede>{{ t('booking.schedule.lede.single') }}</p>
         </ui-section-header>
 
+        <!-- A shop that cannot serve somebody on the visit (`shopReach`). The
+             calendar under it is grey, so this is the whole answer: why, and
+             the one tap to a shop that can — or, when no shop offers it all
+             together, back to the services. Never "this day is busy" and a
+             waitlist bell, for a shop that will never have a time for it. -->
+        @if (shopReach(); as reach) { @if (reach.kind === 'elsewhere') {
+        <ui-stack
+          uiSpacing="compact"
+          uiAlignment="leading"
+          role="status"
+          data-testid="booking-shop-scope"
+          data-reach="elsewhere"
+        >
+          <p uiText uiFont="body">
+            {{ t('booking.schedule.shopScope.elsewhere.title', { shop:
+            reach.shop }) }}
+          </p>
+          <p uiText uiFont="footnote" uiForegroundStyle="secondary">
+            @if (reach.target; as target) { {{
+            t('booking.schedule.shopScope.elsewhere.body', { target: target.name
+            }) }} } @else { {{ t('booking.schedule.shopScope.elsewhere.bodyAny')
+            }} }
+          </p>
+          <button
+            type="button"
+            uiButton
+            uiButtonStyle="bordered"
+            uiControlSize="regular"
+            data-testid="booking-shop-scope-switch"
+            (click)="switchShop(reach.target?.locationId ?? null)"
+          >
+            @if (reach.target; as target) { {{
+            t('booking.schedule.shopScope.elsewhere.switch', { target:
+            target.name }) }} } @else { {{
+            t('booking.schedule.shopScope.elsewhere.switchAny') }} }
+          </button>
+        </ui-stack>
+        } @else if (reach.kind === 'nowhere') {
+        <ui-stack
+          uiSpacing="compact"
+          uiAlignment="leading"
+          role="status"
+          data-testid="booking-shop-scope"
+          data-reach="nowhere"
+        >
+          <p uiText uiFont="body">
+            {{ t('booking.schedule.shopScope.nowhere.title') }}
+          </p>
+          <p uiText uiFont="footnote" uiForegroundStyle="secondary">
+            {{ t('booking.schedule.shopScope.nowhere.body') }}
+          </p>
+          <button
+            type="button"
+            uiButton
+            uiButtonStyle="bordered"
+            uiControlSize="regular"
+            data-testid="booking-shop-scope-services"
+            (click)="store.back()"
+          >
+            {{ t('booking.schedule.shopScope.nowhere.change') }}
+          </button>
+        </ui-stack>
+        } }
+
         <!-- The bounce-back from a lost race. Inside the heading, because it
              is the reason the user is looking at this screen again rather
              than at a confirmation — and it should scroll away like the
@@ -207,7 +271,7 @@
   <!-- ── The times ────────────────────────────────────────────────────
        The chosen day's starts, grouped by daypart. Its bar carries the bell,
        which watches this day. -->
-  @if (timeOpen() && selectedDay(); as day) {
+  @if (timeOpen() && canOpenTimes() && selectedDay(); as day) {
   <lib-booking-time-sheet
     [day]="day"
     [zone]="zone()"

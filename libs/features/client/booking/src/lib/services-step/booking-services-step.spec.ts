@@ -7,7 +7,7 @@ import {
   provideTransloco,
 } from '@jsverse/transloco';
 import { Observable, of } from 'rxjs';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   ANONYMOUS_PRINCIPAL,
   AUTH_GATEWAY,
@@ -17,7 +17,10 @@ import {
   BarberId,
   CATALOG_READER,
   MEDIA_READER,
+  MediaRef,
+  type MediaReader,
   Service,
+  ServiceId,
 } from '@creativo/application/catalog';
 import {
   BOOKING_DRAFT_STORE,
@@ -29,16 +32,29 @@ import {
   WAITLIST_READER,
   ZonedDateTime,
   ok,
+  type Result,
 } from '@creativo/application/booking';
 import { CLOCK } from '@creativo/application/shared';
 import { SessionStorageDraftStore } from '@creativo/infrastructure/web-storage';
+import { CatalogContentService } from '@creativo/features/shared/catalog';
 import { BookingFlowStore } from '../booking-flow.store';
 import { ClientBooking } from '../client-booking/client-booking';
+
+/**
+ * Stand-in copy for the few sentences these specs read; every other key
+ * answers as itself, which is what most assertions here pin.
+ */
+const COPY: Translation = {
+  booking: { party: { guest: 'Guest {{number}}' } },
+  errors: {
+    scheduling: { booking_party: { duplicate_label: 'TAKEN:{{label}}' } },
+  },
+};
 
 @Injectable()
 class TestTranslationLoader implements TranslocoLoader {
   getTranslation(): Observable<Translation> {
-    return of({});
+    return of(COPY);
   }
 }
 
@@ -66,8 +82,22 @@ function service(props: {
    * exercise the span an unpinned barber leaves open.
    */
   performers?: readonly { id: string; minor: number; minutes: number }[];
+  /** A cover at this Storage path. None by default. */
+  cover?: string;
 }): Service {
   const result = Service.create({
+    ...(props.cover === undefined
+      ? {}
+      : {
+          cover: unwrapFixture(
+            MediaRef.create({
+              id: `media-${props.id}`,
+              path: props.cover,
+              width: 1200,
+              height: 1500,
+            }),
+          ),
+        }),
     id: props.id,
     name: { en: props.id, bg: props.id },
     description: { en: 'x', bg: 'x' },
@@ -118,7 +148,22 @@ const CATALOG = [
   service({ id: 'full-care', includes: ['cut', 'beard'] }),
 ];
 
-async function renderShell(): Promise<ComponentFixture<ClientBooking>> {
+function unwrapFixture<T, E>(result: Result<T, E>): T {
+  if (result.isFailure()) throw new Error('bad fixture');
+  return result.value;
+}
+
+/** What a spec changes about the shell's world. */
+interface ShellOptions {
+  /** The live catalogue; `CATALOG` by default. */
+  readonly catalog?: readonly Service[];
+  /** How a cover resolves; to nothing by default. */
+  readonly media?: MediaReader;
+}
+
+async function renderShell(
+  options: ShellOptions = {},
+): Promise<ComponentFixture<ClientBooking>> {
   await TestBed.configureTestingModule({
     imports: [ClientBooking],
     providers: [
@@ -183,7 +228,10 @@ async function renderShell(): Promise<ComponentFixture<ClientBooking>> {
       },
       {
         provide: PROFILE_PORT,
-        useValue: { getProfile: () => Promise.resolve(ok(null)) },
+        useValue: {
+          getProfile: () => Promise.resolve(ok(null)),
+          observeProfile: () => of(ok(null)),
+        },
       },
       {
         provide: AVATAR_UPLOADER,
@@ -196,7 +244,7 @@ async function renderShell(): Promise<ComponentFixture<ClientBooking>> {
       {
         provide: CATALOG_READER,
         useValue: {
-          listActiveServices: () => of(ok(CATALOG)),
+          listActiveServices: () => of(ok(options.catalog ?? CATALOG)),
           listActiveBarbers: () => of(ok([])),
           listServiceCategories: () => of(ok([])),
           listActiveLocations: () => of(ok([])),
@@ -207,7 +255,9 @@ async function renderShell(): Promise<ComponentFixture<ClientBooking>> {
       },
       {
         provide: MEDIA_READER,
-        useValue: { resolve: () => Promise.resolve(ok([])) },
+        useValue: options.media ?? {
+          resolve: () => Promise.resolve(ok([])),
+        },
       },
     ],
   }).compileComponents();
@@ -220,8 +270,10 @@ async function renderShell(): Promise<ComponentFixture<ClientBooking>> {
 }
 
 /** The shell, walked past WHERE — step 1 is optional, so take "any shop". */
-async function render(): Promise<ComponentFixture<ClientBooking>> {
-  const fixture = await renderShell();
+async function render(
+  options: ShellOptions = {},
+): Promise<ComponentFixture<ClientBooking>> {
+  const fixture = await renderShell(options);
   click(fixture, 'booking-location-continue');
   await fixture.whenStable();
   fixture.detectChanges();
@@ -269,8 +321,10 @@ function answer(
 }
 
 /** Walk past the party step onto the catalog. */
-async function toServices(): Promise<ComponentFixture<ClientBooking>> {
-  const fixture = await render();
+async function toServices(
+  options: ShellOptions = {},
+): Promise<ComponentFixture<ClientBooking>> {
+  const fixture = await render(options);
   click(fixture, 'booking-party-continue');
   await fixture.whenStable();
   fixture.detectChanges();
@@ -368,6 +422,63 @@ describe('BookingServicesStep', () => {
     ).toBeNull();
   });
 
+  describe('the grid, per card', () => {
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    // Each card's cover is already on its view model (`coverSrc`, from the
+    // session's one URL cache). Asking the catalogue for it by id searched
+    // the whole list once per card, on every pass of the grid.
+    it('reads each card’s cover off its view model, never searching the catalogue per card', async () => {
+      const byId = vi.spyOn(CatalogContentService.prototype, 'coverUrl');
+      const fixture = await toServices({
+        catalog: [
+          service({ id: 'cut', cover: 'services/cut.jpg' }),
+          service({ id: 'fade' }),
+        ],
+        media: {
+          resolve: (ref) =>
+            Promise.resolve(
+              ok([{ width: ref.width, url: `https://cdn.test/${ref.path}` }]),
+            ),
+        },
+      });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      const coverOf = (id: string) =>
+        host(fixture)
+          .querySelector(`[data-testid="service-card-${id}"] img`)
+          ?.getAttribute('src') ?? null;
+      expect(coverOf('cut')).toBe('https://cdn.test/services/cut.jpg');
+      expect(coverOf('fade')).toBeNull();
+      expect(byId).not.toHaveBeenCalled();
+    });
+
+    // Which cards are locked is derived once per change of the bag or the
+    // catalogue. Asked per card on every pass, it searched the catalogue for
+    // the card and built its blockers' view models each time.
+    it('locks the cards without searching the catalogue for each one on a pass', async () => {
+      const fixture = await toServices();
+      await addLine(fixture, 'service-card-cut', 'booking-variant-short');
+      const search = vi.spyOn(CatalogContentService.prototype, 'findService');
+
+      // A pass of the grid that changes neither the bag nor the catalogue:
+      // the held cut's sheet opens over it.
+      click(fixture, 'service-card-cut');
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(blockedIds(fixture)).toEqual(['fade', 'full-care']);
+      // Only the service in hand is looked up by id, never every card.
+      const asked = search.mock.calls.map(([serviceId]) => serviceId);
+      expect(asked).not.toContain('beard');
+      expect(asked).not.toContain('full-care');
+    });
+  });
+
   it('shows the person scope once there IS a party', async () => {
     const fixture = await render();
     click(fixture, 'booking-add-guest');
@@ -381,6 +492,129 @@ describe('BookingServicesStep', () => {
     expect(
       host(fixture).querySelector('[data-testid="booking-seat-guest-0"]'),
     ).not.toBeNull();
+  });
+
+  it('keeps the rename field open on what was typed, and says why, when the name is another guest’s', async () => {
+    const fixture = await toServices();
+    const store = fixture.debugElement.injector.get(BookingFlowStore);
+    const settle = async () => {
+      await fixture.whenStable();
+      fixture.detectChanges();
+    };
+    click(fixture, 'booking-add-guest');
+    await settle();
+    click(fixture, 'booking-add-guest');
+    await settle();
+    expect(store.guests().map((guest) => guest.label.value)).toEqual([
+      'Guest 1',
+      'Guest 2',
+    ]);
+
+    // The guest just added is the active one: a second press is their menu.
+    click(fixture, 'booking-seat-guest-1');
+    await settle();
+    click(fixture, 'booking-seat-rename-open-guest-1');
+    await settle();
+    const field = () =>
+      host(fixture).querySelector<HTMLInputElement>(
+        '[data-testid="booking-seat-rename-guest-1"]',
+      );
+    const refusal = () =>
+      host(fixture).querySelector('[data-testid="booking-seat-rename-error"]');
+    const type = (value: string) => {
+      const input = field();
+      if (!input) throw new Error('the rename field is not open');
+      input.value = value;
+      input.dispatchEvent(new Event('input'));
+      fixture.detectChanges();
+    };
+    const leave = () => {
+      field()?.dispatchEvent(new Event('blur'));
+      fixture.detectChanges();
+    };
+
+    type('Guest 1');
+    leave();
+
+    // Refused: the name stays, the field stays open on what was typed, and
+    // the reason is said beside it.
+    expect(store.guests().map((guest) => guest.label.value)).toEqual([
+      'Guest 1',
+      'Guest 2',
+    ]);
+    expect(field()?.value).toBe('Guest 1');
+    expect(field()?.getAttribute('aria-invalid')).toBe('true');
+    expect(refusal()?.textContent?.trim()).toBe('TAKEN:Guest 1');
+
+    // The next keystroke clears it; a name nobody holds is taken.
+    type('Maria');
+    expect(refusal()).toBeNull();
+    leave();
+    expect(field()).toBeNull();
+    expect(store.guests().map((guest) => guest.label.value)).toEqual([
+      'Guest 1',
+      'Maria',
+    ]);
+  });
+
+  it('holds Continue and names the label when a restored draft brings two guests back under one name', async () => {
+    const fixture = await toServices();
+    const store = fixture.debugElement.injector.get(BookingFlowStore);
+    const settle = async () => {
+      await fixture.whenStable();
+      fixture.detectChanges();
+    };
+    click(fixture, 'booking-add-guest');
+    await settle();
+    click(fixture, 'booking-add-guest');
+    await settle();
+    // Everybody holds something, so only the names can hold the step.
+    const fadeId = ServiceId.create('fade');
+    if (fadeId.isFailure()) throw new Error('bad fixture');
+    const fade = {
+      serviceId: fadeId.value,
+      variantId: null,
+      barberPref: BarberPref.any(),
+    };
+    store.addLine(SeatKey.self(), fade);
+    for (const guest of store.guests()) {
+      store.addLine(SeatKey.guest(guest.id), fade);
+    }
+    await settle();
+    const proceed = () =>
+      host(fixture).querySelector<HTMLButtonElement>(
+        '[data-testid="booking-services-continue"]',
+      );
+    const notice = () =>
+      host(fixture).querySelector('[data-testid="booking-seat-shared-label"]');
+    expect(proceed()?.disabled).toBe(false);
+    expect(notice()).toBeNull();
+
+    // The same tab with a draft saved before the rule: both guests answer
+    // to «Guest 1».
+    const KEY = 'creativo.booking-draft';
+    const stored = JSON.parse(sessionStorage.getItem(KEY) ?? 'null') as {
+      draft: { party: { guests: { id: string; label: string }[] } };
+    };
+    stored.draft.party.guests = stored.draft.party.guests.map((guest) => ({
+      ...guest,
+      label: 'Guest 1',
+    }));
+    sessionStorage.setItem(KEY, JSON.stringify(stored));
+    expect(store.restore()).toBe(true);
+    await settle();
+
+    expect(store.step()).toBe('services');
+    expect(notice()?.textContent?.trim()).toBe('TAKEN:Guest 1');
+    expect(proceed()?.disabled).toBe(true);
+
+    // One rename, and the step lets the party go.
+    const second = store.guests()[1];
+    if (!second) throw new Error('bad fixture');
+    expect(store.renameGuest(second.id, 'Maria')).toBe(true);
+    await settle();
+    expect(notice()).toBeNull();
+    expect(proceed()?.disabled).toBe(false);
   });
 
   it('gates the CTA until BOTH selects are answered', async () => {

@@ -1,4 +1,6 @@
-import { EnvironmentProviders, Injectable } from '@angular/core';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { EnvironmentProviders, Injectable, type Type } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { UiMap } from '@creativo/ui/controls';
@@ -6,10 +8,65 @@ import { UiCodeScanner } from '@creativo/ui/patterns';
 import {
   Translation,
   TranslocoLoader,
+  TranslocoService,
   provideTransloco,
 } from '@jsverse/transloco';
-import { Observable, of } from 'rxjs';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { Observable, firstValueFrom, of } from 'rxjs';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  AVATAR_UPLOADER,
+  AccountStatus,
+  PROFILE_PORT,
+  User,
+  UserId,
+} from '@creativo/application/accounts';
+import {
+  Appointment,
+  type AppointmentPhoto,
+  CLIENT_HISTORY_READER,
+  CLIENT_PHOTOS_READER,
+  COMPLETED,
+  Money,
+  type Result,
+  Seat,
+  SeatId,
+  SeatSubject,
+  type VisitLeg,
+  ZonedDateTime,
+  ok,
+  seatWorked,
+} from '@creativo/application/booking';
+import {
+  InMemoryClientHistoryReader,
+  InMemoryClientPhotosReader,
+} from '@creativo/application/booking/testing';
+import {
+  BarberId,
+  ServiceId,
+  ServiceTerms,
+} from '@creativo/application/catalog';
+import {
+  CLIENT_VOUCHERS_READER,
+  LOYALTY_ACTIVITY_READER,
+  LOYALTY_CATALOG_READER,
+  LOYALTY_READER,
+} from '@creativo/application/engagement';
+import {
+  InMemoryClientVouchersReader,
+  InMemoryLoyaltyActivityReader,
+  InMemoryLoyaltyCatalogReader,
+  InMemoryLoyaltyReader,
+} from '@creativo/application/engagement/testing';
+import { CLOCK, provideFeatureFlags } from '@creativo/application/shared';
+import {
+  AchievementCategoryPage,
+  AchievementDetailPage,
+  ClientAchievementsPage,
+  ClientCard,
+  ClientLedgerPage,
+  ClientLoyaltyPage,
+  ClientRecordsPage,
+} from '@creativo/features/staff/client-card';
 import { StaffTimeGrid } from '../time-grid/staff-time-grid';
 import {
   type VisitEditorPhoto,
@@ -17,7 +74,9 @@ import {
   type VisitEditorServiceOption,
   type VisitEditorShopOption,
   type VisitEditorClientSection,
+  type VisitEditorCommit,
   type VisitEditorVm,
+  nameSaysRule,
   parsePriceInput,
 } from './staff-visit-editor';
 
@@ -140,7 +199,7 @@ class TestTranslationLoader implements TranslocoLoader {
       'staff.visit.discountPercent': 'Процент',
       'staff.visit.discountUnknownCode': 'Няма такъв код.',
       'staff.visit.discountChecking': 'Проверявам…',
-      'staff.visit.discountFree': 'Безплатно',
+      'staff.visit.discountFree': 'Безплатна услуга',
       'staff.visit.removeDiscount': 'Премахни отстъпката',
       'staff.visit.voucher': 'Ваучер',
       'staff.visit.voucherLeft': 'остават {{amount}}',
@@ -1425,11 +1484,14 @@ describe('StaffVisitEditor', () => {
         'staff-visit-cancel-block',
       ]);
       expect(text(host, 'staff-visit-cancel')).toContain('Откажи часа');
+      // The red is the list row's own role now (client-card-redesign
+      // §5.1.5), not a class of this sheet's.
+      expect(find(host, 'staff-visit-cancel')?.getAttribute('data-role')).toBe(
+        'destructive',
+      );
       expect(
-        find(host, 'staff-visit-cancel')?.classList.contains(
-          'staff-visit__exit--destructive',
-        ),
-      ).toBe(true);
+        find(host, 'staff-visit-cancel-block')?.getAttribute('data-role'),
+      ).toBe('destructive');
 
       const acted: string[] = [];
       fixture.componentInstance.acted.subscribe((kind) => acted.push(kind));
@@ -1656,6 +1718,8 @@ describe('StaffVisitEditor', () => {
       expect(commits).toEqual([
         {
           kind: 'save',
+          // The fixture's reader said no revision: the save claims nothing.
+          revision: null,
           dayKey: '2026-08-27',
           startMinute: 600,
           endMinute: 645,
@@ -1664,6 +1728,9 @@ describe('StaffVisitEditor', () => {
           discounts: [],
           vouchers: [],
           tipMinorUnits: null,
+          // What the note and the tip were drawn from — what the owner
+          // measures their writes against (round 5).
+          drawn: { note: null, tipMinorUnits: null },
           clients: [
             {
               id: 'user-martin',
@@ -1696,6 +1763,31 @@ describe('StaffVisitEditor', () => {
       // Still rendered: the write is a round trip that can be refused, and
       // the owner closes the sheet only once the server has agreed.
       expect(find(host, 'staff-visit-root')).not.toBeNull();
+    });
+
+    /*
+     * THE REVISION THE DRAFT WAS DRAWN FROM (round 5). The save claims it
+     * as `expectedVersion`, so it must be the SEED's, held until the next
+     * re-seed: a live row that moved on under the open sheet (somebody
+     * else's save) is exactly what the claim exists to catch, and adopting
+     * it would claim a screen the barber never saw.
+     */
+    it('claims the revision it was drawn from, not whatever the row reads now', () => {
+      const host = render(visit({ revision: 5 }));
+      const commits: { revision?: number | null }[] = [];
+      fixture.componentInstance.committed.subscribe((c) =>
+        commits.push(c as { revision?: number | null }),
+      );
+
+      // A colleague's save arrives under the open sheet: same visit, newer.
+      fixture.componentRef.setInput('vm', visit({ revision: 6 }));
+      fixture.detectChanges();
+      find(host, 'staff-visit-day-next')?.click();
+      fixture.detectChanges();
+      find(host, 'staff-visit-save')?.click();
+      fixture.detectChanges();
+
+      expect(commits.map((commit) => commit.revision)).toEqual([5]);
     });
 
     /*
@@ -2201,6 +2293,61 @@ describe('StaffVisitEditor', () => {
       ]);
       expect(text(host, 'staff-visit-tip-tile-500')).toContain('общо 50,00 €');
       expect(text(host, 'staff-visit-tip-tile-1000')).toBe('10,00 €');
+    });
+
+    /*
+     * A COLLEAGUE'S TIP UNDER AN OPEN SHEET (round 5). The tip is recorded
+     * beside the visit, not through its revision, so the sheet is the only
+     * thing that can keep an old screen from writing over it: an untouched
+     * tip follows what is stored, and the commit says what it was drawn
+     * from.
+     */
+    it('follows a tip a colleague records while the barber leaves it alone', () => {
+      const host = render();
+      const commits: VisitEditorCommit[] = [];
+      fixture.componentInstance.committed.subscribe((c) => commits.push(c));
+
+      fixture.componentRef.setInput(
+        'vm',
+        visit({ tipLabel: '3,00 €', tipMinorUnits: 300 }),
+      );
+      fixture.detectChanges();
+      // Shown as it is stored, and nothing for «Запази» to do about it.
+      expect(text(host, 'staff-visit-tip-value')).toBe('3,00 €');
+      expect(host.hasAttribute('data-dirty')).toBe(false);
+
+      find(host, 'staff-visit-day-next')?.click();
+      fixture.detectChanges();
+      find(host, 'staff-visit-save')?.click();
+      fixture.detectChanges();
+      expect(commits[0]).toMatchObject({
+        tipMinorUnits: 300,
+        drawn: { tipMinorUnits: 300 },
+      });
+    });
+
+    it('keeps a tip the barber typed over a colleague’s, and remembers what it drew', () => {
+      const host = render();
+      const commits: VisitEditorCommit[] = [];
+      fixture.componentInstance.committed.subscribe((c) => commits.push(c));
+      click(host, 'staff-visit-tip');
+      click(host, 'staff-visit-tip-tile-200');
+
+      fixture.componentRef.setInput(
+        'vm',
+        visit({ tipLabel: '3,00 €', tipMinorUnits: 300 }),
+      );
+      fixture.detectChanges();
+      expect(text(host, 'staff-visit-tip-value')).toBe('2,00 €');
+
+      find(host, 'staff-visit-save')?.click();
+      fixture.detectChanges();
+      // The owner sees the barber's 2,00 € drawn over «none» — and so that
+      // the stored 3,00 € is a colleague's it never showed.
+      expect(commits[0]).toMatchObject({
+        tipMinorUnits: 200,
+        drawn: { tipMinorUnits: null },
+      });
     });
 
     it('withholds the tip row only from a draft and from a visit that is gone', () => {
@@ -3636,9 +3783,10 @@ describe('StaffVisitEditor', () => {
       door.click();
       fixture.detectChanges();
     };
-    /** The sheet's own clock for a photo — the same formatter, so the host's zone cannot fail the test. */
+    /** The sheet's own clock for a photo — the shop's zone, so the host's cannot fail the test. */
     const when = (iso: string) =>
       new Intl.DateTimeFormat('bg-BG', {
+        timeZone: 'Europe/Sofia',
         day: 'numeric',
         month: 'short',
         hour: '2-digit',
@@ -3802,14 +3950,16 @@ describe('StaffVisitEditor', () => {
       expect(find(host, 'staff-visit-page')?.getAttribute('data-page')).toBe(
         'photo',
       );
-      // No title: the header names the moment, as Photos does, and the
-      // page's own heading is for assistive tech alone.
-      expect(fixture.componentInstance.pageTitle()).toBe(
-        when(PHOTOS[0]!.takenAtIso),
-      );
+      // No title: the header names the day, as Photos does (R59, 12:05 in
+      // the shop's clock on 26.08), and the page's own heading is for
+      // assistive tech alone.
+      expect(fixture.componentInstance.pageTitle()).toBe('26.08');
       const heading = host.querySelector('#staff-visit-page-title');
-      expect(heading?.textContent?.trim()).toBe(when(PHOTOS[0]!.takenAtIso));
+      expect(heading?.textContent?.trim()).toBe('26.08');
       expect(heading?.hasAttribute('uivisuallyhidden')).toBe(true);
+      // …so the shell shows the bar's title from rest: no large title will
+      // ever scroll under it to bring the compact one in.
+      expect(fixture.componentInstance.pageHasNoLargeTitle()).toBe(true);
       // The picture, full-bleed, in its own shape — nothing drawn over it.
       const hero = find(host, 'staff-visit-photo-page');
       expect(hero?.classList.contains('staff-visit__photo-hero')).toBe(true);
@@ -3846,9 +3996,10 @@ describe('StaffVisitEditor', () => {
       expect(clientRow?.querySelector('[uileading] ui-avatar img')).toBeNull();
       expect(text(host, 'staff-visit-photo-client')).toBe('Георги Петров');
       expect(clientRow?.textContent).toContain('Клиент');
-      expect(text(host, 'staff-visit-photo-when')).toBe(
-        when(PHOTOS[0]!.takenAtIso),
-      );
+      // «Снимано» says only what the bar does not: the time, never the day
+      // again (wave D r4).
+      expect(text(host, 'staff-visit-photo-when')).toBe('12:05');
+      expect(text(host, 'staff-visit-photo-when')).not.toContain('26');
       // The dock: no bill, no save — the one red act.
       expect(find(host, 'staff-visit-save')).toBeNull();
       expect(find(host, 'staff-visit-total')).toBeNull();
@@ -3868,6 +4019,37 @@ describe('StaffVisitEditor', () => {
       ).toContain('4 / 3');
       expect(find(host, 'staff-visit-photo-chair-row')).toBeNull();
       expect(find(host, 'staff-visit-photo-client-row')).not.toBeNull();
+      expect(text(host, 'staff-visit-photo-client')).toBe('Георги Петров');
+    });
+
+    it('draws the person the photo names with the face the picked row has — as the chair keeps its portrait', () => {
+      // The VM brings the person with a name and a number only; the book
+      // has his face, as the picked group reads it (review, 2026-09-28).
+      const host = render(
+        visit({
+          photos: PHOTOS,
+          clientLabel: 'Георги Петров',
+          clientUserId: 'user-georgi',
+        }),
+      );
+      fixture.componentRef.setInput('uiClientBook', [
+        {
+          id: 'user-georgi',
+          label: 'Георги Петров',
+          phone: null,
+          phoneHref: null,
+          meta: null,
+          avatarSrc: '/clients/georgi.jpg',
+        },
+      ]);
+      fixture.detectChanges();
+      click(host, 'staff-visit-photo-p-1');
+      const clientRow = find(host, 'staff-visit-photo-client-row');
+      expect(
+        clientRow
+          ?.querySelector('[uileading] ui-avatar img')
+          ?.getAttribute('src'),
+      ).toBe('/clients/georgi.jpg');
       expect(text(host, 'staff-visit-photo-client')).toBe('Георги Петров');
     });
 
@@ -4210,6 +4392,48 @@ describe('StaffVisitEditor', () => {
       refusal: null,
     });
 
+    it('prints a free service’s rule only where the coupon’s name does not already say it — never the saving on an offer (WP7 review r6)', () => {
+      const host = renderWith(visit(), {
+        uiGrants: [
+          {
+            grantId: 'grant-free-cut',
+            couponId: 'coupon-free-cut',
+            label: 'Безплатно подстригване',
+            value: { kind: 'free_service' as const },
+            exclusive: true,
+          },
+          {
+            grantId: 'grant-fifth',
+            couponId: 'coupon-fifth',
+            label: 'Пето подстригване',
+            value: { kind: 'free_service' as const },
+            exclusive: true,
+          },
+        ],
+      });
+      openPage(host);
+      // The name says it: the name alone — no «Безплатна услуга» under
+      // «Безплатно подстригване», and no bill preview in its place.
+      const named = find(host, 'staff-visit-discount-grant-grant-free-cut');
+      expect(
+        named?.querySelector('.ui-coupon-card__title')?.textContent?.trim(),
+      ).toBe('Безплатно подстригване');
+      expect(named?.querySelector('.ui-coupon-card__value')).toBeNull();
+      expect(named?.querySelector('.ui-coupon-card__figures')).toBeNull();
+      expect(named?.getAttribute('aria-label')).toBe('Безплатно подстригване');
+      // A name that does not say it keeps the rule.
+      expect(valueOf(host, 'staff-visit-discount-grant-grant-fifth')).toBe(
+        'Безплатна услуга',
+      );
+      // Applied: its line on the bill says, in its chip, what it took.
+      click(host, 'staff-visit-discount-grant-grant-free-cut');
+      const line = find(host, 'staff-visit-discount-grant:grant-free-cut');
+      expect(line?.querySelector('.ui-coupon-card__value')).toBeNull();
+      expect(detailOf(host, 'staff-visit-discount-grant:grant-free-cut')).toBe(
+        '−28,00 €',
+      );
+    });
+
     it("shows the value row that whispers the client's coupon, pushes the page, honours the coupon in place, and lays the ticket at the top of the page", () => {
       const host = renderWith(visit(), { uiGrants: GRANTS });
       const row = find(host, 'staff-visit-discount-row');
@@ -4217,14 +4441,20 @@ describe('StaffVisitEditor', () => {
       expect(row?.closest('[data-testid="staff-visit-money"]')).not.toBeNull();
       // A VALUE row (owner, 2026-09-17: "Discount — None ›"): «Няма» in the
       // secondary ink, the › that promises the page, no plus; the coupon
-      // the client holds whispered under the name in the promo ink —
-      // recognition, not recall.
+      // the client holds whispered under the name — recognition, not
+      // recall. The accent law (2026-09-29): the whisper's words are the
+      // secondary ink, and the orange is the coupon glyph before them.
       expect(rowValue(host)).toBe('Няма');
       expect(
         find(host, 'staff-visit-discount-row-value')?.getAttribute(
           'data-foreground-style',
         ),
       ).toBe('secondary');
+      expect(
+        find(host, 'staff-visit-discount-row-value')?.hasAttribute(
+          'data-weight',
+        ),
+      ).toBe(false);
       expect(
         row?.querySelector('ui-icon[data-name="nav.disclosure"]'),
       ).not.toBeNull();
@@ -4235,11 +4465,14 @@ describe('StaffVisitEditor', () => {
       expect(text(host, 'staff-visit-discount-row-note')).toBe(
         'Има купон: Рожден ден',
       );
-      expect(
-        find(host, 'staff-visit-discount-row-note')?.getAttribute(
-          'data-foreground-style',
-        ),
-      ).toBe('promo');
+      const whisper = find(host, 'staff-visit-discount-row-note');
+      expect(whisper?.getAttribute('data-foreground-style')).toBe('secondary');
+      expect(whisper?.getAttribute('data-font')).toBe('footnote');
+      const whisperGlyph = whisper?.firstElementChild;
+      expect(whisperGlyph?.tagName).toBe('UI-ICON');
+      expect(whisperGlyph?.getAttribute('data-name')).toBe('promo.coupon');
+      expect(whisperGlyph?.getAttribute('data-foreground-style')).toBe('promo');
+      expect(whisperGlyph?.getAttribute('aria-hidden')).toBe('true');
       expect(
         host.querySelector('[data-testid="staff-visit-money"] .ui-coupon-card'),
       ).toBeNull();
@@ -4285,7 +4518,7 @@ describe('StaffVisitEditor', () => {
         ),
       ).not.toBeNull();
       expect(valueOf(host, 'staff-visit-discount-grant-grant-birthday')).toBe(
-        '−20%',
+        '−20 %',
       );
       expect(detailOf(host, 'staff-visit-discount-grant-grant-birthday')).toBe(
         'само този',
@@ -4294,11 +4527,26 @@ describe('StaffVisitEditor', () => {
         'offer',
       );
       expect(valueOf(host, 'staff-visit-discount-grant-grant-loyal')).toBe(
-        '−5%',
+        '−5 %',
       );
       expect(detailOf(host, 'staff-visit-discount-grant-grant-loyal')).toBe(
         'комбинира се',
       );
+      // An offered ticket wears the house pill, decorative — the ticket is
+      // the control, named «използвай» by its own label (revision 3 §3.4).
+      const pill = find(host, 'staff-visit-discount-grant-grant-loyal-use');
+      expect(pill?.tagName).toBe('SPAN');
+      expect(pill?.textContent?.trim()).toBe('Използвай');
+      expect(pill?.getAttribute('aria-hidden')).toBe('true');
+      expect(pill?.getAttribute('data-button-style')).toBe('borderedProminent');
+      expect(
+        pill?.closest('[data-testid="staff-visit-discount-grant-grant-loyal"]'),
+      ).not.toBeNull();
+      expect(
+        find(host, 'staff-visit-discount-grant-grant-loyal')?.querySelector(
+          '.ui-coupon-card__action',
+        ),
+      ).toBeNull();
 
       // «Използвай» applies IN PLACE: the ticket is stamped where it stands,
       // «Премахни» where the call stood, the exclusive one beside it
@@ -4334,9 +4582,21 @@ describe('StaffVisitEditor', () => {
           '.ui-coupon-card__badge ui-icon[data-name="booking.blocked"]',
         ),
       ).not.toBeNull();
+      // The one word a blocked ticket says, projected where a call would
+      // stand — quiet, decorative; the written `uiAction` has no caller.
+      expect(loyal.querySelector('.ui-coupon-card__action')).toBeNull();
       expect(
-        loyal.querySelector('.ui-coupon-card__action')?.textContent?.trim(),
+        find(
+          host,
+          'staff-visit-discount-grant-grant-loyal-blocked',
+        )?.textContent?.trim(),
       ).toBe('Не се комбинира');
+      expect(
+        find(
+          host,
+          'staff-visit-discount-grant-grant-loyal-blocked',
+        )?.getAttribute('aria-hidden'),
+      ).toBe('true');
       expect(applied(host)).toEqual([
         'staff-visit-discount-grant:grant-birthday',
       ]);
@@ -4348,6 +4608,17 @@ describe('StaffVisitEditor', () => {
       expect(text(host, 'staff-visit-discount-lines-value')).toBe(
         'Рожден ден (5,60 €)',
       );
+      // The page's own value row, applied: the same ink, the same weight.
+      expect(
+        find(host, 'staff-visit-discount-lines-value')?.getAttribute(
+          'data-foreground-style',
+        ),
+      ).toBe('primary');
+      expect(
+        find(host, 'staff-visit-discount-lines-value')?.getAttribute(
+          'data-weight',
+        ),
+      ).toBe('semibold');
       expect(
         find(
           host,
@@ -4359,8 +4630,9 @@ describe('StaffVisitEditor', () => {
       expect(host.hasAttribute('data-dirty')).toBe(true);
 
       // Back on the ladder the row reads the ONE line — its name, what it
-      // took off — in the promo ink, the whisper gone; the line travels
-      // with «Запази».
+      // took off — in the primary ink at weight 600 (an applied value is
+      // ink, carried by weight: small figures are never tinted), the
+      // whisper gone; the line travels with «Запази».
       back();
       expect(page(host)).toBeNull();
       expect(rowValue(host)).toBe('Рожден ден (5,60 €)');
@@ -4368,7 +4640,12 @@ describe('StaffVisitEditor', () => {
         find(host, 'staff-visit-discount-row-value')?.getAttribute(
           'data-foreground-style',
         ),
-      ).toBe('promo');
+      ).toBe('primary');
+      expect(
+        find(host, 'staff-visit-discount-row-value')?.getAttribute(
+          'data-weight',
+        ),
+      ).toBe('semibold');
       expect(
         find(host, 'staff-visit-discount-row')
           ?.getAttribute('aria-label')
@@ -4447,19 +4724,19 @@ describe('StaffVisitEditor', () => {
       const first = find(host, 'staff-visit-discount-promo-FIRST10');
       expect(first?.tagName).toBe('BUTTON');
       expect(first?.getAttribute('aria-label')).toBe(
-        'Първо посещение, FIRST10, −10%',
+        'Първо посещение, FIRST10, −10\u202f%',
       );
       expect(text(host, 'staff-visit-discount-promo-FIRST10-code')).toBe(
         'FIRST10',
       );
-      expect(valueOf(host, 'staff-visit-discount-promo-FIRST10')).toBe('−10%');
+      expect(valueOf(host, 'staff-visit-discount-promo-FIRST10')).toBe('−10 %');
       expect(detailOf(host, 'staff-visit-discount-promo-FIRST10')).toBe(
         'комбинира се',
       );
       expect(valueOf(host, 'staff-visit-discount-promo-BEARD5')).toBe(
         '−5,00 €',
       );
-      expect(valueOf(host, 'staff-visit-discount-promo-ALONE20')).toBe('−20%');
+      expect(valueOf(host, 'staff-visit-discount-promo-ALONE20')).toBe('−20 %');
       expect(detailOf(host, 'staff-visit-discount-promo-ALONE20')).toBe(
         'само този',
       );
@@ -4710,7 +4987,7 @@ describe('StaffVisitEditor', () => {
       expect(text(host, 'staff-visit-discount-code:FIRST10-code')).toBe(
         'FIRST10',
       );
-      expect(valueOf(host, 'staff-visit-discount-code:FIRST10')).toBe('−10%');
+      expect(valueOf(host, 'staff-visit-discount-code:FIRST10')).toBe('−10 %');
       expect(detailOf(host, 'staff-visit-discount-code:FIRST10')).toBe(
         '−2,80 €',
       );
@@ -4947,7 +5224,7 @@ describe('StaffVisitEditor', () => {
         [
           ...(find(host, testId)
             ?.closest('ui-slider')
-            ?.querySelectorAll('.ui-slider__mark') ?? []),
+            ?.querySelectorAll('.ui-slider__marks .ui-mark-scale__mark') ?? []),
         ].map((node) =>
           node.textContent?.trim().replace(/[\u202f\u00a0]/g, ' '),
         );
@@ -4978,11 +5255,11 @@ describe('StaffVisitEditor', () => {
       expect(slider.step).toBe('5');
       expect(slider.value).toBe('0');
       expect(marksOf('staff-visit-discount-percent-slider')).toEqual([
-        '0%',
-        '25%',
-        '50%',
-        '75%',
-        '100%',
+        '0 %',
+        '25 %',
+        '50 %',
+        '75 %',
+        '100 %',
       ]);
       expect(
         slider
@@ -4995,7 +5272,7 @@ describe('StaffVisitEditor', () => {
       // A move of the thumb drafts: the figure follows it, and the dock's
       // price previews what it would do — struck, the new one beside it
       // (15% of 28,00 € is 4,20 €) — before anything is kept, and the
-      // dock promises «Приложи −15%».
+      // dock promises «Приложи −15 %».
       slide(host, 'staff-visit-discount-percent-slider', '15');
       expect(percent.value).toBe('15');
       expect(text(host, 'staff-visit-total-was')).toBe('28,00 €');
@@ -5003,8 +5280,8 @@ describe('StaffVisitEditor', () => {
       expect(text(host, 'staff-visit-total-figure')).toBe('23,80 €');
       expect(
         slider.getAttribute('aria-valuetext')?.replace(/[\u202f\u00a0]/g, ' '),
-      ).toBe('−15% · 23,80 €');
-      expect(text(host, 'staff-visit-discount-apply')).toBe('Приложи −15%');
+      ).toBe('−15 % · 23,80 €');
+      expect(text(host, 'staff-visit-discount-apply')).toBe('Приложи −15 %');
       expect(find(host, 'staff-visit-page-done')).toBeNull();
       // Return in the figure keeps it, as the dock's button would; the
       // engine's late `change` does not redraft what was just kept. The
@@ -5021,7 +5298,7 @@ describe('StaffVisitEditor', () => {
       const manual = find(host, 'staff-visit-discount-manual');
       expect(manual?.tagName).toBe('ARTICLE');
       expect(manual?.textContent).toContain('Отстъпка');
-      expect(valueOf(host, 'staff-visit-discount-manual')).toBe('−15%');
+      expect(valueOf(host, 'staff-visit-discount-manual')).toBe('−15 %');
       expect(find(host, 'staff-visit-discount-manual-code')).toBeNull();
       expect(detailOf(host, 'staff-visit-discount-manual')).toBe('−4,20 €');
       expect(
@@ -5042,7 +5319,7 @@ describe('StaffVisitEditor', () => {
       expect(percent.value).toBe('100');
       expect(slider.value).toBe('100');
       expect(find(host, 'staff-visit-discount-figure-note')).toBeNull();
-      expect(text(host, 'staff-visit-discount-apply')).toBe('Приложи −100%');
+      expect(text(host, 'staff-visit-discount-apply')).toBe('Приложи −100 %');
       expect(applyButton(host)?.disabled).toBe(false);
       expect(text(host, 'staff-visit-total-figure')).toBe('0,00 €');
       // The floor promises nothing; the applied line still stands, and the
@@ -5116,10 +5393,10 @@ describe('StaffVisitEditor', () => {
       pickKind(host, 'percent');
       slide(host, 'staff-visit-discount-percent-slider', '10');
       apply(host);
-      expect(valueOf(host, 'staff-visit-discount-manual')).toBe('−10%');
+      expect(valueOf(host, 'staff-visit-discount-manual')).toBe('−10 %');
       expect(detailOf(host, 'staff-visit-discount-manual')).toBe('−2,80 €');
       back();
-      expect(rowValue(host)).toBe('−10% (2,80 €)');
+      expect(rowValue(host)).toBe('−10 % (2,80 €)');
       expect(text(host, 'staff-visit-total-was')).toBe('28,00 €');
       expect(text(host, 'staff-visit-total-figure')).toBe('25,20 €');
       const commits: unknown[] = [];
@@ -5165,7 +5442,7 @@ describe('StaffVisitEditor', () => {
         'staff-visit-discount-code:FIRST10',
         'staff-visit-voucher-v1',
       ]);
-      expect(valueOf(saved, 'staff-visit-discount-code:FIRST10')).toBe('−10%');
+      expect(valueOf(saved, 'staff-visit-discount-code:FIRST10')).toBe('−10 %');
       expect(detailOf(saved, 'staff-visit-discount-code:FIRST10')).toBe(
         '−2,80 €',
       );
@@ -5304,7 +5581,7 @@ describe('StaffVisitEditor', () => {
       expect(text(host, 'staff-visit-discount-code:BEARD5-code')).toBe(
         'BEARD5',
       );
-      expect(valueOf(host, 'staff-visit-discount-manual')).toBe('−10%');
+      expect(valueOf(host, 'staff-visit-discount-manual')).toBe('−10 %');
       expect(detailOf(host, 'staff-visit-discount-manual')).toBe('−2,30 €');
       expect(text(host, 'staff-visit-remove-discount-manual')).toBe('Премахни');
 
@@ -6306,5 +6583,1238 @@ describe('StaffVisitEditor', () => {
         ),
       ).toBe(false);
     });
+  });
+});
+
+/* ────────────────────────────────────────────────────────────────────────
+ * THE CLIENT CARD, WIRED (client-card-redesign §2, §3, §7.5) — the sheet
+ * with `client.profile` on: a person's page is `lib-client-card`, and its
+ * outputs push the card's pages, four deep at most, each landing back
+ * where it came from. The card reads Георги and Мартин through the
+ * in-memory readers of both `/testing` entries (their A0 loyalty
+ * fixtures), in the app's own words; everything the sheet hands it comes
+ * from the VM and the draft, as in production.
+ * ──────────────────────────────────────────────────────────────────────── */
+
+/** The app's own catalogue: the card's words are read from it, as in the app. */
+@Injectable()
+class CatalogueLoader implements TranslocoLoader {
+  getTranslation(lang: string): Observable<Translation> {
+    const file = resolve(
+      __dirname,
+      `../../../../../../infrastructure/i18n/src/assets/i18n/${lang === 'en' ? 'en' : 'bg'}.json`,
+    );
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- a fixed path to the app's own catalogue.
+    return of(JSON.parse(readFileSync(file, 'utf8')) as Translation);
+  }
+}
+
+const CARD_ZONE = 'Europe/Sofia';
+/** The loyalty fixtures' people: Георги books, Мартин comes along. */
+const GEORGI = 'dev-client-1';
+const MARTIN = 'dev-client-2';
+
+function must<T, E>(result: Result<T, E>): T {
+  if (result.isFailure()) throw new Error('bad fixture');
+  return result.value;
+}
+
+/** Monday 28 September 2026, 12:40 in Sofia — the loyalty fixtures' today. */
+const CARD_NOW_MS = must(
+  ZonedDateTime.fromISO('2026-09-28T12:40:00', CARD_ZONE),
+).toMillis();
+
+/** Георги's last worked visit: a fade with Нико on 4 September — what «Повтори» repeats. */
+function georgiLastVisit(): Appointment {
+  const start = must(ZonedDateTime.fromISO('2026-09-04T10:00:00', CARD_ZONE));
+  return must(
+    Appointment.reconstitute({
+      id: 'appt-georgi-last',
+      locationId: 'loc-center',
+      seats: [
+        Seat.of({
+          id: must(SeatId.create('seat-georgi-last')),
+          subject: SeatSubject.account(must(UserId.create(GEORGI)), 'self'),
+          serviceId: must(ServiceId.create('fade')),
+          variantId: null,
+          barberId: must(BarberId.create('niko')),
+          terms: must(
+            ServiceTerms.create(
+              must(Money.fromMinorUnitsAndCode(2800, 'EUR')),
+              45,
+            ),
+          ),
+          startsAt: start,
+          outcome: seatWorked(start.toMillis() + 45 * 60_000),
+        }),
+      ],
+      status: COMPLETED,
+      bookedAt: start,
+    }),
+  );
+}
+
+/** A past cut of Георги's, from another visit — the card's photo rail. */
+const PAST_CUT: AppointmentPhoto = {
+  photoId: 'cut-1',
+  appointmentId: 'appt-georgi-last',
+  barberId: 'niko',
+  clientUserId: GEORGI,
+  clientLabel: 'Георги Петров',
+  takenByUid: 'dev-staff-ivan',
+  takenAtIso: '2026-09-04T08:10:00.000Z',
+  path: 'appointmentPhotos/appt-georgi-last/cut-1',
+  url: 'https://example.test/cuts/cut-1.jpg',
+  width: 1100,
+  height: 1400,
+  origin: 'shot',
+  label: null,
+};
+
+/** Георги's held reward — the discount page's own coupon, and the card's ready ticket. */
+const GEORGI_GRANT = {
+  grantId: 'grant-georgi-punch',
+  couponId: 'coupon-punch-free-cut',
+  label: 'Безплатно подстригване',
+  value: { kind: 'free_service' as const },
+  exclusive: true,
+};
+
+/**
+ * Георги's birthday gift — the coupon says `birthday`, «−20 %», and it
+ * lapses on 28 October: the one grant the birthday card carries (R2-D).
+ */
+const GEORGI_BIRTHDAY_GRANT = {
+  grantId: 'grant-georgi-birthday',
+  couponId: 'coupon-birthday',
+  label: 'Рожден ден',
+  value: { kind: 'percent_off' as const, percent: 20 },
+  exclusive: true,
+  occasion: 'birthday' as const,
+  expiresOn: '2026-10-28',
+};
+
+/** Георги's profile with his birthday TODAY (the fixtures' 28 September), 34 this year. */
+function georgiBornToday(): User {
+  return must(
+    User.reconstitute(
+      {
+        id: GEORGI,
+        phone: '+359881234567',
+        firstName: 'Георги',
+        lastName: 'Петров',
+        roles: ['client'],
+        status: AccountStatus.active(),
+        birthDate: '1992-09-28',
+      },
+      must(ZonedDateTime.fromMillis(CARD_NOW_MS, CARD_ZONE)),
+    ),
+  );
+}
+
+/** The profiles the card's port answers with — empty, as the live seat without a profile read. */
+const profiles = new Map<string, User>();
+
+/** Георги's portrait, as the card's avatar read answers it. */
+const GEORGI_FACE = 'https://example.test/avatars/georgi.jpg';
+
+/**
+ * The fade as the loyalty fixtures key it (`svc-fade`, the «Фейд» family's
+ * subject): on the sheet's catalogue so the medal page's verb can name it.
+ */
+const FADE_OPTION: VisitEditorServiceOption = {
+  id: 'svc-fade',
+  serviceId: 'svc-fade',
+  variantId: null,
+  label: 'Фейд',
+  minutes: 45,
+  priceLabel: '28,00 €',
+};
+
+const CARD_ROSTER = [
+  { id: 'ivan', label: 'Иван', tone: 0, avatarSrc: null },
+  { id: 'niko', label: 'Нико', tone: 1, avatarSrc: null },
+];
+
+describe('StaffVisitEditor — the client card (client.profile on)', () => {
+  let fixture: ComponentFixture<StaffVisitEditor>;
+  /** The sheet's scroller, as `ui-modal-sheet` wraps the editor. */
+  let scroller: HTMLElement;
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [StaffVisitEditor],
+      providers: [
+        ...provideTransloco({
+          config: {
+            availableLangs: ['bg', 'en'],
+            defaultLang: 'bg',
+            fallbackLang: 'bg',
+            missingHandler: { logMissingKey: false },
+          },
+          loader: CatalogueLoader,
+        }),
+        provideFeatureFlags({
+          'client.profile': true,
+          'loyalty.points': true,
+          'loyalty.streaks': true,
+          'loyalty.achievements': true,
+          'loyalty.tiers': true,
+        }),
+        {
+          provide: CLOCK,
+          useValue: {
+            now: (zone: string) => ZonedDateTime.fromMillis(CARD_NOW_MS, zone),
+          },
+        },
+        { provide: LOYALTY_READER, useValue: InMemoryLoyaltyReader.seeded() },
+        {
+          provide: LOYALTY_CATALOG_READER,
+          useValue: new InMemoryLoyaltyCatalogReader(),
+        },
+        // Revision 3's two reads: the wallet's holdings and its feed, the
+        // ledger page's rows (the same fixtures' voucher and journals).
+        {
+          provide: CLIENT_VOUCHERS_READER,
+          useValue: InMemoryClientVouchersReader.seeded(),
+        },
+        {
+          provide: LOYALTY_ACTIVITY_READER,
+          useValue: InMemoryLoyaltyActivityReader.seeded(),
+        },
+        {
+          provide: CLIENT_HISTORY_READER,
+          useValue: new InMemoryClientHistoryReader([georgiLastVisit()]),
+        },
+        {
+          provide: CLIENT_PHOTOS_READER,
+          useValue: new InMemoryClientPhotosReader([PAST_CUT]),
+        },
+        {
+          // The profile the birthday card reads a date of birth from: a
+          // case puts one in `profiles`; everyone else has none.
+          provide: PROFILE_PORT,
+          useValue: {
+            getProfile: async (userId: UserId) =>
+              ok(profiles.get(userId.value) ?? null),
+            observeProfile: (userId: UserId) =>
+              of(ok(profiles.get(userId.value) ?? null)),
+            saveProfile: async () => ok(undefined),
+          },
+        },
+        {
+          // Георги's portrait, found by the card — his seat carries no face,
+          // as in the live seed, so the head's is the only one there is.
+          provide: AVATAR_UPLOADER,
+          useValue: {
+            find: async (userId: UserId) =>
+              ok(
+                userId.value === GEORGI
+                  ? { url: GEORGI_FACE, path: `avatars/${GEORGI}` }
+                  : null,
+              ),
+            upload: async () => ok({ url: '', path: '' }),
+            remove: async () => ok(undefined),
+          },
+        },
+      ],
+      errorOnUnknownElements: true,
+      errorOnUnknownProperties: true,
+    }).compileComponents();
+    const transloco = TestBed.inject(TranslocoService);
+    transloco.setActiveLang('bg');
+    await firstValueFrom(transloco.selectTranslation('bg'));
+    fixture = TestBed.createComponent(StaffVisitEditor);
+    scroller = document.createElement('div');
+    scroller.className = 'modal-sheet__scroll';
+    document.body.appendChild(scroller);
+    scroller.appendChild(fixture.nativeElement as HTMLElement);
+  });
+
+  // jsdom has no `scrollIntoView`; «Постижения» lands its chip band with it
+  // (revision 3, B3) in an animation frame. The stub keeps that landing from
+  // throwing between cases and is taken down with the scroller.
+  beforeEach(() => {
+    Element.prototype.scrollIntoView = vi.fn();
+  });
+
+  afterEach(() => {
+    scroller.remove();
+    profiles.clear();
+    Reflect.deleteProperty(Element.prototype, 'scrollIntoView');
+  });
+
+  /** Георги's 10:00 visit in Иван's chair — or a party, Георги booking for Мартин too. */
+  function georgiVisit(party = false): VisitEditorVm {
+    return visit({
+      clientLabel: 'Георги Петров',
+      clientUserId: GEORGI,
+      ...(party
+        ? {
+            people: [
+              {
+                id: GEORGI,
+                label: 'Георги Петров',
+                phone: '+359 88 123 4567',
+                phoneHref: '+359881234567',
+                meta: null,
+              },
+              {
+                id: MARTIN,
+                label: 'Мартин Илиев',
+                phone: null,
+                phoneHref: null,
+                meta: null,
+              },
+            ],
+            legs: visit().legs.map((leg, index) => ({
+              ...leg,
+              clientId: index === 0 ? GEORGI : MARTIN,
+            })),
+          }
+        : {}),
+    });
+  }
+
+  function render(vm: VisitEditorVm = georgiVisit()): HTMLElement {
+    const ref = fixture.componentRef;
+    ref.setInput('vm', vm);
+    ref.setInput('uiServices', CATALOGUE);
+    ref.setInput('uiBarbers', CARD_ROSTER);
+    ref.setInput('uiOwnerUserId', GEORGI);
+    ref.setInput('uiGrants', [GEORGI_GRANT]);
+    ref.setInput('uiViewer', { uid: 'dev-staff-ivan', roles: ['barber'] });
+    fixture.detectChanges();
+    return fixture.nativeElement as HTMLElement;
+  }
+
+  /** Change detection, the reads that are due, the render hooks, again. */
+  async function settle(): Promise<void> {
+    fixture.detectChanges();
+    for (let i = 0; i < 30; i += 1) {
+      await new Promise((done) => setTimeout(done, 0));
+    }
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+  }
+
+  const editor = () => fixture.componentInstance;
+  const host = () => fixture.nativeElement as HTMLElement;
+  const find = (testId: string) =>
+    host().querySelector<HTMLElement>(`[data-testid="${testId}"]`);
+  const pageKind = () => find('staff-visit-page')?.getAttribute('data-page');
+  const child = <T>(type: Type<T>): T => {
+    const found = fixture.debugElement.query(By.directive(type));
+    expect(found).not.toBeNull();
+    return found.componentInstance as T;
+  };
+
+  async function openCard(clientId = GEORGI): Promise<void> {
+    find(`staff-visit-client-row-${clientId}`)?.click();
+    await settle();
+  }
+
+  async function back(): Promise<void> {
+    editor().pop();
+    await settle();
+  }
+
+  it("mounts lib-client-card as the person's page: its h2 is the page's title, inside the headline", async () => {
+    render();
+    await openCard();
+    expect(pageKind()).toBe('client');
+    expect(editor().depth()).toBe(1);
+    const card = host().querySelector('lib-client-card');
+    expect(card).not.toBeNull();
+    const title = host().querySelector('#staff-visit-page-title');
+    expect(title?.tagName).toBe('H2');
+    expect(title?.closest('ui-sheet-headline')).not.toBeNull();
+    expect(card?.contains(title as Node)).toBe(true);
+    expect(find('staff-visit-page')?.getAttribute('aria-labelledby')).toBe(
+      'staff-visit-page-title',
+    );
+    // The flag-off stub is gone — its call row is the card's quick actions now.
+    expect(find('staff-visit-client-call')).toBeNull();
+    expect(find('staff-visit-client-meta')).toBeNull();
+    // The bar names the person as the card does; the dock's ✓ is the way back.
+    expect(editor().pageTitle()).toBe('Георги Петров');
+    expect(editor().sheetTitle()).toBe('Георги Петров');
+    expect(find('staff-visit-page-done')).not.toBeNull();
+    // His modules came from the readers: the loyalty and the achievements.
+    expect(find('client-loyalty-all')).not.toBeNull();
+    expect(find('client-achievements-all')).not.toBeNull();
+  });
+
+  it('pushes the card’s pages two, three and four deep — and at the cap a push replaces the top page', async () => {
+    render();
+    await openCard();
+    child(ClientCard).openAchievements.emit();
+    await settle();
+    expect(pageKind()).toBe('clientAchievements');
+    expect(editor().depth()).toBe(2);
+    expect(host().getAttribute('data-depth')).toBe('2');
+    expect(editor().pageTitle()).toBe('Постижения');
+    expect(host().querySelector('#staff-visit-page-title')?.tagName).toBe('H2');
+
+    child(ClientAchievementsPage).openScope.emit({ kind: 'archive' });
+    await settle();
+    expect(pageKind()).toBe('achievementCategory');
+    expect(editor().depth()).toBe(3);
+    expect(child(AchievementCategoryPage).scope()).toEqual({ kind: 'archive' });
+
+    child(AchievementCategoryPage).openScope.emit({
+      kind: 'season',
+      seasonId: 'season-2026-summer',
+    });
+    await settle();
+    expect(editor().depth()).toBe(4);
+    expect(child(AchievementCategoryPage).scope()).toEqual({
+      kind: 'season',
+      seasonId: 'season-2026-summer',
+    });
+
+    // A fifth page would be too deep: the family REPLACES the season…
+    child(AchievementCategoryPage).openMedal.emit('series-2026-summer-track');
+    await settle();
+    expect(pageKind()).toBe('achievementDetail');
+    expect(editor().depth()).toBe(4);
+    expect(host().getAttribute('data-depth')).toBe('4');
+    expect(child(AchievementDetailPage).seriesId()).toBe(
+      'series-2026-summer-track',
+    );
+
+    // …so ‹ lands on the archive the season was opened from.
+    await back();
+    expect(editor().depth()).toBe(3);
+    expect(child(AchievementCategoryPage).scope()).toEqual({ kind: 'archive' });
+    await back();
+    expect(pageKind()).toBe('clientAchievements');
+    await back();
+    expect(pageKind()).toBe('client');
+    expect(editor().depth()).toBe(1);
+  });
+
+  it("a related medal replaces the family's page — same depth, same way back", async () => {
+    render();
+    await openCard();
+    child(ClientCard).openMedal.emit('series-visits');
+    await settle();
+    expect(pageKind()).toBe('achievementDetail');
+    expect(editor().depth()).toBe(2);
+
+    child(AchievementDetailPage).openMedal.emit('series-tenure');
+    await settle();
+    expect(editor().depth()).toBe(2);
+    expect(child(AchievementDetailPage).seriesId()).toBe('series-tenure');
+
+    await back();
+    expect(pageKind()).toBe('client');
+    expect(editor().depth()).toBe(1);
+  });
+
+  it('‹ lands back after the render: the scroll restored, the focus on the tile that pushed', async () => {
+    render();
+    await openCard();
+    // The barber has read down the card to the loyalty module.
+    scroller.scrollTop = 240;
+    find('client-loyalty-all')?.click();
+    await settle();
+    expect(pageKind()).toBe('clientLoyalty');
+    expect(child(ClientLoyaltyPage).anchor()).toBeNull();
+    // A page opens at its own top.
+    expect(scroller.scrollTop).toBe(0);
+    expect(document.activeElement?.getAttribute('data-testid')).toBe(
+      'staff-visit-page',
+    );
+
+    await back();
+    expect(pageKind()).toBe('client');
+    expect(scroller.scrollTop).toBe(240);
+    expect(document.activeElement?.getAttribute('data-testid')).toBe(
+      'client-loyalty-all',
+    );
+  });
+
+  it('an anchored push lands on its section: the heading keeps the focus the page gave it, not the container (§2.3)', async () => {
+    render();
+    await openCard();
+    // The built `stamps` anchor is one of the wallet's (`WalletAnchor`,
+    // G1-4): the stamp cards live in «В портфейла», so the page lands on
+    // that section's heading (B2's mapping), handed through unchanged.
+    child(ClientCard).openLoyalty.emit('stamps');
+    await settle();
+    expect(pageKind()).toBe('clientLoyalty');
+    expect(child(ClientLoyaltyPage).anchor()).toBe('stamps');
+    expect(document.activeElement?.tagName).toBe('H3');
+    expect(document.activeElement?.id).toBe('staff-visit-page-title-wallet');
+    // Later renders leave it there.
+    await settle();
+    expect(document.activeElement?.id).toBe('staff-visit-page-title-wallet');
+  });
+
+  it('keeps one title role per page: the person at `title`, the wallet named by the bar from rest, the discount page the sheet’s large title from the wallet’s «Използвай» and from the ladder alike (§5.3, DV7 fallback)', async () => {
+    render();
+    await openCard();
+    const title = () => host().querySelector('#staff-visit-page-title');
+    // The person is the hero's one head at `title` — 28/700, centred (R2-C).
+    expect(title()?.getAttribute('data-font')).toBe('title');
+    expect(editor().pageHasNoLargeTitle()).toBe(false);
+    child(ClientCard).openLoyalty.emit(null);
+    await settle();
+    // THE ALWAYS-TITLED WALLET (§5.3): the pass stands straight under the
+    // bar, so no large title scrolls under it — the h2 is for assistive
+    // tech alone, the bar names the page from rest (the photo's rule), and
+    // the body asks the sheet for the tight fade: the pass under a crisp edge.
+    expect(pageKind()).toBe('clientLoyalty');
+    expect(title()?.tagName).toBe('H2');
+    expect(title()?.getAttribute('data-testid')).toBe('rewards-title');
+    expect(title()?.hasAttribute('data-font')).toBe(false);
+    expect(editor().pageHasNoLargeTitle()).toBe(true);
+    expect(editor().pageTitle()).toBe('Лоялност');
+    expect(editor().sheetTitle()).toBe('Лоялност');
+    expect(
+      host()
+        .querySelector('lib-client-loyalty')
+        ?.getAttribute('data-sheet-fade'),
+    ).toBe('tight');
+    // «Използвай» — one ready ticket — puts the grant on the bill and opens
+    // the discount page: a large title again, the bar waiting for it.
+    find('rewards-action-use')?.click();
+    await settle();
+    expect(pageKind()).toBe('discount');
+    expect(title()?.getAttribute('data-font')).toBe('largeTitle');
+    expect(editor().pageHasNoLargeTitle()).toBe(false);
+
+    // The same page from the ladder's discount row: the same title role.
+    find('staff-visit-page-done')?.click();
+    await settle();
+    expect(editor().depth()).toBe(0);
+    find('staff-visit-discount-row')?.click();
+    await settle();
+    expect(pageKind()).toBe('discount');
+    expect(title()?.getAttribute('data-font')).toBe('largeTitle');
+  });
+
+  it('✓ unwinds the whole stack to the visit, scrolled where it was, the focus on the person’s row', async () => {
+    render();
+    scroller.scrollTop = 180;
+    await openCard();
+    expect(scroller.scrollTop).toBe(0);
+    child(ClientCard).openLoyalty.emit('stamps');
+    await settle();
+    expect(child(ClientLoyaltyPage).anchor()).toBe('stamps');
+    expect(editor().depth()).toBe(2);
+    child(ClientLoyaltyPage).openReward.emit(GEORGI_GRANT.grantId);
+    await settle();
+    expect(pageKind()).toBe('discount');
+    expect(editor().depth()).toBe(3);
+
+    find('staff-visit-page-done')?.click();
+    await settle();
+    expect(editor().depth()).toBe(0);
+    expect(find('staff-visit-page')).toBeNull();
+    expect(find('staff-visit-root')).not.toBeNull();
+    expect(scroller.scrollTop).toBe(180);
+    expect(document.activeElement?.getAttribute('data-testid')).toBe(
+      `staff-visit-client-row-${GEORGI}`,
+    );
+  });
+
+  it('client → «Лоялност» → discount → scan comes back to «Лоялност»: the replace keeps the chain', async () => {
+    render();
+    fixture.componentRef.setInput('uiScan', true);
+    await openCard();
+    child(ClientCard).openLoyalty.emit('catalog');
+    await settle();
+    expect(child(ClientLoyaltyPage).anchor()).toBe('catalog');
+    child(ClientLoyaltyPage).openReward.emit(GEORGI_GRANT.grantId);
+    await settle();
+    expect(pageKind()).toBe('discount');
+    expect(editor().depth()).toBe(3);
+
+    // The camera takes the discount page's place — the same depth.
+    find('staff-visit-discount-scan')?.click();
+    await settle();
+    expect(pageKind()).toBe('scan');
+    expect(editor().depth()).toBe(3);
+    // A code read comes back to the discount page, still three deep.
+    const scanner = fixture.debugElement.query(By.directive(UiCodeScanner))
+      .componentInstance as UiCodeScanner;
+    scanner.uiDetected.emit('gift2025');
+    await settle();
+    expect(pageKind()).toBe('discount');
+    expect(editor().depth()).toBe(3);
+
+    // ‹ walks the chain as it was: «Лоялност» (its anchor spent — the
+    // return does not scroll to the section again), then the person.
+    await back();
+    expect(pageKind()).toBe('clientLoyalty');
+    expect(editor().depth()).toBe(2);
+    expect(child(ClientLoyaltyPage).anchor()).toBeNull();
+    await back();
+    expect(pageKind()).toBe('client');
+  });
+
+  it('opens a past cut read-only: its date as the title, ✓ in the dock and no «Изтрий снимката»', async () => {
+    render();
+    await openCard();
+    // The card names itself in a large title; the bar waits for it.
+    expect(editor().pageHasNoLargeTitle()).toBe(false);
+    child(ClientCard).openPhoto.emit(PAST_CUT.photoId);
+    await settle();
+    expect(pageKind()).toBe('photo');
+    expect(editor().depth()).toBe(2);
+    expect(find('staff-visit-photo-page')).not.toBeNull();
+    expect(find('staff-visit-photo-remove')).toBeNull();
+    expect(find('staff-visit-page-done')).not.toBeNull();
+    // The date as the card words it (R59), in the bar and the page's h2.
+    expect(editor().pageTitle()).toBe('4.09');
+    expect(
+      host().querySelector('#staff-visit-page-title')?.textContent,
+    ).toContain('4.09');
+    // The h2 is for assistive tech alone, so the bar shows the date from
+    // rest (§3.7): the shell's inline-title mode, not a scroll's collapse.
+    expect(editor().pageHasNoLargeTitle()).toBe(true);
+    // The chair and the person, as the sheet's own photo page names them.
+    expect(find('staff-visit-photo-chair')?.textContent).toContain('Нико');
+    expect(find('staff-visit-photo-client')?.textContent).toContain(
+      'Георги Петров',
+    );
+    // With the face the card's head showed a push ago, not his initials.
+    expect(
+      find('staff-visit-photo-client-row')
+        ?.querySelector('[uileading] ui-avatar img')
+        ?.getAttribute('src'),
+    ).toBe(GEORGI_FACE);
+    // «Снимано» says the time alone — the bar already names the day.
+    expect(find('staff-visit-photo-when')?.textContent?.trim()).toBe('11:10');
+
+    find('staff-visit-page-done')?.click();
+    await settle();
+    expect(editor().depth()).toBe(0);
+  });
+
+  it('«Повтори» puts the last visit’s services on the person, goes back to the visit and says so once', async () => {
+    render();
+    await openCard();
+    const last: readonly VisitLeg[] = georgiLastVisit().seats.map((seat) => ({
+      seatId: seat.id,
+      serviceId: seat.serviceId,
+      variantId: seat.variantId,
+      barberId: seat.barberId,
+      minutes: seat.terms.durationMinutes,
+    }));
+    child(ClientCard).repeatLast.emit(last);
+    await settle();
+
+    expect(editor().depth()).toBe(0);
+    // Георги's cut and beard became the fade — in this visit's chair.
+    const commits: VisitEditorCommit[] = [];
+    editor().committed.subscribe((commit) => commits.push(commit));
+    find('staff-visit-save')?.click();
+    expect(
+      commits[0]?.legs.map((leg) => [leg.serviceId, leg.barberId, leg.minutes]),
+    ).toEqual([['fade', 'ivan', 45]]);
+    expect(document.activeElement?.getAttribute('data-testid')).toBe(
+      `staff-visit-client-row-${GEORGI}`,
+    );
+
+    // The polite region speaks once the focus has landed.
+    await new Promise((done) => setTimeout(done, 200));
+    fixture.detectChanges();
+    expect(find('staff-visit-announce')?.getAttribute('role')).toBe('status');
+    expect(find('staff-visit-announce')?.textContent?.trim()).toBe(
+      'Взехме услугите от 4 септември.',
+    );
+  });
+
+  it('«Махни от посещението» runs the one rule for a person leaving, and lands on the next person', async () => {
+    render(georgiVisit(true));
+    await openCard(MARTIN);
+    expect(find('client-remove')).not.toBeNull();
+    child(ClientCard).removeClient.emit();
+    await settle();
+    expect(editor().depth()).toBe(0);
+    expect(find(`staff-visit-client-row-${MARTIN}`)).toBeNull();
+    expect(document.activeElement?.getAttribute('data-testid')).toBe(
+      `staff-visit-client-row-${GEORGI}`,
+    );
+    // He left with his service (`withoutClient`): only Георги's cut stays.
+    const commits: VisitEditorCommit[] = [];
+    editor().committed.subscribe((commit) => commits.push(commit));
+    find('staff-visit-save')?.click();
+    expect(commits[0]?.clients.map((client) => client.id)).toEqual([GEORGI]);
+    expect(commits[0]?.legs.map((leg) => leg.serviceId)).toEqual(['cut']);
+  });
+
+  it("shows the booker's ready ticket and never a companion's — the visit can spend only the booker's rewards", async () => {
+    render(georgiVisit(true));
+    await openCard(GEORGI);
+    expect(find('client-reward-ready')).not.toBeNull();
+    // The name already says the rule: the ticket is the name alone, no
+    // value line to repeat it (§3.1 E, WP7 review r6).
+    expect(find('client-reward-ready')?.getAttribute('aria-label')).toBe(
+      'Безплатно подстригване, използвай',
+    );
+    expect(
+      find('client-reward-ready')?.querySelector('.ui-coupon-card__value'),
+    ).toBeNull();
+    find('staff-visit-page-done')?.click();
+    await settle();
+
+    await openCard(MARTIN);
+    expect(pageKind()).toBe('client');
+    expect(find('client-reward-ready')).toBeNull();
+    // Nor does his card reach the discount page through a reward.
+    child(ClientCard).openReward.emit(GEORGI_GRANT.grantId);
+    await settle();
+    expect(pageKind()).toBe('client');
+    expect(editor().depth()).toBe(1);
+  });
+
+  /** The discount page's own card for Георги's grant, and whether it stands applied. */
+  const grantCard = () =>
+    find(`staff-visit-discount-grant-${GEORGI_GRANT.grantId}`);
+
+  it('client-reward-ready → the discount page lists the grant as applied: «Използвай» does what it says, once (WP7 review r5)', async () => {
+    render();
+    await openCard();
+    const ticket = find('client-reward-ready');
+    expect(ticket?.textContent).toContain('Използвай');
+    ticket?.click();
+    await settle();
+    expect(pageKind()).toBe('discount');
+    expect(editor().depth()).toBe(2);
+    // «Приложени» names it — never «Няма» after a «Използвай».
+    expect(find('staff-visit-discount-lines-value')?.textContent).toContain(
+      'Безплатно подстригване',
+    );
+    expect(
+      find('staff-visit-discount-lines-row')?.hasAttribute('disabled'),
+    ).toBe(false);
+    // Its own card is stamped, «Премахни» where the call stood: nothing
+    // on the page asks «Използвай» for it again.
+    expect(grantCard()?.tagName).toBe('ARTICLE');
+    expect(grantCard()?.hasAttribute('data-applied')).toBe(true);
+    expect(grantCard()?.textContent).not.toContain('Използвай');
+    expect(
+      find(`staff-visit-discount-grant-${GEORGI_GRANT.grantId}-remove`),
+    ).not.toBeNull();
+
+    // ‹: the ticket STANDS where it stood, stamped, «Премахни» where
+    // «Използвай» stood — the discount page's own applied card — and
+    // takes the focus (WP7 review r6: it used to vanish).
+    await back();
+    expect(pageKind()).toBe('client');
+    const stamped = find('client-reward-ready');
+    expect(stamped?.tagName).toBe('ARTICLE');
+    expect(stamped?.hasAttribute('data-applied')).toBe(true);
+    expect(stamped?.textContent).not.toContain('Използвай');
+    expect(stamped?.getAttribute('aria-label')).toBe(
+      'Безплатно подстригване, с това посещение',
+    );
+    expect(find('client-reward-ready-remove')?.textContent?.trim()).toBe(
+      'Премахни',
+    );
+    expect(document.activeElement?.getAttribute('data-testid')).toBe(
+      'client-reward-ready',
+    );
+
+    // Used on the visit: the save carries it.
+    find('staff-visit-page-done')?.click();
+    await settle();
+    const commits: VisitEditorCommit[] = [];
+    editor().committed.subscribe((commit) => commits.push(commit));
+    find('staff-visit-save')?.click();
+    expect(commits[0]).toMatchObject({
+      discounts: [{ source: 'grant', grantId: GEORGI_GRANT.grantId }],
+    });
+  });
+
+  it('«Лоялност»’s «Използвай» disc uses the grant; «Премахни» on the page gives it back — the ticket static again, the disc back, ‹ on the page (§2.2.3)', async () => {
+    render();
+    await openCard();
+    child(ClientCard).openLoyalty.emit(null);
+    await settle();
+    // One ready ticket: the DISC is the verb, said once on the page; the
+    // ticket in the holdings is static, with no call of its own.
+    const ticket = `rewards-ready-${GEORGI_GRANT.grantId}`;
+    expect(find(ticket)?.tagName).toBe('ARTICLE');
+    expect(find(ticket)?.textContent).not.toContain('Използвай');
+    find('rewards-action-use')?.click();
+    await settle();
+    expect(pageKind()).toBe('discount');
+    expect(editor().depth()).toBe(3);
+    expect(grantCard()?.hasAttribute('data-applied')).toBe(true);
+
+    // Taken off again on the page: offered again, where it was.
+    find(`staff-visit-discount-grant-${GEORGI_GRANT.grantId}-remove`)?.click();
+    await settle();
+    expect(grantCard()?.tagName).toBe('BUTTON');
+    expect(find('staff-visit-discount-lines-value')?.textContent).toContain(
+      'Няма',
+    );
+    await back();
+    expect(pageKind()).toBe('clientLoyalty');
+    // The ticket stands static where it stood and the disc is back. A
+    // static article cannot take the focus, so the landing falls to the page.
+    expect(find(ticket)).not.toBeNull();
+    expect(find(`${ticket}-remove`)).toBeNull();
+    expect(find('rewards-action-use')).not.toBeNull();
+    expect(document.activeElement?.getAttribute('data-testid')).toBe(
+      'staff-visit-page',
+    );
+  });
+
+  it('a stamped ticket’s «Премахни» takes the grant off the bill where it stands — offered again, focused — on the glance and on «Лоялност» (WP7 review r6)', async () => {
+    render();
+    await openCard();
+    find('client-reward-ready')?.click();
+    await settle();
+    await back();
+    expect(find('client-reward-ready')?.tagName).toBe('ARTICLE');
+
+    // The discount page's own way off, from the card.
+    find('client-reward-ready-remove')?.click();
+    await settle();
+    const offered = find('client-reward-ready');
+    expect(offered?.tagName).toBe('BUTTON');
+    expect(offered?.textContent).toContain('Използвай');
+    expect(document.activeElement).toBe(offered);
+    expect(pageKind()).toBe('client');
+
+    // «Лоялност»: its disc uses the ticket, which stands stamped on ‹ and
+    // takes the focus; «Премахни» gives the disc back, focused — the verb
+    // that returns where the call stood (§2.2.4).
+    const ticket = `rewards-ready-${GEORGI_GRANT.grantId}`;
+    child(ClientCard).openLoyalty.emit(null);
+    await settle();
+    find('rewards-action-use')?.click();
+    await settle();
+    expect(pageKind()).toBe('discount');
+    await back();
+    expect(pageKind()).toBe('clientLoyalty');
+    expect(find(ticket)?.tagName).toBe('ARTICLE');
+    expect(find(ticket)?.hasAttribute('data-applied')).toBe(true);
+    expect(document.activeElement?.getAttribute('data-testid')).toBe(ticket);
+    // On the bill: nothing left to use.
+    expect(find('rewards-action-use')).toBeNull();
+    find(`${ticket}-remove`)?.click();
+    await settle();
+    expect(find(ticket)?.hasAttribute('data-applied')).toBe(false);
+    expect(find(`${ticket}-remove`)).toBeNull();
+    expect(document.activeElement?.getAttribute('data-testid')).toBe(
+      'rewards-action-use',
+    );
+
+    // Nothing on the bill: the ladder's row reads «Няма» again.
+    find('staff-visit-page-done')?.click();
+    await settle();
+    expect(find('staff-visit-discount-row-value')?.textContent?.trim()).toBe(
+      'Няма',
+    );
+  });
+
+  /* ── Revision 3 (§5): the two new leaves, the wallet's three verbs, the dock's verb ── */
+
+  it('«История» on the wallet pushes the ledger «Движение» three deep — a leaf named by the bar, ✓ back to the visit, ‹ on the disc (§5.1)', async () => {
+    render();
+    await openCard();
+    child(ClientCard).openLoyalty.emit(null);
+    await settle();
+    find('rewards-action-history')?.click();
+    await settle();
+    expect(pageKind()).toBe('clientLedger');
+    expect(editor().depth()).toBe(3);
+    expect(host().getAttribute('data-depth')).toBe('3');
+    expect(child(ClientLedgerPage).titleId()).toBe('staff-visit-page-title');
+    const title = host().querySelector('#staff-visit-page-title');
+    expect(title?.tagName).toBe('H2');
+    expect(title?.getAttribute('data-testid')).toBe('ledger-title');
+    expect(editor().pageTitle()).toBe('Движение');
+    expect(editor().sheetTitle()).toBe('Движение');
+    // A large title of its own: the bar waits for it, as on every page but
+    // the wallet's and the photo's.
+    expect(editor().pageHasNoLargeTitle()).toBe(false);
+    // The dock: ✓ alone, and the focus on the container.
+    expect(find('staff-visit-page-done')).not.toBeNull();
+    expect(find('staff-visit-detail-add')).toBeNull();
+    expect(document.activeElement?.getAttribute('data-testid')).toBe(
+      'staff-visit-page',
+    );
+    // The feed's rows came through the reader.
+    expect(
+      host().querySelector('[data-testid^="ledger-entry-"]'),
+    ).not.toBeNull();
+
+    // ‹ lands on the disc that pushed it.
+    await back();
+    expect(pageKind()).toBe('clientLoyalty');
+    expect(document.activeElement?.getAttribute('data-testid')).toBe(
+      'rewards-action-history',
+    );
+
+    // «Всички ›» on the wallet's feed takes the same road…
+    find('rewards-ledger-all')?.click();
+    await settle();
+    expect(pageKind()).toBe('clientLedger');
+    expect(editor().depth()).toBe(3);
+    // …and ✓ leaves the person altogether.
+    find('staff-visit-page-done')?.click();
+    await settle();
+    expect(editor().depth()).toBe(0);
+    expect(find('staff-visit-page')).toBeNull();
+  });
+
+  it('«Рекорди»: the glance’s line pushes the records page two deep, «Постижения»’s «Всички ›» three; ‹ lands on the control that pushed (§5.1)', async () => {
+    render();
+    await openCard();
+    find('client-records-line')?.click();
+    await settle();
+    expect(pageKind()).toBe('clientRecords');
+    expect(editor().depth()).toBe(2);
+    expect(child(ClientRecordsPage).titleId()).toBe('staff-visit-page-title');
+    const title = () => host().querySelector('#staff-visit-page-title');
+    expect(title()?.tagName).toBe('H2');
+    expect(title()?.getAttribute('data-testid')).toBe('records-title');
+    expect(editor().pageTitle()).toBe('Рекорди');
+    expect(editor().sheetTitle()).toBe('Рекорди');
+    expect(editor().pageHasNoLargeTitle()).toBe(false);
+    expect(find('staff-visit-page-done')).not.toBeNull();
+    await back();
+    expect(pageKind()).toBe('client');
+    expect(document.activeElement?.getAttribute('data-testid')).toBe(
+      'client-records-line',
+    );
+
+    // From «Постижения»: three deep, back on its action.
+    child(ClientCard).openAchievements.emit();
+    await settle();
+    find('achievements-records-all')?.click();
+    await settle();
+    expect(pageKind()).toBe('clientRecords');
+    expect(editor().depth()).toBe(3);
+    await back();
+    expect(pageKind()).toBe('clientAchievements');
+    expect(document.activeElement?.getAttribute('data-testid')).toBe(
+      'achievements-records-all',
+    );
+    // A record card pushes the same page; ✓ unwinds to the visit.
+    child(ClientAchievementsPage).openRecords.emit();
+    await settle();
+    expect(pageKind()).toBe('clientRecords');
+    find('staff-visit-page-done')?.click();
+    await settle();
+    expect(editor().depth()).toBe(0);
+  });
+
+  it('«Код» opens the discount page clean, three deep, the focus on the container — the booker’s wallet only (§5.2)', async () => {
+    render(georgiVisit(true));
+    await openCard(GEORGI);
+    child(ClientCard).openLoyalty.emit(null);
+    await settle();
+    find('rewards-action-code')?.click();
+    await settle();
+    expect(pageKind()).toBe('discount');
+    expect(editor().depth()).toBe(3);
+    // Nothing applied, nothing typed: the code field is the page's first
+    // control; no control is ever auto-focused.
+    expect(find('staff-visit-discount-lines-value')?.textContent).toContain(
+      'Няма',
+    );
+    expect(find('staff-visit-discount-code')).not.toBeNull();
+    expect(document.activeElement?.getAttribute('data-testid')).toBe(
+      'staff-visit-page',
+    );
+    await back();
+    expect(pageKind()).toBe('clientLoyalty');
+    expect(document.activeElement?.getAttribute('data-testid')).toBe(
+      'rewards-action-code',
+    );
+    find('staff-visit-page-done')?.click();
+    await settle();
+
+    // A companion's wallet carries no «Код» — and its output, were it to
+    // fire, opens nothing: only the booker's rewards are this visit's.
+    await openCard(MARTIN);
+    child(ClientCard).openLoyalty.emit(null);
+    await settle();
+    expect(pageKind()).toBe('clientLoyalty');
+    expect(find('rewards-action-code')).toBeNull();
+    expect(find('rewards-action-use')).toBeNull();
+    child(ClientLoyaltyPage).openCode.emit();
+    await settle();
+    expect(pageKind()).toBe('clientLoyalty');
+    expect(editor().depth()).toBe(2);
+  });
+
+  it('a medal’s «Всички ›» opens «Постижения» on its category chip; at the depth cap it replaces the family’s page, the way back kept (§5.2)', async () => {
+    render();
+    await openCard();
+    child(ClientCard).openMedal.emit('series-svc-fade');
+    await settle();
+    expect(pageKind()).toBe('achievementDetail');
+    expect(editor().depth()).toBe(2);
+    find('achievements-detail-related-all')?.click();
+    await settle();
+    expect(pageKind()).toBe('clientAchievements');
+    expect(editor().depth()).toBe(3);
+    expect(editor().pageTitle()).toBe('Постижения');
+    // The page arrived on the chip: the body under the band is the category's.
+    expect(find('achievements-body')?.getAttribute('data-chip')).toBe(
+      'cat-mastery',
+    );
+    expect(find('achievements-chip-cat-mastery')).not.toBeNull();
+    // ‹ walks back to the family, then to the person.
+    await back();
+    expect(pageKind()).toBe('achievementDetail');
+    await back();
+    expect(pageKind()).toBe('client');
+
+    // The glance's «Всички ›» opens the collection WHOLE, whatever chip a
+    // medal's page left behind.
+    child(ClientCard).openAchievements.emit();
+    await settle();
+    expect(find('achievements-body')?.getAttribute('data-chip')).toBe('all');
+
+    // From a scope's grid at the cap: the page REPLACES the family's, and ‹
+    // lands on the scope it was opened from.
+    child(ClientAchievementsPage).openScope.emit({ kind: 'archive' });
+    await settle();
+    child(AchievementCategoryPage).openMedal.emit('series-svc-fade');
+    await settle();
+    expect(pageKind()).toBe('achievementDetail');
+    expect(editor().depth()).toBe(4);
+    child(AchievementDetailPage).openCategory.emit('cat-mastery');
+    await settle();
+    expect(pageKind()).toBe('clientAchievements');
+    expect(editor().depth()).toBe(4);
+    expect(find('achievements-body')?.getAttribute('data-chip')).toBe(
+      'cat-mastery',
+    );
+    await back();
+    expect(pageKind()).toBe('achievementCategory');
+    expect(editor().depth()).toBe(3);
+    expect(child(AchievementCategoryPage).scope()).toEqual({ kind: 'archive' });
+  });
+
+  it('the dock carries a medal page’s one verb: «Добави фейд» seats the service on the person, stays on the page, says so once and gives way to the ✓ (§5.2, DV-C)', async () => {
+    render();
+    fixture.componentRef.setInput('uiServices', [...CATALOGUE, FADE_OPTION]);
+    await openCard();
+    child(ClientCard).openMedal.emit('series-svc-fade');
+    await settle();
+    expect(pageKind()).toBe('achievementDetail');
+    const verb = find('staff-visit-detail-add');
+    expect(verb?.tagName).toBe('BUTTON');
+    expect(verb?.textContent?.trim()).toBe('Добави фейд');
+    expect(verb?.getAttribute('aria-label')).toBe(
+      'Добави Фейд към посещението',
+    );
+    expect(
+      verb?.querySelector('ui-icon[data-name="action.add"]'),
+    ).not.toBeNull();
+    expect(verb?.closest('ui-sheet-action-bar')).not.toBeNull();
+    // Hugged beside the ✓, and a long service name wraps inside it on a
+    // narrow phone rather than pushing the ✓ off the edge.
+    expect(verb?.getAttribute('data-button-style')).toBe('bordered');
+    expect(verb?.getAttribute('data-control-size')).toBe('large');
+    expect(verb?.hasAttribute('data-multiline')).toBe(true);
+    expect(verb?.classList.contains('staff-visit__detail-add')).toBe(true);
+    // Beside the ✓, which stays; the body carries no verb of its own.
+    expect(find('staff-visit-page-done')).not.toBeNull();
+    expect(
+      host().querySelector(
+        'lib-achievement-detail [data-testid="staff-visit-detail-add"]',
+      ),
+    ).toBeNull();
+    expect(find('achievements-detail-this-visit')).toBeNull();
+
+    verb?.click();
+    await settle();
+    // Still on the page; the button gave way and the ✓ took the focus; the
+    // progress card says this visit counts.
+    expect(pageKind()).toBe('achievementDetail');
+    expect(editor().depth()).toBe(2);
+    expect(find('staff-visit-detail-add')).toBeNull();
+    expect(find('staff-visit-page-done')).not.toBeNull();
+    expect(document.activeElement?.getAttribute('data-testid')).toBe(
+      'staff-visit-page-done',
+    );
+    expect(find('achievements-detail-this-visit')).not.toBeNull();
+    // The polite region speaks once the focus has landed.
+    await new Promise((done) => setTimeout(done, 200));
+    fixture.detectChanges();
+    expect(find('staff-visit-announce')?.textContent?.trim()).toBe(
+      'Добавихме фейд към посещението.',
+    );
+
+    // The leg is the draft's: «Запази» carries it, in this visit's chair,
+    // beside what was there.
+    find('staff-visit-page-done')?.click();
+    await settle();
+    const commits: VisitEditorCommit[] = [];
+    editor().committed.subscribe((commit) => commits.push(commit));
+    find('staff-visit-save')?.click();
+    expect(commits[0]?.legs.map((leg) => leg.serviceId)).toEqual([
+      'cut',
+      'beard',
+      'svc-fade',
+    ]);
+    expect(
+      commits[0]?.legs.find((leg) => leg.serviceId === 'svc-fade'),
+    ).toMatchObject({ barberId: 'ivan', minutes: 45 });
+  });
+
+  it('draws ✓ alone on a medal page whose family is not about a service (§2.4)', async () => {
+    render();
+    fixture.componentRef.setInput('uiServices', [...CATALOGUE, FADE_OPTION]);
+    await openCard();
+    child(ClientCard).openMedal.emit('series-visits');
+    await settle();
+    expect(pageKind()).toBe('achievementDetail');
+    expect(find('staff-visit-detail-add')).toBeNull();
+    expect(find('staff-visit-page-done')).not.toBeNull();
+  });
+
+  it('draws ✓ alone on a medal page of a visit that is gone: nothing can be seated on it (§2.4)', async () => {
+    render({ ...georgiVisit(), status: 'cancelled', statusLabel: 'Отказан' });
+    fixture.componentRef.setInput('uiServices', [...CATALOGUE, FADE_OPTION]);
+    await openCard();
+    child(ClientCard).openMedal.emit('series-svc-fade');
+    await settle();
+    expect(pageKind()).toBe('achievementDetail');
+    expect(find('staff-visit-detail-add')).toBeNull();
+    expect(find('staff-visit-page-done')).not.toBeNull();
+  });
+
+  it('seats a companion’s counted service on the companion, in the visit’s chair (§2.4 party member)', async () => {
+    render(georgiVisit(true));
+    fixture.componentRef.setInput('uiServices', [...CATALOGUE, FADE_OPTION]);
+    await openCard(MARTIN);
+    child(ClientCard).openMedal.emit('series-svc-fade');
+    await settle();
+    expect(pageKind()).toBe('achievementDetail');
+    expect(find('staff-visit-detail-add')).not.toBeNull();
+    find('staff-visit-detail-add')?.click();
+    await settle();
+    expect(pageKind()).toBe('achievementDetail');
+    expect(find('staff-visit-detail-add')).toBeNull();
+    find('staff-visit-page-done')?.click();
+    await settle();
+    const commits: VisitEditorCommit[] = [];
+    editor().committed.subscribe((commit) => commits.push(commit));
+    find('staff-visit-save')?.click();
+    expect(
+      commits[0]?.legs.find((leg) => leg.serviceId === 'svc-fade'),
+    ).toMatchObject({ clientId: MARTIN, barberId: 'ivan', minutes: 45 });
+    // Георги's own services stay his.
+    expect(
+      commits[0]?.legs
+        .filter((leg) => leg.serviceId !== 'svc-fade')
+        .map((leg) => leg.clientId),
+    ).toEqual([GEORGI, MARTIN]);
+  });
+
+  /** A ticket's chip — its validity, or nothing. */
+  const chipOf = (ticket: HTMLElement | null) =>
+    ticket?.querySelector('.ui-coupon-card__detail')?.textContent?.trim() ??
+    null;
+
+  it('prints when a held reward lapses — «до 28.10» on the glance ticket and in the wallet, said in words to a reader — and no chip for one that never does (review 2: the editor handed no expiry)', async () => {
+    render();
+    fixture.componentRef.setInput('uiGrants', [
+      { ...GEORGI_GRANT, expiresOn: '2026-10-28' },
+    ]);
+    await openCard();
+    expect(chipOf(find('client-reward-ready'))).toBe('до 28.10');
+    find('client-loyalty-all')?.click();
+    await settle();
+    const ticket = `rewards-ready-${GEORGI_GRANT.grantId}`;
+    expect(chipOf(find(ticket))).toBe('до 28.10');
+    expect(find(ticket)?.getAttribute('aria-label')).toContain(
+      'важи до 28 октомври',
+    );
+
+    // The same grant with no end: the chip goes, the name says nothing of it.
+    fixture.componentRef.setInput('uiGrants', [GEORGI_GRANT]);
+    await settle();
+    expect(find(ticket)).not.toBeNull();
+    expect(chipOf(find(ticket))).toBeNull();
+    expect(find(ticket)?.getAttribute('aria-label')).not.toContain('важи');
+    await back();
+    expect(chipOf(find('client-reward-ready'))).toBeNull();
+  });
+
+  it('carries the birthday gift ONCE: the birthday card prints it with its figure and validity, the glance ticket keeps the other reward, the wallet lists each grant once (R2-D, §2.1.2 c)', async () => {
+    profiles.set(GEORGI, georgiBornToday());
+    render();
+    fixture.componentRef.setInput('uiGrants', [
+      { ...GEORGI_GRANT, expiresOn: '2026-12-31' },
+      GEORGI_BIRTHDAY_GRANT,
+    ]);
+    await openCard();
+    const gift = find('client-birthday-gift');
+    expect(gift).not.toBeNull();
+    expect(find('client-birthday-band')?.textContent).toContain(
+      'Рожден ден · 34 г.',
+    );
+    // The figure as the editor's one formatter words it — the narrow
+    // no-break space before the sign — and the chip under it.
+    expect(
+      gift?.querySelector('.ui-coupon-card__value')?.textContent?.trim(),
+    ).toBe('−20 %');
+    expect(chipOf(gift)).toBe('до 28.10');
+    // The generic ticket never repeats the gift: one ticket, the punch
+    // card's, with its own validity.
+    const tickets = host().querySelectorAll(
+      '[data-testid="client-reward-ready"]',
+    );
+    expect(tickets.length).toBe(1);
+    expect(tickets[0]?.getAttribute('aria-label')).toBe(
+      'Безплатно подстригване, използвай',
+    );
+    expect(tickets[0]?.textContent).not.toContain('Рожден ден');
+    expect(chipOf(tickets[0] as HTMLElement)).toBe('до 31.12');
+
+    // The wallet: no band, each grant one ticket, the soonest to lapse first.
+    find('client-loyalty-all')?.click();
+    await settle();
+    expect(find('client-birthday-band')).toBeNull();
+    const held = [
+      ...host().querySelectorAll<HTMLElement>(
+        '[data-testid^="rewards-ready-"]',
+      ),
+    ]
+      .map((el) => el.getAttribute('data-testid'))
+      .filter((id) => id !== null && !id.endsWith('-remove'));
+    expect(held).toEqual([
+      `rewards-ready-${GEORGI_BIRTHDAY_GRANT.grantId}`,
+      `rewards-ready-${GEORGI_GRANT.grantId}`,
+    ]);
+    expect(chipOf(find(`rewards-ready-${GEORGI_BIRTHDAY_GRANT.grantId}`))).toBe(
+      'до 28.10',
+    );
+  });
+});
+
+describe('nameSaysRule — whether a coupon’s name already says its rule', () => {
+  it('hears the rule’s word in the name whatever its ending, in either language', () => {
+    expect(
+      nameSaysRule('Безплатно подстригване', 'Безплатна услуга', 'bg'),
+    ).toBe(true);
+    expect(
+      nameSaysRule('Безплатно оформяне на брада', 'Безплатна услуга', 'bg'),
+    ).toBe(true);
+    expect(nameSaysRule('Free haircut', 'Free service', 'en')).toBe(true);
+  });
+
+  it('keeps the rule for a name that does not say it', () => {
+    expect(nameSaysRule('Пето подстригване', 'Безплатна услуга', 'bg')).toBe(
+      false,
+    );
+    expect(nameSaysRule('Fifth cut', 'Free service', 'en')).toBe(false);
+    expect(nameSaysRule('Безплатно подстригване', '', 'bg')).toBe(false);
   });
 });

@@ -1,0 +1,147 @@
+/*
+ * THE JUMP PILLS — moved from «Моите часове» (`.appointments__pill*`).
+ * The capsule's face is the client page's, value for value; what the move
+ * adds is the house state layer (the DS's own, through `uiInteractive`:
+ * hover for a pointer, the ungated press for a thumb, the ring) and the
+ * column for one pinned control.
+ */
+
+/* The host is no box of its own: the band is the browser's item, so a
+   band that is not there leaves no gap behind in the browser's column. */
+:host {
+  display: contents;
+}
+
+/* THE BAND: the rail takes what is left, the pinned control its own
+   width. Without a control the second track is empty and costs nothing. */
+.visit-pills {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  min-inline-size: 0;
+  /* The rail's height, held when a filter leaves no pill: the control
+     stays where it was and the list under it does not jump. */
+  min-block-size: calc(var(--control-size-small) + 2 * var(--sys-space-tight));
+}
+
+/* A band that holds nothing (no section, no control) is not there. The
+   control's column is asked whether it is EMPTY, never what it holds:
+   what it holds is the host's element, outside this view. */
+.visit-pills:not(
+  :has(> .visit-pills__rail, > .visit-pills__action:not(:empty))
+) {
+  display: none;
+}
+
+/* The control keeps the trailing track, pills or none. */
+.visit-pills__action {
+  grid-column: 2;
+  display: flex;
+  align-items: center;
+}
+
+.visit-pills__action:empty {
+  display: none;
+}
+
+/* ── THE RAIL ──────────────────────────────────────────────────────────
+   The band's leading track. A little air above and below, so a pill's
+   focus ring is never cut by the rail's own scroll box. */
+.visit-pills__rail {
+  grid-column: 1;
+  padding-block: var(--sys-space-tight);
+}
+
+/* ON A PAGE the rail runs to the screen's edge, and its first pill starts
+   on the content column, like the title above it and the rows below. The
+   viewport-edge → content-edge distance, as a LENGTH (not %): percentages
+   resolve against different boxes in padding and scroll-padding, which
+   would desynchronize the snap points. A page whose column is not the
+   content container states its own `--visit-pills-gutter`. */
+:host([data-bleed='viewport']) .visit-pills__rail {
+  --ui-scroll-row-gutter: var(
+    --visit-pills-gutter,
+    calc(
+      max((100vw - var(--sys-container-content)) / 2, 0px) +
+        var(--sys-space-regular)
+    )
+  );
+}
+
+/* IN A SHEET the DS row's own container bleed does it: the sheet's inset,
+   unless the host names its gutter. */
+:host([data-bleed='container']) .visit-pills__rail {
+  --ui-scroll-row-gutter: var(
+    --visit-pills-gutter,
+    var(--ui-sheet-inset, var(--sys-space-regular))
+  );
+}
+
+/* BEFORE A PINNED CONTROL the rail bleeds on its leading side alone: it
+   ends where the control's column begins, and scrolls under a short fade
+   there, so a pill leaves the rail quietly and never runs into the
+   control. The fade is the rail's trailing padding, so the last pill
+   scrolls clear of it. */
+.visit-pills:has(> .visit-pills__action:not(:empty)) > .visit-pills__rail {
+  --visit-pills-fade: var(--sys-space-comfortable);
+
+  inline-size: auto;
+  margin-inline: calc(-1 * var(--ui-scroll-row-gutter)) 0;
+  padding-inline-end: var(--visit-pills-fade);
+  scroll-padding-inline-end: var(--visit-pills-fade);
+  mask-image: linear-gradient(
+    to left,
+    transparent,
+    #000 var(--visit-pills-fade)
+  );
+}
+
+.visit-pills__action:not(:empty) {
+  padding-inline-start: var(--sys-space-tight);
+}
+
+/* The placeholders stand where the pills will: the same bleed and gutter
+   as the rail, its gap, nothing to scroll. */
+.visit-pills__placeholders {
+  display: flex;
+  gap: var(--sys-space-compact);
+  overflow: hidden;
+  margin-inline: calc(-1 * var(--ui-scroll-row-gutter));
+  padding-inline: var(--ui-scroll-row-gutter);
+}
+
+/* ── A PILL ────────────────────────────────────────────────────────────
+   36 tall, `subheadline` at 600, on the control fill. */
+.visit-pills__pill {
+  flex: 0 0 auto;
+  min-block-size: var(--control-size-small);
+  padding-inline: var(--sys-space-regular);
+  border: 0;
+  border-radius: var(--control-radius-capsule);
+  background: var(--sys-color-fill);
+  color: var(--sys-color-foreground);
+  font: var(--sys-font-subheadline);
+  font-weight: 600;
+  /* Said again after the `font` shorthand, which resets the app's
+     figures: «2026» and «2025» take one width down the rail. */
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  transition:
+    background-color var(--sys-motion-duration-regular)
+      var(--sys-motion-ease-standard),
+    color var(--sys-motion-duration-regular) var(--sys-motion-ease-standard);
+}
+
+/* THE CURRENT ONE is inverted: the primary fill under its own ink. It
+   states a position, so it is filled, and it takes the state layer like
+   the others (the layer rides the ink, whichever it is). */
+.visit-pills__pill[data-selected] {
+  background: var(--sys-color-primary);
+  color: var(--sys-color-on-primary);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .visit-pills__pill {
+    transition: none;
+  }
+}

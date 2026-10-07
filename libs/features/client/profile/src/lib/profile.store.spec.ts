@@ -90,6 +90,8 @@ function configure(options?: {
               ok(options?.profile === undefined ? user() : options.profile),
             );
           },
+          observeProfile: () =>
+            of(ok(options?.profile === undefined ? user() : options.profile)),
           saveProfile: (next: User) => {
             saved.push(next);
             return Promise.resolve(options?.saveResult ?? ok(undefined));

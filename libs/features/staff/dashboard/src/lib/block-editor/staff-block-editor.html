@@ -463,6 +463,7 @@
         <button
           uiListRow
           uiSize="large"
+          uiTrailingWraps
           type="button"
           [uiInteractive]="true"
           [uiAlignment]="repeatFacts() ? 'leading' : 'center'"
@@ -581,6 +582,25 @@
           </button>
         </span>
       </header>
+      <!-- WHAT IT SITS ON — named in red at the frame, the way the visit
+           sheet names a collision (owner, 2026-09-09: "the frame for the
+           appointments has red text when there is overlap; here the text
+           is at the end of the sheet?"). ABOVE the picture, under the bar
+           (review r4, 2026-10-06): this frame is the ladder's last group,
+           and under the picture the sentence was the sheet's last line —
+           at rest on a phone the dock's pill covered its end. The block
+           wears the overlap hatch as well; the visits stay where they are. -->
+      @if (collisionNote(); as note) {
+      <p
+        uiText
+        uiFont="footnote"
+        uiForegroundStyle="destructive"
+        data-verdict="conflict"
+        data-testid="staff-block-frame-note"
+      >
+        {{ note }}
+      </p>
+      }
       <!-- TWO PICTURES OF ONE DAY (owner, 2026-09-09: "when more than two
            barbers are selected, switch strategy — horizontal like MS
            Calendar, each row a barber, the columns the hour grid"). Up to
@@ -619,25 +639,13 @@
         (draftCommitted)="onFrameCommit($event)"
       />
       }
-      <!-- WHAT IT SITS ON — named in red under the picture, the way the
-           visit sheet names a collision (owner, 2026-09-09: "the frame for
-           the appointments has red text when there is overlap; here the
-           text is at the end of the sheet?"). The block wears the overlap
-           hatch as well; the visits stay where they are. -->
-      @if (collisionNote(); as note) {
-      <p
-        uiText
-        uiFont="footnote"
-        uiForegroundStyle="destructive"
-        data-verdict="conflict"
-        data-testid="staff-block-frame-note"
-      >
-        {{ note }}
-      </p>
-      }
     </section>
 
-    <p uiText uiFont="footnote" uiForegroundStyle="tertiary">
+    <!-- SECONDARY, not tertiary (review r4, 2026-10-06): a sentence that
+         says what saving does is read, not a placeholder — the tertiary ink
+         is 2.85:1 on white. Every other explaining footnote in the stack is
+         secondary. -->
+    <p uiText uiFont="footnote" uiForegroundStyle="secondary">
       {{ t('staff.block.effect') }}
     </p>
 
@@ -682,7 +690,7 @@
           uiSize="large"
           type="button"
           [uiInteractive]="true"
-          class="staff-visit__exit--destructive"
+          uiRole="destructive"
           [disabled]="vm().acting"
           [attr.data-armed]="vm().liftArmed ? '' : null"
           data-testid="staff-block-lift"

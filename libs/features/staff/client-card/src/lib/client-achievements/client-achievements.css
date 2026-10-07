@@ -1,0 +1,149 @@
+/*
+ * «ПОСТИЖЕНИЯ» — layout only. Every surface, ink, type role and state
+ * layer is a DS part's own (`ui-sheet-headline`, `ui-section-header`,
+ * `ui-card`, `button[uiCard]`, `ui-grid`, `button[uiMedal]`, `ui-medal`,
+ * `ui-gauge`, `button[uiChip]`, `uiListRow`, `ui-notice`, `ui-skeleton`,
+ * `uiText`); these rules only place them. No `font:` shorthand here, so
+ * the app's tabular figures are never reset.
+ */
+
+/* The page's modules at the stack's module gap (§2.0: `loose`, 32), the
+   head included — the gap the headline's fold expects. */
+:host {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sys-space-loose);
+}
+
+/* The person. A headline's line is never cut (the glance's rule): a long
+   name wraps in balanced lines; the bar truncates its compact copy. */
+.client-achievements__subline {
+  text-wrap: balance;
+  overflow-wrap: break-word;
+}
+
+/* Everything that pushes a page is an origin the editor focuses again on
+   the way back: never under the bar above or the dock below (§2.3). */
+.client-achievements__origin {
+  scroll-margin-block: var(--modal-sheet-origin-margin);
+}
+
+/* AE — the records' PARTS share the row's lines: each card is a subgrid
+   of four of this grid's rows (record-card.css), so the emblems, the
+   labels, the figures and the dates of a row each stand on one line
+   whatever a label wraps (review 3: «13» sat 40 pt under «24»), and the
+   cards of a row are one height. The rows size to what they hold; three
+   records on two columns end on one that spans the row (the rhythm off,
+   §2.3.5), as the one card of a first visit does. */
+.client-achievements__records {
+  grid-auto-rows: auto;
+}
+
+/* (ONE line, kept from the formatter: the emulated encapsulation's shim
+   reads a line break before `>` as a descendant combinator and the rule
+   stops matching.) */
+/* prettier-ignore */
+.client-achievements__records[data-columns='2'] > .record-card-host:last-child:nth-child(odd) {
+  grid-column: 1 / -1;
+}
+
+/* The body under the band keeps the modules' own gap. */
+.client-achievements__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sys-space-loose);
+  min-inline-size: 0;
+}
+
+/* The grid cards: the DS card stacks its children at the compact gap; a
+   fold's button sits centred under the grid, at the regular rung. */
+.client-achievements__card {
+  gap: var(--sys-space-regular);
+}
+
+/* On the narrow step (a 330 phone) the card's padding is 12: its own
+   compact rung and the tight one inside, on the grid (sheet-width.ts). */
+.client-achievements__grid[data-inset='tight'] {
+  padding: var(--sys-space-tight);
+}
+
+.client-achievements__fold {
+  align-self: center;
+}
+
+/* AG/AH — a window's card: its head on one line (the medal beside its one
+   sentence; an event's name beside its date), the families under it. */
+.client-achievements__window {
+  gap: var(--sys-space-regular);
+}
+
+.client-achievements__window-head {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  column-gap: var(--sys-space-regular);
+}
+
+.client-achievements__sentence {
+  text-wrap: pretty;
+}
+
+.client-achievements__event-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sys-space-compact) var(--sys-space-regular);
+  flex-wrap: wrap;
+}
+
+.client-achievements__event-title {
+  min-inline-size: 0;
+  text-wrap: pretty;
+}
+
+/* The families: three regular medals across a phone, four from a 600 pt
+   sheet and in the dialog (sheet-width.ts: the count a name's two lines
+   need), each centred on its column with its title and caption under it
+   (the DS lays the row's three tracks); a card of two families hugs two
+   tiles at its leading edge. */
+.client-achievements__families {
+  justify-items: center;
+}
+
+/* On the narrow step (a 330 phone, sheet-width.ts) the families take a
+   compact step back from the card's padding on each side — the glance's
+   records line's own move — so three tiles of 93 hold «Пълна грижа / на
+   седмицата» whole while the card's head keeps its 16. */
+.client-achievements__families[data-bleed='compact'] {
+  margin-inline: calc(-1 * var(--sys-space-compact));
+}
+
+/* AK — the ring leads two lines, level with it. */
+.client-achievements__collection {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  column-gap: var(--sys-space-regular);
+}
+
+/* A ring that stands ALONE round a figure takes the heavier stroke (§3.7:
+   5 on the 64 ring, the family of /account's ring and the wallet's status
+   ring). Set on the gauge element itself: the host's own declaration is
+   what its parts read (D5-3 c). */
+.client-achievements__collection-ring {
+  --ui-gauge-stroke: calc(var(--sys-space-unit) * 1.25);
+}
+
+.client-achievements__collection-lines {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sys-space-tight);
+  min-inline-size: 0;
+}
+
+/* The chip-shaped bones of the loading page wrap as the band will. */
+.client-achievements__placeholder-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sys-space-compact);
+}

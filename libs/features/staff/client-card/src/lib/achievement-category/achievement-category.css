@@ -1,0 +1,45 @@
+/*
+ * A SCOPE OF THE COLLECTION — layout only. The head, the list labels, the
+ * cards, the grids, the medals, the step track and the notices are DS
+ * parts that draw themselves; these rules place them. No `font:`
+ * shorthand here.
+ */
+
+/* The page's modules at the stack's module gap (§2.0: `loose`, 32), the
+   head included — the gap the headline's fold expects. Embedded under the
+   chips of «Постижения», the summary line sits closer to its grids. */
+:host {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sys-space-loose);
+}
+
+:host([data-embedded]) {
+  gap: var(--sys-space-comfortable);
+}
+
+/* A headline's line is never cut (the glance's rule): a long name or
+   scope wraps in balanced lines; the bar truncates its compact copy. */
+.achievement-category__subline {
+  text-wrap: balance;
+  overflow-wrap: break-word;
+}
+
+/* CE — the season's medal leads its step track, level with it; the
+   sentence under them at the card's regular gap. */
+.achievement-category__track-card {
+  gap: var(--sys-space-regular);
+}
+
+.achievement-category__track {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  column-gap: var(--sys-space-regular);
+}
+
+/* On the narrow step (a 330 phone) the card's padding is 12: its own
+   compact rung and the tight one inside, on the grid (sheet-width.ts). */
+.achievement-category__grid[data-inset='tight'] {
+  padding: var(--sys-space-tight);
+}

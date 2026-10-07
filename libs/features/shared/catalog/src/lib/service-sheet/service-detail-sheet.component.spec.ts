@@ -1,4 +1,4 @@
-import { Component, signal } from '@angular/core';
+import { Component, signal, type Type } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import {
@@ -28,6 +28,7 @@ const bg: Translation = {
       bookServiceWith: 'Запази {{service}} при {{barber}}',
       goToPhoto: 'Снимка {{index}}',
       savings: 'Спестяваш {{amount}}',
+      bundle: 'Пакет',
       durationLabel: 'мин',
       offeredBy: 'Услуги при {{barber}}',
     },
@@ -99,7 +100,7 @@ class DefaultHost {
   readonly barbers = signal(BARBERS);
 }
 
-async function render(host: typeof OverridingHost | typeof DefaultHost) {
+async function render(host: Type<unknown>) {
   await TestBed.configureTestingModule({
     imports: [host],
     providers: [
@@ -152,5 +153,102 @@ describe('ServiceDetailSheetComponent — the [sheet-actions] contract', () => {
       expect(overrideText).toContain(shared);
       expect(defaultText).toContain(shared);
     }
+  });
+});
+
+/*
+ * THE ACCENT LAW ON THE SHEET'S HEAD (2026-09-29): one orange; colour is a
+ * shape, words are ink. A bundle's mark and its saving wear the accent as
+ * THINGS — a wash capsule led by an accent glyph — and never as tinted
+ * small words.
+ */
+const SHAVE: ServiceVm = {
+  ...SERVICE,
+  id: 'svc-shave',
+  name: { en: 'Shave', bg: 'Бръснене' },
+  offerings: [{ barberId: 'ivan', base: { price: 12, minutes: 25 } }],
+};
+
+const BUNDLE: ServiceVm = {
+  ...SERVICE,
+  id: 'svc-full-care',
+  kind: 'bundle',
+  name: { en: 'Full care', bg: 'Пълна грижа' },
+  includes: ['svc-classic-cut', 'svc-shave'],
+  offerings: [{ barberId: 'ivan', base: { price: 21.5, minutes: 55 } }],
+};
+
+@Component({
+  imports: [ServiceDetailSheetComponent],
+  template: `<cr-service-detail-sheet
+    [service]="service()"
+    [barbers]="barbers()"
+    [catalogServices]="catalog()"
+  />`,
+})
+class BundleHost {
+  readonly service = signal(BUNDLE);
+  readonly barbers = signal(BARBERS);
+  readonly catalog = signal<readonly ServiceVm[]>([SERVICE, SHAVE, BUNDLE]);
+}
+
+describe('ServiceDetailSheetComponent — a bundle under the accent law', () => {
+  const byId = (host: HTMLElement, id: string): HTMLElement | null =>
+    host.querySelector(`[data-testid="${id}"]`);
+
+  it('marks a bundle with the accent capsule, its glyph drawn by the badge itself', async () => {
+    const host = await render(BundleHost);
+    const mark = byId(host, 'catalog-sheet-bundle');
+    expect(mark?.classList.contains('ui-badge')).toBe(true);
+    expect(mark?.getAttribute('data-tone')).toBe('accent');
+    expect(mark?.textContent?.trim()).toBe('Пакет');
+    // ONE glyph grammar: the badge's own, never a hand-projected icon.
+    const glyphs = mark?.querySelectorAll('ui-icon') ?? [];
+    expect(glyphs).toHaveLength(1);
+    expect(glyphs[0]?.classList.contains('ui-badge__glyph')).toBe(true);
+    expect(glyphs[0]?.getAttribute('data-name')).toBe('service.bundle');
+  });
+
+  it('states the saving as an accent capsule led by the price tag, its words in ink', async () => {
+    const host = await render(BundleHost);
+    const saving = byId(host, 'catalog-sheet-savings');
+    expect(saving?.classList.contains('ui-badge')).toBe(true);
+    expect(saving?.getAttribute('data-tone')).toBe('accent');
+    expect(saving?.getAttribute('data-prominence')).toBe('standard');
+    // 14,50 + 12,00 apart, 21,50 together.
+    expect(saving?.textContent?.replace(/[\u202f\u00a0]/g, ' ').trim()).toBe(
+      'Спестяваш 5,00 €',
+    );
+    const glyph = saving?.querySelector('ui-icon');
+    expect(glyph?.classList.contains('ui-badge__glyph')).toBe(true);
+    expect(glyph?.getAttribute('data-name')).toBe('promo.sum');
+    expect(glyph?.getAttribute('aria-hidden')).toBe('true');
+    // On a line of its own, UNDER the two facts: beside them it ran past
+    // a 330 phone and every fact on the row wrapped.
+    const facts = byId(host, 'catalog-sheet-facts');
+    expect(facts?.getAttribute('data-axis')).toBe('horizontal');
+    expect(facts?.childElementCount).toBe(2);
+    expect(facts?.contains(saving ?? null)).toBe(false);
+    expect(facts?.nextElementSibling).toBe(saving);
+    expect(saving?.parentElement?.getAttribute('data-axis')).toBe('vertical');
+    // No tinted small words anywhere in the head.
+    expect(saving?.hasAttribute('data-foreground-style')).toBe(false);
+    expect(
+      host.querySelector(
+        '[data-foreground-style="accent"]:not(ui-icon), [data-foreground-style="promo"]:not(ui-icon)',
+      ),
+    ).toBeNull();
+  });
+
+  it('says nothing of a saving, and draws no mark, on a single service', async () => {
+    const host = await render(DefaultHost);
+    expect(byId(host, 'catalog-sheet-bundle')).toBeNull();
+    expect(byId(host, 'catalog-sheet-savings')).toBeNull();
+  });
+
+  it('lists the bundle’s members as rows a tap away', async () => {
+    const host = await render(BundleHost);
+    expect(byId(host, 'service-row-svc-classic-cut')).not.toBeNull();
+    expect(byId(host, 'service-row-svc-shave')).not.toBeNull();
   });
 });

@@ -31,6 +31,9 @@
       "path": "../../libs/features/admin/programs/tsconfig.lib.json"
     },
     {
+      "path": "../../libs/features/admin/loyalty/tsconfig.lib.json"
+    },
+    {
       "path": "../../libs/features/admin/impersonation/tsconfig.lib.json"
     },
     {
@@ -116,6 +119,9 @@
     },
     {
       "path": "../../libs/infrastructure/firebase-app/tsconfig.lib.json"
+    },
+    {
+      "path": "../../libs/domain/scheduling/tsconfig.lib.json"
     }
   ]
 }

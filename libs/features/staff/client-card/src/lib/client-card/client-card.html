@@ -1,0 +1,597 @@
+<!-- A · THE HEAD — a centred hero: the face in its ring, the tier on the
+     ring's rim, the page's one h2 (the bar collapses into it), one quiet
+     line whose facts are ink. It renders from the seat's snapshot at once;
+     the line, the plate and the ring join when the profile and the loyalty
+     reads have answered (a pause never pushes painted content). Head →
+     capsules and head → a notice is the regular gap (§2.1.3), so they
+     share a column. -->
+<div class="client-card__identity">
+  <ui-sheet-headline
+    uiHeadlineStyle="hero"
+    class="client-card__head"
+    [uiMediaTone]="mediaTone()"
+    [uiMediaValue]="ringValue()"
+    data-testid="client-head"
+  >
+    <h2
+      uiSheetLargeTitle
+      uiText
+      uiFont="title"
+      [id]="titleId()"
+      data-testid="client-head-title"
+    >
+      {{ hero().name }}
+    </h2>
+    @if (facts(); as facts) {
+    <!-- A reader hears the sentence; the eye gets its FACTS as the items
+         of a centred line of facts (fact-line.css): ONE run is a fact, in
+         the primary ink at weight 500, and the «·» is the stylesheet's,
+         drawn only between two facts on one line — at 330 the two clauses
+         stand one over the other with no dot hanging at the break. -->
+    <p
+      uiText
+      uiFont="callout"
+      uiForegroundStyle="secondary"
+      class="client-card__state-line"
+      data-testid="client-head-subline"
+    >
+      <span uiVisuallyHidden>{{ lineName() }}</span>
+      <span aria-hidden="true" class="fact-line" data-align="center"
+        >@for (fact of facts; track $index) {<span class="fact-line__fact"
+          >@for (part of fact; track $index) {@if (part.fact) {<span
+            class="client-card__fact"
+            uiForegroundStyle="primary"
+            uiWeight="medium"
+            >{{ part.text }}</span
+          >} @else {{{ part.text }}}}</span
+        >}</span
+      >
+    </p>
+    } @if (hero().tier; as tier) {
+    <!-- A3′ · the plate and the ring in words, heard after the line. -->
+    <span uiVisuallyHidden data-testid="client-head-tier-words"
+      >{{ tier.accessibleName }}</span
+    >
+    }
+    <ui-avatar
+      uiHeadlineMedia
+      uiControlSize="extraLarge"
+      [uiSrc]="hero().avatarSrc"
+      [uiName]="hero().initialsFrom"
+      data-testid="client-head-avatar"
+    />
+    @if (hero().tier; as tier) {
+    <!-- A3 · the tier plate, INSIDE the media: it leaves with the face. -->
+    <span
+      uiHeadlinePlate
+      uiBadge
+      [uiOnMedia]="true"
+      uiIcon="loyalty.tier"
+      data-testid="client-head-tier"
+      >{{ tier.name }}</span
+    >
+    }
+  </ui-sheet-headline>
+
+  @if (words(); as w) {
+  <!-- B · THE CAPSULES — warnings and tags only (the tier is the plate, the
+       birthday its own card), read-only, hugging their words; «+N» stands
+       for the rest, which a reader hears one by one. Absent when empty,
+       and never promised by a skeleton (§2.1.5 lists no placeholder for
+       the row: most clients have none, and the verbs stay where they are
+       when the profile answers). -->
+  @if (overview().capsules; as capsules) { @if (capsules.status === 'ready') {
+  <ui-flow
+    role="list"
+    uiSpacing="compact"
+    uiAlignment="center"
+    [attr.aria-label]="w.capsules.label"
+    data-testid="client-capsules"
+  >
+    @for (capsule of capsules.data.shown; track capsule.id) {
+    <span
+      uiBadge
+      uiSize="regular"
+      role="listitem"
+      [uiTone]="capsule.tone"
+      [uiIcon]="capsule.icon"
+      [attr.data-testid]="'client-capsule-' + capsule.id"
+      >{{ capsule.text }}</span
+    >
+    } @if (capsules.data.more; as more) {
+    <span
+      uiBadge
+      uiSize="regular"
+      aria-hidden="true"
+      data-testid="client-capsule-more"
+      >{{ more.text }}</span
+    >
+    @for (hidden of more.hidden; track hidden.id) {
+    <span uiVisuallyHidden role="listitem">{{ hidden.text }}</span>
+    } }
+  </ui-flow>
+  } }
+
+  <!-- C″ · OFFLINE — saved values; the verbs that write are gone. -->
+  @if (!online()) {
+  <ui-notice
+    uiTone="neutral"
+    uiIcon="connection.offline"
+    [uiLabel]="w.offline"
+    data-testid="client-offline-notice"
+  >
+    <p>{{ w.offline }}</p>
+  </ui-notice>
+  }
+
+  <!-- S7 · THE PROFILE DID NOT LOAD — one notice for the whole card. -->
+  @if (profileFailed()) {
+  <ui-notice
+    uiTone="neutral"
+    [uiLabel]="w.failed.profile"
+    data-testid="client-failed-profile"
+  >
+    <p>{{ w.failed.profile }}</p>
+    <button
+      uiNoticeActions
+      type="button"
+      uiButton
+      uiButtonStyle="bordered"
+      uiTint="neutral"
+      uiControlSize="regular"
+      data-testid="client-retry-profile"
+      (click)="retryAll()"
+    >
+      {{ w.visitsModule.retry }}
+    </button>
+  </ui-notice>
+  } @else if (failuresFolded()) {
+  <!-- Two or more modules failed: one notice, one retry for all of them. -->
+  <ui-notice
+    uiTone="neutral"
+    [uiLabel]="w.failed.some"
+    data-testid="client-failed-slices"
+  >
+    <p>{{ w.failed.some }}</p>
+    <button
+      uiNoticeActions
+      type="button"
+      uiButton
+      uiButtonStyle="bordered"
+      uiTint="neutral"
+      uiControlSize="regular"
+      data-testid="client-retry-slices"
+      (click)="retryAll()"
+    >
+      {{ w.visitsModule.retry }}
+    </button>
+  </ui-notice>
+  } }
+</div>
+
+<!-- ONE PLACEHOLDER BLOCK — a module's content, before its read lands. -->
+<ng-template #block let-height>
+  <ui-skeleton uiRadius="prominent" uiFrame [uiFrameHeight]="height" />
+</ng-template>
+
+<!-- A HEADING'S ACTION, before its figure is known: it holds the width the
+     real «23 ›» will need, inside the column and on the small rung, so
+     nothing moves when it lands. -->
+<ng-template #actionPlaceholder>
+  <ui-skeleton
+    uiSectionAction
+    uiRadius="subtle"
+    uiFrame
+    [uiFrameWidth]="placeholder.actionWidth"
+    [uiFrameHeight]="placeholder.actionHeight"
+  />
+</ng-template>
+
+@if (words(); as w) {
+<!-- ONE MODULE'S READ FAILED — its heading stays; this is its one retry.
+     With two or more failed, the notice under the head speaks for all. -->
+<ng-template #moduleFailed let-region let-word="word">
+  @if (!failuresFolded()) {
+  <ui-notice
+    uiTone="neutral"
+    [uiLabel]="word"
+    [attr.data-testid]="'client-failed-' + region"
+  >
+    <p>{{ word }}</p>
+    <button
+      uiNoticeActions
+      type="button"
+      uiButton
+      uiButtonStyle="bordered"
+      uiTint="neutral"
+      uiControlSize="regular"
+      [attr.data-testid]="'client-retry-' + region"
+      (click)="retry(region)"
+    >
+      {{ w.visitsModule.retry }}
+    </button>
+  </ui-notice>
+  }
+</ng-template>
+
+<!-- BD · THE BIRTHDAY — a card of its own, directly under the head and
+     before the verbs: the page's one orange slab, with the gift under its
+     perforation when one can be used on this visit (R2-D). Never promised
+     by a skeleton: the store mounts it once the profile has answered. -->
+@if (overview().birthday; as birthday) {
+<lib-birthday-card
+  [vm]="birthday"
+  (useGift)="openReward.emit($event)"
+  (removeGift)="removeReward.emit($event)"
+/>
+}
+
+<!-- D · HOW TO REACH THEM — round discs with their word under them: the
+     phone's own apps, and «Повтори», the one promoted verb of the row. A
+     verb this person cannot use is absent, and the run closes up. -->
+@if (overview().actions; as actions) { @if (actions.length > 0) {
+<ui-quick-actions
+  [uiLabel]="w.actions.label"
+  [uiColumns]="actions.length"
+  data-testid="client-quick-actions"
+>
+  @for (action of actions; track action.id) { @if (action.id === 'same') {
+  <button
+    type="button"
+    uiQuickAction
+    uiProminence="accent"
+    [uiIcon]="action.icon"
+    [attr.aria-label]="action.accessibleName"
+    data-testid="client-quick-same"
+    (click)="repeatLast.emit(action.legs)"
+  >
+    {{ action.label }}
+  </button>
+  } @else {
+  <a
+    uiQuickAction
+    [uiIcon]="action.icon"
+    [href]="action.href"
+    [attr.aria-label]="action.accessibleName"
+    [attr.data-testid]="'client-quick-' + action.id"
+    >{{ action.label }}</a
+  >
+  } }
+</ui-quick-actions>
+} }
+
+<!-- E · THE REWARD TO USE NOW — the appointment owner's ticket, white and
+     lifted, its glyph on an accent disc, its figure in the accent, and the
+     decorative pill every ticket wears: the ticket is the control. Once on
+     the bill it STAYS WHERE IT STOOD, the discount page's own applied card
+     — the check on its glyph, a real «Премахни» where the pill stood —
+     focusable, so ‹ lands on it. -->
+@if (overview().reward; as reward) { @switch (reward.status) { @case ('loading')
+{
+<div aria-busy="true" data-testid="client-reward-skeleton">
+  <ng-container
+    *ngTemplateOutlet="block; context: { $implicit: placeholder.ticket }"
+  />
+</div>
+} @case ('ready') { @if (reward.data.applied) {
+<article
+  uiCouponCard
+  [uiApplied]="true"
+  tabindex="-1"
+  class="client-card__origin"
+  [uiTitle]="reward.data.title"
+  [uiValue]="reward.data.value"
+  [uiDetail]="reward.data.detail"
+  [attr.aria-label]="reward.data.accessibleName"
+  data-testid="client-reward-ready"
+>
+  <ui-icon uiCouponGlyph uiName="promo.coupon" />
+  <ui-icon uiCouponBadge uiName="checklist.done" />
+  <button
+    type="button"
+    uiCouponAction
+    uiButton
+    uiButtonStyle="plain"
+    uiTint="neutral"
+    uiControlSize="small"
+    [attr.aria-label]="reward.data.removeName"
+    data-testid="client-reward-ready-remove"
+    (click)="removeReward.emit(reward.data.grantId)"
+  >
+    {{ w.reward.remove }}
+  </button>
+</article>
+} @else {
+<button
+  type="button"
+  uiCouponCard
+  uiInteractive
+  class="client-card__origin"
+  [uiTitle]="reward.data.title"
+  [uiValue]="reward.data.value"
+  [uiDetail]="reward.data.detail"
+  [attr.aria-label]="reward.data.accessibleName"
+  data-testid="client-reward-ready"
+  (click)="openReward.emit(reward.data.grantId)"
+>
+  <!-- The coupon kind's glyph, as the discount page draws this grant. -->
+  <ui-icon uiCouponGlyph uiName="promo.coupon" />
+  @if (reward.data.stack; as stack) {
+  <span uiBadge uiCouponBadge uiProminence="increased">{{ stack }}</span>
+  }
+  <span
+    uiCouponAction
+    uiButton
+    uiButtonStyle="borderedProminent"
+    uiControlSize="small"
+    aria-hidden="true"
+    >{{ w.reward.use }}</span
+  >
+</button>
+} } } }
+
+<!-- H · ПОСЕЩЕНИЯ — what we did last time, who cut and what the client
+     said; what comes next; a waiting request: three cards of ONE shape and
+     one order (the `/account` card), white and lifted. The one place the
+     visit count prints. -->
+@if (overview().visits; as visits) {
+<ui-stack uiSpacing="compact" data-testid="client-visits">
+  <ui-section-header uiHeaderProminence="increased">
+    <h3 uiTitle [id]="headingId('visits')">{{ w.visitsModule.title }}</h3>
+    @if (visitsAction(); as action) {
+    <button
+      uiSectionAction
+      type="button"
+      uiButton
+      uiButtonStyle="plain"
+      uiControlSize="small"
+      class="client-card__origin"
+      [attr.aria-label]="action.name"
+      data-testid="client-visits-all"
+      (click)="openHistory.emit()"
+    >
+      {{ action.figure }}
+      <ui-icon uiName="nav.disclosure" />
+    </button>
+    } @else if (visits.status === 'loading') {
+    <ng-container *ngTemplateOutlet="actionPlaceholder" />
+    }
+  </ui-section-header>
+  @switch (visits.status) { @case ('loading') {
+  <div
+    class="client-card__cards"
+    aria-busy="true"
+    data-testid="client-visits-skeleton"
+  >
+    <ng-container
+      *ngTemplateOutlet="block; context: { $implicit: placeholder.visitCard }"
+    />
+  </div>
+  } @case ('failed') {
+  <ng-container
+    *ngTemplateOutlet="
+      moduleFailed;
+      context: { $implicit: 'visits', word: w.failed.visits }
+    "
+  />
+  } @case ('ready') { @if (visits.data.last || visits.data.next ||
+  visits.data.waitlist) {
+  <div class="client-card__cards">
+    @if (visits.data.last; as last) {
+    <lib-visit-card
+      [vm]="last"
+      headerProminence="standard"
+      [padding]="cardPadding()"
+      (openPhoto)="openPhoto.emit($event)"
+    />
+    } @if (visits.data.next; as next) {
+    <lib-visit-card
+      [vm]="next"
+      headerProminence="standard"
+      [padding]="cardPadding()"
+    />
+    } @if (visits.data.waitlist; as waiting) {
+    <lib-visit-card
+      [vm]="waiting"
+      headerProminence="standard"
+      [padding]="cardPadding()"
+    />
+    }
+  </div>
+  } } }
+</ui-stack>
+}
+
+<!-- F · ЛОЯЛНОСТ and G · ПОСТИЖЕНИЯ — one white card each; side by side in
+     the wide dialog, one under the other on a phone. -->
+@if (overview().loyalty || overview().medals) {
+<div class="client-card__pair">
+  <!-- F · the points, what they buy, what else is held: ONE card, ONE
+       button to the wallet; «Всички» does the same. -->
+  @if (overview().loyalty; as loyalty) {
+  <ui-stack uiSpacing="compact" data-testid="client-loyalty">
+    <ui-section-header uiHeaderProminence="increased">
+      <h3 uiTitle [id]="headingId('loyalty')">{{ w.loyalty.title }}</h3>
+      @if (loyalty.status === 'ready') {
+      <button
+        uiSectionAction
+        type="button"
+        uiButton
+        uiButtonStyle="plain"
+        uiControlSize="small"
+        class="client-card__origin"
+        [attr.aria-label]="w.loyalty.allName"
+        data-testid="client-loyalty-all"
+        (click)="openLoyalty.emit(null)"
+      >
+        {{ w.loyalty.all }}
+        <ui-icon uiName="nav.disclosure" />
+      </button>
+      } @else if (loyalty.status === 'loading') {
+      <ng-container *ngTemplateOutlet="actionPlaceholder" />
+      }
+    </ui-section-header>
+    @switch (loyalty.status) { @case ('loading') {
+    <div aria-busy="true" data-testid="client-loyalty-skeleton">
+      <ng-container
+        *ngTemplateOutlet="
+          block;
+          context: { $implicit: placeholder.loyaltyCard }
+        "
+      />
+    </div>
+    } @case ('failed') {
+    <ng-container
+      *ngTemplateOutlet="
+        moduleFailed;
+        context: { $implicit: 'loyalty', word: w.failed.loyalty }
+      "
+    />
+    } @case ('ready') {
+    <lib-loyalty-glance
+      class="client-card__origin"
+      [vm]="loyalty.data"
+      (open)="openLoyalty.emit(null)"
+    />
+    } }
+  </ui-stack>
+  }
+
+  <!-- G · three named medals, the cue, the records line; the collection
+       is one push away, its size on the heading. -->
+  @if (overview().medals; as medals) {
+  <ui-stack uiSpacing="compact" data-testid="client-achievements">
+    <ui-section-header uiHeaderProminence="increased">
+      <h3 uiTitle [id]="headingId('achievements')">
+        {{ w.achievements.title }}
+      </h3>
+      @if (achievementsAction(); as action) {
+      <button
+        uiSectionAction
+        type="button"
+        uiButton
+        uiButtonStyle="plain"
+        uiControlSize="small"
+        class="client-card__origin"
+        [attr.aria-label]="action.name"
+        data-testid="client-achievements-all"
+        (click)="openAchievements.emit()"
+      >
+        {{ action.figure }}
+        <ui-icon uiName="nav.disclosure" />
+      </button>
+      } @else if (medals.status === 'loading') {
+      <ng-container *ngTemplateOutlet="actionPlaceholder" />
+      }
+    </ui-section-header>
+    @switch (medals.status) { @case ('loading') {
+    <div aria-busy="true" data-testid="client-achievements-skeleton">
+      <ng-container
+        *ngTemplateOutlet="
+          block;
+          context: { $implicit: placeholder.medalsCard }
+        "
+      />
+    </div>
+    } @case ('failed') {
+    <ng-container
+      *ngTemplateOutlet="
+        moduleFailed;
+        context: { $implicit: 'achievements', word: w.failed.achievements }
+      "
+    />
+    } @case ('ready') {
+    <lib-medals-glance
+      [vm]="medals.data"
+      (openMedal)="openMedal.emit($event)"
+      (openRecords)="openRecords.emit()"
+    />
+    } }
+  </ui-stack>
+  }
+</div>
+}
+
+<!-- I · СНИМКИ — past cuts the cards do not show, newest first, in a grid
+     of three (five in the dialog), never a rail: nothing hidden past an
+     edge. The date is a label on the picture, never a second target. -->
+@if (overview().photos; as photos) {
+<ui-stack uiSpacing="compact" data-testid="client-photos">
+  <ui-section-header uiHeaderProminence="increased">
+    <h3 uiTitle [id]="headingId('photos')">{{ w.photos.title }}</h3>
+  </ui-section-header>
+  @switch (photos.status) { @case ('loading') {
+  <ui-grid
+    [uiColumns]="photoColumns()"
+    uiSpacing="compact"
+    aria-busy="true"
+    data-testid="client-photos-skeleton"
+  >
+    @for (tile of photoPlaceholders(); track tile) {
+    <ui-skeleton uiRadius="regular" class="client-card__photo-placeholder" />
+    }
+  </ui-grid>
+  } @case ('failed') {
+  <ng-container
+    *ngTemplateOutlet="
+      moduleFailed;
+      context: { $implicit: 'photos', word: w.failed.photos }
+    "
+  />
+  } @case ('ready') {
+  <ui-grid
+    role="group"
+    [uiColumns]="photoColumns()"
+    uiSpacing="compact"
+    [attr.aria-label]="w.photos.label"
+    data-testid="client-photos-grid"
+  >
+    @for (photo of shownPhotos(); track photo.photoId) {
+    <button
+      type="button"
+      uiInteractive
+      uiRadius="regular"
+      class="client-card__photo client-card__origin"
+      [attr.aria-label]="photo.accessibleName"
+      [attr.data-testid]="'client-photo-' + photo.photoId"
+      (click)="openPhoto.emit(photo.photoId)"
+    >
+      <ui-media-card
+        uiRatio="4 / 5"
+        uiRadius="regular"
+        [uiSrc]="photo.url"
+        [uiScrim]="false"
+      >
+        <span uiBadge uiCaption [uiOnMedia]="true" aria-hidden="true"
+          >{{ photo.dateLabel }}</span
+        >
+      </ui-media-card>
+    </button>
+    }
+  </ui-grid>
+  } }
+</ui-stack>
+}
+
+<!-- K · THE EXITS — the page's one list group: taking the person off the
+     visit, one act whatever the party (the editor decides what follows). -->
+@if (overview().canRemove) {
+<ul uiListGroup [attr.aria-label]="w.exitsLabel" data-testid="client-exits">
+  <li>
+    <button
+      uiListRow
+      uiSize="large"
+      type="button"
+      uiRole="destructive"
+      [uiInteractive]="true"
+      data-testid="client-remove"
+      (click)="removeClient.emit()"
+    >
+      <span uiLeading>
+        <ui-icon uiName="client.remove" aria-hidden="true" />
+      </span>
+      {{ w.remove }}
+    </button>
+  </li>
+</ul>
+} }

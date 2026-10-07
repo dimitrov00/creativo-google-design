@@ -145,6 +145,52 @@ describe('AppointmentsStore', () => {
     expect(store.upcoming().kind).toBe('error');
   });
 
+  it('retry() opens both reads afresh, and loads until the new listener answers', () => {
+    const upcomingReads: Subject<
+      Result<readonly Appointment[], RepositoryError>
+    >[] = [];
+    let historyReads = 0;
+    const store = configure({
+      findById: async () => ok(null),
+      save: async () => ok(undefined),
+      observeUpcomingFor: () => {
+        const read = new Subject<
+          Result<readonly Appointment[], RepositoryError>
+        >();
+        upcomingReads.push(read);
+        return read.asObservable();
+      },
+      observeHistoryFor: () => {
+        historyReads += 1;
+        return of(ok([]));
+      },
+      observeBarberDay: () => EMPTY,
+      searchWindow: async () => ok([]),
+    });
+
+    store.setUserId(unwrap(UserId.create('user_1')));
+    TestBed.tick();
+    upcomingReads[0]?.next(fail(new RepositoryError('denied')));
+    TestBed.tick();
+    expect(store.upcoming().kind).toBe('error');
+
+    store.retry();
+    TestBed.tick();
+    // A fresh pair of listeners — the failed one has stopped for good —
+    // and the failure is not shown while the new one is on its way.
+    expect(upcomingReads).toHaveLength(2);
+    expect(historyReads).toBe(2);
+    expect(upcomingReads[0]?.observed).toBe(false);
+    expect(store.upcoming().kind).toBe('loading');
+
+    upcomingReads[1]?.next(
+      ok([appointmentAt('appt_1', '2030-06-01T10:00:00')]),
+    );
+    TestBed.tick();
+    expect(store.upcoming().kind).toBe('ready');
+    expect(store.appointments()).toHaveLength(1);
+  });
+
   it('nextMonth()/previousMonth() move the focused month forward/back from today', () => {
     const store = configure({
       findById: async () => ok(null),

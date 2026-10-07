@@ -1,0 +1,14 @@
+/*
+ * THE CATEGORY BAND — layout only. The chips draw themselves
+ * (`button[uiChip]`: the control fill, the primary fill when chosen, the
+ * state layer); the flow wraps them. No colour, no `position`, no cover
+ * (DV-A: the band is in flow, never pinned). No `font:` shorthand here.
+ */
+
+:host {
+  display: block;
+  /* A page opened on a chip, or scrolled to the band by «Покажи всички N»,
+     lands with the band under the bar and clear of its fade: the sheet's
+     own clearance (modal-sheet.css), stated once there. */
+  scroll-margin-block-start: var(--modal-sheet-clear-top);
+}

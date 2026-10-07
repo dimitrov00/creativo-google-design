@@ -222,8 +222,10 @@ export class ClientProfile {
   });
 
   constructor() {
-    // `ProfilePort` is one-shot, so the shared snapshot is stale on entry
-    // after any write elsewhere (onboarding's birthday step).
+    // `account` is live, so a write elsewhere (onboarding's birthday step)
+    // is already here. This only re-attaches a listener that stopped on a
+    // failure — a no-op while it is healthy — so entering the screen is one
+    // fresh attempt.
     this.accountState.refresh();
   }
 

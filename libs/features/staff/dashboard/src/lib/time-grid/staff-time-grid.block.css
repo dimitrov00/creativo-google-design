@@ -1,0 +1,546 @@
+/*
+ * THE BLOCK — what a booking or a carve-out IS on the canvas, and how the
+ * frame edits one: its fill and its lanes, proportional placement, the
+ * grab, the neighbours receding behind the subject, the handles, the
+ * readout, the chair with no column of its own, and the leading rail.
+ *
+ * Its own stylesheet because a component stylesheet has a budget (warning
+ * 10 kB, error 20 kB — recalibrated 2026-09-26): the canvas's recipe, with
+ * the shared tag it imports, had reached 18.25 kB minified, within a
+ * couple of kB of the error line. `staff-time-grid.css` keeps the canvas
+ * — the frame, the bands, the axis, the all-day row and the columns; what
+ * became of a block and where now is continue in
+ * `staff-time-grid.state.css`, and the page's use of the grid in
+ * `staff-time-grid.page.css`. Unscoped like every recipe in this feature.
+ *
+ * The split is in the file, not in the cascade. This sheet is the original's
+ * next run of chapters, cut at a chapter boundary with no rule text changed,
+ * and it is listed directly after `staff-time-grid.css` in the same
+ * `styleUrls` — so every rule lands in the document in exactly the order it
+ * had in one file. No rule here now follows a rule it used to precede, or
+ * precedes one it used to follow; no two rules that share an element and a
+ * property changed their relative order, because no two rules did.
+ * `staff-time-grid.state.css` and `staff-time-grid.page.css` follow it, as
+ * the rest of the one file and the page chapter did.
+ */
+
+/* ── Blocks ──────────────────────────────────────────────────────────── */
+
+.staff-grid__event {
+  /* Side-by-side placement for genuine overlaps. */
+  --staff-event-lane: 0;
+  --staff-event-lanes: 1;
+  /* The floor a proportionally-placed block draws at — one five-minute step
+     at frame scale (11.0 / 12 / 13.0px), so the shortest sellable service is
+     drawn true and nothing shorter can pretend to be taller than it is. */
+  --staff-event-min-height: calc(var(--sys-space-unit) * 3);
+
+  grid-column: 1;
+  position: relative;
+  /* Above BOTH the closed shading (0) and the hour-rule overlay (1). */
+  z-index: 2;
+  /* Lane offset and inset in ONE declaration each. A later
+     `margin-inline: 2px` shorthand was resetting `margin-inline-start`, so
+     every overlapping block collapsed onto lane 0 and only the last one was
+     visible — the lanes were computed correctly and then thrown away. */
+  inline-size: calc(100% / var(--staff-event-lanes) - 4px);
+  margin-inline-start: calc(
+    100% / var(--staff-event-lanes) * var(--staff-event-lane) + 2px
+  );
+  margin-inline-end: 2px;
+
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: flex-start;
+  gap: 0;
+  overflow: hidden;
+
+  /* Inset on every edge so a block reads as a card sitting IN its column
+     rather than a band spanning it — the reference's treatment, and what
+     lets two adjacent bookings stay visually separate. */
+  margin-block: 1px;
+  padding: calc(var(--sys-space-unit) * 0.75) var(--sys-space-tight);
+  /* Clears the rail and its inset. */
+  padding-inline-start: calc(var(--sys-space-unit) * 3);
+  border: 0;
+  /* Barely rounded. A calendar block is a SPAN OF TIME, and a generous
+     corner rounds away the very edges that state where it starts and ends. */
+  border-radius: var(--control-radius-subtle);
+  text-align: start;
+  font: inherit;
+  cursor: pointer;
+
+  /* THE design system's tint — the same 12% mix `.ui-button[bordered]` uses
+     for iOS's soft tinted fill. This was 16%, a value the system does not
+     use anywhere else; a surface inventing its own alpha is how a product
+     ends up with five nearly-identical tints and no rule.
+
+     NAMED, because the past hatch cuts stripes OUT of it rather than painting
+     grey ones over it — see `[data-past]`. */
+  /* WHOSE CHAIR, washed. This was the accent — the placeholder from when hue
+     meant "this is a booking" and there was only one identity to express. It
+     is the barber's tone now, at Apple's own measured 15% for a Calendar
+     day/week block.
+
+     The fill STAYS here while the agenda's was removed, and the two are not
+     in conflict: on the grid it is not saying WHO — the column head already
+     did — it is drawing the block's EXTENT, the duration and adjacency and
+     shape of the hour. That is geometry, and it has no substitute. */
+  --staff-event-tint: color-mix(
+    in srgb,
+    var(--barber-tone, var(--sys-color-fill)) var(--staff-event-alpha, 15%),
+    transparent
+  );
+  /* What the past hatch is DRAWN IN. Its own property rather than the tint
+     itself, because the two unfilled states have no tint to cut from — see
+     the `[data-past]` block. Deliberately LIGHTER than the fill: same tone,
+     less of it, so an hour that has gone recedes rather than shouting. */
+  --staff-event-hatch: color-mix(
+    in srgb,
+    var(--barber-tone, var(--sys-color-fill)) var(--staff-event-hatch-alpha, 7%),
+    transparent
+  );
+  background-color: var(--staff-event-tint);
+  color: var(--sys-color-foreground);
+}
+
+/* ON BLACK, the same block needs more of its tone (owner, 2026-09-09: the
+   fill "appears muted, barely visible"). Apple's 15% is measured on a white
+   day view; its dark Calendar draws the block at roughly twice that over
+   black, and so does this. The theme is stamped on the root pre-paint, so
+   the override keys on that — there is no media query to chase. */
+:root[data-theme='dark'] .staff-grid {
+  --staff-event-alpha: 28%;
+  --staff-event-hatch-alpha: 12%;
+  --staff-event-alpha-finished: 13%;
+}
+
+/*
+ * ── Proportional placement ─────────────────────────────────────────────
+ *
+ * The block leaves the row track and takes a percentage of the extent —
+ * exactly the mechanism the now-line has always used, and the only one in
+ * which a 10:05 start draws at 10:05. The column KEEPS its tracks: they are
+ * what the hour rules and the gutter labels are measured against, and the
+ * extent is snapped to whole hours so a percentage of the column's height
+ * and a fraction of its time are the same number.
+ *
+ * The column is `position: relative` and is therefore this block's
+ * containing block; `grid-column: 1` above still resolves the inline edges
+ * against the column's track, so the lane arithmetic survives untouched.
+ * `inset-inline-start: 0` rather than a static position, so the offset is
+ * the lane margin and nothing else.
+ *
+ * The 1px block margins come off. On the page they separate two bookings
+ * that share an edge; here the shared edge IS the information — 10:30 is
+ * where one ends and the next begins — and a margin would put a lie a pixel
+ * either side of every boundary a person is about to drag.
+ */
+.staff-grid__event[data-placement='proportional'] {
+  /* THE TRACK STACK, not `100%`.
+     The column is a grid cell and stretches to whatever the tallest cell in
+     the body's row is; its own tracks are the axis. Those two are the same
+     length only by luck, and a percentage of the box would put a block at
+     the wrong minute the moment they were not — which is the bug the
+     now-line's `100%` has been quietly carrying on the page grid.
+     `--staff-grid-slots` is on the frame and inherits; times the slot height
+     it is the extent, exactly, at every density. */
+  --staff-event-extent: calc(
+    var(--staff-grid-slots, 1) * var(--staff-slot-height)
+  );
+
+  position: absolute;
+  inset-inline-start: 0;
+  inset-block-start: calc(
+    var(--staff-event-top, 0) * var(--staff-event-extent)
+  );
+  block-size: max(
+    calc(var(--staff-event-height, 0) * var(--staff-event-extent)),
+    var(--staff-event-min-height)
+  );
+  margin-block: 0;
+}
+
+/* The block under the handles. Above its neighbours, which is the layer
+   order the frame draws in — a neighbour is context, this is the subject. */
+.staff-grid__event[data-editable] {
+  z-index: 3;
+}
+
+/*
+ * ── The block as a THING TO GRAB ───────────────────────────────────────
+ *
+ * ⚠ `pan-y`, NOT `none` — REVERSED 2026-09-03 (owner).
+ *
+ * This block used to take `touch-action: none`, on the reasoning that the
+ * browser then never claims the gesture, so there is no race to arbitrate and
+ * a 4px threshold is enough to keep a wobbling tap a tap. The paragraph that
+ * argued it also named its own price — "what it costs is the block's own 40×N
+ * pixels as a scroll surface, which the rest of the frame gives back" — and
+ * that is the sentence that turned out to be wrong.
+ *
+ * The rest of the frame gives nothing back on a phone. The block is what a
+ * thumb lands on, the two 44px handles sit on top of it, and the whole
+ * assembly lives in a sheet people scroll. So the frame did not merely refuse
+ * to scroll under a finger: 4px of travel MOVED SOMEBODY'S BOOKING. Silently
+ * writing the wrong time is not a fair trade for a scroll surface.
+ *
+ * `pan-y` gives the day back its scroll — with the platform's own momentum,
+ * which no amount of hand-rolled scrolling reproduces — and the 250ms hold in
+ * `staff-time-grid.ts` is what claims the gesture instead of distance. Nothing
+ * switches mid-gesture: the hold only fires for a finger that has not
+ * travelled, so no pan has begun and capturing the pointer is enough to keep
+ * the frame still. A finger that DID travel scrolls, and can no longer arm.
+ */
+.staff-grid__event[data-drag-owner] {
+  touch-action: pan-y;
+  cursor: grab;
+}
+
+/* A block that is only DRAWN — the frame's neighbours. `inert` already takes
+   it out of the tab order and off the pointer; this stops the cursor from
+   promising a press the block cannot answer. */
+.staff-grid__event[inert] {
+  cursor: default;
+}
+
+/*
+ * ── CONTEXT RECEDES; THE SUBJECT DOES NOT (owner, 2026-09-11) ──────────
+ *
+ * The frame is a picture of ONE booking in its surroundings, and the
+ * surroundings were drawn at the booking's own strength — the same 15%
+ * tint, the same ink, the same rail — so the eye had to find the subject
+ * by its handles. The record always said less for a neighbour ("▒ neighbour
+ * 7%", §3.4's mock) and nothing ever painted it.
+ *
+ * A neighbour is a block that is only drawn; `inert` is that fact, and the
+ * paint keys on it — minus the subject, which a read-only frame (a visit
+ * that is gone) also makes inert without making it context. Less than half
+ * the tint, the name in secondary ink and
+ * its figures in tertiary, the rail at the system's own opacity for a thing
+ * drawn but not actionable, and a fainter hatch when its hour has gone — so
+ * a past neighbour recedes twice over, the way Apple Calendar dims the past
+ * and any editor pushes the unselected back. Nothing invented: 7% is the
+ * record's number, the inks are the system's tiers.
+ */
+.staff-grid__event[inert]:not([data-editable]) {
+  --staff-event-alpha: 7%;
+  --staff-event-hatch-alpha: 4%;
+  color: var(--sys-color-secondary-label);
+}
+
+.staff-grid__event[inert]:not([data-editable]) .staff-event-head__times,
+.staff-grid__event[inert]:not([data-editable]) .staff-event-head__line,
+.staff-grid__event[inert]:not([data-editable]) .staff-event-head__inline {
+  color: var(--sys-color-tertiary-label);
+}
+
+.staff-grid__event[inert]:not([data-editable]) .staff-grid__event-rail {
+  opacity: var(--sys-opacity-disabled);
+}
+
+/* On black a neighbour needs twice its tone too, like every block — the
+   same ratio to the live 28% that 7% is to 15%. */
+:root[data-theme='dark']
+  .staff-grid
+  .staff-grid__event[inert]:not([data-editable]) {
+  --staff-event-alpha: 14%;
+  --staff-event-hatch-alpha: 7%;
+}
+
+/* THE SUBJECT KEEPS ITS STRENGTH. A settled booking recedes on the page —
+   the finished wash, the secondary or tertiary ink — and it receded in its
+   own frame too, where it is the one thing the picture is about: a no-show
+   under edit drew fainter than the neighbours around it. Under edit the
+   block wears the live tint and the primary ink whatever became of it; the
+   strike on the name and the head above the frame still say what did. The
+   elapsed hatch stays: it is the clock's fact, drawn on every block alike. */
+.staff-grid__event[data-editable] {
+  --staff-event-alpha-finished: var(--staff-event-alpha, 15%);
+}
+
+.staff-grid__event[data-editable][data-status] {
+  color: var(--sys-color-foreground);
+}
+
+/*
+ * ── The handles ────────────────────────────────────────────────────────
+ *
+ * Positioned against the COLUMN, from the same two fractions the block is
+ * drawn from, so the handle and the edge it grabs can never drift apart.
+ */
+.staff-frame__handle {
+  --staff-event-extent: calc(
+    var(--staff-grid-slots, 1) * var(--staff-slot-height)
+  );
+  /*
+   * THE HIT AREA, STATED IN PIXELS AND SPLIT BY DIRECTION.
+   *
+   * 44 is a platform floor, not a taste preference: a reader who asked for a
+   * denser layout asked for less whitespace, not a smaller thumb. So the two
+   * reaches are fixed pixels, and only the INWARD one gives way.
+   *
+   * Outward is always 22 — outside the block there is nothing to steal from.
+   * Inward is 22, or HALF THE BLOCK when half the block is less than 22,
+   * which is what makes the two areas meet exactly instead of overlapping.
+   * Their total is `min(44px, blockHeight / 2 + 22px)`, the ruling's own
+   * figure — but a single centred box of that height is NOT the same shape:
+   * at the 10-minute floor it reaches 17px inward where only 12px of block
+   * exists, and the two ends steal 10px of taps from each other. The split is
+   * what makes the arithmetic and the geometry agree.
+   *
+   * Above 88px of block the two inward halves are a full 22 each and what is
+   * left between them IS the move region — one number, one derivation, two
+   * features.
+   */
+  --staff-handle-in: min(
+    22px,
+    calc(var(--staff-event-height, 0) * var(--staff-event-extent) / 2)
+  );
+
+  position: absolute;
+  inset-inline-start: 50%;
+  /* Above the block (3) and its lift (5) both — a handle that disappeared
+     under the thing it resizes would be unusable exactly while in use. */
+  z-index: 6;
+  /* 36.8 × 18.4 / 40 × 20 / 43.2 × 21.6 — the VISUAL capsule, which is free
+     to be small because the hit area above is not. */
+  inline-size: calc(var(--sys-space-unit) * 10);
+  block-size: calc(var(--sys-space-unit) * 5);
+  translate: -50% -50%;
+
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid var(--sys-color-separator);
+  border-radius: var(--control-radius-capsule);
+  background: var(--sys-color-surface);
+  color: var(--sys-color-foreground);
+  box-shadow: var(--sys-elevation-overlay);
+  cursor: ns-resize;
+  /* Same reversal as the block above, and this one mattered more: a handle
+     armed with NO threshold at all, so a scroll that happened to begin on one
+     of these discs resized the booking before the finger had moved a pixel.
+     It now waits for the same hold. */
+  touch-action: pan-y;
+}
+
+.staff-frame__handle[data-edge='start'] {
+  inset-block-start: calc(
+    var(--staff-event-top, 0) * var(--staff-event-extent)
+  );
+}
+
+.staff-frame__handle[data-edge='end'] {
+  inset-block-start: calc(
+    (var(--staff-event-top, 0) + var(--staff-event-height, 0)) *
+      var(--staff-event-extent)
+  );
+}
+
+/*
+ * The hit surface STRADDLES the edge — 22px in, 22px out.
+ *
+ * Wholly inside it steals taps from the block body; wholly outside, from the
+ * neighbour. Straddling is the only construction that takes from neither, and
+ * what is left between the two inward halves is exactly the move region.
+ */
+.staff-frame__handle::before {
+  content: '';
+  position: absolute;
+  inset-inline-start: 50%;
+  translate: -50% 0;
+  min-inline-size: 44px;
+  inline-size: 100%;
+}
+
+/* The capsule is centred on the edge, so 50% of the capsule IS the edge. */
+.staff-frame__handle[data-edge='start']::before {
+  inset-block-start: calc(50% - 22px);
+  block-size: calc(22px + var(--staff-handle-in));
+}
+
+.staff-frame__handle[data-edge='end']::before {
+  inset-block-start: calc(50% - var(--staff-handle-in));
+  block-size: calc(var(--staff-handle-in) + 22px);
+}
+
+/* The icon rides the button's own font, per the standing parity ruling. */
+.staff-frame__handle .ui-icon {
+  pointer-events: none;
+}
+
+/* The one sanctioned hover grammar, with its ungated `:active` mirror —
+   every hover effect owes one, or a tap shows nothing at all on a phone. */
+@media (hover: hover) {
+  .staff-frame__handle:hover {
+    background: var(--sys-color-surface-secondary);
+  }
+}
+
+.staff-frame__handle:active,
+.staff-frame__handle[data-dragging] {
+  background: var(--sys-color-surface-secondary);
+}
+
+.staff-frame__handle:active {
+  /* `scale`, not `transform`: the capsule's centring already owns
+     `translate`, and the two properties compose instead of overwriting. */
+  scale: 0.94;
+}
+
+.staff-frame__handle:focus-visible {
+  outline: var(--sys-focus-ring-width) solid var(--sys-color-ring);
+  outline-offset: var(--sys-focus-ring-offset);
+}
+
+/*
+ * ── The readout ────────────────────────────────────────────────────────
+ *
+ * Pinned to the block's edge OPPOSITE the one under the finger, because
+ * finger occlusion is physical and does not get smaller because someone
+ * asked for a denser layout. A body drag has no far edge to hide behind —
+ * the finger is in the middle — so it takes the start edge instead.
+ *
+ * Always the boundary AND the resulting length: that is Google's
+ * duration-annotated-dropdown insight applied to a gesture, and it is what
+ * lets this frame snap at five minutes where Apple's silent snap needs
+ * fifteen.
+ */
+.staff-frame__readout {
+  --staff-event-extent: calc(
+    var(--staff-grid-slots, 1) * var(--staff-slot-height)
+  );
+
+  position: absolute;
+  inset-inline-start: 50%;
+  inset-block-start: calc(
+    var(--staff-readout-fraction, 0) * var(--staff-event-extent)
+  );
+  z-index: 7;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  padding: 2px var(--sys-space-compact);
+  border-radius: var(--control-radius-capsule);
+  background: var(--sys-color-foreground);
+  color: var(--sys-color-background);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+/* THE WORDS TAKE THE PILL'S INK (owner, 2026-09-09: "muted over some bg,
+   doesn't fit the WCAG score"). `uiFont="caption"` carries the secondary
+   label colour on its own, which over the inverted pill read at 2.9:1 dark
+   and 3.3:1 light. Inherit, so every tone's ink — inverted, destructive,
+   warning — reaches the text it was chosen for. */
+.staff-frame__readout > [uitext] {
+  color: inherit;
+}
+
+.staff-frame__readout[data-side='above'] {
+  translate: -50% calc(-100% - var(--sys-space-compact));
+}
+
+.staff-frame__readout[data-side='below'] {
+  translate: -50% var(--sys-space-compact);
+}
+
+/* Red is a DECISION — an overlap the barber is choosing, or a floor the
+   gesture refuses to go under. Amber is ADVICE: outside the shift is
+   permitted and always was, and warning about it in red would make the one
+   tone that means "stop" mean "carry on" half the time. */
+.staff-frame__readout[data-tone='destructive'] {
+  background: var(--sys-color-destructive);
+  color: var(--sys-color-on-destructive);
+}
+
+/* Dark ink on amber (owner, 2026-09-09: the pill's words "don't fit the
+   WCAG score"): white on this amber is 2.9:1. The note line takes the same
+   full ink — a faded second line was the other half of the failure — and
+   is demoted by weight alone. */
+.staff-frame__readout[data-tone='warning'] {
+  background: var(--sys-color-warning);
+  color: var(--sys-color-on-warning);
+}
+
+/*
+ * ── A chair with no column of its own ──────────────────────────────────
+ *
+ * Over the cap the frame does not pick two chairs out of four and hope: the
+ * chair the sheet was opened at keeps its column and every other one is drawn
+ * inside it, outlined and named. Never draggable — the frame edits the seat
+ * it was opened at, and editing a sibling seat is a separate open.
+ */
+.staff-grid__ghost {
+  --staff-event-extent: calc(
+    var(--staff-grid-slots, 1) * var(--staff-slot-height)
+  );
+
+  position: absolute;
+  inset-inline: 2px;
+  inset-block-start: calc(
+    var(--staff-event-top, 0) * var(--staff-event-extent)
+  );
+  block-size: max(
+    calc(var(--staff-event-height, 0) * var(--staff-event-extent)),
+    calc(var(--sys-space-unit) * 3)
+  );
+  z-index: 1;
+  display: flex;
+  align-items: flex-start;
+  overflow: hidden;
+  padding: 2px var(--sys-space-tight);
+  border: 1px dashed var(--sys-color-separator);
+  border-radius: var(--control-radius-subtle);
+  /* 7%, half the 15% a real block wears: same tone, less of it, so a chair
+     that is context recedes behind the one being edited. */
+  background: color-mix(
+    in srgb,
+    var(--barber-tone, var(--sys-color-fill)) 7%,
+    transparent
+  );
+  color: var(--sys-color-secondary-label);
+  pointer-events: none;
+}
+
+/*
+ * The leading rail — a pill, not an edge.
+ *
+ * A border or an inset shadow is welded to the block's own rectangle: it runs
+ * corner to corner and takes the block's radius, so it reads as part of the
+ * frame. The reference's rail is a separate mark sitting INSIDE the block —
+ * inset top and bottom, rounded at both ends — which is only expressible as
+ * an element with its own geometry.
+ */
+.staff-grid__event-rail {
+  position: absolute;
+  /* Above the masks, like the words — and OUT of the rule that lifts the
+     words, which set this to `position: relative` and collapsed a rail
+     with no content to nothing at all: the frame drew no rail for months. */
+  z-index: 1;
+  /* THE CARD'S OWN GEOMETRY (owner, 2026-09-10: "to keep it identical, the
+     rail in the frame as well"): 4px, a capsule, inset by the block's own
+     padding — exactly how the agenda card carries its rail. */
+  inset-block: calc(var(--sys-space-unit) * 0.75);
+  inset-inline-start: var(--sys-space-unit);
+  inline-size: 4px;
+  border-radius: var(--control-radius-capsule);
+  /* WHOSE CHAIR. This rail has been `--sys-color-accent` since day one — the
+     literal placeholder behind "hue → it is a booking", written when there
+     was only ever one identity to express. It carries the barber now, the
+     same five tones the agenda uses, so the two views say "Ivan" in the same
+     colour. A carve-out has no barber and keeps the neutral fallback. */
+  background: var(--barber-tone, var(--sys-color-separator));
+  pointer-events: none;
+}
+
+/* THE HEAD — the title, the lines, the clock — is ONE recipe with the agenda
+   card now: `event-head/staff-event-head.css` in
+   `@creativo/features/shared/visits`, at `compact` density here. The block
+   keeps only what is the block's: its fill, its rail, its masks, its marks,
+   and the state rules that reach into the head by class. */

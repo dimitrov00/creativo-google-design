@@ -1,0 +1,224 @@
+/*
+ * «ЛОЯЛНОСТ» — layout only. Every surface, ink, type role, ring, track,
+ * ticket, disc, notice and row is a DS part's own (`ui-pass-card`,
+ * `ui-quick-actions`, `ui-card` elevated, `article[uiCouponCard]`,
+ * `ui-gauge`, `ui-streak-track`, `ui-section-header`, `ul[uiListGroup]`,
+ * `ui-notice`, `ui-skeleton`); these rules space the modules at the
+ * sheet's rhythm, seat the discs under the pass, lay the status card's
+ * ring beside its lines and the reward tiles' faces beside their
+ * capsules, and keep what focus lands on clear of the sheet's chrome.
+ * No `font:` shorthand here, so the app's tabular figures are never reset.
+ */
+
+/* MODULE → MODULE at `loose` (32, §2.0), the head included. */
+:host {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sys-space-loose);
+}
+
+/* THE HEAD — the pass, then its discs 24 under it (§2.2.2 WB). */
+.client-loyalty__head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sys-space-comfortable);
+}
+
+/* In the ≥ 761 dialog (column 528) the pass keeps its 355 at the leading
+   edge and the discs stand BESIDE it as a 2 × 2 (§2.2.4). */
+:host([data-wide]) .client-loyalty__head {
+  display: grid;
+  grid-template-columns: 22.1875rem minmax(0, 1fr);
+  align-items: center;
+  column-gap: var(--sys-space-comfortable);
+}
+
+/* A MODULE — its heading row (always the small rung tall, §3.2) 8 over
+   its body (§2.0: heading → body is `compact`). */
+.client-loyalty__module {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sys-space-compact);
+}
+
+/* An anchored heading lands under the bar at the sheet's clear top —
+   below the chrome's fade, not inside it (the built page's lesson: flush
+   at the bar's edge it arrived ghosted), and it is what the focus lands on. */
+.client-loyalty__anchor {
+  scroll-margin-block-start: var(--modal-sheet-clear-top);
+}
+
+/* A landing is not a control: the focus moves to the heading so the next
+   Tab starts inside the section, and the global ring boxed it (a 2 px
+   frame the width of the column after «Награди», review 3). The editor's
+   page container hides the same programmatic landing
+   (`.staff-visit__page:focus-visible`, staff-visit-editor.css). */
+.client-loyalty__anchor:focus-visible {
+  outline: none;
+}
+
+/* WC0 — the empty wallet's one line, centred on its white card. */
+.client-loyalty__empty p {
+  margin: 0;
+}
+
+/* WE — THE STATUS CARD: the ring beside its two lines, the ladder under. */
+.client-loyalty__status {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sys-space-regular);
+}
+
+.client-loyalty__status-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sys-space-regular);
+}
+
+/* A ring that stands ALONE round a figure takes the heavier stroke (§3.7:
+   5 on the 64 ring, the family of /account's ring). Set on the gauge
+   element itself: the host's own declaration is what its parts read. */
+.client-loyalty__ring {
+  --ui-gauge-stroke: calc(var(--sys-space-unit) * 1.25);
+
+  flex: none;
+}
+
+.client-loyalty__status-lines {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sys-space-tight);
+  min-inline-size: 0;
+}
+
+.client-loyalty__status-lines > p {
+  margin: 0;
+  text-wrap: pretty;
+}
+
+/* WF — A REWARD TILE: the face against the capsule, the title under them
+   wrapping whole, the progress bar of a reward out of reach RIGHT UNDER
+   its title (pinned to the foot it floated 45 pt under a one-line title,
+   review 3). Every tile of a row is the same height (the grid stretches
+   them), and the title keeps two lines' room, so the bars of a row stand
+   on one line whether a name takes one line or two. The tile is a
+   container (its width is the grid's track, never its own words), so the
+   narrow step below reads it. */
+.client-loyalty__reward {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sys-space-compact);
+  container: reward-tile / inline-size;
+}
+
+/* The head WRAPS: where the capsule and the face do not share the line,
+   the capsule takes the line under the face instead of folding into two
+   («още» over «29 т.» on a 330 phone, review 3, round 2) — the capsule is
+   never shrunk (`flex: none` on the mark below). */
+.client-loyalty__reward-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--sys-space-compact);
+}
+
+/* The mark — «150 т.» · «от 29 т.» — keeps its own width on every line:
+   a capsule is one word to the line breaker. */
+.client-loyalty__reward-mark {
+  flex: none;
+}
+
+/* A NARROW TILE (a 330 phone's 139, a 360 one's 156; a 390 phone's 170
+   and the dialog's 165 are not) stacks the head for EVERY tile of the
+   grid — the face, the capsule under it, the title — so the titles of a
+   row start on one line whether a tile's capsule is «120 т.» or «още
+   204 т.»: a row where one tile's capsule fitted beside its face and its
+   neighbour's dropped under read ragged (review 3, round 2). 10rem: the
+   widest capsule, the face and the gap no longer share 160 less the
+   padding. */
+@container reward-tile (max-width: 10rem) {
+  .client-loyalty__reward > .client-loyalty__reward-head {
+    flex-direction: column;
+    justify-content: flex-start;
+  }
+}
+
+/* The face: the reward's picture, else the reward glyph in the accent on
+   its wash — the avatar's own hooks, so one element draws both. */
+.client-loyalty__reward-face {
+  /* `--ui-avatar-ink` is the avatar's one ink hook (the monogram, the
+     glyph, and the film it derives); `--ui-avatar-disc` is its DIAMETER,
+     never touched here. The film is deepened to the house wash. */
+  --ui-avatar-ink: var(--sys-color-accent);
+
+  flex: none;
+  background: color-mix(
+    in srgb,
+    var(--sys-color-accent) var(--sys-alpha-tint),
+    transparent
+  );
+}
+
+/* Out of reach: the picture desaturated and quiet; no padlock, no muted
+   tile, the capsule says what is missing. */
+.client-loyalty__reward:not([data-affordable]) .client-loyalty__reward-face {
+  filter: grayscale(1);
+  opacity: 0.45;
+}
+
+/* A reward's name is never cut: it wraps whole, in balanced lines, over
+   the two lines it keeps («Безплатно / подстригване»; «Безплатно оформяне
+   на брада» takes three of 14/600 on a 170 tile, and the row grows). */
+.client-loyalty__reward-title {
+  margin: 0;
+  min-block-size: 2lh;
+  overflow-wrap: anywhere;
+  text-wrap: balance;
+}
+
+.client-loyalty__reward-progress {
+  margin-block-start: 0;
+}
+
+/* THE PAGE WHILE THE ACCOUNT READS — the modules' blocks at the page gap. */
+.client-loyalty__placeholders {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sys-space-loose);
+}
+
+/* The pass's block: the card's own shape, as wide as the column. */
+.client-loyalty__pass-skeleton {
+  inline-size: 100%;
+  block-size: auto;
+  aspect-ratio: 1.586;
+}
+
+/* Four discs at the run's pitch, centred, each over a caption's line. */
+.client-loyalty__discs-skeleton {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 5.5rem));
+  justify-content: center;
+}
+
+.client-loyalty__disc-skeleton {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sys-space-compact);
+  padding-block: var(--sys-space-tight);
+}
+
+/* Two tickets, card after card. */
+.client-loyalty__tickets-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sys-space-regular);
+}
+
+/* A placeholder row's two lines centre on the row, as the event head's do. */
+.client-loyalty__placeholder-lines {
+  min-block-size: var(--control-size-regular);
+  justify-content: center;
+}

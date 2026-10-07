@@ -1,0 +1,553 @@
+/*
+ * WHAT BECAME OF A BLOCK, AND WHERE NOW IS — status as form (a hole, a
+ * carve-out, done, gone), the clock's qualified stretches (elapsed,
+ * surplus, closed, overlap), the mark row and the party share, the short
+ * block, the press and the lift, and the now-line with its pill.
+ *
+ * Its own stylesheet for the budget's sake, like `staff-time-grid.block.css`
+ * before it (warning 10 kB, error 20 kB — recalibrated 2026-09-26; the one
+ * file measured 18.25 kB minified). The lift's comment still holds as
+ * written: it is DECLARED AFTER `:active` in this same sheet.
+ *
+ * The split is in the file, not in the cascade. This sheet is the original's
+ * next run of chapters, cut at a chapter boundary with no rule text changed,
+ * and it is listed directly after `staff-time-grid.block.css` in the same
+ * `styleUrls` — so every rule lands in the document in exactly the order it
+ * had in one file. No rule here now follows a rule it used to precede, or
+ * precedes one it used to follow; no two rules that share an element and a
+ * property changed their relative order, because no two rules did.
+ * `staff-time-grid.page.css` follows it, as it followed the one file.
+ */
+
+/*
+ * ── Status is FORM, never hue ──────────────────────────────────────────
+ *
+ * These blocks used to be green for completed, amber for no-show, accent for
+ * confirmed and grey for cancelled. Three HIG rules say that was wrong:
+ *
+ * 1. *Color* — "don't rely on color alone to convey information". A pale
+ *    green wash beside a pale amber one is the exact pair red-green colour
+ *    blindness cannot separate, and "the cut happened" vs "they never came"
+ *    is not a distinction to hang on a hue.
+ * 2. *Color* again — "avoid using semantic colors for non-semantic
+ *    purposes". Success and warning are system meanings; a finished haircut
+ *    is not a success and an absent client is not a warning.
+ * 3. Apple Calendar's own model: colour says WHICH CALENDAR an event belongs
+ *    to — an identity, chosen by the user — and never what state it is in.
+ *    State is carried by form: past events recede, declined events strike
+ *    through.
+ *
+ * So every booking now shares one hue, and the state is read off the block's
+ * SHAPE: filled = live, recessed = done, unfilled = the time was lost. A
+ * glyph doubles each of the terminal ones, and the accessible name carries
+ * the word — three channels, none of them colour alone.
+ */
+
+/* A sellable hole: the ABSENCE of a fill is the signal — no hatching, no
+   dashes, because this system has no vocabulary for either. */
+.staff-grid__event[data-kind='gap'] {
+  /* The tint must be reset here as well as the colour. It was not, so an
+     ELAPSED gap fell through to the past hatch and drew itself in accent
+     stripes — a hole in the day advertising itself in the brand colour. Same
+     class of bug the no-show branch already carries a comment about. */
+  --staff-event-tint: transparent;
+  --staff-event-hatch: var(--sys-color-fill);
+  background-color: transparent;
+  border: 1px dashed var(--sys-color-separator);
+  color: var(--sys-color-secondary-label);
+  box-shadow: none;
+}
+
+/*
+ * A CARVE-OUT — a break, an admin hour.
+ *
+ * Neutral, because hue is reserved: on this grid a colour says "this is a
+ * booking", and a lunch break is the opposite of one. It is still plainly an
+ * object — a filled rectangle with a rail, a glyph and a name — which is the
+ * whole point: it is time somebody deliberately took, so it has to be
+ * grabbable, not painted on as background.
+ *
+ * Distinct from the closed shading behind it in every channel that matters:
+ * this has a border, a rail, text, a hit target and an accessible name; the
+ * shading has none of those and is `aria-hidden`. That difference IS the
+ * signal that one can be moved and the other cannot.
+ */
+.staff-grid__event[data-kind='block'] {
+  --staff-event-tint: var(--sys-color-fill);
+  background-color: var(--staff-event-tint);
+  border: 1px solid var(--sys-color-separator);
+  color: var(--sys-color-secondary-label);
+}
+
+.staff-grid__event[data-kind='block'] .staff-grid__event-rail {
+  background: var(--sys-color-separator);
+}
+
+/* DONE — recedes, the way Apple Calendar dims the past. Same hue, less of
+   it: the day's achievement is still legible, just no longer competing with
+   what is still to come. */
+/* DONE — recedes, the way Apple Calendar dims the past. Same hue, less of it:
+   the day's achievement stays legible and stops competing with what is still
+   to come. The HATCH is not here — see below; it belongs to the clock. */
+.staff-grid__event[data-status='completed'] {
+  /* Same tone, half the wash. Hue is identity now, so this can no longer
+     reach for the accent without saying "Ivan" and "done" in one colour. */
+  --staff-event-tint: color-mix(
+    in srgb,
+    var(--barber-tone, var(--sys-color-fill))
+      var(--staff-event-alpha-finished, 6%),
+    transparent
+  );
+  background-color: var(--staff-event-tint);
+  color: var(--sys-color-secondary-label);
+}
+
+/*
+ * ── Past is a TEXTURE, and it is orthogonal to status ──────────────────
+ *
+ * The hatch first shipped on `completed`, which quietly made it a fourth
+ * status colour in disguise. It is not: a completed cut, a no-show and a
+ * cancellation at 10:00 are all equally behind us by noon, and so is a
+ * booking still sitting `confirmed` — which is the one a shop most needs to
+ * see, because an unsettled past visit poisons every number derived from it.
+ *
+ * So the axes stay separate, and each keeps its own channel:
+ *   hue     → it is a booking
+ *   form    → what became of it
+ *   texture → whether its hour has gone
+ *
+ * The stripes are TRANSPARENT — gaps cut out of the block's own tint, not
+ * grey bars painted over it. Painting added a second colour to a surface that
+ * had just been reduced to one, and it dirtied every fill it crossed; cutting
+ * makes the block read as the same colour, thinned. Whatever tone a state
+ * carries, its past version is that tone with holes in it.
+ *
+ * …except that TWO states carry no tone at all. `no_show` and `cancelled` are
+ * unfilled by design, so cutting stripes out of their fill drew transparent
+ * stripes on transparent — the hatch was in the DOM, computed, and rendered
+ * nothing. A past no-show looked exactly like a future one, which is the
+ * single worst case for this indicator to fail on: a held chair nobody sat in
+ * is only actionable once its hour has gone. Those two draw the hatch in the
+ * same neutral their outline uses, so the texture exists on every block the
+ * clock has passed, whatever became of it.
+ */
+/*
+ * ── QUALIFIED STRETCHES ────────────────────────────────────────────────
+ *
+ * ⚠ These replace three all-or-nothing treatments (owner ruling 2026-09-03).
+ *
+ * `[data-past]` used to hatch a WHOLE block the moment its last minute had
+ * gone, the closed hours were shading drawn behind the column, and a
+ * collision was named only in the drag readout. Every one of those is a fact
+ * about PART of a booking, and rounding it up to the whole block throws away
+ * the number worth reading: a barber looking at an 11:00 that started twenty
+ * minutes ago wants to see twenty minutes, not a block that has changed
+ * costume.
+ *
+ * One box per stretch, positioned by fractions of the block's own height, so
+ * nothing here knows the extent, the density or the scale it is drawn at.
+ * Under the words and over the fill; never a hit target.
+ */
+.staff-grid__event-mask {
+  position: absolute;
+  z-index: 0;
+  inset-inline: 0;
+  inset-block-start: calc(var(--staff-mask-from, 0) * 100%);
+  block-size: calc(
+    (var(--staff-mask-to, 0) - var(--staff-mask-from, 0)) * 100%
+  );
+  pointer-events: none;
+}
+
+/* The block's own words sit ABOVE every mask — a wash must never take a
+   name's contrast with it. The rail is not a word: it is positioned by its
+   own rule and lifted there. */
+.staff-grid__event > :not(.staff-grid__event-mask, .staff-grid__event-rail) {
+  position: relative;
+  z-index: 1;
+}
+
+/*
+ * ELAPSED — THE HOUSE HATCH FOR "GONE", narrowed to the minutes that are.
+ * (owner ruling 2026-09-03)
+ *
+ * ⚠ This reverses a scrim I put here earlier the same day, and the reversal
+ * is the point: "past" already had a treatment on this feature and I replaced
+ * it with a second one. The agenda card still hatches a finished visit
+ * (`.agenda-card[data-past]`, -45°), the grid block hatched one until this
+ * change, and a live booking's spent minutes are the same fact as either. Two
+ * dialects for one meaning is the defect, however good the second one looks.
+ *
+ * The recipe is the old `[data-past]` rule, and both halves matter:
+ * `background-color` KNOCKS THE FILL OUT — the stripes are cut from the tint
+ * rather than painted over it, which is what the fill's own comment says and
+ * what makes a 7% hatch legible against a 15% fill — and the gradient then
+ * lays the tone back in stripes. An earlier attempt kept the fill and added
+ * the hatch on top; 7% more of a colour already present is a change no eye
+ * can find, and a whole morning of finished bookings looked like the
+ * afternoon's.
+ *
+ * Opaque, deliberately: the fill has to go, and a translucent knock-out only
+ * pales it. The cost is that a past block sitting over closed shading no
+ * longer lets the grey through — which is the block staying legible, not a
+ * fact being lost, since the hours are shaded either side of it.
+ */
+.staff-grid__event-mask[data-kind='elapsed'] {
+  /* A WASH, not a lid (owner, 2026-09-09: the minutes gone "hid the block
+     almost entirely"). The ground colour at three fifths lets two fifths of
+     the tint through under the hatch, so the block still reads as one shape
+     with a part of it behind us — rather than a block that starts at now. */
+  background-color: color-mix(
+    in srgb,
+    var(--sys-color-background) 60%,
+    transparent
+  );
+  background-image: repeating-linear-gradient(
+    -45deg,
+    var(--staff-event-hatch) 0 5px,
+    transparent 5px 10px
+  );
+}
+
+/*
+ * SURPLUS — the minutes past what the services need (owner, 2026-09-09).
+ *
+ * Not a hatch: a hatch on this grid means "gone", "shut" or "taken", and
+ * padding is none of those. A dashed SEAM where the services end, and the
+ * stretch beyond it paled — the same ground wash the elapsed stripes are
+ * cut from, lighter — so the block still reads as one shape with a tail
+ * the barber chose to leave. The length tag sits in that tail.
+ */
+.staff-grid__event-mask[data-kind='surplus'] {
+  border-block-start: 1px dashed
+    color-mix(in srgb, var(--sys-color-foreground) 55%, transparent);
+  background-color: color-mix(
+    in srgb,
+    var(--sys-color-background) 35%,
+    transparent
+  );
+}
+
+/*
+ * CLOSED and OVERLAP — the fill STAYS and stripes go over it.
+ *
+ * That is what separates them from `elapsed` above, and it is the right way
+ * round: a spent hour is over and recedes, so its fill is cut away; a booking
+ * running past closing or sitting on another one is still very much a
+ * booking, so it keeps its weight and gains a mark. Same hatch, opposite
+ * relationship to the fill — which reads as "quieter" against "louder"
+ * before anyone has worked out what the stripes mean.
+ *
+ * The two are told apart from EACH OTHER by direction, not by hue: a colour
+ * pair at this size fails the 3:1 graphic floor against the tinted fills they
+ * sit on. `closed` takes the opposite diagonal to the past hatch so it can
+ * never be misread as time gone; `overlap` crosses both, because two bookings
+ * in one chair is literally two things in one place.
+ */
+.staff-grid__event-mask[data-kind='closed'] {
+  background-image: repeating-linear-gradient(
+    45deg,
+    var(--staff-event-hatch) 0 5px,
+    transparent 5px 10px
+  );
+}
+
+.staff-grid__event-mask[data-kind='overlap'] {
+  background-image:
+    repeating-linear-gradient(
+      45deg,
+      var(--staff-event-hatch) 0 5px,
+      transparent 5px 10px
+    ),
+    repeating-linear-gradient(
+      -45deg,
+      var(--staff-event-hatch) 0 5px,
+      transparent 5px 10px
+    );
+}
+
+/*
+ * A block wholly in the past is an `elapsed` mask from 0 to 1 — the same
+ * treatment, arrived at by the same arithmetic, which is why there is no
+ * `[data-past]` rule any more. The attribute stays on the element: it is
+ * read by the drag guards and it is a fact about the block, not a paint.
+ */
+
+/* THE MARK ROW — the block's bottom line, settled ONCE (`margin-block-start:
+   auto` on the row, not on each mark): the party share at its start, the
+   tag, the warning and the state mark trailing, side by side. Two marks
+   each pushing down with their own auto margin used to split the slack
+   between them and leave the tag floating mid-block whenever the warning
+   glyph appeared (owner, 2026-09-09). */
+.staff-grid__event-marks {
+  display: flex;
+  align-items: center;
+  /* Trailing by default — a lone glyph sits at the end, not the start. */
+  justify-content: flex-end;
+  gap: var(--sys-space-tight);
+  align-self: stretch;
+  margin-block-start: auto;
+  min-inline-size: 0;
+}
+
+.staff-grid__event-marks:empty {
+  display: none;
+}
+
+/* The warning glyph, on the trailing edge of the block's mark row. */
+.staff-grid__event-warning {
+  font-size: 0.875rem;
+  color: var(--sys-color-warning, var(--sys-color-secondary-label));
+}
+
+/* GONE — A GHOST OF THE FILL, NOT AN OUTLINE (owner, 2026-09-10: "the ghost
+   fill, no borders"). Nobody sat in the chair, or the time was given back:
+   the block keeps its shape through the FINISHED wash — the same tone, the
+   settled amount of it, one recessed tier for everything that is no longer
+   a live booking — and the glyph and the strike say which. No stroke: an
+   outline was a second grammar beside the fill, and the only bordered block
+   on the day. With a tint of their own again, the past hatch cuts into it
+   like any other block's, so the neutral stand-in is gone too. */
+.staff-grid__event[data-status='no_show'],
+.staff-grid__event[data-status='cancelled'] {
+  --staff-event-tint: color-mix(
+    in srgb,
+    var(--barber-tone, var(--sys-color-fill))
+      var(--staff-event-alpha-finished, 6%),
+    transparent
+  );
+  background-color: var(--staff-event-tint);
+}
+
+/* THE HOLLOW RAIL — the agenda card's own (2026-09-24): an hour that did
+   not happen keeps the barber's tone as an outline instead of a bar, the
+   block's "unfilled is time that was lost" said again by its rail. */
+.staff-grid__event[data-status='no_show'] .staff-grid__event-rail,
+.staff-grid__event[data-status='cancelled'] .staff-grid__event-rail {
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--barber-tone, var(--sys-color-separator));
+}
+
+/* NO-SHOW — the chair was held and nobody sat in it. */
+.staff-grid__event[data-status='no_show'] {
+  color: var(--sys-color-secondary-label);
+}
+
+/* CANCELLED — the most recessed of the three: nothing happened and nothing
+   was lost. */
+.staff-grid__event[data-status='cancelled'] {
+  color: var(--sys-color-tertiary-label);
+}
+
+/* STRUCK THROUGH — Apple's treatment for a declined event — on the NAME,
+   for both hours that did not happen: a cancellation and a no-show (owner,
+   2026-09-10). Drawn by the head itself from `[struck]` (one mechanism for
+   the block and the card, staff-event-head.css); the times, the service and
+   the tag keep their figures legible, and the glyph still says which. */
+
+/* The glyph that doubles the form, so the state survives a greyscale print
+   and a reader who cannot separate two washes. */
+.staff-grid__event-status {
+  color: var(--sys-color-secondary-label);
+}
+
+/* THE PARTY SHARE — leading, on the block's own bottom line.
+ *
+ * It settles to the START edge while the status mark settles to the END, so
+ * the two occupy one row of marks rather than stacking and costing the block
+ * a line each. `margin-block-start: auto` on both is what puts them there;
+ * whichever renders first claims the row and the other joins it. */
+.staff-grid__event-party {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  /* Leads the mark row; everything after it settles to the end. */
+  margin-inline-end: auto;
+  color: var(--sys-color-secondary-label);
+  font: var(--sys-font-caption);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* The glyph rides the figures rather than leading them at full size — same
+   relationship the agenda's fact icons have to their text. */
+.staff-grid__event-party ui-icon {
+  font-size: 0.75rem;
+}
+
+/* A block too short for two lines has no room for a mark row either; the
+   agenda card still carries the share, and the accessible name always does. */
+.staff-grid__event[data-short] .staff-grid__event-party {
+  display: none;
+}
+
+/* One line only once the block is too short to hold two legibly. The text
+   still starts at the TOP: a short block centring its label while a tall one
+   top-aligns made a column of names that did not share a baseline. */
+.staff-grid__event[data-short] {
+  padding-block: 2px;
+}
+
+/* The one sanctioned hover grammar, with its ungated `:active` mirror so a
+   TAP shows what a hover would (standing mobile-press-parity ruling). */
+@media (hover: hover) {
+  .staff-grid__event:hover {
+    filter: brightness(0.97);
+  }
+}
+
+.staff-grid__event:active {
+  filter: brightness(0.94);
+  transform: scale(0.99);
+}
+
+.staff-grid__event:focus-visible {
+  outline: 2px solid var(--sys-color-accent);
+  outline-offset: 1px;
+}
+
+/*
+ * The lift. Apple's block "becomes opaque in colour"; Google's activation
+ * signal IS the haptic — which iOS Safari does not have, so on the platform
+ * where the gesture is hardest to learn this carries the whole lesson alone.
+ *
+ * DECLARED AFTER `:active`, deliberately: both selectors match while a finger
+ * is down and they carry the same specificity, so source order is what makes
+ * the lift win over the press-down it would otherwise cancel out with.
+ */
+.staff-grid__event[data-moving] {
+  transform: scale(1.02);
+  box-shadow: var(--sys-elevation-overlay);
+  cursor: grabbing;
+  z-index: 5;
+}
+
+/* ── The now-line ────────────────────────────────────────────────────── */
+
+/*
+ * ── Now ────────────────────────────────────────────────────────────────
+ *
+ * A segment per column rather than one rule across the body: the hour is the
+ * same everywhere, so the line crosses everything — but only TODAY's stretch
+ * is accent. On Thursday's column the line says "this is where 10:38 falls",
+ * which is a ruler, not an event; spending the accent on it would claim
+ * something is happening there.
+ */
+/*
+ * THE TRACK IS THE BASIS, not the column's box (2026-09-09, closing the
+ * note that stood here). The gutter used to draw one hour row more than the
+ * columns have slots — the page kept its closing midnight label — and the
+ * columns, grid items in the same row, stretched to the gutter's height. A
+ * percentage of the column was then a percentage of 25 hours drawn over
+ * 24 hours of rows: at 09:55 the line sat inside the ten o'clock block.
+ * The closing label is gone on the page too now (2026-09-23, §3), so the
+ * two boxes are the same height by construction — and the basis stays the
+ * track regardless: `--staff-grid-slots × --staff-slot-height` IS the rows'
+ * height, the same basis every proportionally placed block already uses.
+ */
+.staff-grid__now {
+  position: absolute;
+  inset-inline: 0;
+  inset-block-start: calc(
+    var(--staff-now-fraction, 0) * var(--staff-grid-slots, 1) *
+      var(--staff-slot-height)
+  );
+  block-size: 0;
+  border-block-start: 1px solid var(--sys-color-separator);
+  z-index: 3;
+  pointer-events: none;
+}
+
+.staff-grid__now[data-today] {
+  border-block-start-width: 2px;
+  border-block-start-color: var(--sys-color-accent);
+}
+
+/* The time, as a FILLED pill — the reference's treatment, and the one that
+   survives sitting over a booked block. Accent-on-white read as a floating
+   word; ink in a filled capsule reads as a marker.
+
+   THE FILL IS THE PRIMARY, the ink its on-primary (2026-10-06, the accent
+   law: one orange; colour is a shape, words are ink). It was the solid
+   accent under white 11px figures — 3.04:1, small text's failing grade,
+   recorded as a breach until the owner answered for the orange. The dock's
+   form instead: the primary fill with on-primary ink reads 18.7:1 in
+   light and 16.6:1 in dark, and the orange stays where it is a SHAPE — the
+   line this pill heads. The badge's own count recipe (`badge.css`,
+   `increased` prominence) made the same move. */
+.staff-grid__now-label {
+  position: absolute;
+  /*
+   * The same point as the line, in the SAME KIND of box (2026-09-23, §3).
+   *
+   * The pill used to sit on the BODY, which is `--staff-body-pad` taller
+   * than the columns and starts that much higher, so its fraction had to
+   * add the padding back to land on the line's pixel. It lives INSIDE the
+   * gutter now — a grid item that starts where the columns start — so the
+   * two share one basis by construction, and it pins with the rail when a
+   * week pans sideways instead of being left behind on the body.
+   */
+  inset-block-start: calc(
+    var(--staff-now-fraction, 0) * var(--staff-grid-slots, 1) *
+      var(--staff-slot-height)
+  );
+  /* In the GUTTER, and FLUSH with the column edge the line starts from
+     (owner, 2026-09-09): it used to end where the hour labels end, a
+     compact step short of the column, and that step read as a gap between
+     the figure and its rule. The pill is the line's head — the reference
+     joins the two — so its trailing edge is the column boundary. */
+  /* THE WHOLE GUTTER, as every hour label's box is (owner, 2026-09-09): the
+     pill spans from the gutter's leading edge to the column boundary and
+     ends its figure at the same end padding the hours use, so `09:57`
+     sits in the same column of digits as `10:00` above and below it —
+     one more hour, drawn as a marker, rather than a tag hugging the edge. */
+  inset-inline: 0;
+  text-align: end;
+  /* Inside the rail's own stacking context (sticky makes one): over the
+     hour labels, and gone under the chrome with the rail at the top edge. */
+  z-index: 4;
+  /* Centred on the line's VISUAL middle, not on its top edge.
+     `inset-block-start` places the element's border-box top, so a 2px rule
+     has its middle 1px lower — centring the pill on the coordinate alone left
+     it sitting a hair high, which is exactly the "not centred" that shows. */
+  transform: translateY(calc(-50% + 1px));
+  padding-block: 1px;
+  /* The same end padding `.staff-grid__hour` keeps; the leading side takes
+     the capsule's own radius as breathing room. */
+  padding-inline: var(--sys-space-tight) var(--sys-space-compact);
+  border-radius: var(--control-radius-capsule);
+  font-variant-numeric: tabular-nums;
+  background: var(--sys-color-primary);
+  color: var(--sys-color-on-primary);
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .staff-grid__event:active {
+    transform: none;
+  }
+
+  /* Direct manipulation is not "motion" in the reduced-motion sense — it
+     tracks the finger, which is the point. The LIFT is decoration on top of
+     it, so the scale goes and the shadow stays: the shadow is the answer to
+     "which one am I holding", and losing it would cost information rather
+     than motion. */
+  .staff-grid__event[data-moving] {
+    transform: none;
+  }
+
+  .staff-frame__handle:active {
+    scale: none;
+  }
+}
+
+/* THE TAG: a caption capsule in the accent wash, bottom-trailing with the
+   status mark — the length's departure from the catalogue, stated on the
+   block while it is being resized. */
+/* The tag's look is the shared `.staff-event-tag` recipe
+   (`shared/staff-event-tag.css`) — one mark for the frame's block and the
+   agenda's card; only the short block's hiding is the grid's own. */
+
+.staff-grid__event[data-short] .staff-grid__event-tag {
+  display: none;
+}

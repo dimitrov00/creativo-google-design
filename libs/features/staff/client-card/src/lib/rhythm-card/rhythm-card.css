@@ -1,0 +1,105 @@
+/*
+ * «РИТЪМ» — layout only. The card, the capsule, the track, the button and
+ * every type role are DS parts' own (`ui-card` elevated, `span[uiBadge]`,
+ * `ui-streak-track`, `button[uiButton]`, `uiText`); these rules stack the
+ * card's lines, seat the unit and the capsule on the figure's baseline
+ * and fold the whole rule away. UNSCOPED (the component's encapsulation
+ * is `None`): every selector starts at a `rhythm-card__*` class of its
+ * own. No `font:` shorthand here, so the app's tabular figures are never
+ * reset.
+ */
+
+.rhythm-card {
+  display: block;
+}
+
+/* The card's lines at the card's inner rhythm: the figure, the track, the
+   state, the quiet facts, the rule. */
+.rhythm-card__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sys-space-regular);
+}
+
+/* THE FIGURE ROW — the count (title2, the DS's 24/700) with its unit a
+   step down beside it, both on one baseline; the phase capsule, when the
+   phase is not healthy, trails on the same line and wraps under the unit
+   on a 330 pt phone rather than pushing it. */
+.rhythm-card__figure {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: var(--sys-space-compact);
+  row-gap: var(--sys-space-tight);
+}
+
+.rhythm-card__count {
+  font-variant-numeric: tabular-nums;
+}
+
+/* The capsule hugs its word on the baseline line box; a little air before
+   it so «9 посещения в ритъм  До 10.11» reads as two things. */
+.rhythm-card__phase {
+  margin-inline-start: var(--sys-space-tight);
+  align-self: center;
+}
+
+/* THE TRACK draws its periods alone here: its own `regular` metric would
+   print the same count a second time, over the figure row above, which
+   already holds it at the card's rung and seats the phase capsule beside
+   it. Recorded for the DS (a `uiCountHidden` input would retire this
+   rule); the track's spoken sentence stays on the track. */
+.rhythm-card__track > .ui-streak-track__figure > .ui-metric {
+  display: none;
+}
+
+/* The state line and the quiet facts never leave one word alone on the
+   last line («ритъма.» under «… до 10.11 пази» at 330). */
+.rhythm-card__sentence {
+  text-wrap: pretty;
+}
+
+/* The quiet facts after the state line: «Най-много: 23 · Автоматични
+   защити: 2», one footnote line whose joint is in the text itself (a
+   reader hears the two facts apart), wrapping at the joint when it must. */
+.rhythm-card__facts {
+  text-wrap: pretty;
+}
+
+/* THE RULE LINE — a plain small button that hugs its words at the card's
+   leading edge and unfolds the whole rule under itself; its chevron turns
+   when the rule is open. On a 330 phone the line wraps («… 7 дни» over
+   «гратис»): it wraps as the card's other lines do, from the leading edge,
+   never centred inside its own box. */
+.rhythm-card__rule {
+  align-self: flex-start;
+  justify-content: flex-start;
+  max-inline-size: 100%;
+  margin-inline-start: calc(-1 * var(--sys-space-compact));
+  text-align: start;
+}
+
+.rhythm-card__rule .ui-icon {
+  transition: transform var(--sys-motion-duration-quick)
+    var(--sys-motion-easing-standard);
+}
+
+.rhythm-card__rule[aria-expanded='true'] .ui-icon {
+  transform: rotate(180deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rhythm-card__rule .ui-icon {
+    transition: none;
+  }
+}
+
+/* The whole rule, unfolded: one sentence a line, quiet, as a list. */
+.rhythm-card__rule-full {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sys-space-tight);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}

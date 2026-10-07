@@ -1,0 +1,498 @@
+<!-- AA/AB — the page's name at the sheet's large title, as every pushed page
+     titles, and the person under it in one quiet line. The collection's
+     count is NOT here: it lives once, in the ring (AK). The collapse is the
+     sheet's; nothing here draws a bar. -->
+<ui-sheet-headline data-testid="achievements-head">
+  <h2
+    uiSheetLargeTitle
+    [id]="titleId()"
+    uiText
+    uiFont="largeTitle"
+    data-testid="achievements-title"
+  >
+    {{ words()?.achievements.title }}
+  </h2>
+  @if (store.displayName(); as name) {
+  <p
+    uiText
+    uiFont="callout"
+    uiForegroundStyle="secondary"
+    class="client-achievements__subline"
+    data-testid="achievements-subline"
+  >
+    {{ name }}
+  </p>
+  }
+</ui-sheet-headline>
+
+<!-- C″ — read offline: the medals below are the saved ones; every tile still
+     opens its detail. -->
+@if (!store.online()) {
+<ui-notice
+  uiIcon="connection.offline"
+  [uiLabel]="words()?.offline ?? null"
+  data-testid="achievements-offline"
+>
+  <p>{{ words()?.offline }}</p>
+</ui-notice>
+} @switch (state().kind) { @case ('loading') {
+<!-- Shaped like what lands (§2.3.5): four record blocks, two rows of
+     chip-shaped bones, one grid card of six medal-shaped discs. -->
+<ui-stack
+  uiSpacing="loose"
+  aria-busy="true"
+  data-testid="achievements-skeleton"
+>
+  <ui-stack uiSpacing="compact">
+    <ui-skeleton
+      uiRadius="regular"
+      uiFrame
+      uiFrameWidth="35%"
+      uiFrameHeight="var(--control-size-small)"
+    />
+    <ui-grid [uiColumns]="recordColumns()" uiSpacing="regular">
+      @for (block of placeholderRecords; track block) {
+      <ui-skeleton
+        uiRadius="prominent"
+        uiFrame
+        uiFrameHeight="calc(var(--sys-space-unit) * 41)"
+      />
+      }
+    </ui-grid>
+  </ui-stack>
+  <div class="client-achievements__placeholder-chips" aria-hidden="true">
+    @for (chip of placeholderChips; track chip) {
+    <ui-skeleton
+      uiRadius="capsule"
+      uiFrame
+      [uiFrameWidth]="chip % 3 === 0 ? '5.5rem' : '4.5rem'"
+      uiFrameHeight="var(--control-size-small)"
+    />
+    }
+  </div>
+  <ui-stack uiSpacing="compact">
+    <ui-skeleton
+      uiRadius="regular"
+      uiFrame
+      uiFrameWidth="45%"
+      uiFrameHeight="var(--control-size-small)"
+    />
+    <ui-card uiTone="elevated" [uiPadding]="grid().padding">
+      <ui-grid
+        [uiColumns]="grid().columns"
+        [uiSpacing]="grid().columnSpacing"
+        [uiRowSpacing]="grid().rowSpacing"
+        aria-hidden="true"
+      >
+        @for (disc of placeholderDiscs; track disc) {
+        <ui-stack uiAlignment="center" uiSpacing="compact">
+          <ui-skeleton
+            uiRadius="capsule"
+            uiFrame
+            uiFrameWidth="calc(var(--sys-space-unit) * 16)"
+            uiFrameHeight="calc(var(--sys-space-unit) * 16)"
+          />
+          <ui-skeleton
+            uiRadius="regular"
+            uiFrame
+            uiFrameWidth="60%"
+            uiFrameHeight="var(--sys-space-regular)"
+          />
+        </ui-stack>
+        }
+      </ui-grid>
+    </ui-card>
+  </ui-stack>
+</ui-stack>
+} @case ('failed') {
+<!-- The one retry grammar: what did not load, and «Опитай пак». A partial
+     read is a failure too — every medal `notStarted` would be a fake zero. -->
+<ui-notice
+  [uiLabel]="words()?.failed.achievements ?? null"
+  data-testid="achievements-error"
+>
+  <p>{{ words()?.failed.achievements }}</p>
+  <button
+    uiNoticeActions
+    type="button"
+    uiButton
+    uiButtonStyle="bordered"
+    uiTint="neutral"
+    uiControlSize="regular"
+    data-testid="achievements-retry"
+    (click)="retry()"
+  >
+    {{ words()?.visitsModule.retry }}
+  </button>
+</ui-notice>
+} @case ('absent') {
+<ui-empty-state data-testid="achievements-empty">
+  <p uiText uiFont="subheadline" uiForegroundStyle="secondary">
+    {{ words()?.achievements.firstHint }}
+  </p>
+</ui-empty-state>
+} } @if (ready(); as page) { @let vm = page.vm; @let copy = page.words;
+<!-- AD/AE — THE RECORDS, FIRST (F11): the account's records as white
+     elevated cards, each one button to «Рекорди», and «Всички ›» beside the
+     heading. Three records (the rhythm off) end on one that spans the row;
+     a book that knows only the first visit shows that one card. -->
+@if (vm.records.length > 0) {
+<ui-stack uiSpacing="compact" data-testid="achievements-records">
+  <ui-section-header uiHeaderProminence="increased">
+    <h3 uiTitle [id]="ids.records">{{ copy.achievements.records }}</h3>
+    <button
+      uiSectionAction
+      type="button"
+      uiButton
+      uiButtonStyle="plain"
+      uiControlSize="small"
+      class="client-achievements__origin"
+      [attr.aria-label]="copy.achievements.recordsAllName"
+      data-testid="achievements-records-all"
+      (click)="openRecords.emit()"
+    >
+      {{ copy.loyalty.all }}
+      <ui-icon uiName="nav.disclosure" />
+    </button>
+  </ui-section-header>
+  <ui-grid
+    class="client-achievements__records"
+    [uiColumns]="recordColumns()"
+    uiSpacing="regular"
+    role="list"
+    [attr.aria-labelledby]="ids.records"
+    [attr.data-columns]="recordColumns()"
+  >
+    @for (record of vm.records; track record.id) {
+    <lib-record-card
+      class="client-achievements__origin"
+      [vm]="record"
+      [newWord]="copy.achievements.newRecord"
+      [attr.data-testid]="'achievements-record-' + record.kind"
+      (open)="openRecords.emit()"
+    />
+    }
+  </ui-grid>
+</ui-stack>
+}
+
+<!-- AC — the category band, in flow (DV-A): it filters everything UNDER
+     it; the records stay above. The chosen chip is the store's. -->
+<lib-achievement-chips
+  [chips]="vm.chips"
+  [selectedId]="chosen()"
+  [label]="copy.achievements.chipsLabel"
+  [idPrefix]="ids.chips"
+  testIdPrefix="achievements-chip"
+  data-testid="achievements-chips"
+  (picked)="store.setMedalsChip($event)"
+/>
+
+<!-- Under the band: the overview, one category whole, or the seasons —
+     a region named by the chosen chip. -->
+<section
+  class="client-achievements__body"
+  [attr.aria-labelledby]="ids.chips + '-' + chosen()"
+  [attr.data-chip]="chosen()"
+  data-testid="achievements-body"
+>
+  <!-- Nothing earned and nothing under way: one line says how the first
+       achievement comes; the categories still draw their silhouettes. -->
+  @if (vm.emptyHint; as hint) {
+  <p
+    uiText
+    uiFont="callout"
+    uiForegroundStyle="secondary"
+    data-testid="achievements-first-hint"
+  >
+    {{ hint }}
+  </p>
+  }
+
+  <!-- A category chosen: the built scope body, embedded — its summary
+       line, then the category whole, sub-sectioned on the same grid. -->
+  @if (categoryScope(); as scope) {
+  <lib-achievement-category
+    [titleId]="titleId()"
+    [scope]="scope"
+    embedded
+    data-testid="achievements-category"
+    (openMedal)="openMedal.emit($event)"
+    (openScope)="openScope.emit($event)"
+  />
+  }
+
+  <!-- AF — «Почти спечелени»: ONE row of three, a medal this visit
+       completes first. Absent when nothing is under way. -->
+  @if (vm.close.length > 0) {
+  <ui-stack uiSpacing="compact" data-testid="achievements-close">
+    <ui-section-header uiHeaderProminence="increased">
+      <h3 uiTitle [id]="ids.close">{{ copy.achievements.close }}</h3>
+    </ui-section-header>
+    <ui-card
+      uiTone="elevated"
+      [uiPadding]="grid().padding"
+      class="client-achievements__card"
+    >
+      <ui-grid
+        class="client-achievements__grid"
+        [uiColumns]="3"
+        [uiSpacing]="grid().columnSpacing"
+        [uiRowSpacing]="grid().rowSpacing"
+        [attr.data-inset]="grid().inset"
+        role="list"
+        [attr.aria-labelledby]="ids.close"
+      >
+        @for (tile of vm.close; track tile.key) {
+        <lib-achievement-tile
+          [tile]="tile"
+          [testId]="'achievements-close-' + tile.key"
+          [newWord]="copy.achievements.isNew"
+          (open)="open($event)"
+        />
+        }
+      </ui-grid>
+    </ui-card>
+  </ui-stack>
+  }
+
+  <!-- AG — the running season: its dates on the heading (text, never a
+       countdown); the card ONE button to the season's page: the medal in
+       its ring beside one sentence, then ALL its families, four across. -->
+  @if (vm.season; as season) {
+  <ui-stack uiSpacing="compact" data-testid="achievements-season">
+    <ui-section-header uiHeaderProminence="increased">
+      <h3 uiTitle>{{ season.title }}</h3>
+      <span uiSectionDetail>{{ season.dates }}</span>
+    </ui-section-header>
+    <button
+      type="button"
+      uiCard
+      uiTone="elevated"
+      [uiPadding]="familyGrid().padding"
+      [uiInteractive]="true"
+      class="client-achievements__origin client-achievements__window"
+      [attr.aria-label]="season.accessibleName"
+      [attr.data-testid]="'achievements-season-' + season.seasonId"
+      (click)="openSeason(season.seasonId)"
+    >
+      <span class="client-achievements__window-head" aria-hidden="true">
+        <ui-medal
+          uiControlSize="large"
+          [uiState]="season.medal.state"
+          [uiIcon]="season.medal.icon"
+          [uiSrc]="season.medal.src"
+          [uiMonogram]="season.medal.monogram"
+          [uiLevel]="season.medal.level"
+          [uiValue]="season.medal.value"
+          [uiValueText]="season.medal.valueText"
+          [uiLabel]="season.medal.accessibleName"
+        />
+        @if (season.sentence; as sentence) {
+        <span uiText uiFont="callout" class="client-achievements__sentence"
+          >{{ sentence }}</span
+        >
+        }
+      </span>
+      <ui-grid
+        class="client-achievements__families"
+        [uiColumns]="familyGrid().columns"
+        [uiSpacing]="familyGrid().spacing"
+        [attr.data-bleed]="familyGrid().bleed"
+        uiRowSpacing="regular"
+        aria-hidden="true"
+        data-testid="achievements-season-families"
+      >
+        @for (medal of season.families; track medal.seriesId) {
+        <ui-medal
+          uiControlSize="regular"
+          [uiState]="medal.state"
+          [uiIcon]="medal.icon"
+          [uiSrc]="medal.src"
+          [uiMonogram]="medal.monogram"
+          [uiLevel]="medal.level"
+          [uiTitle]="medal.title"
+          [uiCaption]="medal.caption"
+          [uiValue]="medal.value"
+          [uiValueText]="medal.valueText"
+          [uiLabel]="medal.accessibleName"
+        />
+        }
+      </ui-grid>
+    </button>
+  </ui-stack>
+  }
+
+  <!-- AH — the events, stacked, each one card to its page: the name and
+       its date on the first line, all its families under them. An
+       announced event is here too («от 1.11»): never hidden. -->
+  @if (vm.events.length > 0) {
+  <ui-stack uiSpacing="regular" data-testid="achievements-events">
+    @for (event of vm.events; track event.seasonId) {
+    <button
+      type="button"
+      uiCard
+      uiTone="elevated"
+      [uiPadding]="familyGrid().padding"
+      [uiInteractive]="true"
+      class="client-achievements__origin client-achievements__window"
+      [attr.aria-label]="event.accessibleName"
+      [attr.data-testid]="'achievements-event-' + event.seasonId"
+      (click)="openSeason(event.seasonId)"
+    >
+      <span class="client-achievements__event-head" aria-hidden="true">
+        <span uiText uiFont="headline" class="client-achievements__event-title"
+          >{{ event.title }}</span
+        >
+        <span uiText uiFont="subheadline" uiForegroundStyle="secondary"
+          >{{ event.when }}</span
+        >
+      </span>
+      <ui-grid
+        class="client-achievements__families"
+        [uiColumns]="familyGrid().columns"
+        [uiSpacing]="familyGrid().spacing"
+        [attr.data-bleed]="familyGrid().bleed"
+        uiRowSpacing="regular"
+        aria-hidden="true"
+      >
+        @for (medal of event.medals; track medal.seriesId) {
+        <ui-medal
+          uiControlSize="regular"
+          [uiState]="medal.state"
+          [uiIcon]="medal.icon"
+          [uiSrc]="medal.src"
+          [uiMonogram]="medal.monogram"
+          [uiLevel]="medal.level"
+          [uiTitle]="medal.title"
+          [uiCaption]="medal.caption"
+          [uiValue]="medal.value"
+          [uiValueText]="medal.valueText"
+          [uiLabel]="medal.accessibleName"
+        />
+        }
+      </ui-grid>
+    </button>
+    }
+  </ui-stack>
+  }
+
+  <!-- AK — the collection: the families with a level earned, of the ones
+       published today, ONE number in the ring's centre; the levels ever
+       earned under it. The ring is the meter; the lines are its picture. -->
+  @if (overview()) {
+  <div
+    class="client-achievements__collection"
+    data-testid="achievements-collection"
+  >
+    <ui-gauge
+      class="client-achievements__collection-ring"
+      uiGaugeStyle="circularCapacity"
+      uiControlSize="large"
+      [uiValue]="vm.collection.ring.value"
+      [uiMin]="vm.collection.ring.min"
+      [uiMax]="vm.collection.ring.max"
+      [uiLabel]="vm.collection.ring.label"
+      [uiValueText]="vm.collection.accessibleName"
+    >
+      <span uiCurrentValueLabel>{{ vm.collection.figure }}</span>
+    </ui-gauge>
+    <span class="client-achievements__collection-lines" aria-hidden="true">
+      <span uiText uiFont="callout" uiWeight="semibold"
+        >{{ vm.collection.line }}</span
+      >
+      <span uiText uiFont="subheadline" uiForegroundStyle="secondary"
+        >{{ vm.collection.levels }}</span
+      >
+    </span>
+  </div>
+  }
+
+  <!-- AL — a category as a GRID on a white card, by the catalogue's order:
+       earned, then in progress, then not started (a dashed silhouette,
+       never a padlock); the count is text on the heading. Past nine
+       families two rows show, then «Покажи всички N» (AM), which chooses
+       the category's chip and brings the band under the bar. The grids
+       are the OVERVIEW's: under a chip the embedded scope body above
+       draws the one category, sub-sectioned (P3-2), never both. -->
+  @if (overview()) { @for (section of vm.sections; track section.categoryId) {
+  <ui-stack
+    uiSpacing="compact"
+    [attr.data-testid]="'achievements-shelf-' + section.categoryId"
+  >
+    <ui-section-header uiHeaderProminence="increased">
+      <h3 uiTitle [id]="ids.shelf(section)">{{ section.title }}</h3>
+      <span uiSectionDetail>{{ section.count }}</span>
+    </ui-section-header>
+    <ui-card
+      uiTone="elevated"
+      [uiPadding]="grid().padding"
+      class="client-achievements__card"
+    >
+      <ui-grid
+        class="client-achievements__grid"
+        [uiColumns]="grid().columns"
+        [uiSpacing]="grid().columnSpacing"
+        [uiRowSpacing]="grid().rowSpacing"
+        [attr.data-inset]="grid().inset"
+        role="list"
+        [attr.aria-labelledby]="ids.shelf(section)"
+      >
+        @for (tile of shown(section); track tile.key) {
+        <lib-achievement-tile
+          [tile]="tile"
+          [testId]="'achievements-shelf-' + section.categoryId + '-' + tile.key"
+          [newWord]="copy.achievements.isNew"
+          (open)="open($event)"
+        />
+        }
+      </ui-grid>
+      @if (section.folded; as total) {
+      <button
+        type="button"
+        uiButton
+        uiButtonStyle="plain"
+        uiControlSize="regular"
+        class="client-achievements__fold"
+        [attr.data-testid]="'achievements-shelf-' + section.categoryId + '-all'"
+        (click)="showAll(section.categoryId)"
+      >
+        {{ copy.achievements.showAll(total) }}
+      </button>
+      }
+    </ui-card>
+  </ui-stack>
+  } }
+
+  <!-- AJ — ONE lone row to the archive (DV4): the ended seasons and events
+       the person took part in, counted on the row. -->
+  @if (vm.archive; as archive) {
+  <ul uiListGroup class="client-achievements__archive">
+    <li>
+      <button
+        type="button"
+        uiListRow
+        uiSize="large"
+        [uiInteractive]="true"
+        class="client-achievements__origin"
+        [attr.aria-label]="archive.accessibleName"
+        data-testid="achievements-archive"
+        (click)="openArchive()"
+      >
+        <span uiLeading><ui-icon uiName="loyalty.archive" /></span>
+        {{ copy.achievements.archive }}
+        <ui-stack
+          uiTrailing
+          uiAxis="horizontal"
+          uiSpacing="tight"
+          uiAlignment="center"
+        >
+          <span>{{ archive.count }}</span>
+          <ui-icon uiName="nav.disclosure" />
+        </ui-stack>
+      </button>
+    </li>
+  </ul>
+  }
+</section>
+}

@@ -1,9 +1,39 @@
-import { Route } from '@angular/router';
+import { CanDeactivateFn, Route } from '@angular/router';
+import { firstValueFrom, isObservable } from 'rxjs';
 import { STAFF_ROLES } from '@creativo/domain/accounts';
+import type { AdminRhythmLeaving } from '@creativo/features/admin/loyalty';
 import { activeGuard } from './guards/active.guard';
 import { anonGuard } from './guards/anon.guard';
 import { homeGuard } from './guards/home.guard';
 import { rolesGuard } from './guards/roles.guard';
+
+/**
+ * `/admin/loyalty/rhythm`'s leave guard — the app's first `canDeactivate`
+ * (client-card revision 3 §2.6, §3.17). The DECISION is the feature lib's
+ * own `adminRhythmCanDeactivate` (it asks the page, which holds the draft);
+ * this only reaches it through the SAME dynamic import as the page.
+ *
+ * Not a static import: this file names a feature lib only inside a
+ * `loadComponent`, because a static import of a feature barrel pulls that
+ * feature into the initial chunk — the `initial` budget in project.json
+ * fails a build past 1 MB, and the chunk is ~955 kB. By the time a leave is
+ * decided the route was activated, so the module is loaded and the import
+ * resolves at once; a leave from a route whose page never came to be is
+ * answered `true` by the lib's guard (its `null` arm).
+ */
+const adminRhythmLeaveGuard: CanDeactivateFn<
+  AdminRhythmLeaving | null
+> = async (component, currentRoute, currentState, nextState) => {
+  const { adminRhythmCanDeactivate } =
+    await import('@creativo/features/admin/loyalty');
+  const answer = adminRhythmCanDeactivate(
+    component,
+    currentRoute,
+    currentState,
+    nextState,
+  );
+  return isObservable(answer) ? firstValueFrom(answer) : answer;
+};
 
 // Route tree per blueprint §1.4 — 1:1 with v2. Feature libs are still
 // placeholder screens (Phase 6 lands real UI); this phase only wires the
@@ -130,6 +160,25 @@ export const appRoutes: Route[] = [
     ],
     loadComponent: () =>
       import('@creativo/features/admin/programs').then((m) => m.AdminPrograms),
+  },
+  {
+    // The loyalty rules' home; its one page today is the rhythm's. The
+    // redirect is deliberately UNGUARDED, like `staff`'s: it is not an
+    // authorization decision, and the target's own guards still run.
+    path: 'admin/loyalty',
+    pathMatch: 'full',
+    redirectTo: 'admin/loyalty/rhythm',
+  },
+  {
+    // «Ритъм» — the rhythm rule the admin manages (client-card revision 3
+    // §2.6). The pair `isAdmin()` names in firestore.rules, as on `admin`
+    // above; and the app's first `canDeactivate`: leaving with an unsaved
+    // draft asks first, whichever way the admin leaves.
+    path: 'admin/loyalty/rhythm',
+    canActivate: [activeGuard, rolesGuard('admin', 'sysadmin')],
+    canDeactivate: [adminRhythmLeaveGuard],
+    loadComponent: () =>
+      import('@creativo/features/admin/loyalty').then((m) => m.AdminRhythm),
   },
   {
     path: 'forbidden',

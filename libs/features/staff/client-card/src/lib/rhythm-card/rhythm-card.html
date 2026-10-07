@@ -1,0 +1,117 @@
+@let rhythm = vm();
+<!-- WD · THE RHYTHM CARD — the run as a figure and a track; a capsule only
+     while the phase is not healthy; then where they stand and the rule. -->
+<ui-card uiTone="elevated" uiPadding="comfortable">
+  <div class="rhythm-card__body">
+    <!-- The figure row: «9» title2 · «посещения в ритъм» callout secondary ·
+         [До 10.11] the phase, when there is one to say. -->
+    <p class="rhythm-card__figure">
+      <span
+        uiText
+        uiFont="title2"
+        class="rhythm-card__count"
+        [attr.data-testid]="testId('figure')"
+        >{{ rhythm.figure }}</span
+      >
+      <span uiText uiFont="callout" uiForegroundStyle="secondary"
+        >{{ rhythm.unit }}</span
+      >
+      @if (rhythm.phase; as phase) {
+      <span
+        uiBadge
+        class="rhythm-card__phase"
+        [uiTone]="phase.tone"
+        [attr.data-testid]="testId('phase')"
+        >{{ phase.text }}</span
+      >
+      }
+    </p>
+
+    <!-- The track: the kept marks and the open one. Its sentence is the
+         run heard once; the count it holds is the figure above. -->
+    <ui-streak-track
+      class="rhythm-card__track"
+      uiControlSize="regular"
+      uiProtectedIcon="loyalty.freeze"
+      [uiPeriods]="periods()"
+      [uiCount]="count()"
+      [uiCountLabel]="rhythm.unit"
+      [uiLabel]="rhythm.trackName"
+      [uiFrozen]="rhythm.frozen"
+      [attr.data-testid]="testId('track')"
+    />
+
+    <!-- Where they stand: the coaching line, primary. -->
+    <p
+      uiText
+      uiFont="callout"
+      class="rhythm-card__sentence"
+      [attr.data-testid]="testId('state')"
+    >
+      {{ rhythm.stateLine }}
+    </p>
+
+    @if (rhythm.best || rhythm.protections) {
+    <!-- The quiet facts: the best run (when this one is not it), the
+         protections banked (when the rule grants any). -->
+    <p
+      uiText
+      uiFont="footnote"
+      uiForegroundStyle="secondary"
+      class="rhythm-card__facts"
+    >
+      @if (rhythm.best; as best) {<span [attr.data-testid]="testId('best')"
+        >{{ best }}</span
+      >} @if (rhythm.best && rhythm.protections) {<span aria-hidden="true">
+        · </span
+      >} @if (rhythm.protections; as protections) {<span
+        [attr.data-testid]="testId('protections')"
+        >{{ protections }}</span
+      >}
+    </p>
+    }
+
+    <!-- The rule, as one line a tap unfolds. The button's name is the line
+         it shows and then the verb («Цялото правило»). -->
+    <button
+      type="button"
+      uiButton
+      uiButtonStyle="plain"
+      uiTint="neutral"
+      uiControlSize="small"
+      class="rhythm-card__rule"
+      [attr.aria-expanded]="expanded()"
+      [attr.aria-label]="ruleName()"
+      [attr.data-testid]="testId('rule')"
+      (click)="toggle()"
+    >
+      {{ rhythm.ruleLine }}
+      <ui-icon uiName="field.expand" />
+    </button>
+
+    @if (expanded()) {
+    <ul
+      uiText
+      uiFont="footnote"
+      uiForegroundStyle="secondary"
+      class="rhythm-card__rule-full"
+      [attr.data-testid]="testId('rule-full')"
+    >
+      @for (sentence of rhythm.ruleFull; track $index) {
+      <li class="rhythm-card__sentence">{{ sentence }}</li>
+      }
+    </ul>
+    } @if (rhythm.ruleUpcoming; as upcoming) {
+    <!-- A scheduled change: said whether the rule is open or not. -->
+    <p
+      uiText
+      uiFont="footnote"
+      uiForegroundStyle="secondary"
+      class="rhythm-card__sentence"
+      [attr.data-testid]="testId('rule-upcoming')"
+    >
+      {{ upcoming }}
+    </p>
+    }
+  </div>
+</ui-card>

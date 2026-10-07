@@ -242,6 +242,59 @@
       }
     </ui-stack>
 
+    <!-- WHO ELSE MOVES — on a move only: the people the server carries with
+         the visit because the cart cannot name them (a companion the shop
+         seated). The same card anatomy as the lines above, without a price
+         and without an Edit: they are the shop's arrangement, moved as they
+         are, and nothing here can change them. -->
+    @if (riderLines().length > 0) {
+    <ui-stack uiSpacing="compact" data-testid="booking-review-riders">
+      <ui-stack uiSpacing="none">
+        <span uiText uiFont="headline">{{ t('booking.review.riders') }}</span>
+        <span uiText uiFont="footnote" uiForegroundStyle="secondary">
+          {{ t('booking.review.ridersNote') }}
+        </span>
+      </ui-stack>
+      @for (line of riderLines(); track line.key) {
+      <ui-card
+        uiPadding="regular"
+        class="booking-review-line"
+        data-testid="booking-review-rider"
+      >
+        <div class="booking-review-line__head">
+          <span class="bag-line__art">
+            @if (line.coverSrc) {
+            <ui-async-image [uiSrc]="line.coverSrc" uiAlt="" />
+            } @else {
+            <ui-icon uiName="service.placeholder" uiScale="medium" />
+            }
+          </span>
+          <ui-stack uiSpacing="tight" class="booking-review-line__identity">
+            <span uiText uiFont="headline">{{ line.serviceName }}</span>
+            @if (line.variantName) {
+            <span uiBadge uiTone="neutral" class="booking-review-line__variant">
+              {{ line.variantName }}
+            </span>
+            }
+          </ui-stack>
+        </div>
+
+        <div class="booking-review-line__barber">
+          <ui-avatar
+            [uiSrc]="line.barberAvatarSrc"
+            [uiName]="line.barberName"
+            uiControlSize="small"
+          />
+          <span uiText uiFont="subheadline" uiForegroundStyle="secondary">
+            {{ t('booking.review.withBarber', { name: line.barberName }) }} · {{
+            line.timeLabel }}
+          </span>
+        </div>
+      </ui-card>
+      }
+    </ui-stack>
+    }
+
     <!-- The NOTE, as its own thing. It lived inside the contact sheet for a
          day and earned its eviction: what the barber should know about the
          VISIT is not contact data, and burying it there meant nobody who
@@ -365,15 +418,32 @@
       </ui-list-group>
     </ui-stack>
     } @if (errorMessage(); as message) {
-    <p
-      uiText
-      uiFont="footnote"
-      uiForegroundStyle="destructive"
-      role="alert"
-      data-testid="booking-review-error"
-    >
-      {{ message }}
-    </p>
+    <ui-stack uiSpacing="compact">
+      <p
+        uiText
+        uiFont="footnote"
+        uiForegroundStyle="destructive"
+        role="alert"
+        data-testid="booking-review-error"
+      >
+        {{ message }}
+      </p>
+      <!-- A move somebody else on the visit cannot follow: the copy says
+           when a call is the answer, and this makes it one tap rather than
+           a number to look up. Another time is the chrome's back chevron. -->
+      @if (refusalCallHref(); as href) {
+      <a
+        uiButton
+        uiButtonStyle="bordered"
+        uiControlSize="regular"
+        [href]="href"
+        data-testid="booking-review-call"
+      >
+        <ui-icon uiName="location.call" />
+        {{ t('booking.moveRefused.call') }}
+      </a>
+      }
+    </ui-stack>
     }
 
     <!-- The auth prompt appears at COMMITMENT, paired with what it buys —

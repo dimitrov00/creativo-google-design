@@ -1,0 +1,147 @@
+@let vm = visits(); @let w = words();
+<!-- HA–HC · THE HEAD — the page's name (the bar collapses into it) at the
+     sheet's large title, as every pushed page titles, and the two quiet
+     lines that took the stats band's place (revision 3 §2.5, DV-D): the
+     figures in primary ink inside secondary words, HB said to a reader as
+     one sentence. The page names no person: the bar's way back does. -->
+<ui-sheet-headline>
+  <h2
+    uiSheetLargeTitle
+    uiText
+    uiFont="largeTitle"
+    [id]="titleId()"
+    data-testid="history-title"
+  >
+    {{ w?.visitsModule.title }}
+  </h2>
+  <div class="client-history__lines">
+    @if (lineWaits()) {
+    <!-- The record is still on its way: one callout line's geometry, so
+         the pills under it land without moving. -->
+    <ui-skeleton
+      uiRadius="subtle"
+      uiFrame
+      [uiFrameWidth]="placeholder.width"
+      [uiFrameHeight]="placeholder.height"
+      aria-busy="true"
+      data-testid="history-subline-skeleton"
+    />
+    } @else if (line().length > 0) {
+    <!-- HB · «**23** посещения · през **4** седмици» — a line of FACTS
+         (fact-line.css): each fact one item, its words held together by
+         the presenter's no-break spaces, the dots only between two facts
+         on one line, so a 330 phone's wrap parts between facts and no dot
+         hangs at the break. -->
+    <p
+      uiText
+      uiFont="callout"
+      uiForegroundStyle="secondary"
+      class="client-history__subline"
+      data-testid="history-subline"
+    >
+      <span uiVisuallyHidden>{{ vm.lineName }}</span>
+      <span aria-hidden="true" class="fact-line"
+        >@for (fact of line(); track $index) {<span class="fact-line__fact"
+          >@for (run of fact; track $index) { @if (run.fact) {<span
+            uiForegroundStyle="primary"
+            uiWeight="medium"
+            [attr.data-testid]="run.testId"
+            >{{ run.text }}</span
+          >} @else {{{ run.text }}} }</span
+        >}</span
+      >
+    </p>
+    } @if (facts(); as facts) {
+    <!-- HC · «Без неявявания и откази от клиента · похарчени общо
+         **492,50 €»** — the same line of facts: the note and the sum part
+         between them where they must, the sum's few words never. -->
+    <p
+      uiText
+      uiFont="subheadline"
+      uiForegroundStyle="secondary"
+      class="client-history__facts fact-line"
+      data-testid="history-facts"
+    >
+      @for (fact of facts; track $index) {<span class="fact-line__fact"
+        >@for (run of fact; track $index) { @if (run.fact) {<span
+          uiForegroundStyle="primary"
+          uiWeight="medium"
+          [attr.data-testid]="run.testId"
+          >{{ run.text }}</span
+        >} @else {{{ run.text }}} }</span
+      >}
+    </p>
+    }
+  </div>
+</ui-sheet-headline>
+
+<!-- Offline · the saved rows stay; «Покажи още» goes (a read that cannot
+     answer). -->
+@if (w !== null && !online()) {
+<ui-notice
+  uiTone="neutral"
+  uiIcon="connection.offline"
+  [uiLabel]="w.offline"
+  data-testid="history-offline"
+>
+  <p>{{ w.offline }}</p>
+</ui-notice>
+}
+
+<!-- HF–HJ · THE BROWSER — the client's own screen's body: the month pills
+     with the funnel pinned at the rail's trailing end, the inset grouped
+     rows under their month headings (the staff row: the barber's face
+     trailing, the staff's fact ending the second line), the list's own
+     placeholders, its one failure with «Опитай пак», and its foot. The
+     EMPTY under a filter is this page's: the words and the way back out. -->
+<lib-visits-browser
+  class="client-history__browser"
+  perspective="staff"
+  listStyle="insetGrouped"
+  bleed="container"
+  testIdPrefix="history"
+  [sections]="vm.sections"
+  [state]="listState()"
+  [paging]="vm.paging"
+  (loadMore)="loadMore()"
+  (retry)="retry()"
+>
+  @if (funnel()) {
+  <lib-visit-filter
+    visitPillsAction
+    perspective="staff"
+    testIdPrefix="history-filter"
+    [value]="vm.filter"
+    [offered]="vm.offeredFilters"
+    (valueChange)="setFilter($event)"
+  />
+  }
+  <!-- One block per projected element: a block with two roots would land in
+       the default slot, not the empty state's. -->
+  @if (w !== null && filtering()) {
+  <p
+    visitListEmpty
+    uiText
+    uiFont="body"
+    uiForegroundStyle="secondary"
+    data-testid="history-filter-empty"
+  >
+    {{ w.visitsModule.filteredEmpty }}
+  </p>
+  } @if (w !== null && filtering()) {
+  <button
+    visitListEmpty
+    uiActions
+    type="button"
+    uiButton
+    uiButtonStyle="bordered"
+    uiTint="neutral"
+    uiControlSize="regular"
+    class="client-history__clear"
+    data-testid="history-filter-clear"
+    (click)="setFilter('all')"
+  >
+    {{ w.visitsModule.filterClear }}
+  </button>
+  }
+</lib-visits-browser>

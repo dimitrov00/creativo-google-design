@@ -1,0 +1,107 @@
+/*
+ * A RECORD CARD — layout and the emblem's tint. The surface, the lift, the
+ * state layer and the press are the card's (`button[uiCard]`); the disc is
+ * the avatar's; the capsule the badge's; the type the text modifiers'.
+ * No `font:` shorthand here, so the app's tabular figures are never reset.
+ */
+
+/* The host is the grid's list item and a SUBGRID of four of the records
+   grid's rows — emblem, label, figure, detail — handed down to the card:
+   the four parts of every card in a row stand on the row's four lines
+   whatever a label wraps («Най-много за / година» beside «Най-дълъг
+   ритъм» put «13» 40 pt under «24», review 3), and the card fills the
+   four rows, so four cards of unequal words stand one height. */
+:host {
+  display: grid;
+  grid-row: span 4;
+  grid-template-rows: subgrid;
+  min-inline-size: 0;
+}
+
+/* The card lays its parts on the four shared rows, each at the row's top,
+   a tight step between them (its own gap, inside the grid's regular one);
+   the words start where the emblem starts. The card is an origin: a page
+   pushed from it comes back here, and the editor focuses it again, clear
+   of the bar above and the dock below. */
+.record-card {
+  display: grid;
+  grid-row: span 4;
+  grid-template-rows: subgrid;
+  row-gap: var(--sys-space-tight);
+  align-items: start;
+  min-inline-size: 0;
+  text-align: start;
+  scroll-margin-block: var(--modal-sheet-origin-margin);
+}
+
+/* The emblem stands alone on its line, the words start under it at the
+   compact rung. */
+.record-card__emblem {
+  margin-block-end: var(--sys-space-tight);
+}
+
+/* THE EMBLEM — a mark: the solid accent behind a white glyph (§1 rule 4),
+   through the avatar's own ink hook, as the quick actions' promoted disc
+   paints. A picture (a favourite service's cover) is the avatar as it is. */
+.record-card__emblem:not([data-picture]) {
+  --ui-avatar-ink: var(--sys-color-on-accent);
+  background: var(--sys-color-accent);
+}
+
+/* The glyph at the prominent rung (24 on the 52 disc), not the avatar's
+   proportional placeholder: the record's glyph is a control glyph, sized
+   as every other mark of the stack. */
+.record-card__emblem .ui-icon {
+  font-size: var(--ui-icon-large);
+}
+
+/* The label and the figure wrap inside the card instead of widening it:
+   a label at a syllable where the engine has a Bulgarian dictionary
+   (`hyphens: auto`, the §2.3.2 tile rule), inside the word only where
+   nothing else fits (the floor). A number figure never needs either. */
+.record-card__label,
+.record-card__figure {
+  min-inline-size: 0;
+  max-inline-size: 100%;
+  overflow-wrap: anywhere;
+  hyphens: auto;
+  text-wrap: pretty;
+}
+
+/* A WORD figure (a favourite's service, on the rung the card's own width
+   holds: headline, body or callout at 600, record-card.ts) wraps only
+   between its words, in balanced lines («Класическа / подстрижка»), never
+   inside one: at title2 the engine, with no Bulgarian dictionary, cut it
+   to «Класическ / а / подстрижк / а» (review 3, F1). `break-word` keeps
+   the floor for a single word wider than the card without counting every
+   letter as a break (`anywhere` would shrink the row's min-content to
+   nothing); `min-inline-size: 0` above lets the line shrink to the card
+   instead of running past its padding. */
+.record-card__figure[data-word] {
+  overflow-wrap: break-word;
+  hyphens: manual;
+  text-wrap: balance;
+}
+
+/* The figure's line: the figure, and beside it the capsule «Нов рекорд»
+   of a record set in the last thirty days — the one line of the card with
+   room for the capsule at every width (the emblem's has none at 137 pt). */
+.record-card__figure-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sys-space-compact);
+  max-inline-size: 100%;
+}
+
+.record-card__figure {
+  font-variant-numeric: tabular-nums;
+}
+
+/* The date wraps only where it must («септември 2026 г.» is 109 in a 330
+   phone's 107 pt card) and then before its year, never leaving «г.» alone
+   on a line (`pretty` keeps a short last word with its line). */
+.record-card__detail {
+  font-variant-numeric: tabular-nums;
+  text-wrap: pretty;
+}

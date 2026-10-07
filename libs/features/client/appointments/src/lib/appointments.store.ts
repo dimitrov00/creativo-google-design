@@ -1,6 +1,6 @@
 import { Injectable, computed, inject, signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { of, switchMap } from 'rxjs';
+import { of, startWith, switchMap } from 'rxjs';
 import { CLOCK } from '@creativo/application/shared';
 import { UserId, ZonedDateTime } from '@creativo/application/accounts';
 import {
@@ -57,10 +57,35 @@ export class AppointmentsStore {
 
   private readonly userId = signal<UserId | null>(null);
 
+  /**
+   * Whose visits these are — the signed-in owner every list is read for, and
+   * the account the domain judges "which seats are yours to move" against
+   * (`Appointment.hasSeatTheBookerCanMove`).
+   */
+  readonly owner = this.userId.asReadonly();
+
+  /** Bumped by {@link retry}: each bump is a fresh pair of listeners. */
+  private readonly attempt = signal(0);
+
+  /**
+   * What the two listeners are opened for — the owner, and which attempt.
+   * A new value tears the old listeners down and opens new ones.
+   */
+  private readonly reading = computed(() => ({
+    userId: this.userId(),
+    attempt: this.attempt(),
+  }));
+
   private readonly upcomingResult = toSignal(
-    toObservable(this.userId).pipe(
-      switchMap((userId) =>
-        userId ? this.observeUpcomingUseCase.execute(userId) : of(null),
+    toObservable(this.reading).pipe(
+      switchMap(({ userId }) =>
+        userId
+          ? // Loading again until the fresh listener answers: a retry that
+            // kept showing the failure it is retrying would look dead.
+            this.observeUpcomingUseCase
+              .execute(userId)
+              .pipe(startWith(undefined))
+          : of(null),
       ),
     ),
     { initialValue: undefined },
@@ -88,8 +113,8 @@ export class AppointmentsStore {
    * of them is worth paying for on every mount.
    */
   private readonly historyResult = toSignal(
-    toObservable(this.userId).pipe(
-      switchMap((userId) =>
+    toObservable(this.reading).pipe(
+      switchMap(({ userId }) =>
         userId
           ? this.appointmentRepository.observeHistoryFor(userId, HISTORY_LIMIT)
           : of(null),
@@ -125,12 +150,33 @@ export class AppointmentsStore {
     this.userId.set(userId);
   }
 
+  /**
+   * Read both lists again, from scratch — the list's «Опитай пак».
+   *
+   * A live query that failed for good (a rule denial, a document that will
+   * not parse) has stopped listening (`subscribeWithRetry` retries only the
+   * healable codes), so the only way back is a new listener: the upcoming
+   * list shows as loading until it answers.
+   */
+  retry(): void {
+    this.attempt.update((attempt) => attempt + 1);
+  }
+
   nextMonth(): void {
     this._focusedMonth.set(this.focusedMonth().plusMonths(1));
   }
 
   previousMonth(): void {
     this._focusedMonth.set(this.focusedMonth().plusMonths(-1));
+  }
+
+  /**
+   * Forget the last cancel's refusal. It belongs to the sheet that asked:
+   * kept, it would open over the NEXT visit's cancel sheet, and a closed
+   * window would disable that visit's confirm (`ClientAppointments`).
+   */
+  clearCancelError(): void {
+    this._cancelError.set(null);
   }
 
   /** Runs the domain `cancel()` transition through the repository (blueprint §5, goal 6.4). Resolves `true` on success. */

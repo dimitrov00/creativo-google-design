@@ -1,0 +1,854 @@
+/*
+ * THE PAGE AROUND THE RUN — everything on the day screen that is not the
+ * agenda itself: the write actions docked in the action bar, the page's
+ * frame and its top toolbar, the view switcher, the week strip and its
+ * sliding marker, the barber picker and its legend, the pinned all-day
+ * band, the run's top padding and the undo toast's clearance.
+ *
+ * Its own stylesheet because a component stylesheet has a budget (warning
+ * 10 kB, error 20 kB — recalibrated 2026-09-26): the one file, with the two
+ * shared recipes it imports, measured 16.37 kB minified. The run — the
+ * agenda's cards, holes, states and rows, and the sheets' few bits — stays
+ * in `staff-dashboard.css`.
+ *
+ * The split is in the file, not in the cascade. This sheet is the original's
+ * next run of chapters, cut at a chapter boundary with no rule text changed,
+ * and it is listed directly after `staff-dashboard.css` in the same
+ * `styleUrls` — so every rule lands in the document in exactly the order it
+ * had in one file. No rule here now follows a rule it used to precede, or
+ * precedes one it used to follow; no two rules that share an element and a
+ * property changed their relative order, because no two rules did.
+ *
+ * Scoped like the main sheet (emulated encapsulation), and the scoping is
+ * per sheet — `@keyframes` names included, which Angular renames and
+ * rewrites only within the sheet that declares them. The one animation
+ * here (`staff-fab-rise`) travels with its keyframes, so the scoped name
+ * still matches.
+ */
+
+/* ── The write actions ─────────────────────────────────────────────────
+ *
+ * Lives in `ui-page-action-bar` rather than as a fixed island: the bar
+ * already owns the house chrome fade, the safe-area floor and the trailing
+ * thumb-zone dock, and a second hand-rolled bottom edge on one page is how a
+ * product ends up with two of them.
+ *
+ * `uiPrimary` marks it as the bar's primary so it docks trailing at every
+ * viewport, hugging its intrinsic width (owner ruling 2026-07-25 — no
+ * full-width spread anywhere).
+ */
+.staff-fab {
+  /* The expanded run rises OUT of this box, so it anchors rather than flows. */
+  position: relative;
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* The 52 rung — the largest of the exact 36/44/52 control scale, which is
+   what a single always-present primary earns.
+
+   PRIMARY, not accent: accent is the schedule's own signal — the now-line,
+   today's column, the selected day, a booked block. Spending it again on
+   permanent chrome puts the loudest colour on the one thing that never
+   changes and competes with every live marker on the surface. */
+.staff-fab__trigger {
+  inline-size: var(--control-size-large, 52px);
+  block-size: var(--control-size-large, 52px);
+  border: 0;
+  border-radius: 50%;
+  background: var(--sys-color-primary);
+  color: var(--sys-color-on-primary);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  box-shadow: var(--sys-elevation-raised, 0 2px 12px rgb(0 0 0 / 18%));
+  transition: transform 180ms var(--sys-motion-ease-standard, ease-out);
+}
+
+.staff-fab[data-open] .staff-fab__trigger {
+  transform: rotate(45deg);
+}
+
+@media (hover: hover) {
+  .staff-fab__trigger:hover {
+    filter: brightness(1.06);
+  }
+}
+
+/* Ungated `:active` mirror — a tap must show what a hover would. */
+.staff-fab__trigger:active {
+  transform: scale(0.94);
+}
+
+.staff-fab[data-open] .staff-fab__trigger:active {
+  transform: rotate(45deg) scale(0.94);
+}
+
+.staff-fab__trigger:focus-visible,
+.staff-fab__action:focus-visible {
+  outline: 2px solid var(--sys-color-primary);
+  outline-offset: 2px;
+}
+
+/* Rises out of the bar rather than growing it: the bar's height is the page's
+   bottom rhythm and must not jump when the cluster opens. */
+.staff-fab__actions {
+  position: absolute;
+  inset-block-end: 100%;
+  inset-inline-end: 0;
+  padding-block-end: var(--sys-space-tight);
+
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--sys-space-tight);
+}
+
+/* Label BESIDE the icon, never a bare circle: a fan of unlabelled glyphs
+   makes a receptionist guess which one blocks time and which books someone. */
+.staff-fab__action {
+  display: flex;
+  align-items: center;
+  gap: var(--sys-space-compact);
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+
+  /* Staggered by index so the run reads as one gesture rather than three
+     things appearing at once. */
+  animation: staff-fab-rise 160ms var(--sys-motion-ease-standard, ease-out)
+    backwards;
+  animation-delay: calc(var(--staff-fab-index, 0) * 40ms);
+}
+
+.staff-fab__action-label {
+  padding: calc(var(--sys-space-unit) * 1.5) var(--sys-space-compact);
+  border-radius: var(--control-radius-regular);
+  background: var(--sys-color-surface);
+  color: var(--sys-color-foreground);
+  box-shadow: var(--sys-elevation-raised, 0 1px 6px rgb(0 0 0 / 14%));
+  white-space: nowrap;
+}
+
+.staff-fab__action-icon {
+  inline-size: var(--control-size-regular, 44px);
+  block-size: var(--control-size-regular, 44px);
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--sys-color-surface);
+  color: var(--sys-color-primary);
+  box-shadow: var(--sys-elevation-raised, 0 2px 10px rgb(0 0 0 / 16%));
+}
+
+@media (hover: hover) {
+  .staff-fab__action:hover .staff-fab__action-icon {
+    filter: brightness(0.96);
+  }
+}
+
+.staff-fab__action:active .staff-fab__action-icon {
+  transform: scale(0.94);
+}
+
+.staff-fab__scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 39;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  cursor: default;
+}
+
+@keyframes staff-fab-rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Motion is decoration here — the cluster works identically without it. */
+@media (prefers-reduced-motion: reduce) {
+  .staff-fab__trigger,
+  .staff-fab__action {
+    transition: none;
+    animation: none;
+  }
+
+  .staff-fab__trigger:active,
+  .staff-fab[data-open] .staff-fab__trigger:active,
+  .staff-fab__action:active .staff-fab__action-icon {
+    transform: none;
+  }
+
+  .staff-fab[data-open] .staff-fab__trigger {
+    transform: rotate(45deg);
+  }
+}
+
+/* ── The page's top toolbar ────────────────────────────────────────────
+ *
+ * `ui-toolbar` is a flex ROW with `justify-content: space-between` and a
+ * control-sized minimum height. This header is a COLUMN, so it rides inside
+ * as one child — and a single child has nothing to be spaced against, which
+ * is why it must GROW to fill the bar instead. Without this the column sized
+ * to its content and the trailing buttons stopped short of the bar's own
+ * padding edge; the row looked almost right, which is why it took measuring
+ * to see.
+ */
+/*
+ * THE CALENDAR IS THE SCREEN (2026-09-23, the grid views' design record §2;
+ * owner: "I don't think there should be padding on the frame in other
+ * views").
+ *
+ * In a grid view the page is exactly one viewport tall and never scrolls:
+ * the toolbar sits on top, the canvas fills what is left as a flex child,
+ * and the pane-anchored action bar lands on the viewport floor by
+ * construction. The frame's height used to be `100svh − --staff-head-offset`
+ * with the offset at the toolbar's TOKEN floor (52px) while the bar with its
+ * week strip measured ~117px — so the frame's floor landed 65px under the
+ * viewport's, the page scrolled by that much, the FAB sat below the fold and
+ * two sticky bands fought over the top edge. A flex child cannot be wrong
+ * about a height it never computes. `--staff-head-offset` is gone;
+ * `--staff-toolbar-real` stays, for the agenda's sticky all-day band.
+ *
+ * Full bleed, too: the grid left the padded `ui-stack` for a canvas of its
+ * own, and the 52rem cap — written for the agenda ("this is a schedule, not
+ * prose") — applies to the agenda alone. iOS Calendar's day is a scroll
+ * view edge to edge under the navigation bar; Mac Calendar's week fills
+ * the window.
+ */
+/*
+ * A COLUMN, not a block — which is what `ui-page-action-bar` asks its parent
+ * to be. `main` is `display: block` by default, and in block flow the bar's
+ * `margin-block-start: auto` (and the `<ui-spacer />` above it) both compute
+ * to nothing: the bar landed in normal flow right under the last lane, so a
+ * barber with two visits wore the FAB at mid-screen with half a page of
+ * empty below it. `min-block-size: 100svh` was already here doing nothing
+ * for the same reason. Flex column gives the free space somewhere to go and
+ * floors the bar.
+ *
+ * `position: relative` is the other half of the contract: the calendar view
+ * anchors the bar `pane` (absolute), and with no positioned ancestor that
+ * resolved against the initial containing block — which happened to land in
+ * the right place only because this page is exactly one viewport tall in
+ * grid mode. Now it is anchored to the box the docs name.
+ */
+.staff-day {
+  /* Wider than the app's 40rem default, on this route only. The agenda was
+     capped at 640px, so a front-desk iPad and a 1440px desktop rendered
+     IDENTICALLY to each other while the context line was clipping on a phone
+     — roughly 800px of screen sitting empty beside a run that had run out of
+     room. This is a schedule, not prose; its measure is the day's, not a
+     paragraph's. */
+  --sys-container-content: 52rem;
+  --staff-toolbar-height: calc(
+    var(--control-size-regular, 44px) + var(--sys-space-tight) * 2
+  );
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+
+/* One viewport, no page scroll: only the frame inside the canvas scrolls. */
+.staff-day[data-view-kind='grid'] {
+  block-size: 100svh;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+/* The canvas is the column's growing middle; the grid fills it. A grid
+   cell rather than a flex line so the empty-day sentence and the grid can
+   share the one box — the sentence draws only when the grid has no columns
+   to draw. */
+.staff-day[data-view-kind='grid'] > .staff-canvas {
+  flex: 1 1 0;
+  min-block-size: 0;
+  min-inline-size: 0;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.staff-canvas > * {
+  grid-area: 1 / 1;
+  min-inline-size: 0;
+}
+
+.staff-canvas > p {
+  align-self: start;
+  padding: var(--sys-space-regular);
+}
+
+/* ── THE VIEW SWITCHER, TWICE (2026-09-23, §9) ──────────────────────────
+ *
+ * A menu on a phone — a receptionist switches DAY two hundred times a shift
+ * and VIEW once, so the day pill wins the phone's row — and an icon-only
+ * capsule segmented control from 600px of bar, where four 44px segments fit
+ * beside the pill and the cluster: Apple's own split between iPhone and
+ * iPad. Both are rendered; the bar's own width shows one, and the hidden
+ * carrier is `display: none`, out of the accessibility tree. The segmented
+ * control is a VIEW toggle, which is the one thing that control is for. */
+.staff-toolbar {
+  container: staff-toolbar / inline-size;
+}
+
+.staff-view-segments {
+  display: none;
+}
+
+@container staff-toolbar (width >= 37.5rem) {
+  .staff-view-segments {
+    display: inline-flex;
+  }
+
+  .staff-view-menu {
+    display: none;
+  }
+}
+
+/* The period pill may SHRINK before the cluster does — its own stylesheet
+   says how (`staff-day-pill.css`: the label ellipsises, the ring stays
+   clear); this sheet is scoped and could not reach inside it anyway. */
+
+/* A SHORT viewport — a phone held sideways — gives the height to the hours
+   (§7): the week strip folds away in the grid views (the day pill still
+   opens the month), the toolbar is one row, and the scale does not change;
+   in landscape the phone is being READ, not navigated. */
+@media (max-height: 30rem) {
+  .staff-day[data-view-kind='grid'] .staff-weeks {
+    /* COLLAPSED, not `display: none` (found in review, 2026-09-23): a
+       scroller taken out of layout forgets its `scrollLeft`, and the strip
+       came back on the first of thirteen weeks after a rotation. A zero
+       height keeps the scroller, its width and its parked week; hidden
+       visibility takes it out of the tab order and the accessibility tree
+       with it. */
+    block-size: 0;
+    min-block-size: 0;
+    overflow: hidden;
+    visibility: hidden;
+  }
+}
+
+/* THE WEEK VIEW HAS NO STRIP (review r4, 2026-10-06): its seven column
+   heads ARE the dates, and the strip above them repeated the same seven
+   in a second style — two rows of one week, today marked twice, and a
+   "chosen" disc over a view that shows every day. The heads carry the
+   dates and open a day (Apple's own week head); the period pill's month
+   picker moves the week. Collapsed the landscape way, never `display:
+   none`, so the scroller keeps its parked week for the views that still
+   show it. */
+.staff-day[data-view='week'] .staff-weeks {
+  block-size: 0;
+  min-block-size: 0;
+  overflow: hidden;
+  visibility: hidden;
+}
+
+/* On a wide bar the strip keeps its discs finger-spaced rather than
+   stretching seven of them across a desktop. */
+.staff-day[data-view-kind='grid'] .staff-weeks {
+  max-inline-size: var(--sys-container-content);
+  margin-inline: auto;
+}
+
+/* The view switch's cross-fade is stated in the grid's page stylesheet
+   (`staff-time-grid.page.css`, unscoped): `::view-transition-*` pseudo-
+   elements hang off the document root, and a scoped sheet's selectors are
+   prefixed with the component's attribute and never match them. */
+
+/* The lanes are the column's growing middle. Without this they keep flex's
+   default `shrink: 1` and a long day compresses against the 100svh floor
+   instead of scrolling the page. */
+.staff-day > .staff-lanes {
+  flex: 0 0 auto;
+}
+
+/* The bar GROWS to fit what it holds. It carried a fixed
+   `block-size: var(--staff-toolbar-height)` from when it held one row of
+   controls, which clipped the week strip added beneath them. The token stays
+   as the FLOOR — `settleOnNow` measures the bar's real height at runtime, so
+   nothing downstream depends on the literal. */
+.staff-toolbar {
+  align-items: stretch;
+  padding-block: var(--sys-space-tight);
+  min-block-size: var(--staff-toolbar-height);
+}
+
+/* ── THE WEEK STRIP ────────────────────────────────────────────────────
+ *
+ * A run of weeks that slides one WHOLE week per gesture, with no chevrons.
+ * `ui-scroll-row` brings the mechanics (`scroll-snap-type: x mandatory`,
+ * `scroll-snap-align: start` per child, hidden indicators); everything here
+ * is the week's own shape.
+ *
+ * `inline-size: 100%` on the week is the entire trick: the scroller's snap
+ * points are its children's edges, so a child exactly one viewport wide makes
+ * a flick advance by a week. Nothing measures a drag and nothing listens to
+ * scroll — the snap is the compositor's.
+ */
+.staff-weeks {
+  --staff-week-disc: 2.25rem;
+  /* The row is the toolbar's full width and each week fills it. */
+  inline-size: 100%;
+  /* A flick should feel like turning a page, not skidding. */
+  scroll-behavior: smooth;
+  overscroll-behavior-inline: contain;
+}
+
+.staff-weeks__week {
+  position: relative;
+  inline-size: 100%;
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+}
+
+/* ── THE SLIDING MARKER ───────────────────────────────────────────────
+ *
+ * One per week, parked over the shown day's column. It replaces a background
+ * on the selected numeral, which TELEPORTED — and a jump is what made a 50ms
+ * day change read as slow, because nothing carried the eye from the old day
+ * to the new one. (Measured: the disc updates in 8-23ms and the agenda in
+ * 49-63ms warm. The lag was never in the work.)
+ *
+ * `translateX` by whole column-widths: the columns are `1fr` of seven, so one
+ * column is exactly 100% of the marker's own width and the sum is integer
+ * arithmetic rather than a measured offset. Transform and opacity only, so
+ * this runs on the compositor — no layout, no paint. */
+.staff-weeks__marker {
+  /* A GRID ITEM spanning every column, not an absolute box a seventh of the
+     week wide (owner, 2026-09-09). The day buttons floor at 48px, so on a
+     phone seven of them overrun the 330px week; the old marker measured a
+     seventh of the WEEK and drifted a pixel further right per column. This
+     box is exactly the columns' span, so its seventh is exactly a column. */
+  grid-column: 1 / -1;
+  grid-row: 1;
+  align-self: end;
+  position: relative;
+  /* Pinned to the NUMERAL's own box, not the week's midpoint: the column
+     also holds the weekday initial. The day button's bottom padding and
+     the disc size are the two facts that place it. */
+  margin-block-end: var(--sys-space-tight);
+  block-size: var(--staff-week-disc);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity var(--sys-motion-duration-instant)
+    var(--sys-motion-ease-emphasized);
+}
+
+/* The column-wide carriage the disc rides in — translating by its own
+   width is translating by exactly one column. */
+.staff-weeks__marker-disc {
+  inline-size: calc(100% / 7);
+  block-size: 100%;
+  display: grid;
+  place-items: center;
+  transform: translateX(calc(var(--staff-week-col, 0) * 100%));
+  /* EMPHASIZED, and on the fast tier — because the slowness was in the
+     DEPARTURE, not the duration.
+     `ease-standard` is `cubic-bezier(0.4, 0, 0.2, 1)`: an x1 of 0.4 means it
+     idles before it moves. Measured against a 200ms run, the disc had not
+     covered a QUARTER of its travel until 51ms and half until 70ms, and that
+     dead time at the start is what the eye reads as lag — a tap should be
+     answered on the next frame.
+     `ease-emphasized` (0.22, 1, 0.36, 1) leaves immediately and settles: a
+     quarter of the travel in 9ms, half in 20ms, 90% by 56ms. Same distance,
+     five times the departure, and it still arrives softly rather than
+     snapping. */
+  transition: transform var(--sys-motion-duration-instant)
+    var(--sys-motion-ease-emphasized);
+}
+
+/* A CIRCLE, not a capsule: the marker box is a whole column wide so it can
+   translate by column-widths, but the disc inside it is the numeral's size
+   and centred within it. */
+.staff-weeks__marker-disc::before {
+  content: '';
+  inline-size: var(--staff-week-disc);
+  block-size: var(--staff-week-disc);
+  border-radius: var(--control-radius-capsule);
+  background: var(--sys-color-foreground);
+}
+
+.staff-weeks__week[data-has-selection] .staff-weeks__marker {
+  opacity: 1;
+}
+
+/* Selected AND today: the fill takes the accent. */
+.staff-weeks__week:has([data-selected][data-today])
+  .staff-weeks__marker-disc::before {
+  background: var(--sys-color-accent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .staff-weeks__marker,
+  .staff-weeks__marker-disc {
+    transition: none;
+  }
+}
+
+/* One day. The column position already says which weekday it is, so the
+   letter above is a reminder rather than a label — Apple's own strip. */
+.staff-weeks__day {
+  /* Row 1 explicitly, on its own column: the marker spans that row under
+     every button, and a positioned button paints over it. */
+  grid-row: 1;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.125rem;
+  padding-block: var(--sys-space-tight);
+  border: 0;
+  background: none;
+  cursor: pointer;
+  /* A 7-across strip on a 390px phone gives each day ~52px; the tap target
+     is the whole column, not the numeral. */
+  min-block-size: var(--control-size-regular);
+}
+
+.staff-weeks__initial {
+  font: var(--sys-font-caption);
+  font-variant-numeric: tabular-nums; /* the shorthand resets the app's tabular figures */
+  color: var(--sys-color-secondary-label);
+  text-transform: uppercase;
+}
+
+/* The numeral sits ON the marker, so it paints no disc of its own — only
+   its ink flips, on the same curve the marker travels. 2.25rem, up from
+   1.75: the tap target was always the whole 57x44 column and already over
+   HIG's 44x44 floor, but the DISC read as the target and looked short of
+   it. This is the size the mark should have looked all along. */
+.staff-weeks__number {
+  position: relative;
+  display: grid;
+  place-items: center;
+  inline-size: var(--staff-week-disc);
+  block-size: var(--staff-week-disc);
+  font: var(--sys-font-subheadline);
+  font-variant-numeric: tabular-nums;
+  color: var(--sys-color-foreground);
+  /* The ink follows the disc on the same curve and tier, so the numeral
+     turns as the marker lands rather than after it. */
+  transition: color var(--sys-motion-duration-instant)
+    var(--sys-motion-ease-emphasized);
+}
+
+/* TODAY — a BOLD number in ink with an ACCENT DOT under it (2026-10-06,
+   the accent law: one orange; colour is a shape, words are ink). A filled
+   today would compete with the selected day — only one disc on this strip
+   may be filled — and the accent as INK is out: at this numeral's 13px no
+   orange clears AA, and the darker cut that once did (`--sys-color-
+   accent-label`) read as a second, reddish orange and is gone. So the
+   word is ink, bold, and the orange is a thing beside it: the dot. On this
+   strip the dot means today and nothing else (the strip has no event
+   dots), the badge's rule for a picker notwithstanding. */
+.staff-weeks__day[data-today] .staff-weeks__number {
+  color: var(--sys-color-foreground);
+  font-weight: 700;
+}
+
+/* The dot: hung from the number's own box, under the digits, sized so it
+   reads at a glance without touching the disc's rim (36 − 18 of line box
+   leaves 9 under the digits; the dot takes 5 of them and 2 of air). */
+.staff-weeks__day[data-today] .staff-weeks__number::after {
+  content: '';
+  position: absolute;
+  inset-block-start: calc(50% + 0.72em);
+  inline-size: 0.3125rem;
+  block-size: 0.3125rem;
+  border-radius: var(--control-radius-capsule);
+  background: var(--sys-color-accent);
+}
+
+/* THE SHOWN DAY — ink only; the disc under it belongs to the marker.
+   Foreground fill rather than accent, because the accent is already spent on
+   "today" and the two are usually different days. */
+.staff-weeks__day[data-selected] .staff-weeks__number {
+  color: var(--sys-color-background);
+}
+
+/* SHOWN AND TODAY: the marker's disc turns accent (above), and the number
+   on it is the NEAR-BLACK on-accent ink, not white — white at 13px on the
+   solid accent is 3.04:1, small text's failing grade, and this numeral
+   cannot grow without jumping away from its six neighbours. The dark ink
+   reads 6.16:1 in both themes (the accent is the same value in each), so
+   the strip keeps the Calendar app's grammar — the chosen today is the
+   orange disc — and passes. The dot goes: the disc already says today. */
+.staff-weeks__day[data-selected][data-today] .staff-weeks__number {
+  color: var(--sys-color-on-accent-ink);
+}
+
+.staff-weeks__day[data-selected][data-today] .staff-weeks__number::after {
+  content: none;
+}
+
+/* Hover is its own disc BEHIND the numeral, so it never fights the marker
+   sliding over the same column. */
+@media (hover: hover) {
+  .staff-weeks__day:not([data-selected]):hover .staff-weeks__number::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    border-radius: var(--control-radius-capsule);
+    background: var(--sys-state-layer-hover);
+  }
+}
+
+.staff-weeks__day:focus-visible {
+  outline: var(--sys-focus-ring-width) solid var(--sys-color-ring);
+  outline-offset: calc(var(--sys-focus-ring-offset) * -1);
+  border-radius: var(--control-radius-subtle);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .staff-weeks {
+    scroll-behavior: auto;
+  }
+}
+
+.staff-toolbar__column {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+}
+
+/* ── The barber picker ─────────────────────────────────────────────────
+ *
+ * A portrait, not a labelled button: the shop knows its own barbers by face,
+ * and the name is one tap away in the menu that this opens.
+ *
+ * The BOX is the design system's — `bordered`/`neutral`, icon-only, regular
+ * rung — so this control is the same size and weight as the search and view
+ * buttons beside it. All that is left here is making a portrait sit in a slot
+ * shaped for a glyph.
+ */
+/* INSET in the button, not filling it.
+ *
+ * The button is the control — same 44 rung, same `bordered`/`neutral` fill as
+ * its neighbours — and the portrait sits INSIDE it with the fill showing as a
+ * ring. Filling the button hid it completely, which is the opposite failure
+ * to the one before it: first there was no button, then there was one and the
+ * face covered it. */
+/* The portrait is INSET in its button rather than filling it — a face wants
+   air inside the control the way a glyph has it, and an avatar edge-to-edge
+   read as a photo with a button drawn round it.
+ *
+ * Stated as the avatar's own disc property, not as a width: the DS derives
+ * the box AND the glyph size from that one number, so the "everyone" symbol
+ * stays in proportion instead of being sized for a disc this rule shrank. */
+.staff-scope__trigger .ui-avatar {
+  --ui-avatar-disc: calc(
+    var(--control-size-regular) - var(--sys-space-unit) * 3
+  );
+}
+
+/* ── THE LEGEND: A PATCH OF THE COLOUR, BADGED TO THE PORTRAIT ────────
+ *
+ * The rails down the left of every card teach an alphabet the shop is never
+ * given a key to — five colours, and nowhere says which chair each belongs
+ * to. This is the key, and it took three goes to place.
+ *
+ * It was a RING around the portrait first, which was wrong on its own terms:
+ * a legend swatch's whole job is to BE the colour, and an annulus drawn
+ * around a photograph is contaminated by what it encircles — its perceived
+ * hue shifts with the picture inside it, it competes with the portrait's own
+ * edge, and a headshot with a pale border or a bright background fights it
+ * outright. (The justification offered for it, that Apple does this, was also
+ * simply untrue: Apple Calendar uses a filled swatch and leaves imagery
+ * alone.)
+ *
+ * Then it followed the NAME, and a legend cannot: names are different
+ * lengths, so the patch landed at a different x on every row and there was no
+ * column to read down. A key whose entries do not align is not a key.
+ *
+ * Badged to the portrait's corner it is fixed relative to the avatar, so the
+ * swatches line up exactly however long the names run — and being a discrete
+ * patch with a cut-out ring, it never touches the photograph, which was the
+ * ring's real failure. This is the SAME grammar as the card's "+N guests"
+ * mark, down to the 2px cut-out; a second corner-badge idiom on one screen
+ * would be one too many. */
+.staff-scope__face {
+  position: relative;
+  display: inline-flex;
+  flex: 0 0 auto;
+}
+
+.staff-scope__swatch {
+  position: absolute;
+  inset-block-end: -2px;
+  inset-inline-end: -2px;
+  inline-size: 0.75rem;
+  block-size: 0.75rem;
+  /* CAPSULE, not the rounded square this started as. The square was chosen to
+     stand apart from a screen full of circles, but at 12px in a corner the
+     distinction is invisible, and the badge it now shares its grammar with is
+     a capsule. Consistency with the idiom beats a shape argument nobody can
+     see. */
+  border-radius: var(--control-radius-capsule);
+  /* Full strength, like the rail it is the key to — a swatch that is not the
+     colour it names is not a swatch. It is 12px of it rather than a whole
+     card's perimeter, which is why full strength is right here and was not
+     right for the cancelled outline. */
+  background-color: var(--barber-tone, var(--sys-color-separator));
+  /* The cut-out, so the patch never sits directly against the photograph. */
+  box-shadow: 0 0 0 2px var(--sys-color-surface);
+}
+
+/* ── ALL-DAY: WHO IS NOT IN ──────────────────────────────────────────
+ *
+ * A barber being off was a line of grey footnote type UNDER the whole run,
+ * then a small inline capsule above it. Both read as chrome about the screen
+ * rather than as something on the day. It is an ALL-DAY EVENT — Apple
+ * Calendar banners this class of fact above the timed run — so it is built
+ * out of the event's own parts: `.agenda-card` supplies the 14% chair tint
+ * and the padding, and neither is restated here.
+ *
+ * STICKY, under the bar. An all-day fact is true for the whole day, so it
+ * should not scroll away at the first hour of it — which is exactly why Apple
+ * pins its all-day row above the timed grid rather than letting it leave.
+ *
+ * It sticks to `--staff-toolbar-real`, NOT to `--staff-toolbar-height`. The
+ * token is only the bar's floor: the bar grows to fit the week strip and
+ * measures 117px against the token's 52px, so sticking to the token would
+ * park this band behind the bar. The component publishes the measured height
+ * with a ResizeObserver; the token is the fallback for the frame before the
+ * first measurement lands. */
+.staff-allday {
+  position: sticky;
+  inset-block-start: var(--staff-toolbar-real, var(--staff-toolbar-height));
+  /* Under the bar, over the run — the run must pass beneath this, and this
+     must pass beneath the bar. */
+  z-index: calc(var(--sys-layer-header) - 1);
+  display: grid;
+  gap: var(--sys-space-tight);
+  /* THE GAP TO THE RUN, pulled back to the page's regular beat.
+     The stack this sits in spaces its children `loose` — 32px — which
+     measured 48px of air between the band and the first card, against the
+     8px the run uses between its own groups. The calc names both tokens
+     instead of hard-coding -16px, so it stays correct if either moves. */
+  margin-block: 0 calc(var(--sys-space-regular) - var(--sys-space-loose));
+  padding: 0;
+  list-style: none;
+  /* The band's OWN ground. Without it the run shows through the gaps between
+     the rounded rows as they scroll underneath. */
+  background-color: var(--sys-color-background);
+}
+
+.agenda-card--allday {
+  /* NO RAIL COLUMN — the rail is gone, so the card's two-column grid with a
+     0.75rem gutter would leave an empty one. */
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas: 'body';
+  align-items: center;
+  /* FULLY ROUNDED. At a 44px row the capsule is a true stadium, which is what
+     separates an all-day event from the timed cards at a glance — they carry
+     the card radius, this carries none of the day's geometry because it has
+     none. */
+  border-radius: var(--control-radius-capsule);
+  /* APPLE HIG: 44pt is the minimum touch target, and this one is pressable. */
+  min-block-size: 2.75rem;
+  inline-size: 100%;
+  /* EQUAL ON THREE SIDES, so the disc sits concentric with the capsule's own
+     end: 8px above, below and before it, against a 32px disc in a 48px row.
+     It was 4px inline against 8px block, which put the disc a hair into the
+     curve and read as lopsided.
+     The TRAILING side is deliberately not equal — the text that ends the row
+     needs clearance from a curve that is closing in on it, and matching the
+     leading 8px would crowd it against the arc. This is the same asymmetry
+     `.agenda-card` itself uses (8px leading for the rail, 16px trailing for
+     the times). */
+  padding-block: var(--sys-space-compact);
+  padding-inline-start: var(--sys-space-compact);
+  padding-inline-end: var(--sys-space-regular);
+  /* The button's own chrome, off — the card supplies all of it. */
+  border: 0;
+  font: inherit;
+  color: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.agenda-allday__body {
+  grid-area: body;
+  display: flex;
+  align-items: center;
+  gap: var(--sys-space-compact);
+  min-inline-size: 0;
+}
+
+/* THE DISC — the chair's colour, in the avatar's shape and the avatar's slot.
+ *
+ * A TINT, not the rail's full strength, and the glyph follows the text.
+ *
+ * It was the rail's own colour at 100% with the glyph in
+ * `--sys-color-background` — black on a bright disc in dark, white on a deep
+ * one in light. That passes contrast (4.50:1 at worst) but it makes the disc
+ * the loudest object on the screen and the one icon on the page that does not
+ * share the ink of everything around it: every other glyph here — the mail
+ * and phone marks, the state marks, the toolbar — is foreground or secondary.
+ * An inverted glyph reads as a SELECTED state rather than a mark.
+ *
+ * Foreground ink is impossible on a saturated fill in both themes at once:
+ * the dark palette's identity tones are LIGHT colours (`#5de6ff`), so a
+ * near-white glyph on one disappears. Taking the disc down to a tint solves
+ * both at once — the glyph can be foreground like its neighbours, and the
+ * disc stops shouting. At 36% over the card's own 14% ground it measures
+ * 8.07:1 light and 5.46:1 dark against the 3:1 floor for a graphical object,
+ * and it still reads as a distinct object on the card because it is roughly
+ * two and a half times the ground it sits on. */
+.agenda-allday__disc {
+  display: inline-grid;
+  place-items: center;
+  inline-size: 2rem;
+  block-size: 2rem;
+  flex: none;
+  border-radius: var(--control-radius-capsule);
+  background-color: color-mix(
+    in srgb,
+    var(--barber-tone, var(--sys-color-separator)) 36%,
+    transparent
+  );
+  color: var(--sys-color-foreground);
+  /* Icons inherit their font size in this system, so the glyph is sized here
+     rather than on the icon. */
+  font-size: 1rem;
+}
+
+.agenda-allday__name {
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
+}
+
+/* The trailing column, which on a card holds the clock time. An all-day event
+   has no time — saying what it IS there keeps the run's trailing edge doing
+   one job. */
+.agenda-allday__meta {
+  margin-inline-start: auto;
+  flex: none;
+}
+
+/* ── THE RUN STARTS HIGHER ───────────────────────────────────────────
+ * `uiPaddingVertical="spacious"` is 48px, and above a sticky band that is a
+ * lot of empty page between the week strip and the first thing on the day.
+ * The BOTTOM keeps it — the action bar floats over the end of the run and
+ * needs the clearance. */
+.staff-lanes {
+  padding-block-start: var(--sys-space-regular);
+}
+
+/* ── THE UNDO TOAST ────────────────────────────────────────────────────
+   Raised over a page that keeps a dock at the bottom (the visit sheet's
+   action bar, the agenda's own controls), so it clears one large control
+   plus a breath rather than sitting on top of `Запази`. */
+.staff-dashboard ui-toast,
+ui-toast {
+  --ui-toast-clearance: calc(
+    var(--control-size-large) + var(--sys-space-comfortable)
+  );
+}

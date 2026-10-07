@@ -4,6 +4,7 @@ import {
   Barber,
   CATALOG_READER,
   type CatalogReader,
+  type Location,
   MEDIA_READER,
   MediaRef,
   type MediaReader,
@@ -140,6 +141,14 @@ class FixtureCatalogReader implements Partial<CatalogReader> {
   }
   listActiveBarbers(): Observable<Result<readonly Barber[], never>> {
     return of(ok(this.people));
+  }
+  /**
+   * No shops: the landing's locations are still hand-authored, and the
+   * shared `CatalogContentService` it reads its services and barbers from
+   * subscribes to this read too.
+   */
+  listActiveLocations(): Observable<Result<readonly Location[], never>> {
+    return of(ok([]));
   }
 }
 

@@ -6,34 +6,83 @@ import {
   TranslocoLoader,
   provideTransloco,
 } from '@jsverse/transloco';
-import { Observable, of } from 'rxjs';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { BehaviorSubject, NEVER, Observable, of } from 'rxjs';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   ANONYMOUS_PRINCIPAL,
   AUTH_GATEWAY,
+  type Principal,
+  PrincipalId,
+  activePrincipal,
+  roleFromPrimitive,
 } from '@creativo/application/identity';
-import { AVATAR_UPLOADER, PROFILE_PORT } from '@creativo/application/accounts';
 import {
+  AVATAR_UPLOADER,
+  PROFILE_PORT,
+  UserId,
+} from '@creativo/application/accounts';
+import {
+  AVAILABILITY_READER,
+  Appointment,
+  type AvailabilityReader,
+  type BarberDayAvailability,
+  Interval,
+  TimeSlot,
+  paddedBusy,
+  fail,
   BOOKING_DRAFT_STORE,
   BOOKING_GATEWAY,
   BOOKING_POLICY_READER,
   ZonedDateTime,
   BookingPolicy,
+  Money,
+  Seat,
+  SeatId,
+  SeatSubject,
   WAITLIST_GATEWAY,
   APPOINTMENT_REPOSITORY,
   WAITLIST_READER,
   MAX_PARTY_SIZE,
+  ObserveDayAvailabilityUseCase,
+  type Result,
   ok,
 } from '@creativo/application/booking';
-import { CATALOG_READER, MEDIA_READER } from '@creativo/application/catalog';
-import { CLOCK } from '@creativo/application/shared';
+import { InMemoryAvailabilityReader } from '@creativo/application/booking/testing';
+import {
+  Barber,
+  BarberId,
+  CATALOG_READER,
+  Location,
+  LocationId,
+  MEDIA_READER,
+  Service,
+  ServiceId,
+  ServiceTerms,
+} from '@creativo/application/catalog';
+import { CLOCK, RepositoryError } from '@creativo/application/shared';
 import { SessionStorageDraftStore } from '@creativo/infrastructure/web-storage';
+import { BookingFlowStore } from '../booking-flow.store';
 import { ClientBooking } from './client-booking';
+
+/**
+ * Stand-in copy for the one sentence these specs read: the move-refused
+ * panel's body, with the `{{reach}}` it sends the client to the shop with.
+ * Everything else answers as its own key.
+ */
+const COPY: Translation = {
+  booking: {
+    moveRefused: {
+      companions_only: { body: 'BODY:companions_only {{reach}}' },
+      carried_out_of_reach: { body: 'BODY:out_of_reach {{reach}}' },
+    },
+    reach: { call: 'REACH:call', contact: 'REACH:contact' },
+  },
+};
 
 @Injectable()
 class TestTranslationLoader implements TranslocoLoader {
   getTranslation(): Observable<Translation> {
-    return of({});
+    return of(COPY);
   }
 }
 
@@ -62,7 +111,38 @@ async function renderShell(
    * step the machine had written. Bare (the default) is a fresh "Book now".
    */
   entryParams: Record<string, string> = {},
+  /**
+   * Who is signed in, and what the owner-scoped visit read answers. The
+   * defaults are the anonymous visitor and "no such visit" — every deep-link
+   * landing waits on an ACTIVE principal, so a spec about one says so.
+   */
+  options: {
+    readonly principal?: Principal;
+    readonly visit?: Appointment | null;
+    /**
+     * The live catalogue. Empty by default; `'pending'` barbers never
+     * answer, the way a cold listener waits, and `'failed'` ones answer
+     * with an error. A stream is the live list, changing as the test says.
+     */
+    readonly catalog?: {
+      readonly services?: readonly Service[];
+      readonly barbers?:
+        | readonly Barber[]
+        | 'pending'
+        | 'failed'
+        | Observable<Result<readonly Barber[], RepositoryError>>;
+      /** The same, for the shops: `'pending'` never answers, `'failed'` errs. */
+      readonly locations?: readonly Location[] | 'pending' | 'failed';
+    };
+    /** One day's geometry. No barbers on any day by default. */
+    readonly observeDay?: AvailabilityReader['observeDay'];
+    /** The server's answer to a move. Never asked by default. */
+    readonly reschedule?: () => Promise<
+      Result<{ readonly appointmentId: string }, never>
+    >;
+  } = {},
 ): Promise<ComponentFixture<ClientBooking>> {
+  const catalog = options.catalog ?? {};
   await TestBed.configureTestingModule({
     imports: [ClientBooking],
     providers: [
@@ -85,6 +165,9 @@ async function renderShell(
         provide: BOOKING_GATEWAY,
         useValue: {
           commit: () => Promise.reject(new Error('not used in this spec')),
+          reschedule:
+            options.reschedule ??
+            (() => Promise.reject(new Error('not used in this spec'))),
         },
       },
       // Same posture for the waitlist: these specs never reach the schedule
@@ -95,7 +178,7 @@ async function renderShell(
         // repository whether or not a spec exercises that path.
         provide: APPOINTMENT_REPOSITORY,
         useValue: {
-          findById: async () => ok(null),
+          findById: async () => ok(options.visit ?? null),
           save: async () => ok(undefined),
           observeUpcomingFor: () => of(ok([])),
           observeHistoryFor: () => of(ok([])),
@@ -121,9 +204,18 @@ async function renderShell(
         useValue: { observe: () => of(BookingPolicy.default()) },
       },
       {
+        // A landed move opens on the schedule step, which reads the grid.
+        // Empty is enough: these specs are about the shell, not the grid.
+        provide: AVAILABILITY_READER,
+        useValue: {
+          observeDay: options.observeDay ?? (() => of(ok([]))),
+          observeRangeCapacity: () => of(ok(new Map<string, number>())),
+        },
+      },
+      {
         provide: AUTH_GATEWAY,
         useValue: {
-          observePrincipal: () => of(ANONYMOUS_PRINCIPAL),
+          observePrincipal: () => of(options.principal ?? ANONYMOUS_PRINCIPAL),
           refreshToken: () => Promise.resolve(ok(undefined)),
           signOut: () => Promise.resolve(ok(undefined)),
           currentDisplayName: () => null,
@@ -132,7 +224,10 @@ async function renderShell(
       },
       {
         provide: PROFILE_PORT,
-        useValue: { getProfile: () => Promise.resolve(ok(null)) },
+        useValue: {
+          getProfile: () => Promise.resolve(ok(null)),
+          observeProfile: () => of(ok(null)),
+        },
       },
       {
         provide: AVATAR_UPLOADER,
@@ -149,10 +244,25 @@ async function renderShell(
         // stub — the services step's own behaviour has its own spec.
         provide: CATALOG_READER,
         useValue: {
-          listActiveServices: () => of(ok([])),
-          listActiveBarbers: () => of(ok([])),
+          listActiveServices: () => of(ok(catalog.services ?? [])),
+          listActiveBarbers: () => {
+            const barbers = catalog.barbers;
+            if (barbers === 'pending') return NEVER;
+            if (barbers === 'failed') {
+              return of(fail(new RepositoryError('unavailable')));
+            }
+            if (barbers instanceof Observable) return barbers;
+            return of(ok(barbers ?? []));
+          },
           listServiceCategories: () => of(ok([])),
-          listActiveLocations: () => of(ok([])),
+          listActiveLocations: () => {
+            const locations = catalog.locations;
+            if (locations === 'pending') return NEVER;
+            if (locations === 'failed') {
+              return of(fail(new RepositoryError('unavailable')));
+            }
+            return of(ok(locations ?? []));
+          },
           findServiceById: () => Promise.resolve(ok(null)),
           findBarberById: () => Promise.resolve(ok(null)),
           findLocationById: () => Promise.resolve(ok(null)),
@@ -172,6 +282,13 @@ async function renderShell(
   }
 
   const fixture = TestBed.createComponent(ClientBooking);
+  // The app binds the deep-link params to inputs (`withComponentInputBinding`);
+  // the harness does it by hand, for the ones a spec actually sends.
+  const params = new Map(Object.entries(entryParams));
+  for (const name of ['repeat', 'reschedule'] as const) {
+    const value = params.get(name);
+    if (value !== undefined) fixture.componentRef.setInput(name, value);
+  }
   fixture.detectChanges();
   await fixture.whenStable();
   fixture.detectChanges();
@@ -226,6 +343,268 @@ function guestIds(fixture: ComponentFixture<ClientBooking>): string[] {
     .map((element) => element.getAttribute('data-testid') ?? '')
     .filter((testId) => /^booking-seat-guest-\d+$/.test(testId))
     .map((testId) => testId.replace('booking-seat-', ''));
+}
+
+/** Signed in as `uid` — the state every deep-link landing waits for. */
+function signedIn(uid: string): Principal {
+  return unwrap(
+    activePrincipal(unwrap(PrincipalId.create(uid)), [
+      roleFromPrimitive('client'),
+    ]),
+  );
+}
+
+function unwrap<T, E>(result: Result<T, E>): T {
+  if (result.isFailure()) {
+    throw new Error(`fixture setup failed: ${JSON.stringify(result.error)}`);
+  }
+  return result.value;
+}
+
+/** A past visit of `client-1`'s: one fade with Ivan. */
+function pastVisit(id: string): Appointment {
+  const at = (hour: number) =>
+    unwrap(
+      ZonedDateTime.fromParts(
+        { year: 2026, month: 7, day: 20, hour, minute: 0 },
+        'Europe/Sofia',
+      ),
+    );
+  return unwrap(
+    Appointment.create({
+      id,
+      locationId: 'loc-center',
+      seats: [
+        Seat.of({
+          id: SeatId.generate(),
+          subject: SeatSubject.account(
+            unwrap(UserId.create('client-1')),
+            'self',
+          ),
+          serviceId: unwrap(ServiceId.create('svc-fade')),
+          variantId: null,
+          barberId: unwrap(BarberId.create('ivan')),
+          terms: unwrap(
+            ServiceTerms.create(
+              unwrap(Money.fromMinorUnitsAndCode(2800, 'EUR')),
+              45,
+            ),
+          ),
+          startsAt: at(10),
+        }),
+      ],
+      now: at(8),
+    }),
+  );
+}
+
+/**
+ * An upcoming visit of `client-1`'s that holds only their son — staff
+ * removed the father's own seat. Only the shop can move it.
+ */
+function sonOnlyVisit(id: string): Appointment {
+  const at = (hour: number) =>
+    unwrap(
+      ZonedDateTime.fromParts(
+        { year: 2026, month: 8, day: 20, hour, minute: 0 },
+        'Europe/Sofia',
+      ),
+    );
+  return unwrap(
+    Appointment.create({
+      id,
+      locationId: 'loc-center',
+      seats: [
+        Seat.of({
+          id: SeatId.generate(),
+          subject: SeatSubject.account(
+            unwrap(UserId.create('client-son')),
+            'companion',
+          ),
+          serviceId: unwrap(ServiceId.create('svc-fade')),
+          variantId: null,
+          barberId: unwrap(BarberId.create('petar')),
+          terms: unwrap(
+            ServiceTerms.create(
+              unwrap(Money.fromMinorUnitsAndCode(2800, 'EUR')),
+              45,
+            ),
+          ),
+          startsAt: at(10),
+        }),
+      ],
+      now: at(8),
+    }),
+  );
+}
+
+/**
+ * An upcoming visit of `client-1`'s with the son the shop seated beside him
+ * — somebody a move carries rather than rebuilds.
+ */
+function fatherAndSonVisit(
+  id: string,
+  /** Where the son sits: Petar at 10:00, unless staff re-seated him. */
+  son: { readonly barberId: string; readonly minute: number } = {
+    barberId: 'petar',
+    minute: 0,
+  },
+  /** Further companions the shop seated beside them, each on their own service. */
+  others: readonly {
+    readonly userId: string;
+    readonly serviceId: string;
+    readonly barberId: string;
+  }[] = [],
+): Appointment {
+  const at = (hour: number, minute = 0) =>
+    unwrap(
+      ZonedDateTime.fromParts(
+        { year: 2026, month: 8, day: 20, hour, minute },
+        'Europe/Sofia',
+      ),
+    );
+  const seat = (
+    subject: SeatSubject,
+    barberId: string,
+    startsAt: ZonedDateTime = at(10),
+    serviceId = 'svc-fade',
+  ) =>
+    Seat.of({
+      id: SeatId.generate(),
+      subject,
+      serviceId: unwrap(ServiceId.create(serviceId)),
+      variantId: null,
+      barberId: unwrap(BarberId.create(barberId)),
+      terms: unwrap(
+        ServiceTerms.create(
+          unwrap(Money.fromMinorUnitsAndCode(2800, 'EUR')),
+          45,
+        ),
+      ),
+      startsAt,
+    });
+  return unwrap(
+    Appointment.create({
+      id,
+      locationId: 'loc-center',
+      seats: [
+        seat(
+          SeatSubject.account(unwrap(UserId.create('client-1')), 'self'),
+          'ivan',
+        ),
+        seat(
+          SeatSubject.account(unwrap(UserId.create('client-son')), 'companion'),
+          son.barberId,
+          at(10, son.minute),
+        ),
+        ...others.map((other) =>
+          seat(
+            SeatSubject.account(
+              unwrap(UserId.create(other.userId)),
+              'companion',
+            ),
+            other.barberId,
+            at(10),
+            other.serviceId,
+          ),
+        ),
+      ],
+      now: at(8),
+    }),
+  );
+}
+
+/**
+ * A live catalogue service — the fade everybody on these visits is sold, at
+ * `locationIds` (every shop by default).
+ */
+function catalogService(
+  id = 'svc-fade',
+  variants: readonly {
+    readonly id: string;
+    readonly name: { readonly bg: string; readonly en: string };
+  }[] = [],
+  locationIds: readonly string[] = [],
+): Service {
+  return unwrap(
+    Service.create({
+      id,
+      name: { bg: 'Фейд', en: 'Fade' },
+      description: { bg: '—', en: '—' },
+      categoryId: 'cat-hair',
+      priceMinorUnits: 2800,
+      currencyCode: 'EUR',
+      durationMinutes: 45,
+      locationIds: [...locationIds],
+      conflictsWith: [],
+      variants: [...variants],
+      composition: { kind: 'single' },
+      upsellOnly: false,
+      popular: false,
+      status: 'active',
+      sortOrder: 1,
+    }),
+  );
+}
+
+/** A barber on the ACTIVE list. */
+function activeBarber(id: string): Barber {
+  return unwrap(
+    Barber.create({
+      id,
+      name: { bg: id, en: id },
+      handle: id,
+      title: { bg: 'Бръснар', en: 'Barber' },
+      bio: { bg: '—', en: '—' },
+      locationIds: [],
+      status: 'active',
+      sortOrder: 1,
+    }),
+  );
+}
+
+/** The visit's shop, with a number to dial. */
+function centerShop(): Location {
+  return activeShop('loc-center', {
+    en: 'Creativo · Center',
+    bg: 'Креативо · Център',
+  });
+}
+
+/** The other active shop. */
+function mladostShop(): Location {
+  return activeShop('loc-mladost', {
+    en: 'Creativo · Mladost',
+    bg: 'Креативо · Младост',
+  });
+}
+
+function activeShop(
+  id: string,
+  name: { readonly en: string; readonly bg: string },
+): Location {
+  const open = { kind: 'open' as const, opens: '09:00', closes: '20:00' };
+  return unwrap(
+    Location.create({
+      id,
+      name,
+      address: { en: '1 Vitosha Blvd', bg: 'бул. Витоша 1' },
+      phone: { e164: '+359881234567', display: '+359 88 123 4567' },
+      geo: { lat: 42.6977, lng: 23.3219 },
+      mapUrl: `https://maps.example.com/${id}`,
+      hours: [open, open, open, open, open, open, { kind: 'closed' }],
+      timezone: 'Europe/Sofia',
+      status: 'active',
+      sortOrder: 0,
+    }),
+  );
+}
+
+/** Let an async landing (an owner-scoped read, then the store) finish. */
+async function settle(fixture: ComponentFixture<ClientBooking>): Promise<void> {
+  await fixture.whenStable();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  fixture.detectChanges();
 }
 
 describe('ClientBooking', () => {
@@ -458,5 +837,763 @@ describe('ClientBooking', () => {
     TestBed.resetTestingModule();
     const reloaded = await renderShell({ step: 'services' });
     expect(guestIds(reloaded)).toEqual([]);
+  });
+});
+
+describe('ClientBooking — the sign-in round trip keeps the booking source', () => {
+  beforeEach(() => {
+    sessionStorage.clear();
+    TestBed.resetTestingModule();
+  });
+
+  it('restores the draft on a continuation that still carries ?repeat — it used to throw it away', async () => {
+    const fixture = await render();
+    click(fixture, 'booking-add-guest');
+    expect(guestIds(fixture)).toEqual(['guest-0']);
+
+    // Back from /auth: `?step=` says continuation, `?repeat=` rides along.
+    TestBed.resetTestingModule();
+    const back = await renderShell({ step: 'services', repeat: 'appt-source' });
+
+    expect(host(back).getAttribute('data-state')).toBe('services');
+    expect(guestIds(back)).toEqual(['guest-0']);
+  });
+
+  it('still starts fresh on a ?repeat arrival with no step — a new prefilled flow', async () => {
+    const fixture = await render();
+    click(fixture, 'booking-add-guest');
+
+    TestBed.resetTestingModule();
+    const entered = await renderShell({ repeat: 'appt-source' });
+
+    expect(guestIds(entered)).toEqual([]);
+  });
+
+  it('attaches the repeated visit once signed in, without replacing the bag the person built', async () => {
+    const fixture = await render();
+    click(fixture, 'booking-add-guest');
+
+    TestBed.resetTestingModule();
+    const back = await renderShell(
+      { step: 'services', repeat: 'appt-source' },
+      { principal: signedIn('client-1'), visit: pastVisit('appt-source') },
+    );
+    await settle(back);
+
+    const store = back.debugElement.injector.get(BookingFlowStore);
+    expect(store.bookedFrom()).toBe('appt-source');
+    // Their party, not the old visit's: nobody's bag was overwritten.
+    expect(guestIds(back)).toEqual(['guest-0']);
+    expect(host(back).getAttribute('data-state')).toBe('services');
+  });
+});
+
+describe('ClientBooking — a move link that cannot move', () => {
+  beforeEach(() => {
+    sessionStorage.clear();
+    TestBed.resetTestingModule();
+  });
+
+  function refusal(fixture: ComponentFixture<ClientBooking>): Element | null {
+    return host(fixture).querySelector('[data-testid="booking-move-refused"]');
+  }
+
+  it('says the shop moves a visit that holds only a companion — instead of opening a flow that would book a second one', async () => {
+    const fixture = await renderShell(
+      { reschedule: 'appt-son' },
+      { principal: signedIn('client-1'), visit: sonOnlyVisit('appt-son') },
+    );
+    await settle(fixture);
+
+    expect(refusal(fixture)?.getAttribute('data-reason')).toBe(
+      'companions_only',
+    );
+    // No wizard under it: nothing to continue, nothing to confirm.
+    expect(
+      host(fixture).querySelector('[data-testid="booking-location-continue"]'),
+    ).toBeNull();
+    expect(
+      host(fixture).querySelector('[data-testid="booking-back"]'),
+    ).toBeNull();
+    // The way out that always exists; the call needs the shop's number,
+    // which this empty catalogue does not have.
+    expect(
+      host(fixture).querySelector(
+        '[data-testid="booking-move-refused-appointments"]',
+      ),
+    ).not.toBeNull();
+    const store = fixture.debugElement.injector.get(BookingFlowStore);
+    expect(store.isRescheduling()).toBe(false);
+    expect(store.lineCount()).toBe(0);
+  });
+
+  it('says to GET IN TOUCH, not to call, when the page has no number to dial', async () => {
+    // The shop is missing from this (empty) catalogue, so no call button —
+    // and the copy must not promise one.
+    const fixture = await renderShell(
+      { reschedule: 'appt-son' },
+      { principal: signedIn('client-1'), visit: sonOnlyVisit('appt-son') },
+    );
+    await settle(fixture);
+
+    expect(
+      host(fixture)
+        .querySelector('[data-testid="booking-move-refused-body"]')
+        ?.textContent?.trim(),
+    ).toBe('BODY:companions_only REACH:contact');
+    expect(
+      host(fixture).querySelector('[data-testid="booking-move-refused-call"]'),
+    ).toBeNull();
+  });
+
+  it('says to CALL — beside the call button — once the catalogue knows the shop', async () => {
+    const fixture = await renderShell(
+      { reschedule: 'appt-son' },
+      {
+        principal: signedIn('client-1'),
+        visit: sonOnlyVisit('appt-son'),
+        catalog: { locations: [centerShop()] },
+      },
+    );
+    await settle(fixture);
+
+    expect(
+      host(fixture)
+        .querySelector('[data-testid="booking-move-refused-body"]')
+        ?.textContent?.trim(),
+    ).toBe('BODY:companions_only REACH:call');
+    expect(
+      host(fixture)
+        .querySelector('[data-testid="booking-move-refused-call"]')
+        ?.getAttribute('href'),
+    ).toBe('tel:+359881234567');
+  });
+
+  it('refuses a move link whose visit cannot be read, rather than falling through to a blank bookable flow', async () => {
+    const fixture = await renderShell(
+      { reschedule: 'appt-gone' },
+      { principal: signedIn('client-1'), visit: null },
+    );
+    await settle(fixture);
+
+    expect(refusal(fixture)?.getAttribute('data-reason')).toBe('unavailable');
+    expect(
+      host(fixture).querySelector('[data-testid="booking-location-continue"]'),
+    ).toBeNull();
+  });
+
+  it('never reuses a restored move another account read — it is re-read, and refused for this one', async () => {
+    // client-1 lands the move; the tab then comes back signed in as client-2.
+    const first = await renderShell(
+      { reschedule: 'appt-moving' },
+      { principal: signedIn('client-1'), visit: pastVisit('appt-moving') },
+    );
+    await settle(first);
+    expect(
+      first.debugElement.injector.get(BookingFlowStore).rescheduleOf(),
+    ).toBe('appt-moving');
+
+    TestBed.resetTestingModule();
+    const fixture = await renderShell(
+      { step: 'schedule', reschedule: 'appt-moving' },
+      // The owner-scoped read answers nothing for somebody else's visit.
+      { principal: signedIn('client-2'), visit: null },
+    );
+    await settle(fixture);
+
+    const store = fixture.debugElement.injector.get(BookingFlowStore);
+    expect(store.isRescheduling()).toBe(false);
+    expect(refusal(fixture)?.getAttribute('data-reason')).toBe('unavailable');
+  });
+
+  it('re-reads a restored move’s facts from the stored visit on a reload, and keeps the bag', async () => {
+    const catalog = {
+      services: [catalogService()],
+      barbers: [
+        activeBarber('ivan'),
+        activeBarber('petar'),
+        activeBarber('niko'),
+      ],
+    };
+    const first = await renderShell(
+      { reschedule: 'appt-moving' },
+      {
+        principal: signedIn('client-1'),
+        visit: fatherAndSonVisit('appt-moving'),
+        catalog,
+      },
+    );
+    await settle(first);
+    expect(
+      first.debugElement.injector
+        .get(BookingFlowStore)
+        .riders()
+        .map((rider) => rider.barberId),
+    ).toEqual(['petar']);
+
+    // The tab reloads after staff re-seated the son: Niko, at 10:30.
+    TestBed.resetTestingModule();
+    const rebuilt = vi.spyOn(BookingFlowStore.prototype, 'rescheduleFrom');
+    const fixture = await renderShell(
+      { step: 'schedule', reschedule: 'appt-moving' },
+      {
+        principal: signedIn('client-1'),
+        visit: fatherAndSonVisit('appt-moving', {
+          barberId: 'niko',
+          minute: 30,
+        }),
+        catalog,
+      },
+    );
+    await settle(fixture);
+
+    const store = fixture.debugElement.injector.get(BookingFlowStore);
+    expect(store.rescheduleOf()).toBe('appt-moving');
+    expect(
+      store.riders().map((rider) => [rider.barberId, rider.offsetMinutes]),
+    ).toEqual([['niko', 30]]);
+    // The restored bag stands: the move's facts were re-read, not the bag
+    // rebuilt over what the client had.
+    expect(rebuilt).not.toHaveBeenCalled();
+    rebuilt.mockRestore();
+  });
+
+  it('moves a visit the cart CAN name exactly as before — no refusal', async () => {
+    const fixture = await renderShell(
+      { reschedule: 'appt-moving' },
+      { principal: signedIn('client-1'), visit: pastVisit('appt-moving') },
+    );
+    await settle(fixture);
+
+    expect(refusal(fixture)).toBeNull();
+    const store = fixture.debugElement.injector.get(BookingFlowStore);
+    expect(store.rescheduleOf()).toBe('appt-moving');
+    expect(host(fixture).getAttribute('data-state')).toBe('schedule');
+  });
+});
+
+// The FEATURE half of the rider filter: the schedule step hands the carried
+// seats to the day query, pinned and measured. Whether the grid then drops a
+// time is the engine's (`availability.spec.ts`, riders) and the use case's to
+// forward — pinned there, not here.
+describe('ClientBooking — a move asks the grid to keep room for who it carries', () => {
+  beforeEach(() => {
+    sessionStorage.clear();
+    TestBed.resetTestingModule();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('sends the son the server carries with every day query of the move', async () => {
+    const execute = vi.spyOn(
+      ObserveDayAvailabilityUseCase.prototype,
+      'execute',
+    );
+    const fixture = await renderShell(
+      { reschedule: 'appt-moving' },
+      {
+        principal: signedIn('client-1'),
+        visit: fatherAndSonVisit('appt-moving'),
+        // Everybody still served here, so the move opens on its grid.
+        catalog: {
+          services: [catalogService()],
+          barbers: [activeBarber('ivan'), activeBarber('petar')],
+          locations: [centerShop()],
+        },
+      },
+    );
+    await settle(fixture);
+
+    expect(host(fixture).getAttribute('data-state')).toBe('schedule');
+    expect(
+      host(fixture).querySelector('[data-testid="booking-move-refused"]'),
+    ).toBeNull();
+    const asked = execute.mock.calls.map(
+      ([input]) => (input as { readonly riders?: unknown }).riders,
+    );
+    expect(asked.length).toBeGreaterThan(0);
+    const [riders] = asked.slice(-1) as {
+      readonly barberId: { readonly value: string };
+      readonly offsetMinutes: number;
+      readonly terms: { readonly durationMinutes: number };
+    }[][];
+    expect(
+      riders?.map((rider) => ({
+        barberId: rider.barberId.value,
+        offsetMinutes: rider.offsetMinutes,
+        durationMinutes: rider.terms.durationMinutes,
+      })),
+    ).toEqual([{ barberId: 'petar', offsetMinutes: 0, durationMinutes: 45 }]);
+  });
+
+  it('hands the visit’s own chairs back on every day query, so they never block its move', async () => {
+    const execute = vi.spyOn(
+      ObserveDayAvailabilityUseCase.prototype,
+      'execute',
+    );
+    const fixture = await renderShell(
+      { reschedule: 'appt-moving' },
+      {
+        principal: signedIn('client-1'),
+        visit: fatherAndSonVisit('appt-moving'),
+        catalog: {
+          services: [catalogService()],
+          barbers: [activeBarber('ivan'), activeBarber('petar')],
+          locations: [centerShop()],
+        },
+      },
+    );
+    await settle(fixture);
+
+    const released = execute.mock.calls.map(
+      ([input]) =>
+        (
+          input as {
+            readonly release?: readonly {
+              readonly barberId: { readonly value: string };
+              readonly occupied: { readonly startMs: number };
+            }[];
+          }
+        ).release,
+    );
+    expect(released.length).toBeGreaterThan(0);
+    const tenOClock = unwrap(
+      ZonedDateTime.fromParts(
+        { year: 2026, month: 8, day: 20, hour: 10, minute: 0 },
+        'Europe/Sofia',
+      ),
+    ).toMillis();
+    // Both chairs — the father's the cart rebuilds AND the son's it carries:
+    // the server subtracts the whole visit before it re-places it.
+    expect(
+      released
+        .at(-1)
+        ?.map((chair) => [chair.barberId.value, chair.occupied.startMs]),
+    ).toEqual([
+      ['ivan', tenOClock],
+      ['petar', tenOClock],
+    ]);
+  });
+});
+
+describe('ClientBooking — the moved visit’s own day on the calendar', () => {
+  beforeEach(() => {
+    sessionStorage.clear();
+    TestBed.resetTestingModule();
+  });
+
+  function day(
+    fixture: ComponentFixture<ClientBooking>,
+    key: string,
+  ): HTMLButtonElement | null {
+    return host(fixture).querySelector<HTMLButtonElement>(
+      `[data-testid="booking-day"][data-day-key="${key}"]`,
+    );
+  }
+
+  /**
+   * The visit's day as the barberBusy projection stores it: Ivan and Petar
+   * rostered 10:00–10:45 at Center and nothing else, both taken by the
+   * visit's own chairs. `honours` picks the port's reference reader, which
+   * hands the `release` back as the contract says (`paddedBusy`), or a
+   * reader that BREAKS the contract by ignoring it — the calendar must stay
+   * honest with either.
+   */
+  function visitDayReader(honours: boolean): AvailabilityReader['observeDay'] {
+    const center = unwrap(LocationId.create('loc-center'));
+    const at = (minute: number) =>
+      unwrap(
+        ZonedDateTime.fromParts(
+          { year: 2026, month: 8, day: 20, hour: 10, minute },
+          'Europe/Sofia',
+        ),
+      ).toMillis();
+    const chair = Interval.of(at(0), at(45));
+    const stored = new InMemoryAvailabilityReader((day) =>
+      day.key() !== '2026-08-20'
+        ? []
+        : ['ivan', 'petar'].map((id) => ({
+            barberId: unwrap(BarberId.create(id)),
+            windows: [{ interval: chair, locationId: center }],
+            spans: [chair],
+            turnaroundMinutes: 0,
+          })),
+    );
+    if (honours) {
+      return (locationId, day, barberIds, release) =>
+        stored.observeDay(locationId, day, barberIds, release);
+    }
+    return (_locationId, day) => {
+      if (day.key() !== '2026-08-20') return of(ok([]));
+      return of(
+        ok(
+          ['ivan', 'petar'].map((id): BarberDayAvailability => {
+            const barberId = unwrap(BarberId.create(id));
+            return {
+              barberId,
+              windows: [{ interval: chair, locationId: center }],
+              // The release dropped: what the contract spec now refuses in
+              // every real reader (`availabilityReaderBusyCases`).
+              busy: paddedBusy({
+                barberId,
+                spans: [chair],
+                turnaroundMinutes: 0,
+              }),
+            };
+          }),
+        ),
+      );
+    };
+  }
+
+  async function landMove(
+    honours: boolean,
+  ): Promise<ComponentFixture<ClientBooking>> {
+    // The capacity stub reports no free minutes anywhere: every day the
+    // projection answers is "full", the visit's own chairs included.
+    const fixture = await renderShell(
+      { reschedule: 'appt-moving' },
+      {
+        principal: signedIn('client-1'),
+        visit: fatherAndSonVisit('appt-moving'),
+        catalog: {
+          services: [catalogService()],
+          barbers: [activeBarber('ivan'), activeBarber('petar')],
+          locations: [centerShop()],
+        },
+        observeDay: visitDayReader(honours),
+      },
+    );
+    await settle(fixture);
+    return fixture;
+  }
+
+  it('keeps the day the visit sits on tappable when its own chairs are all that fill it', async () => {
+    const fixture = await landMove(true);
+
+    // Only the exact query can see it: the visit's chairs handed back, the
+    // father and the son fit where they sit now.
+    expect(day(fixture, '2026-08-20')?.disabled).toBe(false);
+    // Any other day is still the projection's to answer.
+    expect(day(fixture, '2026-08-21')?.disabled).toBe(true);
+  });
+
+  it('greys that day when the reader does not hand the chairs back — never a tappable day with an empty sheet', async () => {
+    // A reader that ignores `release`: the day answers what its sheet
+    // would show — nothing — rather than a tappable day with an empty sheet.
+    const fixture = await landMove(false);
+
+    expect(day(fixture, '2026-08-20')?.disabled).toBe(true);
+  });
+});
+
+describe('ClientBooking — a companion the shop can no longer serve here', () => {
+  beforeEach(() => {
+    sessionStorage.clear();
+    TestBed.resetTestingModule();
+  });
+
+  function refusal(fixture: ComponentFixture<ClientBooking>): Element | null {
+    return host(fixture).querySelector('[data-testid="booking-move-refused"]');
+  }
+
+  async function landMove(
+    catalog: {
+      readonly services?: readonly Service[];
+      readonly barbers?: readonly Barber[] | 'pending' | 'failed';
+      /** The Center alone by default. */
+      readonly locations?: readonly Location[] | 'pending' | 'failed';
+    },
+    visit: Appointment = fatherAndSonVisit('appt-moving'),
+  ): Promise<ComponentFixture<ClientBooking>> {
+    const fixture = await renderShell(
+      { reschedule: 'appt-moving' },
+      {
+        principal: signedIn('client-1'),
+        visit,
+        catalog: { locations: [centerShop()], ...catalog },
+      },
+    );
+    await settle(fixture);
+    return fixture;
+  }
+
+  /**
+   * The father, the son on a fade with Petar, and the daughter the shop
+   * seated beside them on braids with Niko.
+   */
+  function familyVisit(): Appointment {
+    return fatherAndSonVisit('appt-moving', undefined, [
+      { userId: 'client-daughter', serviceId: 'svc-braids', barberId: 'niko' },
+    ]);
+  }
+
+  const FAMILY_BARBERS = [
+    activeBarber('ivan'),
+    activeBarber('petar'),
+    activeBarber('niko'),
+  ];
+
+  it('ends in the call panel when the son’s barber is off the active list — not in an empty grid', async () => {
+    const fixture = await landMove({
+      services: [catalogService()],
+      // Petar left: no day would ever read his chair.
+      barbers: [activeBarber('ivan')],
+    });
+
+    expect(refusal(fixture)?.getAttribute('data-reason')).toBe(
+      'carried_out_of_reach',
+    );
+    // The call leads — only the shop can re-seat him — and nothing of the
+    // wizard is left to confirm a move the server would refuse.
+    expect(
+      host(fixture)
+        .querySelector('[data-testid="booking-move-refused-call"]')
+        ?.getAttribute('href'),
+    ).toBe('tel:+359881234567');
+    expect(
+      host(fixture)
+        .querySelector('[data-testid="booking-move-refused-body"]')
+        ?.textContent?.trim(),
+    ).toBe('BODY:out_of_reach REACH:call');
+    expect(
+      host(fixture).querySelector('[data-testid="booking-schedule-step"]'),
+    ).toBeNull();
+    expect(
+      host(fixture).querySelector('[data-testid="booking-back"]'),
+    ).toBeNull();
+  });
+
+  it('ends in the call panel when the son’s service is retired', async () => {
+    const fixture = await landMove({
+      services: [catalogService('svc-other')],
+      barbers: [activeBarber('ivan'), activeBarber('petar')],
+    });
+
+    expect(refusal(fixture)?.getAttribute('data-reason')).toBe(
+      'carried_out_of_reach',
+    );
+  });
+
+  // The grid runs only shops that offer every service on the visit
+  // (`shopsServingParty`). A fade offered only at a shop that has since
+  // closed is served at no shop at all: every sheet would be empty, and the
+  // server refuses the son wherever the move goes. That is the call panel,
+  // not a calendar of empty days.
+  it('ends in the call panel when no ACTIVE shop offers the son’s service any more', async () => {
+    const fixture = await landMove({
+      services: [catalogService('svc-fade', [], ['loc-closed'])],
+      barbers: [activeBarber('ivan'), activeBarber('petar')],
+    });
+
+    expect(refusal(fixture)?.getAttribute('data-reason')).toBe(
+      'carried_out_of_reach',
+    );
+    expect(
+      host(fixture).querySelector('[data-testid="booking-schedule-step"]'),
+    ).toBeNull();
+  });
+
+  // The carried seats move together, to ONE shop. The son's fade is offered
+  // only at the Center and the daughter's braids only in Mladost: each is
+  // served somewhere, never together. The grid runs no shop for the party,
+  // and the schedule step's «Промени услугите» cannot change a companion's
+  // service, so the move ends at the shop, not at that notice.
+  it('ends in the call panel when no ONE active shop serves every companion it carries', async () => {
+    const fixture = await landMove(
+      {
+        services: [
+          catalogService('svc-fade', [], ['loc-center']),
+          catalogService('svc-braids', [], ['loc-mladost']),
+        ],
+        barbers: FAMILY_BARBERS,
+        locations: [centerShop(), mladostShop()],
+      },
+      familyVisit(),
+    );
+
+    expect(refusal(fixture)?.getAttribute('data-reason')).toBe(
+      'carried_out_of_reach',
+    );
+    expect(
+      host(fixture).querySelector('[data-testid="booking-schedule-step"]'),
+    ).toBeNull();
+    expect(
+      host(fixture).querySelector('[data-testid="booking-shop-scope"]'),
+    ).toBeNull();
+  });
+
+  it('opens the grid when one active shop serves every companion it carries', async () => {
+    const fixture = await landMove(
+      {
+        services: [
+          catalogService('svc-fade', [], ['loc-center', 'loc-mladost']),
+          catalogService('svc-braids', [], ['loc-mladost']),
+        ],
+        barbers: FAMILY_BARBERS,
+        locations: [centerShop(), mladostShop()],
+      },
+      familyVisit(),
+    );
+
+    expect(refusal(fixture)).toBeNull();
+    expect(
+      host(fixture).querySelector('[data-testid="booking-schedule-step"]'),
+    ).not.toBeNull();
+  });
+
+  it.each(['pending', 'failed'] as const)(
+    'asks no shop question while the shop read is %s — a list that never arrived is not “no shop”',
+    async (locations) => {
+      // The son's fade is offered only at a shop that has since closed: once
+      // the shops answer, that is the call panel (above). Before, it is not.
+      const fixture = await landMove({
+        services: [catalogService('svc-fade', [], ['loc-closed'])],
+        barbers: [activeBarber('ivan'), activeBarber('petar')],
+        locations,
+      });
+
+      expect(refusal(fixture)).toBeNull();
+      expect(
+        host(fixture).querySelector('[data-testid="booking-schedule-step"]'),
+      ).not.toBeNull();
+    },
+  );
+
+  it('still asks after the barbers while the shops are pending', async () => {
+    const fixture = await landMove({
+      services: [catalogService()],
+      barbers: [activeBarber('ivan')],
+      locations: 'pending',
+    });
+
+    expect(refusal(fixture)?.getAttribute('data-reason')).toBe(
+      'carried_out_of_reach',
+    );
+  });
+
+  it('ends in the call panel when the shops have answered with no active shop — nowhere to seat the son', async () => {
+    const fixture = await landMove({
+      services: [catalogService()],
+      barbers: [activeBarber('ivan'), activeBarber('petar')],
+      locations: [],
+    });
+
+    expect(refusal(fixture)?.getAttribute('data-reason')).toBe(
+      'carried_out_of_reach',
+    );
+    // No shop, so no number to dial: the copy says to get in touch.
+    expect(
+      host(fixture).querySelector('[data-testid="booking-move-refused-call"]'),
+    ).toBeNull();
+    expect(
+      host(fixture)
+        .querySelector('[data-testid="booking-move-refused-body"]')
+        ?.textContent?.trim(),
+    ).toBe('BODY:out_of_reach REACH:contact');
+  });
+
+  it('opens the grid when one active shop still offers the son’s service', async () => {
+    const fixture = await landMove({
+      services: [catalogService('svc-fade', [], ['loc-center'])],
+      barbers: [activeBarber('ivan'), activeBarber('petar')],
+    });
+
+    expect(refusal(fixture)).toBeNull();
+    expect(
+      host(fixture).querySelector('[data-testid="booking-schedule-step"]'),
+    ).not.toBeNull();
+  });
+
+  it('says nothing until the barbers have ANSWERED — an unanswered read is not “nobody”', async () => {
+    const fixture = await landMove({
+      services: [catalogService()],
+      barbers: 'pending',
+    });
+
+    expect(refusal(fixture)).toBeNull();
+    expect(
+      host(fixture).querySelector('[data-testid="booking-schedule-step"]'),
+    ).not.toBeNull();
+  });
+
+  it('says nothing when a catalogue read FAILS — a list that never arrived is not “nobody”', async () => {
+    const fixture = await landMove({
+      services: [catalogService()],
+      barbers: 'failed',
+    });
+
+    expect(refusal(fixture)).toBeNull();
+    expect(
+      host(fixture).querySelector('[data-testid="booking-schedule-step"]'),
+    ).not.toBeNull();
+  });
+
+  it('never replaces a confirmed move with the call panel when the catalogue changes afterwards', async () => {
+    const barbers = new BehaviorSubject<
+      Result<readonly Barber[], RepositoryError>
+    >(ok([activeBarber('ivan'), activeBarber('petar')]));
+    const fixture = await renderShell(
+      { reschedule: 'appt-moving' },
+      {
+        principal: signedIn('client-1'),
+        visit: fatherAndSonVisit('appt-moving'),
+        catalog: {
+          services: [catalogService()],
+          barbers,
+          locations: [centerShop()],
+        },
+        reschedule: async () => ok({ appointmentId: 'appt-moving' }),
+      },
+    );
+    await settle(fixture);
+
+    // The move goes through: Ivan at 14:00 for the father.
+    const store = fixture.debugElement.injector.get(BookingFlowStore);
+    const at = (hour: number) =>
+      unwrap(
+        ZonedDateTime.fromParts(
+          { year: 2026, month: 8, day: 21, hour, minute: 0 },
+          'Europe/Sofia',
+        ),
+      );
+    const slot = unwrap(TimeSlot.of(at(14), at(15)));
+    store.selectDay('2026-08-21', 'Europe/Sofia');
+    store.selectStart(at(14).toMillis(), 'loc-center');
+    store.selectSchedule({
+      locationId: unwrap(LocationId.create('loc-center')),
+      timeSlot: slot,
+      assignments: (store.cart()?.entries() ?? [])
+        .flatMap(([, lines]) => lines)
+        .map((line) => ({
+          lineId: line.id,
+          barberId: unwrap(BarberId.create('ivan')),
+          slot,
+        })),
+    });
+    await store.commit();
+    await settle(fixture);
+    expect(host(fixture).getAttribute('data-state')).toBe('confirmed');
+
+    // …and THEN Petar leaves the active list.
+    barbers.next(ok([activeBarber('ivan')]));
+    await settle(fixture);
+
+    expect(refusal(fixture)).toBeNull();
+    expect(host(fixture).getAttribute('data-state')).toBe('confirmed');
+  });
+
+  it('opens the grid as before when everybody it carries is still served', async () => {
+    const fixture = await landMove({
+      services: [catalogService()],
+      barbers: [activeBarber('ivan'), activeBarber('petar')],
+    });
+
+    expect(refusal(fixture)).toBeNull();
+    expect(
+      host(fixture).querySelector('[data-testid="booking-schedule-step"]'),
+    ).not.toBeNull();
   });
 });

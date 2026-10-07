@@ -1,0 +1,48 @@
+<nav class="visit-pills" [attr.aria-label]="label()">
+  @if (loading()) {
+  <!-- The first page is on its way: capsules at the pills' own height, so
+       the rail lands without moving the list under it. -->
+  <div
+    class="visit-pills__rail visit-pills__placeholders"
+    aria-hidden="true"
+    [attr.data-testid]="testIdPrefix() + '-pills-skeleton'"
+  >
+    @for (width of placeholders; track width) {
+    <ui-skeleton
+      uiRadius="capsule"
+      uiFrame
+      [uiFrameWidth]="width"
+      uiFrameHeight="var(--control-size-small)"
+    />
+    }
+  </div>
+  } @else if (sections().length > 0) {
+  <ui-scroll-row
+    #rail
+    uiSpacing="compact"
+    [uiFullBleed]="bleed() === 'container' ? 'container' : true"
+    class="visit-pills__rail"
+    [attr.data-testid]="testIdPrefix() + '-pills'"
+  >
+    @for (section of sections(); track section.key) {
+    <button
+      type="button"
+      uiInteractive
+      class="visit-pills__pill"
+      [attr.aria-current]="section.key === activeKey() ? 'true' : null"
+      [attr.data-selected]="section.key === activeKey() ? '' : null"
+      [attr.data-section]="section.key"
+      [attr.data-testid]="testIdPrefix() + '-pill'"
+      (click)="jump.emit(section.key)"
+    >
+      {{ section.label }}
+    </button>
+    }
+  </ui-scroll-row>
+  }
+  <!-- ONE control, pinned at the rail's trailing end. Kept on one line with
+       its slot: an empty column must BE empty, so the band can tell. -->
+  <div class="visit-pills__action">
+    <ng-content select="[visitPillsAction]" />
+  </div>
+</nav>

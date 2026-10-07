@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import {
   type GridColumn,
@@ -631,6 +633,17 @@ describe('StaffTimeGrid', () => {
       expect(
         chip?.querySelector('[data-label="long"]')?.textContent?.trim(),
       ).toBe('Нико почива');
+      // The word is INK (review r4, 2026-10-06): `uiText` paints a caption
+      // in the secondary ink, 4.0:1 on the dark theme's wash; the explicit
+      // primary takes it back — on both words, whichever tier shows.
+      for (const label of ['long', 'short']) {
+        expect(
+          chip
+            ?.querySelector(`[data-label="${label}"]`)
+            ?.getAttribute('data-foreground-style'),
+          `the ${label} word is primary ink`,
+        ).toBe('primary');
+      }
       expect(
         chip?.querySelector('[data-label="short"]')?.textContent?.trim(),
       ).toBe('Нико');
@@ -1908,4 +1921,107 @@ describe('StaffTimeGrid', () => {
       ).toContain('Георги Петров');
     });
   });
+});
+
+/*
+ * ── The all-day chip's ink (review r4, 2026-10-06) ──────────────────────
+ *
+ * «Нико почива» on the chip's tone wash was the secondary label: 4.0:1 on
+ * the dark theme's 28% wash, under AA. The word is ink now, and this pins
+ * the ratio off the stylesheets themselves — the chip's rule, the theme's
+ * tones and the dark alpha the blocks publish — so a tone or an alpha that
+ * drifts fails here rather than in a capture. jsdom computes no colour and
+ * no `color-mix`; the arithmetic is WCAG's own (the tokens lib's
+ * `contrast.ts` holds the same formulas; a feature lib does not depend on
+ * it).
+ */
+describe("the all-day chip's ink", () => {
+  const stylesheet = (file: string): string =>
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- the paths are this spec's own literals: the grid's sheets and the theme files.
+    readFileSync(resolve(__dirname, file), 'utf8').replace(
+      /\/\*[\s\S]*?\*\//g,
+      '',
+    );
+  const TOKENS = resolve(__dirname, '../../../../../../ui/tokens');
+  const theme = (name: 'light' | 'dark'): string =>
+    stylesheet(resolve(TOKENS, `theme-${name}.css`));
+
+  /** The body of the first rule whose selector list is exactly `selector`. */
+  const ruleBody = (css: string, selector: string): string => {
+    const at = css.indexOf(`\n${selector} {`);
+    expect(at, `${selector} is a rule`).toBeGreaterThanOrEqual(0);
+    return css.slice(at, css.indexOf('}', at));
+  };
+  const hexOf = (
+    css: string,
+    token: string,
+  ): readonly [number, number, number] => {
+    // eslint-disable-next-line security/detect-non-literal-regexp -- a token name this spec spells.
+    const hex = new RegExp(`${token}:\\s*#([0-9a-f]{6})`, 'i').exec(css)?.[1];
+    expect(hex, `${token} is a hex colour`).toBeDefined();
+    const n = parseInt(hex ?? '000000', 16);
+    return [n >> 16, (n >> 8) & 255, n & 255];
+  };
+  const luminance = (rgb: readonly [number, number, number]): number => {
+    const [r, g, b] = rgb.map((channel) => {
+      const c = channel / 255;
+      return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+    });
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  };
+  const contrast = (
+    a: readonly [number, number, number],
+    b: readonly [number, number, number],
+  ): number => {
+    const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+    return (hi + 0.05) / (lo + 0.05);
+  };
+  const over = (
+    top: readonly [number, number, number],
+    alpha: number,
+    under: readonly [number, number, number],
+  ): readonly [number, number, number] => [
+    top[0] * alpha + under[0] * (1 - alpha),
+    top[1] * alpha + under[1] * (1 - alpha),
+    top[2] * alpha + under[2] * (1 - alpha),
+  ];
+
+  const grid = stylesheet('./staff-time-grid.css');
+  const chip = ruleBody(grid, '.staff-grid__allday-chip');
+
+  it('draws the word in the foreground ink on the tone wash', () => {
+    expect(chip).toContain('color: var(--sys-color-foreground);');
+    expect(chip).toContain(
+      'var(--barber-tone, var(--sys-color-fill)) var(--staff-event-alpha, 15%)',
+    );
+  });
+
+  /** The wash's share: the chip's own default, or the dark theme's from the blocks. */
+  const alphaOf = (name: 'light' | 'dark'): number => {
+    if (name === 'light') return 0.15;
+    const dark = ruleBody(
+      stylesheet('./staff-time-grid.block.css'),
+      ":root[data-theme='dark'] .staff-grid",
+    );
+    const share = /--staff-event-alpha:\s*(\d+)%/.exec(dark)?.[1];
+    expect(share, 'the dark theme publishes the blocks’ alpha').toBeDefined();
+    return Number(share) / 100;
+  };
+
+  it.each(['light', 'dark'] as const)(
+    'reads at 4.5:1 or better on every chair’s wash over the page, %s theme',
+    (name) => {
+      const tokens = theme(name);
+      const ink = hexOf(tokens, '--sys-color-foreground');
+      const page = hexOf(tokens, '--sys-color-background');
+      const alpha = alphaOf(name);
+      for (const slot of [0, 1, 2, 3, 4]) {
+        const tone = hexOf(tokens, `--sys-identity-${slot}`);
+        expect(
+          contrast(ink, over(tone, alpha, page)),
+          `identity ${slot} in ${name}`,
+        ).toBeGreaterThanOrEqual(4.5);
+      }
+    },
+  );
 });

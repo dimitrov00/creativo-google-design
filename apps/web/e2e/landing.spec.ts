@@ -43,8 +43,79 @@ test.describe('marketing landing', () => {
     await expect(page.getByTestId('landing-services')).toBeVisible();
     await expect(page.getByTestId('landing-hiring')).toBeVisible();
     await expect(page.getByTestId('landing-locations')).toBeVisible();
-    await expect(page.getByTestId('landing-footer')).toBeVisible();
+    // The footer is the shared shell's now (`cr-site-footer`), the same one
+    // the careers and courses pages close on.
+    await expect(page.getByTestId('site-footer')).toBeVisible();
   });
+
+  /*
+   * The copy must paint over the half-strength film on every path that
+   * leaves it unlifted. A running (or filling) animation promotes the copy
+   * into a layer of its own, which is what hid the bug: the film — a
+   * positioned layer — painted over the headline and greyed it out wherever
+   * none was running.
+   *   - reduced motion: no reveal, no scroll exit;
+   *   - no scroll-driven animations (Firefox; iOS Safari before 26): the
+   *     `@supports (animation-timeline)` exits are simply absent, and the
+   *     reveal (`fill: 'backwards'`) lets go of the copy once it finishes.
+   * The z-stack must keep source order on its own.
+   */
+  for (const path of [
+    { name: 'under reduced motion', reducedMotion: 'reduce' as const },
+    {
+      name: 'without scroll-driven animations',
+      reducedMotion: 'no-preference' as const,
+    },
+  ]) {
+    test(`the hero headline paints over its film ${path.name}`, async ({
+      page,
+    }) => {
+      await page.emulateMedia({ reducedMotion: path.reducedMotion });
+      await page.goto('/');
+      const hero = page.getByTestId('landing-hero');
+      const heading = hero.getByRole('heading', { level: 1 });
+      await expect(heading).toBeVisible();
+
+      // What a browser without `animation-timeline` renders: none of the
+      // gated scroll exits (the only CSS animations up here)… (Under
+      // reduced motion neither step has anything to do.)
+      await page.addStyleTag({
+        content: '*, *::before, *::after { animation: none !important; }',
+      });
+      // …and the entrance reveals played out and released.
+      await hero.evaluate(async (root) => {
+        await Promise.all(
+          document
+            .getAnimations()
+            .filter((animation) => {
+              const target = (animation.effect as KeyframeEffect | null)
+                ?.target;
+              return target != null && root.contains(target);
+            })
+            .map((animation) => animation.finished),
+        );
+      });
+
+      // A hit test is a paint-order probe only for layers that take part in
+      // hit testing: a decorative film with `pointer-events: none` would be
+      // skipped and the probe would pass while the film covered the copy.
+      // So every layer of the hero takes part, whatever it declares.
+      await page.addStyleTag({
+        content:
+          '[data-testid="landing-hero"] *, [data-testid="landing-hero"] *::before, [data-testid="landing-hero"] *::after { pointer-events: auto !important; }',
+      });
+
+      const topmostIsHeading = await heading.evaluate((element) => {
+        const box = element.getBoundingClientRect();
+        const hit = document.elementFromPoint(
+          box.left + box.width / 2,
+          box.top + box.height / 2,
+        );
+        return hit !== null && element.contains(hit);
+      });
+      expect(topmostIsHeading).toBe(true);
+    });
+  }
 
   test('MapLibre only loads once the locations section is in view', async ({
     page,

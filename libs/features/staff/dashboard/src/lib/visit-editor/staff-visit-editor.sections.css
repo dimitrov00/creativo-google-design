@@ -1,0 +1,402 @@
+/*
+ * THE LADDER'S SECTIONS, TOP TO BOTTOM — the state head and a settled
+ * chair's head, a person row with its call, the client's words, the lines
+ * under the bill, the dock and its total, and the exits — with the few
+ * rules the one file wrote beside them (the page's group labels, a figure
+ * row's label, a leg chip's way off, the team note's box, the day
+ * navigator's row).
+ *
+ * Its own stylesheet because a component stylesheet has a budget (warning
+ * 10 kB, error 20 kB — recalibrated 2026-09-26): `staff-visit-editor.css`,
+ * with the pill recipe it imports, measured 17.07 kB minified even after
+ * the visit's own rows left for `staff-visit-editor.visit.css`. The main
+ * sheet keeps the sheet's box and the frame; the row constructions
+ * continue in `staff-visit-editor.rows.css`. SHARED like the main sheet:
+ * the block sheet draws the dock and the exits too.
+ *
+ * The split is in the file, not in the cascade. This sheet is the original's
+ * next run of chapters, cut at a chapter boundary with no rule text changed,
+ * and it is listed directly after `staff-visit-editor.css` in the same
+ * `styleUrls` — so every rule lands in the document in exactly the order it
+ * had in one file. No rule here now follows a rule it used to precede, or
+ * precedes one it used to follow; no two rules that share an element and a
+ * property changed their relative order, because no two rules did.
+ *
+ * Two components load it, so the order must hold whichever opens first:
+ * both list the shared sheets in the same order — main, sections, rows —
+ * and the block sheet's list is a prefix of the visit editor's (which adds
+ * `staff-visit-editor.visit.css` last). Angular adds a component's sheets
+ * together, in list order, and keeps one copy of a sheet two components
+ * share, so the three always land adjacent and in this order — exactly
+ * where the one file landed.
+ */
+
+/* ── THE STATE HEADER ─────────────────────────────────────────────────
+ *
+ * One strip: the chip (which is the picker) and its measured line on the
+ * leading side, the likely verb docked trailing. It sits on the same
+ * secondary surface as a segment so it reads as the head of the ladder
+ * rather than as a card floating above it, and its tone is a WASH, not a
+ * fill: a gradient from the tone's own ink, 18% at the leading edge to
+ * nothing by two thirds across, so the header says "look here" without
+ * painting the whole strip and drowning the figures on it.
+ *
+ * Neutral draws no wash at all — nine visits in ten are confirmed or past,
+ * and a colour that means "ordinary" means nothing (`STATUS_TONES`).
+ */
+.staff-visit__state {
+  --staff-state-ink: var(--sys-color-foreground);
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: auto auto;
+  column-gap: var(--sys-space-regular);
+  row-gap: var(--sys-space-tight);
+  align-items: center;
+  padding: var(--sys-space-regular);
+  border-radius: var(--control-radius-prominent);
+  background: var(--sys-color-surface-secondary);
+  /* The wash below clips itself; nothing else in here needs a context. */
+}
+
+.staff-visit__state[data-tone='success'] {
+  --staff-state-ink: var(--sys-color-success);
+}
+
+.staff-visit__state[data-tone='warning'] {
+  --staff-state-ink: var(--sys-color-warning);
+}
+
+.staff-visit__state[data-tone='destructive'] {
+  --staff-state-ink: var(--sys-color-destructive);
+}
+
+.staff-visit__state:not([data-tone='neutral'])::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--staff-state-ink) 18%, transparent),
+    transparent 66%
+  );
+  pointer-events: none;
+}
+
+.staff-visit__state-line {
+  grid-column: 1;
+  margin: 0;
+}
+
+/* The one verb the head may carry — a request's answer — spans both rows
+   on the trailing edge, at the 44px rung. */
+.staff-visit__verb {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  align-self: center;
+}
+
+/* ── A SETTLED CHAIR'S HEAD ───────────────────────────────────────────
+ *
+ * The glyph LEADS, in the tone's ink, with the line and the reason beside
+ * it — and no wash. The request head's wash asks for a decision; this one
+ * states a fact, and the tone lives in one glyph rather than across the
+ * ground, which is as loud as a visit that is over should be. */
+.staff-visit__state[data-head='resolution'] {
+  grid-template-columns: auto minmax(0, 1fr);
+}
+
+.staff-visit__state[data-head='resolution']::before {
+  content: none;
+}
+
+/* ONE LINE, ONE ROW (owner, 2026-09-11: "when it's a single text row it
+   had better be centred"). The head's second track is empty when nobody
+   said why, but an empty track still keeps its gap, and a glyph spanning
+   both sat its centre half a gap below the line. Without a detail there
+   is one row, and the glyph spans whatever rows there are. */
+.staff-visit__state[data-head='resolution']:not([data-detail]) {
+  grid-template-rows: auto;
+}
+
+.staff-visit__state-glyph {
+  grid-column: 1;
+  grid-row: 1 / -1;
+  display: inline-flex;
+  color: var(--staff-state-ink);
+}
+
+.staff-visit__state[data-head='resolution'] > .staff-visit__state-line {
+  grid-column: 2;
+}
+
+.staff-visit__state-detail {
+  grid-column: 2;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+/* ── TWO TARGETS IN ONE ROW ───────────────────────────────────────────
+ *
+ * The row pushes the person's page; the `☎` dials. Both clear 44x44 and
+ * their accessible names differ, which is what makes the pair legal. The
+ * anchor is a sibling of the row (an `<a>` inside a `<button>` is not
+ * markup), positioned over the row's trailing end, and the row reserves the
+ * width so the chevron never lands underneath it.
+ */
+.ui-list-group > .staff-visit__peer {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+}
+
+/* TWO trailing targets on one row, and they must not read as one control.
+   The row is a `<button>`, so the call cannot nest inside it — it is a
+   sibling positioned over the space the row reserves.
+ *
+ * ⚠ THE TRAILING EDGE IS THE CALL'S. (owner ruling 2026-09-03)
+ *
+ * This row carries NO trailing chevron — the markup says so in as many
+ * words — yet the call was inset by a full `--control-size-regular` to
+ * clear one, and a hairline was drawn in the gap to separate the call from
+ * it. The result was a chip floating 44px short of the edge with a divider
+ * hanging beside it in dead space, seaming the row against nothing.
+ *
+ * A separator earns its keep between two ADJACENT targets. There is one
+ * target out here, so the seam goes and the call takes the trailing edge
+ * the way a Contacts row's video/message accessory does. Its own
+ * translucent chip is the boundary now: `bordered`+`neutral` paints a
+ * surface, and a surface does not need a line drawn next to it to be read
+ * as a separate control. */
+.staff-visit__peer > .ui-list-row {
+  flex: 1 1 auto;
+}
+
+/* Only the LABEL is inset, and only by what the chip actually occupies. */
+.staff-visit__peer > .ui-list-row > .ui-list-row__label {
+  padding-inline-end: calc(
+    var(--control-size-regular) + var(--sys-space-compact)
+  );
+}
+
+/* ── THE CLIENT'S WORDS ───────────────────────────────────────────────
+ *
+ * Someone else's prose, outside every group and marked up as what it is. A
+ * `ui-list-row` would dress a quotation as a control, and this one is never
+ * editable: overwriting it destroys evidence, and once merged it cannot be
+ * unmerged.
+ */
+.staff-visit__quote {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sys-space-tight);
+  margin: 0;
+  padding-inline-start: var(--sys-space-regular);
+  border-inline-start: 2px solid var(--sys-color-separator);
+}
+
+.staff-visit__quote > blockquote {
+  margin: 0;
+  color: var(--sys-color-secondary-label);
+  font: var(--sys-font-body);
+  font-variant-numeric: tabular-nums; /* the shorthand resets the app's tabular figures */
+}
+
+/* The payment row's value: figure, promo, tip — then the `›`. */
+/* The typed figures — minutes, prices, the tip — are `ui-unit-field`s in the
+   sheet's tinted pill; the field draws its own ring and needs nothing here. */
+
+/* The page's group labels — a word over a segment at the footnote tier, on
+   the rows' own inset; the DS group has no header slot and gets none. */
+.staff-visit__page-label {
+  padding-inline: var(--sys-space-regular);
+}
+
+/* THE LINES UNDER THE BILL: the tip the client left (a green plus) and the
+   discount the shop gave (a minus in the promo ink) — each rises in, the
+   sheet's one expressive moment (the owner's own taste for "expressive
+   success moments"), stilled for whoever asked for less motion. */
+.staff-visit__dock-plus {
+  display: inline-block;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .staff-visit__dock-plus {
+    animation: staff-visit-dock-plus-in var(--sys-motion-duration-regular)
+      var(--sys-motion-ease-standard) both;
+  }
+
+  @keyframes staff-visit-dock-plus-in {
+    from {
+      opacity: 0;
+      translate: 0 4px;
+    }
+  }
+}
+
+/* THE SUM under the tip tiles: the DS amount field on the page's own
+   ground, ATTACHED to the «Друга сума» tile it answers — the regular gap
+   above it (closer than the page's column gap, looser than the grid's
+   compact one, so it reads as the tile's continuation and not as the next
+   block). */
+.staff-visit__entry {
+  margin-block-start: calc(
+    var(--sys-space-regular) - var(--sys-space-comfortable)
+  );
+}
+
+/* THE DIAL — the figure written large over the ruler, lit in the promo
+   ink, the applied line's own. */
+/* THE LINES ON THE BILL — the card's own applied tickets, in the column
+   over the money group (2026-09-17): a new one rises in, the tip's own
+   success moment. Nothing else here: the ticket is `ui-coupon-card`,
+   which wears the rows' fill and corner on its own. */
+@media (prefers-reduced-motion: no-preference) {
+  .staff-visit__line {
+    animation: staff-visit-dock-plus-in var(--sys-motion-duration-regular)
+      var(--sys-motion-ease-standard) both;
+  }
+}
+
+/* THE DOCK'S PRICE LINE — the old figure struck, a role quieter, on the
+   baseline of what is due. */
+.staff-visit__total-line {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--sys-space-tight);
+}
+
+.staff-visit__dial-slider {
+  --ui-slider-tint: var(--sys-color-promo);
+}
+
+/* A figure row's label wraps rather than running into its pill. */
+.staff-visit__figure-row .ui-list-row__label {
+  white-space: normal;
+  min-inline-size: 0;
+}
+
+/* THE WAY OFF — the chip's own capsule, red ink under the thumb. */
+
+@media (hover: hover) {
+  .staff-visit__leg-remove:hover {
+    color: var(--sys-color-destructive-label);
+  }
+}
+
+.staff-visit__leg-remove:active {
+  color: var(--sys-color-destructive-label);
+}
+
+/* The team note's textarea is the same lone row in its other face, so the
+   box must not add a second surface inside the segment it already has. */
+.staff-visit__note {
+  min-block-size: calc(var(--sys-space-unit) * 10);
+  resize: vertical;
+}
+
+/* ── THE DOCK ─────────────────────────────────────────────────────────
+ *
+ * No commit control: `staffEditAppointment` does not exist, so the label is
+ * replaced by a sentence, and the bar docks a spread primary by auto margin.
+ *
+ * ⚠ THE SENTENCE NO LONGER COMPETES FOR THE ROW. (owner ruling 2026-09-04)
+ *
+ * It used to be `flex: 1 1 auto` with an auto leading margin — a second
+ * greedy child beside the spread primary, which pushed `Дойде` off the
+ * trailing gutter and wrapped this sentence into a four-line right-aligned
+ * column. The total moving down here made that visible; it did not cause it.
+ *
+ * The bar wraps and the sentence takes a line of its OWN, above the
+ * controls: it is a caption ABOUT this sheet, not a control in it, and a
+ * paragraph has no business sharing a row with a CTA. The DS bar is
+ * untouched — `flex-wrap` sits on this consumer's own class, so every other
+ * sheet's single-row dock stays exactly as it was.
+ */
+.staff-visit__dock {
+  align-items: center;
+}
+
+/* THE MEDAL PAGE'S VERB (revision 3 §5.2, DV-C): «Добави фейд», hugged
+   beside the ✓ — and never past the column. The bar lays its children at
+   `flex: 0 0 auto`; a long service name («Добави оформяне на брада» on a
+   330 phone, 274 of label beside a 52 ✓ in a 295 column) must give way
+   instead of pushing the ✓ off the edge, so this one may shrink and its
+   label wraps (`uiMultiline` on the button). A verb never truncates. */
+.staff-visit__dock > .staff-visit__detail-add {
+  flex: 0 1 auto;
+  min-inline-size: 0;
+}
+
+/* ── THE EXITS ──────────────────────────────────────────────────────────
+   The sheet's last group. Its destructive rows are the list row's own
+   `uiRole="destructive"` (the ink, and the armed weight on `data-armed`),
+   so nothing of the red is written here. */
+
+/* The warning the arm earns, under the group: a caption about the row. */
+.staff-visit__exits-note {
+  margin: 0;
+  padding-inline: var(--sys-space-regular);
+  font: var(--sys-font-footnote);
+  font-variant-numeric: tabular-nums; /* the shorthand resets the app's tabular figures */
+  color: var(--sys-color-secondary-label);
+}
+
+/* THE ASIDE — a secondary docked beside the primary, hugging it on the
+   thumb rail: the call beside «Запази» at the root (owner, 2026-09-09:
+   "the most common action you do when you open the appointment") and
+   «Нов клиент» beside the ✓ on the client page (owner, 2026-09-22). It
+   takes the bar's auto margin and the prominent button beside it gives its
+   own up — the two travel together, opposite the total. */
+.staff-visit__dock > .staff-visit__dock-aside {
+  margin-inline-start: auto;
+}
+
+.staff-visit__dock > .staff-visit__dock-aside + .ui-button {
+  margin-inline-start: 0;
+}
+
+/* THE TOTAL, docked leading opposite the primary verb — Apple Pay's shape,
+   and the reason `В салона` is no longer the last row of `ПАРИ` (see the
+   ruling in the template). Label over figure, on the bar's own chromeless
+   ground: it carries no surface, no ring and no press state, because it is
+   the one thing down here that is read rather than pressed.
+
+   It claims none of the three markers that dock a child trailing, so the bar
+   leaves it at `flex: 0 0 auto` on the leading edge. The cap keeps a long
+   localized label from eating the row the CTA has to fit in; the figure never
+   truncates, because a total ending in `…` is worse than no total. The two
+   roles bring their own leading through the `font:` shorthand, so the stack
+   needs no line-height of its own — `uiSpacing="none"` is the whole recipe. */
+.staff-visit__total {
+  max-inline-size: 40%;
+}
+
+.staff-visit__total > :first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-inline-size: 100%;
+}
+
+/* The foot of the ladder: what the save cannot take yet, as a quiet caption
+   above the dock's clearance rather than inside the dock. */
+.staff-visit__footnote {
+  margin: 0;
+  text-wrap: balance;
+}
+
+/* Destructive rows sit at the bottom of the scroll in their own group —
+   Apple's placement, one flick away rather than gated behind distance. The
+   red is the DS foreground modifier; there is no destructive row variant and
+   one must not be invented for a single row. */
+.staff-visit__destructive {
+  margin-block-start: var(--sys-space-comfortable);
+}
+
+/* The row carries no label, so the steps own the leading edge outright. */
+.staff-visit__daynav > .ui-list-row__label {
+  display: none;
+}

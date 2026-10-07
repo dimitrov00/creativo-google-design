@@ -1,0 +1,72 @@
+/*
+ * «ПОСЕЩЕНИЯ», revision 3 — layout only. The head, the notice, the pills
+ * with their pinned funnel, the rows, their month headings and the list's
+ * foot are DS parts and the shared browser's own (`ui-sheet-headline`,
+ * `ui-notice`, `lib-visits-browser`, `lib-visit-filter`); these rules
+ * space the page, let the two quiet lines wrap as each must, and tell the
+ * browser where its anchors land. No `font:` shorthand here, so the app's
+ * tabular figures are never reset.
+ */
+
+/* The page: the head, the notice when offline, the browser — a section's
+   gap apart (24), which is the browser's own rhythm (rail → list → the
+   sections), so the first pill stands under the facts as every heading
+   stands under the group before it (§2.5.1: HC → HF is 24). */
+:host {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sys-space-comfortable);
+}
+
+/* HB and HC are the headline's two quiet lines: on a phone the wrapper is
+   no box of its own, so the head's tight gap runs h2 → HB → HC as it does
+   on every page; in the ≥761 dialog (§2.5.4) the two share one line where
+   they fit, on one baseline, and wrap as a row where they do not. */
+.client-history__lines {
+  display: contents;
+}
+
+@media (min-width: 761px) {
+  .client-history__lines {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    column-gap: var(--sys-space-regular);
+    row-gap: var(--sys-space-tight);
+  }
+}
+
+/* HB — a headline's line is never cut (the glance's rule): it wraps on a
+   330 phone BETWEEN its facts (each an item of the line, fact-line.css),
+   and a fact parts inside itself only where its own words must. */
+.client-history__subline {
+  overflow-wrap: break-word;
+}
+
+/* HC — the note and the sum: the line parts between them where it must
+   (never balanced: balanced, the break fell inside the note, P5-2 b), and
+   the sum's words are bound by the presenter. */
+.client-history__facts {
+  overflow-wrap: break-word;
+}
+
+/* THE BROWSER'S ANCHORS land clear of the sheet's chrome AND its fade — the
+   sheet's own clear top (modal-sheet.css: the measured chrome, its 3 rem
+   overhang and a pixel of slack), the value every anchored section of the
+   stack takes (client-loyalty.css). Eight under the bar would put a month
+   heading inside the haze: this list pins no heading, so the overhang is
+   on. The scroll spy's band starts at the same line. Outside a sheet the
+   client page's own clearance stands in. */
+.client-history__browser {
+  --visit-list-anchor-clearance: var(
+    --modal-sheet-clear-top,
+    calc(var(--control-size-large) + var(--sys-space-comfortable))
+  );
+}
+
+/* HE — the empty filter's one way out hugs its words (buttons hug, like
+   every uiButton): the empty state's column would otherwise stretch it
+   across the sheet. */
+.client-history__clear {
+  align-self: flex-start;
+}

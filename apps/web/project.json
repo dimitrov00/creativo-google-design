@@ -30,19 +30,20 @@
             "output": "assets/flags/1x1"
           }
         ],
-        "styles": ["apps/web/src/styles.css"]
+        "styles": ["apps/web/src/styles.css"],
+        "allowedCommonJsDependencies": ["maplibre-gl"]
       },
       "configurations": {
         "production": {
           "budgets": [
             {
               "type": "initial",
-              "maximumWarning": "1mb",
-              "maximumError": "2mb"
+              "maximumWarning": "975kb",
+              "maximumError": "1mb"
             },
             {
               "type": "anyComponentStyle",
-              "maximumWarning": "4kb",
+              "maximumWarning": "10kb",
               "maximumError": "20kb"
             }
           ],
@@ -60,12 +61,22 @@
           "extractLicenses": false,
           "sourceMap": true
         }
-      }
+      },
+      "inputs": [
+        "production",
+        "^production",
+        "{workspaceRoot}/config/feature-flags.json"
+      ]
     },
     "serve": {
       "continuous": true,
       "executor": "@angular/build:dev-server",
       "defaultConfiguration": "development",
+      "options": {
+        "prebundle": {
+          "exclude": ["maplibre-gl"]
+        }
+      },
       "configurations": {
         "production": {
           "buildTarget": "web:build:production"
@@ -82,7 +93,12 @@
       "executor": "@angular/build:unit-test",
       "options": {
         "watch": false
-      }
+      },
+      "inputs": [
+        "default",
+        "^production",
+        "{workspaceRoot}/config/feature-flags.json"
+      ]
     },
     "serve-static": {
       "continuous": true,

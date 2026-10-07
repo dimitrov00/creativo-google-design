@@ -1,0 +1,74 @@
+/*
+ * A LINE OF FACTS — «Ваучер 25,00 € · Печати 3 от 10 · Ритъм 23», «Без
+ * неявявания и откази от клиента · похарчени общо 492,50 €» — whose «·»
+ * stands only BETWEEN two facts on ONE line. Set as text, a joint has to
+ * land somewhere when the line wraps: before the dot («· похарчени» opens
+ * the next line, the ledger's banned form) or after it («клиента ·» ends
+ * this one, the hanging dot of review 3, round 2). Neither is a line of
+ * facts: a line that wraps is two lines of facts, and a dot belongs to
+ * neither.
+ *
+ * So the facts are the ITEMS of a wrapping row, a joint's width apart,
+ * and every fact but the first draws its dot in the gap BEFORE it. A fact
+ * that opens a line has that gap outside the row's inline edge, and the
+ * row clips it there (`overflow-x: clip`: no scroll container, nothing
+ * else cut — the block axis stays visible for descenders and rings). A
+ * fact wider than the row wraps inside itself, as any words do; what a
+ * fact holds together (a count and its noun, a sum and its words) is the
+ * presenter's no-break spaces, as before.
+ *
+ * Shared by the glance's hero line, its loyalty and medals cards and the
+ * history's two quiet lines (`styleUrls`): four readers now — a DS part
+ * in waiting (contract delta FP-2). No `font:` shorthand here, so the
+ * app's tabular figures are never reset.
+ */
+
+.fact-line {
+  --fact-line-joint: calc(var(--sys-space-unit) * 3);
+
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: var(--fact-line-joint);
+  row-gap: 0;
+  overflow-x: clip;
+  overflow-y: visible;
+}
+
+.fact-line__fact {
+  position: relative;
+  min-inline-size: 0;
+}
+
+/* The dot, centred in the gap before its fact, in the line's own ink; a
+   screen reader is told nothing by it (the dot said nothing before
+   either: the lines carry their own sentences). */
+.fact-line__fact:not(:first-child)::before {
+  content: '·' / '';
+  position: absolute;
+  inset-inline-end: 100%;
+  inline-size: var(--fact-line-joint);
+  text-align: center;
+}
+
+/* A CENTRED line of facts — the hero's, under a centred name. The edge
+   above is where a line-opening fact's dot is clipped, and a centred
+   row's lines do not start at it. So this row shrink-wraps its facts and
+   lets each one GROW: on one line nothing is left to grow into, the facts
+   stand as written and the dots in their gaps; a row too narrow for them
+   all breaks between facts, and a fact alone on its line grows to the
+   row's whole width — it starts at the edge, its dot is clipped there,
+   its words are centred inside it. For a line of at most two facts (the
+   hero's): with three, two could share a wrapped line and their dot would
+   sit between their boxes, not their words. A fact wider than the row
+   still shrinks and wraps inside itself. */
+.fact-line[data-align='center'] {
+  inline-size: fit-content;
+  max-inline-size: 100%;
+  margin-inline: auto;
+}
+
+.fact-line[data-align='center'] > .fact-line__fact {
+  flex: 1 1 auto;
+  text-align: center;
+}

@@ -1,0 +1,36 @@
+/*
+ * THE FUNNEL — layout only: the DS button draws the trigger (its wash, its
+ * ink, its state layer, its ring). What is the funnel's own is the DOT it
+ * wears while a filter bites.
+ */
+
+/* The host hugs its trigger, so a pinned funnel is its own 36 in the pill
+   rail's trailing column and nothing more. */
+:host {
+  display: inline-flex;
+}
+
+/* The dot's ground. The DS button is positioned only while it is busy. */
+.visit-filter__trigger {
+  position: relative;
+}
+
+/* NARROWED: the accent as a SHAPE (the accent law: colour is a shape,
+   words and glyphs that name a control are ink). A mark on the trigger's
+   rim, top trailing, where a count badge rides a control's corner.
+
+   The trigger is a circle, so its corner is the rim at 45°: that point
+   lies (1 − cos 45°) / 2 ≈ 14.64 % of the diameter in from the box's top
+   and trailing edges, and the dot is centred on it, at either rung (36 in
+   the pill rail, 44 in a bar). It takes no pointer and scales with the
+   trigger's own press. */
+.visit-filter__dot {
+  position: absolute;
+  inset-block-start: calc(14.64% - var(--sys-size-dot) / 2);
+  inset-inline-end: calc(14.64% - var(--sys-size-dot) / 2);
+  inline-size: var(--sys-size-dot);
+  block-size: var(--sys-size-dot);
+  border-radius: 50%;
+  background: var(--sys-color-accent);
+  pointer-events: none;
+}

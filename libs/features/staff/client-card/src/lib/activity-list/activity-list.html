@@ -1,0 +1,83 @@
+<!-- THE STATEMENT — a month a group: its quiet header (the month, the net
+     when the month is whole), then its events as rows. One event, one row;
+     one row, one sentence. -->
+@for (group of groups(); track group.key) {
+<section
+  class="activity-list__month"
+  [attr.data-testid]="testIdPrefix() + '-month-' + group.key"
+>
+  <ui-section-header uiHeaderProminence="standard">
+    @if (headingLevel() === 3) {
+    <h3 uiTitle [id]="monthHeadingId(group.key)">{{ group.label }}</h3>
+    } @else {
+    <h4 uiTitle [id]="monthHeadingId(group.key)">{{ group.label }}</h4>
+    } @if (group.net; as net) {
+    <!-- The month's net, printed only when every row of the month is in. -->
+    <span
+      uiSectionDetail
+      class="activity-list__net"
+      [attr.data-testid]="testIdPrefix() + '-month-' + group.key + '-net'"
+      >{{ net }}</span
+    >
+    }
+  </ui-section-header>
+  <ul uiListGroup [attr.aria-labelledby]="monthHeadingId(group.key)">
+    @for (row of group.rows; track row.entryId) {
+    <li
+      uiListRow
+      uiSize="regular"
+      uiAlignment="leading"
+      uiTrailingProminence="primary"
+      uiLabelWraps
+      class="activity-list__row"
+      [attr.data-struck]="row.struck ? '' : null"
+      [attr.data-testid]="testIdPrefix() + '-entry-' + row.entryId"
+    >
+      <!-- The kind, as a glyph on a white disc: the ink says who moved. -->
+      <span
+        uiLeading
+        class="activity-list__disc"
+        aria-hidden="true"
+        [attr.data-tone]="row.tone"
+      >
+        <ui-icon
+          class="activity-list__glyph"
+          [uiName]="row.icon"
+          [attr.data-testid]="testIdPrefix() + '-entry-' + row.entryId + '-icon'"
+        />
+      </span>
+      <lib-staff-event-head
+        aria-hidden="true"
+        size="regular"
+        [title]="row.title"
+        [lines]="row.lines"
+        [struck]="row.struck"
+      />
+      @if (row.amount; as amount) {
+      <!-- The signed amount over the balance after: the sign is the
+           direction, the ink is one ink. -->
+      <span uiTrailing class="activity-list__trailing" aria-hidden="true">
+        <span
+          uiText
+          uiFont="callout"
+          uiWeight="semibold"
+          class="activity-list__amount"
+          >{{ amount }}</span
+        >
+        @if (row.balanceAfter; as balance) {
+        <span
+          uiText
+          uiFont="caption"
+          uiForegroundStyle="secondary"
+          class="activity-list__balance"
+          >{{ balance }}</span
+        >
+        }
+      </span>
+      }
+      <span uiVisuallyHidden>{{ row.accessibleName }}</span>
+    </li>
+    }
+  </ul>
+</section>
+}

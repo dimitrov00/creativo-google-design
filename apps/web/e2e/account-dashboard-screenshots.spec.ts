@@ -1,37 +1,20 @@
 import { expect, test, type Page } from '@playwright/test';
-import { mintCustomToken } from './support/mint-custom-token';
+import { expectNoAxeViolations } from './support/axe';
 import {
   seedUpcomingAppointment,
   seedUserProfile,
 } from './support/seed-firestore';
-
-declare global {
-  interface Window {
-    __e2eSignIn?: (customToken: string) => Promise<void>;
-  }
-}
-
-const THEMES = ['light', 'dark'] as const;
+import { signInAs } from './support/sign-in';
+import { THEMES, pinTheme, type Theme } from './support/theme';
 
 async function gotoAccountWithTheme(
   page: Page,
   uid: string,
-  theme: (typeof THEMES)[number],
+  theme: Theme,
 ): Promise<void> {
-  const token = await mintCustomToken(uid, {
-    stage: 'active',
-    roles: ['client'],
-  });
-  await page.addInitScript((t) => {
-    window.localStorage.setItem('ui-theme', t);
-  }, theme);
+  await pinTheme(page, theme);
   await page.emulateMedia({ reducedMotion: 'reduce' });
-  await page.goto('/');
-  await page.waitForFunction(() => typeof window.__e2eSignIn === 'function');
-  await page.evaluate(
-    (customToken) => window.__e2eSignIn?.(customToken),
-    token,
-  );
+  await signInAs(page, uid, ['client']);
   await page.goto('/account');
   await expect(page.getByTestId('account-page')).toHaveAttribute(
     'data-state',
@@ -41,8 +24,12 @@ async function gotoAccountWithTheme(
 
 /**
  * Goal 06.3 screenshot baseline (docs/migration/goals/06-feature-slices.md
- * — "Add a Playwright screenshot spec... per screen"). Mirrors
- * `auth-onboarding-screenshots.spec.ts`'s theme-via-init-script pattern.
+ * — "Add a Playwright screenshot spec... per screen"), once per theme
+ * (`support/theme.ts`).
+ *
+ * The profile is three quarters done (birthday in, no photo), so the
+ * completion card and its ring are part of the picture — a complete profile
+ * shows no card at all.
  */
 test.describe('account dashboard — screenshot baseline', () => {
   for (const theme of THEMES) {
@@ -52,13 +39,23 @@ test.describe('account dashboard — screenshot baseline', () => {
       await seedUpcomingAppointment(`appt-${uid}`, uid, '2030-06-01T10:00:00');
 
       await gotoAccountWithTheme(page, uid, theme);
-      await expect(page.getByTestId('account-upcoming')).toHaveAttribute(
-        'data-state',
+      // The next visit's state is the page's (`data-upcoming` on the host,
+      // C1-1); the drawn card is the shared `lib-visit-card`.
+      await expect(page.getByTestId('account-page')).toHaveAttribute(
+        'data-upcoming',
         'populated',
+      );
+      await expect(page.getByTestId('account-upcoming')).toBeVisible();
+      // The ring waits for the photo lookup (a Storage round trip).
+      await expect(page.getByTestId('account-page')).toHaveAttribute(
+        'data-completion',
+        'open',
       );
       await expect(page).toHaveScreenshot(
         `account-dashboard-populated-${theme}.png`,
       );
+      // The same settled state, once per theme: contrast differs.
+      await expectNoAxeViolations(page);
     });
   }
 });

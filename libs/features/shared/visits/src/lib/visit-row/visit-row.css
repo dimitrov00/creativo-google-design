@@ -1,0 +1,70 @@
+/*
+ * THE VISIT ROW — layout only. Every surface, ink and type role is a DS
+ * part's own (`ui-list-row`, `ui-date-tile`, the event head, `ui-avatar`,
+ * `uiText`); these rules only place them. The inks are the DS's too: the
+ * staff's fact keeps its ink through `lib-visit-row-words`, and the marks
+ * and a status glyph ask for theirs with `uiForegroundStyle`. No `font:`
+ * shorthand here, so the app's tabular figures are never reset.
+ *
+ * Nothing fades. An hour that did not happen already says so — the hollow
+ * stamp, the struck title, its status word, the struck amount — so it keeps
+ * the full ink, like the agenda's struck card: never struck AND greyed, and
+ * the stamp's caption and the struck figure stay over the 4.5:1 floor.
+ */
+
+:host {
+  display: block;
+}
+
+/* A waiting request's glyph holds the stamp's square at the list's rung
+   (the tile's 44), so its title lines up with the tiles around it. */
+.visit-row__lead[data-glyph] {
+  inline-size: var(--control-size-regular);
+  block-size: var(--control-size-regular);
+}
+
+/* The words centre on the stamp: title and fact line sit level with the
+   44 tile; the client's quote, a third line, grows the row instead. */
+.visit-row__head {
+  min-block-size: var(--control-size-regular);
+  align-items: center;
+}
+
+/* ── THE TRAILING EDGE ─────────────────────────────────────────────────
+   One thing, and the marks under it, flush to the edge. */
+.visit-row__trailing {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--sys-space-tight);
+}
+
+/* THE FACE'S COLUMN (a staff row, revision 3 §2.5): 48 from the text to
+   the row's trailing padding, held on every visit of the list whether a
+   face stands in it or not (a visit cut by several draws none). So the
+   text column is one width down the list, the facts that end its second
+   line end on ONE vertical line, and the amounts read as a column. The
+   column is the face's own 36 and 12 of air before it: the DS row's gap
+   is 16, and a tight step of it is given back to the words, which carry
+   more on a staff row than on a client's. The DS row centres the face on
+   the row, however many lines the title takes. */
+.visit-row__face {
+  box-sizing: border-box;
+  inline-size: var(--control-size-small);
+  min-block-size: var(--control-size-small);
+  margin-inline-start: calc(-1 * var(--sys-space-tight));
+  align-items: center;
+  justify-content: center;
+}
+
+.visit-row__marks {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sys-space-compact);
+}
+
+.visit-row__mark {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sys-space-tight);
+}

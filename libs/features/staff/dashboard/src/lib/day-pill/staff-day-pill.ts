@@ -105,12 +105,20 @@ function noonOf(dayKey: string): Date {
  * `uiPresented` is a model: the owner may close it when another popover
  * opens (the page's one-at-a-time rule) and hears when the pill opens
  * itself. Picking a day closes it.
+ *
+ * The popover is a DIALOG, not a menu (2026-10-06): a month has no
+ * menuitems, and announced as `role="menu"` it was an empty menu to a
+ * reader (axe `aria-required-children`, critical, on every run). The DS's
+ * `uiRole="dialog"` names the surface after the pill's own label, moves
+ * focus onto it as a container, leaves the arrow keys to the month, and
+ * still closes on Escape with focus handed back to the pill.
  */
 @Component({
   selector: 'lib-staff-day-pill',
   imports: [UiButton, UiIcon, UiMenu, UiMenuTrigger, UiMonthPicker],
   template: `
     <ui-menu
+      uiRole="dialog"
       [uiAlignment]="uiAlignment()"
       [uiPresented]="uiPresented()"
       [uiLabel]="label()"

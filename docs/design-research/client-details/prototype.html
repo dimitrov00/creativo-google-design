@@ -1,0 +1,3657 @@
+<!doctype html>
+<html lang="bg">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width,initial-scale=1,viewport-fit=cover"
+    />
+  </head>
+  <body>
+    <title>Creativo Client Card</title>
+    <meta
+      name="description"
+      content="Interactive prototype of the redesigned client details: visit-sheet page, profile route and support toolkit."
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=Geist+Mono:wght@400;500&family=Onest:wght@500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      /* ───────────── Page chrome (follows the viewer's theme) ───────────── */
+      :root {
+        --page-bg: #eceef1;
+        --page-ink: #16181c;
+        --page-muted: #5b616a;
+        --page-line: rgba(22, 24, 28, 0.12);
+        --page-card: #f8f9fa;
+        --page-field: rgba(22, 24, 28, 0.05);
+        --page-accent: #b04100;
+        --page-accent-fill: #f26b22;
+        --page-on-accent: #ffffff;
+        --page-focus: #16181c;
+        color-scheme: light;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root:not([data-theme='light']) {
+          --page-bg: #0b0c0e;
+          --page-ink: #e7e8ea;
+          --page-muted: #9aa0a8;
+          --page-line: rgba(231, 232, 234, 0.12);
+          --page-card: #141619;
+          --page-field: rgba(231, 232, 234, 0.07);
+          --page-accent: #f58a4f;
+          --page-accent-fill: #f26b22;
+          --page-on-accent: #ffffff;
+          --page-focus: #e7e8ea;
+          color-scheme: dark;
+        }
+      }
+      :root[data-theme='dark'] {
+        --page-bg: #0b0c0e;
+        --page-ink: #e7e8ea;
+        --page-muted: #9aa0a8;
+        --page-line: rgba(231, 232, 234, 0.12);
+        --page-card: #141619;
+        --page-field: rgba(231, 232, 234, 0.07);
+        --page-accent: #f58a4f;
+        --page-accent-fill: #f26b22;
+        --page-on-accent: #ffffff;
+        --page-focus: #e7e8ea;
+        color-scheme: dark;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+      }
+      body {
+        background: var(--page-bg);
+        color: var(--page-ink);
+        font:
+          400 0.9375rem/1.5 'DM Sans',
+          'Onest',
+          system-ui,
+          -apple-system,
+          'Segoe UI',
+          sans-serif;
+        font-variant-numeric: tabular-nums;
+        padding-inline: 16px;
+        padding-block: 20px 40px;
+      }
+      .page {
+        max-width: 1380px;
+        margin-inline: auto;
+        display: grid;
+        gap: 18px;
+      }
+      .intro {
+        display: grid;
+        gap: 6px;
+        max-width: 72ch;
+      }
+      .intro h1 {
+        font:
+          800 clamp(1.6rem, 3.4vw, 2.25rem)/1 'Onest',
+          system-ui,
+          sans-serif;
+        letter-spacing: -0.03em;
+        margin: 0;
+        text-wrap: balance;
+      }
+      .intro p {
+        margin: 0;
+        color: var(--page-muted);
+      }
+      .intro .tag {
+        font:
+          500 0.6875rem/1.3 'Geist Mono',
+          ui-monospace,
+          monospace;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--page-accent);
+      }
+
+      .controls {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px 18px;
+        align-items: end;
+        padding: 12px 14px;
+        border-radius: 14px;
+        background: var(--page-card);
+        border: 1px solid var(--page-line);
+      }
+      .ctl {
+        display: grid;
+        gap: 4px;
+        min-width: 0;
+      }
+      .ctl label,
+      .ctl .lbl {
+        font:
+          500 0.6875rem/1.2 'Geist Mono',
+          ui-monospace,
+          monospace;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--page-muted);
+      }
+      .ctl select {
+        font:
+          500 0.875rem/1.2 'DM Sans',
+          system-ui,
+          sans-serif;
+        color: var(--page-ink);
+        background: var(--page-field);
+        border: 1px solid var(--page-line);
+        border-radius: 10px;
+        padding: 8px 30px 8px 10px;
+        min-height: 38px;
+        max-width: 100%;
+      }
+      .seg {
+        display: inline-flex;
+        background: var(--page-field);
+        border-radius: 999px;
+        padding: 3px;
+        gap: 2px;
+        border: 1px solid var(--page-line);
+      }
+      .seg button {
+        font:
+          500 0.8125rem/1 'DM Sans',
+          system-ui,
+          sans-serif;
+        color: var(--page-muted);
+        background: transparent;
+        border: 0;
+        border-radius: 999px;
+        padding: 9px 12px;
+        min-height: 34px;
+        cursor: pointer;
+      }
+      .seg button[aria-pressed='true'] {
+        background: var(--page-ink);
+        color: var(--page-bg);
+      }
+      .controls :focus-visible,
+      .notes :focus-visible {
+        outline: 2px solid var(--page-focus);
+        outline-offset: 2px;
+      }
+
+      .stage {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        gap: 18px;
+        align-items: start;
+      }
+      @media (min-width: 1000px) {
+        .stage {
+          grid-template-columns: minmax(0, auto) minmax(280px, 380px);
+        }
+      }
+      .canvas {
+        display: grid;
+        justify-items: center;
+        min-width: 0;
+      }
+      .notes {
+        display: grid;
+        gap: 10px;
+        padding: 14px 16px;
+        border-radius: 14px;
+        background: var(--page-card);
+        border: 1px solid var(--page-line);
+        align-content: start;
+      }
+      .notes h2 {
+        font:
+          700 1.0625rem/1.2 'Onest',
+          system-ui,
+          sans-serif;
+        margin: 0;
+        letter-spacing: -0.01em;
+      }
+      .notes ol {
+        margin: 0;
+        padding-inline-start: 1.2em;
+        display: grid;
+        gap: 8px;
+      }
+      .notes li {
+        color: var(--page-ink);
+        font-size: 0.875rem;
+        line-height: 1.45;
+      }
+      .notes li b {
+        font-weight: 600;
+      }
+      .notes .src {
+        font:
+          400 0.75rem/1.4 'Geist Mono',
+          ui-monospace,
+          monospace;
+        color: var(--page-muted);
+      }
+      .notes .legend {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+      .notes .chip {
+        font:
+          500 0.6875rem/1 'Geist Mono',
+          ui-monospace,
+          monospace;
+        padding: 5px 8px;
+        border-radius: 999px;
+        background: var(--page-field);
+        color: var(--page-muted);
+      }
+
+      /* ───────────── The app (house tokens, its own theme toggle; dark by default like the app) ───────────── */
+      .app {
+        --bg: #ffffff;
+        --fg: #121212;
+        --surface: #ffffff;
+        --surface-2: #f7f7f7;
+        --surface-elev: #ffffff;
+        --label-2: #666666;
+        --label-3: #999999;
+        --accent: #f26b22;
+        --accent-ink: #b04100;
+        --on-accent: #ffffff;
+        --success: #1f8a5f;
+        --warning: #b26a00;
+        --on-warning: #000000;
+        --destructive: #c62828;
+        --destructive-ink: #c62828;
+        --fill: rgba(18, 18, 18, 0.04);
+        --fill-hover: rgba(18, 18, 18, 0.065);
+        --press: rgba(18, 18, 18, 0.09);
+        --seg: rgba(18, 18, 18, 0.14);
+        --separator: rgba(18, 18, 18, 0.06);
+        --primary: #121212;
+        --on-primary: #ffffff;
+        --scrim: rgba(0, 0, 0, 0.45);
+        --material: rgba(255, 255, 255, 0.92);
+        --ring: #121212;
+        --shadow: 0 1px 2px rgba(0, 0, 0, 0.06), 0 8px 24px rgba(0, 0, 0, 0.08);
+        --t-tone-0: #2f7bf6;
+        --t-tone-1: #34a853;
+        --t-tone-2: #8e5bd8;
+        --r-subtle: 5px;
+        --r-regular: 10px;
+        --r-prominent: 18px;
+        --r-hero: 27px;
+        --sp-tight: 4px;
+        --sp-compact: 8px;
+        --sp-regular: 16px;
+        --sp-comfortable: 24px;
+        --sp-loose: 32px;
+        --c-small: 36px;
+        --c-regular: 44px;
+        --c-large: 52px;
+        --f-display: 'Onest', system-ui, sans-serif;
+        --f-text: 'DM Sans', 'Onest', system-ui, sans-serif;
+        --f-mono: 'Geist Mono', ui-monospace, monospace;
+        --d-instant: 150ms;
+        --d-regular: 200ms;
+        --d-deliberate: 300ms;
+        --e-standard: cubic-bezier(0.4, 0, 0.2, 1);
+        --e-emph: cubic-bezier(0.22, 1, 0.36, 1);
+        color: var(--fg);
+        background: var(--bg);
+        font: 400 0.9375rem/1.5 var(--f-text);
+        font-variant-numeric: tabular-nums;
+        color-scheme: light;
+      }
+      .app[data-app-theme='dark'] {
+        --bg: #000000;
+        --fg: #ededed;
+        --surface: #171717;
+        --surface-2: #242424;
+        --surface-elev: #222222;
+        --label-2: #8c8c8c;
+        --label-3: #6b6b6b;
+        --accent: #f26b22;
+        --accent-ink: #fb7735;
+        --on-accent: #ffffff;
+        --success: #3fa56e;
+        --warning: #d08a2c;
+        --on-warning: #1a1a1a;
+        --destructive: #d32f2f;
+        --destructive-ink: #f4796f;
+        --fill: rgba(237, 237, 237, 0.08);
+        --fill-hover: rgba(237, 237, 237, 0.12);
+        --press: rgba(237, 237, 237, 0.16);
+        --seg: rgba(237, 237, 237, 0.2);
+        --separator: rgba(237, 237, 237, 0.12);
+        --primary: #ededed;
+        --on-primary: #000000;
+        --scrim: rgba(0, 0, 0, 0.6);
+        --material: rgba(34, 34, 34, 0.94);
+        --ring: #ededed;
+        --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 8px 24px rgba(0, 0, 0, 0.5);
+        color-scheme: dark;
+      }
+
+      /* Device frames */
+      .phone {
+        width: min(390px, 100%);
+        height: 800px;
+        border-radius: 44px;
+        overflow: hidden;
+        position: relative;
+        box-shadow:
+          0 0 0 10px #1b1c1f,
+          0 0 0 11px #2b2d31,
+          0 30px 60px rgba(0, 0, 0, 0.35);
+        margin-block: 11px;
+      }
+      .desk-wrap {
+        width: 100%;
+        overflow: hidden;
+        border-radius: 16px;
+        box-shadow:
+          0 0 0 1px var(--page-line),
+          0 30px 60px rgba(0, 0, 0, 0.25);
+      }
+      .desk {
+        width: 1200px;
+        height: 760px;
+        position: relative;
+        overflow: hidden;
+        transform-origin: top left;
+      }
+
+      /* Behind the sheet: a glimpse of the schedule */
+      .behind {
+        position: absolute;
+        inset: 0;
+        padding: 18px 16px;
+        background: var(--bg);
+      }
+      .behind .bh-title {
+        font: 800 1.75rem/1.1 var(--f-display);
+        letter-spacing: -0.03em;
+      }
+      .behind .bh-row {
+        height: 54px;
+        border-radius: 12px;
+        background: var(--surface-2);
+        margin-top: 10px;
+      }
+      .scrim {
+        position: absolute;
+        inset: 0;
+        background: var(--scrim);
+      }
+
+      /* Sheet surface */
+      .sheet {
+        position: absolute;
+        inset: 14px 0 0 0;
+        background: var(--surface);
+        border-radius: var(--r-prominent) var(--r-prominent) 0 0;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+      }
+      .sheet.route {
+        inset: 0;
+        border-radius: 0;
+        background: var(--bg);
+      }
+      .bar {
+        display: grid;
+        grid-template-columns: 44px 1fr 44px;
+        align-items: center;
+        gap: 8px;
+        padding: 10px 16px 6px;
+        min-height: 60px;
+        position: relative;
+        z-index: 2;
+      }
+      .bar .ttl {
+        text-align: center;
+        font: 600 1.0625rem/1.2 var(--f-display);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        opacity: 0;
+        transition: opacity var(--d-regular) var(--e-standard);
+      }
+      .bar .ttl.on {
+        opacity: 1;
+      }
+      .grabber {
+        position: absolute;
+        top: 5px;
+        left: 50%;
+        width: 36px;
+        height: 5px;
+        border-radius: 3px;
+        background: color-mix(in srgb, var(--fg) 28%, transparent);
+        transform: translateX(-50%);
+      }
+      .ib {
+        width: 44px;
+        height: 44px;
+        border-radius: 50%;
+        display: inline-grid;
+        place-items: center;
+        border: 0;
+        cursor: pointer;
+        background: var(--fill);
+        color: var(--fg);
+        position: relative;
+        font-size: 20px;
+      }
+      .ib .ic {
+        width: 20px;
+        height: 20px;
+      }
+      .body {
+        flex: 1;
+        overflow-y: auto;
+        overflow-x: hidden;
+        padding: 4px 16px 120px;
+        scroll-behavior: smooth;
+      }
+      .body::-webkit-scrollbar {
+        width: 0;
+      }
+      .stack {
+        display: grid;
+        gap: var(--sp-regular);
+      }
+
+      .ic {
+        width: 1em;
+        height: 1em;
+        fill: currentColor;
+        flex: none;
+        display: inline-block;
+        vertical-align: -0.14em;
+      }
+
+      /* Headline with media slot */
+      .head {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr);
+        gap: 12px;
+        align-items: center;
+        padding-top: 2px;
+      }
+      .head.no-media {
+        grid-template-columns: minmax(0, 1fr);
+      }
+      .av {
+        width: 52px;
+        height: 52px;
+        border-radius: 50%;
+        display: grid;
+        place-items: center;
+        flex: none;
+        background: color-mix(in srgb, var(--t-tone-0) 22%, var(--surface-2));
+        color: var(--fg);
+        font: 600 1.05rem/1 var(--f-display);
+        letter-spacing: 0.02em;
+        position: relative;
+      }
+      .av.sm {
+        width: 32px;
+        height: 32px;
+        font-size: 0.75rem;
+      }
+      .av.xs {
+        width: 28px;
+        height: 28px;
+        font-size: 0.6875rem;
+      }
+      .av.paused {
+        box-shadow:
+          0 0 0 2px var(--surface),
+          0 0 0 4px var(--warning);
+      }
+      .av.guest {
+        background: var(--fill);
+        color: var(--label-2);
+      }
+      .h-title {
+        font: 800 2.25rem/0.98 var(--f-display);
+        letter-spacing: -0.075rem;
+        margin: 0;
+        text-wrap: balance;
+        overflow-wrap: anywhere;
+      }
+      .h-title.long {
+        font-size: 1.75rem;
+        letter-spacing: -0.04rem;
+      }
+      .h-sub {
+        margin: 6px 0 0;
+        font: 500 0.8125rem/1.4 var(--f-text);
+        color: var(--label-2);
+      }
+      .h-sub.warn {
+        color: var(--warning);
+      }
+
+      /* Notice */
+      .notice {
+        border-radius: var(--r-prominent);
+        padding: 12px 14px;
+        display: grid;
+        gap: 8px;
+        background: var(--surface-2);
+      }
+      .notice.warning {
+        background: color-mix(in srgb, var(--warning) 13%, var(--surface-2));
+      }
+      .notice.accent {
+        background: color-mix(in srgb, var(--accent) 12%, var(--surface-2));
+      }
+      .notice.neutral {
+        background: var(--surface-2);
+      }
+      .notice .n-top {
+        display: grid;
+        grid-template-columns: auto 1fr;
+        gap: 10px;
+        align-items: start;
+      }
+      .notice .n-ic {
+        font-size: 20px;
+        line-height: 1;
+        padding-top: 1px;
+      }
+      .notice.warning .n-ic {
+        color: var(--warning);
+      }
+      .notice.accent .n-ic {
+        color: var(--accent-ink);
+      }
+      .notice .n-title {
+        font: 600 0.9375rem/1.3 var(--f-text);
+        margin: 0;
+      }
+      .notice .n-facts {
+        display: grid;
+        gap: 2px;
+        margin: 0;
+        font: 400 0.8125rem/1.4 var(--f-mono);
+        color: var(--label-2);
+      }
+      .notice .n-cap {
+        margin: 0;
+        font: 500 0.75rem/1.35 var(--f-text);
+        color: var(--label-2);
+      }
+      .notice .n-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+      .pin {
+        display: grid;
+        grid-template-columns: auto 1fr;
+        gap: 10px;
+        align-items: center;
+        padding: 10px 14px;
+        border-radius: var(--r-prominent);
+        background: var(--surface-2);
+        font: 500 0.875rem/1.35 var(--f-text);
+      }
+      .pin .ic {
+        font-size: 18px;
+        color: var(--label-2);
+      }
+
+      /* Buttons */
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        border: 0;
+        cursor: pointer;
+        height: var(--c-regular);
+        padding: 0 16px;
+        border-radius: 999px;
+        font: 600 0.875rem/1 var(--f-text);
+        background: var(--fill);
+        color: var(--fg);
+        white-space: nowrap;
+        position: relative;
+      }
+      .btn.sm {
+        height: var(--c-small);
+        padding: 0 14px;
+        font-size: 0.8125rem;
+      }
+      .btn.lg {
+        height: var(--c-large);
+        padding: 0 20px;
+        font-size: 0.9375rem;
+      }
+      .btn.prom {
+        background: var(--primary);
+        color: var(--on-primary);
+      }
+      .btn.accent {
+        background: var(--accent);
+        color: var(--on-accent);
+      }
+      .btn.dest {
+        color: var(--destructive-ink);
+      }
+      .btn.icon {
+        width: var(--c-large);
+        padding: 0;
+      }
+      .btn.icon.reg {
+        width: var(--c-regular);
+        height: var(--c-regular);
+      }
+      .btn .ic {
+        font-size: 20px;
+      }
+      .btn[data-loading='true'] {
+        color: transparent;
+      }
+      .btn[data-loading='true']::after {
+        content: '';
+        position: absolute;
+        width: 18px;
+        height: 18px;
+        border-radius: 50%;
+        border: 2px solid currentColor;
+        border-color: var(--on-primary) transparent var(--on-primary)
+          transparent;
+        animation: spin 0.8s linear infinite;
+      }
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+
+      /* Interactive state layer (uiInteractive) with an ungated :active mirror */
+      [data-int] {
+        position: relative;
+        cursor: pointer;
+      }
+      [data-int]::after {
+        content: '';
+        position: absolute;
+        inset: 0;
+        border-radius: inherit;
+        background: currentColor;
+        opacity: 0;
+        transition: opacity var(--d-instant) var(--e-standard);
+        pointer-events: none;
+      }
+      @media (hover: hover) {
+        [data-int]:hover::after {
+          opacity: 0.06;
+        }
+      }
+      [data-int]:active::after {
+        opacity: 0.1;
+      }
+      .app :focus-visible {
+        outline: 2px solid var(--ring);
+        outline-offset: 2px;
+      }
+
+      /* Capsules */
+      .caps {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
+      .cap {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        height: 26px;
+        padding: 0 10px;
+        border-radius: 999px;
+        font: 500 0.75rem/1 var(--f-text);
+        background: var(--fill);
+        color: var(--fg);
+        white-space: nowrap;
+      }
+      .cap .ic {
+        font-size: 14px;
+      }
+      .cap.accent {
+        background: color-mix(in srgb, var(--accent) 16%, transparent);
+        color: var(--accent-ink);
+      }
+      .cap.warning {
+        background: color-mix(in srgb, var(--warning) 16%, transparent);
+        color: var(--warning);
+      }
+      .cap.success {
+        background: color-mix(in srgb, var(--success) 16%, transparent);
+        color: var(--success);
+      }
+
+      /* Quick actions */
+      .qa {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 8px;
+        list-style: none;
+        margin: 0;
+        padding: 0;
+      }
+      .qa a,
+      .qa button {
+        display: grid;
+        justify-items: center;
+        gap: 6px;
+        text-decoration: none;
+        color: var(--fg);
+        background: none;
+        border: 0;
+        padding: 0;
+        font: 500 0.75rem/1.2 var(--f-text);
+        cursor: pointer;
+        border-radius: 14px;
+      }
+      .qa .qa-c {
+        width: 48px;
+        height: 48px;
+        border-radius: 50%;
+        display: grid;
+        place-items: center;
+        background: var(--fill);
+        font-size: 20px;
+      }
+      .qa .qa-c.accent {
+        background: color-mix(in srgb, var(--accent) 16%, transparent);
+        color: var(--accent-ink);
+      }
+
+      /* List groups (segmented runs) */
+      .group {
+        display: grid;
+        gap: 2px;
+        list-style: none;
+        margin: 0;
+        padding: 0;
+      }
+      .group > * {
+        background: var(--surface-2);
+        border-radius: var(--r-subtle);
+      }
+      .group > :first-child {
+        border-top-left-radius: var(--r-prominent);
+        border-top-right-radius: var(--r-prominent);
+      }
+      .group > :last-child {
+        border-bottom-left-radius: var(--r-prominent);
+        border-bottom-right-radius: var(--r-prominent);
+      }
+      .route .group > * {
+        background: var(--surface-2);
+      }
+      .row {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr) auto;
+        align-items: center;
+        gap: 12px;
+        min-height: var(--c-large);
+        padding: 8px 16px;
+        width: 100%;
+        text-align: start;
+        color: inherit;
+        border: 0;
+        background: inherit;
+        font: inherit;
+        border-radius: inherit;
+      }
+      .row.noleading {
+        grid-template-columns: minmax(0, 1fr) auto;
+      }
+      .row .lead {
+        font-size: 20px;
+        color: var(--label-2);
+        display: grid;
+        place-items: center;
+      }
+      .row .lead.accent {
+        color: var(--accent-ink);
+      }
+      .row .lead.warn {
+        color: var(--warning);
+      }
+      .row .lbl {
+        font: 400 0.9375rem/1.3 var(--f-text);
+        min-width: 0;
+      }
+      .row .lbl .sub {
+        display: block;
+        font: 400 0.8125rem/1.35 var(--f-mono);
+        color: var(--label-2);
+        margin-top: 2px;
+      }
+      .row .trail {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        color: var(--label-2);
+        font: 400 0.9375rem/1.2 var(--f-text);
+        white-space: nowrap;
+      }
+      .row .trail .ic {
+        font-size: 16px;
+        color: var(--label-3);
+      }
+      .row.dest .lbl {
+        color: var(--destructive-ink);
+      }
+      .row.accentrow .lbl {
+        color: var(--accent-ink);
+        font-weight: 600;
+      }
+      .row.tall {
+        min-height: 60px;
+      }
+      .row.stacked {
+        grid-template-columns: minmax(0, 1fr);
+        display: grid;
+        gap: 10px;
+        padding: 14px 16px;
+      }
+      .row.selected {
+        background: color-mix(in srgb, var(--accent) 14%, var(--surface-2));
+      }
+
+      /* Metrics (ui-metric) */
+      .metrics {
+        display: grid;
+        grid-template-columns: auto auto auto;
+        justify-content: space-between;
+        gap: 12px;
+        width: 100%;
+      }
+      .metric {
+        display: grid;
+        gap: 3px;
+        min-width: 0;
+      }
+      .metric .m-val {
+        font: 700 1.375rem/1 var(--f-display);
+        letter-spacing: -0.02em;
+        display: inline-flex;
+        align-items: baseline;
+        gap: 4px;
+      }
+      .metric .m-val .unit {
+        font: 500 0.8125rem/1 var(--f-text);
+        color: var(--label-2);
+        letter-spacing: 0;
+      }
+      .metric .m-val .ic {
+        font-size: 16px;
+        color: var(--accent-ink);
+        align-self: center;
+      }
+      .metric .m-lbl {
+        font: 500 0.75rem/1.2 var(--f-text);
+        color: var(--label-2);
+      }
+      .eng {
+        display: grid;
+        gap: 10px;
+        padding: 14px 16px;
+      }
+      .eng .eng-top {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        align-items: center;
+        gap: 8px;
+      }
+      .eng .eng-line {
+        font: 500 0.8125rem/1.35 var(--f-text);
+        color: var(--label-2);
+      }
+      .eng .eng-line b {
+        color: var(--fg);
+        font-weight: 600;
+      }
+      .eng.frozen .metrics {
+        opacity: 0.55;
+      }
+
+      /* Punch card (discrete meter) */
+      .punch {
+        display: flex;
+        gap: 3px;
+        align-items: center;
+        margin-top: 3px;
+      }
+      .punch i {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: var(--seg);
+        display: block;
+      }
+      .punch i.on {
+        background: var(--accent);
+      }
+      .punch i.gift {
+        width: 11px;
+        height: 11px;
+        border-radius: 3px;
+        background: transparent;
+        box-shadow: inset 0 0 0 1.5px var(--accent);
+      }
+      .punch.lg i {
+        width: 22px;
+        height: 22px;
+      }
+      .punch.lg i.gift {
+        width: 26px;
+        height: 26px;
+        border-radius: 8px;
+        display: grid;
+        place-items: center;
+        color: var(--accent-ink);
+        font-size: 16px;
+      }
+      .punch.lg {
+        gap: 7px;
+        flex-wrap: wrap;
+      }
+
+      /* Streak track */
+      .streak {
+        display: flex;
+        gap: 6px;
+        align-items: flex-end;
+      }
+      .streak .mk {
+        display: grid;
+        justify-items: center;
+        gap: 4px;
+        font: 500 0.625rem/1 var(--f-mono);
+        color: var(--label-3);
+      }
+      .streak .dot {
+        width: 26px;
+        height: 26px;
+        border-radius: 50%;
+        display: grid;
+        place-items: center;
+        font-size: 15px;
+      }
+      .streak .kept {
+        background: var(--accent);
+        color: var(--on-accent);
+      }
+      .streak .frozen {
+        background: color-mix(in srgb, var(--t-tone-0) 20%, transparent);
+        color: var(--t-tone-0);
+      }
+      .streak .missed {
+        box-shadow: inset 0 0 0 1.5px var(--seg);
+        color: var(--label-3);
+      }
+      .streak .current {
+        box-shadow: inset 0 0 0 2px var(--accent);
+        color: var(--accent-ink);
+      }
+
+      /* Gauge (meter) */
+      .gauge {
+        display: grid;
+        gap: 6px;
+      }
+      .gauge .g-track {
+        height: 8px;
+        border-radius: 999px;
+        background: var(--seg);
+        position: relative;
+        overflow: hidden;
+      }
+      .gauge .g-fill {
+        position: absolute;
+        inset: 0 auto 0 0;
+        border-radius: inherit;
+        background: var(--accent);
+      }
+      .gauge .g-ends {
+        display: flex;
+        justify-content: space-between;
+        font: 500 0.75rem/1.2 var(--f-text);
+        color: var(--label-2);
+      }
+
+      /* Medals */
+      .medals {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 14px 8px;
+      }
+      .medal {
+        display: grid;
+        justify-items: center;
+        gap: 6px;
+        text-align: center;
+        background: none;
+        border: 0;
+        color: inherit;
+        font: inherit;
+        padding: 6px 2px;
+        border-radius: 14px;
+      }
+      .medal .md {
+        width: 64px;
+        height: 64px;
+        border-radius: 50%;
+        display: grid;
+        place-items: center;
+        font-size: 28px;
+        position: relative;
+      }
+      .medal.earned .md {
+        background: radial-gradient(
+          circle at 35% 30%,
+          color-mix(in srgb, var(--accent) 55%, #fff) 0 18%,
+          var(--accent) 60%
+        );
+        color: #fff;
+        box-shadow: inset 0 -3px 0 rgba(0, 0, 0, 0.18);
+      }
+      .medal.progress .md,
+      .medal.locked .md {
+        background: transparent;
+        box-shadow: inset 0 0 0 2px var(--seg);
+        color: var(--label-3);
+      }
+      .medal.progress .md::before {
+        content: '';
+        position: absolute;
+        inset: 0;
+        border-radius: 50%;
+        background: conic-gradient(
+          var(--accent) calc(var(--p) * 1%),
+          transparent 0
+        );
+        -webkit-mask: radial-gradient(circle, transparent 29px, #000 30px);
+        mask: radial-gradient(circle, transparent 29px, #000 30px);
+      }
+      .medal .mn {
+        font: 600 0.75rem/1.25 var(--f-text);
+      }
+      .medal .mf {
+        font: 400 0.6875rem/1.2 var(--f-mono);
+        color: var(--label-2);
+      }
+      .medal .new {
+        position: absolute;
+        top: -2px;
+        right: -6px;
+        font: 600 0.625rem/1 var(--f-text);
+        background: var(--accent);
+        color: var(--on-accent);
+        padding: 3px 5px;
+        border-radius: 999px;
+      }
+
+      /* Ticket (coupon card, simplified) */
+      .ticket {
+        display: grid;
+        grid-template-columns: auto 1fr auto;
+        gap: 12px;
+        align-items: center;
+        padding: 12px 14px;
+        border-radius: var(--r-prominent);
+        background: var(--surface-2);
+      }
+      .ticket .tg {
+        width: 40px;
+        height: 40px;
+        border-radius: 12px;
+        display: grid;
+        place-items: center;
+        background: color-mix(in srgb, var(--accent) 16%, transparent);
+        color: var(--accent-ink);
+        font-size: 20px;
+      }
+      .ticket .tt {
+        font: 600 0.9375rem/1.25 var(--f-text);
+      }
+      .ticket .ts {
+        font: 400 0.8125rem/1.3 var(--f-mono);
+        color: var(--label-2);
+      }
+      .ticket.locked .tg {
+        background: var(--fill);
+        color: var(--label-2);
+      }
+      .ticket.sel {
+        background: color-mix(in srgb, var(--accent) 14%, var(--surface-2));
+      }
+
+      /* Ledger rows */
+      .amt {
+        font: 500 0.9375rem/1 var(--f-mono);
+      }
+      .amt.plus {
+        color: var(--success);
+      }
+      .amt.minus {
+        color: var(--fg);
+      }
+      .amt.struck {
+        text-decoration: line-through;
+        color: var(--label-3);
+      }
+      .bal {
+        font: 400 0.6875rem/1 var(--f-mono);
+        color: var(--label-3);
+        display: block;
+        text-align: end;
+        margin-top: 4px;
+      }
+      .pending-tag {
+        font: 500 0.6875rem/1 var(--f-text);
+        color: var(--warning);
+      }
+
+      /* Event head */
+      .ev {
+        display: grid;
+        gap: 2px;
+        min-width: 0;
+      }
+      .ev .ev-t {
+        font: 600 0.9375rem/1.3 var(--f-text);
+      }
+      .ev .ev-t.struck {
+        text-decoration: line-through;
+        color: var(--label-2);
+      }
+      .ev .ev-l {
+        font: 400 0.8125rem/1.3 var(--f-mono);
+        color: var(--label-2);
+        display: flex;
+        gap: 6px;
+        align-items: center;
+      }
+      .ev .ev-l .ic {
+        font-size: 14px;
+      }
+
+      /* Counters */
+      .counters {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 2px;
+      }
+      .counters > div {
+        background: var(--surface-2);
+        padding: 12px 14px;
+        display: grid;
+        gap: 2px;
+      }
+      .counters > div:first-child {
+        border-radius: var(--r-prominent) var(--r-subtle) var(--r-subtle)
+          var(--r-prominent);
+      }
+      .counters > div:last-child {
+        border-radius: var(--r-subtle) var(--r-prominent) var(--r-prominent)
+          var(--r-subtle);
+      }
+      .counters .cv {
+        font: 700 1.25rem/1 var(--f-display);
+      }
+      .counters .cl {
+        font: 500 0.75rem/1.2 var(--f-text);
+        color: var(--label-2);
+      }
+
+      /* Photos */
+      .photos {
+        display: flex;
+        gap: 8px;
+        overflow-x: auto;
+        padding-bottom: 2px;
+        scrollbar-width: none;
+      }
+      .photo {
+        flex: none;
+        width: 84px;
+        display: grid;
+        gap: 4px;
+      }
+      .photo .pimg {
+        width: 84px;
+        height: 104px;
+        border-radius: 12px;
+        background: linear-gradient(
+          160deg,
+          color-mix(in srgb, var(--fg) 22%, var(--surface-2)),
+          color-mix(in srgb, var(--fg) 6%, var(--surface-2))
+        );
+        position: relative;
+        overflow: hidden;
+      }
+      .photo .pimg::after {
+        content: '';
+        position: absolute;
+        left: 50%;
+        top: 22%;
+        width: 44%;
+        height: 44%;
+        transform: translateX(-50%);
+        border-radius: 50% 50% 46% 46%;
+        background: color-mix(in srgb, var(--fg) 30%, transparent);
+      }
+      .photo .pc {
+        font: 400 0.6875rem/1 var(--f-mono);
+        color: var(--label-2);
+      }
+
+      /* Headline for sub-pages / section heads */
+      .pg-title {
+        font: 800 2.25rem/0.98 var(--f-display);
+        letter-spacing: -0.075rem;
+        margin: 0;
+      }
+      .pg-sub {
+        margin: 6px 0 0;
+        font: 500 0.8125rem/1.4 var(--f-text);
+        color: var(--label-2);
+      }
+
+      /* Dock */
+      .dock {
+        position: absolute;
+        left: 16px;
+        right: 16px;
+        bottom: 18px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        z-index: 5;
+        pointer-events: none;
+      }
+      .dock > * {
+        pointer-events: auto;
+      }
+      .dock .lead {
+        margin-inline-end: auto;
+        display: grid;
+        gap: 1px;
+        padding: 6px 12px;
+        border-radius: 16px;
+        background: var(--material);
+        backdrop-filter: blur(20px);
+        -webkit-backdrop-filter: blur(20px);
+      }
+      .dock .lead .dl1 {
+        font: 500 0.6875rem/1.2 var(--f-text);
+        color: var(--label-2);
+      }
+      .dock .lead .dl2 {
+        font: 700 1.0625rem/1.1 var(--f-display);
+      }
+      .dock .spacer {
+        margin-inline-end: auto;
+      }
+      .dock::before {
+        content: '';
+        position: absolute;
+        inset: -40px -16px -18px;
+        background: linear-gradient(to top, var(--surface) 30%, transparent);
+        z-index: -1;
+        pointer-events: none;
+      }
+      .sheet.route .dock::before {
+        background: linear-gradient(to top, var(--bg) 30%, transparent);
+      }
+
+      /* Toast */
+      .toast {
+        position: absolute;
+        left: 16px;
+        right: 16px;
+        bottom: 84px;
+        z-index: 8;
+        display: grid;
+        grid-template-columns: 1fr auto auto;
+        align-items: center;
+        gap: 4px;
+        padding: 6px 6px 6px 16px;
+        border-radius: var(--r-prominent);
+        background: var(--material);
+        backdrop-filter: blur(30px);
+        -webkit-backdrop-filter: blur(30px);
+        box-shadow: var(--shadow);
+        font: 500 0.875rem/1.3 var(--f-text);
+        animation: rise var(--d-deliberate) var(--e-emph);
+      }
+      .toast button {
+        background: none;
+        border: 0;
+        color: var(--accent-ink);
+        font: 600 0.875rem/1 var(--f-text);
+        padding: 12px 10px;
+        border-radius: 12px;
+        cursor: pointer;
+      }
+      .toast .x {
+        color: var(--label-2);
+        width: 36px;
+        height: 36px;
+        padding: 0;
+        display: grid;
+        place-items: center;
+      }
+      @keyframes rise {
+        from {
+          transform: translateY(12px);
+          opacity: 0;
+        }
+        to {
+          transform: none;
+          opacity: 1;
+        }
+      }
+
+      /* Alert */
+      .alert-scrim {
+        position: absolute;
+        inset: 0;
+        background: var(--scrim);
+        display: grid;
+        place-items: center;
+        z-index: 20;
+        padding: 24px;
+        animation: fade var(--d-regular) var(--e-standard);
+      }
+      .alert {
+        width: min(20rem, 100%);
+        background: var(--material);
+        backdrop-filter: blur(40px);
+        -webkit-backdrop-filter: blur(40px);
+        border-radius: 20px;
+        overflow: hidden;
+        text-align: center;
+        box-shadow: var(--shadow);
+        animation: pop var(--d-deliberate) var(--e-emph);
+      }
+      .alert .a-body {
+        padding: 18px 18px 14px;
+        display: grid;
+        gap: 6px;
+      }
+      .alert h3 {
+        margin: 0;
+        font: 600 1.0625rem/1.3 var(--f-text);
+      }
+      .alert p {
+        margin: 0;
+        font: 400 0.8125rem/1.4 var(--f-text);
+        color: var(--label-2);
+      }
+      .alert .a-actions {
+        display: grid;
+      }
+      .alert .a-actions.row2 {
+        grid-template-columns: 1fr 1fr;
+      }
+      .alert .a-actions button {
+        height: 52px;
+        border: 0;
+        background: none;
+        color: var(--fg);
+        font: 400 1rem/1 var(--f-text);
+        box-shadow: 0 -1px 0 var(--separator);
+        cursor: pointer;
+      }
+      .alert .a-actions.row2 button + button {
+        box-shadow:
+          0 -1px 0 var(--separator),
+          -1px 0 0 var(--separator);
+      }
+      .alert .a-actions button.pref {
+        font-weight: 600;
+      }
+      .alert .a-actions button.destr {
+        color: var(--destructive-ink);
+      }
+      @keyframes pop {
+        from {
+          transform: scale(1.08);
+          opacity: 0;
+        }
+        to {
+          transform: none;
+          opacity: 1;
+        }
+      }
+      @keyframes fade {
+        from {
+          opacity: 0;
+        }
+      }
+
+      /* Composer sheet (ui-modal-sheet over the route) */
+      .modal-scrim {
+        position: absolute;
+        inset: 0;
+        background: var(--scrim);
+        z-index: 10;
+        animation: fade var(--d-regular) var(--e-standard);
+      }
+      .modal {
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        top: 36px;
+        background: var(--surface);
+        border-radius: var(--r-prominent) var(--r-prominent) 0 0;
+        z-index: 11;
+        display: flex;
+        flex-direction: column;
+        animation: slide var(--d-deliberate) var(--e-emph);
+      }
+      @keyframes slide {
+        from {
+          transform: translateY(40px);
+          opacity: 0.4;
+        }
+        to {
+          transform: none;
+          opacity: 1;
+        }
+      }
+      .desk .modal {
+        left: 50%;
+        top: 50%;
+        bottom: auto;
+        width: 540px;
+        max-height: 680px;
+        transform: translate(-50%, -50%);
+        border-radius: 27px;
+        animation: none;
+        box-shadow: var(--shadow);
+      }
+      .bat {
+        display: grid;
+        grid-template-columns: 1fr 1px 1fr 1px 1fr;
+        align-items: center;
+        padding: 12px 14px;
+        border-radius: var(--r-prominent);
+        background: var(--surface-2);
+        text-align: center;
+      }
+      .bat .bl {
+        font: 500 0.6875rem/1.2 var(--f-text);
+        color: var(--label-2);
+      }
+      .bat .bv {
+        font: 700 1.25rem/1.1 var(--f-display);
+      }
+      .bat .bv.chg {
+        color: var(--success);
+      }
+      .bat .bv.neg {
+        color: var(--fg);
+      }
+      .bat .sep {
+        width: 1px;
+        height: 30px;
+        background: var(--separator);
+      }
+      .amount {
+        display: grid;
+        grid-template-columns: auto 1fr auto;
+        align-items: center;
+        gap: 12px;
+      }
+      .amount .fig {
+        text-align: center;
+        font: 800 2.75rem/1 var(--f-display);
+        letter-spacing: -0.04em;
+        border: 0;
+        background: none;
+        color: var(--fg);
+        width: 100%;
+        outline: none;
+        font-variant-numeric: tabular-nums;
+      }
+      .amount .fig::-webkit-inner-spin-button {
+        display: none;
+      }
+      .amount .unit {
+        font: 500 1rem/1 var(--f-text);
+        color: var(--label-2);
+      }
+      .bounds {
+        text-align: center;
+        font: 500 0.75rem/1.3 var(--f-text);
+        color: var(--label-2);
+        margin: 0;
+      }
+      .field {
+        width: 100%;
+        min-height: 84px;
+        resize: vertical;
+        border: 0;
+        border-radius: var(--r-regular);
+        background: var(--fill);
+        color: var(--fg);
+        font: 400 0.9375rem/1.45 var(--f-text);
+        padding: 10px 12px;
+      }
+      .help {
+        font: 500 0.75rem/1.3 var(--f-text);
+        color: var(--label-2);
+        margin: 4px 2px 0;
+      }
+      .switch {
+        width: 51px;
+        height: 31px;
+        border-radius: 999px;
+        border: 0;
+        background: var(--seg);
+        position: relative;
+        cursor: pointer;
+        flex: none;
+      }
+      .switch::after {
+        content: '';
+        position: absolute;
+        top: 2px;
+        left: 2px;
+        width: 27px;
+        height: 27px;
+        border-radius: 50%;
+        background: #fff;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.25);
+        transition: transform var(--d-regular) var(--e-standard);
+      }
+      .switch[aria-checked='true'] {
+        background: var(--success);
+      }
+      .switch[aria-checked='true']::after {
+        transform: translateX(20px);
+      }
+      .cascade {
+        display: grid;
+        gap: 2px;
+        list-style: none;
+        margin: 0;
+        padding: 0;
+      }
+      .cascade li {
+        background: var(--surface-2);
+        padding: 10px 14px;
+        display: grid;
+        grid-template-columns: auto 1fr auto;
+        gap: 10px;
+        align-items: center;
+        font: 400 0.875rem/1.35 var(--f-text);
+        border-radius: var(--r-subtle);
+      }
+      .cascade li:first-child {
+        border-top-left-radius: var(--r-prominent);
+        border-top-right-radius: var(--r-prominent);
+      }
+      .cascade li:last-child {
+        border-bottom-left-radius: var(--r-prominent);
+        border-bottom-right-radius: var(--r-prominent);
+      }
+      .cascade .ci {
+        font-size: 18px;
+        color: var(--label-2);
+      }
+      .vc {
+        font: 500 0.8125rem/1 var(--f-mono);
+        white-space: nowrap;
+      }
+      .vc s {
+        color: var(--label-3);
+        text-decoration-thickness: 1px;
+      }
+      .vc b {
+        font-weight: 600;
+        color: var(--fg);
+      }
+      .menu-pop {
+        position: absolute;
+        z-index: 30;
+        min-width: 240px;
+        background: var(--material);
+        backdrop-filter: blur(30px);
+        -webkit-backdrop-filter: blur(30px);
+        border-radius: 14px;
+        box-shadow: var(--shadow);
+        padding: 6px;
+        display: grid;
+      }
+      .menu-pop button {
+        display: grid;
+        grid-template-columns: 20px 1fr;
+        gap: 8px;
+        align-items: center;
+        text-align: start;
+        padding: 10px 10px;
+        border: 0;
+        background: none;
+        color: var(--fg);
+        font: 400 0.9375rem/1.2 var(--f-text);
+        border-radius: 10px;
+        cursor: pointer;
+      }
+      .menu-pop button .ic {
+        font-size: 16px;
+        color: var(--accent-ink);
+      }
+
+      /* Skeleton */
+      .sk {
+        background: var(--fill);
+        border-radius: 10px;
+        position: relative;
+        overflow: hidden;
+      }
+      .sk::after {
+        content: '';
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(
+          90deg,
+          transparent,
+          color-mix(in srgb, var(--fg) 7%, transparent),
+          transparent
+        );
+        transform: translateX(-100%);
+        animation: shimmer 1.4s infinite;
+      }
+      @keyframes shimmer {
+        to {
+          transform: translateX(100%);
+        }
+      }
+
+      /* Activity */
+      .act {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr);
+        gap: 10px;
+        padding: 12px 14px;
+        align-items: start;
+      }
+      .act .asent {
+        font: 400 0.875rem/1.4 var(--f-text);
+      }
+      .act .asent b {
+        font-weight: 600;
+      }
+      .act .ameta {
+        font: 400 0.75rem/1.35 var(--f-mono);
+        color: var(--label-2);
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px 10px;
+        align-items: center;
+        margin-top: 3px;
+      }
+      .act .ameta .ic {
+        font-size: 13px;
+      }
+      .act .adiff {
+        margin-top: 6px;
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+      .act .aacts {
+        margin-top: 8px;
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+      .vis {
+        font: 500 0.6875rem/1 var(--f-text);
+        padding: 3px 6px;
+        border-radius: 999px;
+        background: var(--fill);
+        color: var(--label-2);
+      }
+      .daylbl {
+        font: 600 0.8125rem/1.2 var(--f-text);
+        color: var(--label-2);
+        margin: 6px 4px 0;
+      }
+
+      /* Desktop two-pane */
+      .two {
+        display: grid;
+        grid-template-columns: 352px minmax(0, 1fr);
+        height: 100%;
+      }
+      .two .left {
+        border-right: 1px solid var(--separator);
+        overflow-y: auto;
+        padding: 20px 20px 40px;
+        display: grid;
+        gap: 16px;
+        align-content: start;
+      }
+      .two .right {
+        overflow-y: auto;
+        padding: 20px 32px 60px;
+      }
+      .two .right .inner {
+        max-width: 640px;
+        display: grid;
+        gap: 18px;
+      }
+      .index {
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+        position: sticky;
+        top: 0;
+        padding: 8px 0 10px;
+        background: var(--bg);
+        z-index: 3;
+      }
+      .index button {
+        height: 36px;
+        padding: 0 14px;
+        border-radius: 999px;
+        border: 0;
+        background: var(--fill);
+        color: var(--fg);
+        font: 500 0.8125rem/1 var(--f-text);
+        cursor: pointer;
+      }
+      .index button[aria-current='true'] {
+        background: var(--primary);
+        color: var(--on-primary);
+      }
+      .deskbar {
+        height: 56px;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 0 20px;
+        border-bottom: 1px solid var(--separator);
+        font: 600 1rem/1 var(--f-display);
+      }
+      .deskbar .crumb {
+        color: var(--label-2);
+        font: 500 0.875rem/1 var(--f-text);
+      }
+
+      .gate {
+        padding: 30px 22px;
+        display: grid;
+        gap: 12px;
+        align-content: center;
+        justify-items: start;
+        height: 100%;
+      }
+      .gate h3 {
+        margin: 0;
+        font: 700 1.5rem/1.1 var(--f-display);
+      }
+      .gate p {
+        margin: 0;
+        color: var(--label-2);
+      }
+      .sr {
+        position: absolute !important;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip: rect(0 0 0 0);
+        white-space: nowrap;
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        .app *,
+        .app *::before,
+        .app *::after {
+          animation-duration: 1ms !important;
+          transition-duration: 1ms !important;
+          animation-iteration-count: 1 !important;
+        }
+        .sk::after {
+          display: none;
+        }
+      }
+    </style>
+
+    <div class="page">
+      <header class="intro">
+        <span class="tag"
+          >Creativo · client details redesign · interactive prototype</span
+        >
+        <h1>Creativo Client Card</h1>
+        <p>
+          The redesigned client details for the barbershop app: the page inside
+          the visit sheet, its two sub-pages, the full profile route and the
+          role-gated support toolkit. Pick a screen, a state and a role. Every
+          person and figure here is example data.
+        </p>
+      </header>
+
+      <form class="controls" id="controls" onsubmit="return false;">
+        <div class="ctl">
+          <label for="c-screen">Screen</label>
+          <select id="c-screen"></select>
+        </div>
+        <div class="ctl">
+          <label for="c-state">State</label>
+          <select id="c-state"></select>
+        </div>
+        <div class="ctl">
+          <span class="lbl" id="c-role-l">Viewer role</span>
+          <div class="seg" role="group" aria-labelledby="c-role-l" id="c-role">
+            <button type="button" data-role="barber">Barber</button>
+            <button type="button" data-role="receptionist">Front desk</button>
+            <button type="button" data-role="owner">Owner</button>
+          </div>
+        </div>
+        <div class="ctl">
+          <span class="lbl" id="c-theme-l">App theme</span>
+          <div
+            class="seg"
+            role="group"
+            aria-labelledby="c-theme-l"
+            id="c-theme"
+          >
+            <button type="button" data-theme="dark">Dark</button>
+            <button type="button" data-theme="light">Light</button>
+          </div>
+        </div>
+      </form>
+
+      <div class="stage">
+        <div class="canvas" id="canvas"></div>
+        <aside class="notes" id="notes" aria-live="polite"></aside>
+      </div>
+    </div>
+
+    <script>
+      const G = {
+        call: 'M798-120q-125 0-247-54.5T329-329Q229-429 174.5-551T120-798q0-18 12-30t30-12h162q14 0 25 9.5t13 22.5l26 140q2 16-1 27t-11 19l-97 98q20 37 47.5 71.5T387-386q31 31 65 57.5t72 48.5l94-94q9-9 23.5-13.5T670-390l138 28q14 4 23 14.5t9 23.5v162q0 18-12 30t-30 12Z',
+        sms: 'M320-520q17 0 28.5-11.5T360-560q0-17-11.5-28.5T320-600q-17 0-28.5 11.5T280-560q0 17 11.5 28.5T320-520Zm160 0q17 0 28.5-11.5T520-560q0-17-11.5-28.5T480-600q-17 0-28.5 11.5T440-560q0 17 11.5 28.5T480-520Zm160 0q17 0 28.5-11.5T680-560q0-17-11.5-28.5T640-600q-17 0-28.5 11.5T600-560q0 17 11.5 28.5T640-520ZM240-240l-92 92q-19 19-43.5 8.5T80-177v-623q0-33 23.5-56.5T160-880h640q33 0 56.5 23.5T880-800v480q0 33-23.5 56.5T800-240H240Z',
+        chat: 'm240-240-92 92q-19 19-43.5 8.5T80-177v-623q0-33 23.5-56.5T160-880h640q33 0 56.5 23.5T880-800v480q0 33-23.5 56.5T800-240H240Zm40-160h240q17 0 28.5-11.5T560-440q0-17-11.5-28.5T520-480H280q-17 0-28.5 11.5T240-440q0 17 11.5 28.5T280-400Zm0-120h400q17 0 28.5-11.5T720-560q0-17-11.5-28.5T680-600H280q-17 0-28.5 11.5T240-560q0 17 11.5 28.5T280-520Zm0-120h400q17 0 28.5-11.5T720-680q0-17-11.5-28.5T680-720H280q-17 0-28.5 11.5T240-680q0 17 11.5 28.5T280-640Z',
+        replay:
+          'M480-80q-75 0-140.5-28.5t-114-77q-48.5-48.5-77-114T120-440q0-17 11.5-28.5T160-480q17 0 28.5 11.5T200-440q0 117 81.5 198.5T480-160q117 0 198.5-81.5T760-440q0-117-81.5-198.5T480-720h-6l34 34q12 12 11.5 28T508-630q-12 12-28.5 12.5T451-629L348-732q-12-12-12-28t12-28l103-103q12-12 28.5-11.5T508-890q11 12 11.5 28T508-834l-34 34h6q75 0 140.5 28.5t114 77q48.5 48.5 77 114T840-440q0 75-28.5 140.5t-77 114q-48.5 48.5-114 77T480-80Z',
+        history:
+          'M480-120q-126 0-223-76.5T131-392q-4-15 6-27.5t27-14.5q16-2 29 6t18 24q24 90 99 147t170 57q117 0 198.5-81.5T760-480q0-117-81.5-198.5T480-760q-69 0-129 32t-101 88h70q17 0 28.5 11.5T360-600q0 17-11.5 28.5T320-560H160q-17 0-28.5-11.5T120-600v-160q0-17 11.5-28.5T160-800q17 0 28.5 11.5T200-760v54q51-64 124.5-99T480-840q75 0 140.5 28.5t114 77q48.5 48.5 77 114T840-480q0 75-28.5 140.5t-77 114q-48.5 48.5-114 77T480-120Zm40-376 100 100q11 11 11 28t-11 28q-11 11-28 11t-28-11L452-452q-6-6-9-13.5t-3-15.5v-159q0-17 11.5-28.5T480-680q17 0 28.5 11.5T520-640v144Z',
+        chevron_left:
+          'm432-480 156 156q11 11 11 28t-11 28q-11 11-28 11t-28-11L348-452q-6-6-8.5-13t-2.5-15q0-8 2.5-15t8.5-13l184-184q11-11 28-11t28 11q11 11 11 28t-11 28L432-480Z',
+        chevron_right:
+          'M504-480 348-636q-11-11-11-28t11-28q11-11 28-11t28 11l184 184q6 6 8.5 13t2.5 15q0 8-2.5 15t-8.5 13L404-268q-11 11-28 11t-28-11q-11-11-11-28t11-28l156-156Z',
+        close:
+          'M480-424 284-228q-11 11-28 11t-28-11q-11-11-11-28t11-28l196-196-196-196q-11-11-11-28t11-28q11-11 28-11t28 11l196 196 196-196q11-11 28-11t28 11q11 11 11 28t-11 28L536-480l196 196q11 11 11 28t-11 28q-11 11-28 11t-28-11L480-424Z',
+        check:
+          'm382-354 339-339q12-12 28-12t28 12q12 12 12 28.5T777-636L410-268q-12 12-28 12t-28-12L182-440q-12-12-11.5-28.5T183-497q12-12 28.5-12t28.5 12l142 143Z',
+        block:
+          'M480-80q-83 0-156-31.5T197-197q-54-54-85.5-127T80-480q0-83 31.5-156T197-763q54-54 127-85.5T480-880q83 0 156 31.5T763-763q54 54 85.5 127T880-480q0 83-31.5 156T763-197q-54 54-127 85.5T480-80Zm0-80q54 0 104-17.5t92-50.5L228-676q-33 42-50.5 92T160-480q0 134 93 227t227 93Zm252-124q33-42 50.5-92T800-480q0-134-93-227t-227-93q-54 0-104 17.5T284-732l448 448Z',
+        workspace_premium:
+          'm480-483-68 52q-6 5-12 .5t-4-11.5l26-84-70-56q-5-5-3-11.5t9-6.5h86l26-82q2-7 10-7t10 7l26 82h85q7 0 9.5 6.5T608-582l-71 56 26 84q2 7-4 11.5t-12-.5l-67-52Zm0 363L293-58q-20 7-36.5-5T240-95v-254q-38-42-59-96t-21-115q0-134 93-227t227-93q134 0 227 93t93 227q0 61-21 115t-59 96v254q0 20-16.5 32T667-58l-187-62Zm0-200q100 0 170-70t70-170q0-100-70-170t-170-70q-100 0-170 70t-70 170q0 100 70 170t170 70Z',
+        military_tech:
+          'm480-174-74 56q-12 9-24 .5t-7-22.5l29-92-73-52q-12-8-7-22t19-14h89l28-92-142-84q-18-11-28-29t-10-41v-234q0-33 23.5-56.5T360-880h240q33 0 56.5 23.5T680-800v234q0 23-10 41t-28 29l-142 84 28 92h89q14 0 19 14t-7 22l-73 52 29 92q5 14-7 22.5t-24-.5l-74-56Zm-40-626v282l40 24 40-24v-282h-80Z',
+        local_fire_department:
+          'M160-400q0-113 67-217t184-182q22-15 45.5-1.5T480-760v52q0 34 23.5 57t57.5 23q17 0 32.5-7.5T621-657q8-10 20.5-12.5T665-664q63 45 99 115t36 149q0 88-43 160.5T644-125q17-24 26.5-52.5T680-238q0-40-15-75.5T622-377L480-516 339-377q-29 29-44 64t-15 75q0 32 9.5 60.5T316-125q-70-42-113-114.5T160-400Zm320-4 85 83q17 17 26 38t9 45q0 49-35 83.5T480-120q-50 0-85-34.5T360-238q0-23 9-44.5t26-38.5l85-83Z',
+        event_repeat:
+          'M200-80q-33 0-56.5-23.5T120-160v-560q0-33 23.5-56.5T200-800h40v-40q0-17 11.5-28.5T280-880q17 0 28.5 11.5T320-840v40h320v-40q0-17 11.5-28.5T680-880q17 0 28.5 11.5T720-840v40h40q33 0 56.5 23.5T840-720v200q0 17-11.5 28.5T800-480q-17 0-28.5-11.5T760-520v-40H200v400h240q17 0 28.5 11.5T480-120q0 17-11.5 28.5T440-80H200ZM760 0q-64 0-114.5-35.5T573-128q-5-11 2.5-21.5T595-160q14 0 25.5 8.5T639-130q18 32 50 51t71 19q58 0 99-41t41-99q0-58-41-99t-99-41q-29 0-54 10.5T662-300h28q13 0 21.5 8.5T720-270q0 13-8.5 21.5T690-240h-90q-17 0-28.5-11.5T560-280v-90q0-13 8.5-21.5T590-400q13 0 21.5 8.5T620-370v27q27-26 63-41.5t77-15.5q83 0 141.5 58.5T960-200q0 83-58.5 141.5T760 0Z',
+        ac_unit:
+          'M440-246 337-145q-11 11-27.5 11T282-146q-12-11-12-27.5t12-28.5l158-158v-80h-80L201-281q-11 11-27.5 11T145-282q-11-11-11-27.5t11-27.5l101-103H119q-17 0-28-11.5T80-480q0-17 11.5-28.5T120-520h126L145-622q-11-11-11-27.5t12-28.5q11-11 27.5-11t28.5 11l158 158h80v-80L281-758q-11-11-11-27.5t12-28.5q11-11 27.5-11t27.5 11l103 100v-126q0-17 11.5-28.5T480-880q17 0 28.5 11.5T520-840v126l102-100q11-11 27.5-11t28.5 11q11 12 11 28.5T678-758L520-600v80h80l158-158q11-11 27.5-11t28.5 12q11 11 11 27.5T814-622L714-520h126q17 0 28.5 11.5T880-480q0 17-11.5 28.5T840-440H714l100 103q11 11 11 27.5T814-282q-12 12-28.5 12T758-282L600-440h-80v80l158 159q11 11 11 27.5T677-145q-11 11-27.5 11T622-145L520-246v127q0 17-11.5 28T480-80q-17 0-28.5-11.5T440-120v-126Z',
+        stars:
+          'm480-362 111 84q12 8 24 .5t7-21.5l-42-139 109-78q12-9 7-22.5T677-552H544l-45-146q-5-14-19-14t-19 14l-45 146H283q-14 0-19 13.5t7 22.5l109 78-42 139q-5 14 7 21.5t24-.5l111-84Zm0 282q-83 0-156-31.5T197-197q-54-54-85.5-127T80-480q0-83 31.5-156T197-763q54-54 127-85.5T480-880q83 0 156 31.5T763-763q54 54 85.5 127T880-480q0 83-31.5 156T763-197q-54 54-127 85.5T480-80Z',
+        toll: 'M600-160q-134 0-227-93t-93-227q0-134 93-227t227-93q134 0 227 93t93 227q0 134-93 227t-227 93Zm-375-30q-84-39-134.5-117T40-480q0-95 50.5-173T225-770q21-10 38 1.5t17 37.5q0 10-6.5 19.5T257-697q-63 29-100 87.5T120-480q0 71 37 129.5T257-263q10 5 16.5 14t6.5 20q0 25-17 37t-38 2Z',
+        redeem:
+          'M160-280v80h640v-80H160Zm0-440h88q-5-9-6.5-19t-1.5-21q0-50 35-85t85-35q30 0 55.5 15.5T460-826l20 26 20-26q18-24 44-39t56-15q50 0 85 35t35 85q0 11-1.5 21t-6.5 19h88q33 0 56.5 23.5T880-640v440q0 33-23.5 56.5T800-120H160q-33 0-56.5-23.5T80-200v-440q0-33 23.5-56.5T160-720Zm0 320h640v-240H596l60 82q10 14 8 29.5T648-503q-14 10-29.5 7.5T593-511L480-664 367-511q-10 13-25.5 15.5T312-503q-14-10-16.5-25.5T303-558l59-82H160v240Zm200-320q17 0 28.5-11.5T400-760q0-17-11.5-28.5T360-800q-17 0-28.5 11.5T320-760q0 17 11.5 28.5T360-720Zm240 0q17 0 28.5-11.5T640-760q0-17-11.5-28.5T600-800q-17 0-28.5 11.5T560-760q0 17 11.5 28.5T600-720Z',
+        confirmation_number:
+          'M160-160q-33 0-56.5-23.5T80-240v-135q0-11 7-19t18-10q24-8 39.5-29t15.5-47q0-26-15.5-47T105-556q-11-2-18-10t-7-19v-135q0-33 23.5-56.5T160-800h640q33 0 56.5 23.5T880-720v135q0 11-7 19t-18 10q-24 8-39.5 29T800-480q0 26 15.5 47t39.5 29q11 2 18 10t7 19v135q0 33-23.5 56.5T800-160H160Zm320-120q17 0 28.5-11.5T520-320q0-17-11.5-28.5T480-360q-17 0-28.5 11.5T440-320q0 17 11.5 28.5T480-280Zm0-160q17 0 28.5-11.5T520-480q0-17-11.5-28.5T480-520q-17 0-28.5 11.5T440-480q0 17 11.5 28.5T480-440Zm0-160q17 0 28.5-11.5T520-640q0-17-11.5-28.5T480-680q-17 0-28.5 11.5T440-640q0 17 11.5 28.5T480-600Z',
+        cake: 'M160-80q-17 0-28.5-11.5T120-120v-160q0-33 23.5-56.5T200-360h560q33 0 56.5 23.5T840-280v160q0 17-11.5 28.5T800-80H160Zm40-360v-120q0-33 23.5-56.5T280-640h160v-58q-18-12-29-29t-11-41q0-15 6-29.5t18-26.5l42-42q2-2 14-6 2 0 14 6l42 42q12 12 18 26.5t6 29.5q0 24-11 41t-29 29v58h160q33 0 56.5 23.5T760-560v120H200Z',
+        person_off:
+          'm763-84-77-76H240q-33 0-56.5-23.5T160-240v-32q0-34 17.5-62.5T224-378q45-23 91.5-37t94.5-21L83-763q-12-12-11.5-28.5T84-820q12-12 28.5-12t28.5 12l679 680q12 12 12 28t-12 28q-12 12-28.5 12T763-84Zm-27-294q29 14 46 42.5t18 61.5L666-408q18 7 35.5 14t34.5 16ZM568-506 346-728q23-34 58-53t76-19q66 0 113 47t47 113q0 41-19 76t-53 58Z',
+        event_busy:
+          'm480-304-64 64q-11 11-28 11t-28-11q-11-11-11-28t11-28l64-64-64-64q-11-11-11-28t11-28q11-11 28-11t28 11l64 64 64-64q11-11 28-11t28 11q11 11 11 28t-11 28l-64 64 64 64q11 11 11 28t-11 28q-11 11-28 11t-28-11l-64-64ZM200-80q-33 0-56.5-23.5T120-160v-560q0-33 23.5-56.5T200-800h40v-40q0-17 11.5-28.5T280-880q17 0 28.5 11.5T320-840v40h320v-40q0-17 11.5-28.5T680-880q17 0 28.5 11.5T720-840v40h40q33 0 56.5 23.5T840-720v560q0 33-23.5 56.5T760-80H200Zm0-80h560v-400H200v400Z',
+        task_alt:
+          'M480-80q-83 0-156-31.5T197-197q-54-54-85.5-127T80-480q0-83 31.5-156T197-763q54-54 127-85.5T480-880q48 0 93.5 11t87.5 32q15 8 19.5 24t-5.5 30q-10 14-26.5 18t-32.5-4q-32-15-66.5-23t-69.5-8q-133 0-226.5 93.5T160-480q0 133 93.5 226.5T480-160q133 0 226.5-93.5T800-480q0-8-.5-15.5T798-511q-2-17 6.5-32.5T830-564q16-5 30 3t16 24q2 14 3 28t1 29q0 83-31.5 156T763-197q-54 54-127 85.5T480-80Zm-56-328 372-373q11-11 27.5-11.5T852-781q11 11 11 28t-11 28L452-324q-12 12-28 12t-28-12L282-438q-11-11-11-28t11-28q11-11 28-11t28 11l86 86Z',
+        lock: 'M240-80q-33 0-56.5-23.5T160-160v-400q0-33 23.5-56.5T240-640h40v-80q0-83 58.5-141.5T480-920q83 0 141.5 58.5T680-720v80h40q33 0 56.5 23.5T800-560v400q0 33-23.5 56.5T720-80H240Zm240-200q33 0 56.5-23.5T560-360q0-33-23.5-56.5T480-440q-33 0-56.5 23.5T400-360q0 33 23.5 56.5T480-280ZM360-640h240v-80q0-50-35-85t-85-35q-50 0-85 35t-35 85v80Z',
+        open_in_new:
+          'M200-120q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h240q17 0 28.5 11.5T480-800q0 17-11.5 28.5T440-760H200v560h560v-240q0-17 11.5-28.5T800-480q17 0 28.5 11.5T840-440v240q0 33-23.5 56.5T760-120H200Zm560-584L416-360q-11 11-28 11t-28-11q-11-11-11-28t11-28l344-344H600q-17 0-28.5-11.5T560-800q0-17 11.5-28.5T600-840h200q17 0 28.5 11.5T840-800v200q0 17-11.5 28.5T800-560q-17 0-28.5-11.5T760-600v-104Z',
+        edit_note:
+          'M200-400q-17 0-28.5-11.5T160-440q0-17 11.5-28.5T200-480h200q17 0 28.5 11.5T440-440q0 17-11.5 28.5T400-400H200Zm0-160q-17 0-28.5-11.5T160-600q0-17 11.5-28.5T200-640h360q17 0 28.5 11.5T600-600q0 17-11.5 28.5T560-560H200Zm0-160q-17 0-28.5-11.5T160-760q0-17 11.5-28.5T200-800h360q17 0 28.5 11.5T600-760q0 17-11.5 28.5T560-720H200Zm320 520v-66q0-8 3-15.5t9-13.5l209-208q9-9 20-13t22-4q12 0 23 4.5t20 13.5l37 37q8 9 12.5 20t4.5 22q0 11-4 22.5T863-380L655-172q-6 6-13.5 9t-15.5 3h-66q-17 0-28.5-11.5T520-200Zm263-184 37-39-37-37-38 38 38 38ZM580-220h38l121-122-18-19-19-18-122 121v38Zm0 0v-38l122-121 37 37-121 122h-38Z',
+        sticky_note_2:
+          'm560-200 200-200H600q-17 0-28.5 11.5T560-360v160Zm-360 80q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h560q33 0 56.5 23.5T840-760v367q0 16-6 30.5T817-337L623-143q-11 11-25.5 17t-30.5 6H200Zm120-280h120q17 0 28.5-11.5T480-440q0-17-11.5-28.5T440-480H320q-17 0-28.5 11.5T280-440q0 17 11.5 28.5T320-400Zm0-160h320q17 0 28.5-11.5T680-600q0-17-11.5-28.5T640-640H320q-17 0-28.5 11.5T280-600q0 17 11.5 28.5T320-560Z',
+        photo_camera:
+          'M480-260q75 0 127.5-52.5T660-440q0-75-52.5-127.5T480-620q-75 0-127.5 52.5T300-440q0 75 52.5 127.5T480-260Zm0-80q-42 0-71-29t-29-71q0-42 29-71t71-29q42 0 71 29t29 71q0 42-29 71t-71 29ZM160-120q-33 0-56.5-23.5T80-200v-480q0-33 23.5-56.5T160-760h126l50-54q11-12 26.5-19t32.5-7h170q17 0 32.5 7t26.5 19l50 54h126q33 0 56.5 23.5T880-680v480q0 33-23.5 56.5T800-120H160Z',
+        tune: 'M480-120q-17 0-28.5-11.5T440-160v-160q0-17 11.5-28.5T480-360q17 0 28.5 11.5T520-320v40h280q17 0 28.5 11.5T840-240q0 17-11.5 28.5T800-200H520v40q0 17-11.5 28.5T480-120Zm-320-80q-17 0-28.5-11.5T120-240q0-17 11.5-28.5T160-280h160q17 0 28.5 11.5T360-240q0 17-11.5 28.5T320-200H160Zm160-160q-17 0-28.5-11.5T280-400v-40H160q-17 0-28.5-11.5T120-480q0-17 11.5-28.5T160-520h120v-40q0-17 11.5-28.5T320-600q17 0 28.5 11.5T360-560v160q0 17-11.5 28.5T320-360Zm160-80q-17 0-28.5-11.5T440-480q0-17 11.5-28.5T480-520h320q17 0 28.5 11.5T840-480q0 17-11.5 28.5T800-440H480Zm160-160q-17 0-28.5-11.5T600-640v-160q0-17 11.5-28.5T640-840q17 0 28.5 11.5T680-800v40h120q17 0 28.5 11.5T840-720q0 17-11.5 28.5T800-680H680v40q0 17-11.5 28.5T640-600Zm-480-80q-17 0-28.5-11.5T120-720q0-17 11.5-28.5T160-760h320q17 0 28.5 11.5T520-720q0 17-11.5 28.5T480-680H160Z',
+        undo: 'M320-200q-17 0-28.5-11.5T280-240q0-17 11.5-28.5T320-280h244q63 0 109.5-40T720-420q0-60-46.5-100T564-560H312l76 76q11 11 11 28t-11 28q-11 11-28 11t-28-11L188-572q-6-6-8.5-13t-2.5-15q0-8 2.5-15t8.5-13l144-144q11-11 28-11t28 11q11 11 11 28t-11 28l-76 76h252q97 0 166.5 63T800-420q0 94-69.5 157T564-200H320Z',
+        help: 'M478-240q21 0 35.5-14.5T528-290q0-21-14.5-35.5T478-340q-21 0-35.5 14.5T428-290q0 21 14.5 35.5T478-240Zm2 160q-83 0-156-31.5T197-197q-54-54-85.5-127T80-480q0-83 31.5-156T197-763q54-54 127-85.5T480-880q83 0 156 31.5T763-763q54 54 85.5 127T880-480q0 83-31.5 156T763-197q-54 54-127 85.5T480-80Zm4-572q25 0 43.5 16t18.5 40q0 22-13.5 39T502-525q-23 20-40.5 44T444-427q0 14 10.5 23.5T479-394q15 0 25.5-10t13.5-25q4-21 18-37.5t30-31.5q23-22 39.5-48t16.5-58q0-51-41.5-83.5T484-720q-38 0-72.5 16T359-655q-7 12-4.5 25.5T368-609q14 8 29 5t25-17q11-15 27.5-23t34.5-8Z',
+        pending_actions:
+          'M680-80q-83 0-141.5-58.5T480-280q0-83 58.5-141.5T680-480q83 0 141.5 58.5T880-280q0 83-58.5 141.5T680-80Zm20-208v-92q0-8-6-14t-14-6q-8 0-14 6t-6 14v91q0 8 3 15.5t9 13.5l61 61q6 6 14 6t14-6q6-6 6-14t-6-14l-61-61ZM200-120q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h167q11-35 43-57.5t70-22.5q40 0 71.5 22.5T594-840h166q33 0 56.5 23.5T840-760v160q0 17-11.5 28.5T800-560q-17 0-28.5-11.5T760-600v-160h-80v80q0 17-11.5 28.5T640-640H320q-17 0-28.5-11.5T280-680v-80h-80v560h180q17 0 28.5 11.5T420-160q0 17-11.5 28.5T380-120H200Zm280-640q17 0 28.5-11.5T520-800q0-17-11.5-28.5T480-840q-17 0-28.5 11.5T440-800q0 17 11.5 28.5T480-760Z',
+        auto_awesome:
+          'M19 8.3q-.125 0-.262-.075Q18.6 8.15 18.55 8l-.8-1.75-1.75-.8q-.15-.05-.225-.188Q15.7 5.125 15.7 5t.075-.263Q15.85 4.6 16 4.55l1.75-.8.8-1.75q.05-.15.188-.225.137-.075.262-.075t.263.075q.137.075.187.225l.8 1.75 1.75.8q.15.05.225.187.075.138.075.263t-.075.262Q22.15 5.4 22 5.45l-1.75.8-.8 1.75q-.05.15-.187.225-.138.075-.263.075Zm0 14q-.125 0-.262-.075-.138-.075-.188-.225l-.8-1.75-1.75-.8q-.15-.05-.225-.188-.075-.137-.075-.262t.075-.262q.075-.138.225-.188l1.75-.8.8-1.75q.05-.15.188-.225.137-.075.262-.075t.263.075q.137.075.187.225l.8 1.75 1.75.8q.15.05.225.188.075.137.075.262t-.075.262q-.075.138-.225.188l-1.75.8-.8 1.75q-.05.15-.187.225-.138.075-.263.075ZM9 18.575q-.275 0-.525-.15T8.1 18l-1.6-3.5L3 12.9q-.275-.125-.425-.375-.15-.25-.15-.525t.15-.525q.15-.25.425-.375l3.5-1.6L8.1 6q.125-.275.375-.425.25-.15.525-.15t.525.15q.25.15.375.425l1.6 3.5 3.5 1.6q.275.125.425.375.15.25.15.525t-.15.525q-.15.25-.425.375l-3.5 1.6L9.9 18q-.125.275-.375.425-.25.15-.525.15Z',
+        person:
+          'M480-480q-66 0-113-47t-47-113q0-66 47-113t113-47q66 0 113 47t47 113q0 66-47 113t-113 47ZM160-240v-32q0-34 17.5-62.5T224-378q62-31 126-46.5T480-440q66 0 130 15.5T736-378q29 15 46.5 43.5T800-272v32q0 33-23.5 56.5T720-160H240q-33 0-56.5-23.5T160-240Z',
+        settings:
+          'M433-80q-27 0-46.5-18T363-142l-9-66q-13-5-24.5-12T307-235l-62 26q-25 11-50 2t-39-32l-47-82q-14-23-8-49t27-43l53-40q-1-7-1-13.5v-27q0-6.5 1-13.5l-53-40q-21-17-27-43t8-49l47-82q14-23 39-32t50 2l62 26q11-8 23-15t24-12l9-66q4-26 23.5-44t46.5-18h94q27 0 46.5 18t23.5 44l9 66q13 5 24.5 12t22.5 15l62-26q25-11 50-2t39 32l47 82q14 23 8 49t-27 43l-53 40q1 7 1 13.5v27q0 6.5-2 13.5l53 40q21 17 27 43t-8 49l-48 82q-14 23-39 32t-50-2l-60-26q-11 8-23 15t-24 12l-9 66q-4 26-23.5 44T527-80h-94Zm49-260q58 0 99-41t41-99q0-58-41-99t-99-41q-59 0-99.5 41T342-480q0 58 40.5 99t99.5 41Z',
+        add: 'M440-440H240q-17 0-28.5-11.5T200-480q0-17 11.5-28.5T240-520h200v-200q0-17 11.5-28.5T480-760q17 0 28.5 11.5T520-720v200h200q17 0 28.5 11.5T760-480q0 17-11.5 28.5T720-440H520v200q0 17-11.5 28.5T480-200q-17 0-28.5-11.5T440-240v-200Z',
+        remove:
+          'M240-440q-17 0-28.5-11.5T200-480q0-17 11.5-28.5T240-520h480q17 0 28.5 11.5T760-480q0 17-11.5 28.5T720-440H240Z',
+        filter_list:
+          'M440-240q-17 0-28.5-11.5T400-280q0-17 11.5-28.5T440-320h80q17 0 28.5 11.5T560-280q0 17-11.5 28.5T520-240h-80ZM280-440q-17 0-28.5-11.5T240-480q0-17 11.5-28.5T280-520h400q17 0 28.5 11.5T720-480q0 17-11.5 28.5T680-440H280ZM160-640q-17 0-28.5-11.5T120-680q0-17 11.5-28.5T160-720h640q17 0 28.5 11.5T840-680q0 17-11.5 28.5T800-640H160Z',
+        more_horiz:
+          'M240-400q-33 0-56.5-23.5T160-480q0-33 23.5-56.5T240-560q33 0 56.5 23.5T320-480q0 33-23.5 56.5T240-400Zm240 0q-33 0-56.5-23.5T400-480q0-33 23.5-56.5T480-560q33 0 56.5 23.5T560-480q0 33-23.5 56.5T480-400Zm240 0q-33 0-56.5-23.5T640-480q0-33 23.5-56.5T720-560q33 0 56.5 23.5T800-480q0 33-23.5 56.5T720-400Z',
+        unfold_more:
+          'm480-236 93-93q12-12 29-12t29 12q12 12 12 29t-12 29L508-148q-6 6-13 8.5t-15 2.5q-8 0-15-2.5t-13-8.5L329-271q-12-12-12-29t12-29q12-12 29-12t29 12l93 93Zm0-484-93 93q-12 12-29 12t-29-12q-12-12-12-29t12-29l123-123q6-6 13-8.5t15-2.5q8 0 15 2.5t13 8.5l123 123q12 12 12 29t-12 29q-12 12-29 12t-29-12l-93-93Z',
+        info: 'M480-280q17 0 28.5-11.5T520-320v-160q0-17-11.5-28.5T480-520q-17 0-28.5 11.5T440-480v160q0 17 11.5 28.5T480-280Zm0-320q17 0 28.5-11.5T520-640q0-17-11.5-28.5T480-680q-17 0-28.5 11.5T440-640q0 17 11.5 28.5T480-600Zm0 520q-83 0-156-31.5T197-197q-54-54-85.5-127T80-480q0-83 31.5-156T197-763q54-54 127-85.5T480-880q83 0 156 31.5T763-763q54 54 85.5 127T880-480q0 83-31.5 156T763-197q-54 54-127 85.5T480-80Z',
+        warning:
+          'M109-120q-11 0-20-5.5T75-140q-5-9-5.5-19.5T75-180l370-640q6-10 15.5-15t19.5-5q10 0 19.5 5t15.5 15l370 640q6 10 5.5 20.5T885-140q-5 9-14 14.5t-20 5.5H109Zm371-120q17 0 28.5-11.5T520-280q0-17-11.5-28.5T480-320q-17 0-28.5 11.5T440-280q0 17 11.5 28.5T480-240Zm0-120q17 0 28.5-11.5T520-400v-120q0-17-11.5-28.5T480-560q-17 0-28.5 11.5T440-520v120q0 17 11.5 28.5T480-360Z',
+        schedule:
+          'M520-496v-144q0-17-11.5-28.5T480-680q-17 0-28.5 11.5T440-640v159q0 8 3 15.5t9 13.5l132 132q11 11 28 11t28-11q11-11 11-28t-11-28L520-496ZM480-80q-83 0-156-31.5T197-197q-54-54-85.5-127T80-480q0-83 31.5-156T197-763q54-54 127-85.5T480-880q83 0 156 31.5T763-763q54 54 85.5 127T880-480q0 83-31.5 156T763-197q-54 54-127 85.5T480-80Z',
+        content_cut:
+          'm480-400-94 94q8 15 11 32t3 34q0 66-47 113T240-80q-66 0-113-47T80-240q0-66 47-113t113-47q17 0 34 3t32 11l94-94-94-94q-15 8-32 11t-34 3q-66 0-113-47T80-720q0-66 47-113t113-47q66 0 113 47t47 113q0 17-3 34t-11 32l438 438q27 27 12 61.5T783-120q-11 0-21.5-4.5T743-137L480-400Zm120-120-80-80 223-223q8-8 18.5-12.5T783-840q38 0 52.5 35T823-743L600-520ZM240-640q33 0 56.5-23.5T320-720q0-33-23.5-56.5T240-800q-33 0-56.5 23.5T160-720q0 33 23.5 56.5T240-640Zm240 180q8 0 14-6t6-14q0-8-6-14t-14-6q-8 0-14 6t-6 14q0 8 6 14t14 6ZM240-160q33 0 56.5-23.5T320-240q0-33-23.5-56.5T240-320q-33 0-56.5 23.5T160-240q0 33 23.5 56.5T240-160Z',
+        sell: 'M856-390 570-104q-12 12-27 18t-30 6q-15 0-30-6t-27-18L103-457q-11-11-17-25.5T80-513v-287q0-33 23.5-56.5T160-880h287q16 0 31 6.5t26 17.5l352 353q12 12 17.5 27t5.5 30q0 15-5.5 29.5T856-390ZM260-640q25 0 42.5-17.5T320-700q0-25-17.5-42.5T260-760q-25 0-42.5 17.5T200-700q0 25 17.5 42.5T260-640Z',
+        label:
+          'M807-434 666-234q-11 16-28.5 25t-37.5 9H200q-33 0-56.5-23.5T120-280v-400q0-33 23.5-56.5T200-760h400q20 0 37.5 9t28.5 25l141 200q15 21 15 46t-15 46Z',
+        notifications:
+          'M200-200q-17 0-28.5-11.5T160-240q0-17 11.5-28.5T200-280h40v-280q0-83 50-147.5T420-792v-28q0-25 17.5-42.5T480-880q25 0 42.5 17.5T540-820v28q80 20 130 84.5T720-560v280h40q17 0 28.5 11.5T800-240q0 17-11.5 28.5T760-200H200ZM480-80q-33 0-56.5-23.5T400-160h160q0 33-23.5 56.5T480-80Z',
+        account_circle:
+          'M234-276q51-39 114-61.5T480-360q69 0 132 22.5T726-276q35-41 54.5-93T800-480q0-133-93.5-226.5T480-800q-133 0-226.5 93.5T160-480q0 59 19.5 111t54.5 93Zm246-164q-59 0-99.5-40.5T340-580q0-59 40.5-99.5T480-720q59 0 99.5 40.5T620-580q0 59-40.5 99.5T480-440Zm0 360q-83 0-156-31.5T197-197q-54-54-85.5-127T80-480q0-83 31.5-156T197-763q54-54 127-85.5T480-880q83 0 156 31.5T763-763q54 54 85.5 127T880-480q0 83-31.5 156T763-197q-54 54-127 85.5T480-80Z',
+        keyboard_arrow_down:
+          'M480-361q-8 0-15-2.5t-13-8.5L268-556q-11-11-11-28t11-28q11-11 28-11t28 11l156 156 156-156q11-11 28-11t28 11q11 11 11 28t-11 28L508-372q-6 6-13 8.5t-15 2.5Z',
+        search:
+          'M380-320q-109 0-184.5-75.5T120-580q0-109 75.5-184.5T380-840q109 0 184.5 75.5T640-580q0 44-14 83t-38 69l224 224q11 11 11 28t-11 28q-11 11-28 11t-28-11L532-372q-30 24-69 38t-83 14Zm0-80q75 0 127.5-52.5T560-580q0-75-52.5-127.5T380-760q-75 0-127.5 52.5T200-580q0 75 52.5 127.5T380-400Z',
+        bolt: 'M360-360H236q-24 0-35.5-21.5T203-423l299-430q10-14 26-19.5t33 .5q17 6 25 21t6 32l-32 259h155q26 0 36.5 23t-6.5 43L416-100q-11 13-27 17t-31-3q-15-7-23.5-21.5T328-139l32-221Z',
+        calendar_month:
+          'M200-80q-33 0-56.5-23.5T120-160v-560q0-33 23.5-56.5T200-800h40v-40q0-17 11.5-28.5T280-880q17 0 28.5 11.5T320-840v40h320v-40q0-17 11.5-28.5T680-880q17 0 28.5 11.5T720-840v40h40q33 0 56.5 23.5T840-720v560q0 33-23.5 56.5T760-80H200Zm0-80h560v-400H200v400Zm280-240q-17 0-28.5-11.5T440-440q0-17 11.5-28.5T480-480q17 0 28.5 11.5T520-440q0 17-11.5 28.5T480-400Zm-160 0q-17 0-28.5-11.5T280-440q0-17 11.5-28.5T320-480q17 0 28.5 11.5T360-440q0 17-11.5 28.5T320-400Zm320 0q-17 0-28.5-11.5T600-440q0-17 11.5-28.5T640-480q17 0 28.5 11.5T680-440q0 17-11.5 28.5T640-400ZM480-240q-17 0-28.5-11.5T440-280q0-17 11.5-28.5T480-320q17 0 28.5 11.5T520-280q0 17-11.5 28.5T480-240Zm-160 0q-17 0-28.5-11.5T280-280q0-17 11.5-28.5T320-320q17 0 28.5 11.5T360-280q0 17-11.5 28.5T320-240Zm320 0q-17 0-28.5-11.5T600-280q0-17 11.5-28.5T640-320q17 0 28.5 11.5T680-280q0 17-11.5 28.5T640-240Z',
+        error:
+          'M480-280q17 0 28.5-11.5T520-320q0-17-11.5-28.5T480-360q-17 0-28.5 11.5T440-320q0 17 11.5 28.5T480-280Zm0-160q17 0 28.5-11.5T520-480v-160q0-17-11.5-28.5T480-680q-17 0-28.5 11.5T440-640v160q0 17 11.5 28.5T480-440Zm0 360q-83 0-156-31.5T197-197q-54-54-85.5-127T80-480q0-83 31.5-156T197-763q54-54 127-85.5T480-880q83 0 156 31.5T763-763q54 54 85.5 127T880-480q0 83-31.5 156T763-197q-54 54-127 85.5T480-80Z',
+        done_all:
+          'M70-438q-12-12-11.5-28T71-494q12-11 28-11.5t28 11.5l142 142 14 14 14 14q12 12 11.5 28T296-268q-12 11-28 11.5T240-268L70-438Zm424 85 340-340q12-12 28-11.5t28 12.5q11 12 11.5 28T890-636L522-268q-12 12-28 12t-28-12L296-438q-11-11-11-27.5t11-28.5q12-12 28.5-12t28.5 12l141 141Zm169-282L522-494q-11 11-27.5 11T466-494q-12-12-12-28.5t12-28.5l141-141q11-11 27.5-11t28.5 11q12 12 12 28.5T663-635Z',
+        cloud_off:
+          'M260-160q-92 0-156-64T40-380q0-77 47.5-137T210-594q3-8 6-15.5t6-16.5L84-764q-11-11-11-28t11-28q11-11 28-11t28 11l680 680q11 11 11.5 27.5T820-84q-11 11-27.5 11.5T764-83l-78-77H260Zm604-50L322-751q35-24 74.5-36.5T480-800q117 0 198.5 81.5T760-520q69 8 114.5 59.5T920-340q0 39-15 72.5T864-210Z',
+        verified:
+          'm438-452-58-57q-11-11-27.5-11T324-508q-11 11-11 28t11 28l86 86q12 12 28 12t28-12l170-170q12-12 11.5-28T636-592q-12-12-28.5-12.5T579-593L438-452ZM326-90l-58-98-110-24q-15-3-24-15.5t-7-27.5l11-113-75-86q-10-11-10-26t10-26l75-86-11-113q-2-15 7-27.5t24-15.5l110-24 58-98q8-13 22-17.5t28 1.5l104 44 104-44q14-6 28-1.5t22 17.5l58 98 110 24q15 3 24 15.5t7 27.5l-11 113 75 86q10 11 10 26t-10 26l-75 86 11 113q2 15-7 27.5T802-212l-110 24-58 98q-8 13-22 17.5T584-74l-104-44-104 44q-14 6-28 1.5T326-90Z',
+        how_to_reg:
+          'M400-480q-66 0-113-47t-47-113q0-66 47-113t113-47q66 0 113 47t47 113q0 66-47 113t-113 47ZM160-160q-33 0-56.5-23.5T80-240v-32q0-33 17-62t47-44q51-26 115-44t141-18h26.5q12.5 0 25.5 2 20 2 26 21t-8 33l-17 17q-31 31-35 73t19 77q12 19 3.5 38T412-160H160Zm462-96 174-174q11-11 28-11t28 11q11 11 11 28t-11 28L650-172q-12 12-28 12t-28-12l-82-82q-11-11-11-28t11-28q11-11 28-11t28 11l54 54Z',
+        manage_history:
+          'M480-760q-69 0-129 32t-101 88h70q17 0 28.5 11.5T360-600q0 17-11.5 28.5T320-560H160q-17 0-28.5-11.5T120-600v-160q0-17 11.5-28.5T160-800q17 0 28.5 11.5T200-760v54q51-64 124.5-99T480-840q75 0 140.5 28T735-735q42 42 69 97t34 118q2 17-10 28t-29 11q-17 0-28.5-11T757-520q-7-46-27-86t-52-72q-38-38-88.5-60T480-760ZM164-434q16-2 29 6t18 24q22 81 85 135t146 65q21 3 30 15.5t9 26.5q0 16-10.5 29T441-122q-111-13-195.5-85.5T132-387q-5-17 5-31t27-16Zm356-62 48 48q14 14 12.5 29.5T568-392q-11 11-26.5 12.5T512-392l-60-60q-6-6-9-13.5t-3-15.5v-159q0-17 11.5-28.5T480-680q17 0 28.5 11.5T520-640v144ZM751 0q-14 0-24.5-9T713-32l-6-28q-12-5-22.5-10.5T663-84l-29 9q-13 4-25.5-1T589-92l-8-14q-7-12-5-26t13-23l22-19q-2-13-2-26t2-26l-22-19q-11-9-13-22.5t5-25.5l9-15q7-11 19-16t25-1l29 9q11-8 21.5-13.5T707-340l6-29q3-14 13.5-22.5T751-400h16q14 0 24.5 9t13.5 23l6 28q12 5 23 11.5t21 14.5l27-9q14-5 27 0t20 17l8 14q7 12 5 26t-13 23l-22 19q2 13 2 25t-2 25l22 19q11 9 13 22.5t-5 25.5l-9 15q-7 11-19 16t-25 1l-29-9q-11 8-21.5 13.5T811-60l-6 29q-3 14-13.5 22.5T767 0h-16Zm8-120q33 0 56.5-23.5T839-200q0-33-23.5-56.5T759-280q-33 0-56.5 23.5T679-200q0 33 23.5 56.5T759-120Z',
+        rule: 'm680-264-76 76q-11 11-28 11t-28-11q-11-11-11-28t11-28l76-76-76-76q-11-11-11-28t11-28q11-11 28-11t28 11l76 76 76-76q11-11 28-11t28 11q11 11 11 28t-11 28l-76 76 76 76q11 11 11 28t-11 28q-11 11-28 11t-28-11l-76-76Zm-26-369 142-142q12-12 28-11.5t28 12.5q11 12 11 28t-11 28L683-548q-12 12-28 12t-28-12l-86-86q-11-11-11-28t11-28q11-11 28-11t28 11l57 57ZM120-360h280q17 0 28.5 11.5T440-320q0 17-11.5 28.5T400-280H120q-17 0-28.5-11.5T80-320q0-17 11.5-28.5T120-360Zm0-320h280q17 0 28.5 11.5T440-640q0 17-11.5 28.5T400-600H120q-17 0-28.5-11.5T80-640q0-17 11.5-28.5T120-680Z',
+        call_merge:
+          'M268-188q-11-11-11-28t11-28l172-172v-269l-75 75q-12 12-28 12t-28-12q-12-12-12-28.5t12-28.5l143-144q6-6 13-8.5t15-2.5q8 0 15 2.5t13 8.5l145 145q12 12 12 28t-12 28q-12 12-28.5 12T596-610l-76-75v268q0 16-6 30.5T497-361L324-188q-11 11-28 11t-28-11Zm424 1q-11 11-28 11t-28-11l-72-71q-12-12-12-28t12-28q12-12 28.5-12t28.5 12l71 71q11 11 11.5 27.5T692-187Z',
+        front_hand:
+          'M500-40q-142 0-241-99t-99-241v-380q0-17 11.5-28.5T200-800q17 0 28.5 11.5T240-760v240h80v-320q0-17 11.5-28.5T360-880q17 0 28.5 11.5T400-840v320h80v-360q0-17 11.5-28.5T520-920q17 0 28.5 11.5T560-880v360h80v-280q0-17 11.5-28.5T680-840q17 0 28.5 11.5T720-800v230q-29 21-44.5 53T660-450v50h-50q-63 0-106.5 43.5T460-250v50q0 13 8.5 21.5T490-170q13 0 21.5-8.5T520-200v-50q0-38 26-64t64-26h70q17 0 28.5-11.5T720-380v-70q0-38 26-64t64-26q13 0 21.5 8.5T840-510v130q0 142-99 241T500-40Z',
+        pause_circle:
+          'M400-320q17 0 28.5-11.5T440-360v-240q0-17-11.5-28.5T400-640q-17 0-28.5 11.5T360-600v240q0 17 11.5 28.5T400-320Zm160 0q17 0 28.5-11.5T600-360v-240q0-17-11.5-28.5T560-640q-17 0-28.5 11.5T520-600v240q0 17 11.5 28.5T560-320ZM480-80q-83 0-156-31.5T197-197q-54-54-85.5-127T80-480q0-83 31.5-156T197-763q54-54 127-85.5T480-880q83 0 156 31.5T763-763q54 54 85.5 127T880-480q0 83-31.5 156T763-197q-54 54-127 85.5T480-80Z',
+        play_circle:
+          'm426-330 195-125q14-9 14-25t-14-25L426-630q-15-10-30.5-1.5T380-605v250q0 18 15.5 26.5T426-330Zm54 250q-83 0-156-31.5T197-197q-54-54-85.5-127T80-480q0-83 31.5-156T197-763q54-54 127-85.5T480-880q83 0 156 31.5T763-763q54 54 85.5 127T880-480q0 83-31.5 156T763-197q-54 54-127 85.5T480-80Z',
+        shield_person:
+          'M480-440q58 0 99-41t41-99q0-58-41-99t-99-41q-58 0-99 41t-41 99q0 58 41 99t99 41Zm0 276q59-19 104.5-59.5T664-315q-43-22-89.5-33.5T480-360q-48 0-94.5 11.5T296-315q34 51 79.5 91.5T480-164Zm0 80q-7 0-13-1t-12-3q-135-45-215-166.5T160-516v-189q0-25 14.5-45t37.5-29l240-90q14-5 28-5t28 5l240 90q23 9 37.5 29t14.5 45v189q0 140-80 261.5T505-88q-6 2-12 3t-13 1Z',
+        admin_panel_settings:
+          'M680-80q-83 0-141.5-58.5T480-280q0-83 58.5-141.5T680-480q83 0 141.5 58.5T880-280q0 83-58.5 141.5T680-80ZM160-516v-189q0-25 14.5-45t37.5-29l240-90q14-5 28-5t28 5l240 90q23 9 37.5 29t14.5 45v122q0 17-15 27.5t-32 5.5q-18-5-36-7.5t-37-2.5q-116 0-198 82t-82 198q0 32 7.5 62.5T429-156q9 19-5.5 34t-33.5 6q-42-22-77-54t-62-70q-43-59-67-129.5T160-516Zm520 236q25 0 42.5-17.5T740-340q0-25-17.5-42.5T680-400q-25 0-42.5 17.5T620-340q0 25 17.5 42.5T680-280Zm0 120q31 0 57-14.5t42-38.5q-22-13-47-20t-52-7q-27 0-52 7t-47 20q16 24 42 38.5t57 14.5Z',
+        percent:
+          'M300-520q-58 0-99-41t-41-99q0-58 41-99t99-41q58 0 99 41t41 99q0 58-41 99t-99 41Zm0-80q25 0 42.5-17.5T360-660q0-25-17.5-42.5T300-720q-25 0-42.5 17.5T240-660q0 25 17.5 42.5T300-600Zm360 440q-58 0-99-41t-41-99q0-58 41-99t99-41q58 0 99 41t41 99q0 58-41 99t-99 41Zm0-80q25 0 42.5-17.5T720-300q0-25-17.5-42.5T660-360q-25 0-42.5 17.5T600-300q0 25 17.5 42.5T660-240Zm-472 52q-11-11-11-28t11-28l528-528q11-11 28-11t28 11q11 11 11 28t-11 28L244-188q-11 11-28 11t-28-11Z',
+        loyalty:
+          'M856-390 570-104q-12 12-27 18t-30 6q-15 0-30-6t-27-18L103-457q-11-11-17-25.5T80-513v-287q0-33 23.5-56.5T160-880h287q16 0 31 6.5t26 17.5l352 353q12 12 17.5 27t5.5 30q0 15-5.5 29.5T856-390ZM260-640q25 0 42.5-17.5T320-700q0-25-17.5-42.5T260-760q-25 0-42.5 17.5T200-700q0 25 17.5 42.5T260-640Zm288 352 112-112q11-11 17.5-26t6.5-32q0-34-24-58t-58-24q-19 0-37.5 11T520-492q-30-28-47-38t-35-10q-34 0-58 24t-24 58q0 17 6.5 32t17.5 26l112 112q12 12 28 12t28-12Z',
+        emoji_events:
+          'M280-528v-152h-80v40q0 38 22 68.5t58 43.5Zm400 0q36-13 58-43.5t22-68.5v-40h-80v152ZM440-200v-124q-49-11-87.5-41.5T296-442q-75-9-125.5-65.5T120-640v-40q0-33 23.5-56.5T200-760h80q0-33 23.5-56.5T360-840h240q33 0 56.5 23.5T680-760h80q33 0 56.5 23.5T840-680v40q0 76-50.5 132.5T664-442q-18 46-56.5 76.5T520-324v124h120q17 0 28.5 11.5T680-160q0 17-11.5 28.5T640-120H320q-17 0-28.5-11.5T280-160q0-17 11.5-28.5T320-200h120Z',
+        hourglass_top:
+          'M320-160h320v-120q0-66-47-113t-113-47q-66 0-113 47t-47 113v120ZM200-80q-17 0-28.5-11.5T160-120q0-17 11.5-28.5T200-160h40v-120q0-61 28.5-114.5T348-480q-51-32-79.5-85.5T240-680v-120h-40q-17 0-28.5-11.5T160-840q0-17 11.5-28.5T200-880h560q17 0 28.5 11.5T800-840q0 17-11.5 28.5T760-800h-40v120q0 61-28.5 114.5T612-480q51 32 79.5 85.5T720-280v120h40q17 0 28.5 11.5T800-120q0 17-11.5 28.5T760-80H200Z',
+        north_east:
+          'M680-624 244-188q-11 11-28 11t-28-11q-11-11-11-28t11-28l436-436H400q-17 0-28.5-11.5T360-720q0-17 11.5-28.5T400-760h320q17 0 28.5 11.5T760-720v320q0 17-11.5 28.5T720-360q-17 0-28.5-11.5T680-400v-224Z',
+        arrow_forward:
+          'M647-440H200q-17 0-28.5-11.5T160-480q0-17 11.5-28.5T200-520h447L451-716q-12-12-11.5-28t12.5-28q12-11 28-11.5t28 11.5l264 264q6 6 8.5 13t2.5 15q0 8-2.5 15t-8.5 13L508-188q-11 11-27.5 11T452-188q-12-12-12-28.5t12-28.5l195-195Z',
+        contact_page:
+          'M480-400q33 0 56.5-23.5T560-480q0-33-23.5-56.5T480-560q-33 0-56.5 23.5T400-480q0 33 23.5 56.5T480-400ZM320-240h320v-23q0-24-13-44t-36-30q-26-11-53.5-17t-57.5-6q-30 0-57.5 6T369-337q-23 10-36 30t-13 44v23ZM720-80H240q-33 0-56.5-23.5T160-160v-640q0-33 23.5-56.5T240-880h287q16 0 30.5 6t25.5 17l194 194q11 11 17 25.5t6 30.5v447q0 33-23.5 56.5T720-80Z',
+        badge:
+          'M240-240h240v-18q0-17-9.5-31.5T444-312q-20-9-40.5-13.5T360-330q-23 0-43.5 4.5T276-312q-17 8-26.5 22.5T240-258v18Zm350-60h100q13 0 21.5-8.5T720-330q0-13-8.5-21.5T690-360H590q-13 0-21.5 8.5T560-330q0 13 8.5 21.5T590-300Zm-230-60q25 0 42.5-17.5T420-420q0-25-17.5-42.5T360-480q-25 0-42.5 17.5T300-420q0 25 17.5 42.5T360-360Zm230-60h100q13 0 21.5-8.5T720-450q0-13-8.5-21.5T690-480H590q-13 0-21.5 8.5T560-450q0 13 8.5 21.5T590-420ZM160-80q-33 0-56.5-23.5T80-160v-440q0-33 23.5-56.5T160-680h200v-120q0-33 23.5-56.5T440-880h80q33 0 56.5 23.5T600-800v120h200q33 0 56.5 23.5T880-600v440q0 33-23.5 56.5T800-80H160Zm280-520h80v-200h-80v200Z',
+        keep: 'M640-760v280l68 68q6 6 9 13.5t3 15.5v23q0 17-11.5 28.5T680-320H520v223q0 8-3 15.5T508-68l-14 14q-6 6-14 6t-14-6l-14-14q-6-6-9-13.5T440-97v-223H280q-17 0-28.5-11.5T240-360v-23q0-8 3-15.5t9-13.5l68-68v-280q-17 0-28.5-11.5T280-800q0-17 11.5-28.5T320-840h320q17 0 28.5 11.5T680-800q0 17-11.5 28.5T640-760Z',
+      };
+      const ic = (n, c = '') =>
+        G[n]
+          ? `<svg class="ic ${c}" viewBox="0 -960 960 960" aria-hidden="true" focusable="false"><path d="${G[n]}"/></svg>`
+          : '';
+      const esc = (s) =>
+        String(s).replace(
+          /[&<>"]/g,
+          (ch) =>
+            ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[ch],
+        );
+
+      /* ───────── Example data (not real clients) ───────── */
+      const LEDGER_SEED = [
+        { d: '2.03.2025 г.', t: 'Добре дошъл', k: 'Бонус', a: 20, src: 'rule' },
+        {
+          d: '14.12.2025 г.',
+          t: 'Значка «10-о посещение»',
+          k: 'Награда',
+          a: 50,
+          src: 'rule',
+        },
+        {
+          d: '10.06',
+          t: 'Размяна: оформяне на брада',
+          k: 'Използвани',
+          a: -120,
+          src: 'redeem',
+        },
+        {
+          d: '17.06',
+          t: 'Посещение 17.06',
+          k: 'Спечелени',
+          a: 38,
+          src: 'rule',
+        },
+        {
+          d: '15.07',
+          t: 'Посещение 15.07',
+          k: 'Спечелени',
+          a: 25,
+          src: 'rule',
+        },
+        {
+          d: '1.08',
+          t: 'Бонус от салона',
+          k: 'Корекция',
+          a: 30,
+          src: 'manual',
+          note: 'Жест: закъснение 30 мин',
+        },
+        {
+          d: '27.08',
+          t: 'Посещение 27.08',
+          k: 'Спечелени',
+          a: 38,
+          src: 'rule',
+        },
+      ];
+      function ledger(extra = []) {
+        const all = [...LEDGER_SEED, ...extra];
+        let bal = 259; // opening balance carried from 2024 (earned before the entries shown)
+        const rows = all.map((e) => {
+          if (!e.pending) bal += e.a;
+          return { ...e, bal: e.pending ? null : bal };
+        });
+        return { rows: rows.reverse(), balance: bal };
+      }
+
+      const HISTORY = [
+        {
+          up: true,
+          t: 'Фейд',
+          d: '22.10, 10:00',
+          b: 'Иван',
+          p: '25,00 €',
+          s: 'confirmed',
+        },
+        {
+          t: 'Фейд + оформяне на брада',
+          d: '27.08, 10:00',
+          b: 'Иван',
+          p: '38,00 €',
+          s: 'completed',
+        },
+        {
+          t: 'Фейд',
+          d: '15.07, 17:30',
+          b: 'Никола',
+          p: '25,00 €',
+          s: 'completed',
+        },
+        {
+          t: 'Фейд + оформяне на брада',
+          d: '17.06, 10:00',
+          b: 'Иван',
+          p: '38,00 €',
+          s: 'completed',
+        },
+        { t: 'Фейд', d: '3.06, 18:00', b: 'Иван', p: '25,00 €', s: 'no_show' },
+        {
+          t: 'Фейд',
+          d: '20.05, 10:00',
+          b: 'Иван',
+          p: '25,00 €',
+          s: 'completed',
+        },
+        {
+          t: 'Фейд',
+          d: '22.04, 12:30',
+          b: 'Иван',
+          p: '25,00 €',
+          s: 'cancelled',
+        },
+        {
+          t: 'Фейд + оформяне на брада',
+          d: '8.04, 10:00',
+          b: 'Иван',
+          p: '38,00 €',
+          s: 'completed',
+        },
+      ];
+
+      const MEDALS = [
+        {
+          n: 'Първо подстригване',
+          f: 'март 2024',
+          st: 'earned',
+          g: 'content_cut',
+        },
+        {
+          n: '10-о посещение',
+          f: 'декември 2025',
+          st: 'earned',
+          g: 'military_tech',
+        },
+        { n: 'Рожден ден', f: 'ноември 2025', st: 'earned', g: 'cake' },
+        {
+          n: 'В ритъм × 6',
+          f: '5 от 6',
+          st: 'progress',
+          p: 83,
+          g: 'event_repeat',
+        },
+        {
+          n: '25 посещения',
+          f: '23 от 25',
+          st: 'progress',
+          p: 92,
+          g: 'workspace_premium',
+        },
+        { n: 'Доведи приятел', f: '0 от 1', st: 'locked', g: 'loyalty' },
+      ];
+
+      const STATES = {
+        regular: 'Regular client',
+        first: 'First visit (new client)',
+        paused: 'Paused, temporary',
+        pausedPermanent: 'Paused, permanent',
+        vip: 'Top tier (Платина)',
+        birthday: 'Birthday today + reward ready',
+        guest: 'Guest walk-in (no account)',
+        long: 'Long name and long strings',
+        loading: 'Loading',
+        partial: 'Partial data (loyalty failed)',
+        offline: 'Offline',
+        pending: 'Approval pending',
+        suggested: 'Pause suggested by rule',
+      };
+
+      const SCREENS = [
+        {
+          id: 'sheet-client',
+          label: 'Visit sheet · client page',
+          states: Object.keys(STATES),
+        },
+        {
+          id: 'sheet-history',
+          label: 'Visit sheet · visits',
+          states: ['regular', 'first'],
+        },
+        {
+          id: 'sheet-rewards',
+          label: 'Visit sheet · rewards',
+          states: ['regular', 'vip', 'paused', 'first'],
+        },
+        {
+          id: 'route-phone',
+          label: 'Profile route · phone',
+          states: ['regular', 'paused', 'pending', 'vip', 'loading'],
+        },
+        {
+          id: 'route-desktop',
+          label: 'Profile route · desktop two-pane',
+          states: ['regular', 'paused', 'pending'],
+        },
+        {
+          id: 'route-activity',
+          label: 'Profile route · activity',
+          states: ['regular'],
+        },
+        {
+          id: 'composer-points',
+          label: 'Support · add points',
+          states: ['regular'],
+        },
+        {
+          id: 'flow-outcome',
+          label: 'Support · fix a wrong no-show',
+          states: ['regular', 'paused'],
+        },
+        {
+          id: 'approval',
+          label: 'Support · approve a request',
+          states: ['pending'],
+        },
+        {
+          id: 'composer-pause',
+          label: 'Support · pause online booking',
+          states: ['regular'],
+        },
+        {
+          id: 'self-view',
+          label: 'Client self-view · rewards',
+          states: ['regular', 'paused'],
+        },
+      ];
+
+      const ROLE_NAMES = {
+        barber: 'Бръснар',
+        receptionist: 'Рецепция',
+        owner: 'Собственик',
+      };
+
+      /* ───────── App state ───────── */
+      const S = {
+        screen: 'sheet-client',
+        state: 'regular',
+        role: 'owner',
+        theme: 'dark',
+        toast: null,
+        alert: null,
+        menu: null,
+        extraLedger: [],
+        activityExtra: [],
+        composer: {
+          dir: 'add',
+          amount: 50,
+          reason: 'goodwill',
+          note: '',
+          notify: true,
+          sent: false,
+        },
+        outcome: {
+          to: 'worked',
+          reason: 'staff_error',
+          keepPause: false,
+          done: false,
+        },
+        pause: {
+          scope: 'selfService',
+          term: '14',
+          reason: 'no_show_pattern',
+          show: true,
+        },
+        rewardPick: null,
+        deskSection: 'rewards',
+        expanded: {},
+      };
+      try {
+        const saved = JSON.parse(localStorage.getItem('cc-proto') || 'null');
+        if (saved)
+          Object.assign(S, {
+            role: saved.role || S.role,
+            theme: saved.theme || S.theme,
+          });
+      } catch (e) {
+        /* storage unavailable */
+      }
+      function persist() {
+        try {
+          localStorage.setItem(
+            'cc-proto',
+            JSON.stringify({ role: S.role, theme: S.theme }),
+          );
+        } catch (e) {
+          /* ignore */
+        }
+      }
+
+      function client() {
+        const base = {
+          name: 'Георги Петров',
+          ini: 'ГП',
+          sub: 'Клиент от март 2024 · 23 посещения',
+          phone: '+359 88 123 4567',
+          tier: 'Злато',
+          tags: ['Брада', 'Тих клиент'],
+          pin: 'Само при Иван · бързо, без разговори',
+          points: ledger(S.extraLedger).balance,
+          punch: 7,
+          streak: 5,
+          last: '27.08 · Фейд + брада · Иван',
+          next: '22.10, 10:00 · Иван',
+          visits: 23,
+          note: '№2 отстрани, №4 отгоре с ножица. Брада ниско, линия под челюстта. Без гел.',
+          noteBy: 'Иван · 27.08',
+          photos: ['27.08', '17.06', '20.05', '8.04'],
+          reward: 'Безплатно подстригване',
+          rewardSub:
+            'Може да го вземе · 250 от ' +
+            ledger(S.extraLedger).balance +
+            ' т.',
+          noShows: 1,
+          caps: [],
+          guest: false,
+          paused: null,
+          first: false,
+        };
+        const s = S.state;
+        if (s === 'first')
+          Object.assign(base, {
+            name: 'Кристиан Николов',
+            ini: 'КН',
+            sub: 'Първо посещение',
+            tier: null,
+            tags: [],
+            pin: null,
+            points: 20,
+            punch: 0,
+            streak: 0,
+            last: null,
+            next: null,
+            visits: 0,
+            note: null,
+            photos: [],
+            reward: null,
+            first: true,
+          });
+        if (s === 'guest')
+          Object.assign(base, {
+            name: 'Стефан',
+            ini: 'С',
+            sub: 'Гост · без профил',
+            phone: '+359 89 555 0101',
+            tier: null,
+            tags: [],
+            pin: null,
+            last: null,
+            next: null,
+            note: null,
+            photos: [],
+            reward: null,
+            guest: true,
+          });
+        if (s === 'vip')
+          Object.assign(base, {
+            tier: 'Платина',
+            sub: 'Клиент от 2019 · 142 посещения',
+            visits: 142,
+            points: 1240,
+            punch: 9,
+            streak: 14,
+            reward: 'Безплатно подстригване',
+            rewardSub: 'Може да го вземе · 250 от 1 240 т.',
+          });
+        if (s === 'birthday')
+          Object.assign(base, {
+            birthday: true,
+            reward: 'Рожден ден: −20% на този час',
+            rewardSub: 'Купон на клиента · важи до 24.10',
+          });
+        if (s === 'long')
+          Object.assign(base, {
+            name: 'Александър-Константин Христодулов-Петканов',
+            ini: 'АХ',
+            tags: [
+              'Брада',
+              'Тих клиент',
+              'Кафе без захар',
+              'Идва с детето',
+              'Плаща в брой',
+              'Предпочита сутрин',
+            ],
+            points: 12480,
+            rewardSub: 'Може да го вземе · 250 от 12 480 т.',
+            note: '№2 отстрани, №4 отгоре с ножица, преход много нисък. Брада ниско, линия под челюстта, мустаците отделно по-къси. Без гел, само матираща пудра. Не обича топла кърпа. Идва с детето си — записвай ги заедно, детето първо.',
+            pin: 'Само при Иван · бързо, без разговори · детето първо, после той',
+            noShows: 2,
+          });
+        if (s === 'paused' || s === 'pausedPermanent')
+          Object.assign(base, {
+            paused: s === 'paused' ? 'temp' : 'perm',
+            noShows: 3,
+            reward: null,
+            sub:
+              s === 'paused'
+                ? 'Онлайн записването е спряно до 12.10'
+                : 'Записването е спряно за постоянно',
+          });
+        if (s === 'pending') Object.assign(base, {});
+        if (s === 'suggested') Object.assign(base, { noShows: 3 });
+        return base;
+      }
+
+      /* ───────── Shared bits ───────── */
+      function head(c, opts = {}) {
+        const av = `<div class="av ${c.paused ? 'paused' : ''} ${c.guest ? 'guest' : ''}" aria-hidden="true">${c.guest ? ic('person') : c.ini}</div>`;
+        return `<div class="head">${av}<div><h2 class="h-title ${c.name.length > 26 ? 'long' : ''}" id="pg-title">${esc(c.name)}</h2><p class="h-sub ${c.paused ? 'warn' : ''}">${esc(c.sub)}</p></div></div>`;
+      }
+      function capsFor(c) {
+        const out = [];
+        if (c.tier)
+          out.push(
+            `<li class="cap accent">${ic('workspace_premium')}${c.tier}</li>`,
+          );
+        if (c.birthday)
+          out.push(`<li class="cap accent">${ic('cake')}Рожден ден днес</li>`);
+        if (c.first) out.push(`<li class="cap accent">Нов</li>`);
+        if (c.noShows >= 2)
+          out.push(
+            `<li class="cap warning">${ic('person_off')}${c.noShows} неявявания</li>`,
+          );
+        c.tags.forEach((t) => out.push(`<li class="cap">${esc(t)}</li>`));
+        return out.length
+          ? `<ul class="caps" aria-label="Етикети">${out.join('')}</ul>`
+          : '';
+      }
+      function pauseNotice(c, where) {
+        if (!c.paused) return '';
+        const r = S.role;
+        const temp = c.paused === 'temp';
+        const facts = [
+          temp
+            ? 'До 12.10 · само онлайн записване'
+            : 'За постоянно · всички записвания',
+          temp
+            ? '3 неявявания за 60 дни'
+            : 'Поведение · не се показва на клиента',
+        ];
+        if (r !== 'barber')
+          facts.push(
+            'Спряно от ' +
+              (temp ? 'Мария (рецепция)' : 'Иван (собственик)') +
+              ' · 12.09',
+          );
+        const acts = [];
+        if (r === 'owner')
+          acts.push(
+            `<button class="btn sm" data-int data-act="toast:Промени спирането — отваря формата">Промени</button>`,
+          );
+        if (r === 'owner' || (r === 'receptionist' && temp))
+          acts.push(
+            `<button class="btn sm" data-int data-act="lift">Възстанови записването</button>`,
+          );
+        const note =
+          r !== 'barber'
+            ? `<p class="n-cap">Бележка на екипа: ${temp ? '«Не вдига телефона при напомняне.»' : '«Инцидент на 11.09, виж дейността.»'}</p>`
+            : '';
+        return `<section class="notice warning" aria-labelledby="pause-t">
+    <div class="n-top"><span class="n-ic">${ic('pause_circle')}</span><div>
+      <p class="n-title" id="pause-t">${temp ? 'Онлайн записването е спряно' : 'Записването е спряно за постоянно'}</p>
+      <p class="n-facts">${facts.map(esc).join('<br>')}</p></div></div>
+    ${note}
+    <p class="n-cap">Точките и ритъмът са замразени, докато записването е спряно.</p>
+    ${acts.length ? `<div class="n-actions">${acts.join('')}</div>` : ''}
+  </section>`;
+      }
+      function quickActions(c, offline, route = false) {
+        const items = [];
+        if (c.phone) {
+          items.push(
+            `<li><a href="tel:${c.phone.replace(/\s/g, '')}" data-int aria-label="Обади се на ${esc(c.name)}"><span class="qa-c">${ic('call')}</span>Обади се</a></li>`,
+          );
+          items.push(
+            `<li><a href="sms:${c.phone.replace(/\s/g, '')}" data-int><span class="qa-c">${ic('sms')}</span>SMS</a></li>`,
+          );
+          items.push(
+            `<li><a href="viber://chat?number=${c.phone.replace(/[\s+]/g, '')}" data-int><span class="qa-c">${ic('chat')}</span>Viber</a></li>`,
+          );
+        }
+        if (route) {
+          if (!offline)
+            items.push(
+              `<li><button type="button" data-int data-act="toast:Отваря «Нов час» в графика с този клиент"><span class="qa-c accent">${ic('calendar_month')}</span>Нов час</button></li>`,
+            );
+        } else if (c.last && !offline)
+          items.push(
+            `<li><button type="button" data-int data-act="same"><span class="qa-c accent">${ic('replay')}</span>Същото</button></li>`,
+          );
+        return items.length
+          ? `<ul class="qa" aria-label="Бързи действия">${items.join('')}</ul>`
+          : '';
+      }
+      function engagementRow(c, state) {
+        if (c.guest) return '';
+        if (state === 'partial')
+          return `<ul class="group"><li><div class="row noleading"><span class="lbl" style="color:var(--label-2)">Наградите не се заредиха</span><button class="btn sm" data-int data-act="toast:Зареждаме отново…">Опитай пак</button></div></li></ul>`;
+        const frozen = !!c.paused;
+        const slots = Array.from({ length: 10 }, (_, i) =>
+          i === 9
+            ? '<i class="gift" aria-hidden="true"></i>'
+            : `<i class="${i < c.punch ? 'on' : ''}" aria-hidden="true"></i>`,
+        ).join('');
+        const line = c.first
+          ? 'Първата награда — след <b>10 посещения</b>'
+          : frozen
+            ? 'Замразено, докато записването е спряно'
+            : `Още <b>${10 - c.punch} посещения</b> до безплатно подстригване`;
+        return `<ul class="group" aria-label="Награди"><li><button class="eng ${frozen ? 'frozen' : ''}" data-int data-act="go:sheet-rewards" style="border:0;width:100%;text-align:start;color:inherit;font:inherit;background:inherit;border-radius:inherit">
+    <div class="eng-top"><div class="metrics">
+      <div class="metric" role="group" aria-label="${c.points} точки"><span class="m-val">${c.points.toLocaleString('bg-BG')}<span class="unit">т.</span></span><span class="m-lbl">точки</span></div>
+      <div class="metric" role="meter" aria-valuemin="0" aria-valuemax="10" aria-valuenow="${c.punch}" aria-valuetext="${c.punch} от 10 посещения до безплатно подстригване"><span class="m-val">${c.punch}<span class="unit">/10</span></span><span class="punch">${slots}</span></div>
+      <div class="metric" role="group" aria-label="${c.streak} посещения в ритъм"><span class="m-val">${ic('event_repeat')}${c.streak}</span><span class="m-lbl">в ритъм</span></div>
+    </div><span class="trail">${ic('chevron_right')}</span></div>
+    <span class="eng-line">${line}</span>
+  </button></li></ul>`;
+      }
+
+      function bar(title, { back = true, close = true, titleOn = false } = {}) {
+        return `<div class="bar">${back ? `<button class="ib" data-int data-act="back" aria-label="Назад">${ic('chevron_left')}</button>` : '<span></span>'}
+  <span class="ttl ${titleOn ? 'on' : ''}" id="bar-title">${esc(title)}</span>
+  ${close ? `<button class="ib" data-int data-act="toast:Затваря листа (с въпрос при незапазени промени)" aria-label="Затвори">${ic('close')}</button>` : '<span></span>'}</div>`;
+      }
+      function dockCheck(extraLead = '') {
+        return `<div class="dock">${extraLead}<span class="spacer"></span><button class="btn prom lg icon" data-int data-act="back" aria-label="Готово, назад">${ic('check')}</button></div>`;
+      }
+      function behind() {
+        return `<div class="behind" aria-hidden="true"><div class="bh-title">Днес</div><div class="bh-row"></div><div class="bh-row"></div><div class="bh-row"></div></div><div class="scrim" aria-hidden="true"></div>`;
+      }
+
+      /* ───────── Screens ───────── */
+      function screenSheetClient() {
+        const st = S.state;
+        const c = client();
+        if (st === 'loading') {
+          return `${behind()}<div class="sheet"><div class="grabber"></div>${bar(c.name)}<div class="body"><div class="stack">
+      ${head(c)}
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px">${'<div style="display:grid;justify-items:center;gap:6px"><div class="sk" style="width:48px;height:48px;border-radius:50%"></div><div class="sk" style="width:40px;height:10px"></div></div>'.repeat(3)}</div>
+      <div class="sk" style="height:96px;border-radius:18px"></div>
+      <div class="sk" style="height:52px;border-radius:18px 18px 5px 5px"></div><div class="sk" style="height:52px;border-radius:5px 5px 18px 18px;margin-top:-14px"></div>
+      <p class="h-sub" style="margin:0">Името и телефонът идват веднага от часа; останалото се зарежда.</p>
+    </div></div>${dockCheck()}</div>`;
+        }
+        const offline = st === 'offline';
+        const r = S.role;
+        const rows = [];
+        if (c.pin)
+          rows.push(
+            `<div class="pin" role="note" aria-label="Закачена бележка">${ic('keep')}<span>${esc(c.pin)}</span></div>`,
+          );
+        const suggest =
+          st === 'suggested'
+            ? `<section class="notice neutral" aria-labelledby="sg-t"><div class="n-top"><span class="n-ic">${ic('help')}</span><div><p class="n-title" id="sg-t">3 неявявания за 60 дни</p><p class="n-facts">3.06 · 19.08 · 9.09</p></div></div><p class="n-cap">${r === 'barber' ? 'Рецепцията решава дали да спре онлайн записването.' : 'Правилото само предлага. Решаваш ти, а клиентът може да оспори всяко неявяване.'}</p>${r !== 'barber' ? `<div class="n-actions"><button class="btn sm" data-int data-act="go:composer-pause">Спри онлайн записването…</button><button class="btn sm" data-int data-act="toast:Предложението е скрито до следващото неявяване">Не сега</button></div>` : ''}</section>`
+            : '';
+        const pending =
+          st === 'pending' && r !== 'barber'
+            ? `<section class="notice accent"><div class="n-top"><span class="n-ic">${ic('pending_actions')}</span><div><p class="n-title">Чака одобрение: +120 т.</p><p class="n-facts">Мария · днес 09:12 · изтича на 1.10</p></div></div></section>`
+            : '';
+        const reward =
+          c.reward && !offline
+            ? `<ul class="group"><li><button class="row tall accentrow" data-int data-act="toast:Отваря страницата за отстъпки с наградата на клиента"><span class="lead accent">${ic(c.birthday ? 'cake' : 'redeem')}</span><span class="lbl">${esc(c.reward)}<span class="sub">${esc(c.rewardSub)}</span></span><span class="trail">${ic('chevron_right')}</span></button></li></ul>`
+            : '';
+        const visits = c.last
+          ? `<ul class="group" aria-label="Посещения">
+      <li><div class="row"><span class="lead">${ic('history')}</span><span class="lbl">Последно<span class="sub">${esc(c.last)}</span></span><span></span></div></li>
+      ${c.next ? `<li><div class="row"><span class="lead">${ic('calendar_month')}</span><span class="lbl">Следващо<span class="sub">${esc(c.next)}</span></span><span></span></div></li>` : ''}
+      <li><button class="row" data-int data-act="go:sheet-history"><span class="lead">${ic('manage_history')}</span><span class="lbl">Всички посещения</span><span class="trail">${c.visits} ${ic('chevron_right')}</span></button></li></ul>`
+          : c.guest
+            ? ''
+            : `<ul class="group"><li><div class="row"><span class="lead">${ic('history')}</span><span class="lbl" style="color:var(--label-2)">Още няма минали посещения</span><span></span></div></li></ul>`;
+        const photos = c.photos.length
+          ? `<div class="photos" role="list" aria-label="Снимки от минали посещения">${c.photos.map((d) => `<button class="photo" role="listitem" data-int data-act="toast:Отваря снимката (страница «Снимка»)" style="background:none;border:0;padding:0;color:inherit;border-radius:12px"><span class="pimg"></span><span class="pc">${d}</span></button>`).join('')}</div>`
+          : '';
+        const note = c.guest
+          ? ''
+          : c.note
+            ? `<ul class="group" aria-label="Бележка за клиента"><li><div class="row" style="align-items:start"><span class="lead" style="padding-top:2px">${ic('edit_note')}</span><span class="lbl">${esc(c.note)}<span class="sub">${esc(c.noteBy)}</span></span><span></span></div></li></ul>`
+            : offline
+              ? ''
+              : `<ul class="group"><li><button class="row" data-int data-act="toast:Отваря полето за бележка (част от чернова, записва се с «Запази»)"><span class="lead accent">${ic('add')}</span><span class="lbl" style="color:var(--accent-ink)">Добави бележка за клиента</span><span></span></button></li></ul>`;
+        const full =
+          r !== 'barber' && !c.guest
+            ? `<ul class="group"><li><button class="row" data-int data-act="go:route-phone"><span class="lead">${ic('contact_page')}</span><span class="lbl">Пълен профил</span><span class="trail">${ic('open_in_new')}</span></button></li></ul>`
+            : '';
+        const walk = `<ul class="group"><li><button class="row noleading" data-int data-act="toast:Премахва клиента, часът остава като на място"><span class="lbl">Без клиент (на място)</span><span></span></button></li></ul>`;
+        const offlineNote = offline
+          ? `<p class="h-sub" style="margin:0;display:flex;gap:6px;align-items:center">${ic('cloud_off')} Без връзка · данни от 10:42</p>`
+          : '';
+        return `${behind()}<div class="sheet"><div class="grabber"></div>${bar(c.name)}<div class="body" data-scroll><div class="stack">
+    ${head(c)}${offlineNote}${pauseNotice(c)}${suggest}${pending}${rows.join('')}${capsFor(c)}${quickActions(c, offline)}
+    ${reward}${engagementRow(c, st)}${visits}${photos}${note}${full}${walk}
+  </div></div>${dockCheck()}</div>`;
+      }
+
+      function statusGlyph(s) {
+        if (s === 'no_show')
+          return `<span class="trail" style="color:var(--warning)">${ic('person_off')} Неявяване</span>`;
+        if (s === 'cancelled')
+          return `<span class="trail">${ic('event_busy')} Отказан</span>`;
+        return '<span></span>';
+      }
+      function screenSheetHistory() {
+        const c = client();
+        if (S.state === 'first') {
+          return `${behind()}<div class="sheet"><div class="grabber"></div>${bar('Посещения')}<div class="body"><div class="stack">
+      <div><h2 class="pg-title">Посещения</h2><p class="pg-sub">Още няма минали посещения</p></div>
+      <ul class="group"><li><div class="row"><span class="lead accent">${ic('calendar_month')}</span><span class="lbl">Днес, 10:00<span class="sub">Фейд · Иван</span></span><span></span></div></li></ul>
+      <p class="h-sub" style="margin:0">Тук ще се появява всяко посещение след днешното.</p>
+    </div></div>${dockCheck()}</div>`;
+        }
+        const up = HISTORY.filter((h) => h.up);
+        const past = HISTORY.filter((h) => !h.up);
+        const rowOf = (
+          h,
+        ) => `<li><div class="row tall"><span class="lead ${h.s === 'no_show' ? 'warn' : ''}">${ic(h.s === 'no_show' ? 'person_off' : h.s === 'cancelled' ? 'event_busy' : h.up ? 'calendar_month' : 'content_cut')}</span>
+    <span class="ev"><span class="ev-t ${h.s === 'no_show' || h.s === 'cancelled' ? 'struck' : ''}">${esc(h.t)}</span><span class="ev-l">${esc(h.d)} · ${esc(h.b)}</span><span class="ev-l">${esc(h.p)}</span></span>${statusGlyph(h.s)}</div></li>`;
+        return `${behind()}<div class="sheet"><div class="grabber"></div>${bar('Посещения')}<div class="body"><div class="stack">
+    <div><h2 class="pg-title">Посещения</h2><p class="pg-sub">${c.visits} · от март 2024</p></div>
+    <div class="counters" role="group" aria-label="Обобщение"><div><span class="cv">23</span><span class="cl">завършени</span></div><div><span class="cv">1</span><span class="cl">неявяване</span></div><div><span class="cv">2</span><span class="cl">отказани</span></div></div>
+    <ul class="group"><li><button class="row noleading" data-int data-act="menu:filter"><span class="lbl">Покажи</span><span class="trail">Всички ${ic('unfold_more')}</span></button></li></ul>
+    <ul class="group" aria-label="Предстоящи">${up.map(rowOf).join('')}</ul>
+    <ul class="group" aria-label="Минали">${past.map(rowOf).join('')}</ul>
+    <button class="btn" data-int data-act="toast:Зарежда следващите 30 посещения" style="justify-self:center">Покажи още</button>
+  </div></div>${dockCheck()}</div>`;
+      }
+
+      function streakTrack(n) {
+        const marks = [
+          { k: 'kept', l: 'мар' },
+          { k: 'frozen', l: 'апр', g: 'ac_unit' },
+          { k: 'kept', l: 'май' },
+          { k: 'kept', l: 'юни' },
+          { k: 'kept', l: 'юли' },
+          { k: 'kept', l: 'авг' },
+          { k: 'current', l: 'сеп' },
+        ];
+        return `<div class="streak" role="img" aria-label="${n} посещения в ритъм. Април е пазен: салонът беше затворен. Сегашното посещение продължава ритъма.">${marks.map((m) => `<span class="mk"><span class="dot ${m.k}">${m.k === 'kept' ? ic('check') : m.g ? ic(m.g) : m.k === 'current' ? ic('content_cut') : ''}</span>${m.l}</span>`).join('')}</div>`;
+      }
+      function screenSheetRewards() {
+        const c = client();
+        const L = ledger(S.extraLedger);
+        const vip = S.state === 'vip';
+        const paused = !!c.paused;
+        const catalog = [
+          { t: 'Оформяне на брада', cost: 120 },
+          { t: 'Безплатно подстригване', cost: 250 },
+          { t: 'Фейд + брада', cost: 400 },
+        ];
+        const pts = vip ? 1240 : c.first ? 20 : L.balance;
+        const rows = (
+          c.first
+            ? [
+                {
+                  d: 'днес',
+                  t: 'Добре дошъл',
+                  k: 'Бонус',
+                  a: 20,
+                  bal: 20,
+                  src: 'rule',
+                },
+              ]
+            : L.rows
+        ).slice(0, 5);
+        const ledgerHtml = rows
+          .map(
+            (
+              e,
+            ) => `<li><div class="row tall"><span class="lead">${ic(e.src === 'manual' ? 'person' : e.src === 'redeem' ? 'redeem' : 'auto_awesome')}</span>
+      <span class="ev"><span class="ev-t" style="font-weight:500">${esc(e.t)}</span><span class="ev-l">${esc(e.k)} · ${esc(e.d)}${e.pending ? ' · <span class="pending-tag">чака одобрение</span>' : ''}</span></span>
+      <span style="text-align:end"><span class="amt ${e.a > 0 ? 'plus' : 'minus'} ${e.pending ? 'struck' : ''}">${e.a > 0 ? '+' : '−'}${Math.abs(e.a)}</span>${e.bal != null ? `<span class="bal">${e.bal}</span>` : ''}</span></div></li>`,
+          )
+          .join('');
+        const cat = catalog
+          .map((x, i) => {
+            const ok = pts >= x.cost && !paused;
+            const sel = S.rewardPick === i;
+            return `<li><button class="ticket ${ok ? '' : 'locked'} ${sel ? 'sel' : ''}" data-int ${ok ? `data-act="pick:${i}"` : `aria-disabled="true"`} style="width:100%;border:0;color:inherit;font:inherit;text-align:start" aria-pressed="${sel}">
+      <span class="tg">${ic(ok ? 'redeem' : 'lock')}</span><span><span class="tt">${esc(x.t)}</span><br><span class="ts">${x.cost} т.${ok ? '' : paused ? ' · замразено' : ` · още ${x.cost - pts} т.`}</span></span><span class="trail">${sel ? ic('check') : ''}</span></button></li>`;
+          })
+          .join('');
+        const dock =
+          S.rewardPick != null
+            ? `<div class="dock"><span class="spacer"></span><button class="btn prom lg" data-int data-act="redeem">Размени ${catalog[S.rewardPick].cost} т.</button></div>`
+            : dockCheck();
+        return `${behind()}<div class="sheet"><div class="grabber"></div>${bar('Награди')}<div class="body"><div class="stack">
+    <div><h2 class="pg-title">Награди</h2><p class="pg-sub">${c.first ? 'Нов клиент' : vip ? 'Платина' : 'Злато'} · ${pts.toLocaleString('bg-BG')} т.</p></div>
+    ${paused ? `<section class="notice warning"><div class="n-top"><span class="n-ic">${ic('ac_unit')}</span><div><p class="n-title">Замразено, докато записването е спряно</p><p class="n-facts">Точките остават. Ритъмът не се прекъсва.</p></div></div></section>` : ''}
+    <ul class="group" aria-label="Точки">${ledgerHtml}<li><button class="row" data-int data-act="toast:Как работят точките: 1 т. за всяко евро · награди от 120 т. · точките не изтичат · неявяване не отнема точки"><span class="lead">${ic('info')}</span><span class="lbl">Как работят точките<span class="sub">Точките не изтичат</span></span><span class="trail">${ic('chevron_right')}</span></button></li></ul>
+    <ul class="group" aria-label="До следващата награда"><li><div class="row stacked">
+      <span class="lbl" style="font-weight:600">${c.first ? 'Първата награда — след 10 посещения' : `Още ${10 - (vip ? 9 : c.punch)} посещения до безплатно подстригване`}</span>
+      <span class="punch lg" role="meter" aria-valuemin="0" aria-valuemax="10" aria-valuenow="${vip ? 9 : c.punch}" aria-valuetext="${vip ? 9 : c.punch} от 10">${Array.from({ length: 10 }, (_, i) => (i === 9 ? `<i class="gift">${ic('redeem')}</i>` : `<i class="${i < (vip ? 9 : c.punch) ? 'on' : ''}"></i>`)).join('')}</span></div></li></ul>
+    ${
+      c.first
+        ? ''
+        : `<ul class="group" aria-label="Посещения в ритъм"><li><div class="row stacked">
+      <span class="lbl" style="font-weight:600">${vip ? 14 : c.streak} посещения в ритъм</span>${streakTrack(c.streak)}
+      <span class="h-sub" style="margin:0">${paused ? 'Ритъмът е замразен.' : 'Обикновено идва на ~4 седмици · следващото е записано за 22.10'} · ${ic('ac_unit')} 1 защита в запас</span></div></li></ul>`
+    }
+    ${
+      c.first
+        ? ''
+        : `<ul class="group" aria-label="Ниво"><li><div class="row stacked">
+      <span class="lbl" style="font-weight:600">${vip ? 'Платина · най-високото ниво' : 'Злато'}</span>
+      <div class="gauge" role="meter" aria-valuemin="12" aria-valuemax="20" aria-valuenow="${vip ? 20 : 13}" aria-valuetext="${vip ? 'Най-високото ниво' : '13 от 20 посещения за 12 месеца до Платина'}"><div class="g-track"><div class="g-fill" style="width:${vip ? 100 : 12}%"></div></div>
+      <div class="g-ends"><span>${vip ? 'Платина' : 'Злато · 12'}</span><span>${vip ? '142 посещения' : 'Платина · 20 посещения за 12 месеца'}</span></div></div>
+      <span class="h-sub" style="margin:0">${vip ? 'Предимства: приоритет в листа на чакащите · запис 8 седмици напред' : '13 посещения за последните 12 месеца · още 7 до Платина'}</span></div></li></ul>`
+    }
+    <div class="medals" role="list" aria-label="Значки">${(c.first ? MEDALS.map((m, i) => (i === 0 ? { ...m, st: 'progress', p: 0, f: '0 от 1' } : { ...m, st: 'locked', f: m.st === 'earned' ? '0 от 1' : m.f })) : MEDALS).map((m, i) => `<button class="medal ${m.st}" role="listitem" data-int data-act="toast:${esc(m.n)}: ${m.st === 'earned' ? 'спечелена ' + m.f : 'условие и напредък — ' + m.f}" style="--p:${m.p || 0}" aria-label="${esc(m.n)}, ${m.st === 'earned' ? 'спечелена ' + m.f : m.f}"><span class="md">${ic(m.g)}${i === 1 && !c.first ? '' : ''}</span><span class="mn">${esc(m.n)}</span><span class="mf">${esc(m.f)}</span></button>`).join('')}</div>
+    <ul class="group" aria-label="Награди за размяна" style="gap:8px">${cat}</ul>
+  </div></div>${dock}</div>`;
+      }
+
+      function routeBody(c, compact = false) {
+        const r = S.role;
+        const pend =
+          S.state === 'pending' && r === 'owner'
+            ? `<section class="notice accent"><div class="n-top"><span class="n-ic">${ic('pending_actions')}</span><div><p class="n-title">1 корекция чака решение</p><p class="n-facts">Мария · +120 т. · изтича на 1.10</p></div></div><div class="n-actions"><button class="btn sm prom" data-int data-act="go:approval">Прегледай</button></div></section>`
+            : '';
+        const pendRec =
+          S.state === 'pending' && r === 'receptionist'
+            ? `<section class="notice accent"><div class="n-top"><span class="n-ic">${ic('pending_actions')}</span><div><p class="n-title">Изпратено за одобрение: +120 т.</p><p class="n-facts">чака Иван · изтича на 1.10</p></div></div><div class="n-actions"><button class="btn sm" data-int data-act="toast:Искането е оттеглено">Оттегли</button></div></section>`
+            : '';
+        const facts = `<ul class="group" aria-label="Факти">
+    <li><div class="row"><span class="lead">${ic('calendar_month')}</span><span class="lbl">Клиент от</span><span class="trail">март 2024</span></div></li>
+    <li><div class="row"><span class="lead">${ic('event_repeat')}</span><span class="lbl">Ритъм</span><span class="trail">на ~4 седмици</span></div></li>
+    <li><div class="row"><span class="lead">${ic('content_cut')}</span><span class="lbl">Любим бръснар</span><span class="trail">Иван</span></div></li>
+    ${r === 'owner' ? `<li><div class="row"><span class="lead">${ic('sell')}</span><span class="lbl">Похарчени общо</span><span class="trail">712,00 €</span></div></li>` : ''}
+  </ul>`;
+        const counters = `<div class="counters" role="group" aria-label="За 12 месеца"><div><span class="cv">13</span><span class="cl">посещения</span></div><div><span class="cv">0</span><span class="cl">късни откази</span></div><div><span class="cv">${c.noShows}</span><span class="cl">неявявания</span></div></div>`;
+        const sections = `<ul class="group" aria-label="Раздели">
+    <li><button class="row" data-int data-act="go:sheet-history"><span class="lead">${ic('manage_history')}</span><span class="lbl">Посещения</span><span class="trail">23 ${ic('chevron_right')}</span></button></li>
+    <li><button class="row" data-int data-act="go:sheet-rewards"><span class="lead">${ic('stars')}</span><span class="lbl">Награди</span><span class="trail">${c.points} т. ${ic('chevron_right')}</span></button></li>
+    <li><button class="row" data-int data-act="go:route-activity"><span class="lead">${ic('history')}</span><span class="lbl">Дейност</span><span class="trail">${ic('chevron_right')}</span></button></li></ul>`;
+        const support = supportRows(c);
+        return `${head(c)}${pauseNotice(c)}${pend}${pendRec}${c.pin ? `<div class="pin">${ic('keep')}<span>${esc(c.pin)}</span></div>` : ''}${capsFor(c)}${quickActions(c, false, true)}${counters}${facts}${sections}${support}`;
+      }
+      function supportRows(c) {
+        const r = S.role;
+        if (r === 'barber') return '';
+        const rows = [
+          ['add', 'Добави точки', 'composer-points'],
+          [
+            'remove',
+            'Отнеми точки',
+            'toast:Отваря «Отнеми точки» (с потвърждение)',
+          ],
+          [
+            'event_repeat',
+            'Ритъм и защита',
+            'toast:Отваря «Възстанови ритъма» / «Дай защита»',
+          ],
+          [
+            'military_tech',
+            'Значки',
+            'toast:Отваря «Значки»: дай ръчно / отнеми',
+          ],
+          r === 'owner'
+            ? [
+                'workspace_premium',
+                'Ниво',
+                'toast:Отваря «Ниво» (само собственик)',
+              ]
+            : null,
+          ['person_off', 'Поправи изход на посещение', 'flow-outcome'],
+          [
+            'pause_circle',
+            c.paused ? 'Спиране на записването' : 'Спри онлайн записването',
+            'composer-pause',
+          ],
+          ['help', 'Защо не получи…?', 'toast:Отваря обяснението по правило'],
+        ].filter(Boolean);
+        return `<ul class="group" aria-label="Корекции">${rows.map(([g, t, a]) => `<li><button class="row" data-int data-act="${a.startsWith('toast:') ? a : 'go:' + a}"><span class="lead">${ic(g)}</span><span class="lbl">${t}</span><span class="trail">${ic('chevron_right')}</span></button></li>`).join('')}</ul>`;
+      }
+      function barberGate(what) {
+        return `<div class="sheet route"><div class="gate"><span class="cap">${ic('shield_person')} Бръснар</span><h3>Бръснарят не стига до тук</h3><p>${what} Редът, който води тук, липсва за тази роля — не е сив, а го няма. Ако някой отвори връзката директно, маршрутът го връща към графика.</p><button class="btn prom" data-int data-act="role:receptionist">Виж като рецепция</button></div></div>`;
+      }
+      function screenRoutePhone() {
+        if (S.role === 'barber')
+          return barberGate('Пълният профил е за рецепцията и собственика.');
+        const c = client();
+        if (S.state === 'loading') {
+          return `<div class="sheet route">${bar('Клиент', { close: false })}<div class="body"><div class="stack">${head({ ...c, name: 'Георги Петров', sub: '…' })}<div class="sk" style="height:70px;border-radius:18px"></div><div class="sk" style="height:160px;border-radius:18px"></div></div></div></div>`;
+        }
+        return `<div class="sheet route">${bar(c.name, { close: false })}<div class="body"><div class="stack">${routeBody(c)}</div></div></div>`;
+      }
+      function screenRouteDesktop() {
+        if (S.role === 'barber')
+          return barberGate('Пълният профил е за рецепцията и собственика.');
+        const c = client();
+        const sec = S.deskSection;
+        const L = ledger(S.extraLedger);
+        const left = `${head(c)}${pauseNotice(c)}${c.pin ? `<div class="pin">${ic('sticky_note_2')}<span>${esc(c.pin)}</span></div>` : ''}${capsFor(c)}${quickActions(c)}
+    <ul class="group"><li><div class="row" style="align-items:start"><span class="lead">${ic('edit_note')}</span><span class="lbl">${esc(c.note)}<span class="sub">${esc(c.noteBy)}</span></span><span></span></div></li></ul>
+    <div class="counters"><div><span class="cv">13</span><span class="cl">посещения / 12 м.</span></div><div><span class="cv">1</span><span class="cl">отказани</span></div><div><span class="cv">${c.noShows}</span><span class="cl">неявявания</span></div></div>`;
+        const idx = [
+          ['visits', 'Посещения'],
+          ['rewards', 'Награди'],
+          ['activity', 'Дейност'],
+          ['support', 'Корекции'],
+        ]
+          .map(
+            ([k, l]) =>
+              `<button data-act="desk:${k}" aria-current="${sec === k}">${l}</button>`,
+          )
+          .join('');
+        let content = '';
+        if (sec === 'rewards') {
+          content = `<h2 class="pg-title" style="font-size:1.75rem">Награди</h2>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px">
+        <div class="notice neutral"><span class="metric" style="display:grid"><span class="m-val">${L.balance}<span class="unit">т.</span></span><span class="m-lbl">за размяна</span></span></div>
+        <div class="notice neutral"><span class="metric" style="display:grid"><span class="m-val">${c.punch}<span class="unit">/10</span></span><span class="m-lbl">до безплатно подстригване</span></span></div>
+        <div class="notice neutral"><span class="metric" style="display:grid"><span class="m-val">${ic('event_repeat')}${c.streak}</span><span class="m-lbl">посещения в ритъм</span></span></div>
+      </div>
+      <ul class="group">${L.rows.map((e) => `<li><div class="row"><span class="lead">${ic(e.src === 'manual' ? 'person' : e.src === 'redeem' ? 'redeem' : 'auto_awesome')}</span><span class="ev"><span class="ev-t" style="font-weight:500">${esc(e.t)}</span><span class="ev-l">${esc(e.k)} · ${esc(e.d)}</span></span><span style="text-align:end"><span class="amt ${e.a > 0 ? 'plus' : 'minus'}">${e.a > 0 ? '+' : '−'}${Math.abs(e.a)}</span><span class="bal">${e.bal ?? ''}</span></span></div></li>`).join('')}</ul>
+      <div class="medals" style="grid-template-columns:repeat(6,1fr)">${MEDALS.map((m) => `<div class="medal ${m.st}" style="--p:${m.p || 0}"><span class="md">${ic(m.g)}</span><span class="mn">${esc(m.n)}</span><span class="mf">${esc(m.f)}</span></div>`).join('')}</div>`;
+        } else if (sec === 'visits') {
+          content = `<h2 class="pg-title" style="font-size:1.75rem">Посещения</h2><ul class="group">${HISTORY.map((h) => `<li><div class="row tall"><span class="lead">${ic(h.s === 'no_show' ? 'person_off' : h.s === 'cancelled' ? 'event_busy' : 'content_cut')}</span><span class="ev"><span class="ev-t ${h.s === 'no_show' || h.s === 'cancelled' ? 'struck' : ''}">${esc(h.t)}</span><span class="ev-l">${esc(h.d)} · ${esc(h.b)} · ${esc(h.p)}</span></span>${h.s === 'no_show' ? `<button class="btn sm" data-int data-act="go:flow-outcome">Поправи изхода</button>` : statusGlyph(h.s)}</div></li>`).join('')}</ul>`;
+        } else if (sec === 'activity') {
+          content = `<h2 class="pg-title" style="font-size:1.75rem">Дейност</h2>${activityList()}`;
+        } else {
+          content = `<h2 class="pg-title" style="font-size:1.75rem">Корекции</h2>${S.state === 'pending' && S.role === 'owner' ? `<section class="notice accent"><div class="n-top"><span class="n-ic">${ic('pending_actions')}</span><div><p class="n-title">1 корекция чака решение</p><p class="n-facts">Мария · +120 т. · изтича на 1.10</p></div></div><div class="n-actions"><button class="btn sm prom" data-int data-act="go:approval">Прегледай</button></div></section>` : ''}${supportRows(c)}`;
+        }
+        return `<div class="sheet route"><div class="deskbar">${ic('chevron_left')}<span class="crumb">Клиенти</span><span>/</span><span>${esc(c.name)}</span></div>
+    <div class="two" style="height:calc(100% - 56px)"><div class="left">${left}</div><div class="right"><div class="index" role="navigation" aria-label="Раздели">${idx}</div><div class="inner">${content}</div></div></div></div>`;
+      }
+
+      function activityList() {
+        const r = S.role;
+        const items = [
+          ...S.activityExtra,
+          {
+            day: 'Днес',
+            who: 'МП',
+            sent: '<b>Мария</b> поиска <b>+120 т.</b>',
+            meta: ['09:12', 'ръчно', 'чака одобрение'],
+            diff: '340 → 460 т.',
+            reason: 'Жест · проблем с услугата',
+            note: '«Машинката спря по средата, довършихме с ножица.»',
+            vis: 'Само екипът',
+          },
+          {
+            day: '1.08',
+            who: 'МП',
+            sent: '<b>Мария</b> добави <b>+30 т.</b>',
+            meta: ['14:03', 'ръчно'],
+            diff: '272 → 302 т.',
+            reason: 'Жест · закъснение',
+            note: '«Чака 30 мин заради предния клиент.»',
+            vis: 'Клиентът вижда: «Бонус от салона»',
+            undo: true,
+          },
+          {
+            day: '14.12.2025 г.',
+            who: 'sys',
+            sent: 'Правилото <b>«Всяко 10-о посещение»</b> даде значка и <b>+50 т.</b>',
+            meta: ['автоматично', 'правило v3'],
+            diff: '193 → 243 т.',
+            vis: 'Клиентът вижда',
+            why: true,
+          },
+          {
+            day: '3.06',
+            who: 'ИК',
+            sent: '<b>Иван</b> отбеляза <b>неявяване</b>',
+            meta: ['18:25', 'ръчно'],
+            diff: 'Потвърден → Неявяване',
+            vis: 'Клиентът вижда статуса',
+          },
+        ];
+        let lastDay = '';
+        return items
+          .map((it) => {
+            const dayHead =
+              it.day !== lastDay ? `<p class="daylbl">${it.day}</p>` : '';
+            lastDay = it.day;
+            const av =
+              it.who === 'sys'
+                ? `<span class="av xs" style="background:var(--fill)">${ic('auto_awesome')}</span>`
+                : `<span class="av xs">${it.who}</span>`;
+            const reason =
+              r !== 'barber' && it.reason
+                ? `<span>${ic('rule')} ${esc(it.reason)}</span>`
+                : '';
+            const note =
+              r === 'owner' && it.note
+                ? `<div class="ameta">${ic('sticky_note_2')} ${esc(it.note)}</div>`
+                : '';
+            const acts = [];
+            if (it.undo && r !== 'barber')
+              acts.push(
+                `<button class="btn sm" data-int data-act="undoLater">Отмени корекцията</button>`,
+              );
+            if (it.why)
+              acts.push(
+                `<button class="btn sm" data-int data-act="toast:Защо: 10 от 10 завършени посещения · правило v3 · издадено веднъж (ключ 10-о:1)">Защо?</button>`,
+              );
+            return `${dayHead}<div class="group"><div class="act">${av}<div><div class="asent">${it.sent}</div><div class="ameta">${it.meta.map(esc).join(' · ')}${reason ? ' · ' + reason : ''}</div><div class="adiff"><span class="vc">${esc(it.diff).replace('→', '<span aria-hidden="true">→</span>')}</span><span class="vis">${esc(it.vis)}</span></div>${note}${acts.length ? `<div class="aacts">${acts.join('')}</div>` : ''}</div></div></div>`;
+          })
+          .join('');
+      }
+      function screenRouteActivity() {
+        if (S.role === 'barber')
+          return barberGate('Дейността е за рецепцията и собственика.');
+        return `<div class="sheet route">${bar('Дейност', { close: false, titleOn: true })}<div class="body"><div class="stack">
+    <div><h2 class="pg-title">Дейност</h2><p class="pg-sub">Георги Петров · всичко се добавя, нищо не се трие</p></div>
+    <ul class="group"><li><button class="row noleading" data-int data-act="toast:Филтър: Всички · Точки · Ритъм · Значки · Спиране · Посещения · Профил"><span class="lbl">Покажи</span><span class="trail">Всички ${ic('unfold_more')}</span></button></li></ul>
+    ${activityList()}
+  </div></div></div>`;
+      }
+
+      const clientLabel = (r) =>
+        r === 'goodwill'
+          ? 'Бонус от салона'
+          : r === 'service_issue'
+            ? 'Компенсация от салона'
+            : 'Корекция от салона';
+      const REASONS = {
+        add: [
+          ['goodwill', 'Жест от салона'],
+          ['service_issue', 'Проблем с услугата'],
+          ['missed_award', 'Пропусната награда'],
+          ['system_fault', 'Грешка в системата'],
+          ['other', 'Друго'],
+        ],
+        remove: [
+          ['staff_error', 'Грешно начислени'],
+          ['duplicate_account', 'Дублиран профил'],
+          ['fraud_or_abuse', 'Злоупотреба'],
+          ['other', 'Друго'],
+        ],
+      };
+      function screenComposerPoints() {
+        if (S.role === 'barber')
+          return barberGate(
+            'Бръснарят може само да поиска корекция — от листа «Изпрати искане».',
+          );
+        const c = client();
+        const q = S.composer;
+        const cap = S.role === 'receptionist' ? 50 : Infinity;
+        const needsApproval = q.amount > cap;
+        const before = ledger(S.extraLedger).balance;
+        const after = before + (q.amount || 0);
+        const reasonLabel = (REASONS.add.find(([k]) => k === q.reason) ||
+          [])[1];
+        const unlock =
+          before < 400 && after >= 400
+            ? `<li><span class="ci">${ic('redeem')}</span><span>Ще може да размени «Фейд + брада» (400 т.)</span><span></span></li>`
+            : '';
+        const cascade = `<ul class="cascade" aria-label="Какво още ще се промени">
+    <li><span class="ci">${ic('stars')}</span><span>Точки</span><span class="vc"><s>${before}</s> <span aria-hidden="true">→</span> <b>${after}</b></span></li>
+    ${unlock}
+    <li><span class="ci">${ic('workspace_premium')}</span><span>Нивото не се променя — ниво се печели с посещения</span><span></span></li>
+    ${q.notify ? `<li><span class="ci">${ic('notifications')}</span><span>Клиентът вижда «${clientLabel(q.reason)}»; известието тръгва след 10 мин, ако не отмениш</span><span></span></li>` : `<li><span class="ci">${ic('notifications')}</span><span>Клиентът вижда «${clientLabel(q.reason)}» в историята, без известие</span><span></span></li>`}
+  </ul>`;
+        const route = `<div class="sheet route" style="opacity:.9">${bar(c.name, { close: false })}<div class="body"><div class="stack">${routeBody(c)}</div></div></div>`;
+        const cta = needsApproval
+          ? `Изпрати за одобрение`
+          : `Добави ${q.amount || 0} т.`;
+        return `${route}<div class="modal-scrim"></div><div class="modal" role="dialog" aria-modal="true" aria-labelledby="cmp-t">
+    <div class="bar"><button class="ib" data-int data-act="closeModal" aria-label="Затвори">${ic('close')}</button><span class="ttl on" id="cmp-t">Добави точки</span><span></span></div>
+    <div class="body" style="padding-bottom:110px"><div class="stack">
+      <div class="bat" role="group" aria-label="Преди и след"><div><div class="bl">Сега</div><div class="bv">${before}</div></div><span class="sep"></span><div><div class="bl">Промяна</div><div class="bv chg">+${q.amount || 0}</div></div><span class="sep"></span><div><div class="bl">След</div><div class="bv">${after}</div></div></div>
+      <ul class="group"><li><button class="row noleading" data-int data-act="menu:reason" id="reason-row" aria-haspopup="menu"><span class="lbl">Причина</span><span class="trail" style="color:var(--fg)">${esc(reasonLabel)} ${ic('unfold_more')}</span></button></li></ul>
+      <div class="amount"><button class="btn icon reg" data-int data-act="amt:-10" aria-label="Намали с 10">${ic('remove')}</button>
+        <label class="sr" for="amt">Точки</label><div style="display:flex;align-items:baseline;justify-content:center;gap:6px"><input id="amt" class="fig" inputmode="numeric" value="${q.amount || ''}" style="width:4.2ch" aria-describedby="amt-b"><span class="unit">т.</span></div>
+        <button class="btn icon reg" data-int data-act="amt:10" aria-label="Увеличи с 10">${ic('add')}</button></div>
+      <p class="bounds" id="amt-b">${S.role === 'receptionist' ? 'До 50 т. сама · над това — към собственика' : 'Без лимит · над 250 т. влиза в седмичния преглед'}</p>
+      ${needsApproval ? `<section class="notice accent"><div class="n-top"><span class="n-ic">${ic('pending_actions')}</span><div><p class="n-title">Над лимита ти от 50 т.</p><p class="n-facts">Отива при Иван (собственик) · нищо не се променя до одобрението</p></div></div></section>` : ''}
+      <div><label class="sr" for="note">Бележка</label><textarea id="note" class="field" placeholder="Напр. «Машинката спря по средата»">${esc(q.note)}</textarea><p class="help">Вижда се само от екипа${q.reason === 'other' ? ' · задължителна при «Друго»' : ' · по желание'}</p></div>
+      <ul class="group"><li><div class="row noleading"><span class="lbl">Уведоми клиента</span><button class="switch" role="switch" aria-checked="${q.notify}" aria-label="Уведоми клиента" data-act="notify"></button></div></li></ul>
+      ${cascade}
+    </div></div>
+    <div class="dock"><span class="spacer"></span><button class="btn prom lg" data-int data-act="commitPoints" ${!q.amount || (q.reason === 'other' && !q.note.trim()) ? 'disabled style="opacity:.4"' : ''}>${cta}</button></div>
+  </div>`;
+      }
+
+      function screenFlowOutcome() {
+        if (S.role === 'barber')
+          return `${behind()}<div class="sheet"><div class="gate"><span class="cap">${ic('shield_person')} Бръснар</span><h3>Бръснарят поправя изхода само в същия ден</h3><p>Това неявяване е от 3.06. Редът «Поправи изхода» липсва за бръснаря — рецепцията или собственикът го поправят.</p><button class="btn prom" data-int data-act="role:receptionist">Виж като рецепция</button></div></div>`;
+        const o = S.outcome;
+        const r = S.role;
+        const pausedCase = S.state === 'paused';
+        const choices = [
+          ['worked', 'Дойде и е обслужен'],
+          ['cancelled_client', 'Отказа навреме'],
+          ['cancelled_staff', 'Салонът го отказа'],
+        ];
+        const worked = o.to === 'worked';
+        const cascade = worked
+          ? `
+    <li><span class="ci">${ic('task_alt')}</span><span>Посещение 3.06</span><span class="vc"><s>Неявяване</s> → <b>Завършено</b></span></li>
+    <li><span class="ci">${ic('stars')}</span><span>Точки за посещението (правило)</span><span class="vc">+25</span></li>
+    <li><span class="ci">${ic('event_repeat')}</span><span>Посещения в ритъм (преизчислено)</span><span class="vc"><s>3</s> → <b>5</b></span></li>
+    <li><span class="ci">${ic('person_off')}</span><span>Неявявания за 60 дни</span><span class="vc"><s>3</s> → <b>2</b></span></li>
+`
+          : `<li><span class="ci">${ic('event_busy')}</span><span>Посещение 3.06</span><span class="vc"><s>Неявяване</s> → <b>Отказано</b></span></li>
+    <li><span class="ci">${ic('person_off')}</span><span>Неявявания за 60 дни</span><span class="vc"><s>3</s> → <b>2</b></span></li>
+    <li><span class="ci">${ic('event_repeat')}</span><span>Посещения в ритъм — преизчислено без неявяването</span><span class="vc"><s>3</s> → <b>4</b></span></li>`;
+        const manual = pausedCase
+          ? `<section class="notice neutral"><div class="n-top"><span class="n-ic">${ic('pause_circle')}</span><div><p class="n-title">Спирането от Мария се основаваше и на това неявяване</p><p class="n-facts">Остават 2 неявявания за 60 дни · не се променя само</p></div></div>
+      <ul class="group"><li><button class="row noleading ${!o.keepPause ? '' : 'selected'}" data-int data-act="keep:1" role="radio" aria-checked="${o.keepPause}"><span class="lbl">Запази спирането</span><span class="trail">${o.keepPause ? ic('check') : ''}</span></button></li><li><button class="row noleading ${o.keepPause ? '' : 'selected'}" data-int data-act="keep:0" role="radio" aria-checked="${!o.keepPause}"><span class="lbl">Вдигни спирането</span><span class="trail">${!o.keepPause ? ic('check') : ''}</span></button></li></ul></section>`
+          : '';
+        const count = (worked ? 4 : 3) + (pausedCase ? 1 : 0);
+        return `${behind()}<div class="sheet"><div class="grabber"></div>${bar('Поправи изхода', { titleOn: false })}<div class="body"><div class="stack">
+    <div><h2 class="pg-title" style="font-size:1.9rem">Поправи изхода</h2><p class="pg-sub">Георги Петров · 3.06, 18:00 · Фейд · Иван</p></div>
+    <ul class="group" role="radiogroup" aria-label="Какво всъщност стана">${choices.map(([k, l]) => `<li><button class="row noleading ${o.to === k ? 'selected' : ''}" data-int data-act="to:${k}" role="radio" aria-checked="${o.to === k}"><span class="lbl">${l}</span><span class="trail">${o.to === k ? ic('check') : ''}</span></button></li>`).join('')}</ul>
+    <ul class="group"><li><button class="row noleading" data-int data-act="toast:Причини: Грешка на екипа · Грешка в системата · Клиентът показа доказателство · Друго"><span class="lbl">Причина</span><span class="trail" style="color:var(--fg)">Грешка на екипа ${ic('unfold_more')}</span></button></li></ul>
+    <ul class="cascade" aria-label="Какво ще се промени">${cascade}</ul>
+    ${manual}
+    <p class="help">Нищо не се трие: всяка промяна е нов ред в дейността и може да се отмени.</p>
+  </div></div>
+  <div class="dock"><span class="spacer"></span><button class="btn prom lg" data-int data-act="confirmOutcome:${count}">Поправи</button></div></div>`;
+      }
+
+      function screenApproval() {
+        if (S.role !== 'owner')
+          return `<div class="sheet route"><div class="gate"><span class="cap">${ic('shield_person')} ${ROLE_NAMES[S.role]}</span><h3>Одобрява само собственикът</h3><p>${S.role === 'receptionist' ? 'Рецепцията вижда искането си като «Чака Иван» и може да го оттегли. Никой не одобрява собственото си искане.' : 'Бръснарят не вижда искания.'}</p><button class="btn prom" data-int data-act="role:owner">Виж като собственик</button></div></div>`;
+        return `<div class="sheet route">${bar('Искане', { close: false, titleOn: true })}<div class="body"><div class="stack">
+    <div class="head"><div class="av">МП</div><div><h2 class="h-title" style="font-size:1.75rem">+120 т. за Георги Петров</h2><p class="h-sub">Поиска Мария (рецепция) · днес 09:12</p></div></div>
+    <div class="bat"><div><div class="bl">Сега</div><div class="bv">340</div></div><span class="sep"></span><div><div class="bl">Промяна</div><div class="bv chg">+120</div></div><span class="sep"></span><div><div class="bl">След</div><div class="bv">460</div></div></div>
+    <ul class="group">
+      <li><div class="row"><span class="lead">${ic('rule')}</span><span class="lbl">Причина<span class="sub">Проблем с услугата</span></span><span></span></div></li>
+      <li><div class="row" style="align-items:start"><span class="lead">${ic('sticky_note_2')}</span><span class="lbl">Бележка<span class="sub">«Машинката спря по средата, довършихме с ножица.»</span></span><span></span></div></li>
+      <li><div class="row"><span class="lead">${ic('warning')}</span><span class="lbl">Защо чака теб<span class="sub">Над лимита на рецепцията (50 т.)</span></span><span></span></div></li>
+    </ul>
+    <ul class="cascade"><li><span class="ci">${ic('redeem')}</span><span>Ще може да размени «Фейд + брада» (400 т.)</span><span></span></li><li><span class="ci">${ic('refresh') || ic('history')}</span><span>Прегледът е пуснат наново сега: нищо не се е променило</span><span></span></li></ul>
+    <p class="help">Изтича на 1.10 — ако никой не реши, нищо няма да се промени.</p>
+  </div></div>
+  <div class="dock"><button class="btn lg" data-int data-act="reject">Откажи</button><span class="spacer"></span><button class="btn prom lg" data-int data-act="approve">Одобри +120 т.</button></div></div>`;
+      }
+
+      function screenComposerPause() {
+        if (S.role === 'barber')
+          return barberGate(
+            'Бръснарят може да изпрати искане за спиране; решава рецепцията или собственикът.',
+          );
+        const p = S.pause;
+        const terms =
+          S.role === 'owner'
+            ? [
+                ['7', '7 дни'],
+                ['14', '14 дни'],
+                ['30', '30 дни'],
+                ['perm', 'За постоянно'],
+              ]
+            : [
+                ['7', '7 дни'],
+                ['14', '14 дни'],
+                ['30', '30 дни'],
+              ];
+        const c = client();
+        const route = `<div class="sheet route" style="opacity:.9">${bar(c.name, { close: false })}<div class="body"><div class="stack">${routeBody(c)}</div></div></div>`;
+        return `${route}<div class="modal-scrim"></div><div class="modal" role="dialog" aria-modal="true" aria-labelledby="pz-t">
+    <div class="bar"><button class="ib" data-int data-act="closeModal" aria-label="Затвори">${ic('close')}</button><span class="ttl on" id="pz-t">Спри записването</span><span></span></div>
+    <div class="body" style="padding-bottom:110px"><div class="stack">
+      <ul class="group" role="radiogroup" aria-label="Какво спира">
+        <li><button class="row ${p.scope === 'selfService' ? 'selected' : ''}" data-int data-act="scope:selfService" role="radio" aria-checked="${p.scope === 'selfService'}"><span class="lead">${ic('pause_circle')}</span><span class="lbl">Само по телефона<span class="sub">Онлайн записването спира · екипът още го записва</span></span><span class="trail">${p.scope === 'selfService' ? ic('check') : ''}</span></button></li>
+        ${S.role === 'owner' ? `<li><button class="row ${p.scope === 'allBookings' ? 'selected' : ''}" data-int data-act="scope:allBookings" role="radio" aria-checked="${p.scope === 'allBookings'}"><span class="lead">${ic('block')}</span><span class="lbl">Всички записвания<span class="sub">Екипът получава предупреждение</span></span><span class="trail">${p.scope === 'allBookings' ? ic('check') : ''}</span></button></li>` : ''}
+      </ul>
+      <ul class="group" role="radiogroup" aria-label="За колко">${terms.map(([k, l]) => `<li><button class="row noleading ${p.term === k ? 'selected' : ''}" data-int data-act="term:${k}" role="radio" aria-checked="${p.term === k}"><span class="lbl">${l}</span><span class="trail">${p.term === k ? ic('check') : ''}</span></button></li>`).join('')}</ul>
+      <ul class="group"><li><button class="row noleading" data-int data-act="toast:Причини: Неявявания · Късни откази · Поведение · Плащане · Подозрение за измама · Друго"><span class="lbl">Причина</span><span class="trail" style="color:var(--fg)">Неявявания ${ic('unfold_more')}</span></button></li>
+        <li><div class="row noleading"><span class="lbl">Покажи причината на клиента<span class="sub">«след 3 пропуснати часа»</span></span><button class="switch" role="switch" aria-checked="${p.show}" data-act="showReason" aria-label="Покажи причината на клиента"></button></div></li></ul>
+      <div><label class="sr" for="pnote">Бележка</label><textarea id="pnote" class="field" placeholder="Напр. «Не вдига при напомняне»"></textarea><p class="help">Вижда се само от екипа · по желание</p></div>
+      <ul class="cascade" aria-label="Какво ще стане">
+        <li><span class="ci">${ic('calendar_month')}</span><span>Записаният час на 22.10 остава</span><span></span></li>
+        <li><span class="ci">${ic('ac_unit')}</span><span>Точките и ритъмът се замразяват, не се губят</span><span></span></li>
+        <li><span class="ci">${ic('person')}</span><span>Клиентът вижда: «Онлайн записването ти е спряно${p.term === 'perm' ? '' : ' до ' + (p.term === '7' ? '1.10' : p.term === '14' ? '8.10' : '24.10')}. Обади се на салона.»</span><span></span></li>
+      </ul>
+    </div></div>
+    <div class="dock"><span class="spacer"></span><button class="btn prom lg" data-int data-act="confirmPause">Спри записването</button></div>
+  </div>`;
+      }
+
+      function screenSelfView() {
+        const paused = S.state === 'paused';
+        const L = ledger([]);
+        const labels = {
+          rule: 'Спечелени',
+          manual: 'От салона',
+          redeem: 'Използвани',
+        };
+        return `<div class="sheet route">${bar('Награди', { close: false })}<div class="body"><div class="stack">
+    <div><h2 class="pg-title">Награди</h2><p class="pg-sub">Злато · член от март 2024</p></div>
+    ${paused ? `<section class="notice warning"><div class="n-top"><span class="n-ic">${ic('pause_circle')}</span><div><p class="n-title">Онлайн записването ти е спряно до 12.10</p><p class="n-facts">След 3 пропуснати часа. Точките ти са запазени.</p></div></div><div class="n-actions"><a class="btn sm prom" href="tel:+35924001234" data-int>${ic('call')} Обади се на салона</a></div></section>` : ''}
+    <div class="notice neutral" style="text-align:center;padding:20px 14px"><span class="metric" style="justify-items:center"><span class="m-val" style="font-size:2.75rem">${L.balance}<span class="unit">т.</span></span><span class="m-lbl">точки за размяна</span></span></div>
+    <ul class="group"><li><div class="row stacked"><span class="lbl" style="font-weight:600">Още 3 посещения до безплатно подстригване</span><span class="punch lg" role="meter" aria-valuemin="0" aria-valuemax="10" aria-valuenow="7" aria-valuetext="7 от 10">${Array.from({ length: 10 }, (_, i) => (i === 9 ? `<i class="gift">${ic('redeem')}</i>` : `<i class="${i < 7 ? 'on' : ''}"></i>`)).join('')}</span></div></li>
+      <li><div class="row stacked"><span class="lbl" style="font-weight:600">5 посещения в ритъм</span>${streakTrack(5)}<span class="h-sub" style="margin:0">Идваш на около 4 седмици. Април е пазен — салонът беше затворен.</span></div></li></ul>
+    <div class="medals" role="list" aria-label="Значки">${MEDALS.map((m) => `<div class="medal ${m.st}" role="listitem" style="--p:${m.p || 0}" aria-label="${esc(m.n)}, ${m.st === 'earned' ? 'спечелена ' + m.f : m.f}"><span class="md">${ic(m.g)}</span><span class="mn">${esc(m.n)}</span><span class="mf">${esc(m.f)}</span></div>`).join('')}</div>
+    <ul class="group" aria-label="История на точките">${L.rows
+      .slice(0, 5)
+      .map(
+        (e) =>
+          `<li><div class="row"><span class="lead">${ic(e.src === 'manual' ? 'person' : e.src === 'redeem' ? 'redeem' : 'auto_awesome')}</span><span class="ev"><span class="ev-t" style="font-weight:500">${esc(e.t)}</span><span class="ev-l">${esc(labels[e.src] || 'Бонус')} · ${esc(e.d)}</span></span><span class="amt ${e.a > 0 ? 'plus' : 'minus'}">${e.a > 0 ? '+' : '−'}${Math.abs(e.a)}</span></div></li>`,
+      )
+      .join('')}</ul>
+    <ul class="group" aria-label="Последни посещения"><li><div class="row tall"><span class="lead warn">${ic('person_off')}</span><span class="ev"><span class="ev-t struck">Фейд · 3.06</span><span class="ev-l">Отбелязано като неявяване</span></span><button class="btn sm" data-int data-act="toast:Оспорването отива в салона; нищо не се променя, докато не го прегледат">Това е грешка?</button></div></li></ul>
+    <ul class="group"><li><button class="row" data-int data-act="toast:Пауза на ритъма: до 90 дни в годината, с крайна дата — ритъмът не се прекъсва"><span class="lead">${ic('ac_unit')}</span><span class="lbl">Пауза на ритъма<span class="sub">Пътуваш или си болен? Ритъмът чака</span></span><span class="trail">${ic('chevron_right')}</span></button></li>
+      <li><button class="row" data-int data-act="toast:Как работят точките: 1 т. за всяко евро · награди от 120 т. · точките не изтичат"><span class="lead">${ic('info')}</span><span class="lbl">Как работят точките</span><span class="trail">${ic('chevron_right')}</span></button></li>
+      <li><button class="row" data-int data-act="toast:Пропуснато посещение? — заявка до салона; нищо не се променя, докато не я прегледат"><span class="lead">${ic('help')}</span><span class="lbl">Пропуснато посещение?</span><span class="trail">${ic('chevron_right')}</span></button></li></ul>
+  </div></div></div>`;
+      }
+
+      /* ───────── Notes per screen ───────── */
+      const NOTES = {
+        'sheet-client': [
+          "Pushed from the ladder's client row: depth one, ‹ in the shell's bar, ✓ in the dock returns.",
+          'Rules only <b>suggest</b> a pause (state «Pause suggested by rule»); a person confirms, and the client can dispute each no-show.',
+          '<b>Head</b>: avatar in the new headline media slot, name as the large title, one state sentence under it.',
+          '<b>Pause notice first</b> when paused: a calm warning notice, facts by role, the inverse action in its slot. Never the word «блокиран».',
+          '<b>Pinned staff alert</b> travels to the ladder row too (Fresha staff alert).',
+          '<b>Capsules</b> only when meaningful: tier word + glyph, birthday, ≥2 no-shows in 90 days, staff tags.',
+          '<b>Quick actions</b> are absent when their data is: no phone, no call; no past visit, no «Същото».',
+          '<b>Reward ready</b> before the summary: it is actionable on this visit.',
+          '<b>Engagement row</b>: spendable points, a 10-slot punch card (meter), visits in rhythm. Tier lives in the capsule.',
+          '<b>Пълен профил</b> leaves the sheet for the route (front desk and owner only; the discard guard asks when dirty).',
+        ],
+        'sheet-history': [
+          'Replace-with-restore: ‹ returns to the client page, a second ‹ to the visit.',
+          'Neutral counters, equal weight (Fresha).',
+          'Filter is a choice menu on a row (≤5 options), never a segmented control.',
+          'Rows reuse the staff event head; no-show and cancelled are struck with a glyph and a word, never colour alone.',
+        ],
+        'sheet-rewards': [
+          'Ledger: verb · source · date · signed amount · running balance; corrections are rows of the same shape.',
+          'Punch card is a discrete meter; tier is a continuous gauge with both ends named (role="meter", never progressbar, never rings).',
+          'Badges: real art muted with a fraction when locked; no padlocks on badges.',
+          'Rewards: padlock only on catalogue items not yet affordable, with the distance. Picking one puts «Размени N т.» in the dock.',
+        ],
+        'route-phone': [
+          "Front desk and owner only: the sheet's «Пълен профил» row is absent for barbers.",
+          'Neutral counters and key facts; lifetime spend is owner-only.',
+          '<b>Корекции</b> exists only when the viewer holds at least one support capability.',
+          'Direction is two rows («Добави точки» / «Отнеми точки»), never a segmented control.',
+        ],
+        'route-desktop': [
+          '≥1024px: two panes. Left pane holds identity, actions, pinned alert, note and counters; the right pane holds the selected section with a section index.',
+          'Composers present as a centred dialog on wide screens (same ui-modal-sheet).',
+        ],
+        'route-activity': [
+          'Append-only: actor + verb + object sentences, grouped by day, before → after.',
+          'Reason visible to front desk and owner; the internal note to the owner only.',
+          '«Отмени корекцията» appends a compensating entry; the receipt toast is not the only way back.',
+          '«Защо?» on rule awards opens the explainer.',
+        ],
+        'composer-points': [
+          'Before → change → after at the top, live.',
+          'Reason first (closed list; «Друго» requires a note), then the amount with its bounds stated before input.',
+          'Front desk over 50 т. sees the approval notice and the CTA becomes «Изпрати за одобрение».',
+          'Reversible and non-cascading: commit with a receipt and undo, no alert.',
+        ],
+        'flow-outcome': [
+          'Lives on the settled visit (the one exception inside the visit sheet).',
+          'Pauses are never automatic: a pause whose basis included this no-show is offered as a choice, defaulting to «Вдигни».',
+          'Derived state is recomputed (streak, counters); ledger state is compensated (points); manual state is a choice (a manual pause).',
+          'Cascading, so ONE alert states the change in counts, verb as the button, no default button.',
+        ],
+        approval: [
+          'Only the owner decides, never on their own request.',
+          'The preview is re-run at decision time; reject needs a reason; the card says what happens if nobody acts.',
+        ],
+        'composer-pause': [
+          'Scope first: online self-booking only (default) or all bookings (owner).',
+          'Terms by role: front desk up to 30 days; permanent is owner-only.',
+          'Client-visible reason is a deliberate switch; the team note never reaches the client.',
+          'Nothing is cancelled silently; points and streak freeze.',
+        ],
+        'self-view': [
+          'Phase 5. The client sees spendable points, visit progress, rhythm, badges and an honest ledger with neutral labels.',
+          'Each no-show carries «Това е грешка?» (GDPR rectification path); the client can pause their rhythm up to 90 days a year.',
+          'A paused client gets a calm notice with a way to call. There is no countdown and no loss wording.',
+          '«Пропуснато посещение?» files a claim; nothing changes until staff review it.',
+        ],
+      };
+
+      /* ───────── Render ───────── */
+      const canvas = document.getElementById('canvas');
+      const notesEl = document.getElementById('notes');
+      function render() {
+        const scr = SCREENS.find((x) => x.id === S.screen);
+        if (!scr.states.includes(S.state)) S.state = scr.states[0];
+        // controls
+        const sSel = document.getElementById('c-screen');
+        sSel.innerHTML = SCREENS.map(
+          (x) =>
+            `<option value="${x.id}" ${x.id === S.screen ? 'selected' : ''}>${x.label}</option>`,
+        ).join('');
+        const stSel = document.getElementById('c-state');
+        stSel.innerHTML = scr.states
+          .map(
+            (k) =>
+              `<option value="${k}" ${k === S.state ? 'selected' : ''}>${STATES[k]}</option>`,
+          )
+          .join('');
+        document
+          .querySelectorAll('#c-role button')
+          .forEach((b) =>
+            b.setAttribute('aria-pressed', String(b.dataset.role === S.role)),
+          );
+        document
+          .querySelectorAll('#c-theme button')
+          .forEach((b) =>
+            b.setAttribute('aria-pressed', String(b.dataset.theme === S.theme)),
+          );
+
+        const map = {
+          'sheet-client': screenSheetClient,
+          'sheet-history': screenSheetHistory,
+          'sheet-rewards': screenSheetRewards,
+          'route-phone': screenRoutePhone,
+          'route-desktop': screenRouteDesktop,
+          'route-activity': screenRouteActivity,
+          'composer-points': screenComposerPoints,
+          'flow-outcome': screenFlowOutcome,
+          approval: screenApproval,
+          'composer-pause': screenComposerPause,
+          'self-view': screenSelfView,
+        };
+        const inner = map[S.screen]();
+        const overlay =
+          (S.toast
+            ? `<div class="toast" role="status"><span>${esc(S.toast.label)}</span>${S.toast.undo ? `<button data-act="undo">Отмени</button>` : '<span></span>'}<button class="x" data-act="dismissToast" aria-label="Затвори">${ic('close')}</button></div>`
+            : '') +
+          (S.alert
+            ? `<div class="alert-scrim"><div class="alert" role="alertdialog" aria-modal="true" aria-labelledby="al-t" aria-describedby="al-m"><div class="a-body"><h3 id="al-t">${esc(S.alert.title)}</h3><p id="al-m">${esc(S.alert.msg)}</p></div><div class="a-actions ${S.alert.row ? 'row2' : ''}">${S.alert.actions.map((a) => `<button data-act="${a.act}" class="${a.cls || ''}">${esc(a.label)}</button>`).join('')}</div></div></div>`
+            : '') +
+          (S.menu ? S.menu : '');
+        const desktop = S.screen === 'route-desktop';
+        if (desktop) {
+          canvas.innerHTML = `<div class="desk-wrap" id="deskwrap"><div class="desk app" data-app-theme="${S.theme}" id="app">${inner}${overlay}</div></div>`;
+          fitDesk();
+        } else {
+          canvas.innerHTML = `<div class="phone app" data-app-theme="${S.theme}" id="app">${inner}${overlay}</div>`;
+        }
+        notesEl.innerHTML = `<h2>${esc(scr.label)}</h2><div class="legend"><span class="chip">${ROLE_NAMES[S.role]}</span><span class="chip">${esc(STATES[S.state])}</span></div><ol>${(NOTES[S.screen] || []).map((n) => `<li>${n}</li>`).join('')}</ol><p class="src">Example data only. Tap rows inside the frame: they navigate, open composers and raise receipts.</p>`;
+        const amt = document.getElementById('amt');
+        if (amt)
+          amt.addEventListener('input', (e) => {
+            const v = parseInt(e.target.value.replace(/\D/g, ''), 10);
+            S.composer.amount = isNaN(v) ? 0 : Math.min(v, 9999);
+            const pos = e.target.selectionStart;
+            render();
+            const a2 = document.getElementById('amt');
+            a2.focus();
+            try {
+              a2.setSelectionRange(pos, pos);
+            } catch (err) {
+              /* noop */
+            }
+          });
+        const note = document.getElementById('note');
+        if (note)
+          note.addEventListener('input', (e) => {
+            S.composer.note = e.target.value;
+            const btn = document.querySelector('[data-act="commitPoints"]');
+            if (btn) {
+              const bad =
+                !S.composer.amount ||
+                (S.composer.reason === 'other' && !S.composer.note.trim());
+              btn.disabled = bad;
+              btn.style.opacity = bad ? '.4' : '';
+            }
+          });
+      }
+      function fitDesk() {
+        const wrap = document.getElementById('deskwrap');
+        const desk = wrap && wrap.firstElementChild;
+        if (!wrap || !desk) return;
+        const w = wrap.clientWidth || 1200;
+        const s = Math.min(1, w / 1200);
+        desk.style.transform = `scale(${s})`;
+        wrap.style.height = 760 * s + 'px';
+      }
+      window.addEventListener('resize', () => {
+        if (S.screen === 'route-desktop') fitDesk();
+      });
+
+      let toastTimer = null;
+      function toast(label, undo) {
+        S.toast = { label, undo };
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(
+          () => {
+            S.toast = null;
+            render();
+          },
+          undo ? 8000 : 3200,
+        );
+      }
+
+      /* ───────── Interactions ───────── */
+      const HISTORY_STACK = [];
+      function go(screen) {
+        HISTORY_STACK.push(S.screen);
+        S.screen = screen;
+        S.menu = null;
+        S.rewardPick = null;
+      }
+      document.getElementById('c-screen').addEventListener('change', (e) => {
+        S.screen = e.target.value;
+        HISTORY_STACK.length = 0;
+        S.toast = null;
+        S.alert = null;
+        S.menu = null;
+        render();
+      });
+      document.getElementById('c-state').addEventListener('change', (e) => {
+        S.state = e.target.value;
+        render();
+      });
+      document.getElementById('c-role').addEventListener('click', (e) => {
+        const b = e.target.closest('button');
+        if (!b) return;
+        S.role = b.dataset.role;
+        persist();
+        render();
+      });
+      document.getElementById('c-theme').addEventListener('click', (e) => {
+        const b = e.target.closest('button');
+        if (!b) return;
+        S.theme = b.dataset.theme;
+        persist();
+        render();
+      });
+
+      canvas.addEventListener('click', (e) => {
+        const el = e.target.closest('[data-act]');
+        if (!el) {
+          if (S.menu && !e.target.closest('.menu-pop')) {
+            S.menu = null;
+            render();
+          }
+          return;
+        }
+        const act = el.dataset.act;
+        if (el.tagName === 'A') return; // tel:/sms:/viber: are conveniences
+        e.preventDefault();
+        const [k, v] = act.split(/:(.*)/s);
+        switch (k) {
+          case 'go':
+            go(v);
+            break;
+          case 'back':
+            S.screen = HISTORY_STACK.pop() || 'sheet-client';
+            S.rewardPick = null;
+            break;
+          case 'toast':
+            toast(v, false);
+            break;
+          case 'dismissToast':
+            S.toast = null;
+            break;
+          case 'same':
+            toast(
+              'Взехме услугите от 27.08: Фейд + оформяне на брада, Иван, 45 мин.',
+              true,
+            );
+            break;
+          case 'role':
+            S.role = v;
+            persist();
+            break;
+          case 'desk':
+            S.deskSection = v;
+            break;
+          case 'pick':
+            S.rewardPick = S.rewardPick === Number(v) ? null : Number(v);
+            break;
+          case 'redeem': {
+            const cost = [120, 250, 400][S.rewardPick];
+            const bal = ledger(S.extraLedger).balance;
+            S.alert = {
+              title: `Размени ${cost} т.?`,
+              msg: `${bal} → ${bal - cost} т. Наградата отива в този час като отстъпка.`,
+              row: true,
+              actions: [
+                { label: 'Отказ', act: 'closeAlert' },
+                { label: 'Размени', act: `doRedeem:${cost}`, cls: 'pref' },
+              ],
+            };
+            break;
+          }
+          case 'doRedeem':
+            S.extraLedger.push({
+              d: 'днес',
+              t: 'Размяна за този час',
+              k: 'Използвани',
+              a: -Number(v),
+              src: 'redeem',
+            });
+            S.alert = null;
+            S.rewardPick = null;
+            toast(`Разменени ${v} т. · наградата е на сметката`, true);
+            break;
+          case 'closeAlert':
+            S.alert = null;
+            break;
+          case 'lift':
+            S.state = 'regular';
+            toast('Онлайн записването е възстановено', true);
+            break;
+          case 'doLift':
+            S.alert = null;
+            S.state = 'regular';
+            toast('Записването е възстановено', true);
+            break;
+          case 'menu': {
+            if (v === 'reason') {
+              const opts = REASONS.add
+                .map(
+                  ([key, label]) =>
+                    `<button data-act="reason:${key}" role="menuitemradio" aria-checked="${S.composer.reason === key}"><span>${S.composer.reason === key ? ic('check') : ''}</span>${label}</button>`,
+                )
+                .join('');
+              S.menu = `<div class="menu-pop" role="menu" style="left:16px;right:16px;top:200px">${opts}</div>`;
+            } else {
+              S.menu = `<div class="menu-pop" role="menu" style="right:16px;top:230px">${['Всички', 'Предстоящи', 'Завършени', 'Неявявания', 'Отказани'].map((l, i) => `<button data-act="menuPick" role="menuitemradio" aria-checked="${i === 0}"><span>${i === 0 ? ic('check') : ''}</span>${l}</button>`).join('')}</div>`;
+            }
+            break;
+          }
+          case 'menuPick':
+            S.menu = null;
+            break;
+          case 'reason':
+            S.composer.reason = v;
+            S.menu = null;
+            break;
+          case 'amt':
+            S.composer.amount = Math.max(
+              0,
+              (S.composer.amount || 0) + Number(v),
+            );
+            break;
+          case 'notify':
+            S.composer.notify = !S.composer.notify;
+            break;
+          case 'closeModal':
+            S.screen = 'route-phone';
+            break;
+          case 'commitPoints': {
+            const q = S.composer;
+            if (S.role === 'receptionist' && q.amount > 50) {
+              S.screen = 'route-phone';
+              S.state = 'pending';
+              toast(`Изпратено за одобрение: +${q.amount} т.`, false);
+            } else {
+              S.extraLedger.push({
+                d: 'днес',
+                t: clientLabel(q.reason),
+                k: 'Корекция',
+                a: q.amount,
+                src: 'manual',
+              });
+              S.activityExtra.unshift({
+                day: 'Днес',
+                who: S.role === 'owner' ? 'ИК' : 'МП',
+                sent: `<b>${S.role === 'owner' ? 'Иван' : 'Мария'}</b> добави <b>+${q.amount} т.</b>`,
+                meta: ['сега', 'ръчно'],
+                diff: `${ledger(S.extraLedger).balance - q.amount} → ${ledger(S.extraLedger).balance} т.`,
+                reason: (REASONS.add.find(([key]) => key === q.reason) ||
+                  [])[1],
+                note: q.note ? '«' + q.note + '»' : '',
+                vis: 'Клиентът вижда: «' + clientLabel(q.reason) + '»',
+                undo: true,
+              });
+              S.screen = 'route-phone';
+              toast(
+                `Добавени ${q.amount} т. · ${ledger(S.extraLedger).balance - q.amount} → ${ledger(S.extraLedger).balance}`,
+                true,
+              );
+              S.lastUndo = 'points';
+            }
+            break;
+          }
+          case 'undo': {
+            if (S.lastUndo === 'points' && S.extraLedger.length) {
+              const last = S.extraLedger[S.extraLedger.length - 1];
+              S.extraLedger.push({
+                d: 'днес',
+                t: 'Отменена корекция',
+                k: 'Корекция',
+                a: -last.a,
+                src: 'manual',
+              });
+              toast('Корекцията е отменена с нов ред', false);
+            } else toast('Отменено', false);
+            S.lastUndo = null;
+            return render();
+          }
+          case 'undoLater':
+            S.alert = {
+              title: 'Отмени корекцията?',
+              msg: 'Добавя ред −30 т. в дейността. Оригиналният ред остава, задраскан.',
+              row: true,
+              actions: [
+                { label: 'Отказ', act: 'closeAlert' },
+                { label: 'Отмени корекцията', act: 'doUndoLater', cls: 'pref' },
+              ],
+            };
+            break;
+          case 'doUndoLater':
+            S.alert = null;
+            S.extraLedger.push({
+              d: 'днес',
+              t: 'Отменена корекция от 1.08',
+              k: 'Корекция',
+              a: -30,
+              src: 'manual',
+            });
+            toast('Добавен компенсиращ ред −30 т.', false);
+            break;
+          case 'to':
+            S.outcome.to = v;
+            break;
+          case 'keep':
+            S.outcome.keepPause = v === '1';
+            break;
+          case 'confirmOutcome':
+            S.alert = {
+              title: 'Поправи изхода на часа?',
+              msg: `Часът от 3.06 става ${S.outcome.to === 'worked' ? 'завършен' : 'отказан'}. ${v} промени по наградите и броячите.`,
+              row: true,
+              actions: [
+                { label: 'Отказ', act: 'closeAlert' },
+                { label: 'Поправи', act: 'doOutcome', cls: 'pref' },
+              ],
+            };
+            break;
+          case 'doOutcome':
+            S.alert = null;
+            S.screen = 'sheet-client';
+            S.state = S.outcome.keepPause ? S.state : 'regular';
+            toast('Изходът е поправен · 3.06', true);
+            break;
+          case 'approve':
+            S.alert = null;
+            S.extraLedger.push({
+              d: 'днес',
+              t: 'Компенсация от салона',
+              k: 'Корекция',
+              a: 120,
+              src: 'manual',
+            });
+            S.screen = 'route-phone';
+            S.state = 'regular';
+            toast('Одобрено: +120 т. · 340 → 460', false);
+            break;
+          case 'doApprove':
+            S.alert = null;
+            S.extraLedger.push({
+              d: 'днес',
+              t: 'Корекция от салона',
+              k: 'Корекция',
+              a: 120,
+              src: 'manual',
+            });
+            S.screen = 'route-phone';
+            S.state = 'regular';
+            toast('Одобрено: +120 т.', false);
+            break;
+          case 'reject':
+            toast('Отказът иска причина: отваря кратка форма', false);
+            break;
+          case 'scope':
+            S.pause.scope = v;
+            break;
+          case 'term':
+            S.pause.term = v;
+            break;
+          case 'showReason':
+            S.pause.show = !S.pause.show;
+            break;
+          case 'confirmPause':
+            if (S.pause.scope === 'allBookings') {
+              S.alert = {
+                title: 'Спри всички записвания?',
+                msg: '1 записан час (22.10) — избери дали остава. Точките и ритъмът се замразяват.',
+                row: true,
+                actions: [
+                  { label: 'Отказ', act: 'closeAlert' },
+                  { label: 'Спри', act: 'doPause', cls: 'destr' },
+                ],
+              };
+            } else {
+              S.screen = 'route-phone';
+              S.state = 'paused';
+              toast(
+                'Онлайн записването е спряно до ' +
+                  (S.pause.term === '7'
+                    ? '1.10'
+                    : S.pause.term === '14'
+                      ? '8.10'
+                      : S.pause.term === '30'
+                        ? '24.10'
+                        : 'второ нареждане'),
+                true,
+              );
+            }
+            break;
+          case 'doPause':
+            S.alert = null;
+            S.screen = 'route-phone';
+            S.state = 'paused';
+            toast('Онлайн записването е спряно', true);
+            break;
+        }
+        render();
+      });
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && (S.alert || S.menu)) {
+          S.alert = null;
+          S.menu = null;
+          render();
+        }
+      });
+
+      render();
+    </script>
+  </body>
+</html>

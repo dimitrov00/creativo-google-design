@@ -1,0 +1,89 @@
+@if (words(); as w) { @let card = vm(); @switch (card.kind) { @case ('upcoming')
+{
+<!-- (d) · WITHIN THE WEEK — one quiet line in the accent tone: the weekday
+     and the date, the age when the year is known. A date, never a
+     countdown; no band, no flecks. -->
+<ui-notice
+  uiTone="accent"
+  uiIcon="client.birthday"
+  [uiLabel]="card.accessibleName"
+  data-testid="client-birthday-upcoming"
+>
+  <p>{{ card.title }}</p>
+</ui-notice>
+} @case ('today') { @if (card.gift; as gift) { @if (gift.applied) {
+<!-- (a′) · THE GIFT IS ON THE BILL — the band stays; the body is the
+     applied ticket: the check beside the figure, a real «Премахни» where
+     the pill stood. It takes the focus when the discount page pops. -->
+<article
+  uiCouponCard
+  [uiApplied]="true"
+  tabindex="-1"
+  class="birthday-card__origin"
+  [uiTitle]="gift.value === null ? gift.title : card.giftLabel"
+  [uiValue]="gift.value"
+  [uiDetail]="gift.detail"
+  [attr.aria-label]="card.accessibleName"
+  data-testid="client-birthday-gift"
+>
+  <ui-occasion-band [uiTitle]="card.title" data-testid="client-birthday-band">
+    <ui-icon uiOccasionGlyph uiName="client.birthday" />
+  </ui-occasion-band>
+  <ui-icon uiCouponBadge uiName="checklist.done" />
+  <button
+    type="button"
+    uiCouponAction
+    uiButton
+    uiButtonStyle="plain"
+    uiTint="neutral"
+    uiControlSize="small"
+    [attr.aria-label]="gift.removeName"
+    data-testid="client-birthday-gift-remove"
+    (click)="removeGift.emit(gift.grantId)"
+  >
+    {{ w.reward.remove }}
+  </button>
+</article>
+} @else {
+<!-- (a) · TODAY, THE GIFT HELD — the band heads the ticket; under the
+     perforation the figure in the accent, the label, the chip, and the
+     decorative pill every ticket wears. The ticket is the one control. -->
+<button
+  type="button"
+  uiCouponCard
+  uiInteractive
+  class="birthday-card__origin"
+  [uiTitle]="gift.value === null ? gift.title : card.giftLabel"
+  [uiValue]="gift.value"
+  [uiDetail]="gift.detail"
+  [attr.aria-label]="card.accessibleName"
+  data-testid="client-birthday-gift"
+  (click)="useGift.emit(gift.grantId)"
+>
+  <ui-occasion-band [uiTitle]="card.title" data-testid="client-birthday-band">
+    <ui-icon uiOccasionGlyph uiName="client.birthday" />
+  </ui-occasion-band>
+  @if (gift.stack; as stack) {
+  <span uiBadge uiCouponBadge uiProminence="increased">{{ stack }}</span>
+  }
+  <span
+    uiCouponAction
+    uiButton
+    uiButtonStyle="borderedProminent"
+    uiControlSize="small"
+    aria-hidden="true"
+    >{{ w.reward.use }}</span
+  >
+</button>
+} } @else {
+<!-- (b) · TODAY, NOTHING TO USE — the band alone, fully rounded: a
+     statement, not a control. -->
+<ui-occasion-band
+  role="note"
+  [uiTitle]="card.title"
+  [attr.aria-label]="card.accessibleName"
+  data-testid="client-birthday-band"
+>
+  <ui-icon uiOccasionGlyph uiName="client.birthday" />
+</ui-occasion-band>
+} } } }

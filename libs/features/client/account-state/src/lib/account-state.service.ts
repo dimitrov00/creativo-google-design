@@ -5,8 +5,10 @@ import {
   effect,
   inject,
   signal,
+  untracked,
 } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
+import type { Subscription } from 'rxjs';
 import {
   AUTH_GATEWAY,
   ANONYMOUS_PRINCIPAL,
@@ -29,13 +31,10 @@ import { PROFILE_PORT, User, UserId } from '@creativo/application/accounts';
  * eager import would pull the whole dashboard screen into the main
  * bundle and defeat `/account`'s lazy chunk.
  *
- * The "single `users/{uid}` snapshot" half of the brief is a partial
- * implementation: `ProfilePort` only exposes a one-shot `getProfile`, not a
- * live listener (no such port exists yet — adding one is infrastructure
- * work outside this goal's scope guard, which asks to stop and flag a
- * missing port rather than invent one). `account` here re-fetches once per
- * uid change instead of subscribing to a live snapshot; a `ProfilePort`
- * with an `observeProfile` method would let this become a true snapshot.
+ * `account` is the single live `users/{uid}` snapshot (`observeProfile`):
+ * one listener per signed-in uid, so a write from anywhere — this tab's own
+ * profile save, registration completing, a pause the shop applies — reaches
+ * every screen without a re-fetch.
  */
 @Injectable({ providedIn: 'root' })
 export class AccountStateService {
@@ -55,49 +54,76 @@ export class AccountStateService {
   private readonly _account = signal<User | null>(null);
   readonly account = this._account.asReadonly();
 
-  /** True while the current uid's profile fetch is in flight — lets consumers (e.g. dashboard skeletons) tell "still loading" apart from "loaded, no profile". */
+  /** True until the current uid's first snapshot answers — lets consumers (e.g. dashboard skeletons) tell "still loading" apart from "loaded, no profile". */
   private readonly _accountLoading = signal(false);
   readonly accountLoading = this._accountLoading.asReadonly();
 
-  /** Monotonic fetch token — a stale fetch resolving late must never clobber a newer one. */
-  private fetchSequence = 0;
+  /**
+   * The uid to listen to, as a string so the listener follows the PERSON:
+   * a token refresh or the onboarding → active claim flip re-emits the
+   * principal, and none of those is a reason to re-attach.
+   */
+  private readonly uid = computed(() => {
+    const principal = this.principal();
+    return principal.kind === 'anonymous' ? null : principal.uid.value;
+  });
+
+  /** Bumped by `refresh()` to re-attach a listener that has stopped. */
+  private readonly relistens = signal(0);
+
+  /** Whose profile `_account` holds, so a re-attach for the same person keeps it on screen. */
+  private listenedUid: string | null = null;
+  /** The listener's last answer was a failure; `subscribeWithRetry` stops on the unhealable ones. */
+  private listenerFailed = false;
 
   constructor() {
-    effect(() => {
-      this.loadProfileFor(this.principal());
+    effect((onCleanup) => {
+      const uid = this.uid();
+      this.relistens();
+      const subscription = untracked(() => this.listen(uid));
+      onCleanup(() => subscription?.unsubscribe());
     });
   }
 
   /**
-   * Re-fetches the current principal's profile on demand — the one-shot
-   * `getProfile` port means the cached `account` goes stale after any
-   * profile write elsewhere (e.g. the onboarding birthday save; owner
-   * report 2026-07-27). Screens that must show current truth on entry
-   * (the dashboard) call this on init; a live `observeProfile` port would
-   * retire it.
+   * A no-op while the listener is healthy: `account` is already current.
+   * Only after a failure (a rule denial, an unparseable document, which the
+   * listener does not retry) does it re-attach, so a screen that calls it on
+   * entry still gets one fresh attempt, as it did from the one-shot read.
    */
   refresh(): void {
-    this.loadProfileFor(this.principal());
+    if (this.listenerFailed) {
+      this.relistens.update((count) => count + 1);
+    }
   }
 
-  private loadProfileFor(principal: Principal): void {
-    const sequence = ++this.fetchSequence;
-    if (principal.kind === 'anonymous') {
+  private listen(uid: string | null): Subscription | null {
+    if (uid !== this.listenedUid) {
+      // Never show one person's profile to the next, not even for a frame.
+      this._account.set(null);
+      this.listenedUid = uid;
+    }
+    this.listenerFailed = false;
+    const userIdResult = uid === null ? null : UserId.create(uid);
+    if (userIdResult === null || userIdResult.isFailure()) {
       this._account.set(null);
       this._accountLoading.set(false);
-      return;
+      return null;
     }
-    const userIdResult = UserId.create(principal.uid.value);
-    if (userIdResult.isFailure()) {
-      this._account.set(null);
-      this._accountLoading.set(false);
-      return;
-    }
-    this._accountLoading.set(true);
-    void this.profilePort.getProfile(userIdResult.value).then((result) => {
-      if (sequence !== this.fetchSequence) return;
-      this._account.set(result.isSuccess() ? result.value : null);
-      this._accountLoading.set(false);
-    });
+    this._accountLoading.set(this._account() === null);
+    return this.profilePort
+      .observeProfile(userIdResult.value)
+      .subscribe((result) => {
+        if (result.isSuccess()) {
+          this._account.set(result.value);
+          this.listenerFailed = false;
+        } else {
+          // Keep what is on screen: dated data beats a blank account while a
+          // transient failure retries, and a first answer that fails leaves
+          // it null anyway.
+          this.listenerFailed = true;
+        }
+        this._accountLoading.set(false);
+      });
   }
 }

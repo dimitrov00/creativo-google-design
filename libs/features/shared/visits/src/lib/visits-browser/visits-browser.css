@@ -1,0 +1,17 @@
+/*
+ * THE VISITS BROWSER — layout only: the rail, then the list, a section's
+ * gap apart (24), which is also the gap between the list's own sections.
+ * So the first heading stands under the rail exactly as every heading
+ * stands under the group before it.
+ */
+
+:host {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sys-space-comfortable);
+  min-inline-size: 0;
+  /* The first pill's jump lands the browser's own top — the rail — at the
+     chrome's line, clear of the host's chrome by the same length every
+     section heading takes (visit-list.css). */
+  scroll-margin-block-start: var(--visit-list-anchor-clearance, 0px);
+}

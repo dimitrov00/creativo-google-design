@@ -6,7 +6,7 @@ import {
   signal,
   untracked,
 } from '@angular/core';
-import { Router, RouterLink } from '@angular/router';
+import { Router } from '@angular/router';
 import { TranslocoDirective, TranslocoService } from '@jsverse/transloco';
 import { Money, formatMoney } from '@creativo/application/booking';
 import { PhoneNumber } from '@creativo/application/identity';
@@ -16,7 +16,6 @@ import {
   CatalogContentService,
   CatalogPresenter,
 } from '@creativo/features/shared/catalog';
-import { translateDomainError } from '@creativo/infrastructure/i18n';
 import {
   UiAsyncImage,
   UiAvatar,
@@ -51,6 +50,12 @@ import type { BookingContactProps } from '@creativo/application/booking';
 import { MAX_BOOKING_NOTE_LENGTH } from '@creativo/application/booking';
 import { AUTH_DEPLOYMENT } from '@creativo/application/identity';
 import { BookingFlowStore } from '../booking-flow.store';
+import { bookingSignInReturnUrl } from '../booking-return-url';
+import {
+  bookingErrorMessage,
+  callHrefForRefusal,
+} from './booking-error-message';
+import { placeRiders } from './rider-placement';
 import { BookingContactSheet } from '../contact-sheet/booking-contact-sheet';
 import { BookingStepTitle } from '../chrome/booking-chrome.service';
 import { BookingStepLayout } from '../step-layout/booking-step-layout';
@@ -73,6 +78,15 @@ interface ReviewLineVm {
   readonly timeLabel: string | null;
   readonly priceLabel: string;
 }
+
+/**
+ * One person the server moves WITH this visit without their being in the
+ * cart — a line's anatomy without a price: what they are sold is the shop's
+ * arrangement, kept as it was, not something this screen is quoting.
+ */
+type RiderLineVm = Omit<ReviewLineVm, 'priceLabel' | 'timeLabel'> & {
+  readonly timeLabel: string;
+};
 
 /**
  * One person's shelf of the summary — the same anatomy the bag renders,
@@ -117,7 +131,6 @@ interface ReviewGroupVm {
     BookingContactSheet,
     BookingStepLayout,
     BookingStepTitle,
-    RouterLink,
     TranslocoDirective,
     UiAsyncImage,
     UiAvatar,
@@ -559,6 +572,55 @@ export class BookingReviewStep {
   protected readonly multiPerson = computed(() => this.groups().length > 1);
 
   /**
+   * WHO ELSE MOVES. On a move, anyone the cart cannot name — a companion the
+   * shop seated beside the booker — is carried by the server, not sent from
+   * here (`BookingFlowStore.riders`). They are shown anyway: a move must
+   * never carry a person the client was not told about, and "call the shop"
+   * lands better when the client could see who it was about.
+   *
+   * Placed by the server's own arithmetic — the cart's new earliest start
+   * plus each rider's stored distance from it — so the minute on the card is
+   * the minute the server will write.
+   */
+  protected readonly riderLines = computed<readonly RiderLineVm[]>(() => {
+    const selection = this.store.selection();
+    const riders = this.store.riders();
+    if (!selection || riders.length === 0) return [];
+
+    return placeRiders(selection, riders).map(({ rider, startMs }, index) => {
+      const service = this.catalog.findService(rider.serviceId);
+      const variant =
+        service && rider.variantId !== null
+          ? (service.variants.find(
+              (candidate) => candidate.id.value === rider.variantId,
+            ) ?? null)
+          : null;
+      const barberId = BarberId.create(rider.barberId);
+      return {
+        key: `rider-${index}`,
+        coverSrc: service
+          ? (this.catalog.toServiceVm(service).coverSrc ?? null)
+          : null,
+        // A service the catalogue no longer lists still names a PERSON who
+        // is moving — the line stays, under a neutral name.
+        serviceName: service
+          ? this.content.text({ en: service.name.en, bg: service.name.bg })
+          : this.transloco.translate('booking.review.riderService'),
+        variantName: variant
+          ? this.content.text({ en: variant.name.en, bg: variant.name.bg })
+          : null,
+        barberName: barberId.isSuccess()
+          ? this.barberName(barberId.value)
+          : rider.barberId,
+        barberAvatarSrc: barberId.isSuccess()
+          ? this.barberAvatarSrc(barberId.value)
+          : null,
+        timeLabel: this.time(startMs),
+      };
+    });
+  });
+
+  /**
    * What it comes to.
    *
    * Summed from the same per-barber terms each row shows, so the total and its
@@ -599,12 +661,22 @@ export class BookingReviewStep {
     return total ? formatMoney(total, this.content.locale()) : null;
   });
 
-  /** The `slot_unavailable` bounce is handled by the store; this is anything else. */
+  /**
+   * The `slot_unavailable` bounce is handled by the store; this is anything
+   * else — in the server's own words when there are some (`bookingErrorMessage`).
+   */
   protected readonly errorMessage = computed(() => {
     const error = this.store.error();
     if (!error || this.store.slotTaken()) return null;
-    return translateDomainError(this.transloco, error);
+    // Told whether the call button is beside it, so the copy says "call"
+    // only when there is one to press.
+    return bookingErrorMessage(this.transloco, error, this.refusalCallHref());
   });
+
+  /** `tel:` for the shop beside a refused move — see `callHrefForRefusal`. */
+  protected readonly refusalCallHref = computed(() =>
+    callHrefForRefusal(this.store.error(), this.shop()?.phone.e164 ?? null),
+  );
 
   /**
    * Confirm, or sign in first.
@@ -612,12 +684,17 @@ export class BookingReviewStep {
    * The redirect lands on `?step=schedule` rather than back here on purpose:
    * the draft resumes one step back (see `BookingFlowStore.restore`), because
    * the offer this screen shows would be minutes old by then and nobody
-   * re-checked it. The user's day survives, so it costs one tap.
+   * re-checked it. The user's day survives, so it costs one tap. The visit
+   * the flow was started from or is moving rides along
+   * (`bookingSignInReturnUrl`) — it can only be read once somebody is signed
+   * in, which is exactly what this round trip is for.
    */
   protected async confirm(): Promise<void> {
     if (!this.isSignedIn()) {
       await this.router.navigate(['/auth'], {
-        queryParams: { redirect: '/book?step=schedule' },
+        queryParams: {
+          redirect: bookingSignInReturnUrl(this.router, this.router.url),
+        },
       });
       return;
     }

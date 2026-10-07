@@ -1,0 +1,165 @@
+/*
+ * THE VISIT CARD — layout only. The surface, its lift and its padding are
+ * `ui-card`'s; every ink and type role is a DS part's own (`uiText`,
+ * `uiForegroundStyle`, `uiBadge`, `ui-avatar`, `ui-media-card`). These
+ * rules place the parts and set the air between them, on the space
+ * tokens. No colour is declared here, and no `font:` shorthand, so the
+ * app's tabular figures are never reset.
+ *
+ * THE RHYTHM (revision 3 §2.0, §3.10). The words are one block: the label,
+ * the services, the facts and the client's own words sit `tight` (4)
+ * apart, because each line belongs to the one over it. What is not words
+ * stands off them: the thumbs by `regular` (16), the capsule by `compact`
+ * (8). Where the label is the card's heading (`increased`, `/account`) it
+ * stands `compact` over what it heads and the capsule hugs the line it
+ * qualifies (`tight`): today's «Предстоящ час» to the pixel.
+ */
+
+:host {
+  /* One cell: an interactive card's thumbs lie over its foot (below). */
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+
+  --visit-card-thumb: calc(var(--sys-space-unit) * 18);
+  --visit-card-label-gap: var(--sys-space-tight);
+  --visit-card-capsule-gap: var(--sys-space-compact);
+}
+
+:host([data-header-prominence='increased']) {
+  --visit-card-label-gap: var(--sys-space-compact);
+  --visit-card-capsule-gap: var(--sys-space-tight);
+}
+
+/* The card's own gap is between BLOCKS of equal standing; this card's
+   parts stand at three distances, so each part states its own. */
+.visit-card {
+  grid-area: 1 / 1;
+  gap: 0;
+  min-inline-size: 0;
+}
+
+.visit-card__words {
+  display: flex;
+  flex-direction: column;
+  min-inline-size: 0;
+}
+
+/* ── THE HEAD: the label over the services, the face in the corner ─────
+   The face hangs from the card's top-trailing corner and the words keep
+   their own column, so a long list of services wraps beside the face and
+   never under it. */
+.visit-card__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  column-gap: var(--sys-space-regular);
+}
+
+.visit-card__titles {
+  display: grid;
+  row-gap: var(--visit-card-label-gap);
+  min-inline-size: 0;
+}
+
+.visit-card__label,
+.visit-card__services,
+.visit-card__line,
+.visit-card__quote {
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
+}
+
+.visit-card__services {
+  text-wrap: balance;
+}
+
+.visit-card__face {
+  flex: none;
+}
+
+/* ── THE FACTS, the figure at their trailing edge ──────────────────────
+   The money ends the facts' FIRST line and only that line: it floats at
+   the trailing edge and the line runs round it. As a column of its own
+   it held its width down every line the facts wrapped to (four short
+   lines beside «1 127,50 €» at 330). The two are one role at one leading
+   (`callout`), so they share the first baseline; the figure never
+   breaks. */
+.visit-card__facts {
+  display: flow-root;
+  margin-block-start: var(--sys-space-tight);
+}
+
+/* A heading with no services under it heads the facts themselves. */
+:host([data-header-prominence='increased'])
+  .visit-card__head:not([data-services])
+  + .visit-card__facts {
+  margin-block-start: var(--visit-card-label-gap);
+}
+
+.visit-card__line {
+  display: block;
+  text-wrap: pretty;
+}
+
+.visit-card__figure {
+  float: inline-end;
+  margin-inline-start: var(--sys-space-regular);
+  white-space: nowrap;
+}
+
+.visit-card__quote {
+  margin-block-start: var(--sys-space-tight);
+}
+
+/* ── THE CAPSULE hugs its word ─────────────────────────────────────── */
+.visit-card__capsule {
+  align-self: flex-start;
+  margin-block-start: var(--visit-card-capsule-gap);
+}
+
+/* ── THE THUMBS ────────────────────────────────────────────────────────
+   At most three squares on one line. They give way before they wrap: in
+   a narrow column (the dialog's 2-up) three share the line a little
+   smaller, and the card keeps its height. */
+.visit-card__thumbs {
+  display: flex;
+  gap: var(--sys-space-compact);
+  margin-block-start: var(--sys-space-regular);
+}
+
+/* A bare tap target around the picture (the DS resets a button whose one
+   child is a media card, media-card.css): the shape and the press ride
+   `uiRadius` + `uiInteractive`. A thumb pushes the photo page and takes
+   the focus back on ‹, so it is an origin: it lands clear of the sheet's
+   bar above and its dock below, by the sheet's own clearance. */
+.visit-card__thumb {
+  flex: 0 1 var(--visit-card-thumb);
+  min-inline-size: 0;
+  scroll-margin-block: var(--modal-sheet-origin-margin);
+}
+
+/* ── THE INTERACTIVE CARD'S THUMBS ─────────────────────────────────────
+   The whole card is a button, and a control may not sit inside one. The
+   button keeps a room the thumbs' height at its foot; the thumbs are its
+   sibling, laid over that room in the same cell and inset by the card's
+   own padding (the shared `[data-padding]` ladder). Only the pictures
+   take the pointer: between them the card is still the target. */
+.visit-card__room {
+  flex: none;
+  block-size: var(--visit-card-thumb);
+  margin-block-start: var(--sys-space-regular);
+}
+
+.visit-card__thumbs[data-outside] {
+  grid-area: 1 / 1;
+  align-self: end;
+  position: relative;
+  z-index: 1;
+  margin-block-start: 0;
+  padding-block-start: 0;
+  pointer-events: none;
+}
+
+.visit-card__thumbs[data-outside] > .visit-card__thumb {
+  pointer-events: auto;
+}

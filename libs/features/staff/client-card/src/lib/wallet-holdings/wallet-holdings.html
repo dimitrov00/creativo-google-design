@@ -1,0 +1,94 @@
+<!-- WC · EVERY THING HELD, a ticket on white paper, in the wallet's order. -->
+@for (holding of holdings(); track keyOf(holding)) { @switch (holding.kind) {
+@case ('voucher') { @let voucher = holding.voucher;
+<!-- WC1 · a gift voucher: its balance is the accent figure, the one chip
+     says what it was issued for and how long it is good. Nothing to
+     press: it is spent at the bill. -->
+<article
+  uiCouponCard
+  [uiTitle]="voucher.title"
+  [uiValue]="voucher.balance"
+  [uiDetail]="voucher.detail"
+  [attr.aria-label]="voucher.accessibleName"
+  [attr.data-testid]="'rewards-voucher-' + voucher.voucherId"
+>
+  <ui-icon uiCouponGlyph uiName="promo.voucher" />
+</article>
+} @case ('ticket') { @let ticket = holding.ticket; @if (ticket.applied) {
+<!-- WC2 · a ticket already on the bill: the discount page's own applied
+     card, with its real «Премахни». ‹ from the discount page lands on it. -->
+<article
+  uiCouponCard
+  [uiApplied]="true"
+  tabindex="-1"
+  class="wallet-holdings__origin"
+  [uiTitle]="ticket.title"
+  [uiValue]="ticket.value"
+  [uiDetail]="ticket.detail"
+  [attr.aria-label]="ticket.accessibleName"
+  [attr.data-testid]="'rewards-ready-' + ticket.grantId"
+>
+  <ui-icon uiCouponGlyph uiName="promo.coupon" />
+  <ui-icon uiCouponBadge uiName="checklist.done" />
+  <button
+    type="button"
+    uiCouponAction
+    uiButton
+    uiButtonStyle="plain"
+    uiTint="neutral"
+    uiControlSize="small"
+    [attr.aria-label]="ticket.removeName"
+    [attr.data-testid]="'rewards-ready-' + ticket.grantId + '-remove'"
+    (click)="removeReward.emit(ticket.grantId)"
+  >
+    {{ words().remove }}
+  </button>
+</article>
+} @else {
+<!-- WC2 · a reward held: static, its validity in the chip, no call — the
+     disc under the pass is the verb, said once on the page. -->
+<article
+  uiCouponCard
+  [uiTitle]="ticket.title"
+  [uiValue]="ticket.value"
+  [uiDetail]="ticket.detail"
+  [attr.aria-label]="ticket.accessibleName"
+  [attr.data-testid]="'rewards-ready-' + ticket.grantId"
+>
+  <ui-icon uiCouponGlyph uiName="promo.coupon" />
+  @if (ticket.stack; as stack) {
+  <span uiBadge uiCouponBadge uiProminence="increased">{{ stack }}</span>
+  }
+</article>
+} } @case ('stamps') { @let card = holding.card;
+<!-- WC3 · a stamp card: the stamps are the count. -->
+<ui-card
+  uiTone="elevated"
+  uiPadding="comfortable"
+  class="wallet-holdings__stamps"
+  [attr.data-testid]="'rewards-stamp-' + card.ruleId"
+>
+  <div class="wallet-holdings__stamps-head">
+    <p uiText uiFont="callout" uiWeight="semibold">{{ words().stampCard }}</p>
+    <p
+      uiText
+      uiFont="subheadline"
+      uiForegroundStyle="secondary"
+      class="wallet-holdings__stamps-line"
+    >
+      {{ holding.line }}
+    </p>
+  </div>
+  <ui-gauge
+    uiGaugeStyle="discreteCapacity"
+    uiControlSize="large"
+    uiRewardIcon="loyalty.reward"
+    [uiColumns]="5"
+    [uiMin]="card.gauge.min"
+    [uiMax]="card.gauge.max"
+    [uiValue]="card.gauge.value"
+    [uiLabel]="card.gauge.label"
+    [uiValueText]="card.gauge.valueText"
+  />
+</ui-card>
+} } }

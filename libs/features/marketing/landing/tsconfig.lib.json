@@ -47,6 +47,9 @@
     },
     {
       "path": "../../shared/shell/tsconfig.lib.json"
+    },
+    {
+      "path": "../../../application/shared/tsconfig.lib.json"
     }
   ]
 }

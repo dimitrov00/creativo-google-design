@@ -1,14 +1,5 @@
-import { BARBER_ART, SERVICE_ART } from '@creativo/features/shared/catalog';
-import { Injectable, computed, effect, inject, signal } from '@angular/core';
-import { toSignal } from '@angular/core/rxjs-interop';
-import { map } from 'rxjs/operators';
-import {
-  CATALOG_READER,
-  MEDIA_READER,
-  type Barber,
-  type MediaRef,
-  type Service,
-} from '@creativo/application/catalog';
+import { CatalogContentService } from '@creativo/features/shared/catalog';
+import { Injectable, type Signal, computed, inject } from '@angular/core';
 import { LanguageService } from '@creativo/features/shared/shell';
 import {
   type BarberVm,
@@ -22,28 +13,29 @@ import {
   formatDurationRange,
   formatPrice,
 } from './landing-content';
-import { barberToVm, serviceToVm } from '@creativo/features/shared/catalog';
 
 /**
  * The landing's single content source — now the REAL catalog.
  *
- * `CATALOG_READER` feeds services and barbers, `MEDIA_READER` resolves
- * their cover/avatar `MediaRef`s to URLs, and `catalog-to-vm` maps both
- * onto the `ServiceVm`/`BarberVm` shapes the sections already bind. The
- * page and the onboarding grid finally read ONE source, which is what
- * stopped them disagreeing about which services exist and what they cost.
+ * Services and barbers are `CatalogContentService`'s view models: the
+ * session's one catalogue read and its one media cache, the same the
+ * booking flow and onboarding read. A visitor who goes from the landing to
+ * `/book` resolves each cover once, and a missing cover costs one request a
+ * session, not one per surface. (The landing kept a second `MediaUrlCache`
+ * and its own catalogue subscriptions until 2026-09-26.) The page and the
+ * onboarding grid read ONE source, which is what stopped them disagreeing
+ * about which services exist and what they cost.
  *
  * Still hand-authored: locations and work shots (no seeded counterpart
  * yet), and the editorial art direction merged in by `catalog-to-vm`.
  *
- * Collections are SIGNALS now, not plain arrays — Firestore answers
+ * Collections are SIGNALS, not plain arrays — Firestore answers
  * asynchronously, and templates re-read them as the catalog arrives.
  */
 @Injectable({ providedIn: 'root' })
 export class LandingContentService {
   private readonly language = inject(LanguageService);
-  private readonly catalog = inject(CATALOG_READER);
-  private readonly media = inject(MEDIA_READER);
+  private readonly catalog = inject(CatalogContentService);
 
   /** Intl locale for money/durations — tracks the active language. */
   readonly locale = computed(() => this.language.activeLang());
@@ -51,43 +43,11 @@ export class LandingContentService {
   readonly workShots: readonly WorkShotVm[] = WORK_SHOTS;
   readonly locations: readonly LocationVm[] = LOCATIONS;
 
-  /** Resolved media URLs by `MediaRef` id — filled as `MEDIA_READER` answers. */
-  private readonly mediaUrls = signal<Readonly<Record<string, string>>>({});
-  private readonly mediaRequests = new Set<string>();
+  /** Active barbers, their avatars resolved — the catalogue's own view models. */
+  readonly barbers: Signal<readonly BarberVm[]> = this.catalog.barberVms;
 
-  private readonly domainServices = toSignal(
-    this.catalog
-      .listActiveServices()
-      .pipe(map((result) => (result.isSuccess() ? result.value : []))),
-    { initialValue: [] as readonly Service[] },
-  );
-
-  private readonly domainBarbers = toSignal(
-    this.catalog
-      .listActiveBarbers()
-      .pipe(map((result) => (result.isSuccess() ? result.value : []))),
-    { initialValue: [] as readonly Barber[] },
-  );
-
-  readonly barbers = computed<readonly BarberVm[]>(() =>
-    this.domainBarbers().map((barber) =>
-      barberToVm(
-        barber,
-        barber.avatar ? this.mediaUrls()[barber.avatar.id.value] : undefined,
-        BARBER_ART[barber.id.value],
-      ),
-    ),
-  );
-
-  readonly allServices = computed<readonly ServiceVm[]>(() =>
-    this.domainServices().map((service) =>
-      serviceToVm(
-        service,
-        service.cover ? this.mediaUrls()[service.cover.id.value] : undefined,
-        SERVICE_ART[service.id.value],
-      ),
-    ),
-  );
+  /** Active services, their covers resolved — the catalogue's own view models. */
+  readonly allServices: Signal<readonly ServiceVm[]> = this.catalog.serviceVms;
 
   /** Marketing shelf — upsell-only add-ons belong to /book, not here (v2). */
   readonly shelfServices = computed<readonly ServiceVm[]>(() =>
@@ -99,30 +59,6 @@ export class LandingContentService {
   readonly bundleServices = computed<readonly ServiceVm[]>(() =>
     this.shelfServices().filter((service) => service.kind === 'bundle'),
   );
-
-  constructor() {
-    // Resolve every cover/avatar exactly once. A live-query re-emit hands
-    // back the same refs, so `mediaRequests` keeps a snapshot from
-    // re-fetching what is already in flight.
-    effect(() => {
-      const refs: MediaRef[] = [
-        ...this.domainServices().map((service) => service.cover),
-        ...this.domainBarbers().map((barber) => barber.avatar),
-      ].filter((ref): ref is MediaRef => ref !== null);
-
-      for (const ref of refs) {
-        const id = ref.id.value;
-        if (this.mediaRequests.has(id)) continue;
-        this.mediaRequests.add(id);
-        void this.media.resolve(ref).then((result) => {
-          if (result.isFailure()) return;
-          const [variant] = result.value;
-          if (!variant) return;
-          this.mediaUrls.update((urls) => ({ ...urls, [id]: variant.url }));
-        });
-      }
-    });
-  }
 
   /** Resolve a localized pair against the active language. */
   text(localized: Localized): string {

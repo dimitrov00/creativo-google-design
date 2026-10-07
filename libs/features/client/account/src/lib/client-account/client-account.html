@@ -73,22 +73,45 @@
         </a>
       </ui-grid>
 
+      <!-- THE NEXT VISIT — the SHARED visit card (client-card revision 3
+           §3.10, R2-I), the one the staff glance draws too: «Предстоящ час»
+           as the card's own heading, the day and the hour on the visit's
+           own calendar (the shop's zone, never the device's), the status in
+           the appointments screen's words as a capsule that hugs its word.
+           The whole card is a button (`account-upcoming`, its capsule
+           `account-upcoming-status`): it opens the visit on «Моите часове».
+           Its state is the page's (`data-upcoming` on the host).
+           Plain, like every card on this page (in light the same white
+           card as `elevated`; in dark it stays level with its neighbours).
+           No services and no face here (`/account`'s form, owner question
+           Q7). -->
+      @if (upcomingCard(); as card) {
+      <lib-visit-card
+        headerProminence="increased"
+        tone="plain"
+        interactive
+        [showServices]="false"
+        [vm]="card"
+        (open)="openUpcoming(card.id)"
+      />
+      } @else {
+      <!-- Before the card: loading, an error, or the honest empty. Loading
+           is its own state, never the empty one: a client with a booking
+           must not be told "no upcoming appointments" while the live query
+           attaches, nor while the card's words load. -->
       <ui-card
         uiPadding="comfortable"
         data-testid="account-upcoming"
-        [attr.data-state]="upcoming().kind"
+        [attr.data-state]="upcomingState()"
       >
         <p uiText uiFont="headline">{{ t('account.upcoming.title') }}</p>
-        @switch (upcoming().kind) { @case ('populated') { @if
-        (upcomingAppointment(); as visit) {
-        <ui-stack uiSpacing="tight">
-          <p uiText uiFont="body">
-            {{ formatAppointmentDate(visit) }} · {{ formatAppointmentTime(visit)
-            }}
-          </p>
-          <span uiBadge uiTone="accent">{{ visit.status.kind }}</span>
-        </ui-stack>
-        } } @case ('error') {
+        @switch (upcomingState()) { @case ('loading') {
+        <ui-skeleton
+          uiFrame
+          uiFrameHeight="2.75rem"
+          data-testid="account-upcoming-skeleton"
+        />
+        } @case ('error') {
         <p
           uiText
           uiFont="footnote"
@@ -115,16 +138,15 @@
         </ui-empty-state>
         } }
       </ui-card>
-
-      @if (completion(); as progress) {
+      } @if (completion(); as progress) {
       <ui-card
         uiPadding="comfortable"
         data-testid="account-completion"
         [attr.data-state]="progress.complete ? 'complete' : 'open'"
       >
         <!-- Gauge-first reading (Apple ring grammar): the ring carries
-             the "how far along" answer at a glance — fraction center
-             while open, accent check when the profile completes. As
+             the "how far along" answer at a glance, the fraction at its
+             center (the card leaves once the profile completes). As
              generous as the dashboard tiles above (owner ruling
              2026-07-27): a bigger ring, comfortable spacing. -->
         <ui-stack
@@ -135,7 +157,10 @@
         >
           <!-- The card only renders while INCOMPLETE (a finished profile
                shows no nudge at all), so the center is always the
-               fraction. -->
+               fraction. Unlabelled on purpose: the progress line beside
+               it says the same thing in words, so the ring stays the DS
+               default, decorative (aria-hidden, no role) — a `uiLabel`
+               here would make readers hear the progress twice. -->
           <ui-progress-ring
             [uiValue]="progress.done / progress.total"
             uiFrame
@@ -159,7 +184,10 @@
              precedent). An OPEN item's row IS the way back in (owner
              ruling 2026-07-27, replacing the separate continue CTA): it
              deep-links into the onboarding personalization phase at its
-             own step, with the iOS disclosure chevron as the affordance.
+             own step, with the iOS disclosure chevron as the affordance —
+             and it is a CONTROL to the hand as well as to the eye
+             (`uiInteractive`: the house hover and press, which a bare
+             anchor on a row never had; client-card revision 3 §1.3 T0).
              Settled rows stay inert — no hover promise on a dead surface
              (case-study §2.5). -->
         <ui-list-group role="list" data-testid="account-completion-items">
@@ -176,6 +204,7 @@
           } @else {
           <a
             uiListRow
+            [uiInteractive]="true"
             role="listitem"
             class="account-completion__item"
             data-done="false"

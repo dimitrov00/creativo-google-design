@@ -1,0 +1,433 @@
+<!-- DA / DC / DD — the medal on its STAGE (the hero head: an accent wash, a
+     white spotlight, the pass's two discs; the head draws no ring of its
+     own, the medal wears its own), the family's title under it at the
+     NAME's rung, where it stands in one quiet line with its date as the
+     fact. The page does not rise: it is a medal's page, not a person's.
+     The face is hidden from assistive tech — the state line and the
+     progress card say what the ring draws. A page with no medal to stand
+     there (the read failed, no account) is not a medal's page: the head
+     is the standard one, so the bar's word does not float under the
+     hero's empty media box. -->
+<ui-sheet-headline
+  [uiHeadlineStyle]="hero() ? 'hero' : 'standard'"
+  [uiMediaStage]="hero()"
+  data-testid="achievements-detail-head"
+>
+  <h2
+    uiSheetLargeTitle
+    [id]="titleId()"
+    uiText
+    uiFont="title"
+    data-testid="achievements-detail-title"
+  >
+    {{ title() }}
+  </h2>
+  @if (ready(); as page) {
+  <p
+    uiText
+    uiFont="callout"
+    uiForegroundStyle="secondary"
+    class="achievement-detail__state"
+    data-testid="achievements-detail-state"
+  >
+    @for (part of page.vm.stateLine; track $index) { @if (part.fact) {
+    <span
+      uiForegroundStyle="primary"
+      uiWeight="medium"
+      class="achievement-detail__fact"
+      >{{ part.text }}</span
+    >
+    } @else {
+    <span>{{ part.text }}</span>
+    } }
+  </p>
+  } @else if (state().kind === 'loading') {
+  <ui-skeleton
+    class="achievement-detail__state-skeleton"
+    uiRadius="capsule"
+    uiFrame
+    uiFrameWidth="calc(var(--sys-space-unit) * 50)"
+    uiFrameHeight="var(--sys-space-regular)"
+  />
+  }
+  <!-- The face is its block's one root, so it lands in the media slot. -->
+  @if (ready(); as page) {
+  <ui-medal
+    uiHeadlineMedia
+    uiControlSize="extraLarge"
+    [uiState]="page.vm.medal.state"
+    [uiIcon]="page.vm.medal.icon"
+    [uiSrc]="page.vm.medal.src"
+    [uiMonogram]="page.vm.medal.monogram"
+    [uiLevel]="page.vm.medal.level"
+    [uiValue]="page.vm.medal.value"
+    [uiValueText]="page.vm.medal.valueText"
+    [uiLabel]="page.vm.medal.accessibleName"
+    data-testid="achievements-detail-medal"
+  />
+  } @else if (state().kind === 'loading') {
+  <ui-skeleton
+    uiHeadlineMedia
+    uiRadius="capsule"
+    uiFrame
+    uiFrameWidth="var(--control-size-extraLarge)"
+    uiFrameHeight="var(--control-size-extraLarge)"
+  />
+  }
+</ui-sheet-headline>
+
+<!-- Read offline: the standing below is the saved one; the dock's verb is
+     absent (the store withholds it). -->
+@if (!store.online()) {
+<ui-notice
+  uiIcon="connection.offline"
+  [uiLabel]="words()?.offline ?? null"
+  data-testid="achievements-offline"
+>
+  <p>{{ words()?.offline }}</p>
+</ui-notice>
+} @switch (state().kind) { @case ('loading') {
+<!-- The progress card's block and the «Как се печели» block while the
+     family is on its way (§2.4.4); the stage above holds its disc. -->
+<div
+  class="achievement-detail__skeleton"
+  aria-busy="true"
+  data-testid="achievements-detail-skeleton"
+>
+  <ui-skeleton
+    uiRadius="prominent"
+    uiFrame
+    uiFrameHeight="calc(var(--sys-space-unit) * 35)"
+  />
+  <ui-skeleton
+    uiRadius="prominent"
+    uiFrame
+    uiFrameHeight="calc(var(--sys-space-unit) * 89)"
+  />
+</div>
+} @case ('failed') {
+<ui-notice
+  [uiLabel]="words()?.failed.achievements ?? null"
+  data-testid="achievements-error"
+>
+  <p>{{ words()?.failed.achievements }}</p>
+  <button
+    uiNoticeActions
+    type="button"
+    uiButton
+    uiButtonStyle="bordered"
+    uiTint="neutral"
+    uiControlSize="regular"
+    data-testid="achievements-retry"
+    (click)="retry()"
+  >
+    {{ words()?.visitsModule.retry }}
+  </button>
+</ui-notice>
+} @case ('absent') {
+<ui-empty-state data-testid="achievements-empty">
+  <p uiText uiFont="subheadline" uiForegroundStyle="secondary">
+    {{ words()?.achievements.firstHint }}
+  </p>
+</ui-empty-state>
+} } @if (ready(); as page) { @let vm = page.vm; @let words = page.words;
+
+<!-- DE + DF — side by side only in the wide dialog (§2.4.4). -->
+<div class="achievement-detail__pair">
+  <!-- DE — the progress: THE ONLY PLACE for the count. The metric at the
+       page's one hero rung names itself; the card is the group it names.
+       What remains, and — when this visit's services already hold what
+       counts — that it is counted. -->
+  <ui-card
+    uiTone="elevated"
+    uiPadding="comfortable"
+    role="group"
+    [attr.aria-labelledby]="ids.progress"
+    class="achievement-detail__progress"
+    data-testid="achievements-detail-progress"
+  >
+    <ui-stack uiSpacing="compact" uiAlignment="leading">
+      <ui-metric
+        [id]="ids.progress"
+        uiControlSize="extraLarge"
+        [uiValue]="vm.progress.value"
+        [uiUnit]="vm.progress.unit"
+        [uiCaption]="vm.progress.what"
+        [uiLabel]="progressName(vm.progress)"
+      />
+      @if (vm.progress.remaining !== null || vm.progress.thisVisit !== null) {
+      <ui-stack uiSpacing="none" uiAlignment="leading">
+        @if (vm.progress.remaining; as remaining) {
+        <p
+          uiText
+          uiFont="callout"
+          uiWeight="semibold"
+          data-testid="achievements-detail-remaining"
+        >
+          {{ remaining }}
+        </p>
+        } @if (vm.progress.thisVisit; as thisVisit) {
+        <p
+          uiText
+          uiFont="callout"
+          uiForegroundStyle="secondary"
+          data-testid="achievements-detail-this-visit"
+        >
+          {{ thisVisit }}
+        </p>
+        }
+      </ui-stack>
+      }
+    </ui-stack>
+  </ui-card>
+
+  <!-- DF — «Как се печели»: ONE sentence chosen by the family's metric,
+       the pictures of what counts (one cover across the card, or a 2-up
+       grid), who and where, the exclusion ONCE. A cover is a picture, not
+       a control: the page's one verb is in the dock. Absent for a retired
+       family. -->
+  @if (vm.how; as how) {
+  <section
+    class="achievement-detail__module"
+    [attr.aria-labelledby]="ids.how"
+    data-testid="achievements-detail-how"
+  >
+    <ui-section-header uiHeaderProminence="increased">
+      <h3 uiTitle [id]="ids.how">{{ words.achievement.howTitle }}</h3>
+    </ui-section-header>
+    <ui-card uiTone="elevated" uiPadding="comfortable">
+      <ui-stack uiSpacing="regular" uiAlignment="stretch">
+        <p uiText uiFont="body" data-testid="achievements-detail-how-sentence">
+          {{ how.sentence }}
+        </p>
+        <!-- No art, no cover (§2.4.4): the sentence already names what
+             counts, and a name under no picture is a stray label. -->
+        @let pictures = picturesWithArt(how); @if (pictures.length > 0) {
+        <ui-grid
+          [uiColumns]="coverColumns(how, pictures)"
+          uiSpacing="regular"
+          class="achievement-detail__covers"
+        >
+          @for (picture of pictures; track picture.key) {
+          <figure
+            class="achievement-detail__cover"
+            [attr.data-testid]="'achievements-detail-count-' + picture.key"
+          >
+            <ui-media-card
+              [uiSrc]="picture.src"
+              [uiAlt]="picture.title"
+              [uiRatio]="how.ratio"
+              [uiScrim]="false"
+              [uiRing]="false"
+              uiRadius="regular"
+            >
+              @if (picture.more; as more) {
+              <span
+                uiOverlayTrailing
+                uiBadge
+                uiProminence="increased"
+                [attr.aria-label]="words.achievement.moreCount(more)"
+                >{{ words.achievement.moreCount(more) }}</span
+              >
+              }
+            </ui-media-card>
+            <figcaption class="achievement-detail__cover-words">
+              <span uiText uiFont="subheadline" uiWeight="semibold"
+                >{{ picture.title }}</span
+              >
+              @if (picture.caption; as caption) {
+              <span
+                uiText
+                uiFont="footnote"
+                uiForegroundStyle="secondary"
+                class="achievement-detail__price"
+                >{{ caption }}</span
+              >
+              }
+            </figcaption>
+          </figure>
+          }
+        </ui-grid>
+        }
+        <div
+          class="achievement-detail__who"
+          data-testid="achievements-detail-who"
+        >
+          @if (how.faces.length > 0) {
+          <ui-avatar-group
+            uiControlSize="small"
+            [uiOverflow]="facesOverflow(how)"
+            [attr.aria-label]="facesName(how)"
+          >
+            @for (face of facesShown(how); track face.name) {
+            <ui-avatar
+              uiControlSize="small"
+              [uiSrc]="face.src"
+              [uiName]="face.name"
+            />
+            }
+          </ui-avatar-group>
+          }
+          <span uiText uiFont="callout">{{ how.who }}</span>
+        </div>
+        @if (how.excluded; as excluded) {
+        <p
+          uiText
+          uiFont="footnote"
+          uiForegroundStyle="secondary"
+          data-testid="achievements-detail-excluded"
+        >
+          {{ excluded }}
+        </p>
+        }
+      </ui-stack>
+    </ui-card>
+  </section>
+  }
+</div>
+
+<!-- DH + DI — side by side only in the wide dialog. -->
+<div class="achievement-detail__pair">
+  <!-- DH — «Нива»: a ladder of MEDALS. A level passed is `complete` with
+       ITS numeral; the next and the later ones are dashed silhouettes, the
+       next said in the primary ink, the later ones quiet. Each row is one
+       sentence to a screen reader; the medal and the words are its
+       picture. -->
+  <section
+    class="achievement-detail__module"
+    [attr.aria-labelledby]="ids.levels"
+    data-testid="achievements-detail-ladder"
+  >
+    <ui-section-header uiHeaderProminence="increased">
+      <h3 uiTitle [id]="ids.levels">{{ words.achievement.levelsTitle }}</h3>
+    </ui-section-header>
+    <ui-card uiTone="elevated" uiPadding="comfortable">
+      <ol
+        class="achievement-detail__levels"
+        data-testid="achievements-detail-levels"
+      >
+        @for (level of vm.ladder; track level.level) {
+        <li
+          class="achievement-detail__level"
+          [attr.data-tone]="level.tone"
+          [attr.aria-label]="level.accessibleName"
+          [attr.data-testid]="'achievements-detail-level-' + level.level"
+        >
+          <ui-medal
+            uiControlSize="regular"
+            [uiState]="level.medal.state"
+            [uiIcon]="level.medal.icon"
+            [uiSrc]="level.medal.src"
+            [uiMonogram]="level.medal.monogram"
+            [uiLevel]="level.medal.level"
+            [uiLabel]="level.accessibleName"
+            aria-hidden="true"
+          />
+          <span class="achievement-detail__level-words" aria-hidden="true">
+            <span
+              uiText
+              uiFont="body"
+              uiWeight="medium"
+              [uiForegroundStyle]="level.tone === 'later' ? 'secondary' : 'primary'"
+              class="achievement-detail__level-title"
+              >{{ level.title }}</span
+            >
+            @if (level.reward !== null || level.earnedOn !== null) {
+            <span class="achievement-detail__level-facts">
+              @if (level.reward; as reward) {
+              <span
+                uiText
+                uiFont="subheadline"
+                uiForegroundStyle="secondary"
+                class="achievement-detail__level-reward"
+                >{{ reward }}</span
+              >
+              } @if (level.earnedOn; as earnedOn) {
+              <span
+                uiText
+                uiFont="footnote"
+                uiForegroundStyle="secondary"
+                class="achievement-detail__level-date"
+                >{{ earnedOn }}</span
+              >
+              }
+            </span>
+            }
+          </span>
+        </li>
+        }
+      </ol>
+    </ui-card>
+  </section>
+
+  <!-- DI — the visits that counted: the shared staff rows, inset grouped,
+       static; at most five. Absent when none of the loaded visits counts. -->
+  @if (vm.visits.length > 0) {
+  <section
+    class="achievement-detail__module"
+    [attr.aria-labelledby]="ids.visits"
+  >
+    <ui-section-header uiHeaderProminence="increased">
+      <h3 uiTitle [id]="ids.visits">{{ words.achievement.visitsTitle }}</h3>
+    </ui-section-header>
+    <ul
+      uiListGroup
+      [attr.aria-labelledby]="ids.visits"
+      data-testid="achievements-detail-visits"
+    >
+      @for (row of vm.visits; track row.id) {
+      <lib-visit-row [vm]="row" perspective="staff" />
+      }
+    </ul>
+  </section>
+  }
+</div>
+
+<!-- DJ — the family's neighbours: ONE grid row of three, never a rail. A
+     tap REPLACES this page with theirs; «Всички» opens «Постижения» on the
+     category's chip (a season's family has no chip: no action). -->
+@if (vm.related; as related) {
+<section
+  class="achievement-detail__module"
+  [attr.aria-labelledby]="ids.related"
+  data-testid="achievements-detail-related"
+>
+  <ui-section-header uiHeaderProminence="increased">
+    <h3 uiTitle [id]="ids.related">{{ related.title }}</h3>
+    @if (vm.categoryId; as categoryId) {
+    <button
+      uiSectionAction
+      type="button"
+      uiButton
+      uiButtonStyle="plain"
+      uiControlSize="small"
+      [attr.aria-describedby]="ids.related"
+      data-testid="achievements-detail-related-all"
+      (click)="openCategory.emit(categoryId)"
+    >
+      {{ words.loyalty.all }}
+      <ui-icon uiName="nav.disclosure" />
+    </button>
+    }
+  </ui-section-header>
+  <ui-card uiTone="elevated" uiPadding="regular">
+    <ui-grid
+      role="list"
+      [attr.aria-labelledby]="ids.related"
+      [uiColumns]="3"
+      uiSpacing="compact"
+      uiRowSpacing="regular"
+      class="achievement-detail__related"
+    >
+      @for (tile of related.tiles; track tile.key) {
+      <lib-achievement-tile
+        [tile]="tile"
+        [testId]="'achievements-detail-related-' + tile.key"
+        [newWord]="words.achievements.isNew"
+        (open)="open($event)"
+      />
+      }
+    </ui-grid>
+  </ui-card>
+</section>
+} }

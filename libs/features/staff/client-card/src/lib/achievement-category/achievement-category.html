@@ -1,0 +1,203 @@
+<!-- CA/CB — a PUSHED scope (a season, the archive, a day) titles at the
+     sheet's large title, as every pushed page does, and one line under it:
+     the person, or a season's dates. Embedded under the chips of
+     «Постижения» (a category), the page above holds the title and this
+     body opens on the category's summary line alone. -->
+@if (embedded()) { @if (subline(); as subline) {
+<p
+  uiText
+  uiFont="callout"
+  uiForegroundStyle="secondary"
+  class="achievement-category__subline"
+  data-testid="achievements-scope-subline"
+>
+  {{ subline }}
+</p>
+} } @else {
+<ui-sheet-headline data-testid="achievements-scope-head">
+  <h2
+    uiSheetLargeTitle
+    [id]="titleId()"
+    uiText
+    uiFont="largeTitle"
+    data-testid="achievements-scope-title"
+  >
+    {{ title() }}
+  </h2>
+  @if (subline(); as subline) {
+  <p
+    uiText
+    uiFont="callout"
+    uiForegroundStyle="secondary"
+    class="achievement-category__subline"
+    data-testid="achievements-scope-subline"
+  >
+    {{ subline }}
+  </p>
+  }
+</ui-sheet-headline>
+
+<!-- C″ — read offline: the medals below are the saved ones. -->
+@if (!store.online()) {
+<ui-notice
+  uiIcon="connection.offline"
+  [uiLabel]="words()?.offline ?? null"
+  data-testid="achievements-offline"
+>
+  <p>{{ words()?.offline }}</p>
+</ui-notice>
+} } @switch (state().kind) { @case ('loading') {
+<!-- Six discs on a white card, where a grid of families will land. -->
+<ui-card
+  uiTone="elevated"
+  [uiPadding]="grid().padding"
+  aria-busy="true"
+  data-testid="achievements-scope-skeleton"
+>
+  <ui-grid
+    [uiColumns]="grid().columns"
+    [uiSpacing]="grid().columnSpacing"
+    [uiRowSpacing]="grid().rowSpacing"
+    aria-hidden="true"
+  >
+    @for (disc of placeholderDiscs; track disc) {
+    <ui-stack uiAlignment="center" uiSpacing="compact">
+      <ui-skeleton
+        uiRadius="capsule"
+        uiFrame
+        uiFrameWidth="calc(var(--sys-space-unit) * 16)"
+        uiFrameHeight="calc(var(--sys-space-unit) * 16)"
+      />
+      <ui-skeleton
+        uiRadius="regular"
+        uiFrame
+        uiFrameWidth="60%"
+        uiFrameHeight="var(--sys-space-regular)"
+      />
+    </ui-stack>
+    }
+  </ui-grid>
+</ui-card>
+} @case ('failed') {
+<ui-notice
+  [uiLabel]="words()?.failed.achievements ?? null"
+  data-testid="achievements-error"
+>
+  <p>{{ words()?.failed.achievements }}</p>
+  <button
+    uiNoticeActions
+    type="button"
+    uiButton
+    uiButtonStyle="bordered"
+    uiTint="neutral"
+    uiControlSize="regular"
+    data-testid="achievements-retry"
+    (click)="retry()"
+  >
+    {{ words()?.visitsModule.retry }}
+  </button>
+</ui-notice>
+} @case ('absent') {
+<ui-empty-state data-testid="achievements-empty">
+  <p uiText uiFont="subheadline" uiForegroundStyle="secondary">
+    {{ words()?.achievements.firstHint }}
+  </p>
+</ui-empty-state>
+} } @if (ready(); as page) { @let vm = page.vm;
+<!-- CE — a season's medal in its ring over its step track, above its
+     families, on a white card: the I–V ladder is drawn HERE, on the
+     season's page, and nowhere else (§2.3.2 AG). -->
+@if (vm.track; as track) {
+<ui-card
+  uiTone="elevated"
+  uiPadding="comfortable"
+  class="achievement-category__track-card"
+  data-testid="achievements-scope-track"
+>
+  <div class="achievement-category__track">
+    <ui-medal
+      aria-hidden="true"
+      uiControlSize="large"
+      [uiState]="track.medal.state"
+      [uiIcon]="track.medal.icon"
+      [uiSrc]="track.medal.src"
+      [uiMonogram]="track.medal.monogram"
+      [uiLevel]="track.medal.level"
+      [uiValue]="track.medal.value"
+      [uiValueText]="track.medal.valueText"
+      [uiLabel]="track.medal.accessibleName"
+    />
+    <ui-gauge
+      uiGaugeStyle="steps"
+      [uiValue]="track.gauge.value"
+      [uiMin]="track.gauge.min"
+      [uiMax]="track.gauge.max"
+      [uiMarks]="track.gauge.marks"
+      [uiLabel]="track.gauge.label"
+      [uiValueText]="track.gauge.valueText"
+    />
+  </div>
+  @if (track.sentence; as sentence) {
+  <p uiText uiFont="callout" aria-hidden="true">{{ sentence }}</p>
+  }
+</ui-card>
+}
+
+<!-- CF — an ended season lists only what was earned, and says that it
+     closed: its dates are the subline's, the level it closed on the rim's
+     and the track's last node. No sentence above it: nothing is left to
+     reach. -->
+@if (vm.ended; as ended) {
+<p
+  uiText
+  uiFont="footnote"
+  uiForegroundStyle="secondary"
+  data-testid="achievements-scope-ended"
+>
+  {{ ended }}
+</p>
+}
+
+<!-- CC/CD — the sections: a quiet list label over a white card holding a
+     grid of medals, or one unlabelled card (a season, a day, a shelf with
+     nothing to split). Every grid on the same step: three columns on a
+     phone, four from 600, six in the dialog. -->
+@for (section of vm.sections; track section.key) {
+<ui-stack
+  uiSpacing="compact"
+  [attr.data-testid]="'achievements-scope-section-' + section.key"
+>
+  @if (section.title; as heading) {
+  <ui-section-header uiHeaderProminence="standard">
+    <h3 uiTitle [id]="sectionLabel(section)">{{ heading }}</h3>
+    @if (section.detail; as detail) {
+    <span uiSectionDetail>{{ detail }}</span>
+    }
+  </ui-section-header>
+  }
+  <ui-card
+    uiTone="elevated"
+    [uiPadding]="grid().padding"
+    class="achievement-category__card"
+  >
+    <ui-grid
+      class="achievement-category__grid"
+      [uiColumns]="grid().columns"
+      [uiSpacing]="grid().columnSpacing"
+      [uiRowSpacing]="grid().rowSpacing"
+      [attr.data-inset]="grid().inset"
+      role="list"
+      [attr.aria-labelledby]="sectionLabel(section)"
+    >
+      @for (tile of section.tiles; track tile.key) {
+      <lib-achievement-tile
+        [tile]="tile"
+        [testId]="'achievements-scope-' + tile.key"
+        [newWord]="page.words.achievements.isNew"
+        (open)="open($event)"
+      />
+      }
+    </ui-grid>
+  </ui-card>
+</ui-stack>
+} }

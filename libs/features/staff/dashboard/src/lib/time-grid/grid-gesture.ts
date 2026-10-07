@@ -40,8 +40,9 @@ export const DRAG_THRESHOLD_PX = 4;
  *
  * ⚠ THE IMPLEMENTATION HAD DEPARTED FROM THAT, and the departure is what a
  * thumb kept paying for (owner, 2026-09-03). It took `touch-action: none` and
- * a 4px threshold instead, and `staff-time-grid.css` was honest about the
- * price: "what it costs is the block's own 40×N pixels as a scroll surface".
+ * a 4px threshold instead, and the grid's stylesheet was honest about the
+ * price (the grab chapter, now in `staff-time-grid.block.css`, still quotes
+ * it): "what it costs is the block's own 40×N pixels as a scroll surface".
  * On a phone that is not a corner of the frame — the block IS what a finger
  * lands on, and the handles are 44px discs sitting on top of it — so scrolling
  * the day moved a booking or resized one. An accidental write is a far worse

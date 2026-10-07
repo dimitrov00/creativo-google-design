@@ -31,16 +31,7 @@
     @if (showsHead()) { @if (columns().length > 1 || columns()[0]?.dayNumber !==
     null) {
     <div class="staff-grid__head">
-      <!-- The zone, named. A grid that states times without stating which
-         clock they are on is one wrong assumption from a missed visit. -->
-      <button
-        type="button"
-        class="staff-grid__zone"
-        data-testid="staff-grid-zone"
-        (click)="zonePicked.emit()"
-      >
-        {{ zoneLabel() }}
-      </button>
+      <ng-container *ngTemplateOutlet="zoneCorner" />
       @for (column of placedColumns(); track column.id) {
       <!-- THE HEAD AT THREE WIDTHS (2026-09-23, §4): the full name, the
            first name (or the short weekday), the weekday's initial — all
@@ -83,17 +74,12 @@
       </div>
       }
     </div>
-    } @else {
-    <!-- A single barber column still owes the zone, which the head carried. -->
+    } @else if (zoneLabel()) {
+    <!-- A single barber column still owes the zone, which the head carried
+         — while there is one to owe; a blank corner alone is a band of
+         nothing. -->
     <div class="staff-grid__head staff-grid__head--bare">
-      <button
-        type="button"
-        class="staff-grid__zone"
-        data-testid="staff-grid-zone"
-        (click)="zonePicked.emit()"
-      >
-        {{ zoneLabel() }}
-      </button>
+      <ng-container *ngTemplateOutlet="zoneCorner" />
     </div>
     } } @if (hasAllDay()) {
     <!-- All-day: what is true of the WHOLE day and has no hour to sit at — a
@@ -534,11 +520,16 @@
     aria-hidden="true"
     >{{ entry.initial }}</span
   >
+  <!-- THE WORD IS INK (review r4, 2026-10-06): `uiText` paints a caption
+       in the secondary ink, which reads 4.0:1 on the dark theme's 28%
+       wash; the explicit primary takes it back. The wash and the disc
+       tier's initial say WHOSE; the word says what. -->
   <span
     class="staff-grid__allday-word"
     data-label="long"
     uiText
     uiFont="caption"
+    uiForegroundStyle="primary"
     aria-hidden="true"
     >{{ entry.label }}</span
   >
@@ -547,7 +538,35 @@
     data-label="short"
     uiText
     uiFont="caption"
+    uiForegroundStyle="primary"
     aria-hidden="true"
     >{{ entry.shortLabel }}</span
   >
+</ng-template>
+
+<!-- THE CORNER — the head's first track and the sticky cell the axis
+     hairline hangs on. The zone is NAMED there only when the caller hands
+     one over — the page does so while the device's clock is not the
+     shop's (review r4, 2026-10-06): a label that is always true reads as
+     debug chrome, and Apple's corner is empty. A grid that states times
+     on a clock that is not the reader's still says which, and the label
+     opens the sentence explaining it. -->
+<ng-template #zoneCorner>
+  @if (zoneLabel()) {
+  <button
+    type="button"
+    class="staff-grid__zone"
+    data-testid="staff-grid-zone"
+    (click)="zonePicked.emit()"
+  >
+    {{ zoneLabel() }}
+  </button>
+  } @else {
+  <span
+    class="staff-grid__zone"
+    data-blank
+    data-testid="staff-grid-zone"
+    aria-hidden="true"
+  ></span>
+  }
 </ng-template>

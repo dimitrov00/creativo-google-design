@@ -1,5 +1,13 @@
-import { Injectable, computed, effect, inject, signal } from '@angular/core';
-import { toSignal } from '@angular/core/rxjs-interop';
+import {
+  DestroyRef,
+  Injectable,
+  computed,
+  effect,
+  inject,
+  untracked,
+} from '@angular/core';
+import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
+import { distinctUntilChanged, map, skip } from 'rxjs';
 import {
   Barber,
   CATALOG_READER,
@@ -8,9 +16,11 @@ import {
   MediaRef,
   Service,
 } from '@creativo/application/catalog';
+import { AUTH_GATEWAY, type Principal } from '@creativo/application/identity';
 import { BARBER_ART, SERVICE_ART } from './catalog-art';
 import { type BarberVm, type ServiceVm } from './catalog-vm';
 import { barberToVm, serviceToVm } from './catalog-to-vm';
+import { MediaUrlCache } from './media-url-cache';
 
 /**
  * The live catalog, with its media resolved — the one place a surface says
@@ -28,7 +38,18 @@ import { barberToVm, serviceToVm } from './catalog-to-vm';
 @Injectable({ providedIn: 'root' })
 export class CatalogContentService {
   private readonly catalogReader = inject(CATALOG_READER);
-  private readonly mediaReader = inject(MEDIA_READER);
+
+  /**
+   * Resolved cover and avatar URLs, one resolve per media object — a
+   * snapshot re-emit never re-fetches; a transient failure is retried with
+   * backoff; a missing or forbidden object is asked about once
+   * (`MediaUnavailableError`), and a forbidden one again after the viewer
+   * changes (see the constructor).
+   *
+   * THE session's one cache: the landing reads its view models from here
+   * too, so a cover resolves once whichever surface asks first.
+   */
+  private readonly media = new MediaUrlCache(inject(MEDIA_READER));
 
   private readonly servicesResult = toSignal(
     this.catalogReader.listActiveServices(),
@@ -70,14 +91,35 @@ export class CatalogContentService {
   readonly loading = computed(() => this.servicesResult() === null);
 
   /**
-   * Resolved media URLs, keyed by service id for covers and by `MediaRef`
-   * id for barber avatars. The two namespaces are each unique and never
-   * collide.
+   * True once the services read has answered SUCCESSFULLY.
+   *
+   * Not `!loading()`: a failed read also ends the loading, and renders as an
+   * empty list. A consumer that decides from what is NOT on the list (a
+   * retired service) must wait for this one, or it reads "retired" off a
+   * list that never arrived.
    */
-  private readonly urls = signal<Readonly<Record<string, string>>>({});
+  readonly servicesKnown = computed(
+    () => this.servicesResult()?.isSuccess() === true,
+  );
 
-  /** Keys with a resolve already in flight — a snapshot re-emit must not re-fetch. */
-  private readonly requested = new Set<string>();
+  /**
+   * The same for the barbers, which are a separate read: who is active is
+   * known only once that read answers successfully. `loading` covers the
+   * services only.
+   */
+  readonly barbersKnown = computed(
+    () => this.barbersResult()?.isSuccess() === true,
+  );
+
+  /**
+   * The same for the shops, a third read. `locations()` is empty both while
+   * the read is pending and after it fails, which is not "no active shop":
+   * a consumer that decides from which shops are NOT on the list (a shop
+   * that cannot serve somebody) waits for this one.
+   */
+  readonly locationsKnown = computed(
+    () => this.locationsResult()?.isSuccess() === true,
+  );
 
   readonly serviceVms = computed<readonly ServiceVm[]>(() =>
     this.services().map((service) => this.toServiceVm(service)),
@@ -87,42 +129,67 @@ export class CatalogContentService {
     this.barbers().map((barber) =>
       barberToVm(
         barber,
-        barber.avatar ? this.urls()[barber.avatar.id.value] : undefined,
-        // eslint-disable-next-line security/detect-object-injection -- catalog ids.
+        this.media.url(barber.avatar),
         BARBER_ART[barber.id.value],
       ),
     ),
   );
 
-  constructor() {
-    effect(() => {
-      const refs: { readonly key: string; readonly ref: MediaRef }[] = [
-        ...this.services().flatMap((service) =>
-          service.cover ? [{ key: service.id.value, ref: service.cover }] : [],
-        ),
-        ...this.barbers().flatMap((barber) =>
-          barber.avatar
-            ? [{ key: barber.avatar.id.value, ref: barber.avatar }]
-            : [],
-        ),
-      ];
+  /** Every cover and avatar the catalogue names. */
+  private readonly mediaRefs = computed<readonly MediaRef[]>(() => [
+    ...this.services().flatMap((service) =>
+      service.cover ? [service.cover] : [],
+    ),
+    ...this.barbers().flatMap((barber) =>
+      barber.avatar ? [barber.avatar] : [],
+    ),
+  ]);
 
-      for (const { key, ref } of refs) {
-        if (this.requested.has(key)) continue;
-        this.requested.add(key);
-        void this.mediaReader.resolve(ref).then((result) => {
-          if (result.isFailure()) return;
-          const [variant] = result.value;
-          if (!variant) return;
-          this.urls.update((urls) => ({ ...urls, [key]: variant.url }));
-        });
-      }
+  constructor() {
+    inject(DestroyRef).onDestroy(() => this.media.dispose());
+    effect(() => {
+      const refs = this.mediaRefs();
+      // Tracks the catalogue only; the cache's own bookkeeping is not a
+      // dependency of this effect.
+      untracked(() => this.media.request(refs));
     });
+    // A new viewer — a sign-in, a sign-out, a change of roles — may read
+    // what Storage's rules refused the last one: the cache forgets its
+    // forbidden answers and the catalogue's media are asked for again. The
+    // FIRST viewer is not a change: Storage waits for Auth to restore the
+    // session before it asks, so the first answers were already its. No
+    // gateway (a test bed without one) means no viewer to change.
+    inject(AUTH_GATEWAY, { optional: true })
+      ?.observePrincipal()
+      .pipe(
+        map(viewerOf),
+        distinctUntilChanged(),
+        skip(1),
+        takeUntilDestroyed(),
+      )
+      .subscribe(() => {
+        this.media.identityChanged();
+        this.media.request(this.mediaRefs());
+      });
   }
 
-  /** The resolved cover URL for one service, or `undefined` while in flight. */
+  /**
+   * The resolved cover URL for one service, or `undefined` while unknown —
+   * by id, for a caller that holds only the id. One that holds the
+   * `Service` asks {@link coverUrlOf}, which does not search the list.
+   */
   coverUrl(serviceId: string): string | undefined {
-    return this.urls()[serviceId];
+    const service = this.findService(serviceId);
+    return service ? this.coverUrlOf(service) : undefined;
+  }
+
+  /**
+   * The resolved cover URL for a service already in hand, or `undefined`
+   * while unknown: a lookup by its cover's path, never a search of the
+   * catalogue — a grid that asks per card on every pass stays linear.
+   */
+  coverUrlOf(service: Service): string | undefined {
+    return this.media.url(service.cover);
   }
 
   /**
@@ -136,13 +203,27 @@ export class CatalogContentService {
   toServiceVm(service: Service): ServiceVm {
     return serviceToVm(
       service,
-      this.urls()[service.id.value],
-      // eslint-disable-next-line security/detect-object-injection -- catalog ids.
+      this.coverUrlOf(service),
       SERVICE_ART[service.id.value],
     );
   }
 
   findService(serviceId: string): Service | undefined {
     return this.services().find((service) => service.id.value === serviceId);
+  }
+}
+
+/**
+ * Who is asking, as far as Storage's rules can tell: signed out, or a uid
+ * with its roles. A token refresh with the same claims is the same viewer.
+ */
+function viewerOf(principal: Principal): string {
+  switch (principal.kind) {
+    case 'anonymous':
+      return 'anonymous';
+    case 'onboarding':
+      return `onboarding:${principal.uid.value}`;
+    case 'active':
+      return `active:${principal.uid.value}:${[...principal.roles].sort().join(',')}`;
   }
 }

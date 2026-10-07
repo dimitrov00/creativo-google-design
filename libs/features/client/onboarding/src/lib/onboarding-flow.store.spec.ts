@@ -89,7 +89,14 @@ describe('OnboardingFlowStore — birthday step', () => {
             completeRegistration,
           },
         },
-        { provide: PROFILE_PORT, useValue: { getProfile, saveProfile } },
+        {
+          provide: PROFILE_PORT,
+          useValue: {
+            getProfile,
+            observeProfile: () => of(ok(seededProfile())),
+            saveProfile,
+          },
+        },
         {
           provide: AVATAR_UPLOADER,
           useValue: {

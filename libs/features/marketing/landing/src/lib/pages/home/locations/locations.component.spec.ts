@@ -1,4 +1,6 @@
 import { TestBed } from '@angular/core/testing';
+import { onTestFinished, vi } from 'vitest';
+import { MAPLIBRE_SOURCES, type MapLibreSources } from '@creativo/ui/controls';
 import { provideTestI18n } from '../../../test-i18n.providers';
 import { provideTestCatalog } from '../../../test-catalog.providers';
 import { LocationsComponent } from './locations.component';
@@ -108,5 +110,46 @@ describe('LocationsComponent', () => {
         '.location-sheet__week li.ui-list-row[data-selected] [data-visually-hidden]',
       ),
     ).not.toBeNull();
+  });
+
+  it('fails soft when MapLibre cannot be fetched — logs, keeps the list, rejects nothing', async () => {
+    const logged = vi
+      .spyOn(console, 'error')
+      .mockImplementation(() => undefined);
+    onTestFinished(() => logged.mockRestore());
+    // What a stale deploy or a dropped connection gives a lazy chunk.
+    const offline = new TypeError(
+      'Failed to fetch dynamically imported module',
+    );
+    const sources: MapLibreSources = {
+      library: () => Promise.reject(offline),
+      stylesheet: async () => '',
+    };
+    await TestBed.configureTestingModule({
+      imports: [LocationsComponent],
+      providers: [
+        ...provideTestI18n(),
+        ...provideTestCatalog(),
+        { provide: MAPLIBRE_SOURCES, useValue: sources },
+      ],
+    }).compileComponents();
+
+    const fixture = TestBed.createComponent(LocationsComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    // Before the fix the load was awaited outside every try: the rejection
+    // escaped `ngAfterViewInit` unhandled and nothing was logged.
+    await vi.waitFor(() =>
+      expect(logged).toHaveBeenCalledWith(
+        '[cr-locations] map failed to load:',
+        offline,
+      ),
+    );
+    const host: HTMLElement = fixture.nativeElement;
+    expect(host.querySelectorAll('.location-card').length).toBe(2);
+    expect(
+      host.querySelector('[data-locations-map]')?.childElementCount ?? 0,
+    ).toBe(0);
   });
 });

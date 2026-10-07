@@ -64,8 +64,10 @@
  * so `:focus-within` is the honest proxy — and `:not([aria-expanded])` keeps
  * it off the button.
  *
- * 18% is not invented: `button.css:405-412` already defines that mix as "the
- * open/pressed resting state for triggers and layout toggles".
+ * 18% is not invented: button.css's selected rung
+ * (`.ui-button[data-button-style='bordered'][data-selected]`) already
+ * defines that mix as "the open/pressed resting state for triggers and
+ * layout toggles".
  */
 .staff-sheet__pill[aria-expanded='true'],
 .staff-sheet__pill:not([aria-expanded]):focus-within {
@@ -93,15 +95,16 @@
 }
 
 /*
- * ⚠ The VALUE stays foreground ink and the CHEVRON carries the accent.
+ * The VALUE is foreground ink and the CHEVRON carries the accent.
  *
- * iOS tints the open pill's text too, and this repo cannot follow it there:
- * `--sys-color-accent-label` on an 18% wash measures ≈3.9:1, worse than the
- * 4.3:1 `button.css` already flags as failing 4.5, and paling the wash to
- * reach 4.5 makes it too quiet to read as open. The glyph is a graphic, so
- * it answers to the 3:1 floor, which raw accent clears — the same move
- * `.ui-list-row[data-selected]` makes when it lifts its trailing detail back
- * to foreground over an accent wash.
+ * iOS tints the open pill's text too. Here it is the accent law
+ * (2026-09-29): one orange; colour is a shape, words are ink. The value is
+ * the primary ink on the 18% wash (14.51:1 at the worst in light, 10.04:1
+ * in dark), on every ground the pill stands on; no darker cut of the
+ * accent exists to tint it with. The glyph is a graphic beside the value
+ * that names it, and takes the main accent — the same move
+ * `.ui-list-row[data-selected]` makes when it lifts its trailing detail
+ * back to foreground over an accent wash.
  */
 .staff-sheet__pill[aria-expanded='true'] .ui-icon,
 .staff-sheet__pill:not([aria-expanded]):focus-within .ui-icon {

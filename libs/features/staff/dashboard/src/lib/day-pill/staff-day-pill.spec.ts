@@ -89,4 +89,46 @@ describe('StaffDayPill', () => {
     fixture.detectChanges();
     expect(trigger()?.textContent).toContain('7 – 13 септември');
   });
+
+  /*
+   * ── THE POPOVER IS A DIALOG (2026-10-06) ───────────────────────────
+   * A month has no menuitems: announced as `role="menu"` it was an empty
+   * menu to a reader (axe `aria-required-children`, critical, on every
+   * run of the review's capture). The DS surface is asked for its dialog
+   * form, named after the pill's own label.
+   */
+  const surface = () => host().querySelector<HTMLElement>('.ui-menu__surface');
+
+  async function open(): Promise<void> {
+    trigger()?.click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+  }
+
+  it('presents the month as a non-modal dialog named for the day — never an empty menu', async () => {
+    await open();
+    expect(surface()?.getAttribute('role')).toBe('dialog');
+    expect(surface()?.getAttribute('aria-modal')).toBe('false');
+    expect(surface()?.getAttribute('aria-label')).toBe('ср, 9.09');
+    expect(trigger()?.getAttribute('aria-haspopup')).toBe('dialog');
+    expect(trigger()?.getAttribute('aria-expanded')).toBe('true');
+    // Nothing in it claims to be a menu item: the days are the month's own buttons.
+    expect(surface()?.querySelector('[role="menuitem"]')).toBeNull();
+    expect(
+      surface()?.querySelector('[data-testid="staff-day-pill-calendar"]'),
+    ).not.toBeNull();
+  });
+
+  it('takes focus as a container on open, and Escape closes it with focus back on the pill', async () => {
+    await open();
+    expect(document.activeElement).toBe(surface());
+    surface()?.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+    );
+    fixture.detectChanges();
+    expect(fixture.componentInstance.uiPresented()).toBe(false);
+    expect(document.activeElement).toBe(trigger());
+    expect(trigger()?.getAttribute('aria-expanded')).toBe('false');
+  });
 });

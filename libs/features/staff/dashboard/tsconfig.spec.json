@@ -27,5 +27,13 @@
     "src/**/*.spec.jsx",
     "src/**/*.d.ts"
   ],
-  "files": ["src/test-setup.ts"]
+  "files": ["src/test-setup.ts"],
+  "references": [
+    {
+      "path": "../../shared/visits/tsconfig.lib.json"
+    },
+    {
+      "path": "../client-card/tsconfig.lib.json"
+    }
+  ]
 }

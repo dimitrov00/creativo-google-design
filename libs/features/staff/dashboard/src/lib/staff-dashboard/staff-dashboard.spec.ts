@@ -4,17 +4,18 @@ import { By } from '@angular/platform-browser';
 import {
   AUTH_GATEWAY,
   type Principal,
-  type PrincipalId,
+  PrincipalId,
   roleFromPrimitive,
 } from '@creativo/application/identity';
 import {
   Translation,
   TranslocoLoader,
+  TranslocoService,
   provideTransloco,
 } from '@jsverse/transloco';
-import { BehaviorSubject, Observable, of } from 'rxjs';
+import { BehaviorSubject, Observable, ReplaySubject, map, of } from 'rxjs';
 import { USER_SEARCH_PORT } from '@creativo/application/governance';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Router, provideRouter } from '@angular/router';
 import {
   APPOINTMENT_NOTES,
@@ -29,19 +30,28 @@ import {
   Money,
   Seat,
   SeatId,
+  SeatLabel,
   SCHEDULE_EXCEPTION_WRITER,
   Result,
   ScheduleException,
   SeatSubject,
   type SeatRelationship,
+  type StaffEditAppointmentRequest,
   ZonedDateTime,
   fail,
   ok,
+  AppliedOperations,
   BookingGatewayError,
+  appointmentFromDocument,
+  appointmentToDocument,
 } from '@creativo/application/booking';
 import {
   COUPON_GRANT_REPOSITORY,
   COUPON_READER,
+  Coupon,
+  CouponCombinability,
+  type CouponGrantWithCoupon,
+  CouponValue,
   GIFT_VOUCHER_READER,
 } from '@creativo/application/engagement';
 import {
@@ -54,8 +64,14 @@ import {
   ServiceId,
   ServiceTerms,
 } from '@creativo/application/catalog';
-import { AVATAR_UPLOADER, UserId } from '@creativo/application/accounts';
-import { CLOCK } from '@creativo/application/shared';
+import {
+  AVATAR_UPLOADER,
+  AccountStatus,
+  PROFILE_PORT,
+  User,
+  UserId,
+} from '@creativo/application/accounts';
+import { CLOCK, ID_GENERATOR } from '@creativo/application/shared';
 import { StaffDashboard, reversibleSave } from './staff-dashboard';
 import {
   StaffVisitEditor,
@@ -187,10 +203,56 @@ function interval(startIso: string, endIso: string): Interval {
   return Interval.of(at(startIso).toMillis(), at(endIso).toMillis());
 }
 
+/**
+ * The same visit as a reader that SAYS which stored revision it read —
+ * what `appointmentFromDocument` hands the lanes once it reads the counter.
+ */
+function readAt(appointment: Appointment, revision: number): Appointment {
+  return value(
+    Appointment.reconstitute({
+      id: appointment.id.value,
+      locationId: appointment.locationId.value,
+      seats: [...appointment.seats],
+      status: appointment.status,
+      contact: appointment.contact,
+      bookedAt: appointment.bookedAt,
+      revision,
+    }),
+  );
+}
+
+/**
+ * The same visit as the PRODUCTION reader hands it to the lanes: written to
+ * its document with the stored counter beside it — none at all for a row
+ * written before staff editing (`null`) — and read back through
+ * `appointmentFromDocument`, the mapper the Firestore repository reads
+ * every row through (round 6). Nothing here says which revision the copy
+ * is at: the mapper reads it off the document, or the claim is not live.
+ */
+function storedAt(
+  appointment: Appointment,
+  revision: number | null,
+): Appointment {
+  const document = appointmentToDocument(appointment);
+  return value(
+    appointmentFromDocument(
+      appointment.id.value,
+      revision === null ? document : { ...document, revision },
+    ),
+  );
+}
+
+/**
+ * The next build's table, when a test wants the words to land LATE — the
+ * way `bg.json` does on a phone, after the first change detection. `null`
+ * is the empty table at once, which every other test runs on.
+ */
+let lateTable: ReplaySubject<Translation> | null = null;
+
 @Injectable()
 class TestTranslationLoader implements TranslocoLoader {
   getTranslation(): Observable<Translation> {
-    return of({});
+    return lateTable ?? of({});
   }
 }
 
@@ -208,6 +270,8 @@ function provideTestI18n(): EnvironmentProviders[] {
 
 describe('StaffDashboard', () => {
   let fixture: ComponentFixture<StaffDashboard>;
+  /** How many staff intents `ID_GENERATOR` has named — see the fixture. */
+  let minted = 0;
 
   /** Ivan holds one 10:00 visit; Niko's chair is empty. Typed with the
    *  port's two parameters so `mock.calls[n][1]` — the day subscribed — is a
@@ -260,6 +324,16 @@ describe('StaffDashboard', () => {
       ]),
     ),
   );
+
+  /** The profiles `PROFILE_PORT` answers with, by uid (a companion's name). */
+  const profiles = new Map<string, User>();
+
+  /**
+   * The coupons `COUPON_GRANT_REPOSITORY` answers with, for whoever asks
+   * (the fixture's booker has a generated uid); who asked is kept.
+   */
+  let heldGrants: readonly CouponGrantWithCoupon[] = [];
+  const grantsAskedFor: string[] = [];
 
   /** Who is at the book. `next()` a plain barber to shut the money gate. */
   const principal$ = new BehaviorSubject<Principal>({
@@ -314,6 +388,14 @@ describe('StaffDashboard', () => {
           provide: CLOCK,
           useValue: {
             now: (zone: string) => ZonedDateTime.fromISO(nowIso, zone),
+          },
+        },
+        {
+          // Names each staff intent; counted, so a spec can tell a reused
+          // name from a fresh one without comparing random strings.
+          provide: ID_GENERATOR,
+          useValue: {
+            next: () => `operation-${String(++minted).padStart(12, '0')}`,
           },
         },
         {
@@ -435,10 +517,16 @@ describe('StaffDashboard', () => {
           },
         },
         // The discount row's two reads (2026-09-10): nobody holds a coupon
-        // and no code opens one, so the menu offers «Без» and the typed arms.
+        // unless a case puts one in `heldGrants`, and no code opens one, so
+        // the menu offers «Без» and the typed arms.
         {
           provide: COUPON_GRANT_REPOSITORY,
-          useValue: { findUsableForUser: async () => ok([]) },
+          useValue: {
+            findUsableForUser: async (userId: UserId) => {
+              grantsAskedFor.push(userId.value);
+              return ok(heldGrants);
+            },
+          },
         },
         {
           provide: COUPON_READER,
@@ -454,6 +542,15 @@ describe('StaffDashboard', () => {
         {
           provide: MEDIA_READER,
           useValue: { resolve: () => Promise.resolve(ok([])) },
+        },
+        {
+          // `users/{uid}` — only a companion's name is ever asked of it
+          // here; nobody has a profile unless a case puts one in.
+          provide: PROFILE_PORT,
+          useValue: {
+            getProfile: async (userId: UserId) =>
+              ok(profiles.get(userId.value) ?? null),
+          },
         },
       ],
     }).compileComponents();
@@ -476,6 +573,21 @@ describe('StaffDashboard', () => {
       fields: { toggle: (id: string) => void; isOn: (id: string) => boolean };
     };
     if (!component.fields.isOn('freeTime')) component.fields.toggle('freeTime');
+    fixture.detectChanges();
+  }
+
+  /**
+   * Where the device's clock is set. The grid's corner names the zone only
+   * while that is not the shop's (review r4, 2026-10-06) — and the machine
+   * running this file may well be in Sofia, so a test that wants the
+   * label says where the device is rather than assuming.
+   */
+  function deviceZone(zone: string): void {
+    (
+      fixture.componentInstance as unknown as {
+        deviceZone: { set: (zone: string) => void };
+      }
+    ).deviceZone.set(zone);
     fixture.detectChanges();
   }
 
@@ -1501,6 +1613,9 @@ describe('StaffDashboard', () => {
                 atMs: Date.UTC(2026, 7, 5, 7, 0, 0),
                 by: 'staff' as const,
                 reason: { kind: 'client_unwell' as const },
+                // The window the cancel was judged under; not this spec's
+                // concern, so none was recorded.
+                window: null,
               },
             }
           : {}),
@@ -2085,10 +2200,51 @@ describe('StaffDashboard', () => {
     // cannot read; the all-day row is the band built for a fact with no hour.
     expect(host().textContent).toContain('staff.day.offBadge');
 
-    // The zone is the head's other job and survives either way.
+    // The zone is the head's other job and survives either way — NAMED only
+    // while the device's clock is not the shop's (review r4, 2026-10-06).
+    deviceZone('UTC');
     expect(
       host().querySelector('[data-testid="staff-grid-zone"]')?.textContent,
     ).toContain('EE');
+  });
+
+  it('leaves the corner blank, and drops the bare head, while the device is in the shop’s zone (review r4)', async () => {
+    // «EEST» in every grid's corner read as a debug label: a barber's phone
+    // is in the shop's zone and nothing else in the app names one. The
+    // corner keeps its track (the axis hairline hangs on it) and says
+    // nothing; it names the clock again — and opens the sentence — only
+    // for a device abroad.
+    chooseView('three-day');
+    deviceZone('Europe/Sofia');
+    await fixture.whenStable();
+    fixture.detectChanges();
+    const corner = host().querySelector('[data-testid="staff-grid-zone"]');
+    expect(corner?.tagName).toBe('SPAN');
+    expect(corner?.hasAttribute('data-blank')).toBe(true);
+    expect(corner?.textContent?.trim()).toBe('');
+    expect(host().querySelector('.staff-grid__head')).not.toBeNull();
+
+    deviceZone('UTC');
+    const named = host().querySelector('[data-testid="staff-grid-zone"]');
+    expect(named?.tagName).toBe('BUTTON');
+    expect(named?.textContent).toContain('EE');
+
+    // One chair in scope and nothing to name: no head band at all — a
+    // blank corner alone would be a band of nothing above the hours.
+    chooseView('day');
+    deviceZone('Europe/Sofia');
+    await fixture.whenStable();
+    fixture.detectChanges();
+    (
+      host().querySelector(
+        '[data-testid="staff-scope-ivan"]',
+      ) as HTMLButtonElement
+    ).click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(host().querySelector('.staff-grid__head')).toBeNull();
+    expect(host().querySelector('[data-testid="staff-grid-zone"]')).toBeNull();
   });
 
   it('drops the column head only when ONE chair is in scope', async () => {
@@ -2108,7 +2264,9 @@ describe('StaffDashboard', () => {
 
     // Scoped to one barber the head is suppressed: the toolbar already names
     // whose day this is, and repeating it under the bar is a row of chrome
-    // for nothing.
+    // for nothing. The bare band stays for the zone — while there is one
+    // to name, the device off the shop's clock (review r4, 2026-10-06).
+    deviceZone('UTC');
     expect(
       host().querySelectorAll('[data-testid="staff-grid-column-head"]').length,
     ).toBe(0);
@@ -2517,6 +2675,7 @@ describe('StaffDashboard', () => {
               atMs: Date.UTC(2026, 7, 5, 7, 0, 0),
               by: 'client' as const,
               reason: { kind: 'client_unwell' as const },
+              window: null,
             },
           }),
         ],
@@ -2539,13 +2698,8 @@ describe('StaffDashboard', () => {
     }
   });
 
-  it("tags a visit that runs off the catalogue's length, the way the frame does", async () => {
-    // Owner, 2026-09-10: "the events here should look a lot like the ones
-    // in the frame … the ±x min if extended or subtracted". The seat was
-    // sold for 30 minutes; the chair's catalogue says 45 for the fade, so
-    // the card says «−15 мин» in its foot, beside the marks — the frame's
-    // own tag, one recipe.
-    const visits = observeBarberDay.getMockImplementation();
+  /** Ivan's 14:00 fade: sold for 30 minutes, 45 in the chair's catalogue. */
+  function stretchedFade(): void {
     observeBarberDay.mockImplementation((barberId: { value: string }) =>
       of(
         ok(
@@ -2564,17 +2718,76 @@ describe('StaffDashboard', () => {
         ),
       ),
     );
+  }
+
+  it("tags a visit that runs off the catalogue's length, the way the frame does", async () => {
+    // Owner, 2026-09-10: "the events here should look a lot like the ones
+    // in the frame … the ±x min if extended or subtracted". The seat was
+    // sold for 30 minutes; the chair's catalogue says 45 for the fade, so
+    // the card says «−15 мин» in its foot, beside the marks — the frame's
+    // own tag, one recipe.
+    const visits = observeBarberDay.getMockImplementation();
+    stretchedFade();
     try {
       TestBed.resetTestingModule();
       await build();
+      // The loader hands over no words, so the tag is WITHHELD — never the
+      // key with a minus in front of it (review r4, 2026-10-06).
+      expect(
+        host().querySelector('[data-testid="staff-visit-tag"]'),
+      ).toBeNull();
+
+      TestBed.inject(TranslocoService).setTranslation(
+        { 'staff.visit.minutes': '{{minutes}} мин' },
+        'bg',
+        { merge: true },
+      );
+      fixture.detectChanges();
       const tag = host().querySelector('[data-testid="staff-visit-tag"]');
-      // The loader returns no translations, so this asserts the true minus
-      // and the key the figure reaches for; the words are the helper's own
-      // spec's business (`shared/catalog-delta.spec.ts`).
-      expect(tag?.textContent?.trim()).toBe('−staff.visit.minutes');
+      expect(tag?.textContent?.trim()).toBe('−15 мин');
       expect(tag?.closest('.agenda-card__foot')).not.toBeNull();
       expect(tag?.classList.contains('staff-event-tag')).toBe(true);
     } finally {
+      if (visits) observeBarberDay.mockImplementation(visits);
+    }
+  });
+
+  it('words the tag the moment the table lands, on rows built before it (review r4)', async () => {
+    // The live defect (2026-10-06): `bg.json` landed after the first change
+    // detection, the rows had been computed with the key — an effect reads
+    // them before the words — and the capsule read «−staff.visit.minutes»
+    // until the clock ticked. The loader answers LATE here, the rows are
+    // read before it does, and once it has the tag is worded; a dotted key
+    // never reaches the DOM.
+    const visits = observeBarberDay.getMockImplementation();
+    stretchedFade();
+    lateTable = new ReplaySubject<Translation>(1);
+    try {
+      TestBed.resetTestingModule();
+      await build();
+      const component = fixture.componentInstance as unknown as {
+        agenda: () => readonly {
+          items: readonly { tag?: string | null }[];
+        }[];
+      };
+      const before = component.agenda().flatMap((group) => group.items);
+      expect(before.length).toBeGreaterThan(0);
+      expect(before.every((item) => !item.tag)).toBe(true);
+      expect(
+        host().querySelector('[data-testid="staff-visit-tag"]'),
+      ).toBeNull();
+
+      lateTable.next({ 'staff.visit.minutes': '{{minutes}} мин' });
+      lateTable.complete();
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+      const tags = [
+        ...host().querySelectorAll('[data-testid="staff-visit-tag"]'),
+      ].map((tag) => tag.textContent?.trim() ?? '');
+      expect(tags).toEqual(['−15 мин']);
+    } finally {
+      lateTable = null;
       if (visits) observeBarberDay.mockImplementation(visits);
     }
   });
@@ -2613,6 +2826,398 @@ describe('StaffDashboard', () => {
       if (roster) observeDay.mockImplementation(roster);
       if (visits) observeBarberDay.mockImplementation(visits);
     }
+  });
+
+  describe('every staff intent goes out named (2026-09-25)', () => {
+    const MOVE = {
+      kind: 'move',
+      startIso: '2026-08-05T11:00:00.000+03:00',
+    } as const;
+
+    /** The gateway's `staffEdit`, answering from `answers` in order. */
+    function sends(
+      answers: readonly ('ok' | 'lost')[],
+    ): StaffEditAppointmentRequest[] {
+      const sent: StaffEditAppointmentRequest[] = [];
+      const gateway = TestBed.inject(BOOKING_GATEWAY) as {
+        staffEdit: (request: StaffEditAppointmentRequest) => Promise<unknown>;
+      };
+      gateway.staffEdit = async (request) => {
+        const answer = answers[sent.length] ?? 'ok';
+        sent.push(request);
+        return answer === 'ok'
+          ? ok({ appointmentId: request.appointmentId, revision: sent.length })
+          : fail(new BookingGatewayError('unknown', 'deadline exceeded'));
+      };
+      return sent;
+    }
+
+    function store(): {
+      staffEdit: (request: StaffEditAppointmentRequest) => Promise<boolean>;
+    } {
+      return (
+        fixture.componentInstance as unknown as {
+          store: {
+            staffEdit: (
+              request: StaffEditAppointmentRequest,
+            ) => Promise<boolean>;
+          };
+        }
+      ).store;
+    }
+
+    it('re-sends a failed intent under its own name, and names the next one afresh', async () => {
+      const sent = sends(['lost', 'ok', 'ok']);
+
+      // The answer is lost; the barber taps «Запази» again on the same draft.
+      expect(
+        await store().staffEdit({
+          appointmentId: 'appointment-1',
+          command: MOVE,
+        }),
+      ).toBe(false);
+      expect(
+        await store().staffEdit({
+          appointmentId: 'appointment-1',
+          command: MOVE,
+        }),
+      ).toBe(true);
+      // Landed — so the same batch again is the barber doing it AGAIN.
+      await store().staffEdit({
+        appointmentId: 'appointment-1',
+        command: MOVE,
+      });
+
+      const names = sent.map((request) => request.operationId);
+      expect(names[0]).toMatch(/^[A-Za-z0-9_-]{16,64}$/);
+      expect(names[1]).toBe(names[0]);
+      expect(names[2]).not.toBe(names[0]);
+    });
+
+    it('names a changed draft afresh even after a failure', async () => {
+      const sent = sends(['lost', 'ok']);
+
+      await store().staffEdit({
+        appointmentId: 'appointment-1',
+        command: MOVE,
+      });
+      await store().staffEdit({
+        appointmentId: 'appointment-1',
+        command: { ...MOVE, startIso: '2026-08-05T12:00:00.000+03:00' },
+      });
+
+      expect(sent[1]?.operationId).not.toBe(sent[0]?.operationId);
+    });
+
+    it('treats an acknowledged overlap as a new decision, not a re-send', async () => {
+      const sent = sends(['lost', 'ok']);
+
+      await store().staffEdit({
+        appointmentId: 'appointment-1',
+        command: MOVE,
+      });
+      await store().staffEdit({
+        appointmentId: 'appointment-1',
+        command: MOVE,
+        acknowledgedOverlap: true,
+      });
+
+      expect(sent[1]?.operationId).not.toBe(sent[0]?.operationId);
+    });
+
+    it('keeps a name the caller chose', async () => {
+      const sent = sends(['ok']);
+
+      await store().staffEdit({
+        appointmentId: 'appointment-1',
+        command: MOVE,
+        operationId: 'operation-chosen-by-caller',
+      });
+
+      expect(sent[0]?.operationId).toBe('operation-chosen-by-caller');
+    });
+
+    it('names each queued drop as its own intent when it goes', async () => {
+      const sent: StaffEditAppointmentRequest[] = [];
+      let release: () => void = () => undefined;
+      const gateway = TestBed.inject(BOOKING_GATEWAY) as {
+        staffEdit: (request: StaffEditAppointmentRequest) => Promise<unknown>;
+      };
+      gateway.staffEdit = async (request) => {
+        sent.push(request);
+        if (sent.length === 1) {
+          await new Promise<void>((resolve) => (release = resolve));
+        }
+        return ok({ appointmentId: request.appointmentId, revision: 1 });
+      };
+
+      const first = store().staffEdit({
+        appointmentId: 'appointment-1',
+        command: MOVE,
+      });
+      // A newer drop while the first is in flight: queued, not sent.
+      await store().staffEdit({
+        appointmentId: 'appointment-1',
+        command: { ...MOVE, startIso: '2026-08-05T12:00:00.000+03:00' },
+      });
+      expect(sent).toHaveLength(1);
+      release();
+      await first;
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(sent).toHaveLength(2);
+      expect(sent[1]?.operationId).toMatch(/^operation-/);
+      expect(sent[1]?.operationId).not.toBe(sent[0]?.operationId);
+    });
+
+    // Round 3 (2026-09-25): the name was kept per VISIT and cleared by any
+    // success, so a lost-but-committed intent superseded by a queued drop
+    // that landed went out afresh the next time — and applied twice.
+    it('keeps a failed intent’s name across a queued drop that landed — the same intent sent again is still one change', async () => {
+      const sent: StaffEditAppointmentRequest[] = [];
+      let release: (answer: 'ok' | 'lost') => void = () => undefined;
+      const gateway = TestBed.inject(BOOKING_GATEWAY) as {
+        staffEdit: (request: StaffEditAppointmentRequest) => Promise<unknown>;
+      };
+      gateway.staffEdit = async (request) => {
+        sent.push(request);
+        const answer =
+          sent.length === 1
+            ? await new Promise<'ok' | 'lost'>((resolve) => (release = resolve))
+            : 'ok';
+        return answer === 'ok'
+          ? ok({ appointmentId: request.appointmentId, revision: sent.length })
+          : fail(new BookingGatewayError('unknown', 'deadline exceeded'));
+      };
+
+      const first = store().staffEdit({
+        appointmentId: 'appointment-1',
+        command: MOVE,
+      });
+      // A newer drop while the first is in flight: queued.
+      await store().staffEdit({
+        appointmentId: 'appointment-1',
+        command: { ...MOVE, startIso: '2026-08-05T12:00:00.000+03:00' },
+      });
+      // The first answer is lost; the queued drop goes, and lands.
+      release('lost');
+      expect(await first).toBe(false);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(sent).toHaveLength(2);
+
+      // The first intent, sent again: under its own name, whatever landed.
+      await store().staffEdit({
+        appointmentId: 'appointment-1',
+        command: MOVE,
+      });
+      expect(sent).toHaveLength(3);
+      expect(sent[1]?.operationId).not.toBe(sent[0]?.operationId);
+      expect(sent[2]?.operationId).toBe(sent[0]?.operationId);
+    });
+
+    /*
+     * ── THE STALE-SCREEN GUARD (round 5) ─────────────────────────────────
+     * Every intent claims the revision it was made on; the store carries
+     * that claim forward across THIS device's own landed intents only.
+     */
+    /** A gateway that stamps the next revision after the one claimed. */
+    function stamps(
+      refuse: (request: StaffEditAppointmentRequest) => boolean = () => false,
+    ): StaffEditAppointmentRequest[] {
+      const sent: StaffEditAppointmentRequest[] = [];
+      const gateway = TestBed.inject(BOOKING_GATEWAY) as {
+        staffEdit: (request: StaffEditAppointmentRequest) => Promise<unknown>;
+      };
+      gateway.staffEdit = async (request) => {
+        sent.push(request);
+        return refuse(request)
+          ? fail(
+              new BookingGatewayError('invalid_request', 'moved on', {
+                serverCode: 'booking.staffEdit.stale',
+                expected: String(request.expectedVersion),
+                actual: '9',
+              }),
+            )
+          : ok({
+              appointmentId: request.appointmentId,
+              revision: (request.expectedVersion ?? 0) + 1,
+            });
+      };
+      return sent;
+    }
+
+    it('sends the revision the intent was made on, and a claim of nothing as nothing', async () => {
+      const sent = stamps();
+      await store().staffEdit({
+        appointmentId: 'appointment-1',
+        command: MOVE,
+        expectedVersion: 3,
+      } as StaffEditAppointmentRequest);
+      await store().staffEdit({
+        appointmentId: 'appointment-2',
+        command: MOVE,
+        expectedVersion: null,
+      } as StaffEditAppointmentRequest);
+
+      expect(sent.map((request) => request.expectedVersion)).toEqual([3, null]);
+    });
+
+    it('carries the claim across its OWN landed intents — a save’s undo is never stale against the save', async () => {
+      const sent = stamps();
+      // The save, drawn at 3, lands at 4; its undo was drawn at 3 too.
+      await store().staffEdit({
+        appointmentId: 'appointment-1',
+        command: MOVE,
+        expectedVersion: 3,
+      } as StaffEditAppointmentRequest);
+      await store().staffEdit({
+        appointmentId: 'appointment-1',
+        command: { ...MOVE, startIso: '2026-08-05T10:00:00.000+03:00' },
+        expectedVersion: 3,
+      } as StaffEditAppointmentRequest);
+      // …and a third save from the same sheet, still drawn at 3.
+      await store().staffEdit({
+        appointmentId: 'appointment-1',
+        command: { ...MOVE, startIso: '2026-08-05T12:00:00.000+03:00' },
+        expectedVersion: 3,
+      } as StaffEditAppointmentRequest);
+
+      expect(sent.map((request) => request.expectedVersion)).toEqual([3, 4, 5]);
+    });
+
+    it('sends a drop queued behind its own in-flight save on the revision that save stamped', async () => {
+      const sent: StaffEditAppointmentRequest[] = [];
+      let release: () => void = () => undefined;
+      const gateway = TestBed.inject(BOOKING_GATEWAY) as {
+        staffEdit: (request: StaffEditAppointmentRequest) => Promise<unknown>;
+      };
+      gateway.staffEdit = async (request) => {
+        sent.push(request);
+        if (sent.length === 1) {
+          await new Promise<void>((resolve) => (release = resolve));
+        }
+        return ok({
+          appointmentId: request.appointmentId,
+          revision: (request.expectedVersion ?? 0) + 1,
+        });
+      };
+
+      const first = store().staffEdit({
+        appointmentId: 'appointment-1',
+        command: MOVE,
+        expectedVersion: 3,
+      } as StaffEditAppointmentRequest);
+      await store().staffEdit({
+        appointmentId: 'appointment-1',
+        command: { ...MOVE, startIso: '2026-08-05T12:00:00.000+03:00' },
+        expectedVersion: 3,
+      } as StaffEditAppointmentRequest);
+      release();
+      await first;
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(sent.map((request) => request.expectedVersion)).toEqual([3, 4]);
+    });
+
+    it('never carries a claim across somebody else’s save — the stale refusal stands, and is the row’s', async () => {
+      const sent = stamps((request) => request.expectedVersion === 3);
+      const refused = await store().staffEdit({
+        appointmentId: 'appointment-1',
+        command: MOVE,
+        expectedVersion: 3,
+      } as StaffEditAppointmentRequest);
+
+      expect(refused).toBe(false);
+      const error = (
+        store() as unknown as {
+          errorFor: (id: string) => BookingGatewayError | null;
+        }
+      ).errorFor('appointment-1');
+      expect(error?.params?.['serverCode']).toBe('booking.staffEdit.stale');
+      // A refused intent stamped nothing: the next one drawn at 3 claims 3.
+      await store().staffEdit({
+        appointmentId: 'appointment-1',
+        command: { ...MOVE, startIso: '2026-08-05T12:00:00.000+03:00' },
+        expectedVersion: 3,
+      } as StaffEditAppointmentRequest);
+      expect(sent[1]?.expectedVersion).toBe(3);
+    });
+
+    it('re-sends a lost intent under its name AND its claim, so the server answers it from the ledger', async () => {
+      const sent = sends(['lost', 'ok']);
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        await store().staffEdit({
+          appointmentId: 'appointment-1',
+          command: MOVE,
+          expectedVersion: 3,
+        } as StaffEditAppointmentRequest);
+      }
+      expect(sent[1]?.operationId).toBe(sent[0]?.operationId);
+      expect(sent[1]?.expectedVersion).toBe(3);
+    });
+
+    // What the store guarantees is a bound on ITS map: at most CAP failed
+    // names per visit. It cannot promise to keep a name no longer than the
+    // server's ledger remembers it (that ledger counts every device's
+    // applied intents); the batch's own shape is the backstop, pinned in
+    // staff-edit-appointment.use-case.spec.ts (round 4, 2026-09-25).
+    it('holds at most CAP failed names per visit, dropping the oldest', async () => {
+      const cap = AppliedOperations.CAP;
+      const sent = sends(Array.from({ length: cap + 2 }, () => 'lost'));
+      const at = (minute: number) => ({
+        ...MOVE,
+        startIso: `2026-08-05T11:${String(minute).padStart(2, '0')}:00.000+03:00`,
+      });
+
+      // CAP + 1 different intents fail: the oldest name falls off.
+      for (let minute = 0; minute <= cap; minute += 1) {
+        await store().staffEdit({
+          appointmentId: 'appointment-1',
+          command: at(minute),
+        });
+      }
+      await store().staffEdit({
+        appointmentId: 'appointment-1',
+        command: at(0),
+      });
+      expect(sent[cap + 1]?.operationId).not.toBe(sent[0]?.operationId);
+      // The newest is still remembered.
+      await store().staffEdit({
+        appointmentId: 'appointment-1',
+        command: at(cap),
+      });
+      expect(sent[cap + 2]?.operationId).toBe(sent[cap]?.operationId);
+    });
+
+    it("sends the sheet's «Запази» named", async () => {
+      const sent = sends(['ok']);
+      const component = fixture.componentInstance as unknown as {
+        commitFromEditor: (id: string, commit: unknown) => Promise<void>;
+        visitSheetRow: () => { appointmentId: string } | null;
+      };
+      (
+        host().querySelector('[data-testid="staff-visit-row"]') as HTMLElement
+      ).click();
+      fixture.detectChanges();
+      const row = component.visitSheetRow();
+      if (row === null) throw new Error('the sheet did not open');
+
+      await component.commitFromEditor(row.appointmentId, {
+        kind: 'save',
+        dayKey: '2026-08-05',
+        startMinute: 600,
+        endMinute: 630,
+        note: null,
+        discounts: [],
+        vouchers: [],
+        tipMinorUnits: null,
+        clients: [],
+        legs: [],
+      });
+
+      expect(sent).toHaveLength(1);
+      expect(sent[0]?.operationId).toMatch(/^operation-\d{12}$/);
+    });
   });
 
   it("raises a refused save as the page's toast, in the shop's words, and keeps the sheet", async () => {
@@ -2670,6 +3275,68 @@ describe('StaffDashboard', () => {
     expect(toast()?.querySelectorAll('button').length).toBe(1);
     expect(component.undo()).toBeNull();
     expect(component.visitSheetRow()?.appointmentId).toBe(row.appointmentId);
+  });
+
+  // Round 4 (2026-09-25): a refusal that names WHY (`params.field`) is
+  // worded one level deeper, the client's rule (`wordError`). A save that
+  // would seat one person in two chairs said only "invalid input".
+  it('words a refused save by the field it names, then by its code, then as the gateway', async () => {
+    TestBed.inject(TranslocoService).setTranslation(
+      {
+        'errors.booking.commit.invalid_input': 'Невалидни данни.',
+        'errors.booking.commit.invalid_input.person_overlap':
+          'Един човек не може да е на два стола.',
+      },
+      'bg',
+      { merge: true },
+    );
+    const refusal = (field: string | null) =>
+      new BookingGatewayError('invalid_request', 'refused', {
+        serverCode: 'booking.commit.invalid_input',
+        ...(field === null ? {} : { field }),
+      });
+    const gateway = TestBed.inject(BOOKING_GATEWAY) as {
+      staffEdit: (request: unknown) => Promise<unknown>;
+    };
+    gateway.staffEdit = async () => fail(refusal('person_overlap'));
+    const component = fixture.componentInstance as unknown as {
+      commitFromEditor: (id: string, commit: unknown) => Promise<void>;
+      visitSheetRow: () => { appointmentId: string } | null;
+      describeError: (error: BookingGatewayError) => string;
+    };
+    (
+      host().querySelector('[data-testid="staff-visit-row"]') as HTMLElement
+    ).click();
+    fixture.detectChanges();
+    const row = component.visitSheetRow();
+    if (row === null) throw new Error('the sheet did not open');
+
+    await component.commitFromEditor(row.appointmentId, {
+      kind: 'save',
+      dayKey: '2026-08-05',
+      startMinute: 600,
+      endMinute: 630,
+      note: null,
+      discounts: [],
+      vouchers: [],
+      tipMinorUnits: null,
+      clients: [],
+      legs: [],
+    });
+    fixture.detectChanges();
+    expect(
+      host()
+        .querySelector('[data-testid="staff-toast"] [role="status"]')
+        ?.textContent?.trim(),
+    ).toBe('Един човек не може да е на два стола.');
+
+    // A field with no copy of its own falls back to the code's; no server
+    // code at all, to the gateway's own.
+    expect(component.describeError(refusal('seats'))).toBe('Невалидни данни.');
+    expect(component.describeError(refusal(null))).toBe('Невалидни данни.');
+    expect(
+      component.describeError(new BookingGatewayError('unknown', 'lost')),
+    ).toBe('booking.gateway.failed');
   });
 
   it("sends the editor's shutter up with the visit's facts, and a refusal as the page's toast", async () => {
@@ -2836,6 +3503,40 @@ describe('StaffDashboard', () => {
     query.dispatchEvent(new Event('blur'));
     fixture.detectChanges();
     expect(header()?.hasAttribute('data-collapsed')).toBe(false);
+  });
+
+  // The photo page arrived with a blank bar (wave D r3): it has no large
+  // title, so nothing ever scrolled under the bar to bring the compact
+  // one in, and its date (§3.7) sat at opacity 0.
+  it("shows the bar's title from rest on a page with no large title of its own", () => {
+    (
+      host().querySelector('[data-testid="staff-visit-row"]') as HTMLElement
+    ).click();
+    fixture.detectChanges();
+    const toolbar = () =>
+      host().querySelector(
+        '[data-testid="staff-visit-sheet"] .modal-sheet__toolbar',
+      );
+    // The ladder: the bar is the only title.
+    expect(toolbar()?.hasAttribute('data-title-always')).toBe(true);
+    // A page with a large title: the bar waits for it to scroll under.
+    (
+      host().querySelector(
+        '[data-testid="staff-visit-add-service"]',
+      ) as HTMLElement
+    ).click();
+    fixture.detectChanges();
+    expect(toolbar()?.hasAttribute('data-title-always')).toBe(false);
+    const editor = fixture.debugElement.query(By.directive(StaffVisitEditor))
+      .componentInstance as StaffVisitEditor;
+    editor.pop();
+    fixture.detectChanges();
+    // The photo viewer: the picture is the page, the bar names it at once.
+    (editor as unknown as { openPhoto(photoId: string): void }).openPhoto('p');
+    fixture.detectChanges();
+    expect(editor.depth()).toBe(1);
+    expect(editor.pageHasNoLargeTitle()).toBe(true);
+    expect(toolbar()?.hasAttribute('data-title-always')).toBe(true);
   });
 
   // The «Нов час» sheet never forwarded the fold (found 2026-09-24): its
@@ -3106,6 +3807,606 @@ describe('StaffDashboard', () => {
     expect(editor.dirty()).toBe(false);
   });
 
+  /*
+   * ── THE STALE-SCREEN GUARD, ON THE SHEET (round 5) ────────────────────
+   * The sheet claims the revision its draft was drawn from; a colleague's
+   * save since is refused, and the sheet reloads the visit and says so.
+   */
+  describe('the sheet claims the revision it was drawn from', () => {
+    let visits: ReturnType<typeof observeBarberDay.getMockImplementation>;
+
+    beforeEach(async () => {
+      visits = observeBarberDay.getMockImplementation();
+      const original = visits;
+      if (original === undefined) throw new Error('no lanes to wrap');
+      // Every visit stored at revision 3 and read through the production
+      // mapper — the claim is what the mapper reads off the document.
+      observeBarberDay.mockImplementation((barberId, dayKey) =>
+        original(barberId, dayKey).pipe(
+          map((result) =>
+            result.isSuccess()
+              ? ok(result.value.map((visit) => storedAt(visit, 3)))
+              : result,
+          ),
+        ),
+      );
+      TestBed.resetTestingModule();
+      await build();
+    });
+
+    afterEach(() => {
+      if (visits) observeBarberDay.mockImplementation(visits);
+    });
+
+    function openAndDrag(): {
+      dirty: () => boolean;
+    } {
+      (
+        host().querySelector('[data-testid="staff-visit-row"]') as HTMLElement
+      ).click();
+      fixture.detectChanges();
+      const editor = fixture.debugElement.query(By.directive(StaffVisitEditor))
+        .componentInstance as unknown as {
+        onFrameCommit: (commit: unknown) => void;
+        dirty: () => boolean;
+      };
+      editor.onFrameCommit({
+        id: 'appointment-1',
+        kind: 'move',
+        startMinute: 660,
+        endMinute: 690,
+      });
+      fixture.detectChanges();
+      return editor;
+    }
+
+    async function save(): Promise<void> {
+      (
+        host().querySelector('[data-testid="staff-visit-save"]') as HTMLElement
+      ).click();
+      await fixture.whenStable();
+      fixture.detectChanges();
+    }
+
+    it('sends «Запази» and its undo claiming the drawn revision', async () => {
+      const component = fixture.componentInstance as unknown as {
+        store: { staffEdit: (request: unknown) => Promise<boolean> };
+        runUndo: () => Promise<void>;
+        rowWaitMs: number;
+      };
+      component.rowWaitMs = 0;
+      const claims: unknown[] = [];
+      component.store.staffEdit = async (request) => {
+        claims.push((request as { expectedVersion?: unknown }).expectedVersion);
+        return true;
+      };
+      openAndDrag();
+      await save();
+      await component.runUndo();
+
+      // The undo claims the snapshot's revision too; the store carries it
+      // across the save it is undoing (pinned in the store's own specs).
+      expect(claims).toEqual([3, 3]);
+    });
+
+    it('reloads the visit and says so in one line when somebody else saved it first', async () => {
+      TestBed.inject(TranslocoService).setTranslation(
+        {
+          'errors.booking.staffEdit.stale':
+            'Някой друг току-що промени посещението — ето го, както е сега.',
+        },
+        'bg',
+        { merge: true },
+      );
+      const component = fixture.componentInstance as unknown as {
+        store: {
+          staffEdit: (request: unknown) => Promise<boolean>;
+          errorFor: (id: string) => BookingGatewayError | null;
+        };
+        notice: () => string | null;
+        undo: () => unknown;
+        visitReseedMark: () => { appointmentId: string; n: number };
+        visitSheetRow: () => { appointmentId: string } | null;
+        rowWaitMs: number;
+      };
+      component.rowWaitMs = 0;
+      let sent = 0;
+      component.store.staffEdit = async () => {
+        sent += 1;
+        return false;
+      };
+      component.store.errorFor = () =>
+        new BookingGatewayError('invalid_request', 'moved on', {
+          serverCode: 'booking.staffEdit.stale',
+          expected: '3',
+          actual: '4',
+        });
+      const editor = openAndDrag();
+      expect(editor.dirty()).toBe(true);
+
+      await save();
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      fixture.detectChanges();
+
+      // Sent once and never again: nothing is written over the colleague.
+      expect(sent).toBe(1);
+      expect(component.notice()).toBe(
+        'Някой друг току-що промени посещението — ето го, както е сега.',
+      );
+      expect(component.undo()).toBeNull();
+      // The sheet stays on the visit and takes the live row as its draft.
+      expect(component.visitSheetRow()?.appointmentId).toBe('appointment-1');
+      expect(component.visitReseedMark()).toEqual({
+        appointmentId: 'appointment-1',
+        n: 1,
+      });
+      expect(editor.dirty()).toBe(false);
+    });
+
+    /**
+     * The REAL store's wire: every staff intent the sheet sends reaches the
+     * gateway here, claim and all, and is answered by `answer` — the
+     * server's stamp of the next revision, unless it refuses.
+     */
+    function wire(
+      answer: (
+        request: StaffEditAppointmentRequest,
+      ) => Result<
+        { appointmentId: string; revision: number },
+        BookingGatewayError
+      > = (request) =>
+        ok({
+          appointmentId: request.appointmentId,
+          revision: (request.expectedVersion ?? 0) + 1,
+        }),
+    ): StaffEditAppointmentRequest[] {
+      const sent: StaffEditAppointmentRequest[] = [];
+      const gateway = TestBed.inject(BOOKING_GATEWAY) as {
+        staffEdit: (request: StaffEditAppointmentRequest) => Promise<unknown>;
+      };
+      gateway.staffEdit = async (request) => {
+        sent.push(request);
+        return answer(request);
+      };
+      (
+        fixture.componentInstance as unknown as { rowWaitMs: number }
+      ).rowWaitMs = 0;
+      return sent;
+    }
+
+    it('puts the revision the mapper read off the document on the wire (round 6)', async () => {
+      const sent = wire();
+      openAndDrag();
+      await save();
+
+      // Stored at 3, read through `appointmentFromDocument`, claimed as 3 —
+      // through the real store, as the callable receives it.
+      expect(sent.map((request) => request.expectedVersion)).toEqual([3]);
+    });
+
+    it('claims 0 for a row written before staff editing — the counter the server reads it at', async () => {
+      observeBarberDay.mockImplementation((barberId, dayKey) => {
+        if (visits === undefined) throw new Error('no lanes to wrap');
+        return visits(barberId, dayKey).pipe(
+          map((result) =>
+            result.isSuccess()
+              ? ok(result.value.map((visit) => storedAt(visit, null)))
+              : result,
+          ),
+        );
+      });
+      TestBed.resetTestingModule();
+      await build();
+      const sent = wire();
+      openAndDrag();
+      await save();
+
+      // Not `null` — a claim of nothing, which the server never refuses.
+      expect(sent.map((request) => request.expectedVersion)).toEqual([0]);
+    });
+
+    it('is refused by the server when a colleague saved since, and reloads the visit', async () => {
+      TestBed.inject(TranslocoService).setTranslation(
+        {
+          'errors.booking.staffEdit.stale':
+            'Някой друг току-що промени посещението — ето го, както е сега.',
+        },
+        'bg',
+        { merge: true },
+      );
+      // The server's own answer to a claim of 3 on a visit now at 4.
+      const sent = wire((request) =>
+        request.expectedVersion === 3
+          ? fail(
+              new BookingGatewayError('invalid_request', 'moved on', {
+                serverCode: 'booking.staffEdit.stale',
+                expected: '3',
+                actual: '4',
+              }),
+            )
+          : ok({ appointmentId: request.appointmentId, revision: 99 }),
+      );
+      const component = fixture.componentInstance as unknown as {
+        notice: () => string | null;
+        undo: () => unknown;
+        visitReseedMark: () => { appointmentId: string; n: number };
+      };
+      const editor = openAndDrag();
+      await save();
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      fixture.detectChanges();
+
+      // Claimed 3, refused, sent once: the older sheet wrote nothing.
+      expect(sent.map((request) => request.expectedVersion)).toEqual([3]);
+      expect(component.notice()).toBe(
+        'Някой друг току-що промени посещението — ето го, както е сега.',
+      );
+      expect(component.undo()).toBeNull();
+      expect(component.visitReseedMark()).toEqual({
+        appointmentId: 'appointment-1',
+        n: 1,
+      });
+      expect(editor.dirty()).toBe(false);
+    });
+
+    it('does not reload on any other refusal — the draft is the barber’s to fix', async () => {
+      const component = fixture.componentInstance as unknown as {
+        store: {
+          staffEdit: (request: unknown) => Promise<boolean>;
+          errorFor: (id: string) => BookingGatewayError | null;
+        };
+        visitReseedMark: () => { appointmentId: string; n: number };
+        rowWaitMs: number;
+      };
+      component.rowWaitMs = 0;
+      component.store.staffEdit = async () => false;
+      component.store.errorFor = () =>
+        new BookingGatewayError('slot_unavailable', 'taken', {
+          serverCode: 'booking.staffEdit.overlaps',
+        });
+      const editor = openAndDrag();
+      await save();
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      fixture.detectChanges();
+
+      expect(component.visitReseedMark().n).toBe(0);
+      expect(editor.dirty()).toBe(true);
+    });
+  });
+
+  /*
+   * ── THE NOTE AND THE TIP BESIDE THE BATCH (round 5, found in review) ──
+   * Each is written in a document of its own and neither moves the visit's
+   * revision, so the batch's claim cannot guard them. The batch goes first
+   * and alone decides; a field the barber did not touch is never written;
+   * and one a colleague changed under a field the barber did touch refuses
+   * the save before anything goes out.
+   */
+  describe('the note and the tip beside the batch', () => {
+    const lane$ = new BehaviorSubject<readonly Appointment[]>([]);
+    const note$ = new BehaviorSubject<string | null>(null);
+    let visits: ReturnType<typeof observeBarberDay.getMockImplementation>;
+    let stored: Appointment;
+
+    /** The visit with Ivan's seat tipped `minor` — a stamp, same revision. */
+    function tipped(visit: Appointment, minor: number | null): Appointment {
+      const money =
+        minor === null
+          ? null
+          : value(Money.fromMinorUnitsAndCode(minor, 'EUR'));
+      return value(
+        Appointment.reconstitute({
+          id: visit.id.value,
+          locationId: visit.locationId.value,
+          seats: visit.seats.map((seat) =>
+            seat.barberId.value === 'ivan' ? seat.withTip(money) : seat,
+          ),
+          status: visit.status,
+          contact: visit.contact,
+          bookedAt: visit.bookedAt,
+          revision: visit.revision,
+        }),
+      );
+    }
+
+    beforeEach(async () => {
+      visits = observeBarberDay.getMockImplementation();
+      stored = readAt(
+        appointment(
+          'appointment-1',
+          '2026-08-05T10:00:00',
+          { name: 'Мартин Илиев', phone: '+359881234567' },
+          'ivan',
+          true,
+        ),
+        3,
+      );
+      lane$.next([stored]);
+      note$.next(null);
+      observeBarberDay.mockImplementation((barberId) =>
+        barberId.value === 'ivan'
+          ? lane$.pipe(map((list) => ok(list)))
+          : of(ok([])),
+      );
+      TestBed.resetTestingModule();
+      await build();
+      // The team note, live, as the notes collection would deliver it.
+      const notes = TestBed.inject(APPOINTMENT_NOTES) as unknown as {
+        observe: (id: string) => Observable<unknown>;
+      };
+      notes.observe = () =>
+        note$.pipe(
+          map((text) =>
+            ok(
+              text === null
+                ? null
+                : { text, authorUid: null, writtenAtIso: null },
+            ),
+          ),
+        );
+      TestBed.inject(TranslocoService).setTranslation(
+        {
+          'errors.booking.staffEdit.stale':
+            'Някой друг току-що промени посещението — ето го, както е сега.',
+        },
+        'bg',
+        { merge: true },
+      );
+    });
+
+    afterEach(() => {
+      if (visits) observeBarberDay.mockImplementation(visits);
+    });
+
+    interface EditorHandle {
+      onFrameCommit: (commit: unknown) => void;
+      setTip: (minor: number | null) => void;
+      commitNote: (value: string) => void;
+      removeLeg: (seatId: string) => void;
+      dirty: () => boolean;
+    }
+
+    /** Every write the sheet makes, in the order it makes them. */
+    function harness() {
+      const component = fixture.componentInstance as unknown as {
+        store: {
+          staffEdit: (request: unknown) => Promise<boolean>;
+          saveTeamNote: (id: string, text: string | null) => Promise<boolean>;
+          recordTip: (request: {
+            seatId: string;
+            amountMinorUnits: number | null;
+          }) => Promise<boolean>;
+          errorFor: (id: string) => BookingGatewayError | null;
+        };
+        notice: () => string | null;
+        undo: () => unknown;
+        runUndo: () => Promise<void>;
+        visitReseedMark: () => { appointmentId: string; n: number };
+        rowWaitMs: number;
+      };
+      component.rowWaitMs = 0;
+      const sent: string[] = [];
+      const tips: { seatId: string; amountMinorUnits: number | null }[] = [];
+      const notes: (string | null)[] = [];
+      component.store.staffEdit = async () => {
+        sent.push('batch');
+        return true;
+      };
+      component.store.saveTeamNote = async (_id, text) => {
+        sent.push('note');
+        notes.push(text);
+        return true;
+      };
+      component.store.recordTip = async (request) => {
+        sent.push('tip');
+        tips.push(request);
+        return true;
+      };
+      return { component, sent, tips, notes };
+    }
+
+    function open(): EditorHandle {
+      (
+        host().querySelector('[data-testid="staff-visit-row"]') as HTMLElement
+      ).click();
+      fixture.detectChanges();
+      return fixture.debugElement.query(By.directive(StaffVisitEditor))
+        .componentInstance as unknown as EditorHandle;
+    }
+
+    function drag(editor: EditorHandle): void {
+      editor.onFrameCommit({
+        id: 'appointment-1',
+        kind: 'move',
+        startMinute: 660,
+        endMinute: 690,
+      });
+      fixture.detectChanges();
+    }
+
+    async function save(): Promise<void> {
+      (
+        host().querySelector('[data-testid="staff-visit-save"]') as HTMLElement
+      ).click();
+      await fixture.whenStable();
+      fixture.detectChanges();
+    }
+
+    async function settle(): Promise<void> {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      fixture.detectChanges();
+    }
+
+    it('sends the batch first, and the note and the tip only once it landed', async () => {
+      const { sent, notes, tips } = harness();
+      const editor = open();
+      editor.setTip(200);
+      editor.commitNote('дължи 5 €');
+      drag(editor);
+      await save();
+
+      expect(sent).toEqual(['batch', 'note', 'tip']);
+      expect(notes).toEqual(['дължи 5 €']);
+      expect(tips.map((tip) => tip.amountMinorUnits)).toEqual([200]);
+    });
+
+    it('writes neither the note nor the tip when the batch is refused as stale', async () => {
+      const { component, sent } = harness();
+      component.store.staffEdit = async () => {
+        sent.push('batch');
+        return false;
+      };
+      component.store.errorFor = () =>
+        new BookingGatewayError('invalid_request', 'moved on', {
+          serverCode: 'booking.staffEdit.stale',
+          expected: '3',
+          actual: '4',
+        });
+      const editor = open();
+      editor.setTip(200);
+      editor.commitNote('дължи 5 €');
+      drag(editor);
+      await save();
+      await settle();
+
+      // The old screen's note and tip never land over the colleague's.
+      expect(sent).toEqual(['batch']);
+      expect(component.visitReseedMark()).toEqual({
+        appointmentId: 'appointment-1',
+        n: 1,
+      });
+    });
+
+    it('keeps a colleague’s tip recorded after the sheet opened when the barber saves a drag', async () => {
+      const { sent, tips } = harness();
+      const editor = open();
+      // A colleague settles up under the open sheet: 3,00 €, no revision.
+      lane$.next([tipped(stored, 300)]);
+      fixture.detectChanges();
+      expect(editor.dirty()).toBe(false);
+
+      drag(editor);
+      await save();
+
+      expect(sent).toEqual(['batch']);
+      expect(tips).toEqual([]);
+    });
+
+    it('refuses a tip typed over one a colleague recorded since — nothing sent, and the sheet shows theirs', async () => {
+      const { component, sent } = harness();
+      const editor = open();
+      editor.setTip(200);
+      fixture.detectChanges();
+      lane$.next([tipped(stored, 300)]);
+      fixture.detectChanges();
+      drag(editor);
+      await save();
+      await settle();
+
+      expect(sent).toEqual([]);
+      expect(component.notice()).toBe(
+        'Някой друг току-що промени посещението — ето го, както е сега.',
+      );
+      expect(component.undo()).toBeNull();
+      expect(component.visitReseedMark()).toEqual({
+        appointmentId: 'appointment-1',
+        n: 1,
+      });
+      expect(editor.dirty()).toBe(false);
+      expect(
+        host()
+          .querySelector('[data-testid="staff-visit-tip-value"]')
+          ?.textContent?.replace(/\s+/g, ' ')
+          .trim(),
+      ).toBe('3,00 €');
+    });
+
+    it('refuses a note typed over one a colleague wrote since', async () => {
+      const { component, sent } = harness();
+      const editor = open();
+      editor.commitNote('дължи 5 €');
+      fixture.detectChanges();
+      note$.next('не обича да говори');
+      fixture.detectChanges();
+      await save();
+      await settle();
+
+      expect(sent).toEqual([]);
+      expect(component.visitReseedMark().n).toBe(1);
+      expect(editor.dirty()).toBe(false);
+    });
+
+    it('does not undo a tip over one a colleague recorded after the save', async () => {
+      const { component, sent, tips } = harness();
+      const editor = open();
+      editor.setTip(200);
+      fixture.detectChanges();
+      await save();
+      // The chair-wide move and resize always ride along (no-ops here).
+      expect(sent).toEqual(['batch', 'tip']);
+
+      // The save lands, and a colleague records 3,00 € over it.
+      lane$.next([tipped(stored, 300)]);
+      fixture.detectChanges();
+      await component.runUndo();
+      await settle();
+
+      // The way back is refused before anything goes out.
+      expect(sent).toEqual(['batch', 'tip']);
+      expect(tips.map((tip) => tip.amountMinorUnits)).toEqual([200]);
+      expect(component.undo()).toBeNull();
+      expect(component.visitReseedMark().n).toBe(1);
+    });
+
+    it('stamps the tip on a seat the batch KEPT, never on one it removed', async () => {
+      const booker = UserId.generate();
+      const price = value(Money.fromMinorUnitsAndCode(2800, 'EUR'));
+      const seatOf = (startIso: string) =>
+        Seat.of({
+          id: SeatId.generate(),
+          subject: SeatSubject.account(booker, 'self'),
+          serviceId: ServiceId.generate(),
+          variantId: null,
+          barberId: value(BarberId.create('ivan')),
+          terms: value(ServiceTerms.create(price, 30)),
+          startsAt: at(startIso),
+        });
+      const first = seatOf('2026-08-05T10:00:00');
+      const second = seatOf('2026-08-05T10:30:00');
+      lane$.next([
+        readAt(
+          value(
+            Appointment.create({
+              id: 'appointment-1',
+              locationId: LocationId.generate().toString(),
+              seats: [first, second],
+              now: at('2026-08-05T08:00:00'),
+            }),
+          ),
+          3,
+        ),
+      ]);
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      const { sent, tips } = harness();
+      const editor = open();
+      editor.removeLeg(first.id.value);
+      editor.setTip(200);
+      fixture.detectChanges();
+      await save();
+
+      expect(sent).toEqual(['batch', 'tip']);
+      expect(tips).toEqual([
+        expect.objectContaining({
+          seatId: second.id.value,
+          amountMinorUnits: 200,
+        }),
+      ]);
+    });
+  });
+
   it('says a refused undo left the save standing, and offers nothing to try again', async () => {
     const component = fixture.componentInstance as unknown as {
       store: {
@@ -3265,6 +4566,15 @@ describe('StaffDashboard', () => {
     expect(reversibleSave({ status: 'completed' }, moved)).toBe(true);
     expect(reversibleSave({ status: 'confirmed' }, added)).toBe(true);
     expect(reversibleSave(null, added)).toBe(true);
+    // A save that removed a seat keeps its «Отмени» — one half of a pair
+    // the visit already held included: the server remembers the pairs a
+    // save broke and lets its undo put them back (round 6, the BA call:
+    // «Отмени» restores exactly what the save changed; pinned in
+    // staff-edit-appointment.undo.spec.ts).
+    const removed = [
+      { kind: 'removeSeat', seatId: 'seat-2' },
+    ] as unknown as Parameters<typeof reversibleSave>[1];
+    expect(reversibleSave({ status: 'confirmed' }, removed)).toBe(true);
   });
 
   it("undoes a save by the save's own arithmetic: the added seat goes, the removed one returns with its terms, the block and the bill go back", () => {
@@ -3434,6 +4744,96 @@ describe('StaffDashboard', () => {
     fixture.detectChanges();
     expect(component.createVisit()?.startMinute).toBe(615);
     expect(component.createVisit()?.minutes).toBe(45);
+  });
+
+  describe('«Запиши пак» and the rebooking edge (defect §2.3 #6)', () => {
+    type RebookHarness = {
+      openCreate: (kind: 'booking' | 'block') => void;
+      rebookFromEditor: (vm: unknown) => void;
+      createFromEditor: (commit: unknown) => Promise<void>;
+      visitEditorVm: () => {
+        clientUserId: string | null;
+        clientLabel: string;
+      } | null;
+    };
+
+    /** One cut for `clientId`, saved from the create sheet. */
+    const saveFor = (clientId: string, label: string) => ({
+      kind: 'save',
+      dayKey: '2026-09-02',
+      startMinute: 600,
+      endMinute: 630,
+      note: null,
+      clients: [{ id: clientId, label, phone: '+359881234567' }],
+      legs: [
+        {
+          seatId: 'draft-cut',
+          serviceId: 'cut',
+          variantId: null,
+          minutes: 30,
+          priceLabel: null,
+          barberId: 'ivan',
+          clientId,
+        },
+      ],
+    });
+
+    function capture(): CommitBookingRequest[] {
+      const requests: CommitBookingRequest[] = [];
+      const gateway = TestBed.inject(BOOKING_GATEWAY) as {
+        commit: (request: CommitBookingRequest) => Promise<unknown>;
+      };
+      gateway.commit = async (request) => {
+        requests.push(request);
+        return ok({ appointmentId: 'apt-rebooked' });
+      };
+      return requests;
+    }
+
+    function rebookTheFinishedVisit(component: RebookHarness): {
+      clientUserId: string;
+      clientLabel: string;
+    } {
+      (
+        host().querySelector('[data-testid="staff-visit-row"]') as HTMLElement
+      ).click();
+      fixture.detectChanges();
+      const vm = component.visitEditorVm();
+      if (vm?.clientUserId == null) throw new Error('no client on the visit');
+      component.rebookFromEditor(vm);
+      fixture.detectChanges();
+      return { clientUserId: vm.clientUserId, clientLabel: vm.clientLabel };
+    }
+
+    it('books the new visit FROM the finished one, for the same client', async () => {
+      const requests = capture();
+      const component = fixture.componentInstance as unknown as RebookHarness;
+      const { clientUserId, clientLabel } = rebookTheFinishedVisit(component);
+
+      await component.createFromEditor(saveFor(clientUserId, clientLabel));
+
+      expect(requests).toHaveLength(1);
+      expect(requests[0]?.onBehalfOfUserId).toBe(clientUserId);
+      expect(requests[0]?.bookedFromAppointmentId).toBe('appointment-1');
+    });
+
+    it('sends no edge once the desk swaps the person, nor from a cold create', async () => {
+      const requests = capture();
+      const component = fixture.componentInstance as unknown as RebookHarness;
+      rebookTheFinishedVisit(component);
+
+      // Somebody else in the chair: their first booking, not a return.
+      await component.createFromEditor(saveFor('user-someone-else', 'Петър'));
+
+      component.openCreate('booking');
+      fixture.detectChanges();
+      await component.createFromEditor(saveFor('user-martin', 'Мартин'));
+
+      expect(requests).toHaveLength(2);
+      for (const request of requests) {
+        expect('bookedFromAppointmentId' in request).toBe(false);
+      }
+    });
   });
 
   it('sends the other shop as a relocate that LEADS the batch, and nothing when the shop is the same', async () => {
@@ -3688,6 +5088,169 @@ describe('StaffDashboard', () => {
     // `NaN` if either seat is missing — which fails the assertion, as it should.
     expect((at[1] ?? NaN) - (at[0] ?? NaN)).toBe(30 * 60_000);
     expect(component.createVisit()).toBeNull();
+  });
+
+  // Round 3 (2026-09-25): every unnamed person fell back to the one
+  // «Случаен клиент», so two strangers on one visit shared a label — and the
+  // client prefill and the server's party check read them as one person.
+  it('names each stranger on one visit apart — the second is numbered, one person once', async () => {
+    const requests: CommitBookingRequest[] = [];
+    const gateway = TestBed.inject(BOOKING_GATEWAY) as {
+      commit: (request: CommitBookingRequest) => Promise<unknown>;
+    };
+    gateway.commit = async (request) => {
+      requests.push(request);
+      return ok({ appointmentId: 'apt-strangers', status: 'confirmed' });
+    };
+    const component = fixture.componentInstance as unknown as {
+      openCreate: (kind: 'booking' | 'block') => void;
+      createFromEditor: (commit: unknown) => Promise<void>;
+    };
+    component.openCreate('booking');
+    fixture.detectChanges();
+    const leg = (seatId: string, clientId: string) => ({
+      seatId,
+      serviceId: 'cut',
+      variantId: null,
+      minutes: 30,
+      priceLabel: null,
+      barberId: 'ivan',
+      clientId,
+    });
+    await component.createFromEditor({
+      kind: 'save',
+      dayKey: '2026-09-03',
+      startMinute: 600,
+      endMinute: 690,
+      note: null,
+      clients: [],
+      legs: [
+        leg('draft-a', 'primary'),
+        leg('draft-b', 'guest-second'),
+        leg('draft-c', 'primary'),
+      ],
+    });
+    // The test catalogue answers with keys: the first stranger keeps the
+    // plain word, the second is the numbered one, and the first's two
+    // services stay one person's.
+    expect(requests[0]?.seats.map((seat) => seat.subject)).toEqual([
+      { kind: 'guest', label: 'staff.visit.walkIn' },
+      { kind: 'guest', label: 'staff.visit.walkInNumbered' },
+      { kind: 'guest', label: 'staff.visit.walkIn' },
+    ]);
+  });
+
+  // Round 4 (2026-09-25): the server tells guests apart per APPOINTMENT
+  // (`personKey`), across chairs, while the edit path numbered a new
+  // stranger past THIS chair's people only. On a party split across two
+  // chairs, the stranger took the label the other chair's walk-in already
+  // held, and the server read the two as one person.
+  it("numbers a stranger added on one chair of a split party past the other chair's walk-in", async () => {
+    const visits = observeBarberDay.getMockImplementation();
+    const WALK_IN = 'Случаен клиент';
+    const price = value(Money.fromMinorUnitsAndCode(2800, 'EUR'));
+    const seatFor = (chair: string, subject: SeatSubject) =>
+      Seat.of({
+        id: SeatId.generate(),
+        subject,
+        serviceId: value(ServiceId.create('fade')),
+        variantId: null,
+        barberId: value(BarberId.create(chair)),
+        terms: value(ServiceTerms.create(price, 30)),
+        startsAt: at('2026-08-05T10:00:00'),
+      });
+    const split = value(
+      Appointment.create({
+        id: 'appointment-split',
+        locationId: LocationId.generate().toString(),
+        seats: [
+          seatFor('ivan', SeatSubject.account(UserId.generate(), 'self')),
+          seatFor(
+            'niko',
+            SeatSubject.anonymous(value(SeatLabel.create(WALK_IN))),
+          ),
+        ],
+        now: at('2026-08-05T08:00:00'),
+        contact: value(
+          BookingContact.create({
+            name: 'Мартин Илиев',
+            phone: '+359881234567',
+            email: null,
+            note: null,
+          }),
+        ),
+      }),
+    );
+    observeBarberDay.mockImplementation((barberId: { value: string }) =>
+      of(
+        ok(
+          barberId.value === 'ivan' || barberId.value === 'niko' ? [split] : [],
+        ),
+      ),
+    );
+    try {
+      TestBed.resetTestingModule();
+      await build();
+      TestBed.inject(TranslocoService).setTranslation(
+        {
+          'staff.visit.walkIn': WALK_IN,
+          'staff.visit.walkInNumbered': `${WALK_IN} {{number}}`,
+        },
+        'bg',
+        { merge: true },
+      );
+      const sent: StaffEditAppointmentRequest[] = [];
+      const component = fixture.componentInstance as unknown as {
+        store: {
+          staffEdit: (request: StaffEditAppointmentRequest) => Promise<boolean>;
+        };
+        commitFromEditor: (
+          id: string,
+          commit: VisitEditorCommit,
+        ) => Promise<void>;
+        visitEditorVm: () => VisitEditorVm | null;
+        rowWaitMs: number;
+      };
+      component.rowWaitMs = 0;
+      component.store.staffEdit = async (request) => {
+        sent.push(request);
+        return true;
+      };
+      (
+        host().querySelector(
+          '[data-row-id="appointment-split#ivan"]',
+        ) as HTMLElement
+      ).click();
+      fixture.detectChanges();
+      const vm = component.visitEditorVm();
+      if (vm === null) throw new Error('the sheet did not open');
+      const before = snapshotCommitOf(vm);
+      const cut = before.legs[0];
+      if (cut === undefined) throw new Error('the chair has no leg');
+
+      // A service for somebody the desk never named, on Ivan's chair: the
+      // walk-in placeholder beside the chair's own client.
+      const withStranger: VisitEditorCommit = {
+        ...before,
+        endMinute: before.endMinute + cut.minutes,
+        legs: [
+          ...before.legs,
+          { ...cut, seatId: 'draft-stranger', clientId: 'primary' },
+        ],
+      };
+      await component.commitFromEditor('appointment-split', withStranger);
+
+      const commands = (sent[0]?.command ?? []) as readonly {
+        kind: string;
+        seatId?: string;
+        subject?: unknown;
+      }[];
+      expect(
+        commands.find((command) => command.kind === 'addSeat')?.subject,
+      ).toEqual({ kind: 'guest', label: `${WALK_IN} 2` });
+    } finally {
+      if (visits) observeBarberDay.mockImplementation(visits);
+    }
   });
 
   it('keeps the view menu to views, and blocking time under ＋', () => {
@@ -3985,5 +5548,333 @@ describe('StaffDashboard', () => {
     expect(component.blockEditorVm()?.dayKey).toBe('2026-08-05');
     expect(component.blockEditorVm()?.barberIds).toEqual(['niko']);
     expect(component.blockEditorVm()?.dayIsOff).toBe(true);
+  });
+
+  /*
+   * THE CLIENT CARD'S THREE INPUTS (client-card-redesign §7.5): who booked
+   * the visit (the only person its held rewards are for), who is looking
+   * (the card's ‹role› gates), and the catalogue as the card names things
+   * — one object for the page's life, reading the catalogue live.
+   */
+  it("binds the client card's inputs on the visit sheet: the booker, the viewer, the catalogue", () => {
+    const original = principal$.value;
+    principal$.next({
+      kind: 'active',
+      uid: value(PrincipalId.create('dev-staff-ivan')),
+      roles: ['barber', 'admin'].map(roleFromPrimitive),
+    });
+    try {
+      (
+        host().querySelector('[data-testid="staff-visit-row"]') as HTMLElement
+      ).click();
+      fixture.detectChanges();
+      const component = fixture.componentInstance as unknown as {
+        visitSheetRow: () => { ownerUserId: string | null } | null;
+      };
+      const owner = component.visitSheetRow()?.ownerUserId ?? null;
+      expect(owner).not.toBeNull();
+      const editor = fixture.debugElement.query(By.directive(StaffVisitEditor))
+        .componentInstance as StaffVisitEditor;
+      expect(editor.uiOwnerUserId()).toBe(owner);
+      expect(editor.uiViewer()).toEqual({
+        uid: 'dev-staff-ivan',
+        roles: ['barber', 'admin'],
+      });
+
+      const catalog = editor.uiClientCardCatalog();
+      expect(catalog).not.toBeNull();
+      expect(catalog?.barberName('ivan')).toBe('Иван');
+      expect(catalog?.barberName('nobody')).toBeNull();
+      expect(catalog?.serviceName('fade')).toBe('fade');
+      expect(catalog?.serviceName('retired')).toBeNull();
+      // No category is listed and no shop is active in this fixture.
+      expect(catalog?.serviceCategory('fade')).toBeNull();
+      expect(catalog?.locationName('loc-center')).toBeNull();
+      expect(catalog?.locationCount).toBe(0);
+      // One object: a new one each pass would re-open an open card.
+      fixture.detectChanges();
+      expect(editor.uiClientCardCatalog()).toBe(catalog);
+    } finally {
+      principal$.next(original);
+    }
+  });
+
+  /*
+   * THE BOOKER'S COUPONS reach the sheet WITH THEIR OCCASION (revision 3
+   * §4.6): the client card heads a birthday gift with its band only when
+   * the coupon says `birthday`, and keeps it out of the generic ticket —
+   * an option that arrives without one is a plain ticket, the band alone
+   * above it (review 2, fix-editor r1: the store dropped the field).
+   */
+  it("offers the booker's coupons with their occasion: a birthday grant reaches the sheet as `occasion: 'birthday'`, a plain one as `null`", async () => {
+    const coupon = (
+      id: string,
+      name: string,
+      percent: number,
+      occasion: 'birthday' | null,
+    ) =>
+      value(
+        Coupon.create({
+          id,
+          name,
+          value: value(CouponValue.percentOff(percent)),
+          combinability:
+            occasion === null
+              ? CouponCombinability.stackable()
+              : CouponCombinability.exclusive(),
+          expiry: { kind: 'never' },
+          enabled: true,
+          occasion,
+        }),
+      );
+    // The port's answer is the pair; the store reads the grant's id, its
+    // value and WHEN it lapses, and asks it whether it is usable — that is
+    // the whole grant here. The birthday gift lapses at 22:30 UTC on 28
+    // October — 00:30 on the 29th in Sofia (UTC+2 once summer time has
+    // ended), the day the card must print.
+    const held = (
+      grantId: string,
+      of: Coupon,
+      expiresAt: ZonedDateTime | null = null,
+    ): CouponGrantWithCoupon => ({
+      grant: {
+        id: { value: grantId },
+        value: of.value,
+        isUsable: () => true,
+        state: {
+          kind: 'active',
+          capacity: { kind: 'single_use' },
+          expiration:
+            expiresAt === null
+              ? { kind: 'no_expiry' }
+              : { kind: 'expires_at', at: expiresAt },
+        },
+      } as unknown as CouponGrantWithCoupon['grant'],
+      coupon: of,
+    });
+    heldGrants = [
+      held(
+        'grant-birthday',
+        coupon('coupon-birthday', 'Рожден ден', 20, 'birthday'),
+        value(ZonedDateTime.fromISO('2026-10-28T22:30:00', 'UTC')),
+      ),
+      held('grant-loyal', coupon('coupon-loyal', 'Постоянен клиент', 5, null)),
+    ];
+    // Earlier cases opened sheets of their own; only this opening counts.
+    grantsAskedFor.length = 0;
+    try {
+      (
+        host().querySelector('[data-testid="staff-visit-row"]') as HTMLElement
+      ).click();
+      fixture.detectChanges();
+      // The read lands a few ticks on: the probe's signal becomes its
+      // observable, the port answers, the answer becomes the signal.
+      for (let i = 0; i < 10; i += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      }
+      await fixture.whenStable();
+      fixture.detectChanges();
+      const component = fixture.componentInstance as unknown as {
+        visitSheetRow: () => { ownerUserId: string | null } | null;
+      };
+      const owner = component.visitSheetRow()?.ownerUserId ?? null;
+      expect(owner).not.toBeNull();
+      expect(grantsAskedFor).toEqual([owner]);
+      const editor = fixture.debugElement.query(By.directive(StaffVisitEditor))
+        .componentInstance as StaffVisitEditor;
+      expect(editor.uiGrants()).toEqual([
+        {
+          grantId: 'grant-birthday',
+          couponId: 'coupon-birthday',
+          label: 'Рожден ден',
+          value: { kind: 'percent_off', percent: 20 },
+          exclusive: true,
+          occasion: 'birthday',
+          // The shop's day, not the UTC instant's (review 2, POLISH-editor).
+          expiresOn: '2026-10-29',
+        },
+        {
+          grantId: 'grant-loyal',
+          couponId: 'coupon-loyal',
+          label: 'Постоянен клиент',
+          value: { kind: 'percent_off', percent: 5 },
+          exclusive: false,
+          occasion: null,
+          expiresOn: null,
+        },
+      ]);
+    } finally {
+      heldGrants = [];
+      grantsAskedFor.length = 0;
+    }
+  });
+
+  it("names a companion by his own profile — never with the booker's name or number", async () => {
+    const visits = observeBarberDay.getMockImplementation();
+    const price = value(Money.fromMinorUnitsAndCode(2800, 'EUR'));
+    const seat = (chair: string, uid: string, relationship: SeatRelationship) =>
+      Seat.of({
+        id: SeatId.generate(),
+        subject: SeatSubject.account(value(UserId.create(uid)), relationship),
+        serviceId: ServiceId.generate(),
+        variantId: null,
+        barberId: value(BarberId.create(chair)),
+        terms: value(ServiceTerms.create(price, 30)),
+        startsAt: at('2026-08-05T10:00:00'),
+      });
+    // A father books himself with Ivan and his son — an account of his
+    // own — with Niko: the contact is the father's.
+    const family = value(
+      Appointment.create({
+        id: 'appointment-family',
+        locationId: LocationId.generate().toString(),
+        seats: [
+          seat('ivan', 'user-father', 'self'),
+          seat('niko', 'user-son', 'companion'),
+        ],
+        now: at('2026-08-05T08:00:00'),
+        contact: value(
+          BookingContact.create({
+            name: 'Стоян Колев',
+            phone: '+359 88 765 4321',
+            email: null,
+            note: null,
+          }),
+        ),
+      }),
+    );
+    profiles.set(
+      'user-son',
+      value(
+        User.reconstitute(
+          {
+            id: 'user-son',
+            phone: '+359887000111',
+            firstName: 'Иво',
+            lastName: 'Колев',
+            roles: ['client'],
+            status: AccountStatus.active(),
+          },
+          at('2026-08-05T08:00:00'),
+        ),
+      ),
+    );
+    observeBarberDay.mockImplementation((barberId: { value: string }) =>
+      of(
+        ok(
+          barberId.value === 'ivan' || barberId.value === 'niko'
+            ? [family]
+            : [],
+        ),
+      ),
+    );
+    try {
+      TestBed.resetTestingModule();
+      await build();
+      // The son's profile is asked for as the book loads.
+      await fixture.whenStable();
+      fixture.detectChanges();
+      const open = (rowId: string) => {
+        (
+          host().querySelector(`[data-row-id="${rowId}"]`) as HTMLElement
+        ).click();
+        fixture.detectChanges();
+        return fixture.debugElement.query(By.directive(StaffVisitEditor))
+          .componentInstance as StaffVisitEditor;
+      };
+      const son = open('appointment-family#niko').vm().people?.[0];
+      expect(son).toEqual({
+        id: 'user-son',
+        label: 'Иво Колев',
+        phone: null,
+        phoneHref: null,
+        meta: null,
+      });
+
+      // The father's chair keeps the booking's contact: it is his.
+      const component = fixture.componentInstance as unknown as {
+        closeVisitSheet: () => void;
+      };
+      component.closeVisitSheet();
+      fixture.detectChanges();
+      const father = open('appointment-family#ivan').vm().people?.[0];
+      expect(father?.id).toBe('user-father');
+      expect(father?.label).toBe('Стоян Колев');
+      expect(father?.phoneHref).toBe('+359887654321');
+    } finally {
+      if (visits) observeBarberDay.mockImplementation(visits);
+      profiles.clear();
+    }
+  });
+
+  /*
+   * ── THE TOOLBAR BOX, OFF THE RENDER HOOK (2026-10-06) ─────────────────
+   * `watchToolbar` keeps asking for the bar frame by frame, which puts it
+   * outside Angular's error handler and past the view's own lifetime. Gate 5
+   * caught it constructing a `ResizeObserver` jsdom does not have — an
+   * uncaught exception that failed the whole run while every test passed.
+   */
+  describe('the toolbar box, measured off the render hook', () => {
+    const frames: FrameRequestCallback[] = [];
+
+    beforeEach(async () => {
+      frames.length = 0;
+      vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
+        frames.push(cb);
+        return frames.length;
+      });
+      vi.stubGlobal('cancelAnimationFrame', () => undefined);
+      TestBed.resetTestingModule();
+      await build();
+    });
+
+    afterEach(() => {
+      vi.unstubAllGlobals();
+      frames.length = 0;
+    });
+
+    /** The method as a frame callback runs it: with nothing around it. */
+    function fromAFrame(): { watchToolbar: (framesLeft: number) => void } {
+      return fixture.componentInstance as unknown as {
+        watchToolbar: (framesLeft: number) => void;
+      };
+    }
+
+    it('measures the bar once where nothing observes resizes (jsdom), instead of throwing from the frame', () => {
+      expect(typeof ResizeObserver).toBe('undefined');
+      const page = host().querySelector<HTMLElement>('.staff-day');
+      page?.style.removeProperty('--staff-toolbar-real');
+      const asked = frames.length;
+
+      expect(() => fromAFrame().watchToolbar(2)).not.toThrow();
+
+      expect(page?.style.getPropertyValue('--staff-toolbar-real')).toMatch(
+        /^\d+px$/,
+      );
+      // The bar was there: measured, not asked for again.
+      expect(frames).toHaveLength(asked);
+    });
+
+    it('stops asking once the page is gone — no observer, no `onDestroy` on a destroyed view', () => {
+      const observed: Element[] = [];
+      vi.stubGlobal(
+        'ResizeObserver',
+        class {
+          observe(target: Element): void {
+            observed.push(target);
+          }
+          disconnect(): void {
+            // nothing to let go of
+          }
+        },
+      );
+      fixture.destroy();
+      frames.length = 0;
+
+      expect(() => fromAFrame().watchToolbar(3)).not.toThrow();
+
+      expect(observed).toHaveLength(0);
+      expect(frames).toHaveLength(0);
+    });
   });
 });

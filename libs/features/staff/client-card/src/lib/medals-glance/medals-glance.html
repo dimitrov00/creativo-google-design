@@ -1,0 +1,83 @@
+@if (words(); as w) { @let card = vm();
+<ui-card
+  uiTone="elevated"
+  [uiPadding]="padding()"
+  class="medals-glance__card"
+  data-testid="client-achievements-strip"
+>
+  <!-- THREE NAMED MEDALS in a grid, never a rail: the shared tile at
+       `large`, its ring and rim numeral the DS's, no caption here. The
+       tiles' hosts are the list's items; the medal's own row rule sets
+       every title of the row on one line. The tiles share the card's
+       measure with no gap between them (§2.1.6: a tile of 82 at 330, so
+       «Есен 2026» holds one line): the air round a ring of 64 is the
+       tiles' own. -->
+  <ui-grid
+    role="list"
+    [uiColumns]="3"
+    uiSpacing="none"
+    class="medals-glance__medals"
+    [attr.aria-label]="w.achievements.title"
+  >
+    @for (tile of card.tiles; track tile.key) {
+    <lib-achievement-tile
+      [tile]="tile"
+      [testId]="'client-medal-' + tile.key"
+      [newWord]="w.achievements.isNew"
+      (open)="openMedal.emit($event.medal.seriesId)"
+    />
+    }
+  </ui-grid>
+
+  <!-- THE CUE — one callout, in primary ink, under the medals. -->
+  @if (card.cue; as cue) {
+  <p
+    uiText
+    uiFont="callout"
+    class="medals-glance__cue"
+    data-testid="client-achievements-cue"
+  >
+    {{ cue }}
+  </p>
+  }
+
+  <!-- THE RECORDS LINE — the first two records as facts of one quiet line,
+       and ONE button that pushes «Рекорди» (§2.1.1 draws no glyph on it:
+       the line is a quiet line that happens to push, as the loyalty card
+       is a card that happens to push). The button's sentence names it;
+       the drawn runs are hidden from a reader. The facts are the items of
+       a line of facts (fact-line.css): a record and its label are one
+       word to the line breaker, and the «·» is drawn only between two
+       facts on one line — at 390 the two stand one over the other with
+       no dot at the break. -->
+  @if (card.records.length > 0 && card.recordsName; as name) {
+  <button
+    type="button"
+    uiInteractive
+    uiRadius="subtle"
+    class="medals-glance__records"
+    [attr.aria-label]="name"
+    data-testid="client-records-line"
+    (click)="openRecords.emit()"
+  >
+    <span
+      uiText
+      uiFont="subheadline"
+      uiForegroundStyle="secondary"
+      class="medals-glance__facts fact-line"
+      aria-hidden="true"
+      >@for (record of card.records; track record.kind) {<span
+        class="medals-glance__record fact-line__fact"
+        >{{ record.label }}
+        <span
+          uiForegroundStyle="primary"
+          uiWeight="medium"
+          [attr.data-testid]="'client-record-' + record.kind"
+          >{{ record.value }}</span
+        ></span
+      >}</span
+    >
+  </button>
+  }
+</ui-card>
+}

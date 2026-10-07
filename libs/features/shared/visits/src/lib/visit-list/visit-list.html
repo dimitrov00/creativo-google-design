@@ -1,0 +1,201 @@
+<!-- ONE PLACEHOLDER ROW — the real row's own geometry (`ui-list-row`,
+     regular, leading), a stamp's square and the head's two lines, so the
+     first page lands without moving anything. -->
+<ng-template #placeholder>
+  <ui-list-row uiSize="regular" uiAlignment="leading">
+    <ui-skeleton
+      uiLeading
+      uiRadius="subtle"
+      uiFrame
+      uiFrameWidth="var(--control-size-regular)"
+      uiFrameHeight="var(--control-size-regular)"
+    />
+    <ui-stack uiSpacing="tight" class="visit-list__placeholder-lines">
+      <ui-skeleton
+        uiRadius="subtle"
+        uiFrame
+        uiFrameWidth="55%"
+        uiFrameHeight="0.875rem"
+      />
+      <ui-skeleton
+        uiRadius="subtle"
+        uiFrame
+        uiFrameWidth="35%"
+        uiFrameHeight="0.8125rem"
+      />
+    </ui-stack>
+  </ui-list-row>
+</ng-template>
+
+@switch (state()) { @case ('loading') {
+<div
+  class="visit-list__placeholders"
+  aria-busy="true"
+  [attr.data-testid]="prefix() + '-skeleton'"
+>
+  @for (group of placeholderGroups(); track group) {
+  <div class="visit-list__placeholder-group" aria-hidden="true">
+    @if (placeholderGroups().length > 1) {
+    <!-- The heading's own line, so the first page lands without moving
+         the rows under it. -->
+    <ui-skeleton
+      class="visit-list__placeholder-heading"
+      uiRadius="subtle"
+      uiFrame
+      uiFrameWidth="9rem"
+      uiFrameHeight="1rem"
+    />
+    } @if (plain()) {
+    <div class="visit-list__rows">
+      @for (index of placeholders(); track index) {
+      <ng-container *ngTemplateOutlet="placeholder" />
+      }
+    </div>
+    } @else {
+    <ui-list-group>
+      @for (index of placeholders(); track index) {
+      <ng-container *ngTemplateOutlet="placeholder" />
+      }
+    </ui-list-group>
+    }
+  </div>
+  }
+</div>
+} @case ('error') {
+<!-- The one retry grammar of the stack: what did not load, and «Опитай пак». -->
+<ng-container *transloco="let t">
+  <ui-notice
+    [uiLabel]="t('clientCard.failed.visits')"
+    [attr.data-testid]="prefix() + '-error'"
+  >
+    <p>{{ t('clientCard.failed.visits') }}</p>
+    <button
+      uiNoticeActions
+      type="button"
+      uiButton
+      uiButtonStyle="bordered"
+      uiTint="neutral"
+      uiControlSize="regular"
+      [attr.data-testid]="prefix() + '-retry'"
+      (click)="retry.emit()"
+    >
+      {{ t('visits.retry') }}
+    </button>
+  </ui-notice>
+</ng-container>
+} @default { @if (sections().length === 0) {
+<!-- The host's words: only it knows whether the list is empty or filtered.
+     Its action hugs its label (visit-list.css). -->
+<ui-empty-state
+  class="visit-list__empty"
+  [attr.data-testid]="prefix() + '-empty'"
+>
+  <ng-content select="[visitListEmpty]" />
+</ui-empty-state>
+} @else {
+<ui-stack
+  [uiSpacing]="plain() ? 'regular' : 'comfortable'"
+  [attr.data-testid]="prefix() + '-list'"
+>
+  @for (section of sections(); track section.key) {
+  <ui-stack
+    [uiSpacing]="plain() ? 'none' : 'compact'"
+    class="visit-list__section"
+    [attr.data-testid]="section.testId"
+  >
+    <ui-section-header uiHeaderProminence="standard" [uiPinned]="plain()">
+      <h3
+        uiTitle
+        [id]="headingId(section)"
+        [attr.data-section-key]="section.key"
+      >
+        {{ section.label }}
+      </h3>
+      @if (section.detail; as detail) {
+      <span uiSectionDetail>{{ detail }}</span>
+      }
+    </ui-section-header>
+    @if (plain()) {
+    <ul
+      role="list"
+      class="visit-list__rows"
+      [attr.aria-labelledby]="headingId(section)"
+    >
+      @for (row of section.rows; track row.id) {
+      <lib-visit-row
+        [vm]="row"
+        [perspective]="perspective()"
+        [interactive]="interactive()"
+        (open)="openRow.emit(row.id)"
+      />
+      }
+    </ul>
+    } @else {
+    <ul uiListGroup [attr.aria-labelledby]="headingId(section)">
+      @for (row of section.rows; track row.id) {
+      <lib-visit-row
+        [vm]="row"
+        [perspective]="perspective()"
+        [interactive]="interactive()"
+        (open)="openRow.emit(row.id)"
+      />
+      }
+    </ul>
+    }
+  </ui-stack>
+  }
+</ui-stack>
+} @if (foot(); as page) {
+<!-- THE FOOT: the next page, hugged and centred; or why it did not come;
+     or the end, in the host's words. -->
+<ng-container *transloco="let t">
+  <ui-stack uiSpacing="compact" uiAlignment="center" class="visit-list__foot">
+    @switch (page.kind) { @case ('end') {
+    <p
+      uiText
+      uiFont="footnote"
+      uiForegroundStyle="secondary"
+      uiMultilineTextAlignment="center"
+      [attr.data-testid]="prefix() + '-end'"
+    >
+      {{ page.endLabel }}
+    </p>
+    } @case ('failed') {
+    <p
+      uiText
+      uiFont="footnote"
+      uiForegroundStyle="secondary"
+      uiMultilineTextAlignment="center"
+      role="status"
+      [attr.data-testid]="prefix() + '-more-failed'"
+    >
+      {{ t('visits.moreFailed') }}
+    </p>
+    <button
+      type="button"
+      uiButton
+      uiButtonStyle="bordered"
+      uiTint="neutral"
+      uiControlSize="regular"
+      [attr.data-testid]="prefix() + '-more-retry'"
+      (click)="more()"
+    >
+      {{ t('visits.retry') }}
+    </button>
+    } @default {
+    <button
+      type="button"
+      uiButton
+      uiButtonStyle="bordered"
+      uiTint="neutral"
+      uiControlSize="regular"
+      [uiLoading]="page.kind === 'loading'"
+      [attr.data-testid]="prefix() + '-more'"
+      (click)="more()"
+    >
+      {{ t('visits.more') }}
+    </button>
+    } }
+  </ui-stack>
+</ng-container>
+} } }

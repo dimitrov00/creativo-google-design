@@ -24,7 +24,7 @@ import {
   hollowStatus,
   StaffEventHead,
   type StaffEventLine,
-} from '../shared/event-head/staff-event-head';
+} from '@creativo/features/shared/visits';
 import {
   DRAG_THRESHOLD_PX,
   EdgeScroller,
@@ -499,7 +499,12 @@ const FALLBACK_PX_PER_MINUTE = 2.4;
     StaffEventHead,
   ],
   templateUrl: './staff-time-grid.html',
-  styleUrls: ['./staff-time-grid.css', './staff-time-grid.page.css'],
+  styleUrls: [
+    './staff-time-grid.css',
+    './staff-time-grid.block.css',
+    './staff-time-grid.state.css',
+    './staff-time-grid.page.css',
+  ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   // Unscoped like the ui patterns: bare `.staff-grid-*` selectors are the
   // styling contract, and a host-level attribute cannot reach a child's

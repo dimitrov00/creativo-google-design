@@ -1,0 +1,68 @@
+/*
+ * «В ПОРТФЕЙЛА» — layout only. The tickets, the card, the stamps and the
+ * type are DS parts' own (`article[uiCouponCard]`, `ui-card` elevated,
+ * `ui-gauge`, `uiText`); these rules stack the holdings at the module's
+ * card-to-card rhythm and lay two side by side in the wide dialog. No
+ * `font:` shorthand here, so the app's tabular figures are never reset.
+ */
+
+/* One column, card after card at 16 (§2.0: card → card inside one
+   module). A ticket's lift is a `drop-shadow()` on the ticket; nothing
+   here clips it. */
+:host {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--sys-space-regular);
+}
+
+/* The ≥ 761 dialog (column 528): the holdings go two across, and each
+   keeps its OWN height — a ticket without conditions (no chip, no foot:
+   «Безплатно подстригване») beside a voucher with its foot was stretched
+   to the voucher's height and showed a blank lower half of paper (review
+   3, round 2). A short ticket beside a tall one is what a wallet looks
+   like; a paper padded out to its neighbour is not. */
+:host([data-columns='2']) {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+}
+
+/* WC2 applied: ‹ from the discount page lands on the stamped ticket
+   (§2.3): clear of the bar above and the dock below, and — a landing is
+   not a control (the loyalty anchor's rule) — without the DS's inset ring,
+   which is drawn for `button, article` alike and boxed the glance's
+   birthday card the same way (review 3, round 2). */
+.wallet-holdings__origin {
+  scroll-margin-block: var(--modal-sheet-origin-margin);
+}
+
+article.wallet-holdings__origin:focus-visible {
+  outline: none;
+}
+
+article.wallet-holdings__origin:focus-visible::before {
+  box-shadow: none;
+}
+
+/* THE STAMP CARD — its two lines over the stamps (WC3: the DS's `large`
+   rung — stamps at 44 edge to edge, the check on a stamp, the ordinal on
+   an empty slot, the reward's glyph on the tenth; FD-4). */
+.wallet-holdings__stamps {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sys-space-regular);
+}
+
+.wallet-holdings__stamps-head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sys-space-tight);
+}
+
+.wallet-holdings__stamps-head > p {
+  margin: 0;
+}
+
+/* «10 печата за безплатно подстригване» wraps whole, never a lone last word. */
+.wallet-holdings__stamps-line {
+  text-wrap: pretty;
+}

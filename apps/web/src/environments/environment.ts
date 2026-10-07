@@ -1,3 +1,6 @@
+// A named import, so the bundle carries only this environment's map.
+import { development as featureFlags } from '../../../../config/feature-flags.json';
+
 // Firebase's web config is public, non-secret client config — safe to
 // commit; security comes from Firestore/Functions rules and Auth, not from
 // hiding this object. Placeholder values until the real Firebase project
@@ -37,4 +40,7 @@ export const environment = {
     storageHost: emulatorHost,
     storagePort: 9199,
   },
+  // Build-time flags (R41): the manifest's `development` map, parsed and
+  // validated by `provideFeatureFlags` at bootstrap.
+  featureFlags,
 };

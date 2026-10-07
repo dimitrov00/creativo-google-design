@@ -1,0 +1,70 @@
+<!-- The head as every visit list mounts it. The title wraps (a staff row
+     names what was done, whole); the fact line keeps to one line. -->
+<lib-staff-event-head
+  class="visit-row-words__head"
+  size="regular"
+  [truncateLines]="!wraps()"
+  [title]="vm().title"
+  [lines]="vm().lines"
+  [struck]="vm().struck"
+  [quote]="vm().quote"
+  [quoteTestId]="quoteTestId()"
+/>
+@if (ends()) {
+<!-- THE END OF THE SECOND LINE: the marks, then the one fact. -->
+<span class="visit-row-words__end">
+  @if (vm().marks.length > 0) {
+  <!-- Detail before the figure: a glyph each, counted where it counts. -->
+  <span class="visit-row-words__marks" uiForegroundStyle="secondary">
+    @for (mark of vm().marks; track mark.icon) {
+    <span class="visit-row-words__mark" [attr.data-mark]="mark.icon">
+      <ui-icon [uiName]="mark.icon" uiScale="small" [uiLabel]="mark.label" />
+      @if (mark.count !== null) {
+      <span uiText uiFont="caption">{{ mark.count }}</span>
+      }
+    </span>
+    }
+  </span>
+  } @if (fact(); as fact) { @switch (fact.kind) { @case ('amount') {
+  <!-- Money: charged in the primary ink at weight 600, booked and
+       cancelled in the secondary and struck (`<s>`: no longer what it
+       says). -->
+  <span
+    uiText
+    uiFont="callout"
+    uiWeight="semibold"
+    class="visit-row-words__figure"
+    [uiForegroundStyle]="fact.emphasis"
+    data-fact="amount"
+  >
+    @if (fact.struck) {
+    <s>{{ fact.text }}</s>
+    } @else { {{ fact.text }} }
+  </span>
+  } @case ('status') {
+  <!-- A state in words beside its glyph: the warning is the GLYPH's, the
+       word keeps the primary ink; a neutral state's glyph is detail. -->
+  <span
+    class="visit-row-words__status"
+    [attr.data-tone]="fact.tone"
+    data-fact="status"
+  >
+    <ui-icon
+      [uiName]="fact.icon"
+      uiScale="small"
+      [uiForegroundStyle]="fact.tone === 'warning' ? 'warning' : 'secondary'"
+    />
+    <span
+      uiText
+      uiFont="subheadline"
+      uiForegroundStyle="primary"
+      class="visit-row-words__figure"
+      >{{ fact.text }}</span
+    >
+  </span>
+  } @case ('badge') {
+  <!-- «Този час»: the accent's wash under ink (the accent law). -->
+  <span uiBadge uiTone="accent" data-fact="badge">{{ fact.text }}</span>
+  } } }
+</span>
+}

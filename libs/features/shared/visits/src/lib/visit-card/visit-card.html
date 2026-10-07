@@ -1,0 +1,172 @@
+<!-- THE WORDS, once: the static card and the button both set them. Spans
+     throughout, since a button holds phrasing content only; each is a flex
+     or grid item, so it lays out as a block. ONE order for every kind:
+     the label, THE SERVICES, the facts with the figure at their trailing
+     edge, the client's own words. -->
+<ng-template #words>
+  <span
+    class="visit-card__head"
+    [attr.data-services]="showServices() ? '' : null"
+  >
+    <span class="visit-card__titles">
+      <span
+        class="visit-card__label"
+        uiText
+        [uiFont]="heading() ? 'headline' : 'subheadline'"
+        [uiForegroundStyle]="heading() ? undefined : 'secondary'"
+        >{{ vm().label }}</span
+      >
+      @if (showServices()) {
+      <span
+        class="visit-card__services"
+        uiText
+        [uiFont]="heading() ? 'body' : 'headline'"
+        [uiWeight]="heading() ? 'medium' : undefined"
+        >{{ drawn().services }}</span
+      >
+      }
+    </span>
+    @if (vm().barber; as barber) {
+    <!-- Who cuts, in the top-trailing corner. The sentence names him. -->
+    <ui-avatar
+      class="visit-card__face"
+      uiControlSize="regular"
+      [uiSrc]="barber.avatarSrc"
+      [uiName]="barber.name"
+    />
+    }
+  </span>
+  @if (vm().facts.length > 0 || vm().figure !== null) {
+  <span class="visit-card__facts">
+    <!-- The figure ends the facts' FIRST line: it floats at the trailing
+         edge and the line runs round it, so a line that wraps takes the
+         whole width under the money (visit-card.css). -->
+    @if (vm().figure; as figure) {
+    <span
+      class="visit-card__figure"
+      uiText
+      uiFont="callout"
+      uiWeight="semibold"
+      uiForegroundStyle="primary"
+      >{{ figure }}</span
+    >
+    }
+    <!-- The runs carry their own joints, so nothing stands between them:
+         the line reads «5.09 · Иван · Център» whatever wraps. ONE run is
+         the fact, in the primary ink at weight 500 inside the quiet line. -->
+    <span
+      class="visit-card__line"
+      uiText
+      [uiFont]="quiet() ? 'callout' : 'body'"
+      [uiForegroundStyle]="quiet() ? 'secondary' : undefined"
+      >@for (part of drawn().facts; track $index) {<span
+        class="visit-card__run"
+        [attr.data-fact]="part.fact ? '' : null"
+        [uiForegroundStyle]="part.fact && quiet() ? 'primary' : undefined"
+        [uiWeight]="part.fact && quiet() ? 'medium' : undefined"
+        >{{ part.text }}</span
+      >}</span
+    >
+  </span>
+  } @if (vm().quote; as quote) {
+  <span
+    class="visit-card__quote"
+    uiText
+    uiFont="callout"
+    [attr.data-testid]="vm().testId + '-quote'"
+    >{{ quote }}</span
+  >
+  }
+</ng-template>
+
+<!-- A status that is news, in the words the appointments screen uses. It
+     hugs its word: a capsule, never a bar across the card. On the static
+     card it is drawn only (`drawn`): the sentence says the word. -->
+<ng-template #capsule let-drawn="drawn">
+  @if (vm().capsule; as status) {
+  <span
+    class="visit-card__capsule"
+    uiBadge
+    [uiTone]="status.tone"
+    [attr.aria-hidden]="drawn ? 'true' : null"
+    [attr.data-testid]="vm().testId + '-status'"
+    >{{ status.text }}</span
+  >
+  }
+</ng-template>
+
+<!-- The visit's photos, at most three. Each is a control of its own: it
+     opens the picture and takes the focus back on the way out. -->
+<ng-template #thumbs>
+  @for (photo of vm().photos; track photo.id) {
+  <button
+    type="button"
+    class="visit-card__thumb"
+    uiInteractive
+    uiRadius="regular"
+    [attr.aria-label]="photo.alt"
+    [attr.data-testid]="'client-visit-photo-' + photo.id"
+    (click)="openPhoto.emit(photo.id)"
+  >
+    <ui-media-card
+      [uiSrc]="photo.url"
+      uiRatio="1 / 1"
+      uiRadius="regular"
+      [uiScrim]="false"
+    />
+  </button>
+  }
+</ng-template>
+
+@if (interactive()) {
+<!-- The whole card is the control: the button's name is the sentence, so
+     its words are read once. -->
+<button
+  type="button"
+  uiCard
+  class="visit-card"
+  [uiTone]="tone()"
+  [uiPadding]="padding()"
+  [uiInteractive]="true"
+  [attr.data-testid]="vm().testId"
+  [attr.aria-label]="vm().accessibleName"
+  (click)="open.emit()"
+>
+  <span class="visit-card__words">
+    <ng-container *ngTemplateOutlet="words" />
+  </span>
+  <ng-container *ngTemplateOutlet="capsule; context: { drawn: false }" />
+  @if (vm().photos.length > 0) {
+  <!-- The thumbs' room at the card's foot: a control may not sit inside a
+       button, so they lie over this room from outside it. -->
+  <span class="visit-card__room" aria-hidden="true"></span>
+  }
+</button>
+@if (vm().photos.length > 0) {
+<div class="visit-card__thumbs" data-outside [attr.data-padding]="padding()">
+  <ng-container *ngTemplateOutlet="thumbs" />
+</div>
+} } @else {
+<!-- A card to read: a group named by its sentence. The sentence is real
+     text in reading order, and the drawn words are hidden from the reader,
+     so nothing is heard twice. -->
+<ui-card
+  class="visit-card"
+  role="group"
+  [uiTone]="tone()"
+  [uiPadding]="padding()"
+  [attr.data-testid]="vm().testId"
+  [attr.aria-labelledby]="nameId"
+>
+  <span uiVisuallyHidden [id]="nameId">{{ vm().accessibleName }}</span>
+  <span class="visit-card__words" aria-hidden="true">
+    <ng-container *ngTemplateOutlet="words" />
+  </span>
+  @if (vm().photos.length > 0) {
+  <div class="visit-card__thumbs">
+    <ng-container *ngTemplateOutlet="thumbs" />
+  </div>
+  }
+  <ng-container *ngTemplateOutlet="capsule; context: { drawn: true }" />
+</ui-card>
+}

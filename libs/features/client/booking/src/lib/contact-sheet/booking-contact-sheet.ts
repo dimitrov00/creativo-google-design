@@ -54,14 +54,16 @@ import {
  * default: a person booking from a colleague's phone, or giving the landline
  * of the office they will be at, is not renaming themselves.
  *
- * ### The switch saves EVERYTHING it shows (owner ruling 2026-08-05)
- * An earlier pass persisted only the name, on the argument that phone/email
- * are login-adjacent. The owner overruled it: a switch that says "save to my
- * profile" and then saves a third of the form is a lie with a toggle. What
- * it writes is the PROFILE record — the login identifier lives in Firebase
- * Auth and is untouched from here, which is what the footnote now says.
- * Every profile change is audited server-side by the `auditProfileChanges`
- * trigger, actor and fields included.
+ * ### The switch saves the NAME, and says so (FIX 2, 2026-09-25)
+ * The 2026-08-05 ruling had the switch save the whole form, so it would not
+ * be "a lie with a toggle". The owner may now edit only their names and
+ * birth date on the profile (the `users` allowlist); a phone or e-mail
+ * changes only through the OTP contact-change callables, which prove the
+ * person holds the new one. So the switch is worded for what it can do —
+ * save the name — and appears only while saving it would change the
+ * profile's. A typed phone or e-mail that differs gets one quiet line: it
+ * applies to this booking only. Every profile change is audited server-side
+ * by the `auditProfileChanges` trigger, actor and fields included.
  *
  * Ownership never moves either way: whatever name and number are entered,
  * the appointment belongs to the signed-in account, which remains the only
@@ -132,6 +134,39 @@ export class BookingContactSheet {
   );
 
   /**
+   * Whether there is a name to save: the switch is offered only while the
+   * save would CHANGE the profile — the typed name split exactly as the
+   * write splits it (`profileNameFrom`), compared field by field. A single
+   * word keeps the stored surname, so «Иван» over «Иван Петров» saves
+   * nothing and offers nothing. No profile, nothing to save to.
+   */
+  protected readonly nameDiffers = computed(() => {
+    const user = this.accountState.account();
+    if (user === null) return false;
+    const next = profileNameFrom(this.name(), user);
+    return (
+      next !== null &&
+      (next.firstName !== user.firstName.value ||
+        next.lastName !== user.lastName.value)
+    );
+  });
+
+  /**
+   * Whether the typed phone or e-mail stray from the profile's — the cue for
+   * the footnote that they apply to this booking only. A number still being
+   * typed (`phone` is `null` until valid) counts as a change.
+   */
+  protected readonly contactDiffers = computed(() => {
+    const user = this.accountState.account();
+    if (!user) return false;
+    const typedEmail = this.email().trim().toLowerCase();
+    return (
+      this.phone() !== user.phone.value ||
+      typedEmail !== (user.email?.value ?? '')
+    );
+  });
+
+  /**
    * Validate through the DOMAIN, never through a second copy of its rules:
    * the same `BookingContact.create` the server runs, so a value this sheet
    * accepts is a value the commit accepts.
@@ -154,7 +189,9 @@ export class BookingContactSheet {
     }
     const contact = result.value.toProps();
 
-    if (this.saveToProfile()) {
+    // Only while the switch is on screen: a name typed back to the profile's
+    // own hides it, and a hidden switch must not still write.
+    if (this.saveToProfile() && this.nameDiffers()) {
       this.pending.set(true);
       const written = await this.writeProfile(contact);
       this.pending.set(false);
@@ -173,23 +210,21 @@ export class BookingContactSheet {
   }
 
   /**
-   * `true` once the profile says what the sheet says — name, phone AND
-   * email.
+   * `true` once the profile carries the typed NAME.
    *
    * Rebuilt through `User.reconstitute`, the domain's own validating door,
-   * so a value the profile would refuse never reaches the port. The write is
-   * a plain profile save; the sign-in identifier lives in Firebase Auth and
-   * is deliberately not touched from here. The `auditProfileChanges` trigger
-   * records the change server-side, whatever path wrote it.
+   * so a value the profile would refuse never reaches the port. Phone and
+   * e-mail are the STORED ones, never the typed: the profile save writes
+   * only the owner's allowlist, and the search keys it derives must index
+   * the contact details the document actually holds. No refresh afterwards:
+   * `account` is the live `users/{uid}` listener, so the review row behind
+   * the sheet shows the new name as soon as the write lands.
    */
   private async writeProfile(contact: BookingContactProps): Promise<boolean> {
     const user = this.accountState.account();
     if (!user) return false;
-
-    // One name field, two domain values: everything up to the first space is
-    // the given name, the rest the family name. A single-word name keeps the
-    // surname the profile already had rather than erasing it.
-    const [first, ...rest] = contact.name.trim().split(/\s+/);
+    const name = profileNameFrom(contact.name, user);
+    if (name === null) return false;
 
     // The birth-date age window is checked against an explicit instant — the
     // Clock port, never a raw Date (§7.1).
@@ -199,12 +234,12 @@ export class BookingContactSheet {
     const updated = User.reconstitute(
       {
         id: user.id.value,
-        phone: contact.phone,
-        firstName: first ?? user.firstName.value,
-        lastName: rest.join(' ') || user.lastName.value,
+        phone: user.phone.value,
+        firstName: name.firstName,
+        lastName: name.lastName,
         roles: [...user.roles],
         status: user.status,
-        email: contact.email ?? undefined,
+        email: user.email?.value,
         birthDate: user.birthDate?.toISODate(),
       },
       today.value,
@@ -212,11 +247,29 @@ export class BookingContactSheet {
     if (updated.isFailure()) return false;
 
     const saved = await this.profile.saveProfile(updated.value);
-    if (saved.isFailure()) return false;
-
-    // The account signal is what every other surface reads; refreshing it is
-    // how the review row behind the sheet shows the new details.
-    this.accountState.refresh();
-    return true;
+    return saved.isSuccess();
   }
+}
+
+/**
+ * The profile name a typed name would be saved as — the ONE split both the
+ * switch and the write use, so the switch can never promise a change the
+ * save does not make.
+ *
+ * One name field, two domain values: everything up to the first space is the
+ * given name, the rest the family name, spacing settled. A single-word name
+ * keeps the surname the profile already had rather than erasing it. Case
+ * stays — «иван» → «Иван» is exactly the correction someone saves. `null`
+ * when nothing was typed.
+ */
+function profileNameFrom(
+  typed: string,
+  user: Pick<User, 'lastName'>,
+): { readonly firstName: string; readonly lastName: string } | null {
+  const [first, ...rest] = typed.trim().split(/\s+/);
+  if (first === undefined || first.length === 0) return null;
+  return {
+    firstName: first,
+    lastName: rest.length > 0 ? rest.join(' ') : user.lastName.value,
+  };
 }

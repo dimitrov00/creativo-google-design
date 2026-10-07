@@ -115,6 +115,7 @@ async function render(options?: {
         provide: PROFILE_PORT,
         useValue: {
           getProfile: () => Promise.resolve(ok(profile)),
+          observeProfile: () => of(ok(profile)),
           saveProfile: (next: User) => {
             saved.push(next);
             return Promise.resolve(options?.saveResult?.() ?? ok(undefined));

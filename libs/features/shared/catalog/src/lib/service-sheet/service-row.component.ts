@@ -87,7 +87,12 @@ import type { ServiceVm } from '../content/catalog-vm';
                rule is about a symbol restating its own unit label; this is
                a repeated CATEGORY mark, which is what HIG symbols are for
                — you spot the layers mark down a run without reading it,
-               and it's the same pairing the sheet's bundle badge uses. -->
+               and it's the same pairing the sheet's bundle badge uses.
+
+               The accent law (2026-09-29): the GLYPH is the orange, the
+               word is ink. «Пакет» takes the primary ink back from the
+               quiet line, so the mark reads a step over the duration
+               beside it without a tinted small word. -->
           <ui-stack
             uiAxis="horizontal"
             uiSpacing="tight"
@@ -106,8 +111,12 @@ import type { ServiceVm } from '../content/catalog-vm';
               @if (minutes() !== undefined) {
                 <span aria-hidden="true">·</span>
               }
-              <span uiForegroundStyle="accent" class="service-row__bundle">
-                <ui-icon uiName="service.bundle" />
+              <span
+                uiForegroundStyle="primary"
+                class="service-row__bundle"
+                data-testid="service-row-bundle"
+              >
+                <ui-icon uiName="service.bundle" uiForegroundStyle="accent" />
                 {{ t('landing.services.bundle') }}
               </span>
             }

@@ -452,6 +452,49 @@
               </ui-list-group>
             </div>
 
+            @if (isAdmin()) {
+              <!-- The shop's rules — ITS OWN group after the account run
+                   (iOS Settings grammar: what is MINE, then what I MANAGE,
+                   then the site). One row today: «Лоялност», the ONE way to
+                   the admin page «Ритъм» (/admin/loyalty/rhythm; client-card
+                   revision 3 §2.6, §3.17) — the wallet carries no link to it,
+                   because a routerLink inside the visit sheet would drop the
+                   visit's draft. A plain grouped row on the same recipe as
+                   the account rows above (leading glyph at the medium rung,
+                   the label in the row's own ink): a rule is set rarely, so
+                   it never competes with the schedule's fill, and the group
+                   has room for the admin's other pages when they arrive.
+
+                   UI-only, like the schedule row: `rolesGuard('admin',
+                   'sysadmin')` on the route and `isAdmin()` in
+                   firestore.rules are the locks; this only decides what is
+                   worth showing. -->
+              <div
+                class="cr-menu__section"
+                [uiReveal]="'fade-up'"
+                uiRevealTrigger="mount"
+                [uiRevealDelay]="160"
+              >
+                <ui-list-group>
+                  <a
+                    routerLink="/admin/loyalty/rhythm"
+                    uiListRow
+                    uiSize="large"
+                    [uiInteractive]="true"
+                    data-testid="menu-admin-loyalty"
+                    (click)="close()"
+                  >
+                    <ui-icon
+                      uiLeading
+                      uiName="admin.loyalty"
+                      uiScale="medium"
+                    />
+                    {{ t('landing.menu.loyaltyAdmin') }}
+                  </a>
+                </ui-list-group>
+              </div>
+            }
+
             <!-- Site — in-page anchors. -->
             <div
               class="cr-menu__section"

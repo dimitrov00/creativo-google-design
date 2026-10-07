@@ -43,6 +43,12 @@
       "path": "../../shared/catalog/tsconfig.lib.json"
     },
     {
+      "path": "../../shared/visits/tsconfig.lib.json"
+    },
+    {
+      "path": "../client-card/tsconfig.lib.json"
+    },
+    {
       "path": "../../../application/shared/tsconfig.lib.json"
     },
     {

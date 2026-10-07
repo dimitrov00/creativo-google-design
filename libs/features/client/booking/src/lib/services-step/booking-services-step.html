@@ -56,7 +56,11 @@
                     t('booking.party.rename', { name: seat.label })
                   "
               [attr.data-testid]="'booking-seat-rename-' + seat.key"
-              (input)="renameDraft.set($any($event.target).value)"
+              [attr.aria-invalid]="renameRefusal() ? 'true' : null"
+              [attr.aria-describedby]="
+                renameRefusal() ? 'booking-seat-rename-error' : null
+              "
+              (input)="typeRename($any($event.target).value)"
               (blur)="commitRename(seat, $any($event.target).value)"
               (keydown.enter)="$any($event.target).blur()"
             />
@@ -106,6 +110,34 @@
         </span>
         }
       </ui-scroll-row>
+
+      <!-- A name another guest already has: the field above stays open on
+           what was typed, and this says why it was not taken. Outside the
+           scroller for the same reason the menu is. Two guests a restored
+           draft brought back under one name are said the same way, and
+           Continue waits for the rename. -->
+      @if (renameRefusal(); as message) {
+      <p
+        uiText
+        uiFont="footnote"
+        uiForegroundStyle="destructive"
+        role="alert"
+        id="booking-seat-rename-error"
+        data-testid="booking-seat-rename-error"
+      >
+        {{ message }}
+      </p>
+      } @else if (sharedLabel(); as label) {
+      <p
+        uiText
+        uiFont="footnote"
+        uiForegroundStyle="destructive"
+        role="alert"
+        data-testid="booking-seat-shared-label"
+      >
+        {{ t('errors.scheduling.booking_party.duplicate_label', { label }) }}
+      </p>
+      }
 
       <!--
         The person menu lives OUTSIDE the scroller.
@@ -171,7 +203,7 @@
         [uiServiceId]="service.id"
         [uiName]="content.text(service.name)"
         [uiMeta]="metaFor(service)"
-        [uiCoverUrl]="catalog.coverUrl(service.id) ?? null"
+        [uiCoverUrl]="service.coverSrc ?? null"
         [uiSelectedCount]="selectedCountFor(service.id)"
         [uiBlocked]="isBlocked(service.id)"
         [uiBlockedLabel]="t('booking.services.blockedBadge')"

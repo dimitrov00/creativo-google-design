@@ -27,6 +27,25 @@
          large title and at most one line under it, tight, subheadline in
          secondary ink; it folds while a page's search is engaged. -->
     @switch (page.kind) { @case ('client') { @if (currentClient(); as client) {
+    @if (profileOn) {
+    <!-- THE CLIENT CARD (client-card-redesign §3.1): the page's one h2 is
+         the card's own, inside its headline — the container above is
+         labelled by it. The card writes nothing; each output is a push, a
+         draft change or the way back to the visit. -->
+    <lib-client-card
+      titleId="staff-visit-page-title"
+      (openLoyalty)="openLoyalty($event)"
+      (openAchievements)="openAchievements()"
+      (openMedal)="openMedal($event)"
+      (openRecords)="openRecords()"
+      (openHistory)="openHistory()"
+      (openPhoto)="openPastCut($event)"
+      (openReward)="openReward($event)"
+      (removeReward)="removeReward($event)"
+      (repeatLast)="repeatLast($event)"
+      (removeClient)="removeFromCard()"
+    />
+    } @else {
     <ui-sheet-headline>
       <h2
         uiSheetLargeTitle
@@ -69,10 +88,56 @@
     }
     <!-- Removing a client is `Добави клиент` run backwards: the search
            page's rows toggle, so unticking a person is where removal lives.
-           A destructive row here would need copy `staff.visit` does not
-           carry, and inventing it in the template is how a catalogue and a
-           surface start disagreeing. -->
-    } } @case ('clientSearch') {
+           (The client card, behind `client.profile`, carries its own
+           destructive row, «Махни от посещението».) -->
+    } } } @case ('clientLoyalty') {
+    <!-- THE WALLET (revision 3 §2.2): the bar names it from rest
+         (`pageHasNoLargeTitle`), its own h2 for assistive tech alone; the
+         pass stands straight under the bar. «Код» opens the discount page
+         clean; «История» and «Всички ›» push the ledger. -->
+    <lib-client-loyalty
+      titleId="staff-visit-page-title"
+      [anchor]="loyaltyAnchor()"
+      (openReward)="openReward($event)"
+      (removeReward)="removeReward($event)"
+      (openCode)="openCode()"
+      (openLedger)="openLedger()"
+    />
+    } @case ('clientLedger') {
+    <!-- «ДВИЖЕНИЕ» (§2.2.6): the wallet's whole ledger, three deep; a leaf
+         — it reads the store and pages itself, nothing to bind. -->
+    <lib-client-ledger titleId="staff-visit-page-title" />
+    } @case ('clientAchievements') {
+    <lib-client-achievements
+      titleId="staff-visit-page-title"
+      (openScope)="openScope($event)"
+      (openMedal)="openMedal($event)"
+      (openRecords)="openRecords()"
+    />
+    } @case ('clientRecords') {
+    <!-- «РЕКОРДИ» (§2.3.4): from the glance's line (two deep) or from
+         «Постижения» (three); a leaf. -->
+    <lib-client-records titleId="staff-visit-page-title" />
+    } @case ('achievementCategory') { @if (currentScope(); as scope) {
+    <lib-achievement-category
+      titleId="staff-visit-page-title"
+      [scope]="scope"
+      (openScope)="openScope($event)"
+      (openMedal)="openMedal($event)"
+    />
+    } } @case ('achievementDetail') { @if (page.subjectId; as seriesId) {
+    <!-- A related medal REPLACES this page (§2.1): same depth, same way back.
+         Its category link opens «Постижения» on that chip (revision 3 §5.2);
+         the page's one verb is the DOCK's, not the body's (DV-C). -->
+    <lib-achievement-detail
+      titleId="staff-visit-page-title"
+      [seriesId]="seriesId"
+      (openMedal)="replaceMedal($event)"
+      (openCategory)="openCategory($event)"
+    />
+    } } @case ('clientHistory') {
+    <lib-client-history titleId="staff-visit-page-title" />
+    } @case ('clientSearch') {
     <!-- THE TITLE FOLDS WHILE A SEARCH IS ENGAGED (2026-09-22): the field
          rises under the bar and the compact title lands there — the
          UISearchController grammar. Folded, not scrolled: the sheet's own
@@ -560,6 +625,7 @@
           <button
             uiListRow
             uiSize="large"
+            uiTrailingWraps
             type="button"
             [uiInteractive]="true"
             [disabled]="!linesRowValue().applied"
@@ -573,7 +639,8 @@
             <span uiTrailing class="staff-visit__row-value">
               <span
                 class="staff-visit__figures"
-                [uiForegroundStyle]="linesRowValue().applied ? 'promo' : 'secondary'"
+                [uiForegroundStyle]="linesRowValue().applied ? 'primary' : 'secondary'"
+                [uiWeight]="linesRowValue().applied ? 'semibold' : undefined"
                 data-testid="staff-visit-discount-lines-value"
                 >{{ linesRowValue().label }}</span
               >
@@ -733,7 +800,7 @@
          thumb, the quarters taller and named (the Mobbin sweep: Acorns'
          portfolio percent over a ruler, Rocket Money's lit savings ticks,
          Google Photos' edit sliders, Binance's target-ROI marks). A move
-         drafts, and the dock's «Приложи −15%» keeps it; a hundred and more,
+         drafts, and the dock's «Приложи −15 %» keeps it; a hundred and more,
          typed, snaps to a hundred. -->
     <ui-stack
       uiSpacing="regular"
@@ -871,12 +938,19 @@
          title — the image at its original ratio, centered"; then: "make
          the information shown by default … the people as user rows"): the
          picture full-bleed in its own shape, centred in the space above the
-         dock, no large title — the header names the moment, as Photos'
+         dock, no large title — the header names its day, as Photos'
          bar does. Under it, the facts as ROWS, always: the people first,
          each a person row with a face — the chair's portrait with its
-         legend, the client's initials — then when it was taken, and which
-         of the shop's pictures it is. «Изтрий снимката» stays the dock's. -->
-    <h2 uiVisuallyHidden id="staff-visit-page-title">{{ photoWhen(photo) }}</h2>
+         legend, the client's initials — then the time it was taken (the
+         bar names its day, so the row says only what the bar does not),
+         and which of the shop's pictures it is. «Изтрий снимката» stays
+         the dock's.
+         ⚠ With no large title to scroll under the bar, the bar's compact
+         title never collapses in on its own: `pageHasNoLargeTitle` tells
+         the shell to show it from rest (`titleAlwaysVisible`). -->
+    <h2 uiVisuallyHidden id="staff-visit-page-title">
+      {{ photoTitle(photo) }}
+    </h2>
     <figure
       class="staff-visit__photo-hero"
       data-testid="staff-visit-photo-page"
@@ -931,7 +1005,7 @@
       >
         <span uiLeading class="staff-visit__face">
           <ui-avatar
-            [uiSrc]="null"
+            [uiSrc]="photoClientFace(photo)"
             [uiName]="photo.clientLabel"
             uiControlSize="regular"
             data-testid="staff-visit-photo-client-face"
@@ -953,7 +1027,7 @@
           uiForegroundStyle="secondary"
           class="staff-visit__figures"
           data-testid="staff-visit-photo-when"
-          >{{ photoWhen(photo) }}</span
+          >{{ photoTime(photo) }}</span
         >
       </li>
       @if (photo.origin === 'library' && photo.label; as name) {
@@ -1805,9 +1879,7 @@
             type="button"
             class="staff-visit__row-press"
             [attr.data-testid]="'staff-visit-client-row-' + client.id"
-            (click)="
-              push('client', client.id, 'staff-visit-client-row-' + client.id)
-            "
+            (click)="openClient(client.id)"
           >
             <ng-container
               *ngTemplateOutlet="clientLines; context: { $implicit: client }"
@@ -1856,9 +1928,7 @@
           type="button"
           [uiInteractive]="true"
           [attr.data-testid]="'staff-visit-client-row-' + client.id"
-          (click)="
-              push('client', client.id, 'staff-visit-client-row-' + client.id)
-            "
+          (click)="openClient(client.id)"
         >
           <span uiLeading>
             <!-- The SAME face as the barber row above it: a participant is
@@ -2026,6 +2096,7 @@
             uiListRow
             uiSize="large"
             uiAlignment="leading"
+            uiTrailingWraps
             type="button"
             [uiInteractive]="true"
             [attr.aria-label]="shopRowName()"
@@ -2360,6 +2431,7 @@
         <button
           uiListRow
           uiSize="large"
+          uiTrailingWraps
           type="button"
           [uiInteractive]="true"
           [uiAlignment]="discountWhisper() ? 'leading' : 'center'"
@@ -2373,17 +2445,23 @@
             <span
               uiText
               uiFont="footnote"
-              uiForegroundStyle="promo"
+              uiForegroundStyle="secondary"
               class="staff-visit__figures"
               data-testid="staff-visit-discount-row-note"
-              >{{ note }}</span
+              ><ui-icon
+                uiName="promo.coupon"
+                uiForegroundStyle="promo"
+                aria-hidden="true"
+              />
+              {{ note }}</span
             >
             }
           </ui-stack>
           <span uiTrailing class="staff-visit__row-value">
             <span
               class="staff-visit__figures"
-              [uiForegroundStyle]="discountRowValue().applied ? 'promo' : 'secondary'"
+              [uiForegroundStyle]="discountRowValue().applied ? 'primary' : 'secondary'"
+              [uiWeight]="discountRowValue().applied ? 'semibold' : undefined"
               data-testid="staff-visit-discount-row-value"
               >{{ discountRowValue().label }}</span
             >
@@ -2410,6 +2488,7 @@
             uiListRow
             uiSize="large"
             uiAlignment="leading"
+            uiTrailingWraps
             type="button"
             [uiInteractive]="true"
             [attr.aria-label]="tipRowName()"
@@ -2521,7 +2600,7 @@
           uiSize="large"
           type="button"
           [uiInteractive]="true"
-          [class.staff-visit__exit--destructive]="exit.destructive"
+          [uiRole]="exit.destructive ? 'destructive' : null"
           [disabled]="vm().acting"
           [attr.data-testid]="'staff-visit-' + exit.id"
           (click)="runExit(exit)"
@@ -2774,7 +2853,12 @@
     </button>
     } @else {
     <ng-container *ngTemplateOutlet="pageDone" />
-    } } @else if (dockPage === 'photo') {
+    } } @else if (dockPage === 'photo') { @if (photoReadOnly()) {
+    <!-- A PAST CUT (client-card-redesign §3.7) is read-only — it belongs to
+         its own visit: ✓ only, back to the visit like every page of the
+         client stack. -->
+    <ng-container *ngTemplateOutlet="pageDone" />
+    } @else {
     <!-- THE ONE THING A PHOTO'S PAGE CAN DO — take the picture down. Red,
          where «Запази» stands; the shell's ‹ is the way back without. -->
     <button
@@ -2789,7 +2873,7 @@
     >
       {{ t('staff.visit.photoRemove') }}
     </button>
-    } @else if (dockPage === 'scan') {
+    } } @else if (dockPage === 'scan') {
     <!-- THE CAMERA'S ONE WAY BACK — «Въведи на ръка», where the search
          page's «Нов клиент» stands: the page has nothing to confirm, and
          the shell's ‹ is the same road. -->
@@ -2807,7 +2891,7 @@
     } @else if (dockPage === 'discount') {
     <!-- THE PROMISE, IN THE DOCK (owner, 2026-09-16: "the bottom CTA
          should say what it applies and switch"; 2026-09-17: in the main
-         sheet's toolbar): «Приложи −10%», «Приложи FIRST10» — the one act
+         sheet's toolbar): «Приложи −10 %», «Приложи FIRST10» — the one act
          the page exists for, in its own words, on the thumb rail. It
          appears once there is something to apply and gives the dock its
          ✓ back when there is not; a code being checked holds it. -->
@@ -2842,7 +2926,33 @@
     </button>
     } @else {
     <ng-container *ngTemplateOutlet="pageDone" />
-    } } @else if (dockPage !== null) {
+    } } @else if (dockPage === 'achievementDetail') {
+    <!-- THE MEDAL PAGE'S ONE VERB (revision 3 §5.2, DV-C): «Добави фейд» —
+         the family's service onto this person's seat, beside ✓ — while the
+         seat lacks it and the visit can take it (the store's gate). The body
+         carries no verb of its own; a cover is a picture, not a control. The
+         button gives way once the legs hold the service: the ✓ stays. -->
+    @if (detailAction(); as action) {
+    <!-- Hugged beside the ✓ and never past the column: a long service name
+         («Добави оформяне на брада» on a 330 phone) wraps inside the
+         button (`uiMultiline`) rather than pushing the ✓ off the edge. -->
+    <button
+      type="button"
+      uiButton
+      uiButtonStyle="bordered"
+      uiControlSize="large"
+      [uiMultiline]="true"
+      class="staff-visit__detail-add"
+      [attr.aria-label]="action.accessibleName"
+      data-testid="staff-visit-detail-add"
+      (click)="addCountedService(action.serviceId)"
+    >
+      <ui-icon uiName="action.add" />
+      {{ action.label }}
+    </button>
+    }
+    <ng-container *ngTemplateOutlet="pageDone" />
+    } @else if (dockPage !== null) {
     <ng-container *ngTemplateOutlet="pageDone" />
     }
   </ui-sheet-action-bar>
@@ -2952,6 +3062,14 @@
     (change)="pickPhotos($event)"
   />
 
+  <!-- THE SHEET'S ONE POLITE REGION: a change made away from where the tap
+       was — «Повтори» rewriting the services from the person's card — is
+       said once, after the focus has landed. Always in the DOM, so the
+       line is announced when it arrives; pages open none of their own. -->
+  <p uiVisuallyHidden role="status" data-testid="staff-visit-announce">
+    {{ announcement() }}
+  </p>
+
   <ng-template #lineTicket let-line>
     <article
       uiCouponCard
@@ -3022,7 +3140,7 @@
        check and «Премахни» where the call stood, the line itself on the
        ladder; BLOCKED by what is on the bill, muted with the "cannot
        combine" glyph in the same corner slot (HIG: mute the whole thing,
-       never a warning capsule). The figure is the offer's RULE — «−10%»,
+       never a warning capsule). The figure is the offer's RULE — «−10 %»,
        «−5,00 €» — never what it would take off this bill, which two offers
        previewed side by side do not add up to once stacked (owner:
        "confusion = bad UX"); the chip says only whether it stacks. -->
@@ -3065,13 +3183,24 @@
       [uiValue]="offer.value"
       [uiCode]="offer.code"
       [uiDetail]="offer.line"
-      [uiAction]="t('staff.visit.couponBlocked')"
       [uiTestId]="offer.testId"
       [attr.data-testid]="offer.testId"
       [attr.aria-label]="offerName(offer) + ', ' + t('staff.visit.couponBlocked')"
     >
       <ui-icon uiCouponGlyph uiName="promo.coupon" />
       <ui-icon uiCouponBadge uiName="booking.blocked" />
+      <!-- The one word a blocked ticket says, quiet, where a call would
+           stand (the DS's own unavailable example): the ticket is muted
+           whole, the glyph says why, the name says it to a reader. -->
+      <span
+        uiCouponAction
+        uiText
+        uiFont="callout"
+        uiForegroundStyle="secondary"
+        aria-hidden="true"
+        [attr.data-testid]="offer.testId + '-blocked'"
+        >{{ t('staff.visit.couponBlocked') }}</span
+      >
     </button>
     } @else {
     <button
@@ -3082,13 +3211,25 @@
       [uiValue]="offer.value"
       [uiCode]="offer.code"
       [uiDetail]="offer.line"
-      [uiAction]="t('staff.visit.useNow')"
       [uiTestId]="offer.testId"
       [attr.data-testid]="offer.testId"
       [attr.aria-label]="offerName(offer)"
       (click)="applyOffer(offer)"
     >
       <ui-icon uiCouponGlyph uiName="promo.coupon" />
+      <!-- THE CALL IS DRESS (revision 3 §3.4): the same prominent pill every
+           offering ticket wears, decorative — the ticket is the control, its
+           name says «използвай». `uiAction`, the written call, has no caller
+           in this sheet any more. -->
+      <span
+        uiCouponAction
+        uiButton
+        uiButtonStyle="borderedProminent"
+        uiControlSize="small"
+        aria-hidden="true"
+        [attr.data-testid]="offer.testId + '-use'"
+        >{{ t('staff.visit.useNow') }}</span
+      >
     </button>
     }
   </ng-template>

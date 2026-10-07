@@ -1,23 +1,20 @@
 import { expect, test, type Page } from '@playwright/test';
+import { THEMES, pinTheme, type Theme } from './support/theme';
 
 /**
  * Goal 06.2 screenshot baseline (docs/migration/goals/06-feature-slices.md
  * — "Add a Playwright screenshot spec... per screen"). Unlike the landing
  * slice, these screens carry no video/live-map content, so a full-page
  * screenshot is deterministic without the hero-fold workarounds
- * `landing-screenshots.spec.ts` needed. Mirrors that spec's
- * theme-via-init-script pattern.
+ * `landing-screenshots.spec.ts` needed. Once per theme
+ * (`support/theme.ts`).
  */
-const THEMES = ['light', 'dark'] as const;
-
 async function gotoWithTheme(
   page: Page,
   path: string,
-  theme: (typeof THEMES)[number],
+  theme: Theme,
 ): Promise<void> {
-  await page.addInitScript((t) => {
-    window.localStorage.setItem('ui-theme', t);
-  }, theme);
+  await pinTheme(page, theme);
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.goto(path);
 }

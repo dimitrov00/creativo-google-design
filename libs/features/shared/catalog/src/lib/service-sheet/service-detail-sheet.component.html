@@ -13,11 +13,16 @@
     (uiClosed)="onClosed()"
   >
     <ng-container ngProjectAs="[sheet-badge]">
+      <!-- The badge's ONE glyph grammar (`uiIcon`): the capsule draws the
+           mark itself, in the accent, beside the word in ink. -->
       @if (service().kind === 'bundle') {
-        <span uiBadge uiTone="accent">
-          <ui-icon uiName="service.bundle" />
-          {{ t('landing.services.bundle') }}
-        </span>
+        <span
+          uiBadge
+          uiTone="accent"
+          uiIcon="service.bundle"
+          data-testid="catalog-sheet-bundle"
+          >{{ t('landing.services.bundle') }}</span
+        >
       }
     </ng-container>
 
@@ -29,28 +34,35 @@
          it). The Maps-place-card exception, where a leading symbol says
          WHICH fact a row is, doesn't apply to two self-describing values
          sitting side by side. -->
-    <ui-stack
-      sheet-facts
-      uiAxis="horizontal"
-      uiSpacing="loose"
-      uiAlignment="center"
-    >
-      <span uiText uiFont="subheadline" uiForegroundStyle="secondary">{{
-        duration()
-      }}</span>
-      <strong uiText uiFont="subheadline" class="service-sheet__summary-price"
-        >{{ t('landing.services.from') }} {{ fromPrice() }}</strong
+    <ui-stack sheet-facts uiSpacing="regular" uiAlignment="leading">
+      <ui-stack
+        uiAxis="horizontal"
+        uiSpacing="loose"
+        uiAlignment="center"
+        data-testid="catalog-sheet-facts"
       >
+        <span uiText uiFont="subheadline" uiForegroundStyle="secondary">{{
+          duration()
+        }}</span>
+        <strong uiText uiFont="subheadline" class="service-sheet__summary-price"
+          >{{ t('landing.services.from') }} {{ fromPrice() }}</strong
+        >
+      </ui-stack>
       <!-- A bundle's whole point, stated instead of left to be worked out:
-           the members priced separately cost more. Accent ink because it's
-           the persuasive fact, not another neutral stat. -->
+           the members priced separately cost more. It is the persuasive
+           fact, so it wears the accent — as a THING, never as tinted small
+           words (the accent law, 2026-09-29): the accent's wash capsule led
+           by the price-tag glyph in the orange, the words in ink. On a
+           line of its own under the two facts: as a third fact beside them
+           it ran past a 330 phone, and every fact on the row wrapped. -->
       @if (savings(); as saved) {
-        <strong
-          uiText
-          uiFont="subheadline"
-          uiForegroundStyle="accent"
+        <span
+          uiBadge
+          uiTone="accent"
+          uiIcon="promo.sum"
           class="service-sheet__summary-savings"
-          >{{ t('landing.services.savings', { amount: saved.price }) }}</strong
+          data-testid="catalog-sheet-savings"
+          >{{ t('landing.services.savings', { amount: saved.price }) }}</span
         >
       }
     </ui-stack>

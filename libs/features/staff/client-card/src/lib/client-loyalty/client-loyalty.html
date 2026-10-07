@@ -1,0 +1,574 @@
+@if (words(); as w) {
+<!-- W0 · THE PAGE'S NAME — the bar shows it from rest (`pageHasNoLargeTitle`);
+     a reader keeps it as the container's label. -->
+<h2 uiVisuallyHidden [id]="titleId()" data-testid="rewards-title">
+  {{ w.loyalty.title }}
+</h2>
+
+<!-- ONE PLACEHOLDER BLOCK — a section's card, before its read lands. -->
+<ng-template #block let-height>
+  <ui-skeleton uiRadius="prominent" uiFrame [uiFrameHeight]="height" />
+</ng-template>
+
+<!-- A HEADING'S PLACEHOLDER — the small rung the heading row keeps. -->
+<ng-template #headingBlock>
+  <ui-skeleton
+    uiRadius="subtle"
+    uiFrame
+    uiFrameWidth="40%"
+    [uiFrameHeight]="heights.heading"
+  />
+</ng-template>
+
+<!-- THREE PLACEHOLDER ROWS — the statement's own row geometry: a disc
+     leading two lines, in a regular leading list row. -->
+<ng-template #rows>
+  <ui-list-group aria-hidden="true">
+    @for (row of placeholderRows; track row) {
+    <ui-list-row uiSize="regular" uiAlignment="leading">
+      <ui-skeleton
+        uiLeading
+        uiRadius="capsule"
+        uiFrame
+        uiFrameWidth="2.25rem"
+        uiFrameHeight="2.25rem"
+      />
+      <ui-stack uiSpacing="tight" class="client-loyalty__placeholder-lines">
+        <ui-skeleton
+          uiRadius="subtle"
+          uiFrame
+          uiFrameWidth="55%"
+          uiFrameHeight="0.9375rem"
+        />
+        <ui-skeleton
+          uiRadius="subtle"
+          uiFrame
+          uiFrameWidth="30%"
+          uiFrameHeight="0.75rem"
+        />
+      </ui-stack>
+    </ui-list-row>
+    }
+  </ui-list-group>
+</ng-template>
+
+<!-- A SECTION'S READ FAILED — its heading stays; this is its one retry. -->
+<ng-template
+  #sectionRetry
+  let-section
+  let-region="region"
+  let-message="message"
+>
+  <ui-notice
+    uiTone="neutral"
+    [uiLabel]="message"
+    [attr.data-testid]="'rewards-failed-' + section"
+  >
+    <p>{{ message }}</p>
+    <button
+      uiNoticeActions
+      type="button"
+      uiButton
+      uiButtonStyle="bordered"
+      uiTint="neutral"
+      uiControlSize="regular"
+      [attr.data-testid]="'rewards-retry-' + section"
+      (click)="retry(region)"
+    >
+      {{ w.visitsModule.retry }}
+    </button>
+  </ui-notice>
+</ng-template>
+
+@if (!online()) {
+<!-- Offline: saved values, nothing that writes (the presenter took the
+     two verbs away). -->
+<ui-notice
+  uiTone="neutral"
+  uiIcon="connection.offline"
+  [uiLabel]="w.offline"
+  data-testid="rewards-offline"
+>
+  <p>{{ w.offline }}</p>
+</ui-notice>
+} @if (wallet(); as slice) { @switch (slice.status) { @case ('loading') {
+<!-- The account on its way: the pass as one block of its own shape, four
+     discs, two tickets, then each later section its heading over a block. -->
+<div
+  class="client-loyalty__placeholders"
+  aria-busy="true"
+  data-testid="rewards-skeleton"
+>
+  <div class="client-loyalty__head" aria-hidden="true">
+    <ui-skeleton uiRadius="prominent" class="client-loyalty__pass-skeleton" />
+    <div class="client-loyalty__discs-skeleton">
+      @for (disc of placeholderDiscs; track disc) {
+      <span class="client-loyalty__disc-skeleton">
+        <ui-skeleton
+          uiRadius="capsule"
+          uiFrame
+          uiFrameWidth="3.25rem"
+          uiFrameHeight="3.25rem"
+        />
+        <ui-skeleton
+          uiRadius="subtle"
+          uiFrame
+          uiFrameWidth="3rem"
+          uiFrameHeight="0.75rem"
+        />
+      </span>
+      }
+    </div>
+  </div>
+  <ui-stack uiSpacing="compact" aria-hidden="true">
+    <ng-container *ngTemplateOutlet="headingBlock" />
+    <div class="client-loyalty__tickets-skeleton">
+      @for (ticket of placeholderTickets; track ticket) {
+      <ng-container
+        *ngTemplateOutlet="block; context: { $implicit: heights.ticket }"
+      />
+      }
+    </div>
+  </ui-stack>
+  @for (section of placeholderSections; track section) {
+  <ui-stack uiSpacing="compact" aria-hidden="true">
+    <ng-container *ngTemplateOutlet="headingBlock" />
+    <ng-container
+      *ngTemplateOutlet="block; context: { $implicit: heights[section] }"
+    />
+  </ui-stack>
+  }
+  <ui-stack uiSpacing="compact" aria-hidden="true">
+    <ng-container *ngTemplateOutlet="headingBlock" />
+    <ng-container *ngTemplateOutlet="rows" />
+  </ui-stack>
+</div>
+} @case ('failed') {
+<!-- The account did not load: one notice, one retry. -->
+<ui-notice
+  uiTone="neutral"
+  [uiLabel]="w.failed.loyalty"
+  data-testid="rewards-failed"
+>
+  <p>{{ w.failed.loyalty }}</p>
+  <button
+    uiNoticeActions
+    type="button"
+    uiButton
+    uiButtonStyle="bordered"
+    uiTint="neutral"
+    uiControlSize="regular"
+    data-testid="rewards-retry"
+    (click)="retry('loyalty')"
+  >
+    {{ w.visitsModule.retry }}
+  </button>
+</ui-notice>
+} @case ('ready') { @let vm = slice.data; @if (vm.frozen) {
+<!-- Paused: the pass says «Замразено», this says why. Nothing is zeroed. -->
+<ui-notice
+  uiTone="neutral"
+  uiIcon="loyalty.freeze"
+  [uiLabel]="w.rhythm.frozen"
+  data-testid="rewards-frozen"
+>
+  <p>{{ w.rhythm.frozen }}</p>
+</ui-notice>
+}
+
+<!-- WA + WB · THE PASS and THE DISCS under it — what he holds with the
+     shop, and what can be done with it today. One head, 24 between. -->
+<div class="client-loyalty__head">
+  <ui-pass-card
+    class="client-loyalty__pass"
+    uiTestId="rewards-pass"
+    data-testid="rewards-pass"
+    [uiFigure]="vm.pass.figure"
+    [uiUnit]="vm.pass.unit"
+    [uiHolder]="vm.pass.holder"
+    [uiDetail]="vm.pass.since"
+    [uiState]="vm.pass.state"
+    [uiFrozen]="vm.pass.frozen"
+    [uiLabel]="vm.pass.accessibleName"
+  >
+    <ui-logo uiPassMark />
+    @if (vm.pass.tier; as tier) {
+    <span
+      uiPassBadge
+      uiBadge
+      [uiOnMedia]="true"
+      uiIcon="loyalty.tier"
+      data-testid="rewards-pass-tier"
+      >{{ tier }}</span
+    >
+    }
+  </ui-pass-card>
+
+  @if (vm.actions.length > 0) {
+  <ui-quick-actions
+    [uiLabel]="w.loyaltyPage.actions.label"
+    [uiColumns]="discColumns(vm.actions.length)"
+    data-testid="rewards-actions"
+  >
+    @for (action of vm.actions; track action.id) {
+    <button
+      uiQuickAction
+      [uiIcon]="action.icon"
+      [uiProminence]="action.prominence"
+      [attr.aria-label]="action.accessibleName"
+      [attr.data-testid]="'rewards-action-' + action.id"
+      (click)="act(action)"
+    >
+      {{ action.label }} @if (action.count; as count) {
+      <!-- Several tickets ready: the count on the disc's corner, and in
+           the verb's name. -->
+      <span
+        uiQuickActionBadge
+        uiBadge
+        uiTone="accent"
+        uiProminence="increased"
+        data-testid="rewards-action-use-count"
+        >{{ count }}</span
+      >
+      }
+    </button>
+    }
+  </ui-quick-actions>
+  }
+</div>
+
+<!-- WC · «В ПОРТФЕЙЛА» — every thing held, a ticket on white paper. The
+     heading's detail is the vouchers' sum when several are held; a bare
+     count would only repeat the tickets under it. -->
+<section
+  class="client-loyalty__module"
+  data-testid="rewards-wallet"
+  [attr.aria-labelledby]="headingId('wallet')"
+>
+  <ui-section-header uiHeaderProminence="increased">
+    <h3
+      #walletHeading
+      uiTitle
+      tabindex="-1"
+      class="client-loyalty__anchor"
+      [id]="headingId('wallet')"
+    >
+      {{ w.loyaltyPage.wallet }}
+    </h3>
+    @if (vm.holdingsDetail; as detail) {
+    <span uiSectionDetail data-testid="rewards-wallet-count">{{ detail }}</span>
+    }
+  </ui-section-header>
+  @switch (vm.holdings.status) { @case ('loading') {
+  <div
+    class="client-loyalty__tickets-skeleton"
+    aria-busy="true"
+    data-testid="rewards-wallet-skeleton"
+  >
+    @for (ticket of placeholderTickets; track ticket) {
+    <ng-container
+      *ngTemplateOutlet="block; context: { $implicit: heights.ticket }"
+    />
+    }
+  </div>
+  } @case ('failed') {
+  <ng-container
+    *ngTemplateOutlet="
+      sectionRetry;
+      context: {
+        $implicit: 'wallet',
+        region: 'vouchers',
+        message: w.failed.vouchers
+      }
+    "
+  />
+  } @case ('ready') { @if (vm.holdings.data.length === 0) {
+  <!-- WC0 · nothing held. -->
+  <ui-card
+    uiTone="elevated"
+    uiPadding="comfortable"
+    class="client-loyalty__empty"
+    data-testid="rewards-wallet-empty"
+  >
+    <ui-empty-state>
+      <p uiText uiFont="callout" uiForegroundStyle="secondary">
+        {{ w.loyaltyPage.walletEmpty }}
+      </p>
+    </ui-empty-state>
+  </ui-card>
+  } @else if (holdingWords(); as holdingWords) {
+  <lib-wallet-holdings
+    role="group"
+    data-testid="rewards-holdings"
+    [attr.aria-label]="w.loyaltyPage.walletName(vm.holdings.data.length)"
+    [holdings]="vm.holdings.data"
+    [words]="holdingWords"
+    [columns]="wide() ? 2 : 1"
+    (removeReward)="removeReward.emit($event)"
+  />
+  } } }
+</section>
+
+<!-- WD · «РИТЪМ» — absent with the flag off and when the rule in force is off. -->
+@if (vm.rhythm; as rhythm) {
+<section
+  class="client-loyalty__module"
+  [attr.aria-labelledby]="headingId('rhythm')"
+>
+  <ui-section-header uiHeaderProminence="increased">
+    <h3
+      #rhythmHeading
+      uiTitle
+      tabindex="-1"
+      class="client-loyalty__anchor"
+      [id]="headingId('rhythm')"
+    >
+      {{ w.loyaltyPage.rhythm }}
+    </h3>
+  </ui-section-header>
+  <lib-rhythm-card [vm]="rhythm" [ruleMoreLabel]="w.rhythm.ruleMore" />
+</section>
+}
+
+<!-- WE · «СТАТУС» — what remains in a ring, the four tiers as steps. -->
+@if (vm.tier; as tier) {
+<section
+  class="client-loyalty__module"
+  data-testid="rewards-status"
+  [attr.aria-labelledby]="headingId('status')"
+>
+  <ui-section-header uiHeaderProminence="increased">
+    <h3
+      #statusHeading
+      uiTitle
+      tabindex="-1"
+      class="client-loyalty__anchor"
+      [id]="headingId('status')"
+    >
+      {{ w.loyaltyPage.tier }}
+    </h3>
+  </ui-section-header>
+  @switch (tier.status) { @case ('loading') {
+  <div aria-busy="true" data-testid="rewards-tier-skeleton">
+    <ng-container
+      *ngTemplateOutlet="block; context: { $implicit: heights.status }"
+    />
+  </div>
+  } @case ('failed') {
+  <ng-container
+    *ngTemplateOutlet="
+      sectionRetry;
+      context: { $implicit: 'tier', region: 'loyalty', message: w.failed.loyalty }
+    "
+  />
+  } @case ('ready') { @let status = tier.data;
+  <ui-card
+    uiTone="elevated"
+    uiPadding="comfortable"
+    class="client-loyalty__status"
+    data-testid="rewards-tier"
+  >
+    <div class="client-loyalty__status-head">
+      <!-- The ring holds what REMAINS; at the top, the check. Heard
+           through the steps gauge under it, so it is presentational. -->
+      <ui-gauge
+        class="client-loyalty__ring"
+        uiGaugeStyle="circularCapacity"
+        uiControlSize="large"
+        aria-hidden="true"
+        [uiMin]="status.ring.min"
+        [uiMax]="status.ring.max"
+        [uiValue]="status.ring.value"
+        [uiLabel]="status.ring.label"
+        [uiValueText]="status.ring.valueText"
+        data-testid="rewards-tier-ring"
+      >
+        @if (status.remaining; as remaining) {
+        <span uiCurrentValueLabel>{{ remaining }}</span>
+        } @else {
+        <ui-icon uiCurrentValueLabel uiName="checklist.done" />
+        }
+      </ui-gauge>
+      <div class="client-loyalty__status-lines" aria-hidden="true">
+        <p
+          uiText
+          uiFont="callout"
+          uiWeight="semibold"
+          data-testid="rewards-tier-line"
+        >
+          {{ status.line1 }}
+        </p>
+        <p uiText uiFont="subheadline" uiForegroundStyle="secondary">
+          {{ status.line2 }}
+        </p>
+      </div>
+    </div>
+    <ui-gauge
+      uiGaugeStyle="steps"
+      uiControlSize="regular"
+      [uiMin]="status.steps.min"
+      [uiMax]="status.steps.max"
+      [uiValue]="status.steps.value"
+      [uiMarks]="status.steps.marks"
+      [uiLabel]="status.steps.label"
+      [uiValueText]="status.steps.valueText"
+      data-testid="rewards-tier-track"
+    />
+  </ui-card>
+  } }
+</section>
+}
+
+<!-- WF · «НАГРАДИ ЗА ТОЧКИ» — information: what the points buy, within
+     reach first, the picture of a reward out of reach greyed and the
+     capsule saying what is missing. -->
+@if (vm.catalog; as catalog) {
+<section
+  class="client-loyalty__module"
+  data-testid="rewards-catalog-module"
+  [attr.aria-labelledby]="headingId('catalog')"
+>
+  <ui-section-header uiHeaderProminence="increased">
+    <h3
+      #catalogHeading
+      uiTitle
+      tabindex="-1"
+      class="client-loyalty__anchor"
+      [id]="headingId('catalog')"
+    >
+      {{ w.loyaltyPage.catalogTitle }}
+    </h3>
+  </ui-section-header>
+  @switch (catalog.status) { @case ('loading') {
+  <ui-grid
+    [uiColumns]="wide() ? 3 : 2"
+    uiSpacing="regular"
+    aria-busy="true"
+    data-testid="rewards-catalog-skeleton"
+  >
+    @for (tile of placeholderTickets; track tile) {
+    <ng-container
+      *ngTemplateOutlet="block; context: { $implicit: heights.catalog }"
+    />
+    }
+  </ui-grid>
+  } @case ('failed') {
+  <ng-container
+    *ngTemplateOutlet="
+      sectionRetry;
+      context: {
+        $implicit: 'catalog',
+        region: 'loyalty',
+        message: w.failed.loyalty
+      }
+    "
+  />
+  } @case ('ready') {
+  <ui-grid
+    [uiColumns]="wide() ? 3 : 2"
+    uiSpacing="regular"
+    role="list"
+    [attr.aria-label]="catalog.data.name"
+    data-testid="rewards-catalog"
+  >
+    @for (tile of catalog.data.tiles; track tile.rewardId) {
+    <ui-card
+      uiTone="elevated"
+      uiPadding="regular"
+      role="listitem"
+      class="client-loyalty__reward"
+      [attr.aria-label]="tile.accessibleName"
+      [attr.data-affordable]="tile.affordable ? '' : null"
+      [attr.data-testid]="'rewards-catalog-' + tile.rewardId"
+    >
+      <div class="client-loyalty__reward-head" aria-hidden="true">
+        <!-- The reward's picture (its service's cover), else the reward
+             glyph on an accent-wash disc. -->
+        <ui-avatar
+          class="client-loyalty__reward-face"
+          uiControlSize="regular"
+          [uiSrc]="tile.src"
+          [uiIcon]="tile.src ? null : 'loyalty.reward'"
+        />
+        <span uiBadge uiTone="neutral" class="client-loyalty__reward-mark"
+          >{{ tile.missing ?? tile.cost }}</span
+        >
+      </div>
+      <p
+        uiText
+        uiFont="callout"
+        uiWeight="semibold"
+        class="client-loyalty__reward-title"
+        aria-hidden="true"
+      >
+        {{ tile.title }}
+      </p>
+      @if (tile.progress !== null) {
+      <ui-gauge
+        class="client-loyalty__reward-progress"
+        uiGaugeStyle="linearCapacity"
+        uiControlSize="small"
+        aria-hidden="true"
+        [uiMin]="0"
+        [uiMax]="1"
+        [uiValue]="tile.progress"
+        [uiLabel]="tile.title"
+        [uiValueText]="tile.missing ?? ''"
+        [attr.data-testid]="'rewards-catalog-' + tile.rewardId + '-progress'"
+      />
+      }
+    </ui-card>
+    }
+  </ui-grid>
+  } }
+</section>
+}
+
+<!-- WG · «ДВИЖЕНИЕ» — the newest five events of the journal, by month;
+     «Всички ›» opens the ledger page. -->
+@if (vm.activity; as activity) {
+<section
+  class="client-loyalty__module"
+  data-testid="rewards-ledger"
+  [attr.aria-labelledby]="headingId('ledger')"
+>
+  <ui-section-header uiHeaderProminence="increased">
+    <h3 uiTitle [id]="headingId('ledger')">{{ w.loyaltyPage.ledgerTitle }}</h3>
+    <button
+      uiSectionAction
+      type="button"
+      uiButton
+      uiButtonStyle="plain"
+      uiControlSize="small"
+      [attr.aria-label]="w.loyaltyPage.ledgerAllName"
+      data-testid="rewards-ledger-all"
+      (click)="openLedger.emit()"
+    >
+      {{ w.loyalty.all }}
+      <ui-icon uiName="nav.disclosure" />
+    </button>
+  </ui-section-header>
+  @switch (activity.status) { @case ('loading') {
+  <div aria-busy="true" data-testid="rewards-ledger-skeleton">
+    <ng-container *ngTemplateOutlet="rows" />
+  </div>
+  } @case ('failed') {
+  <ng-container
+    *ngTemplateOutlet="
+      sectionRetry;
+      context: {
+        $implicit: 'ledger',
+        region: 'activity',
+        message: w.failed.activity
+      }
+    "
+  />
+  } @case ('ready') {
+  <lib-activity-list
+    [groups]="activity.data"
+    testIdPrefix="rewards-ledger"
+    [headingLevel]="4"
+  />
+  } }
+</section>
+} } } } }

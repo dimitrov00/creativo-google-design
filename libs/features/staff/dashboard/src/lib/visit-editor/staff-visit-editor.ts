@@ -17,6 +17,7 @@ import {
   phoneSegments,
   rankClients,
 } from './client-query';
+import { type VisitSides, adoptSides } from './visit-sides';
 import { ShowcaseGalleryComponent } from '@creativo/features/shared/catalog';
 import { ThemeService } from '@creativo/features/shared/shell';
 import {
@@ -40,9 +41,33 @@ import {
 import { TranslocoDirective, TranslocoService } from '@jsverse/transloco';
 import {
   Money,
+  type VisitLeg,
   ZonedDateTime,
   formatMoney,
 } from '@creativo/application/booking';
+import { FEATURE_FLAGS } from '@creativo/application/shared';
+import {
+  AchievementCategoryPage,
+  AchievementDetailPage,
+  type AchievementScope,
+  ClientAchievementsPage,
+  ClientCard,
+  type ClientCardCatalog,
+  type ClientCardContext,
+  type ClientCardGrant,
+  type ClientCardLeg,
+  ClientCardStore,
+  type ClientCardSubject,
+  ClientHistoryPage,
+  ClientLedgerPage,
+  ClientLoyaltyPage,
+  ClientRecordsPage,
+  type DetailActionVm,
+  type WalletAnchor,
+  achievementScopeKey,
+  achievementScopeOf,
+  visitsRows,
+} from '@creativo/features/staff/client-card';
 import {
   CouponValue,
   DiscountApplication,
@@ -61,7 +86,6 @@ import {
   UiAvatar,
   UiBadge,
   UiButton,
-  UiChip,
   UiChoiceLeading,
   UiChoiceMenu,
   UiChoiceTiles,
@@ -83,7 +107,7 @@ import {
   StaffEventHead,
   type StaffEventLine,
   type StaffEventRun,
-} from '../shared/event-head/staff-event-head';
+} from '@creativo/features/shared/visits';
 import { FrameFullscreen } from '../shared/frame-fullscreen';
 import { UiScrollColumn, UiStack } from '@creativo/ui/layout';
 import {
@@ -191,6 +215,13 @@ export interface VisitEditorVerb {
  */
 export type VisitEditorCommit = {
   readonly kind: 'save';
+  /**
+   * The stored revision the draft was DRAWN from (`VisitEditorVm.revision`
+   * at seed time), or `null`/absent for none — what the owner claims as the
+   * save's `expectedVersion`, so a colleague's save since is refused as
+   * stale instead of overwritten (round 5).
+   */
+  readonly revision?: number | null;
   readonly dayKey: string;
   readonly startMinute: number;
   readonly endMinute: number;
@@ -223,9 +254,17 @@ export type VisitEditorCommit = {
   /**
    * What the client left this chair, in minor units — drafted like every
    * other line since 2026-09-15; `null` when none, or cleared. The owner
-   * writes it beside the batch when it differs from what is recorded.
+   * writes it beside the batch when it differs from what it was drawn from.
    */
   readonly tipMinorUnits: number | null;
+  /**
+   * The note and the tip as the draft last READ them from the server
+   * (`visit-sides.ts`, round 5). The owner writes a side field only when
+   * the draft changed it from this, and refuses the save as stale when the
+   * stored value moved under a changed one. Absent: measured against what
+   * is stored now.
+   */
+  readonly drawn?: VisitSides;
   /** Who the visit is for — an account id, or a guest's label. */
   readonly clients: readonly {
     readonly id: string;
@@ -275,6 +314,14 @@ export interface VisitEditorPeer {
 export interface VisitEditorVm {
   /** Empty while CREATING: the sheet drafts a visit that does not exist yet. */
   readonly appointmentId: string;
+  /**
+   * The stored revision this visit was read at (`Appointment.revision`).
+   * Seeded into the draft, never compared: the draft keeps the revision it
+   * was drawn from until it is re-seeded, and a save claims exactly that.
+   * Absent or `null` claims nothing — a new visit, or a reader that did
+   * not say.
+   */
+  readonly revision?: number | null;
   /**
    * THIS ROW's own name — `appointmentId#barberId`.
    *
@@ -459,6 +506,12 @@ export interface VisitEditorPhoto {
   readonly barberId: string;
   readonly barberName: string | null;
   readonly clientLabel: string;
+  /**
+   * The person's face, when the source already knows it — a past cut
+   * carries the client card head's. Absent on this visit's own pictures:
+   * the sheet fills the row from the picked person (`photoClientFace`).
+   */
+  readonly clientAvatarSrc?: string | null;
   readonly width: number | null;
   readonly height: number | null;
   /** The visit's own picture, or one of the shop's pointed at — with its name. */
@@ -573,6 +626,24 @@ export interface VisitEditorGrantOption {
   readonly label: string;
   readonly value: VisitEditorDiscountValue;
   readonly exclusive: boolean;
+  /**
+   * The moment the coupon was made for (`Coupon.occasion`, revision 3): the
+   * client card heads a birthday gift with its band and keeps it out of
+   * the generic ticket. Absent or `null` for a coupon tied to no occasion —
+   * the owner of this sheet reads it off the coupon; a host that does not
+   * know it yet hands nothing and the card draws a plain ticket.
+   */
+  readonly occasion?: 'birthday' | null;
+  /**
+   * The shop's day the grant lapses on (`YYYY-MM-DD`, Europe/Sofia), read
+   * off `CouponGrant.state.expiration` by the owner of this sheet: the
+   * card's tickets print it as their validity chip («до 28.10»), the
+   * birthday gift and the wallet alike, and sort the soonest first. Absent
+   * or `null` for a grant that never lapses — then no chip at all (review
+   * 2: the editor handed `null` for every grant, so no ticket ever said
+   * when it ends).
+   */
+  readonly expiresOn?: string | null;
 }
 
 /** One of the shop's live promo codes — offered as a row, never typed. */
@@ -614,6 +685,21 @@ export function discountValueOf(value: CouponValue): VisitEditorDiscountValue {
     case 'free_service':
       return { kind: 'free_service' };
   }
+}
+
+/**
+ * A percent as a figure: «20 %» — the sign set off by a narrow no-break
+ * space, as Bulgarian typography and revision 3 (§1.1, §2.1.2) write it;
+ * `Intl`'s percent style for `bg` sets none. The one place the spacing
+ * lives: the ruler's marks, the dock, every ticket.
+ */
+function percentLabel(percent: number): string {
+  return `${percent}\u202f%`;
+}
+
+/** A percent discount's RULE: «−20 %» — one grammar for the ticket, the dock and the slider alike. */
+function percentOffLabel(percent: number): string {
+  return `−${percentLabel(percent)}`;
 }
 
 /** The sheet's plain value → the domain's, through its validating doors, or `null`. */
@@ -676,6 +762,12 @@ interface DraftClient {
 }
 
 interface VisitDraft {
+  /**
+   * The revision the draft was DRAWN from — the seed's, fixed until the
+   * next re-seed (a new subject, «Отмени», a stale reload). Not part of the
+   * saved shape: it is what the save claims, never something it changes.
+   */
+  readonly revision: number | null;
   readonly dayKey: string;
   readonly dayLabel: string;
   readonly startMinute: number;
@@ -703,9 +795,26 @@ interface VisitDraft {
   readonly vouchers: readonly VisitEditorVoucher[];
   /** The tip as drafted — `null` for none. Seeded from the recording. */
   readonly tipMinorUnits: number | null;
+  /**
+   * The note and the tip as the server last said them, which `note` and
+   * `tipMinorUnits` started from — followed while the barber leaves a field
+   * alone (`adoptSides`), kept while they have changed it. Not part of the
+   * saved shape: it is what the save is measured against.
+   */
+  readonly drawn: VisitSides;
 }
 
-/** Which page is presented on top of the ladder. Depth is exactly one. */
+/**
+ * Which page is presented on top of the ladder. The client card's pages
+ * (client-card-redesign §2) stack under the person's page, four deep at
+ * most; every other page sits one deep, straight on the ladder.
+ *
+ * Revision 3 (§5.1) adds the wallet's ledger «Движение» (`clientLedger`,
+ * three deep under «Лоялност») and the records page «Рекорди»
+ * (`clientRecords`, two deep from the glance's line, three from
+ * «Постижения»). `achievementCategory` stays for the season, archive and
+ * day scopes; a category is a chip on «Постижения» now, never a page.
+ */
 type EditorPageKind =
   | 'client'
   | 'clientSearch'
@@ -715,7 +824,51 @@ type EditorPageKind =
   | 'scan'
   | 'photo'
   | 'camera'
-  | 'library';
+  | 'library'
+  | 'clientLoyalty'
+  | 'clientLedger'
+  | 'clientAchievements'
+  | 'clientRecords'
+  | 'achievementCategory'
+  | 'achievementDetail'
+  | 'clientHistory';
+
+/** How deep the client stack goes; a push past it replaces the top page (§2.2). */
+const MAX_PAGE_DEPTH = 4;
+
+/**
+ * Where a pushed page's focus arrives (§2.3): its `container`; or, for
+ * «Лоялност» opened from a tile, the `section` heading the page itself
+ * focuses once it has painted — the container only while it has not.
+ */
+type PageArrival = 'container' | 'section';
+
+/**
+ * The shop's zone — the one the card's store and presenters read the day
+ * in (`client-card.store.ts`), so the visit's start the card is handed is
+ * the instant the frame draws.
+ */
+const SHOP_ZONE = 'Europe/Sofia';
+
+/**
+ * Whether a landing may focus this element: a control, a link, or a box
+ * that asked for it (`tabindex`) and is not disabled. A static article or
+ * a plain span is as good as gone for the focus.
+ */
+function canTakeFocus(element: HTMLElement): boolean {
+  return (
+    element.matches(
+      'a[href], button, input, select, textarea, summary, [tabindex], [contenteditable]',
+    ) && !element.matches(':disabled')
+  );
+}
+
+/** An account's id, or `null` for a walk-in: a `guest-…` seat or the placeholder. */
+function accountIdOf(clientId: string): string | null {
+  return clientId === 'primary' || clientId.startsWith('guest-')
+    ? null
+    : clientId;
+}
 
 /** What the discount page adds: a code, the client's coupon, or — for money roles — a figure. */
 /** What the «Вид» pop-up offers: the shop's codes, a voucher or coupon, a percent, a sum. */
@@ -740,8 +893,11 @@ interface OfferChoice {
   readonly code: string | null;
   readonly label: string;
   readonly exclusive: boolean;
-  /** The RULE — «−10%», «−5,00 €» — never a figure computed on this bill. */
-  readonly value: string;
+  /**
+   * The RULE — «−10 %», «−5,00 €» — never a figure computed on this bill;
+   * `null` when the name already says it (`couponValue`).
+   */
+  readonly value: string | null;
   /** Whether it stacks, in words. */
   readonly line: string;
   readonly applied: boolean;
@@ -750,10 +906,21 @@ interface OfferChoice {
 
 interface EditorPage {
   readonly kind: EditorPageKind;
-  /** The leg or client the page is about, when it is about one. */
+  /**
+   * What the page is about: the leg or client for the ladder's pages; the
+   * person (`DraftClient.id`) on `client`, `clientLoyalty`, `clientLedger`,
+   * `clientAchievements`, `clientRecords` and `clientHistory`; a scope key
+   * (`achievementScopeKey`) on `achievementCategory`; a family id on
+   * `achievementDetail`; a photo id on `photo`; on `scan`, the origin of
+   * the discount page it stands in for, so the way back focuses it again.
+   */
   readonly subjectId: string | null;
   /** The row that opened it — focus goes back there on pop (WCAG 3.2.2). */
   readonly originTestId: string | null;
+  /** The page this one was pushed from; `null` for a page pushed from the ladder. */
+  readonly returnTo: EditorPage | null;
+  /** The sheet scroller's `scrollTop` when this page was pushed, restored on pop. */
+  readonly returnScrollTop: number;
 }
 
 /**
@@ -958,6 +1125,7 @@ function seedDraft(vm: VisitEditorVm): VisitDraft {
   const sum = sumOrDefault(legs);
   const span = vm.endMinute - vm.startMinute;
   return {
+    revision: vm.revision ?? null,
     dayKey: vm.dayKey,
     dayLabel: vm.dayLabel,
     startMinute: vm.startMinute,
@@ -971,6 +1139,7 @@ function seedDraft(vm: VisitEditorVm): VisitDraft {
     discounts: vm.discounts,
     vouchers: vm.vouchers,
     tipMinorUnits: vm.tipMinorUnits,
+    drawn: { note: vm.teamNote, tipMinorUnits: vm.tipMinorUnits },
   };
 }
 
@@ -982,6 +1151,7 @@ function seedDraft(vm: VisitEditorVm): VisitDraft {
 function commitOf(draft: VisitDraft, endMinute: number): VisitEditorCommit {
   return {
     kind: 'save',
+    revision: draft.revision,
     dayKey: draft.dayKey,
     startMinute: draft.startMinute,
     endMinute,
@@ -990,6 +1160,7 @@ function commitOf(draft: VisitDraft, endMinute: number): VisitEditorCommit {
     discounts: draft.discounts,
     vouchers: draft.vouchers,
     tipMinorUnits: draft.tipMinorUnits,
+    drawn: draft.drawn,
     clients: draft.clients.map((client) => ({
       id: client.id,
       label: client.label,
@@ -1048,15 +1219,17 @@ export function snapshotCommitOf(vm: VisitEditorVm): VisitEditorCommit {
  * exits, and a dock that carries the total, the call and the one write.
  * Each group is a chromeless `ui-list-group` with no eyebrow over it.
  *
- * ### One navigation stack, depth exactly one
+ * ### One navigation stack
  * A row that owns SEVERAL values travels (`›`); a value with a spatial editor
  * of its own expands in place (`⌄`). The service, the two searches, the
  * discount, the scanner, the camera, the gallery and a photo are pages inside
  * THIS sheet — one scrim, one focus trap, one commit — not sheets on top of a
- * sheet. `‹` in the bar pops (and walks a party trail), Escape pops the child
- * and only closes at root, and there is no `Готово` on a child: the HIG's
- * own reason is that a second commit-shaped control is the one people
- * mistake for the dismiss.
+ * sheet. The ladder's pages sit one deep; the client card's pages stack under
+ * the person's page, four deep at most, each remembering the page and the
+ * scroll it was pushed from (client-card-redesign §2.2). `‹` in the bar pops
+ * one step (and walks a party trail), the card's ✓ goes back to the visit,
+ * and there is no `Готово` on a child: the HIG's own reason is that a second
+ * commit-shaped control is the one people mistake for the dismiss.
  *
  * ### Two regimes of writing
  * The DRAFT: everything typed, picked OR DRAGGED here mutates a local
@@ -1081,7 +1254,6 @@ export function snapshotCommitOf(vm: VisitEditorVm): VisitEditorCommit {
     StaffEventHead,
     UiBadge,
     UiButton,
-    UiChip,
     UiChoiceLeading,
     UiAmountField,
     UiChoiceMenu,
@@ -1118,9 +1290,29 @@ export function snapshotCommitOf(vm: VisitEditorVm): VisitEditorCommit {
     UiProgressView,
     UiCameraCapture,
     ShowcaseGalleryComponent,
+    ClientCard,
+    ClientLoyaltyPage,
+    ClientLedgerPage,
+    ClientAchievementsPage,
+    ClientRecordsPage,
+    AchievementCategoryPage,
+    AchievementDetailPage,
+    ClientHistoryPage,
   ],
+  // THE CLIENT CARD'S DATA, one per sheet (client-card-redesign §5.2.1):
+  // provided here and resolved LAZILY — the first push of a person's page
+  // constructs it (`ensureCardStore`), so a sheet that never opens a card
+  // (and a spec that binds none of its ports) never builds it.
+  providers: [ClientCardStore],
   templateUrl: './staff-visit-editor.html',
-  styleUrl: './staff-visit-editor.css',
+  // Two sheets, one cascade: the main one is shared with the block sheet;
+  // the visit's own rows and pages follow it (the component style budget).
+  styleUrls: [
+    './staff-visit-editor.css',
+    './staff-visit-editor.sections.css',
+    './staff-visit-editor.rows.css',
+    './staff-visit-editor.visit.css',
+  ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   // Unscoped like every surface in this feature: the `.staff-*` classes are
   // the styling contract and several of them dress projected DS content.
@@ -1291,6 +1483,30 @@ export class StaffVisitEditor {
   readonly uiCamera = input<boolean | null>(null);
 
   /**
+   * THE APPOINTMENT'S OWNER — the account that booked it, whose held
+   * rewards `uiGrants` are and the only person the visit can spend them for
+   * (client-card-redesign §3.1.3). A companion's card shows no ticket.
+   * `null` for a visit nobody booked for themselves, and while creating.
+   */
+  readonly uiOwnerUserId = input<string | null>(null);
+  /**
+   * WHO IS LOOKING — the signed-in principal's uid and roles: the card's
+   * ‹role› gates and its admin-only money read. `null` gates everything
+   * role-bound shut.
+   */
+  readonly uiViewer = input<{
+    readonly uid: string;
+    readonly roles: readonly string[];
+  } | null>(null);
+  /**
+   * The catalogue as the client card names things — services, barbers,
+   * shops, covers — resolved by the dashboard's catalogue. `null` falls
+   * back to what this sheet already holds (`uiServices`, `uiBarbers`,
+   * `uiShops`), which names everything and draws no art.
+   */
+  readonly uiClientCardCatalog = input<ClientCardCatalog | null>(null);
+
+  /**
    * The day the DRAFT is on, whenever it changes — including the reseed that
    * fires when the sheet opens on a new appointment.
    *
@@ -1334,6 +1550,12 @@ export class StaffVisitEditor {
     });
     this.destroyRef.onDestroy(() => this.detachPickerKeys?.());
     this.resolveDragCopy();
+    // The client card's pushes remember the element pressed (see
+    // `originOf`); the polite region's pending line goes with the sheet.
+    this.listenForPresses();
+    this.destroyRef.onDestroy(() => {
+      if (this.announceTimer !== null) clearTimeout(this.announceTimer);
+    });
 
     /*
      * ⚠ An EFFECT rather than an emit inside `pickDay`/`stepDay`/`goToday`.
@@ -1485,22 +1707,22 @@ export class StaffVisitEditor {
   private readonly seed = computed(() => seedDraft(this.vm()));
 
   /**
-   * The team note the draft was last SEEDED with. The note is read live from
-   * its own document and usually lands a tick after the sheet opened, so a
-   * draft seeded before it arrived must adopt it — unless the barber has
-   * already typed, in which case their words win.
+   * THE NOTE AND THE TIP FOLLOW WHAT IS STORED while the barber leaves them
+   * alone (round 5). The note is read live from its own document and
+   * usually lands a tick after the sheet opened; a colleague can record a
+   * tip under an open sheet. A field the barber has not touched takes the
+   * stored value, so the sheet never shows — and a save never writes — an
+   * older one. A field they changed keeps their words, and the draft still
+   * remembers what it was drawn from, so a save can tell a colleague's
+   * change under it (`visit-sides.ts`).
    */
-  private adoptedNote: string | null = null;
-
-  protected readonly adoptNote = effect(() => {
-    const incoming = this.vm().teamNote;
-    untracked(() => {
-      const draft = this.draft();
-      if (draft.note === this.adoptedNote && incoming !== draft.note) {
-        this.draft.update((current) => ({ ...current, note: incoming }));
-      }
-      this.adoptedNote = incoming;
-    });
+  protected readonly adoptStoredSides = effect(() => {
+    const vm = this.vm();
+    const incoming: VisitSides = {
+      note: vm.teamNote,
+      tipMinorUnits: vm.tipMinorUnits,
+    };
+    untracked(() => this.draft.update((draft) => adoptSides(draft, incoming)));
   });
 
   /**
@@ -1688,8 +1910,40 @@ export class StaffVisitEditor {
 
   private readonly page = signal<EditorPage | null>(null);
   protected readonly currentPage = computed(() => this.page());
-  /** PUBLIC: the sheet shell draws the way back in its header bar. */
-  readonly depth = computed(() => (this.page() ? 1 : 0));
+  /**
+   * PUBLIC: the sheet shell draws the way back in its header bar. The
+   * length of the chain — 0 at the ladder, up to `MAX_PAGE_DEPTH` in the
+   * client stack; the host stamps it as `data-depth`.
+   */
+  readonly depth = computed(() => {
+    let depth = 0;
+    for (let page = this.page(); page !== null; page = page.returnTo) {
+      depth += 1;
+    }
+    return depth;
+  });
+
+  /**
+   * PUBLIC: A PAGE THAT DOES NOT NAME ITSELF IS NAMED BY THE BAR FROM REST
+   * (§3.7: the photo's bar title is its date). The photo viewer has no
+   * large title — the picture is the page, its h2 for assistive tech
+   * alone (owner, 2026-09-17) — so nothing ever scrolls under the bar,
+   * and the compact title waited, blank, for a crossing that never came
+   * (wave D r3). The shell ORs this into `titleAlwaysVisible`, the DS's
+   * inline-title mode the ladder already takes; every other page keeps
+   * its large title and the scroll's collapse.
+   *
+   * THE WALLET IS ALWAYS TITLED TOO (revision 3 §5.3, R2-F): «Лоялност»
+   * puts the pass straight under the bar, its h2 visually hidden with the
+   * page's title id as the photo's is, so the bar names it from rest and
+   * nothing orange ever scrolls under a half-faded large title. Its body
+   * asks the sheet for the tight fade (`data-sheet-fade="tight"`), so the
+   * pass passes under a crisp edge.
+   */
+  readonly pageHasNoLargeTitle = computed(() => {
+    const kind = this.page()?.kind;
+    return kind === 'photo' || kind === 'clientLoyalty';
+  });
 
   /**
    * PUBLIC: the pushed page's own name, for the sheet shell's bar (owner,
@@ -1721,9 +1975,14 @@ export class StaffVisitEditor {
   readonly pageTitle = computed<string | null>(() => {
     const page = this.page();
     if (page === null) return null;
+    // THE CLIENT STACK'S NAMES are the card's (§2.1): the person as their
+    // profile names them once read, a module page's own name, the scope's
+    // or the family's title — each falling back to what is known before
+    // the card's words and data have loaded.
+    const store = this.cardStoreRef();
     switch (page.kind) {
       case 'client':
-        return this.currentClient()?.label ?? null;
+        return store?.displayName() ?? this.currentClient()?.label ?? null;
       case 'clientSearch':
         return this.rawCopy('staff.visit.addClient');
       case 'clientNew':
@@ -1735,26 +1994,61 @@ export class StaffVisitEditor {
       case 'scan':
         return this.rawCopy('staff.visit.scanTitle');
       case 'photo': {
-        // The moment, as Photos names it — the picture itself is the page.
+        // The day, as Photos names it — the picture itself is the page.
         const photo = this.currentPhoto();
         return photo === null
           ? this.rawCopy('staff.visit.photo')
-          : this.photoWhen(photo);
+          : this.photoTitle(photo);
       }
       case 'camera':
         return this.rawCopy('staff.visit.photoTake');
       case 'library':
         return this.rawCopy('staff.visit.photoSystem');
+      case 'clientLoyalty':
+        return (
+          store?.barTitle(page.kind, page.subjectId) ??
+          this.rawCopy('clientCard.loyalty.title')
+        );
+      // Revision 3's two leaves: the wallet's ledger and the records page
+      // (§5.3), named by the store's `barTitle` as the module pages are.
+      case 'clientLedger':
+        return (
+          store?.barTitle(page.kind, page.subjectId) ??
+          this.rawCopy('clientCard.ledgerPage.title')
+        );
+      case 'clientRecords':
+        return (
+          store?.barTitle(page.kind, page.subjectId) ??
+          this.rawCopy('clientCard.achievements.records')
+        );
+      case 'clientHistory':
+        return (
+          store?.barTitle(page.kind, page.subjectId) ??
+          this.rawCopy('clientCard.visits.title')
+        );
+      case 'clientAchievements':
+      case 'achievementCategory':
+      case 'achievementDetail':
+        return (
+          store?.barTitle(page.kind, page.subjectId) ??
+          this.rawCopy('clientCard.achievements.title')
+        );
     }
   });
 
   /**
    * The dock's ✓ on a page — the draft already holds the edits; back to the
    * ladder. On the discount page it stands while there is nothing to
-   * apply, on the service page while nothing is picked.
+   * apply, on the service page while nothing is picked. ANYWHERE IN THE
+   * CLIENT STACK it leaves the person altogether (§2.2): ‹ walks one step,
+   * ✓ goes back to the visit — two controls, two intents.
    */
   protected confirmPage(): void {
     const leaving = this.page()?.kind ?? null;
+    if (this.clientOfStack() !== null) {
+      this.popToLadder();
+      return;
+    }
     this.pop();
     // The add-client page's ✓ asks the party's next question at once.
     if (leaving === 'clientSearch') this.serveNext();
@@ -2248,6 +2542,20 @@ export class StaffVisitEditor {
     );
   });
 
+  /**
+   * THE PERSON WHOSE CARD IS OPEN: the nearest `client` page down the
+   * chain (§2.1) — the card's every page, and a discount or a past cut
+   * pushed from it, are about them. `null` off the client stack, and once
+   * the person has left the visit.
+   */
+  protected readonly clientOfStack = computed<DraftClient | null>(() => {
+    let page = this.page();
+    while (page !== null && page.kind !== 'client') page = page.returnTo;
+    if (page === null) return null;
+    const id = page.subjectId;
+    return this.draft().clients.find((client) => client.id === id) ?? null;
+  });
+
   /** Every barber this visit already knows about, the chair included. */
   protected readonly barberOptions = computed(() => {
     // THE ROSTER when it is bound — real ids, real portraits. The derived
@@ -2701,23 +3009,175 @@ export class StaffVisitEditor {
 
   /* ── Navigation ────────────────────────────────────────────────────── */
 
+  /**
+   * A PAGE, PUSHED (client-card-redesign §2.2). It remembers where it came
+   * from — the page under it and how far the sheet was scrolled — so ‹
+   * lands back exactly there; then it opens at its own top, the focus on
+   * its container. The ladder's pages sit one deep; only the client card's
+   * pages push from a page. A push that would go past `MAX_PAGE_DEPTH`
+   * REPLACES the top page instead, keeping its way back.
+   */
   protected push(
     kind: EditorPageKind,
     subjectId: string | null,
     originTestId: string | null,
+    arrival: PageArrival = 'container',
   ): void {
-    // Depth is exactly one: a push from a child would be a different screen,
-    // and this sheet is not the place for one.
-    if (this.page()) return;
+    const under = this.page();
+    if (under !== null && this.depth() >= MAX_PAGE_DEPTH) {
+      // The page it replaces is the one ‹ must land on the origin of.
+      this.replace(kind, subjectId, under.originTestId);
+      this.openAtTop(arrival);
+      return;
+    }
     this.query.set('');
     // A page re-opened must not remember the focus its last field had.
     this.searchFocused.set(false);
-    this.page.set({ kind, subjectId, originTestId });
+    this.page.set({
+      kind,
+      subjectId,
+      originTestId,
+      returnTo: under,
+      returnScrollTop: this.sheetScroller()?.scrollTop ?? 0,
+    });
     if (kind === 'clientSearch') this.clientsBrowsed.emit();
+    this.openAtTop(arrival);
+  }
+
+  /**
+   * The top page at its own top, the focus on its CONTAINER — never on its
+   * first control, so a price field cannot steal the keyboard on entry.
+   *
+   * A `section` arrival defers to the page: «Лоялност» opened from a tile
+   * scrolls its section under the bar and focuses the heading from its own
+   * render hook, which runs BEFORE this one (a child's hooks register as
+   * its view is refreshed, inside the sheet's). Taking the focus back to
+   * the container there left the heading unfocused (WP7 review, 2026-09-28).
+   * The container still catches the focus while the page has not landed —
+   * the loyalty still loading, or the section left out by its flag — and
+   * the page moves it on once it paints.
+   */
+  private openAtTop(arrival: PageArrival = 'container'): void {
     this.scrollPageToTop();
-    // Focus lands on the page CONTAINER, not on its first control, so a
-    // price field cannot steal the keyboard on entry.
-    this.focusLater('.staff-visit__page');
+    afterNextRender(
+      () => {
+        const container =
+          this.host.nativeElement.querySelector<HTMLElement>(
+            '.staff-visit__page',
+          );
+        if (container === null) return;
+        const active = container.ownerDocument.activeElement;
+        const landed =
+          arrival === 'section' &&
+          active !== container &&
+          container.contains(active);
+        if (!landed) container.focus({ preventScroll: true });
+      },
+      { injector: this.injector },
+    );
+  }
+
+  /**
+   * THE TOP PAGE, SWAPPED AT THE SAME DEPTH (§2.2): the new page inherits
+   * the replaced page's way back, so the chain under it survives — a
+   * `client → clientLoyalty → discount → scan` round trip comes back to
+   * `clientLoyalty`. The query, the search focus and a page's scratch are
+   * left alone: a replace continues the moment, it does not open a new one.
+   * The caller moves the focus.
+   */
+  private replace(
+    kind: EditorPageKind,
+    subjectId: string | null,
+    originTestId: string | null,
+  ): void {
+    const top = this.page();
+    this.page.set({
+      kind,
+      subjectId,
+      originTestId,
+      returnTo: top?.returnTo ?? null,
+      returnScrollTop: top?.returnScrollTop ?? 0,
+    });
+  }
+
+  /** The sheet's scroller — `ui-modal-sheet`'s own — or `null` outside one. */
+  private sheetScroller(): HTMLElement | null {
+    return this.host.nativeElement.closest<HTMLElement>('.modal-sheet__scroll');
+  }
+
+  /**
+   * LANDING BACK (§2.3): the page under goes up, and once it has rendered
+   * — a parent page draws at once from what it already holds, so the
+   * sheet is its full height again — the scroll it was left at is
+   * restored, and then the origin is focused without scrolling. Restoring
+   * before the render would clamp to the child's shorter height. A move
+   * made meanwhile wins (the party flow pushes its next question on the
+   * same tap): a landing on a page no longer up is dropped.
+   */
+  private land(
+    target: EditorPage | null,
+    scrollTop: number,
+    focusTestId: string | null,
+  ): void {
+    // The loyalty page's anchor is the ARRIVAL's; landing back on the page
+    // it must not scroll to its section and take the focus again.
+    if (target?.kind === 'clientLoyalty') this.loyaltyAnchor.set(null);
+    this.page.set(target);
+    afterNextRender(
+      () => {
+        if (this.page() !== target) return;
+        const scroller = this.sheetScroller();
+        if (scroller !== null) scroller.scrollTop = scrollTop;
+        if (focusTestId === null) return;
+        const root = this.host.nativeElement;
+        // An origin that is gone — a ticket the visit can no longer offer
+        // meanwhile — or one that cannot take the focus any more (the
+        // wallet's ticket, offered again as a static article once its
+        // grant came off the bill on the discount page, revision 3) leaves
+        // the focus to the page it stood on, never the document. (A reward
+        // ticket «Използвай» used is NOT gone: it stands stamped where it
+        // stood, and takes the focus itself.)
+        const found = root.querySelector<HTMLElement>(
+          `[data-testid="${focusTestId}"]`,
+        );
+        const origin =
+          found !== null && canTakeFocus(found)
+            ? found
+            : target === null
+              ? null
+              : root.querySelector<HTMLElement>('.staff-visit__page');
+        origin?.focus({ preventScroll: true });
+      },
+      { injector: this.injector },
+    );
+  }
+
+  /**
+   * What a page was in the middle of does not survive it: picks not
+   * seated, a code half-typed, a figure drafted, a kind picked. What is on
+   * the bill stays — it is the draft's.
+   */
+  private leavePage(page: EditorPage): void {
+    if (page.kind === 'service') this.servicePicks.set(new Map());
+    if (page.kind === 'discount') this.resetDiscountEntry();
+    if (page.kind === 'library') this.librarySelection.set(new Set());
+  }
+
+  /**
+   * ✓ ANYWHERE IN THE CLIENT STACK (§2.2): the whole chain unwinds, each
+   * page's scratch with it, and the ladder comes back scrolled where it
+   * was, the focus on the row that opened the person — or on `focusTestId`
+   * when that row has gone with them.
+   */
+  protected popToLadder(focusTestId?: string): void {
+    let page = this.page();
+    if (page === null) return;
+    let root = page;
+    for (; page !== null; page = page.returnTo) {
+      this.leavePage(page);
+      root = page;
+    }
+    this.land(null, root.returnScrollTop, focusTestId ?? root.originTestId);
   }
 
   /**
@@ -2737,35 +3197,29 @@ export class StaffVisitEditor {
     }
   }
 
-  /** PUBLIC: the sheet shell's header back button calls it. */
+  /**
+   * PUBLIC: the sheet shell's header back button calls it. One step down
+   * the chain — to the page this one was pushed from, or the ladder —
+   * with the scroll and the focus landed back where they were.
+   */
   pop(): void {
     const page = this.page();
-    // The new-client form was pushed FROM the search; back returns there,
+    if (page === null) return;
+    // The new-client form REPLACED the search; back replaces it again,
     // with what was typed still in the field.
-    if (page?.kind === 'clientNew') {
-      this.page.set({
-        kind: 'clientSearch',
-        subjectId: null,
-        originTestId: 'staff-visit-add-client',
-      });
+    if (page.kind === 'clientNew') {
+      this.replace('clientSearch', null, 'staff-visit-add-client');
       this.focusLater('[data-testid="staff-visit-client-query"]');
       return;
     }
-    if (page?.kind === 'scan') {
+    if (page.kind === 'scan') {
       // Back to the discount page the camera stood in for — its field
       // focused again, with nothing lost.
       this.returnToDiscountPage('[data-testid="staff-visit-discount-code"]');
       return;
     }
-    // What a page was in the middle of does not survive it: picks not
-    // seated, a code half-typed, a figure drafted, a kind picked. What is
-    // on the bill stays — it is the draft's.
-    if (page?.kind === 'service') this.servicePicks.set(new Map());
-    if (page?.kind === 'discount') this.resetDiscountEntry();
-    if (page?.kind === 'library') this.librarySelection.set(new Set());
-    const origin = page?.originTestId ?? null;
-    this.page.set(null);
-    if (origin) this.focusLater(`[data-testid="${origin}"]`);
+    this.leavePage(page);
+    this.land(page.returnTo, page.returnScrollTop, page.originTestId);
   }
 
   /**
@@ -3677,13 +4131,9 @@ export class StaffVisitEditor {
       email: parsed.email,
     });
     this.newClientCountry.set(this.deployment.defaultCountry);
-    // A push from the search page — the one place this sheet goes two
-    // deep, and `pop` knows the way back to the search.
-    this.page.set({
-      kind: 'clientNew',
-      subjectId: null,
-      originTestId: 'staff-visit-add-client',
-    });
+    // The form REPLACES the search at the same depth — the query stays
+    // typed — and `pop` replaces it back.
+    this.replace('clientNew', null, 'staff-visit-add-client');
     this.focusLater('[data-testid="staff-visit-new-name"]');
   }
 
@@ -4288,13 +4738,16 @@ export class StaffVisitEditor {
     this.linesOpen.set(false);
   }
 
-  /** The page back in the camera's place, everything as it was, and the field to focus. */
+  /**
+   * The page back in the camera's place — a replace, so the chain under it
+   * (a client card's loyalty page) survives — everything as it was, the
+   * discount page's own origin kept (the scanner held it), and the field to
+   * focus.
+   */
   private returnToDiscountPage(focus: string): void {
-    this.page.set({
-      kind: 'discount',
-      subjectId: null,
-      originTestId: 'staff-visit-discount-row',
-    });
+    const scan = this.page();
+    const origin = scan?.kind === 'scan' ? scan.subjectId : null;
+    this.replace('discount', null, origin ?? 'staff-visit-discount-row');
     this.focusLater(focus);
   }
 
@@ -4307,7 +4760,7 @@ export class StaffVisitEditor {
    * BLOCKED by what is on the bill — an exclusive offer beside anything,
    * any offer beside an exclusive one — muted with the "cannot combine"
    * glyph, the way an unusable service card is (HIG). The card reads the
-   * offer's RULE as its figure («−10%», «−5,00 €»), never what it would
+   * offer's RULE as its figure («−10 %», «−5,00 €»), never what it would
    * take off this bill: two offers previewed on the same bill do not add
    * up once stacked, and a figure that changes under the reader is a
    * figure that lies (owner: "confusion = bad UX"). A code the client
@@ -4332,7 +4785,7 @@ export class StaffVisitEditor {
           code: promo.code,
           label: promo.label,
           exclusive: promo.exclusive,
-          value: this.valueLabel(promo.value),
+          value: this.couponValue(promo.label, promo.value),
           line: this.rawCopy(
             promo.exclusive ? 'staff.visit.alone' : 'staff.visit.stacks',
           ),
@@ -4342,7 +4795,7 @@ export class StaffVisitEditor {
       });
   });
 
-  /** An offer's spoken name: «Първо посещение, FIRST10, −10%». */
+  /** An offer's spoken name: «Първо посещение, FIRST10, −10 %». */
   protected offerName(offer: OfferChoice): string {
     return [offer.label, offer.code, offer.value]
       .filter((part): part is string => part !== null)
@@ -4392,15 +4845,74 @@ export class StaffVisitEditor {
    */
   /* ── The shop's photos of the visit ─────────────────────────────────── */
 
-  /** The photo whose page is up, or `null` — gone the moment the live read drops it. */
+  /**
+   * The photo whose page is up, or `null` — gone the moment the live read
+   * drops it. This visit's own first; else a PAST CUT the client card
+   * opened (§3.7), which the card holds and this sheet draws as its own.
+   */
   protected readonly currentPhoto = computed<VisitEditorPhoto | null>(() => {
     const page = this.page();
     if (page?.kind !== 'photo') return null;
     return (
       this.vm().photos?.find((photo) => photo.photoId === page.subjectId) ??
-      null
+      this.pastCut(page.subjectId)
     );
   });
+
+  /**
+   * A past cut as this sheet's photo (§3.7): the chair named through the
+   * card's catalogue, the person as the card names them, a picture the
+   * shop took — never one of the gallery's.
+   */
+  private pastCut(photoId: string | null): VisitEditorPhoto | null {
+    const store = this.cardStoreRef();
+    const cut = photoId === null ? null : (store?.photoById(photoId) ?? null);
+    if (store === null || cut === null) return null;
+    return {
+      photoId: cut.photoId,
+      url: cut.url,
+      takenAtIso: cut.takenAtIso,
+      barberId: cut.barberId,
+      barberName: this.cardCatalog().barberName(cut.barberId),
+      clientLabel: store.displayName() ?? this.clientOfStack()?.label ?? '',
+      // The face the card's head just showed, so the push keeps the person.
+      clientAvatarSrc:
+        store.head().avatarSrc ??
+        this.faceOfPicked(this.clientOfStack()?.id ?? null),
+      width: cut.width,
+      height: cut.height,
+      origin: 'shot',
+      label: null,
+    };
+  }
+
+  /**
+   * A PAST CUT IS READ-ONLY (§3.7): it belongs to its own visit, so its
+   * page offers no «Изтрий снимката» — the dock's ✓ goes back to the
+   * visit, as on every page of the client stack.
+   */
+  protected readonly photoReadOnly = computed(() => {
+    const page = this.page();
+    return (
+      page?.kind === 'photo' &&
+      !(this.vm().photos ?? []).some(
+        (photo) => photo.photoId === page.subjectId,
+      )
+    );
+  });
+
+  /**
+   * The photo page's name: the DAY it was taken, «4.09» (R59) — a past cut
+   * as the card words it, this visit's picture in the same form — while
+   * the «Снимано» row under it says only the time the bar does not
+   * (wave D r4: the whole moment in both printed the date twice).
+   */
+  protected photoTitle(photo: VisitEditorPhoto): string {
+    return this.photoReadOnly()
+      ? (this.cardStoreRef()?.barTitle('photo', photo.photoId) ??
+          this.photoDay(photo))
+      : this.photoDay(photo);
+  }
 
   /** A thumbnail's tap: the picture as a page, the facts in rows under it, «Изтрий» in the dock. */
   protected openPhoto(photoId: string): void {
@@ -4428,6 +4940,30 @@ export class StaffVisitEditor {
     return photo.barberName === null
       ? null
       : { label: photo.barberName, avatarSrc: null, tone: null };
+  }
+
+  /**
+   * THE PERSON ROW'S FACE, as the chair row keeps its portrait (review,
+   * 2026-09-28: the glance drew Георги's photo, and one push later his row
+   * on the photo page drew «ГП»). A past cut brings the card head's; this
+   * visit's own pictures take the picked person's — the one the photo
+   * names — and initials only when nobody has a face to give.
+   */
+  protected photoClientFace(photo: VisitEditorPhoto): string | null {
+    if (photo.clientAvatarSrc != null) return photo.clientAvatarSrc;
+    const named = this.pickedClients().find(
+      (client) => client.label === photo.clientLabel,
+    );
+    return named?.avatarSrc ?? null;
+  }
+
+  /** A picked person's face by their id, filled as the picked group fills it. */
+  private faceOfPicked(clientId: string | null): string | null {
+    if (clientId === null) return null;
+    return (
+      this.pickedClients().find((client) => client.id === clientId)
+        ?.avatarSrc ?? null
+    );
   }
 
   /** «Добави снимка» opens its doors — the camera, the phone's own pictures, the shop's. */
@@ -4564,21 +5100,50 @@ export class StaffVisitEditor {
   /** The dock's «Изтрий снимката»: said upward by id; the page is gone at once. */
   protected removePhoto(): void {
     const photo = this.currentPhoto();
-    if (photo === null) return;
+    if (photo === null || this.photoReadOnly()) return;
     this.photoRemoved.emit(photo.photoId);
     this.pop();
   }
 
+  // Every word about a picture's moment reads the shop's own clock, so the
+  // bar's day and the row's time can never straddle two midnights.
   private readonly photoWhenFormat = new Intl.DateTimeFormat('bg-BG', {
+    timeZone: SHOP_ZONE,
     day: 'numeric',
     month: 'short',
     hour: '2-digit',
     minute: '2-digit',
   });
 
-  /** «17 септ., 16:21» — when the shutter was pressed, in the shop's own clock. */
+  private readonly photoTimeFormat = new Intl.DateTimeFormat('bg-BG', {
+    timeZone: SHOP_ZONE,
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+
+  /** «4.09, 16:21» — the whole moment, for the names assistive tech hears (a thumbnail's, the picture's alt). */
   protected photoWhen(photo: VisitEditorPhoto): string {
     return this.photoWhenFormat.format(new Date(photo.takenAtIso));
+  }
+
+  /** «4.09» (R59; «6.03.2025 г.» outside this year) — the photo page's bar title. */
+  protected photoDay(photo: VisitEditorPhoto): string {
+    const at = new Date(photo.takenAtIso);
+    const year = new Intl.DateTimeFormat('en-CA', {
+      timeZone: SHOP_ZONE,
+      year: 'numeric',
+    }).format(at);
+    return new Intl.DateTimeFormat('bg-BG', {
+      timeZone: SHOP_ZONE,
+      day: 'numeric',
+      month: '2-digit',
+      ...(year === this.vm().todayKey.slice(0, 4) ? {} : { year: 'numeric' }),
+    }).format(at);
+  }
+
+  /** «16:21» — the «Снимано» row: what the bar's day leaves unsaid. */
+  protected photoTime(photo: VisitEditorPhoto): string {
+    return this.photoTimeFormat.format(new Date(photo.takenAtIso));
   }
 
   /** The picture's own shape for its page; a photo that never said is drawn 4:3. */
@@ -4592,15 +5157,17 @@ export class StaffVisitEditor {
   }
 
   protected openScanner(): void {
-    // The camera takes the discount page's place — nothing of the entry is
-    // cleared; `pop` brings the page back.
-    this.page.set({
-      kind: 'scan',
-      subjectId: null,
-      originTestId: 'staff-visit-discount-scan',
-    });
-    this.scrollPageToTop();
-    this.focusLater('.staff-visit__page');
+    // The camera takes the discount page's place — a replace, nothing of
+    // the entry cleared; `pop` brings the page back. The scanner holds the
+    // discount page's own origin, so the page it restores still knows
+    // where ‹ goes after it.
+    const discount = this.page();
+    this.replace(
+      'scan',
+      discount?.originTestId ?? null,
+      'staff-visit-discount-scan',
+    );
+    this.openAtTop();
   }
 
   /** A code the camera read: back to the field with it, asked at once. */
@@ -4677,7 +5244,7 @@ export class StaffVisitEditor {
   /**
    * THE CARD'S PROMISE on the discount sheet: what «Приложи» would put on
    * the bill from the field beneath the kind, in its own words — «Приложи GIFT2025»,
-   * «Приложи −10%», «Приложи −5,00 €» — or nothing, in which case the foot
+   * «Приложи −10 %», «Приложи −5,00 €» — or nothing, in which case the foot
    * keeps its «Готово» and the card is only being read. A code being checked
    * holds the button with «Проверявам…»; a figure never exceeds what the
    * page can take, since it snaps to it as it is written. The cards need
@@ -4708,7 +5275,7 @@ export class StaffVisitEditor {
         if (read === null) return null;
         const what =
           read.kind === 'percent'
-            ? `−${read.percent}%`
+            ? percentOffLabel(read.percent)
             : `−${this.moneyLabel(read.minor)}`;
         return { label: apply(what), disabled: false };
       }
@@ -4806,11 +5373,12 @@ export class StaffVisitEditor {
   /** The quarters, named. */
   protected readonly percentMarks: readonly UiSliderMark[] = [
     0, 25, 50, 75, 100,
-  ].map((value) => ({ value, label: `${value}%` }));
+  ].map((value) => ({ value, label: percentLabel(value) }));
 
-  /** What a reader hears for the thumb: «−15% · 23,80 €» — the share, and what the dock says is due. */
+  /** What a reader hears for the thumb: «−15 % · 23,80 €» — the share, and what the dock says is due. */
   protected readonly percentValueText = computed(
-    () => `−${this.percentSliderValue()}% · ${this.dockTotalLabel()}`,
+    () =>
+      `${percentOffLabel(this.percentSliderValue())} · ${this.dockTotalLabel()}`,
   );
 
   /** A move of the thumb writes the figure; the floor writes a zero, which promises nothing. */
@@ -5042,7 +5610,7 @@ export class StaffVisitEditor {
   protected readonly discountLines = computed(() =>
     this.bill().lines.map((line) => {
       const title = this.discountTitle(line.discount);
-      const value = this.valueLabel(line.discount.value);
+      const value = this.couponValue(title, line.discount.value);
       const took = `−${this.moneyLabel(line.amount)}`;
       const glyph: UiIconName =
         line.discount.source === 'manual'
@@ -5061,7 +5629,7 @@ export class StaffVisitEditor {
         glyph,
         value,
         detail,
-        /** The ticket's spoken name: «Първо посещение, FIRST10, −10%, −2,80 €». */
+        /** The ticket's spoken name: «Първо посещение, FIRST10, −10 %, −2,80 €». */
         name: [title, code, value, detail]
           .filter((part): part is string => part !== null)
           .join(', '),
@@ -5128,16 +5696,45 @@ export class StaffVisitEditor {
       : formatMoney(money.value, this.transloco.getActiveLang());
   }
 
-  /** What a value does, as a word: `−10%`, `−5,00 €`, «Безплатно». */
+  /**
+   * What a value does — the RULE: `−10 %`, `−5,00 €`, «Безплатна услуга».
+   * The rule, never an echo of the coupon's name above it: «Безплатно
+   * подстригване» over «Безплатно» said one word twice (WP7 review).
+   */
   private valueLabel(value: VisitEditorDiscountValue): string {
     switch (value.kind) {
       case 'percent_off':
-        return `−${value.percent}%`;
+        return percentOffLabel(value.percent);
       case 'fixed_amount':
         return `−${this.moneyLabel(value.amountMinorUnits)}`;
       case 'free_service':
         return this.rawCopy('staff.visit.discountFree');
     }
+  }
+
+  /**
+   * THE COUPON'S VALUE LINE — one grammar for every ticket that shows a
+   * coupon: the discount page's offers and applied lines, the client
+   * card's ready tickets (E, LD). The rule, as `valueLabel` words it —
+   * unless the coupon's NAME already says it, and then nothing: «Безплатно
+   * подстригване» over «Безплатна услуга» told one fact twice, in the
+   * ticket's loudest line (WP7 review r6). Only a free service can: a
+   * percentage or a sum is a figure the name does not carry. Never the
+   * saving on this bill in its place — a free service zeroes whatever is
+   * left, so its sum is a bill preview, and an offer shows its rule, never
+   * a preview (owner, 2026-09-16). A name that does not say it («Пето
+   * подстригване») keeps «Безплатна услуга»; an applied line's chip still
+   * says what it took («−17,50 €»).
+   */
+  private couponValue(
+    name: string,
+    value: VisitEditorDiscountValue,
+  ): string | null {
+    const rule = this.valueLabel(value);
+    return value.kind === 'free_service' &&
+      nameSaysRule(name, rule, this.transloco.getActiveLang())
+      ? null
+      : rule;
   }
 
   /** The line's title: the coupon's name, or the row's own word for a manual figure. */
@@ -5164,7 +5761,7 @@ export class StaffVisitEditor {
         code: null,
         label: grant.label,
         exclusive: grant.exclusive,
-        value: this.valueLabel(grant.value),
+        value: this.couponValue(grant.label, grant.value),
         // The card's chip: whether it stacks, in words.
         line: this.rawCopy(
           grant.exclusive ? 'staff.visit.alone' : 'staff.visit.stacks',
@@ -5251,7 +5848,9 @@ export class StaffVisitEditor {
       const name =
         line !== undefined
           ? (line.code ??
-            (line.glyph === 'promo.coupon' ? line.title : line.value))
+            (line.glyph === 'promo.coupon'
+              ? line.title
+              : (line.value ?? line.title)))
           : (vouchers[0]?.voucher.code ?? '');
       return { label: `${name} (${amount})`, applied: true };
     }
@@ -5699,7 +6298,680 @@ export class StaffVisitEditor {
   ]);
 
   protected readonly snapMinutes = GRAIN_MINUTES;
+
+  /* ── THE CLIENT CARD (client-card-redesign §2, §3) ─────────────────────
+   *
+   * With `client.profile` on, a person's page is `lib-client-card` and
+   * its modules push the card's pages — «Лоялност», «Постижения», a scope,
+   * a family, «Посещения», a past cut — four deep at most, each landing
+   * back where it came from. The card computes and writes nothing: every
+   * act it offers is an output this sheet turns into a push, a draft
+   * change or the way back to the visit. Off, the person's page is the
+   * stub it always was. */
+
+  /** `client.profile`, read once (`config/feature-flags.json`). */
+  protected readonly profileOn =
+    inject(FEATURE_FLAGS).isEnabled('client.profile');
+
+  /** The card's store once a person's page has asked for it (`ensureCardStore`). */
+  private readonly cardStoreRef = signal<ClientCardStore | null>(null);
+
+  /**
+   * THE STORE, BUILT WHERE NOTHING IS BEING READ: its constructor
+   * subscribes (`toSignal`), which Angular refuses inside a `computed` or
+   * a template, so the tap that opens a person constructs it and
+   * everything that renders reads `cardStoreRef`.
+   */
+  private ensureCardStore(): ClientCardStore {
+    const known = untracked(this.cardStoreRef);
+    if (known !== null) return known;
+    const store = untracked(() => this.injector.get(ClientCardStore));
+    this.cardStoreRef.set(store);
+    return store;
+  }
+
+  /**
+   * The section «Лоялност» opens on — the tile's; `null` is the page's top.
+   * Typed `WalletAnchor` (G1-4): the wallet's own two sections, `wallet`
+   * and `status`, beside the built three. The glance emits `null` alone
+   * today (the wallet at its top, §2.1.4); the width is the contract's.
+   */
+  protected readonly loyaltyAnchor = signal<WalletAnchor | null>(null);
+
+  /** The scope an `achievementCategory` page shows, decoded once per page. */
+  protected readonly currentScope = computed<AchievementScope | null>(() => {
+    const page = this.page();
+    return page?.kind === 'achievementCategory' && page.subjectId !== null
+      ? achievementScopeOf(page.subjectId)
+      : null;
+  });
+
+  /**
+   * THE CATALOGUE THIS SHEET ALREADY HOLDS, as the card reads one — the
+   * fallback while the owner binds none: every name the catalogue, the
+   * roster and the shops give, no art (the card then draws monograms and
+   * emblems). Its lookups read the inputs, so a late catalogue re-words
+   * the card without a re-open.
+   */
+  private readonly heldCatalog: ClientCardCatalog = (() => {
+    const services = this.uiServices;
+    const barbers = this.uiBarbers;
+    const shops = this.uiShops;
+    return {
+      serviceName: (id: string) => {
+        const option = services().find((entry) => entry.serviceId === id);
+        return option === undefined
+          ? null
+          : (option.serviceLabel ?? option.label);
+      },
+      serviceCoverSrc: () => null,
+      serviceCategory: () => null,
+      barberName: (id: string) =>
+        barbers().find((barber) => barber.id === id)?.label ?? null,
+      barberAvatarSrc: (id: string) =>
+        barbers().find((barber) => barber.id === id)?.avatarSrc ?? null,
+      locationName: (id: string) =>
+        shops().find((shop) => shop.id === id)?.label ?? null,
+      locationCoverSrc: () => null,
+      get locationCount() {
+        return shops().length;
+      },
+    };
+  })();
+
+  /** The catalogue the card is handed: the owner's, else the one this sheet holds. */
+  protected readonly cardCatalog = computed<ClientCardCatalog>(
+    () => this.uiClientCardCatalog() ?? this.heldCatalog,
+  );
+
+  /** A catalogue object's identity, for the opening's key. */
+  private readonly catalogIds = new WeakMap<ClientCardCatalog, number>();
+  private catalogsSeen = 0;
+
+  private catalogIdOf(catalog: ClientCardCatalog): number {
+    const known = this.catalogIds.get(catalog);
+    if (known !== undefined) return known;
+    this.catalogsSeen += 1;
+    this.catalogIds.set(catalog, this.catalogsSeen);
+    return this.catalogsSeen;
+  }
+
+  /** The person as the card is handed them (§5.2.1): the seat's snapshot. */
+  private cardSubjectOf(client: DraftClient): ClientCardSubject {
+    return {
+      id: client.id,
+      userId: accountIdOf(client.id),
+      label: client.label,
+      phone: client.phone,
+      phoneHref: client.phoneHref,
+      email: client.email ?? null,
+      avatarSrc: client.avatarSrc ?? null,
+    };
+  }
+
+  /** Whether this person booked the visit — the only one its held rewards are for (§3.1.3). */
+  private isOwnerOf(client: DraftClient): boolean {
+    const account = accountIdOf(client.id);
+    return account !== null && account === this.uiOwnerUserId();
+  }
+
+  /**
+   * THE VISIT ON SCREEN as the card reads it (§5.2.1): the draft's legs
+   * for THIS person (the whole visit for a party of one), each starting at
+   * the drafted start in the shop's zone; the drafted shop; the owner's
+   * held rewards, those not yet on this bill apart from those already on
+   * it, worded by this sheet's own discount formatter, and none for
+   * anybody else.
+   */
+  private cardContextOf(client: DraftClient): ClientCardContext {
+    const vm = this.vm();
+    const draft = this.draft();
+    const partyOfOne = draft.clients.length <= 1;
+    const start = ZonedDateTime.fromISO(
+      `${draft.dayKey}T${clockLabel(draft.startMinute)}:00`,
+      SHOP_ZONE,
+    );
+    const startsAtIso = start.isSuccess() ? start.value.toISO() : '';
+    const legs: ClientCardLeg[] = draft.legs
+      .filter((leg) => partyOfOne || leg.clientId === client.id)
+      .map((leg) => ({
+        serviceId: leg.serviceId,
+        variantId: leg.variantId,
+        minutes: leg.minutes,
+        barberId: leg.barberId === '' ? null : leg.barberId,
+        startsAtIso,
+      }));
+    const isOwner = this.isOwnerOf(client);
+    // A reward READY TO USE is one not on this bill yet (`grants`); once
+    // the ticket's «Използвай» (or the discount page) has put it there it
+    // is `grantsOnBill`, which the card draws STAMPED where the ticket
+    // stood, «Премахни» where «Използвай» stood (WP7 review r6).
+    const onBill = new Set(
+      draft.discounts
+        .filter((discount) => discount.source === 'grant')
+        .map((discount) => discount.grantId),
+    );
+    const held: ClientCardGrant[] = isOwner
+      ? this.uiGrants().map((grant) => ({
+          grantId: grant.grantId,
+          title: grant.label,
+          valueLabel: this.couponValue(grant.label, grant.value),
+          // When it lapses, as the store read it off the grant: the
+          // ticket's «до 28.10», and nothing for one that never does.
+          expiresOn: grant.expiresOn ?? null,
+          // The coupon's moment, when the owner knows it (revision 3 §5.4):
+          // the card heads a birthday gift with its band.
+          occasion: grant.occasion ?? null,
+        }))
+      : [];
+    const grants = held.filter((grant) => !onBill.has(grant.grantId));
+    // Still in hand until the visit saves: the card's points tile never
+    // names one as what the points are «enough for» (DV5, wave D r6).
+    const grantsOnBill = held.filter((grant) => onBill.has(grant.grantId));
+    return {
+      appointmentId: vm.appointmentId === '' ? null : vm.appointmentId,
+      viewer: this.uiViewer() ?? { uid: '', roles: [] },
+      isOwner,
+      settled: this.settled(),
+      // Only a gone visit locks what the card offers (the reward, the
+      // person's removal, «Повтори»): a finished one stays correctable.
+      gone: this.gone(),
+      partyOfOne,
+      legs,
+      locationId: draft.locationId,
+      grants,
+      grantsOnBill,
+      catalog: this.cardCatalog(),
+    };
+  }
+
+  /**
+   * WHAT THE CARD IS OPENED WITH, keyed: the VM is a new object every
+   * minute (the now-line), and a new object saying the same thing is not a
+   * new card — only a change the card would show (the grants landing, a
+   * face, the catalogue) re-opens it, which refreshes without skeletons.
+   */
+  private readonly cardOpening = computed<{
+    readonly subject: ClientCardSubject;
+    readonly context: ClientCardContext;
+    readonly key: string;
+  } | null>(
+    () => {
+      if (!this.profileOn) return null;
+      const client = this.clientOfStack();
+      if (client === null) return null;
+      const subject = this.cardSubjectOf(client);
+      const context = this.cardContextOf(client);
+      const key = JSON.stringify([
+        subject,
+        { ...context, catalog: this.catalogIdOf(context.catalog) },
+      ]);
+      return { subject, context, key };
+    },
+    { equal: (a, b) => a?.key === b?.key },
+  );
+
+  /** The opening the store last took; cleared when the person's pages are left. */
+  private openedCardKey: string | null = null;
+
+  /** The card follows what it is about while its pages are up. */
+  protected readonly syncCardOnChange = effect(() => {
+    const opening = this.cardOpening();
+    untracked(() => {
+      if (opening === null) {
+        // Off the stack: the next visit to the person reads them afresh.
+        this.openedCardKey = null;
+        return;
+      }
+      this.openCard(opening);
+    });
+  });
+
+  private openCard(opening: {
+    readonly subject: ClientCardSubject;
+    readonly context: ClientCardContext;
+    readonly key: string;
+  }): void {
+    if (opening.key === this.openedCardKey) return;
+    this.openedCardKey = opening.key;
+    this.ensureCardStore().open(opening.subject, opening.context);
+  }
+
+  /**
+   * A PERSON'S ROW: their page — the client card with `client.profile` on,
+   * opened in the same tap so its head paints from the seat at once (S1).
+   */
+  protected openClient(clientId: string): void {
+    if (this.profileOn) this.ensureCardStore();
+    this.push('client', clientId, `staff-visit-client-row-${clientId}`);
+    const opening = untracked(this.cardOpening);
+    if (opening !== null) this.openCard(opening);
+  }
+
+  /**
+   * THE ELEMENT A PRESS LANDED ON — the origin a card page's push
+   * remembers, so ‹ focuses the very tile, medal or row that opened it.
+   * The card's outputs carry only what to open (§5.2.2), so the sheet reads
+   * the press itself, in the capture phase, before any output fires.
+   */
+  private pressedTestId: string | null = null;
+
+  private listenForPresses(): void {
+    const host = this.host.nativeElement;
+    const remember = (event: Event): void => {
+      const target = event.target instanceof Element ? event.target : null;
+      const control = target?.closest('button, a, [role="button"]') ?? target;
+      this.pressedTestId =
+        control?.closest('[data-testid]')?.getAttribute('data-testid') ?? null;
+    };
+    host.addEventListener('click', remember, true);
+    this.destroyRef.onDestroy(() =>
+      host.removeEventListener('click', remember, true),
+    );
+  }
+
+  /** The press's origin, once — else the one the design names for that act. */
+  private originOf(fallback: string | null): string | null {
+    const pressed = this.pressedTestId;
+    this.pressedTestId = null;
+    return pressed ?? fallback;
+  }
+
+  /**
+   * The glance's loyalty card opens «Лоялност» at its top (`null`); an
+   * anchor — a section's name, `WalletAnchor` — lands the wallet on that
+   * section, the heading focused by the page itself.
+   */
+  protected openLoyalty(anchor: WalletAnchor | null): void {
+    const client = this.clientOfStack();
+    if (client === null) return;
+    this.loyaltyAnchor.set(anchor);
+    const tile =
+      anchor === null
+        ? 'client-loyalty-all'
+        : `client-loyalty-${anchor === 'catalog' ? 'points' : anchor}`;
+    // A tile's push lands on its section: the page focuses the heading.
+    this.push(
+      'clientLoyalty',
+      client.id,
+      this.originOf(tile),
+      anchor === null ? 'container' : 'section',
+    );
+  }
+
+  /**
+   * «34 ›»: the achievements collection, WHOLE — the glance's count is the
+   * collection's, so a fresh entry opens on «Всички», not on a chip a
+   * medal's page may have left behind (revision 3 §2.3.2: the chip is the
+   * store's and survives the page; ‹ from a medal still returns to it).
+   */
+  protected openAchievements(): void {
+    const client = this.clientOfStack();
+    if (client === null) return;
+    this.ensureCardStore().setMedalsChip('all');
+    this.push(
+      'clientAchievements',
+      client.id,
+      this.originOf('client-achievements-all'),
+    );
+  }
+
+  /** «24 ›»: the history. */
+  protected openHistory(): void {
+    const client = this.clientOfStack();
+    if (client === null) return;
+    this.push('clientHistory', client.id, this.originOf('client-visits-all'));
+  }
+
+  /**
+   * «РЕКОРДИ» (revision 3 §5.2): the glance's records line pushes the page
+   * two deep; «Постижения»'s «Всички ›» and its record cards push it three.
+   * The origin is the press's own, else the one the design names for the
+   * page up — the glance's line, or the collection's action.
+   */
+  protected openRecords(): void {
+    const client = this.clientOfStack();
+    if (client === null) return;
+    const fromGlance = this.page()?.kind === 'client';
+    this.push(
+      'clientRecords',
+      client.id,
+      this.originOf(
+        fromGlance ? 'client-records-line' : 'achievements-records-all',
+      ),
+    );
+  }
+
+  /**
+   * «ИСТОРИЯ» — the wallet's disc — and «Всички ›» on its feed (§5.2): the
+   * ledger «Движение», three deep under «Лоялност», a leaf.
+   */
+  protected openLedger(): void {
+    const client = this.clientOfStack();
+    if (client === null) return;
+    this.push(
+      'clientLedger',
+      client.id,
+      this.originOf('rewards-action-history'),
+    );
+  }
+
+  /**
+   * «КОД» on the wallet (§5.2; «Използвай» with several tickets takes the
+   * same road): the discount page, clean — nothing drafted, nothing
+   * applied — whose coupons are exactly the owner's; the code field is its
+   * first control and the scanner one tap from it. The focus arrives on
+   * the container, as on every page (no control is ever auto-focused).
+   * Only ever the booker's card: a companion's rewards cannot be spent on
+   * this visit.
+   */
+  protected openCode(): void {
+    const client = this.clientOfStack();
+    if (client === null || !this.isOwnerOf(client)) return;
+    this.resetDiscountEntry();
+    this.push('discount', null, this.originOf('rewards-action-code'));
+  }
+
+  /**
+   * A MEDAL'S CATEGORY (§5.2): «Постижения» opened on that chip. The
+   * store's chip is set BEFORE the push, so the page reads it as it is
+   * built and lands its chip band under the bar (its own render hook); at
+   * the depth cap the stack's own rule replaces the family's page, the way
+   * back kept.
+   */
+  protected openCategory(categoryId: string): void {
+    const client = this.clientOfStack();
+    if (client === null) return;
+    this.ensureCardStore().setMedalsChip(categoryId);
+    this.push('clientAchievements', client.id, this.originOf(null));
+  }
+
+  /** A medal — the glance's strip, a rail, a shelf, a scope's grid — pushes its family. */
+  protected openMedal(seriesId: string): void {
+    const fromGlance = this.page()?.kind === 'client';
+    this.push(
+      'achievementDetail',
+      seriesId,
+      this.originOf(fromGlance ? `client-medal-${seriesId}` : null),
+    );
+  }
+
+  /**
+   * A RELATED MEDAL on a family's page REPLACES it (§2.1): same depth, same
+   * way back — ‹ still lands on the tile that opened the first family.
+   */
+  protected replaceMedal(seriesId: string): void {
+    const top = this.page();
+    this.pressedTestId = null;
+    this.replace('achievementDetail', seriesId, top?.originTestId ?? null);
+    this.openAtTop();
+  }
+
+  /** A category, a season, an event, the archive or a day: its scope page. */
+  protected openScope(scope: AchievementScope): void {
+    this.push(
+      'achievementCategory',
+      achievementScopeKey(scope),
+      this.originOf(null),
+    );
+  }
+
+  /** A past cut — the rail's, the featured visit's thumbs — on the photo page, read-only (§3.7). */
+  protected openPastCut(photoId: string): void {
+    this.push('photo', photoId, this.originOf(`client-photo-${photoId}`));
+  }
+
+  /**
+   * THE READY TICKET — the glance's, or «Лоялност»'s — does what it says:
+   * «Използвай» puts that grant on the bill through the discount page's
+   * own card path (`applyOffer`: a grant the bill cannot take beside what
+   * stands on it is refused, and the page it opens says why), and then
+   * opens that page, whose coupons are exactly the owner's (§3.1.3), with
+   * the grant under «Приложени» and its card stamped, «Премахни» where
+   * the call stood. The dock's ✓ goes back to the visit; ‹ to the card,
+   * where the same ticket STANDS STAMPED where it stood, «Премахни» where
+   * «Използвай» stood, and takes the focus (WP7 review r6: it used to
+   * vanish, the layout shifting under the restored scroll). The tap used
+   * to open the page only, which then asked «Използвай» again over
+   * «Приложени · Няма» (WP7 review r5). Only ever the booker's card: a
+   * companion's rewards cannot be spent on this visit.
+   */
+  protected openReward(grantId: string): void {
+    const client = this.clientOfStack();
+    if (client === null || !this.isOwnerOf(client)) return;
+    const fallback = this.rewardTicket(grantId);
+    this.resetDiscountEntry();
+    const offer = this.grantChoices().find((choice) => choice.id === grantId);
+    if (offer !== undefined) this.applyOffer(offer);
+    // On the wallet the press is the «Използвай» DISC (revision 3 §2.2.3),
+    // which gives way once the ticket is on the bill: ‹ lands on the
+    // stamped ticket itself, where the glance's own press already is.
+    const fromWallet = this.page()?.kind === 'clientLoyalty';
+    if (fromWallet) this.pressedTestId = null;
+    this.push('discount', null, this.originOf(fallback));
+  }
+
+  /**
+   * AN APPLIED TICKET'S «ПРЕМАХНИ» — the glance's or «Лоялност»'s: the
+   * discount page's own way off (`removeDiscount` on the grant's line, the
+   * page's card path), and the ticket, offered again where it stood, keeps
+   * the focus — the button the press was on is gone with the stamp. Only
+   * ever the booker's card.
+   */
+  protected removeReward(grantId: string): void {
+    const client = this.clientOfStack();
+    if (client === null || !this.isOwnerOf(client)) return;
+    // The press was the act, not a push: no origin to remember.
+    this.pressedTestId = null;
+    const line = this.draft().discounts.find(
+      (discount) => discount.source === 'grant' && discount.grantId === grantId,
+    );
+    if (line === undefined) return;
+    this.removeDiscount(discountKey(line));
+    // The glance offers the ticket again where it stood, focused. The
+    // wallet's offered ticket is static (revision 3 §2.2.4): the verb that
+    // comes back is the «Използвай» disc, which stands first in the DOM, so
+    // the selector list lands there when it is drawn and on the ticket else.
+    const ticket = `[data-testid="${this.rewardTicket(grantId)}"]`;
+    this.focusLater(
+      this.page()?.kind === 'clientLoyalty'
+        ? `[data-testid="rewards-action-use"], ${ticket}`
+        : ticket,
+    );
+  }
+
+  /** The ticket a held reward stands on, on the page up: «Лоялност»'s own, else the glance's one. */
+  private rewardTicket(grantId: string): string {
+    return this.page()?.kind === 'clientLoyalty'
+      ? `rewards-ready-${grantId}`
+      : 'client-reward-ready';
+  }
+
+  /**
+   * THE DOCK'S VERB ON A MEDAL'S PAGE (revision 3 §5.2, DV-C): «Добави
+   * фейд» while the family is about a service this person's seat lacks and
+   * the visit can take it — the store's gate: online, not gone, the client
+   * not paused, the family still moving. `null` draws ✓ alone.
+   */
+  protected readonly detailAction = computed<DetailActionVm | null>(() => {
+    const page = this.page();
+    if (page?.kind !== 'achievementDetail' || page.subjectId === null) {
+      return null;
+    }
+    return this.cardStoreRef()?.detailAction(page.subjectId) ?? null;
+  });
+
+  /**
+   * «ДОБАВИ ФЕЙД» (§5.2): one leg of that service for the person whose
+   * medal this is, in this visit's chair — the `repeatLast` precedent for
+   * one service — and the sheet STAYS on the page: the card re-reads the
+   * visit, the store answers `null` over the new legs, the button gives way
+   * to the ✓ beside it (which takes the focus, where the finger was) and
+   * the progress card gains «Това посещение се брои…». The polite region
+   * says so once. Nothing is written: «Запази» appears by the dirty rule.
+   */
+  protected addCountedService(serviceId: string): void {
+    const client = this.clientOfStack();
+    if (client === null) return;
+    // The service's plain option, else its first variant — the catalogue's
+    // own order, as the service page lists them.
+    const options = this.uiServices().filter(
+      (entry) => entry.serviceId === serviceId,
+    );
+    const option =
+      options.find((entry) => entry.variantId === null) ?? options[0];
+    if (option === undefined) return;
+    // The press was the act, not a push: no origin to remember.
+    this.pressedTestId = null;
+    this.addServiceLeg(option, client.id);
+    this.focusLater('[data-testid="staff-visit-page-done"]');
+    const words = this.cardStoreRef()?.words() ?? null;
+    if (words !== null) {
+      this.announce(
+        words.achievement.added(option.serviceLabel ?? option.label),
+      );
+    }
+  }
+
+  /**
+   * «ПОВТОРИ» (old §5A.1.3): the person's services become the last
+   * visit's — its services, variants and minutes, in this visit's chair
+   * (the last visit's barber only while the sheet has no chair), the ones
+   * the catalogue no longer sells left out — and the sheet goes back to
+   * the visit, the focus on the person's row, where the new rows are. The
+   * sheet's polite region says so once. Nothing is written: «Запази»
+   * appears by the dirty rule.
+   */
+  protected repeatLast(legs: readonly VisitLeg[]): void {
+    const client = this.clientOfStack();
+    if (client === null) return;
+    const date = this.lastVisitDate();
+    const draft = this.draft();
+    const repeated = legs.flatMap((leg): DraftLeg[] => {
+      const option = this.uiServices().find(
+        (entry) =>
+          entry.serviceId === leg.serviceId.value &&
+          (entry.variantId ?? null) === (leg.variantId?.value ?? null),
+      );
+      if (option === undefined) return [];
+      const chair = this.chairOf(
+        draft.chairId === '' ? leg.barberId.value : draft.chairId,
+      );
+      return [
+        {
+          seatId: `draft-${option.id}-${Date.now().toString(36)}-${this.minted++}`,
+          serviceId: option.serviceId,
+          variantId: option.variantId,
+          serviceLabel: option.serviceLabel ?? option.label,
+          minutes: leg.minutes,
+          priceLabel: option.priceLabel,
+          barberId: chair.id,
+          barberName: chair.name,
+          barberTone: chair.tone,
+          // The last visit's length, where it is not the catalogue's, is a
+          // length somebody agreed — said on the row, as a stored one is.
+          overridden: leg.minutes !== option.minutes,
+          clientId: client.id,
+        },
+      ];
+    });
+    if (repeated.length === 0) return;
+    const partyOfOne = draft.clients.length <= 1;
+    this.draft.update((current) => ({
+      ...current,
+      // The services drive the length again, as every leg change does.
+      durationOverride: null,
+      legs: [
+        ...current.legs.filter(
+          (leg) => !partyOfOne && leg.clientId !== client.id,
+        ),
+        ...repeated,
+      ],
+    }));
+    this.popToLadder();
+    if (date !== null) {
+      this.announce(
+        this.transloco.translate('staff.visit.client.announce.sameAsLast', {
+          date,
+        }),
+      );
+    }
+  }
+
+  /**
+   * «Махни от посещението» — the one rule for a person leaving
+   * (`withoutClient`), then back to the visit: the focus on the next
+   * person's row, or «Добави клиент» when nobody is left.
+   */
+  protected removeFromCard(): void {
+    const client = this.clientOfStack();
+    if (client === null) return;
+    const clients = this.draft().clients;
+    const index = clients.findIndex((entry) => entry.id === client.id);
+    const remaining = clients.filter((entry) => entry.id !== client.id);
+    const next = remaining[Math.min(index, remaining.length - 1)];
+    this.removeClient(client.id);
+    this.popToLadder(
+      next === undefined
+        ? 'staff-visit-add-client'
+        : `staff-visit-client-row-${next.id}`,
+    );
+  }
+
+  /**
+   * The day of the visit «Повтори» repeats — the newest WORKED visit of
+   * the card's loaded history apart from the one on screen, the rule the
+   * card's featured visit follows (`lastWorkedVisit`) — «4 септември» (an
+   * announcement takes the long month, R59; the year only outside this
+   * one) — or `null` while the card holds none. The rows are worded from
+   * the store's `visitRowsInput`, not taken off its «Посещения» page: that
+   * page's funnel may be narrowed to «Неявявания» while the sheet's
+   * «Повтори» is pressed one page up, and the day must still be said.
+   */
+  private lastVisitDate(): string | null {
+    const store = this.cardStoreRef();
+    const rows =
+      store?.visits().status === 'ready' ? store.visitRowsInput() : null;
+    if (rows === null || rows === undefined) return null;
+    const current = this.vm().appointmentId;
+    let lastMs: number | null = null;
+    for (const row of visitsRows(rows)) {
+      if (row.outcome !== 'worked' || row.id === current) continue;
+      if (lastMs === null || row.startMs > lastMs) lastMs = row.startMs;
+    }
+    if (lastMs === null) return null;
+    const year = new Intl.DateTimeFormat('en-CA', {
+      timeZone: SHOP_ZONE,
+      year: 'numeric',
+    }).format(lastMs);
+    return new Intl.DateTimeFormat(this.transloco.getActiveLang(), {
+      timeZone: SHOP_ZONE,
+      day: 'numeric',
+      month: 'long',
+      ...(year === this.vm().todayKey.slice(0, 4) ? {} : { year: 'numeric' }),
+    }).format(lastMs);
+  }
+
+  /**
+   * THE SHEET'S ONE POLITE REGION (old §8): what a tap changed away from
+   * where it was made, said once, after the focus has landed so the move
+   * is heard first. Pages open none of their own.
+   */
+  protected readonly announcement = signal('');
+  private announceTimer: ReturnType<typeof setTimeout> | null = null;
+
+  private announce(text: string): void {
+    this.announcement.set('');
+    if (this.announceTimer !== null) clearTimeout(this.announceTimer);
+    this.announceTimer = setTimeout(() => {
+      this.announceTimer = null;
+      this.announcement.set(text);
+    }, ANNOUNCE_DELAY_MS);
+  }
 }
+
+/** How long after the focus lands the polite region speaks (old §8.6). */
+const ANNOUNCE_DELAY_MS = 150;
 
 /** The shop's one currency (see `project_currency_is_eur`). */
 const MONEY_CODE = 'EUR';
@@ -5713,6 +6985,30 @@ function instantAt(index: number): ZonedDateTime {
   const instant = ZonedDateTime.fromMillis(index, 'UTC');
   if (instant.isFailure()) throw new Error('unreachable: the UTC epoch');
   return instant.value;
+}
+
+/**
+ * Whether a coupon's NAME already says its rule: a word of the name shares
+ * its stem with the rule's first word — «Безплатно подстригване» and
+ * «Безплатна услуга» (безплат-), "Free haircut" and "Free service". The
+ * stem is the word less its ending (its last two letters, never under
+ * four), so a gender or number ending does not hide the echo; «Пето
+ * подстригване» says nothing of the kind.
+ */
+export function nameSaysRule(
+  name: string,
+  rule: string,
+  locale: string,
+): boolean {
+  const words = (text: string): string[] =>
+    text
+      .toLocaleLowerCase(locale)
+      .split(/[^\p{L}\p{N}]+/u)
+      .filter((word) => word.length > 0);
+  const [head] = words(rule);
+  if (head === undefined) return false;
+  const stem = head.slice(0, Math.max(4, head.length - 2));
+  return words(name).some((word) => word.startsWith(stem));
 }
 
 /** A line's identity on the ladder — the promise, never a stored id. */

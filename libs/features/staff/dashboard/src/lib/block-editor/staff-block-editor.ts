@@ -295,10 +295,16 @@ function weekdayName(
     SwipeToDeleteDirective,
   ],
   templateUrl: './staff-block-editor.html',
-  // The visit editor's stylesheet, shared on purpose: the header, the frame
+  // The visit editor's stylesheets, shared on purpose: the header, the frame
   // box, the pills and the dock are the same objects here, and a second
-  // copy is how two sheets start drifting apart.
-  styleUrl: '../visit-editor/staff-visit-editor.css',
+  // copy is how two sheets start drifting apart. The visit editor's list
+  // minus its last (visit-only) sheet, in the same order: a prefix is what
+  // keeps the shared sheets landing in one order whichever sheet opens first.
+  styleUrls: [
+    '../visit-editor/staff-visit-editor.css',
+    '../visit-editor/staff-visit-editor.sections.css',
+    '../visit-editor/staff-visit-editor.rows.css',
+  ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   encapsulation: ViewEncapsulation.None,
   host: {

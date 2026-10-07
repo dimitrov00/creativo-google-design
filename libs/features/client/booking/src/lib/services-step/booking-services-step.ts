@@ -50,6 +50,7 @@ import {
   UiSectionHeader,
 } from '@creativo/ui/patterns';
 import { SessionIdentityService } from '@creativo/features/shared/shell';
+import { translateDomainError } from '@creativo/infrastructure/i18n';
 import { BookingBagSheet } from '../bag-sheet/booking-bag-sheet';
 import { BookingFlowStore } from '../booking-flow.store';
 import { BookingStepTitle } from '../chrome/booking-chrome.service';
@@ -225,8 +226,33 @@ export class BookingServicesStep {
     });
   }
 
+  /**
+   * Every service the active seat's lines block, by id: `blockersFor`'s
+   * answer for the whole catalogue, derived once per change of the cart or
+   * the catalogue. The grid asks per card on every pass, and a per-card
+   * `blockersFor` searched the catalogue and built the blockers' view models
+   * each time.
+   */
+  private readonly blockedIds = computed<ReadonlySet<string>>(() => {
+    const all = this.catalog.services();
+    const known = new Set(all.map((service) => service.id.value));
+    const selected = this.selectedServices();
+    return new Set(
+      all
+        .filter((candidate) => {
+          const selectability = selectabilityFor(selected, candidate, all);
+          // `blockersFor` names only blockers the catalogue knows.
+          return (
+            selectability.kind !== 'selectable' &&
+            selectability.by.some((id) => known.has(id.value))
+          );
+        })
+        .map((candidate) => candidate.id.value),
+    );
+  });
+
   protected isBlocked(serviceId: string): boolean {
-    return this.blockersFor(serviceId).length > 0;
+    return this.blockedIds().has(serviceId);
   }
 
   /**
@@ -374,11 +400,14 @@ export class BookingServicesStep {
     // never reused, so after add → add → remove-first the length-based number
     // repeats one that is still on screen and two people end up with the same
     // name. The number can skip after removals, which is the honest cost of
-    // never showing two "Guest 2"s.
+    // never showing two "Guest 2"s. A prefilled guest can already hold a
+    // placeholder-shaped name the visit stored («Гост 3»), so the number
+    // also steps past every label in use (`unusedGuestLabel`).
     this.store.addGuest(
-      this.transloco.translate('booking.party.guest', {
-        number: this.nextGuestNumber(),
-      }),
+      this.store.unusedGuestLabel(
+        (number) => this.transloco.translate('booking.party.guest', { number }),
+        this.nextGuestNumber(),
+      ),
     );
     // Read the id BACK rather than deriving it from the count: guest ids are
     // monotonic and never reused (§7.7), so after any add → remove → add the
@@ -405,18 +434,56 @@ export class BookingServicesStep {
 
   protected startRename(seat: SeatScopeVm): void {
     this.seatMenuKey.set(null);
+    this.renameRefusal.set(null);
     this.renameDraft.set(seat.label);
     this.renamingKey.set(seat.key);
     this.focusIn(`[data-testid="booking-seat-rename-${seat.key}"]`);
   }
 
+  /**
+   * Why the name just typed was not taken — another guest already answers
+   * to it (`DuplicateGuestLabelError`). Said under the row while the field
+   * stays open with what was typed, so the fix is one edit, not a retype;
+   * cleared by the next keystroke.
+   */
+  protected readonly renameRefusal = signal<string | null>(null);
+
+  /**
+   * A label two guests already share, or `null`. Only a draft restored from
+   * before "one label, one guest" can hold one (`BookingParty.sharedLabel`).
+   * The step names it under the row and holds its forward move, because
+   * past here the grid would seat two people the server counts as one.
+   * Renaming either guest clears it.
+   */
+  protected readonly sharedLabel = computed(
+    () => this.store.party()?.sharedLabel()?.value ?? null,
+  );
+
+  protected typeRename(value: string): void {
+    this.renameDraft.set(value);
+    this.renameRefusal.set(null);
+  }
+
   protected commitRename(seat: SeatScopeVm, label: string): void {
-    this.renamingKey.set(null);
-    this.renameDraft.set('');
-    if (seat.seatKey.kind !== 'guest') return;
     const trimmed = label.trim();
-    if (trimmed.length === 0 || trimmed === seat.label) return;
-    this.store.renameGuest(seat.seatKey.guestId, trimmed);
+    if (
+      seat.seatKey.kind !== 'guest' ||
+      trimmed.length === 0 ||
+      trimmed === seat.label ||
+      this.store.renameGuest(seat.seatKey.guestId, trimmed)
+    ) {
+      this.renamingKey.set(null);
+      this.renameDraft.set('');
+      this.renameRefusal.set(null);
+      return;
+    }
+    // Refused: the field stays open on what was typed, and the reason is
+    // said beside it. Never refocused — a field that grabbed focus back on
+    // every blur would be one nobody could leave.
+    const error = this.store.error();
+    this.renameRefusal.set(
+      error ? translateDomainError(this.transloco, error) : null,
+    );
   }
 
   /** Bring the scope row into view — it is above the fold only at the top. */
@@ -496,9 +563,15 @@ export class BookingServicesStep {
     return pending !== null && pending.key === this.activeSeat().key;
   });
 
-  /** Nothing in the bag, or somebody in the party still booking nothing. */
+  /**
+   * Nothing in the bag, somebody in the party still booking nothing, or two
+   * guests under one name (`sharedLabel`, said under the row).
+   */
   protected readonly forwardBlocked = computed(
-    () => this.store.lineCount() === 0 || this.activeSeatEmpty(),
+    () =>
+      this.store.lineCount() === 0 ||
+      this.activeSeatEmpty() ||
+      this.sharedLabel() !== null,
   );
 
   /**

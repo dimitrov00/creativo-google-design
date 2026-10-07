@@ -1,0 +1,79 @@
+@let card = vm();
+<!-- ONE white card, ONE button → the wallet. The button's sentence says it
+     all; the drawn words are hidden from a reader. -->
+<button
+  type="button"
+  uiCard
+  uiTone="elevated"
+  uiPadding="comfortable"
+  [uiInteractive]="true"
+  class="loyalty-glance__card"
+  [attr.aria-label]="card.accessibleName"
+  data-testid="client-loyalty-points"
+  (click)="open.emit()"
+>
+  <!-- The pass's two discs as a wash in the trailing corner: a cap over the
+       figure's line and a crescent down the trailing edge, both inside the
+       card's own box. Decoration: nothing is written over them. -->
+  <span class="loyalty-glance__disc" aria-hidden="true"></span>
+  <span class="loyalty-glance__disc" aria-hidden="true"></span>
+
+  <span class="loyalty-glance__words" aria-hidden="true">
+    <!-- The figure: the balance as a display figure in the accent, on
+         white (rule 3), the unit quiet beside it on one baseline. -->
+    <span class="loyalty-glance__figure">
+      <span
+        uiText
+        uiFont="title2"
+        uiForegroundStyle="accent"
+        class="loyalty-glance__value"
+        data-testid="client-loyalty-points-figure"
+        >{{ card.figure }}</span
+      >
+      @if (card.unit; as unit) {
+      <span
+        uiText
+        uiFont="callout"
+        uiForegroundStyle="secondary"
+        class="loyalty-glance__unit"
+        >{{ unit }}</span
+      >
+      }
+    </span>
+
+    <!-- What the points buy, in primary ink. -->
+    @if (card.sentence; as sentence) {
+    <span
+      uiText
+      uiFont="callout"
+      class="loyalty-glance__sentence"
+      data-testid="client-loyalty-points-sentence"
+      >{{ sentence }}</span
+    >
+    }
+
+    <!-- Everything else held, as facts of one quiet line (fact-line.css):
+         a fact and its label are one word to the line breaker, and the
+         «·» stands only between two facts on one line — a wrapped line
+         neither ends nor opens on a dot. -->
+    @if (card.holdings.length > 0) {
+    <span
+      uiText
+      uiFont="subheadline"
+      uiForegroundStyle="secondary"
+      class="loyalty-glance__holdings fact-line"
+      data-testid="client-loyalty-holdings"
+      >@for (holding of card.holdings; track holding.id) {<span
+        class="loyalty-glance__holding fact-line__fact"
+        >{{ holding.label }}
+        <span
+          uiForegroundStyle="primary"
+          uiWeight="medium"
+          [attr.data-testid]="'client-loyalty-' + holding.id"
+          >{{ holding.value }}</span
+        ></span
+      >}</span
+    >
+    }
+  </span>
+</button>

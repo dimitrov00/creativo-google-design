@@ -4,6 +4,7 @@ import {
   formatDayPillRange,
 } from '../day-pill/staff-day-pill';
 import { runViewTransition } from '../shared/view-transition';
+import { fill } from '../time-grid/grid-gesture';
 import {
   ChangeDetectionStrategy,
   Component,
@@ -28,9 +29,9 @@ import {
   roleFromPrimitive,
 } from '@creativo/application/identity';
 import { Coupon } from '@creativo/application/engagement';
-import type {
+import {
   BookingGatewayError,
-  StaffDiscountRequest,
+  type StaffDiscountRequest,
 } from '@creativo/application/booking';
 import { TranslocoDirective, TranslocoService } from '@jsverse/transloco';
 import {
@@ -49,6 +50,7 @@ import {
   summarizeSeatOutcomes,
   type CommitBookingSeatRequest,
   ownerUserIdOf,
+  wordError,
 } from '@creativo/application/booking';
 import { AGENDA_FIELDS, AgendaFields } from '../agenda-fields';
 import {
@@ -72,17 +74,25 @@ import {
   VisitEditorResolution,
   snapshotCommitOf,
 } from '../visit-editor/staff-visit-editor';
+import {
+  type SideWrites,
+  type VisitSides,
+  sideWritesOf,
+  sidesMovedUnder,
+} from '../visit-editor/visit-sides';
 import { assignBarberTones } from '../barber-tone';
 import {
   CatalogContentService,
   CatalogPresenter,
 } from '@creativo/features/shared/catalog';
 import { catalogMinutesOf, catalogTagOf } from '../shared/catalog-delta';
+import { walkInLabels } from '../shared/walk-in-labels';
 import {
+  firstNameOf,
   hollowStatus,
   StaffEventHead,
   type StaffEventLine,
-} from '../shared/event-head/staff-event-head';
+} from '@creativo/features/shared/visits';
 import {
   pluralForm,
   relativeTime,
@@ -95,8 +105,7 @@ import {
   UiSegmentedControl,
   type UiSegment,
   UiAvatar,
-  UiBadge,
-  UiBadgeTone,
+  type UiBadgeTone,
   UiButton,
   UiChip,
   UiIcon,
@@ -136,6 +145,7 @@ import {
   UiToast,
 } from '@creativo/ui/patterns';
 import {
+  STAFF_ZONE,
   StaffDayStore,
   addDays,
   startOfWeek,
@@ -162,7 +172,16 @@ import {
   parseClientQuery,
   rankClients,
 } from '../visit-editor/client-query';
-import { AVATAR_UPLOADER, UserId } from '@creativo/application/accounts';
+import {
+  AVATAR_UPLOADER,
+  PROFILE_PORT,
+  UserId,
+} from '@creativo/application/accounts';
+import {
+  CATALOG_READER,
+  type ServiceCategory,
+} from '@creativo/application/catalog';
+import type { ClientCardCatalog } from '@creativo/features/staff/client-card';
 import {
   AUTH_DEPLOYMENT,
   PhoneNumber,
@@ -198,9 +217,32 @@ function rowKey(appointmentId: string, barberId: string): string {
  * point of a seat-scoped verb.
  */
 /** What a save wrote BESIDE the batch — and so what its undo writes back. */
-interface SaveWrites {
-  readonly note: boolean;
-  readonly tip: boolean;
+type SaveWrites = SideWrites;
+
+/**
+ * What one write of the sheet came to: the batch (`true` when there was
+ * none to send), the side documents (`true` when none was due), and whether
+ * it was refused before anything went out because a side field it carries
+ * was changed by somebody else (`sidesMovedUnder`).
+ */
+interface EditorWrite {
+  readonly batch: boolean;
+  readonly sides: boolean;
+  readonly stale: boolean;
+}
+
+/**
+ * The stale refusal a write earns on THIS device, before anything is sent:
+ * the note or the tip it carries moved under the draft. The server's own
+ * stale refusal (`booking.staffEdit.stale`) is the same sentence and the
+ * same reload, so it is spoken in the server's code.
+ */
+function sidesMovedError(): BookingGatewayError {
+  return new BookingGatewayError(
+    'invalid_request',
+    'a side field of the visit moved under the draft',
+    { serverCode: 'booking.staffEdit.stale' },
+  );
 }
 
 /**
@@ -240,6 +282,15 @@ const BUSY_SETTLE_MS = 1500;
  */
 function isOverlapOffer(error: BookingGatewayError | null): boolean {
   return error?.params?.['serverCode'] === 'booking.staffEdit.overlaps';
+}
+
+/**
+ * The visit moved on under the sheet — somebody else saved it since the
+ * draft was drawn (`booking.staffEdit.stale`, round 5). Never retried and
+ * never written over: the sheet reloads the visit as it now stands.
+ */
+function isStaleRefusal(error: BookingGatewayError | null): boolean {
+  return error?.params?.['serverCode'] === 'booking.staffEdit.stale';
 }
 
 /**
@@ -312,6 +363,12 @@ interface DayRowVm {
   readonly id: string;
   /** The aggregate this row is a share of. What the server is told about. */
   readonly appointmentId: string;
+  /**
+   * The stored revision the visit was read at (`Appointment.revision`), or
+   * `null` where the reader did not say. What a sheet drawn from this row
+   * claims on its next save — see `StaffIntent`.
+   */
+  readonly revision: number | null;
   /** WHERE the visit is — the root's own fact, one place for every chair. */
   readonly locationId: string;
   /**
@@ -591,10 +648,10 @@ const STATUS_ICONS: Partial<Record<AppointmentStatusKind, UiIconName>> = {
  * Status is FORM, never hue — the grid's ruling, now honoured here too.
  *
  * These badges were accent / success-green / destructive-red / warning-amber,
- * which is exactly the arrangement `staff-time-grid.css` quotes HIG at length
- * to forbid: a pale green beside a pale amber is the pair red-green colour
- * blindness cannot separate, and "the cut happened" versus "they never came"
- * is not a distinction to hang on a hue. Success and warning are system
+ * which is exactly the arrangement `staff-time-grid.state.css` quotes HIG at
+ * length to forbid: a pale green beside a pale amber is the pair red-green
+ * colour blindness cannot separate, and "the cut happened" versus "they never
+ * came" is not a distinction to hang on a hue. Success and warning are system
  * meanings besides; a finished haircut is not a success and an absent client
  * is not a warning.
  *
@@ -640,7 +697,7 @@ function shopClock(ms: number): string {
     hour: '2-digit',
     minute: '2-digit',
     hour12: false,
-    timeZone: 'Europe/Sofia',
+    timeZone: STAFF_ZONE,
   }).format(new Date(ms));
 }
 
@@ -660,7 +717,7 @@ function shopMinuteOfDay(ms: number): number {
     hour: '2-digit',
     minute: '2-digit',
     hour12: false,
-    timeZone: 'Europe/Sofia',
+    timeZone: STAFF_ZONE,
   }).formatToParts(new Date(ms));
   const hour = Number(parts.find((p) => p.type === 'hour')?.value ?? '0');
   const minute = Number(parts.find((p) => p.type === 'minute')?.value ?? '0');
@@ -807,23 +864,11 @@ function abbreviateWeekday(long: string, locale: string): string {
 }
 
 /**
- * «Иван» from «Иван Колев» — what a column head carries once the whole
- * name would truncate (2026-09-23, the grid views' design record §4). Half
- * a surname identifies nobody; a first name in a shop of five does.
- */
-function firstNameOf(name: string): string {
-  return name.trim().split(/\s+/)[0] ?? name;
-}
-
-/**
  * How many chairs the all-day band names on one date before it says «+N»
  * (§8): a fourth chip would push the band into a second screen of chrome,
  * and a phone has no tooltip to read the rest from.
  */
 const ALL_DAY_CHIP_CAP = 3;
-
-/** The whole product is Europe/Sofia-only for now (blueprint §7.1). */
-const SHOP_ZONE = 'Europe/Sofia';
 
 /**
  * A day key plus minutes-from-midnight → the instant, in shop time.
@@ -871,7 +916,7 @@ function shopWallClockUtc(at: number): number {
     minute: '2-digit',
     second: '2-digit',
     hour12: false,
-    timeZone: SHOP_ZONE,
+    timeZone: STAFF_ZONE,
   }).formatToParts(new Date(at));
   const value = (type: string): number =>
     Number(parts.find((part) => part.type === type)?.value ?? '0');
@@ -974,7 +1019,6 @@ const MONEY_ROLES = DOMAIN_MONEY_ROLES.map(roleFromPrimitive);
     StaffEventHead,
     TranslocoDirective,
     UiAvatar,
-    UiBadge,
     UiButton,
     StaffDayPill,
     UiChip,
@@ -1008,7 +1052,7 @@ const MONEY_ROLES = DOMAIN_MONEY_ROLES.map(roleFromPrimitive);
   ],
   providers: [StaffDayStore],
   templateUrl: './staff-dashboard.html',
-  styleUrl: './staff-dashboard.css',
+  styleUrls: ['./staff-dashboard.css', './staff-dashboard.chrome.css'],
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
     class: 'lib-staff-dashboard',
@@ -1019,6 +1063,18 @@ export class StaffDashboard {
   /** An hour that did not happen — struck on the card's head (staff-event-head). */
   protected readonly hollowStatus = hollowStatus;
   private readonly transloco = inject(TranslocoService);
+  /**
+   * THE LOADED TABLE, AS A SIGNAL (review r4, 2026-10-06: the agenda's
+   * capsule printed «−staff.visit.minutes» on the party rows at first
+   * paint). The rows are built in a `computed` that an effect reads before
+   * `bg.json` has landed, and `translate()` hands the KEY back for every
+   * word asked of it then — and nothing invalidates the rows afterwards,
+   * because `translate()` reads no signal. `selectTranslation()` waits for
+   * the load and re-emits on a language change or a `setTranslation`, so
+   * the words a row carries (`copyOf`, `rawCopy`) are read through this and
+   * every row is rebuilt the moment the table is there.
+   */
+  private readonly copyTable = toSignal(this.transloco.selectTranslation());
   private readonly title = inject(Title);
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
   private readonly destroyRef = inject(DestroyRef);
@@ -1094,9 +1150,17 @@ export class StaffDashboard {
    * A single attempt returned early and never came back, leaving the custom
    * property unset and the band sticking to the token's 52px floor —
    * i.e. behind the bar. Same failure, same shape of fix, as `settleOnNow`.
+   *
+   * Two things a frame loop has to respect that a render hook gets for free:
+   * it outlives the view (a page left within the budget must not register
+   * `onDestroy` on a view already destroyed — NG0911), and it runs OUTSIDE
+   * Angular's error handler, so anything thrown here is an uncaught
+   * exception rather than a logged one. An engine without `ResizeObserver`
+   * (jsdom, a server) therefore keeps the one-off measurement, the same line
+   * the DS's modal sheet and the grid's frame watch draw.
    */
   private watchToolbar(framesLeft: number): void {
-    if (framesLeft <= 0) return;
+    if (framesLeft <= 0 || this.destroyRef.destroyed) return;
     const bar =
       this.host.nativeElement.querySelector<HTMLElement>('.staff-toolbar');
     const page =
@@ -1111,6 +1175,7 @@ export class StaffDashboard {
         `${Math.round(bar.getBoundingClientRect().height)}px`,
       );
     publish();
+    if (typeof ResizeObserver !== 'function') return;
     const observer = new ResizeObserver(publish);
     observer.observe(bar);
     this.destroyRef.onDestroy(() => observer.disconnect());
@@ -1142,7 +1207,8 @@ export class StaffDashboard {
    * no-op on an unscrollable document counted as "settled".
    */
   private settleOnNow(framesLeft: number): void {
-    if (framesLeft <= 0) return;
+    // A page left mid-budget must not scroll the one that replaced it.
+    if (framesLeft <= 0 || this.destroyRef.destroyed) return;
     const marker =
       this.host.nativeElement.querySelector<HTMLElement>('[data-now-anchor]');
     if (!marker) {
@@ -1201,6 +1267,80 @@ export class StaffDashboard {
     if (principal === undefined) return false;
     return MONEY_ROLES.some((role) => principalHasRole(principal, role));
   });
+
+  /**
+   * WHO IS LOOKING, as the client card reads it (client-card-redesign
+   * §5.2.1): the uid and the roles — its ‹role› gates and the admin-only
+   * money read. Nobody while the principal is not an onboarded one.
+   */
+  protected readonly cardViewer = computed<{
+    readonly uid: string;
+    readonly roles: readonly string[];
+  } | null>(() => {
+    const principal = this.principal();
+    return principal?.kind === 'active'
+      ? { uid: principal.uid.value, roles: [...principal.roles] }
+      : null;
+  });
+
+  /** The shop's service categories — the card's «Майсторство» sections name them. */
+  private readonly serviceCategories = toSignal(
+    inject(CATALOG_READER).listServiceCategories(),
+    { initialValue: null },
+  );
+
+  /**
+   * THE CATALOGUE AS THE CLIENT CARD NAMES THINGS (§5.2.1) — built ONCE:
+   * each lookup reads the catalogue's live signals, so the card's
+   * computeds follow a late catalogue on their own and the object never
+   * changes (a new object would re-open the card). Services, barbers and
+   * shops in the reader's language; covers and portraits as the catalogue
+   * resolved them. A shop's cover is not resolved by the catalogue's media
+   * cache today (it asks for services' and barbers' only, and no seeded
+   * shop carries one), so a shop family draws the first letter of the
+   * shop's `shortName` given below («Център» → «Ц»), as §3.3.3 orders it.
+   */
+  protected readonly clientCardCatalog: ClientCardCatalog = (() => {
+    const catalog = this.catalog;
+    const content = this.content;
+    const categories = this.serviceCategories;
+    return {
+      serviceName: (id: string) => {
+        const service = catalog.findService(id);
+        return service === undefined ? null : content.text(service.name);
+      },
+      serviceCoverSrc: (id: string) => catalog.coverUrl(id) ?? null,
+      serviceCategory: (id: string) => {
+        const service = catalog.findService(id);
+        const listed = categories();
+        if (service === undefined || !listed?.isSuccess()) return null;
+        const category = listed.value.find((entry: ServiceCategory) =>
+          entry.id.equals(service.categoryId),
+        );
+        return category === undefined
+          ? null
+          : { id: category.id.value, name: content.text(category.name) };
+      },
+      barberName: (id: string) => {
+        const barber = catalog.barbers().find((entry) => entry.id.value === id);
+        return barber === undefined ? null : content.text(barber.name);
+      },
+      barberAvatarSrc: (id: string) =>
+        catalog.barberVms().find((vm) => vm.id === id)?.avatarSrc ?? null,
+      // A row's fact line names the shop without the brand every shop
+      // carries: `Location.shortName` (its name when the catalogue has none).
+      locationName: (id: string) => {
+        const location = catalog
+          .locations()
+          .find((entry) => entry.id.value === id);
+        return location === undefined ? null : content.text(location.shortName);
+      },
+      locationCoverSrc: () => null,
+      get locationCount() {
+        return catalog.locations().length;
+      },
+    };
+  })();
   protected readonly store = inject(StaffDayStore);
 
   /**
@@ -1386,7 +1526,7 @@ export class StaffDashboard {
       year: 'numeric',
       month: '2-digit',
       day: '2-digit',
-      timeZone: 'Europe/Sofia',
+      timeZone: STAFF_ZONE,
     }).format(new Date(ms));
     return parts;
   }
@@ -1399,7 +1539,7 @@ export class StaffDashboard {
       hour: '2-digit',
       minute: '2-digit',
       hour12: false,
-      timeZone: 'Europe/Sofia',
+      timeZone: STAFF_ZONE,
     }).format(new Date(ms));
   }
 
@@ -1879,11 +2019,29 @@ export class StaffDashboard {
   protected readonly zoneLabel = computed(
     () =>
       new Intl.DateTimeFormat('en-GB', {
-        timeZone: SHOP_ZONE,
+        timeZone: STAFF_ZONE,
         timeZoneName: 'short',
       })
         .formatToParts(new Date(this.nowMs()))
-        .find((part) => part.type === 'timeZoneName')?.value ?? SHOP_ZONE,
+        .find((part) => part.type === 'timeZoneName')?.value ?? STAFF_ZONE,
+  );
+
+  /** The zone the device's clock is set to, as the platform resolves it. */
+  protected readonly deviceZone = signal(
+    new Intl.DateTimeFormat().resolvedOptions().timeZone,
+  );
+
+  /**
+   * The grid corner's zone label — only while the device's clock is NOT
+   * the shop's (review r4, 2026-10-06: «EEST» in every grid's corner read
+   * as a debug label; a barber's phone is in the shop's zone and nothing
+   * else in the app names one). Apple Calendar leaves the corner empty.
+   * The zone is named where it would otherwise be assumed wrongly — a
+   * phone abroad, a desktop set to UTC — and the alert that explains it
+   * opens from that label. Empty, the grid draws a blank corner.
+   */
+  protected readonly zoneCorner = computed(() =>
+    this.deviceZone() === STAFF_ZONE ? '' : this.zoneLabel(),
   );
 
   /**
@@ -3033,7 +3191,7 @@ export class StaffDashboard {
    * the cheapest correct way to ask "same day?" across a DST boundary.
    */
   private dayOf(millis: number): string {
-    return new Intl.DateTimeFormat('en-CA', { timeZone: SHOP_ZONE }).format(
+    return new Intl.DateTimeFormat('en-CA', { timeZone: STAFF_ZONE }).format(
       new Date(millis),
     );
   }
@@ -3044,7 +3202,7 @@ export class StaffDashboard {
       hour: '2-digit',
       minute: '2-digit',
       hour12: false,
-      timeZone: SHOP_ZONE,
+      timeZone: STAFF_ZONE,
     }).format(new Date(millis));
   }
 
@@ -3061,7 +3219,7 @@ export class StaffDashboard {
       hour: '2-digit',
       minute: '2-digit',
       hour12: false,
-      timeZone: SHOP_ZONE,
+      timeZone: STAFF_ZONE,
     }).format(new Date(atMs));
   }
 
@@ -3153,22 +3311,30 @@ export class StaffDashboard {
     return (variantTerms ?? offering.base).minutes;
   }
 
-  /** The frame's tag, on the row: the run's distance from the catalogue. */
+  /**
+   * The frame's tag, on the row: the run's distance from the catalogue.
+   *
+   * The pattern («{{minutes}} мин») is read FIRST, off the loaded table,
+   * and filled here — the way the editors word their drag readouts — so
+   * every row depends on the table: built before `bg.json` has landed, the
+   * tag is withheld rather than printed as its key, and the row is rebuilt
+   * the moment the words are there (review r4, 2026-10-06).
+   */
   private catalogTag(
     seats: readonly Appointment['seats'][number][],
     barberId: string,
     startMs: number,
     endMs: number,
   ): string | null {
+    const pattern = this.copyOf('staff.visit.minutes');
+    if (pattern === null) return null;
     const span = Math.max(0, Math.round((endMs - startMs) / 60_000));
     const sold = catalogMinutesOf(
       seats,
       (seat) => this.chairMinutesOf(seat, barberId),
       (seat) => seat.terms.durationMinutes,
     );
-    return catalogTagOf(span, sold, (minutes) =>
-      this.transloco.translate('staff.visit.minutes', { minutes }),
-    );
+    return catalogTagOf(span, sold, (minutes) => fill(pattern, { minutes }));
   }
 
   private toRow(
@@ -3207,9 +3373,7 @@ export class StaffDashboard {
      * contact's name, because that IS the person in it.
      */
     const contact = appointment.contact;
-    const guestLabels = seats.flatMap((seat) =>
-      seat.subject.kind === 'anonymous' ? [seat.subject.label.value] : [],
-    );
+    const guestLabels = guestLabelsOf(seats);
     const allGuests = seats.length > 0 && guestLabels.length === seats.length;
     const clientLabel: string =
       (allGuests ? guestLabels.join(' + ') : contact?.name) ??
@@ -3222,7 +3386,15 @@ export class StaffDashboard {
      * party keeps its grammar when reopened (owner ruling 2026-09-08). The
      * booker's own seat carries the contact; a guest carries only their
      * label, which is all the shop holds about them.
+     *
+     * A COMPANION ACCOUNT IS NOT THE BOOKER (client-card-redesign §3.1.4,
+     * the P0 audit's defect): the contact is the booker's, so a son booked
+     * by his father never wears the father's name or number. He is named
+     * by his own profile once it is read (`companionNames`), and his card
+     * reads `users/{uid}` itself; his number is his profile's, never the
+     * booking's.
      */
+    const companionNames = this.companionNames();
     const personOf = (seat: (typeof seats)[number]): VisitEditorClientOption =>
       seat.subject.kind === 'anonymous'
         ? {
@@ -3232,15 +3404,25 @@ export class StaffDashboard {
             phoneHref: null,
             meta: null,
           }
-        : {
-            id: seat.subject.userId.value,
-            label:
-              contact?.name ??
-              this.transloco.translate('staff.day.unnamedClient'),
-            phone: contact?.phone.formatInternational() ?? null,
-            phoneHref: contact?.phone.value ?? null,
-            meta: null,
-          };
+        : seat.subject.relationship === 'companion'
+          ? {
+              id: seat.subject.userId.value,
+              label:
+                companionNames[seat.subject.userId.value] ??
+                this.transloco.translate('staff.day.unnamedClient'),
+              phone: null,
+              phoneHref: null,
+              meta: null,
+            }
+          : {
+              id: seat.subject.userId.value,
+              label:
+                contact?.name ??
+                this.transloco.translate('staff.day.unnamedClient'),
+              phone: contact?.phone.formatInternational() ?? null,
+              phoneHref: contact?.phone.value ?? null,
+              meta: null,
+            };
     const people = seats
       .map(personOf)
       .filter(
@@ -3304,6 +3486,7 @@ export class StaffDashboard {
       kind: 'visit',
       id: rowKey(appointment.id.value, barberId),
       appointmentId: appointment.id.value,
+      revision: appointment.revision,
       locationId: appointment.locationId.value,
       seatId: seats[0]?.id.value ?? '',
       seatIds: seats.map((seat) => seat.id.value),
@@ -3726,6 +3909,8 @@ export class StaffDashboard {
     return {
       appointmentId: row.appointmentId,
       rowId: row.id,
+      // The revision the sheet's draft is drawn from — what «Запази» claims.
+      revision: row.revision,
       locationId: row.locationId,
       /*
        * THE REST OF THE BOOKING.
@@ -4091,12 +4276,23 @@ export class StaffDashboard {
       row !== null && vm !== null && vm.appointmentId === appointmentId
         ? snapshotCommitOf(vm)
         : null;
+    /*
+     * THE SIDE FIELDS this save writes (round 5): the ones the barber
+     * CHANGED from what the draft drew them from — never one they left
+     * alone, however long the sheet has been open (`sideWritesOf`). The
+     * sheet follows the stored note and tip while they are untouched, so a
+     * colleague's tip recorded after it opened is shown, not written over.
+     * A commit that does not say what it drew is measured against what is
+     * stored now.
+     */
+    const drawn: VisitSides = commit.drawn ?? {
+      note: this.store.teamNote(),
+      tipMinorUnits: row?.tipMinorUnits ?? null,
+    };
+    const touched = sideWritesOf(commit, drawn);
     const writes: SaveWrites = {
-      note: commit.note !== this.store.teamNote(),
-      tip:
-        row !== null &&
-        row.seatIds[0] !== undefined &&
-        (commit.tipMinorUnits ?? null) !== row.tipMinorUnits,
+      note: touched.note,
+      tip: touched.tip && row !== null && row.seatIds[0] !== undefined,
     };
     /*
      * What the way back has to work with: whether this save has one at all
@@ -4115,6 +4311,7 @@ export class StaffDashboard {
       commit,
       row,
       writes,
+      drawn,
     );
     /*
      * ⚠ ONLY ON SUCCESS. The mark tells the sheet the server has spoken, and
@@ -4127,13 +4324,25 @@ export class StaffDashboard {
     if (landed.batch) this.visitSavedMark.update((mark) => mark + 1);
     // The sheet stays, the toast says why (owner, 2026-09-17) — and a
     // save that lands takes a stale refusal down with it.
-    if (!landed.batch || !landed.note) {
-      this.refuse(this.store.errorFor(appointmentId));
+    if (!landed.batch || !landed.sides) {
+      const error = landed.stale
+        ? sidesMovedError()
+        : this.store.errorFor(appointmentId);
+      this.refuse(error);
+      // SOMEBODY ELSE SAVED IT FIRST: the toast says so in one line, and
+      // the sheet reloads the visit as it now stands — the draft drawn
+      // from the older screen is never written over theirs.
+      if (!landed.batch && isStaleRefusal(error)) {
+        void this.reloadStale(appointmentId, row, error);
+      }
       return;
     }
     if (before !== null && row !== null && reversible) {
       this.notice.set(null);
-      this.offerSaveUndo(appointmentId, row, before, writes, shapeNeutral);
+      this.offerSaveUndo(appointmentId, row, before, writes, shapeNeutral, {
+        note: commit.note,
+        tipMinorUnits: commit.tipMinorUnits,
+      });
       return;
     }
     /*
@@ -4149,16 +4358,46 @@ export class StaffDashboard {
    * THE WRITES a target state costs from a row: the batch (`commandsFor`),
    * and beside it the team note and the tip, each only when the caller says
    * it changed — a save knows what it typed, and its undo knows what the
-   * save wrote. `batch` is the one answer «Запази» waits for; `note` is the
-   * side document's own.
+   * save wrote. `drawn` is what those side fields were when the change was
+   * made: the draft's for a save, what the save wrote for its undo.
+   *
+   * ⚠ THE BATCH GOES FIRST, AND ALONE DECIDES (round 5). The batch claims
+   * the revision the draft was drawn from; the note and the tip are written
+   * only once it has landed. Written before it, a save the server then
+   * refused as stale had already put the old screen's note and tip over a
+   * colleague's — the very overwrite the claim exists to stop. And a side
+   * field somebody else changed under the draft refuses the write before
+   * anything goes out (`sidesMovedUnder`): the note and the tip do not move
+   * the revision, so this device's own view is the only guard they have.
    */
   private async writeFromEditor(
     appointmentId: string,
     target: VisitEditorCommit,
     row: DayRowVm | null,
     writes: SaveWrites,
-  ): Promise<{ readonly batch: boolean; readonly note: boolean }> {
+    drawn: VisitSides,
+  ): Promise<EditorWrite> {
+    if (
+      sidesMovedUnder(writes, drawn, target, {
+        note: this.store.teamNoteOf(appointmentId),
+        tipMinorUnits: row === null ? undefined : row.tipMinorUnits,
+      })
+    ) {
+      return { batch: false, sides: false, stale: true };
+    }
+
+    // The batch claims the revision the draft was drawn from (round 5): a
+    // colleague's save since is refused as stale, never overwritten. A save
+    // that changed only the note or the tip has no batch to send.
     const commands = this.commandsFor(target, row);
+    if (commands.length > 0) {
+      const batch = await this.store.staffEdit({
+        appointmentId,
+        command: commands,
+        expectedVersion: target.revision ?? null,
+      });
+      if (!batch) return { batch: false, sides: true, stale: false };
+    }
 
     /*
      * THE TEAM NOTE writes beside the batch, not inside it: it lives in a
@@ -4166,22 +4405,26 @@ export class StaffDashboard {
      * there is no command for it and no reason to hold it hostage to a
      * placement decision. An unchanged note writes nothing.
      */
-    let noteWritten = true;
-    if (writes.note) {
-      noteWritten = await this.store.saveTeamNote(appointmentId, target.note);
-    }
+    const noteWritten = writes.note
+      ? await this.store.saveTeamNote(appointmentId, target.note)
+      : true;
 
     /*
-     * THE TIP writes beside the batch too (2026-09-15): a stamp on the
-     * chair's first seat, not a `staffEdit` command (the port says why),
-     * and drafted with the rest of the sheet so «Запази» is the receipt's
-     * one verb. Unchanged writes nothing; a new visit carries none. The
-     * seat is the row's first — every seat in a row is the same barber's,
-     * so which carries the number changes nothing about whose tip it is.
+     * THE TIP writes beside the batch too (2026-09-15): a stamp on one of
+     * the chair's seats, not a `staffEdit` command (the port says why), and
+     * drafted with the rest of the sheet so «Запази» is the receipt's one
+     * verb. Unchanged writes nothing; a new visit carries none. The seat is
+     * the row's first that the batch KEPT — the batch has already run, and
+     * a seat it removed takes a stamp with it. Every seat in a row is the
+     * same barber's, so which carries the number changes nothing about
+     * whose tip it is.
      */
-    const tipSeat = row?.seatIds[0];
+    const tipSeat =
+      row?.seatIds.find((seatId) =>
+        target.legs.some((leg) => leg.seatId === seatId),
+      ) ?? row?.seatIds[0];
     const tipWritten =
-      writes.tip && row !== null && tipSeat !== undefined
+      writes.tip && tipSeat !== undefined
         ? await this.store.recordTip({
             appointmentId,
             seatId: tipSeat,
@@ -4189,12 +4432,7 @@ export class StaffDashboard {
           })
         : true;
 
-    // A save that changed only the note or the tip has no batch to send.
-    const batch =
-      commands.length === 0
-        ? tipWritten
-        : await this.store.staffEdit({ appointmentId, command: commands });
-    return { batch, note: noteWritten };
+    return { batch: true, sides: noteWritten && tipWritten, stale: false };
   }
 
   /**
@@ -4266,6 +4504,20 @@ export class StaffDashboard {
      * this visit rides as a guest under their own name (the party grammar).
      */
     const chairPerson = commit.clients[0]?.id ?? 'primary';
+    // A stranger joining this visit is numbered past every label the VISIT
+    // already holds — this chair's walk-in, and every other chair's too,
+    // since the server tells guests apart per appointment (`walkInLabels`,
+    // `visitGuestLabels`).
+    const strangers = this.walkInNames(
+      commit,
+      row === null
+        ? []
+        : [
+            ...row.people.map((person) => person.label),
+            ...this.visitGuestLabels(row.appointmentId),
+          ],
+      chairPerson,
+    );
     const subjectFor = (
       clientId: string,
     ): { kind: 'self' } | { kind: 'guest'; label: string } => {
@@ -4279,6 +4531,7 @@ export class StaffDashboard {
       }
       const label: string =
         commit.clients.find((client) => client.id === clientId)?.label ??
+        strangers.get(clientId) ??
         this.transloco.translate('staff.visit.walkIn');
       return { kind: 'guest', label };
     };
@@ -4448,6 +4701,8 @@ export class StaffDashboard {
     before: VisitEditorCommit,
     writes: SaveWrites,
     shapeNeutral: boolean,
+    /** The note and the tip the save wrote — what the undo is drawn from. */
+    wrote: VisitSides,
   ): void {
     const shape = rowShape(rowBefore);
     const find = () => this.rowFor(rowBefore.id, rowBefore.seatIds);
@@ -4468,12 +4723,15 @@ export class StaffDashboard {
             (row) => row === null || rowShape(row) !== shape,
           );
         }
+        // Drawn from what the save wrote: a colleague's note or tip since
+        // is refused as stale, never written over (round 5).
         const write = () =>
           this.writeFromEditor(
             appointmentId,
             before,
             find() ?? rowBefore,
             writes,
+            wrote,
           );
         let landed = await write();
         /*
@@ -4487,24 +4745,32 @@ export class StaffDashboard {
          */
         if (
           !landed.batch &&
+          !landed.stale &&
           isOverlapOffer(this.store.errorFor(appointmentId))
         ) {
           await new Promise((resolve) => setTimeout(resolve, BUSY_SETTLE_MS));
           landed = await write();
         }
-        if (!landed.batch || !landed.note) {
+        if (!landed.batch || !landed.sides) {
           /*
            * A REFUSED UNDO is not "try again": the receipt is spent and the
            * sheet is clean on the SAVED visit. The toast says the save
            * stands, and why (found in review).
            */
-          const error = this.store.errorFor(appointmentId);
+          const error = landed.stale
+            ? sidesMovedError()
+            : this.store.errorFor(appointmentId);
           this.undo.set(null);
           this.notice.set(
             this.transloco.translate('staff.day.undo.refused', {
               reason: error === null ? '' : this.describeError(error),
             }),
           );
+          // Somebody else saved the visit after this save: the undo is not
+          // written over them, and the sheet shows what they left.
+          if (!landed.batch && isStaleRefusal(error)) {
+            void this.reloadStale(appointmentId, find(), error);
+          }
           return false;
         }
         void this.reseedWhenBack(appointmentId, find, shape);
@@ -4526,6 +4792,31 @@ export class StaffDashboard {
     shape: string,
   ): Promise<void> {
     await this.awaitRow(find, (row) => row !== null && rowShape(row) === shape);
+    this.visitReseedMark.update(({ n }) => ({ appointmentId, n: n + 1 }));
+  }
+
+  /**
+   * THE STALE-SCREEN RELOAD (round 5). A save or an undo the server refused
+   * as stale: somebody else's save landed after this sheet's draft was
+   * drawn. Once the live row has caught up with the revision the server
+   * reported (`params.actual`) — or the ceiling passes — the sheet showing
+   * that visit takes the live row as its draft again, with the toast
+   * already saying why. Nothing is re-sent: what the barber meant to change
+   * may no longer make sense over what their colleague did.
+   */
+  private async reloadStale(
+    appointmentId: string,
+    row: DayRowVm | null,
+    error: BookingGatewayError | null,
+  ): Promise<void> {
+    const actual = Number(error?.params?.['actual']);
+    if (row !== null && Number.isInteger(actual)) {
+      const find = () => this.rowFor(row.id, row.seatIds);
+      await this.awaitRow(
+        find,
+        (live) => live !== null && (live.revision ?? -1) >= actual,
+      );
+    }
     this.visitReseedMark.update(({ n }) => ({ appointmentId, n: n + 1 }));
   }
 
@@ -4849,6 +5140,8 @@ export class StaffDashboard {
       readonly label: string;
       readonly phone: string | null;
     };
+    /** The visit a `Запиши пак` came from — the rebooking edge. */
+    readonly bookedFrom?: string;
   } | null>(null);
 
   /** Which create door the ＋ is showing: the kind menu. */
@@ -5017,7 +5310,8 @@ export class StaffDashboard {
   /**
    * `Запиши пак` — a NEW visit prefilled from a finished one: same chair,
    * same services, same client; the day is the barber's to pick. Legs get
-   * fresh draft ids so the commit mints new seats rather than naming old.
+   * fresh draft ids so the commit mints new seats rather than naming old,
+   * and the finished visit rides along as `bookedFromAppointmentId`.
    */
   protected rebookFromEditor(vm: VisitEditorVm): void {
     this.closeVisitSheet();
@@ -5040,6 +5334,7 @@ export class StaffDashboard {
         label: vm.clientLabel,
         phone: vm.phone,
       },
+      ...(vm.appointmentId ? { bookedFrom: vm.appointmentId } : {}),
     });
   }
 
@@ -5080,6 +5375,60 @@ export class StaffDashboard {
       void this.avatarUploader.find(userId.value).then((found) => {
         const url = found.isSuccess() ? (found.value?.url ?? null) : null;
         this.avatarUrls.update((urls) => ({ ...urls, [id]: url }));
+      });
+    }
+  }
+
+  /**
+   * COMPANIONS' NAMES (client-card-redesign §3.1.4): a companion account
+   * on a booking — the son his father booked — is named by his OWN
+   * profile, never the booker's contact. Looked up once per session for
+   * every companion in the loaded days, as the book loads, so the sheet
+   * usually seeds with his name; until it lands his row reads «Клиент без
+   * име» and his card names him from `users/{uid}` itself. Without a
+   * profile port (a test bed) nobody is looked up.
+   */
+  private readonly profiles = inject(PROFILE_PORT, { optional: true });
+  protected readonly companionNames = signal<Readonly<Record<string, string>>>(
+    {},
+  );
+  private readonly companionLookups = new Set<string>();
+
+  protected readonly lookUpCompanions = effect(() => {
+    const ids = new Set<string>();
+    const lanes = [
+      ...this.store.lanes(),
+      ...this.store.dayCells().flatMap((cell) => cell.lanes),
+    ];
+    for (const lane of lanes) {
+      for (const appointment of lane.appointments) {
+        for (const seat of appointment.seats) {
+          if (
+            seat.subject.kind === 'account' &&
+            seat.subject.relationship === 'companion'
+          ) {
+            ids.add(seat.subject.userId.value);
+          }
+        }
+      }
+    }
+    untracked(() => this.resolveCompanionNames([...ids]));
+  });
+
+  private resolveCompanionNames(ids: readonly string[]): void {
+    const profiles = this.profiles;
+    if (profiles === null) return;
+    for (const id of ids) {
+      if (this.companionLookups.has(id)) continue;
+      const userId = UserId.create(id);
+      if (userId.isFailure()) continue;
+      this.companionLookups.add(id);
+      void profiles.getProfile(userId.value).then((found) => {
+        // A failed read is asked again when the book next changes.
+        if (found.isFailure()) this.companionLookups.delete(id);
+        const name = found.isSuccess() ? (found.value?.fullName() ?? '') : '';
+        if (name.length === 0) return;
+        this.companionNames.update((names) => ({ ...names, [id]: name }));
       });
     }
   }
@@ -5191,7 +5540,7 @@ export class StaffDashboard {
     return new Intl.DateTimeFormat(this.content.locale(), {
       day: 'numeric',
       month: 'short',
-      timeZone: SHOP_ZONE,
+      timeZone: STAFF_ZONE,
     }).format(new Date(millis));
   }
 
@@ -5275,6 +5624,59 @@ export class StaffDashboard {
   }
 
   /**
+   * EVERY GUEST LABEL THE VISIT HOLDS, whichever chair holds it (round 4,
+   * 2026-09-25). The server's party check groups guests by label across the
+   * whole APPOINTMENT (`personKey`), not per chair, so a stranger added on
+   * one chair of a split party must be numbered past a walk-in already on
+   * the other — `DayRowVm.people` is one chair's. Read off the stored
+   * aggregate on any loaded day (the fallback `rowFor` uses too), so the
+   * other chair counts whether or not its row is drawn.
+   */
+  private visitGuestLabels(appointmentId: string): readonly string[] {
+    for (const cell of this.store.dayCells()) {
+      for (const lane of cell.lanes) {
+        const appointment = lane.appointments.find(
+          (entry) => entry.id.value === appointmentId,
+        );
+        if (appointment !== undefined) return guestLabelsOf(appointment.seats);
+      }
+    }
+    return [];
+  }
+
+  /**
+   * The labels the visit's UNNAMED people ride under (round 3,
+   * 2026-09-25): every leg whose person is not a drafted client — and is not
+   * `except`, the chair's own person, who keeps the chair's subject — named
+   * «Случаен клиент», then «Случаен клиент 2»… past the drafted clients'
+   * labels and `taken`, the ones the stored visit already holds. One
+   * catalogue word each (`staff.visit.walkIn`, `staff.visit.walkInNumbered`).
+   */
+  private walkInNames(
+    commit: {
+      readonly legs: readonly { readonly clientId: string }[];
+      readonly clients: readonly {
+        readonly id: string;
+        readonly label: string;
+      }[];
+    },
+    taken: readonly string[],
+    except: string | null = null,
+  ): ReadonlyMap<string, string> {
+    const named = new Set(commit.clients.map((client) => client.id));
+    return walkInLabels(
+      commit.legs
+        .map((leg) => leg.clientId)
+        .filter((id) => !named.has(id) && id !== except),
+      [...commit.clients.map((client) => client.label), ...taken],
+      (number): string =>
+        number === null
+          ? this.transloco.translate('staff.visit.walkIn')
+          : this.transloco.translate('staff.visit.walkInNumbered', { number }),
+    );
+  }
+
+  /**
    * The create sheet's `Запази` — a booking placed by staff.
    *
    * THE PARTY GRAMMAR (2026-09-08): every leg names its person, so a visit
@@ -5307,9 +5709,14 @@ export class StaffDashboard {
     const isAccount = (id: string): boolean =>
       id !== 'primary' && !id.startsWith('guest-');
     const owner = commit.clients.find((client) => isAccount(client.id)) ?? null;
+    // Two strangers on one visit are two people: the second is numbered,
+    // or the server's party check reads them as one (`walkInLabels`).
+    const strangers = this.walkInNames(commit, []);
     const walkIn: string = this.transloco.translate('staff.visit.walkIn');
     const labelOf = (clientId: string): string =>
-      commit.clients.find((client) => client.id === clientId)?.label ?? walkIn;
+      commit.clients.find((client) => client.id === clientId)?.label ??
+      strangers.get(clientId) ??
+      walkIn;
 
     const seats: CommitBookingSeatRequest[] = [];
     let offset = 0;
@@ -5337,6 +5744,14 @@ export class StaffDashboard {
     // number the domain can parse, so a bare walk-in rides on its guest
     // label instead.
     const contactPerson = owner ?? commit.clients[0] ?? null;
+    // THE REBOOKING EDGE (defect §2.3 #6): a `Запиши пак` names the visit it
+    // came from, unless the desk swapped the person on the way. Then the
+    // visit is somebody else's booking, not this client coming back.
+    const bookedFrom =
+      create.bookedFrom !== undefined &&
+      (owner?.id ?? null) === (create.client?.id ?? null)
+        ? create.bookedFrom
+        : null;
     const done = await this.store.createBooking({
       locationId,
       seats,
@@ -5352,6 +5767,7 @@ export class StaffDashboard {
           }
         : {}),
       onBehalfOfUserId: owner?.id ?? null,
+      ...(bookedFrom ? { bookedFromAppointmentId: bookedFrom } : {}),
     });
     if (done) this.createVisit.set(null);
     else this.refuse(this.store.createError(), 'staff.visit.createFailed');
@@ -5885,13 +6301,25 @@ export class StaffDashboard {
   }
 
   /**
-   * A string from the loaded table, read OUTSIDE the reactive graph: a
-   * `translate()` inside a `computed` marks itself dirty on every read.
+   * A string from the loaded table, or `null` while the table is not here.
+   * Read through `copyTable`, so a `computed` that words itself with it is
+   * rebuilt when the words land — `translate()` would hand the key back
+   * and never say when the real word arrived.
+   */
+  private copyOf(key: string): string | null {
+    const table =
+      this.copyTable() ??
+      this.transloco.getTranslation(this.transloco.getActiveLang());
+    const raw = (table as Record<string, unknown> | undefined)?.[key];
+    return typeof raw === 'string' ? raw : null;
+  }
+
+  /**
+   * A string from the loaded table — the key itself until it loads, which
+   * is what a missing string looks like everywhere else in the app.
    */
   private rawCopy(key: string): string {
-    const table = this.transloco.getTranslation(this.transloco.getActiveLang());
-    const raw = (table as Record<string, unknown> | undefined)?.[key];
-    return typeof raw === 'string' ? raw : this.transloco.translate(key);
+    return this.copyOf(key) ?? this.transloco.translate(key);
   }
 
   protected togglePicker(which: 'view' | 'scope'): void {
@@ -5950,13 +6378,29 @@ export class StaffDashboard {
         if (label !== key) params[side] = label;
       }
     }
-    if (serverCode) {
-      const key = `errors.${serverCode}`;
-      const specific = this.transloco.translate(key, params);
-      if (specific !== key) return specific;
-    }
-    return translateDomainError(this.transloco, error);
+    // ONE LEVEL DEEPER FIRST (round 4, 2026-09-25): the refusal's own
+    // reason (`params.field` — «one person, two chairs», a shared guest
+    // label — or a carried seat's `params.refusal`) has copy of its own, so
+    // `<serverCode>.<reason>` is tried before `<serverCode>`, then the
+    // gateway's own code. The client's rule (`wordError`), reused: a staff
+    // save refused for seating one person twice said only "invalid input".
+    return wordError({ code: error.code, params }, (code) =>
+      translateDomainError(this.transloco, { code, params }),
+    );
   }
+}
+
+/**
+ * The labels these seats' guests ride under, seat by seat — a guest's only
+ * identity, and what the server's party check tells people apart by
+ * (`personKey`).
+ */
+function guestLabelsOf(
+  seats: readonly Appointment['seats'][number][],
+): string[] {
+  return seats.flatMap((seat) =>
+    seat.subject.kind === 'anonymous' ? [seat.subject.label.value] : [],
+  );
 }
 
 /** The bill's discounts as the sheet reads them — every snapshot, in stored order. */

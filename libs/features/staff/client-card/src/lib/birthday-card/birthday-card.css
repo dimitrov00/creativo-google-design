@@ -1,0 +1,37 @@
+/*
+ * THE BIRTHDAY CARD — layout only. The band's orange, its flecks, the
+ * ticket's paper, its figure, its chip and its pill are the DS's own
+ * (`ui-occasion-band`, `button[uiCouponCard]`, `span[uiButton]`,
+ * `ui-notice`); this sheet only lets the host take its row in the page
+ * and keeps the card clear of the sheet's chrome when the focus comes
+ * back to it. No colour, no `font:` shorthand: nothing of the law is
+ * decided here.
+ */
+
+:host {
+  display: block;
+}
+
+/* The ticket's foot is the DS's; the whole card fills the column. */
+.ui-coupon-card {
+  inline-size: 100%;
+}
+
+/* The applied gift takes the focus back when the discount page pops (§2.3):
+   it lands clear of the bar above and the dock below. */
+.birthday-card__origin {
+  scroll-margin-block: var(--modal-sheet-origin-margin);
+}
+
+/* A landing is not a control (the loyalty anchor's rule, review 3): the
+   stamped article takes the focus by its test id on ‹, and the DS's inset
+   ring — drawn for `button, article` alike — boxed the whole card, band
+   and body, in the after-use shot (review 3, round 2). The ring is the
+   ticket's `::before`; the button form keeps it. */
+article.birthday-card__origin:focus-visible {
+  outline: none;
+}
+
+article.birthday-card__origin:focus-visible::before {
+  box-shadow: none;
+}

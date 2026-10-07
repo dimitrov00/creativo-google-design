@@ -7,7 +7,7 @@ import {
   provideTransloco,
 } from '@jsverse/transloco';
 import { Observable, of } from 'rxjs';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   AUTH_DEPLOYMENT,
   AUTH_GATEWAY,
@@ -22,13 +22,26 @@ import {
   reconstituteIdentifier,
 } from '@creativo/application/identity';
 import { CLOCK, RepositoryError } from '@creativo/application/shared';
-import { CATALOG_READER, MEDIA_READER } from '@creativo/application/catalog';
+import {
+  CATALOG_READER,
+  MEDIA_READER,
+  MediaRef,
+  MediaUnavailableError,
+  Service,
+  type MediaReadError,
+  type MediaReader,
+  type MediaVariant,
+  type Result,
+} from '@creativo/application/catalog';
 import {
   AVATAR_UPLOADER,
   PROFILE_PORT,
   User,
 } from '@creativo/application/accounts';
 import { fail } from '@creativo/application/identity';
+import { AvatarUploadError } from '@creativo/application/accounts';
+import { SessionIdentityService } from '@creativo/features/shared/shell';
+import { CatalogContentService } from '@creativo/features/shared/catalog';
 import { ClientOnboarding } from './client-onboarding';
 
 @Injectable()
@@ -89,21 +102,93 @@ function seededProfile(): User {
   return userResult.value;
 }
 
+type MediaAnswer = Result<readonly MediaVariant[], MediaReadError>;
+
+/** Answers every resolve with nothing — the default: no covers, no requests of interest. */
+const NO_MEDIA: MediaReader = { resolve: () => Promise.resolve(ok([])) };
+
+/**
+ * Holds every resolve until the test answers it, so a failure can land
+ * AFTER the test takes over the clock (the walk to the services grid runs
+ * on real timers; the retry backoff is only steppable on fake ones).
+ */
+class HeldMediaReader implements MediaReader {
+  readonly calls: string[] = [];
+  private readonly held: ((answer: MediaAnswer) => void)[] = [];
+
+  resolve(ref: MediaRef): Promise<MediaAnswer> {
+    this.calls.push(ref.path);
+    return new Promise((resolve) => this.held.push(resolve));
+  }
+
+  /** Answers the oldest resolve still waiting. */
+  answer(answer: MediaAnswer): void {
+    const next = this.held.shift();
+    if (!next) throw new Error('no resolve is waiting for an answer');
+    next(answer);
+  }
+}
+
+const COVER = (() => {
+  const result = MediaRef.create({
+    id: 'media-fade',
+    path: 'services/fade.jpg',
+    width: 1200,
+    height: 1500,
+  });
+  if (result.isFailure()) throw new Error('fixture cover invalid');
+  return result.value;
+})();
+const COVER_URL = `https://cdn.test/${COVER.path}`;
+
+const FADE = (() => {
+  const result = Service.create({
+    id: 'svc-fade',
+    name: { en: 'Skin fade', bg: 'Фейд' },
+    description: { en: 'x', bg: 'x' },
+    categoryId: 'cat-hair',
+    priceMinorUnits: 1750,
+    currencyCode: 'EUR',
+    durationMinutes: 50,
+    cover: COVER,
+    locationIds: [],
+    conflictsWith: [],
+    composition: { kind: 'single' },
+    upsellOnly: false,
+    popular: true,
+    status: 'active',
+    sortOrder: 1,
+  });
+  if (result.isFailure()) throw new Error('fixture service invalid');
+  return result.value;
+})();
+
+/** The longest wait the default retry policy can pick after the first failure. */
+const FIRST_BACKOFF_CEILING_MS = 2_000;
+
 describe('ClientOnboarding', () => {
   const completeRegistration = vi.fn();
   const signOut = vi.fn();
   const getProfile = vi.fn();
   const saveProfile = vi.fn();
+  const uploadAvatarFile = vi.fn();
   let fixture: ComponentFixture<ClientOnboarding>;
 
   async function setup(
     identifier: Identifier,
     deployment?: AuthDeployment,
+    catalog: {
+      readonly services: readonly Service[];
+      readonly media: MediaReader;
+    } = { services: [], media: NO_MEDIA },
   ): Promise<void> {
     completeRegistration.mockReset().mockResolvedValue(ok(undefined));
     signOut.mockReset().mockResolvedValue(ok(undefined));
     getProfile.mockReset().mockResolvedValue(ok(seededProfile()));
     saveProfile.mockReset().mockResolvedValue(ok(undefined));
+    uploadAvatarFile
+      .mockReset()
+      .mockResolvedValue(ok({ url: 'http://avatar', path: 'avatars/x' }));
 
     await TestBed.configureTestingModule({
       imports: [ClientOnboarding],
@@ -142,19 +227,22 @@ describe('ClientOnboarding', () => {
         },
         {
           provide: PROFILE_PORT,
-          useValue: { getProfile, saveProfile },
+          useValue: {
+            getProfile,
+            observeProfile: () => of(ok(seededProfile())),
+            saveProfile,
+          },
         },
         {
           provide: AVATAR_UPLOADER,
           useValue: {
-            upload: () =>
-              Promise.resolve(ok({ url: 'http://avatar', path: 'avatars/x' })),
+            upload: (...args: unknown[]) => uploadAvatarFile(...args),
           },
         },
         {
           provide: CATALOG_READER,
           useValue: {
-            listActiveServices: () => of(ok([])),
+            listActiveServices: () => of(ok(catalog.services)),
             findServiceById: () => Promise.resolve(ok(null)),
             listServiceCategories: () => of(ok([])),
             listActiveBarbers: () => of(ok([])),
@@ -163,10 +251,7 @@ describe('ClientOnboarding', () => {
             findLocationById: () => Promise.resolve(ok(null)),
           },
         },
-        {
-          provide: MEDIA_READER,
-          useValue: { resolve: () => Promise.resolve(ok([])) },
-        },
+        { provide: MEDIA_READER, useValue: catalog.media },
       ],
     }).compileComponents();
 
@@ -405,6 +490,50 @@ describe('ClientOnboarding', () => {
       expect(query('onboarding-skip-avatar')).not.toBeNull();
     });
 
+    it('tells the shared avatar lookup about a photo that landed, and never about one that failed', async () => {
+      const refresh = vi.spyOn(
+        TestBed.inject(SessionIdentityService),
+        'refreshAvatar',
+      );
+      const createObjectURL = URL.createObjectURL;
+      const revokeObjectURL = URL.revokeObjectURL;
+      URL.createObjectURL = () => 'blob:preview';
+      URL.revokeObjectURL = () => undefined;
+      try {
+        await walkToBirthday();
+        query<HTMLButtonElement>('onboarding-skip-birthday')?.click();
+        await settle();
+        const pick = async (): Promise<void> => {
+          const input = query<HTMLInputElement>('onboarding-avatar-input');
+          if (!input) throw new Error('avatar input not rendered');
+          Object.defineProperty(input, 'files', {
+            value: [new File(['x'], 'me.png', { type: 'image/png' })],
+            configurable: true,
+          });
+          input.dispatchEvent(new Event('change'));
+          await settle();
+        };
+
+        uploadAvatarFile.mockResolvedValueOnce(
+          fail(new AvatarUploadError('storage down')),
+        );
+        await pick();
+        query<HTMLButtonElement>('onboarding-avatar-enter-app')?.click();
+        await settle();
+        expect(uploadAvatarFile).toHaveBeenCalledTimes(1);
+        expect(refresh).not.toHaveBeenCalled();
+
+        await pick();
+        query<HTMLButtonElement>('onboarding-avatar-enter-app')?.click();
+        await settle();
+        expect(uploadAvatarFile).toHaveBeenCalledTimes(2);
+        expect(refresh).toHaveBeenCalledTimes(1);
+      } finally {
+        URL.createObjectURL = createObjectURL;
+        URL.revokeObjectURL = revokeObjectURL;
+      }
+    });
+
     it('skips straight to avatar without touching the profile port', async () => {
       await walkToBirthday();
       // The shared session model reads the profile on its own (it backs
@@ -460,6 +589,111 @@ describe('ClientOnboarding', () => {
         'accounts.update_profile.repository_failure',
       );
     });
+  });
+
+  describe('service covers (the shared catalogue media cache)', () => {
+    const exampleDigits = (
+      examplePhoneNumber(DEFAULT_AUTH_DEPLOYMENT.defaultCountry) as string
+    ).replace(/\D/g, '');
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    /** Registers, then personalizes onto the services grid. */
+    async function walkToServices(): Promise<void> {
+      fillInput('onboarding-first-name', 'Ada');
+      fillInput('onboarding-last-name', 'Lovelace');
+      typePhone(exampleDigits);
+      await settle();
+      query<HTMLButtonElement>('onboarding-submit-about')?.click();
+      await settle();
+      query<HTMLButtonElement>('onboarding-personalize')?.click();
+      await settle();
+      expect(query('onboarding-services-list')).not.toBeNull();
+    }
+
+    function coverSrc(): string | null {
+      fixture.detectChanges();
+      const card = query(`service-card-${FADE.id.value}`);
+      if (!card) throw new Error('service card not rendered');
+      return (
+        card.querySelector('img.ui-async-image__image')?.getAttribute('src') ??
+        null
+      );
+    }
+
+    /** Steps the fake clock, then hands it back so the fixture can settle. */
+    async function elapseThenRealTime(ms: number): Promise<void> {
+      await vi.advanceTimersByTimeAsync(ms);
+      vi.useRealTimers();
+      await settle();
+    }
+
+    it('shows the resolved cover on the card', async () => {
+      const media = new HeldMediaReader();
+      await setup(EMAIL_IDENTIFIER, undefined, { services: [FADE], media });
+      await walkToServices();
+      expect(coverSrc()).toBeNull();
+
+      media.answer(ok([{ width: COVER.width, url: COVER_URL }]));
+      await settle();
+
+      expect(coverSrc()).toBe(COVER_URL);
+      expect(media.calls).toEqual([COVER.path]);
+    });
+
+    it('reads each card’s cover off its own service, never by searching the catalogue', async () => {
+      const media = new HeldMediaReader();
+      await setup(EMAIL_IDENTIFIER, undefined, { services: [FADE], media });
+      await walkToServices();
+      // Every card asks on every pass: a search per card was O(n²). The
+      // spy is in place before the cover lands, so the pass that paints it
+      // is one that asked.
+      const search = vi.spyOn(
+        TestBed.inject(CatalogContentService),
+        'findService',
+      );
+      media.answer(ok([{ width: COVER.width, url: COVER_URL }]));
+      await settle();
+
+      expect(coverSrc()).toBe(COVER_URL);
+      expect(search).not.toHaveBeenCalled();
+    });
+
+    it('retries a cover whose first resolve failed transiently, then shows it', async () => {
+      const media = new HeldMediaReader();
+      await setup(EMAIL_IDENTIFIER, undefined, { services: [FADE], media });
+      await walkToServices();
+
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+      media.answer(fail(new RepositoryError('storage/retry-limit-exceeded')));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(coverSrc()).toBeNull();
+
+      await vi.advanceTimersByTimeAsync(FIRST_BACKOFF_CEILING_MS);
+      expect(media.calls).toEqual([COVER.path, COVER.path]);
+
+      media.answer(ok([{ width: COVER.width, url: COVER_URL }]));
+      await elapseThenRealTime(100);
+      expect(coverSrc()).toBe(COVER_URL);
+    });
+
+    it.each(['not_found', 'forbidden'] as const)(
+      'asks once about a permanently unavailable cover (%s) and keeps the card on its fallback',
+      async (reason) => {
+        const media = new HeldMediaReader();
+        await setup(EMAIL_IDENTIFIER, undefined, { services: [FADE], media });
+        await walkToServices();
+
+        vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+        media.answer(fail(new MediaUnavailableError(reason, COVER.path)));
+        await elapseThenRealTime(10 * 60_000);
+
+        expect(media.calls).toEqual([COVER.path]);
+        expect(coverSrc()).toBeNull();
+      },
+    );
   });
 
   describe('phone_otp deployment (the identifier channel supplies the phone)', () => {

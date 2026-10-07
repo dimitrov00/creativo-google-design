@@ -324,7 +324,9 @@ it. What we fixed was paint, rhythm and one real accessibility bug.
       token preserves hue (21.1°) and saturation (0.89) exactly and moves only
       lightness — **`#c14b0b`, 4.91:1 on the page and 4.58:1 on a card** — and
       aliases straight back to the accent in dark. Fills, rails and hairlines
-      keep `--sys-color-accent`; this token is for ink.
+      keep `--sys-color-accent`; this token is for ink. (Superseded
+      2026-09-25: re-cut to `#b04100` light and `#fb7735` dark, see
+      "Resolved 2026-09-25" further down.)
 - [x] **The now-line takes the time gutter.** Same `3.25rem 1fr` as every
       group, so the clock sits on the same axis as 09:00 and 10:30 instead of
       floating free of the column it is a time in. `opacity: 0.55` is gone — it
@@ -993,12 +995,16 @@ defect.
       anchors, and the appointments date stamp and action buttons. All move to
       `--sys-color-accent-label` — same hue, same saturation, darkened for
       light only (**4.91:1**), aliased back to the accent in dark, so dark is
-      untouched. Verified after: `/careers` and `/book` have **zero**
+      untouched (superseded 2026-09-25: both themes were re-cut, see
+      "Resolved 2026-09-25" below). Verified after: `/careers` and `/book` have **zero**
       accent-coloured text nodes left, and the two on `/` are `ui-icon`
       glyphs, where 3.04:1 clears the 3:1 graphical floor.
 
-**Left deliberately, with the number.** The `bordered` button's label sits on
-its own 12% accent wash, so even the label cut reaches only **4.3:1** — the
+**Left deliberately, with the number** (resolved 2026-09-25: the ink was
+re-cut in both themes, see "Resolved 2026-09-25" below; the figures in this
+paragraph and the next are the 2026-08-25 state). The `bordered` button's
+label sits on its own 12% accent wash, so even the label cut reaches only
+**4.3:1** — the
 worst accent pairing in the system, improved from 2.67:1 but still short.
 Closing the last 0.2 means lightening that wash from 12% to 8% (which lands
 exactly on 4.5), and that visibly pales every bordered button in the app —
@@ -1009,8 +1015,127 @@ an icon fill is correct there.
 
 **Visible result:** accent TEXT darkens slightly on the light theme across the
 app — eyebrows, links, bordered-button labels, the appointments date stamp.
-Hue and saturation are unchanged; dark is byte-identical. Everything else on
-every route is pixel-identical. 53 projects green.
+Hue and saturation are unchanged; dark is byte-identical (true of this pass
+only: superseded 2026-09-25, when dark moved to `#fb7735`, see below).
+Everything else on every route is pixel-identical. 53 projects green.
+
+**Resolved 2026-09-25 — the ink moved, the wash stayed** (the "Left
+deliberately" bordered item above). Conformance is not optional (WCAG 2.2 AA,
+and the European Accessibility Act has covered consumer booking services
+since June 2025), and the 12% wash is the bordered
+style's identity, so neither "leave it" nor "pale 34 buttons to 8%" was
+taken: `--sys-color-accent-label` was re-cut instead, same OKLCH hue, sized to
+clear **4.6:1** (AA plus a rendering margin) on the WORST real pairing of text
+below large size rather than the bare page (two more resting washes, held by
+cases of their own rather than by the ceiling, are below the table: a selected
+bordered button's 18% rung, and the selected date badge, heavier than the stamp
+only in dark). Measuring every ground the ink is
+read on — page, card,
+grouped segment, elevated card, chrome material, the translucent list fill,
+each under the accent washes that carry it — found the bordered label was not
+the worst case: the appointments date stamp (16% over a grouped segment) was
+3.88:1 light and 4.08:1 dark, and a coupon inside the visit editor's fold
+4.22:1 light and 4.09:1 dark. Dark failed too, so dark moved as well.
+
+Figures in this table are truncated to two decimals (the narrative above rounds, so the old light ink reads 4.91 there and 4.90 here).
+
+| Pairing (worst ground)                          | Light before → after | Dark before → after       |
+| ----------------------------------------------- | -------------------- | ------------------------- |
+| Ink bare on the page                            | 4.90 → 5.82          | 6.90 → 7.79               |
+| Ink on fill over a segment (coupon in the fold) | 4.22 → 5.02          | 4.09 → 4.61               |
+| Bordered 12% on page / card                     | **4.30 → 5.11**      | 6.21 / 5.06 → 7.01 / 5.71 |
+| Bordered 12% on a grouped segment               | 4.04 → 4.80          | 4.32 → 4.87               |
+| Bordered 12% on an elevated card                | = card               | 4.23 → 4.78               |
+| Appointments stamp 16% on a segment             | 3.88 → **4.61**      | 4.08 → **4.61**           |
+| Bordered pressed 18% on page / card             | 4.03 → 4.79          | 5.74 / 4.60 → 6.48 / 5.19 |
+
+Light `#c14b0b` → `#b04100` (OKLCH L 0.564 → 0.523, h 42.3° → 42.2°; chroma
+0.165 → 0.157, the sRGB gamut edge at that lightness). Dark
+`var(--sys-color-accent)` → `#fb7735` (L 0.684 → 0.715, h 44.3° held). Fills,
+rails, icons and the washes themselves keep `--sys-color-accent`; nothing but
+accent TEXT changes colour, a shade deeper on light and a shade brighter on
+dark. Figures are axe's sRGB flattening, taking the lower of the unrounded and
+hex-rounded ground. `libs/ui/tokens/src/lib/accent-label.spec.ts` now reads the
+theme files and the bordered rungs in `button.css`, and fails if the ink or a
+bordered rung drops one of these pairings under 4.6 (or a pressed label on a
+page or card under 4.5); the axe waiver on `account-upcoming-book-cta` is gone.
+
+**Two resting washes outside the ceiling: the selected bordered rung and the
+selected date badge (recorded 2026-09-25, round 3; corrected 2026-09-26).** The 4.6 floor
+holds for accent ink under every resting wash that carries text below large
+size, on the grounds each wash is placed on, except a selected bordered
+button's 18% rung, which the guard holds to 4.5 on the page and a card (4.51:1
+on a light grouped segment; `button.css`). The appointments stamp's 16% would
+read 4.49:1 on a dark elevated card, where it is not placed; the spec's wash
+property samples the page, a card and a grouped segment.
+
+The selected bordered button
+(`.ui-button[data-button-style='bordered'][data-selected]`, which `button.css`
+calls "the open/pressed resting state") rests on the 18% press rung. Its label
+reads 4.79:1 on a light page or card and 5.19:1 on a dark card, only 4.51:1 on
+a light grouped segment, and 4.46:1 on a dark grouped segment and 4.36:1 on a
+dark elevated card. `accent-label.spec.ts` holds it to AA (4.5) on the page and
+a card, beside the pressed label, and `button.css` records the 4.51:1 and keeps
+such a label off the two dark grounds. No selected bordered button carries text
+today (below).
+
+The selected `ui-date-badge` (the booking flow's day grid and review calendar,
+and the month picker the staff day pill opens) lays the ink on
+`--sys-alpha-segment-selected`, 14% in light and 20% in dark. In light it reads
+5.01:1 on the page and 4.70:1 on a grouped segment. In dark it reads 5.01:1 on
+a card, but **4.32:1 on a grouped segment and 4.22:1 on an elevated card**,
+short of 4.5 (`date-badge.css`, re-measured 2026-09-26 with axe's unrounded
+flattening, truncated to hundredths). The number is bold. At 20 px, in the day
+grid and the month picker, it is large text (WCAG ≥ 18.66 px bold, and the
+HIG's bold row), where the bar is 3:1, so those pairings pass by their size and
+not by the ink. The review calendar draws it at body size (15 px) on a card,
+where it clears 4.5. Since 2026-09-26 `accent-label.spec.ts` holds it: 3:1 on
+every ground, 4.5:1 on the page and a card, a bold number, and a bold-large
+size in `calendar-grid.css`'s large grid and in `month-picker.css`. A date
+drawn below large size may take that disc only on the page or a card; in dark
+it would need a rung of 15% or less to clear 4.5 on an elevated card.
+
+**What the guard does not see (review, 2026-09-25).** The pairing that now
+sets the floor is the appointments stamp (16% over a grouped segment, 4.61 in
+both themes), and the spec does not read that wash from its source:
+`ACCENT_INK_WASH_CEILING = 0.16` is a constant, and only `button.css` is
+parsed. Raising the stamp's wash in `client-appointments.css`, or putting
+accent ink on a heavier accent wash anywhere else, would not fail CI.
+Follow-up: parse the stamp rule's percentage from `client-appointments.css`
+the way `borderedRung()` parses `button.css` (and add that file to the tokens
+test inputs), or move the stamp onto a shared alpha token the spec resolves.
+(Closed 2026-09-25, after round 1: the spec reads the stamp from
+`.visit__date[data-upcoming]` in `client-appointments.css`, and the ceiling is
+the heaviest of `INK_WASHES_AT_REST`, derived rather than copied.)
+
+Still short, and not a placement the app uses: the 18% rung under a bordered
+accent label on a dark grouped segment (4.46) or elevated card (4.36), and on
+a light grouped segment (4.51, under the 4.6 target). That rung is the press,
+and it is also the RESTING fill of a selected bordered button
+(`.ui-button[data-button-style='bordered'][data-selected]`), which the spec
+does not cover yet. Today the only bordered button bound to `uiSelected` is
+site-header's menu trigger, and it is icon-only, so this is latent.
+Follow-up: a spec case for the `[data-selected]` rung, gated to the page and
+card like the pressed case, and a line in `button.css` recording that a
+selected accent bordered button that carries text must not sit on a dark
+grouped segment or elevated card. (Closed 2026-09-25: the spec holds the
+`[data-selected]` rung to AA on the page and a card beside the pressed case,
+and `button.css` carries the warning above that rule.)
+
+**Browser proof (after the round-1 e2e pass, 2026-09-25).** Every screenshot
+baseline was regenerated after the re-cut, and the suite passed 39/39 on
+them. Axe runs once per theme on the populated `/account` and on
+`/account/appointments` (the list, which carries the stamp, and the
+calendar). The harness case that replaced the waiver (the empty `/account`
+with the bordered book CTA) runs axe once, under Playwright's default light
+scheme, so the bordered label in dark (`#fb7735`) has no browser-rendered
+check yet. Follow-up: one shared theme helper in `apps/web/e2e/support` (four
+screenshot specs each set `ui-theme` through their own `addInitScript`), and
+a second, dark axe pass in the harness. (Closed 2026-09-25 in code:
+`apps/web/e2e/support/theme.ts` holds `THEMES` and `pinTheme`, every screenshot
+spec pins its theme through it, and the harness scans `/account` once per
+theme. The e2e run of 2026-09-25 21:30 passed 42/42 with it, the dark pass on
+the phone, tablet and desktop projects included.)
 
 **2026-08-25 — twenty-seventh pass. The foot gets a row.**
 

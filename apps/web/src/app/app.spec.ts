@@ -52,6 +52,7 @@ describe('App', () => {
           provide: PROFILE_PORT,
           useValue: {
             getProfile: () => Promise.resolve(ok(null)),
+            observeProfile: () => of(ok(null)),
             saveProfile: () => Promise.resolve(ok(undefined)),
           },
         },

@@ -3,140 +3,127 @@
        Sticky over a scrim, like `/book`'s own bar — this screen scrolls a
        long way and the way out must not scroll with it. -->
   <ui-toolbar uiSticky uiToolbarBackground="scrim">
-    <ui-stack
-      uiAxis="horizontal"
-      uiAlignment="center"
-      uiSpacing="compact"
-      uiFrame
-      uiFrameMaxWidth="infinity"
-    >
-      <a
-        uiButton
-        uiButtonStyle="bordered"
-        uiTint="neutral"
-        uiControlSize="regular"
-        [uiIconOnly]="true"
-        routerLink="/account"
-        [attr.aria-label]="t('appointments.header.back')"
-        data-testid="appointments-back"
+    <ui-stack uiSpacing="none" uiFrame uiFrameMaxWidth="infinity">
+      <!-- Row one is the same in both views, at the bar's standing height, so
+         the calendar's extra row below it never moves a control. -->
+      <ui-stack
+        uiAxis="horizontal"
+        uiAlignment="center"
+        uiSpacing="compact"
+        uiFrame
+        uiFrameMaxWidth="infinity"
+        uiFrameMinHeight="var(--control-size-large)"
       >
-        <ui-icon uiName="nav.back" />
-      </a>
-
-      <ui-spacer />
-
-      <!-- Two views of ONE set of visits, so a segmented track rather than
-           two separate buttons: the choice is exclusive and the control
-           should look like it. Icon-only — a list and a calendar are the two
-           glyphs nobody needs a word for. -->
-      <div
-        class="appointments-views"
-        role="tablist"
-        [attr.aria-label]="t('appointments.view.label')"
-      >
-        <button
-          type="button"
-          role="tab"
-          class="appointments-views__option"
-          [attr.aria-selected]="view() === 'list'"
-          [attr.data-selected]="view() === 'list' ? '' : null"
-          [attr.aria-label]="t('appointments.view.list')"
-          [title]="t('appointments.view.list')"
-          data-testid="appointments-view-list"
-          (click)="setView('list')"
-        >
-          <ui-icon uiName="view.list" uiScale="small" />
-        </button>
-        <button
-          type="button"
-          role="tab"
-          class="appointments-views__option"
-          [attr.aria-selected]="view() === 'calendar'"
-          [attr.data-selected]="view() === 'calendar' ? '' : null"
-          [attr.aria-label]="t('appointments.view.calendar')"
-          [title]="t('appointments.view.calendar')"
-          data-testid="appointments-view-calendar"
-          (click)="setView('calendar')"
-        >
-          <ui-icon uiName="view.calendar" uiScale="small" />
-        </button>
-      </div>
-
-      <ui-spacer />
-
-      <!-- Narrowing, as a MENU rather than a second row of pills: the pills
-           already own where-you-are, and HIG puts a secondary, occasional
-           choice behind a nav-bar glyph instead of spending permanent
-           screen on it. The funnel goes accent while it bites, because a
-           list that is hiding things has to say so. -->
-      <ui-menu
-        [uiPresented]="filterMenuOpen()"
-        uiAlignment="trailing"
-        [uiLabel]="t('appointments.filter.label')"
-        (uiDismissed)="filterMenuOpen.set(false)"
-      >
-        <button
-          uiMenuTrigger
-          type="button"
+        <a
           uiButton
           uiButtonStyle="bordered"
           uiTint="neutral"
           uiControlSize="regular"
           [uiIconOnly]="true"
-          class="appointments__filter"
-          [attr.aria-label]="filterButtonLabel()"
-          [title]="filterButtonLabel()"
-          data-testid="appointments-filter"
-          [attr.data-filtering]="filtering() ? '' : null"
-          (click)="filterMenuOpen.set(!filterMenuOpen())"
+          routerLink="/account"
+          [attr.aria-label]="t('appointments.header.back')"
+          data-testid="appointments-back"
         >
-          <ui-icon uiName="action.filter" />
-        </button>
+          <ui-icon uiName="nav.back" />
+        </a>
 
-        <ui-list-group>
-          @for (option of filters; track option) {
+        <ui-spacer />
+
+        <!-- Two views of ONE set of visits, so a segmented track rather than
+           two separate buttons: the choice is exclusive and the control
+           should look like it. Icon-only — a list and a calendar are the two
+           glyphs nobody needs a word for. -->
+        <div
+          class="appointments-views"
+          role="tablist"
+          [attr.aria-label]="t('appointments.view.label')"
+        >
           <button
-            uiMenuItem
-            uiListRow
             type="button"
-            [uiInteractive]="true"
-            [uiSelected]="filter() === option"
-            [attr.data-testid]="'appointments-filter-' + option"
-            (click)="setFilter(option)"
+            role="tab"
+            class="appointments-views__option"
+            [attr.aria-selected]="view() === 'list'"
+            [attr.data-selected]="view() === 'list' ? '' : null"
+            [attr.aria-label]="t('appointments.view.list')"
+            [title]="t('appointments.view.list')"
+            data-testid="appointments-view-list"
+            (click)="setView('list')"
           >
-            <span uiText uiFont="body">
-              {{ t('appointments.filter.' + option) }}
-            </span>
-            @if (filter() === option) {
-            <ui-icon
-              uiTrailing
-              uiName="checklist.done"
-              uiForegroundStyle="accent"
-            />
-            }
+            <ui-icon uiName="view.list" uiScale="small" />
           </button>
-          }
-        </ui-list-group>
-      </ui-menu>
+          <button
+            type="button"
+            role="tab"
+            class="appointments-views__option"
+            [attr.aria-selected]="view() === 'calendar'"
+            [attr.data-selected]="view() === 'calendar' ? '' : null"
+            [attr.aria-label]="t('appointments.view.calendar')"
+            [title]="t('appointments.view.calendar')"
+            data-testid="appointments-view-calendar"
+            (click)="setView('calendar')"
+          >
+            <ui-icon uiName="view.calendar" uiScale="small" />
+          </button>
+        </div>
 
-      <!-- The one thing this screen exists to lead to. The shop's own ink,
+        <ui-spacer />
+
+        <!-- Narrowing, as a MENU rather than a second row of pills: the pills
+           already own where-you-are, and HIG puts a secondary, occasional
+           choice behind a nav-bar glyph instead of spending permanent
+           screen on it. The shared funnel — the staff card's history
+           narrows with the same one — goes to the accent while it bites,
+           because a list that is hiding things has to say so, and its name
+           says which option bites. -->
+        <lib-visit-filter
+          perspective="client"
+          testIdPrefix="appointments-filter"
+          [value]="filter()"
+          (valueChange)="setFilter($event)"
+        />
+
+        <!-- The one thing this screen exists to lead to. The shop's own ink,
            filled: HIG puts the additive action at the bar's trailing edge
            and tints it with the app's accent — the DS's `borderedProminent`
            is the white pill this app reserves for a screen's ONE primary
            action, which a nav-bar glyph is not. -->
-      <a
-        uiButton
-        uiButtonStyle="bordered"
-        uiControlSize="regular"
-        [uiIconOnly]="true"
-        class="appointments__add"
-        routerLink="/book"
-        [attr.aria-label]="t('appointments.bookCta')"
-        [title]="t('appointments.bookCta')"
-        data-testid="appointments-book-cta"
+        <a
+          uiButton
+          uiButtonStyle="bordered"
+          uiControlSize="regular"
+          [uiIconOnly]="true"
+          class="appointments__add"
+          routerLink="/book"
+          [attr.aria-label]="t('appointments.bookCta')"
+          [title]="t('appointments.bookCta')"
+          data-testid="appointments-book-cta"
+        >
+          <ui-icon uiName="action.add" />
+        </a>
+      </ui-stack>
+
+      <!-- The calendar's weekday key, pinned under the controls — the month
+         view's own header row (iOS Calendar keeps it under the bar the same
+         way). It cannot travel with the heading, as `/book`'s does: this run
+         opens on today's month and grows backwards whenever its top comes
+         near, so a key closing the heading would be off screen for good and
+         every month would be seven unlabelled columns. Same
+         `ui-calendar-grid uiSize="large"` as every month, on the same
+         measure, so each letter sits over the dates it names. -->
+      @if (view() === 'calendar') {
+      <div
+        class="appointments__weekdays"
+        data-testid="appointments-chrome-weekdays"
       >
-        <ui-icon uiName="action.add" />
-      </a>
+        <ui-calendar-grid uiSize="large" aria-hidden="true">
+          @for (label of weekdayLabels(); track $index) {
+          <span uiWeekday uiText uiFont="caption" uiForegroundStyle="secondary">
+            {{ label }}
+          </span>
+          }
+        </ui-calendar-grid>
+      </div>
+      }
     </ui-stack>
   </ui-toolbar>
 
@@ -147,24 +134,6 @@
     uiPaddingHorizontal="regular"
     class="appointments"
   >
-    @switch (store.upcoming().kind) { @case ('loading') {
-    <ui-stack uiSpacing="comfortable" data-testid="appointments-skeleton">
-      <ui-skeleton uiFrame uiFrameHeight="3rem" />
-      <ui-skeleton uiFrame uiFrameHeight="8rem" />
-      <ui-skeleton uiFrame uiFrameHeight="8rem" />
-    </ui-stack>
-    } @case ('error') {
-    <p
-      uiText
-      uiFont="footnote"
-      uiForegroundStyle="destructive"
-      role="alert"
-      data-testid="appointments-error"
-    >
-      {{ translateListError() }}
-    </p>
-    } @default {
-
     <!-- ── LIST ──────────────────────────────────────────────────────── -->
     @if (view() === 'list') {
     <ui-stack uiSpacing="none" class="appointments__head">
@@ -181,151 +150,106 @@
       }
     </ui-stack>
 
-    @if (isEmpty()) {
-    <ui-stack uiSpacing="compact" data-testid="appointments-empty">
-      @if (isFilteredEmpty()) {
-      <!-- Empty BECAUSE of the funnel: the way out is the filter, not a
-           booking. Offering "book one" here would answer a question the
-           person did not ask. -->
-      <p uiText uiFont="body" uiForegroundStyle="secondary">
-        {{ t('appointments.empty.filtered') }}
-      </p>
-      <button
-        type="button"
-        uiButton
-        uiButtonStyle="bordered"
-        uiControlSize="regular"
-        data-testid="appointments-clear-filter"
-        (click)="setFilter('all')"
-      >
-        {{ t('appointments.filter.clear') }}
-      </button>
-      } @else {
-      <p uiText uiFont="body" uiForegroundStyle="secondary">
-        {{ t('appointments.empty.title') }}
-      </p>
-      <a
-        uiButton
-        uiButtonStyle="bordered"
-        uiControlSize="regular"
-        routerLink="/book"
-        data-testid="appointments-empty-cta"
-      >
-        {{ t('appointments.empty.cta') }}
-      </a>
-      }
-    </ui-stack>
-    } @else {
-
-    <!-- The pills NAVIGATE. One per section that actually holds a visit, so
-         every option leads somewhere; the current one follows the scroll. -->
-    <ui-scroll-row
-      uiSpacing="compact"
-      [uiFullBleed]="true"
-      class="appointments__pills"
-      data-testid="appointments-pills"
+    <!-- The shared visits BROWSER, in the client's perspective (client-card
+         revision 3 §3.11): the jump pills over the list — one per section
+         that actually holds a visit, so every option leads somewhere, the
+         current one following the scroll — then month sections under their
+         headings (the anchors the pills jump to), one inset group each, a
+         row per visit that opens its sheet. The browser owns the pills, the
+         scroll spy and the jump; the page states only how far a jumped
+         heading stands clear of its floating bar
+         (`--visit-list-anchor-clearance`, client-appointments.css). It
+         draws its own placeholders and its own failure with «Опитай пак»;
+         the EMPTY is the page's, because only the page knows whether
+         nothing is there or the funnel is hiding it. -->
+    <lib-visits-browser
+      perspective="client"
+      testIdPrefix="appointments"
+      class="appointments__browser"
+      [sections]="sections()"
+      [state]="listState()"
+      (openRow)="showVisit($event)"
+      (retry)="retry()"
     >
-      @for (section of sections(); track section.key) {
-      <button
-        type="button"
-        class="appointments__pill"
-        [attr.data-selected]="activeSection() === section.key ? '' : null"
-        [attr.data-section]="section.key"
-        data-testid="appointments-pill"
-        (click)="jumpTo(section.key)"
-      >
-        {{ section.label }}
-      </button>
-      }
-    </ui-scroll-row>
-
-    <ui-stack uiSpacing="comfortable" data-testid="appointments-list">
-      @for (section of sections(); track section.key) {
-      <ui-stack uiSpacing="compact">
-        <p
-          #sectionAnchor
-          uiText
-          uiFont="caption"
-          uiForegroundStyle="secondary"
-          class="appointments__section-head"
-          [attr.data-section-key]="section.key"
-        >
-          {{ section.label }}
+      <ng-container ngProjectAs="[visitListEmpty]">
+        <p uiText uiFont="body" uiForegroundStyle="secondary">
+          {{ isFilteredEmpty() ? t('appointments.empty.filtered') :
+          t('appointments.empty.title') }}
         </p>
-
-        <ui-list-group>
-          @for (visit of section.visits; track visit.id) {
-          <button
-            type="button"
-            uiListRow
-            uiSize="regular"
-            uiAlignment="center"
-            [uiInteractive]="true"
-            data-testid="appointment-row"
-            [attr.data-appointment-id]="visit.id"
-            [attr.data-status]="visit.status"
-            (click)="showVisit(visit)"
-          >
-            <!-- WHEN, as a stamp: weekday over day number, accent while the
-                 visit is still ahead and quiet once it is a memory. -->
-            <span
-              uiLeading
-              class="visit__date"
-              [attr.data-upcoming]="visit.upcoming ? '' : null"
-              aria-hidden="true"
-            >
-              <span class="visit__weekday">{{ visit.weekdayShort }}</span>
-              <span class="visit__day">{{ visit.dayOfMonth }}</span>
-            </span>
-
-            <ui-stack uiSpacing="none" class="visit__identity">
-              <span uiText uiFont="body" uiWeight="semibold">
-                {{ visit.title }}
-              </span>
-              <span class="visit__with">
-                @if (visit.multipleBarbers) {
-                <ui-icon
-                  uiName="booking.anyBarber"
-                  uiScale="small"
-                  uiForegroundStyle="secondary"
-                />
-                } @else {
-                <ui-avatar
-                  class="visit__face"
-                  [uiSrc]="visit.barberAvatarSrc"
-                  [uiName]="visit.barberMonogram"
-                  uiControlSize="small"
-                />
-                }
-                <span uiText uiFont="footnote" uiForegroundStyle="secondary">
-                  {{ visit.barberLabel }} · {{ visit.timeLabel }}
-                </span>
-              </span>
-            </ui-stack>
-          </button>
-          }
-        </ui-list-group>
-      </ui-stack>
-      }
-    </ui-stack>
-    } }
+        @if (isFilteredEmpty()) {
+        <!-- Empty BECAUSE of the funnel: the way out is the filter, not a
+             booking. Offering "book one" here would answer a question the
+             person did not ask. -->
+        <button
+          uiActions
+          type="button"
+          uiButton
+          uiButtonStyle="bordered"
+          uiControlSize="regular"
+          data-testid="appointments-clear-filter"
+          (click)="setFilter('all')"
+        >
+          {{ t('visits.filter.clear') }}
+        </button>
+        } @else {
+        <a
+          uiActions
+          uiButton
+          uiButtonStyle="bordered"
+          uiControlSize="regular"
+          routerLink="/book"
+          data-testid="appointments-empty-cta"
+        >
+          {{ t('appointments.empty.cta') }}
+        </a>
+        }
+      </ng-container>
+    </lib-visits-browser>
+    }
 
     <!-- ── CALENDAR ──────────────────────────────────────────────────── -->
-    @else {
+    @else { @switch (store.upcoming().kind) { @case ('loading') {
+    <ui-stack
+      uiSpacing="comfortable"
+      class="appointments__status"
+      data-testid="appointments-skeleton"
+    >
+      <ui-skeleton uiFrame uiFrameHeight="3rem" />
+      <ui-skeleton uiFrame uiFrameHeight="8rem" />
+      <ui-skeleton uiFrame uiFrameHeight="8rem" />
+    </ui-stack>
+    } @case ('error') {
+    <!-- The list's own failure grammar: what did not load, and the one
+         retry word of the stack. -->
+    <ui-notice
+      class="appointments__status"
+      [uiLabel]="t('clientCard.failed.visits')"
+      data-testid="appointments-error"
+    >
+      <p>{{ t('clientCard.failed.visits') }}</p>
+      <button
+        uiNoticeActions
+        type="button"
+        uiButton
+        uiButtonStyle="bordered"
+        uiTint="neutral"
+        uiControlSize="regular"
+        data-testid="appointments-retry"
+        (click)="retry()"
+      >
+        {{ t('visits.retry') }}
+      </button>
+    </ui-notice>
+    } @default {
     <ui-calendar-scroller
       #calendarScroller
       data-testid="appointments-calendar"
       (scroll)="onCalendarScroll()"
     >
+      <!-- The heading alone: the weekday key it used to close lives in the
+           bar, where it stays on screen for the whole run. -->
       <ui-stack uiCalendarLede uiSpacing="compact" class="appointments__head">
         <h1 uiText uiFont="largeTitle">{{ t('appointments.header.title') }}</h1>
-        <ui-calendar-grid uiSize="large" aria-hidden="true">
-          @for (label of weekdayLabels(); track $index) {
-          <span uiWeekday uiText uiFont="caption" uiForegroundStyle="secondary">
-            {{ label }}
-          </span>
-          }
-        </ui-calendar-grid>
       </ui-stack>
 
       @for (month of months(); track month.key) {
@@ -360,7 +284,7 @@
             data-testid="appointments-calendar-day"
             [attr.data-day-key]="day.dayKey"
             [attr.aria-label]="dayAriaLabel(day.visits)"
-            (click)="showVisit(day.visits[0]!)"
+            (click)="showVisit(day.visits[0]!.id)"
           >
             <!-- The SAME `ui-date-badge` an empty day renders: a date does
                  not shrink because something happened on it, and a
@@ -472,90 +396,97 @@
         </span>
       </ui-stack>
 
-      <!-- The verbs, as a run of labelled glyphs — the Maps place-card and
-           Contacts-card anatomy. A glyph with its word underneath is read at
-           a glance and still says what it does; a column of full-width
-           buttons would make four equal-weight demands of a screen whose
-           job is to state a fact. -->
-      <div class="visit-actions" role="group">
+      <!-- The verbs, as the DS's quick actions — the Maps place-card and
+           Contacts-card run: round discs, each a glyph on its disc with its
+           word under it, one column per verb this visit has (an absent verb
+           leaves no hole). A glyph with its word is read at a glance and
+           still says what it does; a column of full-width buttons would
+           make four equal-weight demands of a screen whose job is to state
+           a fact. ONE verb is promoted to the solid disc (R2-B, G1-1): the
+           one the sheet leads with, which is the one a person reaches for
+           first. -->
+      <ui-quick-actions
+        [uiLabel]="t('appointments.visit.actions')"
+        [uiColumns]="openVisitVerbCount()"
+        data-testid="appointment-actions"
+      >
         <!-- A visit that has HAPPENED wants a different first verb: nobody
              calendars last month, and "the same again" is the one thing a
              good haircut earns. -->
         @if (visit.upcoming) {
         <button
+          uiQuickAction
+          uiIcon="visit.calendar"
+          uiProminence="accent"
           type="button"
-          class="visit-actions__item"
           data-testid="appointment-add-to-calendar"
           (click)="addToCalendar(visit)"
         >
-          <span class="visit-actions__glyph">
-            <ui-icon uiName="visit.calendar" />
-          </span>
-          <span uiText uiFont="caption">
-            {{ t('appointments.visit.addToCalendar') }}
-          </span>
+          {{ t('appointments.visit.addToCalendar') }}
         </button>
         } @else {
         <a
-          class="visit-actions__item"
+          uiQuickAction
+          uiIcon="visit.repeat"
+          uiProminence="accent"
           routerLink="/book"
           [queryParams]="{ repeat: visit.id }"
           data-testid="appointment-book-again"
         >
-          <span class="visit-actions__glyph">
-            <ui-icon uiName="visit.repeat" />
-          </span>
-          <span uiText uiFont="caption">
-            {{ t('appointments.visit.bookAgain') }}
-          </span>
+          {{ t('appointments.visit.bookAgain') }}
         </a>
-        } @if (visit.upcoming && canCancel(visit.appointment)) {
+        } @if (visit.upcoming && canMove(visit.appointment)) {
         <!-- A move is governed by the SAME window a cancellation is, and
-             refused on the server by the same rule — so it appears exactly
-             while it is possible. -->
+             refused on the server by the same rules — so it appears exactly
+             while it is possible: inside the window, and only for a visit
+             holding a seat that is the client's to move. -->
         <a
-          class="visit-actions__item"
+          uiQuickAction
+          uiIcon="visit.reschedule"
           routerLink="/book"
           [queryParams]="{ reschedule: visit.id }"
           data-testid="appointment-reschedule"
         >
-          <span class="visit-actions__glyph">
-            <ui-icon uiName="visit.reschedule" />
-          </span>
-          <span uiText uiFont="caption">
-            {{ t('appointments.visit.reschedule') }}
-          </span>
+          {{ t('appointments.visit.reschedule') }}
         </a>
         } @if (openVisitDirections(); as directions) {
         <a
-          class="visit-actions__item"
+          uiQuickAction
+          uiIcon="location.directions"
           [href]="directions"
           target="_blank"
           rel="noopener"
           data-testid="appointment-directions"
         >
-          <span class="visit-actions__glyph">
-            <ui-icon uiName="location.directions" />
-          </span>
-          <span uiText uiFont="caption">
-            {{ t('appointments.visit.directions') }}
-          </span>
+          {{ t('appointments.visit.directions') }}
         </a>
         } @if (openVisitPhoneHref(); as phoneHref) {
         <a
-          class="visit-actions__item"
+          uiQuickAction
+          uiIcon="location.call"
           [href]="phoneHref"
           data-testid="appointment-call"
         >
-          <span class="visit-actions__glyph">
-            <ui-icon uiName="location.call" />
-          </span>
-          <span uiText uiFont="caption">
-            {{ t('appointments.visit.call') }}
-          </span>
+          {{ t('appointments.visit.call') }}
         </a>
         }
-      </div>
+      </ui-quick-actions>
+
+      <!-- Where «Премести» would be, for a visit only the shop can move (the
+           client's own seat is gone; somebody the shop added is all that is
+           left): the reason, pointing at the call verb above when there is
+           one — never a verb that opens a move doomed to be refused. -->
+      @if (visit.upcoming && shopMovesOnly(visit.appointment)) {
+      <p
+        uiText
+        uiFont="footnote"
+        uiForegroundStyle="secondary"
+        data-testid="appointment-shop-moves"
+      >
+        {{ t('appointments.visit.shopMoves', { reach: t(openVisitReachKey()) })
+        }}
+      </p>
+      }
 
       <!-- The facts, in the grouped-list register: who, where, what was
            asked for, what it comes to. -->
@@ -663,7 +594,8 @@
         uiForegroundStyle="secondary"
         data-testid="appointment-cancel-window-closed"
       >
-        {{ t('appointments.cancel.windowClosed') }}
+        {{ t('appointments.cancel.windowClosed', { reach: t(openVisitReachKey())
+        }) }}
       </p>
       }
     </ui-stack>
@@ -722,13 +654,32 @@
     </ui-stack>
 
     <ui-sheet-action-bar sheet-overlay [uiVisible]="true">
+      <!-- The window closed while this sheet was open: only the shop can
+           cancel now, so the call LEADS, and this sheet covers the visit's
+           own call verb, so it brings its own. With no number to dial, the
+           copy above says to get in touch. -->
+      @if (cancelCallHref(); as href) {
+      <a
+        uiButton
+        uiButtonStyle="borderedProminent"
+        [uiSpread]="true"
+        [href]="href"
+        data-testid="appointment-cancel-call"
+      >
+        <ui-icon uiName="location.call" />
+        {{ t('appointments.visit.call') }}
+      </a>
+      }
+      <!-- …and the destructive confirm, which can only hear the same
+           refusal again, steps back: disabled, and no longer prominent. -->
       <button
         type="button"
         uiButton
-        uiButtonStyle="borderedProminent"
+        [uiButtonStyle]="cancelRefusedForGood() ? 'bordered' : 'borderedProminent'"
         uiRole="destructive"
         [uiSpread]="true"
         [uiLoading]="store.cancellingId() !== null"
+        [disabled]="cancelRefusedForGood()"
         data-testid="appointment-cancel-confirm"
         (click)="confirmCancel()"
       >

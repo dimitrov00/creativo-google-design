@@ -1,0 +1,208 @@
+/*
+ * «РЕКОРДИ» — layout and the discs' tint. The head, the cards, the list
+ * group and its rows, the event head, the bars and the notices are DS
+ * and shared parts that draw themselves; these rules place them. No
+ * `font:` shorthand here, so the app's tabular figures are never reset.
+ */
+
+/* The page's modules at the stack's module gap (§2.0: `loose`, 32), the
+   head included — the gap the headline's fold expects. */
+:host {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sys-space-loose);
+}
+
+/* The person. A headline's line is never cut: a long name wraps in
+   balanced lines; the bar truncates its compact copy. */
+.client-records__subline {
+  text-wrap: balance;
+  overflow-wrap: break-word;
+}
+
+/* RC — the hero card: the emblem's row, then the figure with its words
+   right under it (the tight rung: the words belong to the figure). */
+.client-records__featured {
+  gap: var(--sys-space-regular);
+}
+
+.client-records__featured-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--sys-space-compact);
+}
+
+.client-records__featured-words {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sys-space-tight);
+  min-inline-size: 0;
+}
+
+/* The page's ONE display figure: a day («1 март 2025 г.») or a service's
+   name wraps inside the card rather than widening it. */
+.client-records__hero-figure {
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+  hyphens: auto;
+  text-wrap: balance;
+}
+
+.client-records__hero-sentence {
+  text-wrap: pretty;
+}
+
+/* THE EMBLEM — a mark: the solid accent behind a white glyph (§1 rule 4),
+   through the avatar's own ink hook, as the records' cards and the quick
+   actions' promoted disc paint. A picture is the avatar as it is. */
+.client-records__emblem:not([data-picture]) {
+  --ui-avatar-ink: var(--sys-color-on-accent);
+  background: var(--sys-color-accent);
+}
+
+.client-records__emblem .ui-icon {
+  font-size: var(--ui-icon-large);
+}
+
+/* RD/RE — the groups: one column on a phone, 2-up in the wide dialog. */
+.client-records__groups {
+  display: grid;
+  gap: var(--sys-space-loose);
+}
+
+@media (min-width: 761px) {
+  .client-records__groups {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    column-gap: var(--sys-space-regular);
+  }
+}
+
+/* A row holds a title and its quiet line in the stack's one head, never
+   an ellipsis; the disc and the figure centre on it. */
+.client-records__head {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+}
+
+/* THE DISC — white on the group's grey segment (the elevated surface in
+   dark), the glyph in the accent through the avatar's ink hook; a barber's
+   face, or his initials, is the avatar as it is. */
+.client-records__disc[data-glyph] {
+  --ui-avatar-ink: var(--sys-color-accent);
+  background: var(--sys-color-surface-elevated);
+}
+
+.client-records__disc[data-glyph] .ui-icon {
+  font-size: var(--ui-icon-medium);
+}
+
+/* The figure at the trailing edge, in the label's ink; a long value
+   («Фейд · Оформяне на брада») wraps there, two lines at most (the row's
+   own `uiTrailingWraps`). */
+.client-records__figure {
+  font-variant-numeric: tabular-nums;
+}
+
+/* A group's column is what its rows measure themselves against: the one
+   column of a phone, half of one in the dialog's 2-up. */
+.client-records__groups > * {
+  container: records-group / inline-size;
+}
+
+/* A NARROW COLUMN (§2.3.4: «Обичайни услуги» puts its value under its
+   title) — a 330 phone's 295, the dialog's 256 halves — cannot hold a 44
+   disc, a title's whole words and a long value on one line: «Първо
+   посещение» beside «6.03.2025 г.» broke inside its word. So a row with a
+   LONG value (the component says which, `data-long`) wraps: the disc and
+   the title keep the first line, the value takes a line of its own under
+   the title, starting where the title starts. A short figure keeps the
+   trailing edge. 340 is the widest column that lays the narrow step
+   (a 374 viewport, sheet-width.ts). */
+@container records-group (max-width: 21.25rem) {
+  .client-records__row[data-long] {
+    flex-wrap: wrap;
+    row-gap: var(--sys-space-tight);
+  }
+
+  .client-records__row[data-long] > .client-records__figure {
+    flex-basis: 100%;
+    max-inline-size: none;
+    padding-inline-start: calc(
+      var(--control-size-regular) + var(--sys-space-regular)
+    );
+    text-align: start;
+  }
+}
+
+/* A PHONE'S COLUMN — a 390 phone's 355, a 393's 358 — holds a 44 disc,
+   «Първо посещение» whole and a 12-character date («8.03.2025 г.») on
+   one line with nothing to spare, and a 13-character one («14.05.2025 г.»,
+   a two-digit day) not at all: the title broke inside its phrase («Първо
+   / посещение», review 3, round 4). So a value the component marks
+   `phone` wraps under its title up to 360: a 402 phone's 367 and every
+   wider column hold it beside the title. */
+@container records-group (max-width: 22.5rem) {
+  .client-records__row[data-long='phone'] {
+    flex-wrap: wrap;
+    row-gap: var(--sys-space-tight);
+  }
+
+  .client-records__row[data-long='phone'] > .client-records__figure {
+    flex-basis: 100%;
+    max-inline-size: none;
+    padding-inline-start: calc(
+      var(--control-size-regular) + var(--sys-space-regular)
+    );
+    text-align: start;
+  }
+}
+
+/* A value LONGER than a date — a service's name, «Класическа подстрижка»
+   — takes the line under its title at EVERY width: beside the title it
+   held the row's trailing three fifths and left the title one word a
+   line, broken inside the word («Любим / а / услуга», review 3, F6).
+   «Фейд», «Иван» and the dates keep the trailing edge where the column
+   holds them. */
+.client-records__row[data-long='always'] {
+  flex-wrap: wrap;
+  row-gap: var(--sys-space-tight);
+}
+
+.client-records__row[data-long='always'] > .client-records__figure {
+  flex-basis: 100%;
+  max-inline-size: none;
+  padding-inline-start: calc(
+    var(--control-size-regular) + var(--sys-space-regular)
+  );
+  text-align: start;
+}
+
+/* RF — one bar per year on ONE axis: the card is the grid, every row a
+   subgrid of its three columns — the year, the bar across, the count — so
+   the count column is as wide as its widest row and every bar ends on the
+   same line. (Each row its own grid, the record year's emblem widened its
+   count and shortened its full bar below a lesser year's track, review 3.) */
+.client-records__years {
+  display: grid;
+  grid-template-columns: calc(var(--sys-space-unit) * 11) minmax(0, 1fr) auto;
+  gap: var(--sys-space-regular);
+}
+
+.client-records__year {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
+  align-items: center;
+  min-block-size: var(--control-size-regular);
+}
+
+/* The count at the trailing edge of its column, the record year's emblem
+   before it. */
+.client-records__year-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--sys-space-tight);
+  font-variant-numeric: tabular-nums;
+}

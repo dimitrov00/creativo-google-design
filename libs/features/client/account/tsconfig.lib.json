@@ -46,6 +46,9 @@
       "path": "../../shared/shell/tsconfig.lib.json"
     },
     {
+      "path": "../../shared/visits/tsconfig.lib.json"
+    },
+    {
       "path": "../account-state/tsconfig.lib.json"
     },
     {

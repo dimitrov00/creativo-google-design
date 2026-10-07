@@ -9,7 +9,14 @@ import {
 } from '@angular/core';
 import { Router } from '@angular/router';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { distinctUntilChanged, of, switchMap } from 'rxjs';
+import {
+  type Observable,
+  combineLatest,
+  distinctUntilChanged,
+  map,
+  of,
+  switchMap,
+} from 'rxjs';
 import { TranslocoDirective, TranslocoService } from '@jsverse/transloco';
 import {
   AVAILABILITY_READER,
@@ -17,11 +24,14 @@ import {
   BookingPolicy,
   CalendarDay,
   ObserveDayAvailabilityUseCase,
+  type ObserveDayAvailabilityInput,
   ObserveRangeCapacityUseCase,
   type ScheduleSelection,
   ZonedDateTime,
+  partyServicesOf,
+  shopsServingParty,
 } from '@creativo/application/booking';
-import { BarberId } from '@creativo/application/catalog';
+import { BarberId, type LocationId } from '@creativo/application/catalog';
 import { CLOCK } from '@creativo/application/shared';
 import { AccountStateService } from '@creativo/features/client/account-state';
 import {
@@ -44,12 +54,14 @@ import {
   UiSectionHeader,
 } from '@creativo/ui/patterns';
 import { BookingFlowStore } from '../booking-flow.store';
+import { bookingSignInReturnUrl } from '../booking-return-url';
 import {
   BookingChromeAccessory,
   BookingStepTitle,
 } from '../chrome/booking-chrome.service';
 import { BookingStepLayout } from '../step-layout/booking-step-layout';
 import { BookingTimeSheet } from './time-sheet/booking-time-sheet';
+import { sameDayQuery } from './same-day-query';
 import {
   type AvailabilityDayCell,
   type AvailabilityMonth,
@@ -87,10 +99,21 @@ import {
  * never ask, and every control it touched had to branch on it. The waitlist
  * survives it as the bell in the sheet's bar, watching the one chosen day.
  *
- * ### Today is the only day the clock matters to
+ * ### The days the projection cannot answer
  * The calendar's grey/live split comes from a coarse per-day capacity
- * projection that never sees `now`, so today alone is answered by the real
- * day query — see {@link isBookable}.
+ * projection. It never sees `now`, and it counts a moved visit's own chairs
+ * as taken, so today and a move's own day are answered by the real day query
+ * instead — see {@link isBookable}.
+ *
+ * ### A shop that cannot serve the visit says so
+ * The grid runs a shop only if it offers every service on the visit, the
+ * cart's and the ones a move carries (`shopsServingParty`), because the
+ * server refuses a seat at a shop that does not offer its service. The
+ * capacity projection knows nothing of services. Left alone, a shop the
+ * party cannot be served at would show a calendar of live days whose every
+ * sheet says "busy", with a waitlist bell for a shop that will never serve
+ * it. So the step asks the same rule first ({@link shopReach}): such a shop
+ * greys the calendar and SAYS why, with the one tap to a shop that can.
  *
  * ### Everything here is an OFFER
  * The grid is computed in the browser from live geometry. The authority is
@@ -146,8 +169,8 @@ export class BookingScheduleStep {
     this.availability,
   );
 
-  /** Today only — the one day whose bookability depends on the clock. */
-  private readonly observeToday = new ObserveDayAvailabilityUseCase(
+  /** The days the projection cannot answer — see {@link exactDays}. */
+  private readonly observeExact = new ObserveDayAvailabilityUseCase(
     this.availability,
   );
 
@@ -198,6 +221,124 @@ export class BookingScheduleStep {
   private readonly barberIds = computed<readonly BarberId[]>(() =>
     this.catalog.barbers().map((barber) => barber.id),
   );
+
+  /**
+   * The chairs the projection is asked about: the barbers the visit's lines
+   * accept (`BookingCart.acceptedBarbers`), not every active one.
+   *
+   * The same reasoning as the shop below, one level down. Asked about every
+   * barber, a "same again with Ivan" bag saw every Friday live at Center —
+   * Niko and Stefan have room there, Ivan works Mladost that day — and each
+   * of those days opened a sheet that could only say "busy" (2026-09-26).
+   * A chair no line accepts can never make a day bookable for this visit.
+   */
+  private readonly capacityBarberIds = computed<readonly BarberId[]>(() => {
+    const cart = this.store.cart();
+    const pool = this.barberIds();
+    return cart ? cart.acceptedBarbers(pool) : pool;
+  });
+
+  // ── Which shops can serve this visit ────────────────────────────────
+
+  /**
+   * The active shops that offer every service on the visit, the cart's and
+   * the ones a move carries: `shopsServingParty`, the rule the grid runs a
+   * shop by and the server refuses a seat by.
+   *
+   * `null` until the services and the shops have both answered
+   * SUCCESSFULLY (`servicesKnown`, `locationsKnown`): an empty list that is
+   * pending or failed is not "no shop serves this".
+   *
+   * `null` too for an answered list with no active shop in it. The question
+   * here is which shops the visit's SERVICES shut out, and with no shop at
+   * all no change to the services would open one: «Промени услугите» would
+   * send the client round a loop. That is a shop outage, not this notice's.
+   */
+  private readonly servingShops = computed<readonly LocationId[] | null>(() => {
+    const cart = this.store.cart();
+    if (
+      !cart ||
+      !this.catalog.servicesKnown() ||
+      !this.catalog.locationsKnown()
+    ) {
+      return null;
+    }
+    const shops = this.locations();
+    if (shops.length === 0) return null;
+    return shopsServingParty(
+      partyServicesOf(cart, this.store.availabilityRiders()),
+      this.catalog.services(),
+      shops.map((shop) => shop.id),
+    );
+  });
+
+  /**
+   * Can the chosen shop serve this visit, and if not, where can it be?
+   *
+   * - `served`: the grid answers. Under "any shop" that holds whenever ONE
+   *   active shop can, since the grid runs only those.
+   * - `elsewhere`: the chosen shop does not offer something on the visit,
+   *   and another shop does. The way there is one tap: the shop, when one
+   *   alone can serve it, else "any shop", which runs exactly the ones that
+   *   can.
+   * - `nowhere`: no active shop offers everything on the visit together.
+   *   Only a change to the services can fix that. A move whose CARRIED seats
+   *   no one active shop serves together never gets here: the shell ends it
+   *   in the call panel (`carriedSeatsInReach` asks about all of them at
+   *   once), because a change to the client's own services cannot fix a
+   *   companion's.
+   *
+   * A chosen shop that is not on the active list is not this question's to
+   * answer (it would read as "does not offer your services", which is not
+   * why), so it counts as served.
+   */
+  protected readonly shopReach = computed<ShopReach>(() => {
+    const serving = this.servingShops();
+    if (serving === null) return SERVED;
+    const chosen = this.store.locationId();
+    if (chosen === null) {
+      return serving.length > 0 ? SERVED : { kind: 'nowhere' };
+    }
+    const chosenShop = this.location();
+    if (!chosenShop || serving.some((id) => id.equals(chosen))) return SERVED;
+    if (serving.length === 0) return { kind: 'nowhere' };
+
+    const only = serving.length === 1 ? serving[0] : undefined;
+    const target = only
+      ? this.locations().find((shop) => shop.id.equals(only))
+      : undefined;
+    return {
+      kind: 'elsewhere',
+      shop: this.shopName(chosenShop),
+      target: target
+        ? { locationId: target.id, name: this.shopName(target) }
+        : null,
+    };
+  });
+
+  /**
+   * `shopReach` as the calendar needs it: a boolean, so a fresh notice for
+   * the same answer (a locale change renames the shops) does not re-derive
+   * every cell of the run.
+   */
+  private readonly shopServed = computed(
+    () => this.shopReach().kind === 'served',
+  );
+
+  private shopName(shop: {
+    readonly name: { readonly en: string; readonly bg: string };
+  }): string {
+    return this.content.text({ en: shop.name.en, bg: shop.name.bg });
+  }
+
+  /**
+   * Take the visit to a shop that can serve it: the one the notice names,
+   * or "any shop" (`null`), which runs every shop that can. The day and the
+   * time are dropped with the shop, as on the location step.
+   */
+  protected switchShop(locationId: LocationId | null): void {
+    this.store.selectLocation(locationId);
+  }
 
   // ── When ────────────────────────────────────────────────────────────
 
@@ -253,7 +394,9 @@ export class BookingScheduleStep {
 
   /** One cell's resting facts — everything except whether it is selected. */
   private describe(cell: AvailabilityDayCell): ScheduleDayVm {
-    const bookable = this.isBookable(cell);
+    // A shop that cannot serve the visit has no bookable day, whatever its
+    // chairs say: the grid runs nothing there (`shopReach`).
+    const bookable = this.shopServed() && this.isBookable(cell);
     const date = this.dateAriaFormat().format(
       new Date(cell.day.startOfDay().toMillis()),
     );
@@ -378,11 +521,31 @@ export class BookingScheduleStep {
   private readonly capacityQuery = computed(() => {
     const today = this.today();
     const horizonEnd = this.horizonEnd();
-    const barberIds = this.barberIds();
+    const barberIds = this.capacityBarberIds();
     if (!today || !horizonEnd || barberIds.length === 0) return null;
     const range = horizonQueryRange(today, horizonEnd);
     return range
-      ? { locationId: this.store.locationId(), range, barberIds }
+      ? { locationId: this.capacityLocationId(), range, barberIds }
+      : null;
+  });
+
+  /**
+   * The shop the projection is asked about: the chosen one or, under "any
+   * shop", the ONE active shop that can serve the visit when only one can.
+   *
+   * The projection knows nothing of services, and the grid runs only the
+   * shops that can serve the party. Asked about every shop, it would mark a
+   * day live for chairs at a shop the grid never runs for this visit, and
+   * that day's sheet could only say "busy". With several serving shops among
+   * more, the projection still counts them all: it takes one shop or every
+   * shop, and the sheet stays the authority.
+   */
+  private readonly capacityLocationId = computed<LocationId | null>(() => {
+    const chosen = this.store.locationId();
+    if (chosen !== null) return chosen;
+    const serving = this.servingShops();
+    return serving !== null && serving.length === 1
+      ? (serving[0] ?? null)
       : null;
   });
 
@@ -413,74 +576,107 @@ export class BookingScheduleStep {
   /**
    * Can this day still be booked?
    *
-   * TODAY is the only day where the clock matters, and it is the one day the
-   * capacity projection cannot answer: `observeRangeCapacity` reports a coarse
-   * free-minute total per day and never sees `now`, so at 21:00 today still
-   * looked as open as it did at 09:00 — a tappable day whose sheet then had
-   * nothing in it. So today, and only today, is answered by the REAL day query
-   * ({@link todayHasOptions}), which runs the same engine the time sheet does
-   * and does see the clock. Every other day keeps the cheap projection.
+   * The cheap capacity projection answers every day but the ones it CANNOT
+   * answer, which are asked the real day query instead ({@link exactDays}).
+   * Until that answer lands, today stays live (so it does not flicker grey
+   * and back on every load) and every other day keeps the projection.
    */
   private isBookable(cell: AvailabilityDayCell): boolean {
     if (cell.outOfRange) return false;
-    if (cell.isToday) return this.todayHasOptions();
-    return cell.freeMinutes > 0;
+    const exact = this.exactAnswers()?.get(cell.dayKey);
+    if (exact !== undefined) return exact;
+    return cell.isToday || cell.freeMinutes > 0;
   }
 
   /**
-   * Today's real arrangements — one extra live query, for one day.
-   *
-   * Worth it: this is the difference between "today is grey because the shop
-   * is closed" and "today is tappable at 22:00 and lies about it". `null`
-   * (still loading) counts as bookable so the day does not flicker grey and
-   * back on every load.
+   * The days the projection cannot answer, each asked the REAL day query,
+   * the same engine the time sheet runs:
+   * - TODAY, the one day the clock matters to. `observeRangeCapacity`
+   *   reports a coarse free-minute total per day and never sees `now`, so at
+   *   21:00 today still looked as open as it did at 09:00: a tappable day
+   *   whose sheet then had nothing in it.
+   * - the day the visit being MOVED sits on now. The projection counts the
+   *   visit's own chairs as taken, while its own seats never block its own
+   *   move, so a day it alone fills may still take it. Only the exact query,
+   *   the release included, can say, and it says exactly what the sheet will
+   *   show. A projection-free "keep it tappable" would promise a sheet that
+   *   is empty whenever the release is not honoured.
    */
-  private readonly todayQuery = computed(() => {
+  private readonly exactDays = computed<readonly CalendarDay[]>(() => {
+    const today = this.today();
+    if (!today) return [];
+    const zone = this.zone();
+    const days = new Map([[today.key(), today]]);
+    for (const chair of this.store.moveRelease()) {
+      const start = ZonedDateTime.fromMillis(chair.occupied.startMs, zone);
+      if (start.isFailure()) continue;
+      const day = CalendarDay.fromZonedDateTime(start.value);
+      // A day gone by has no cell to answer for.
+      if (!day.isBefore(today)) days.set(day.key(), day);
+    }
+    return [...days.values()];
+  });
+
+  /**
+   * One live query per exact day. Worth it: today is the difference between
+   * "grey because the shop is closed" and "tappable at 22:00 and lying about
+   * it", and a move's own day is the one it most often lands back on.
+   */
+  private readonly exactQueries = computed<
+    readonly ObserveDayAvailabilityInput[] | null
+  >(() => {
     const cart = this.store.cart();
     const now = this.now();
-    const today = this.today();
-    if (!cart || !now || !today) return null;
-    return {
+    if (!cart || !now) return null;
+    const query = {
       cart,
       services: this.catalog.services(),
       barberIds: this.barberIds(),
       locationId: this.store.locationId(),
-      day: today,
       policy: this.policy(),
       now,
+      // Everybody a MOVE carries, pinned to the party's start, for the
+      // engine's rider check (`AvailabilityQuery.riders`): a start where one
+      // of them cannot sit is not offered, because the server would refuse
+      // it (`booking.reschedule.carried_seat_unplaceable`).
+      riders: this.store.availabilityRiders(),
+      // …and the visit's own chairs, handed back: its own seats never block
+      // its own move, for the cart's lines and the riders alike.
+      release: this.store.moveRelease(),
     };
+    return this.exactDays().map((day) => ({ ...query, day }));
   });
 
-  private readonly todayResult = toSignal(
-    toObservable(this.todayQuery).pipe(
-      // Same structural guard as the capacity stream, plus the pieces this
-      // query adds: the cart and the clock's "now" tick. References suffice
-      // for cart/services — they change identity only on a real change.
-      distinctUntilChanged((a, b) => {
-        if (a === null || b === null) return a === b;
-        return (
-          a.cart === b.cart &&
-          a.services === b.services &&
-          a.day.key() === b.day.key() &&
-          a.policy === b.policy &&
-          a.now.toMillis() === b.now.toMillis() &&
-          (a.locationId?.value ?? null) === (b.locationId?.value ?? null) &&
-          a.barberIds.map((id) => id.value).join(',') ===
-            b.barberIds.map((id) => id.value).join(',')
-        );
-      }),
-      switchMap((input) =>
-        input === null ? of(null) : this.observeToday.execute(input),
+  /** Each exact day's answer, by day key, once all of them have answered. */
+  private readonly exactAnswers = toSignal(
+    toObservable(this.exactQueries).pipe(
+      // The capacity stream's structural guard, one query at a time.
+      distinctUntilChanged((a, b) =>
+        a === null || b === null
+          ? a === b
+          : a.length === b.length &&
+            a.every((query, index) => sameDayQuery(query, b.at(index) ?? null)),
       ),
+      switchMap((queries): Observable<ReadonlyMap<string, boolean> | null> => {
+        if (queries === null) return of(null);
+        // `combineLatest([])` completes without emitting; no day is no answer.
+        if (queries.length === 0) return of(new Map());
+        return combineLatest(
+          queries.map((query) =>
+            this.observeExact
+              .execute(query)
+              .pipe(
+                map((result): readonly [string, boolean] => [
+                  query.day.key(),
+                  result.isSuccess() && result.value.options.length > 0,
+                ]),
+              ),
+          ),
+        ).pipe(map((answers) => new Map(answers)));
+      }),
     ),
     { initialValue: null },
   );
-
-  private readonly todayHasOptions = computed(() => {
-    const result = this.todayResult();
-    if (result === null) return true;
-    return result.isSuccess() && result.value.options.length > 0;
-  });
 
   // ── Commands ────────────────────────────────────────────────────────
 
@@ -511,8 +707,12 @@ export class BookingScheduleStep {
     this.store.watchOnly(day);
 
     if (this.accountState.principal().kind !== 'active') {
+      // The same return the review step builds, sources and all — see
+      // `bookingSignInReturnUrl`.
       await this.router.navigate(['/auth'], {
-        queryParams: { redirect: '/book?step=schedule' },
+        queryParams: {
+          redirect: bookingSignInReturnUrl(this.router, this.router.url),
+        },
       });
       return;
     }
@@ -593,8 +793,14 @@ export class BookingScheduleStep {
    * pick is present in both modes and only ever changes its enabled state —
    * a control that vanishes when you toggle a neighbouring one is the bar
    * churn this step was rebuilt to stop.
+   *
+   * Never at a shop that cannot serve the visit (`shopReach`): its sheet
+   * could only say "busy" and offer a waitlist for times that shop will
+   * never have for this party.
    */
-  protected readonly canOpenTimes = computed(() => this.selectedDay() !== null);
+  protected readonly canOpenTimes = computed(
+    () => this.selectedDay() !== null && this.shopServed(),
+  );
 
   // ── The forward move ────────────────────────────────────────────────
 
@@ -691,3 +897,20 @@ function capacityQueryKey(
     query.barberIds.map((id) => id.value).join(','),
   ].join('|');
 }
+
+/** Can the chosen shop serve the visit — see `BookingScheduleStep.shopReach`. */
+type ShopReach =
+  | { readonly kind: 'served' }
+  | {
+      readonly kind: 'elsewhere';
+      /** The chosen shop's name. */
+      readonly shop: string;
+      /** The one shop that can serve it, or `null` for "any shop". */
+      readonly target: {
+        readonly locationId: LocationId;
+        readonly name: string;
+      } | null;
+    }
+  | { readonly kind: 'nowhere' };
+
+const SERVED: ShopReach = { kind: 'served' };

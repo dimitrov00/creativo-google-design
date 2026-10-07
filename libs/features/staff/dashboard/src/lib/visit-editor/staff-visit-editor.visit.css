@@ -1,0 +1,236 @@
+/*
+ * THE VISIT'S OWN ROWS AND PAGES — the rules only the visit editor draws:
+ * the catalogue page's service rows, a leg row's chips, the note's stack and
+ * the shop's photos (the grid, the photo page, the camera, the gallery).
+ *
+ * Its own stylesheet for the reason the time grid's page chapter has one
+ * (`staff-time-grid.page.css`): a component stylesheet has a budget, and
+ * `staff-visit-editor.css` — which the block sheet loads too — had come
+ * within a few hundred bytes of the 20 kB error line (round 6, 2026-09-26).
+ * The block sheet uses none of these classes, so it simply stops paying for
+ * them. Unscoped like the rest of the feature; the split is in the file,
+ * not in the cascade: this sheet loads right after the shared ones (the
+ * main sheet and, since the 10 kB line, its contiguous continuations
+ * `staff-visit-editor.sections.css` and `staff-visit-editor.rows.css` —
+ * the same rules, in the same order), in the order the rules had there,
+ * and none of them shares an element and a property with a rule it now
+ * follows instead of preceding.
+ */
+
+/* ── A ROW WITH TWO CONTROLS (the service card, 2026-09-17) ──────────────
+   The catalogue's row holds the PICK — a checkbox button that IS the row's
+   label, filling it edge to edge — and the DS count stepper trailing. A tap
+   on the pick selects: the row takes the DS selection wash (eased in, not
+   switched), and the stepper's square turns to a ✓ and unfolds into
+   `− 1 +` (owner: "in place of a check, a stepper should animate, expand").
+   The trailing cell is RESERVED at the open stepper's width from the
+   start, so the square sits where the `+` will land and the label never
+   rewraps under the unfold.
+
+   THE ROW IS INTERACTIVE (owner, 2026-09-17: "those rows do not have a
+   hover effect although they are interactive"): it rides the DS
+   `uiInteractive` state layer — hover and press ink over the whole
+   segment, the one grammar every tappable row has — and the stepper
+   inside keeps its own: while the pointer is on the stepper the row's
+   layer stays clear and the row does not press. */
+.staff-visit__service-row {
+  transition:
+    background-color var(--sys-motion-duration-deliberate)
+      var(--sys-motion-ease-standard),
+    transform var(--sys-motion-duration-instant) var(--sys-motion-ease-standard);
+}
+
+.staff-visit__service-row:has(
+    .staff-visit__service-count :is(:hover, :active)
+  )::after {
+  background: transparent;
+}
+
+.staff-visit__service-row:has(.staff-visit__service-count :active) {
+  transform: none;
+}
+
+.staff-visit__service-row > .ui-list-row__label {
+  display: flex;
+  min-inline-size: 0;
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+}
+
+/* A row's label as its own button, a trailing control beside it — the
+   catalogue's pick and a party person's row (2026-09-24) share it. */
+.staff-visit__service-pick,
+.staff-visit__row-press {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  min-inline-size: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: var(--control-radius-subtle);
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-variant-numeric: tabular-nums; /* the shorthand resets the app's tabular figures */
+  text-align: start;
+  cursor: pointer;
+}
+
+.staff-visit__service-pick:focus-visible,
+.staff-visit__row-press:focus-visible {
+  outline: var(--sys-focus-ring-width) solid var(--sys-color-accent);
+  outline-offset: 2px;
+}
+
+.staff-visit__service-count {
+  display: inline-flex;
+  justify-content: flex-end;
+  inline-size: calc(var(--control-size-small) * 2 + var(--sys-space-unit) * 5);
+  flex-shrink: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .staff-visit__service-row,
+  .staff-visit__service-pick {
+    transition: none;
+  }
+}
+
+/* ── THE ROW'S CHIPS ────────────────────────────────────────────────────
+   Person (on a party), the variant's icon, the counter — small DS controls
+   in a tight run on the row's SECOND LINE (owner, 2026-09-09: "move those
+   in a separate row"), trailing: the figures lead that line, the controls
+   sit on the thumb side, and the title above keeps the row's full width.
+   The face is a 24px disc inside a 36px round chip. */
+.staff-visit__leg-body {
+  display: flex;
+  flex-direction: column;
+  /* STRETCH, stated: the lines must take the row's full width so the chips
+     at the end of a line reach the trailing edge. `flex-start` was tried
+     here for the duration row's title and shrank every line to its content
+     — the counter slid in beside the figures (owner, 2026-09-09). */
+  align-items: stretch;
+  gap: var(--sys-space-tight);
+  inline-size: 100%;
+  min-inline-size: 0;
+}
+
+/* The duration row's title is a menu trigger; it hugs its own words. */
+.staff-visit__leg-body > ui-choice-menu {
+  align-self: flex-start;
+}
+
+/* Only when it says something: an empty footnote must not hold a line
+   under the title (the row is one line then, its chips centred on it).
+   A class, not `:empty` — an empty interpolation still leaves a text node. */
+.staff-visit__leg-line--blank {
+  display: none;
+}
+
+.staff-visit__leg-chips {
+  display: inline-flex;
+  align-items: center;
+  /* A compact gap, so the 44 px hit boxes below meet without overlapping. */
+  gap: var(--sys-space-compact);
+  flex-shrink: 0;
+  margin-inline-start: auto;
+}
+
+/* 44 PX UNDER THE THUMB (2026-09-18, the order review): the chips keep
+   the small control's 36 px look and each takes HIG's 44 px hit box — a
+   transparent box 4 px past every edge, so a wet thumb aiming at «−» does
+   not have to be exact and does not land on the neighbour. */
+.staff-visit__leg-chips > .ui-button {
+  position: relative;
+}
+
+.staff-visit__leg-chips > .ui-button::before {
+  content: '';
+  position: absolute;
+  inset: -4px;
+}
+
+.staff-visit__leg-face-chip .ui-avatar {
+  --ui-avatar-disc: calc(var(--sys-space-unit) * 6);
+}
+
+/* The note's label sits over a field that takes the row's whole width. */
+.staff-visit__note-stack {
+  inline-size: 100%;
+}
+
+/* ── THE SHOP'S PHOTOS OF THE VISIT (2026-09-17) ─────────────────────────
+   A grid of squares in the row, as many across as the row is wide — each
+   a door to the picture's page — and, on that page, the picture in its own
+   shape with the group's corner. */
+.staff-visit__photo-grid {
+  display: grid;
+  grid-template-columns: repeat(
+    auto-fill,
+    minmax(calc(var(--sys-space-unit) * 18), 1fr)
+  );
+  gap: var(--sys-space-tight);
+  inline-size: 100%;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.staff-visit__photo {
+  display: block;
+  inline-size: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: var(--control-radius-subtle);
+  background: var(--sys-color-fill);
+  overflow: hidden;
+  cursor: pointer;
+}
+
+.staff-visit__photo:focus-visible {
+  outline: var(--sys-focus-ring-width) solid var(--sys-color-accent);
+  outline-offset: 2px;
+}
+
+/* THE PHOTO AS A VIEWER (2026-09-17; owner: "full sheet screen, no title —
+   the image at its original ratio, centered; the information shown by
+   default, the people as user rows"): the picture full-bleed in its own
+   shape on black; the facts are rows beneath it. */
+.staff-visit__photo-hero {
+  position: relative;
+  margin-inline: calc(-1 * var(--ui-sheet-inset, var(--sys-space-regular)));
+  background: #000;
+}
+
+/* THE VIEWER CENTRES ITS PICTURE (owner, 2026-09-17: "the image should be
+   centered, no?"): the page takes the whole of what the scroller gives it
+   above the dock — the host is the scroller's flex column, the dock
+   pushes itself to its end — and floats the picture in the middle, as
+   Photos does. With the facts unfolded the picture and its rows are
+   centred as one block, and only when that block outgrows the space does
+   the page scroll. */
+.staff-visit__page[data-page='photo'] {
+  flex: 1 0 auto;
+  justify-content: center;
+}
+
+.staff-visit__photo-hero > .ui-async-image {
+  display: block;
+  inline-size: 100%;
+}
+
+/* The camera's viewfinder fills the page; the shop's gallery is the shared
+   showcase gallery, full-bleed past the page's own gutter so its own — the
+   sheet's — applies once. */
+.staff-visit__camera {
+  display: flex;
+  inline-size: 100%;
+}
+
+.staff-visit__gallery {
+  margin-inline: calc(-1 * var(--ui-sheet-inset, var(--sys-space-regular)));
+  min-inline-size: 0;
+}

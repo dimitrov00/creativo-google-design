@@ -74,6 +74,8 @@ const bg: Translation = {
       bookings: 'Моите резервации',
       rewards: 'Моите награди',
       openPositions: 'Отворени позиции',
+      staffDay: 'График',
+      loyaltyAdmin: 'Лоялност',
     },
     hero: { cta: 'Запази час' },
     footer: {
@@ -112,6 +114,8 @@ describe('SiteMenuComponent', () => {
     isAuthed?: boolean;
     /** A staff-tier session — surfaces the schedule row. */
     isStaffMember?: boolean;
+    /** One of the admin pair — surfaces the «Лоялност» entry. */
+    isAdmin?: boolean;
     /** How many upcoming visits the bookings row should report. */
     upcoming?: number;
     /** How many UNREAD notifications the inbox should report. */
@@ -156,6 +160,7 @@ describe('SiteMenuComponent', () => {
           provide: PROFILE_PORT,
           useValue: {
             getProfile: () => Promise.resolve(ok(inputs.profile ?? null)),
+            observeProfile: () => of(ok(inputs.profile ?? null)),
           },
         },
         {
@@ -203,6 +208,9 @@ describe('SiteMenuComponent', () => {
     }
     if (inputs.isStaffMember !== undefined) {
       fixture.componentRef.setInput('isStaffMember', inputs.isStaffMember);
+    }
+    if (inputs.isAdmin !== undefined) {
+      fixture.componentRef.setInput('isAdmin', inputs.isAdmin);
     }
     // Several passes: the avatar URL travels principal signal → observable
     // → storage-lookup promise → signal, so the portrait's <img> only
@@ -668,6 +676,108 @@ describe('SiteMenuComponent', () => {
       const inEnglish = dateOf();
       expect(inEnglish).not.toBe(inBulgarian);
       expect(/[а-я]/i.test(inEnglish)).toBe(false);
+    });
+  });
+
+  /**
+   * The ONE way to the admin page «Ритъм» (`/admin/loyalty/rhythm`;
+   * client-card revision 3 §2.6, §3.17): the wallet carries no link to it,
+   * because a routerLink inside the visit sheet would drop the visit's
+   * draft. The row is UI-only like the schedule's — `rolesGuard('admin',
+   * 'sysadmin')` and firestore.rules' `isAdmin()` are the locks.
+   */
+  describe('the admin loyalty row', () => {
+    it('is absent for a staff session without the admin pair', async () => {
+      const fixture = await render({
+        open: true,
+        isAuthed: true,
+        isStaffMember: true,
+      });
+      expect(
+        fixture.nativeElement.querySelector(
+          '[data-testid="menu-admin-loyalty"]',
+        ),
+      ).toBeNull();
+    });
+
+    it('leads to /admin/loyalty/rhythm as «Лоялност», the loyalty glyph leading at the medium rung — and nothing else in the menu leads there', async () => {
+      const fixture = await render({
+        open: true,
+        isAuthed: true,
+        isStaffMember: true,
+        isAdmin: true,
+      });
+      const host: HTMLElement = fixture.nativeElement;
+
+      const row = host.querySelector<HTMLAnchorElement>(
+        '[data-testid="menu-admin-loyalty"]',
+      );
+      expect(row).not.toBeNull();
+      // An anchor on the row grammar: keyboard, focus ring and middle-click
+      // for free, and the one shared hover/press layer.
+      expect(row!.tagName).toBe('A');
+      expect(row!.getAttribute('href')).toBe('/admin/loyalty/rhythm');
+      expect(row!.classList.contains('ui-list-row')).toBe(true);
+      expect(row!.textContent).toContain('Лоялност');
+
+      // The glyph LEADS, on the same ladder step as every row glyph.
+      const glyph = row!.firstElementChild;
+      expect(glyph?.tagName.toLowerCase()).toBe('ui-icon');
+      expect(glyph?.hasAttribute('uileading')).toBe(true);
+      expect(glyph?.getAttribute('uiname')).toBe('admin.loyalty');
+      expect(glyph?.getAttribute('data-scale')).toBe('medium');
+
+      expect(
+        host.querySelectorAll('a[href="/admin/loyalty/rhythm"]').length,
+      ).toBe(1);
+    });
+
+    /**
+     * Mine, then what I manage, then the site (the Settings grammar). A rule
+     * is set rarely, so the row never competes with the schedule's fill: a
+     * plain grouped row in a run of its own, with room for the admin's other
+     * pages when they arrive.
+     */
+    it('sits in its own group after the account run and before the site anchors, and stays quiet', async () => {
+      const fixture = await render({
+        open: true,
+        isAuthed: true,
+        isStaffMember: true,
+        isAdmin: true,
+      });
+      const host: HTMLElement = fixture.nativeElement;
+
+      const row = host.querySelector('[data-testid="menu-admin-loyalty"]')!;
+      const notifications = host.querySelector(
+        '[data-testid="menu-notifications"]',
+      )!;
+      const careers = host.querySelector('a[href="/careers"]')!;
+
+      // Its own segmented run — not a member of the account group.
+      const group = row.closest('ui-list-group');
+      expect(group).not.toBeNull();
+      expect(group!.contains(notifications)).toBe(false);
+      expect(group!.querySelectorAll('.ui-list-row').length).toBe(1);
+
+      expect(
+        notifications.compareDocumentPosition(row) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+      expect(
+        row.compareDocumentPosition(careers) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+
+      // Plain, large, interactive; never a second fill, a tint or a selection.
+      expect(row.getAttribute('data-variant')).toBe('plain');
+      expect(row.getAttribute('data-size')).toBe('large');
+      expect(row.hasAttribute('data-interactive')).toBe(true);
+      expect(row.hasAttribute('data-selected')).toBe(false);
+      expect(row.querySelector('[uitrailing]')).toBeNull();
+
+      // The schedule row keeps the ONE filled row of a staff session.
+      const filled = host.querySelectorAll('[data-variant="prominent"]');
+      expect(filled.length).toBe(1);
+      expect(filled[0]!.getAttribute('data-testid')).toBe('menu-staff-day');
     });
   });
 });

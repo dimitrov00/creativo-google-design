@@ -45,11 +45,26 @@ import type {
 const DAY_MINUTES = 1440;
 
 /**
- * Minutes either side of "now" within which an hour label stands down so the
- * now pill has the ruler to itself. Along this axis a label is ~36px wide
- * and the pill a little more; at 80px an hour that is twenty minutes.
+ * The minutes around "now" within which an hour label stands down so the now
+ * pill has the ruler to itself — the grid's rule, on this axis, where it is
+ * LOPSIDED: a label hangs to the RIGHT of its tick (a tight pad and «20:00»
+ * in caption figures, ~36px) while the pill is centred on its minute (~40px
+ * wide). At 80px an hour the pill's left half reaches an hour BEHIND now
+ * until now is 50 minutes past it ((36 + 20 + 4px of air) / 1.33); an hour
+ * AHEAD is touched only within 20 ((20 − 6 + 4) / 1.33, rounded up). The
+ * symmetric twenty drew «20:32» over the «00» of «20:00» (review r5,
+ * 2026-10-06).
  */
-const NOW_LABEL_CLEARANCE = 20;
+const NOW_LABEL_CLEARANCE_BEHIND = 50;
+const NOW_LABEL_CLEARANCE_AHEAD = 20;
+
+/** Would the now pill, centred on `now`, land on the label hung at `hour`? */
+function coveredByNow(hour: number, now: number): boolean {
+  const behind = now - hour;
+  return (
+    behind > -NOW_LABEL_CLEARANCE_AHEAD && behind < NOW_LABEL_CLEARANCE_BEHIND
+  );
+}
 
 /**
  * The scale a gesture falls back to when the layout cannot be measured — a
@@ -159,7 +174,7 @@ interface DragState {
   selector: 'lib-staff-timeline',
   imports: [UiAvatar, UiIcon, UiTextDirective],
   templateUrl: './staff-timeline.html',
-  styleUrl: './staff-timeline.css',
+  styleUrls: ['./staff-timeline.css', './staff-timeline.band.css'],
   changeDetection: ChangeDetectionStrategy.OnPush,
   // Unscoped like the grid: bare `.staff-timeline*` selectors are the
   // styling contract.
@@ -221,7 +236,7 @@ export class StaffTimeline {
         key: String(minute),
         index,
         label: hourLabel(minute),
-        nearNow: now !== null && Math.abs(minute - now) < NOW_LABEL_CLEARANCE,
+        nearNow: now !== null && coveredByNow(minute, now),
       });
     }
     return out;

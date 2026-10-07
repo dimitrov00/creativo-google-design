@@ -1,0 +1,62 @@
+/*
+ * THE VISITS LIST — layout only: the DS parts draw every surface, heading
+ * and row (`ui-section-header`, `ul[uiListGroup]`, `ui-list-row`,
+ * `ui-notice`, `ui-empty-state`, `uiButton`, `ui-skeleton`).
+ */
+
+:host {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sys-space-comfortable);
+}
+
+/* PLAIN ≙ `.listStyle(.plain)`: rows with no segment fill, set on the page.
+   A plain run needs a real list's semantics without its bullets
+   (`role="list"` keeps them in WebKit), and its rows' inner padding moves
+   out into the page's gutter, so a stamp starts on the same edge as the
+   heading above it and the rest of the page. The rows own no surface for
+   the bleed to show. */
+.visit-list__rows {
+  display: flex;
+  flex-direction: column;
+  margin-block: 0;
+  margin-inline: calc(-1 * var(--sys-space-regular));
+  padding: 0;
+  list-style: none;
+}
+
+/* THE EMPTY'S ACTION HUGS its label, on the copy's leading edge — «Покажи
+   всички» is a capsule, not a bar (owner, 2026-07-23: a button sizes to
+   its label; full width is a consumer's explicit `uiFrame`). The empty
+   state is a column that stretches its children; this list's does not. */
+.visit-list__empty {
+  align-items: flex-start;
+}
+
+/* A heading a host scrolls to (the client's jump pills) lands clear of the
+   host's own floating chrome: the host states that height as
+   `--visit-list-anchor-clearance` on the list (none by default). */
+[data-section-key] {
+  scroll-margin-block-start: var(--visit-list-anchor-clearance, 0px);
+}
+
+/* THE PLACEHOLDERS stand in the list's own rhythm: a group is a heading's
+   line and its rows a compact gap under it, and the groups stand a
+   section apart, as the sections they stand for do. */
+.visit-list__placeholders {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sys-space-comfortable);
+}
+
+.visit-list__placeholder-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sys-space-compact);
+}
+
+/* A placeholder's two lines centre on its stamp, like the head's. */
+.visit-list__placeholder-lines {
+  min-block-size: var(--control-size-regular);
+  justify-content: center;
+}

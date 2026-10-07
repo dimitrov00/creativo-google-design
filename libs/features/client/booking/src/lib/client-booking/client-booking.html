@@ -46,7 +46,7 @@
             uiFrame
             uiFrameMaxWidth="infinity"
           >
-            @if (store.canGoBack()) {
+            @if (store.canGoBack() && !refusal()) {
             <button
               type="button"
               uiButton
@@ -65,6 +65,9 @@
             <ui-spacer />
           </ui-stack>
 
+          <!-- No stepper over a refused move: there is no wizard under it to
+               be a step of. -->
+          @if (!refusal()) {
           <ui-stepper
             [uiSteps]="store.totalSteps"
             [uiCurrent]="store.currentStep()"
@@ -78,6 +81,7 @@
             uiFrame
             uiFrameWidth="min(34vw, 10rem)"
           />
+          }
 
           <ui-stack
             uiAxis="horizontal"
@@ -138,6 +142,57 @@
     </ui-toolbar>
     }
 
+    <!-- A MOVE LINK THAT CANNOT MOVE says so, in place of the wizard. The
+         wizard under it would be a bookable flow whose Confirm writes a
+         second visit beside the one the person came to move — so it is not
+         rendered at all. Three reasons (`MoveRefusal`): the visit holds only
+         somebody the shop added, or somebody it carries can no longer be
+         served here (only the shop can move them, so the call leads in both),
+         or it could not be read here. -->
+    @if (refusal(); as refused) {
+    <lib-booking-step-layout>
+      <ui-empty-state
+        [uiTitle]="t('booking.moveRefused.' + refused.reason + '.title')"
+        data-testid="booking-move-refused"
+        [attr.data-reason]="refused.reason"
+      >
+        <!-- "Call" only when the call button below is there to press; with
+             no number to dial it says to get in touch (`shopReachKey`). -->
+        <p
+          uiText
+          uiFont="body"
+          uiForegroundStyle="secondary"
+          data-testid="booking-move-refused-body"
+        >
+          {{ t('booking.moveRefused.' + refused.reason + '.body', { reach:
+          t(reachKey()) }) }}
+        </p>
+        <ui-stack uiActions uiSpacing="compact">
+          @if (refusalCallHref(); as href) {
+          <a
+            uiButton
+            uiButtonStyle="borderedProminent"
+            uiControlSize="large"
+            [href]="href"
+            data-testid="booking-move-refused-call"
+          >
+            <ui-icon uiName="location.call" />
+            {{ t('booking.moveRefused.call') }}
+          </a>
+          }
+          <a
+            uiButton
+            [uiButtonStyle]="refusalCallHref() ? 'bordered' : 'borderedProminent'"
+            uiControlSize="large"
+            routerLink="/account/appointments"
+            data-testid="booking-move-refused-appointments"
+          >
+            {{ t('booking.moveRefused.appointments') }}
+          </a>
+        </ui-stack>
+      </ui-empty-state>
+    </lib-booking-step-layout>
+    } @else {
     <!-- Each step owns its measure column, spacer and action bar through
          `lib-booking-step-layout`, which must be the growing flex child of
          THIS column for the bar to pin to the viewport floor. -->
@@ -161,6 +216,6 @@
         {{ t('booking.' + store.step() + '.title') }}
       </p>
     </lib-booking-step-layout>
-    } }
+    } } }
   </ui-stack>
 </ng-container>

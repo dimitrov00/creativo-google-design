@@ -1,0 +1,507 @@
+/*
+ * THE ROW CONSTRUCTIONS the ladder and its pages are built from — a row
+ * that is a menu trigger, a row title that is a menu, the coupon frame,
+ * the choice at a row's trailing edge, a person row's head and the empty
+ * search, a value row's trailing run, the row that extends into a fold,
+ * the shop's map-or-list views, a leg's barber pill, and swipe to delete.
+ *
+ * Its own stylesheet for the budget's sake, like
+ * `staff-visit-editor.sections.css` before it (warning 10 kB, error 20 kB —
+ * recalibrated 2026-09-26; the one file measured 17.07 kB minified).
+ * SHARED like the main sheet: the block sheet's menu rows, value rows and
+ * swipe-to-delete rows are these.
+ *
+ * The split is in the file, not in the cascade. This sheet is the original's
+ * next run of chapters, cut at a chapter boundary with no rule text changed,
+ * and it is listed directly after `staff-visit-editor.sections.css` in the
+ * same `styleUrls` — so every rule lands in the document in exactly the order
+ * it had in one file. No rule here now follows a rule it used to precede, or
+ * precedes one it used to follow; no two rules that share an element and a
+ * property changed their relative order, because no two rules did.
+ *
+ * Both components list it third, after the main sheet and the sections
+ * (the block sheet's list a prefix of the visit editor's), so it lands
+ * where the one file's tail did whichever sheet opens first — see the
+ * sections sheet's header.
+ */
+
+/* ── A LIST ROW THAT IS ALSO A MENU TRIGGER ───────────────────────────
+ *
+ * `ui-list-group`'s recipe flattens exactly ONE wrapper between the group
+ * and a row (`.ui-list-group > :not(.ui-list-row) > .ui-list-row`, with the
+ * wrapper set to `display: contents`). A row that opens a menu has TWO —
+ * `li > ui-menu > button` — because `uiMenuTrigger` has to live inside the
+ * `ui-menu` that anchors the surface. The chain misses, and the row loses
+ * the segment fill and the run's outer corners: it renders as bare text on
+ * the sheet's ground beside neighbours that are properly carded.
+ *
+ * ⚠ `display: contents` on the `ui-menu` would flatten the chain but also
+ * kill the `position: relative` the surface is absolutely positioned
+ * against, so the menu would anchor to whatever is positioned further up —
+ * the sheet. The wrapper stays a box; the segment styling is restated for
+ * the one extra level instead. The day `--ui-list-group-wrapper` becomes a
+ * real hook (list-group.css:24 already names it in prose), this goes.
+ */
+.staff-visit__group > li > ui-menu,
+.staff-visit__group > li > ui-choice-menu,
+.staff-visit__group > li > ui-choice-menu > ui-menu {
+  /* `.ui-menu` is `inline-flex`, which shrink-wraps the row; the segment
+     must fill the run's width like every other. `position: relative`
+     survives, which is the part that matters. A `ui-choice-menu` host wraps
+     the same `ui-menu` one level deeper (2026-09-09) and needs the same. */
+  display: block;
+}
+
+.staff-visit__group > li > ui-menu > .ui-list-row,
+.staff-visit__group > li > ui-choice-menu > ui-menu > .ui-list-row {
+  background: var(--sys-color-surface-secondary);
+  border-radius: var(--control-radius-subtle);
+}
+
+.staff-visit__group > li:first-child > ui-menu > .ui-list-row,
+.staff-visit__group > li:first-child > ui-choice-menu > ui-menu > .ui-list-row {
+  border-start-start-radius: var(--control-radius-prominent);
+  border-start-end-radius: var(--control-radius-prominent);
+}
+
+.staff-visit__group > li:last-child > ui-menu > .ui-list-row,
+.staff-visit__group > li:last-child > ui-choice-menu > ui-menu > .ui-list-row {
+  border-end-start-radius: var(--control-radius-prominent);
+  border-end-end-radius: var(--control-radius-prominent);
+}
+
+/* ── A ROW TITLE THAT IS A MENU ──────────────────────────────────────────
+   `Времетраене ⌄` reads as the row's label — same colour, same face, same
+   left edge as `Начало` above it — with only the chevron saying it opens.
+   Hit-target height is the row's; the capsule appears on hover/press. */
+.staff-visit__row-title {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sys-space-tight);
+  /* The row is the 44px target; the button itself is a small control so
+     its focus ring fits inside the row instead of being clipped by it. */
+  min-block-size: var(--control-size-small, 36px);
+  margin-inline-start: calc(-1 * var(--sys-space-compact));
+  padding-inline: var(--sys-space-compact);
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.staff-visit__row-title > ui-icon {
+  color: var(--sys-color-secondary-label);
+}
+
+/* THE COUPON FRAME — the DS scroll column, capped at two cards and a half
+   (two 112px tickets, two compact gaps, half a ticket): the cut card says
+   there is more, the way a half-visible row does in any list; one or two
+   cards hug their own height and never scroll. Nothing else — the cards
+   are the frame's own edges. */
+.staff-visit__coupons {
+  --ui-scroll-column-max-block-size: calc(var(--sys-space-unit) * 74);
+}
+
+/* THE CHOICE AT A ROW'S TRAILING EDGE — the same plain trigger as the
+   root's duration title, mirrored: the value in the secondary ink every
+   value row reads in, the pop-up mark beside it, and its padding hanging
+   past the row's inset so the words sit where a value sits. */
+.staff-visit__row-choice {
+  margin-inline-start: 0;
+  margin-inline-end: calc(-1 * var(--sys-space-compact));
+  color: var(--sys-color-secondary-label);
+}
+
+/* ── THE PINNED SEARCH is the DS's own since 2026-09-24 (`ui-search-field`
+   `uiPinned`), and a page's head with its fold is `ui-sheet-headline`. */
+
+/* The create row's disc: the avatar's own recipe, inked in the accent —
+   an action where a face would go, at the people's size. */
+.staff-visit__create-disc {
+  --ui-avatar-ink: var(--sys-color-accent);
+}
+
+/* A PERSON ROW'S HEAD (2026-09-22): the event head as the row's label. It
+   stands as tall as the disc and centres its lines in it, so a one-line
+   head — a name alone, «Нов клиент» with nothing typed — sits WITH the
+   disc the way a name sits with its face; a head of three lines is taller
+   than the disc and the row grows to it. The marks are the head's own. */
+.staff-visit__client-head {
+  min-block-size: var(--control-size-small);
+  align-items: center;
+}
+
+.staff-visit__client-trailing {
+  display: inline-flex;
+  gap: var(--sys-space-compact);
+  align-items: center;
+}
+
+/* NOTHING TO SUGGEST YET: the search glyph, large and quiet, over one
+   line of help — a hint, not a "no match" for a search nobody has run. */
+.staff-visit__search-empty {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sys-space-compact);
+  align-items: center;
+  margin: 0;
+  padding-block: var(--sys-space-spacious);
+  color: var(--sys-color-tertiary-label);
+  text-align: center;
+}
+
+.staff-visit__search-empty > .ui-icon {
+  font-size: 2rem;
+}
+
+/* A VALUE ROW'S TRAILING RUN (`span[uiTrailing].staff-visit__row-value`,
+   2026-09-17): the value in its own ink, then the mark that says what the
+   row does — «›» for a row that pushes a page, a chevron for the row that
+   unfolds a section beneath it, turned while the section is open. Its
+   layout is the DS row's own `uiTrailingWraps` (≙ LabeledContent's value
+   in a Form: the long value gives way — three fifths of the row, two
+   lines at the trailing edge, then an ellipsis — the label never, the
+   glyph keeps its size); this sheet only moves the value (below). */
+
+.staff-visit__disclosure {
+  transition: rotate var(--sys-motion-duration-regular)
+    var(--sys-motion-ease-emphasized);
+}
+
+[aria-expanded='true'] .staff-visit__disclosure {
+  rotate: 180deg;
+}
+
+/* THE ROW THAT EXTENDS (owner, 2026-09-17: "on click it should extend,
+   animate beautifully, like the tip row extending itself and the tip body
+   being inside that row"): one segment — the group's own fill and corners,
+   carried here because the group's rules stop one level up — holding the
+   row and, beneath it, the FOLD — a one-track grid whose track goes from
+   nothing to as tall as the section needs, so the segment GROWS out of
+   the row and folds back into it; the section fades and settles a beat
+   behind. `0fr → 1fr` is the one height animation CSS has for content it
+   has not measured, and it plays everywhere. The row is OUTSIDE the grid:
+   a two-track grid with the row as its `auto` track interpolated both
+   tracks and the row wobbled taller mid-way (measured: 52 → 122 → 52 px). */
+.staff-visit__extend {
+  display: flex;
+  flex-direction: column;
+  background: var(--sys-color-surface-secondary);
+  border-radius: var(--control-radius-subtle);
+}
+
+.staff-visit__fold {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows var(--sys-motion-duration-slow)
+    var(--sys-motion-ease-emphasized);
+}
+
+[data-open] > .staff-visit__fold {
+  grid-template-rows: 1fr;
+}
+
+/* The group's outer corners, as the group would give a segment of its own. */
+.staff-visit__group > li:first-child > .staff-visit__extend {
+  border-start-start-radius: var(--control-radius-prominent);
+  border-start-end-radius: var(--control-radius-prominent);
+}
+
+.staff-visit__group > li:last-child > .staff-visit__extend {
+  border-end-start-radius: var(--control-radius-prominent);
+  border-end-end-radius: var(--control-radius-prominent);
+}
+
+/* The row inside carries no fill of its own — the segment's is the one —
+   and its press ink follows the segment's corners, square at the bottom
+   once the section continues beneath it. */
+.staff-visit__extend > .ui-list-row {
+  background: transparent;
+  border-radius: inherit;
+}
+
+.staff-visit__extend[data-open] > .ui-list-row {
+  border-end-start-radius: 0;
+  border-end-end-radius: 0;
+}
+
+/* THE VALUE, ONCE (owner, 2026-09-17: "when expanded you see it a couple of
+   times — the row, the selected tile, the bottom toolbar — feels too
+   much"): while the section is open the tiles ARE the value, so the row's
+   own reading steps aside (Apple's inline date picker prints the selection
+   nowhere but in the picker; the compact one keeps a value only because
+   its picker is a modal elsewhere). It comes back as the section folds —
+   the disclosure's label says what is hidden. The dock's line stays: it is
+   the bill's line item, the payment sheet's own grammar, not a readout.
+   Only the SEGMENT'S OWN row steps aside: the receipt's rows inside the
+   discount page's fold keep their figures — they are what unfolds. */
+.staff-visit__row-value > .staff-visit__figures {
+  transition:
+    opacity var(--sys-motion-duration-regular) var(--sys-motion-ease-standard),
+    translate var(--sys-motion-duration-regular) var(--sys-motion-ease-standard);
+}
+
+.staff-visit__extend[data-open]
+  > .ui-list-row
+  .staff-visit__row-value
+  > .staff-visit__figures {
+  opacity: 0;
+  translate: 0 var(--sys-space-tight);
+}
+
+/* The section: no height of its own until the grid gives it one, and its
+   content clipped meanwhile; it rises in a beat behind the segment. */
+.staff-visit__fold-section {
+  min-block-size: 0;
+  overflow: hidden;
+  opacity: 0;
+  translate: 0 calc(-1 * var(--sys-space-unit));
+  transition:
+    opacity var(--sys-motion-duration-regular) var(--sys-motion-ease-standard),
+    translate var(--sys-motion-duration-slow) var(--sys-motion-ease-emphasized);
+}
+
+[data-open] > .staff-visit__fold > .staff-visit__fold-section {
+  opacity: 1;
+  translate: 0 0;
+  transition-delay: 60ms;
+}
+
+/* The body pads itself — the row's own inset — so the folded section is
+   exactly nothing tall. */
+.staff-visit__fold-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sys-space-regular);
+  padding: 0 var(--sys-space-regular) var(--sys-space-regular);
+}
+
+/* THE TICKETS INSIDE THE SEGMENT (2026-09-17; owner: "if shown expanded I
+   expect the coupon card, not just list rows"): a ticket's own fill is the
+   segment's, so inside the fold it would read as a hole — the card's
+   surface hook is set a fill step above the segment, the control fill's
+   own strength composed over it, and the badge's ring follows. */
+.staff-visit__fold-body {
+  --ui-coupon-card-surface: color-mix(
+    in srgb,
+    var(--sys-color-foreground) var(--sys-alpha-fill),
+    var(--sys-color-surface-secondary)
+  );
+}
+
+/* A ROW ASLEEP (2026-09-17): «Приложени · Няма» on a clean bill has
+   nothing to unfold — the row stays, so the first line changes its text
+   and moves nothing, but its chevron fades and it takes no press. */
+.staff-visit__extend > .ui-list-row:disabled {
+  cursor: default;
+}
+
+.staff-visit__extend > .ui-list-row:disabled .staff-visit__disclosure {
+  opacity: 0.4;
+}
+
+/* A ROW'S SECOND LINE THAT MAY RUN LONG — the shop's name — wraps to
+   two lines and then ends in an ellipsis instead of the row's
+   single-line clip, which cut an address mid-word (found live,
+   2026-09-18). The row's label resets nothing for a stack inside it;
+   the line does it for itself. */
+.staff-visit__row-line {
+  display: -webkit-box;
+  overflow: hidden;
+  white-space: normal;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+}
+
+/* «САЛОН» UNFOLDS A MAP OR A LIST (owner, 2026-09-18: "like the tip,
+   expandable, reusing our map"; then "map only, and a toolbar pill with
+   two icons toggling map or list … overlaying the map"): the two views
+   share one box, and the VIEW PILL floats over its top-trailing corner —
+   Maps' own corner for floating controls — staying put while the view
+   beneath it changes. The map is the review card's, in the fold's own
+   inset, taller by half again (owner: "a bit larger / higher") — a
+   fixed height, so the fold has a size to grow to before a tile has
+   drawn, on the control fill while it loads, and tall enough that the
+   other shop's edge arrow clears both the pill's band and the pin even
+   when it points due north; the list starts under the pill. */
+.staff-visit__views {
+  position: relative;
+}
+
+.staff-visit__view-pill {
+  position: absolute;
+  inset-block-start: var(--sys-space-compact);
+  inset-inline-end: var(--sys-space-compact);
+  z-index: 2;
+}
+
+/* The place line: the storefront at the street, a compact step under the
+   map (the views box stacks its children with no gap of its own). */
+.staff-visit__place {
+  display: flex;
+  gap: var(--sys-space-compact);
+  align-items: center;
+  margin: 0;
+  margin-block-start: var(--sys-space-compact);
+}
+
+.staff-visit__place[hidden] {
+  display: none;
+}
+
+.staff-visit__views[data-view='list'] > .staff-visit__shop-list {
+  padding-block-start: calc(
+    var(--control-size-small) + var(--sys-space-compact) * 2
+  );
+}
+
+.staff-visit__map {
+  position: relative;
+  block-size: 17rem;
+  overflow: hidden;
+  border-radius: var(--control-radius-subtle);
+  background: var(--sys-color-fill);
+}
+
+.staff-visit__map > .ui-map {
+  position: absolute;
+  inset: 0;
+}
+
+/* THE ROWS INSIDE THE SEGMENT: a row's own fill is the segment's, so
+   inside the fold it would read as a hole — lifted a fill step, the
+   tickets' own recipe, and the chosen one's wash composed over that. */
+.staff-visit__shop-list.ui-list-group > :not(.ui-list-row) > .ui-list-row {
+  background: color-mix(
+    in srgb,
+    var(--sys-color-foreground) var(--sys-alpha-fill),
+    var(--sys-color-surface-secondary)
+  );
+}
+
+.staff-visit__shop-list.ui-list-group
+  > :not(.ui-list-row)
+  > .ui-list-row[data-selected] {
+  background: color-mix(
+    in srgb,
+    var(--sys-color-accent) var(--sys-alpha-segment-selected),
+    color-mix(
+      in srgb,
+      var(--sys-color-foreground) var(--sys-alpha-fill),
+      var(--sys-color-surface-secondary)
+    )
+  );
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .staff-visit__disclosure,
+  .staff-visit__fold,
+  .staff-visit__fold-section,
+  .staff-visit__row-value > .staff-visit__figures {
+    transition: none;
+  }
+}
+
+/* The leg's barber, as a pill with his face: the DS small capsule, the
+   portrait leading the name. The portrait sits INSIDE the capsule (owner,
+   2026-09-09: at the pill's full height it "took too much space") — a
+   24px disc with six pixels of capsule around it, the way a person chip
+   carries a face, then the name at a compact gap. */
+.staff-visit__leg-barber {
+  gap: var(--sys-space-compact);
+  padding-inline-start: calc(var(--sys-space-unit) * 1.5);
+}
+
+.staff-visit__leg-barber .ui-avatar {
+  --ui-avatar-disc: calc(var(--sys-space-unit) * 6);
+}
+
+/* ── SWIPE TO DELETE ────────────────────────────────────────────────────
+   The row's content slides on `--lib-swipe-x` (the directive's), the act
+   waits behind it at the trailing edge. The li clips and rounds as the
+   group's segment would, so the red never shows past the row's corners.
+   The row's chips open popovers from inside this clip, and may: a
+   `ui-menu` surface rides the TOP LAYER (menu.ts, 2026-09-09), out of
+   reach of any clip or stacking context on the page.
+
+   ⚠ `display: block`, stated: the group flattens every non-row child to
+   `display: contents` (list-group.css), and a box-less li can neither be
+   the act's containing block nor clip it — the act then spans whatever is
+   positioned above it, which is the sheet. Same trap as the menu wrappers
+   at the top of this file; same answer. */
+.staff-visit__swipe {
+  display: block;
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--control-radius-subtle);
+  touch-action: pan-y;
+}
+
+.staff-visit__group > li.staff-visit__swipe:first-child {
+  border-start-start-radius: var(--control-radius-prominent);
+  border-start-end-radius: var(--control-radius-prominent);
+}
+
+.staff-visit__group > li.staff-visit__swipe:last-child {
+  border-end-start-radius: var(--control-radius-prominent);
+  border-end-end-radius: var(--control-radius-prominent);
+}
+
+.staff-visit__swipe-content {
+  position: relative;
+  z-index: 1;
+  transform: translateX(var(--lib-swipe-x, 0px));
+  transition: transform var(--sys-motion-duration-regular)
+    var(--sys-motion-ease-emphasized);
+  /* The row is a plain `ui-list-row` element here, so it paints its own
+     segment fill; the group's rules give it the corners. A TICKET on the
+     discount card follows the card's segment hook (coupon-card.css) so it
+     stays a step above the raised surface — and stays opaque over the act
+     waiting behind it. */
+  background: var(--ui-coupon-card-surface, var(--sys-color-surface-secondary));
+}
+
+.staff-visit__swipe[data-dragging] .staff-visit__swipe-content {
+  transition: none;
+}
+
+.staff-visit__swipe-action {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-end: 0;
+  inline-size: 5.5rem;
+  display: grid;
+  place-items: center;
+  border: 0;
+  background: var(--sys-color-destructive);
+  color: var(--sys-color-on-destructive);
+  cursor: pointer;
+  /* Painted only while it can be reached: at rest two coincident rounded
+     clips leave a hairline of the red at the row's corners. `opacity`, not
+     `visibility`, so the keyboard path below still finds it. */
+  opacity: 0;
+}
+
+.staff-visit__swipe[data-dragging] .staff-visit__swipe-action,
+.staff-visit__swipe[data-open] .staff-visit__swipe-action,
+.staff-visit__swipe-action:focus-visible {
+  opacity: 1;
+}
+
+/* Off the tab ring while hidden? No — a keyboard user reaches it directly;
+   focusing it slides the content aside so the act is seen. */
+.staff-visit__swipe:has(.staff-visit__swipe-action:focus-visible)
+  .staff-visit__swipe-content {
+  transform: translateX(-5.5rem);
+}
+
+.staff-visit__swipe-content .ui-list-row__label {
+  white-space: normal;
+}
+
+/* The visit's own rows and pages — the catalogue's service rows, a leg's
+   chips, the note's stack, the photos — continue in
+   `staff-visit-editor.visit.css`: the block sheet shares THIS file and draws
+   none of them. */

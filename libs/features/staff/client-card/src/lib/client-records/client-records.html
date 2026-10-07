@@ -1,0 +1,249 @@
+<!-- RA/RB — the page's name at the sheet's large title, as every pushed page
+     titles, and the person under it. The tenure is a ROW below, not here. -->
+<ui-sheet-headline data-testid="records-head">
+  <h2
+    uiSheetLargeTitle
+    [id]="titleId()"
+    uiText
+    uiFont="largeTitle"
+    data-testid="records-title"
+  >
+    {{ words()?.achievements.records }}
+  </h2>
+  @if (subline(); as name) {
+  <p
+    uiText
+    uiFont="callout"
+    uiForegroundStyle="secondary"
+    class="client-records__subline"
+    data-testid="records-subline"
+  >
+    {{ name }}
+  </p>
+  }
+</ui-sheet-headline>
+
+<!-- Read offline: the figures below are the saved ones. -->
+@if (!store.online()) {
+<ui-notice
+  uiIcon="connection.offline"
+  [uiLabel]="words()?.offline ?? null"
+  data-testid="records-offline"
+>
+  <p>{{ words()?.offline }}</p>
+</ui-notice>
+} @switch (state().kind) { @case ('loading') {
+<!-- Shaped like what lands: one featured block, two groups of two rows. -->
+<ui-stack uiSpacing="loose" aria-busy="true" data-testid="records-skeleton">
+  <ui-skeleton
+    uiRadius="prominent"
+    uiFrame
+    uiFrameHeight="calc(var(--sys-space-unit) * 51)"
+  />
+  @for (group of placeholderGroups; track group) {
+  <ui-stack uiSpacing="compact">
+    <ui-skeleton
+      uiRadius="regular"
+      uiFrame
+      uiFrameWidth="30%"
+      uiFrameHeight="var(--control-size-small)"
+    />
+    <ui-stack uiSpacing="tight">
+      @for (row of placeholderRows; track row) {
+      <ui-skeleton
+        uiRadius="prominent"
+        uiFrame
+        uiFrameHeight="calc(var(--sys-space-unit) * 15)"
+      />
+      }
+    </ui-stack>
+  </ui-stack>
+  }
+</ui-stack>
+} @case ('failed') {
+<!-- The records ride the account's read: its notice, and «Опитай пак». -->
+<ui-notice
+  [uiLabel]="words()?.failed.loyalty ?? null"
+  data-testid="records-error"
+>
+  <p>{{ words()?.failed.loyalty }}</p>
+  <button
+    uiNoticeActions
+    type="button"
+    uiButton
+    uiButtonStyle="bordered"
+    uiTint="neutral"
+    uiControlSize="regular"
+    data-testid="records-retry"
+    (click)="retry()"
+  >
+    {{ words()?.visitsModule.retry }}
+  </button>
+</ui-notice>
+} @case ('empty') {
+<ui-empty-state data-testid="records-empty">
+  <p uiText uiFont="subheadline" uiForegroundStyle="secondary">
+    {{ words()?.records.empty }}
+  </p>
+</ui-empty-state>
+} @case ('ready') { @if (ready(); as vm) { @let copy = words();
+<!-- RC — the newest record, the page's ONE hero figure: the emblem on the
+     solid accent (or the service's cover), the figure in the display rung,
+     what it counts, the day it was set; «Нов рекорд» within thirty days. -->
+@if (vm.featured; as featured) {
+<ui-card
+  uiTone="elevated"
+  uiPadding="comfortable"
+  role="group"
+  class="client-records__featured"
+  [attr.aria-label]="featured.accessibleName"
+  [attr.data-kind]="featured.kind"
+  [attr.data-new]="featured.isNew ? '' : null"
+  data-testid="records-featured"
+>
+  <span class="client-records__featured-head" aria-hidden="true">
+    <ui-avatar
+      class="client-records__emblem"
+      uiControlSize="large"
+      [uiSrc]="featured.src"
+      [uiIcon]="featured.src === null ? featured.icon : null"
+      [uiName]="featured.value"
+      [attr.data-picture]="featured.src === null ? null : ''"
+    />
+    @if (featured.isNew) {
+    <span uiBadge uiTone="accent" data-testid="records-featured-new"
+      >{{ copy?.achievements.newRecord }}</span
+    >
+    }
+  </span>
+  <span class="client-records__featured-words" aria-hidden="true">
+    <span
+      uiText
+      uiFont="largeTitle"
+      class="client-records__hero-figure"
+      data-testid="records-featured-figure"
+      >{{ featured.value }}</span
+    >
+    <span uiText uiFont="body" class="client-records__hero-sentence"
+      >{{ featured.sentence }}</span
+    >
+    @if (featured.detail; as detail) {
+    <span uiText uiFont="subheadline" uiForegroundStyle="secondary"
+      >{{ detail }}</span
+    >
+    }
+  </span>
+</ui-card>
+}
+
+<!-- RD/RE — the rows by theme, inset grouped: a white disc with the accent
+     glyph, or the subject's picture, leads; the title and its quiet line
+     are the stack's one head; the figure stands at the trailing edge. The
+     groups sit 2-up in the wide dialog. -->
+@if (vm.groups.length > 0) {
+<div class="client-records__groups" data-testid="records-groups">
+  @for (group of vm.groups; track group.theme) {
+  <ui-stack
+    uiSpacing="compact"
+    [attr.data-testid]="'records-group-' + group.theme"
+  >
+    <ui-section-header uiHeaderProminence="increased">
+      <h3 uiTitle [id]="ids.group(group.theme)">{{ group.title }}</h3>
+    </ui-section-header>
+    <ul uiListGroup [attr.aria-labelledby]="ids.group(group.theme)">
+      @for (row of group.rows; track row.id) {
+      <li
+        uiListRow
+        uiSize="regular"
+        uiTrailingProminence="primary"
+        uiLabelWraps
+        uiTrailingWraps
+        class="client-records__row"
+        [attr.data-row]="row.id"
+        [attr.data-long]="long(row)"
+        [attr.data-testid]="'records-row-' + row.id"
+      >
+        <span uiVisuallyHidden>{{ row.accessibleName }}</span>
+        <ui-avatar
+          uiLeading
+          class="client-records__disc"
+          uiControlSize="regular"
+          aria-hidden="true"
+          [uiSrc]="row.src"
+          [uiIcon]="row.src === null ? row.icon : null"
+          [uiName]="row.faceName ?? ''"
+          [attr.data-glyph]="row.icon === null ? null : ''"
+        />
+        <lib-staff-event-head
+          class="client-records__head"
+          aria-hidden="true"
+          size="regular"
+          [title]="row.title"
+          [lines]="lines(row)"
+        />
+        <span
+          uiTrailing
+          uiText
+          uiFont="headline"
+          class="client-records__figure"
+          aria-hidden="true"
+          >{{ row.figure }}</span
+        >
+      </li>
+      }
+    </ul>
+  </ui-stack>
+  }
+</div>
+}
+
+<!-- RF — «По години»: one white card of a bar per year, the count beside
+     it; the record year wears the emblem. Only when the whole history is
+     loaded (no cursor left), so a year is never under-counted. -->
+@if (vm.years; as years) {
+<ui-stack uiSpacing="compact" data-testid="records-years">
+  <ui-section-header uiHeaderProminence="increased">
+    <h3 uiTitle [id]="ids.years">{{ copy?.records.byYear }}</h3>
+  </ui-section-header>
+  <ui-card
+    uiTone="elevated"
+    uiPadding="comfortable"
+    class="client-records__years"
+    role="list"
+    [attr.aria-labelledby]="ids.years"
+  >
+    @for (year of years; track year.year) {
+    <div
+      role="listitem"
+      class="client-records__year"
+      [attr.data-record]="year.record ? '' : null"
+      [attr.data-testid]="'records-year-' + year.year"
+    >
+      <span uiText uiFont="body" uiWeight="medium" aria-hidden="true"
+        >{{ year.year }}</span
+      >
+      <ui-gauge
+        uiGaugeStyle="linearCapacity"
+        uiControlSize="small"
+        [uiValue]="year.gauge.value"
+        [uiMin]="year.gauge.min"
+        [uiMax]="year.gauge.max"
+        [uiLabel]="year.gauge.label"
+        [uiValueText]="year.accessibleName"
+      />
+      <span class="client-records__year-count" aria-hidden="true">
+        @if (year.record) {
+        <ui-icon
+          uiName="loyalty.record.mostVisitsInYear"
+          uiForegroundStyle="accent"
+          uiScale="small"
+          class="client-records__year-mark"
+        />
+        }
+        <span uiText uiFont="headline">{{ year.count }}</span>
+      </span>
+    </div>
+    }
+  </ui-card>
+</ui-stack>
+} } } }

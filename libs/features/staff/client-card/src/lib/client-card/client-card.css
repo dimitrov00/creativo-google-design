@@ -1,0 +1,111 @@
+/*
+ * THE GLANCE PAGE — layout only. Every surface, ink, type role and control
+ * is a DS part's own (`ui-sheet-headline` in its hero layout, `ui-avatar`,
+ * the plate `span[uiBadge]`, `span[uiBadge]` in `ui-flow`, `ui-notice`,
+ * `ui-quick-actions`, `button[uiCouponCard]`, `ui-section-header`, the
+ * shared visit card, the loyalty and medals cards, `ui-grid` of
+ * `ui-media-card`s, `ul[uiListGroup]` with its destructive row,
+ * `ui-skeleton`); these rules stack the modules 32 apart, lift the head
+ * into the bar's row, let its lines wrap uncut, lay two cards to a row in
+ * the wide dialog and keep what the focus lands on clear of the sheet's
+ * chrome. No colour and no `font:` shorthand here: the card changes
+ * colour entirely through the DS, and the app's tabular figures are never
+ * reset.
+ */
+
+/* The modules at the client stack's own gap (§2.0: module → module is
+   `loose`, 32), flat under the page container. */
+:host {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sys-space-loose);
+}
+
+/* A — the head, then the capsules and the notices at the regular gap
+   (§2.1.3: head → capsule row is 16, a notice 16 under the line). */
+.client-card__identity {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sys-space-regular);
+}
+
+/* THE RISE (R2-C, DV-G): the hero climbs 37 of the bar's 61 into its row,
+   between ‹ and ✕, so the ring's top stands 35 under the grabber. The
+   chrome's height is what `ui-modal-sheet` writes on its scroller. */
+.client-card__head {
+  --ui-sheet-headline-rise: calc(
+    var(--modal-sheet-chrome-height) - var(--sys-space-comfortable)
+  );
+}
+
+/* A5 — the quiet line is never cut. It is a centred line of facts
+   (fact-line.css): at 330 «Клиент от март 2025 г.» stands over «идва през
+   4 седмици», each centred, no dot at the break; a clause wider than the
+   column (a pause sentence) wraps in balanced lines inside itself. A fact
+   («март 2025 г.», «4 седмици») is one word to the line breaker by the
+   presenter's no-break spaces, the card's one grammar. */
+.client-card__state-line {
+  text-wrap: balance;
+  overflow-wrap: break-word;
+}
+
+/* H — the visit cards, `regular` (16) apart inside the module. In the
+   ≥ 761 dialog two share a row (§2.1.6); a card alone, or the third, takes
+   the whole row. */
+.client-card__cards {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--sys-space-regular);
+}
+
+:host([data-sheet-width='regular']) .client-card__cards {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+:host([data-sheet-width='regular']) .client-card__cards > :only-child,
+:host([data-sheet-width='regular']) .client-card__cards > :nth-child(3) {
+  grid-column: 1 / -1;
+}
+
+/* F · G — the loyalty and the medals modules, each with its heading: one
+   under the other at the page's own 32 — in the ≥ 761 dialog too (review
+   3, F5: side by side at 528 each had 256, where the loyalty card ended
+   mid-row beside its taller neighbour, and the medals card cut «Рожден
+   ден в салона» to «Рожден / ден в…» and ran its records line past its
+   edge). The visit cards keep their 2-up (H): a card of three lines holds
+   half a column; a card of three named medals does not. */
+.client-card__pair {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--sys-space-loose);
+  min-inline-size: 0;
+}
+
+/* I1 — a bare tap target around the picture: the DS resets a button whose
+   one child is a media card (media-card.css); the radius and the press ride
+   `uiRadius` + `uiInteractive`, the width is the grid's column. */
+
+/* I1 while the grid reads: the tiles' own 4 / 5 frame. */
+.client-card__photo-placeholder {
+  display: block;
+  aspect-ratio: 4 / 5;
+}
+
+/* Everything that pushes a page takes the focus back on ‹ (§2.3): it lands
+   clear of the bar above and the dock below. */
+.client-card__origin {
+  scroll-margin-block: var(--modal-sheet-origin-margin);
+}
+
+/* The reward ticket used stands stamped where it stood, an `article` the
+   editor focuses on ‹. A landing is not a control (the loyalty anchor's
+   rule): the DS's inset ring, drawn for `button, article` alike, boxed the
+   birthday card the same way (review 3, round 2). The button form keeps
+   its ring. */
+article.client-card__origin:focus-visible {
+  outline: none;
+}
+
+article.client-card__origin:focus-visible::before {
+  box-shadow: none;
+}

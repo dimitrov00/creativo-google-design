@@ -1,10 +1,11 @@
 import { Injectable, computed, inject, signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { Observable, of, switchMap } from 'rxjs';
-import { AUTH_GATEWAY } from '@creativo/application/identity';
+import { Observable, from, of, startWith, switchMap } from 'rxjs';
+import { AUTH_GATEWAY, type Role } from '@creativo/application/identity';
 import {
   AVATAR_UPLOADER,
   UserId,
+  type UserRole,
   profileCompletion,
   STAFF_ROLES,
 } from '@creativo/application/accounts';
@@ -13,6 +14,29 @@ import { AccountStateService } from '@creativo/features/client/account-state';
 /** An avatar answer that has ARRIVED — `undefined` is reserved for "still looking". */
 function settled(url: string | null): Observable<string | null | undefined> {
   return of(url);
+}
+
+/**
+ * The admin pair — the SAME two roles `isAdmin()` in firestore.rules names,
+ * `rolesGuard('admin', 'sysadmin')` on every `/admin` route checks, and the
+ * `publishStreakDefinition` callable admits (`callerIsAdmin`). Four dialects
+ * of one rule; keep them equal. Narrower than `STAFF_ROLES`, which the pair
+ * is also part of: an admin is staff, a barber is not an admin.
+ */
+const ADMIN_ROLES: readonly UserRole[] = ['admin', 'sysadmin'];
+
+/**
+ * Whether the token's claims hold one of `roles`. Claims-tolerant, like
+ * `worksTheBook`: an unrecognised claim is simply not in the list and grants
+ * nothing, so the claims are never narrowed to the vocabulary first.
+ */
+function holdsAnyOf(
+  claims: readonly Role[],
+  roles: readonly UserRole[],
+): boolean {
+  return claims.some((claim) =>
+    (roles as readonly string[]).includes(claim as string),
+  );
 }
 
 /**
@@ -27,6 +51,14 @@ function settled(url: string | null): Observable<string | null | undefined> {
  * flattening (2026-07-28) the shell could not see `AccountStateService` at
  * all and kept its own duplicate principal subscription — the two are now
  * one chain.
+ *
+ * The avatar lookup and the profile's completion are the APP's, not the
+ * chrome's alone: `/account`'s completion card, the menu's nudge and the
+ * onboarding resume all read `profileProgress` from here (round 6,
+ * 2026-09-26). The dashboard used to run a second Storage lookup and a
+ * second `profileCompletion` of its own — two answers that could disagree
+ * after an upload, and twice the requests. Whoever uploads a photo calls
+ * `refreshAvatar()` and every reader follows.
  */
 @Injectable({ providedIn: 'root' })
 export class SessionIdentityService {
@@ -47,10 +79,22 @@ export class SessionIdentityService {
   readonly isStaffMember = computed(() => {
     const principal = this.principal();
     return (
-      principal.kind === 'active' &&
-      principal.roles.some((role) =>
-        (STAFF_ROLES as readonly string[]).includes(role as string),
-      )
+      principal.kind === 'active' && holdsAnyOf(principal.roles, STAFF_ROLES)
+    );
+  });
+
+  /**
+   * One of the admin pair, `admin | sysadmin` — the SAME grouping
+   * firestore.rules' `isAdmin()` and the `/admin` routes' `rolesGuard` use,
+   * read off the token's claims. Drives the menu's «Лоялност» entry (the one
+   * way to the admin page `/admin/loyalty/rhythm`; client-card revision 3
+   * §3.17) and nothing security-bearing: the route's guard, the rules and
+   * the callable re-check for themselves.
+   */
+  readonly isAdmin = computed(() => {
+    const principal = this.principal();
+    return (
+      principal.kind === 'active' && holdsAnyOf(principal.roles, ADMIN_ROLES)
     );
   });
 
@@ -90,12 +134,32 @@ export class SessionIdentityService {
   private readonly avatarReload = signal(0);
 
   /**
+   * Whose photo `avatarLookup` last answered for (a uid), or `null` when it
+   * last answered for no one. A re-check for the SAME person keeps that
+   * answer on screen while it runs; a new person starts from "still
+   * looking".
+   */
+  private avatarOwner: string | null = null;
+
+  /**
    * The uploaded photo's URL, `null` when the user has none, `undefined`
    * while the lookup is still in flight — the third state exists so the
    * completion model below can wait for a real answer instead of counting
    * a not-yet-loaded photo as missing and flashing the wrong fraction.
    * Avatar existence is a storage lookup, not a profile field (see
    * `AvatarUploader.find`).
+   *
+   * "In flight" is said again every time the PERSON changes (round 6): a
+   * cold load starts signed out, and the signed-out answer (`null`) used
+   * to stay in the signal while the signed-in lookup ran, so the account
+   * snapshot landing first read as "no photo" — a completion card and a
+   * `data-completion="open"` for a finished profile, and, on a switch of
+   * account, the previous person's picture in the next one's header. A
+   * re-check for the same person (`refreshAvatar()`, a token refresh)
+   * keeps the last answer instead: the menu re-checks on every open and
+   * must not blink its portrait. A failed lookup still settles as "no
+   * photo", so nothing that waits for an answer (the onboarding resume)
+   * waits forever.
    */
   private readonly avatarLookup = toSignal(
     toObservable(
@@ -109,14 +173,26 @@ export class SessionIdentityService {
       switchMap(({ principal }) => {
         // The explicit widening is what lets `undefined` (in flight) live
         // alongside `null` (settled: no photo) in this signal's type.
-        if (principal.kind !== 'active') return settled(null);
-        const userIdResult = UserId.create(principal.uid.value);
-        if (userIdResult.isFailure()) return settled(null);
-        return this.avatarUploader
-          .find(userIdResult.value)
-          .then((result) =>
-            result.isSuccess() ? (result.value?.url ?? null) : null,
-          );
+        const userIdResult =
+          principal.kind === 'active'
+            ? UserId.create(principal.uid.value)
+            : null;
+        if (userIdResult === null || userIdResult.isFailure()) {
+          this.avatarOwner = null;
+          return settled(null);
+        }
+        const samePerson = this.avatarOwner === userIdResult.value.value;
+        this.avatarOwner = userIdResult.value.value;
+        const answer = from(
+          this.avatarUploader
+            .find(userIdResult.value)
+            .then((result) =>
+              result.isSuccess() ? (result.value?.url ?? null) : null,
+            ),
+        );
+        return samePerson
+          ? answer
+          : answer.pipe(startWith<string | null | undefined>(undefined));
       }),
     ),
     { initialValue: undefined as string | null | undefined },
@@ -126,21 +202,24 @@ export class SessionIdentityService {
   readonly avatarUrl = computed(() => this.avatarLookup() ?? null);
 
   /**
-   * Re-runs the storage lookup — the menu calls this on every open, so a
-   * photo added later in the same session (onboarding's avatar step, a
-   * future settings screen) shows up the next time the portrait is on
-   * screen instead of waiting for a reload.
+   * Re-runs the storage lookup, keeping the last answer on screen until the
+   * new one lands. Whoever uploads a photo calls it after the upload (the
+   * profile screen's store; onboarding's avatar step), and the two screens
+   * that SHOW the answer call it on arrival — the menu on every open,
+   * `/account` on entry — so a photo added on another device, or by a path
+   * that forgot to call it, shows up the next time it is on screen instead
+   * of waiting for a reload.
    */
   refreshAvatar(): void {
     this.avatarReload.update((bump) => bump + 1);
   }
 
   /**
-   * How far along the profile is — `null` while the snapshot is still
-   * loading AND once everything is filled in, so the menu's nudge simply
-   * doesn't exist for a finished profile (same rule as the dashboard's
-   * completion card). Shares `profileCompletion` with that card, so the
-   * two can never disagree about what is still missing.
+   * How far along the profile is — `null` while the snapshot or the photo
+   * lookup is still loading. THE one computation: the menu's nudge
+   * (`completion`), `/account`'s completion card and its host's
+   * `data-completion`, and the onboarding resume all read it, so they can
+   * never disagree about what is still missing.
    */
   readonly profileProgress = computed(() => {
     const user = this.accountState.account();
@@ -154,6 +233,11 @@ export class SessionIdentityService {
     return profileCompletion(user, photo !== null);
   });
 
+  /**
+   * The nudge's model — `null` while loading AND once everything is filled
+   * in, so a finished profile shows no nudge anywhere (Apple's suggestion
+   * cards disappear when done; owner ruling 2026-07-27).
+   */
   readonly completion = computed(() => {
     const progress = this.profileProgress();
     return progress && !progress.complete ? progress : null;

@@ -1,0 +1,384 @@
+/*
+ * THE EVENT'S HEAD — one recipe for the frame's block (`compact`) and the
+ * agenda's card (`regular`): the words on the left, the clock on the right
+ * (owner, 2026-09-16: "the agenda card should be the same as the grid
+ * event, but bigger, so we stay consistent"). Unscoped like every recipe in
+ * this feature — `.staff-event-head__*` is the contract — so a host's own
+ * state rules reach in: a struck title on a cancelled booking, dimmed lines
+ * on a neighbour's block.
+ *
+ * Every type declaration here is a LONGHAND, but for the two prose runs that
+ * ARE a text role — the client's quote and the gloss — which take the role's
+ * token whole (`font: var(--sys-font-…)`) and say `tabular-nums` again right
+ * after it. The `font` shorthand resets the app's tabular figures
+ * (tokens.css), and a head that is half figures must never lose them by
+ * accident.
+ */
+.staff-event-head {
+  /* THE SCALE — the block's numbers; `regular` steps each up one role. */
+  --staff-event-title-size: 0.75rem; /* footnote */
+  --staff-event-line-size: 0.6875rem; /* caption */
+  /* The client's words are prose in the text face, a step under the mono
+     facts they follow (mono runs optically larger): the caption role on the
+     block, the footnote role on the card — the roles' own tokens. */
+  --staff-event-quote-font: var(--sys-font-caption);
+  --staff-event-icon-size: 0.75rem;
+  --staff-event-gap: var(--sys-space-tight);
+  /* ONE leading for both densities (below) — named, because the glyph that
+     leads a fact line is seated on it. */
+  --staff-event-leading: 1.3;
+
+  display: flex;
+  align-items: flex-start;
+  gap: var(--staff-event-gap);
+  min-inline-size: 0;
+  /* THE HOST'S WHOLE WIDTH, whichever way it lays its children: the block
+     stacks them in a column and aligns them to the start, so an item that
+     does not stretch is only as wide as its content — and with the size
+     containment below, its content counts for nothing and it collapses to
+     zero (the frame drew six blank blocks for a minute). Stretching takes
+     the host's cross size regardless; in the card's row it costs nothing. */
+  align-self: stretch;
+  /* The head decides for itself whether it is wide enough to carry the
+     clock beside the words — the block used to, on its own width. */
+  container-type: inline-size;
+  /* ONE leading for both densities — the block's — so the card is the block
+     scaled and not a looser cousin of it (owner, 2026-09-16: "a bigger gap
+     between the client name and the service"). */
+  line-height: var(--staff-event-leading);
+}
+
+.staff-event-head[data-size='regular'] {
+  --staff-event-title-size: 0.875rem; /* callout */
+  /* Mono runs optically larger: 13px reads as the card's 14px text. */
+  --staff-event-line-size: 0.8125rem;
+  --staff-event-quote-font: var(--sys-font-footnote);
+  --staff-event-icon-size: 0.875rem;
+  --staff-event-gap: var(--sys-space-compact);
+}
+
+.staff-event-head__lines {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+/* WHO — the one line in the text face, at 600. The card's whole hierarchy
+   is two rungs: who, and everything else about them. Where it wraps it
+   never leaves a word alone on its last line (wave D r4: «Фейд ·
+   Оформяне на / брада» beside the glance's price) — `pretty`, so a line
+   that fits is never reshaped. The STYLE longhand, never the `text-wrap`
+   shorthand: the shorthand also sets the wrap mode back to `wrap`, and a
+   title that keeps to one line (a density below, or a host's `nowrap`
+   it inherits) must keep doing so. */
+.staff-event-head__title {
+  max-inline-size: 100%;
+  font-family: var(--sys-font-family-text);
+  font-size: var(--staff-event-title-size);
+  font-weight: 600;
+  text-wrap-style: pretty;
+}
+
+/* The service on the title's own line (a quarter-hour block): secondary ink
+   and a middot carry the demotion the second line used to carry by
+   position — it is still plainly the subordinate half of the line. The
+   middot is a text node, not generated content, so it travels with a copy
+   and a test can read the line as it is seen. */
+.staff-event-head__sep,
+.staff-event-head__inline {
+  font-weight: 400;
+  color: var(--sys-color-secondary-label);
+}
+
+/* EVERY FACT under the name, in the mono face — one advance per glyph, the
+   owner's ruling for data (2026-09-16) — in secondary ink; a glyph leads a
+   line that would otherwise be an anonymous string of characters, sized off
+   the line and quieter than it.
+
+   The glyph rides the FIRST line. A regular head's fact may wrap (a long
+   address), and centred against the wrapped block the glyph floated beside
+   the middle line, leading nothing (review r4). So the items align to the
+   start and the glyph is seated on the first line by hand: half of what the
+   line's leading leaves over the glyph's em box — the same seat `center`
+   gave it while the line was one line, to the pixel. */
+.staff-event-head__line {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sys-space-tight);
+  max-inline-size: 100%;
+  min-inline-size: 0;
+  color: var(--sys-color-secondary-label);
+}
+
+.staff-event-head__line ui-icon,
+.staff-event-head__quote ui-icon {
+  flex: 0 0 auto;
+  font-size: var(--staff-event-icon-size);
+  color: var(--sys-color-tertiary-label, var(--sys-color-secondary-label));
+}
+
+.staff-event-head__line ui-icon {
+  margin-block-start: calc(
+    (
+        var(--staff-event-line-size) * var(--staff-event-leading) -
+          var(--staff-event-icon-size)
+      ) /
+      2
+  );
+}
+
+/* THE CLIENT'S OWN WORDS (client-card redesign §5.3.4) — a line under the
+   facts, led by the note glyph: prose, so the text face and never mono, in
+   the facts' secondary ink, and ONE line with an ellipsis at the end in
+   both densities (the host's accessible name holds the whole note). Never
+   struck: the title alone carries an hour that did not happen, and a
+   no-show's «ще закъснея» is evidence. */
+.staff-event-head__quote {
+  display: flex;
+  align-items: center;
+  gap: var(--sys-space-tight);
+  max-inline-size: 100%;
+  min-inline-size: 0;
+  color: var(--sys-color-secondary-label);
+}
+
+.staff-event-head__quote-text {
+  min-inline-size: 0;
+  /* The role's size and face; the head keeps its one leading, and the
+     client's words stay regular under the facts. */
+  font: var(--staff-event-quote-font);
+  font-weight: 400;
+  line-height: inherit;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.staff-event-head__text {
+  min-inline-size: 0;
+}
+
+/* A WHOLE RUN — a fact with no space in it: an address, a single word. It
+   has no honest place to part, and parted anywhere it reads as noise
+   («konstantin.pophristodulo / v- / karageorgiev@test.local», three lines
+   of an agenda card, review r4). So it keeps to ONE line and ends in an
+   ellipsis whatever the density, as a picker's line does: what shows
+   identifies, and the visit itself holds the whole of it. A fact with
+   spaces still wraps at them (the regular rule at the end). */
+.staff-event-head__text[data-whole] {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.staff-event-head__text,
+.staff-event-head__times {
+  font-family: var(--sys-font-family-mono);
+  font-size: var(--staff-event-line-size);
+  font-variant-numeric: tabular-nums;
+}
+
+/* THE CLOCK — the start in the row's own ink, the end a step quieter
+   beneath it, the reading of it smaller and quieter still. Read downward:
+   stacked, the two are plainly a pair, so no dash is needed to join them. */
+.staff-event-head__times {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  text-align: end;
+  white-space: nowrap;
+}
+
+.staff-event-head__end {
+  color: var(--sys-color-secondary-label);
+}
+
+.staff-event-head__gloss {
+  /* The caption role (500, the text face), on the head's one leading. */
+  font: var(--sys-font-caption);
+  line-height: inherit;
+  font-variant-numeric: tabular-nums;
+  color: var(--sys-color-secondary-label);
+}
+
+/* A STATE IN THE GLOSS (2026-09-24): «Отказан», «Не дойде» where the
+   countdown stood — the word the eye finds before it reads the name, in
+   the foreground ink and the weight, never a hue (status is form). */
+.staff-event-head[data-gloss-state] .staff-event-head__gloss {
+  color: var(--sys-color-foreground);
+  font-weight: 600;
+}
+
+/* WHAT MATCHED IS WHAT IS PRIMARY (2026-09-22, the add-client page's
+   search): a marked title or line recedes to the secondary ink around its
+   runs and the typed runs hold the foreground — Spotlight's grammar. Ink
+   only, never weight: the mono face has no honest semibold, and the title
+   is 600 already. */
+.staff-event-head__title[data-marked] {
+  color: var(--sys-color-secondary-label);
+}
+
+.staff-event-head__hit {
+  color: var(--sys-color-foreground);
+}
+
+/* COMPACT — a block scanned at a glance: one line each with an ellipsis,
+   and the clock only where the column can spare it (the frame's threshold
+   was 160px on the block; inside the block's padding that is 144px here).
+   A `regular` head asked to `truncate` (a picker's row) does the same;
+   one asked to `truncateLines` (the glance's featured visit) does it for
+   the fact lines alone, and its title still wraps. */
+.staff-event-head[data-size='compact'] .staff-event-head__title,
+.staff-event-head[data-size='compact'] .staff-event-head__line,
+.staff-event-head[data-size='compact'] .staff-event-head__text,
+.staff-event-head[data-truncate] .staff-event-head__title,
+.staff-event-head[data-truncate] .staff-event-head__line,
+.staff-event-head[data-truncate] .staff-event-head__text,
+.staff-event-head[data-truncate-lines] .staff-event-head__line,
+.staff-event-head[data-truncate-lines] .staff-event-head__text {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.staff-event-head[data-size='compact'] .staff-event-head__times {
+  display: none;
+}
+
+@container (min-width: 144px) {
+  .staff-event-head[data-size='compact'] .staff-event-head__times {
+    display: flex;
+  }
+}
+
+/* THE HELD RUN (wave D r2). A one-line fact line can close on a run that
+   no ellipsis takes: the barber after the shop on a history row. The text
+   becomes a row of two runs. The lead gives way first, and the held run
+   keeps its whole width, so «Креативо · Младост · Иван» reads «Креативо ·
+   Мла… · Иван» and never «Креативо · Младост · Ив…». The held run keeps its
+   leading joint (`pre`, because a box drops the first space of its line).
+   It truncates only when it alone is wider than the line. The head splits
+   a line this way only where its lines keep to one line. */
+.staff-event-head__text[data-held] {
+  display: flex;
+}
+
+.staff-event-head__lead {
+  min-inline-size: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.staff-event-head__hold {
+  flex: none;
+  max-inline-size: 100%;
+  white-space: pre;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* THE TITLE'S TRAILING FIGURE (wave D r2). A host may set one thing at the
+   end of the title's line through `[uiTrailing]`: the glance's featured
+   visit puts its money there. Only the title shares a line with it. The
+   title wraps short of it, and every fact line and the quote run the
+   head's whole width under both. A figure in a column of its own held that
+   column down the card's full height, so at 330 the facts read «Креативо ·
+   Млад…» over ≈120 pt of empty column under «27,50 €». The title and the
+   figure share their first baseline, however many lines the title wraps
+   to; a row alone on its line aligns as it did. */
+.staff-event-head__lines:has(> [uitrailing]) {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: var(--sys-space-regular);
+  align-items: first baseline;
+}
+
+.staff-event-head__lines:has(> [uitrailing]) > * {
+  grid-column: 1 / -1;
+}
+
+.staff-event-head__lines:has(> [uitrailing]) > .staff-event-head__title {
+  grid-row: 1;
+  grid-column: 1;
+}
+
+.staff-event-head__lines > [uitrailing] {
+  grid-row: 1;
+  grid-column: 2;
+}
+
+/* ── THE STATES — the head's own, stamped by its inputs ─────────────────
+ *
+ * STRUCK THROUGH — Apple's treatment for a declined event — on the NAME,
+ * for both hours that did not happen: a cancellation and a no-show (owner,
+ * 2026-09-10). `currentcolor` is load-bearing: the strike inherits the
+ * name's ink and the name keeps its own, so it is never struck AND greyed
+ * — two marks for one fact. The times, the service and the tag keep their
+ * figures legible; the host's glyph says which of the two it was.
+ *
+ * AND NO INK MOVES (review r5, a11y). The struck state sets no colour and
+ * no opacity on anything: the name keeps the foreground, every fact line
+ * and the clock keep the secondary ink — the roles that clear the 4.5:1
+ * floor at full strength on the page, a card and a segment in both themes
+ * (the secondary on the background / the segment: 5.74 / 5.37 light,
+ * 6.24 / 4.62 dark). A struck head that still fails the floor is being
+ * FADED by its host, and a fade is the host's to answer for with
+ * `receded`, below. No ink token survives the agenda's 0.55 on a past
+ * hollow card (staff-dashboard.css, "when a hollow row is also past"):
+ * through it the secondary lands at 2.36:1 dark and 2.18 light, and even
+ * the foreground title at 3.91 in light. Lifting the struck facts to
+ * survive that fade would make a cancelled hour still ahead — the one
+ * that just came free — the loudest card on the day; the fade must come
+ * up to the 0.75 the compensation covers, with `receded` passed.
+ *
+ * These rules live HERE and not in a host's stylesheet on purpose: the
+ * agenda's is view-scoped and its rule could never reach a title in this
+ * view (2026-09-17). */
+.staff-event-head[data-struck] .staff-event-head__title {
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+  text-decoration-color: currentcolor;
+}
+
+/* RECEDED — a past card fades to 0.75, and the facts' own secondary ink
+   would land under the 4.5:1 floor against the page showing through the
+   card's stripes. Half way to the foreground is the compensation: over the
+   floor, under a live card's own facts, the name above still receding. The
+   arithmetic is the agenda's (staff-dashboard.css, "the compensation"):
+   5.17:1 light and 6.33:1 dark over the page. The clock's end and its
+   gloss are the same ink at the same size, so they take the same lift
+   (review r5: bare, they sat at 3.4 light / 3.8 dark through the fade,
+   unseen by axe only because a hatched card's background-image makes it
+   pass the card over). A state in the gloss keeps its foreground. A head
+   that is struck AND receded takes the lift too — a host that fades a
+   hollow card passes both — and the lift covers a fade of 0.75, no
+   deeper. */
+.staff-event-head[data-receded] .staff-event-head__line,
+.staff-event-head[data-receded] .staff-event-head__quote,
+.staff-event-head[data-receded] .staff-event-head__end,
+.staff-event-head[data-receded]:not([data-gloss-state])
+  .staff-event-head__gloss {
+  color: color-mix(
+    in srgb,
+    var(--sys-color-foreground) 50%,
+    var(--sys-color-secondary-label)
+  );
+}
+
+/* REGULAR — read at arm's length: lines wrap, and NOTHING truncates. Half a
+   surname identifies nobody. (A picker's row opts out above, and so do a
+   featured card's fact lines, and a fact that is one whole run.) */
+.staff-event-head[data-size='regular']:not([data-truncate])
+  .staff-event-head__title,
+.staff-event-head[data-size='regular']:not(
+    [data-truncate],
+    [data-truncate-lines]
+  )
+  .staff-event-head__text {
+  overflow-wrap: anywhere;
+}

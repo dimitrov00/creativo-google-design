@@ -13,6 +13,7 @@ import {
 } from '@angular/core';
 import { TranslocoDirective, TranslocoService } from '@jsverse/transloco';
 import {
+  MapLibreLoader,
   UI_ICON_OVERRIDES,
   UiButton,
   UiIcon,
@@ -151,13 +152,16 @@ export class LocationsComponent implements AfterViewInit {
   private readonly iconOverrides = inject(UI_ICON_OVERRIDES, {
     optional: true,
   });
+  // The DS's one way to MapLibre — the library AND its stylesheet, which
+  // left the global bundle (2026-09-26) and now arrives with the map.
+  private readonly mapLibre = inject(MapLibreLoader);
 
   private map: MapLibreMap | undefined;
   private markerElements: HTMLElement[] = [];
   private sheetMap: MapLibreMap | undefined;
   private sheetMarker: MapLibreMarker | undefined;
   private indicatorElements: HTMLElement[] = [];
-  // `ngAfterViewInit` is async (it awaits maplibre-gl's dynamic import, then
+  // `ngAfterViewInit` is async (it awaits MapLibre's lazy load, then
   // waits on the map's own async 'load' event) — on a slow connection, or if
   // Safari reloads a backgrounded tab, the component can be destroyed before
   // that work resumes. Any DestroyRef.onDestroy() call made after the fact
@@ -237,14 +241,16 @@ export class LocationsComponent implements AfterViewInit {
 
     const host = this.elementRef.nativeElement;
 
-    // maplibre-gl ships a UMD bundle, not a real ESM module (it builds its
-    // exports object dynamically inside a factory function, so esbuild can't
-    // statically detect named exports off it) — the dynamic import()'s named
-    // properties (e.g. `.Map`) come back undefined; only `.default` (the
-    // whole UMD `module.exports` object) is populated. Confirmed live: using
-    // named properties directly threw "maplibregl.Map is not a constructor".
-    const { default: maplibregl } = await import('maplibre-gl');
-    if (this.destroyed) return;
+    // The library and its stylesheet, lazily and once for every map in the
+    // app; the UMD bundle's `.default` quirk is unwrapped there too (see
+    // `MapLibreLoader`). Chunks that cannot be fetched (offline, a deploy
+    // that replaced them) fail as soft as no WebGL does below: logged, both
+    // maps left empty, the location list untouched.
+    const maplibregl = await this.mapLibre.load().catch((error: unknown) => {
+      console.error('[cr-locations] map failed to load:', error);
+      return null;
+    });
+    if (!maplibregl || this.destroyed) return;
 
     const mapContainer = host.querySelector<HTMLElement>(
       '[data-locations-map]',

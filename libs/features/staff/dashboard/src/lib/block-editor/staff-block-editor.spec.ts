@@ -293,7 +293,7 @@ describe('StaffBlockEditor', () => {
     expect(find(host, 'staff-timeline-row')).toBeNull();
     expect(columns(host)).toBe(2);
   });
-  it('names what the block sits on, in red under the picture, across the chosen chairs', () => {
+  it('names what the block sits on, in red under the frame’s bar, across the chosen chairs', () => {
     const host = render();
     // Ivan's noon hour sits on Мартин's 12:30 — one sentence, the visit sheet's.
     const note = find(host, 'staff-block-frame-note');
@@ -302,6 +302,23 @@ describe('StaffBlockEditor', () => {
       'Застъпва се с Мартин Илиев · 12:30 – 13:00',
     );
     expect(note?.closest('[data-testid="staff-block-frame"]')).not.toBeNull();
+    // ABOVE the picture, under the bar (review r4, 2026-10-06): this frame
+    // is the ladder's last group, and a line under the picture ran under
+    // the dock's pill at rest on a phone.
+    const picture = host.querySelector(
+      '[data-testid="staff-block-frame"] lib-staff-time-grid',
+    );
+    expect(picture).not.toBeNull();
+    expect(
+      note?.previousElementSibling?.classList.contains('staff-frame__head'),
+    ).toBe(true);
+    expect(
+      note !== null &&
+        picture !== null &&
+        (note.compareDocumentPosition(picture) &
+          Node.DOCUMENT_POSITION_FOLLOWING) !==
+          0,
+    ).toBe(true);
 
     // Two chairs, two visits inside: a count and the names.
     click(host, 'staff-block-add-barber');
@@ -524,6 +541,36 @@ describe('StaffBlockEditor', () => {
       '2026-09-24',
       '2026-10-01',
     ]);
+  });
+
+  it("lifts from a red row that is the list row's own destructive role, weightier once armed", () => {
+    // The exits' red is the DS list row's `uiRole="destructive"` (the ink,
+    // and the armed weight on `data-armed`), not a class of this sheet's
+    // (client-card-redesign §5.1.5).
+    const host = render(vm({ blockId: 'block-1' }));
+    const lift = find(host, 'staff-block-lift');
+    expect(lift?.getAttribute('data-role')).toBe('destructive');
+    expect(lift?.hasAttribute('data-armed')).toBe(false);
+    expect(lift?.classList.contains('staff-visit__exit--destructive')).toBe(
+      false,
+    );
+    // «Превърни в час» beside it is an ordinary row.
+    expect(find(host, 'staff-block-convert')?.hasAttribute('data-role')).toBe(
+      false,
+    );
+    const lifts: number[] = [];
+    fixture.componentInstance.lifted.subscribe(() => lifts.push(1));
+    click(host, 'staff-block-lift');
+    expect(lifts).toEqual([1]);
+
+    // Armed, the same row becomes the confirm: still the destructive role,
+    // stamped armed — the DS's `[data-role='destructive'][data-armed]`
+    // weight — with the warning beneath the group.
+    const armed = render(vm({ blockId: 'block-1', liftArmed: true }));
+    const confirm = find(armed, 'staff-block-lift');
+    expect(confirm?.getAttribute('data-role')).toBe('destructive');
+    expect(confirm?.hasAttribute('data-armed')).toBe(true);
+    expect(find(armed, 'staff-block-lift-warning')).not.toBeNull();
   });
 
   it('steps its day like the visit sheet, and tells the owner', () => {

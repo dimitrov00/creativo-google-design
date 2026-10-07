@@ -88,6 +88,11 @@ export class SiteMenuComponent {
   /** A staff-tier session — shows the day-sheet entry. UI-only: the /staff
    *  route guard and firestore.rules re-check for themselves. */
   readonly isStaffMember = input(false);
+  /** One of the admin pair (`admin | sysadmin`) — shows the «Лоялност»
+   *  entry, the ONE way to the admin page `/admin/loyalty/rhythm`
+   *  (client-card revision 3 §3.17). UI-only, like `isStaffMember`: the
+   *  route's `rolesGuard` and firestore.rules' `isAdmin()` are the locks. */
+  readonly isAdmin = input(false);
   readonly closed = output();
 
   protected readonly behavior = inject(UiSheetBehavior);

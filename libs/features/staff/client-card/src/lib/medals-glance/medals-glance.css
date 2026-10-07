@@ -1,0 +1,74 @@
+/*
+ * THE MEDALS CARD OF THE GLANCE — layout only. The card, the medals,
+ * their rings, rim numerals and titles, the grid's tracks and the state
+ * layer are the DS's own (`ui-card` elevated, `ui-grid`,
+ * `button[uiMedal]` through the shared tile, `uiInteractive`); these
+ * rules set the three blocks of the card at their distances. No colour,
+ * no `font:` shorthand: nothing of the law is decided here.
+ */
+
+:host {
+  display: block;
+}
+
+/* The card's own gap is between blocks of equal standing; this card's
+   three stand at their own distances, each said below. */
+.medals-glance__card {
+  gap: 0;
+}
+
+/* The grid of tiles takes the card's inline room; a tile is as wide as
+   its column, so a title wraps inside it and never past it. */
+.medals-glance__medals {
+  min-inline-size: 0;
+}
+
+/* The cue: a regular step under the medals' row, wrapping whole (`pretty`
+   keeps the level's numeral from standing alone — the copy binds it to
+   «ниво» with a no-break space already). */
+.medals-glance__cue {
+  margin: var(--sys-space-regular) 0 0;
+  min-inline-size: 0;
+  text-wrap: pretty;
+  overflow-wrap: break-word;
+}
+
+/* THE RECORDS LINE is a button that hugs its words: no UA chrome, the
+   state layer (`uiInteractive`) on its own box, a compact step of air
+   either side so the layer never touches a letter — the steps are taken
+   back from the card's own padding on both sides, so the layer stays
+   INSIDE the card, the words keep the card's leading edge and the line
+   has the card's whole measure. A tight step under the cue
+   (the line belongs to it), a compact one when it stands alone. It is
+   ONE line of text and nothing else: «Любима услуга Фейд · Най-много за
+   година 13» measures 304 at 390, where the card's measure is 307, so a
+   glyph of its own (16 and a step) folded the line in two there. */
+.medals-glance__records {
+  position: relative;
+  display: block;
+  align-self: flex-start;
+  box-sizing: border-box;
+  max-inline-size: calc(100% + 2 * var(--sys-space-compact));
+  margin: var(--sys-space-compact) calc(-1 * var(--sys-space-compact)) 0;
+  padding: var(--sys-space-tight) var(--sys-space-compact);
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  appearance: none;
+  cursor: pointer;
+}
+
+.medals-glance__cue + .medals-glance__records {
+  margin-block-start: var(--sys-space-tight);
+}
+
+/* The facts are a line of facts (fact-line.css): where the column holds
+   both they share a line with the dot between them; where it does not
+   (390: 309 of words in a 307 measure) each takes a line of its own and
+   no dot hangs at the break. A record and its label are one word to the
+   line breaker. */
+.medals-glance__record {
+  white-space: nowrap;
+}

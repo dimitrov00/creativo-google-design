@@ -1,0 +1,37 @@
+@if (pills()) {
+<!-- The pills NAVIGATE. One per section that actually holds a visit, so
+     every option leads somewhere; the current one follows the scroll. -->
+<lib-visit-pills
+  [sections]="railSections()"
+  [activeKey]="activeKey()"
+  [bleed]="bleed()"
+  [testIdPrefix]="prefix()"
+  [loading]="state() === 'loading'"
+  (jump)="jumpTo($event)"
+>
+  <ng-content select="[visitPillsAction]" ngProjectAs="[visitPillsAction]" />
+</lib-visit-pills>
+}
+
+<!-- The shared visits list: sections under their headings (the anchors the
+     pills jump to), one inset group each. It draws its own placeholders and
+     its own failure with «Опитай пак»; the EMPTY is the host's, because
+     only the host knows whether nothing is there or the funnel is hiding
+     it. -->
+<lib-visit-list
+  class="visits-browser__list"
+  [sections]="sections()"
+  [perspective]="perspective()"
+  [listStyle]="listStyle()"
+  [state]="state()"
+  [paging]="paging()"
+  [testIdPrefix]="prefix()"
+  [interactive]="interactive()"
+  [skeletonGroups]="2"
+  [skeletonRows]="2"
+  (openRow)="openRow.emit($event)"
+  (loadMore)="loadMore.emit()"
+  (retry)="retry.emit()"
+>
+  <ng-content select="[visitListEmpty]" ngProjectAs="[visitListEmpty]" />
+</lib-visit-list>

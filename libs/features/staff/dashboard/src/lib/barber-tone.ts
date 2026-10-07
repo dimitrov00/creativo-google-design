@@ -3,8 +3,8 @@
  *
  * ### Why colour, and why only here
  * The calendar grids column by barber, so position already says who and hue
- * was free to mean "this is a booking" (`staff-time-grid.css`, "Status is
- * FORM, never hue"). The agenda has no columns: one clock-ordered run mixes
+ * was free to mean "this is a booking" (`staff-time-grid.state.css`, "Status
+ * is FORM, never hue"). The agenda has no columns: one clock-ordered run mixes
  * every chair, and the only things saying who were a name and a photo — both
  * of which must be READ. Colour is the one channel that survives peripheral
  * vision, so a rail lets the eye group a chair's whole day while scrolling

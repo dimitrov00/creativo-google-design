@@ -1,4 +1,5 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page, type TestInfo } from '@playwright/test';
+import { attemptKey } from './support/attempt-key';
 
 declare global {
   interface Window {
@@ -13,22 +14,14 @@ declare global {
  * emulators and the ported `requestOtpChallenge`/`verifyOtpChallenge`/
  * `completeRegistration` callables (`pnpm run e2e:web` builds+serves
  * `apps/functions` into the functions emulator first). Emails are unique
- * per test to dodge the 1-minute resend rate limit between tests; each
- * `emulators:exec` run starts from an empty store, so a deterministic
- * per-test address never collides with a previous run's registration.
+ * per test to dodge the 1-minute resend rate limit between tests, and per
+ * `--repeat-each` copy and per retry (`attemptKey`): a retry of the "new
+ * email" test must not find the account its failed predecessor registered,
+ * nor a copy the one an earlier copy registered on the same emulator.
+ * `role` tells apart the addresses one test uses for different people.
  */
-function fakeEmail(testId: string): string {
-  const suffix = Math.abs(hashCode(testId)) % 10_000;
-  return `e2e-client-${suffix}@example.com`;
-}
-
-function hashCode(input: string): number {
-  let hash = 0;
-  for (let i = 0; i < input.length; i++) {
-    hash = (hash << 5) - hash + input.charCodeAt(i);
-    hash |= 0;
-  }
-  return hash;
+function fakeEmail(info: TestInfo, role = 'new'): string {
+  return `e2e-client-${role}-${attemptKey(info)}@example.com`;
 }
 
 async function readDevOtpCode(page: Page): Promise<string> {
@@ -70,7 +63,7 @@ test.describe('auth + onboarding (email OTP)', () => {
   test('a new email walks identify → otp → onboarding (names + phone) → /account', async ({
     page,
   }) => {
-    const email = fakeEmail(test.info().testId);
+    const email = fakeEmail(test.info());
 
     await page.emulateMedia({ reducedMotion: 'reduce' });
     await page.goto('/auth');
@@ -109,7 +102,7 @@ test.describe('auth + onboarding (email OTP)', () => {
     page,
     browser,
   }) => {
-    const email = fakeEmail(`${test.info().testId}-returning`);
+    const email = fakeEmail(test.info(), 'returning');
 
     // First pass: register.
     await page.goto('/auth');
@@ -161,7 +154,7 @@ test.describe('auth + onboarding (email OTP)', () => {
   test('an incorrect OTP code shows an inline domain error', async ({
     page,
   }) => {
-    const email = fakeEmail(`${test.info().testId}-wrong-code`);
+    const email = fakeEmail(test.info(), 'wrong-code');
 
     await page.goto('/auth');
     await identifyWithEmail(page, email);

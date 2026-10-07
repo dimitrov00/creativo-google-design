@@ -14,12 +14,16 @@ import {
   AVAILABILITY_READER,
   BookingPolicy,
   CalendarDay,
+  DAYPARTS,
+  type Daypart,
   type LocatedOption,
   ObserveDayAvailabilityUseCase,
+  type ObserveDayAvailabilityInput,
   type ScheduleSelection,
   type SeatAssignment,
   TimeSlot,
   ZonedDateTime,
+  daypartOf,
 } from '@creativo/application/booking';
 import { BarberId, LocationId } from '@creativo/application/catalog';
 import { CLOCK } from '@creativo/application/shared';
@@ -41,10 +45,11 @@ import {
 } from '@creativo/ui/patterns';
 import { SessionIdentityService } from '@creativo/features/shared/shell';
 import { BookingFlowStore } from '../../booking-flow.store';
+import { sameDayQuery } from '../same-day-query';
 
-/** A run of start times sharing a part of the day. */
+/** A run of start times sharing a part of the day (`daypartOf`). */
 interface DaypartVm {
-  readonly key: 'morning' | 'afternoon' | 'evening';
+  readonly key: Daypart;
   readonly starts: readonly StartVm[];
 }
 
@@ -66,9 +71,6 @@ interface ArrangementLineVm {
   readonly personLabel: string;
   readonly timeLabel: string;
 }
-
-const MORNING_ENDS_AT = 12;
-const AFTERNOON_ENDS_AT = 17;
 
 /**
  * The times available on ONE chosen day.
@@ -199,42 +201,36 @@ export class BookingTimeSheet {
 
   // ── Live read ───────────────────────────────────────────────────────
 
-  private readonly dayQuery = computed(() => {
-    const cart = this.store.cart();
-    const now = this.now();
-    if (!cart || !now) return null;
-    return {
-      cart,
-      services: this.catalog.services(),
-      barberIds: this.barberIds(),
-      locationId: this.store.locationId(),
-      day: this.day(),
-      policy: this.policy(),
-      now,
-    };
-  });
+  private readonly dayQuery = computed<ObserveDayAvailabilityInput | null>(
+    () => {
+      const cart = this.store.cart();
+      const now = this.now();
+      if (!cart || !now) return null;
+      return {
+        cart,
+        services: this.catalog.services(),
+        barberIds: this.barberIds(),
+        locationId: this.store.locationId(),
+        day: this.day(),
+        policy: this.policy(),
+        now,
+        // Everybody a MOVE carries, pinned to the party's start, for the
+        // engine's rider check (`AvailabilityQuery.riders`): a start where one
+        // of them cannot sit is not offered, because the server would refuse
+        // it (`booking.reschedule.carried_seat_unplaceable`).
+        riders: this.store.availabilityRiders(),
+        // …and the visit's own chairs, handed back: its own seats never block
+        // its own move, for the cart's lines and the riders alike.
+        release: this.store.moveRelease(),
+      };
+    },
+  );
 
   private readonly dayResult = toSignal(
     toObservable(this.dayQuery).pipe(
-      // Structural identity, exactly as the schedule step's streams: the
-      // computed mints a fresh literal per recompute, and re-subscribing on
-      // a no-op recompute re-bills this day's whole read (1 + 2×barbers
-      // listeners). References suffice for cart/services/policy — they
-      // change identity only on a real change now that the policy is
-      // identity-stable at its source.
-      distinctUntilChanged((a, b) => {
-        if (a === null || b === null) return a === b;
-        return (
-          a.cart === b.cart &&
-          a.services === b.services &&
-          a.day.key() === b.day.key() &&
-          a.policy === b.policy &&
-          a.now.toMillis() === b.now.toMillis() &&
-          (a.locationId?.value ?? null) === (b.locationId?.value ?? null) &&
-          a.barberIds.map((id) => id.value).join(',') ===
-            b.barberIds.map((id) => id.value).join(',')
-        );
-      }),
+      // Structural identity, the schedule step's own: re-subscribing on a
+      // no-op recompute re-bills this day's whole read.
+      distinctUntilChanged(sameDayQuery),
       switchMap((input) =>
         input === null ? of(null) : this.observeDay.execute(input),
       ),
@@ -257,24 +253,16 @@ export class BookingTimeSheet {
     // every chip is at it, and repeating the name on 28 chips is noise.
     const nameShops = this.store.locationId() === null;
 
-    const groups = new Map<DaypartVm['key'], StartVm[]>([
-      ['morning', []],
-      ['afternoon', []],
-      ['evening', []],
-    ]);
+    const groups = new Map<Daypart, StartVm[]>(
+      DAYPARTS.map((part) => [part, []]),
+    );
 
     for (const { locationId, option } of result.value.options) {
       const startMs = option.envelope.startMs;
+      // The shop's clock face, not the device's: «сутрин» is the shop's morning.
       const start = ZonedDateTime.fromMillis(startMs, this.zone());
       if (start.isFailure()) continue;
-      const hour = start.value.hour;
-      const key: DaypartVm['key'] =
-        hour < MORNING_ENDS_AT
-          ? 'morning'
-          : hour < AFTERNOON_ENDS_AT
-            ? 'afternoon'
-            : 'evening';
-      groups.get(key)?.push({
+      groups.get(daypartOf(start.value))?.push({
         key: `${locationId.value}|${startMs}`,
         startMs,
         shopKey: locationId.value,

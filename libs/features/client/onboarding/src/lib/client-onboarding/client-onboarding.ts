@@ -17,23 +17,13 @@ import {
   LastName,
   MAX_AVATAR_BYTES,
 } from '@creativo/application/accounts';
+import { Service, ServiceId, formatMoney } from '@creativo/application/catalog';
 import {
-  Barber,
-  CATALOG_READER,
-  MEDIA_READER,
-  MediaRef,
-  Service,
-  ServiceId,
-  formatMoney,
-} from '@creativo/application/catalog';
-import {
-  type BarberVm,
+  CatalogContentService,
   ServiceCardComponent,
   ServiceDetailSheetComponent,
   type ServiceVm,
-  barberToVm,
   formatServiceMeta,
-  serviceToVm,
 } from '@creativo/features/shared/catalog';
 import {
   BirthDate,
@@ -139,7 +129,15 @@ import { ONBOARDING_SERVICES_CAP } from '../services-cap';
   },
 })
 export class ClientOnboarding {
-  private readonly catalogReader = inject(CATALOG_READER);
+  /**
+   * The live catalogue with its media resolved — the SAME source `/book`
+   * reads. Onboarding used to run its own two subscriptions and its own
+   * cover cache, which marked a cover requested before it answered and
+   * never unmarked it (a cover that failed once stayed on its placeholder
+   * for the session), and mapped services with no art direction (an empty
+   * gallery in the shared detail sheet).
+   */
+  private readonly catalog = inject(CatalogContentService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly transloco = inject(TranslocoService);
@@ -227,19 +225,10 @@ export class ClientOnboarding {
       (!this.needsPhone || this.phoneValue() !== null),
   );
 
-  private readonly servicesResult = toSignal(
-    this.catalogReader.listActiveServices(),
-    { initialValue: null },
-  );
-  protected readonly services = computed<readonly Service[]>(() => {
-    const result = this.servicesResult();
-    return result?.isSuccess() ? result.value : [];
-  });
+  protected readonly services = this.catalog.services;
   protected readonly selectedServiceIds = signal<readonly ServiceId[]>([]);
 
   /* ── Services grid (capped multi-select, design: image-forward cards) ── */
-
-  private readonly mediaReader = inject(MEDIA_READER);
 
   /** Deployment-configurable selection ceiling (default 3). */
   protected readonly servicesCap = inject(ONBOARDING_SERVICES_CAP);
@@ -249,11 +238,6 @@ export class ClientOnboarding {
   protected readonly capReached = computed(
     () => this.selectionCount() >= this.servicesCap,
   );
-
-  /** Resolved cover URLs by service id — filled as `MEDIA_READER` answers. */
-  protected readonly coverUrls = signal<Readonly<Record<string, string>>>({});
-  /** Ids with a resolve already in flight — a snapshot re-emit must not re-fetch. */
-  private readonly coverRequests = new Set<string>();
 
   /** The service whose details sheet is open (null = shut). */
   protected readonly detailsService = signal<Service | null>(null);
@@ -265,34 +249,16 @@ export class ClientOnboarding {
      changes nothing else, which is the whole point: a second hand-rolled
      body is how two surfaces drift apart. */
 
-  private readonly barbersResult = toSignal(
-    this.catalogReader.listActiveBarbers(),
-    { initialValue: null },
-  );
-  private readonly barbersFromCatalog = computed<readonly Barber[]>(() => {
-    const result = this.barbersResult();
-    return result?.isSuccess() ? result.value : [];
-  });
-  /** Performers, mapped for the sheet. Avatars resolve through the same media cache as covers. */
-  protected readonly barberVms = computed<readonly BarberVm[]>(() =>
-    this.barbersFromCatalog().map((barber) =>
-      barberToVm(
-        barber,
-        barber.avatar ? this.coverUrls()[barber.avatar.id.value] : undefined,
-        undefined,
-      ),
-    ),
-  );
+  /** Performers, mapped for the sheet — avatars resolved, art direction applied. */
+  protected readonly barberVms = this.catalog.barberVms;
 
   /** Every service as a view model — the sheet resolves bundle members against it. */
-  protected readonly serviceVms = computed<readonly ServiceVm[]>(() =>
-    this.services().map((service) => this.toVm(service)),
-  );
+  protected readonly serviceVms = this.catalog.serviceVms;
 
   /** The open service as a view model, or null when the sheet is shut. */
   protected readonly detailsVm = computed<ServiceVm | null>(() => {
     const service = this.detailsService();
-    return service ? this.toVm(service) : null;
+    return service ? this.catalog.toServiceVm(service) : null;
   });
 
   /** Id-keyed twins of the domain helpers — the sheet hands back view models, not aggregates. */
@@ -304,10 +270,6 @@ export class ClientOnboarding {
   protected openDetailsById(id: string): void {
     const service = this.services().find((s) => s.id.value === id);
     if (service) this.detailsService.set(service);
-  }
-
-  private toVm(service: Service): ServiceVm {
-    return serviceToVm(service, this.coverUrls()[service.id.value], undefined);
   }
 
   protected readonly enteringFailed = signal(false);
@@ -363,37 +325,6 @@ export class ClientOnboarding {
     });
 
     inject(DestroyRef).onDestroy(() => this.revokeAvatarPreview());
-
-    // Resolve each service's cover exactly once as the catalog streams in
-    // (MediaRef → servable URL is the media reader port's job; failures
-    // stay silent — the card's scissors fallback IS the degraded state).
-    effect(() => {
-      // Barber avatars ride the same cache — the shared sheet shows
-      // performer cards, so their `MediaRef`s need resolving too. Keyed by
-      // MediaRef id for barbers and service id for covers; both are unique
-      // within their own namespace and never collide.
-      const refs: { readonly key: string; readonly ref: MediaRef }[] = [
-        ...this.services().flatMap((service) =>
-          service.cover ? [{ key: service.id.value, ref: service.cover }] : [],
-        ),
-        ...this.barbersFromCatalog().flatMap((barber) =>
-          barber.avatar
-            ? [{ key: barber.avatar.id.value, ref: barber.avatar }]
-            : [],
-        ),
-      ];
-
-      for (const { key, ref } of refs) {
-        if (this.coverRequests.has(key)) continue;
-        this.coverRequests.add(key);
-        void this.mediaReader.resolve(ref).then((result) => {
-          if (result.isFailure()) return;
-          const [variant] = result.value;
-          if (!variant) return;
-          this.coverUrls.update((urls) => ({ ...urls, [key]: variant.url }));
-        });
-      }
-    });
 
     // An already-ACTIVE account has nothing to do on the About form —
     // registration is complete, identity + profile exist. This is the
@@ -694,8 +625,14 @@ export class ClientOnboarding {
     });
   }
 
+  /**
+   * Null while unknown, and for good once Storage says the cover is gone —
+   * the card's scissors fallback IS that state. Read off the service in
+   * hand (`coverUrlOf`), not by id: every card asks on every pass, and a
+   * search of the catalogue per card made the grid quadratic.
+   */
   protected serviceCoverUrl(service: Service): string | null {
-    return this.coverUrls()[service.id.value] ?? null;
+    return this.catalog.coverUrlOf(service) ?? null;
   }
 
   protected openDetails(service: Service): void {
@@ -763,6 +700,9 @@ export class ClientOnboarding {
         this.avatarErrorCode.set(errorCode);
         return;
       }
+      // The header portrait and /account read ONE shared lookup; the uploader
+      // tells it a new photo landed (`SessionIdentityService.refreshAvatar`).
+      this.identity.refreshAvatar();
     }
     this.store.enterApp();
     await this.finishEntering();

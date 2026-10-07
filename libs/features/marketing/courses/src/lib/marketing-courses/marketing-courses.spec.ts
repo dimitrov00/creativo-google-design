@@ -88,7 +88,10 @@ async function configure(
       // The shared session model behind that chrome reads the profile.
       {
         provide: PROFILE_PORT,
-        useValue: { getProfile: () => Promise.resolve(ok(null)) },
+        useValue: {
+          getProfile: () => Promise.resolve(ok(null)),
+          observeProfile: () => of(ok(null)),
+        },
       },
       // …and its menu counts upcoming visits.
       {

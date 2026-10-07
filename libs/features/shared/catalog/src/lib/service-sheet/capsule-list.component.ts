@@ -4,7 +4,7 @@ import {
   ViewEncapsulation,
   input,
 } from '@angular/core';
-import { UiBadge, UiIcon, type UiIconName } from '@creativo/ui/controls';
+import { UiBadge, type UiIconName } from '@creativo/ui/controls';
 import { UiFlow, UiStack } from '@creativo/ui/layout';
 import { UiTextDirective } from '@creativo/ui/modifiers';
 
@@ -29,22 +29,25 @@ export interface CapsuleVm {
  * chunky display rhythm — list-row naming precedent) inside `ui-flow`
  * (the wrapping chip cluster). Capsules HUG their labels on every width —
  * the buttons-hug ruling — so no column morph, no local layout CSS. The
- * list semantics ride ARIA roles (item count still announced to AT).
+ * list semantics ride ARIA roles (item count still announced to AT). The
+ * glyph is the badge's own `uiIcon` (2026-09-28): one grammar for a glyph
+ * on a capsule, never a `ui-icon` projected by hand.
  */
 @Component({
   selector: 'cr-capsule-list',
-  imports: [UiBadge, UiFlow, UiIcon, UiStack, UiTextDirective],
+  imports: [UiBadge, UiFlow, UiStack, UiTextDirective],
   template: `
     <ui-stack uiSpacing="regular">
       <h3 uiText uiFont="title3">{{ heading() }}</h3>
       <ui-flow uiSpacing="compact" uiAlignment="leading" role="list">
         @for (item of items(); track $index) {
-          <span uiBadge uiSize="large" role="listitem">
-            @if (item.icon; as icon) {
-              <ui-icon [uiName]="icon" />
-            }
-            {{ item.label }}
-          </span>
+          <span
+            uiBadge
+            uiSize="large"
+            role="listitem"
+            [uiIcon]="item.icon ?? null"
+            >{{ item.label }}</span
+          >
         }
       </ui-flow>
     </ui-stack>

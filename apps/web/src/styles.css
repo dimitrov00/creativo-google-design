@@ -16,9 +16,12 @@
 @import '@fontsource/dm-sans/500.css';
 @import '@fontsource/dm-sans/600.css';
 @import '@fontsource/dm-sans/700.css';
-/* MapLibre chrome (marker anchoring, attribution) — imported nowhere else;
-   without it markers render un-positioned and invisible. */
-@import 'maplibre-gl/dist/maplibre-gl.css';
+/* MapLibre's own chrome (`maplibre-gl/dist/maplibre-gl.css`, 69.9 kB) is NOT
+   imported here any more (2026-09-26): every visitor paid for it at boot,
+   and only lazy routes and a deferred landing section draw a map.
+   `MapLibreLoader` (libs/ui/controls, map/) injects it with the library,
+   once, first in <head>'s cascade — where this import used to put it. Every
+   map loads through it; never re-add the import. */
 @import '@fontsource/geist-mono/400.css';
 @import '@fontsource/geist-mono/700.css';
 
@@ -168,17 +171,27 @@
   }
 
   /* Anchor default — only for bare content links, never for anchors acting
-     as design-system controls (uiButton, uiListRow, anything uiInteractive),
-     carrying an explicit uiForegroundStyle stamp, or riding the uiLink
-     inline-link recipe: sys-base is layer-registered AFTER sys-components
-     (landing-shared.css import order), so a bare `a` rule here would beat
-     every DS control's ink, every [data-foreground-style] modifier, and
-     [data-link]'s secondary-at-rest ink. */
-  a:not(.ui-button):not([data-foreground-style]):not([data-interactive]):not(
-      [data-link]
-    ) {
-    /* Ink, not fill: a bare link in the raw accent is 3.04:1 on white. */
-    color: var(--sys-color-accent-label);
+     as design-system controls (uiButton, uiListRow, uiCard, anything
+     uiInteractive: every DS host wears a `ui-*` class), carrying an explicit
+     uiForegroundStyle stamp, or riding the uiLink inline-link recipe:
+     sys-base is layer-registered AFTER sys-components (landing-shared.css
+     import order), so a bare `a` rule here would beat every DS control's
+     ink, every [data-foreground-style] modifier, and [data-link]'s
+     secondary-at-rest ink. It did: `a[uiListRow]` without `uiInteractive`
+     took the link's colour, and /account's open checklist rows read brown
+     (2026-09-29). `:not([class*='ui-'])` closes that for every DS host.
+
+     THE ACCENT LAW: words are ink. A prose link is the ink around it on an
+     accent underline — the orange is the rule under the word, never the
+     word (the raw accent as small type is 3.04:1 on white). */
+  a:not(.ui-button):not([class*='ui-']):not([data-foreground-style]):not(
+      [data-interactive]
+    ):not([data-link]) {
+    color: inherit;
+    text-decoration: underline;
+    text-decoration-color: var(--sys-color-accent);
+    text-decoration-thickness: var(--sys-stroke-mark);
+    text-underline-offset: 0.2em;
   }
 }
 

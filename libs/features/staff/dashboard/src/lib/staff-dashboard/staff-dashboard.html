@@ -56,14 +56,21 @@
 
           <ui-stack uiSpacing="none" uiAlignment="center">
             <!-- Midnight rolled over under an open tab. The sheet says so
-                 rather than moving the day under a thumb mid-tap. -->
+                 rather than moving the day under a thumb mid-tap. Words
+                 are ink (the accent law): the orange is the day's glyph
+                 before them. -->
             @if (store.showingStaleToday()) {
             <span
               uiText
               uiFont="caption"
-              uiForegroundStyle="accent"
+              uiForegroundStyle="primary"
               data-testid="staff-day-stale"
             >
+              <ui-icon
+                uiName="staff.day"
+                uiForegroundStyle="accent"
+                aria-hidden="true"
+              />
               {{ t('staff.day.staleDay') }}
             </span>
             }
@@ -423,7 +430,7 @@
         [uiRegionLabel]="regionLabel()"
         [rosterStartMinute]="rosterExtent().start"
         [nowMinute]="nowMinute()"
-        [zoneLabel]="zoneLabel()"
+        [zoneLabel]="zoneCorner()"
         [allDay]="allDay()"
         [allDayAlways]="true"
         [allDayLabel]="t('staff.day.allDay')"
@@ -456,21 +463,6 @@
            the groups ask for — reading as a hole in the day where there
            was only layout. Free time is a CARD here; whitespace must
            never be mistaken for it. -->
-      <!-- ALL-DAY, AND THEREFORE AT THE TOP.
-           A barber being off is not a footnote about the screen, it is a
-           fact ON the day — Apple Calendar banners exactly this class of
-           event above the timed run, and a shop reads "who is even in today"
-           before it reads the ten o'clock. It used to be a line of grey
-           footnote type UNDER the whole agenda, which is the last place it
-           gets read and the first thing you need.
-
-           One capsule per barber, each in their own chair's tone: `ui-badge`
-           already is a non-interactive capsule with a 14% tint — the same
-           14% the agenda cards are tinted with — so an all-day mark reads as
-           a miniature of the cards below it. The identity tone is set
-           through the component's OWN two variables rather than over the top
-           of it; `--ui-badge-tint` and `--ui-badge-ink` are how every tone in
-           badge.css is declared. -->
       @if (resting().length > 0) {
       <!-- ALL-DAY, AND THEREFORE AT THE TOP — one full-width row per barber.
            A barber being off is not a footnote about the screen, it is a fact
@@ -762,7 +754,7 @@
                   size="regular"
                   [title]="entry.clientLabel"
                   [struck]="hollowStatus(entry.status)"
-                  [receded]="entry.past && !hollowStatus(entry.status)"
+                  [receded]="entry.past"
                   [lines]="factLines(entry)"
                   [start]="fields.isOn('timeStart') ? entry.startLabel : null"
                   [end]="fields.isOn('timeEnd') ? endLabel(entry) : null"
@@ -1145,10 +1137,15 @@
        it: it duplicated the title bar's job, it carried a SECOND dismiss, and
        projected as one element it could never reach the `sheet-accessory`
        slot, so the `✕` it carried scrolled away with the content. -->
+  <!-- The bar carries its title from rest wherever no large title could
+       collapse into it: the ladder, and a page that has none (the photo —
+       its date, §3.7). -->
   <ui-modal-sheet
     sheetId="staff-visit-sheet"
     labelledBy="staff-visit-title"
-    [titleAlwaysVisible]="visitEditor.depth() === 0"
+    [titleAlwaysVisible]="
+      visitEditor.depth() === 0 || visitEditor.pageHasNoLargeTitle()
+    "
     [titleCollapsed]="visitEditor.searchEngaged() ? true : undefined"
     uiPresentationSizing="automatic"
     [open]="true"
@@ -1205,6 +1202,9 @@
       [uiPromos]="store.promos()"
       [uiPromoCode]="visitCodeResult()"
       (promoCodeEntered)="resolveCodeFromEditor($event)"
+      [uiOwnerUserId]="editorVm.clientUserId"
+      [uiViewer]="cardViewer()"
+      [uiClientCardCatalog]="clientCardCatalog"
       (dismissed)="closeVisitSheet()"
       (dayChanged)="onVisitDayChanged($event)"
       (chairChanged)="onVisitChairChanged($event)"
@@ -1241,7 +1241,9 @@
   <ui-modal-sheet
     sheetId="staff-create-sheet"
     labelledBy="staff-create-title"
-    [titleAlwaysVisible]="createEditor.depth() === 0"
+    [titleAlwaysVisible]="
+      createEditor.depth() === 0 || createEditor.pageHasNoLargeTitle()
+    "
     [titleCollapsed]="createEditor.searchEngaged() ? true : undefined"
     uiPresentationSizing="automatic"
     [open]="true"
@@ -1275,6 +1277,8 @@
       [uiClientSections]="visitClientSectionsWithFaces()"
       [uiClientBook]="visitClientBookWithFaces()"
       [uiClientSearching]="visitClientSearching()"
+      [uiViewer]="cardViewer()"
+      [uiClientCardCatalog]="clientCardCatalog"
       (clientsBrowsed)="browseClients()"
       (dismissed)="closeCreateSheet()"
       (clientQuery)="searchClients($event)"

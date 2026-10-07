@@ -1,5 +1,6 @@
 import { EnvironmentProviders, Injectable } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
 import { provideRouter } from '@angular/router';
 import {
   Translation,
@@ -10,8 +11,33 @@ import { Observable, of } from 'rxjs';
 import { AVATAR_UPLOADER, PROFILE_PORT } from '@creativo/application/accounts';
 import { APPOINTMENT_REPOSITORY } from '@creativo/application/booking';
 import { NOTIFICATION_READER } from '@creativo/application/notifications';
-import { AUTH_GATEWAY, ok } from '@creativo/application/identity';
+import {
+  ANONYMOUS_PRINCIPAL,
+  AUTH_GATEWAY,
+  Principal,
+  PrincipalId,
+  Result,
+  activePrincipal,
+  ok,
+  roleFromPrimitive,
+} from '@creativo/application/identity';
+import { SiteMenuComponent } from '../menu/site-menu.component';
 import { SiteHeaderComponent } from './site-header.component';
+
+function unwrap<T>(result: Result<T, unknown>): T {
+  if (result.isFailure()) throw new Error('fixture failed');
+  return result.value;
+}
+
+/** An active session holding these claims. */
+function active(roles: readonly string[]): Principal {
+  return unwrap(
+    activePrincipal(
+      unwrap(PrincipalId.create('user_1')),
+      roles.map((role) => roleFromPrimitive(role)),
+    ),
+  );
+}
 
 const bg: Translation = {
   landing: {
@@ -21,7 +47,12 @@ const bg: Translation = {
       close: 'Затвори',
       primary: 'Навигация',
     },
-    menu: { bookings: 'Моите резервации', rewards: 'Моите награди' },
+    menu: {
+      bookings: 'Моите резервации',
+      rewards: 'Моите награди',
+      staffDay: 'График',
+      loyaltyAdmin: 'Лоялност',
+    },
     hero: { cta: 'Запази час' },
     footer: {
       nav: {
@@ -53,7 +84,10 @@ function provideTestI18n(): EnvironmentProviders[] {
   });
 }
 
-async function configure(): Promise<ComponentFixture<SiteHeaderComponent>> {
+async function configure(
+  /** Who is signed in — a guest unless said otherwise. */
+  principal: Principal = ANONYMOUS_PRINCIPAL,
+): Promise<ComponentFixture<SiteHeaderComponent>> {
   // `ThemeService` defaults to 'dark' whenever `<html data-theme>` isn't
   // explicitly stamped 'light' (the pre-paint boot script's job, absent in
   // this jsdom environment) — and dark mode always gets the white wordmark
@@ -69,7 +103,13 @@ async function configure(): Promise<ComponentFixture<SiteHeaderComponent>> {
       ...provideTestI18n(),
       {
         provide: AUTH_GATEWAY,
-        useValue: { observePrincipal: () => of({ kind: 'anonymous' }) },
+        useValue: {
+          observePrincipal: () => of(principal),
+          // The identity portrait reads name + channel off the gateway.
+          currentDisplayName: () => null,
+          currentIdentifier: () => null,
+          signOut: async () => undefined,
+        },
       },
       // The trigger's account circle reads its photo off the shared
       // session identity (no avatar for an anonymous session).
@@ -79,7 +119,10 @@ async function configure(): Promise<ComponentFixture<SiteHeaderComponent>> {
       },
       {
         provide: PROFILE_PORT,
-        useValue: { getProfile: () => Promise.resolve(ok(null)) },
+        useValue: {
+          getProfile: () => Promise.resolve(ok(null)),
+          observeProfile: () => of(ok(null)),
+        },
       },
       // The menu's bookings row counts upcoming visits, and its
       // notifications row counts unread ones.
@@ -131,5 +174,65 @@ describe('SiteHeaderComponent', () => {
     expect(
       header?.querySelector('.cr-header__brand ui-logo svg.ui-logo__mark'),
     ).not.toBeNull();
+  });
+
+  /**
+   * The header owns the menu and hands it the session's three flags off the
+   * one shared identity read model — `isAuthed`, `isStaffMember` and, since
+   * client-card revision 3 (§3.17), `isAdmin`: the admin pair the menu's
+   * «Лоялност» entry follows.
+   */
+  describe('what it hands the menu', () => {
+    async function settled(fixture: ComponentFixture<SiteHeaderComponent>) {
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+      return fixture.debugElement.query(By.directive(SiteMenuComponent))
+        .componentInstance as SiteMenuComponent;
+    }
+
+    it('flags the admin pair for the menu — an admin is staff too', async () => {
+      const menu = await settled(await configure(active(['admin'])));
+
+      expect(menu.isAuthed()).toBe(true);
+      expect(menu.isStaffMember()).toBe(true);
+      expect(menu.isAdmin()).toBe(true);
+    });
+
+    it('keeps a barber out of the pair', async () => {
+      const menu = await settled(await configure(active(['barber'])));
+
+      expect(menu.isAuthed()).toBe(true);
+      expect(menu.isStaffMember()).toBe(true);
+      expect(menu.isAdmin()).toBe(false);
+    });
+
+    it('hands a guest none of the three', async () => {
+      const menu = await settled(await configure());
+
+      expect(menu.isAuthed()).toBe(false);
+      expect(menu.isStaffMember()).toBe(false);
+      expect(menu.isAdmin()).toBe(false);
+    });
+
+    it('opens, on the trigger, a menu holding the admin entry for an admin', async () => {
+      const fixture = await configure(active(['admin']));
+      await settled(fixture);
+      const host: HTMLElement = fixture.nativeElement;
+
+      host
+        .querySelector<HTMLButtonElement>('[data-testid="nav-menu-trigger"]')!
+        .click();
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(host.querySelector('[data-testid="site-menu"]')).not.toBeNull();
+      const row = host.querySelector<HTMLAnchorElement>(
+        '[data-testid="menu-admin-loyalty"]',
+      );
+      expect(row).not.toBeNull();
+      expect(row!.getAttribute('href')).toBe('/admin/loyalty/rhythm');
+    });
   });
 });

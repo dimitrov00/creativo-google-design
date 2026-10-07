@@ -1,0 +1,163 @@
+/*
+ * A MEDAL'S DETAIL (client-card revision 3 §2.4) — layout only. The stage,
+ * the medal and its ring, the metric, the cards, the covers, the faces,
+ * the rows and the tiles are DS parts that draw themselves; these rules
+ * place them: the page's module rhythm, the two pairs the wide dialog sets
+ * side by side, the ladder's rows, the covers' words. No `font:` shorthand,
+ * no colour, no size of a DS part's own.
+ */
+
+/* The page's modules at the sheet's module gap (§2.0: module → module is
+   `loose`, 32), the head included: the state line to the progress card,
+   the card to the next heading. The host is its own inline-size container,
+   so the pairs below read the COLUMN they stand in (355 on a phone, 528 in
+   the ≥ 761 dialog), not the viewport. */
+:host {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sys-space-loose);
+  container-type: inline-size;
+}
+
+/* DD — a fact inside the quiet line stays whole: the head balances its
+   lines (`text-wrap: balance`, the DS), and a balanced line would part a
+   date from its «г.» (D3-4). */
+.achievement-detail__fact {
+  white-space: nowrap;
+}
+
+/* The state line's stand-in while the family loads: centred under the
+   title as the line will be. */
+.achievement-detail__state-skeleton {
+  justify-self: center;
+  margin-inline: auto;
+}
+
+/* The two blocks under the stage while the family loads (§2.4.4): the
+   progress card's and «Как се печели»'s, at the module gap. */
+.achievement-detail__skeleton {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--sys-space-loose);
+}
+
+/* A module: its heading, then its body a compact step under (§2.0:
+   heading → body is `compact`, under a heading row that is the `small`
+   rung tall). The one track is `minmax(0, 1fr)`, never `auto`: an `auto`
+   track starts at its content's min-content size, and the staff rows'
+   fact lines hold their words with no-break spaces, so the list would
+   stand wider than the column and push the barber's face past the edge
+   (seen at 330: the rows at 357 in a 295 column). */
+.achievement-detail__module {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--sys-space-compact);
+  min-inline-size: 0;
+}
+
+/* Two modules that share a row in the ≥ 761 dialog (§2.4.4): the progress
+   beside «Как се печели», the ladder beside the visits. On a phone they
+   stack at the module gap; in the dialog's 528 column they stand side by
+   side, each on its own top line. The step is 30rem (480): over the widest
+   phone column (≈ 400) and under the dialog's 528. A pair with one module
+   (a retired family's progress alone, a ladder with no counted visit)
+   gives it the whole row. */
+.achievement-detail__pair {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--sys-space-loose);
+  min-inline-size: 0;
+}
+
+@container (inline-size >= 30rem) {
+  .achievement-detail__pair {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: start;
+  }
+
+  .achievement-detail__pair > :only-child {
+    grid-column: 1 / -1;
+  }
+}
+
+/* DF — a cover and its two words: the picture, then the service's name
+   and its price a compact step under, the price tabular. The figure is a
+   grid cell of the covers' grid: it never grows past its track. */
+.achievement-detail__cover {
+  display: grid;
+  gap: var(--sys-space-compact);
+  margin: 0;
+  min-inline-size: 0;
+}
+
+.achievement-detail__cover-words {
+  display: grid;
+  gap: var(--sys-space-tight);
+  min-inline-size: 0;
+}
+
+.achievement-detail__price {
+  font-variant-numeric: tabular-nums;
+}
+
+/* DF — the who line: the faces as one mark, then the words; they wrap at
+   330 where the line is longer than the card. */
+.achievement-detail__who {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sys-space-compact) var(--sys-space-regular);
+}
+
+/* DH — the ladder: a list of medals, a level a row. Rows of 68 a compact
+   step apart: the 52 ring stands in the row's middle, so the rim chip
+   hanging 8 under it (D6-2 b) ends on the row's own foot. */
+.achievement-detail__levels {
+  display: grid;
+  gap: var(--sys-space-compact);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.achievement-detail__level {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  column-gap: var(--sys-space-regular);
+  align-items: center;
+  min-block-size: calc(var(--sys-space-unit) * 17);
+}
+
+/* The row's words, in the house row grammar (the visit row's): the level
+   and its threshold take the FIRST line whole, the reward and the day it
+   was earned share the second, the day at the trailing edge. A level's
+   line is a sentence of two facts («Ниво III · 25 посещения»), and beside
+   a date it parted at its joint even at 390 («Ниво I ·» over «3
+   посещения»; a season's level ran to four lines at 330) — given the
+   whole width it holds one line at 390 and parts once at 330. The second
+   line wraps as a whole: where the reward and the day do not share a line
+   (330), the day drops under the reward, still at the trailing edge,
+   rather than the reward parting in two. Without a day the reward keeps
+   its line; without either the row is one line. */
+.achievement-detail__level-words {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  row-gap: var(--sys-space-tight);
+  min-inline-size: 0;
+}
+
+.achievement-detail__level-facts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  column-gap: var(--sys-space-compact);
+  row-gap: var(--sys-space-tight);
+  min-inline-size: 0;
+}
+
+.achievement-detail__level-date {
+  margin-inline-start: auto;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}

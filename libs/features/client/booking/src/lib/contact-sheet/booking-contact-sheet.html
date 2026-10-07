@@ -81,10 +81,13 @@
         </label>
       </ui-stack>
 
-      <!-- Persistence is asked for, never assumed. The switch saves the
-           WHOLE form (owner ruling 2026-08-05) — the footnote's job is to
-           say the one thing it does not touch: the sign-in identifier. -->
+      <!-- Persistence is asked for, never assumed, and only for what the
+           profile can take from here: the NAME (FIX 2). The switch shows
+           while the typed name differs from the profile's; a changed phone
+           or e-mail gets one quiet line saying it stays with this booking. -->
+      @if (nameDiffers() || contactDiffers()) {
       <ui-stack uiSpacing="tight">
+        @if (nameDiffers()) {
         <ui-list-group>
           <ui-list-row uiSize="large">
             {{ t('booking.contact.saveToProfile') }}
@@ -98,12 +101,18 @@
             ></button>
           </ui-list-row>
         </ui-list-group>
-        <p uiText uiFont="footnote" uiForegroundStyle="secondary">
-          {{ t('booking.contact.loginUnchanged') }}
+        } @if (contactDiffers()) {
+        <p
+          uiText
+          uiFont="caption"
+          uiForegroundStyle="secondary"
+          data-testid="booking-contact-this-booking-only"
+        >
+          {{ t('booking.contact.contactThisBookingOnly') }}
         </p>
+        }
       </ui-stack>
-
-      @if (error(); as message) {
+      } @if (error(); as message) {
       <p
         uiText
         uiFont="footnote"

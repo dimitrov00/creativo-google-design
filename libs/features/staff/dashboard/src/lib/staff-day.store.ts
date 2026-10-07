@@ -14,6 +14,7 @@ import { settledViewTransition } from './shared/view-transition';
 import {
   APPOINTMENT_NOTES,
   APPOINTMENT_PHOTOS,
+  AppliedOperations,
   type AppointmentPhoto,
   APPOINTMENT_REPOSITORY,
   AVAILABILITY_READER,
@@ -31,6 +32,7 @@ import {
   type StaffEditAppointmentRequest,
   type TransitionAppointmentRequest,
   Result,
+  ZonedDateTime,
   ok,
 } from '@creativo/application/booking';
 import { downscaleImage } from '@creativo/infrastructure/storage';
@@ -45,7 +47,11 @@ import {
   type GiftVoucher,
 } from '@creativo/application/engagement';
 import { UserId } from '@creativo/application/identity';
-import { CLOCK, RepositoryError } from '@creativo/application/shared';
+import {
+  CLOCK,
+  ID_GENERATOR,
+  RepositoryError,
+} from '@creativo/application/shared';
 import {
   type VisitEditorGrantOption,
   type VisitEditorPromoOption,
@@ -55,6 +61,58 @@ import { CatalogContentService } from '@creativo/features/shared/catalog';
 
 /** The whole product is Europe/Sofia-only for now (blueprint §7.1). */
 export const STAFF_ZONE = 'Europe/Sofia';
+
+/**
+ * The shop's day a held coupon lapses on (`YYYY-MM-DD`), or `null` for one
+ * that never does. The grant's expiry is an instant the adapter rebuilds
+ * in UTC; the card prints a DAY on the shop's calendar («до 28.10»), so
+ * the instant is read in the shop's zone first — a grant lapsing at
+ * 00:30 Sofia is one more day held here, not one less.
+ */
+export function grantExpiresOn(
+  grant: CouponGrantWithCoupon['grant'],
+): string | null {
+  if (grant.state.kind !== 'active') return null;
+  const { expiration } = grant.state;
+  if (expiration.kind !== 'expires_at') return null;
+  const local = ZonedDateTime.fromMillis(expiration.at.toMillis(), STAFF_ZONE);
+  return (local.isSuccess() ? local.value : expiration.at).toISODate();
+}
+
+/**
+ * What makes two sends the SAME staff intent: the visit, the batch, and the
+ * two claims beside it — an acknowledged overlap is a different decision
+ * from an unacknowledged one, and a claim on another revision is a draft of
+ * another visit. Serialised, because equality is the only question ever
+ * asked of it. Read off the request AS SENT (the claim rebased — see
+ * `StaffDayStore.claimFor`), so a re-send is recognised by what the wire
+ * carried.
+ */
+function intentOf(request: StaffEditAppointmentRequest): string {
+  return JSON.stringify([
+    request.appointmentId,
+    request.command,
+    request.acknowledgedOverlap === true,
+    request.expectedVersion ?? null,
+  ]);
+}
+
+/**
+ * Every staff intent states the revision it was made on (round 5): the
+ * visit's copy's `Appointment.revision`, or `null` where the reader did not
+ * say — a claim of nothing, which the server never refuses. Required by the
+ * store's one funnel, so no caller can forget it.
+ */
+export type StaffIntent = StaffEditAppointmentRequest & {
+  readonly expectedVersion: number | null;
+};
+
+/**
+ * How many of its own landed intents per visit the store remembers for
+ * rebasing a claim — see `StaffDayStore.claimFor`. A sheet stays open for
+ * one visit's worth of saves, not hundreds.
+ */
+const LANDED_PER_VISIT = 16;
 
 /**
  * The shortest hole the run will call sellable.
@@ -351,6 +409,8 @@ export class StaffDayStore {
   private readonly exceptions = inject(SCHEDULE_EXCEPTION_WRITER);
   private readonly gateway = inject(BOOKING_GATEWAY);
   private readonly clock = inject(CLOCK);
+  /** Mints each staff intent's `operationId` — see `staffEdit`. */
+  private readonly ids = inject(ID_GENERATOR);
   private readonly catalog = inject(CatalogContentService);
   private readonly router = inject(Router);
   private readonly route = inject(ActivatedRoute);
@@ -784,19 +844,47 @@ export class StaffDayStore {
     this._noteFor.set(appointmentId);
   }
 
-  private readonly noteResult = toSignal(
+  /**
+   * The listener's latest answer, NAMED BY THE VISIT it answers for — a
+   * sheet that hops to another visit of the party must not read the last
+   * one's note while the new one loads.
+   */
+  private readonly noteRead = toSignal(
     toObservable(this._noteFor).pipe(
-      switchMap((id) => (id === null ? of(ok(null)) : this.notes.observe(id))),
+      switchMap((id) =>
+        id === null
+          ? of(null)
+          : this.notes.observe(id).pipe(map((result) => ({ id, result }))),
+      ),
     ),
-    { initialValue: undefined },
+    { initialValue: null },
   );
 
   /** The note's text, or `null` — while loading, while absent, or with no visit open. */
   readonly teamNote = computed<string | null>(() => {
-    const result = this.noteResult();
-    if (result === undefined || result.isFailure()) return null;
-    return result.value?.text ?? null;
+    const id = this._noteFor();
+    return id === null ? null : (this.teamNoteOf(id) ?? null);
   });
+
+  /**
+   * The stored note of `appointmentId` as this device hears it now, or
+   * `undefined` when it cannot say — nobody is listening to that visit's
+   * note, it has not answered yet, or it failed. What a save measures a
+   * colleague's note against (`sidesMovedUnder`): a note this device does
+   * not hear is not judged, never guessed.
+   */
+  teamNoteOf(appointmentId: string): string | null | undefined {
+    const read = this.noteRead();
+    if (
+      read === null ||
+      read.id !== appointmentId ||
+      read.id !== this._noteFor() ||
+      read.result.isFailure()
+    ) {
+      return undefined;
+    }
+    return read.result.value?.text ?? null;
+  }
 
   /* ── The shop's photos of the open visit ─────────────────────────────── */
 
@@ -948,6 +1036,14 @@ export class StaffDayStore {
       label: coupon.name,
       value: discountValueOf(grant.value),
       exclusive: CouponCombinability.isExclusive(coupon.combinability),
+      // The coupon's moment (revision 3 §4.6): the client card heads a
+      // birthday gift with its band only when the coupon says so — a
+      // grant that reaches it without one is a plain ticket, every day.
+      occasion: coupon.occasion,
+      // When it lapses, on the shop's calendar: the card's tickets print
+      // it as their chip («до 28.10») and put the soonest first; a grant
+      // that never lapses prints none (review 2: every ticket was chipless).
+      expiresOn: grantExpiresOn(grant),
     }));
   });
 
@@ -1568,9 +1664,30 @@ export class StaffDayStore {
    * an OFFER (re-send with `acknowledgedOverlap`), and it is the row's error
    * signal that carries it, so the offer renders in the visit that earned it
    * rather than as a banner three screens away.
+   *
+   * ### Every send goes out NAMED (2026-09-25)
+   * Each intent — a save, an undo, a queued drop — carries an `operationId`
+   * minted here, the one funnel every staff edit passes through, and the
+   * SAME intent sent again after a failure carries the same one — whatever
+   * landed in between (see `unsettledOperations`). The server remembers the
+   * names it applied, so a
+   * save whose answer was lost in transit and is tapped again lands ONCE,
+   * with one audit row, instead of twice. A caller that names its own
+   * intent keeps its name.
+   *
+   * ### Every send states the revision it was made on (round 5)
+   * `expectedVersion` is REQUIRED here (`StaffIntent`): the revision of the
+   * copy the sheet's draft was drawn from. A colleague's save since is
+   * refused by the server as `booking.staffEdit.stale`, and the sheet then
+   * reloads the visit and says so, instead of overwriting it with an older
+   * screen. This device's OWN landed intents are not someone else's change:
+   * the claim is rebased across them before it goes (`claimFor`), so a
+   * queued drop, a second save from the same sheet and a save's undo are
+   * never refused by the save before them. A re-send under the same name is
+   * still answered from the server's ledger ahead of the stale check.
    */
-  async staffEdit(request: StaffEditAppointmentRequest): Promise<boolean> {
-    const id = request.appointmentId;
+  async staffEdit(intent: StaffIntent): Promise<boolean> {
+    const id = intent.appointmentId;
 
     /*
      * ⚠ A SECOND EDIT SUPERSEDES THE FIRST — IT IS NOT DISCARDED.
@@ -1594,7 +1711,7 @@ export class StaffDayStore {
      * one no longer is.
      */
     if (this._pending().has(id)) {
-      this.queuedEdits.set(id, request);
+      this.queuedEdits.set(id, intent);
       return true;
     }
 
@@ -1605,12 +1722,23 @@ export class StaffDayStore {
       return next;
     });
 
+    const request: StaffIntent = {
+      ...intent,
+      expectedVersion: this.claimFor(id, intent.expectedVersion),
+    };
+    const key = intentOf(request);
+    const operationId = this.operationIdFor(request, key);
     try {
-      const result = await this.gateway.staffEdit(request);
+      const result = await this.gateway.staffEdit({ ...request, operationId });
       if (result.isFailure()) {
+        // Refused, or LOST — the two look the same from here, so the same
+        // intent sent again goes under the same name.
+        this.rememberUnsettled(id, key, operationId);
         this._errors.update((map) => new Map(map).set(id, result.error));
         return false;
       }
+      this.settle(id, key);
+      this.recordLanded(id, request.expectedVersion, result.value.revision);
       return true;
     } finally {
       this._pending.update((set) => {
@@ -1636,7 +1764,140 @@ export class StaffDayStore {
    * last is meaningful, so a newer request overwrites the queued one rather
    * than joining a line of stale ones behind it.
    */
-  private readonly queuedEdits = new Map<string, StaffEditAppointmentRequest>();
+  private readonly queuedEdits = new Map<string, StaffIntent>();
+
+  /**
+   * THIS DEVICE'S OWN LANDED INTENTS, per visit: the revision each was made
+   * on → the revision it stamped. At most `LANDED_PER_VISIT`, oldest
+   * dropped.
+   */
+  private readonly landed = new Map<string, Map<number, number>>();
+
+  /**
+   * The claim an intent goes out with: the revision it was made on, carried
+   * forward across every intent of THIS device that landed on it since.
+   *
+   * A sheet's draft is drawn once, at open; the save it sends lands at the
+   * next revision, and the undo of that save — or a second save, or a drop
+   * queued behind the first — was made on the same screen. Claiming the
+   * drawn revision would have the server refuse them as stale against the
+   * device's own write. Only a revision somebody ELSE stamped is left
+   * unexplained, and that is exactly the save that must not be
+   * overwritten. `null` claims nothing and stays so.
+   */
+  private claimFor(appointmentId: string, drawn: number | null): number | null {
+    if (drawn === null) return null;
+    const chain = this.landed.get(appointmentId);
+    let claim = drawn;
+    // Each step strictly climbs (`recordLanded`), so the walk ends.
+    for (let next = chain?.get(claim); next !== undefined;) {
+      claim = next;
+      next = chain?.get(claim);
+    }
+    return claim;
+  }
+
+  /** An intent of this device landed: `from` → `to`, kept for `claimFor`. */
+  private recordLanded(
+    appointmentId: string,
+    from: number | null,
+    to: number,
+  ): void {
+    // A claim of nothing has no revision to carry forward; and a stamp that
+    // does not climb is not one an edit on `from` can have written (a
+    // gateway answer with no revision reads as 0), so it is not trusted.
+    if (from === null || !(to > from)) return;
+    const chain = this.landed.get(appointmentId) ?? new Map<number, number>();
+    chain.set(from, to);
+    for (const oldest of chain.keys()) {
+      if (chain.size <= LANDED_PER_VISIT) break;
+      chain.delete(oldest);
+    }
+    this.landed.set(appointmentId, chain);
+  }
+
+  /**
+   * THE INTENTS THAT DID NOT LAND, per appointment — each keyed by the
+   * intent itself (`intentOf`), with the name it went out under.
+   *
+   * A failed send was either refused or lost after the server committed it,
+   * and nothing here can tell which. So a later send of the SAME intent —
+   * the barber tapping «Запази» again on the same draft — reuses the name,
+   * and the server answers a lost one with what it already committed rather
+   * than applying it twice (a refused one it simply applies, having never
+   * seen the name).
+   *
+   * KEYED BY INTENT, NOT BY VISIT (round 3, 2026-09-25). It held one entry
+   * per appointment, cleared by any success: an intent that failed — lost,
+   * but committed — and was then superseded by a queued drop that landed
+   * lost its name, and sending the same batch again applied it twice. Now
+   * an intent's name is dropped only when THAT intent lands: the same batch
+   * again after its own success is the barber doing it again (a move, its
+   * undo, the move once more), and reusing the name would answer "saved"
+   * while applying nothing. Everything else — a changed draft, an
+   * acknowledged overlap — is a new intent with a new name.
+   *
+   * The ruling's price, stated: a failed intent re-sent after a DIFFERENT
+   * one landed is answered from the ledger when it had in fact committed,
+   * so the visit stays where the later intent put it — which the live lane
+   * shows, since nothing here moves a block before the server does. Never
+   * applied twice is the promise; the lane is the receipt.
+   *
+   * AT MOST `AppliedOperations.CAP` FAILED NAMES PER VISIT, oldest dropped.
+   * That bounds this map and promises nothing about the server's ledger,
+   * which keeps the last CAP intents APPLIED to the visit, from any device:
+   * once CAP other intents have landed since a name was kept, the server no
+   * longer knows it, and a re-send under it is applied as new. (Round 4,
+   * 2026-09-25: this used to promise "never a name kept longer than the
+   * server's ledger remembers it". No client can keep that promise, since
+   * it never sees other devices' intents, so no pruning here could make it
+   * true.) What stops such a re-send from doubling anything is the batch
+   * itself: an `addSeat` names the seat id minted here and is refused the
+   * second time, a `removeSeat` of a seat already gone is refused, and
+   * every other arm states a target (a start, an end, a price, a chair, the
+   * bill's whole set), so applying it again writes the visit it already
+   * wrote, over whatever landed since, as an unnamed re-send always did. A
+   * sheet also sends `expectedVersion` (round 5), so a colleague's save in
+   * between is refused as stale rather than written over.
+   */
+  private readonly unsettledOperations = new Map<string, Map<string, string>>();
+
+  /** The name this send goes out under — see `unsettledOperations`. */
+  private operationIdFor(
+    request: StaffEditAppointmentRequest,
+    intent: string,
+  ): string {
+    if (request.operationId !== undefined) return request.operationId;
+    return (
+      this.unsettledOperations.get(request.appointmentId)?.get(intent) ??
+      this.ids.next()
+    );
+  }
+
+  /** A send that failed: its name kept under its intent, newest last. */
+  private rememberUnsettled(
+    appointmentId: string,
+    intent: string,
+    operationId: string,
+  ): void {
+    const intents =
+      this.unsettledOperations.get(appointmentId) ?? new Map<string, string>();
+    intents.delete(intent);
+    intents.set(intent, operationId);
+    for (const oldest of intents.keys()) {
+      if (intents.size <= AppliedOperations.CAP) break;
+      intents.delete(oldest);
+    }
+    this.unsettledOperations.set(appointmentId, intents);
+  }
+
+  /** A send that landed: THAT intent is settled; every other keeps its name. */
+  private settle(appointmentId: string, intent: string): void {
+    const intents = this.unsettledOperations.get(appointmentId);
+    if (intents === undefined) return;
+    intents.delete(intent);
+    if (intents.size === 0) this.unsettledOperations.delete(appointmentId);
+  }
 
   /**
    * Record — or clear — what one seat was tipped.

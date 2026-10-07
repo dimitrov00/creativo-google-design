@@ -1,0 +1,61 @@
+/*
+ * THE ACTIVITY LIST — layout and the one disc. The rows, the event head,
+ * the month header and the figures' type are DS parts' own (`uiListGroup`,
+ * `uiListRow`, `lib-staff-event-head`, `ui-section-header`, `uiText`);
+ * these rules space the months, draw the white disc a row's glyph stands
+ * on and stack the two trailing figures. No `font:` shorthand here, so
+ * the app's tabular figures are never reset.
+ */
+
+/* Month after month at the module's inner rhythm: 24 between groups,
+   the header 8 over its rows. */
+:host {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sys-space-comfortable);
+}
+
+.activity-list__month {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sys-space-compact);
+}
+
+/* THE DISC — 36, WHITE on the grey segment in both themes (§1.1: colour
+   is a shape; the glyph carries the kind). It is the row's leading slot,
+   so the row centres it on its two lines. */
+.activity-list__disc {
+  inline-size: var(--control-size-small);
+  block-size: var(--control-size-small);
+  border-radius: var(--control-radius-capsule);
+  background: var(--sys-color-surface-elevated);
+}
+
+/* The glyph: 20 on the 36 disc; the shop GAVE (a visit, a level, a grant,
+   a status) in the accent, the shop TOOK or corrected in the primary
+   ink. A glyph selector, as the accent law allows (§1.5, 5a). */
+.activity-list__glyph {
+  font-size: var(--ui-icon-medium);
+  color: var(--sys-color-foreground);
+}
+
+.activity-list__disc[data-tone='accent'] .activity-list__glyph {
+  color: var(--sys-color-accent);
+}
+
+/* The trailing figures, right-aligned on two lines: the signed amount
+   over the balance after it. Tabular, so the column holds at 330 too. */
+.activity-list__trailing {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  text-align: end;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* A struck row keeps its figures legible: the head strikes the title, the
+   amount stands as it was written (the reversal's own row says the rest). */
+.activity-list__row[data-struck] .activity-list__amount {
+  color: var(--sys-color-secondary-label);
+}

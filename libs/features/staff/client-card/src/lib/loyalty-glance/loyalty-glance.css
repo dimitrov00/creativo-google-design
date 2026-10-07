@@ -1,0 +1,108 @@
+/*
+ * THE LOYALTY CARD OF THE GLANCE — layout only. The surface, its lift and
+ * its padding are `ui-card`'s; every ink and type role is a modifier's
+ * own (`uiText`, `uiForegroundStyle`, `uiWeight`): the figure's orange is
+ * `uiForegroundStyle="accent"` on a `title2` figure, a display figure on
+ * white (the law, rule 3), and this sheet declares no `color:`. The one
+ * colour it paints is the wash of the two discs, a `background`, never
+ * an ink. No `font:` shorthand: the app's tabular figures are never
+ * reset.
+ */
+
+:host {
+  display: block;
+}
+
+/* The card clips the discs cut into its corner; the button's words start
+   at its leading edge. */
+.loyalty-glance__card {
+  --loyalty-glance-unit: var(--sys-space-unit);
+
+  position: relative;
+  overflow: clip;
+  text-align: start;
+}
+
+/* THE MOTIF — the pass's two discs as a wash (`--sys-alpha-tint`, 14 %).
+   Each is a BOX inside the card with its circle cut in by `clip-path`: a
+   round element hung half outside and clipped would leave its box over
+   what stands round the card, and a contrast check would then read the
+   wash behind words it is nowhere near. The cap: a disc of 140 with its
+   centre above the card's top edge, over the figure's line in the
+   trailing 108; the crescent: a disc of 88 down the trailing edge, in the
+   card's own 24 of padding. No word of the card lies over either. */
+.loyalty-glance__disc {
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline-end: 0;
+  inline-size: calc(var(--loyalty-glance-unit) * 27);
+  block-size: calc(var(--loyalty-glance-unit) * 13);
+  background: color-mix(
+    in srgb,
+    var(--sys-color-accent) var(--sys-alpha-tint),
+    transparent
+  );
+  clip-path: circle(
+    calc(var(--loyalty-glance-unit) * 17.5) at
+      calc(var(--loyalty-glance-unit) * 17.5)
+      calc(var(--loyalty-glance-unit) * -4.5)
+  );
+  pointer-events: none;
+}
+
+.loyalty-glance__disc + .loyalty-glance__disc {
+  inset-block: calc(var(--loyalty-glance-unit) * 10) 0;
+  inline-size: var(--sys-space-comfortable);
+  block-size: auto;
+  clip-path: circle(
+    calc(var(--loyalty-glance-unit) * 11) at
+      calc(var(--loyalty-glance-unit) * 11)
+      calc(var(--loyalty-glance-unit) * 11)
+  );
+}
+
+/* THE WORDS — one block, `tight` apart: the sentence belongs to the figure,
+   the holdings to the sentence. They stand over the discs and keep the
+   card's inline room less the cap's, so the figure never runs under it. */
+.loyalty-glance__words {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--sys-space-tight);
+  min-inline-size: 0;
+}
+
+/* The figure and its unit on ONE baseline, a compact step apart. */
+.loyalty-glance__figure {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sys-space-compact);
+  /* The cap is 108 wide: the figure's line ends before it. */
+  max-inline-size: calc(100% - var(--loyalty-glance-unit) * 27);
+}
+
+.loyalty-glance__value {
+  white-space: nowrap;
+}
+
+/* The sentence wraps whole, never cut; a `pretty` wrap keeps the last
+   word from standing alone. */
+.loyalty-glance__sentence {
+  min-inline-size: 0;
+  text-wrap: pretty;
+  overflow-wrap: break-word;
+}
+
+/* The holdings: a quiet line of facts (`.fact-line`, fact-line.css) that
+   wraps to two on a 330 pt phone BETWEEN its facts, the dots staying
+   between facts on one line. A fact and its label are one word to the
+   line breaker, so «Печати» and «3 от 10» never part. */
+.loyalty-glance__holdings {
+  min-inline-size: 0;
+  margin-block-start: var(--sys-space-tight);
+}
+
+.loyalty-glance__holding {
+  white-space: nowrap;
+}

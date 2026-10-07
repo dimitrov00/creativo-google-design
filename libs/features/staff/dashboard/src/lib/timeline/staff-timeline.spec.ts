@@ -323,6 +323,36 @@ describe('StaffTimeline', () => {
     ).toBe('12:30');
   });
 
+  it('withholds the hour labels the now pill would cover — a wider reach behind now than ahead', () => {
+    // The ruler's labels hang to the RIGHT of their tick and the pill is
+    // centred on its minute, so «20:32» landed on the «00» of «20:00»
+    // under a symmetric twenty (review r5, 2026-10-06). An hour behind now
+    // stands down until now is 50 minutes past it; an hour ahead only
+    // within 20.
+    const hidden = (host: HTMLElement) =>
+      Array.from(
+        host.querySelectorAll<HTMLElement>(
+          '.staff-timeline__hour[data-near-now]',
+        ),
+      ).map((label) => Number(label.dataset['hour']));
+    fixture.componentRef.setInput('nowMinute', 20 * 60 + 32);
+    const host = render(shop().map((c) => ({ ...c, isToday: true })));
+    expect(hidden(host)).toEqual([20 * 60]);
+
+    fixture.componentRef.setInput('nowMinute', 20 * 60 + 41);
+    fixture.detectChanges();
+    expect(hidden(host)).toEqual([20 * 60, 21 * 60]);
+
+    fixture.componentRef.setInput('nowMinute', 20 * 60 + 50);
+    fixture.detectChanges();
+    expect(hidden(host)).toEqual([21 * 60]);
+
+    // Not today: every hour says its name.
+    fixture.componentRef.setInput('nowMinute', 20 * 60 + 32);
+    render(shop());
+    expect(hidden(host)).toEqual([]);
+  });
+
   it('draws the band but no handles when the caller says it is not editable', () => {
     const host = render(shop(), false);
     const band = grab(host, 'staff-timeline-band');

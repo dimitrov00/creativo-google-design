@@ -1,0 +1,58 @@
+/*
+ * «ДВИЖЕНИЕ» — layout only. The headline, the chips, the rows, the
+ * notices and the type are DS parts' own (`ui-sheet-headline`,
+ * `button[uiChip]`, `ui-flow`, `lib-activity-list`, `ui-notice`,
+ * `ui-empty-state`, `uiText`); these rules space the page's blocks and
+ * centre its foot. No `font:` shorthand here, so the app's tabular
+ * figures are never reset.
+ */
+
+/* The head, the chips, the statement and the foot at 24 (§2.2.6: the
+   headline's own 4 inside it; 24 to the chips; 24 to the first month;
+   24 to the foot). */
+:host {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sys-space-comfortable);
+}
+
+/* LB — one line that wraps whole under a long name; the balance is a
+   fact in primary ink and never parts from its unit. */
+.client-ledger__subline {
+  text-wrap: balance;
+  overflow-wrap: break-word;
+}
+
+.client-ledger__subline > span {
+  white-space: nowrap;
+}
+
+/* LF/LG — hugged and centred: the button, or the end line. */
+.client-ledger__foot {
+  display: flex;
+  justify-content: center;
+  text-align: center;
+}
+
+.client-ledger__foot > p {
+  margin: 0;
+}
+
+/* The page while the first page reads: three month blocks at the page gap. */
+.client-ledger__placeholders {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sys-space-comfortable);
+}
+
+.client-ledger__placeholder-month {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sys-space-compact);
+}
+
+/* A placeholder row's two lines centre on the row, as the event head's do. */
+.client-ledger__placeholder-lines {
+  min-block-size: var(--control-size-regular);
+  justify-content: center;
+}

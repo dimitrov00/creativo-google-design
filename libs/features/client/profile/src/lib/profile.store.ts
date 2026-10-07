@@ -99,11 +99,9 @@ export class ProfileStore {
     this._pending.set(true);
     try {
       const result = await run(userId, this.today);
-      if (result.isFailure()) return result.error.code;
-      // `ProfilePort` is one-shot, so the shared snapshot every other
-      // screen reads is stale the moment this write lands.
-      this.accountState.refresh();
-      return null;
+      // No refresh: `account` is the live `users/{uid}` listener, so the
+      // write reaches every screen that reads it on its own.
+      return result.isFailure() ? result.error.code : null;
     } finally {
       this._pending.set(false);
     }

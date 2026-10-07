@@ -6,13 +6,15 @@ import {
   computed,
   effect,
   inject,
+  input,
+  linkedSignal,
   signal,
   viewChild,
-  viewChildren,
 } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
 import { TranslocoDirective, TranslocoService } from '@jsverse/transloco';
+import { map, switchMap } from 'rxjs';
 import { UserId, ZonedDateTime } from '@creativo/application/accounts';
 import {
   Appointment,
@@ -22,12 +24,30 @@ import {
   BookingPolicy,
   Money,
   formatMoney,
+  shopReachKey,
+  wordError,
 } from '@creativo/application/booking';
 import { AccountStateService } from '@creativo/features/client/account-state';
 import {
   CatalogContentService,
   CatalogPresenter,
 } from '@creativo/features/shared/catalog';
+import {
+  type VisitFilter,
+  VisitFilterMenu,
+  type VisitListState,
+  type VisitLookup,
+  type VisitRowVm,
+  type VisitSectionVm,
+  type VisitWords,
+  VisitsBrowser,
+  matchesVisitFilter,
+  sectionVisits,
+  visitRowOf,
+  visitSectionKey,
+  visitSectionLabel,
+  visitWordsOf,
+} from '@creativo/features/shared/visits';
 import {
   UiAvatar,
   UiBadge,
@@ -38,16 +58,17 @@ import {
   UiTextField,
   UiSkeleton,
 } from '@creativo/ui/controls';
-import { UiScrollRow, UiSpacer, UiStack, UiToolbar } from '@creativo/ui/layout';
+import { UiSpacer, UiStack, UiToolbar } from '@creativo/ui/layout';
 import {
   UiCalendarGrid,
   UiCalendarScroller,
   UiDateBadge,
   UiListGroup,
   UiListRow,
-  UiMenu,
-  UiMenuItem,
+  UiNotice,
   UiPageActionBar,
+  UiQuickAction,
+  UiQuickActions,
   UiSheetActionBar,
 } from '@creativo/ui/patterns';
 import {
@@ -62,36 +83,10 @@ import {
 import { CLOCK } from '@creativo/application/shared';
 import { translateDomainError } from '@creativo/infrastructure/i18n';
 import { AppointmentsStore, APPOINTMENTS_ZONE } from '../appointments.store';
-import {
-  type VisitSection,
-  type VisitVm,
-  groupVisitsByMonth,
-  monthKeyOf,
-} from '../visit-vm';
+import type { ClientVisitVm } from '../visit-vm';
 import { buildVisitIcs } from '../visit-ics';
 
 type AppointmentsView = 'list' | 'calendar';
-
-/**
- * What the funnel narrows to.
- *
- * `all` and `upcoming` are the two axes a person actually thinks in; the
- * three terminal statuses are there because a history is where you go
- * looking for "did I ever no-show?" — and each of them is a status the
- * appointment document genuinely carries, so no option can ever be a lie.
- */
-type VisitFilter = 'all' | 'upcoming' | 'completed' | 'cancelled' | 'no_show';
-
-const VISIT_FILTERS: readonly VisitFilter[] = [
-  'all',
-  'upcoming',
-  'completed',
-  'cancelled',
-  'no_show',
-];
-
-/** The upcoming section's key — not a month, so it can never collide with one. */
-const UPCOMING_KEY = 'upcoming';
 
 /**
  * How far the calendar reaches on first paint, and how much more it takes
@@ -128,14 +123,29 @@ const STATUS_TONES: Record<AppointmentStatusKind, UiBadgeTone> = {
   cancelled: 'destructive',
   no_show: 'warning',
 };
-const DEFAULT_CANCEL_REASON = 'Cancelled by client.';
+/**
+ * Empty until the client types something. The field is optional, and the
+ * callable files any text as the client's own words (`other`), so a
+ * prefilled sentence was recorded as their reason on every cancel nobody
+ * explained — in English, on a Bulgarian screen — instead of `unspecified`.
+ */
+const DEFAULT_CANCEL_REASON = '';
+
+/** The server's refusal of a cancel whose free window has closed. */
+const CANCEL_WINDOW_CLOSED = 'booking.cancel.window_closed';
 
 /** One day cell of the calendar view. */
 interface VisitDayVm {
   readonly dayKey: string;
   readonly dayOfMonth: number | null;
   readonly isToday: boolean;
-  readonly visits: readonly VisitVm[];
+  readonly visits: readonly ClientVisitVm[];
+}
+
+/** One visit, both ways the page draws it: a row of the list, and the calendar's and the sheet's view model. */
+interface PageVisit {
+  readonly row: VisitRowVm;
+  readonly visit: ClientVisitVm;
 }
 
 interface VisitMonthVm {
@@ -154,11 +164,31 @@ interface VisitMonthVm {
  * asks for more; "my history" grows forever and a screen that reads all of it
  * pays for every visit a loyal client ever made, on every mount.
  *
+ * ### One browser, shared with the staff card
+ * The list view is the shared visits BROWSER (`lib-visits-browser`,
+ * `@creativo/features/shared/visits`, client-card revision 3 §3.11, R2-I):
+ * the jump pills over the list, the scroll spy and the jump, and the same
+ * rows, sections and funnel a barber reads a client's history with — in
+ * the client's perspective, where a row opens the visit's sheet and the
+ * barber is a face on the trailing edge. What stays here is the page's
+ * own: the bar with the funnel, the calendar, the visit sheet and the
+ * cancel flow, and the one length the browser asks its host for — how far
+ * a heading stands clear of the floating bar when a pill lands on it
+ * (`--visit-list-anchor-clearance`, client-appointments.css).
+ *
  * ### The pills navigate, they do not filter
  * A filter row hides things; these jump. Every section stays on screen and
  * the pills say where you are — the Photos-app grammar, and the reason there
  * is a pill for "upcoming" and one per month that ACTUALLY holds a visit.
  * An option that leads nowhere is the one thing a filter row must not have.
+ * They moved from this page into the browser value for value (same ids);
+ * the page hands it the sections and hears which row was opened.
+ *
+ * ### A visit can be asked for
+ * `/account/appointments?visit=<id>` opens that visit's sheet on arrival —
+ * how `/account`'s «Предстоящ час» card lands here. The query is bound to
+ * the `visit` input by the router's component input binding; the page
+ * writes no URL back when the sheet closes.
  *
  * ### Cancelling lives in the visit sheet
  * A row states a fact; it does not carry a destructive button (a red glyph
@@ -185,13 +215,13 @@ interface VisitMonthVm {
     UiInteractiveDirective,
     UiListGroup,
     UiListRow,
-    UiMenu,
-    UiMenuItem,
     UiModalSheet,
+    UiNotice,
     UiPageActionBar,
     UiPaddingDirective,
+    UiQuickAction,
+    UiQuickActions,
     UiRadiusDirective,
-    UiScrollRow,
     UiSheetActionBar,
     UiSkeleton,
     UiSpacer,
@@ -200,6 +230,8 @@ interface VisitMonthVm {
     UiTextField,
     UiToolbar,
     UiWeightDirective,
+    VisitFilterMenu,
+    VisitsBrowser,
   ],
   providers: [AppointmentsStore],
   templateUrl: './client-appointments.html',
@@ -231,43 +263,15 @@ export class ClientAppointments {
 
   protected readonly view = signal<AppointmentsView>('list');
 
-  protected readonly filters = VISIT_FILTERS;
+  /**
+   * What the funnel narrows to (`lib-visit-filter`, which draws the
+   * trigger, names the choice in force and goes to the accent while it
+   * bites); the list and the calendar both show only what matches it.
+   */
   protected readonly filter = signal<VisitFilter>('all');
-  protected readonly filterMenuOpen = signal(false);
 
-  /** A narrowed list has to SAY so — the funnel wears a dot when it bites. */
+  /** A narrowed list — its empty offers the filter back rather than a booking. */
   protected readonly filtering = computed(() => this.filter() !== 'all');
-
-  /**
-   * The button's accessible name carries what the DOT cannot.
-   *
-   * A coloured mark is a glance affordance and nothing more: a screen reader
-   * announcing "Filter" over a narrowed list would be describing a control
-   * whose state it cannot see. Naming the active option is how the same fact
-   * reaches both.
-   */
-  protected readonly filterButtonLabel = computed(() => {
-    const label = this.transloco.translate('appointments.filter.label');
-    if (!this.filtering()) return label;
-    return `${label}: ${this.transloco.translate(
-      `appointments.filter.${this.filter()}`,
-    )}`;
-  });
-
-  /**
-   * Which section the pills call current — set by a tap, then by scrolling.
-   *
-   * `null` until either happens, because there is no honest default: a
-   * client with no upcoming visit opens on their most recent month, and
-   * pinning the pill to "upcoming" would light up a section that is not
-   * even in the list (which is exactly how it first rendered — three pills,
-   * none of them current).
-   */
-  private readonly touchedSection = signal<string | null>(null);
-
-  protected readonly activeSection = computed(
-    () => this.touchedSection() ?? this.sections()[0]?.key ?? UPCOMING_KEY,
-  );
 
   /** How far the rendered run reaches, in months, either side of today. */
   private readonly monthsBack = signal(INITIAL_MONTH_SPAN);
@@ -275,12 +279,23 @@ export class ClientAppointments {
   /** One growth at a time — a scroll fires far faster than a render. */
   private growing = false;
 
-  protected readonly openVisitId = signal<string | null>(null);
+  /**
+   * A visit to open on arrival — `/account/appointments?visit=<id>`, bound
+   * from the query by the router's component input binding. `/account`'s
+   * «Предстоящ час» card lands here with its visit's sheet already open.
+   */
+  readonly visit = input<string>();
+
+  /**
+   * The visit whose sheet is open: the one the route asked for, until a row
+   * or a day opens another or the sheet is dismissed. The sheet itself waits
+   * for the visit to be among the loaded ones (`openVisit`).
+   */
+  protected readonly openVisitId = linkedSignal<string | null>(
+    () => this.visit() ?? null,
+  );
   protected readonly confirmingId = signal<AppointmentId | null>(null);
   protected readonly cancelReason = signal(DEFAULT_CANCEL_REASON);
-
-  private readonly sectionElements =
-    viewChildren<ElementRef<HTMLElement>>('sectionAnchor');
 
   /**
    * `read: ElementRef` is load-bearing: `ui-calendar-scroller` is a
@@ -295,48 +310,156 @@ export class ClientAppointments {
 
   // ── The visits, resolved ─────────────────────────────────────────────
 
-  private readonly upcomingVisits = computed<readonly VisitVm[]>(() => {
-    const filter = this.filter();
-    // Every terminal filter is by definition about the past, so the
-    // upcoming run empties rather than showing bookings that cannot match.
-    if (filter !== 'all' && filter !== 'upcoming') return [];
-    return [...this.store.appointments()]
-      .sort((a, b) => (a.timeSlot.start.isBefore(b.timeSlot.start) ? -1 : 1))
-      .map((appointment) => this.toVisit(appointment, true));
-  });
-
-  private readonly pastVisits = computed<readonly VisitVm[]>(() => {
-    const filter = this.filter();
-    if (filter === 'upcoming') return [];
-    return this.store
-      .history()
-      .filter((appointment) =>
-        filter === 'all' ? true : appointment.status.kind === filter,
-      )
-      .map((appointment) => this.toVisit(appointment, false));
-  });
-
-  protected readonly sections = computed<readonly VisitSection[]>(() => {
-    const sections: VisitSection[] = [];
-    const upcoming = this.upcomingVisits();
-    if (upcoming.length > 0) {
-      sections.push({
-        key: UPCOMING_KEY,
-        label: this.transloco.translate('appointments.sections.upcoming'),
-        visits: upcoming,
-      });
-    }
-    sections.push(
-      ...groupVisitsByMonth(this.pastVisits(), (date) =>
-        this.capitalize(date.toLocaleString(this.locale(), { month: 'long' })),
+  /**
+   * The language the catalogue has LOADED, once it has. The row words are
+   * built from it with `translate(…, lang)`, so no lookup inside a
+   * `computed` can start a load — a write the computed would read back and
+   * never settle on (the staff card's store reads its words the same way).
+   */
+  private readonly loadedLang = toSignal(
+    this.transloco.langChanges$.pipe(
+      switchMap((lang) =>
+        this.transloco.selectTranslation(lang).pipe(map(() => lang)),
       ),
-    );
-    return sections;
+    ),
+    { initialValue: null },
+  );
+
+  /** The rows' words in the client's perspective — «Пропуснат», «Отказан». */
+  private readonly words = computed<VisitWords | null>(() => {
+    const lang = this.loadedLang();
+    return lang === null
+      ? null
+      : visitWordsOf(
+          (key, params) => this.transloco.translate(key, params, lang),
+          lang,
+          'client',
+        );
   });
 
-  protected readonly totalVisits = computed(
-    () => this.upcomingVisits().length + this.pastVisits().length,
+  /** The catalogue, as a row reads it: names in the active language, the barber's face. */
+  private readonly lookup = computed<VisitLookup>(() => {
+    const barbers = new Map(
+      this.catalog.barberVms().map((barber) => [barber.id, barber]),
+    );
+    const locations = this.catalog.locations();
+    return {
+      serviceName: (id) => {
+        const service = this.catalog.findService(id);
+        return service
+          ? this.content.text({ en: service.name.en, bg: service.name.bg })
+          : null;
+      },
+      barberName: (id) => {
+        const barber = barbers.get(id);
+        return barber ? this.content.text(barber.name) : null;
+      },
+      barberAvatarSrc: (id) => barbers.get(id)?.avatarSrc ?? null,
+      locationName: (id) => {
+        const shop = locations.find((location) => location.id.value === id);
+        return shop
+          ? this.content.text({ en: shop.name.en, bg: shop.name.bg })
+          : null;
+      },
+      locationCount: locations.length,
+    };
+  });
+
+  /**
+   * Every visit the two reads hold, each ONCE. An open booking whose hour
+   * has already begun is in both — the upcoming read has no date bound, the
+   * history holds everything started — and it is one visit, filed by its
+   * own start.
+   */
+  private readonly appointments = computed<readonly Appointment[]>(() => {
+    const seen = new Set<string>();
+    const appointments: Appointment[] = [];
+    for (const appointment of [
+      ...this.store.appointments(),
+      ...this.store.history(),
+    ]) {
+      if (seen.has(appointment.id.value)) continue;
+      seen.add(appointment.id.value);
+      appointments.push(appointment);
+    }
+    return appointments;
+  });
+
+  /**
+   * Every visit as the list's row, and the calendar's and the sheet's view
+   * model built from that row. Empty until the catalogue's words have
+   * loaded — the list shows its placeholders meanwhile.
+   */
+  private readonly visits = computed<readonly PageVisit[]>(() => {
+    const words = this.words();
+    const lang = this.loadedLang();
+    if (words === null || lang === null) return [];
+    const lookup = this.lookup();
+    const nowMs = this.store.today.toMillis();
+    const owner = this.store.owner()?.value ?? null;
+    return this.appointments().map((appointment) => {
+      const row = visitRowOf(
+        appointment,
+        {
+          perspective: 'client',
+          grain: 'month',
+          subjectUserId: owner,
+          currentAppointmentId: null,
+          nowMs,
+          locale: lang,
+          words,
+        },
+        lookup,
+      );
+      return { row, visit: this.toVisit(appointment, row, lookup, lang) };
+    });
+  });
+
+  /** What the funnel lets through — the list's rows and the calendar's days alike. */
+  private readonly shownVisits = computed<readonly PageVisit[]>(() => {
+    const filter = this.filter();
+    return this.visits().filter(({ row }) => matchesVisitFilter(row, filter));
+  });
+
+  /**
+   * The list: «Предстоящи» first, soonest first, then one section per month
+   * that holds a visit, newest first — each heading with its year
+   * («Юли 2026 г.»), so a history reaching past a year never draws two
+   * «Юли» under the same word. The pills say what the headings say.
+   */
+  protected readonly sections = computed<readonly VisitSectionVm[]>(() => {
+    const lang = this.loadedLang();
+    if (lang === null) return [];
+    return sectionVisits(
+      this.shownVisits().map(({ row }) => row),
+      {
+        grain: 'month',
+        testIdPrefix: 'appointments',
+        labels: {
+          upcoming: this.transloco.translate(
+            'appointments.sections.upcoming',
+            {},
+            lang,
+          ),
+          section: (key) => visitSectionLabel(key, lang),
+        },
+      },
+    );
+  });
+
+  /** Where the list stands: the catalogue's words are part of "loaded". */
+  protected readonly listState = computed<VisitListState>(() => {
+    const kind = this.store.upcoming().kind;
+    if (kind === 'error') return 'error';
+    return kind === 'loading' || this.words() === null ? 'loading' : 'ready';
+  });
+
+  /** Every visit by its id — what a row, or a day, opens. */
+  private readonly visitById = computed(
+    () => new Map(this.visits().map(({ visit }) => [visit.id, visit] as const)),
   );
+
+  protected readonly totalVisits = computed(() => this.shownVisits().length);
 
   /** "5 посещения" / "1 посещение" — two forms, because one visit is not "1 visits". */
   protected readonly countLabel = computed(() => {
@@ -348,7 +471,7 @@ export class ClientAppointments {
   });
 
   protected readonly isEmpty = computed(
-    () => this.store.upcoming().kind === 'ready' && this.totalVisits() === 0,
+    () => this.listState() === 'ready' && this.totalVisits() === 0,
   );
 
   /**
@@ -368,9 +491,9 @@ export class ClientAppointments {
    * merely THAT something is booked.
    */
   protected readonly months = computed<readonly VisitMonthVm[]>(() => {
-    const visits = [...this.pastVisits(), ...this.upcomingVisits()];
+    const visits = this.shownVisits().map(({ visit }) => visit);
 
-    const byDay = new Map<string, VisitVm[]>();
+    const byDay = new Map<string, ClientVisitVm[]>();
     for (const visit of visits) {
       const key = visit.appointment.timeSlot.calendarDayKey();
       const bucket = byDay.get(key);
@@ -382,7 +505,7 @@ export class ClientAppointments {
     // nothing in it is still a month a person may want to look at. It is
     // then widened to hold every visit, so a booking outside the current
     // window is never unreachable.
-    const todayKey = monthKeyOf(this.store.today);
+    const todayKey = visitSectionKey(this.store.today, 'month');
     const keys = [...byDay.keys()].sort();
     const earliestVisit = (keys.at(0) ?? todayKey).slice(0, 7);
     const latestVisit = (keys.at(-1) ?? todayKey).slice(0, 7);
@@ -456,6 +579,40 @@ export class ClientAppointments {
   });
 
   /**
+   * How the visit sheet sends the client to the shop (`{{reach}}`): "call"
+   * when the sheet's own call verb is there to press, "get in touch" when
+   * the catalogue has no number for this shop (`shopReachKey`).
+   */
+  protected readonly openVisitReachKey = computed(() =>
+    shopReachKey(this.openVisitPhoneHref()),
+  );
+
+  /**
+   * The call beside a cancel the server refused because the free window
+   * closed while the sheet was open. That refusal ends at the shop, and the
+   * confirmation sheet covers the visit sheet's own call verb, so it gets
+   * its own. `null` for every other failure (a retry is the fix, not a
+   * call) and when there is no number to dial.
+   */
+  protected readonly cancelCallHref = computed(() =>
+    this.cancelRefusedForGood() ? this.openVisitPhoneHref() : null,
+  );
+
+  /**
+   * The server said NO for good: the free window closed while the sheet was
+   * open. Pressing «Откажи» again can only hear the same refusal, so the
+   * destructive confirm is disabled and the sheet leads with the call to the
+   * shop, which is the one way this visit can still be cancelled (business
+   * decision: a definitive refusal ends at the shop). A refusal a retry can
+   * fix (the terms could not be read) leaves the confirm as it is: pressing
+   * it again IS the fix.
+   */
+  protected readonly cancelRefusedForGood = computed(
+    () =>
+      this.store.cancelError()?.params['serverCode'] === CANCEL_WINDOW_CLOSED,
+  );
+
+  /**
    * What the client asked the shop to know, echoed back.
    *
    * Written at booking and, until now, never shown again — a note you
@@ -485,13 +642,27 @@ export class ClientAppointments {
     return total ? formatMoney(total, this.locale()) : null;
   });
 
-  protected readonly openVisit = computed<VisitVm | null>(() => {
+  protected readonly openVisit = computed<ClientVisitVm | null>(() => {
     const id = this.openVisitId();
-    if (!id) return null;
+    return id === null ? null : (this.visitById().get(id) ?? null);
+  });
+
+  /**
+   * How many verbs the open visit's sheet offers — one column each. A verb
+   * this visit cannot use is ABSENT, never dimmed, and the run closes up
+   * around it: «В календара» or «Пак същото» always, «Премести» while the
+   * client may move it, «Навигация» and «Обади се» when the catalogue
+   * knows the shop's place and number.
+   */
+  protected readonly openVisitVerbCount = computed(() => {
+    const visit = this.openVisit();
+    if (!visit) return 0;
+    const move = visit.upcoming && this.canMove(visit.appointment);
     return (
-      [...this.upcomingVisits(), ...this.pastVisits()].find(
-        (visit) => visit.id === id,
-      ) ?? null
+      1 +
+      (move ? 1 : 0) +
+      (this.openVisitDirections() === null ? 0 : 1) +
+      (this.openVisitPhoneHref() === null ? 0 : 1)
     );
   });
 
@@ -503,33 +674,6 @@ export class ClientAppointments {
       if (userIdResult.isSuccess()) {
         this.store.setUserId(userIdResult.value);
       }
-    });
-
-    // The pills follow the scroll: whichever section's heading is highest on
-    // screen is the one they call current. Tapping one scrolls there and the
-    // observer confirms it — one source of truth for "where am I", rather
-    // than a selection that drifts out of step with what is on screen.
-    effect((onCleanup) => {
-      const anchors = this.sectionElements();
-      if (anchors.length === 0 || typeof IntersectionObserver === 'undefined') {
-        return;
-      }
-      const observer = new IntersectionObserver(
-        (entries) => {
-          const visible = entries
-            .filter((entry) => entry.isIntersecting)
-            .sort(
-              (a, b) => a.boundingClientRect.top - b.boundingClientRect.top,
-            );
-          const key = visible[0]?.target.getAttribute('data-section-key');
-          if (key) this.touchedSection.set(key);
-        },
-        // The band under the toolbar: a heading counts as "current" from the
-        // moment it reaches the chrome, not when it reaches the middle.
-        { rootMargin: '-96px 0px -70% 0px', threshold: 0 },
-      );
-      for (const anchor of anchors) observer.observe(anchor.nativeElement);
-      onCleanup(() => observer.disconnect());
     });
   }
 
@@ -600,7 +744,7 @@ export class ClientAppointments {
    * cheaper than two code paths.
    */
   protected scrollToToday(smooth = false): void {
-    const key = monthKeyOf(this.store.today);
+    const key = visitSectionKey(this.store.today, 'month');
     afterNextRender(
       () => {
         this.calendarScroller()
@@ -615,22 +759,14 @@ export class ClientAppointments {
   }
 
   protected setFilter(next: VisitFilter): void {
+    // The browser forgets its current pill when the sections change under
+    // it, so the narrowed list's rail falls back to whatever it starts with.
     this.filter.set(next);
-    this.filterMenuOpen.set(false);
-    // The sections a moment ago may not exist now; let the pills fall back
-    // to whatever the narrowed list starts with.
-    this.touchedSection.set(null);
   }
 
-  protected jumpTo(key: string): void {
-    this.touchedSection.set(key);
-    const anchor = this.sectionElements().find(
-      (element) => element.nativeElement.dataset['sectionKey'] === key,
-    );
-    anchor?.nativeElement.scrollIntoView({
-      behavior: 'smooth',
-      block: 'start',
-    });
+  /** Read both lists again — the list's «Опитай пак» after a failed read. */
+  protected retry(): void {
+    this.store.retry();
   }
 
   /**
@@ -641,7 +777,7 @@ export class ClientAppointments {
    * stable UID so a second tap updates the event instead of duplicating it.
    * See `visit-ics.ts`.
    */
-  protected addToCalendar(visit: VisitVm): void {
+  protected addToCalendar(visit: ClientVisitVm): void {
     const now = this.clock.now(APPOINTMENTS_ZONE);
     const shopName = this.openVisitShopName();
     const address = this.openVisitAddress();
@@ -678,8 +814,9 @@ export class ClientAppointments {
     setTimeout(() => URL.revokeObjectURL(url), 0);
   }
 
-  protected showVisit(visit: VisitVm): void {
-    this.openVisitId.set(visit.id);
+  /** Open a visit's sheet — by id, from a row (`openRow`) or a calendar day. */
+  protected showVisit(id: string): void {
+    this.openVisitId.set(id);
   }
 
   protected dismissVisit(): void {
@@ -687,6 +824,8 @@ export class ClientAppointments {
   }
 
   protected requestCancel(id: AppointmentId): void {
+    // A fresh sheet asks afresh: the last refusal was about the last ask.
+    this.store.clearCancelError();
     this.confirmingId.set(id);
     this.cancelReason.set(DEFAULT_CANCEL_REASON);
   }
@@ -697,7 +836,8 @@ export class ClientAppointments {
 
   protected async confirmCancel(): Promise<void> {
     const id = this.confirmingId();
-    if (!id) return;
+    // The button is disabled then; this holds for any other way in.
+    if (!id || this.cancelRefusedForGood()) return;
     const cancelled = await this.store.cancel(id, this.cancelReason());
     if (cancelled) {
       this.confirmingId.set(null);
@@ -712,6 +852,29 @@ export class ClientAppointments {
       CANCELLABLE_STATUSES.has(appointment.status.kind) &&
       !this.windowClosed(appointment)
     );
+  }
+
+  /**
+   * «Премести» is offered only for a visit the client can actually move: one
+   * the window still allows (the same rule a cancellation is refused by) AND
+   * one holding a seat that is theirs to move — the domain's rule, the one
+   * the server refuses `shop_only` by. A visit left holding only somebody
+   * the shop added would open a move that can only be refused.
+   */
+  protected canMove(appointment: Appointment): boolean {
+    return (
+      this.canCancel(appointment) &&
+      appointment.hasSeatTheBookerCanMove(this.store.owner())
+    );
+  }
+
+  /**
+   * Movable by the window, but nothing on it is the client's to move — only
+   * the shop can. Said, rather than leaving the verb to silently vanish; the
+   * shop's number is already one of the verbs when the catalogue knows it.
+   */
+  protected shopMovesOnly(appointment: Appointment): boolean {
+    return this.canCancel(appointment) && !this.canMove(appointment);
   }
 
   /** Still cancellable by STATUS, but the free window has passed. */
@@ -751,7 +914,7 @@ export class ClientAppointments {
   // ── Formatting ───────────────────────────────────────────────────────
 
   /** One day cell's announcement — the visit, or how many there are. */
-  protected dayAriaLabel(visits: readonly VisitVm[]): string {
+  protected dayAriaLabel(visits: readonly ClientVisitVm[]): string {
     const first = visits[0];
     if (!first) return '';
     if (visits.length === 1) {
@@ -763,7 +926,7 @@ export class ClientAppointments {
     });
   }
 
-  protected fullDayLabel(visit: VisitVm): string {
+  protected fullDayLabel(visit: ClientVisitVm): string {
     return visit.appointment.timeSlot.start.toLocaleString(this.locale(), {
       weekday: 'long',
       day: 'numeric',
@@ -771,17 +934,26 @@ export class ClientAppointments {
     });
   }
 
+  /**
+   * Why a cancel did not go through — in the SERVER's words when the
+   * catalogue has them (`wordError`, the rule the booking flow's review step
+   * follows too). Unreadable cancellation terms say to try again in a
+   * moment, and the sheet stays open on the same button to do exactly that;
+   * a closed window names its hours. The gateway's own "something went
+   * wrong" is only the fallback.
+   */
   protected translateCancelError(): string | null {
     const error = this.store.cancelError();
     if (!error) return null;
-    return translateDomainError(this.transloco, {
-      code: error.code,
-      params: error.params,
-    });
-  }
-
-  protected translateListError(): string {
-    return translateDomainError(this.transloco, { code: 'repository_failure' });
+    // A closed window sends the client to the shop, in the words the call
+    // beside it earns (`cancelCallHref`).
+    const params = {
+      ...error.params,
+      reach: this.transloco.translate(shopReachKey(this.cancelCallHref())),
+    };
+    return wordError(error, (code) =>
+      translateDomainError(this.transloco, { code, params }),
+    );
   }
 
   // ── Internals ────────────────────────────────────────────────────────
@@ -794,47 +966,36 @@ export class ClientAppointments {
     return value.charAt(0).toLocaleUpperCase(this.locale()) + value.slice(1);
   }
 
-  private toVisit(appointment: Appointment, upcoming: boolean): VisitVm {
-    const start = appointment.timeSlot.start;
+  /**
+   * The calendar's and the sheet's view of a visit, built FROM its row: the
+   * title (the services, deduplicated — a party of three having the same
+   * cut is one thing being done, three times) and the barber's word (one
+   * barber the catalogue no longer lists is still ONE barber, never
+   * «1 бръснари») are the row's own, so the row and the sheet it opens
+   * cannot word the visit apart.
+   */
+  private toVisit(
+    appointment: Appointment,
+    row: VisitRowVm,
+    lookup: VisitLookup,
+    locale: string,
+  ): ClientVisitVm {
     const barberIds = appointment.barberIds();
-    const barber =
-      barberIds.length === 1
-        ? this.catalog
-            .barberVms()
-            .find((candidate) => candidate.id === barberIds[0]?.value)
-        : undefined;
-
-    const services = appointment.seats
-      .map((seat) => this.catalog.findService(seat.serviceId.value))
-      .filter((service) => service !== undefined)
-      .map((service) =>
-        this.content.text({ en: service.name.en, bg: service.name.bg }),
-      );
-    // Deduplicated: a party of three having the same cut is one thing being
-    // done, three times — the row says WHAT, and the sheet says how many.
-    const uniqueServices = [...new Set(services)];
-
+    const single =
+      barberIds.length === 1 ? (barberIds[0]?.value ?? null) : null;
+    const trailing = row.trailing;
     return {
-      id: appointment.id.value,
+      id: row.id,
       appointment,
-      weekdayShort: start.toLocaleString(this.locale(), { weekday: 'short' }),
-      dayOfMonth: Number(start.toISO().slice(8, 10)),
-      title:
-        uniqueServices.join(' · ') ||
-        this.transloco.translate('appointments.visit.unknownService'),
-      barberLabel: barber
-        ? this.content.text(barber.name)
-        : this.transloco.translate('appointments.visit.severalBarbers', {
-            count: barberIds.length,
-          }),
-      barberAvatarSrc: barber?.avatarSrc ?? null,
-      barberMonogram: barber ? this.content.text(barber.name) : '',
-      multipleBarbers: barberIds.length !== 1,
-      timeLabel: start.toLocaleString(this.locale(), {
+      title: row.title,
+      barberLabel: trailing?.kind === 'barber' ? trailing.name : '',
+      barberAvatarSrc: single === null ? null : lookup.barberAvatarSrc(single),
+      barberMonogram: single === null ? '' : (lookup.barberName(single) ?? ''),
+      timeLabel: appointment.timeSlot.start.toLocaleString(locale, {
         hour: '2-digit',
         minute: '2-digit',
       }),
-      upcoming,
+      upcoming: row.upcoming,
       status: appointment.status.kind,
     };
   }
@@ -842,7 +1003,7 @@ export class ClientAppointments {
   private buildMonth(
     year: number,
     month: number,
-    byDay: ReadonlyMap<string, VisitVm[]>,
+    byDay: ReadonlyMap<string, ClientVisitVm[]>,
   ): VisitMonthVm {
     const pad = (value: number) => String(value).padStart(2, '0');
     const firstOfMonth = Date.UTC(year, month - 1, 1);
@@ -855,7 +1016,7 @@ export class ClientAppointments {
         dayKey: '',
         dayOfMonth: null,
         isToday: false,
-        visits: [] as readonly VisitVm[],
+        visits: [] as readonly ClientVisitVm[],
       })),
       ...Array.from({ length: days }, (_, index) => {
         const dayKey = `${year}-${pad(month)}-${pad(index + 1)}`;

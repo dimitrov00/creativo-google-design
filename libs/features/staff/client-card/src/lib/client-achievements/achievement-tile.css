@@ -1,0 +1,18 @@
+/*
+ * A MEDAL TILE — layout only. The medal draws its disc, ring, rim, meter,
+ * title, caption and state layer itself (`button[uiMedal]`); the tile
+ * only takes the slot its rail or grid hands it. No `display` of its own:
+ * the DS lays the host on its row's tracks (medal.css, ONE ROW, SHARED
+ * TRACKS), so the words of a row share their lines.
+ */
+
+:host {
+  min-inline-size: 0;
+}
+
+/* The tile is an origin: a detail pushed from it comes back here, and the
+   editor focuses it again. Focused from the keyboard it must never sit
+   under the bar above or the dock below (§2.3). */
+.achievement-tile__medal {
+  scroll-margin-block: var(--modal-sheet-origin-margin);
+}

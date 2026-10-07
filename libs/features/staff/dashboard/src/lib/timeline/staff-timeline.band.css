@@ -1,0 +1,293 @@
+/*
+ * THE BAND AND ITS HANDLES — the chair timeline's editing layer: the block
+ * stretched down every chair, the two edge capsules that resize it, the
+ * band's name and the readout on the ruler, and the chip back to the band.
+ *
+ * Its own stylesheet because a component stylesheet has a budget (warning
+ * 10 kB, error 20 kB — recalibrated 2026-09-26): the one file had crossed
+ * the warning line at 10.09 kB minified. The picture — the frame, the
+ * ruler, the rows, the bars and the now-line — stays in
+ * `staff-timeline.css`; this is what a finger moves. Unscoped like the rest
+ * of the feature.
+ *
+ * The split is in the file, not in the cascade. This sheet is the original's
+ * next run of chapters, cut at a chapter boundary with no rule text changed,
+ * and it is listed directly after `staff-timeline.css` in the same
+ * `styleUrls` — so every rule lands in the document in exactly the order it
+ * had in one file. No rule here now follows a rule it used to precede, or
+ * precedes one it used to follow; no two rules that share an element and a
+ * property changed their relative order, because no two rules did.
+ */
+
+/* ── The band ───────────────────────────────────────────────────────── */
+
+/* The block, once, over every chair: the grid's carve-out — a filled
+   rectangle with a border, a glyph and a name — stretched down the rows. */
+.staff-timeline__band {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: calc(
+    var(--staff-timeline-rail) + var(--staff-bar-from, 0) *
+      var(--staff-timeline-extent)
+  );
+  inline-size: max(
+    calc(var(--staff-bar-span, 0) * var(--staff-timeline-extent)),
+    calc(var(--sys-space-unit) * 3)
+  );
+  z-index: 3;
+  display: flex;
+  align-items: flex-start;
+  overflow: hidden;
+  padding: calc(var(--sys-space-unit) * 0.75) var(--sys-space-tight);
+  border: 1px solid var(--sys-color-separator);
+  border-radius: var(--control-radius-subtle);
+  background: var(--sys-color-fill);
+  color: var(--sys-color-secondary-label);
+  font: inherit;
+  text-align: start;
+  cursor: grab;
+  /* The browser keeps BOTH pans until the hold fires: a finger that travels
+     scrolls the day, along either axis, and can no longer arm. */
+  touch-action: manipulation;
+}
+
+.staff-timeline__band[inert] {
+  cursor: default;
+}
+
+/* ALL DAY. A band that reaches both ends of the axis has no edge on screen
+   to say it is there, so it says so with the hatch the grid uses for hours
+   that are taken. */
+.staff-timeline__band[data-whole] {
+  background-image: repeating-linear-gradient(
+    -45deg,
+    color-mix(in srgb, var(--sys-color-separator) 70%, transparent) 0 4px,
+    transparent 4px 12px
+  );
+}
+
+/* Lifted: the shadow says "this one", and keeps saying it under reduced
+   motion, where there is nothing else to take away. */
+.staff-timeline__band[data-moving] {
+  z-index: 5;
+  box-shadow: var(--sys-elevation-overlay);
+}
+
+/* The band's name lives on the ruler (below); its face carries only the
+   wash of what has gone. Padding kept for the focus ring's sake. */
+.staff-timeline__band-elapsed {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: 0;
+  inline-size: calc(var(--staff-band-elapsed, 0) * 100%);
+  background-color: color-mix(
+    in srgb,
+    var(--sys-color-background) 60%,
+    transparent
+  );
+  background-image: repeating-linear-gradient(
+    -45deg,
+    color-mix(in srgb, var(--sys-color-separator) 60%, transparent) 0 5px,
+    transparent 5px 10px
+  );
+  pointer-events: none;
+}
+
+.staff-timeline__band:focus-visible {
+  outline: var(--sys-focus-ring-width) solid var(--sys-color-ring);
+  outline-offset: var(--sys-focus-ring-offset);
+}
+
+/* ── The handles ────────────────────────────────────────────────────── */
+
+/* Vertical capsules on the band's two edges, centred down the rows; the
+   grid's handles, turned. The hit surface straddles the edge — 22px out
+   and up to 22px in, never more than half the band — so the two never
+   steal from each other or from what lies beside them. */
+.staff-timeline__handle {
+  --staff-handle-in: min(
+    22px,
+    calc(var(--staff-bar-span, 0) * var(--staff-timeline-extent) / 2)
+  );
+
+  position: absolute;
+  inset-block-start: 50%;
+  z-index: 6;
+  inline-size: calc(var(--sys-space-unit) * 5);
+  block-size: calc(var(--sys-space-unit) * 10);
+  translate: -50% -50%;
+
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid var(--sys-color-separator);
+  border-radius: var(--control-radius-capsule);
+  background: var(--sys-color-surface);
+  color: var(--sys-color-foreground);
+  box-shadow: var(--sys-elevation-overlay);
+  cursor: ew-resize;
+  touch-action: manipulation;
+}
+
+.staff-timeline__handle[data-edge='start'] {
+  inset-inline-start: calc(
+    var(--staff-timeline-rail) + var(--staff-bar-from, 0) *
+      var(--staff-timeline-extent)
+  );
+}
+
+.staff-timeline__handle[data-edge='end'] {
+  inset-inline-start: calc(
+    var(--staff-timeline-rail) +
+      (var(--staff-bar-from, 0) + var(--staff-bar-span, 0)) *
+      var(--staff-timeline-extent)
+  );
+}
+
+.staff-timeline__handle::before {
+  content: '';
+  position: absolute;
+  inset-block-start: 50%;
+  translate: 0 -50%;
+  min-block-size: 44px;
+  block-size: 100%;
+}
+
+.staff-timeline__handle[data-edge='start']::before {
+  inset-inline-start: calc(50% - 22px);
+  inline-size: calc(22px + var(--staff-handle-in));
+}
+
+.staff-timeline__handle[data-edge='end']::before {
+  inset-inline-start: calc(50% - var(--staff-handle-in));
+  inline-size: calc(var(--staff-handle-in) + 22px);
+}
+
+.staff-timeline__handle .ui-icon {
+  pointer-events: none;
+}
+
+@media (hover: hover) {
+  .staff-timeline__handle:hover {
+    background: var(--sys-color-surface-secondary);
+  }
+}
+
+.staff-timeline__handle:active,
+.staff-timeline__handle[data-dragging] {
+  background: var(--sys-color-surface-secondary);
+}
+
+.staff-timeline__handle:active {
+  scale: 0.94;
+}
+
+.staff-timeline__handle:focus-visible {
+  outline: var(--sys-focus-ring-width) solid var(--sys-color-ring);
+  outline-offset: var(--sys-focus-ring-offset);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .staff-timeline__handle:active {
+    scale: none;
+  }
+}
+
+/* ── The readout ────────────────────────────────────────────────────── */
+
+/* The band's name, on the ruler over its middle: a quiet capsule in the
+   band's own materials, so the name and the thing share a look. */
+.staff-timeline__band-tag {
+  position: absolute;
+  inset-block: 2px;
+  inset-inline-start: calc(
+    var(--staff-readout-fraction, 0) * var(--staff-timeline-extent)
+  );
+  translate: -50% 0;
+  z-index: 4;
+  display: inline-flex;
+  align-items: center;
+  gap: calc(var(--sys-space-unit) * 0.75);
+  padding-inline: var(--sys-space-tight);
+  border: 1px solid var(--sys-color-separator);
+  border-radius: var(--control-radius-capsule);
+  background: var(--sys-color-surface);
+  color: var(--sys-color-secondary-label);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+/* On the ruler, hung under the boundary it names; the grid's pill, with
+   the grid's inks — inverted, red for a decision, amber for advice. */
+.staff-timeline__readout {
+  position: absolute;
+  inset-block-start: 2px;
+  inset-inline-start: calc(
+    var(--staff-readout-fraction, 0) * var(--staff-timeline-extent)
+  );
+  translate: -50% 0;
+  z-index: 7;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  padding: 2px var(--sys-space-compact);
+  border-radius: var(--control-radius-capsule);
+  background: var(--sys-color-foreground);
+  color: var(--sys-color-background);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.staff-timeline__readout > [uitext] {
+  color: inherit;
+}
+
+.staff-timeline__readout[data-tone='destructive'] {
+  background: var(--sys-color-destructive);
+  color: var(--sys-color-on-destructive);
+}
+
+.staff-timeline__readout[data-tone='warning'] {
+  background: var(--sys-color-warning);
+  color: var(--sys-color-on-warning);
+}
+
+/* BACK TO THE BAND — the grid's chip, at the left or right edge of the
+   track, clear of the pinned rail of chairs. */
+.staff-timeline__recenter {
+  position: absolute;
+  inset-block-start: 50%;
+  translate: 0 -50%;
+  z-index: 5;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sys-space-tight);
+  min-block-size: var(--control-size-small);
+  padding: 0 var(--sys-space-compact);
+  border: 1px solid var(--sys-color-separator);
+  border-radius: var(--control-radius-capsule);
+  background: var(--sys-color-surface);
+  color: var(--sys-color-foreground);
+  box-shadow: var(--sys-elevation-overlay);
+  font: var(--sys-font-caption);
+  font-variant-numeric: tabular-nums; /* the shorthand resets the app's tabular figures */
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.staff-timeline__recenter[data-edge='before'] {
+  inset-inline-start: calc(
+    var(--staff-timeline-rail) + var(--sys-space-compact)
+  );
+}
+
+.staff-timeline__recenter[data-edge='after'] {
+  inset-inline-end: var(--sys-space-compact);
+}
+
+.staff-timeline__recenter-time {
+  font-variant-numeric: tabular-nums;
+}

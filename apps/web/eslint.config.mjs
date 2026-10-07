@@ -36,17 +36,9 @@ export default [
         ],
         // Override or add rules here
         rules: {}
-    },
-    {
-        // Playwright/Node-side test tooling (apps/web/e2e/support) mints
-        // Firebase Admin custom tokens directly against the Auth emulator —
-        // it never ships in the app bundle, so the infrastructure-only
-        // firebase/* boundary (blueprint §1.2) doesn't apply here (mirrors
-        // how each libs/infrastructure/*/eslint.config.mjs turns this rule
-        // off for its own exempt zone).
-        files: ["apps/web/e2e/**/*.ts"],
-        rules: {
-            "no-restricted-imports": "off"
-        }
     }
+    // The e2e folder's `no-restricted-imports` exemption is inherited from
+    // the root config (a basePath-independent `**/e2e/**/*.ts` block): a
+    // pattern spelled `apps/web/e2e/**` here matched only when the nx
+    // executor set basePath to the workspace root.
 ];

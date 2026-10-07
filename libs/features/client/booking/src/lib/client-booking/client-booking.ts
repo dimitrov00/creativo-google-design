@@ -1,19 +1,33 @@
-import { Component, effect, inject, input, untracked } from '@angular/core';
+import {
+  Component,
+  computed,
+  effect,
+  inject,
+  input,
+  untracked,
+} from '@angular/core';
 import { TranslocoService } from '@jsverse/transloco';
 import {
   APPOINTMENT_REPOSITORY,
   AppointmentId,
   WAITLIST_READER,
+  shopReachKey,
 } from '@creativo/application/booking';
 import { NgTemplateOutlet } from '@angular/common';
-import { ActivatedRoute, Router } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { TranslocoDirective } from '@jsverse/transloco';
 import { UiButton, UiIcon } from '@creativo/ui/controls';
 import { UiSpacer, UiStack, UiToolbar } from '@creativo/ui/layout';
-import { UiFrameDirective, UiMaterialDirective } from '@creativo/ui/modifiers';
-import { UiStepper } from '@creativo/ui/patterns';
+import {
+  UiFrameDirective,
+  UiMaterialDirective,
+  UiTextDirective,
+} from '@creativo/ui/modifiers';
+import { UiEmptyState, UiStepper } from '@creativo/ui/patterns';
 import { AccountStateService } from '@creativo/features/client/account-state';
-import { BookingFlowStore } from '../booking-flow.store';
+import { CatalogContentService } from '@creativo/features/shared/catalog';
+import { BookingFlowStore, type MoveRefusalState } from '../booking-flow.store';
+import { carriedSeatsInReach } from './carried-reach';
 import {
   BookingChromeHeight,
   BookingChromeService,
@@ -65,14 +79,17 @@ import { BookingStepLayout } from '../step-layout/booking-step-layout';
     BookingScheduleStep,
     BookingServicesStep,
     BookingStepLayout,
+    RouterLink,
     TranslocoDirective,
     UiButton,
+    UiEmptyState,
     UiFrameDirective,
     UiMaterialDirective,
     UiIcon,
     UiSpacer,
     UiStack,
     UiStepper,
+    UiTextDirective,
     UiToolbar,
   ],
   templateUrl: './client-booking.html',
@@ -109,6 +126,7 @@ export class ClientBooking {
   private readonly waitlistReader = inject(WAITLIST_READER);
   private readonly appointments = inject(APPOINTMENT_REPOSITORY);
   private readonly transloco = inject(TranslocoService);
+  private readonly catalog = inject(CatalogContentService);
 
   /**
    * Land the deep link: fetch the caller's own request and rebuild the flow
@@ -133,17 +151,30 @@ export class ClientBooking {
 
   /**
    * Land "the same again": fetch the visit and rebuild the bag around it.
+   * The store keeps the visit as the booking's source, so the commit carries
+   * the rebooking edge (`bookedFromAppointmentId`).
    *
    * Owner-scoped like the waitlist read, and silent on every failure path —
    * a retired service or a foreign id is not worth an error screen over
    * what is still a perfectly good booking flow.
    */
   private async landRepeat(appointmentId: string): Promise<void> {
+    // A CONTINUATION that already holds this source (a reload after the
+    // landing ran) has nothing to do: the draft brought it back.
+    if (this.restoredDraft && this.store.bookedFrom() === appointmentId) return;
+
     const id = AppointmentId.create(appointmentId);
     if (id.isFailure()) return;
 
     const found = await this.appointments.findById(id.value);
     if (found.isFailure() || found.value === null) return;
+    if (this.restoredDraft) {
+      // The person's own flow is back (the sign-in round trip of somebody who
+      // arrived signed out and built the bag themselves): attach the visit it
+      // started from, never overwrite what they built.
+      this.store.attachRepeatSource(found.value);
+      return;
+    }
     this.store.repeat(found.value, (ordinal) =>
       this.transloco.translate('booking.party.guest', { number: ordinal }),
     );
@@ -152,22 +183,119 @@ export class ClientBooking {
   /**
    * Land a move: the same bag as the appointment being moved, and the store
    * told to COMMIT it as a move rather than as a second booking.
+   *
+   * NOT silent on failure, unlike the two landings above. They open a new
+   * booking either way, so falling through to the ordinary flow loses
+   * nothing; a move link that falls through opens a bookable flow whose
+   * Confirm writes a SECOND visit beside the one the person meant to move.
+   * Every way this cannot become that move is a refusal the shell shows
+   * instead of the wizard (`BookingFlowStore.moveRefusal`).
    */
   private async landReschedule(appointmentId: string): Promise<void> {
+    // Already moving THIS visit (a reload, or the round trip of a flow that
+    // landed signed in): the restored draft is the move, and its bag stays
+    // as built. What the grid decides it with (who is carried, which chairs
+    // are its own) is as old as the landing, so that alone is re-read from
+    // the stored visit. Otherwise the bag is rebuilt from the visit even on
+    // a continuation — a move is the SAME booking, so what is booked, not a
+    // bag assembled before the visit could be read, is what moves.
+    if (this.restoredDraft && this.store.rescheduleOf() === appointmentId) {
+      await this.store.rereadMove();
+      return;
+    }
     const id = AppointmentId.create(appointmentId);
-    if (id.isFailure()) return;
+    if (id.isFailure()) {
+      this.store.refuseMove('unavailable');
+      return;
+    }
 
     const found = await this.appointments.findById(id.value);
-    if (found.isFailure() || found.value === null) return;
+    if (found.isFailure() || found.value === null) {
+      this.store.refuseMove('unavailable');
+      return;
+    }
+    // Refuses on its own when the visit cannot move here — see `MoveRefusal`.
     this.store.rescheduleFrom(found.value, (ordinal) =>
       this.transloco.translate('booking.party.guest', { number: ordinal }),
     );
   }
 
+  /**
+   * A move whose carried seats the shop can no longer serve at all
+   * (`carriedSeatsInReach`): a barber or service is gone, or no active shop
+   * offers every carried service together. It ends in the call panel, not in
+   * a grid with nothing on it.
+   *
+   * Asked only once BOTH catalogue reads have answered SUCCESSFULLY. An
+   * unanswered read and a failed one both render as an empty list, and
+   * either would refuse every move with a companion on it: "the list did not
+   * arrive" is not "everyone is gone". The shops are the same, a third read:
+   * until it has answered successfully the shop question is not asked, and
+   * the barber, service and variant ones still are. A computed rather than a
+   * latched refusal: it follows the live catalogue, so a barber put back on
+   * the list reopens the move.
+   */
+  private readonly carriedRefusal = computed<MoveRefusalState | null>(() => {
+    const riders = this.store.riders();
+    if (riders.length === 0) return null;
+    if (!this.catalog.servicesKnown() || !this.catalog.barbersKnown()) {
+      return null;
+    }
+    return carriedSeatsInReach(
+      riders,
+      this.catalog.services(),
+      this.catalog.barbers(),
+      this.catalog.locationsKnown() ? this.catalog.locations() : null,
+    )
+      ? null
+      : { reason: 'carried_out_of_reach', locationId: this.store.locationId() };
+  });
+
+  /**
+   * Why this move cannot happen here, if it cannot: what the landing decided
+   * (`BookingFlowStore.moveRefusal`), else what the catalogue says about the
+   * people it carries. The shell shows it INSTEAD of the wizard.
+   *
+   * Never once the flow has ended. A move the server accepted is answered,
+   * and the live catalogue changing afterwards (the companion's barber taken
+   * off the list, say) must not replace its confirmation with a refusal.
+   */
+  protected readonly refusal = computed<MoveRefusalState | null>(() => {
+    const step = this.store.step();
+    if (step === 'confirmed' || step === 'waitlisted') return null;
+    return this.store.moveRefusal() ?? this.carriedRefusal();
+  });
+
+  /**
+   * `tel:` for the shop of a refused move, when the catalogue knows it — a
+   * companion only the shop can move is one phone call away, so the refusal
+   * offers the call rather than just describing it.
+   */
+  protected readonly refusalCallHref = computed(() => {
+    const locationId = this.refusal()?.locationId ?? null;
+    if (locationId === null) return null;
+    const shop = this.catalog
+      .locations()
+      .find((candidate) => candidate.id.equals(locationId));
+    return shop ? `tel:${shop.phone.e164}` : null;
+  });
+
+  /**
+   * How the refusal's copy sends the client to the shop: "call" beside the
+   * call button, "get in touch" when there is no number to dial — a shop
+   * missing from the active catalogue, or locations still loading.
+   */
+  protected readonly reachKey = computed(() =>
+    shopReachKey(this.refusalCallHref()),
+  );
+
   /** One-shot latch — the deep link lands exactly once per visit. */
   private waitlistLanded = false;
   private repeatLanded = false;
   private rescheduleLanded = false;
+
+  /** A draft came back in the constructor — see the continuation rule there. */
+  private restoredDraft = false;
 
   constructor() {
     // A draft resumes only on a CONTINUATION, never on a fresh arrival.
@@ -185,15 +313,26 @@ export class ClientBooking {
     // next reload, which would otherwise restore a flow the user had just
     // been shown the start of.
     const params = this.route.snapshot.queryParamMap;
-    // `?repeat=` starts a NEW booking that happens to be prefilled — the
-    // draft it replaces must go, or the prefill lands on top of it.
-    if (params.has('repeat') || params.has('reschedule')) {
-      this.store.clearDraft();
-    } else if (params.has('step') || params.has('waitlist')) {
-      this.store.restore();
+    // A `?step=` is a CONTINUATION whatever rides beside it: the sign-in
+    // round trip comes back as `?step=schedule&repeat=…` (the source it could
+    // not read signed out), and the machine writes `step` next to a landed
+    // `?repeat=` too, so a reload carries both. Clearing the draft there
+    // threw away the bag and the day the round trip exists to keep.
+    //
+    // Without a step, `?repeat=` / `?reschedule=` is a FRESH arrival that
+    // starts a new, prefilled flow — the draft it replaces must go, or the
+    // prefill lands on top of it.
+    if (params.has('step') || params.has('waitlist')) {
+      this.restoredDraft = this.store.restore();
     } else {
       this.store.clearDraft();
     }
+
+    // A move link binds the flow to THAT move before anything is read:
+    // until the visit lands (or is refused), Confirm cannot quietly become a
+    // new booking — see `BookingFlowStore.expectMove`.
+    const moveId = params.get('reschedule');
+    if (moveId) this.store.expectMove(moveId);
 
     // The deep link can only be honoured once the PRINCIPAL is live: the
     // request is owner-readable, and on a cold tab Firebase auth hydrates
@@ -212,13 +351,21 @@ export class ClientBooking {
 
     // Same rule, same reason: the appointment is owner-readable, and on a
     // cold tab Firebase auth hydrates asynchronously.
+    //
+    // Both claim FIRST. The claim releases a restored source some OTHER
+    // account read, and the landings' "already holding this visit" shortcut
+    // must see the flow after that release — not before it, which is where
+    // effect order alone would put it (the claim effect is declared last).
     effect(() => {
       const principal = this.accountState.principal();
       const repeatId = this.repeat();
       if (this.repeatLanded || !repeatId) return;
       if (principal.kind !== 'active') return;
       this.repeatLanded = true;
-      untracked(() => void this.landRepeat(repeatId));
+      untracked(() => {
+        this.store.claim(principal.uid.value);
+        void this.landRepeat(repeatId);
+      });
     });
 
     effect(() => {
@@ -227,7 +374,10 @@ export class ClientBooking {
       if (this.rescheduleLanded || !moveId) return;
       if (principal.kind !== 'active') return;
       this.rescheduleLanded = true;
-      untracked(() => void this.landReschedule(moveId));
+      untracked(() => {
+        this.store.claim(principal.uid.value);
+        void this.landReschedule(moveId);
+      });
     });
 
     // State → URL. Depends on the machine ONLY. `replaceUrl` stays false so
@@ -269,9 +419,10 @@ export class ClientBooking {
       });
     });
 
-    // Sign-in can land mid-flow (the review step's round trip). Claiming is
-    // a no-op on an already-claimed party, so re-running on unrelated
-    // principal changes is harmless.
+    // Sign-in can land mid-flow (the review step's round trip). Claiming for
+    // the account that already holds the party is a no-op, so re-running on
+    // unrelated principal changes is harmless; a DIFFERENT account re-binds
+    // the party to itself (see `BookingFlowStore.claim`).
     effect(() => {
       const principal = this.accountState.principal();
       if (principal.kind === 'active') {

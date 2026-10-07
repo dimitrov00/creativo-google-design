@@ -27,7 +27,7 @@
  * the host claims the viewport, the scroller claims what is left of it.
  *
  * The toolbar is `position: fixed` while sticky and reserves no flow space,
- * so the months pass BENEATH it and dissolve into its scrim; the heading
+ * so the months pass BENEATH it and dissolve under its key; the heading
  * clears it with its own padding.
  */
 :host([data-view='calendar']) {
@@ -46,12 +46,82 @@
 :host([data-view='calendar']) ui-calendar-scroller {
   flex: 1;
   min-block-size: 0;
+  /* THE BAR'S CLEARANCE, stated once on the scroll box it overlays: every
+     scroll into view — a month by name, a day brought in by its focus as
+     the keyboard walks the grid — lands below the key, never under the
+     bar. A month adds only its own air to this (its margin, below);
+     padding and margin ADD, so the bar's height is said here alone. */
+  scroll-padding-block-start: var(--appointments-calendar-bar);
 }
 
-:host([data-view='calendar']) .appointments__head {
+/*
+ * ── The calendar's bar is SOLID on its own strip ───────────────────────
+ *
+ * The scrim bar is the LIST view's: a ramp the large title dissolves into
+ * on its way under the controls, with whatever is beneath still showing
+ * through — right over a title, wrong over a grid of dates. In this view
+ * the bar is two rows and a month runs under both, so the previous month's
+ * last row stood INSIDE the ‹ chip and the view switch, greyed by the
+ * ramp's near-opaque top (review r4: «28 29 30» behind the controls at
+ * rest, on every width and in both themes). A row of figures under the
+ * controls is noise, however faint; a bar with a weekday key is a header
+ * (iOS Calendar's month view, the staff schedule's week strip), and a
+ * header is solid.
+ *
+ * So the bar's own box takes the page's ground, and the toolbar's ramp —
+ * the SAME smootherstep every bar in the app dissolves by, untouched — is
+ * hung off the bar's bottom edge over the toolbar's own 3 rem overhang:
+ * a month scrolling up fades out under the key instead of being cut at it,
+ * and nothing shows through the controls. Two geometry properties on the
+ * DS's pseudo-element, no restated gradient.
+ */
+:host([data-view='calendar']) ui-toolbar {
+  background: var(--sys-color-background);
+}
+
+:host([data-view='calendar']) ui-toolbar::before {
+  inset-block-start: 100%;
+  block-size: 3rem;
+}
+
+:host([data-view='calendar']) .appointments__head,
+:host([data-view='calendar']) .appointments__status {
   padding-block-start: calc(
-    var(--control-size-large) + var(--sys-space-comfortable)
+    var(--appointments-calendar-bar) + var(--sys-space-comfortable)
   );
+}
+
+/*
+ * ── The calendar's bar: the controls, then the weekday key ─────────────
+ *
+ * Both rows have a DECLARED height, so everything that must clear the bar
+ * (the heading above, a month scrolled to by name) is plain CSS rather than
+ * a measurement racing the first scroll: row one keeps the bar's standing
+ * `--control-size-large`, and the key row is a caption line plus the grid's
+ * own compact pad with room to spare — rem-sized like both, so it scales
+ * with them.
+ */
+:host {
+  --appointments-weekday-row: var(--sys-space-loose);
+  --appointments-calendar-bar: calc(
+    var(--control-size-large) + var(--appointments-weekday-row)
+  );
+}
+
+/*
+ * The key lands on EXACTLY the measure the months use, or its letters stop
+ * lining up with the columns they label: the toolbar already pads itself by
+ * the page gutter, so the cap is the content column less that gutter, and
+ * centring does the rest. (The scroller hides its scrollbar, so a classic
+ * one cannot narrow the months under the key.)
+ */
+.appointments__weekdays {
+  inline-size: 100%;
+  max-inline-size: calc(
+    var(--sys-container-content) - 2 * var(--sys-space-regular)
+  );
+  block-size: var(--appointments-weekday-row);
+  margin-inline: auto;
 }
 
 /*
@@ -98,132 +168,24 @@
 }
 
 /*
- * ── The jump pills ─────────────────────────────────────────────────────
- * Not `ui-chip`: a chip is a filter that changes what you see, and these
- * change where you ARE. The selected one is filled because it states the
- * current position rather than a chosen option.
+ * ── The browser under the bar ──────────────────────────────────────────
+ * The jump pills and their rail are the shared browser's own now
+ * (`lib-visit-pills`, client-card revision 3 §3.11 — moved from this page
+ * value for value: 36 tall, `subheadline` 600, the control fill, the
+ * current one inverted, the viewport bleed with the first pill on the
+ * content column). What the page still says is how far a heading the pills
+ * jump to stands clear of the FLOATING bar when it lands — the bar's
+ * standing height plus the page's own section gap — which is also where
+ * the browser's scroll spy starts counting a heading as current.
  */
-.appointments__pills {
-  padding-block: var(--sys-space-tight);
-}
-
-.appointments__pill {
-  flex: 0 0 auto;
-  min-block-size: var(--control-size-small);
-  padding-inline: var(--sys-space-regular);
-  border: 0;
-  border-radius: var(--control-radius-capsule);
-  background: var(--sys-color-fill);
-  color: var(--sys-color-foreground);
-  font: var(--sys-font-subheadline);
-  font-weight: 600;
-  cursor: pointer;
-  white-space: nowrap;
-  transition:
-    background-color var(--sys-motion-duration-regular)
-      var(--sys-motion-ease-standard),
-    color var(--sys-motion-duration-regular) var(--sys-motion-ease-standard);
-}
-
-.appointments__pill[data-selected] {
-  background: var(--sys-color-foreground);
-  color: var(--sys-color-background);
-}
-
-.appointments__pill:focus-visible {
-  outline: var(--sys-focus-ring-width) solid var(--sys-color-ring);
-  outline-offset: var(--sys-focus-ring-offset);
-}
-
-/* The section heading, in the grouped-list caption register. */
-.appointments__section-head {
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  padding-inline-start: var(--sys-space-compact);
-  /* Scrolled to by the jump pills — it must clear the sticky bar when it
-     lands, not hide behind it. */
-  scroll-margin-block-start: calc(
+.appointments__browser {
+  --visit-list-anchor-clearance: calc(
     var(--control-size-large) + var(--sys-space-comfortable)
   );
 }
 
 .appointments__month {
   padding-block-end: var(--sys-space-compact);
-}
-
-/*
- * ── A visit row ────────────────────────────────────────────────────────
- * WHEN as a stamp, WHAT as the headline, WITH WHOM underneath.
- */
-.visit__date {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 0.0625rem;
-  /* The row's own height comes from this stamp plus the list row's padding —
-     the reference proportion. A 3rem stamp with a headline beside it made a
-     row half again as tall as it needed to be for two short lines. */
-  inline-size: 2.5rem;
-  block-size: 2.5rem;
-  flex: none;
-  border-radius: var(--control-radius-subtle);
-  background: var(--sys-color-fill);
-  color: var(--sys-color-secondary-label);
-}
-
-/* Still ahead: the shop's own ink. Once it is a memory, the stamp goes
-   quiet — a history where every row shouts has no upcoming visit. */
-/* The INK cut, not the fill. Both children are bare spans — a 10px uppercase
-   weekday and an 18px numeral — so they inherited `--sys-color-accent`, which
-   this system measures at 3.04:1 AS TYPE, under the 4.5:1 floor. The
-   background is untouched: as a fill it is doing the job it is toned for. */
-.visit__date[data-upcoming] {
-  background: color-mix(in srgb, var(--sys-color-accent) 16%, transparent);
-  color: var(--sys-color-accent-label);
-}
-
-.visit__weekday {
-  /* `--sys-font-caption2` never existed — the fallback was carrying this
-     the whole time, and the `font-size` below overrides the role's size
-     anyway. Naming the real token stops the fake one being copied. */
-  font: var(--sys-font-caption);
-  font-size: 0.625rem;
-  line-height: 1;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-}
-
-.visit__day {
-  font: var(--sys-font-headline);
-  line-height: 1.1;
-}
-
-/* A service name may wrap; `ui-list-row`'s label is single-line by default,
-   and the DS's own note says a multi-line identity stack resets that in its
-   own content. */
-.visit__identity,
-.visit__identity > span {
-  white-space: normal;
-}
-
-.visit__with {
-  display: flex;
-  align-items: center;
-  gap: var(--sys-space-tight);
-  min-inline-size: 0;
-}
-
-/*
- * A face at footnote scale — it sits BESIDE a footnote line and belongs to
- * it, so the DS's standing `small` control size (a tap target) is nearly
- * twice what this needs. Sized by the box; the media fills it.
- */
-.visit__face.ui-avatar {
-  inline-size: 1.25rem;
-  block-size: 1.25rem;
-  min-inline-size: 0;
-  flex: none;
 }
 
 /*
@@ -293,6 +255,18 @@
 }
 
 /*
+ * The verbs' run may use the sheet's safe inset. Its columns are air round
+ * 52 discs (the run centres at its 88 pitch and never reaches the edge on a
+ * 390 phone), so on a 330 phone four verbs keep their whole words — «В
+ * календара» is 75 wide, and a column squeezed to the inset's 73.7 cut it
+ * to «В календар…» — while nothing comes nearer the edge than the discs
+ * already stand. Measured in the capture (scratchpad/v2/shots/C1).
+ */
+.visit-sheet__body > .ui-quick-actions {
+  margin-inline: calc(-1 * var(--sys-space-compact));
+}
+
+/*
  * A status badge HUGS its word. Left to the stack it sits in it stretches to
  * the sheet's full width, which reads as a filled banner — a much louder
  * claim than "this one was a no-show".
@@ -321,43 +295,12 @@
   background: color-mix(in srgb, var(--sys-color-accent) 88%, black);
 }
 
-/*
- * ── "This list is narrowed" ────────────────────────────────────────────
- * A DOT, not a recoloured glyph.
- *
- * Tinting the funnel says "this control is interactive", which every control
- * in the bar already is — the difference between the two states was a shade,
- * and shades do not survive a glance. A mark that is ABSENT or PRESENT does:
- * it is the iOS badge grammar (Mail's own filter, an unread count), read at
- * the corner rather than in the middle of a shape.
- *
- * The ring is the bar's own backdrop, so the dot reads as sitting ON the
- * button rather than inside it, and stays legible over the scrim in both
- * themes.
- */
-.appointments__filter {
-  position: relative;
-  overflow: visible;
-}
-
-.appointments__filter[data-filtering]::after {
-  content: '';
-  position: absolute;
-  inset-block-start: 0.125rem;
-  inset-inline-end: 0.125rem;
-  inline-size: 0.625rem;
-  block-size: 0.625rem;
-  border-radius: var(--control-radius-capsule);
-  background: var(--sys-color-accent);
-  box-shadow: 0 0 0 0.125rem var(--sys-color-background);
-}
-
-/* A month scrolled to by name lands UNDER the floating bar unless it says
-   otherwise — the same clearance the list's section headings take. */
+/* A month scrolled to by name lands the same air under the key that the
+   list's section headings take under their bar. The bar itself is the
+   scroller's clearance (`scroll-padding`, above), never restated here: the
+   two lengths add. */
 .appointments [uiCalendarMonth] {
-  scroll-margin-block-start: calc(
-    var(--control-size-large) + var(--sys-space-comfortable)
-  );
+  scroll-margin-block-start: var(--sys-space-comfortable);
 }
 
 /*
@@ -367,65 +310,6 @@
  */
 :host([data-view='calendar']) .appointments {
   position: relative;
-}
-
-/*
- * ── A visit's verbs ────────────────────────────────────────────────────
- * The Maps place-card / Contacts-card run: equal columns, each a glyph on
- * its own tinted disc with the word beneath. Read at a glance, and still
- * says what it does — which a bare glyph does not and a column of
- * full-width buttons says four times too loudly.
- */
-.visit-actions {
-  display: grid;
-  grid-auto-flow: column;
-  grid-auto-columns: 1fr;
-  gap: var(--sys-space-compact);
-}
-
-.visit-actions__item {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: var(--sys-space-tight);
-  padding-block: var(--sys-space-compact);
-  border: 0;
-  border-radius: var(--control-radius-regular);
-  background: none;
-  /* Ink, not fill: this button carries an 11px caption beside its glyph, and
-     the raw accent is 3.04:1 as type. The icon takes the darker cut with it
-     and still clears the 3:1 graphical floor comfortably. */
-  color: var(--sys-color-accent-label);
-  text-align: center;
-  text-decoration: none;
-  cursor: pointer;
-}
-
-.visit-actions__glyph {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  inline-size: var(--control-size-regular);
-  block-size: var(--control-size-regular);
-  border-radius: var(--control-radius-capsule);
-  background: color-mix(in srgb, var(--sys-color-accent) 16%, transparent);
-}
-
-.visit-actions__item:focus-visible {
-  outline: var(--sys-focus-ring-width) solid var(--sys-color-ring);
-  outline-offset: var(--sys-focus-ring-offset);
-}
-
-/* Hover and press ride the house grammar: the disc deepens, and the whole
-   column answers — including on touch, where there is no hover to rely on. */
-@media (hover: hover) {
-  .visit-actions__item:hover .visit-actions__glyph {
-    background: color-mix(in srgb, var(--sys-color-accent) 26%, transparent);
-  }
-}
-
-.visit-actions__item:active .visit-actions__glyph {
-  background: color-mix(in srgb, var(--sys-color-accent) 32%, transparent);
 }
 
 /* A note and an address wrap; the DS row label is one ellipsizing line by

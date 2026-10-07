@@ -1,0 +1,158 @@
+/*
+ * A STAFF ROW'S WORDS — the event head and the staff's fact in ONE run of
+ * lines (client-card revision 3 §2.5): the title over the whole text
+ * column, then the fact line with the fact at its end, then what follows
+ * (a second line, the client's quote) over the whole column again.
+ *
+ * Unscoped, as the schedule's recipes that lay the head out are: the
+ * head's lines are reached by the head's own published classes. Nothing
+ * here restyles a line: no ink, no face, no size of the head's is set.
+ * Only WHERE each line sits, and the end of the second one.
+ */
+
+/* A wrapping run. The lines centre on the 44 stamp exactly as a client's
+   row centres its head, so the two lists keep one geometry: 12 of padding
+   round 44, 68 tall. */
+.visit-row-words {
+  /* THE FACT LINE'S FLOOR (revision 3 review 2, fix-visits-r1): the least
+     width the fact line keeps beside the fact — the held barber (« · Иван»
+     is 55 in the 13px mono) and a time's five glyphs before it («10:00»,
+     39): a cut shop name is the line's grammar («Цент… · Иван»), a cut
+     figure is a wrong figure, so the fact drops to its own line before a
+     time would lose a digit. 23 units (92) is also what a plain amount
+     leaves the line at 330 (155 − 6 − 55 = 93.5), so those rows keep to
+     two lines there. It is the line's flex BASIS, so it decides where the
+     run breaks: see `.staff-event-head__line` below. */
+  --visit-row-words-line-floor: calc(var(--sys-space-unit) * 23);
+
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  align-content: center;
+  /* The least air between the fact line and the fact; the fact stands on
+     the trailing edge, so the air is nearly always more. */
+  column-gap: calc(var(--sys-space-unit) * 1.5);
+  min-inline-size: 0;
+  min-block-size: var(--control-size-regular);
+}
+
+/* The head and its run of lines step out of the layout: their lines are
+   this run's items. Everything the head hands down (its leading, its
+   scale) still reaches them. */
+.visit-row-words > .staff-event-head,
+.visit-row-words > .staff-event-head > .staff-event-head__lines {
+  display: contents;
+}
+
+.visit-row-words .staff-event-head__title {
+  order: 1;
+  flex: 0 0 100%;
+}
+
+/* THE SECOND LINE is shared. The fact keeps its width and the trailing
+   edge; the fact line YIELDS to it, its barber held against the ellipsis
+   as on every row, so the row stays two lines (68) and the facts of a
+   list end on one vertical line (revision 3 §2.5.2).
+
+   The yielding is the floor's doing. A wrapping run breaks on each item's
+   hypothetical size, and only then shrinks what shares a line: with the
+   line's own width as its basis (`auto`) the fact dropped to a third line
+   on every row the two did not fit — the open visit's «днес, 10:00 · Иван»
+   beside «▣ 1 · Този час» at 390 (line 140 + end 103 in a 215 column),
+   and every amount row at 330 (101 + 55 in 155). The basis is the FLOOR
+   instead: the run keeps the fact on the line wherever floor + gap + fact
+   fit, the line then grows into what is left and truncates its lead
+   («Отказан от с… · Иван», «Цент… · Иван»), and the fact drops to a line
+   of its own only where even the floor would not fit beside it (marks and
+   a figure at 330). `min-inline-size: 0`, so no content minimum overrides
+   the basis. The visit on screen leads with its time alone («10:00 ·
+   Иван», the presenter), so its line is whole beside «▣ 1 · Този час» at
+   390. Measured on the live sheet: 390 → one line on every row (a current
+   visit marked twice drops its end, its time whole); 330 → one line on a
+   plain amount («Цент… · Иван»), the marked rows and the capsule drop. */
+.visit-row-words .staff-event-head__line {
+  order: 2;
+  flex: 1 1 var(--visit-row-words-line-floor);
+  min-inline-size: 0;
+}
+
+/* The line that carries the fact is as tall as the tallest fact, the
+   capsule «Този час» (22): so every row of a list sets its title at one
+   height over its stamp, whichever fact ends it, and a fact that dropped
+   to its own line has a little air over it. The line's words centre in
+   it, as the head centres them on a glyph. */
+.visit-row-words .staff-event-head__title + .staff-event-head__line {
+  min-block-size: calc(var(--sys-space-unit) * 5.5);
+}
+
+/* A STATUS-LED ROW (review r5): a cancelled visit's first line is its
+   status word, whole — «Отказан от салона», the one fact the row is
+   about, and from the floor it was the lead the ellipsis took («Отказан
+   от с…» at 330, «Отказан от …» at 390 while the barber shared the line).
+   Its basis is its own width instead, so the run breaks on the whole
+   word: the struck amount stays beside it where both fit (390: 133 + 6 +
+   55 in 215) and drops to a line of its own where they do not (330: in
+   155), as the marks and the capsule already do there. The barber runs
+   the whole width under both. A word wider than the column alone still
+   ends in an ellipsis: there is nothing else to give. */
+.visit-row-words[data-lead-whole]
+  .staff-event-head__title
+  + .staff-event-head__line {
+  flex-basis: auto;
+}
+
+.visit-row-words > .visit-row-words__end {
+  order: 3;
+  flex: none;
+  margin-inline-start: auto;
+}
+
+/* Whatever follows runs the whole width: a waiting request's days, the
+   client's own words. */
+.visit-row-words .staff-event-head__line ~ .staff-event-head__line {
+  order: 4;
+  flex: 0 0 100%;
+}
+
+.visit-row-words .staff-event-head__quote {
+  order: 5;
+  flex: 0 0 100%;
+}
+
+/* ── THE END OF THE SECOND LINE ────────────────────────────────────────
+   The marks, then the fact, on one line that never wraps and never
+   shrinks: a figure cut short is a wrong figure. */
+.visit-row-words__end {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sys-space-compact);
+  white-space: nowrap;
+}
+
+.visit-row-words__marks {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sys-space-compact);
+}
+
+.visit-row-words__mark {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sys-space-tight);
+}
+
+.visit-row-words__status {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sys-space-tight);
+}
+
+/* The figure rides the fact line: its own leading would make the second
+   line taller than the line it ends, and a staff row would stand a hair
+   off a client's. Tabular, said again after the role's `font` shorthand
+   (it resets the app's figures), so the amounts of a list read as a
+   column. */
+.visit-row-words__figure {
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
