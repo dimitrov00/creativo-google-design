@@ -1,0 +1,28 @@
+{
+  // The seed's fixture bodies (tools/seed/fixtures/*.ts): every export is
+  // `satisfies Omit<XEntity, 'id'>` against @creativo/ecs-core, so a stale
+  // shape fails `pnpm nx typecheck seed-tools`, not a query (ECS migration
+  // §6 Phase 3, Risk 1, Risk 8). The `.mjs` writers import them through the
+  // esbuild path of load-domain.mjs; this config only type-checks them.
+  //
+  // Deliberately NOT a runtime name (tsconfig.lib.json and friends): the
+  // `@nx/js:typescript-sync` generator rewrites a runtime config's
+  // `references` from the project graph, and this project's graph edges
+  // come from the `.mjs` seed bundling the legacy libraries by path — none
+  // of which this config compiles. The one reference here is the library
+  // the fixture bodies are held to.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "outDir": "../../dist/out-tsc",
+    "composite": true,
+    "declaration": true,
+    "types": ["node"],
+    "rootDir": "../.."
+  },
+  "include": ["fixtures/**/*.ts"],
+  "references": [
+    {
+      "path": "../../libs/ecs-core/tsconfig.lib.json"
+    }
+  ]
+}

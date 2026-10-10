@@ -1,5 +1,8 @@
 import type { AuthClaims } from '../components/auth-claims.data';
-import type { Identifier } from '../components/identifier.data';
+import type {
+  Identifier,
+  ParsedIdentifier,
+} from '../components/identifier.data';
 import type { PipelineError } from '../components/pipeline-errors.data';
 import type { RepositoryError } from '../components/repository-errors.data';
 import type { Result } from '../components/result.data';
@@ -57,24 +60,35 @@ export type SaveOtp = (
 /**
  * Deliver a login code — the LOGIN-OTP sender identity, never shared with
  * a campaign sender (`console-otp-sender.adapter.ts` writes it through `Log`
- * today, as `console-otp-sender.ts` does).
+ * today, as `console-otp-sender.ts` does). The destination arrives parsed —
+ * its channel is the `kind` the edge parse or the stored `destinationType`
+ * named (`ParsedIdentifier.ofDestination`) — so no adapter ever infers an
+ * SMS from an e-mail by sniffing the string.
  */
 export type SendOtp = (
-  destination: Identifier,
+  destination: ParsedIdentifier,
   code: string,
 ) => Promise<Result<void, PipelineError>>;
 
 /**
  * The OTP's randomness and hashing (functions Q3): the pipeline draws a
  * code and a salt, hashes, and hands `OtpSystem.issue` the hash; on verify,
- * `hashCode` computes the `codeMatches` boolean `OtpSystem.verify` takes.
- * Implemented by `otp-crypto.adapter.ts` — node, and the fixed-code variant
- * for the emulator (today's `NodeOtpCrypto`/`FixedCodeOtpCrypto`).
+ * `codeMatches` answers the boolean `OtpSystem.verify` takes — the typed
+ * code hashed with the stored salt and compared with the stored hash in
+ * CONSTANT time (`timingSafeEqual`, as today's `NodeOtpCrypto.verify`), so
+ * no pipeline ever compares two hashes with `===`. Implemented by
+ * `otp-crypto.adapter.ts` — node, and the fixed-code variant for the
+ * emulator (today's `NodeOtpCrypto`/`FixedCodeOtpCrypto`).
  */
 export type OtpCrypto = {
   readonly nextCode: () => string;
   readonly nextSalt: () => string;
   readonly hashCode: (code: string, salt: string) => string;
+  readonly codeMatches: (
+    code: string,
+    salt: string,
+    expectedHash: string,
+  ) => boolean;
 };
 
 // ── Accounts by destination, and Admin Auth ───────────────────────────────
@@ -82,10 +96,11 @@ export type OtpCrypto = {
 /**
  * The account holding a phone or e-mail — the single-field users query
  * `where('phone' | 'email', '==', value)` (`firestore-user-repository.ts:175`,
- * no composite); `null` when none does.
+ * no composite), the field picked by the parsed destination's `kind`;
+ * `null` when none does.
  */
 export type FindUserByDestination = (
-  destination: Identifier,
+  destination: ParsedIdentifier,
 ) => Promise<Result<UserEntity | null, RepositoryError>>;
 
 /**
@@ -96,7 +111,7 @@ export type FindUserByDestination = (
  * `null` while the winner's stub is not written yet.
  */
 export type FindAuthUserByDestination = (
-  destination: Identifier,
+  destination: ParsedIdentifier,
 ) => Promise<Result<UserId | null, PipelineError>>;
 
 /**
@@ -109,7 +124,7 @@ export type FindAuthUserByDestination = (
  * e-mail is the race guard, not the users document.
  */
 export type ProvisionAuthUser = (
-  destination: Identifier,
+  destination: ParsedIdentifier,
 ) => Promise<Result<UserId | null, PipelineError>>;
 
 /** A custom sign-in token carrying `claims` (the tenant rides inside them). */
@@ -122,6 +137,20 @@ export type MintCustomToken = (
 export type SetClaims = (
   uid: UserId,
   claims: AuthClaims,
+) => Promise<Result<void, PipelineError>>;
+
+/**
+ * The Auth user's display name — what the header/menu account monogram reads
+ * through `AuthGateway.currentDisplayName()` (session-cached, no Firestore
+ * read). `completeRegistration` calls it after the registered `Update` with
+ * `"<firstName> <lastName>"` and IGNORES its Result — best-effort identity
+ * chrome that must never fail a complete registration (the monogram falls
+ * back to the identifier's initial), as today
+ * (`complete-registration.use-case.ts:266-274`).
+ */
+export type SetDisplayName = (
+  uid: UserId,
+  displayName: string,
 ) => Promise<Result<void, PipelineError>>;
 
 /**
@@ -141,4 +170,5 @@ export type IdentityPorts = {
   readonly provisionAuthUser: ProvisionAuthUser;
   readonly mintCustomToken: MintCustomToken;
   readonly setClaims: SetClaims;
+  readonly setDisplayName: SetDisplayName;
 };

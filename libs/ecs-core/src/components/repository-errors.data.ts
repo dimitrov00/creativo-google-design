@@ -12,6 +12,11 @@ export const RepositoryErrorCode = {
   ReadFailed: 'repo.read_failed',
   /** The store refused or failed a write. */
   WriteFailed: 'repo.write_failed',
+  /**
+   * A `Create` met a document already there (Firestore's ALREADY_EXISTS) —
+   * a lost create race or a replay; nothing of the plan was applied.
+   */
+  AlreadyExists: 'repo.already_exists',
   /** A document was read but is not the entity's shape. */
   Malformed: 'repo.malformed',
   /** The adapter itself could not be loaded (a lazy chunk failed). */
@@ -36,6 +41,11 @@ export const RepositoryError = {
 
   writeFailed(path: string | null, reason: string | null): RepositoryError {
     return { code: RepositoryErrorCode.WriteFailed, path, reason };
+  },
+
+  /** The document `path` a refused `Create` named; the store's reason is the code itself. */
+  alreadyExists(path: string | null): RepositoryError {
+    return { code: RepositoryErrorCode.AlreadyExists, path, reason: null };
   },
 
   malformed(path: string | null, reason: string | null): RepositoryError {

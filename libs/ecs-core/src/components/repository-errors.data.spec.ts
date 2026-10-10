@@ -6,6 +6,7 @@ describe('RepositoryError', () => {
     expect(Object.values(RepositoryErrorCode)).toEqual([
       'repo.read_failed',
       'repo.write_failed',
+      'repo.already_exists',
       'repo.malformed',
       'repository.unavailable',
     ]);
@@ -24,6 +25,11 @@ describe('RepositoryError', () => {
     ).toEqual({
       code: 'repo.write_failed',
       path: 'barberBusy/b_ivan__2026-10-07',
+      reason: null,
+    });
+    expect(RepositoryError.alreadyExists('auditLog/a1')).toEqual({
+      code: 'repo.already_exists',
+      path: 'auditLog/a1',
       reason: null,
     });
     expect(RepositoryError.malformed('users/u1', 'timeInterval')).toEqual({

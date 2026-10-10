@@ -548,6 +548,29 @@ export const ZonedTimeSystem = {
   },
 
   /**
+   * `epochMs` as an ISO-8601 instant on the zone's wall clock WITH the
+   * offset in force — `2026-10-10T14:00:00.000+03:00` in Sofia — the
+   * spelling `ZonedDateTime.toISO()` gave today's `*Iso` wire params in the
+   * shop's zone (milliseconds always, `±HH:MM` always; a zero offset prints
+   * `+00:00`). Read on the zone's clock, so the string names the same instant
+   * `parseIso` reads back.
+   */
+  isoOf(epochMs: number, zone: string): Result<string, TimeError> {
+    const clock = ZonedTimeSystem.wallClockOf(epochMs, zone);
+    if (!clock.ok) return clock;
+    const { dayKey, minuteOfDay, second, offsetMinutes } = clock.value;
+    const millisecond =
+      ((epochMs % MS_PER_SECOND) + MS_PER_SECOND) % MS_PER_SECOND;
+    const offset = Math.abs(offsetMinutes);
+    const sign = offsetMinutes < 0 ? '-' : '+';
+    return Result.ok(
+      `${describeWallClock(dayKey, minuteOfDay)}:${pad2(second)}.` +
+        `${String(millisecond).padStart(3, '0')}` +
+        `${sign}${pad2(Math.floor(offset / 60))}:${pad2(offset % 60)}`,
+    );
+  },
+
+  /**
    * A wall clock on a calendar day → the instant — the door every typed time
    * and every "Monday 09:00" comes through at the edge. DST is decided here,
    * explicitly (Europe/Sofia):

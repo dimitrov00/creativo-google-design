@@ -24,8 +24,10 @@
  *
  * ### Gift vouchers
  * Money already paid, drawn down by visits. The vouchers ARE the fixture
- * file `vouchers.json` under `@creativo/application/engagement/testing`,
- * which the mapper's spec parses and the in-memory reader serves, moved by
+ * file `vouchers.json` under `@creativo/ecs-core/testing` (moved there
+ * from `@creativo/application/engagement/testing`, which re-exports it, in
+ * the ECS migration's Phase 3a), which the mapper's spec parses and the
+ * in-memory reader serves, moved by
  * whole days from the fixtures' day to the shop's today (as the seasons
  * move): Георги HOLDS `GIFT50`, 25,00 € left of 50,00 € — the pass
  * «В портфейла» — beside one he spent and one the shop voided, which a
@@ -219,7 +221,7 @@ export function couponGrantWritesOf(book, catalog, today) {
 
 const VOUCHERS_FILE = join(
   WORKSPACE_ROOT,
-  'libs/application/engagement/src/testing/fixtures/loyalty/vouchers.json',
+  'libs/ecs-core/src/testing/fixtures/loyalty/vouchers.json',
 );
 
 /** How many days a date is past the last day of the month before it; none on a month's own last day. */

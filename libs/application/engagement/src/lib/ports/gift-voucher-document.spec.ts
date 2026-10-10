@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { ZonedDateTime } from '@creativo/domain/kernel';
 import type { GiftVoucher } from '@creativo/domain/engagement';
-import vouchersJson from '../../testing/fixtures/loyalty/vouchers.json';
+import { giftVouchersJson as vouchersJson } from '@creativo/ecs-core/testing';
 import {
   GIFT_VOUCHERS_COLLECTION,
   GIFT_VOUCHER_HOLDER_FIELD,

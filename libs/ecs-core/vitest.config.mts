@@ -28,6 +28,7 @@ export default defineConfig(() => ({
       exclude: [
         'src/index.ts',
         'src/testing.ts',
+        'src/testing/**',
         'src/ports/**',
         '**/*.spec.ts',
         '**/*.type-spec.ts',

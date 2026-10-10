@@ -10,6 +10,7 @@ import {
   createEnvironmentInjector,
   inject,
   makeEnvironmentProviders,
+  runInInjectionContext,
 } from '@angular/core';
 import { Observable } from 'rxjs';
 import { retryDelayMs } from './retry-schedule';
@@ -36,6 +37,25 @@ import { retryDelayMs } from './retry-schedule';
  *   cannot be cancelled — and simply warms the next call).
  * - `'promise'`: the call awaits the load, then the adapter.
  *
+ * ## Two forms of binding, moved one row at a time
+ * A binding names what answers the port in the loaded module in exactly one
+ * of two ways — the type refuses both, and neither:
+ *
+ * - `adapter: (m) => m.SomeAdapterClass` — the CLASS form: an `@Injectable`
+ *   class implementing the port, created by Angular (`injector.get`) in its
+ *   own small injector.
+ * - `factory: (m) => (injector) => m.someReadPorts(injector.get(SDK))` — the
+ *   FACTORY form ({@link FactoryPicker}): a plain port BUNDLE (an object of
+ *   function members) built by an `(sdkHandle) => bundle` closure export.
+ *   The returned `(injector) => bundle` is called directly — no class, no
+ *   injector of its own — with the scope's injector, INSIDE that injector's
+ *   injection context, so `inject()` works in it as in a provider factory
+ *   (a plain call outside one would throw NG0203).
+ *
+ * Both forms share the scope, the `methods` classification and
+ * `onLoadError`; a composition root moves its rows from `adapter` to
+ * `factory` one token at a time, and the class form goes with the last.
+ *
  * ## One load, one scope injector, one instance of everything
  * A {@link LazyAdapterScope} is imported once, however many ports and calls
  * race for it. Its providers (the SDK instances) live in ONE environment
@@ -43,7 +63,10 @@ import { retryDelayMs } from './retry-schedule';
  * it lists: each SDK instance is created once and shared. Each adapter class
  * is created once, on its first call, in its OWN small injector under the
  * scope's — so adapters share the SDK instances and still `inject()` root
- * services (Auth, Functions, the clock) exactly as before.
+ * services (Auth, Functions, the clock) exactly as before. Each bundle is
+ * created once too, on its first call, keyed by its binding's `factory`
+ * (two rows naming the same picker share one bundle, as two rows naming the
+ * same class share one adapter).
  *
  * ## Load failures are the port's own failure
  * A failed import (offline at first use, a stale deploy) or a creation that
@@ -85,6 +108,9 @@ import { retryDelayMs } from './retry-schedule';
  *   `initializeFirestore`, which throws `failed-precondition` once it has
  *   succeeded for the app — one broken adapter would take every data port
  *   down with it.
+ * - A bundle factory that throws holds no injector record, so there is no
+ *   NG0200 to avoid: nothing is cached, the scope stays, and the next call
+ *   calls the factory afresh.
  */
 
 /** How a lazy port method answers. */
@@ -92,7 +118,10 @@ export type LazyMethodKind = 'observable' | 'promise';
 
 /** What a scope's loader resolves to. */
 export interface LazyAdapterModule<M> {
-  /** The dynamically imported module(s) the adapter classes are picked from. */
+  /**
+   * The dynamically imported module(s) the adapter classes and the bundle
+   * factories are picked from.
+   */
   readonly module: M;
   /** Providers the adapters need that must load lazily too (SDK instances). */
   readonly providers: readonly (Provider | EnvironmentProviders)[];
@@ -119,7 +148,22 @@ export class LazyPortLoadError extends Error {
   }
 }
 
+/** The class form: picks an adapter class out of the loaded module. */
 type Picker<M, P> = (module: M) => Type<P>;
+
+/**
+ * The factory form: picks out of the loaded module the function that builds
+ * a port bundle from the scope's injector. Called once per scope injector,
+ * in its injection context.
+ */
+export type FactoryPicker<M, P> = (
+  module: M,
+) => (injector: EnvironmentInjector) => P;
+
+/** What answers a port: exactly one of an adapter class or a bundle factory. */
+type AdapterSource<M, P> =
+  | { readonly adapter: Picker<M, P>; readonly factory?: never }
+  | { readonly factory: FactoryPicker<M, P>; readonly adapter?: never };
 
 type Answer<F> = F extends (...args: never[]) => infer R ? R : never;
 
@@ -154,31 +198,45 @@ export type LazyPortMethods<P, F> = {
     : KindOf<P[K]>;
 };
 
-/** How one port is bound to an adapter of a {@link LazyAdapterScope}. */
-export interface LazyPortBinding<P, M, F> {
-  /** Picks the adapter class, which must implement the port, out of the loaded module. */
-  readonly adapter: Picker<M, P>;
+/** What every binding says about the port's calls, whichever form answers. */
+interface LazyPortCalls<P, F> {
   /** Every method of the port, classified. */
   readonly methods: LazyPortMethods<P, NoInfer<F>>;
   /** The port's own failure answer for a failed load. */
   readonly onLoadError: (error: LazyPortLoadError) => F;
 }
 
+/**
+ * How one port is bound to a {@link LazyAdapterScope}: `methods`,
+ * `onLoadError`, and EXACTLY ONE of
+ *
+ * - `adapter` — picks the adapter class, which must implement the port; or
+ * - `factory` — picks the function building a bundle that implements the
+ *   port ({@link FactoryPicker}).
+ */
+export type LazyPortBinding<P, M, F> = AdapterSource<M, P> &
+  LazyPortCalls<P, F>;
+
 type Outcome<P> =
   | { readonly loaded: true; readonly adapter: P }
   | { readonly loaded: false; readonly error: LazyPortLoadError };
 
-/** What a failure is reported under: the load, or one adapter class. */
-type FailureKey = typeof LOAD | Type<unknown>;
+/**
+ * What a failure is reported under: the load, one adapter class, or one
+ * bundle factory.
+ */
+type FailureKey = typeof LOAD | Type<unknown> | FactoryPicker<never, unknown>;
 
 const LOAD = Symbol('load');
 
 /**
- * A loaded scope: its module, its injector holding the SDK instances, and
- * one injector per adapter class, created on that adapter's first call.
+ * A loaded scope: its module, its injector holding the SDK instances, one
+ * injector per adapter class and one bundle per factory, each created on
+ * its first call.
  */
 class LoadedScope<M> {
   private readonly adapters = new Map<Type<unknown>, EnvironmentInjector>();
+  private readonly bundles = new Map<FactoryPicker<M, unknown>, unknown>();
 
   constructor(
     readonly module: M,
@@ -210,9 +268,24 @@ class LoadedScope<M> {
     }
   }
 
+  /**
+   * The bundle `factory` builds, created once: picked and called with the
+   * scope's injector, inside its injection context. A factory that throws
+   * leaves nothing cached, so the next call calls it afresh.
+   */
+  bundle<P>(factory: FactoryPicker<M, P>): P {
+    if (this.bundles.has(factory)) return this.bundles.get(factory) as P;
+    const bundle = runInInjectionContext(this.injector, () =>
+      factory(this.module)(this.injector),
+    );
+    this.bundles.set(factory, bundle);
+    return bundle;
+  }
+
   destroy(): void {
     for (const injector of this.adapters.values()) injector.destroy();
     this.adapters.clear();
+    this.bundles.clear();
     this.injector.destroy();
   }
 }
@@ -248,8 +321,12 @@ class LazyAdapterHost<M> {
     return this.destroyed;
   }
 
-  /** The adapter `pick` names, created once in the loaded scope — never a rejection. */
-  async adapter<P>(pick: Picker<M, P>): Promise<Outcome<P>> {
+  /**
+   * What `source` names — the adapter its class form picks, or the bundle
+   * its factory form builds — created once in the loaded scope; never a
+   * rejection.
+   */
+  async adapter<P>(source: AdapterSource<M, P>): Promise<Outcome<P>> {
     let loaded: LoadedScope<M>;
     try {
       loaded = await this.loaded();
@@ -258,15 +335,23 @@ class LazyAdapterHost<M> {
       return this.failure(cause);
     }
     if (this.destroyed) return this.failure(this.destroyedError());
-    let type: Type<P> | undefined;
+    // A class picker that throws is reported as the load's failure, as before.
+    let key: FailureKey = LOAD;
     try {
-      type = pick(loaded.module);
-      const adapter = loaded.adapter(type);
-      this.failing.delete(type);
+      let adapter: P;
+      if (source.factory) {
+        key = source.factory;
+        adapter = loaded.bundle(source.factory);
+      } else {
+        const type = source.adapter(loaded.module);
+        key = type;
+        adapter = loaded.adapter(type);
+      }
+      this.failing.delete(key);
       return { loaded: true, adapter };
     } catch (cause) {
       const outcome = this.failure(cause);
-      this.report(type ?? LOAD, outcome.error);
+      this.report(key, outcome.error);
       return outcome;
     }
   }
@@ -371,8 +456,9 @@ export class LazyAdapterScope<M> {
 
 /**
  * Binds `token` to a proxy that loads `scope` on its first call and forwards
- * every call to the adapter `binding.adapter` picks. Environment-level only:
- * the scope's injector hangs off the root.
+ * every call to what the binding names: the adapter class `binding.adapter`
+ * picks, or the bundle `binding.factory` builds. Environment-level only: the
+ * scope's injector hangs off the root.
  */
 export function provideLazyPort<P, M, F>(
   token: InjectionToken<P>,
@@ -392,9 +478,14 @@ type Method = (...args: unknown[]) => unknown;
 
 function lazyPort<P, M, F>(
   host: LazyAdapterHost<M>,
-  { adapter: pick, methods, onLoadError }: LazyPortBinding<P, M, F>,
+  binding: LazyPortBinding<P, M, F>,
 ): P {
-  // Called ON the adapter: its methods read `this` (the SDK handle).
+  const { methods, onLoadError } = binding;
+  // The binding is its own source: `host.adapter` reads only its `adapter`
+  // or `factory`, whichever the row uses.
+  const source: AdapterSource<M, P> = binding;
+  // Called ON the adapter: a class adapter's methods read `this` (the SDK
+  // handle); a bundle's closures ignore it.
   const call = (adapter: P, name: string, args: unknown[]): unknown => {
     const method: unknown = Reflect.get(adapter as object, name);
     if (typeof method !== 'function') {
@@ -410,7 +501,7 @@ function lazyPort<P, M, F>(
       subscriber.add(() => clearTimeout(retry));
 
       const attempt = (): void => {
-        void host.adapter(pick).then((outcome) => {
+        void host.adapter(source).then((outcome) => {
           if (subscriber.closed) return;
           try {
             if (outcome.loaded) {
@@ -451,7 +542,7 @@ function lazyPort<P, M, F>(
     kind === 'observable'
       ? (...args) => observe(name, args)
       : async (...args) => {
-          const outcome = await host.adapter(pick);
+          const outcome = await host.adapter(source);
           return outcome.loaded
             ? call(outcome.adapter, name, args)
             : onLoadError(outcome.error);

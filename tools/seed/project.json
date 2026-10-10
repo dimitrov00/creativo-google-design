@@ -3,7 +3,8 @@
   "$schema": "../../node_modules/nx/schemas/project-schema.json",
   "sourceRoot": "tools/seed",
   "projectType": "library",
-  "tags": ["scope:tooling", "type:util"],
+  "tags": ["scope:tooling", "type:tooling"],
+  "// tags": "type:tooling (ECS migration Phase 3a), not type:util: the fixture bodies of tools/seed/fixtures/*.ts import their entity types from @creativo/ecs-core (type:domain) to `satisfies Omit<XEntity, 'id'>` them, which the type:util row of eslint.config.mjs forbids; `typecheck` is inferred from tsconfig.json, over tsconfig.fixtures.json",
   "// inputs": "package.json's scripts and its firebase-tools pin sit outside every project, and settle-scripts.spec.mjs and emulator-cli.spec.mjs read them (the latter also the installed firebase-tools itself): a script edit, a new pin or a new install must re-run them and mark this project affected",
   "targets": {
     "test": {

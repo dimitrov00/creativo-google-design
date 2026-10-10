@@ -234,6 +234,21 @@ export default [
               onlyDependOnLibsWithTags: ['type:util', 'type:tokens'],
             },
             {
+              // `seed-tools` (tools/seed), retagged from `type:util` in ECS
+              // migration Phase 3a: its fixture bodies
+              // (`tools/seed/fixtures/*.ts`) import their entity types from
+              // `@creativo/ecs-core` (`type:domain`) to `satisfies
+              // Omit<XEntity, 'id'>` them, which the `type:util` row above
+              // forbids. Never application or infrastructure: a fixture is
+              // a document body, not a mapper's input.
+              sourceTag: 'type:tooling',
+              onlyDependOnLibsWithTags: [
+                'type:tooling',
+                'type:util',
+                'type:domain',
+              ],
+            },
+            {
               sourceTag: 'type:tokens',
               onlyDependOnLibsWithTags: ['type:tokens'],
             },

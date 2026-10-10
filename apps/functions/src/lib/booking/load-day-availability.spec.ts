@@ -3,7 +3,8 @@ import type { Firestore } from 'firebase-admin/firestore';
 import { Result, ZonedDateTime } from '@creativo/domain/kernel';
 import { BarberId } from '@creativo/domain/catalog';
 import { CalendarDay, Interval } from '@creativo/domain/scheduling';
-import { availabilityReaderBusyCases } from '@creativo/application/booking/testing';
+import { BarberId as BarberKey, DayKey } from '@creativo/ecs-core';
+import { schedulingPortsContract } from '@creativo/ecs-core/testing';
 import { createProjectionFirestore } from '../../test-support/fake-projection-firestore';
 import { loadDayAvailability } from './load-day-availability';
 
@@ -12,10 +13,12 @@ import { loadDayAvailability } from './load-day-availability';
  * loader's own parsing, windowing and padding — the snapshot every waitlist
  * notification is decided from.
  *
- * Its `busy` is held to the SAME contract as the grid's reader
- * (`availabilityReaderBusyCases`): `paddedBusy` of the stored spans and the
- * roster's turnaround. A waitlist request is a new booking, never a move, so
- * only the cases that hand nothing back apply.
+ * Its `busy` is held to the SAME contract as the scheduling ports
+ * (`schedulingPortsContract`, `@creativo/ecs-core/testing` — the successor
+ * of the grid reader's `availabilityReaderBusyCases`): `paddedBusy` of the
+ * stored spans and the roster's turnaround. Each case's spans are seeded in
+ * this loader's own wire shape. A waitlist request is a new booking, never a
+ * move, so only the cases that hand nothing back apply.
  */
 
 const ZONE = 'Europe/Sofia';
@@ -131,11 +134,12 @@ async function busyOf(
 
 describe('loadDayAvailability — the port’s busy contract', () => {
   // A waitlist request is a new booking: nothing is ever handed back.
-  const cases = availabilityReaderBusyCases({
-    day,
-    barberId: ivan,
-    otherBarberId: niko,
-  }).filter((entry) => (entry.release ?? []).length === 0);
+  const cases = schedulingPortsContract({
+    dayKey: DayKey.of(DAY_KEY),
+    zone: ZONE,
+    barberId: BarberKey.of(ivan.value),
+    otherBarberId: BarberKey.of(niko.value),
+  }).cases.filter((entry) => (entry.release ?? []).length === 0);
 
   it('runs the contract’s cases that hand nothing back', () => {
     // A contract that grew or lost a release-free case should be noticed,

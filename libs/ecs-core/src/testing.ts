@@ -4,7 +4,7 @@
  * production code never may (the root `no-restricted-imports`
  * testing-entry-point guard).
  *
- * Four families, each a plain function — no classes, no module state:
+ * Five families, each a plain function — no classes, no module state:
  *
  * - the purity contract's {@link deepFreeze} (`ecs-systems.md` spec contract);
  * - the pinned impure primitives a pipeline hands its systems — `nowMs`,
@@ -14,14 +14,24 @@
  *   ({@link memoryReadTx}), the single commit port ({@link memoryCommitPlan},
  *   which records every applied plan for the spec to assert), the telemetry
  *   bundle ({@link recordingTelemetry}) and the whole {@link memoryTxPorts}
- *   bundle — plain functions over a `Map`, never an SDK fake;
- * - fixture builders: complete, internally consistent entities and day
- *   tables with every field present, overridable field by field.
+ *   bundle — and the scheduling busy streams ({@link memoryLoadBusyDay},
+ *   {@link memoryObserveBusyDay}): plain functions over a `Map`, never an SDK
+ *   fake;
+ * - port contracts as data — `testing/scheduling.port.contract.ts`, the
+ *   busy cases every `LoadBusyDay`/`ObserveBusyDay` implementation runs
+ *   (the successor of the application layer's `availabilityReaderBusyCases`,
+ *   blueprint §7);
+ * - fixtures: complete, internally consistent entities and day tables with
+ *   every field present, overridable field by field, and the loyalty
+ *   fixtures of `testing/loyalty.fixtures.ts` — the rhythm's rule as
+ *   entities, and the two loyalty JSON files (`testing/fixtures/loyalty/`)
+ *   the dev seed reads by path.
  *
  * Expected instants are literal epoch-ms constants, never computed with a
  * date library (§9 D5): zone math in a fixture goes through ZonedTimeSystem
  * like everywhere else.
  */
+import { defer, of } from 'rxjs';
 import { AccountStatus } from './components/account-status.data';
 import { BookingStatus } from './components/booking-status.data';
 import { BusyKey } from './components/busy-key.data';
@@ -74,8 +84,10 @@ import {
 import { ServiceCategoryId } from './entities/service-category.entity';
 import { ServiceId, type ServiceEntity } from './entities/service.entity';
 import { UserId, type UserEntity } from './entities/user.entity';
+import { RepositoryError } from './components/repository-errors.data';
+import type { LoadBusyDay, ObserveBusyDay } from './ports/scheduling.port';
 import type { Log, TrackError } from './ports/telemetry.port';
-import { QueryOp } from './ports/collections';
+import { Collections, QueryOp } from './ports/collections';
 import type {
   CommitPlan,
   Hash,
@@ -90,28 +102,12 @@ import { ZonedTimeSystem } from './systems/zoned-time.system';
 
 /* ── The purity contract ────────────────────────────────────────────────── */
 
-/**
- * Freezes a fixture all the way down — arrays and plain objects — and
- * returns it, so a system that writes into an input throws in strict mode
- * instead of passing. Test-only: Law 1 forbids `Object.freeze` in
- * production code.
- *
- * It ALWAYS recurses, even into a value that is already frozen: a fixture
- * shallow-frozen first (`Object.freeze(x)`) still has mutable children, and
- * an `isFrozen` short-cut would leave them so. Cycles are cut by the set of
- * objects already visited in this call.
- */
-export function deepFreeze<T>(value: T): T {
-  freezeAll(value, new WeakSet<object>());
-  return value;
-}
+export { deepFreeze } from './testing/deep-freeze';
 
-function freezeAll(value: unknown, seen: WeakSet<object>): void {
-  if (typeof value !== 'object' || value === null || seen.has(value)) return;
-  seen.add(value);
-  Object.freeze(value);
-  for (const inner of Object.values(value)) freezeAll(inner, seen);
-}
+/* ── The port contracts and the fixture families of their own files ────── */
+
+export * from './testing/scheduling.port.contract';
+export * from './testing/loyalty.fixtures';
 
 /* ── Result helpers ─────────────────────────────────────────────────────── */
 
@@ -397,49 +393,33 @@ export function memoryReadTx(store: MemoryStore): MemoryReadTx {
   };
 }
 
-/** One field written at a dotted path into a map, copying on the way down. */
-function writeAt(
-  map: DocBody,
-  parts: readonly string[],
-  value: unknown,
-): DocBody {
-  const [head, ...rest] = parts as [string, ...string[]];
-  const inner = own(map, head);
-  const next =
-    rest.length === 0
-      ? value
-      : writeAt(
-          typeof inner === 'object' && inner !== null && !Array.isArray(inner)
-            ? (inner as DocBody)
-            : {},
-          rest,
-          value,
-        );
-  return Object.fromEntries([
-    ...Object.entries(map).filter(([key]) => key !== head),
-    [head, next],
-  ]);
-}
-
-/** Merges an update's field map; dotted keys reach nested maps. */
+/**
+ * Merges an update's field map at the ROOT, as the transaction adapter
+ * does: each key is one root field by its literal name (Law 5: writes
+ * target root fields, never dot paths) — a `.` in a key is a character.
+ */
 function mergeFields(body: DocBody, fields: DocBody): DocBody {
-  let next = body;
-  for (const [field, value] of Object.entries(fields)) {
-    next = writeAt(next, field.split('.'), value);
-  }
-  return next;
+  return { ...body, ...fields };
 }
 
 /**
- * Applies a write plan to a store all-or-nothing, with the transaction's
- * own failures: `create` over an existing document and `update` of an
- * absent one reject the whole plan (Firestore's ALREADY_EXISTS / NOT_FOUND),
- * leaving the store untouched.
+ * A plan staged against a store: the bodies it would leave (`null` = deleted),
+ * or the first `Create` that met a document already there.
  */
-export function applyWrites(
+type StagedPlan =
+  | { readonly conflict: null; readonly staged: Map<string, DocBody | null> }
+  | { readonly conflict: string };
+
+/**
+ * Stages a write plan without touching the store, seeing its own earlier
+ * writes. A `Create` over an existing document stops the staging as the
+ * plan's conflict (Firestore's ALREADY_EXISTS); an `Update` of an absent
+ * one throws (NOT_FOUND — an infrastructure failure, never a value).
+ */
+function stageWrites(
   store: MemoryStore,
   writes: readonly WriteOp[],
-): void {
+): StagedPlan {
   const staged = new Map<string, DocBody | null>();
   const current = (key: string): DocBody | null =>
     staged.has(key)
@@ -452,9 +432,7 @@ export function applyWrites(
         staged.set(key, op.body);
         break;
       case WriteKind.Create:
-        if (current(key) !== null) {
-          throw new Error(`ALREADY_EXISTS: ${key} — the plan was not applied`);
-        }
+        if (current(key) !== null) return { conflict: key };
         staged.set(key, op.body);
         break;
       case WriteKind.Update: {
@@ -470,10 +448,38 @@ export function applyWrites(
         break;
     }
   }
+  return { conflict: null, staged };
+}
+
+/** Writes a staged plan through to the store. */
+function commitStaged(
+  store: MemoryStore,
+  staged: ReadonlyMap<string, DocBody | null>,
+): void {
   for (const [key, body] of staged) {
     if (body === null) store.delete(key);
     else store.set(key, body);
   }
+}
+
+/**
+ * Applies a write plan to a store all-or-nothing, with the transaction's
+ * own failures: `create` over an existing document and `update` of an
+ * absent one reject the whole plan (Firestore's ALREADY_EXISTS / NOT_FOUND),
+ * leaving the store untouched. ({@link memoryCommitPlan} answers the
+ * ALREADY_EXISTS as a value instead, as the `CommitPlan` port says.)
+ */
+export function applyWrites(
+  store: MemoryStore,
+  writes: readonly WriteOp[],
+): void {
+  const plan = stageWrites(store, writes);
+  if (plan.conflict !== null) {
+    throw new Error(
+      `ALREADY_EXISTS: ${plan.conflict} — the plan was not applied`,
+    );
+  }
+  commitStaged(store, plan.staged);
 }
 
 /** A {@link CommitPlan} double and the record of what reached it. */
@@ -489,9 +495,12 @@ export type MemoryCommit = {
  * The single commit port over a store (the in-memory sibling of the
  * functions' `FakeProjectionFirestore`, blueprint §7): runs `read` against a
  * {@link memoryReadTx}, hands the snapshot to the pure `decide`, applies the
- * returned plan atomically ({@link applyWrites}) and answers the decision
- * without its plan. A refusal writes nothing; an ALREADY_EXISTS/NOT_FOUND
- * plan rejects the promise, the way an infrastructure failure does.
+ * returned plan atomically and answers the decision without its plan. A
+ * refusal writes nothing. A `Create` over an existing document answers
+ * `RepositoryError.alreadyExists(path)` as a VALUE and applies nothing, as
+ * the `CommitPlan` port and the Firestore adapter do; an `Update` of an
+ * absent document (NOT_FOUND) rejects the promise, the way an
+ * infrastructure failure does.
  */
 export function memoryCommitPlan(store: MemoryStore): MemoryCommit {
   const plans: (readonly WriteOp[])[] = [];
@@ -501,13 +510,17 @@ export function memoryCommitPlan(store: MemoryStore): MemoryCommit {
     decide: (
       snapshot: S,
     ) => Result<D & { readonly writes: readonly WriteOp[] }, E>,
-  ): Promise<Result<D, E>> => {
+  ): Promise<Result<D, E | RepositoryError>> => {
     const tx = memoryReadTx(store);
     transactions.push(tx);
     const decision = decide(await read(tx));
     if (!decision.ok) return decision;
     const { writes, ...rest } = decision.value;
-    applyWrites(store, writes);
+    const plan = stageWrites(store, writes);
+    if (plan.conflict !== null) {
+      return Result.err(RepositoryError.alreadyExists(plan.conflict));
+    }
+    commitStaged(store, plan.staged);
     plans.push(writes);
     // `rest` is the decision minus its plan — `D` exactly, which the
     // spread's `Omit` cannot prove for a generic `D`.
@@ -564,6 +577,37 @@ export function recordingTelemetry(): {
       errors.push({ error, context: context ?? null });
     },
   };
+}
+
+/**
+ * `loadBusyDay` — the server's busy read (`scheduling.port.ts`) — over a
+ * store: `barberBusy/{key}` as the entity, `null` when the day holds
+ * nothing. Exactly the stored document: no padding, no merging, no
+ * release — availability is derived by the caller, never behind the port
+ * (blueprint §4.2). The in-memory runner of `schedulingPortsContract`.
+ */
+export function memoryLoadBusyDay(store: MemoryStore): LoadBusyDay {
+  return async (key) =>
+    Result.ok(
+      entityAt<BarberBusyDayEntity>(store, [Collections.BarberBusy, key]),
+    );
+}
+
+/**
+ * `observeBusyDay` — the browser's busy stream — over a store: ONE
+ * emission of the day as stored when subscribed, then complete. A later
+ * write to the store is not re-emitted; a spec that needs the second
+ * emission subscribes again.
+ */
+export function memoryObserveBusyDay(store: MemoryStore): ObserveBusyDay {
+  return (key) =>
+    defer(() =>
+      of<Result<BarberBusyDayEntity | null, RepositoryError>>(
+        Result.ok(
+          entityAt<BarberBusyDayEntity>(store, [Collections.BarberBusy, key]),
+        ),
+      ),
+    );
 }
 
 /* ── Fixture builders ───────────────────────────────────────────────────── */

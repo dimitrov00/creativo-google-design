@@ -45,7 +45,7 @@ export const WriteOp = {
     return { kind: WriteKind.Create, path, body };
   },
 
-  /** Merge `fields` into an existing document (dotted keys reach nested maps). */
+  /** Merge root `fields` into an existing document (Law 5: never dot paths). */
   update(path: DocPath, fields: DocBody): WriteOp.Update {
     return { kind: WriteKind.Update, path, fields };
   },

@@ -1,3 +1,4 @@
+import type { RepositoryError } from '../components/repository-errors.data';
 import type { Result } from '../components/result.data';
 import type { DocPath, WriteOp } from '../components/write-op.data';
 import type { QueryOp } from './collections';
@@ -97,16 +98,24 @@ export type ReadTx = {
  * the pure `decide`, applies the returned `writes` atomically and answers
  * the decision without its plan. A refusal (`Result.err`) writes nothing.
  * The adapter retries the whole read → decide on contention, so `decide`
- * must be pure — it may run more than once. Only an infrastructure failure
- * (contention retries exhausted, the store unreachable) rejects the
- * promise: it is not an expected outcome, and the edge maps it once.
+ * must be pure — it may run more than once.
+ *
+ * A `Create` over a document already there (Firestore's ALREADY_EXISTS) is
+ * an EXPECTED outcome — a deterministic id met its replay (the audit row,
+ * the users stub, a waitlist notification) or lost a create race — so it
+ * answers as a value, `RepositoryError.alreadyExists(path)`
+ * (`repo.already_exists`), and nothing of the plan is applied; the
+ * pipeline decides whether that is the replay or a refusal. Only an
+ * infrastructure failure (contention retries exhausted, the store
+ * unreachable, an `Update` of an absent document) rejects the promise: it
+ * is not an expected outcome, and the edge maps it once.
  */
 export type CommitPlan = <S, D, E>(
   read: (tx: ReadTx) => Promise<S>,
   decide: (
     snapshot: S,
   ) => Result<D & { readonly writes: readonly WriteOp[] }, E>,
-) => Promise<Result<D, E>>;
+) => Promise<Result<D, E | RepositoryError>>;
 
 /** A digest — sha256 hex in production — for deterministic ids (`hash(rowBasis)`). */
 export type Hash = (input: string) => string;

@@ -6,9 +6,10 @@ import { TenantId } from './tenant-id.data';
 
 /*
  * The cases of libs/domain/identity/src/lib/auth-claims.spec.ts, copied over
- * the token's stored shape: `tenantId` beside `stage`, and `roles: []` on an
- * onboarding token. Roles are now the closed `Role` vocabulary, so the
- * legacy fixture's `'owner'` is `admin` here.
+ * the in-memory struct: `tenantId` beside `stage`, and `roles: []` on
+ * onboarding claims (the token itself omits that key — `toToken`). Roles are
+ * now the closed `Role` vocabulary, so the legacy fixture's `'owner'` is
+ * `admin` here.
  */
 const TENANT = TenantId.of('creativo');
 
@@ -112,5 +113,50 @@ describe('AuthClaims.isActive / hasRole', () => {
     const onboarding = AuthClaims.onboarding(TENANT);
     expect(AuthClaims.isActive(onboarding)).toBe(false);
     expect(AuthClaims.hasRole(onboarding, Role.Barber)).toBe(false);
+  });
+});
+
+describe('AuthClaims.toToken', () => {
+  const active = (): AuthClaims => {
+    const claims = AuthClaims.active(TENANT, [Role.Barber, Role.Admin]);
+    if (!claims.ok) throw new Error('fixture');
+    return claims.value;
+  };
+
+  it('stores active claims as { tenantId, stage, roles }', () => {
+    expect(AuthClaims.toToken(active())).toEqual({
+      tenantId: 'creativo',
+      stage: 'active',
+      roles: ['barber', 'admin'],
+    });
+  });
+
+  it('stores onboarding claims WITHOUT a roles key — today’s token shape', () => {
+    const token = AuthClaims.toToken(AuthClaims.onboarding(TENANT));
+    expect(token).toEqual({ tenantId: 'creativo', stage: 'onboarding' });
+    expect(token).not.toHaveProperty('roles');
+  });
+
+  it('leaves a null tenant out rather than storing it', () => {
+    const token = AuthClaims.toToken({
+      tenantId: null,
+      stage: AuthStage.Onboarding,
+      roles: [],
+    });
+    expect(token).toEqual({ stage: 'onboarding' });
+    expect(token).not.toHaveProperty('tenantId');
+  });
+
+  it('is the inverse of fromToken — fromToken(toToken(c)) is c', () => {
+    for (const claims of [active(), AuthClaims.onboarding(TENANT)]) {
+      expect(AuthClaims.fromToken(AuthClaims.toToken(claims))).toEqual(claims);
+    }
+  });
+
+  it('copies the roles, so the token bag cannot change the claims', () => {
+    const claims = active();
+    const token = AuthClaims.toToken(claims);
+    (token['roles'] as Role[]).push(Role.Receptionist);
+    expect(claims.roles).toEqual([Role.Barber, Role.Admin]);
   });
 });

@@ -7,7 +7,7 @@
     "types": ["node"],
     "rootDir": "../.."
   },
-  "include": ["src/**/*.ts"],
+  "include": ["src/**/*.ts", "src/testing/fixtures/**/*.json"],
   "exclude": [
     "vite.config.ts",
     "vite.config.mts",

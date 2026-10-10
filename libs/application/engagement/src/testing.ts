@@ -8,7 +8,12 @@
  * projector spec holds its output to their shape, the e2e seed writes them —
  * so the wire cannot drift between packages. They live behind their own
  * entry point so the production barrel (`@creativo/application/engagement`)
- * can never hand one to a provider.
+ * can never hand one to a provider. Since the ECS migration's Phase 3a the
+ * catalogue and the vouchers live in `@creativo/ecs-core/testing`
+ * (`libs/ecs-core/src/testing/fixtures/loyalty/`, where the dev seed reads
+ * them by path) and the fixtures' day is its `FIXTURE_TODAY`; this entry
+ * re-exports them, typed as the wire's documents, until Phase 4. The two
+ * accounts still live here.
  *
  * Beside them, every loyalty port's in-memory reference: the two readers
  * of the first card, and revision 3's three (client-card-revision-3.md
@@ -91,10 +96,20 @@ import {
   streakScheduleFromDocument,
   streakScheduleToDocument,
 } from './lib/ports/loyalty-document';
-import catalogJson from './testing/fixtures/loyalty/catalog.json';
+// The catalogue and the vouchers moved to ecs-core's test support in Phase
+// 3a (the dev seed reads them there by path); this entry re-exports them,
+// typed as the wire's documents, until Phase 4 deletes it. Test support
+// importing test support — never production code (the lib's eslint config
+// gives this entry the specs' import rule).
+import {
+  FIXTURE_TODAY,
+  giftVouchersJson,
+  loyaltyCatalogJson,
+} from '@creativo/ecs-core/testing';
 import georgiJson from './testing/fixtures/loyalty/account-georgi.json';
 import martinJson from './testing/fixtures/loyalty/account-martin.json';
-import vouchersJson from './testing/fixtures/loyalty/vouchers.json';
+
+export { giftVouchersJson, loyaltyCatalogJson };
 
 /** The published catalogue: every catalogue collection, keyed by collection, then by document id. */
 export interface LoyaltyCatalogFixture {
@@ -220,13 +235,13 @@ function deepFreeze<T>(value: T): T {
 }
 
 export const loyaltyFixtures: LoyaltyFixtures = deepFreeze({
-  today: '2026-09-28',
-  catalog: fixture<LoyaltyCatalogFixture>(catalogJson),
+  today: FIXTURE_TODAY,
+  catalog: fixture<LoyaltyCatalogFixture>(loyaltyCatalogJson),
   georgi: fixture<LoyaltyAccountFixture>(georgiJson),
   martin: fixture<LoyaltyAccountFixture>(martinJson),
   vouchers: fixture<{
     readonly [GIFT_VOUCHERS_COLLECTION]: GiftVouchersFixture;
-  }>(vouchersJson).giftVouchers,
+  }>(giftVouchersJson).giftVouchers,
 });
 
 // ── In-memory readers ───────────────────────────────────────────────────

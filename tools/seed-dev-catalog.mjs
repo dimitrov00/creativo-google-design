@@ -76,7 +76,8 @@
  * `pnpm run seed:dev`), then check again.
  *
  * ### Loyalty (client-card-redesign.md §4.6, client-card-revision-3.md §4)
- * The loyalty catalogue is `catalog.json` from the engagement fixtures, its
+ * The loyalty catalogue is `catalog.json` from ecs-core's test fixtures
+ * (`libs/ecs-core/src/testing/fixtures/loyalty/`), its
  * seasons moved to the shop's today. The accounts of Георги and Мартин —
  * account, family and season progress, the journal — are the engine's
  * output over the same appointments (`tools/seed/loyalty.mjs`), never typed
@@ -525,7 +526,8 @@ console.log('seeded settings/bookingPolicy');
 /*
  * THE LOYALTY CATALOGUE (client-card-redesign.md §4.6): the achievement
  * shelves and their medal families, the seasons and the event, the tiers,
- * the rewards and the rhythm — `catalog.json` from the engagement fixtures,
+ * the rewards and the rhythm — `catalog.json` from ecs-core's test fixtures
+ * (`libs/ecs-core/src/testing/fixtures/loyalty/`),
  * the same file the mapper specs and the e2e read, with its seasons moved to
  * the shop's today so every run has one open season, one open event and one
  * ended season. Presentation, not personal data: anyone signed in reads it,

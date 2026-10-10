@@ -16,14 +16,20 @@ export const AuthStage = {
 export type AuthStage = (typeof AuthStage)[keyof typeof AuthStage];
 
 /**
- * The authorization facts on the Firebase ID token's custom claims, **as
- * stored on the token** (`firebase-auth-token-adapter.ts:12-19`): a
- * disciplined, slow-changing cache of `users/{uid}`. A flat struct, every
- * key present: the claim key is `stage` — kept, because renaming a claim on
- * live tokens would read every signed-in person as onboarding until they
- * signed in again — and an onboarding token carries `roles: []`, which the
- * rules' `'roles' in request.auth.token ? … : []` reads exactly as the
- * omitted key it replaces.
+ * The authorization facts on the Firebase ID token's custom claims: a
+ * disciplined, slow-changing cache of `users/{uid}`. In memory a flat
+ * struct, every key present — an onboarding account holds `roles: []`, a
+ * token this app did not mint `tenantId: null`. The claim key is `stage` —
+ * kept, because renaming a claim on live tokens would read every signed-in
+ * person as onboarding until they signed in again.
+ *
+ * **The bag stored on the token** is spelled once, by
+ * {@link AuthClaims.toToken} (and read back by {@link AuthClaims.fromToken}),
+ * unchanged from today (`firebase-auth-token-adapter.ts:12-19`):
+ * `{ tenantId, stage: 'active', roles }` when active and
+ * `{ tenantId, stage: 'onboarding' }` — NO `roles` key — while onboarding,
+ * which the rules' `'roles' in request.auth.token ? … : []` read as no
+ * roles; a `null` tenant is left out rather than stored.
  *
  * Invariant (enforced by the factories, degraded to by `fromToken`): roles
  * exist iff the stage is active — "active but roleless" is unrepresentable
@@ -79,6 +85,22 @@ export const AuthClaims = {
       }
     }
     return { tenantId, stage: AuthStage.Onboarding, roles: [] };
+  },
+
+  /**
+   * The custom-claims bag as it is STORED on the token — the one place
+   * that shape is spelled, the inverse of {@link AuthClaims.fromToken}
+   * (`fromToken(toToken(c))` is `c`). Active: `{ tenantId, stage, roles }`;
+   * onboarding: `{ tenantId, stage }` with no `roles` key; a `null` tenant is
+   * left out. Today's shape byte for byte, so live tokens and
+   * `firestore.rules` read every token minted through it as they always have.
+   */
+  toToken(claims: AuthClaims): { readonly [claim: string]: unknown } {
+    const tenant =
+      claims.tenantId === null ? {} : { tenantId: claims.tenantId };
+    return claims.stage === AuthStage.Active
+      ? { ...tenant, stage: claims.stage, roles: [...claims.roles] }
+      : { ...tenant, stage: claims.stage };
   },
 
   isActive(claims: AuthClaims): boolean {

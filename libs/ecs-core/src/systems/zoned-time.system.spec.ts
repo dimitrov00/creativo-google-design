@@ -1023,6 +1023,67 @@ describe('ZonedTimeSystem.wallClockOf / zones', () => {
   });
 });
 
+describe('ZonedTimeSystem.isoOf — an instant on the zone’s clock, with its offset', () => {
+  it('spells the instant as ZonedDateTime.toISO() did in the shop’s zone', () => {
+    // 2026-10-10T11:00:00.000Z — Sofia summer (EEST, +03:00).
+    expect(valueOf(ZonedTimeSystem.isoOf(1_791_630_000_000, SOFIA))).toBe(
+      '2026-10-10T14:00:00.000+03:00',
+    );
+    // 2026-12-01T08:30:15.007Z — Sofia winter (EET, +02:00); seconds and ms kept.
+    expect(valueOf(ZonedTimeSystem.isoOf(1_796_113_815_007, SOFIA))).toBe(
+      '2026-12-01T10:30:15.007+02:00',
+    );
+  });
+
+  it('names each occurrence of the repeated hour by its own offset', () => {
+    // 2026-10-25T00:30Z and 01:30Z both read 03:30 in Sofia.
+    expect(valueOf(ZonedTimeSystem.isoOf(1_792_888_200_000, SOFIA))).toBe(
+      '2026-10-25T03:30:00.000+03:00',
+    );
+    expect(valueOf(ZonedTimeSystem.isoOf(1_792_891_800_000, SOFIA))).toBe(
+      '2026-10-25T03:30:00.000+02:00',
+    );
+  });
+
+  it('writes a non-hour, a negative and a zero offset as ±HH:MM', () => {
+    // 2026-10-10T00:00Z.
+    expect(valueOf(ZonedTimeSystem.isoOf(1_791_590_400_000, KOLKATA))).toBe(
+      '2026-10-10T05:30:00.000+05:30',
+    );
+    expect(valueOf(ZonedTimeSystem.isoOf(1_791_590_400_000, UTC))).toBe(
+      '2026-10-10T00:00:00.000+00:00',
+    );
+    // 2026-10-10T02:00Z is the previous evening in São Paulo (-03:00).
+    expect(valueOf(ZonedTimeSystem.isoOf(1_791_597_600_000, SAO_PAULO))).toBe(
+      '2026-10-09T23:00:00.000-03:00',
+    );
+    // Before the epoch: the millisecond is still the positive remainder.
+    expect(valueOf(ZonedTimeSystem.isoOf(-1, UTC))).toBe(
+      '1969-12-31T23:59:59.999+00:00',
+    );
+  });
+
+  it('reads back through parseIso as the same instant', () => {
+    for (const epochMs of [1_791_630_000_000, 1_792_891_800_000]) {
+      const iso = valueOf(ZonedTimeSystem.isoOf(epochMs, SOFIA));
+      expect(
+        valueOf(ZonedTimeSystem.parseIso(iso, SOFIA, DstResolution.Reject))
+          .epochMs,
+      ).toBe(epochMs);
+    }
+  });
+
+  it('refuses a zone the runtime does not know, and an instant out of range', () => {
+    expect(errorOf(ZonedTimeSystem.isoOf(0, 'Not/AZone'))).toEqual({
+      code: TimeErrorCode.InvalidTimeZone,
+      rawZone: 'Not/AZone',
+    });
+    expect(errorOf(ZonedTimeSystem.isoOf(Number.NaN, SOFIA)).code).toBe(
+      TimeErrorCode.InvalidDateTime,
+    );
+  });
+});
+
 describe('UTC and a non-hour offset (sanity)', () => {
   it('UTC: every day starts at UTC midnight and nothing ever transitions', () => {
     const days = ZonedTimeSystem.dayTable(

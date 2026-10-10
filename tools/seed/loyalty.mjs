@@ -7,9 +7,11 @@
  * by construction rather than by a comment.
  *
  * ### The catalogue IS the fixture file
- * `catalog.json` under `@creativo/application/engagement/testing` is §4.6's
- * catalogue: WP3's mapper specs parse it, the e2e seeds it, and this module
- * writes it — one file, so the wire cannot drift between the three. Only the
+ * `catalog.json` under `@creativo/ecs-core/testing` (moved there from
+ * `@creativo/application/engagement/testing` in the ECS migration's Phase
+ * 3a; that entry still re-exports it) is §4.6's catalogue: WP3's mapper
+ * specs parse it, the e2e seeds it, and this module writes it — one file,
+ * so the wire cannot drift between the three. Only the
  * season windows move, by whole days from the fixtures' day to the shop's
  * today (as the day fixtures move), so every run shows one open season, one
  * open event and one ended season.
@@ -246,7 +248,7 @@ function jobInstantOn(day) {
 
 const CATALOG_FILE = join(
   WORKSPACE_ROOT,
-  'libs/application/engagement/src/testing/fixtures/loyalty/catalog.json',
+  'libs/ecs-core/src/testing/fixtures/loyalty/catalog.json',
 );
 
 /** The Europe/Sofia day `catalog.json`'s season windows are dated for — the fixtures' `today`. */

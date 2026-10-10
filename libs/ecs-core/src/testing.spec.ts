@@ -333,36 +333,37 @@ describe('memoryReadTx', () => {
 });
 
 describe('applyWrites', () => {
-  it('applies set, create, update (dotted) and delete as one plan', () => {
+  it('applies set, create, update (root fields) and delete as one plan', () => {
     const store = memoryStore([
       { path: ['a', '1'], body: { x: 1, nested: { keep: true, change: 1 } } },
       { path: ['a', '2'], body: { y: 1 } },
     ]);
     applyWrites(store, [
       WriteOp.update(['a', '1'], {
-        'nested.change': 2,
-        'fresh.leaf': 'new',
+        nested: { change: 2 },
         x: 5,
       }),
       WriteOp.create(['a', '3'], { z: 1 }),
       WriteOp.set(['a', '2'], { y: 2 }),
       WriteOp.remove(['a', '4']),
     ]);
-    expect(store.get('a/1')).toEqual({
-      x: 5,
-      nested: { keep: true, change: 2 },
-      fresh: { leaf: 'new' },
-    });
+    // A root field is replaced whole — never merged into (Law 5).
+    expect(store.get('a/1')).toEqual({ x: 5, nested: { change: 2 } });
     expect(store.get('a/2')).toEqual({ y: 2 });
     expect(store.get('a/3')).toEqual({ z: 1 });
     applyWrites(store, [WriteOp.remove(['a', '3'])]);
     expect(store.has('a/3')).toBe(false);
   });
 
-  it('replaces a non-map value on a dotted path with a map', () => {
-    const store = memoryStore([{ path: ['a', '1'], body: { leaf: [1] } }]);
+  it('writes a key with a dot as ONE root field named with the dot — never a nested map (Law 5)', () => {
+    const store = memoryStore([
+      { path: ['a', '1'], body: { leaf: { inner: 0, keep: true } } },
+    ]);
     applyWrites(store, [WriteOp.update(['a', '1'], { 'leaf.inner': 1 })]);
-    expect(store.get('a/1')).toEqual({ leaf: { inner: 1 } });
+    expect(store.get('a/1')).toEqual({
+      leaf: { inner: 0, keep: true },
+      'leaf.inner': 1,
+    });
   });
 
   it('sees its own earlier writes inside the plan', () => {
@@ -434,15 +435,38 @@ describe('memoryCommitPlan', () => {
     expect(plans).toEqual([]);
   });
 
-  it('a plan the store refuses rejects the promise', async () => {
-    const store = memoryStore([{ path: ['a', '1'], body: {} }]);
+  it('a Create over an existing document answers ALREADY_EXISTS as a value and applies nothing', async () => {
+    const store = memoryStore([{ path: ['a', '1'], body: { n: 1 } }]);
+    const { commit, plans } = memoryCommitPlan(store);
+    const result = await commit(
+      async () => null,
+      () =>
+        Result.ok({
+          writes: [
+            WriteOp.set(['a', '2'], { n: 2 }),
+            WriteOp.create(['a', '1'], { n: 9 }),
+          ],
+        }),
+    );
+    expect(result).toEqual({
+      ok: false,
+      error: { code: 'repo.already_exists', path: 'a/1', reason: null },
+    });
+    expect([...store.keys()]).toEqual(['a/1']);
+    expect(store.get('a/1')).toEqual({ n: 1 });
+    expect(plans).toEqual([]);
+  });
+
+  it('a plan the store cannot apply (NOT_FOUND) rejects the promise', async () => {
+    const store = memoryStore();
     const { commit, plans } = memoryCommitPlan(store);
     await expect(
       commit(
         async () => null,
-        () => Result.ok({ writes: [WriteOp.create(['a', '1'], {})] }),
+        () => Result.ok({ writes: [WriteOp.update(['a', '1'], { n: 1 })] }),
       ),
-    ).rejects.toThrow(/ALREADY_EXISTS/);
+    ).rejects.toThrow(/NOT_FOUND/);
+    expect(store.size).toBe(0);
     expect(plans).toEqual([]);
   });
 });
