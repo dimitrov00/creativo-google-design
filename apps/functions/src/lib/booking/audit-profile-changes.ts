@@ -11,6 +11,12 @@ import {
   AUDIT_LOG_COLLECTION,
   auditEntryToDocument,
 } from '@creativo/application/shared';
+import {
+  type Actor as EcsActor,
+  ActorKind,
+  AuditSystem,
+  SystemSource,
+} from '@creativo/ecs-core';
 import { adminFirestore } from '../firebase-admin';
 import {
   attemptFailure,
@@ -32,13 +38,6 @@ export const AUDITED_PROFILE_FIELDS = [
   'birthDate',
 ] as const;
 
-/** Absent, `null` and `''` are one fact — "no value" — however a writer spelled it. */
-function comparable(value: unknown): string {
-  return value === undefined || value === null || value === ''
-    ? ''
-    : JSON.stringify(value);
-}
-
 /**
  * The audited fields whose value changed, in `AUDITED_PROFILE_FIELDS` order.
  * NAMES only: the row says THAT the phone changed, never from what to what
@@ -49,54 +48,29 @@ export function changedProfileFields(
   before: Readonly<Record<string, unknown>>,
   after: Readonly<Record<string, unknown>>,
 ): readonly string[] {
-  const was = new Map(Object.entries(before));
-  const is = new Map(Object.entries(after));
-  return AUDITED_PROFILE_FIELDS.filter(
-    (field) => comparable(was.get(field)) !== comparable(is.get(field)),
-  );
+  return AuditSystem.changedProfileFields(before, after);
 }
 
 export function profileAuditAction(
   beforeExists: boolean,
   afterExists: boolean,
 ): string {
-  if (!beforeExists) return 'profile.created';
-  return afterExists ? 'profile.updated' : 'profile.deleted';
+  return AuditSystem.profileAction(beforeExists, afterExists);
 }
-
-/** A Firebase uid as this app mints and accepts them (the commit path's shape). */
-const UID_SHAPE = /^[A-Za-z0-9_-]{1,128}$/;
 
 /**
  * WHO wrote the profile, from the event's auth context — not the profile's
  * owner, which was only ever a guess that happened to be right while the
- * owner was the sole writer.
- *
- * - `service_account` is the Admin SDK: a callable, the seed, a backfill. The
- *   process is the actor; any person behind it is on that callable's own row.
- * - `system` is the platform itself (a TTL delete, say).
- * - Anything else is an end user through a client SDK, and `authId` is their
- *   uid (`api_key` in production). An id that is not uid-shaped — the
- *   emulator reports `unknown` with a fake e-mail — is not guessed at: the
- *   row says it could not tell, rather than naming somebody.
+ * owner was the sole writer. The rule is `AuditSystem.profileWriter`
+ * (`@creativo/ecs-core`): the Admin SDK and the platform are processes, an
+ * end user is credited by a uid-shaped id, and an id that is not one is
+ * never guessed at.
  */
 export function profileWriter(
   authType: string,
   authId: string | undefined,
 ): Actor {
-  switch (authType) {
-    case 'service_account':
-      return Actor.system('admin_sdk');
-    case 'system':
-      return Actor.system('firestore_system');
-  }
-  const uid =
-    authId !== undefined && UID_SHAPE.test(authId)
-      ? UserId.create(authId)
-      : null;
-  if (uid?.isSuccess()) return Actor.user(uid.value);
-  const known = ['api_key', 'unauthenticated', 'unknown'].includes(authType);
-  return Actor.system(`unattributed_${known ? authType : 'unknown'}`);
+  return legacyActorOf(AuditSystem.profileWriter(authType, authId ?? null));
 }
 
 /**
@@ -216,3 +190,18 @@ export const auditProfileChanges = onDocumentWrittenWithAuthContext(
   { document: 'users/{uid}', retry: true },
   (event) => auditProfileWrite(event, adminFirestore()),
 );
+
+// ── The bridge: ecs-core's actor → the legacy class (Phase 4 deletes it) ──
+
+/** The writer as the legacy row holds it: a process by its source, a person by uid. */
+function legacyActorOf(actor: EcsActor): Actor {
+  if (actor.kind === ActorKind.User) {
+    const uid = UserId.create(actor.userId);
+    if (uid.isSuccess()) return Actor.user(uid.value);
+  }
+  return Actor.system(
+    actor.kind === ActorKind.System
+      ? actor.source
+      : SystemSource.UnattributedUnknown,
+  );
+}

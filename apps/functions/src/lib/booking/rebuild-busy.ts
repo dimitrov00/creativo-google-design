@@ -3,6 +3,7 @@ import { logger } from 'firebase-functions';
 import type { DocumentData, Firestore } from 'firebase-admin/firestore';
 import { Interval } from '@creativo/domain/scheduling';
 import { busyContributionsOf, mergeBusy } from '@creativo/application/booking';
+import { BusySystem } from '@creativo/ecs-core';
 import { busyPurgeAt } from '../../adapters/firestore-booking-store';
 import { adminFirestore } from '../firebase-admin';
 
@@ -110,9 +111,10 @@ async function rebuildBusyDocument(db: Firestore, key: string): Promise<void> {
         barberId,
         dayKey,
         zone,
-        // The same normalize-and-format path the commit write uses, so a
-        // rebuild after a no-op change produces byte-identical slots.
-        busy: mergeBusy([], intervals, zone),
+        // The projection's merge (`BusySystem.mergeBusy`: density, never
+        // count), stored through the same format path the commit write
+        // uses, so a rebuild after a no-op change produces identical slots.
+        busy: mergeBusy([], BusySystem.mergeBusy([], intervals, []), zone),
         purgeAt: busyPurgeAt(dayKey),
       });
     });

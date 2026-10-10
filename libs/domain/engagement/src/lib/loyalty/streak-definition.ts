@@ -1,4 +1,13 @@
 import { Result, fail, ok } from '@creativo/domain/kernel';
+import {
+  DayKey,
+  type ServiceCategoryId,
+  type ServiceId,
+  StreakIntervalKind,
+  StreakQualifierKind,
+  type StreakRule,
+  StreakRuleSystem,
+} from '@creativo/ecs-core';
 import { LocalizedText, LocalizedTextProps } from '@creativo/domain/catalog';
 import { IsoDate, isIsoDate } from './loyalty-calendar';
 import {
@@ -165,32 +174,12 @@ export interface StreakRuleChange {
 }
 
 type Whole = { readonly min: number; readonly max: number };
-type PartDirection = Exclude<StreakRuleDirection, 'switch'>;
 
 const wholeWithin = (value: unknown, range: Whole): value is number =>
   typeof value === 'number' &&
   Number.isInteger(value) &&
   value >= range.min &&
   value <= range.max;
-
-/** Which way a figure moved, given which way is the client's. */
-const moved = (
-  before: number,
-  after: number,
-  more: 'looser' | 'stricter',
-): PartDirection => {
-  if (after === before) return 'neutral';
-  const less = more === 'looser' ? 'stricter' : 'looser';
-  return after > before ? more : less;
-};
-
-const blend = (parts: readonly PartDirection[]): PartDirection => {
-  const looser = parts.includes('looser');
-  const stricter = parts.includes('stricter');
-  if (parts.includes('mixed') || (looser && stricter)) return 'mixed';
-  if (looser) return 'looser';
-  return stricter ? 'stricter' : 'neutral';
-};
 
 /**
  * One version of the rhythm's rule, validated: every figure inside its
@@ -496,109 +485,44 @@ export class StreakDefinition {
   }
 
   summary(): StreakRuleSummary {
-    const { protections, bookingHold, repair } = this;
+    const summary = StreakRuleSystem.summary(ruleOf(this));
+    const { interval, qualifier } = summary;
     return {
-      enabled: this.enabled,
-      interval: this.interval.toProps(),
-      graceDays: this.graceDays,
-      protections:
-        protections.enabled && protections.maxBanked > 0
-          ? {
-              maxBanked: protections.maxBanked,
-              earnEvery: protections.earnEvery,
-            }
-          : null,
-      shopExcuses: STREAK_SHOP_EXCUSES.every((excuse) =>
-        this.excuses.includes(excuse),
-      ),
-      hold:
-        bookingHold.enabled && bookingHold.maxDaysPastDue > 0
-          ? { maxDaysPastDue: bookingHold.maxDaysPastDue }
-          : null,
-      repair:
-        repair.enabled && this.onBreak === 'restart'
-          ? { windowDays: repair.windowDays }
-          : null,
-      holdsCount: this.onBreak === 'hold',
-      qualifier: this.qualifier.toProps(),
+      ...summary,
+      interval:
+        interval.kind === StreakIntervalKind.Fixed
+          ? { kind: 'fixed', days: interval.days }
+          : {
+              kind: 'personal',
+              tolerancePct: interval.tolerancePct,
+              minDays: interval.minDays,
+              maxDays: interval.maxDays,
+              fallbackDays: interval.fallbackDays,
+            },
+      qualifier:
+        qualifier.kind === StreakQualifierKind.Services
+          ? { kind: 'services', serviceIds: qualifier.serviceIds }
+          : qualifier.kind === StreakQualifierKind.Categories
+            ? { kind: 'categories', categoryIds: qualifier.categoryIds }
+            : { kind: 'anyVisit' },
     };
   }
 
   /**
    * What moved since `previous`, and whom it favours. A part is judged by
    * what it DOES: a figure of a part that is off, before and after, is
-   * listed as changed and moves nothing (`neutral`).
+   * listed as changed and moves nothing (`neutral`). The math is
+   * `StreakRuleSystem.changeFrom`; the name is the head's, compared here.
    */
   changeFrom(previous: StreakDefinition): StreakRuleChange {
-    const parts: [keyof StreakDefinitionProps, boolean, PartDirection][] = [
-      ['name', !this.name.equals(previous.name), 'neutral'],
-      ['enabled', this.enabled !== previous.enabled, 'neutral'],
-      [
-        'qualifier',
-        !this.qualifier.equals(previous.qualifier),
-        this.qualifierFrom(previous),
-      ],
-      [
-        'minGapDays',
-        this.minGapDays !== previous.minGapDays,
-        moved(previous.minGapDays, this.minGapDays, 'stricter'),
-      ],
-      [
-        'bookingHold',
-        !sameFigures(this.bookingHold, previous.bookingHold),
-        moved(heldDays(previous), heldDays(this), 'looser'),
-      ],
-      [
-        'interval',
-        !this.interval.equals(previous.interval),
-        this.intervalFrom(previous),
-      ],
-      [
-        'graceDays',
-        this.graceDays !== previous.graceDays,
-        moved(previous.graceDays, this.graceDays, 'looser'),
-      ],
-      ['riskLeadDays', this.riskLeadDays !== previous.riskLeadDays, 'neutral'],
-      [
-        'protections',
-        !sameFigures(this.protections, previous.protections),
-        this.protectionsFrom(previous),
-      ],
-      [
-        'excuses',
-        this.excuses.join() !== previous.excuses.join(),
-        blend([
-          this.excuses.some((e) => !previous.excuses.includes(e))
-            ? 'looser'
-            : 'neutral',
-          previous.excuses.some((e) => !this.excuses.includes(e))
-            ? 'stricter'
-            : 'neutral',
-        ]),
-      ],
-      [
-        'clientPause',
-        !sameFigures(this.clientPause, previous.clientPause),
-        moved(pauseDays(previous), pauseDays(this), 'looser'),
-      ],
-      [
-        'repair',
-        !sameFigures(this.repair, previous.repair),
-        this.repairFrom(previous),
-      ],
-      [
-        'onBreak',
-        this.onBreak !== previous.onBreak,
-        this.onBreak === 'hold' ? 'looser' : 'stricter',
-      ],
-    ];
-    const moving = parts.filter(([, differs]) => differs);
+    const change = StreakRuleSystem.changeFrom(
+      ruleOf(this),
+      ruleOf(previous),
+      !this.name.equals(previous.name),
+    );
     return {
-      direction:
-        this.enabled !== previous.enabled
-          ? 'switch'
-          : blend(moving.map(([, , direction]) => direction)),
-      changed: moving.map(([key]) => key),
+      direction: change.direction,
+      changed: change.changed as readonly (keyof StreakDefinitionProps)[],
     };
   }
 
@@ -624,9 +548,8 @@ export class StreakDefinition {
   equals(other: StreakDefinition): boolean {
     return (
       this.id === other.id &&
-      this.version === other.version &&
-      this.effectiveFrom === other.effectiveFrom &&
-      this.changeFrom(other).changed.length === 0
+      this.name.equals(other.name) &&
+      StreakRuleSystem.equals(ruleOf(this), ruleOf(other))
     );
   }
 
@@ -651,100 +574,49 @@ export class StreakDefinition {
       onBreak: this.onBreak,
     };
   }
-
-  private qualifierFrom(previous: StreakDefinition): PartDirection {
-    switch (this.qualifier.comparedTo(previous.qualifier)) {
-      case 'same':
-        return 'neutral';
-      case 'wider':
-        return 'looser';
-      case 'narrower':
-        return 'stricter';
-      case 'other':
-        return 'mixed';
-    }
-  }
-
-  /**
-   * Two intervals of one kind are compared figure by figure: every figure
-   * of an interval lengthens a period as it grows. Across kinds they are
-   * compared by the periods they can open: a personal interval whose
-   * shortest period is the fixed one's length favours everyone.
-   */
-  private intervalFrom(previous: StreakDefinition): PartDirection {
-    const after = this.interval.toProps();
-    const before = previous.interval.toProps();
-    if (after.kind === 'fixed' && before.kind === 'fixed') {
-      return moved(before.days, after.days, 'looser');
-    }
-    if (after.kind === 'personal' && before.kind === 'personal') {
-      return blend([
-        moved(before.tolerancePct, after.tolerancePct, 'looser'),
-        moved(before.minDays, after.minDays, 'looser'),
-        moved(before.maxDays, after.maxDays, 'looser'),
-        moved(before.fallbackDays, after.fallbackDays, 'looser'),
-      ]);
-    }
-    const longer = this.interval.shortestDays >= previous.interval.longestDays;
-    const shorter = this.interval.longestDays <= previous.interval.shortestDays;
-    if (longer && shorter) return 'neutral';
-    if (longer) return 'looser';
-    return shorter ? 'stricter' : 'mixed';
-  }
-
-  private protectionsFrom(previous: StreakDefinition): PartDirection {
-    const after = reserveOf(this);
-    const before = reserveOf(previous);
-    if (after === 0 || before === 0) return moved(before, after, 'looser');
-    return blend([
-      moved(before, after, 'looser'),
-      moved(
-        previous.protections.earnEvery,
-        this.protections.earnEvery,
-        'stricter',
-      ),
-      moved(
-        previous.protections.startWith,
-        this.protections.startWith,
-        'looser',
-      ),
-    ]);
-  }
-
-  /** The way back matters only where a miss breaks the run: under `hold` nothing is broken, before or after. */
-  private repairFrom(previous: StreakDefinition): PartDirection {
-    if (this.onBreak === 'hold' || previous.onBreak === 'hold') {
-      return 'neutral';
-    }
-    const after = this.repair;
-    const before = previous.repair;
-    if (!after.enabled || !before.enabled) {
-      return moved(Number(before.enabled), Number(after.enabled), 'looser');
-    }
-    return blend([
-      moved(before.windowDays, after.windowDays, 'looser'),
-      moved(before.perYear, after.perYear, 'looser'),
-    ]);
-  }
 }
 
-/** Two parts hold the same figures, the switch among them. */
-function sameFigures(
-  a: Readonly<Record<string, number | boolean>>,
-  b: Readonly<Record<string, number | boolean>>,
-): boolean {
-  const figures = new Map(Object.entries(b));
-  return Object.entries(a).every(([key, value]) => figures.get(key) === value);
+// ── The bridge: legacy class → ecs-core struct (Phase 4 deletes it) ──────
+
+/** The version as `StreakRuleSystem` reads it: the class's figures, with the day as a day key. */
+function ruleOf(definition: StreakDefinition): StreakRule {
+  const qualifier = definition.qualifier.toProps();
+  const interval = definition.interval.toProps();
+  return {
+    version: definition.version,
+    effectiveFromDayKey: DayKey.of(definition.effectiveFrom),
+    enabled: definition.enabled,
+    qualifier:
+      qualifier.kind === 'services'
+        ? {
+            kind: StreakQualifierKind.Services,
+            serviceIds: qualifier.serviceIds as readonly ServiceId[],
+          }
+        : qualifier.kind === 'categories'
+          ? {
+              kind: StreakQualifierKind.Categories,
+              categoryIds:
+                qualifier.categoryIds as readonly ServiceCategoryId[],
+            }
+          : { kind: StreakQualifierKind.AnyVisit },
+    minGapDays: definition.minGapDays,
+    bookingHold: definition.bookingHold,
+    interval:
+      interval.kind === 'fixed'
+        ? { kind: StreakIntervalKind.Fixed, days: interval.days }
+        : {
+            kind: StreakIntervalKind.Personal,
+            tolerancePct: interval.tolerancePct,
+            minDays: interval.minDays,
+            maxDays: interval.maxDays,
+            fallbackDays: interval.fallbackDays,
+          },
+    graceDays: definition.graceDays,
+    riskLeadDays: definition.riskLeadDays,
+    protections: definition.protections,
+    excuses: definition.excuses,
+    clientPause: definition.clientPause,
+    repair: definition.repair,
+    onBreak: definition.onBreak,
+  };
 }
-
-/** The days past the due date a booking holds: none when the hold is off. */
-const heldDays = (rule: StreakDefinition): number =>
-  rule.bookingHold.enabled ? rule.bookingHold.maxDaysPastDue : 0;
-
-/** The days a year a client may pause: none when the pause is off. */
-const pauseDays = (rule: StreakDefinition): number =>
-  rule.clientPause.enabled ? rule.clientPause.maxDaysPerYear : 0;
-
-/** What the reserve can hold: nothing when protections are off. */
-const reserveOf = (rule: StreakDefinition): number =>
-  rule.protections.enabled ? rule.protections.maxBanked : 0;

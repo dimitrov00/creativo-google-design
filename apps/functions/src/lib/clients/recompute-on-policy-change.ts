@@ -3,6 +3,7 @@ import { onDocumentWritten } from 'firebase-functions/v2/firestore';
 import { onSchedule } from 'firebase-functions/v2/scheduler';
 import { FieldPath, type Firestore } from 'firebase-admin/firestore';
 import type { ClientStatsPolicy } from '@creativo/domain/scheduling';
+import { WorkBudgetSystem } from '@creativo/ecs-core';
 import {
   BOOKING_POLICY_DOC,
   CLIENT_STATS_COLLECTION,
@@ -263,7 +264,8 @@ async function walkStoredClients(
   let superseded = false;
   try {
     let policy: ClientStatsPolicy | null = null;
-    while (pages === 0 || !budget.spent()) {
+    // Always the first page, then only while the budget lasts.
+    while (WorkBudgetSystem.takesChunk(pages, () => budget.spent())) {
       const live = policyJobFromDocument((await ref.get()).data());
       if (live === null || !sameStep(live, fired)) {
         superseded = true;

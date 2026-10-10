@@ -1,9 +1,13 @@
+import { OtpSystem } from '@creativo/ecs-core';
 import { Email, Otp, OtpId, OtpPurpose } from '@creativo/domain/models';
-import { PhoneNumber, Result, fail, ok } from '@creativo/domain/kernel';
 import {
-  AuthDeployment,
-  identifierKindForStrategy,
-} from '@creativo/domain/identity';
+  PhoneNumber,
+  Result,
+  ZonedDateTime,
+  fail,
+  ok,
+} from '@creativo/domain/kernel';
+import { AuthDeployment } from '@creativo/domain/identity';
 import {
   OtpCodeGenerator,
   OtpCodeHasher,
@@ -23,10 +27,10 @@ import {
   ValidationFailure,
 } from './request-otp.errors';
 
-// NOT part of `OtpPolicy` (which owns ttl/attempts/session): the resend
-// window is server-side abuse throttling, deliberately outside deployment
-// config so a config edit can never widen it by accident.
-const RATE_LIMIT_WINDOW_MINUTES = 1;
+// The resend window (server-side abuse throttling, deliberately outside
+// deployment config) and the deployment's one challenge channel are
+// `OtpSystem` math (`@creativo/ecs-core`, Phase 2 shim) — this use case
+// keeps its I/O order and its error classes.
 const OTP_ZONE = 'UTC';
 
 export interface RequestOtpInput {
@@ -104,11 +108,14 @@ export class RequestOtpUseCase {
     // Magic-link deployments issue no code challenges at all, so any OTP
     // request against one is a mismatch by definition.
     const strategy = this.deployment.strategy;
-    const requestedKind = input.destinationType === 'sms' ? 'phone' : 'email';
+    // The `email_link` clause never changes the verdict (`channelAccepts`
+    // already refuses it); it narrows `strategy` to an OTP strategy, whose
+    // policy carries `maxAttempts`, for the issue below.
     if (
-      strategy.kind === 'email_link' ||
-      requestedKind !== identifierKindForStrategy(strategy)
+      !OtpSystem.channelAccepts(strategy, input.destinationType) ||
+      strategy.kind === 'email_link'
     ) {
+      const requestedKind = input.destinationType === 'sms' ? 'phone' : 'email';
       return fail(new OtpChannelMismatchError(requestedKind, strategy.kind));
     }
 
@@ -124,7 +131,14 @@ export class RequestOtpUseCase {
     }
     const now = nowResult.value;
 
-    const since = now.plusMinutes(-RATE_LIMIT_WINDOW_MINUTES);
+    const sinceResult = ZonedDateTime.fromMillis(
+      OtpSystem.resendWindowStartMs(now.toMillis()),
+      OTP_ZONE,
+    );
+    if (sinceResult.isFailure()) {
+      return fail(sinceResult.error);
+    }
+    const since = sinceResult.value;
     const recentResult =
       await this.otpRepository.findRecentUnconsumedByDestination(
         destination,

@@ -10,6 +10,7 @@ import {
   InvalidGuestSequenceError,
 } from './booking-party.errors';
 import { SeatLabel } from './seat-label';
+import { Party, SeatLabel as EcsSeatLabel } from '@creativo/ecs-core';
 
 export interface BookingPartyGuest {
   readonly id: GuestId;
@@ -35,16 +36,9 @@ export interface BookingPartyGuest {
 export function labelSharedByTwoGuests(
   guests: Iterable<{ readonly key: string; readonly label: SeatLabel }>,
 ): SeatLabel | null {
-  const keyByLabel = new Map<string, string>();
-  for (const guest of guests) {
-    const known = keyByLabel.get(guest.label.value);
-    if (known === undefined) {
-      keyByLabel.set(guest.label.value, guest.key);
-    } else if (known !== guest.key) {
-      return guest.label;
-    }
-  }
-  return null;
+  const listed = [...guests];
+  const shared = Party.labelSharedByTwoGuests(listed.map(labelledGuestOf));
+  return shared === null ? null : legacyLabelOf(listed, shared);
 }
 
 export interface CreateBookingPartyProps {
@@ -314,4 +308,27 @@ export class BookingParty {
     }
     return ok(raw);
   }
+}
+
+// ── The bridge: legacy label → ecs-core struct (Phase 4 deletes it) ──────
+
+/** A guest as `Party.labelSharedByTwoGuests` reads it: its key and its stored label. */
+function labelledGuestOf(guest: {
+  readonly key: string;
+  readonly label: SeatLabel;
+}): Party.LabelledGuest {
+  return { key: guest.key, label: EcsSeatLabel.of(guest.label.value) };
+}
+
+/**
+ * The caller's own label object for the shared label the rule named (every
+ * guest under it carries an equal one); `null` only if no guest does, which
+ * the rule never answers.
+ */
+function legacyLabelOf(
+  guests: readonly { readonly key: string; readonly label: SeatLabel }[],
+  shared: EcsSeatLabel,
+): SeatLabel | null {
+  const match = guests.find((guest) => guest.label.value === shared);
+  return match === undefined ? null : match.label;
 }

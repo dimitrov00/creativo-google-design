@@ -5,6 +5,16 @@ import {
   ImpersonationSessionId,
 } from '@creativo/domain/governance';
 import { UserId } from '@creativo/domain/accounts';
+import {
+  ImpersonationEndReason as EcsEndReason,
+  ImpersonationEndReasonKind,
+  type ImpersonationSessionEntity,
+  ImpersonationSessionId as EcsSessionId,
+  ImpersonationState,
+  ImpersonationStatus,
+  ImpersonationSystem,
+  UserId as EcsUserId,
+} from '@creativo/ecs-core';
 import { ImpersonationPort } from '../ports/impersonation.port';
 import {
   EndImpersonationError,
@@ -38,10 +48,19 @@ export class EndImpersonationUseCase {
       return fail(new ImpersonationSessionNotFoundError());
     }
 
-    const clock = { now: () => input.now };
-    const reason = session.isExpired(clock)
-      ? ImpersonationEndReason.expired()
-      : ImpersonationEndReason.adminEnded(input.endedBy);
+    // The decision is `ImpersonationSystem.endByAdmin`: `expired` when the
+    // window had lapsed by the time the call arrived, `admin_ended` by the
+    // caller otherwise. The class then stamps that reason on its own copy;
+    // an already-ended session is refused by `end` with its own error.
+    const decided = ImpersonationSystem.endByAdmin(
+      entityOf(session),
+      EcsUserId.of(input.endedBy.value),
+      input.now.toMillis(),
+    );
+    const reason =
+      decided.ok && expiredIn(decided.value)
+        ? ImpersonationEndReason.expired()
+        : ImpersonationEndReason.adminEnded(input.endedBy);
 
     const endResult = session.end(input.now, reason);
     if (endResult.isFailure()) {
@@ -56,4 +75,35 @@ export class EndImpersonationUseCase {
 
     return ok(ended);
   }
+}
+
+// ── The bridge: the legacy session → ecs-core's entity (Phase 4 deletes it) ─
+
+function entityOf(session: ImpersonationSession): ImpersonationSessionEntity {
+  return {
+    id: EcsSessionId.of(session.id.value),
+    adminUserId: EcsUserId.of(session.adminUserId.value),
+    targetUserId: EcsUserId.of(session.targetUserId.value),
+    scope: session.scope,
+    reason: session.reason,
+    startedAtMs: session.startedAt.toMillis(),
+    expiresAtMs: session.expiresAt.toMillis(),
+    status:
+      session.status.kind === 'active'
+        ? ImpersonationStatus.active()
+        : {
+            kind: ImpersonationState.Ended,
+            endedAtMs: session.status.endedAt.toMillis(),
+            // Only `active` is read by the end; an ended row is refused.
+            reason: EcsEndReason.expired(),
+          },
+  };
+}
+
+/** Did the system end the session as `expired`? */
+function expiredIn(ended: ImpersonationSessionEntity): boolean {
+  return (
+    ended.status.kind === ImpersonationState.Ended &&
+    ended.status.reason.kind === ImpersonationEndReasonKind.Expired
+  );
 }

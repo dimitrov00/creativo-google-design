@@ -2,6 +2,13 @@ import {
   type PersistedDocument,
   policyFromDocument,
 } from '@creativo/application/booking';
+import {
+  PolicyRecomputeJobId,
+  PolicyRecomputeJobKind,
+  PolicyRecomputeJobSystem,
+  PreciseInstant,
+  type PolicyRecomputeJobEntity,
+} from '@creativo/ecs-core';
 import { BACKFILL_JOBS_COLLECTION } from '../ops/backfill-plan';
 
 /**
@@ -18,10 +25,17 @@ import { BACKFILL_JOBS_COLLECTION } from '../ops/backfill-plan';
  * write of this document is what triggers the next (the
  * `backfillJobs/{job}` progress shape `runBackfill` keeps, one document
  * over).
+ *
+ * Phase 2 shim: the decisions are `PolicyRecomputeJobSystem` in
+ * `@creativo/ecs-core`, over the job as its entity — epoch ms, and the
+ * change instant as a `{ seconds, nanos }` struct (§9 D17). This file keeps
+ * the stored RFC 3339 shapes for its callers and converts at the edge: every
+ * instant the system hands back unchanged keeps the exact text it came in
+ * as, and an instant it stamps is `nowIso`.
  */
 
 /** The job's document id, beside `runBackfill`'s own jobs. */
-export const POLICY_RECOMPUTE_JOB = 'clientStatsPolicy';
+export const POLICY_RECOMPUTE_JOB = PolicyRecomputeJobKind.ClientStatsPolicy;
 
 export const POLICY_RECOMPUTE_PATH = `${BACKFILL_JOBS_COLLECTION}/${POLICY_RECOMPUTE_JOB}`;
 
@@ -125,25 +139,6 @@ export function policyJobToDocument(
   };
 }
 
-/** Whole seconds, an optional fraction (dot included), a zone — no nested quantifier. */
-const RFC3339 =
-  /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(\.\d+|)(Z|[+-]\d{2}:\d{2})$/i;
-
-/** An RFC 3339 instant as whole epoch seconds and its fraction's digits; `null` when it is not one. */
-function instantOf(
-  iso: string,
-): { readonly seconds: number; readonly fraction: string } | null {
-  const match = RFC3339.exec(iso);
-  const [, wholeSeconds, fraction, zone] = match ?? [];
-  if (wholeSeconds === undefined || zone === undefined) return null;
-  const ms = Date.parse(`${wholeSeconds}${zone}`);
-  if (Number.isNaN(ms)) return null;
-  return {
-    seconds: ms / 1000,
-    fraction: (fraction ?? '').slice(1).replace(/0+$/, ''),
-  };
-}
-
 /**
  * The order of two RFC 3339 instants at FULL precision — negative, zero or
  * positive — or `null` when either is not one.
@@ -151,17 +146,13 @@ function instantOf(
  * Not `Date.parse`: it keeps milliseconds, and a Firestore event's time is
  * stamped in microseconds, so two settings writes inside one millisecond
  * would compare as simultaneous. The offset is normalised through the whole
- * seconds, and the fractions compare digit by digit.
+ * seconds, and the fraction is read to the nanosecond.
  */
 export function compareInstants(a: string, b: string): number | null {
-  const left = instantOf(a);
-  const right = instantOf(b);
-  if (left === null || right === null) return null;
-  if (left.seconds !== right.seconds) return left.seconds - right.seconds;
-  const width = Math.max(left.fraction.length, right.fraction.length);
-  const x = left.fraction.padEnd(width, '0');
-  const y = right.fraction.padEnd(width, '0');
-  return x === y ? 0 : x < y ? -1 : 1;
+  return PolicyRecomputeJobSystem.compareInstants(
+    instantFromIso(a),
+    instantFromIso(b),
+  );
 }
 
 /**
@@ -183,25 +174,17 @@ export function planPolicyJobStart(
   change: PolicyChange,
   nowIso: string,
 ): PolicyRecomputeJob | null {
-  if (current !== null) {
-    if (current.generation === change.eventId) return null;
-    const order = compareInstants(change.atIso, current.changedAt);
-    if (order !== null && order < 0) return null;
-  }
-  return {
-    generation: change.eventId,
-    changedAt: change.atIso,
-    cursor: null,
-    storedClients: 0,
-    recomputed: 0,
-    failed: 0,
-    startedAt: nowIso,
-    updatedAt: nowIso,
-    finishedAt: null,
-    stalledAt: null,
-    lastFailureCode: null,
-    windowHours: change.windowHours ?? null,
-  };
+  const texts: InstantTexts = new Map();
+  const next = PolicyRecomputeJobSystem.nextStep(
+    current === null ? null : toEntity(current, texts),
+    {
+      generation: change.eventId,
+      changedAt: instantIn(change.atIso, texts),
+      windowHours: change.windowHours ?? null,
+    },
+    msOf(nowIso),
+  );
+  return next === null ? null : fromEntity(next, null, nowIso, texts);
 }
 
 /**
@@ -214,10 +197,10 @@ export function sameStep(
   a: PolicyRecomputeJob,
   b: PolicyRecomputeJob,
 ): boolean {
-  return (
-    a.generation === b.generation &&
-    a.cursor === b.cursor &&
-    a.finishedAt === b.finishedAt
+  const texts: InstantTexts = new Map();
+  return PolicyRecomputeJobSystem.sameStep(
+    toEntity(a, texts),
+    toEntity(b, texts),
   );
 }
 
@@ -243,18 +226,14 @@ export function advancePolicyJob(
   step: PolicyStep,
   nowIso: string,
 ): PolicyRecomputeJob {
-  return {
-    ...job,
-    cursor: step.cursor,
-    storedClients: job.storedClients + step.visited,
-    recomputed: job.recomputed + step.recomputed,
-    failed: job.failed + step.failed,
-    updatedAt: nowIso,
-    finishedAt: step.exhausted ? nowIso : null,
-    // A step that moved the pass ends any stall before it.
-    stalledAt: null,
-    lastFailureCode: null,
-  };
+  const texts: InstantTexts = new Map();
+  const was = toEntity(job, texts);
+  return fromEntity(
+    PolicyRecomputeJobSystem.advance(was, step, msOf(nowIso)),
+    { job, entity: was },
+    nowIso,
+    texts,
+  );
 }
 
 /**
@@ -268,11 +247,19 @@ export function stallPolicyJob(
   code: string,
   nowIso: string,
 ): PolicyRecomputeJob {
-  return { ...job, stalledAt: nowIso, lastFailureCode: code };
+  const texts: InstantTexts = new Map();
+  const was = toEntity(job, texts);
+  return fromEntity(
+    PolicyRecomputeJobSystem.stall(was, code, msOf(nowIso)),
+    { job, entity: was },
+    nowIso,
+    texts,
+  );
 }
 
 /** How long a pass may go without moving before the sweep nudges it. */
-export const POLICY_JOB_STALE_AFTER_MS = 60 * 60 * 1000;
+export const POLICY_JOB_STALE_AFTER_MS =
+  PolicyRecomputeJobSystem.STALE_AFTER_MS;
 
 /**
  * The daily sweep's verdict: the job rewritten to fire its step once more,
@@ -293,11 +280,13 @@ export function planPolicyJobNudge(
   nowIso: string,
   staleAfterMs: number = POLICY_JOB_STALE_AFTER_MS,
 ): PolicyRecomputeJob | null {
-  if (job === null || job.finishedAt !== null) return null;
-  const quietMs = Date.parse(nowIso) - Date.parse(job.updatedAt);
-  // An unreadable time cannot prove the pass is moving: nudge it.
-  if (!Number.isNaN(quietMs) && quietMs < staleAfterMs) return null;
-  return { ...job, updatedAt: nowIso, stalledAt: null };
+  if (job === null) return null;
+  const texts: InstantTexts = new Map();
+  const was = toEntity(job, texts);
+  const next = PolicyRecomputeJobSystem.nudge(was, msOf(nowIso), staleAfterMs);
+  return next === null
+    ? null
+    : fromEntity(next, { job, entity: was }, nowIso, texts);
 }
 
 /**
@@ -323,7 +312,8 @@ export interface LivePolicyLine {
 }
 
 /** The generation a pass the sweep starts is filed under — never an event id. */
-export const SWEEP_GENERATION_PREFIX = 'sweep:';
+export const SWEEP_GENERATION_PREFIX =
+  PolicyRecomputeJobSystem.SWEEP_GENERATION_PREFIX;
 
 /**
  * The daily sweep's catch-up: the pass a DROPPED policy start owes the
@@ -358,37 +348,180 @@ export const SWEEP_GENERATION_PREFIX = 'sweep:';
  * lead-time edits are routine and change no client's answer. The residual
  * above needs two PERMANENT start failures in a row plus a move back, heals
  * per client on their next appointment write, and has a manual repair. For
- * the literal rule, drop the window-equality return below; the spec pins
- * both halves ("owes nothing … moved no line" and the residual).
+ * the literal rule, drop the window-equality return in
+ * `PolicyRecomputeJobSystem.owesCatchUp`; the spec pins both halves ("owes
+ * nothing … moved no line" and the residual).
  */
 export function planPolicyCatchUp(
   job: PolicyRecomputeJob | null,
   live: LivePolicyLine,
   nowIso: string,
 ): PolicyRecomputeJob | null {
-  if (job === null) {
-    const defaults = policyFromDocument(undefined).cancellationWindowHours;
-    if (live.windowHours === defaults) return null;
-  } else {
-    // No document at all is a change too (a deleted policy is the defaults);
-    // an instant that does not parse cannot prove the job is current.
-    const order =
-      live.updatedAt === null
-        ? null
-        : compareInstants(live.updatedAt, job.changedAt);
-    if (order !== null && order <= 0) return null;
-    if (job.windowHours !== null && job.windowHours === live.windowHours) {
-      return null;
-    }
-  }
-  const atIso = live.updatedAt ?? nowIso;
-  return planPolicyJobStart(
-    job,
+  const texts: InstantTexts = new Map();
+  const next = PolicyRecomputeJobSystem.catchUp(
+    job === null ? null : toEntity(job, texts),
     {
-      eventId: `${SWEEP_GENERATION_PREFIX}${atIso}`,
-      atIso,
+      updatedAt:
+        live.updatedAt === null ? null : instantIn(live.updatedAt, texts),
       windowHours: live.windowHours,
     },
-    nowIso,
+    msOf(nowIso),
+    live.updatedAt ?? nowIso,
+    policyFromDocument(undefined).cancellationWindowHours,
   );
+  return next === null ? null : fromEntity(next, null, nowIso, texts);
+}
+
+/* ── The Phase 2 bridge: RFC 3339 strings ↔ the job entity ─────────────── */
+
+/** Whole seconds, an optional fraction (dot included), a zone — no nested quantifier. */
+const RFC3339 =
+  /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(\.\d+|)(Z|[+-]\d{2}:\d{2})$/i;
+
+/**
+ * An RFC 3339 instant — what a legacy job or pass stamp holds — as the
+ * §9 D17 `{ seconds, nanos }` struct, its fraction read to the nanosecond.
+ * One that does not parse becomes an instant no order can be read from
+ * (`NaN`), which `PolicyRecomputeJobSystem.compareInstants` answers `null`.
+ * Shared with `client-stats-projection.ts`, the other side of the pass guard.
+ */
+export function instantFromIso(iso: string): PreciseInstant {
+  const match = RFC3339.exec(iso);
+  const [, wholeSeconds, fraction, zone] = match ?? [];
+  const ms =
+    wholeSeconds === undefined || zone === undefined
+      ? Number.NaN
+      : Date.parse(`${wholeSeconds}${zone}`);
+  if (Number.isNaN(ms)) return { seconds: Number.NaN, nanos: Number.NaN };
+  const digits = (fraction ?? '').slice(1, 10).padEnd(9, '0');
+  return { seconds: ms / 1000, nanos: Number(digits) };
+}
+
+/** Each instant struct handed to the system, by identity, to the text it came in as. */
+type InstantTexts = Map<PreciseInstant, string>;
+
+function instantIn(iso: string, texts: InstantTexts): PreciseInstant {
+  const instant = instantFromIso(iso);
+  texts.set(instant, iso);
+  return instant;
+}
+
+const msOf = (iso: string): number => Date.parse(iso);
+const msOrNull = (iso: string | null): number | null =>
+  iso === null ? null : msOf(iso);
+
+function toEntity(
+  job: PolicyRecomputeJob,
+  texts: InstantTexts,
+): PolicyRecomputeJobEntity {
+  const finishedAtMs = msOrNull(job.finishedAt);
+  return {
+    id: PolicyRecomputeJobId.of(PolicyRecomputeJobId.FIXED),
+    job: PolicyRecomputeJobKind.ClientStatsPolicy,
+    generation: job.generation,
+    changedAt: instantIn(job.changedAt, texts),
+    cursor: job.cursor,
+    storedClients: job.storedClients,
+    recomputed: job.recomputed,
+    failed: job.failed,
+    startedAtMs: msOf(job.startedAt),
+    updatedAtMs: msOf(job.updatedAt),
+    finishedAtMs,
+    stepKey: PolicyRecomputeJobSystem.stepKeyOf(
+      job.generation,
+      job.cursor,
+      finishedAtMs,
+    ),
+    stalledAtMs: msOrNull(job.stalledAt),
+    lastFailureCode: job.lastFailureCode,
+    windowHours: job.windowHours,
+  };
+}
+
+/**
+ * An instant field back as text: the stored text when the system left it
+ * as it was, `nowIso` when it stamped now (the only instant it makes).
+ */
+function textOf(
+  ms: number,
+  wasMs: number | null,
+  wasText: string | null,
+  nowIso: string,
+): string {
+  if (wasText !== null && Object.is(ms, wasMs)) return wasText;
+  return Object.is(ms, msOf(nowIso)) || !Number.isFinite(ms)
+    ? nowIso
+    : new Date(ms).toISOString();
+}
+
+function textOrNull(
+  ms: number | null,
+  wasMs: number | null,
+  wasText: string | null,
+  nowIso: string,
+): string | null {
+  return ms === null ? null : textOf(ms, wasMs, wasText, nowIso);
+}
+
+/** The change instant back as text: the text it came in as, else `nowIso` (the sweep's no-document change). */
+function changedAtText(
+  instant: PreciseInstant,
+  texts: InstantTexts,
+  nowIso: string,
+): string {
+  const text = texts.get(instant);
+  if (text !== undefined) return text;
+  return PreciseInstant.equals(
+    instant,
+    PreciseInstant.fromEpochMs(msOf(nowIso)),
+  )
+    ? nowIso
+    : new Date(PreciseInstant.toEpochMs(instant)).toISOString();
+}
+
+function fromEntity(
+  next: PolicyRecomputeJobEntity,
+  was: {
+    readonly job: PolicyRecomputeJob;
+    readonly entity: PolicyRecomputeJobEntity;
+  } | null,
+  nowIso: string,
+  texts: InstantTexts,
+): PolicyRecomputeJob {
+  const before = was?.entity ?? null;
+  const stored = was?.job ?? null;
+  return {
+    generation: next.generation,
+    changedAt: changedAtText(next.changedAt, texts, nowIso),
+    cursor: next.cursor,
+    storedClients: next.storedClients,
+    recomputed: next.recomputed,
+    failed: next.failed,
+    startedAt: textOf(
+      next.startedAtMs,
+      before?.startedAtMs ?? null,
+      stored?.startedAt ?? null,
+      nowIso,
+    ),
+    updatedAt: textOf(
+      next.updatedAtMs,
+      before?.updatedAtMs ?? null,
+      stored?.updatedAt ?? null,
+      nowIso,
+    ),
+    finishedAt: textOrNull(
+      next.finishedAtMs,
+      before?.finishedAtMs ?? null,
+      stored?.finishedAt ?? null,
+      nowIso,
+    ),
+    stalledAt: textOrNull(
+      next.stalledAtMs,
+      before?.stalledAtMs ?? null,
+      stored?.stalledAt ?? null,
+      nowIso,
+    ),
+    lastFailureCode: next.lastFailureCode,
+    windowHours: next.windowHours,
+  };
 }

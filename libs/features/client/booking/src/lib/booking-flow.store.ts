@@ -20,11 +20,11 @@ import {
   BookingFlowStep,
   BookingParty,
   CalendarDay,
-  type CartLine,
   CartLineId,
   Interval,
   FlexibleWhen,
   GuestId,
+  MAX_FLEXIBLE_DAYS,
   MAX_PARTY_SIZE,
   NewCartLine,
   type CommitBookingSeatRequest,
@@ -38,7 +38,6 @@ import {
   advanceBookingFlow,
   carriedOffsetMinutes,
   fail,
-  firstSeatWithoutService,
   initialBookingFlowState,
   ok,
   seatKeyValue,
@@ -49,7 +48,7 @@ import {
   ServiceId,
   ServiceVariantId,
 } from '@creativo/application/catalog';
-import type { UserId } from '@creativo/application/accounts';
+import { UserId } from '@creativo/application/accounts';
 import type {
   Appointment,
   BookingContactProps,
@@ -58,6 +57,31 @@ import type {
   WaitlistRequest,
 } from '@creativo/application/booking';
 import { CLOCK } from '@creativo/application/shared';
+import {
+  BarberId as BarberKey,
+  type BookingCart as CartData,
+  BookingCartSystem,
+  type BookingFlowLimits,
+  BookingFlowStep as FlowStep,
+  BookingFlowSystem,
+  CommitSubjectKind,
+  DayKey,
+  DayWindows as DayWindowsData,
+  FlexibleWhen as WhenData,
+  GuestLabelSystem,
+  type LocationId as LocationKey,
+  MinuteRange,
+  type Party as PartyData,
+  PartyMember as MemberData,
+  PrefillCompanions,
+  type PrefillSeat,
+  SeatLabel as LabelData,
+  SeatSubject as SubjectData,
+  ServiceId as ServiceKey,
+  ServiceVariantId as VariantKey,
+  TimeInterval,
+  UserId as UserKey,
+} from '@creativo/ecs-core';
 
 /**
  * Wraps the pure `advanceBookingFlow` machine (blueprint §5.3) with the two
@@ -188,7 +212,13 @@ export class BookingFlowStore {
 
   readonly maxPartySize = MAX_PARTY_SIZE;
 
-  readonly canAddGuest = computed(() => this.partySize() < MAX_PARTY_SIZE);
+  readonly canAddGuest = computed(() => {
+    const party = this.party();
+    return (
+      party === null ||
+      BookingFlowSystem.canAddGuest(toPartyData(party), FLOW_LIMITS)
+    );
+  });
 
   readonly isClaimed = computed(() => this.party()?.isClaimed() ?? true);
 
@@ -221,21 +251,18 @@ export class BookingFlowStore {
    * drops its whole navigation chrome rather than showing controls that
    * cannot do anything.
    */
-  readonly isTerminal = computed(
-    () => BOOKING_FLOW_STEPS.indexOf(this.step()) === -1,
+  readonly isTerminal = computed(() =>
+    BookingFlowSystem.isTerminal(this.step()),
   );
 
   /** 1-based position on the wizard spine; terminal states report the end. */
-  readonly currentStep = computed(() => {
-    const index = BOOKING_FLOW_STEPS.indexOf(this.step());
-    return index === -1 ? this.totalSteps : index + 1;
-  });
+  readonly currentStep = computed(() =>
+    BookingFlowSystem.currentStep(this.step()),
+  );
 
   // Terminal states report step 4 of 4, which used to light this up on the
   // confirmation screen — a back chevron the machine answers with a refusal.
-  readonly canGoBack = computed(
-    () => !this.isTerminal() && this.currentStep() > 1,
-  );
+  readonly canGoBack = computed(() => BookingFlowSystem.canGoBack(this.step()));
 
   // ── Commands ───────────────────────────────────────────────────────
 
@@ -781,56 +808,38 @@ export class BookingFlowStore {
     const party = this.party();
     if (!cart || !party) return null;
 
-    const lineIndex = new Map<
-      string,
-      { readonly seatKey: string; readonly line: CartLine }
-    >();
-    for (const [seatKey, lines] of cart.entries()) {
-      for (const line of lines) {
-        lineIndex.set(line.id.value, { seatKey, line });
-      }
-    }
-
-    const guestLabels = new Map(
-      party.guests.map((guest) => [guest.id.value, guest.label.value]),
-    );
-
-    const seats: CommitBookingSeatRequest[] = [];
-    for (const assignment of selection.assignments) {
-      const found = lineIndex.get(assignment.lineId.value);
-      if (!found) return null;
-
-      // `seatKeyValue` is `'self'` or the bare `GuestId`. A guest travels as
-      // their LABEL, because that is all a party member is until they have an
-      // account of their own — the server has no user to bind them to.
-      const label = guestLabels.get(found.seatKey);
-      if (found.seatKey !== 'self' && label === undefined) return null;
-
-      seats.push({
+    // `BookingCartSystem.toCommitSeats`: one entry per assignment, WHAT and
+    // WHO, never a price or a duration; a guest travels as their LABEL plus
+    // their seat key. The wire keeps the slot's own zoned ISO start.
+    const seats = BookingCartSystem.toCommitSeats(
+      toCartData(cart),
+      toPartyData(party),
+      selection.assignments.map((assignment) => ({
         lineId: assignment.lineId.value,
-        serviceId: found.line.serviceId.value,
-        variantId: found.line.variantId?.value ?? null,
-        barberId: assignment.barberId.value,
-        // The cart line has carried the preference the whole way here and it
-        // was being dropped at this boundary — the resolved id looks the same
-        // whether the client insisted on Ivan or took the first free chair,
-        // and those are different bookings the morning Ivan calls in sick.
-        barberPref: found.line.barberPref.kind,
-        startIso: assignment.slot.start.toISO(),
-        subject:
-          found.seatKey === 'self'
-            ? { kind: 'self' }
-            : {
-                kind: 'guest',
-                label: label as string,
-                // Who, among guests: the seat key, one per person. It lets
-                // the server tell two guests who share a label from one
-                // guest with two services — see `CommitBookingSeatRequest`.
-                guestKey: found.seatKey,
-              },
-      });
-    }
-    return seats;
+        barberId: BarberKey.of(assignment.barberId.value),
+        timeInterval: TimeInterval.of(
+          assignment.slot.start.toMillis(),
+          assignment.slot.end.toMillis(),
+        ),
+      })),
+    );
+    if (seats === null) return null;
+    return seats.map((seat, index): CommitBookingSeatRequest => ({
+      lineId: seat.lineId,
+      serviceId: seat.serviceId,
+      variantId: seat.variantId,
+      barberId: seat.barberId,
+      barberPref: seat.barberPref,
+      startIso: selection.assignments.at(index)?.slot.start.toISO() ?? '',
+      subject:
+        seat.subject.kind === CommitSubjectKind.Self
+          ? { kind: 'self' }
+          : {
+              kind: 'guest',
+              label: seat.subject.label,
+              guestKey: seat.subject.guestKey,
+            },
+    }));
   }
 
   /**
@@ -921,22 +930,16 @@ export class BookingFlowStore {
     const cartResult = BookingCart.reconstitute(request.cart);
     if (cartResult.isFailure()) return false;
 
-    const guestIds = cartResult.value
-      .entries()
-      .map(([seatKey]) => seatKey)
-      .filter((seatKey) => seatKey !== 'self');
-    // Placeholders, each one no other guest holds (`firstUnusedLabel`): this
-    // party lands on the schedule step, past the rename that would fix it.
-    const taken = new Set<string>();
-    const partyResult = BookingParty.reconstitute({
-      ownerId: request.ownerId.value,
-      guests: guestIds.map((id) => {
-        const label = firstUnusedLabel(taken, guestLabel);
-        taken.add(label);
-        return { id, label };
-      }),
-      nextSequence: guestIds.length + 1,
-    });
+    // Placeholders, each one no other guest holds
+    // (`BookingCartSystem.partyForCart`): this party lands on the schedule
+    // step, past the rename that would fix it.
+    const party = BookingCartSystem.partyForCart(
+      toCartData(cartResult.value),
+      UserKey.of(request.ownerId.value),
+      guestLabel,
+    );
+    if (party === null) return false;
+    const partyResult = BookingParty.reconstitute(toPartyProps(party));
     if (partyResult.isFailure()) return false;
 
     const props = request.toProps();
@@ -1025,12 +1028,14 @@ export class BookingFlowStore {
    */
   private readerOf(appointment: Appointment): UserId | null {
     const claimed = this.party()?.ownerId ?? null;
+    const reader = BookingCartSystem.readerOf(
+      toPrefillSeats(appointment.seats),
+      claimed === null ? null : UserKey.of(claimed.value),
+    );
+    if (reader === null) return null;
     if (claimed !== null) return claimed;
-    const self = appointment.seats.find(
-      (seat) =>
-        seat.subject.kind === 'account' && seat.subject.relationship === 'self',
-    )?.subject;
-    return self?.kind === 'account' ? self.userId : null;
+    const self = UserId.create(reader);
+    return self.isSuccess() ? self.value : null;
   }
 
   /**
@@ -1073,91 +1078,23 @@ export class BookingFlowStore {
     companions: 'as_guests' | 'carried_by_server',
   ): boolean {
     const owner = this.readerOf(appointment);
-    const seatKeys = new Map<string, string>();
-    /** Guest seat key → the label the visit stored for that person. */
-    const storedLabels = new Map<string, string>();
-    const lines: {
-      seatKey: string;
-      lines: {
-        id: string;
-        serviceId: string;
-        variantId: string | null;
-        barberId: string | null;
-      }[];
-    }[] = [];
+    // The party() accessor, not the raw state: a terminal state keeps its
+    // party inside its receipt and has none at the top level.
+    const partyOwner = this.party()?.ownerId ?? null;
+    const bag = BookingCartSystem.prefill(
+      toPrefillSeats(appointment.seats),
+      owner === null ? null : UserKey.of(owner.value),
+      partyOwner === null ? null : UserKey.of(partyOwner.value),
+      companions === 'as_guests'
+        ? PrefillCompanions.AsGuests
+        : PrefillCompanions.CarriedByServer,
+      guestLabel,
+    );
+    if (bag === null) return false;
 
-    let sequence = 1;
-    let guestOrdinal = 0;
-    for (const seat of appointment.seats) {
-      const subject = seat.subject;
-      const theBookers = seat.isMovableByBooker(owner);
-      if (!theBookers && companions === 'carried_by_server') continue;
-      // The booker's OWN seat — `self` and theirs. A `self` seat bound to
-      // another account is somebody else, exactly like a companion.
-      const isSelf = theBookers && subject.kind === 'account';
-      // ONE KEY PER PERSON, not per seat: a client with a cut and a beard is
-      // one person with two lines, and so is a guest. An anonymous guest's
-      // LABEL is the only identity it has, and it is the identity the server
-      // counts people by (`personKey`) — so two seats under one label are one
-      // person on both sides. Keying by seat instead split one guest into two
-      // nameless people on every repeat and every move. One person is then
-      // never offered two chairs at once (`AvailabilityLine.personKey`): a
-      // stored pair side by side comes back as a sequence. Two DIFFERENT
-      // people under one label is a labelling defect at the source (the
-      // staff sheet's old shared walk-in default), not something a label can
-      // tell apart here.
-      // The booker is `self`; everyone else becomes a guest seat under a
-      // fresh id — a stored `GuestId` belongs to the party that has since
-      // been thrown away.
-      const person = isSelf
-        ? 'self'
-        : subject.kind === 'anonymous'
-          ? `label:${subject.label.value}`
-          : `account:${subject.userId.value}`;
-      let seatKey = seatKeys.get(person);
-      if (!seatKey) {
-        seatKey = isSelf ? 'self' : `guest-${guestOrdinal++}`;
-        seatKeys.set(person, seatKey);
-        lines.push({ seatKey, lines: [] });
-        if (!isSelf && subject.kind === 'anonymous') {
-          storedLabels.set(seatKey, subject.label.value);
-        }
-      }
-      const bucket = lines.find((entry) => entry.seatKey === seatKey);
-      bucket?.lines.push({
-        id: `line-${sequence++}`,
-        serviceId: seat.serviceId.value,
-        variantId: seat.variantId?.value ?? null,
-        barberId: seat.barberId.value,
-      });
-    }
-    if (lines.length === 0) return false;
-
-    const cartResult = BookingCart.reconstitute({
-      seats: lines,
-      nextSequence: sequence,
-    });
+    const cartResult = BookingCart.reconstitute(toCartProps(bag.cart));
     if (cartResult.isFailure()) return false;
-
-    const guestIds = lines
-      .map((entry) => entry.seatKey)
-      .filter((seatKey) => seatKey !== 'self');
-    // Stored names first, so a placeholder can step around every one of them.
-    const taken = new Set(storedLabels.values());
-    const guests = guestIds.map((id) => {
-      const stored = storedLabels.get(id);
-      if (stored !== undefined) return { id, label: stored };
-      const placeholder = firstUnusedLabel(taken, guestLabel);
-      taken.add(placeholder);
-      return { id, label: placeholder };
-    });
-    const partyResult = BookingParty.reconstitute({
-      // The party() accessor, not the raw state: a terminal state keeps its
-      // party inside its receipt and has none at the top level.
-      ownerId: this.party()?.ownerId?.value ?? null,
-      guests,
-      nextSequence: guestIds.length + 1,
-    });
+    const partyResult = BookingParty.reconstitute(toPartyProps(bag.party));
     if (partyResult.isFailure()) return false;
 
     this._state.set({
@@ -1248,20 +1185,47 @@ export class BookingFlowStore {
     // guard on its own. So is "one label, one guest": a draft saved before
     // that rule may hold two guests under one name, and it resumes on
     // services, where `next` says so and one rename fixes it.
-    if (
-      (draft.step === 'schedule' || draft.step === 'review') &&
-      !cartResult.value.isEmpty() &&
-      firstSeatWithoutService(partyResult.value, cartResult.value) === null &&
-      partyResult.value.sharedLabel() === null
-    ) {
+    // `BookingCartSystem.restore` decides: schedule only for a bag every
+    // seat of which holds something and no two guests share a label, with
+    // the days and the picked day that have gone by dropped.
+    const declared = this.restoreWhen(draft);
+    const today = this.todayKeyOf(draft.zone);
+    const resumed = BookingCartSystem.restore(
+      {
+        state:
+          draft.step === 'schedule' || draft.step === 'review'
+            ? {
+                kind: FlowStep.Schedule,
+                party: toPartyData(partyResult.value),
+                cart: toCartData(cartResult.value),
+                locationId: toLocationKey(locationId),
+                when: toWhenData(declared),
+              }
+            : {
+                kind: FlowStep.Services,
+                party: toPartyData(partyResult.value),
+                cart: toCartData(cartResult.value),
+                locationId: toLocationKey(locationId),
+              },
+        selectedDayKey:
+          draft.dayKey !== null && DayKey.isValid(draft.dayKey)
+            ? DayKey.of(draft.dayKey)
+            : null,
+      },
+      today ?? EARLIEST_DAY,
+    );
+    if (resumed.state.kind === FlowStep.Schedule) {
+      const kept = WhenData.dayKeys(resumed.state.when);
       this._zone.set(draft.zone);
-      this._selectedDayKey.set(this.restoreDayKey(draft));
+      this._selectedDayKey.set(this.restoredDayKey(draft, today, resumed));
       this._state.set({
         kind: 'schedule',
         party: partyResult.value,
         cart: cartResult.value,
         locationId,
-        when: this.restoreWhen(draft),
+        when: FlexibleWhen.of(
+          declared.days.filter((day) => kept.includes(DayKey.of(day.dayKey))),
+        ),
       });
       return true;
     }
@@ -1276,62 +1240,45 @@ export class BookingFlowStore {
   }
 
   /**
-   * The stored declaration, or an empty one.
+   * The stored declaration, parsed in the draft's zone — or an empty one.
+   * Its lapsed days are dropped by `BookingCartSystem.restore`.
    *
    * A declaration that no longer parses is DROPPED rather than failing the
-   * restore — same reasoning as the stored shop above. Losing "I'm free
-   * Tuesday morning" costs a few taps; losing the party and the bag with it
-   * costs the whole session.
-   *
-   * The zone comes from the days themselves, which are stored as bare
-   * `YYYY-MM-DD` keys: a shop's zone is the one this was authored in, and the
-   * schedule step re-derives it from the location on every render anyway.
+   * restore: losing "I'm free Tuesday morning" costs a few taps; losing the
+   * party and the bag with it costs the whole session. No zone means no
+   * declaration worth restoring: the day keys would have to be resolved
+   * against a guess.
    */
-  /**
-   * The stored day, unless it has gone by.
-   *
-   * A tab left open overnight restores a `dayKey` the calendar no longer
-   * renders — today's month is the first one shown, so a day before it has no
-   * cell to be selected on and no cell to be tapped off. Keeping it would leave
-   * the step believing a day is chosen while nothing on screen says so, and the
-   * "open on today" scroll skips itself because it thinks the user already
-   * picked. Same reasoning as {@link restoreWhen}'s pruning, one field over.
-   */
-  private restoreDayKey(draft: BookingDraft): string | null {
-    if (draft.dayKey === null || draft.zone === null) return draft.dayKey;
-    const day = CalendarDay.create(draft.dayKey, draft.zone);
-    const now = this.clock.now(draft.zone);
-    if (day.isFailure() || now.isFailure()) return null;
-    return day.value.isBefore(CalendarDay.fromZonedDateTime(now.value))
-      ? null
-      : draft.dayKey;
-  }
-
   private restoreWhen(draft: BookingDraft): FlexibleWhen {
     const props = draft.when;
-    // No zone means no declaration worth restoring: the day keys would have to
-    // be resolved against a guess, and a guessed zone shifts every window in
-    // the request by however far the two zones differ.
     if (!props || props.days.length === 0 || draft.zone === null) {
       return FlexibleWhen.empty();
     }
     const restored = FlexibleWhen.create(props, draft.zone);
-    if (restored.isFailure()) return FlexibleWhen.empty();
+    return restored.isFailure() ? FlexibleWhen.empty() : restored.value;
+  }
 
-    // Drop days that have gone by while the draft sat in storage.
-    //
-    // A tab left open overnight restores a declaration naming yesterday — and
-    // yesterday is not on the calendar any more, so the user can neither see
-    // it selected nor tap it off, while the count in the CTA keeps counting
-    // it. The server drops lapsed days too (`decideWaitlist`); doing it here
-    // as well is what keeps the screen and the request describing the same
-    // set of days.
-    const now = this.clock.now(draft.zone);
-    if (now.isFailure()) return restored.value;
-    const today = CalendarDay.fromZonedDateTime(now.value);
-    return FlexibleWhen.of(
-      restored.value.days.filter((day) => !day.day.isBefore(today)),
-    );
+  /** Today's key in `zone`, or `null` without a zone or a clock reading. */
+  private todayKeyOf(zone: string | null): DayKey | null {
+    if (zone === null) return null;
+    const now = this.clock.now(zone);
+    if (now.isFailure()) return null;
+    return DayKey.of(CalendarDay.fromZonedDateTime(now.value).key());
+  }
+
+  /**
+   * The stored day, unless it has gone by (`BookingCartSystem.restore`). A
+   * key with no zone is kept as stored; one whose zone cannot say what today
+   * is, or that is no day at all, is dropped.
+   */
+  private restoredDayKey(
+    draft: BookingDraft,
+    today: DayKey | null,
+    resumed: { readonly selectedDayKey: DayKey | null },
+  ): string | null {
+    if (draft.dayKey === null || draft.zone === null) return draft.dayKey;
+    if (today === null || !DayKey.isValid(draft.dayKey)) return null;
+    return resumed.selectedDayKey;
   }
 
   clearDraft(): void {
@@ -1479,19 +1426,7 @@ export function firstUnusedLabel(
   label: (ordinal: number) => string,
   from = 1,
 ): string {
-  const last = from + taken.size;
-  for (let ordinal = from; ordinal <= last; ordinal++) {
-    const candidate = label(ordinal).trim();
-    if (!taken.has(candidate)) return candidate;
-  }
-  let numbered = '';
-  for (let ordinal = from; ordinal <= last; ordinal++) {
-    numbered = `${label(ordinal).trim()} ${ordinal}`.trim();
-    if (!taken.has(numbered)) return numbered;
-  }
-  // Unreachable for any `label` that answers the same word for every
-  // ordinal; a pathological one still returns rather than spinning.
-  return numbered;
+  return GuestLabelSystem.firstUnusedLabel([...taken], label, from);
 }
 
 /**
@@ -1707,4 +1642,114 @@ function isRider(value: unknown): value is BookingDraftRider {
     // to prevent.
     moveRiderOf(value as BookingDraftRider) !== null
   );
+}
+
+/* ── Legacy ↔ ECS converters (the store's math is BookingCartSystem's and
+ * BookingFlowSystem's; these only change the shape) ─────────────────── */
+
+/** The wizard's two policy numbers, as the legacy machine reads them. */
+const FLOW_LIMITS: BookingFlowLimits = {
+  maxPartySize: MAX_PARTY_SIZE,
+  maxFlexibleDays: MAX_FLEXIBLE_DAYS,
+};
+
+/** Before every day a draft can name — prunes nothing. */
+const EARLIEST_DAY = DayKey.of('0000-01-01');
+
+function toLocationKey(locationId: LocationId | null): LocationKey | null {
+  return locationId === null ? null : (locationId.value as LocationKey);
+}
+
+function toPartyData(party: BookingParty): PartyData {
+  return {
+    ownerUserId:
+      party.ownerId === null ? null : UserKey.of(party.ownerId.value),
+    members: [
+      MemberData.owner(),
+      ...party.guests.map((guest) =>
+        MemberData.guest(guest.id.value, LabelData.of(guest.label.value)),
+      ),
+    ],
+    nextGuestSequence: party.nextGuestSequence,
+  };
+}
+
+function toPartyProps(party: PartyData) {
+  return {
+    ownerId: party.ownerUserId,
+    guests: party.members.flatMap((member) =>
+      member.kind === 'guest'
+        ? [{ id: member.guestId, label: member.label as string }]
+        : [],
+    ),
+    nextSequence: party.nextGuestSequence,
+  };
+}
+
+function toCartData(cart: BookingCart): CartData {
+  return {
+    seats: cart.entries().map(([seatKey, lines]) => ({
+      seatKey,
+      lines: lines.map((line) => ({
+        lineId: line.id.value,
+        seatKey,
+        serviceId: ServiceKey.of(line.serviceId.value),
+        variantId:
+          line.variantId === null ? null : VariantKey.of(line.variantId.value),
+        barberId:
+          line.barberPref.kind === 'specific'
+            ? BarberKey.of(line.barberPref.barberId.value)
+            : null,
+        locationId: null,
+      })),
+    })),
+    nextSequence: cart.nextLineSequence,
+  };
+}
+
+function toCartProps(cart: CartData): ReconstituteBookingCartProps {
+  return {
+    seats: cart.seats.map((seat) => ({
+      seatKey: seat.seatKey,
+      lines: seat.lines.map((line) => ({
+        id: line.lineId,
+        serviceId: line.serviceId,
+        variantId: line.variantId,
+        barberId: line.barberId,
+      })),
+    })),
+    nextSequence: cart.nextSequence,
+  };
+}
+
+function toWhenData(when: FlexibleWhen): WhenData {
+  return WhenData.of(
+    when.days.map((day) =>
+      DayWindowsData.of(
+        DayKey.of(day.dayKey),
+        day.windows.map((window) =>
+          MinuteRange.of(
+            window.start.minutesFromMidnight(),
+            window.end.minutesFromMidnight(),
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
+function toPrefillSeats(seats: Appointment['seats']): readonly PrefillSeat[] {
+  return seats.map((seat) => ({
+    serviceId: ServiceKey.of(seat.serviceId.value),
+    variantId:
+      seat.variantId === null ? null : VariantKey.of(seat.variantId.value),
+    barberId: BarberKey.of(seat.barberId.value),
+    subject:
+      seat.subject.kind === 'anonymous'
+        ? SubjectData.anonymous(LabelData.of(seat.subject.label.value))
+        : SubjectData.account(
+            UserKey.of(seat.subject.userId.value),
+            seat.subject.relationship,
+          ),
+  }));
 }

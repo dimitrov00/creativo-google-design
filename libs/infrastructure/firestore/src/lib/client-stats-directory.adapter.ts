@@ -9,6 +9,7 @@ import {
   query,
   startAfter,
 } from 'firebase/firestore';
+import { PageStepKind, PagingSystem } from '@creativo/ecs-core';
 import { FIREBASE_FIRESTORE } from '@creativo/infrastructure/firebase-app';
 import { Result, fail, ok } from '@creativo/domain/kernel';
 import {
@@ -55,15 +56,24 @@ export class FirestoreClientStatsDirectory implements ClientStatsDirectory {
           limit(size + 1),
         ),
       );
-      const read = snapshot.docs.slice(0, size);
-      const last = read[read.length - 1];
+      // The size + 1 read cut (`PagingSystem.nextCursor`): the extra row
+      // says whether anyone is left, and the cursor is the page's last id.
+      // Ids are unique, so a page never ends inside a tie.
+      const step = PagingSystem.nextCursor(
+        snapshot.docs,
+        size,
+        (entry) => entry.id,
+      );
+      const read =
+        step.kind === PageStepKind.Page
+          ? step.rows
+          : snapshot.docs.slice(0, size);
       return ok({
         records: read.flatMap((entry) => {
           const record = clientStatsFromDocument(entry.id, entry.data());
           return record === null ? [] : [record];
         }),
-        next:
-          last !== undefined && snapshot.docs.length > size ? last.id : null,
+        next: step.kind === PageStepKind.Page ? step.cursor : null,
       });
     } catch (error) {
       return fail(
@@ -80,5 +90,5 @@ function pastClient(after: string | null): QueryConstraint[] {
 
 /** A whole count of at least one, whatever was asked. */
 function atLeastOne(raw: number): number {
-  return Number.isFinite(raw) ? Math.max(1, Math.floor(raw)) : 1;
+  return Number.isFinite(raw) ? PagingSystem.pageSize(raw) : 1;
 }

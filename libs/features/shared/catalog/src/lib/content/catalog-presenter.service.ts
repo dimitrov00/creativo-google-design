@@ -1,6 +1,13 @@
 import { Injectable, computed, inject } from '@angular/core';
 import { LanguageService } from '@creativo/features/shared/shell';
 import {
+  BarberId,
+  type CatalogPriced,
+  CatalogPricingSystem,
+  ServiceTerms,
+  ServiceVariantId,
+} from '@creativo/ecs-core';
+import {
   type Localized,
   type ServiceVm,
   formatDurationRange,
@@ -48,16 +55,45 @@ export class CatalogPresenter {
   serviceMeta(service: ServiceVm, fromLabel: string): string {
     // EVERY bookable term, not just the base ones — a card that folded only
     // `offering.base` quoted a cheapest price the sheet it opens could
-    // contradict one tap later.
-    const prices = service.offerings.flatMap((offering) => [
-      offering.base.price,
-      ...Object.values(offering.byVariant ?? {}).map((term) => term.price),
-    ]);
-    const cheapest = prices.length > 0 ? Math.min(...prices) : 0;
+    // contradict one tap later (`CatalogPricingSystem.cardPrice`).
+    const tag =
+      service.offerings.length > 0
+        ? CatalogPricingSystem.cardPrice(pricedOf(service))
+        : { cheapestMinorUnits: 0, spread: false };
     return formatServiceMeta({
-      price: this.price(cheapest),
+      price: this.price(tag.cheapestMinorUnits / 100),
       fromLabel,
-      spread: prices.length > 0 && Math.max(...prices) > cheapest,
+      spread: tag.spread,
     });
   }
+}
+
+/* ── Phase 2 shim converter: the view model → the catalogue's terms ─────── */
+
+/** EUR major units → the terms matrix the pricing system reads. */
+function pricedOf(service: ServiceVm): CatalogPriced {
+  const terms = (vm: { readonly price: number; readonly minutes: number }) =>
+    ServiceTerms.unpadded(Math.round(vm.price * 100), 'EUR', vm.minutes);
+  const variantIds = new Set(service.variants.map((variant) => variant.id));
+  for (const offering of service.offerings) {
+    for (const id of Object.keys(offering.byVariant ?? {})) variantIds.add(id);
+  }
+  const first = service.offerings[0];
+  return {
+    baseTerms: first ? terms(first.base) : ServiceTerms.unpadded(0, 'EUR', 0),
+    variants: [...variantIds].map((id) => ({
+      id: ServiceVariantId.of(id),
+      name: { bg: id, en: id },
+    })),
+    offerings: service.offerings.map((offering) => ({
+      barberId: BarberId.of(offering.barberId),
+      base: terms(offering.base),
+      overrides: Object.entries(offering.byVariant ?? {}).map(
+        ([variantId, variantTerms]) => ({
+          variantId: ServiceVariantId.of(variantId),
+          terms: terms(variantTerms),
+        }),
+      ),
+    })),
+  };
 }

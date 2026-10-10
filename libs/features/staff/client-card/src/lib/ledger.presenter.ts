@@ -5,6 +5,7 @@ import {
   levelNumeral,
   sofiaDayOf,
 } from '@creativo/application/engagement';
+import { type LedgerEntryRef, LedgerSystem } from '@creativo/ecs-core';
 import { visitSectionLabel } from '@creativo/features/shared/visits';
 import type { UiIconName } from '@creativo/ui/controls';
 import {
@@ -104,48 +105,6 @@ function voidedIds(entries: readonly ActivityEntry[]): ReadonlySet<string> {
 }
 
 /**
- * What an entry folds with. A visit folds by its APPOINTMENT, so its seats
- * are one row under either spelling of the id. A LEVEL is an event of its
- * own, the medal and the points it paid: where a journal files a level's
- * bonus under the visit that earned it (the first round's ids), the visit
- * stays a visit and the level a level. A row that compensates another,
- * and a row that was compensated, never fold with the event they belong
- * to: each keeps a row of its own, beside the other (the reversal worded,
- * the reversed row struck).
- */
-function eventKeyOf(entry: ActivityEntry, voided: ReadonlySet<string>): string {
-  const appointmentId = appointmentIdOf(entry.correlationId);
-  const family = textOf(entry, 'seriesId');
-  const event = [
-    appointmentId === null ? entry.correlationId : `appt:${appointmentId}`,
-    ...(family === null ? [] : [family, String(countOf(entry, 'level') ?? '')]),
-  ].join('\u0000');
-  if (entry.reverses !== null) return `reversal\u0000${event}`;
-  return voided.has(entry.id) ? `voided\u0000${event}` : `event\u0000${event}`;
-}
-
-/** What a folded event moved, and the balance it left. */
-function movementOf(
-  entries: readonly ActivityEntry[],
-): Pick<ActivityEvent, 'delta' | 'balanceAfter'> {
-  let delta: number | null = null;
-  let balanceAfter: number | null = null;
-  for (const { effect } of entries) {
-    if (effect.kind !== 'points') continue;
-    delta = (delta ?? 0) + effect.delta;
-    // Newest first: the first point row met is the one the event ends on.
-    balanceAfter ??= effect.balanceAfter;
-  }
-  if (delta !== null) return { delta, balanceAfter };
-  for (const { effect } of entries) {
-    if (effect.kind !== 'redemption') continue;
-    if (effect.op === 'redeemed') return { delta: -effect.cost, balanceAfter };
-    if (effect.op === 'reversed') return { delta: effect.cost, balanceAfter };
-  }
-  return { delta: null, balanceAfter };
-}
-
-/**
  * The entries as events, newest first. `whole` says the entries are
  * everything there is under the pill (no cursor is left); when they are
  * NOT, the page boundary may have cut the oldest event, so it is held back
@@ -157,35 +116,16 @@ export function foldByEvent(
   entries: readonly ActivityEntry[],
   whole: boolean,
 ): readonly ActivityEvent[] {
-  const voided = voidedIds(entries);
-  const folded = new Map<string, ActivityEntry[]>();
-  for (const entry of [...entries].sort((a, b) => b.seq - a.seq)) {
-    const key = eventKeyOf(entry, voided);
-    const event = folded.get(key);
-    if (event === undefined) folded.set(key, [entry]);
-    else event.push(entry);
-  }
-  const events = [...folded.values()].flatMap(
-    (rows): readonly ActivityEvent[] => {
-      const [newest] = rows;
-      return newest === undefined
-        ? []
-        : [
-            {
-              id: newest.id,
-              at: newest.at,
-              entries: rows,
-              ...movementOf(rows),
-            },
-          ];
-    },
-  );
-  return whole || events.length < 2 ? events : events.slice(0, -1);
-}
-
-/** The month an instant falls in on the shop's calendar: `YYYY-MM`. */
-function monthOf(at: Date): string {
-  return sofiaDayOf(at).slice(0, 7);
+  return LedgerSystem.fold(entries.map(ledgerRefOf), whole).map((event) => {
+    const rows = event.entries.map((ref) => ref.source);
+    return {
+      id: event.id,
+      at: (rows[0] as ActivityEntry).at,
+      entries: rows,
+      delta: event.delta,
+      balanceAfter: event.balanceAfter,
+    };
+  });
 }
 
 /**
@@ -198,8 +138,9 @@ export function wholeMonthsOf(
   entries: readonly ActivityEntry[],
   whole: boolean,
 ): ReadonlySet<string> {
-  const months = [...new Set(entries.map((entry) => monthOf(entry.at)))].sort();
-  return new Set(whole ? months : months.slice(1));
+  return new Set(
+    LedgerSystem.wholeMonths(entries.map(ledgerRefOf), whole, SHOP_ZONE),
+  );
 }
 
 // ── 2 · Rows ────────────────────────────────────────────────────────────
@@ -627,44 +568,36 @@ export function activityGroups(
   const loaded = events.flatMap((event) => event.entries);
   const originals = new Map(loaded.map((entry) => [entry.id, entry]));
   const voided = voidedIds(loaded);
-  const ordered = [...events].sort(
-    (a, b) => (b.entries[0]?.seq ?? 0) - (a.entries[0]?.seq ?? 0),
+  // The months, the limit's cut and each month's net are
+  // `LedgerSystem.months`; the rows and the words are this file's.
+  const months = LedgerSystem.months(
+    events.map((event) => ({
+      id: event.id,
+      atMs: event.at.getTime(),
+      entries: event.entries.map(ledgerRefOf),
+      delta: event.delta,
+      balanceAfter: event.balanceAfter,
+      source: event,
+    })),
+    input.limit ?? null,
+    [...input.wholeMonths],
+    SHOP_ZONE,
   );
-  const limit = Math.max(0, Math.floor(input.limit ?? ordered.length));
-  const shown = ordered.slice(0, limit);
-  const cut = new Set(ordered.slice(limit).map((event) => monthOf(event.at)));
-
-  const months = new Map<string, ActivityEvent[]>();
-  for (const event of shown) {
-    const key = monthOf(event.at);
-    months.set(key, [...(months.get(key) ?? []), event]);
-  }
-  return [...months]
-    .sort(([a], [b]) => b.localeCompare(a))
-    .flatMap(([key, month]): readonly ActivityGroupVm[] => {
-      const rows = month.flatMap((event) => {
-        const row = rowOf(event, originals, voided, input);
-        return row === null ? [] : [row];
-      });
-      if (rows.length === 0) return [];
-      const moved = month.flatMap((event) =>
-        event.delta === null ? [] : [event.delta],
-      );
-      const settled =
-        input.wholeMonths.has(key) && !cut.has(key) && moved.length > 0;
-      return [
-        {
-          key,
-          label: visitSectionLabel(key, words.lang),
-          net: settled
-            ? words.ledgerPage.signed(
-                moved.reduce((sum, delta) => sum + delta, 0),
-              )
-            : null,
-          rows,
-        },
-      ];
+  return months.flatMap((month): readonly ActivityGroupVm[] => {
+    const rows = month.events.flatMap(({ source }) => {
+      const row = rowOf(source, originals, voided, input);
+      return row === null ? [] : [row];
     });
+    if (rows.length === 0) return [];
+    return [
+      {
+        key: month.key,
+        label: visitSectionLabel(month.key, words.lang),
+        net: month.net === null ? null : words.ledgerPage.signed(month.net),
+        rows,
+      },
+    ];
+  });
 }
 
 // ── 3 · The page ────────────────────────────────────────────────────────
@@ -725,5 +658,32 @@ export function ledgerPageVm(input: LedgerPageInput): LedgerPageVm {
         })
       : [],
     paging: pagingOf(input),
+  };
+}
+
+// ── The bridge: the reader's row → ecs-core struct (Phase 4 deletes it) ──
+
+/** The shop's zone: a row's month is read on its calendar. */
+const SHOP_ZONE = 'Europe/Sofia';
+
+/** A journal row as `LedgerSystem` folds it, the row riding along. */
+function ledgerRefOf(
+  entry: ActivityEntry,
+): LedgerEntryRef & { readonly source: ActivityEntry } {
+  const { effect } = entry;
+  return {
+    id: entry.id,
+    seq: entry.seq,
+    atMs: entry.at.getTime(),
+    correlationId: entry.correlationId,
+    reverses: entry.reverses,
+    seriesId: textOf(entry, 'seriesId'),
+    level: countOf(entry, 'level'),
+    kind: effect.kind,
+    pointsDelta: effect.kind === 'points' ? effect.delta : null,
+    balanceAfter: effect.kind === 'points' ? effect.balanceAfter : null,
+    redemptionOp: effect.kind === 'redemption' ? effect.op : null,
+    cost: effect.kind === 'redemption' ? effect.cost : null,
+    source: entry,
   };
 }

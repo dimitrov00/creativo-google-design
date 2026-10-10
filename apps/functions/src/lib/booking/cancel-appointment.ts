@@ -1,3 +1,4 @@
+import { AuditSystem } from '@creativo/ecs-core';
 import { logger } from 'firebase-functions';
 import { HttpsError, onCall } from 'firebase-functions/v2/https';
 import type { Firestore } from 'firebase-admin/firestore';
@@ -231,7 +232,7 @@ export const cancelAppointment = onCall(async (request) => {
     // One cancellation, one instant — and a reinstated visit cancelled again
     // is a second cancellation with an instant of its own. A retry of this
     // one is refused by the lifecycle graph before it gets here.
-    changeKey: `cancelled:${cancelledAtMs}`,
+    changeKey: AuditSystem.changeKey.cancelled(cancelledAtMs),
   });
 
   return { appointmentId };

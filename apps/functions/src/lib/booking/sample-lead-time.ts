@@ -5,9 +5,15 @@ import { CalendarDay } from '@creativo/domain/scheduling';
 import {
   CAPACITY_COLLECTION,
   type CapacityDayEntry,
-  capacityMonthKey,
-  freeMinutesFor,
 } from '@creativo/application/booking';
+import {
+  BarberId,
+  CapacityEntry,
+  DayKey,
+  LeadTimeSystem,
+  LocationId,
+  ZonedTimeSystem,
+} from '@creativo/ecs-core';
 import { adminFirestore } from '../firebase-admin';
 import { loadBookingPolicy } from './load-booking-policy';
 import { TENANT_ZONE } from './tenant-zone';
@@ -146,11 +152,9 @@ interface FirstAvailable {
 }
 
 /**
- * Walk forward to the first day this barber has sellable time.
- *
- * Starts at TODAY rather than tomorrow: same-day walk-ups are most of a
- * barbershop's volume, and a lead time that could never be zero would hide
- * exactly the days the shop is quiet.
+ * Walk forward to the first day this barber has sellable time — from TODAY
+ * (same-day walk-ups are most of a barbershop's volume). Phase 2 shim: the
+ * walk is `LeadTimeSystem.firstAvailableDay` over the rollup's entries.
  */
 function firstAvailableDay(input: {
   readonly barberId: string;
@@ -159,23 +163,13 @@ function firstAvailableDay(input: {
   readonly daysByMonth: ReadonlyMap<string, Record<string, CapacityDayEntry>>;
   readonly thresholdMinutes: number;
 }): FirstAvailable | null {
-  const { barberId, from, to, daysByMonth, thresholdMinutes } = input;
-
-  let day = from;
-  let leadTimeDays = 0;
-  while (!to.isBefore(day)) {
-    const dayKey = day.key();
-    const entry = daysByMonth.get(capacityMonthKey(dayKey))?.[dayKey];
-    // `null` location: any shop this barber works counts — the question is
-    // when they are next free, not where.
-    const freeMinutes = freeMinutesFor(entry, [barberId], null);
-    if (freeMinutes >= thresholdMinutes) {
-      return { dayKey, leadTimeDays, freeMinutes };
-    }
-    day = day.next();
-    leadTimeDays += 1;
-  }
-  return null;
+  return LeadTimeSystem.firstAvailableDay(
+    capacityEntriesOf(input.daysByMonth),
+    BarberId.of(input.barberId),
+    DayKey.of(input.from.key()),
+    DayKey.of(input.to.key()),
+    input.thresholdMinutes,
+  );
 }
 
 /** Every `YYYY-MM` the inclusive span touches, in order. */
@@ -183,31 +177,60 @@ function monthKeysBetween(
   from: CalendarDay,
   to: CalendarDay,
 ): readonly string[] {
-  const keys: string[] = [];
-  let cursor = from.startOfMonth();
-  while (!to.isBefore(cursor)) {
-    keys.push(capacityMonthKey(cursor.key()));
-    cursor = cursor.endOfMonth().next();
-  }
-  return keys;
+  return LeadTimeSystem.monthKeysBetween(
+    DayKey.of(from.key()),
+    DayKey.of(to.key()),
+  );
 }
 
 function dayCountBetween(from: CalendarDay, to: CalendarDay): number {
-  let count = 0;
-  let day = from;
-  while (!to.isBefore(day)) {
-    count += 1;
-    day = day.next();
-  }
-  return count;
+  return LeadTimeSystem.dayCountBetween(
+    DayKey.of(from.key()),
+    DayKey.of(to.key()),
+  );
 }
 
-/** A wall-clock instant → its `YYYY-MM-DD` in `zone`. */
+/** A wall-clock instant → its `YYYY-MM-DD` in `zone` (`''` for an unknown zone). */
 function dayKeyOf(instant: Date, zone: string): string {
-  return new Intl.DateTimeFormat('en-CA', {
-    timeZone: zone,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).format(instant);
+  const clock = ZonedTimeSystem.wallClockOf(instant.getTime(), zone);
+  return clock.ok ? clock.value.dayKey : '';
+}
+
+/* ── Converter: the stored `days` map → the rollup's sorted entries ─────── */
+
+/**
+ * `{ [dayKey]: { [barberId]: { [locationId]: minutes } } }` per month → sorted
+ * `CapacityEntry` rows, read the way `freeMinutesFor` reads them: a malformed
+ * barber entry is skipped and a junk figure counts as zero.
+ */
+function capacityEntriesOf(
+  daysByMonth: ReadonlyMap<string, Record<string, CapacityDayEntry>>,
+): readonly CapacityEntry[] {
+  const entries: CapacityEntry[] = [];
+  for (const [month, days] of daysByMonth) {
+    for (const [dayKey, day] of Object.entries(days)) {
+      // A day is read from its own month's document only.
+      if (
+        !DayKey.isValid(dayKey) ||
+        CapacityEntry.monthOf(DayKey.of(dayKey)) !== month
+      ) {
+        continue;
+      }
+      for (const [barberId, contribution] of Object.entries(day)) {
+        if (typeof contribution !== 'object' || contribution === null) continue;
+        for (const [locationId, raw] of Object.entries(contribution)) {
+          const minutes = Number(raw);
+          entries.push(
+            CapacityEntry.of(
+              DayKey.of(dayKey),
+              BarberId.of(barberId),
+              LocationId.of(locationId),
+              Number.isFinite(minutes) ? minutes : 0,
+            ),
+          );
+        }
+      }
+    }
+  }
+  return entries.sort(CapacityEntry.compare);
 }

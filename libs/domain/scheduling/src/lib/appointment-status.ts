@@ -1,3 +1,5 @@
+import { BookingStatus as BookingStatusData } from '@creativo/ecs-core';
+
 /**
  * Lifecycle status of an `Appointment`. A discriminated union (not a status
  * string plus a separate optional `cancellationReason` field) — `cancelled`
@@ -35,61 +37,35 @@ export function cancelled(reason: string): AppointmentStatus {
   return { kind: 'cancelled', reason };
 }
 
-/**
- * Legal forward transitions. Terminal states map to `[]`. This is the
- * single source of truth for the lifecycle graph — `Appointment`'s
- * transition methods (`confirm()`/`cancel()`/`complete()`/`markNoShow()`)
- * all defer to `canTransition` rather than re-encoding the graph.
+/*
+ * THIN SHIM (ECS migration Phase 2). The lifecycle graph — the ONE source of
+ * truth for which move is legal (`pending → confirmed | cancelled`,
+ * `confirmed → completed | cancelled | no_show`, the single correction edge
+ * `no_show → confirmed`, `completed`/`cancelled` terminal) — is the ECS
+ * `BookingStatus` companion. These functions keep the legacy signatures and
+ * only convert (the legacy status carries no instant; the graph reads none).
  */
-const TRANSITIONS: Record<
-  AppointmentStatusKind,
-  readonly AppointmentStatusKind[]
-> = {
-  pending: ['confirmed', 'cancelled'],
-  confirmed: ['completed', 'cancelled', 'no_show'],
-  completed: [],
-  cancelled: [],
-  // The ONE correction edge. A no-show is a judgement made at a moment, and
-  // the moment it is most often wrong is the ten minutes right after it: the
-  // client was in traffic, and the chair is still theirs. Reachable only
-  // through `Appointment.reopenNoShow`, which also clears the seat outcomes
-  // the stamp wrote — a status that walked back while its seats stayed
-  // `no_show` would be a worse state than the one we are undoing.
-  //
-  // Deliberately NOT symmetric with `completed`, which stays terminal: a cut
-  // that was delivered cannot become un-delivered, and money will hang off
-  // it. This edge exists because a no-show is an ASSERTION ABOUT THE FUTURE
-  // that can be falsified minutes later; a completed cut is a fact.
-  no_show: ['confirmed'],
-};
 
-/**
- * A status with no outgoing transitions — a GRAPH question.
- *
- * Note this is no longer the same question as "is this visit over": since
- * the no-show correction edge exists, `no_show` has an outgoing transition
- * and is not terminal, yet it is certainly settled. Anything asking "should
- * this still appear in a live list" wants `isSettled`.
- */
-export function isTerminal(status: AppointmentStatus): boolean {
-  return TRANSITIONS[status.kind].length === 0;
+/* ── Legacy ↔ ECS converters ─────────────────────────────────────────── */
+
+function toStatusData(status: AppointmentStatus): BookingStatusData {
+  return status.kind === 'cancelled'
+    ? BookingStatusData.cancel(0, status.reason)
+    : { kind: status.kind, atMs: 0 };
 }
 
 /**
- * The visit is over, whatever became of it — a LIFECYCLE question.
- *
- * Split out from `isTerminal` when `no_show` gained its correction edge.
- * The two had been the same set, so readers used them interchangeably, and
- * adding one edge would otherwise have put no-showed bookings back into
- * clients' upcoming lists and pulled them out of history — from a change
- * that was only ever about letting staff take a stamp back.
+ * A status with no outgoing transitions — a GRAPH question. `no_show` has
+ * its correction edge, so it is not terminal although it is settled; ask
+ * `isSettled` whether a visit should still appear in a live list.
  */
+export function isTerminal(status: AppointmentStatus): boolean {
+  return BookingStatusData.isTerminal(toStatusData(status));
+}
+
+/** The visit is over, whatever became of it — a LIFECYCLE question. */
 export function isSettled(status: AppointmentStatus): boolean {
-  return (
-    status.kind === 'completed' ||
-    status.kind === 'cancelled' ||
-    status.kind === 'no_show'
-  );
+  return BookingStatusData.isSettled(toStatusData(status));
 }
 
 /** Whether `from.kind → to` is a legal lifecycle move. */
@@ -97,5 +73,5 @@ export function canTransition(
   from: AppointmentStatus,
   to: AppointmentStatusKind,
 ): boolean {
-  return TRANSITIONS[from.kind].includes(to);
+  return BookingStatusData.canTransition(toStatusData(from), to);
 }

@@ -1,3 +1,13 @@
+import {
+  BirthDate as BirthDay,
+  E164,
+  Email,
+  IdentifierKind,
+  Registration,
+  type RegistrationStanding,
+  RegistrationSystem,
+  type Role,
+} from '@creativo/ecs-core';
 import { AccountStatus, User } from '@creativo/domain/accounts';
 import { Result, fail, ok } from '@creativo/domain/kernel';
 import {
@@ -5,13 +15,14 @@ import {
   DEFAULT_AUTH_DEPLOYMENT,
   RegistrationField,
   activeClaims,
-  authStrategyRequires,
   roleFromPrimitive,
 } from '@creativo/domain/identity';
 import {
   AuthTokenPort,
+  UserRecordSnapshot,
   UserRepositoryPort,
   otpDestinationFromRaw,
+  toRegistrationFields,
 } from '@creativo/application/identity';
 import { ClockPort, RepositoryError } from '@creativo/application/shared';
 import { DEFAULT_TENANT_ID } from '../lib/otp/tenant';
@@ -86,6 +97,28 @@ function parseInput(
 /** Calendar-date validation zone for the optional birthday — UTC, same convention as the OTP use-cases' `OTP_ZONE`. */
 const BIRTH_DATE_ZONE = 'UTC';
 
+/*
+ * Phase 2 shim (ECS migration): the login channel's own field, the
+ * strategy's required-field check and the settle of the registered profile
+ * (what a re-run keeps) are `RegistrationSystem` (`@creativo/ecs-core`); the
+ * birthday goes through the identity `BirthDate`, itself a shim over
+ * `AgeSystem`. The converter below is the only code besides the delegating
+ * calls.
+ */
+
+/** What the stored document holds, as the system reads it (stored values were validated on the way in). */
+function toStanding(user: UserRecordSnapshot): RegistrationStanding {
+  return {
+    registration: user.registered
+      ? Registration.registered()
+      : Registration.provisioned(),
+    roles: user.roles as readonly Role[],
+    email: user.email === null ? null : Email.of(user.email),
+    phone: user.phone === null ? null : E164.of(user.phone),
+    birthDate: user.birthDate === null ? null : BirthDay.of(user.birthDate),
+  };
+}
+
 export class CompleteRegistrationUseCase {
   constructor(
     private readonly userRepository: UserRepositoryPort,
@@ -110,21 +143,18 @@ export class CompleteRegistrationUseCase {
     // The identifier itself already satisfies whichever of phone/email is
     // the login channel — the client never has to re-submit it as a form
     // field for the requirement to be met.
-    const effectiveFields: Partial<Record<RegistrationField, string>> = {
-      ...input.fields,
-      [input.kind]: input.fields[input.kind] ?? input.value,
-    };
+    const effectiveFields = RegistrationSystem.effectiveFields(
+      input.kind === 'phone' ? IdentifierKind.Phone : IdentifierKind.Email,
+      input.value,
+      toRegistrationFields(input.fields),
+    );
 
     // The SAME shared deployment const the web app injects — server-side
     // re-validation reads the strategy from one source, not a local copy.
     const strategy = DEFAULT_AUTH_DEPLOYMENT.strategy;
-    for (const field of strategy.required) {
-      if (!authStrategyRequires(strategy, field)) continue;
-      // eslint-disable-next-line security/detect-object-injection -- `field` is always one of the `RegistrationField` literals off `strategy.required`, never external input.
-      const value = effectiveFields[field];
-      if (!value?.trim()) {
-        return fail(new MissingRegistrationFieldError(field));
-      }
+    const missing = RegistrationSystem.missingField(strategy, effectiveFields);
+    if (missing !== null) {
+      return fail(new MissingRegistrationFieldError(missing));
     }
 
     const todayResult = this.clock.now(BIRTH_DATE_ZONE);
@@ -138,7 +168,7 @@ export class CompleteRegistrationUseCase {
     // (registering without one must stay exactly as before); a present value
     // must survive the domain VO's invariants (real ISO calendar date, in
     // the past, age 16–120) before it may touch the user document.
-    const rawBirthDate = effectiveFields['birthDate']?.trim();
+    const rawBirthDate = effectiveFields.birthDate?.trim();
     let birthDateIso: string | undefined;
     if (rawBirthDate) {
       const birthDateResult = BirthDate.createFromISO(rawBirthDate, today);
@@ -191,12 +221,16 @@ export class CompleteRegistrationUseCase {
       user.status.kind === 'stored'
         ? user.status.status
         : AccountStatus.active();
-    const roles = user.roles.length > 0 ? [...user.roles] : ['client'];
     // …and so do its contact channels. On a first registration the form
     // supplies the channel the login did not verify; once registered, a
     // phone or email changes only through the OTP contact-change callables
     // (the `users` owner allowlist, FIX 2), never through a re-run's form.
-    const keepContacts = user.registered;
+    const settled = RegistrationSystem.settle(
+      toStanding(user),
+      effectiveFields,
+      birthDateIso === undefined ? null : BirthDay.of(birthDateIso),
+    );
+    const roles = [...settled.roles];
 
     // The registered profile is the REAL `domain/accounts` `User` — the
     // exact aggregate (and, through `saveRegistered`, the exact document
@@ -205,24 +239,16 @@ export class CompleteRegistrationUseCase {
     // above (`required` always includes all three); the `?? ''` fallbacks
     // only narrow types, with the domain VOs rejecting an empty value as
     // defense-in-depth.
-    const email = keepContacts
-      ? (user.email ?? undefined)
-      : effectiveFields['email']?.trim() || (user.email ?? undefined);
-    const phone =
-      keepContacts && user.phone
-        ? user.phone
-        : (effectiveFields['phone']?.trim() ?? '');
-    const birthDate = birthDateIso ?? user.birthDate ?? undefined;
     const registeredResult = User.create(
       {
         id: user.id.value,
-        phone,
-        firstName: effectiveFields['firstName']?.trim() ?? '',
-        lastName: effectiveFields['lastName']?.trim() ?? '',
+        phone: settled.phone,
+        firstName: settled.firstName,
+        lastName: settled.lastName,
         roles,
         status,
-        ...(email !== undefined && { email }),
-        ...(birthDate !== undefined && { birthDate }),
+        ...(settled.email !== null && { email: settled.email }),
+        ...(settled.birthDate !== null && { birthDate: settled.birthDate }),
       },
       today,
     );

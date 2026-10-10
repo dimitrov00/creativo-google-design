@@ -247,6 +247,15 @@ export class BarberOffering {
     return [this.base, ...this.overrides.values()];
   }
 
+  /**
+   * The overrides as `[variantId, terms]` pairs, in authoring order — the
+   * bridge the `Service` shim builds the ecs-core offering struct from
+   * (Phase 4 deletes it with this class).
+   */
+  overrideEntries(): readonly (readonly [string, ServiceTerms])[] {
+    return [...this.overrides];
+  }
+
   private static termsFromProps(raw: {
     priceMinorUnits: number;
     currencyCode: string;

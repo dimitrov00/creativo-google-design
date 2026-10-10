@@ -6,16 +6,38 @@ import {
   type StreakDefinition,
   type StreakPeriodFact,
   type StreakState,
-  redeemProblem,
   tierSteps,
 } from '@creativo/application/engagement';
+import {
+  AppointmentId,
+  DayKey,
+  type Metric,
+  Points,
+  type RedeemableRewardRef,
+  RewardId,
+  RewardSystem,
+  StreakDefinitionId,
+  type StreakState as SystemStreakState,
+  StreakSystem,
+  type StreakTrackMark,
+  TierId,
+  type TierState,
+  type TierStepRef,
+  TierSystem,
+  type GiftVoucherEntity,
+  GiftVoucherId,
+  UserId as UserRefId,
+  VoucherCode,
+  VoucherState,
+  VoucherSystem,
+  ZonedTimeSystem,
+} from '@creativo/ecs-core';
 import { rhythmRuleWords } from '@creativo/features/shared/visits';
 import type { UiMark, UiStreakPeriod } from '@creativo/ui/controls';
 import {
   cardLocaleOf,
   dayLong,
   dayMonth,
-  dayPlus,
   dayShort,
   figure,
   monthLong,
@@ -241,6 +263,9 @@ export function passVm(input: WalletInput): PassVm {
 
 // ── WC · What is held ───────────────────────────────────────────────────
 
+/** The shop's calendar — the zone `shopDayOf` (`sofiaDayOf`) reads. */
+const SHOP_ZONE = 'Europe/Sofia';
+
 /** A voucher's last day on the shop's calendar; `null` when it never expires. */
 function lastDayOf(voucher: GiftVoucher): string | null {
   return voucher.expiresAt === null
@@ -248,26 +273,43 @@ function lastDayOf(voucher: GiftVoucher): string | null {
     : shopDayOf(voucher.expiresAt.toMillis());
 }
 
-/** What can be spent today: issued, not voided, not past its day, with a balance. */
-function spendable(voucher: GiftVoucher, today: string): boolean {
-  const lastDay = lastDayOf(voucher);
-  return (
-    voucher.state.kind === 'active' &&
-    voucher.balance.toMinorUnits() > 0 &&
-    (lastDay === null || lastDay >= today)
+/**
+ * Today's shop midnight — what a voucher must not expire before — read off
+ * ONE day table per call, never one per voucher; `null` for a day the table
+ * cannot place.
+ */
+function todayStartMsOf(today: string): number | null {
+  const day = DayKey.of(today);
+  return ZonedTimeSystem.startOfDayMs(
+    day,
+    ZonedTimeSystem.dayTable(SHOP_ZONE, day, day),
   );
 }
 
-function soonestFirst(a: GiftVoucher, b: GiftVoucher): number {
-  return (
-    (lastDayOf(a) ?? '9999-12-31').localeCompare(
-      lastDayOf(b) ?? '9999-12-31',
-    ) || a.id.value.localeCompare(b.id.value)
+/**
+ * The vouchers that can be spent today (`VoucherSystem.spendable`): issued,
+ * not voided, not past its day, with a balance. "Its day" is the shop's:
+ * a voucher is spendable while it expires no earlier than today's shop
+ * midnight. A day the table cannot place spends nothing rather than
+ * everything.
+ */
+function spendableOf(
+  vouchers: readonly GiftVoucher[],
+  today: string,
+): readonly GiftVoucher[] {
+  const startMs = todayStartMsOf(today);
+  if (startMs === null) return [];
+  return vouchers.filter((voucher) =>
+    VoucherSystem.spendable(voucherOf(voucher), startMs),
   );
 }
+
+/** The day a never-expiring voucher sorts as: after every real one. */
+const NEVER = '9999-12-31';
 
 function voucherVm(
   voucher: GiftVoucher,
+  lastDay: string | null,
   today: string,
   words: Words,
 ): VoucherVm {
@@ -275,7 +317,6 @@ function voucherVm(
   const lang = words.lang;
   const balance = formatMoney(voucher.balance, lang);
   const value = formatMoney(voucher.initialValue, lang);
-  const lastDay = lastDayOf(voucher);
   const until = lastDay === null ? null : dayShort(lastDay, today, lang);
   // One fact, once: an untouched voucher's chip does not repeat the figure
   // over it, so it says its validity alone, or nothing.
@@ -307,10 +348,24 @@ export function voucherVms(
   today: string,
   words: Words,
 ): readonly VoucherVm[] {
-  return vouchers
-    .filter((voucher) => spendable(voucher, today))
-    .sort(soonestFirst)
-    .map((voucher) => voucherVm(voucher, today, words));
+  // Each voucher's last day worked out ONCE (the shop's calendar is a zone
+  // reading), then sorted on it: day keys are ASCII, so `<` is their order.
+  const held = spendableOf(vouchers, today).map((voucher) => ({
+    voucher,
+    lastDay: lastDayOf(voucher),
+  }));
+  held.sort((a, b) => {
+    const x = a.lastDay ?? NEVER;
+    const y = b.lastDay ?? NEVER;
+    return x < y
+      ? -1
+      : x > y
+        ? 1
+        : a.voucher.id.value.localeCompare(b.voucher.id.value);
+  });
+  return held.map(({ voucher, lastDay }) =>
+    voucherVm(voucher, lastDay, today, words),
+  );
 }
 
 /** The grants as the wallet's tickets: ready ones and the ones on this visit's bill. */
@@ -411,9 +466,9 @@ function holdingsDetailOf(
   holdings: readonly WalletHoldingVm[],
 ): string | null {
   const { words, today } = input;
-  const [first, ...rest] = vouchersOf(input)
-    .filter((voucher) => spendable(voucher, today))
-    .map((voucher) => voucher.balance);
+  const [first, ...rest] = spendableOf(vouchersOf(input), today).map(
+    (voucher) => voucher.balance,
+  );
   if (first === undefined || rest.length === 0) return null;
   let sum = first;
   for (const balance of rest) {
@@ -530,12 +585,10 @@ interface RhythmStanding {
  * no period is open.
  */
 function inChairDueOf(state: StreakState, input: WalletInput): string | null {
-  return input.inChairToday &&
-    !input.paused &&
-    state.phase.kind !== 'frozen' &&
-    state.period !== null
-    ? dayPlus(input.today, state.period.intervalDays)
-    : null;
+  return StreakSystem.inChairDue(streakStateOf(state), DayKey.of(input.today), {
+    inChairToday: input.inChairToday,
+    paused: input.paused,
+  });
 }
 
 function standingOf(
@@ -624,75 +677,64 @@ function standingOf(
   }
 }
 
-/** A closed period as the track draws it; a visit's caption is chosen with its neighbours'. */
-interface DrawnPeriod {
-  readonly period: UiStreakPeriod;
-  /** The visit a `kept` or a `repaired` mark stands for; `null` on a due date nobody met. */
-  readonly visitDay: string | null;
-}
-
-function closedPeriod(fact: StreakPeriodFact, input: WalletInput): DrawnPeriod {
+/** A closed period as the track draws it; a visit's caption is chosen with its neighbours' (`rhythmMarks`). */
+function closedPeriod(
+  fact: StreakPeriodFact,
+  input: WalletInput,
+): UiStreakPeriod {
   const { words, today } = input;
   const rhythm = words.rhythm;
   const month = monthLong(fact.on, words.lang);
   switch (fact.mark) {
     case 'kept':
       return {
-        period: {
-          id: `kept-${fact.on}`,
-          mark: 'kept',
-          caption: '',
-          description: rhythm.markKept(
-            month,
-            dayShort(fact.on, today, words.lang),
-          ),
-        },
-        visitDay: fact.on,
+        id: `kept-${fact.on}`,
+        mark: 'kept',
+        caption: '',
+        description: rhythm.markKept(
+          month,
+          dayShort(fact.on, today, words.lang),
+        ),
       };
     case 'repaired':
       return {
-        period: {
-          id: `repaired-${fact.on}`,
-          mark: 'repaired',
-          caption: '',
-          description: rhythm.markRepaired(month),
-        },
-        visitDay: fact.on,
+        id: `repaired-${fact.on}`,
+        mark: 'repaired',
+        caption: '',
+        description: rhythm.markRepaired(month),
       };
     case 'protected':
       return {
-        period: {
-          id: `protected-${fact.on}`,
-          mark: 'protected',
-          caption: '',
-          description: rhythm.markProtected(
-            month,
-            fact.reason === null
-              ? rhythm.reasonFreeze
-              : rhythm.reason(fact.reason),
-          ),
-        },
-        visitDay: null,
+        id: `protected-${fact.on}`,
+        mark: 'protected',
+        caption: '',
+        description: rhythm.markProtected(
+          month,
+          fact.reason === null
+            ? rhythm.reasonFreeze
+            : rhythm.reason(fact.reason),
+        ),
       };
     case 'missed':
       return {
-        period: {
-          id: `missed-${fact.on}`,
-          mark: 'missed',
-          caption: '',
-          description: rhythm.markMissed(month),
-        },
-        visitDay: null,
+        id: `missed-${fact.on}`,
+        mark: 'missed',
+        caption: '',
+        description: rhythm.markMissed(month),
       };
   }
 }
 
-/** The open period, from the phase, the due date and the visit in the chair; `null` while none is open. */
+/**
+ * The open period as the track draws it (`StreakSystem.track`'s open mark):
+ * a protection or an excuse carrying the period, today's visit in the
+ * chair, or the due date.
+ */
 function openPeriod(
-  state: StreakState,
+  mark: StreakTrackMark,
   standing: RhythmStanding,
   input: WalletInput,
-): DrawnPeriod | null {
+): UiStreakPeriod {
   const { words, today } = input;
   const rhythm = words.rhythm;
   const lang = words.lang;
@@ -700,49 +742,45 @@ function openPeriod(
   // captioned a second time.
   const due = (day: string) =>
     day === standing.day ? '' : rhythm.dueBy(dayShort(day, today, lang));
-  const phase = state.phase;
-  const open = (period: Omit<UiStreakPeriod, 'id'>): DrawnPeriod => ({
-    period: { id: 'current', ...period },
-    visitDay: null,
-  });
-  if (phase.kind === 'frozen' && !input.paused) {
-    return open({
+  if (mark.mark === 'protected') {
+    const reason = mark.reason as FrozenReason;
+    return {
+      id: 'current',
       mark: 'protected',
-      caption: due(phase.until),
+      caption: due(mark.on),
       description:
-        phase.reason === 'excuse'
+        reason === 'excuse'
           ? // Which excuse it was is the closed period's to say; the open
             // one names the day its due date moved to.
-            rhythm.markCurrent(dayLong(phase.until, today, lang))
+            rhythm.markCurrent(dayLong(mark.on, today, lang))
           : rhythm.markProtected(
-              monthLong(phase.until, lang),
-              rhythm.reason(phase.reason),
+              monthLong(mark.on, lang),
+              rhythm.reason(reason),
             ),
-    });
+    };
   }
   if (input.inChairToday) {
-    return open({
+    return {
+      id: 'current',
       mark: 'current',
       caption: words.visits.today,
       description: rhythm.markCurrent(dayLong(today, today, lang)),
-    });
+    };
   }
-  if (state.dueBy !== null) {
-    return open({
-      mark: 'current',
-      caption: due(state.dueBy),
-      description: rhythm.markCurrent(dayLong(state.dueBy, today, lang)),
-    });
-  }
-  return null;
+  return {
+    id: 'current',
+    mark: 'current',
+    caption: due(mark.on),
+    description: rhythm.markCurrent(dayLong(mark.on, today, lang)),
+  };
 }
 
 /**
  * The track's marks, oldest first: the projection's closed periods, then
- * the open one. The visits' captions are ONE axis in one grain: the
- * month's word while every drawn visit has a month of its own, every
- * visit's day once two share one (DV12). A due date nobody met has no
- * visit to name: its mark says it, uncaptioned.
+ * the open one (`StreakSystem.track`). The visits' captions are ONE axis in
+ * one grain: the month's word while every drawn visit has a month of its
+ * own, every visit's day once two share one (DV12). A due date nobody met
+ * has no visit to name: its mark says it, uncaptioned.
  */
 function rhythmMarks(
   state: StreakState,
@@ -750,25 +788,32 @@ function rhythmMarks(
   input: WalletInput,
 ): readonly UiStreakPeriod[] {
   const { words } = input;
-  const open = openPeriod(state, standing, input);
-  const drawn = [
-    ...state.periods.map((fact) => closedPeriod(fact, input)),
-    ...(open === null ? [] : [open]),
-  ].slice(-WALLET_RHYTHM_PERIODS);
-  const months = drawn.flatMap(({ visitDay }) =>
-    visitDay === null ? [] : [visitDay.slice(0, 7)],
-  );
-  const byMonth = new Set(months).size === months.length;
-  return drawn.map(({ period, visitDay }) =>
-    visitDay === null
+  const track = StreakSystem.track(streakStateOf(state), {
+    today: DayKey.of(input.today),
+    inChairToday: input.inChairToday,
+    paused: input.paused,
+    limit: WALLET_RHYTHM_PERIODS,
+  });
+  return track.marks.map((mark) => {
+    const period = mark.open
+      ? openPeriod(mark, standing, input)
+      : closedPeriod(
+          {
+            mark: mark.mark as StreakPeriodFact['mark'],
+            on: mark.on,
+            reason: mark.reason as StreakPeriodFact['reason'],
+          },
+          input,
+        );
+    return mark.visitDay === null
       ? period
       : {
           ...period,
-          caption: byMonth
-            ? words.monthShort(Number(visitDay.slice(5, 7)))
-            : dayMonth(visitDay, words.lang),
-        },
-  );
+          caption: track.byMonth
+            ? words.monthShort(Number(mark.visitDay.slice(5, 7)))
+            : dayMonth(mark.visitDay, words.lang),
+        };
+  });
 }
 
 /**
@@ -850,22 +895,23 @@ function tierOf(
     value: step.atLeast,
     label: step.name.get(locale),
   }));
-  const top = marks.at(-1)?.value ?? 1;
+  // The ring and the gauge are `TierSystem.progress`'s numbers.
+  const progress = TierSystem.progress(
+    tierStateOf(account.tier),
+    catalog.tiers.map(tierRefOf),
+  );
   const steps = (valueText: string): GaugeVm => ({
-    value: Math.min(Math.max(track.value, 0), top),
+    value: progress.gaugeValue,
     min: 0,
-    max: top,
+    max: progress.top,
     marks,
     label: page.tier,
     valueText,
   });
-  const remaining =
-    next === null
-      ? null
-      : Math.max(0, track.remaining ?? next.atLeast - track.value);
+  const remaining = progress.remaining;
 
-  if (next === null || remaining === null) {
-    const sentence = page.tierTop(current?.atLeast ?? track.value);
+  if (next === null || remaining === null || progress.atTop) {
+    const sentence = page.tierTop(progress.currentAtLeast ?? progress.value);
     return {
       ring: {
         value: 1,
@@ -891,13 +937,11 @@ function tierOf(
   );
   // From the tier the account stands on to the next: an override may stand
   // above what the visits reached, and the arc never runs backwards.
-  const floor = Math.min(current?.atLeast ?? 0, next.atLeast);
-  const span = Math.max(1, next.atLeast - floor);
   return {
     ring: {
-      value: Math.min(Math.max(span - remaining, 0), span),
+      value: progress.ringValue,
       min: 0,
-      max: span,
+      max: progress.ringMax,
       marks: [],
       label: page.tier,
       valueText: sentence,
@@ -937,16 +981,16 @@ function tilesOf(
   const balance = account.balance;
   const tiles = offered(catalog, today).flatMap(
     (reward): readonly RewardTileVm[] => {
-      const problem = redeemProblem(reward, {
+      // Within reach is the balance against the cost and nothing else:
+      // `RewardSystem.affordable`; `null` is a reward nobody can take today.
+      const reach = RewardSystem.affordable(
+        rewardRefOf(reward),
         balance,
-        today,
-        paused: false,
-        recent: [],
-      });
-      if (problem !== null && problem !== 'insufficientPoints') return [];
+        DayKey.of(today),
+      );
+      if (reach === null) return [];
       const title = reward.name.get(locale);
-      const short = Math.max(0, reward.cost - balance);
-      const missing = problem === null ? null : figure(short, words.lang);
+      const missing = reach.affordable ? null : figure(reach.short, words.lang);
       return [
         {
           rewardId: reward.id,
@@ -954,10 +998,7 @@ function tilesOf(
           cost: words.ledgerPage.points(reward.cost),
           affordable: missing === null,
           missing: missing === null ? null : page.moreToGo(missing),
-          progress:
-            missing === null
-              ? null
-              : Math.min(Math.max(balance, 0) / reward.cost, 0.999),
+          progress: reach.progress,
           src:
             input.covers.get(reward.id) ??
             (reward.grants.kind === 'coupon'
@@ -1065,5 +1106,123 @@ export function walletVm(input: WalletInput): WalletVm {
     ...(tier === undefined ? {} : { tier }),
     ...(catalog === undefined ? {} : { catalog }),
     ...(activity === undefined ? {} : { activity }),
+  };
+}
+
+// ── The bridge: legacy shapes → ecs-core structs (Phase 4 deletes it) ────
+
+/** What carries a frozen period, as the legacy phase names it. */
+type FrozenReason = Extract<StreakState['phase'], { kind: 'frozen' }>['reason'];
+
+/** The account's rhythm as `StreakSystem` reads it: the instant in ms, the ids as brands. */
+function streakStateOf(state: StreakState): SystemStreakState {
+  return {
+    streakId: StreakDefinitionId.of(state.streakId),
+    definitionVersion: state.definitionVersion,
+    phase: state.phase as SystemStreakState['phase'],
+    current: state.current,
+    best: state.best,
+    lastQualifiedAtMs:
+      state.lastQualifiedAt === null ? null : state.lastQualifiedAt.getTime(),
+    dueBy: state.dueBy === null ? null : DayKey.of(state.dueBy),
+    freezesBanked: state.freezesBanked,
+    period: state.period,
+    periods: state.periods as SystemStreakState['periods'],
+    heldBy:
+      state.heldBy === null
+        ? null
+        : {
+            appointmentId: AppointmentId.of(state.heldBy.appointmentId),
+            on: DayKey.of(state.heldBy.on),
+          },
+    runStartedOn:
+      state.runStartedOn === null ? null : DayKey.of(state.runStartedOn),
+  };
+}
+
+/** The account's tier as `TierSystem` reads it. */
+function tierStateOf(tier: WalletInput['account']['tier']): TierState {
+  return {
+    current: TierId.of(tier.current),
+    definitionVersion: tier.definitionVersion,
+    sinceMs: tier.since.getTime(),
+    qualifying: tier.qualifying,
+    next: tier.next === null ? null : TierId.of(tier.next),
+    remaining: tier.remaining,
+    override:
+      tier.override === null
+        ? null
+        : {
+            tierId: TierId.of(tier.override.tierId),
+            until:
+              tier.override.until === null
+                ? null
+                : DayKey.of(tier.override.until),
+            source: tier.override.source,
+          },
+  };
+}
+
+/** A tier as `TierSystem` reads it; its name rides along by reference. */
+function tierRefOf(tier: LoyaltyCatalog['tiers'][number]): TierStepRef {
+  return {
+    id: TierId.of(tier.id),
+    rank: tier.rank,
+    name: tier.name,
+    qualify: {
+      metric: tier.qualify.metric as Metric,
+      atLeast: tier.qualify.atLeast,
+      window: tier.qualify.window,
+    },
+  };
+}
+
+/** A reward as `RewardSystem` reads it. */
+function rewardRefOf(
+  reward: LoyaltyCatalog['rewards'][number],
+): RedeemableRewardRef {
+  return {
+    id: RewardId.of(reward.id),
+    cost: Points.of(reward.cost),
+    enabled: reward.enabled,
+    order: reward.order,
+    available: {
+      from:
+        reward.available.from === null
+          ? null
+          : DayKey.of(reward.available.from),
+      until:
+        reward.available.until === null
+          ? null
+          : DayKey.of(reward.available.until),
+    },
+    limits: reward.limits,
+    redeemedCount: reward.redeemedCount,
+  };
+}
+
+/** A voucher as `VoucherSystem.spendable` reads it. */
+function voucherOf(voucher: GiftVoucher): GiftVoucherEntity {
+  const { state } = voucher;
+  const moneyOf = (money: GiftVoucher['balance']) => ({
+    amountMinorUnits: money.toMinorUnits(),
+    currencyCode: money.currencyCode(),
+  });
+  return {
+    id: GiftVoucherId.of(voucher.id.value),
+    code: VoucherCode.of(voucher.code),
+    initialValue: moneyOf(voucher.initialValue),
+    balance: moneyOf(voucher.balance),
+    issuedAtMs: voucher.issuedAt.toMillis(),
+    expiresAtMs:
+      voucher.expiresAt === null ? null : voucher.expiresAt.toMillis(),
+    issuedToUserId:
+      voucher.issuedToUserId === null
+        ? null
+        : UserRefId.of(voucher.issuedToUserId.value),
+    state:
+      state.kind === 'void'
+        ? VoucherState.voided(state.voidedAt.toMillis(), state.reason)
+        : VoucherState.active(),
   };
 }

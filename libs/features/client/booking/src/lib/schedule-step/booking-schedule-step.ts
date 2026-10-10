@@ -28,10 +28,23 @@ import {
   ObserveRangeCapacityUseCase,
   type ScheduleSelection,
   ZonedDateTime,
-  partyServicesOf,
-  shopsServingParty,
 } from '@creativo/application/booking';
-import { BarberId, type LocationId } from '@creativo/application/catalog';
+import type { BookingCart, MoveRider } from '@creativo/application/booking';
+import {
+  BarberId as BarberKey,
+  type BookingCart as CartData,
+  BookingCartSystem,
+  type CartRider,
+  type CartServiceScope,
+  LocationId as LocationKey,
+  ServiceId as ServiceKey,
+  ServiceVariantId as VariantKey,
+} from '@creativo/ecs-core';
+import {
+  BarberId,
+  type LocationId,
+  type Service,
+} from '@creativo/application/catalog';
 import { CLOCK } from '@creativo/application/shared';
 import { AccountStateService } from '@creativo/features/client/account-state';
 import {
@@ -265,11 +278,19 @@ export class BookingScheduleStep {
     }
     const shops = this.locations();
     if (shops.length === 0) return null;
-    return shopsServingParty(
-      partyServicesOf(cart, this.store.availabilityRiders()),
-      this.catalog.services(),
-      shops.map((shop) => shop.id),
+    // `BookingCartSystem.shopsServingParty` — the shops, in the order given,
+    // that offer every service on the visit.
+    const serving = BookingCartSystem.shopsServingParty(
+      BookingCartSystem.partyServicesOf(
+        toCartData(cart),
+        this.store.availabilityRiders().map(toCartRider),
+      ),
+      this.catalog.services().map(toServiceScope),
+      shops.map((shop) => LocationKey.of(shop.id.value)),
     );
+    return shops
+      .filter((shop) => serving.includes(LocationKey.of(shop.id.value)))
+      .map((shop) => shop.id);
   });
 
   /**
@@ -914,3 +935,42 @@ type ShopReach =
   | { readonly kind: 'nowhere' };
 
 const SERVED: ShopReach = { kind: 'served' };
+
+/* ── Legacy ↔ ECS converters (the shop rule is BookingCartSystem's) ────── */
+
+function toServiceScope(service: Service): CartServiceScope {
+  return {
+    id: ServiceKey.of(service.id.value),
+    locationIds: service.locationIds.map((id) => LocationKey.of(id.value)),
+  };
+}
+
+function toCartRider(rider: MoveRider): CartRider {
+  return {
+    serviceId: ServiceKey.of(rider.serviceId.value),
+    barberId: BarberKey.of(rider.barberId.value),
+    offsetMinutes: rider.offsetMinutes,
+    terms: rider.terms,
+  };
+}
+
+function toCartData(cart: BookingCart): CartData {
+  return {
+    seats: cart.entries().map(([seatKey, lines]) => ({
+      seatKey,
+      lines: lines.map((line) => ({
+        lineId: line.id.value,
+        seatKey,
+        serviceId: ServiceKey.of(line.serviceId.value),
+        variantId:
+          line.variantId === null ? null : VariantKey.of(line.variantId.value),
+        barberId:
+          line.barberPref.kind === 'specific'
+            ? BarberKey.of(line.barberPref.barberId.value)
+            : null,
+        locationId: null,
+      })),
+    })),
+    nextSequence: cart.nextLineSequence,
+  };
+}

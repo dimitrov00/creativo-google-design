@@ -1,3 +1,4 @@
+import { AuditSystem } from '@creativo/ecs-core';
 import { HttpsError, onCall } from 'firebase-functions/v2/https';
 import { FirestoreBookingStore } from '../../adapters/firestore-booking-store';
 import { SystemClock } from '../../adapters/system-clock';
@@ -219,7 +220,7 @@ export const commitBooking = onCall(async (request) => {
     subjects: requestedSeatSubjects(seats, ownerUserId),
     atIso: new Date().toISOString(),
     context: { locationId: String(payload.locationId ?? '') },
-    changeKey: `attempt:${attemptId ?? appointmentId}`,
+    changeKey: AuditSystem.changeKey.attempt(attemptId ?? null, appointmentId),
   });
   return { appointmentId };
 });

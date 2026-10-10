@@ -1,11 +1,22 @@
+import { IdentifierKind, RegistrationSystem } from '@creativo/ecs-core';
 import { Result, fail, ok } from '@creativo/domain/kernel';
 import {
   AuthStrategy,
   Identifier,
   RegistrationField,
-  authStrategyRequires,
 } from '@creativo/domain/identity';
 import { OtpClient, OtpClientError } from '../ports/otp-client.port';
+import {
+  fromRegistrationFields,
+  toRegistrationFields,
+} from '../registration-fields.shim';
+
+/*
+ * Phase 2 shim (ECS migration): the login channel's own field and the
+ * strategy's required-field check are `RegistrationSystem.effectiveFields`
+ * and `.missingField` (`@creativo/ecs-core`); the form's partial record
+ * crosses through the lib's one converter pair.
+ */
 
 export class MissingRegistrationFieldError extends Error {
   constructor(public readonly field: RegistrationField) {
@@ -37,25 +48,19 @@ export class RegisterUserUseCase {
     // the login channel — the "about" step never re-collects it as a form
     // field for the requirement to be met (mirrors `completeRegistration`'s
     // own server-side check, which applies this same fallback).
-    const effectiveFields: Partial<Record<RegistrationField, string>> = {
-      ...fields,
-      [identifier.kind]: fields[identifier.kind] ?? identifier.value.toString(),
-    };
-
-    for (const field of strategy.required) {
-      if (!authStrategyRequires(strategy, field)) continue;
-      // `field` is always one of the `RegistrationField` literals
-      // (`strategy.required`'s own element type), never external input.
-      // eslint-disable-next-line security/detect-object-injection
-      const value = effectiveFields[field];
-      if (!value?.trim()) {
-        return fail(new MissingRegistrationFieldError(field));
-      }
+    const effective = RegistrationSystem.effectiveFields(
+      identifier.kind === 'phone' ? IdentifierKind.Phone : IdentifierKind.Email,
+      identifier.value.toString(),
+      toRegistrationFields(fields),
+    );
+    const missing = RegistrationSystem.missingField(strategy, effective);
+    if (missing !== null) {
+      return fail(new MissingRegistrationFieldError(missing));
     }
 
     const result = await this.otpClient.completeRegistration(
       identifier,
-      effectiveFields,
+      fromRegistrationFields(effective),
     );
     if (result.isFailure()) {
       return fail({ kind: 'client_error', error: result.error });

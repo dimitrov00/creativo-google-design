@@ -1,13 +1,46 @@
+import type { BookingDraftRider } from '@creativo/application/booking';
+import type { Barber, Location, Service } from '@creativo/application/catalog';
 import {
-  type BookingDraftRider,
-  shopsServingParty,
-} from '@creativo/application/booking';
-import type {
-  Barber,
-  Location,
-  Service,
+  BarberId,
+  LocationId,
+  type MoveCatalogService,
+  type MoveRider,
+  MoveSystem,
   ServiceId,
-} from '@creativo/application/catalog';
+  type ServiceVariantId,
+} from '@creativo/ecs-core';
+
+/*
+ * THIN SHIM (ECS migration Phase 2). Whether the shop can still serve who a
+ * move carries — each rider's barber active, service offered, the variant it
+ * was sold as still sold, and ONE active shop offering every carried service
+ * at once — is `MoveSystem.carriedSeatsInReach`. This keeps the legacy
+ * signature and only converts.
+ */
+
+/* ── Legacy ↔ ECS converters ─────────────────────────────────────────── */
+
+function toRiderData(rider: BookingDraftRider): MoveRider {
+  return {
+    serviceId: ServiceId.of(rider.serviceId),
+    variantId: rider.variantId as ServiceVariantId | null,
+    barberId: BarberId.of(rider.barberId),
+    offsetMinutes: rider.offsetMinutes,
+    durationMinutes: rider.durationMinutes,
+    setupMinutes: rider.setupMinutes,
+    cleanupMinutes: rider.cleanupMinutes,
+  };
+}
+
+function toServiceData(service: Service): MoveCatalogService {
+  return {
+    id: ServiceId.of(service.id.value),
+    variants: service.variants.map((variant) => ({
+      id: variant.id.value as ServiceVariantId,
+    })),
+    locationIds: service.locationIds.map((id) => LocationId.of(id.value)),
+  };
+}
 
 /**
  * Can the shop still serve every seat a move CARRIES, together, on some day,
@@ -52,30 +85,12 @@ export function carriedSeatsInReach(
   barbers: readonly Barber[],
   locations: readonly Location[] | null,
 ): boolean {
-  if (riders.length === 0) return true;
-  const active = new Set(barbers.map((barber) => barber.id.value));
-  const offered = new Map(
-    services.map((service) => [service.id.value, service]),
-  );
-  const carried: ServiceId[] = [];
-  for (const rider of riders) {
-    if (!active.has(rider.barberId)) return false;
-    const service = offered.get(rider.serviceId);
-    if (!service) return false;
-    if (
-      rider.variantId !== null &&
-      !service.variants.some((variant) => variant.id.value === rider.variantId)
-    ) {
-      return false;
-    }
-    carried.push(service.id);
-  }
-  if (locations === null) return true;
-  return (
-    shopsServingParty(
-      { lineServiceIds: [], riderServiceIds: carried },
-      services,
-      locations.map((location) => location.id),
-    ).length > 0
+  return MoveSystem.carriedSeatsInReach(
+    riders.map(toRiderData),
+    barbers.map((barber) => BarberId.of(barber.id.value)),
+    services.map(toServiceData),
+    locations === null
+      ? null
+      : locations.map((location) => LocationId.of(location.id.value)),
   );
 }

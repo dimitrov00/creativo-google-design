@@ -1,3 +1,7 @@
+import {
+  AppliedOperation as EcsAppliedOperation,
+  AppointmentEditSystem,
+} from '@creativo/ecs-core';
 import type { PersistedDocument } from './appointment-document';
 
 /**
@@ -83,7 +87,7 @@ function entryOf(raw: unknown): AppliedOperation | null {
  */
 export class AppliedOperations {
   /** How many applied intents a visit remembers. */
-  static readonly CAP = 20;
+  static readonly CAP: typeof EcsAppliedOperation.CAP = 20;
 
   private constructor(private readonly entries: readonly AppliedOperation[]) {}
 
@@ -109,7 +113,7 @@ export class AppliedOperations {
 
   /** The applied intent with this name, or `null` when it is not remembered. */
   find(id: string): AppliedOperation | null {
-    return this.entries.find((entry) => entry.id === id) ?? null;
+    return EcsAppliedOperation.find(this.entries, id);
   }
 
   /**
@@ -119,9 +123,13 @@ export class AppliedOperations {
    * `CAP`.
    */
   record(entry: AppliedOperation): AppliedOperations {
-    const rest = this.entries.filter((known) => known.id !== entry.id);
     return new AppliedOperations(
-      [...rest, entry].slice(-AppliedOperations.CAP),
+      AppointmentEditSystem.record(
+        this.entries,
+        entry.id,
+        entry.revision,
+        entry.digest,
+      ),
     );
   }
 

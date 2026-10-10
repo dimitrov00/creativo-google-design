@@ -23,6 +23,15 @@ import {
   ServiceVariantId,
 } from '@creativo/application/catalog';
 import {
+  BarberId as BarberKey,
+  type Money as MoneyData,
+  type PricedService,
+  type ServiceTerms as TermsData,
+  type TermsSpan,
+  TermsSpanSystem,
+  ServiceVariantId as VariantKey,
+} from '@creativo/ecs-core';
+import {
   CatalogContentService,
   CatalogPresenter,
   type ServiceVm,
@@ -61,12 +70,6 @@ import type { SeatScopeVm } from '../seat-scope-vm';
  * already applies — owner ruling 2026-07-31). A pinned barber collapses the
  * span to a point, and every label below prints a single value when it does.
  */
-interface TermsSpan {
-  readonly minPrice: Money;
-  readonly maxPrice: Money;
-  readonly minMinutes: number;
-  readonly maxMinutes: number;
-}
 
 /** One option on a line's variant or performer menu. */
 interface BagOptionVm {
@@ -325,92 +328,54 @@ export class BookingBagSheet {
   // ── Terms ───────────────────────────────────────────────────────────
 
   /**
-   * What a (service, variant, barber) will cost and take.
-   *
-   * A named barber resolves to exactly one `ServiceTerms` — the one the server
-   * will charge. "Anyone" resolves to the span across everyone who performs it,
-   * because the scheduler picks the performer and their rate comes with them.
-   * A service nobody has claimed yet falls back to the catalog's base terms,
-   * which is the only quote there is.
+   * What a (service, variant, barber) will cost and take
+   * (`TermsSpanSystem.spanFor`): a named barber resolves to exactly the one
+   * `ServiceTerms` the server will charge; "anyone" to the span across
+   * everyone who performs it, because the scheduler picks the performer and
+   * their rate comes with them; a service nobody has claimed yet to the
+   * catalog's base terms, the only quote there is.
    */
   private spanFor(
     service: Service,
     variantId: ServiceVariantId | null,
     barberId: BarberId | null,
   ): TermsSpan {
-    const resolved = barberId
-      ? [service.termsFor(barberId, variantId)]
-      : service.offerings.map((offering) =>
-          service.termsFor(offering.barberId, variantId),
-        );
-    // `termsFor` always answers, so the base fallback makes the seed total —
-    // there is no "no terms" case to model.
-    const seed = service.termsFor(null, variantId);
-    const terms = resolved.length > 0 ? resolved : [seed];
-
-    // Single currency is a cart invariant the aggregate enforces, so minor
-    // units compare directly.
-    return terms.reduce<TermsSpan>(
-      (span, next) => ({
-        minPrice:
-          next.price.toMinorUnits() < span.minPrice.toMinorUnits()
-            ? next.price
-            : span.minPrice,
-        maxPrice:
-          next.price.toMinorUnits() > span.maxPrice.toMinorUnits()
-            ? next.price
-            : span.maxPrice,
-        minMinutes: Math.min(span.minMinutes, next.durationMinutes),
-        maxMinutes: Math.max(span.maxMinutes, next.durationMinutes),
-      }),
-      {
-        minPrice: terms[0]?.price ?? seed.price,
-        maxPrice: terms[0]?.price ?? seed.price,
-        minMinutes: terms[0]?.durationMinutes ?? seed.durationMinutes,
-        maxMinutes: terms[0]?.durationMinutes ?? seed.durationMinutes,
-      },
+    return TermsSpanSystem.spanFor(
+      pricedServiceOf(service),
+      variantId === null ? null : VariantKey.of(variantId.value),
+      barberId === null ? null : BarberKey.of(barberId.value),
     );
   }
 
   /**
-   * Several spans as one.
-   *
-   * Floors add to the floor and ceilings to the ceiling: a bag holding one
-   * pinned 14,50 € line and one open 13,00–15,50 € line is honestly
-   * 27,50 – 30,00 €, not a single number either end of it.
-   *
-   * Mixed currencies are a data error the aggregate also refuses, and a
-   * PARTIAL total would be worse than none — so the label vanishes rather than
-   * quoting a sum that is missing a line (the review step's ruling).
+   * Several spans as one (`TermsSpanSystem.sum`): floors add to the floor
+   * and ceilings to the ceiling — a bag holding one pinned 14,50 € line and
+   * one open 13,00–15,50 € line is honestly 27,50 – 30,00 €. Mixed
+   * currencies (a data error the aggregate also refuses) give `null`: a
+   * PARTIAL total would be worse than none, so the label vanishes.
    */
   private sum(spans: readonly TermsSpan[]): TermsSpan | null {
-    let total: TermsSpan | null = null;
-    for (const span of spans) {
-      if (total === null) {
-        total = span;
-        continue;
-      }
-      const min = total.minPrice.add(span.minPrice);
-      const max = total.maxPrice.add(span.maxPrice);
-      if (min.isFailure() || max.isFailure()) return null;
-      total = {
-        minPrice: min.value,
-        maxPrice: max.value,
-        minMinutes: total.minMinutes + span.minMinutes,
-        maxMinutes: total.maxMinutes + span.maxMinutes,
-      };
-    }
-    return total;
+    return TermsSpanSystem.sum(spans);
   }
 
   /** "28,00 €", or "13,00 € – 15,50 €" when the barber is still open. */
   private priceLabel(span: TermsSpan | null): string | null {
     if (!span) return null;
-    const low = formatMoney(span.minPrice, this.content.locale());
-    if (span.minPrice.toMinorUnits() === span.maxPrice.toMinorUnits()) {
-      return low;
-    }
-    return `${low} – ${formatMoney(span.maxPrice, this.content.locale())}`;
+    const bounds = TermsSpanSystem.priceBounds(span);
+    const low = this.money(bounds.min);
+    if (TermsSpanSystem.isPricePoint(span)) return low;
+    return `${low} – ${this.money(bounds.max)}`;
+  }
+
+  /** A struct amount in the locale's words — the one money formatter. */
+  private money(amount: MoneyData): string {
+    const money = Money.fromMinorUnitsAndCode(
+      amount.amountMinorUnits,
+      amount.currencyCode,
+    );
+    return money.isSuccess()
+      ? formatMoney(money.value, this.content.locale())
+      : '';
   }
 
   /** A menu option's one-line terms — "45 мин · 28,00 €". */
@@ -558,10 +523,7 @@ export class BookingBagSheet {
           },
         ];
       })
-      .sort(
-        (a, b) =>
-          a.span.minPrice.toMinorUnits() - b.span.minPrice.toMinorUnits(),
-      )
+      .sort((a, b) => a.span.minPriceMinorUnits - b.span.minPriceMinorUnits)
       .map((entry): BagOptionVm => ({
         key: entry.barber.id,
         id: entry.barber.id,
@@ -583,4 +545,31 @@ export class BookingBagSheet {
       options: [anyone, ...named],
     };
   }
+}
+
+/* ── The bridge: the catalogue class → the terms matrix struct ─────────── */
+
+function termsDataOf(terms: Service['baseTerms']): TermsData {
+  return {
+    priceMinorUnits: terms.price.toMinorUnits(),
+    currencyCode: terms.price.currencyCode(),
+    durationMinutes: terms.durationMinutes,
+    setupMinutes: terms.setupMinutes,
+    cleanupMinutes: terms.cleanupMinutes,
+  };
+}
+
+/** A service's terms matrix as `TermsSpanSystem` reads it. */
+function pricedServiceOf(service: Service): PricedService {
+  return {
+    baseTerms: termsDataOf(service.baseTerms),
+    offerings: service.offerings.map((offering) => ({
+      barberId: BarberKey.of(offering.barberId.value),
+      base: termsDataOf(offering.base),
+      overrides: offering.overrideEntries().map(([variantId, terms]) => ({
+        variantId: VariantKey.of(variantId),
+        terms: termsDataOf(terms),
+      })),
+    })),
+  };
 }

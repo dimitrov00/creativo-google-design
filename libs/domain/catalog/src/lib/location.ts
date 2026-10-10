@@ -5,6 +5,10 @@ import {
   fail,
   ok,
 } from '@creativo/domain/kernel';
+import {
+  LocationId as EcsLocationId,
+  LocationScopeSystem,
+} from '@creativo/ecs-core';
 import { LocationId } from './ids';
 import {
   InvalidGeoCoordinateError,
@@ -295,7 +299,14 @@ export function locationScopeServes(
   locationIds: readonly LocationId[],
   locationId: LocationId,
 ): boolean {
-  return (
-    locationIds.length === 0 || locationIds.some((id) => id.equals(locationId))
+  return LocationScopeSystem.serves(
+    locationIds.map(scopeIdOf),
+    scopeIdOf(locationId),
   );
+}
+
+// ── The bridge: legacy id → ecs-core brand (Phase 4 deletes it) ──────────
+
+function scopeIdOf(id: LocationId): EcsLocationId {
+  return EcsLocationId.of(id.value);
 }

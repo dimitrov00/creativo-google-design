@@ -1,5 +1,6 @@
 import { InjectionToken } from '@angular/core';
 import { DomainError, Result } from '@creativo/domain/kernel';
+import { ShopReach } from '@creativo/ecs-core';
 import type {
   BookingContactProps,
   CancellationReasonKind,
@@ -230,7 +231,7 @@ export function wordError(
  * disagree.
  */
 export function shopReachKey(callHref: string | null): string {
-  return callHref === null ? 'booking.reach.contact' : 'booking.reach.call';
+  return ShopReach.forCallHref(callHref);
 }
 
 /** The server's codes to try, most specific first — see {@link wordError}. */

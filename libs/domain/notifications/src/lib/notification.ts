@@ -1,4 +1,5 @@
 import { Id, Result, ZonedDateTime, fail, ok } from '@creativo/domain/kernel';
+import { NotificationSystem } from '@creativo/ecs-core';
 import {
   EmptyNotificationIdError,
   EmptyNotificationTitleError,
@@ -59,6 +60,10 @@ export interface NotificationProps {
  * Deliberately NOT modelled yet (no use-case needs them): delivery
  * channels (push/email/SMS), per-channel receipts, and grouping/threading.
  * The port returns whole notifications, so adding them later is additive.
+ *
+ * A thin shim since the ECS migration's Phase 2: the read state and the
+ * receipt rule are `NotificationSystem` (`@creativo/ecs-core`); the bridge
+ * is `receiptOf` at the end.
  */
 export class Notification {
   private constructor(
@@ -95,7 +100,13 @@ export class Notification {
     if (title.length === 0) errors.push(new EmptyNotificationTitleError());
 
     const readAt = props.readAt ?? null;
-    if (readAt && readAt.isBefore(props.sentAt)) {
+    if (
+      readAt !== null &&
+      NotificationSystem.readBeforeSent({
+        sentAtMs: props.sentAt.toMillis(),
+        readAtMs: readAt.toMillis(),
+      }) !== null
+    ) {
       // Clock skew between writer and reader is real; a receipt that
       // predates its own message is a bug worth surfacing, not rounding.
       errors.push(
@@ -121,12 +132,15 @@ export class Notification {
   }
 
   isUnread(): boolean {
-    return this.readAt === null;
+    return NotificationSystem.isUnread(receiptOf(this));
   }
 
   /** Already-read notifications return THIS — marking twice must not move the receipt. */
   markRead(at: ZonedDateTime): Notification {
-    if (this.readAt !== null) return this;
+    const receipt = receiptOf(this);
+    if (NotificationSystem.markRead(receipt, at.toMillis()) === receipt) {
+      return this;
+    }
     return new Notification(
       this.id,
       this.kind,
@@ -141,8 +155,28 @@ export class Notification {
 
 /** How many of these are unread — the number every badge renders. */
 export function unreadCount(notifications: readonly Notification[]): number {
-  return notifications.reduce(
-    (count, notification) => count + (notification.isUnread() ? 1 : 0),
-    0,
-  );
+  return NotificationSystem.unreadCount(notifications.map(badgeReceiptOf));
+}
+
+// ── The bridge: legacy class → ecs-core struct (Phase 4 deletes it) ──────
+
+/** The receipt as the system reads it: the instant in ms, `null` = unread. */
+function receiptOf(notification: Notification): {
+  readonly readAtMs: number | null;
+} {
+  return {
+    readAtMs:
+      notification.readAt === null ? null : notification.readAt.toMillis(),
+  };
+}
+
+/**
+ * The receipt as the badge reads it: `isUnread()` is the one thing the
+ * legacy count ever asked of a notification, so the bridge asks nothing
+ * more of an unread one (a reader double may answer only that).
+ */
+function badgeReceiptOf(notification: Notification): {
+  readonly readAtMs: number | null;
+} {
+  return notification.isUnread() ? { readAtMs: null } : receiptOf(notification);
 }

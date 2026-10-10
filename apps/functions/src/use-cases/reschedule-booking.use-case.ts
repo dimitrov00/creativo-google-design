@@ -1,3 +1,4 @@
+import { AppointmentEditSystem, LedgerVerdictKind } from '@creativo/ecs-core';
 import { Result, ZonedDateTime, fail, ok } from '@creativo/domain/kernel';
 import { UserId } from '@creativo/domain/accounts';
 import {
@@ -126,12 +127,19 @@ function replayOf(
   operation: { readonly id: string; readonly digest: string } | null,
 ): Result<AppliedOperation | null, RescheduleBookingError> {
   if (operation === null) return ok(null);
-  const applied = AppliedOperations.fromDocument(current).find(operation.id);
-  if (applied === null) return ok(null);
-  if (applied.digest !== operation.digest) {
-    return fail(new CommitBookingInvalidInputError('attemptId'));
+  const verdict = AppointmentEditSystem.ledgerVerdict(
+    AppliedOperations.fromDocument(current).toArray(),
+    operation.id,
+    operation.digest,
+  );
+  switch (verdict.kind) {
+    case LedgerVerdictKind.New:
+      return ok(null);
+    case LedgerVerdictKind.Mismatch:
+      return fail(new CommitBookingInvalidInputError('attemptId'));
+    case LedgerVerdictKind.Replay:
+      return ok(verdict.applied);
   }
-  return ok(applied);
 }
 
 /**

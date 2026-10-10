@@ -23,6 +23,7 @@ import {
   activityEntryFromDocument,
 } from '@creativo/application/engagement';
 import { RepositoryError } from '@creativo/application/shared';
+import { PageStepKind, PagingSystem } from '@creativo/ecs-core';
 import { clientJournalCollection } from './firestore-paths';
 
 const NOTHING: LoyaltyActivityPage = { entries: [], next: null };
@@ -80,10 +81,22 @@ export class FirestoreLoyaltyActivityReader implements LoyaltyActivityReader {
           limit(size + 1),
         ),
       );
-      const read = snapshot.docs.slice(0, size);
+      // The size + 1 read cut (`PagingSystem.nextCursor`): the extra row
+      // says whether anything older is left, and the cursor is the page's
+      // oldest `seq`. `seq` is unique, so a page never ends inside a tie.
+      const step = PagingSystem.nextCursor(snapshot.docs, size, seqOf);
+      const read =
+        step.kind === PageStepKind.Page
+          ? step.rows
+          : snapshot.docs.slice(0, size);
       return ok({
         entries: parsed(read),
-        next: snapshot.docs.length > size ? oldestSeqOf(read) : null,
+        next:
+          step.kind === PageStepKind.Page
+            ? step.cursor === null
+              ? null
+              : oldestSeqOf(read)
+            : oldestSeqOf(read),
       });
     } catch (error) {
       return fail(new RepositoryError('Failed to read the activity', error));
@@ -135,7 +148,13 @@ function oldestSeqOf(
   return typeof seq === 'number' && Number.isFinite(seq) ? seq : null;
 }
 
-/** A whole count of at least one, whatever was asked. */
+/** A whole count of at least one, whatever was asked (`PagingSystem.pageSize`; a non-number is one). */
 function atLeastOne(raw: number): number {
-  return Number.isFinite(raw) ? Math.max(1, Math.floor(raw)) : 1;
+  return Number.isFinite(raw) ? PagingSystem.pageSize(raw) : 1;
+}
+
+/** A row's `seq` as the page key — `NaN` (never a tie) when it holds none. */
+function seqOf(doc: QueryDocumentSnapshot<DocumentData>): number {
+  const seq: unknown = doc.data()['seq'];
+  return typeof seq === 'number' && Number.isFinite(seq) ? seq : Number.NaN;
 }

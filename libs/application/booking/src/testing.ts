@@ -19,6 +19,7 @@
 import type { Appointment } from '@creativo/domain/scheduling';
 import { type Result, fail, ok } from '@creativo/domain/kernel';
 import { RepositoryError } from '@creativo/application/shared';
+import { PageStepKind, PagingSystem } from '@creativo/ecs-core';
 import { subjectUserIdsOf } from './lib/ports/appointment-document';
 import type { AppointmentPhoto } from './lib/ports/appointment-photos.port';
 import type {
@@ -71,7 +72,7 @@ export class InMemoryClientHistoryReader implements ClientHistoryReader {
   ): Promise<Result<ClientHistoryPage, RepositoryError>> {
     this.calls.push({ userId, beforeIso: page.beforeIso, limit: page.limit });
     if (this.failure !== null) return fail(this.failure);
-    const limit = Math.max(1, Math.floor(page.limit));
+    const limit = PagingSystem.pageSize(page.limit);
     const newestFirst = this.appointments
       .filter((appointment) => subjectUserIdsOf(appointment).includes(userId))
       .map((appointment) => ({
@@ -86,17 +87,27 @@ export class InMemoryClientHistoryReader implements ClientHistoryReader {
           ? byText(b.appointment.id.value, a.appointment.id.value)
           : byText(b.startIso, a.startIso),
       );
-    const boundary = newestFirst[limit - 1]?.startIso;
-    if (boundary === undefined || newestFirst.length === limit) {
-      return ok({
-        appointments: newestFirst.map((entry) => entry.appointment),
-        nextBeforeIso: null,
-      });
-    }
-    const kept = newestFirst.filter(({ startIso }) => startIso >= boundary);
+    // The adapter's own rule (`PagingSystem`): read one row more than the
+    // page, and take a tied instant whole.
+    const keyOf = (entry: (typeof newestFirst)[number]) => entry.startIso;
+    const step = PagingSystem.nextCursor(
+      newestFirst.slice(0, limit + 1),
+      limit,
+      keyOf,
+    );
+    const cut =
+      step.kind === PageStepKind.Page
+        ? step
+        : PagingSystem.sameInstantBoundary(
+            step.newer,
+            newestFirst.filter((entry) => keyOf(entry) === step.boundary),
+            (entry) => entry.appointment.id.value,
+            newestFirst.some((entry) => keyOf(entry) < step.boundary),
+            step.boundary,
+          );
     return ok({
-      appointments: kept.map((entry) => entry.appointment),
-      nextBeforeIso: kept.length < newestFirst.length ? boundary : null,
+      appointments: cut.rows.map((entry) => entry.appointment),
+      nextBeforeIso: cut.cursor,
     });
   }
 }

@@ -4,6 +4,48 @@ import {
   CouponValue,
   DiscountInput,
 } from '@creativo/domain/engagement';
+import {
+  AppliedDiscount as AppliedDiscountData,
+  CouponGrantId,
+  type CouponValue as CouponValueData,
+  DiscountSystem,
+} from '@creativo/ecs-core';
+
+/*
+ * THIN SHIM (ECS migration Phase 2). The rules about a discount ON THE VISIT
+ * — exclusive alone, no promise twice, "the same promise" — are
+ * `DiscountSystem` over the ECS `AppliedDiscount` struct. This class keeps
+ * the legacy API its callers hold and only converts.
+ */
+
+/* ── Legacy ↔ ECS converters ─────────────────────────────────────────── */
+
+function toValueData(value: CouponValue): CouponValueData {
+  return value.kind === 'fixed_amount'
+    ? {
+        kind: 'fixed_amount',
+        amount: {
+          amountMinorUnits: value.amount.toMinorUnits(),
+          currencyCode: value.amount.currencyCode(),
+        },
+      }
+    : value;
+}
+
+/** The legacy discount as the ECS `AppliedDiscount` struct (Phase 4 deletes it). */
+export function toEcsDiscount(discount: AppliedDiscount): AppliedDiscountData {
+  return {
+    id: discount.id,
+    source: discount.source,
+    value: toValueData(discount.value),
+    label: discount.label,
+    grantId:
+      discount.grantId === null ? null : CouponGrantId.of(discount.grantId),
+    code: discount.code,
+    appliedAtMs: discount.appliedAt.toMillis(),
+    combinability: discount.combinability,
+  };
+}
 
 /**
  * Where a discount on a visit came from.
@@ -82,15 +124,11 @@ export class AppliedDiscount {
    * twice is a caller bug, not a double discount.
    */
   static isLegalSet(discounts: readonly AppliedDiscount[]): boolean {
-    const ids = new Set(discounts.map((discount) => discount.id));
-    if (ids.size !== discounts.length) return false;
-    return CouponCombinability.isLegalSelection(
-      discounts.map((discount) => discount.combinability),
-    );
+    return DiscountSystem.isLegalSet(discounts.map(toEcsDiscount));
   }
 
   get exclusive(): boolean {
-    return CouponCombinability.isExclusive(this.combinability);
+    return AppliedDiscountData.isExclusive(toEcsDiscount(this));
   }
 
   /** The evaluator's own shape — id, label, value and the instant it was applied. */
@@ -105,12 +143,9 @@ export class AppliedDiscount {
 
   /** Same promise: source, value and provenance agree. The instant is not identity. */
   equals(other: AppliedDiscount): boolean {
-    return (
-      this.source === other.source &&
-      this.grantId === other.grantId &&
-      this.code === other.code &&
-      CouponValue.kindRank(this.value) === CouponValue.kindRank(other.value) &&
-      CouponValue.magnitude(this.value) === CouponValue.magnitude(other.value)
+    return DiscountSystem.samePromise(
+      toEcsDiscount(this),
+      toEcsDiscount(other),
     );
   }
 }

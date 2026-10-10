@@ -39,6 +39,11 @@ import {
   snapTo,
   timeLabel,
 } from './grid-gesture';
+import {
+  type EventRuns,
+  GridLayoutSystem,
+  type LaneSlot,
+} from '@creativo/ecs-core';
 
 /** One block drawn in a column — a visit, an absence, or a sellable hole. */
 export interface GridEvent {
@@ -897,8 +902,16 @@ export class StaffTimeGrid {
       // The clock only qualifies a column that is actually TODAY — yesterday's
       // ten o'clock is wholly past and tomorrow's wholly ahead, and neither is
       // a booking half-run.
-      const placed = laid.map((event) =>
-        maskEvent(event, laid, column.open, column.isToday ? now : null),
+      // ONE sweep per column (`GridLayoutSystem.columnRuns`): the blocks
+      // sorted once by start, the windows once, every block's outside and
+      // overlap runs emitted together — never a block against every sibling.
+      const runs = GridLayoutSystem.columnRuns(laid, column.open);
+      const placed = laid.map((event, index) =>
+        maskEvent(
+          event,
+          runs.at(index) as EventRuns,
+          column.isToday ? now : null,
+        ),
       );
       return {
         ...column,
@@ -2226,32 +2239,14 @@ function closedRuns(
   start: number,
   end: number,
 ): readonly ClosedRun[] {
-  const windows = open
-    // CLAMPED to the drawn hours first. A run is emitted as a `grid-row`
-    // against the extent's own track, so a shift that reaches outside it — a
-    // lunch break at 13:00 when the frame is drawing 09:00–12:00 — asked for
-    // rows the column does not have, and the browser invented them: the
-    // column grew an hour past its axis and every proportional placement in
-    // it drifted. A no-op on the page, where the extent is the whole day.
-    .map((w) => ({
-      startMinute: Math.max(w.startMinute, start),
-      endMinute: Math.min(w.endMinute, end),
-    }))
-    .filter((w) => w.endMinute > w.startMinute)
-    .sort((a, b) => a.startMinute - b.startMinute);
-
-  const runs: ClosedRun[] = [];
-  let cursor = start;
-  for (const window of windows) {
-    // Overlapping or touching windows collapse instead of back-tracking the
-    // cursor, which would emit a negative-height run.
-    if (window.startMinute > cursor) {
-      runs.push(run(cursor, window.startMinute, start));
-    }
-    cursor = Math.max(cursor, window.endMinute);
-  }
-  if (cursor < end) runs.push(run(cursor, end, start));
-  return runs;
+  // CLAMPED to the drawn hours, sorted and merged in
+  // `GridLayoutSystem.closedRuns`: a run is emitted as a `grid-row` against
+  // the extent's own track, so a shift reaching outside it — a lunch break
+  // at 13:00 while the frame draws 09:00–12:00 — must not ask for rows the
+  // column does not have.
+  return GridLayoutSystem.closedRuns(open, start, end).map((closed) =>
+    run(closed.startMinute, closed.endMinute, start),
+  );
 }
 
 function run(from: number, to: number, origin: number): ClosedRun {
@@ -2310,61 +2305,6 @@ function ghostBlocks(
  * and every chair is merged, simultaneous blocks are the normal case.
  */
 /**
- * The stretches of `[from, to)` that NO window covers.
- *
- * An empty window list means the chair is shut all day, and the answer is the
- * whole span — which is the case the old whole-column shading could state and
- * a per-block mark could not.
- */
-function outsideRuns(
-  from: number,
-  to: number,
-  open: readonly OpenWindow[],
-): readonly (readonly [number, number])[] {
-  const runs: (readonly [number, number])[] = [];
-  let cursor = from;
-  const windows = [...open].sort((a, b) => a.startMinute - b.startMinute);
-  for (const window of windows) {
-    if (window.endMinute <= cursor) continue;
-    if (window.startMinute >= to) break;
-    if (window.startMinute > cursor) {
-      runs.push([cursor, Math.min(window.startMinute, to)]);
-    }
-    cursor = Math.max(cursor, window.endMinute);
-    if (cursor >= to) break;
-  }
-  if (cursor < to) runs.push([cursor, to]);
-  return runs;
-}
-
-/** Overlapping stretches, merged so two collisions do not double-paint. */
-function overlapRuns(
-  event: LaidEvent,
-  siblings: readonly LaidEvent[],
-): readonly (readonly [number, number])[] {
-  const hits: [number, number][] = [];
-  for (const other of siblings) {
-    // A gap is the ABSENCE of a booking — sitting on one is the point of the
-    // gesture, not a collision. The same rule `draftVerdict` applies.
-    if (other.id === event.id || other.kind === 'gap') continue;
-    const from = Math.max(event.startMinute, other.startMinute);
-    const to = Math.min(event.endMinute, other.endMinute);
-    if (to > from) hits.push([from, to]);
-  }
-  hits.sort((a, b) => a[0] - b[0]);
-  const merged: [number, number][] = [];
-  for (const hit of hits) {
-    const last = merged.at(-1);
-    if (last !== undefined && hit[0] <= last[1]) {
-      last[1] = Math.max(last[1], hit[1]);
-      continue;
-    }
-    merged.push([...hit]);
-  }
-  return merged;
-}
-
-/**
  * Qualify one block: what has gone, what is outside the shift, what collides.
  *
  * ORDER IS PAINT ORDER. `elapsed` is a flat wash and goes down first so the
@@ -2374,8 +2314,7 @@ function overlapRuns(
  */
 function maskEvent(
   event: LaidEvent,
-  siblings: readonly LaidEvent[],
-  open: readonly OpenWindow[],
+  runs: EventRuns,
   now: number | null,
 ): PlacedEvent {
   const span = event.endMinute - event.startMinute;
@@ -2406,15 +2345,15 @@ function maskEvent(
   }
 
   // A carve-out is time taken OUT of the day; it is not a booking that can
-  // run past closing, and hatching it against a shift it is not part of
-  // would mark every break in the calendar as a problem.
-  const closed =
-    event.kind === 'block'
-      ? []
-      : outsideRuns(event.startMinute, event.endMinute, open);
-  for (const shut of closed) masks.push(run('closed', shut));
-  for (const hit of overlapRuns(event, siblings))
-    masks.push(run('overlap', hit));
+  // run past closing, so the sweep gives it no outside runs. A gap is the
+  // ABSENCE of a booking — never the other side of a collision.
+  const closed = runs.outside;
+  for (const shut of closed) {
+    masks.push(run('closed', [shut.startMinute, shut.endMinute]));
+  }
+  for (const hit of runs.overlap) {
+    masks.push(run('overlap', [hit.startMinute, hit.endMinute]));
+  }
   return { ...event, masks, outside: closed.length > 0 };
 }
 
@@ -2439,46 +2378,21 @@ function place(
     : events;
   const sorted = [...visible].sort((a, b) => a.startMinute - b.startMinute);
   // A cluster is a run of events that transitively overlap; lanes are only
-  // ever shared within one, so a busy morning cannot narrow a quiet afternoon.
-  const clusters: GridEvent[][] = [];
-  let current: GridEvent[] = [];
-  let clusterEnd = -Infinity;
-  for (const event of sorted) {
-    if (current.length > 0 && event.startMinute >= clusterEnd) {
-      clusters.push(current);
-      current = [];
-      clusterEnd = -Infinity;
-    }
-    current.push(event);
-    clusterEnd = Math.max(clusterEnd, event.endMinute);
-  }
-  if (current.length > 0) clusters.push(current);
-
-  const placed: LaidEvent[] = [];
-  for (const cluster of clusters) {
-    const laneEnds: number[] = [];
-    const assigned = cluster.map((event) => {
-      let lane = laneEnds.findIndex((end) => end <= event.startMinute);
-      if (lane === -1) {
-        lane = laneEnds.length;
-        laneEnds.push(event.endMinute);
-      } else {
-        laneEnds[lane] = event.endMinute;
-      }
-      return { event, lane };
-    });
-    for (const { event, lane } of assigned) {
-      placed.push({
-        ...event,
-        ...(proportional
-          ? proportionalBox(event, originMinute, extentMinutes)
-          : slotBox(event, originMinute)),
-        lane,
-        lanes: laneEnds.length,
-        short: event.endMinute - event.startMinute < SHORT_BLOCK_MINUTES,
-      });
-    }
-  }
+  // ever shared within one, so a busy morning cannot narrow a quiet afternoon
+  // (`GridLayoutSystem.lanes`, parallel to `sorted`).
+  const slots = GridLayoutSystem.lanes(sorted);
+  const placed: LaidEvent[] = sorted.map((event, index) => {
+    const slot = slots.at(index) as LaneSlot;
+    return {
+      ...event,
+      ...(proportional
+        ? proportionalBox(event, originMinute, extentMinutes)
+        : slotBox(event, originMinute)),
+      lane: slot.lane,
+      lanes: slot.lanes,
+      short: event.endMinute - event.startMinute < SHORT_BLOCK_MINUTES,
+    };
+  });
   /*
    * IN THE CALLER'S ORDER, never the packer's. The packer sorts by start to
    * find clusters and lanes, and a template tracking its output moved a

@@ -1,4 +1,5 @@
 import type { DocumentData, Firestore } from 'firebase-admin/firestore';
+import { SearchFieldsSystem } from '@creativo/ecs-core';
 import { UserId } from '@creativo/domain/models';
 import type { User } from '@creativo/domain/accounts';
 import {
@@ -18,21 +19,12 @@ import { Result, fail, ok } from '@creativo/domain/kernel';
 
 const COLLECTION = 'users';
 
-function prefixesOf(token: string): string[] {
-  const out: string[] = [];
-  for (let i = 1; i <= token.length; i += 1) {
-    out.push(token.slice(0, i));
-  }
-  return out;
-}
-
 /**
- * Standard Firestore "poor man's search" trick — every prefix of every
- * whitespace-split token in the full name, lowercased. MUST stay in
- * lockstep with the web's `computeSearchFields`
- * (`libs/infrastructure/firestore/src/lib/profile.adapter.ts`): both sides
- * write the same `users/{uid}` document, and `FirestoreUserSearchAdapter`
- * queries these fields regardless of which side last wrote them.
+ * The `users/{uid}` search keys (`searchName`, `searchPrefixes`) — Phase 2
+ * shim (ECS migration): computed by `SearchFieldsSystem.fromForms`
+ * (`@creativo/ecs-core`), the ONE implementation the web's profile adapter
+ * and the functions' user repository share, so the two writers of the
+ * document can no longer drift apart.
  */
 function computeSearchFields(
   fullName: string,
@@ -42,34 +34,12 @@ function computeSearchFields(
   searchName: string;
   searchPrefixes: string[];
 } {
-  const searchName = fullName.trim().toLowerCase();
-  const tokens = searchName.split(/\s+/).filter((t) => t.length > 0);
-  const prefixSet = new Set<string>();
-  for (const token of tokens) {
-    for (const prefix of prefixesOf(token)) {
-      prefixSet.add(prefix);
-    }
-  }
-  // THE NUMBER AND THE MAIL, too (owner, 2026-09-09): the desk searches by
-  // whatever the client says — a name, a number read off a phone, an
-  // address. Digits only for the phone, in every form a person types it
-  // (E.164 without the plus, and the national form); the email whole and
-  // its local part. Prefixes from the 3rd character keep the array sane.
-  for (const form of phoneForms) {
-    const digits = form.replace(/\D/g, '');
-    for (const prefix of prefixesOf(digits)) {
-      if (prefix.length >= 3) prefixSet.add(prefix);
-    }
-  }
-  if (email) {
-    const lower = email.trim().toLowerCase();
-    for (const token of [lower, lower.split('@')[0] ?? '']) {
-      for (const prefix of prefixesOf(token)) {
-        if (prefix.length >= 3) prefixSet.add(prefix);
-      }
-    }
-  }
-  return { searchName, searchPrefixes: [...prefixSet] };
+  const { searchName, searchPrefixes } = SearchFieldsSystem.fromForms(
+    fullName,
+    phoneForms,
+    email,
+  );
+  return { searchName, searchPrefixes: [...searchPrefixes] };
 }
 
 /**
@@ -78,7 +48,7 @@ function computeSearchFields(
  * everything the server registers reconstitutes cleanly there. The web
  * never writes this shape itself: it creates no `users` document and
  * updates only the owner's allowlist (names, birth date, search keys — see
- * `computeSearchFields`'s lockstep note above).
+ * `computeSearchFields` above — one system for both writers).
  */
 function registeredToPersistence(user: User): DocumentData {
   const { searchName, searchPrefixes } = computeSearchFields(

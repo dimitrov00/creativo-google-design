@@ -1,4 +1,5 @@
 import { logger } from 'firebase-functions';
+import { TriggerAttemptSystem } from '@creativo/ecs-core';
 
 /**
  * How a retrying handler judges one failed attempt — shared by every
@@ -6,65 +7,24 @@ import { logger } from 'firebase-functions';
  * the policy-change recompute and its job) and the scheduled sweep that
  * nudges that job, so they read a code, decide on a redelivery and log the
  * attempt's age the same way (`reportAttempt`).
+ *
+ * Phase 2 shim: the verdicts are `TriggerAttemptSystem` in
+ * `@creativo/ecs-core`; this file keeps the legacy names, parses the event's
+ * wire time, and does the logging and the rethrow.
  */
-
-/** gRPC status numbers as the Admin SDK reports them, by canonical name. */
-const GRPC_CODES: ReadonlyMap<number, string> = new Map([
-  [1, 'cancelled'],
-  [2, 'unknown'],
-  [3, 'invalid-argument'],
-  [4, 'deadline-exceeded'],
-  [5, 'not-found'],
-  [6, 'already-exists'],
-  [7, 'permission-denied'],
-  [8, 'resource-exhausted'],
-  [9, 'failed-precondition'],
-  [10, 'aborted'],
-  [11, 'out-of-range'],
-  [12, 'unimplemented'],
-  [13, 'internal'],
-  [14, 'unavailable'],
-  [15, 'data-loss'],
-  [16, 'unauthenticated'],
-]);
 
 /** A failure's canonical code — numeric (Admin SDK) or string, `unknown` otherwise. */
 export function failureCode(error: unknown): string {
-  const code =
-    error !== null && typeof error === 'object'
-      ? (error as { code?: unknown }).code
-      : undefined;
-  if (typeof code === 'number') return GRPC_CODES.get(code) ?? 'unknown';
-  if (typeof code === 'string' && code.length > 0) {
-    return code
-      .replace(/^[a-z]+\//, '')
-      .replace(/_/g, '-')
-      .toLowerCase();
-  }
-  return 'unknown';
+  return TriggerAttemptSystem.failureCode(error);
 }
 
-/**
- * The failures worth a redelivery: a contended, overloaded or briefly absent
- * backend answers differently next time. Everything else (unparseable input,
- * a domain refusal, a permission) would fail the same way for the whole 24 h
- * retry window, so it is logged and dropped instead.
- */
-const TRANSIENT_CODES: readonly string[] = [
-  'aborted',
-  'unavailable',
-  'deadline-exceeded',
-  'resource-exhausted',
-];
-
 export function attemptOutcome(code: string): 'transient' | 'permanent' {
-  return TRANSIENT_CODES.includes(code) ? 'transient' : 'permanent';
+  return TriggerAttemptSystem.attemptOutcome(code);
 }
 
 /** How far into the retry window this delivery is — from the event's own time. */
 export function eventAgeMs(eventTime: string, nowMs: number): number | null {
-  const ms = Date.parse(eventTime);
-  return Number.isNaN(ms) ? null : Math.max(0, nowMs - ms);
+  return TriggerAttemptSystem.eventAgeMs(eventAtMs(eventTime), nowMs);
 }
 
 export interface AttemptFailure {
@@ -78,7 +38,7 @@ export function attemptFailure(
   error: unknown,
   code: string = failureCode(error),
 ): AttemptFailure {
-  return { error, code, outcome: attemptOutcome(code) };
+  return TriggerAttemptSystem.attemptFailure(error, code);
 }
 
 /**
@@ -90,12 +50,7 @@ export function attemptFailure(
 export function decisiveFailure(
   errors: readonly unknown[],
 ): AttemptFailure | null {
-  const judged = errors.map((error) => attemptFailure(error));
-  return (
-    judged.find((failure) => failure.outcome === 'transient') ??
-    judged[0] ??
-    null
-  );
+  return TriggerAttemptSystem.decisiveFailure(errors);
 }
 
 /**
@@ -117,13 +72,12 @@ export function attemptLine(
   failure: AttemptFailure,
   nowMs: number,
 ): AttemptLine {
-  return {
+  return TriggerAttemptSystem.attemptLine(
     fn,
-    eventId: event.id,
-    outcome: failure.outcome,
-    code: failure.code,
-    ageMs: eventAgeMs(event.time, nowMs),
-  };
+    { id: event.id, atMs: eventAtMs(event.time) },
+    failure,
+    nowMs,
+  );
 }
 
 /** Log a failed attempt's ONE line, and nothing else. */
@@ -153,4 +107,10 @@ export function reportAttempt(
 ): void {
   logAttempt(fn, event, failure, nowMs);
   if (failure.outcome === 'transient') throw failure.error;
+}
+
+/** The event's wire time as epoch ms; `null` when it does not parse. */
+function eventAtMs(eventTime: string): number | null {
+  const ms = Date.parse(eventTime);
+  return Number.isNaN(ms) ? null : ms;
 }

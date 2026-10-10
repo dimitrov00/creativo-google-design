@@ -11,8 +11,14 @@ import {
   APPOINTMENT_REPOSITORY,
   AppointmentId,
   WAITLIST_READER,
-  shopReachKey,
 } from '@creativo/application/booking';
+import type { Location } from '@creativo/application/catalog';
+import {
+  E164,
+  LocationId as LocationKey,
+  type ReachableShop,
+  ShopReachSystem,
+} from '@creativo/ecs-core';
 import { NgTemplateOutlet } from '@angular/common';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { TranslocoDirective } from '@jsverse/transloco';
@@ -271,23 +277,24 @@ export class ClientBooking {
    * companion only the shop can move is one phone call away, so the refusal
    * offers the call rather than just describing it.
    */
-  protected readonly refusalCallHref = computed(() => {
+  private readonly refusalReach = computed(() => {
     const locationId = this.refusal()?.locationId ?? null;
-    if (locationId === null) return null;
-    const shop = this.catalog
-      .locations()
-      .find((candidate) => candidate.id.equals(locationId));
-    return shop ? `tel:${shop.phone.e164}` : null;
+    return ShopReachSystem.reach(
+      this.catalog.locations().map(reachableShopOf),
+      locationId === null ? null : LocationKey.of(locationId.value),
+    );
   });
+
+  protected readonly refusalCallHref = computed(
+    () => this.refusalReach().callHref,
+  );
 
   /**
    * How the refusal's copy sends the client to the shop: "call" beside the
    * call button, "get in touch" when there is no number to dial — a shop
    * missing from the active catalogue, or locations still loading.
    */
-  protected readonly reachKey = computed(() =>
-    shopReachKey(this.refusalCallHref()),
-  );
+  protected readonly reachKey = computed(() => this.refusalReach().reach);
 
   /** One-shot latch — the deep link lands exactly once per visit. */
   private waitlistLanded = false;
@@ -450,4 +457,16 @@ export class ClientBooking {
     this.store.clearDraft();
     await this.router.navigate(['/']);
   }
+}
+
+/** A catalogue shop as `ShopReachSystem` reads it: its id, number and pin. */
+function reachableShopOf(location: Location): ReachableShop {
+  return {
+    id: LocationKey.of(location.id.value),
+    phone: {
+      e164: E164.of(location.phone.e164),
+      display: location.phone.display,
+    },
+    geo: { lat: location.geo.lat, lng: location.geo.lng },
+  };
 }

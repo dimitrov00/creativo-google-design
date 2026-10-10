@@ -2,10 +2,26 @@ import { Result, fail, ok } from '@creativo/domain/kernel';
 import {
   type LocationId,
   Service,
+  type ServiceTerms as LegacyServiceTerms,
   ServiceVariantId,
-  servicesConflict,
 } from '@creativo/domain/catalog';
 import type { BookingCart, BookingPolicy } from '@creativo/domain/scheduling';
+import {
+  BarberId as EcsBarberId,
+  type BookingCart as EcsBookingCart,
+  type BookingCommitError,
+  BookingCommitErrorCode,
+  type BookingPolicy as EcsBookingPolicy,
+  LocationId as EcsLocationId,
+  LocationState,
+  PartyAdmissionSystem,
+  ServiceCategoryId,
+  ServiceComposition,
+  type ServiceEntity,
+  ServiceId as EcsServiceId,
+  ServiceTerms,
+  ServiceVariantId as EcsServiceVariantId,
+} from '@creativo/ecs-core';
 import {
   CommitBookingConflictingServicesError,
   type CommitBookingError,
@@ -69,7 +85,11 @@ export interface AdmissibleShop {
 export function shopListed<T extends AdmissibleShop>(
   shop: T | null,
 ): shop is T {
-  return shop !== null && shop.active;
+  return PartyAdmissionSystem.shopListed(
+    shop === null
+      ? null
+      : { status: shop.active ? LocationState.Active : LocationState.Hidden },
+  );
 }
 
 /** What one seat resolved to, in the order asked. */
@@ -117,94 +137,30 @@ export function partyAdmissible(
   policy: BookingPolicy,
   options: PartyAdmissionOptions,
 ): Result<readonly AdmittedSeat[], CommitBookingError> {
-  if (seats.length === 0) {
-    return fail(new CommitBookingInvalidInputError('seats'));
-  }
-
-  // A "person" is counted from the seats rather than trusted from a field,
-  // because the cap is a rule and the client is not where rules live.
-  const people = new Set(seats.map((seat) => seat.personKey));
-  if (people.size > policy.maxPartySize) {
-    return fail(new CommitBookingPartyTooLargeError(policy.maxPartySize));
-  }
-
-  const byId = new Map(services.map((service) => [service.id.value, service]));
-  /** Services already asked for, per person — the conflict check's input. */
-  const servicesByPerson = new Map<string, Service[]>();
-  const admitted: AdmittedSeat[] = [];
-
-  for (const seat of seats) {
-    const service = byId.get(seat.serviceId) ?? null;
-    if (!service) {
-      // A carried seat survives its service leaving the catalogue: the
-      // appointment EXISTS and its terms are a snapshot. Everything the
-      // catalogue row would have decided (location, variant, conflicts) is
-      // skipped with it, because there is no row left to decide from.
-      if (!seat.carried) {
-        return fail(new CommitBookingUnknownServiceError(seat.serviceId));
-      }
-    } else if (
-      options.locationId !== null &&
-      // `servesLocation`, not a hand-rolled `some`: an EMPTY `locationIds`
-      // is the catalogue's "every location".
-      !service.servesLocation(options.locationId)
-    ) {
-      return fail(
-        new CommitBookingServiceNotAtLocationError(
-          seat.serviceId,
-          options.locationId.value,
-        ),
-      );
-    }
-
-    let variantId: ServiceVariantId | null = null;
-    if (seat.variantId !== null) {
-      const parsed = ServiceVariantId.create(seat.variantId);
-      if (parsed.isFailure()) {
-        return fail(new CommitBookingInvalidInputError('variantId'));
-      }
-      const chosen = parsed.value;
-      variantId = chosen;
-      // A variant the service does not declare is unreachable through the
-      // UI: a stale tab or a forged payload, and either way the terms it
-      // would resolve to are not the ones the user saw.
-      if (
-        service &&
-        !service.variants.some((variant) => variant.id.equals(chosen))
-      ) {
-        return fail(new CommitBookingInvalidInputError('variantId'));
-      }
-    } else if (service && service.variants.length > 0 && !seat.carried) {
-      // The catalogue offers a choice that moves the price; committing
-      // without one would silently charge `baseTerms`. A CARRIED seat is
-      // the exception: its terms travel wholesale, so there is no
-      // `baseTerms` to charge by accident, and every seat booked before its
-      // service gained a variant is legitimately `variantId: null`.
-      return fail(new CommitBookingInvalidInputError('variantId'));
-    }
-
-    if (service) {
-      const existing = servicesByPerson.get(seat.personKey) ?? [];
-      for (const other of existing) {
-        if (
-          !options.allowConflictingServices &&
-          servicesConflict(service, other, services)
-        ) {
-          return fail(
-            new CommitBookingConflictingServicesError(
-              service.id.value,
-              other.id.value,
-            ),
-          );
-        }
-      }
-      servicesByPerson.set(seat.personKey, [...existing, service]);
-    }
-
-    admitted.push({ service, variantId });
-  }
-
-  return ok(admitted);
+  const admitted = PartyAdmissionSystem.admit(
+    seats,
+    services.map(toServiceEntity),
+    toPolicy(policy),
+    {
+      locationId:
+        options.locationId === null
+          ? null
+          : EcsLocationId.of(options.locationId.value),
+      allowConflictingServices: options.allowConflictingServices === true,
+    },
+  );
+  if (!admitted.ok) return fail(toLegacyError(admitted.error));
+  return ok(
+    admitted.value.map((seat) => ({
+      service:
+        seat.service === null
+          ? null
+          : (services.find(
+              (service) => service.id.value === seat.service?.id,
+            ) ?? null),
+      variantId: seat.variantId === null ? null : toVariantId(seat.variantId),
+    })),
+  );
 }
 
 /**
@@ -219,14 +175,130 @@ export function cartAdmissible(
   policy: BookingPolicy,
   locationId: LocationId | null,
 ): Result<void, CommitBookingError> {
-  const seats = cart.entries().flatMap(([seatKey, lines]) =>
-    lines.map((line): AdmissibleSeat => ({
-      personKey: seatKey,
-      serviceId: line.serviceId.value,
-      variantId: line.variantId?.value ?? null,
-      carried: false,
-    })),
+  const admitted = PartyAdmissionSystem.admitCart(
+    toCart(cart),
+    services.map(toServiceEntity),
+    toPolicy(policy),
+    locationId === null ? null : EcsLocationId.of(locationId.value),
   );
-  const admitted = partyAdmissible(seats, services, policy, { locationId });
-  return admitted.isFailure() ? fail(admitted.error) : ok(undefined);
+  return admitted.ok ? ok(undefined) : fail(toLegacyError(admitted.error));
+}
+
+/* ── Phase 2 shim converters: legacy aggregates ↔ ecs-core structs ──────── */
+
+function toTerms(terms: LegacyServiceTerms): ServiceTerms {
+  return ServiceTerms.of(
+    terms.price.toMinorUnits(),
+    terms.price.currencyCode(),
+    terms.durationMinutes,
+    terms.setupMinutes,
+    terms.cleanupMinutes,
+  );
+}
+
+/** The legacy aggregate → the stored entity (the cover is not read by admission). */
+function toServiceEntity(service: Service): ServiceEntity {
+  const composition = service.composition;
+  return {
+    id: EcsServiceId.of(service.id.value),
+    name: { bg: service.name.bg, en: service.name.en },
+    description: { bg: service.description.bg, en: service.description.en },
+    categoryId: ServiceCategoryId.of(service.categoryId.value),
+    baseTerms: toTerms(service.baseTerms),
+    variants: service.variants.map((variant) => ({
+      id: EcsServiceVariantId.of(variant.id.value),
+      name: { bg: variant.name.bg, en: variant.name.en },
+    })),
+    offerings: service.offerings.map((offering) => ({
+      barberId: EcsBarberId.of(offering.barberId.value),
+      base: toTerms(offering.base),
+      overrides: service.variants.flatMap((variant) => {
+        const terms = offering.termsFor(variant.id);
+        return terms === offering.base
+          ? []
+          : [
+              {
+                variantId: EcsServiceVariantId.of(variant.id.value),
+                terms: toTerms(terms),
+              },
+            ];
+      }),
+    })),
+    cover: null,
+    locationIds: service.locationIds.map((id) => EcsLocationId.of(id.value)),
+    conflictsWith: service.conflictsWith.map((id) => EcsServiceId.of(id.value)),
+    composition:
+      composition.kind === 'bundle'
+        ? ServiceComposition.bundle(
+            composition.includes.map((id) => EcsServiceId.of(id.value)),
+          )
+        : ServiceComposition.single(),
+    upsellOnly: service.upsellOnly,
+    popular: service.popular,
+    status: service.status,
+    sortOrder: service.sortOrder,
+  };
+}
+
+function toPolicy(policy: BookingPolicy): EcsBookingPolicy {
+  return {
+    maxPartySize: policy.maxPartySize,
+    slotStepMinutes: policy.slotStepMinutes,
+    minLeadMinutes: policy.minLeadMinutes,
+    horizonMonths: policy.horizonMonths,
+    cancellationWindowHours: policy.cancellationWindow.hours,
+    maxFlexibleDays: policy.maxFlexibleDays,
+    autoConfirm: policy.autoConfirm,
+  };
+}
+
+function toCart(cart: BookingCart): EcsBookingCart {
+  return {
+    seats: cart.entries().map(([seatKey, lines]) => ({
+      seatKey,
+      lines: lines.map((line) => ({
+        lineId: line.id.value,
+        seatKey,
+        serviceId: EcsServiceId.of(line.serviceId.value),
+        variantId:
+          line.variantId === null
+            ? null
+            : EcsServiceVariantId.of(line.variantId.value),
+        barberId: null,
+        locationId: null,
+      })),
+    })),
+    nextSequence: 0,
+  };
+}
+
+/** A non-blank variant id the system admitted → the legacy value object. */
+function toVariantId(raw: string): ServiceVariantId | null {
+  const parsed = ServiceVariantId.create(raw);
+  return parsed.isSuccess() ? parsed.value : null;
+}
+
+/** The system's refusal → the legacy error class the callers branch on. */
+function toLegacyError(error: BookingCommitError): CommitBookingError {
+  switch (error.code) {
+    case BookingCommitErrorCode.PartyTooLarge:
+      return new CommitBookingPartyTooLargeError(error.maxPartySize);
+    case BookingCommitErrorCode.UnknownService:
+      return new CommitBookingUnknownServiceError(error.serviceId);
+    case BookingCommitErrorCode.ServiceNotAtLocation:
+      return new CommitBookingServiceNotAtLocationError(
+        error.serviceId,
+        error.locationId,
+      );
+    case BookingCommitErrorCode.ConflictingServices:
+      return new CommitBookingConflictingServicesError(
+        error.first,
+        error.second,
+      );
+    case BookingCommitErrorCode.InvalidInput:
+      return new CommitBookingInvalidInputError(error.field);
+    default:
+      // Admission refuses with the five codes above only.
+      return new CommitBookingInvalidInputError(error.code);
+  }
 }

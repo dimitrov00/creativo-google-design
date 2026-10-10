@@ -18,6 +18,7 @@ import {
   toShop,
 } from '../../adapters/firestore-booking-store';
 import { shopListed } from '../../use-cases/party-admission';
+import { DayKey, LeadTimeSystem, ZonedTimeSystem } from '@creativo/ecs-core';
 import { adminFirestore } from '../firebase-admin';
 import {
   dayKeysBetween,
@@ -207,14 +208,10 @@ async function horizonSpan(
   return { fromKey: today.value.key(), toKey: horizonEnd };
 }
 
-/** A wall-clock instant → its `YYYY-MM-DD` in `zone`. */
+/** A wall-clock instant → its `YYYY-MM-DD` in `zone` (`''` for an unknown zone). */
 function dayKeyOf(instant: Date, zone: string): string {
-  return new Intl.DateTimeFormat('en-CA', {
-    timeZone: zone,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).format(instant);
+  const clock = ZonedTimeSystem.wallClockOf(instant.getTime(), zone);
+  return clock.ok ? clock.value.dayKey : '';
 }
 
 /**
@@ -247,7 +244,12 @@ export async function rebuildBarberCapacity(
   if (dayKeys.length === 0) return;
 
   await db.runTransaction(async (tx) => {
-    const monthKeys = [...new Set(dayKeys.map((key) => key.slice(0, 7)))];
+    // The month documents the walked days touch (`dayKeys` is one
+    // contiguous, sorted run).
+    const monthKeys = LeadTimeSystem.monthKeysBetween(
+      DayKey.of(dayKeys[0] as string),
+      DayKey.of(dayKeys[dayKeys.length - 1] as string),
+    );
     const [locationsSnap, scheduleSnap, busySnap, exceptionsSnap, monthSnaps] =
       await Promise.all([
         tx.get(db.collection('locations').where('status', '==', 'active')),

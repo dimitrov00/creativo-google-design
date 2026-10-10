@@ -9,6 +9,11 @@ import {
 import { Router } from '@angular/router';
 import { TranslocoDirective, TranslocoService } from '@jsverse/transloco';
 import { Money, formatMoney } from '@creativo/application/booking';
+import {
+  CalendarGridSystem,
+  DayKey,
+  ShopReachSystem,
+} from '@creativo/ecs-core';
 import { PhoneNumber } from '@creativo/application/identity';
 import { BarberId } from '@creativo/application/catalog';
 import { AccountStateService } from '@creativo/features/client/account-state';
@@ -233,8 +238,12 @@ export class BookingReviewStep {
    *  URL, so iOS offers Apple Maps and everything else opens Google Maps. */
   protected readonly directionsHref = computed(() => {
     const shop = this.shop();
-    if (!shop) return null;
-    return `https://www.google.com/maps/dir/?api=1&destination=${shop.geo.lat},${shop.geo.lng}`;
+    return shop
+      ? ShopReachSystem.directionsHref({
+          lat: shop.geo.lat,
+          lng: shop.geo.lng,
+        })
+      : null;
   });
 
   /** The day, spelled out — "Monday, 3 August". */
@@ -310,19 +319,14 @@ export class BookingReviewStep {
   protected readonly weeks = computed<readonly (number | null)[][]>(() => {
     const ymd = this.selectedYmd();
     if (!ymd) return [];
-    const lead =
-      (new Date(Date.UTC(ymd.year, ymd.month - 1, 1)).getUTCDay() + 6) % 7;
-    const count = new Date(Date.UTC(ymd.year, ymd.month, 0)).getUTCDate();
-    const cells: (number | null)[] = [
-      ...Array.from({ length: lead }, () => null),
-      ...Array.from({ length: count }, (_, index) => index + 1),
-    ];
-    while (cells.length % 7 !== 0) cells.push(null);
-    const weeks: (number | null)[][] = [];
-    for (let index = 0; index < cells.length; index += 7) {
-      weeks.push(cells.slice(index, index + 7));
-    }
-    return weeks;
+    // `CalendarGridSystem.monthGrid`: Monday-first, padded to whole weeks;
+    // a weekday is civil arithmetic, so no day table is needed.
+    const month = DayKey.of(
+      `${String(ymd.year).padStart(4, '0')}-${String(ymd.month).padStart(2, '0')}-01`,
+    );
+    return CalendarGridSystem.monthGrid(month, [], []).map((week) =>
+      week.map((cell) => (cell.inMonth ? cell.dayOfMonth : null)),
+    );
   });
 
   protected readonly selectedDayOfMonth = computed(

@@ -6,6 +6,13 @@ import {
   ScheduleExceptionId,
   type ScheduleExceptionKind,
 } from '@creativo/domain/scheduling';
+import {
+  ExceptionDetail,
+  ExceptionEffectKind,
+  LocationId as EcsLocationId,
+  MinuteRange,
+  ScheduleExceptionSystem,
+} from '@creativo/ecs-core';
 
 /**
  * The PUBLIC face of a schedule exception — how "Ivan is off on the 14th"
@@ -80,29 +87,29 @@ export function exceptionToDocument(
 }
 
 function toEffect(detail: ScheduleExceptionKind): PublicExceptionEffect {
-  switch (detail.kind) {
-    // Unavailable all day. Four domain reasons, ONE public effect — see the
-    // doc comment above; narrowing this is a privacy regression.
-    case 'closed':
-    case 'time_off':
-    case 'sick':
-    case 'training':
-    case 'travel':
+  const effect = ScheduleExceptionSystem.publicEffect(detailOf(detail));
+  if (!effect.ok) {
+    // A range-bearing arm holding no range: the legacy writer published it
+    // as it stood, an empty list of spans.
+    return { kind: detail.kind === 'hours' ? 'hours' : 'blocked', ranges: [] };
+  }
+  const value = effect.value;
+  switch (value.kind) {
+    case ExceptionEffectKind.Closed:
       return { kind: 'closed' };
-    case 'hours':
-      return { kind: 'hours', ranges: toSpans(detail.ranges) };
-    case 'break':
-    case 'admin':
-      return { kind: 'blocked', ranges: toSpans(detail.ranges) };
+    case ExceptionEffectKind.Hours:
+      return { kind: 'hours', ranges: toSpans(value.ranges) };
+    case ExceptionEffectKind.Blocked:
+      return { kind: 'blocked', ranges: toSpans(value.ranges) };
   }
 }
 
 function toSpans(
-  ranges: readonly LocalTimeRange[],
+  ranges: readonly MinuteRange[],
 ): readonly { readonly from: string; readonly to: string }[] {
   return ranges.map((range) => ({
-    from: range.start.toString(),
-    to: range.end.toString(),
+    from: clockOf(range.startMinutes),
+    to: clockOf(range.endMinutes),
   }));
 }
 
@@ -183,36 +190,92 @@ function toRanges(raw: unknown): readonly LocalTimeRange[] {
 export function coalesceRanges(
   ranges: readonly LocalTimeRange[],
 ): readonly LocalTimeRange[] {
-  const sorted = [...ranges].sort(
-    (a, b) => a.start.minutesFromMidnight() - b.start.minutesFromMidnight(),
+  return ScheduleExceptionSystem.merge(ranges.map(minuteRangeOf), []).flatMap(
+    (range) => legacyRangeOf(ranges, range),
   );
-  const out: LocalTimeRange[] = [];
-  for (const range of sorted) {
-    const last = out[out.length - 1];
-    if (
-      last &&
-      range.start.minutesFromMidnight() <= last.end.minutesFromMidnight()
-    ) {
-      if (range.end.minutesFromMidnight() > last.end.minutesFromMidnight()) {
-        const merged = LocalTimeRange.create(
-          last.start.toString(),
-          range.end.toString(),
-        );
-        if (merged.isSuccess()) out[out.length - 1] = merged.value;
-      }
-      continue;
-    }
-    out.push(range);
-  }
-  return out;
 }
 
-/** The day's blocks minus one — matched on its edges, not its identity. */
 export function withoutRange(
   ranges: readonly LocalTimeRange[],
   gone: LocalTimeRange,
 ): readonly LocalTimeRange[] {
-  return ranges.filter(
-    (range) => !(range.start.equals(gone.start) && range.end.equals(gone.end)),
+  const kept = ScheduleExceptionSystem.withoutRange(
+    ranges.map(minuteRangeOf),
+    minuteRangeOf(gone),
   );
+  // Every kept range is one of the caller's, in order: hand those back.
+  return ranges.filter((range) =>
+    kept.some(
+      (struct) =>
+        struct.startMinutes === range.start.minutesFromMidnight() &&
+        struct.endMinutes === range.end.minutesFromMidnight(),
+    ),
+  );
+}
+
+// ── The bridge: legacy shapes ↔ ecs-core structs (Phase 4 deletes it) ────
+
+function minuteRangeOf(range: LocalTimeRange): MinuteRange {
+  return MinuteRange.of(
+    range.start.minutesFromMidnight(),
+    range.end.minutesFromMidnight(),
+  );
+}
+
+/** Minutes of the day as the stored `HH:mm` (zero-padded, as `LocalTimeOfDay` prints it). */
+function clockOf(minutes: number): string {
+  const hour = Math.floor(minutes / 60);
+  const minute = minutes % 60;
+  return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+}
+
+/**
+ * A merged range as the caller's own object when it is one of theirs
+ * untouched, else a new one spanning it (none, should the clock not parse).
+ */
+function legacyRangeOf(
+  ranges: readonly LocalTimeRange[],
+  merged: MinuteRange,
+): readonly LocalTimeRange[] {
+  const own = ranges.find(
+    (range) =>
+      range.start.minutesFromMidnight() === merged.startMinutes &&
+      range.end.minutesFromMidnight() === merged.endMinutes,
+  );
+  if (own !== undefined) return [own];
+  const built = LocalTimeRange.create(
+    clockOf(merged.startMinutes),
+    clockOf(merged.endMinutes),
+  );
+  return built.isSuccess() ? [built.value] : [];
+}
+
+/** The reasoned detail as `ScheduleExceptionSystem` reads it. */
+function detailOf(detail: ScheduleExceptionKind): ExceptionDetail {
+  switch (detail.kind) {
+    case 'closed':
+      return ExceptionDetail.closed();
+    case 'time_off':
+      return ExceptionDetail.timeOff();
+    case 'sick':
+      return ExceptionDetail.sick(detail.paid);
+    case 'training':
+      return ExceptionDetail.training(detail.topic);
+    case 'travel':
+      return ExceptionDetail.travel(
+        EcsLocationId.of(detail.toLocationId.value),
+      );
+    case 'hours':
+      return ExceptionDetail.hours(detail.ranges.map(minuteRangeOf));
+    case 'break':
+      return ExceptionDetail.break(
+        detail.ranges.map(minuteRangeOf),
+        detail.paid,
+      );
+    case 'admin':
+      return ExceptionDetail.admin(
+        detail.ranges.map(minuteRangeOf),
+        detail.note,
+      );
+  }
 }

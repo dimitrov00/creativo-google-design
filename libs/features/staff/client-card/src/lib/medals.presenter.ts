@@ -1,4 +1,10 @@
 import {
+  DayKey,
+  type PersonalRecord as SystemRecord,
+  RecordsSystem,
+  ServiceId as ServiceRefId,
+} from '@creativo/ecs-core';
+import {
   type BadgeCategory,
   type BadgeProgress,
   type BadgeSeries,
@@ -33,7 +39,6 @@ import type { AchievementScope } from './client-card.contracts';
 import {
   dayLong,
   dayShort,
-  daysBetweenDays,
   figure,
   monthYearLong,
   runningCase,
@@ -288,18 +293,7 @@ export function recordSetOn(
   record: PersonalRecord,
   today: string,
 ): string | null {
-  switch (record.kind) {
-    case 'longestRhythm':
-    case 'firstVisit':
-      return record.on;
-    case 'mostVisitsInYear': {
-      if (record.year === null) return null;
-      const end = `${String(record.year).padStart(4, '0')}-12-31`;
-      return end > today ? today : end;
-    }
-    case 'favouriteService':
-      return null;
-  }
+  return RecordsSystem.setOn(recordOf(record), DayKey.of(today));
 }
 
 /**
@@ -310,20 +304,7 @@ export function recordSetOn(
  * until the year closes on it.
  */
 export function isNewRecord(record: PersonalRecord, today: string): boolean {
-  if (record.kind === 'firstVisit' || record.kind === 'favouriteService') {
-    return false;
-  }
-  if (
-    record.kind === 'mostVisitsInYear' &&
-    record.year !== null &&
-    String(record.year) === today.slice(0, 4)
-  ) {
-    return false;
-  }
-  const on = recordSetOn(record, today);
-  if (on === null) return false;
-  const age = daysBetweenDays(on, today);
-  return age >= 0 && age <= NEW_RECORD_DAYS;
+  return RecordsSystem.isNew(recordOf(record), DayKey.of(today));
 }
 
 /**
@@ -402,11 +383,13 @@ export function recordsOf(
   data: AchievementsData,
   rhythm: boolean,
 ): readonly PersonalRecord[] {
-  return RECORD_ORDER.flatMap((kind) => {
-    if (kind === 'longestRhythm' && !rhythm) return [];
-    const record = data.account.records.find((r) => r.kind === kind);
-    return record === undefined ? [] : [record];
-  });
+  return RecordsSystem.ordered(
+    data.account.records.map((record) => ({
+      ...recordOf(record),
+      source: record,
+    })),
+    rhythm,
+  ).map((ref) => ref.source);
 }
 
 // ── The families the page draws ─────────────────────────────────────────
@@ -948,5 +931,19 @@ export function medalScopeVm(
           ),
     track: built.track === null ? null : trackInRing(built.track, data, ctx),
     sections,
+  };
+}
+
+// ── The bridge: legacy record → ecs-core struct (Phase 4 deletes it) ─────
+
+/** A personal record as `RecordsSystem` reads it: the same figures, days and ids as brands. */
+function recordOf(record: PersonalRecord): SystemRecord {
+  return {
+    kind: record.kind,
+    value: record.value,
+    on: record.on === null ? null : DayKey.of(record.on),
+    year: record.year,
+    serviceId:
+      record.serviceId === null ? null : ServiceRefId.of(record.serviceId),
   };
 }

@@ -9,6 +9,13 @@ import {
   UserId,
   EmptyIdError as AccountsEmptyIdError,
 } from '@creativo/domain/accounts';
+import {
+  InvitationId as InvitationRefId,
+  RedemptionCount,
+  ReferralSystem,
+  type InvitationEntity,
+  UserId as UserRefId,
+} from '@creativo/ecs-core';
 import { InvitationId } from './ids';
 import { EmptyIdError } from './ids.errors';
 import {
@@ -35,7 +42,9 @@ export interface ReconstituteInvitationProps extends CreateInvitationProps {
 
 /**
  * **Aggregate root.** An invitation issued by a user (ports v2's
- * `Invitation.ts`). The code (== invitation id) is shareable — anyone
+ * `Invitation.ts`). A thin shim since the ECS migration's Phase 2: the
+ * counter bump and the self-invitation guard are `ReferralSystem`
+ * (`@creativo/ecs-core`). The code (== invitation id) is shareable — anyone
  * with the link can attempt to redeem it. `redemptionCount` is
  * denormalized (maintained by whichever use-case processes a redemption)
  * — negative/non-integer counts are unrepresentable.
@@ -100,14 +109,17 @@ export class Invitation {
       this.id,
       this.inviterUserId,
       this.inviterName,
-      this.redemptionCount + 1,
+      ReferralSystem.recordRedemption(entityOf(this)).redemptionCount,
       this.createdAt,
     );
   }
 
   /** Whether the given user is the original inviter — guards self-invitation. */
   isSelfInvitation(candidateUserId: UserId): boolean {
-    return this.inviterUserId.equals(candidateUserId);
+    return ReferralSystem.isSelfInvitation(
+      entityOf(this),
+      UserRefId.of(candidateUserId.value),
+    );
   }
 
   private static validateInviterName(
@@ -127,4 +139,17 @@ export class Invitation {
     }
     return ok(raw);
   }
+}
+
+// ── The bridge: legacy class → ecs-core struct (Phase 4 deletes it) ──────
+
+/** The invitation as `ReferralSystem` reads it. */
+function entityOf(invitation: Invitation): InvitationEntity {
+  return {
+    id: InvitationRefId.of(invitation.id.value),
+    inviterUserId: UserRefId.of(invitation.inviterUserId.value),
+    inviterName: invitation.inviterName,
+    redemptionCount: RedemptionCount.of(invitation.redemptionCount),
+    createdAtMs: invitation.createdAt.toMillis(),
+  };
 }

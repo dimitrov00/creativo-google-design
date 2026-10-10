@@ -1,3 +1,5 @@
+import { WorkBudgetSystem } from '@creativo/ecs-core';
+
 /**
  * How long a piece of operational work may keep TAKING work — shared by the
  * backfill callable and the policy-change recompute, the two handlers whose
@@ -10,14 +12,17 @@
  * appointments, a page of clients), and uses the rest to finish the unit in
  * hand and say where it stopped. The budget never interrupts a unit: every
  * unit is state-based, so stopping BETWEEN them is always safe to resume.
+ *
+ * Phase 2 shim: the arithmetic is `WorkBudgetSystem` in `@creativo/ecs-core`;
+ * this file keeps the legacy names for its callers and the awaiting walk.
  */
 
 /** The share of the timeout spent taking new work; the rest is the unit in hand plus the bookkeeping. */
-export const WORK_BUDGET_SHARE = 0.7;
+export const WORK_BUDGET_SHARE = WorkBudgetSystem.WORK_BUDGET_SHARE;
 
 /** Milliseconds of new-work budget for a handler with this timeout. */
 export function budgetMsFor(timeoutSeconds: number): number {
-  return Math.floor(timeoutSeconds * 1000 * WORK_BUDGET_SHARE);
+  return WorkBudgetSystem.budgetMsFor(timeoutSeconds);
 }
 
 /**
@@ -25,7 +30,8 @@ export function budgetMsFor(timeoutSeconds: number): number {
  * caller configures otherwise — `HttpsCallableOptions.timeout`, "Default is
  * 70000" (`@firebase/functions`). The most impatient client a callable has.
  */
-export const CALLABLE_CLIENT_TIMEOUT_SECONDS = 70;
+export const CALLABLE_CLIENT_TIMEOUT_SECONDS =
+  WorkBudgetSystem.CALLABLE_CLIENT_TIMEOUT_SECONDS;
 
 /**
  * Milliseconds of new-work budget for a CALLABLE: a share of whichever gives
@@ -43,7 +49,10 @@ export function callableBudgetMs(
   platformTimeoutSeconds: number,
   clientTimeoutSeconds: number = CALLABLE_CLIENT_TIMEOUT_SECONDS,
 ): number {
-  return budgetMsFor(Math.min(platformTimeoutSeconds, clientTimeoutSeconds));
+  return WorkBudgetSystem.callableBudgetMs(
+    platformTimeoutSeconds,
+    clientTimeoutSeconds,
+  );
 }
 
 /** One invocation's allowance, started when the handler starts. */
@@ -58,7 +67,9 @@ export interface WorkBudget {
  */
 export function timeBudget(clockMs: () => number, limitMs: number): WorkBudget {
   const startedMs = clockMs();
-  return { spent: () => clockMs() - startedMs >= limitMs };
+  return {
+    spent: () => WorkBudgetSystem.isSpent(startedMs, clockMs(), limitMs),
+  };
 }
 
 /** A budget that never runs out — for a caller that bounds its work some other way. */
@@ -85,12 +96,14 @@ export async function walkWithin<T, R>(
   budget: WorkBudget,
   work: (chunk: readonly T[]) => Promise<R>,
 ): Promise<Walked<R>> {
-  const size = Math.max(1, Math.floor(chunkSize));
+  const size = WorkBudgetSystem.chunkSize(chunkSize);
+  const spent = (): boolean => budget.spent();
   const results: R[] = [];
   let handled = 0;
-  while (handled < items.length) {
-    if (handled > 0 && budget.spent()) break;
-    const chunk = items.slice(handled, handled + size);
+  for (;;) {
+    const range = WorkBudgetSystem.nextChunk(items.length, size, handled);
+    if (range === null || !WorkBudgetSystem.takesChunk(handled, spent)) break;
+    const chunk = items.slice(range.start, range.end);
     results.push(await work(chunk));
     handled += chunk.length;
   }

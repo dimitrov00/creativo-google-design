@@ -1,5 +1,6 @@
 import {
   Money,
+  PhoneNumber,
   Result,
   ZonedDateTime,
   fail,
@@ -8,53 +9,95 @@ import {
 import {
   BarberId,
   type LocationDayHours,
-  LocationId,
-  Service,
+  type Service,
   ServiceId,
   ServiceTerms,
+  ServiceVariantId,
 } from '@creativo/domain/catalog';
 import {
   Appointment,
+  AppointmentBarberDoubleBookedError,
+  AppointmentEmptySeatsError,
+  type AppointmentError,
+  AppointmentMixedCurrencyError,
+  AppointmentMultipleSelfSeatsError,
+  AppointmentPastStartTimeError,
   BarberPref,
   BookingContact,
   type BookingContactProps,
   BookingPolicy,
-  CalendarDay,
   type ChairTime,
+  EmptyIdError,
   Interval,
   PENDING,
+  type ScheduleException,
   Seat,
   SeatId,
   SeatLabel,
   type SeatIdPair,
-  type SeatSlot,
   SeatSubject,
-  ScheduleException,
   StaffScheduleHistory,
   StandingDoubleSeatings,
-  buildDayWindows,
+  WEEKDAYS,
   labelSharedByTwoGuests,
-  paddedBusy,
-  shopDayHours,
-  windowsAt,
+  toEcsDetail,
 } from '@creativo/domain/scheduling';
 import { UserId } from '@creativo/domain/accounts';
 import type { AppointmentPlacement } from '@creativo/application/booking';
 import {
+  BarberId as EcsBarberId,
+  type BookingCommitError,
+  BookingCommitErrorCode,
+  BookingCommitField,
+  BookingDecisionSystem,
+  type BookingPolicy as EcsBookingPolicy,
+  type BookingSnapshot as EcsBookingSnapshot,
+  BusyKey,
+  DayHours,
+  DayKey,
+  type DayOffset,
+  type DecideBookingRequest as EcsDecideBookingRequest,
+  E164,
+  type ExceptionEffect,
+  GuestLabelSystem,
+  LocationId as EcsLocationId,
+  type RequestedSubject,
+  type Seat as EcsSeat,
+  ScheduleExceptionSystem,
+  type ScheduleVersion,
+  SchedulingErrorCode,
+  type SchedulingError,
+  ServiceCategoryId,
+  ServiceComposition,
+  type ServiceEntity,
+  ServiceId as EcsServiceId,
+  ServiceTerms as EcsServiceTerms,
+  ServiceVariantId as EcsServiceVariantId,
+  SeatId as EcsSeatId,
+  ShiftSegment,
+  type StaffTermsOverride as EcsStaffTermsOverride,
+  type Weekday,
+  ZonedTimeSystem,
+} from '@creativo/ecs-core';
+import {
   CommitBookingBarberNotRosteredError,
   CommitBookingBeyondHorizonError,
+  CommitBookingConflictingServicesError,
   type CommitBookingError,
   CommitBookingInvalidInputError,
   CommitBookingInvariantError,
+  CommitBookingPartyTooLargeError,
+  CommitBookingServiceNotAtLocationError,
   CommitBookingShopUnavailableError,
   CommitBookingSlotUnavailableError,
   CommitBookingTooSoonError,
+  CommitBookingUnauthenticatedError,
+  CommitBookingUnknownServiceError,
 } from './commit-booking.errors';
 import {
   CommitBookingDuplicateGuestLabelError,
   CommitBookingPersonDoubleBookedError,
 } from './decide-booking.errors';
-import { partyAdmissible } from './party-admission';
 
 /** One seat as the client asked for it — see `CommitBookingSeatRequest`. */
 export interface RequestedSeat {
@@ -335,492 +378,69 @@ export interface DecideBookingDeps {
   readonly stood?: readonly SeatIdPair[];
 }
 
-/** `${barberId}__${dayKey}` — the busy projection's composite key. */
-function busyKey(barberId: string, dayKey: string): string {
-  return `${barberId}__${dayKey}`;
-}
-
 /**
  * Decide whether a requested booking may be written, and what writing it
- * means. Pure: every fact comes from `snapshot` and `deps`, so the whole
- * server-side authority is unit-testable without an emulator.
+ * means. Pure: every fact comes from `snapshot` and `deps`.
  *
- * ### What the server re-derives rather than trusts
- * The client sends WHAT it wants and WHO it wants it from. Everything that
- * determines whether that is legal, and what it costs, is recomputed here:
- *
- * - **Terms** come from `Service.termsFor(barberId, variantId)`, so the price
- *   and duration are the catalog's. A client naming its own price would book
- *   a 40 € fade for nothing; one naming its own duration would book over the
- *   next appointment.
- * - **The owner** comes from the verified auth token, never the payload — so
- *   nobody books in someone else's name.
- * - **Windows** come from `buildDayWindows` against the roster and the shop's
- *   published hours, so a seat cannot be placed at a time nobody works.
- * - **Conflicts** are re-checked per person: the UI locks conflicting
- *   services, and a UI is not an enforcement boundary.
- * - **People** are re-counted: no write puts one person in two chairs at
- *   once anew (`CommitBookingPersonDoubleBookedError`; a pair a rebuilt
- *   visit already held stands, by seat id: `deps.standing`), and two guests
- *   the client tells apart may not share the label that is their only
- *   identity (`CommitBookingDuplicateGuestLabelError`, the domain's
- *   `labelSharedByTwoGuests`).
- * - **Collisions** are checked against the busy set read in this transaction,
- *   which is what makes two people racing for 14:00 resolve to one winner.
+ * Phase 2 shim: the decision is `BookingDecisionSystem.decide` in
+ * `@creativo/ecs-core` — terms re-derived from the catalogue, the owner from
+ * the verified token, the windows from the roster and the shop's hours,
+ * conflicts per person, people re-counted ("one person, one chair"; two
+ * guests the client tells apart may not share the label the domain's
+ * `labelSharedByTwoGuests` reads them by) and collisions against the busy set
+ * read in this transaction. This function converts the legacy inputs to the
+ * system's structs, and its answer back to the legacy `Appointment` and
+ * error classes.
  */
 export function decideBooking(
   request: DecideBookingRequest,
   snapshot: BookingSnapshot,
   deps: DecideBookingDeps,
 ): Result<BookingDecision, CommitBookingError> {
-  const locationIdResult = LocationId.create(request.locationId);
-  if (locationIdResult.isFailure()) {
-    // A blank id names no shop: the one "no usable shop" answer the store's
-    // load gives a shop it cannot find.
-    return fail(
-      new CommitBookingShopUnavailableError(request.locationId, 'not_found'),
-    );
-  }
-  const locationId = locationIdResult.value;
-
-  // A walk-in the shop entered itself has no owner at all — see
-  // `DecideBookingDeps.ownerUserId`. `toSubject` still refuses a `self` seat
-  // without one, so "nobody owns this" can never become "anybody may claim it".
-  let owner: UserId | null = null;
-  if (deps.ownerUserId !== null) {
-    const ownerResult = UserId.create(deps.ownerUserId);
-    if (ownerResult.isFailure()) {
-      return fail(new CommitBookingInvalidInputError('ownerUserId'));
-    }
-    owner = ownerResult.value;
-  }
-
-  // Two guests the client tells apart must not share a label: `personKey`
-  // would read them as ONE person — counted once, their services judged
-  // together, one of them in two chairs. Asked before anything counts people,
-  // by the domain's own rule (the one `BookingParty.sharedLabel` reads), so
-  // the flow and the server can never disagree about what "shared" means.
-  const sharedLabel = labelSharedByTwoGuests(namedGuestsOf(request.seats));
-  if (sharedLabel !== null) {
-    return fail(new CommitBookingDuplicateGuestLabelError(sharedLabel.value));
-  }
-
-  // EVERY REFUSAL THAT DOES NOT DEPEND ON THE TIME, in one place
-  // (`partyAdmissible`, round 6): nobody to seat, too many people, a
-  // service unknown or not offered here, a variant missing or undeclared,
-  // two services one person may not have together. The waitlist asks the
-  // same function when a request is made and before every notification, so
-  // it never promises what this refuses. A "person" is a subject: the
-  // booker, each account companion and each distinctly-labelled guest. A
-  // seat whose terms staff fixed (`termsOverrides`) is CARRIED: it survives
-  // its service retiring or gaining variants since it was booked — the
-  // frozen book the staff edit exists to unfreeze.
-  const admission = partyAdmissible(
-    request.seats.map((seat) => ({
-      personKey: personKey(seat.subject),
-      serviceId: seat.serviceId,
-      variantId: seat.variantId,
-      carried: deps.termsOverrides?.has(seat.lineId) === true,
-    })),
-    snapshot.services,
-    deps.policy,
+  const outside = deps.allowOutsideWindow === true;
+  const ecsRequest = toEcsRequest(request, snapshot.zone);
+  const decided = BookingDecisionSystem.decide(
+    ecsRequest,
+    toEcsSnapshot(snapshot),
+    toEcsPolicy(deps.policy),
     {
-      locationId,
+      allowOutsideWindow: outside,
+      skipMinNotice: outside,
+      allowOverlap: deps.allowOverlap === true,
       allowConflictingServices: deps.allowConflictingServices === true,
     },
+    (snapshot.release ?? []).map((chair) => ({
+      barberId: EcsBarberId.of(chair.barberId.value),
+      occupied: chair.occupied,
+    })),
+    {
+      nowMs: deps.now.toMillis(),
+      nextId: deps.nextId,
+      days: dayTableOf(snapshot.zone, deps.now, ecsRequest),
+      ownerUserId: deps.ownerUserId,
+      termsOverrides: overridePatchesOf(deps.termsOverrides),
+      standing: (deps.standing ?? []).map((seat) => ({
+        id: seat.id,
+        subject: toEcsSubject(seat.subject),
+        startMs: seat.startMs,
+        durationMinutes: seat.durationMinutes,
+      })),
+      stood: (deps.stood ?? []).map(([seatId, otherSeatId]) => ({
+        seatId: EcsSeatId.of(seatId),
+        otherSeatId: EcsSeatId.of(otherSeatId),
+      })),
+      parsePhone,
+    },
   );
-  if (admission.isFailure()) return fail(admission.error);
-
-  const notBeforeMs = deps.now.toMillis() + deps.policy.minLeadMinutes * 60_000;
-  const horizonEnd = deps.policy.horizonEndFrom(
-    CalendarDay.fromZonedDateTime(deps.now),
-  );
-
-  /** Per barber+day, the spans THIS booking claims — for the projection write. */
-  const busyWrites: BusyWrite[] = [];
-  const seats: Seat[] = [];
-  /** Every sold slot so far, whose, and which seat — "one person, one chair". */
-  const seated: SeatSlot[] = [];
-  /**
-   * The double seatings the visit already held (`deps.standing`), and the
-   * ones its last save broke while that save may still be undone
-   * (`deps.stood`).
-   */
-  const standing = standingDoubleSeatingsOf(deps.standing ?? []).union(
-    StandingDoubleSeatings.ofPairs(deps.stood ?? []),
-  );
-
-  for (const [index, requested] of request.seats.entries()) {
-    const override = deps.termsOverrides?.get(requested.lineId);
-    // eslint-disable-next-line security/detect-object-injection -- `index` is this very loop's index over `request.seats`, which `admission` was built from in order.
-    const admitted = admission.value[index];
-    // Unreachable: one admitted entry per requested seat, in order.
-    if (admitted === undefined) {
-      return fail(new CommitBookingInvalidInputError('seats'));
-    }
-    const { service, variantId } = admitted;
-
-    const barberIdResult = BarberId.create(requested.barberId);
-    const serviceIdResult = ServiceId.create(requested.serviceId);
-    if (barberIdResult.isFailure() || serviceIdResult.isFailure()) {
-      return fail(new CommitBookingInvalidInputError('seat identifiers'));
-    }
-    const barberId = barberIdResult.value;
-
-    const startResult = ZonedDateTime.fromISO(
-      requested.startIso,
-      snapshot.zone,
-    );
-    if (startResult.isFailure()) {
-      return fail(new CommitBookingInvalidInputError('startIso'));
-    }
-    const start = startResult.value;
-
-    if (!deps.allowOutsideWindow && start.toMillis() < notBeforeMs) {
-      return fail(new CommitBookingTooSoonError(deps.policy.minLeadMinutes));
-    }
-
-    const day = CalendarDay.fromZonedDateTime(start);
-    if (!deps.allowOutsideWindow && horizonEnd.isBefore(day)) {
-      return fail(
-        new CommitBookingBeyondHorizonError(deps.policy.horizonMonths),
-      );
-    }
-
-    // SERVER-RESOLVED terms — the whole point of the round trip. The catalog
-    // answers first, always; an override then replaces the numbers staff are
-    // allowed to fix, and what the catalog said is kept beside them.
-    const catalogTerms = service?.termsFor(barberId, variantId) ?? null;
-    const resolved = resolveTerms(catalogTerms, override);
-    if (resolved.isFailure()) return fail(resolved.error);
-    const { terms, provenance } = resolved.value;
-
-    const subjectResult = toSubject(requested, owner);
-    if (subjectResult.isFailure()) return fail(subjectResult.error);
-
-    const seatIdResult = SeatId.create(deps.nextId());
-    if (seatIdResult.isFailure()) {
-      return fail(new CommitBookingInvalidInputError('seatId'));
-    }
-
-    const seat = Seat.of({
-      id: seatIdResult.value,
-      subject: subjectResult.value,
-      serviceId: serviceIdResult.value,
-      variantId,
-      barberId,
-      terms,
-      catalogTerms: provenance,
-      startsAt: start,
-      pref:
-        requested.barberPref === 'any'
-          ? BarberPref.any()
-          : requested.barberPref === 'specific'
-            ? BarberPref.specific(barberId)
-            : null,
-    });
-    seats.push(seat);
-
-    // ONE PERSON, ONE CHAIR AT A TIME (owner decision, 2026-09-25) — on the
-    // SOLD minutes, the rule the grid offers times by (`sitsTwiceAt`). Every
-    // path decides through here, the shop's included: nobody's pen can put a
-    // person in two chairs, and a cut then a beard, back to back, is fine.
-    // Only a NEW overlap is refused (round 5): a pair of seats the rebuilt
-    // visit already held, by id, stands wherever the edit put it
-    // (`deps.standing`), and a seat the edit adds is judged in full.
-    const sold: SeatSlot = {
-      seatId: seat.id.value,
-      personKey: personKey(requested.subject),
-      slot: seat.soldTime(),
-    };
-    if (standing.seatsTwiceAnew(seated, sold)) {
-      return fail(new CommitBookingPersonDoubleBookedError(sold.personKey));
-    }
-    seated.push(sold);
-
-    // The chair is held for setup + service + cleanup; the client is sold the
-    // service alone. Availability is checked against the former — the seat's
-    // own statement of it, the span the projection records.
-    const occupied = seat.chairTime();
-
-    const placement = checkPlacement({
-      barberId,
-      locationId,
-      day,
-      occupied,
-      snapshot,
-      startIso: requested.startIso,
-      allowOutsideWindow: deps.allowOutsideWindow === true,
-      allowOverlap: deps.allowOverlap === true,
-    });
-    if (placement.isFailure()) return fail(placement.error);
-
-    busyWrites.push({
-      barberId: barberId.value,
-      dayKey: day.key(),
-      // The projection records what is actually taken, pads included: a
-      // reader that only saw the sold slot would offer the cleanup minutes
-      // to the next client.
-      interval: occupied,
-    });
-  }
-
-  // The contact is validated HERE, with the rest of the request, so an
-  // unreachable number is refused before an appointment exists rather than
-  // discovered when the shop tries to call. Absent is allowed (a booking
-  // still works without one); present-and-broken is not.
-  let contact: BookingContact | null = null;
-  if (request.contact) {
-    const contactResult = BookingContact.create(request.contact);
-    if (contactResult.isFailure()) {
-      return fail(new CommitBookingInvalidInputError('contact'));
-    }
-    contact = contactResult.value;
-  }
-
-  const appointmentResult = deps.allowOutsideWindow
-    ? // The shop's own placement, so the FUTURE-START invariant is not asked.
-      // `Appointment.create` refuses a start that is not after `now`, which is
-      // right for a booking being made and wrong for a visit being corrected:
-      // the party is in the chair, the clock has passed their start, and
-      // "nudge them fifteen minutes" must not be refused on the grounds that
-      // ten o'clock has already happened. `bookedAt` and `status` are
-      // placeholders here — the staff path restores the appointment's real
-      // ones, exactly as it restores the contact and the arrival stamp.
-      Appointment.reconstitute({
-        id: request.attemptId ?? deps.nextId(),
-        locationId: locationId.value,
-        seats,
-        status: PENDING,
-        bookedAt: deps.now,
-        contact,
-        bookedFromAppointmentId: request.bookedFromAppointmentId ?? null,
-      })
-    : Appointment.create({
-        id: request.attemptId ?? deps.nextId(),
-        locationId: locationId.value,
-        seats,
-        // `now` becomes the appointment's `bookedAt` — the booking instant, and
-        // the denominator of every lead-time figure. It is the transaction's own
-        // clock reading, so the number is the server's, not the caller's.
-        now: deps.now,
-        contact,
-        bookedFromAppointmentId: request.bookedFromAppointmentId ?? null,
-      });
-  if (appointmentResult.isFailure()) {
-    // This is where a party's own seats colliding on one barber is caught,
-    // and where a mixed-currency cart dies.
-    return fail(new CommitBookingInvariantError(appointmentResult.error));
-  }
-
-  // Auto-confirm (owner ruling 2026-08-07, `BookingPolicy.autoConfirm`,
-  // default on). `Appointment.create` always stamps `pending` because a
-  // booking's ACCEPTANCE is tenant policy, not a domain invariant — so the
-  // policy is applied here, at the one place a booking comes into existence.
-  //
-  // Note what this does NOT say: `confirmed` means the shop accepted the
-  // booking, never that the client is standing there. Arrival is its own
-  // stamp (`Appointment.arrivedAt`), which is exactly why turning this on
-  // does not cost the front desk its signal.
-  // Staff placement CONFIRMS (2026-09-08): the shop that put the booking on
-  // its own book has already accepted it, and a walk-in left `pending` would
-  // wait on nobody. The staff-edit path discards this status anyway — it
-  // restores the stored one — so only creation is affected.
-  const appointment =
-    deps.policy.autoConfirm || deps.allowOutsideWindow
-      ? appointmentResult.value.confirm()
-      : ok(appointmentResult.value);
-  if (appointment.isFailure()) {
-    return fail(new CommitBookingInvariantError(appointment.error));
-  }
-
-  return ok({ appointment: appointment.value, busyWrites });
-}
-
-/**
- * The terms this seat is actually written with, plus the catalog's answer
- * when the two differ.
- *
- * Three cases, and none of them is "trust the caller": no override at all is
- * the catalog verbatim (every client commit); an override on top of a live
- * catalog row is a staff edit, and the catalog row is kept as provenance; an
- * override with no catalog row left is a booking whose service has since been
- * retired, and there is nothing to compare it to.
- */
-function resolveTerms(
-  catalog: ServiceTerms | null,
-  override: StaffTermsOverride | undefined,
-): Result<
-  { terms: ServiceTerms; provenance: ServiceTerms | null },
-  CommitBookingError
-> {
-  if (!override) {
-    if (!catalog) return fail(new CommitBookingInvalidInputError('terms'));
-    return ok({ terms: catalog, provenance: null });
-  }
-
-  const currencyCode =
-    override.currencyCode ?? catalog?.price.currencyCode() ?? '';
-  const minorUnits = override.priceMinorUnits ?? catalog?.price.toMinorUnits();
-  const durationMinutes = override.durationMinutes ?? catalog?.durationMinutes;
-  if (minorUnits === undefined || durationMinutes === undefined) {
-    return fail(new CommitBookingInvalidInputError('terms'));
-  }
-
-  const price = Money.fromMinorUnitsAndCode(minorUnits, currencyCode);
-  if (price.isFailure()) {
-    return fail(new CommitBookingInvalidInputError('priceMinorUnits'));
-  }
-  const terms = ServiceTerms.create(price.value, durationMinutes, {
-    // Padding is chair geometry, not a price, and no command changes it —
-    // whichever of the two answers the caller carried forward is the one the
-    // busy projection was drawn from.
-    setupMinutes: override.setupMinutes ?? catalog?.setupMinutes ?? 0,
-    cleanupMinutes: override.cleanupMinutes ?? catalog?.cleanupMinutes ?? 0,
-  });
-  if (terms.isFailure()) {
-    return fail(new CommitBookingInvalidInputError('durationMinutes'));
-  }
-
-  return ok({
-    terms: terms.value,
-    // Equal terms are not an override — a move that changes nothing about the
-    // money must not start claiming the catalog was overruled.
-    provenance: catalog && !catalog.equals(terms.value) ? catalog : null,
-  });
-}
-
-/**
- * Is this exact span placeable for this barber?
- *
- * Two questions, and both must be re-asked here rather than inherited from
- * the client's grid: is the barber rostered for it (windows), and is anyone
- * else already in it (busy, padded by that barber's turnaround).
- *
- * ### The staff relaxations are refusals REMOVED, not checks re-run
- * `allowOutsideWindow` drops the roster question entirely — `roster-window.ts`
- * rules that what the windows describe is what a CLIENT may be offered, never
- * a bound on what can exist. `allowOverlap` drops the collision question, and
- * only once the sheet has said so out loud. Neither weakens the other: staff
- * placing an 08:00 regular still cannot silently sit on somebody else's 08:00.
- */
-function checkPlacement(input: {
-  readonly barberId: BarberId;
-  readonly locationId: LocationId;
-  readonly day: CalendarDay;
-  readonly occupied: Interval;
-  readonly snapshot: BookingSnapshot;
-  readonly startIso: string;
-  readonly allowOutsideWindow: boolean;
-  readonly allowOverlap: boolean;
-}): Result<void, CommitBookingError> {
-  const {
-    barberId,
-    locationId,
-    day,
-    occupied,
-    snapshot,
-    startIso,
-    allowOutsideWindow,
-    allowOverlap,
-  } = input;
-
-  const schedule = snapshot.schedules.get(barberId.value);
-  if (!schedule && !allowOutsideWindow) {
-    return fail(
-      new CommitBookingBarberNotRosteredError(barberId.value, day.key()),
-    );
-  }
-
-  if (schedule && !allowOutsideWindow) {
-    // Windows for the whole day, then narrowed to the shop being booked. A
-    // barber's day can span two shops, and a Center booking may only use a
-    // Center window — their Mladost afternoon is somebody else's capacity.
-    const exception = snapshot.exceptions.get(
-      busyKey(barberId.value, day.key()),
-    );
-    const windows = windowsAt(
-      buildDayWindows({
-        day,
-        schedule: schedule.history,
-        exceptions: exception ? [exception] : [],
-        shopHours: new Map([
-          [locationId.value, shopDayHours(day, locationId, snapshot.shopHours)],
-        ]),
-      }),
-      locationId,
-    );
-    if (windows.length === 0) {
-      return fail(
-        new CommitBookingBarberNotRosteredError(barberId.value, day.key()),
-      );
-    }
-
-    const inAWindow = windows.some((window) =>
-      Interval.contains(window.interval, occupied),
-    );
-    if (!inAWindow) {
-      // Rostered that day, but not for this span — the client was offered a
-      // time that the roster does not actually cover, so it is refused with the
-      // recoverable code: re-picking from a fresh grid is the fix.
-      return fail(
-        new CommitBookingSlotUnavailableError(barberId.value, startIso),
-      );
-    }
-  }
-
-  if (allowOverlap) return ok(undefined);
-
-  // A barber with no roster document has no declared turnaround either, and
-  // zero is the honest reading: the reset time is a fact about the chair, and
-  // inventing one would block a neighbour that nothing says is blocked.
-  //
-  // Padded by `paddedBusy`, the rule the grid's read is held to as well
-  // (`AvailabilityReader.observeDay`), so the client is offered exactly the
-  // gaps this check lets through — a rebuilt visit's own chairs handed back
-  // first (`BookingSnapshot.release`), on both sides.
-  const taken = paddedBusy({
-    barberId,
-    spans: snapshot.busy.get(busyKey(barberId.value, day.key())) ?? [],
-    turnaroundMinutes: schedule?.turnaroundMinutes ?? 0,
-    release: snapshot.release,
-  });
-  if (taken.some((interval) => Interval.overlaps(interval, occupied))) {
-    return fail(
-      new CommitBookingSlotUnavailableError(barberId.value, startIso),
-    );
-  }
-
-  return ok(undefined);
-}
-
-/**
- * One key per person on the cart, whatever seats they hold.
- *
- * A guest is keyed by the label as it is STORED — trimmed, the way
- * `SeatLabel` keeps it — so « Иван» and «Иван» are the one person they will
- * be on the appointment, not two people until the write.
- */
-function personKey(subject: RequestedSeat['subject']): string {
-  switch (subject.kind) {
-    case 'self':
-      return 'self';
-    case 'companion':
-      return `account:${subject.userId}`;
-    case 'guest':
-      return `guest:${subject.label.trim()}`;
-  }
+  if (!decided.ok) return fail(toLegacyError(decided.error, request));
+  return toLegacyDecision(decided.value, request, snapshot, deps);
 }
 
 /**
  * The visit as it stood (`DecideBookingDeps.standing`) → the double
- * seatings it already held, keyed by the same `personKey` every request
- * seat is counted by. The sold span is the seat's service minutes from its
- * start, the span `Seat.soldTime` reads.
- *
- * Exported for the staff edit, which asks it of the visit before AND after
- * its batch to learn which pairs the batch broke (`brokenBy`) — the same
- * people counted the same way as the decision counts them.
+ * seatings it already held, keyed by the same person key every request seat
+ * is counted by. Exported for the staff edit, which asks it of the visit
+ * before AND after its batch to learn which pairs the batch broke.
  */
 export function standingDoubleSeatingsOf(
   standing: readonly StandingSeat[],
@@ -829,7 +449,7 @@ export function standingDoubleSeatingsOf(
   return StandingDoubleSeatings.of(
     standing.map((seat) => ({
       seatId: seat.id,
-      personKey: personKey(seat.subject),
+      personKey: GuestLabelSystem.personKeyOf(toEcsSubject(seat.subject)),
       slot: Interval.of(
         seat.startMs,
         seat.startMs + seat.durationMinutes * 60_000,
@@ -838,13 +458,250 @@ export function standingDoubleSeatingsOf(
   );
 }
 
+/* ── Phase 2 shim converters: legacy shapes ↔ ecs-core structs ──────────── */
+
+function toEcsSubject(subject: RequestedSeat['subject']): RequestedSubject {
+  switch (subject.kind) {
+    case 'self':
+      return { kind: 'self' };
+    case 'companion':
+      return { kind: 'companion', userId: subject.userId };
+    case 'guest':
+      return {
+        kind: 'guest',
+        label: subject.label,
+        guestKey: subject.guestKey ?? null,
+      };
+  }
+}
+
+/** The request, its starts read as instants in the shop's zone (`null`: did not parse). */
+function toEcsRequest(
+  request: DecideBookingRequest,
+  zone: string,
+): EcsDecideBookingRequest {
+  return {
+    locationId: request.locationId,
+    seats: request.seats.map((seat) => {
+      const start = ZonedDateTime.fromISO(seat.startIso, zone);
+      return {
+        lineId: seat.lineId,
+        serviceId: seat.serviceId,
+        variantId: seat.variantId,
+        barberId: seat.barberId,
+        barberPref: seat.barberPref ?? null,
+        startMs: start.isSuccess() ? start.value.toMillis() : null,
+        subject: toEcsSubject(seat.subject),
+      };
+    }),
+    attemptId: request.attemptId ?? null,
+    bookedFromAppointmentId: request.bookedFromAppointmentId ?? null,
+    contact: request.contact
+      ? {
+          name: request.contact.name,
+          phone: request.contact.phone,
+          email: request.contact.email ?? null,
+          note: request.contact.note ?? null,
+        }
+      : null,
+    placement: request.placement ?? null,
+  };
+}
+
+function toEcsSnapshot(snapshot: BookingSnapshot): EcsBookingSnapshot {
+  return {
+    zone: snapshot.zone,
+    shopHours: weekOf(snapshot.shopHours),
+    services: snapshot.services.map(toServiceEntity),
+    schedules: [...snapshot.schedules].map(([barberId, schedule]) => ({
+      barberId: EcsBarberId.of(barberId),
+      versions: versionsOf(schedule.history),
+      turnaroundMinutes: schedule.turnaroundMinutes,
+    })),
+    busy: [...snapshot.busy].flatMap(([key, spans]) => {
+      const id = BusyKey.parse(key);
+      return id === null ? [] : [{ id, spans }];
+    }),
+    exceptions: [...snapshot.exceptions].flatMap(([key, exception]) => {
+      const id = BusyKey.parse(key);
+      const effect = effectOf(exception);
+      return id === null || effect === null
+        ? []
+        : [
+            {
+              barberId: BusyKey.split(id).barberId,
+              dayKey: DayKey.of(exception.day.key()),
+              effect,
+            },
+          ];
+    }),
+  };
+}
+
+function toEcsPolicy(policy: BookingPolicy): EcsBookingPolicy {
+  return {
+    maxPartySize: policy.maxPartySize,
+    slotStepMinutes: policy.slotStepMinutes,
+    minLeadMinutes: policy.minLeadMinutes,
+    horizonMonths: policy.horizonMonths,
+    cancellationWindowHours: policy.cancellationWindow.hours,
+    maxFlexibleDays: policy.maxFlexibleDays,
+    autoConfirm: policy.autoConfirm,
+  };
+}
+
+function overridePatchesOf(
+  overrides: ReadonlyMap<string, StaffTermsOverride> | undefined,
+): readonly EcsStaffTermsOverride[] {
+  return [...(overrides ?? [])].map(([seatKey, override]) => ({
+    seatKey,
+    priceMinorUnits: override.priceMinorUnits ?? null,
+    currencyCode: override.currencyCode ?? null,
+    durationMinutes: override.durationMinutes ?? null,
+    setupMinutes: override.setupMinutes ?? null,
+    cleanupMinutes: override.cleanupMinutes ?? null,
+  }));
+}
+
+/** The kernel's phone rule, so a contact parses exactly as it always did. */
+function parsePhone(raw: string): E164 | null {
+  const phone = PhoneNumber.create(raw);
+  return phone.isSuccess() ? E164.of(phone.value.value) : null;
+}
+
+/** The zone table around `now` and every parsed start, a day of margin each side. */
+function dayTableOf(
+  zone: string,
+  now: ZonedDateTime,
+  request: EcsDecideBookingRequest,
+): readonly DayOffset[] {
+  const instants = [now.toMillis()];
+  for (const seat of request.seats) {
+    if (seat.startMs !== null) instants.push(seat.startMs);
+  }
+  return ZonedTimeSystem.dayTableAround(
+    zone,
+    Math.min(...instants),
+    Math.max(...instants),
+    1,
+  );
+}
+
+function toTerms(terms: ServiceTerms): EcsServiceTerms {
+  return EcsServiceTerms.of(
+    terms.price.toMinorUnits(),
+    terms.price.currencyCode(),
+    terms.durationMinutes,
+    terms.setupMinutes,
+    terms.cleanupMinutes,
+  );
+}
+
+/** The legacy aggregate → the stored entity (the cover is not read by the decision). */
+function toServiceEntity(service: Service): ServiceEntity {
+  const composition = service.composition;
+  return {
+    id: EcsServiceId.of(service.id.value),
+    name: { bg: service.name.bg, en: service.name.en },
+    description: { bg: service.description.bg, en: service.description.en },
+    categoryId: ServiceCategoryId.of(service.categoryId.value),
+    baseTerms: toTerms(service.baseTerms),
+    variants: service.variants.map((variant) => ({
+      id: EcsServiceVariantId.of(variant.id.value),
+      name: { bg: variant.name.bg, en: variant.name.en },
+    })),
+    offerings: service.offerings.map((offering) => ({
+      barberId: EcsBarberId.of(offering.barberId.value),
+      base: toTerms(offering.base),
+      overrides: service.variants.flatMap((variant) => {
+        const terms = offering.termsFor(variant.id);
+        return terms === offering.base
+          ? []
+          : [
+              {
+                variantId: EcsServiceVariantId.of(variant.id.value),
+                terms: toTerms(terms),
+              },
+            ];
+      }),
+    })),
+    cover: null,
+    locationIds: service.locationIds.map((id) => EcsLocationId.of(id.value)),
+    conflictsWith: service.conflictsWith.map((id) => EcsServiceId.of(id.value)),
+    composition:
+      composition.kind === 'bundle'
+        ? ServiceComposition.bundle(
+            composition.includes.map((id) => EcsServiceId.of(id.value)),
+          )
+        : ServiceComposition.single(),
+    upsellOnly: service.upsellOnly,
+    popular: service.popular,
+    status: service.status,
+    sortOrder: service.sortOrder,
+  };
+}
+
+/** The roster history → its versions, the weekday map flattened to segments. */
+function versionsOf(history: StaffScheduleHistory): readonly ScheduleVersion[] {
+  return history.all().map((version) => ({
+    seq: version.seq,
+    effectiveFromDayKey: DayKey.of(version.effectiveFrom.key()),
+    effectiveToDayKey:
+      version.effectiveTo === null
+        ? null
+        : DayKey.of(version.effectiveTo.key()),
+    segments: WEEKDAYS.flatMap((weekday, index) =>
+      version.pattern
+        .segmentsOn(weekday)
+        .map((segment) =>
+          ShiftSegment.of(
+            (index + 1) as Weekday,
+            EcsLocationId.of(segment.locationId.value),
+            segment.start.minutesFromMidnight(),
+            segment.end.minutesFromMidnight(),
+          ),
+        ),
+    ),
+  }));
+}
+
 /**
- * The guests this request tells apart, as the domain's label rule reads
- * them: each seat of a guest the client NAMED (`guestKey`), under the label
- * it will be stored as. Two seats under one label and one key are one guest
- * with two services; a seat with no key is read the way the label alone
- * reads it, and a label that is not one is refused by name later
- * (`toSubject`), so it has nothing to share.
+ * `'HH:mm'` weeks → minutes. A week holding a clock that does not parse
+ * (refused by the `Location` aggregate, so never stored) publishes nothing.
+ */
+function weekOf(weekly: readonly LocationDayHours[]): readonly DayHours[] {
+  const week: DayHours[] = [];
+  for (const entry of weekly) {
+    if (entry.kind === 'closed') {
+      week.push(DayHours.closed());
+      continue;
+    }
+    const opens = DayHours.parseClock(entry.opens);
+    const closes = DayHours.parseClock(entry.closes);
+    if (!opens.ok || !closes.ok) return [];
+    week.push(DayHours.open(opens.value, closes.value));
+  }
+  return week;
+}
+
+/**
+ * A published exception → its public effect: the GDPR boundary is
+ * `ScheduleExceptionSystem.publicEffect`, the detail converted once by the
+ * scheduling shim's `toEcsDetail`.
+ */
+function effectOf(exception: ScheduleException): ExceptionEffect | null {
+  const effect = ScheduleExceptionSystem.publicEffect(
+    toEcsDetail(exception.detail),
+  );
+  return effect.ok ? effect.value : null;
+}
+
+/**
+ * The guests a request tells apart, as the domain's label rule reads them —
+ * how the legacy refusal names the label two of them share. Kept (rather
+ * than reading `error.detail` alone) because decide-booking.spec.ts pins
+ * that this file asks the domain's `labelSharedByTwoGuests`, which is itself
+ * a shim over the same `Party.labelSharedByTwoGuests` the system asks.
  */
 function namedGuestsOf(
   seats: readonly RequestedSeat[],
@@ -860,31 +717,269 @@ function namedGuestsOf(
   return guests;
 }
 
-function toSubject(
-  requested: RequestedSeat,
-  ownerUserId: UserId | null,
-): Result<SeatSubject, CommitBookingError> {
-  if (requested.subject.kind === 'self') {
-    // Bound to the TOKEN, so a payload cannot book in someone else's name —
-    // and refused outright when there is no token to bind to, because the
-    // `self` seat IS the owner's seat.
-    if (ownerUserId === null) {
-      return fail(new CommitBookingInvalidInputError('ownerUserId'));
+/** The system's refusal → the legacy error class the callers branch on. */
+function toLegacyError(
+  error: BookingCommitError,
+  request: DecideBookingRequest,
+): CommitBookingError {
+  switch (error.code) {
+    case BookingCommitErrorCode.InvalidInput:
+      if (error.field === BookingCommitField.LocationId && error.reason) {
+        return new CommitBookingShopUnavailableError(
+          error.detail ?? '',
+          error.reason === 'unlisted' ? 'unlisted' : 'not_found',
+        );
+      }
+      if (error.field === BookingCommitField.PersonOverlap) {
+        return new CommitBookingPersonDoubleBookedError(error.detail ?? '');
+      }
+      if (error.field === BookingCommitField.GuestLabel) {
+        return new CommitBookingDuplicateGuestLabelError(
+          labelSharedByTwoGuests(namedGuestsOf(request.seats))?.value ??
+            error.detail ??
+            '',
+        );
+      }
+      return new CommitBookingInvalidInputError(error.field);
+    case BookingCommitErrorCode.Unauthenticated:
+      return new CommitBookingUnauthenticatedError();
+    case BookingCommitErrorCode.UnknownService:
+      return new CommitBookingUnknownServiceError(error.serviceId);
+    case BookingCommitErrorCode.ServiceNotAtLocation:
+      return new CommitBookingServiceNotAtLocationError(
+        error.serviceId,
+        error.locationId,
+      );
+    case BookingCommitErrorCode.ConflictingServices:
+      return new CommitBookingConflictingServicesError(
+        error.first,
+        error.second,
+      );
+    case BookingCommitErrorCode.BarberNotRostered:
+      return new CommitBookingBarberNotRosteredError(
+        error.barberId,
+        error.dayKey,
+      );
+    case BookingCommitErrorCode.SlotUnavailable:
+      return new CommitBookingSlotUnavailableError(
+        error.barberId,
+        request.seats.at(error.seatIndex)?.startIso ?? '',
+      );
+    case BookingCommitErrorCode.TooSoon:
+      return new CommitBookingTooSoonError(error.minLeadMinutes);
+    case BookingCommitErrorCode.BeyondHorizon:
+      return new CommitBookingBeyondHorizonError(error.horizonMonths);
+    case BookingCommitErrorCode.PartyTooLarge:
+      return new CommitBookingPartyTooLargeError(error.maxPartySize);
+    case BookingCommitErrorCode.InvariantViolated:
+      return new CommitBookingInvariantError(
+        error.violations.map(toLegacyViolation),
+      );
+  }
+}
+
+function toLegacyViolation(violation: SchedulingError): AppointmentError {
+  switch (violation.code) {
+    case SchedulingErrorCode.AppointmentEmptySeats:
+      return new AppointmentEmptySeatsError();
+    case SchedulingErrorCode.AppointmentMultipleSelfSeats:
+      return new AppointmentMultipleSelfSeatsError();
+    case SchedulingErrorCode.AppointmentPastStartTime:
+      return new AppointmentPastStartTimeError();
+    case SchedulingErrorCode.AppointmentBarberDoubleBooked:
+      return new AppointmentBarberDoubleBookedError(violation.barberId);
+    case SchedulingErrorCode.AppointmentMixedCurrency:
+      return new AppointmentMixedCurrencyError(
+        violation.expected,
+        violation.found,
+      );
+    case SchedulingErrorCode.IdEmpty:
+    default:
+      return new EmptyIdError('AppointmentId');
+  }
+}
+
+/**
+ * The system's draft → the legacy aggregate, built through the legacy
+ * factories exactly as the decision always built it (`create`, or
+ * `reconstitute` for the shop's own placement, then `confirm`).
+ */
+function toLegacyDecision(
+  decision: {
+    readonly appointment: {
+      readonly id: string;
+      readonly seats: readonly EcsSeat[];
+      readonly bookingStatus: { readonly kind: string };
+      readonly bookedFromAppointmentId: string | null;
+    };
+    readonly busyWrites: readonly {
+      readonly barberId: string;
+      readonly dayKey: string;
+      readonly interval: Interval;
+    }[];
+  },
+  request: DecideBookingRequest,
+  snapshot: BookingSnapshot,
+  deps: DecideBookingDeps,
+): Result<BookingDecision, CommitBookingError> {
+  const seats: Seat[] = [];
+  for (const seat of decision.appointment.seats) {
+    const legacy = toLegacySeat(seat, snapshot);
+    if (legacy === null) {
+      return fail(new CommitBookingInvalidInputError('seats'));
     }
-    return ok(SeatSubject.account(ownerUserId, 'self'));
+    seats.push(legacy);
   }
-  if (requested.subject.kind === 'companion') {
-    // Only ever the stored person a staff edit carries forward — see
-    // `RequestedSeat.subject`.
-    const companion = UserId.create(requested.subject.userId);
-    if (companion.isFailure()) {
-      return fail(new CommitBookingInvalidInputError('companion'));
+  let contact: BookingContact | null = null;
+  if (request.contact) {
+    const parsed = BookingContact.create(request.contact);
+    if (parsed.isFailure()) {
+      return fail(new CommitBookingInvalidInputError('contact'));
     }
-    return ok(SeatSubject.account(companion.value, 'companion'));
+    contact = parsed.value;
   }
-  const label = SeatLabel.create(requested.subject.label);
-  if (label.isFailure()) {
-    return fail(new CommitBookingInvalidInputError('guest label'));
+  const props = {
+    id: decision.appointment.id,
+    locationId: request.locationId,
+    seats,
+    contact,
+    bookedFromAppointmentId: request.bookedFromAppointmentId ?? null,
+  };
+  const built =
+    deps.allowOutsideWindow === true
+      ? Appointment.reconstitute({
+          ...props,
+          status: PENDING,
+          bookedAt: deps.now,
+        })
+      : Appointment.create({ ...props, now: deps.now });
+  if (built.isFailure()) {
+    return fail(new CommitBookingInvariantError(built.error));
   }
-  return ok(SeatSubject.anonymous(label.value));
+  const appointment =
+    decision.appointment.bookingStatus.kind === 'confirmed'
+      ? built.value.confirm()
+      : ok(built.value);
+  if (appointment.isFailure()) {
+    return fail(new CommitBookingInvariantError(appointment.error));
+  }
+  return ok({
+    appointment: appointment.value,
+    busyWrites: decision.busyWrites.map((write) => ({
+      barberId: write.barberId,
+      dayKey: write.dayKey,
+      interval: write.interval,
+    })),
+  });
+}
+
+/** One decided seat → the legacy `Seat`; `null` if a figure the system admitted does not rebuild. */
+function toLegacySeat(seat: EcsSeat, snapshot: BookingSnapshot): Seat | null {
+  const id = SeatId.create(seat.id);
+  const serviceId = ServiceId.create(seat.serviceId);
+  const barberId = BarberId.create(seat.barberId);
+  const startsAt = ZonedDateTime.fromMillis(seat.startMs, snapshot.zone);
+  const price = Money.fromMinorUnitsAndCode(
+    seat.terms.priceMinorUnits,
+    seat.terms.currencyCode,
+  );
+  if (
+    id.isFailure() ||
+    serviceId.isFailure() ||
+    barberId.isFailure() ||
+    startsAt.isFailure() ||
+    price.isFailure()
+  ) {
+    return null;
+  }
+  const pads = {
+    setupMinutes: seat.terms.setupMinutes,
+    cleanupMinutes: seat.terms.cleanupMinutes,
+  };
+  const terms = ServiceTerms.create(
+    price.value,
+    seat.terms.durationMinutes,
+    pads,
+  );
+  if (terms.isFailure()) return null;
+
+  let variantId: ServiceVariantId | null = null;
+  if (seat.variantId !== null) {
+    const parsed = ServiceVariantId.create(seat.variantId);
+    if (parsed.isFailure()) return null;
+    variantId = parsed.value;
+  }
+
+  const catalogTerms =
+    seat.terms.catalogPriceMinorUnits === null
+      ? null
+      : catalogTermsOf(seat, snapshot.services, barberId.value, variantId);
+
+  let subject: SeatSubject;
+  if (seat.subject.kind === 'account') {
+    const userId = UserId.create(seat.subject.userId);
+    if (userId.isFailure()) return null;
+    subject = SeatSubject.account(userId.value, seat.subject.relationship);
+  } else {
+    const label = SeatLabel.create(seat.subject.label);
+    if (label.isFailure()) return null;
+    subject = SeatSubject.anonymous(label.value);
+  }
+
+  return Seat.of({
+    id: id.value,
+    subject,
+    serviceId: serviceId.value,
+    variantId,
+    barberId: barberId.value,
+    terms: terms.value,
+    catalogTerms,
+    startsAt: startsAt.value,
+    pref:
+      seat.barberPref === 'any'
+        ? BarberPref.any()
+        : seat.barberPref === 'specific'
+          ? BarberPref.specific(barberId.value)
+          : null,
+  });
+}
+
+/**
+ * The catalogue's answer the seat was resolved against, kept as provenance
+ * (`catalogTerms`) when the system found the charged terms differ from it.
+ * Rebuilt from the legacy catalogue itself — `termsFor` with the CATALOGUE's
+ * own pads, exactly as the legacy `resolveTerms` kept it — because the
+ * system's `SeatTerms` keeps only the catalogue price and duration: an
+ * override that changes nothing but a pad must still record the row it
+ * overruled. Falls back to the stored pair (charged pads) only when the row
+ * is gone, as `catalogTermsFromDocument` reads it back.
+ */
+function catalogTermsOf(
+  seat: EcsSeat,
+  services: readonly Service[],
+  barberId: BarberId,
+  variantId: ServiceVariantId | null,
+): ServiceTerms | null {
+  const service = services.find((each) => each.id.value === seat.serviceId);
+  if (service !== undefined) return service.termsFor(barberId, variantId);
+  if (
+    seat.terms.catalogPriceMinorUnits === null ||
+    seat.terms.catalogDurationMinutes === null
+  ) {
+    return null;
+  }
+  const catalogPrice = Money.fromMinorUnitsAndCode(
+    seat.terms.catalogPriceMinorUnits,
+    seat.terms.currencyCode,
+  );
+  if (catalogPrice.isFailure()) return null;
+  const catalog = ServiceTerms.create(
+    catalogPrice.value,
+    seat.terms.catalogDurationMinutes,
+    {
+      setupMinutes: seat.terms.setupMinutes,
+      cleanupMinutes: seat.terms.cleanupMinutes,
+    },
+  );
+  return catalog.isSuccess() ? catalog.value : null;
 }

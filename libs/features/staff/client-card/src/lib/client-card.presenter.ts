@@ -1,8 +1,12 @@
+import { type User } from '@creativo/application/accounts';
 import {
-  AccountStatus,
-  type User,
-  ZonedDateTime,
-} from '@creativo/application/accounts';
+  AccountStatus as GlanceStatus,
+  AgeSystem,
+  BirthDate,
+  type BlockReason,
+  ClientGlanceSystem,
+  DayKey,
+} from '@creativo/ecs-core';
 import {
   type Appointment,
   type AppointmentPhoto,
@@ -80,24 +84,16 @@ export function pauseOf(
   user: User | null,
   nowMs: number,
 ): { readonly until: string | null } | null {
-  if (user === null || user.status.kind !== 'blocked') return null;
-  const now = ZonedDateTime.fromMillis(nowMs, SHOP_ZONE);
-  if (now.isFailure() || !AccountStatus.isBlocked(user.status, now.value)) {
-    return null;
-  }
-  const until = user.status.until;
-  return { until: until === undefined ? null : shopDayOf(until.toMillis()) };
+  const pause = ClientGlanceSystem.pauseOf(statusOf(user), nowMs);
+  if (pause === null) return null;
+  return { until: pause.untilMs === null ? null : shopDayOf(pause.untilMs) };
 }
 
 /** Today is the person's birthday (a 29 February one is kept on the 28th in other years). */
 export function isBirthdayToday(user: User | null, today: string): boolean {
   const birth = user?.birthDate?.toISODate();
   if (birth === undefined) return false;
-  const monthDay = birth.slice(5);
-  if (monthDay === today.slice(5)) return true;
-  const year = Number(today.slice(0, 4));
-  const leap = (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
-  return monthDay === '02-29' && !leap && today.slice(5) === '02-28';
+  return AgeSystem.isBirthdayOn(BirthDate.of(birth), DayKey.of(today));
 }
 
 /** The name the card shows: `users/{uid}`'s once read, the seat's until then (and for good, for a guest). */
@@ -225,17 +221,16 @@ export function sameLegs(
   last: readonly VisitLeg[],
   draft: ClientCardContext['legs'],
 ): boolean {
-  const key = (serviceId: string, variantId: string | null) =>
-    `${serviceId}\u0000${variantId ?? ''}`;
-  const a = last
-    .map((leg) => key(leg.serviceId.value, leg.variantId?.value ?? null))
-    .sort()
-    .join('\u0001');
-  const b = draft
-    .map((leg) => key(leg.serviceId, leg.variantId))
-    .sort()
-    .join('\u0001');
-  return a === b;
+  return ClientGlanceSystem.sameLegs(
+    last.map((leg) => ({
+      serviceId: leg.serviceId.value,
+      variantId: leg.variantId?.value ?? null,
+    })),
+    draft.map((leg) => ({
+      serviceId: leg.serviceId,
+      variantId: leg.variantId,
+    })),
+  );
 }
 
 export interface ActionsInput {
@@ -548,10 +543,24 @@ export function isInChairToday(
   context: ClientCardContext,
   nowMs: number,
 ): boolean {
-  if (context.appointmentId === null || context.settled) return false;
-  const today = shopDayOf(nowMs);
-  return context.legs.some((leg) => {
-    const start = Date.parse(leg.startsAtIso);
-    return Number.isFinite(start) && shopDayOf(start) === today;
-  });
+  return ClientGlanceSystem.isInChairToday(
+    context.appointmentId !== null && !context.settled,
+    context.legs.map((leg) => Date.parse(leg.startsAtIso)),
+    nowMs,
+    SHOP_ZONE,
+  );
+}
+
+// ── The bridge: legacy class → ecs-core struct (Phase 4 deletes it) ──────
+
+/** The account's status as `ClientGlanceSystem` reads it: the pause's end in ms. */
+function statusOf(user: User | null): GlanceStatus | null {
+  if (user === null) return null;
+  const { status } = user;
+  return status.kind === 'blocked'
+    ? GlanceStatus.block(
+        status.reason as BlockReason,
+        status.until === undefined ? null : status.until.toMillis(),
+      )
+    : GlanceStatus.active();
 }

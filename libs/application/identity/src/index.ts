@@ -16,6 +16,8 @@ export * from './lib/use-cases/ensure-session-ready.use-case';
 export * from './lib/flow/guest-guard';
 export * from './lib/flow/auth-flow';
 export * from './lib/flow/onboarding-flow';
+// Phase 2 shim converters (ECS migration) — deleted in Phase 4.
+export * from './lib/registration-fields.shim';
 
 // Facade re-export (blueprint §1.2 layering): `type:feature` libs may never
 // depend on `type:domain` directly, only through `type:application` — and
@@ -30,23 +32,12 @@ export * from '@creativo/domain/identity';
 // reason: feature-layer test doubles need to construct port-shaped
 // `Result`s without an illegal `type:domain` import of their own.
 export type { Result } from '@creativo/domain/kernel';
-export { ok, fail } from '@creativo/domain/kernel';
 // The kernel's caged phone vocabulary, re-exported for the same reason:
 // feature steps that COLLECT a phone (onboarding's about step, a phone-OTP
 // identify screen) validate the field text through `PhoneNumber.create`
 // and reason-map `PhoneNumberInvalidError.reason` to example-bearing error
 // copy (`examplePhoneNumber`) — without an illegal `type:domain` import of
 // their own. `libphonenumber-js` itself stays caged in `domain/kernel`.
-export {
-  PhoneNumber,
-  PhoneNumberInvalidError,
-  examplePhoneNumber,
-  // The staff omnibox reads a number as it is typed — «088 76» printed
-  // «+359 88 76» before it is whole — and asks the index by the tenant's
-  // own dial code (2026-09-22).
-  formatPhoneDraft,
-  countryCallingCode,
-} from '@creativo/domain/kernel';
 export type {
   CountryIso2,
   PhoneNumberInvalidReason,
@@ -55,10 +46,9 @@ export type {
 // domain code) is a kernel `ZonedDateTime`; re-exported so the onboarding
 // about step (and its test doubles) can source `today` from the `Clock`
 // port and hand it to the VO without an illegal `type:domain` import.
-export { ZonedDateTime } from '@creativo/domain/kernel';
 
 // Who may touch the shop's money (2026-09-10) — the accounts domain's own
 // list and predicate, re-exported for the staff surfaces that gate on it.
 // `UserId` rides along for the one feature that hands a client's id to a
 // repository port.
-export { MONEY_ROLES, UserId, handlesMoney } from '@creativo/domain/accounts';
+export * from './lib/public-reexports';

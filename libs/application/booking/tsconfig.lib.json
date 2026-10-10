@@ -25,6 +25,9 @@
   ],
   "references": [
     {
+      "path": "../../ecs-core/tsconfig.lib.json"
+    },
+    {
       "path": "../shared/tsconfig.lib.json"
     },
     {

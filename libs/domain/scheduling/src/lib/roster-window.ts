@@ -1,11 +1,27 @@
 import { LocationDayHours, LocationId } from '@creativo/domain/catalog';
+import {
+  BarberId as EcsBarberId,
+  type DayException,
+  DayHours,
+  DayKey,
+  type DayOffset,
+  type ExceptionEffect,
+  IntervalSetSystem,
+  LocationId as EcsLocationId,
+  type RosterWindow as EcsRosterWindow,
+  RosterSystem,
+  ScheduleExceptionSystem,
+  type ScheduleVersion,
+  type ShopHours,
+  ShiftSegment as EcsShiftSegment,
+  type Weekday,
+  ZonedTimeSystem,
+} from '@creativo/ecs-core';
 import { CalendarDay } from './calendar-day';
 import { Interval } from './interval';
-import { LocalTimeOfDay } from './local-time-of-day';
-import { ScheduleException } from './schedule-exception';
-import { ShiftSegment } from './shift-segment';
+import { ScheduleException, toEcsDetail } from './schedule-exception';
 import { StaffScheduleHistory } from './staff-schedule';
-import { weekdayOf } from './weekday';
+import { WEEKDAYS } from './weekday';
 
 /**
  * A materialised stretch of a barber's rostered day, as real instants.
@@ -54,26 +70,24 @@ export function shopDayHours(
   locationId: LocationId,
   weeklyHours: readonly LocationDayHours[],
 ): ShopDayHours | null {
-  if (weeklyHours.length !== 7) return null;
-  // `Location.hours` is Mon-first; `CalendarDay.weekday()` is ISO 1..7.
-  const entry = weeklyHours.at(day.weekday() - 1);
-  if (entry === undefined) return null;
-  if (entry.kind === 'closed') return { locationId, intervals: [] };
-
-  const opens = LocalTimeOfDay.create(entry.opens);
-  const closes = LocalTimeOfDay.create(entry.closes);
-  if (opens.isFailure() || closes.isFailure()) return null;
-
-  const start = opens.value.onDay(day);
-  const end = closes.value.onDay(day);
-  // A DST-erased opening time is dropped rather than guessed at — same rule
-  // as a roster range, for the same reason.
-  if (start.isFailure() || end.isFailure())
-    return { locationId, intervals: [] };
-
+  const row = dayRowOf(day);
+  if (row === null) return null;
+  // The day's own entry decides; one whose clock does not parse imposes no
+  // bound (the legacy reading), whatever the other six say.
+  const entry = weeklyHours.at(row.weekday - 1);
+  if (weeklyHours.length === 7 && entry !== undefined && !parses(entry)) {
+    return null;
+  }
+  const hours = RosterSystem.shopDayHours(weekOf(weeklyHours), row);
+  if (hours === null) return null;
   return {
     locationId,
-    intervals: [Interval.of(start.value.toMillis(), end.value.toMillis())],
+    intervals: hours.map((open) =>
+      Interval.of(
+        ZonedTimeSystem.instantOf(row, open.openMinutes),
+        ZonedTimeSystem.instantOf(row, open.closeMinutes),
+      ),
+    ),
   };
 }
 
@@ -130,93 +144,11 @@ export interface BuildDayWindowsInput {
 export function buildDayWindows(
   input: BuildDayWindowsInput,
 ): readonly RosterWindow[] {
-  const { day, schedule, exceptions, shopHours } = input;
-
-  const relevant = exceptions.filter((exception) => exception.day.equals(day));
-
-  // A location-wide closure, or any whole-day absence, ends it immediately.
-  if (relevant.some((exception) => exception.isWholeDay())) {
-    return [];
-  }
-
-  const version = schedule.versionFor(day);
-  if (version === null) return [];
-
-  const rostered = version.pattern.segmentsOn(weekdayOf(day));
-  if (rostered.length === 0) return [];
-
-  // An `hours` exception replaces the day's TIMES but not its places: the
-  // barber is still covering the shop they were rostered at, just for
-  // different hours. With a multi-shop day the override lands on the first
-  // segment's location — an override that needs to move a barber between shops
-  // is a roster amendment, not a one-day tweak.
-  const override = relevant.find((exception) => exception.replacesRoster());
-  const segments: readonly ShiftSegment[] =
-    override && override.detail.kind === 'hours'
-      ? override.detail.ranges.map((range) =>
-          ShiftSegment.of(range, (rostered[0] as ShiftSegment).locationId),
-        )
-      : rostered;
-
-  // Carve-outs: breaks and admin blocks sit inside a day that is still
-  // worked. They are subtracted from the WINDOWS (not merely marked busy) so
-  // that unpaid time never enters the capacity denominator in the first place.
-  const carveOuts = carveOutsOn(day, relevant);
-
-  const windows: RosterWindow[] = [];
-  for (const segment of segments) {
-    const start = segment.start.onDay(day);
-    const end = segment.end.onDay(day);
-    // A segment the day's DST transition erased is DROPPED rather than
-    // guessed at. It cannot be silently relocated: a roster claiming an hour
-    // that does not exist is an authoring problem, and inventing a different
-    // hour would book a client at a time nobody rostered.
-    if (start.isFailure() || end.isFailure()) continue;
-
-    const worked = Interval.of(start.value.toMillis(), end.value.toMillis());
-
-    // This shop's hours are a hard bound on the PUBLIC surface. A shop that
-    // publishes none imposes none; one that publishes `closed` for today
-    // bounds the segment to nothing. See `ShopDayHours`.
-    const hours = shopHours?.get(segment.locationId.value) ?? null;
-    const bounded = hours
-      ? Interval.intersect([worked], hours.intervals)
-      : [worked];
-
-    for (const interval of Interval.subtract(bounded, carveOuts)) {
-      windows.push({ interval, locationId: segment.locationId });
-    }
-  }
-
-  return windows.sort(
-    (a, b) =>
-      a.interval.startMs - b.interval.startMs ||
-      a.locationId.value.localeCompare(b.locationId.value),
-  );
-}
-
-/**
- * The carve-outs an exception asks for on this day, normalised.
- *
- * Extracted so that "what does a break subtract" and "what does a break LOOK
- * like" can never disagree — the two used to be one expression inside
- * `buildDayWindows`, and the second question had no way to ask it at all.
- */
-function carveOutsOn(
-  day: CalendarDay,
-  exceptions: readonly ScheduleException[],
-): readonly Interval[] {
-  return Interval.normalize(
-    exceptions.flatMap((exception) => {
-      const detail = exception.detail;
-      if (detail.kind !== 'break' && detail.kind !== 'admin') return [];
-      return detail.ranges.flatMap((range) => {
-        const start = range.start.onDay(day);
-        const end = range.end.onDay(day);
-        if (start.isFailure() || end.isFailure()) return [];
-        return [Interval.of(start.value.toMillis(), end.value.toMillis())];
-      });
-    }),
+  const row = dayRowOf(input.day);
+  if (row === null) return [];
+  return toLegacyWindows(
+    RosterSystem.buildDayWindows(toEcsInput(input, row), [row]),
+    row,
   );
 }
 
@@ -248,38 +180,12 @@ function carveOutsOn(
 export function buildDayCarveOuts(
   input: BuildDayWindowsInput,
 ): readonly RosterWindow[] {
-  const { day, schedule, exceptions, shopHours } = input;
-  const relevant = exceptions.filter((exception) => exception.day.equals(day));
-
-  // A whole-day absence removed the day entirely — there is no worked time
-  // left for a carve-out to sit inside.
-  if (relevant.some((exception) => exception.isWholeDay())) return [];
-
-  const carveOuts = carveOutsOn(day, relevant);
-  if (carveOuts.length === 0) return [];
-
-  // Re-run the day WITHOUT its carve-outs, so what is left to intersect is
-  // exactly the worked time the real call then subtracts from. Passing the
-  // same input minus the carving exceptions reuses one implementation rather
-  // than restating the pattern/override/shop-hours order of application here,
-  // which is where a second copy would drift.
-  const worked = buildDayWindows({
-    day,
-    schedule,
-    exceptions: relevant.filter(
-      (exception) =>
-        exception.detail.kind !== 'break' && exception.detail.kind !== 'admin',
-    ),
-    shopHours,
-  });
-
-  const blocks: RosterWindow[] = [];
-  for (const window of worked) {
-    for (const interval of Interval.intersect([window.interval], carveOuts)) {
-      blocks.push({ interval, locationId: window.locationId });
-    }
-  }
-  return blocks.sort((a, b) => a.interval.startMs - b.interval.startMs);
+  const row = dayRowOf(input.day);
+  if (row === null) return [];
+  return toLegacyWindows(
+    RosterSystem.buildDayCarveOuts(toEcsInput(input, row), [row]),
+    row,
+  );
 }
 
 /** Only the windows worked at one shop — what a booking at that shop may use. */
@@ -292,5 +198,121 @@ export function windowsAt(
 
 /** Total rostered minutes — the raw figure `scheduledMinutes` starts from. */
 export function rosteredMinutes(windows: readonly RosterWindow[]): number {
-  return Interval.totalMinutes(windows.map((window) => window.interval));
+  return IntervalSetSystem.totalMinutes(
+    windows.map((window) => window.interval),
+  );
+}
+
+/* ── Phase 2 shim converters: legacy shapes ↔ ecs-core structs ──────────── */
+
+/** The day's row of its zone's table — the one place its offsets are read. */
+function dayRowOf(day: CalendarDay): DayOffset | null {
+  const key = DayKey.of(day.key());
+  return ZonedTimeSystem.dayTable(day.zone, key, key)[0] ?? null;
+}
+
+function parses(entry: LocationDayHours): boolean {
+  return (
+    entry.kind === 'closed' ||
+    (DayHours.parseClock(entry.opens).ok &&
+      DayHours.parseClock(entry.closes).ok)
+  );
+}
+
+/** `'HH:mm'` → minutes; an entry that does not parse reads as closed here (see `shopDayHours`). */
+function weekOf(weekly: readonly LocationDayHours[]): readonly DayHours[] {
+  return weekly.map((entry) => {
+    if (entry.kind === 'closed') return DayHours.closed();
+    const opens = DayHours.parseClock(entry.opens);
+    const closes = DayHours.parseClock(entry.closes);
+    return opens.ok && closes.ok
+      ? DayHours.open(opens.value, closes.value)
+      : DayHours.closed();
+  });
+}
+
+/** The roster history → its versions, the weekday map flattened to segments. */
+function versionsOf(history: StaffScheduleHistory): readonly ScheduleVersion[] {
+  return history.all().map((version) => ({
+    seq: version.seq,
+    effectiveFromDayKey: DayKey.of(version.effectiveFrom.key()),
+    effectiveToDayKey:
+      version.effectiveTo === null
+        ? null
+        : DayKey.of(version.effectiveTo.key()),
+    segments: WEEKDAYS.flatMap((weekday, index) =>
+      version.pattern
+        .segmentsOn(weekday)
+        .map((segment) =>
+          EcsShiftSegment.of(
+            (index + 1) as Weekday,
+            EcsLocationId.of(segment.locationId.value),
+            segment.start.minutesFromMidnight(),
+            segment.end.minutesFromMidnight(),
+          ),
+        ),
+    ),
+  }));
+}
+
+/** A published exception → its public effect (the reasoned detail collapses). */
+function effectOf(exception: ScheduleException): ExceptionEffect | null {
+  const effect = ScheduleExceptionSystem.publicEffect(
+    toEcsDetail(exception.detail),
+  );
+  return effect.ok ? effect.value : null;
+}
+
+/**
+ * The legacy input → the system's: only the exceptions ON this day (key and
+ * zone, as `CalendarDay.equals` reads them), each shop's hours as minutes of
+ * the day (`null`: no bound, `[]`: closed). The barber is not part of the
+ * legacy input; the windows' barber is not read back.
+ */
+function toEcsInput(input: BuildDayWindowsInput, row: DayOffset) {
+  const exceptions: DayException[] = [];
+  for (const exception of input.exceptions) {
+    if (!exception.day.equals(input.day)) continue;
+    const effect = effectOf(exception);
+    if (effect !== null) exceptions.push({ dayKey: row.dayKey, effect });
+  }
+  const shopHours: ShopHours[] = [...(input.shopHours ?? [])].map(
+    ([locationId, hours]) => ({
+      locationId: EcsLocationId.of(locationId),
+      hours:
+        hours === null
+          ? null
+          : hours.intervals.map((interval) => ({
+              openMinutes: ZonedTimeSystem.minuteOfDay(interval.startMs, row),
+              closeMinutes: ZonedTimeSystem.minuteOfDay(interval.endMs, row),
+            })),
+    }),
+  );
+  return {
+    barberId: EcsBarberId.of(''),
+    dayKey: row.dayKey,
+    versions: versionsOf(input.schedule),
+    exceptions,
+    shopHours,
+  };
+}
+
+/** The system's minute windows → the legacy instant windows of the day. */
+function toLegacyWindows(
+  windows: readonly EcsRosterWindow[],
+  row: DayOffset,
+): readonly RosterWindow[] {
+  const out: RosterWindow[] = [];
+  for (const window of windows) {
+    const locationId = LocationId.create(window.locationId);
+    if (locationId.isFailure()) continue;
+    out.push({
+      interval: Interval.of(
+        ZonedTimeSystem.instantOf(row, window.startMinutes),
+        ZonedTimeSystem.instantOf(row, window.endMinutes),
+      ),
+      locationId: locationId.value,
+    });
+  }
+  return out;
 }

@@ -1,21 +1,45 @@
 import type { LocalizedText } from '@creativo/domain/catalog';
+import {
+  type BadgeCategoryId as CategoryRefId,
+  type BadgeLevel as SystemLevel,
+  type CatalogCategoryRef,
+  type CatalogSeasonRef,
+  DayKey,
+  type FamilyScope as SystemScope,
+  type Metric as SystemMetric,
+  type Points,
+  type RedeemableRewardRef,
+  RewardSystem,
+  type RewardId,
+  type SeasonId as SeasonRefId,
+  type SeriesId,
+  type StandingCatalog,
+  type StandingProgress,
+  type StandingSeriesRef,
+  StandingSystem,
+  type TierId,
+  type TierStepRef,
+  TierSystem,
+} from '@creativo/ecs-core';
 import type { BadgeSeries } from './badge-series';
-import { PER_VISIT_METRICS, type BadgeSubject } from './badge-vocabulary';
 import type {
   RedeemProblem,
   RedemptionRecord,
   RewardCatalogItem,
   TierDefinition,
 } from './catalog-entries';
-import { type IsoDate, daysBetween, sofiaDayOf } from './loyalty-calendar';
+import { type IsoDate, LOYALTY_ZONE } from './loyalty-calendar';
 import type { LoyaltyCatalog } from './loyalty-catalog';
 import type { BadgeProgress, TierState } from './projections';
 
 /**
  * STANDING — what the card derives from one client's progress against the
- * catalogue (client-card-redesign §4.2). Pure functions over the catalogue
- * and the client's projections, the `statWindows(stats, now)` precedent:
- * the behaviour crosses both, so it belongs to neither.
+ * catalogue (client-card-redesign §4.2). A thin shim since the ECS
+ * migration's Phase 2: the math is `StandingSystem`, `RewardSystem` and
+ * `TierSystem` (`@creativo/ecs-core`); this file carries the legacy API —
+ * the class catalogue, the progress `Map`, `Date`s — across, and keeps the
+ * one function that stays in the template layer (`levelNumeral`). The
+ * bridge is the private helpers at the end.
  *
  * `progress` is always the client's progress documents keyed by family id;
  * a family missing from it is not started.
@@ -83,9 +107,7 @@ export function levelNumeral(level: number): string {
 export function earnedLevelCount(
   progress: ReadonlyMap<string, BadgeProgress>,
 ): number {
-  let count = 0;
-  for (const p of progress.values()) count += p.earned.length;
-  return count;
+  return StandingSystem.earnedLevelCount(progressOf(progress));
 }
 
 /**
@@ -101,34 +123,13 @@ export function familiesIn(
   scope: FamilyScope,
   today: IsoDate,
 ): readonly BadgeSeries[] {
-  const shown = (s: BadgeSeries): boolean =>
-    !s.isRetired() || progress.has(s.id.value);
-  switch (scope.kind) {
-    case 'category':
-      return catalog.seriesIn(scope.categoryId).filter(shown);
-    case 'season': {
-      const season = catalog.season(scope.seasonId);
-      if (season === null) return [];
-      return season.seriesIds
-        .map((id) => catalog.series(id.value))
-        .filter((s): s is BadgeSeries => s !== null && shown(s));
-    }
-    case 'archive': {
-      const ended = new Set(
-        catalog.seasonsIn('ended', today).map((s) => s.id.value),
-      );
-      return catalog.families.filter(
-        (s) => s.seasonId !== null && ended.has(s.seasonId.value) && shown(s),
-      );
-    }
-    case 'day':
-      return catalog.families.filter(
-        (s) =>
-          progress
-            .get(s.id.value)
-            ?.earned.some((e) => sofiaDayOf(e.earnedAt) === scope.day) === true,
-      );
-  }
+  return StandingSystem.familiesIn(
+    catalogOf(catalog),
+    progressOf(progress),
+    scopeOf(scope),
+    DayKey.of(today),
+    LOYALTY_ZONE,
+  ).map((ref) => ref.source);
 }
 
 /**
@@ -148,48 +149,19 @@ export function familyCounts(
   readonly earned: number;
   readonly total: number;
 } {
-  const families = familiesIn(catalog, progress, scope, today);
-  return {
-    started: families.filter((s) => progress.has(s.id.value)).length,
-    earned: families.filter(
-      (s) => (progress.get(s.id.value)?.earned.length ?? 0) > 0,
-    ).length,
-    total: families.length,
-  };
-}
-
-const SPECIFICITY: Readonly<Record<BadgeSubject['kind'] | 'none', number>> = {
-  service: 3,
-  barber: 2,
-  location: 1,
-  none: 0,
-};
-
-interface Candidate {
-  readonly series: BadgeSeries;
-  readonly level: number;
-  readonly value: number;
-  readonly target: number;
+  return StandingSystem.familyCounts(
+    catalogOf(catalog),
+    progressOf(progress),
+    scopeOf(scope),
+    DayKey.of(today),
+    LOYALTY_ZONE,
+  );
 }
 
 /**
- * «Скоро» — the diversity rule. One visit moves four to six families at
- * once; without the rule the rail is four clones of «24/25».
- *
- * 1. Candidates: not complete, not retired, not in a season that is not
- *    open, not calendar-driven, with a known next target; ranked by
- *    value / target, descending.
- * 2. At most one family per category (a season's families count as that
- *    season).
- * 3. Among CATEGORY families whose next level completes on the same next
- *    worked visit — equal target − value on a per-visit count the client's
- *    visits already move (a family not started yet is moved by none of
- *    them) — only the most specific subject stays: service › barber ›
- *    location › none; ties by category order, then series order. A
- *    season's families stay outside step 3: the season is its own clock,
- *    so its track sits beside the service it shares a visit with.
- * 4. Fill to `limit` in rank order; rank ties by the nearer finish, the
- *    shelf order (seasons after categories), the series order, the id.
+ * «Скоро» — the diversity rule (`StandingSystem.closestLevels`): one family
+ * per shelf, the most specific subject among the families one visit
+ * completes together, ranked by how near each is.
  */
 export function closestLevels(
   catalog: LoyaltyCatalog,
@@ -197,85 +169,12 @@ export function closestLevels(
   today: IsoDate,
   limit: number,
 ): readonly ClosestLevel[] {
-  const shelfOrder = (s: BadgeSeries): number =>
-    s.categoryId === null
-      ? Number.POSITIVE_INFINITY
-      : (catalog.category(s.categoryId.value)?.order ??
-        Number.POSITIVE_INFINITY);
-  const candidates = catalog.families.flatMap((series): Candidate[] => {
-    const season =
-      series.seasonId === null ? null : catalog.season(series.seasonId.value);
-    if (
-      series.isRetired() ||
-      series.isCalendarDriven() ||
-      (series.seasonId !== null &&
-        (season === null || season.phaseOn(today) !== 'open'))
-    ) {
-      return [];
-    }
-    const standing = series.standing(progress.get(series.id.value) ?? null);
-    if (standing.next === null || standing.target === null) return [];
-    return [
-      {
-        series,
-        level: standing.next.level,
-        value: standing.value,
-        target: standing.target,
-      },
-    ];
-  });
-
-  const bySubject = (a: Candidate, b: Candidate): number =>
-    SPECIFICITY[b.series.subject?.kind ?? 'none'] -
-      SPECIFICITY[a.series.subject?.kind ?? 'none'] ||
-    shelfOrder(a.series) - shelfOrder(b.series) ||
-    a.series.order - b.series.order;
-  const sameVisit = new Map<number, Candidate[]>();
-  for (const c of candidates) {
-    const metric = c.series.metric?.metric;
-    if (
-      c.value === 0 ||
-      c.series.categoryId === null ||
-      metric === undefined ||
-      !PER_VISIT_METRICS.includes(metric)
-    ) {
-      continue;
-    }
-    const remaining = c.target - c.value;
-    sameVisit.set(remaining, [...(sameVisit.get(remaining) ?? []), c]);
-  }
-  const yielded = new Set<Candidate>();
-  for (const group of sameVisit.values()) {
-    const [keep] = [...group].sort(bySubject);
-    for (const c of group) if (c !== keep) yielded.add(c);
-  }
-
-  const ranked = candidates
-    .filter((c) => !yielded.has(c))
-    .sort(
-      (a, b) =>
-        b.value / b.target - a.value / a.target ||
-        a.target - a.value - (b.target - b.value) ||
-        shelfOrder(a.series) - shelfOrder(b.series) ||
-        a.series.order - b.series.order ||
-        (a.series.id.value < b.series.id.value ? -1 : 1),
-    );
-  const shelves = new Set<string>();
-  const out: ClosestLevel[] = [];
-  for (const c of ranked) {
-    if (out.length >= limit) break;
-    const shelf =
-      c.series.categoryId?.value ?? `season:${c.series.seasonId?.value ?? ''}`;
-    if (shelves.has(shelf)) continue;
-    shelves.add(shelf);
-    out.push({
-      seriesId: c.series.id.value,
-      level: c.level,
-      value: c.value,
-      target: c.target,
-    });
-  }
-  return out;
+  return StandingSystem.closestLevels(
+    catalogOf(catalog),
+    progressOf(progress),
+    DayKey.of(today),
+    limit,
+  );
 }
 
 /**
@@ -287,29 +186,18 @@ export function recentLevelsByDay(
   progress: ReadonlyMap<string, BadgeProgress>,
   limit: number,
 ): readonly EarnedDay[] {
-  const days = new Map<
-    IsoDate,
-    { seriesId: string; level: number; earnedAt: Date }[]
-  >();
-  for (const p of progress.values()) {
-    for (const e of p.earned) {
-      const day = sofiaDayOf(e.earnedAt);
-      days.set(day, [
-        ...(days.get(day) ?? []),
-        { seriesId: p.seriesId, level: e.level, earnedAt: e.earnedAt },
-      ]);
-    }
-  }
-  return [...days.entries()]
-    .sort(([a], [b]) => (a < b ? 1 : a > b ? -1 : 0))
-    .slice(0, Math.max(0, limit))
-    .map(([day, levels]) => ({
-      day,
-      levels: [...levels].sort(
-        (a, b) =>
-          b.earnedAt.getTime() - a.earnedAt.getTime() || b.level - a.level,
-      ),
-    }));
+  return StandingSystem.recentLevelsByDay(
+    progressOf(progress),
+    limit,
+    LOYALTY_ZONE,
+  ).map((day) => ({
+    day: day.day,
+    levels: day.levels.map((level) => ({
+      seriesId: level.seriesId,
+      level: level.level,
+      earnedAt: new Date(level.earnedAtMs),
+    })),
+  }));
 }
 
 /** «Ново»: earned after the previous visit began; before a first visit, everything is new. */
@@ -317,7 +205,7 @@ export function isNewSince(
   earnedAt: Date,
   previousVisitAtMs: number | null,
 ): boolean {
-  return previousVisitAtMs === null || earnedAt.getTime() > previousVisitAtMs;
+  return StandingSystem.isNewSince(earnedAt.getTime(), previousVisitAtMs);
 }
 
 /**
@@ -335,35 +223,16 @@ export function redeemProblem(
     readonly recent: readonly RedemptionRecord[];
   },
 ): RedeemProblem | null {
-  if (!item.enabled) return 'disabled';
-  if (item.available.from !== null && ctx.today < item.available.from) {
-    return 'notYetAvailable';
-  }
-  if (item.available.until !== null && ctx.today > item.available.until) {
-    return 'ended';
-  }
-  if (item.limits.total !== null && item.redeemedCount >= item.limits.total) {
-    return 'soldOut';
-  }
-  if (ctx.paused) return 'paused';
-  if (ctx.balance < item.cost) return 'insufficientPoints';
-  const per = item.limits.perClient;
-  if (per !== null) {
-    const inWindow = ctx.recent.filter(
-      (r) =>
-        r.rewardId === item.id && daysBetween(r.on, ctx.today) < per.windowDays,
-    );
-    if (inWindow.length >= per.count) return 'perClientLimit';
-  }
-  return null;
+  return RewardSystem.problem(rewardRef(item), {
+    balance: ctx.balance,
+    today: DayKey.of(ctx.today),
+    paused: ctx.paused,
+    recent: ctx.recent.map((record) => ({
+      rewardId: record.rewardId as RewardId,
+      on: DayKey.of(record.on),
+    })),
+  });
 }
-
-const redeemableOn = (
-  item: RewardCatalogItem,
-  balance: number,
-  today: IsoDate,
-): RedeemProblem | null =>
-  redeemProblem(item, { balance, today, paused: false, recent: [] });
 
 /** The costliest reward the balance buys today (enabled, in its window, in stock); ties by catalogue order. */
 export function bestAffordable(
@@ -372,9 +241,11 @@ export function bestAffordable(
   today: IsoDate,
 ): RewardCatalogItem | null {
   return (
-    rewards
-      .filter((r) => redeemableOn(r, balance, today) === null)
-      .sort((a, b) => b.cost - a.cost || a.order - b.order)[0] ?? null
+    RewardSystem.bestAffordable(
+      rewards.map(rewardRef),
+      balance,
+      DayKey.of(today),
+    )?.source ?? null
   );
 }
 
@@ -385,9 +256,11 @@ export function nextAffordable(
   today: IsoDate,
 ): RewardCatalogItem | null {
   return (
-    rewards
-      .filter((r) => redeemableOn(r, balance, today) === 'insufficientPoints')
-      .sort((a, b) => a.cost - b.cost || a.order - b.order)[0] ?? null
+    RewardSystem.nextAffordable(
+      rewards.map(rewardRef),
+      balance,
+      DayKey.of(today),
+    )?.source ?? null
   );
 }
 
@@ -410,17 +283,160 @@ export function tierSteps(
   readonly nextTierId: string | null;
   readonly remaining: number | null;
 } {
+  const track = TierSystem.steps(
+    {
+      current: state.current as TierId,
+      definitionVersion: state.definitionVersion,
+      sinceMs: state.since.getTime(),
+      qualifying: state.qualifying,
+      next: state.next as TierId | null,
+      remaining: state.remaining,
+      override:
+        state.override === null
+          ? null
+          : {
+              tierId: state.override.tierId as TierId,
+              until: state.override.until as DayKey | null,
+              source: state.override.source,
+            },
+    },
+    tiers.map(tierRef),
+  );
   return {
-    steps: [...tiers]
-      .sort((a, b) => a.rank - b.rank)
-      .map((t) => ({
-        tierId: t.id,
-        atLeast: t.qualify.atLeast,
-        name: t.name,
+    ...track,
+    // The tier's own name, by reference: the catalogue's `LocalizedText`.
+    steps: track.steps.map((step) => ({
+      tierId: step.tierId,
+      atLeast: step.atLeast,
+      name: step.name as LocalizedText,
+    })),
+  };
+}
+
+// ── The bridge: legacy class/Map/Date ↔ ecs-core struct (Phase 4 deletes it) ──
+
+/** A row as the system reads it, carrying the legacy object it stands for. */
+type Ref<R, S> = R & { readonly source: S };
+
+function progressOf(
+  progress: ReadonlyMap<string, BadgeProgress>,
+): readonly StandingProgress[] {
+  const out: StandingProgress[] = [];
+  for (const [seriesId, p] of progress) {
+    out.push({
+      id: seriesId as SeriesId,
+      value: p.value,
+      earned: p.earned.map((earned) => ({
+        level: earned.level,
+        earnedAtMs: earned.earnedAt.getTime(),
+        via: earned.via,
+        count: earned.count,
       })),
-    value: state.qualifying,
-    currentTierId: state.override?.tierId ?? state.current,
-    nextTierId: state.next,
-    remaining: state.remaining,
+    });
+  }
+  return out;
+}
+
+function seriesRef(series: BadgeSeries): Ref<StandingSeriesRef, BadgeSeries> {
+  return {
+    id: series.id.value as SeriesId,
+    categoryId:
+      series.categoryId === null
+        ? null
+        : (series.categoryId.value as CategoryRefId),
+    seasonId:
+      series.seasonId === null ? null : (series.seasonId.value as SeasonRefId),
+    order: series.order,
+    levels: series.levels as unknown as readonly SystemLevel[],
+    metric:
+      series.metric === null
+        ? null
+        : {
+            metric: series.metric.metric as SystemMetric,
+            window: null,
+            where: null,
+          },
+    // The system reads the subject's kind alone: the same tags.
+    subject: series.subject as unknown as StandingSeriesRef['subject'],
+    retiredAtMs: series.retiredAt === null ? null : series.retiredAt.getTime(),
+    source: series,
+  };
+}
+
+function catalogOf(
+  catalog: LoyaltyCatalog,
+): StandingCatalog<Ref<StandingSeriesRef, BadgeSeries>> {
+  return {
+    categories: catalog.categories.map((category): CatalogCategoryRef => ({
+      id: category.id.value as CategoryRefId,
+      order: category.order,
+    })),
+    families: catalog.families.map(seriesRef),
+    seasons: catalog.seasons.map((season): CatalogSeasonRef => ({
+      id: season.id.value as SeasonRefId,
+      window: {
+        from: DayKey.of(season.window.from),
+        until: DayKey.of(season.window.until),
+      },
+      trackSeriesId:
+        season.trackSeriesId === null
+          ? null
+          : (season.trackSeriesId.value as SeriesId),
+      seriesIds: season.seriesIds.map((id) => id.value as SeriesId),
+    })),
+  };
+}
+
+function scopeOf(scope: FamilyScope): SystemScope {
+  switch (scope.kind) {
+    case 'category':
+      return {
+        kind: 'category',
+        categoryId: scope.categoryId as CategoryRefId,
+      };
+    case 'season':
+      return { kind: 'season', seasonId: scope.seasonId as SeasonRefId };
+    case 'archive':
+      return { kind: 'archive' };
+    case 'day':
+      return { kind: 'day', day: DayKey.of(scope.day) };
+  }
+}
+
+function rewardRef(
+  reward: RewardCatalogItem,
+): Ref<RedeemableRewardRef, RewardCatalogItem> {
+  return {
+    id: reward.id as RewardId,
+    cost: reward.cost as Points,
+    enabled: reward.enabled,
+    order: reward.order,
+    available: {
+      from:
+        reward.available.from === null
+          ? null
+          : DayKey.of(reward.available.from),
+      until:
+        reward.available.until === null
+          ? null
+          : DayKey.of(reward.available.until),
+    },
+    limits: reward.limits,
+    redeemedCount: reward.redeemedCount,
+    source: reward,
+  };
+}
+
+function tierRef(tier: TierDefinition): TierStepRef {
+  return {
+    id: tier.id as TierId,
+    rank: tier.rank,
+    // The catalogue's class, by reference: it reads as `{ bg, en }`.
+    name: tier.name,
+    qualify: {
+      metric: tier.qualify.metric as SystemMetric,
+      atLeast: tier.qualify.atLeast,
+      window: tier.qualify.window,
+    },
   };
 }

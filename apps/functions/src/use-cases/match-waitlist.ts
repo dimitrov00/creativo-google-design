@@ -1,33 +1,58 @@
-import { ZonedDateTime } from '@creativo/domain/kernel';
-import { BarberId, LocationId, Service } from '@creativo/domain/catalog';
+import type { Result, ZonedDateTime } from '@creativo/domain/kernel';
+import {
+  BarberId,
+  LocationId,
+  type Service,
+  type ServiceTerms,
+} from '@creativo/domain/catalog';
 import {
   type AvailabilityAssignment,
   type BarberDayAvailability,
   BookingCart,
-  BookingPolicy,
+  type BookingPolicy,
   CalendarDay,
-  type Interval,
-  WaitlistRequest,
-  windowsAt,
+  type FlexibleWhen,
+  Interval,
+  type WaitlistRequest,
 } from '@creativo/domain/scheduling';
 import {
-  cartToAvailabilityLines,
-  optionsForDay,
-  partyServicesOf,
-} from '@creativo/application/booking';
+  BarberId as BarberKey,
+  type BookingCart as CartData,
+  type BookingPolicy as PolicyData,
+  type CartBarberDay,
+  type CartService,
+  DayKey,
+  DayWindows as DayWindowsData,
+  FlexibleWhen as WhenData,
+  LocationId as LocationKey,
+  MinuteRange,
+  RosterWindow,
+  ServiceId as ServiceKey,
+  type ServiceTerms as TermsData,
+  ServiceVariantId as VariantKey,
+  TimeInterval,
+  WaitlistRequestId,
+  WaitlistSystem,
+  ZonedTimeSystem,
+} from '@creativo/ecs-core';
 import { cartAdmissible } from './party-admission';
+
+/*
+ * THIN SHIM (ECS migration Phase 2). The matcher is `WaitlistSystem.match`
+ * (the grid's own day search, `BookingCartSystem.optionsForDay`, over the
+ * request's declared windows); the commit's admission (`cartAdmissible`) is
+ * handed to it as a verdict. This file keeps the legacy signature and only
+ * converts the legacy classes to the ECS structs and the match back.
+ */
 
 /** What one request needs to be matched against a day. */
 export interface MatchWaitlistSnapshot {
   readonly zone: string;
   readonly services: readonly Service[];
   /**
-   * Every barber rostered on the day, at EVERY active shop, with `busy`
-   * already padded by their turnaround (`BarberDayAvailability.busy`,
-   * `paddedBusy`) — exactly what the grid's reader hands the engine. Their
-   * windows are at LISTED shops only (`toShop`, `shopListed`,
-   * `loadDayAvailability`): a shop hidden since holds none, so nothing here
-   * is searched there. A day with nothing to search has no barbers at all.
+   * Every barber rostered on the day, at EVERY listed shop, with `busy`
+   * already padded by their turnaround — exactly what the grid's reader hands
+   * the engine. A day with nothing to search has no barbers at all.
    */
   readonly barbers: readonly BarberDayAvailability[];
 }
@@ -35,77 +60,190 @@ export interface MatchWaitlistSnapshot {
 export interface WaitlistMatch {
   readonly request: WaitlistRequest;
   readonly day: CalendarDay;
-  /**
-   * The ONE shop the whole party is placed at. An appointment holds one
-   * `locationId`, so a match is always single-shop, and for a request that
-   * named a shop it is that shop.
-   */
+  /** The ONE shop the whole party is placed at. */
   readonly locationId: LocationId;
   readonly startMs: number;
   readonly endMs: number;
   readonly barberIds: readonly BarberId[];
-  /**
-   * Who sits where and when — the arrangement the promise is about, line by
-   * line, exactly as the grid would hand it to the review step. It is what a
-   * commit of this match is built from.
-   */
+  /** Who sits where and when — the arrangement the promise is about. */
   readonly assignments: readonly AvailabilityAssignment[];
 }
 
+/* ── Legacy ↔ ECS converters ─────────────────────────────────────────── */
+
+function must<T, E>(result: Result<T, E>): T {
+  if (result.isFailure())
+    throw new Error('unreachable: an id the match was built from');
+  return result.value;
+}
+
+function toTerms(terms: ServiceTerms): TermsData {
+  return {
+    priceMinorUnits: terms.price.toMinorUnits(),
+    currencyCode: terms.price.currencyCode(),
+    durationMinutes: terms.durationMinutes,
+    setupMinutes: terms.setupMinutes,
+    cleanupMinutes: terms.cleanupMinutes,
+  };
+}
+
+function toService(service: Service): CartService {
+  return {
+    id: ServiceKey.of(service.id.value),
+    baseTerms: toTerms(service.baseTerms),
+    // Every declared variant's terms per barber: the only variants a line
+    // can name (`Service.create` refuses an override of any other).
+    offerings: service.offerings.map((offering) => ({
+      barberId: BarberKey.of(offering.barberId.value),
+      base: toTerms(offering.base),
+      overrides: service.variants.map((variant) => ({
+        variantId: VariantKey.of(variant.id.value),
+        terms: toTerms(offering.termsFor(variant.id)),
+      })),
+    })),
+    locationIds: service.locationIds.map((id) => LocationKey.of(id.value)),
+  };
+}
+
+function toCart(cart: WaitlistRequest['cart']): CartData {
+  return {
+    seats: cart.seats.map((seat) => ({
+      seatKey: seat.seatKey,
+      lines: seat.lines.map((line) => ({
+        lineId: line.id,
+        seatKey: seat.seatKey,
+        serviceId: ServiceKey.of(line.serviceId),
+        variantId:
+          line.variantId === null ? null : VariantKey.of(line.variantId),
+        barberId: line.barberId === null ? null : BarberKey.of(line.barberId),
+        locationId: null,
+      })),
+    })),
+    nextSequence: cart.nextSequence,
+  };
+}
+
+function toWhen(when: FlexibleWhen): WhenData {
+  return WhenData.of(
+    when.days.map((day) =>
+      DayWindowsData.of(
+        DayKey.of(day.dayKey),
+        day.windows.map((window) =>
+          MinuteRange.of(
+            window.start.minutesFromMidnight(),
+            window.end.minutesFromMidnight(),
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
+function toPolicy(policy: BookingPolicy): PolicyData {
+  return {
+    maxPartySize: policy.maxPartySize,
+    slotStepMinutes: policy.slotStepMinutes,
+    minLeadMinutes: policy.minLeadMinutes,
+    horizonMonths: policy.horizonMonths,
+    cancellationWindowHours: policy.cancellationWindowHours,
+    maxFlexibleDays: policy.maxFlexibleDays,
+    autoConfirm: policy.autoConfirm,
+  };
+}
+
+function toBarberDay(
+  barber: BarberDayAvailability,
+  day: Parameters<typeof ZonedTimeSystem.minuteOfDay>[1],
+): CartBarberDay {
+  const barberId = BarberKey.of(barber.barberId.value);
+  return {
+    barberId,
+    windows: barber.windows.map((window) =>
+      RosterWindow.of(
+        barberId,
+        LocationKey.of(window.locationId.value),
+        ZonedTimeSystem.minuteOfDay(window.interval.startMs, day),
+        ZonedTimeSystem.minuteOfDay(window.interval.endMs, day),
+      ),
+    ),
+    busy: barber.busy.map((span) => TimeInterval.of(span.startMs, span.endMs)),
+  };
+}
+
+/** The day's row and the snapshot's catalogue and roster, as the system reads them. */
+type ConvertedDay = {
+  readonly row: Parameters<typeof ZonedTimeSystem.minuteOfDay>[1];
+  readonly services: readonly CartService[];
+  readonly barbers: readonly CartBarberDay[];
+};
+
+/*
+ * Private converter caches, keyed by the objects the caller shares across a
+ * day's requests (the snapshot, the clock reading, the policy): a legacy
+ * value is converted once, never once per request. Weak, so a finished
+ * trigger's values are collected with it.
+ */
+const CONVERTED_DAYS = new WeakMap<
+  MatchWaitlistSnapshot,
+  Map<string, ConvertedDay | null>
+>();
+const TODAY_KEYS = new WeakMap<ZonedDateTime, DayKey>();
+const POLICIES = new WeakMap<BookingPolicy, PolicyData>();
+
+function convertedDayOf(
+  snapshot: MatchWaitlistSnapshot,
+  day: CalendarDay,
+): ConvertedDay | null {
+  let byDay = CONVERTED_DAYS.get(snapshot);
+  if (byDay === undefined) {
+    byDay = new Map();
+    CONVERTED_DAYS.set(snapshot, byDay);
+  }
+  const key = day.key();
+  const cached = byDay.get(key);
+  if (cached !== undefined) return cached;
+  const row = ZonedTimeSystem.dayTable(
+    snapshot.zone,
+    DayKey.of(key),
+    DayKey.of(key),
+  )[0];
+  const converted =
+    row === undefined
+      ? null
+      : {
+          row,
+          services: snapshot.services.map(toService),
+          barbers: snapshot.barbers.map((barber) => toBarberDay(barber, row)),
+        };
+  byDay.set(key, converted);
+  return converted;
+}
+
+function todayDayKeyOf(now: ZonedDateTime): DayKey {
+  let key = TODAY_KEYS.get(now);
+  if (key === undefined) {
+    key = DayKey.of(CalendarDay.fromZonedDateTime(now).key());
+    TODAY_KEYS.set(now, key);
+  }
+  return key;
+}
+
+function policyDataOf(policy: BookingPolicy): PolicyData {
+  let data = POLICIES.get(policy);
+  if (data === undefined) {
+    data = toPolicy(policy);
+    POLICIES.set(policy, data);
+  }
+  return data;
+}
+
 /**
- * Does anything on this day now fit what this request asked for?
- *
- * ### A notification is a promise, so it is the grid's answer
- * It may name only a start `commitBooking` would accept for this request right
- * then. So this asks the question the booking grid asks, through the same
- * functions (`ObserveDayAvailabilityUseCase` → `optionsForDay`), with the
- * request's own declared windows as the mask:
- *
- * - **One shop per party.** `optionsForDay` partitions the pool by the shop
- *   on each barber's windows and runs the engine once per shop. A mixed pool
- *   seated a father at Center and his son at Mladost at the same time — an
- *   appointment holds one `locationId`, so that promise could never be kept.
- * - **The service offered there.** It runs only the shops that serve every
- *   seat (`shopsServingParty`, the rule `decideBooking` refuses
- *   `service_not_at_location` by).
- * - **The shop the request named.** Narrowed with `windowsAt`, as the grid's
- *   reader narrows its read, so a barber's hours at another shop are not
- *   offered and the other shops' searches are not paid for.
- * - **A shop still listed.** The request's shop passed the waitlist's shop
- *   rule when it was made (`shopListed`, `decideWaitlist`). A shop hidden
- *   since holds no windows in the snapshot, so a request naming it finds
- *   nothing and is SKIPPED, not closed. It stays `open`, for three reasons:
- *   `hidden` can be undone (`LocationStatus`); no status means "shop gone"
- *   (`expired` means every day has passed); and catalogue drift is skipped
- *   the same way below. It lapses by its own days like every request: the
- *   trigger's lapse check runs on a day with nothing to search as well,
- *   because `loadDayAvailability` returns an empty day there, never
- *   `null`. An "any shop" request is never searched at a hidden shop
- *   either.
- * - **The barber's turnaround** is in `snapshot.barbers[].busy` already
- *   (`loadDayAvailability`, `paddedBusy`), and the barber preference rides on
- *   each line (`cartToAvailabilityLines`).
- * - **The lead time and the horizon** are the policy's own, as the commit
- *   applies them.
- * - **The whole party, as the commit admits it.** Every refusal the commit
- *   makes whatever the time — a retired service, a variant the service now
- *   requires, services that now conflict, a party over the cap, a service
- *   the named shop no longer offers — is asked first, through the commit's
- *   own checks (`cartAdmissible`): catalogue drift since the request is
- *   never a promise.
- *
- * ### Only ONE match matters
- * A notification says "something opened up", not "here are eleven options".
- * So each shop's search stops at the first arrangement the engine finds
- * (`maxOptions: 1`), and the earliest of those across shops is the one named.
- * That is not always the day's earliest start (the engine walks barber by
- * barber), but it is always one the commit accepts, and computing the rest
- * would be work thrown away — the user re-searches live when they open the
- * app anyway, because by then the slot may be gone again.
- *
- * Returns `null` when nothing fits, which is the overwhelmingly common answer:
- * this runs on every change to a barber's day, and most of those are bookings
- * being MADE rather than released.
+ * Does anything on this day now fit what this request asked for? A
+ * notification is a PROMISE, so this is `WaitlistSystem.match`: the grid's
+ * own question with the request's declared windows as the mask, at the shop
+ * it named (or every listed shop, one party one shop), after the lead time,
+ * inside the horizon, for a bag the commit still admits. `null` — nothing
+ * fits — is the overwhelmingly common answer.
  */
 export function matchWaitlist(
   request: WaitlistRequest,
@@ -113,90 +251,53 @@ export function matchWaitlist(
   snapshot: MatchWaitlistSnapshot,
   deps: { readonly now: ZonedDateTime; readonly policy: BookingPolicy },
 ): WaitlistMatch | null {
-  const declared = request.when.for(day);
-  if (!declared) return null;
-
-  // Past the booking horizon the commit refuses every start
-  // (`beyond_horizon`). The request was inside it when it was made, but the
-  // shop can shorten its horizon since, and the promise is judged now.
-  const horizonEnd = deps.policy.horizonEndFrom(
-    CalendarDay.fromZonedDateTime(deps.now),
-  );
-  if (horizonEnd.isBefore(day)) return null;
-
+  // A bag the cart cannot read is no promise (the legacy reader's refusal).
   const cart = BookingCart.reconstitute(request.cart);
   if (cart.isFailure()) return null;
+  // The day's table row and the converted catalogue and roster, once per
+  // shared snapshot: the caller hands every request watching the day the
+  // SAME snapshot, so N requests are one Intl table and one conversion.
+  const converted = convertedDayOf(snapshot, day);
+  if (converted === null) return null;
+  const { row } = converted;
 
-  // THE PARTY AS THE COMMIT WOULD ADMIT IT NOW, whatever the time — the
-  // commit's own checks (`cartAdmissible`, round 6). The request passed
-  // them when it was made; the catalogue can change since: a service
-  // retired, one that gained variants (the commit refuses a line with none
-  // chosen), two services that now conflict, a party cap the owner lowered,
-  // a service the named shop stopped offering. Any of these refuses every
-  // start, so no start is a promise.
-  const admissible = cartAdmissible(
-    cart.value,
-    snapshot.services,
-    deps.policy,
-    request.locationId,
+  const found = WaitlistSystem.match(
+    {
+      id: WaitlistRequestId.of(request.id.value),
+      locationId:
+        request.locationId === null
+          ? null
+          : LocationKey.of(request.locationId.value),
+      cart: toCart(request.cart),
+      when: toWhen(request.when),
+    },
+    row,
+    { services: converted.services, barbers: converted.barbers },
+    {
+      nowMs: deps.now.toMillis(),
+      todayDayKey: todayDayKeyOf(deps.now),
+      policy: policyDataOf(deps.policy),
+      admissible: cartAdmissible(
+        cart.value,
+        snapshot.services,
+        deps.policy,
+        request.locationId,
+      ).isSuccess(),
+    },
   );
-  if (admissible.isFailure()) return null;
-
-  // The shop the request named, narrowed the way the grid's reader narrows
-  // (`AvailabilityReader.observeDay`): its windows only, and a barber with
-  // none there is not in the pool at all. `null` is "any shop", where every
-  // shop stays a candidate and `optionsForDay` keeps each run to one.
-  const shop = request.locationId;
-  const barbers = shop
-    ? snapshot.barbers.flatMap((barber): readonly BarberDayAvailability[] => {
-        const windows = windowsAt(barber.windows, shop);
-        return windows.length === 0 ? [] : [{ ...barber, windows }];
-      })
-    : snapshot.barbers;
-  if (barbers.length === 0) return null;
-
-  // The whole party: `cartToAvailabilityLines` drops a line whose service
-  // left the catalogue, and the admission above has already refused any
-  // such cart (`unknown_service`), so every line is here.
-  const lines = cartToAvailabilityLines(
-    cart.value,
-    snapshot.services,
-    barbers.map((barber) => barber.barberId),
-  );
-
-  // The same lead-time floor the client applies. Without it a cancellation
-  // ten minutes before the slot would notify someone about a time they
-  // cannot physically reach, and `commitBooking` would refuse it anyway.
-  const notBeforeMs = deps.now.toMillis() + deps.policy.minLeadMinutes * 60_000;
-
-  const withinMs: readonly Interval[] = declared.toIntervals();
-  if (withinMs.length === 0) return null;
-
-  const options = optionsForDay({
-    lines,
-    services: snapshot.services,
-    party: partyServicesOf(cart.value),
-    barbers,
-    policy: deps.policy,
-    notBeforeMs,
-    withinMs,
-    // One per shop is all a notification can use; the options come back
-    // sorted by start across shops.
-    maxOptions: 1,
-  });
-
-  const first = options[0];
-  if (!first) return null;
+  if (found === null) return null;
 
   return {
     request,
     day,
-    locationId: first.locationId,
-    startMs: first.option.envelope.startMs,
-    endMs: first.option.envelope.endMs,
-    barberIds: first.option.assignments.map(
-      (assignment) => assignment.barberId,
-    ),
-    assignments: first.option.assignments,
+    locationId: must(LocationId.create(found.locationId)),
+    startMs: found.startMs,
+    endMs: found.endMs,
+    barberIds: found.barberIds.map((id) => must(BarberId.create(id))),
+    assignments: found.assignments.map((assignment) => ({
+      lineId: assignment.lineId,
+      barberId: must(BarberId.create(assignment.barberId)),
+      slot: Interval.of(assignment.slot.startMs, assignment.slot.endMs),
+    })),
   };
 }

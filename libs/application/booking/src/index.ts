@@ -41,13 +41,11 @@ export * from '@creativo/domain/scheduling';
 // port-shaped `Result`s in tests without an illegal `type:domain` import
 // of its own.
 export type { DomainError, Result } from '@creativo/domain/kernel';
-export { ok, fail } from '@creativo/domain/kernel';
 // `ZonedDateTime` joins them for the same reason: the schedule step deals in
 // instants end to end — "now" from the clock port, a slot start, a chip label
 // — and it cannot reach past this facade for the kernel type that carries one.
-export { ZonedDateTime } from '@creativo/domain/kernel';
 // `Money`/`formatMoney` join them for the review step, which sums the
 // per-barber terms each of its rows shows. Going through `Money.add` rather
 // than adding minor units by hand is what makes a mixed-currency cart refuse
 // to produce a total instead of producing a wrong one.
-export { Money, formatMoney } from '@creativo/domain/kernel';
+export * from './lib/public-reexports';

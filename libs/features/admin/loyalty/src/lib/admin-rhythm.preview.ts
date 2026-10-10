@@ -8,7 +8,6 @@ import {
 } from '@creativo/application/booking';
 import {
   type IsoDate,
-  PreviewStreakDefinitionUseCase,
   type StreakDefinition,
   type StreakFacts,
   type StreakPreview,
@@ -17,6 +16,16 @@ import {
   sofiaDayOf,
 } from '@creativo/application/engagement';
 import { RepositoryError } from '@creativo/application/shared';
+import {
+  DayKey,
+  type ServiceCategoryId,
+  type ServiceId,
+  type StreakFacts as SystemFacts,
+  StreakIntervalKind,
+  StreakPreviewSystem,
+  StreakQualifierKind,
+  type StreakRule,
+} from '@creativo/ecs-core';
 
 /*
  * «КАКВО ЩЕ СЕ ПРОМЕНИ», THE FACTS (client-card revision 3 §2.6.4, §4.4).
@@ -151,19 +160,19 @@ export function rhythmPreviewReadsFacts(
   );
 }
 
-/** The fold: the application's, over the facts the walk read. */
+/** The fold: `StreakPreviewSystem.estimate` (`@creativo/ecs-core`), over the facts the walk read. */
 export function rhythmPreviewOf(input: {
   readonly inForce: StreakDefinition;
   readonly draft: StreakDefinition;
   readonly facts: RhythmPreviewFacts;
   readonly today: IsoDate;
 }): StreakPreview {
-  return new PreviewStreakDefinitionUseCase().execute({
-    inForce: input.inForce,
-    draft: input.draft,
-    clients: input.facts.clients,
-    today: input.today,
-  });
+  return StreakPreviewSystem.estimate(
+    ruleOf(input.inForce),
+    ruleOf(input.draft),
+    input.facts.clients.map(factsOf),
+    DayKey.of(input.today),
+  );
 }
 
 // ── The rule card's sample run ─────────────────────────────────────────────
@@ -229,4 +238,78 @@ export function sampleRhythmRun(
   today: IsoDate,
 ): StreakState | null {
   return projectStreak(definition, sampleRhythmFacts(definition, today), today);
+}
+
+// ── The bridge: legacy class/facts → ecs-core struct (Phase 4 deletes it) ──
+
+/** A version as the system reads it: the class's figures, the day as a day key. */
+function ruleOf(definition: StreakDefinition): StreakRule {
+  const props = definition.toProps();
+  const { qualifier, interval } = props;
+  return {
+    version: props.version,
+    effectiveFromDayKey: DayKey.of(props.effectiveFrom),
+    enabled: props.enabled,
+    qualifier:
+      qualifier.kind === 'services'
+        ? {
+            kind: StreakQualifierKind.Services,
+            serviceIds: qualifier.serviceIds as readonly ServiceId[],
+          }
+        : qualifier.kind === 'categories'
+          ? {
+              kind: StreakQualifierKind.Categories,
+              categoryIds:
+                qualifier.categoryIds as readonly ServiceCategoryId[],
+            }
+          : { kind: StreakQualifierKind.AnyVisit },
+    minGapDays: props.minGapDays,
+    bookingHold: props.bookingHold,
+    interval:
+      interval.kind === 'fixed'
+        ? { kind: StreakIntervalKind.Fixed, days: interval.days }
+        : {
+            kind: StreakIntervalKind.Personal,
+            tolerancePct: interval.tolerancePct,
+            minDays: interval.minDays,
+            maxDays: interval.maxDays,
+            fallbackDays: interval.fallbackDays,
+          },
+    graceDays: props.graceDays,
+    riskLeadDays: props.riskLeadDays,
+    protections: props.protections,
+    excuses: props.excuses,
+    clientPause: props.clientPause,
+    repair: props.repair,
+    onBreak: props.onBreak,
+  };
+}
+
+/** One person's facts as the system reads them: every field present. */
+function factsOf(facts: StreakFacts): SystemFacts {
+  return {
+    visits: facts.visits.map((visit) => ({
+      day: DayKey.of(visit.day),
+      counted: visit.counted,
+      atMs: visit.at === undefined ? null : visit.at.getTime(),
+    })),
+    excused: facts.excused.map((excused) => ({
+      day: DayKey.of(excused.day),
+      reason: excused.reason,
+    })),
+    bookings: facts.bookings.map((booking) => ({
+      placedOn: DayKey.of(booking.placedOn),
+      day: DayKey.of(booking.day),
+      appointmentId: booking.appointmentId ?? null,
+    })),
+    pauses: facts.pauses.map((pause) => ({
+      from: DayKey.of(pause.from),
+      until: DayKey.of(pause.until),
+      reason: pause.reason,
+    })),
+    grants: facts.grants.map((grant) => ({
+      day: DayKey.of(grant.day),
+      count: grant.count,
+    })),
+  };
 }

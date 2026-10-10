@@ -1,3 +1,4 @@
+import { AuditSystem, ZonedTimeSystem } from '@creativo/ecs-core';
 import type { Firestore } from 'firebase-admin/firestore';
 import { logger } from 'firebase-functions';
 import { HttpsError, onCall } from 'firebase-functions/v2/https';
@@ -85,16 +86,15 @@ const STAFF_TRANSITIONS: readonly AppointmentStatusKind[] = [
  * look ancient and resolve them wrongly, so it is parsed rather than faked.
  */
 /**
- * The shop's calendar day of an instant — `YYYY-MM-DD` in the slot's zone.
- * `en-CA` is the one locale whose default date is ISO-shaped.
+ * The shop's calendar day of an instant — `YYYY-MM-DD` in the slot's zone
+ * (`ZonedTimeSystem`, over the one-day table around it); `null` for a zone
+ * or instant it cannot resolve, which is never "the same day".
  */
-function shopDayKey(ms: number, zone: string): string {
-  return new Intl.DateTimeFormat('en-CA', {
-    timeZone: zone,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).format(new Date(ms));
+function shopDayKey(ms: number, zone: string): string | null {
+  return ZonedTimeSystem.dayKeyOf(
+    ms,
+    ZonedTimeSystem.dayTableAround(zone, ms, ms, 0),
+  );
 }
 
 function seatStartMs(seat: Record<string, unknown>): number {
@@ -372,7 +372,9 @@ export const transitionAppointment = onCall(async (request) => {
       );
       const endMs = Math.max(0, ...seats.map(seatEndMs));
       const nowMs = Date.now();
-      if (shopDayKey(endMs, zone) !== shopDayKey(nowMs, zone)) {
+      const visitDay = shopDayKey(endMs, zone);
+      const today = shopDayKey(nowMs, zone);
+      if (visitDay === null || today === null || visitDay !== today) {
         throw new HttpsError(
           'failed-precondition',
           'A settled visit can only be reopened on its own day',
@@ -514,7 +516,7 @@ export const transitionAppointment = onCall(async (request) => {
     // A retry of the same verb is refused by the graph (or the resolved-seat
     // guard) before it gets here; a later reopen-and-redo is a new instant.
     // The seat is in the key because one person can hold two seats.
-    changeKey: `transition:${seatId.length > 0 ? seatId : 'party'}:${decidedAtMs}`,
+    changeKey: AuditSystem.changeKey.transition(seatId, decidedAtMs),
   });
 
   return { appointmentId, to };

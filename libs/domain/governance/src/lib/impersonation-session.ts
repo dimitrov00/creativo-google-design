@@ -1,4 +1,16 @@
 import {
+  type GovernanceError,
+  GovernanceErrorCode,
+  ImpersonationEndReason as EndReason,
+  ImpersonationSessionId as SessionId,
+  ImpersonationState,
+  ImpersonationStatus,
+  ImpersonationSystem,
+  type Role,
+  UserId as UserKey,
+  knownRoles,
+} from '@creativo/ecs-core';
+import {
   Clock,
   Result,
   ZonedDateTime,
@@ -6,7 +18,7 @@ import {
   fail,
   ok,
 } from '@creativo/domain/kernel';
-import { UserId, UserRole, isStaff } from '@creativo/domain/accounts';
+import { UserId, UserRole } from '@creativo/domain/accounts';
 import { ImpersonationSessionId } from './ids';
 import {
   ImpersonationScope,
@@ -34,6 +46,87 @@ import {
  * that never displays a calendar date.
  */
 const INSTANT_ZONE = 'UTC';
+
+/*
+ * Phase 2 shim (ECS migration): the invariants, the staff gate, the end
+ * and the expiry rule live in `ImpersonationSystem` (`@creativo/ecs-core`).
+ * This class keeps its public API, its id/scope/instant parsing and its
+ * error classes; the helpers below are the only code besides the delegating
+ * bodies.
+ */
+
+/** What the structural invariants read, off the parsed fields. */
+type ParsedShape = {
+  readonly adminUserId: UserId;
+  readonly targetUserId: UserId;
+  readonly reason: string;
+  readonly startedAt: ZonedDateTime;
+  readonly expiresAt: ZonedDateTime;
+};
+
+function toShape(fields: ParsedShape) {
+  return {
+    adminUserId: UserKey.of(fields.adminUserId.value),
+    targetUserId: UserKey.of(fields.targetUserId.value),
+    reason: fields.reason,
+    startedAtMs: fields.startedAt.toMillis(),
+    expiresAtMs: fields.expiresAt.toMillis(),
+  };
+}
+
+/** A role list as the staff gate reads it — an unknown string grants nothing either way. */
+function toRoles(roles: readonly UserRole[]): readonly Role[] {
+  return knownRoles(roles);
+}
+
+/** A structural fault back as this context's error class. */
+function toLegacyFault(
+  error: GovernanceError,
+): ImpersonationSessionValidationError {
+  switch (error.code) {
+    case GovernanceErrorCode.ImpersonationSelf:
+      return new SelfImpersonationError();
+    case GovernanceErrorCode.ImpersonationReasonRequired:
+      return new ImpersonationReasonRequiredError();
+    default:
+      return new InvalidImpersonationExpiryError();
+  }
+}
+
+/** A start refusal back as this context's error class — the staff gate, or a structural fault. */
+function toLegacyStartError(
+  error: GovernanceError,
+): StartImpersonationSessionError {
+  return error.code === GovernanceErrorCode.ImpersonationAdminNotStaff
+    ? new ImpersonatorNotStaffError(error.adminUserId)
+    : toLegacyFault(error);
+}
+
+/** An end reason as the system's struct. */
+function toEndReason(reason: ImpersonationEndReason): EndReason {
+  switch (reason.kind) {
+    case 'admin_ended':
+      return EndReason.adminEnded(UserKey.of(reason.endedBy.value));
+    case 'revoked_by_security':
+      return EndReason.revokedBySecurity(
+        UserKey.of(reason.revokedBy.value),
+        reason.notes,
+      );
+    default:
+      return EndReason.expired();
+  }
+}
+
+/** The stored status as the system's struct. */
+function toStatus(status: ImpersonationSessionStatus): ImpersonationStatus {
+  return status.kind === 'active'
+    ? ImpersonationStatus.active()
+    : {
+        kind: ImpersonationState.Ended,
+        endedAtMs: status.endedAt.toMillis(),
+        reason: toEndReason(status.reason),
+      };
+}
 
 /** Fields shared by both build entry points. */
 export interface ImpersonationSessionCoreProps {
@@ -116,8 +209,15 @@ export class ImpersonationSession {
     if (result.isFailure()) {
       return result;
     }
-    if (!isStaff(props.adminRoles)) {
-      return fail([new ImpersonatorNotStaffError(props.adminUserId)]);
+    const session = result.value;
+    const started = ImpersonationSystem.start({
+      ...toShape(session),
+      id: SessionId.of(session.id.value),
+      adminRoles: toRoles(props.adminRoles),
+      scope: session.scope,
+    });
+    if (!started.ok) {
+      return fail(started.error.map(toLegacyStartError));
     }
     return result;
   }
@@ -160,18 +260,17 @@ export class ImpersonationSession {
     const [id, adminUserId, targetUserId, scope, startedAt, expiresAt] =
       combined.value;
 
-    const errors: ImpersonationSessionValidationError[] = [];
-    if (adminUserId.equals(targetUserId)) {
-      errors.push(new SelfImpersonationError());
-    }
-    if (props.reason.trim().length === 0) {
-      errors.push(new ImpersonationReasonRequiredError());
-    }
-    if (!startedAt.isBefore(expiresAt)) {
-      errors.push(new InvalidImpersonationExpiryError());
-    }
-    if (errors.length > 0) {
-      return fail(errors);
+    const faults = ImpersonationSystem.faults(
+      toShape({
+        adminUserId,
+        targetUserId,
+        reason: props.reason,
+        startedAt,
+        expiresAt,
+      }),
+    );
+    if (faults.length > 0) {
+      return fail(faults.map(toLegacyFault));
     }
 
     return ok(
@@ -193,7 +292,17 @@ export class ImpersonationSession {
     endedAt: ZonedDateTime,
     reason: ImpersonationEndReason,
   ): Result<ImpersonationSession, ImpersonationSessionAlreadyEndedError> {
-    if (this.status.kind !== 'active') {
+    const ended = ImpersonationSystem.end(
+      {
+        ...toShape(this),
+        id: SessionId.of(this.id.value),
+        scope: this.scope,
+        status: toStatus(this.status),
+      },
+      endedAt.toMillis(),
+      toEndReason(reason),
+    );
+    if (!ended.ok) {
       return fail(new ImpersonationSessionAlreadyEndedError(this.id.value));
     }
     return ok(
@@ -223,6 +332,9 @@ export class ImpersonationSession {
    * `status.kind === 'active'` alone.
    */
   isExpired(clock: Clock): boolean {
-    return this.expiresAt.isSameOrBefore(clock.now());
+    return ImpersonationSystem.isExpired(
+      { expiresAtMs: this.expiresAt.toMillis() },
+      clock.now().toMillis(),
+    );
   }
 }

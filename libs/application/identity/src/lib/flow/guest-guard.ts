@@ -1,4 +1,6 @@
+import { GuestGuardSystem } from '@creativo/ecs-core';
 import { Principal } from '@creativo/domain/identity';
+import { principalTagOf } from './principal-tag';
 
 /**
  * The settled account verdict `/auth`/`/onboarding` branch on. Ports v2's
@@ -13,9 +15,17 @@ import { Principal } from '@creativo/domain/identity';
  */
 export type Settled = 'loading' | 'anonymous' | 'onboarding' | 'active';
 
+/*
+ * Phase 2 shim (ECS migration): the verdict and the latch are
+ * `GuestGuardSystem` (`@creativo/ecs-core`); the principal reaches it
+ * through the lib's one converter (`principal-tag.ts`).
+ */
+
 /** Pure classification — `null` (no snapshot yet) is the only source of `loading`. */
 export function classify(principal: Principal | null): Settled {
-  return principal === null ? 'loading' : principal.kind;
+  return GuestGuardSystem.classify(
+    principal === null ? null : principalTagOf(principal),
+  );
 }
 
 /**
@@ -32,6 +42,5 @@ export function latchSettledPrincipal(
   prev: Exclude<Settled, 'loading'> | null,
   live: Settled,
 ): Exclude<Settled, 'loading'> | null {
-  if (prev !== null) return prev;
-  return live === 'loading' ? null : live;
+  return GuestGuardSystem.latch(prev, live);
 }

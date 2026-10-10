@@ -26,4 +26,4 @@ export * from '@creativo/domain/accounts';
 // explicit clock instant) — re-exported for the same reason as `identity`'s
 // `Result`/`ok`/`fail`: feature-layer components/tests build `User`
 // instances without an illegal `type:domain` import of their own.
-export { ZonedDateTime } from '@creativo/domain/kernel';
+export * from './lib/public-reexports';

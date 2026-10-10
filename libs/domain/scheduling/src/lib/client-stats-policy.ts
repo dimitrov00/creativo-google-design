@@ -1,14 +1,27 @@
 import { Result, fail, ok } from '@creativo/domain/kernel';
+import {
+  type BookingPolicy as EcsBookingPolicy,
+  ClientStatsPolicy as EcsClientStatsPolicy,
+  type SchedulingError,
+  SchedulingErrorCode,
+} from '@creativo/ecs-core';
 import { BookingPolicy } from './booking-policy';
 import type { CancellationWindow } from './cancellation-window';
 import { InvalidClientStatsPolicyError } from './client-stats.errors';
+
+/*
+ * Phase 2 shim: the policy and its rules are `ClientStatsPolicy` in
+ * `@creativo/ecs-core` (a component: the validation, the late line). This
+ * class keeps the legacy shape for its callers — its `booking` is the
+ * `BookingPolicy` class — and converts at the edge (`toStruct`).
+ */
 
 /**
  * How far back `ClientStats` keeps individual instants: the longest window a
  * reader asks for (the route's 12-month counters, R35). Everything older
  * lives on only in the lifetime counts.
  */
-export const CLIENT_STATS_BOUNDED_DAYS = 365;
+export const CLIENT_STATS_BOUNDED_DAYS: typeof EcsClientStatsPolicy.BOUNDED_DAYS = 365;
 
 export interface ClientStatsPolicyProps {
   /**
@@ -44,38 +57,19 @@ export class ClientStatsPolicy {
   static create(
     props: ClientStatsPolicyProps,
   ): Result<ClientStatsPolicy, InvalidClientStatsPolicyError[]> {
-    const errors: InvalidClientStatsPolicyError[] = [];
-    if (
-      !Number.isInteger(props.suggestPauseNoShows) ||
-      props.suggestPauseNoShows <= 0
-    ) {
-      errors.push(
-        new InvalidClientStatsPolicyError(
-          'suggestPauseNoShows',
-          props.suggestPauseNoShows,
-        ),
-      );
-    }
     // A window longer than the stored instants would ask about no-shows the
     // document no longer holds, and the suggestion would quietly undercount.
-    if (
-      !Number.isInteger(props.suggestPauseWindowDays) ||
-      props.suggestPauseWindowDays <= 0 ||
-      props.suggestPauseWindowDays > CLIENT_STATS_BOUNDED_DAYS
-    ) {
-      errors.push(
-        new InvalidClientStatsPolicyError(
-          'suggestPauseWindowDays',
-          props.suggestPauseWindowDays,
-        ),
-      );
-    }
-    if (errors.length > 0) return fail(errors);
+    const result = EcsClientStatsPolicy.create({
+      booking: bookingStruct(props.booking),
+      suggestPauseNoShows: props.suggestPauseNoShows,
+      suggestPauseWindowDays: props.suggestPauseWindowDays,
+    });
+    if (!result.ok) return fail(result.error.map(toLegacyError));
     return ok(
       new ClientStatsPolicy(
         props.booking,
-        props.suggestPauseNoShows,
-        props.suggestPauseWindowDays,
+        result.value.suggestPauseNoShows,
+        result.value.suggestPauseWindowDays,
       ),
     );
   }
@@ -119,7 +113,44 @@ export class ClientStatsPolicy {
     cancelledAtMs: number,
     stamped: CancellationWindow | null,
   ): boolean {
-    const judgedBy = stamped ?? this.booking.cancellationWindow;
-    return !judgedBy.allowsFreeCancelAt(startMs, cancelledAtMs);
+    return EcsClientStatsPolicy.isLateCancellation(
+      this.toStruct(),
+      startMs,
+      cancelledAtMs,
+      stamped === null ? null : stamped.hours,
+    );
   }
+
+  /**
+   * Phase 2 bridge: this policy as the `@creativo/ecs-core` struct the
+   * systems take (`ClientStatsSystem`'s `policy`). Deleted with the class.
+   */
+  toStruct(): EcsClientStatsPolicy {
+    return {
+      booking: bookingStruct(this.booking),
+      suggestPauseNoShows: this.suggestPauseNoShows,
+      suggestPauseWindowDays: this.suggestPauseWindowDays,
+    };
+  }
+}
+
+/** The booking policy class as the plain struct. */
+function bookingStruct(booking: BookingPolicy): EcsBookingPolicy {
+  return {
+    maxPartySize: booking.maxPartySize,
+    slotStepMinutes: booking.slotStepMinutes,
+    minLeadMinutes: booking.minLeadMinutes,
+    horizonMonths: booking.horizonMonths,
+    cancellationWindowHours: booking.cancellationWindowHours,
+    maxFlexibleDays: booking.maxFlexibleDays,
+    autoConfirm: booking.autoConfirm,
+  };
+}
+
+/** A refused field as the legacy error class (`scheduling.client_stats_policy.invalid`). */
+function toLegacyError(error: SchedulingError): InvalidClientStatsPolicyError {
+  // `create` refuses with this one code only; the guard narrows the union.
+  return error.code === SchedulingErrorCode.ClientStatsPolicyInvalid
+    ? new InvalidClientStatsPolicyError(error.field, error.rawValue)
+    : new InvalidClientStatsPolicyError(error.code, Number.NaN);
 }

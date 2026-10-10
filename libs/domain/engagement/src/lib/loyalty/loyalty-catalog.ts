@@ -1,4 +1,25 @@
 import { Result, fail, ok } from '@creativo/domain/kernel';
+import {
+  type BadgeCategoryId as CategoryRefId,
+  type CatalogCategoryRef,
+  type CatalogRewardRef,
+  type CatalogSeasonRef,
+  type CatalogSeriesRef,
+  type CatalogStreakRef,
+  type CatalogTierRef,
+  DayKey,
+  EngagementErrorCode,
+  type ValidLoyaltyCatalog as SystemCatalog,
+  type LoyaltyCatalogError as SystemCatalogError,
+  LoyaltyCatalogSystem,
+  type Metric as SystemMetric,
+  type Points,
+  type RewardId,
+  type SeasonId as SeasonRefId,
+  type SeriesId,
+  type StreakDefinitionId,
+  type TierId,
+} from '@creativo/ecs-core';
 import type { BadgeCategory } from './badge-category';
 import type { BadgeSeries } from './badge-series';
 import type { RewardCatalogItem, TierDefinition } from './catalog-entries';
@@ -15,6 +36,14 @@ import type { Season, SeasonPhase } from './season';
 import type { StreakDefinition } from './streak-definition';
 import type { StreakDefinitionSchedule } from './streak-schedule';
 
+/*
+ * The published loyalty catalogue as a class — a thin shim since the ECS
+ * migration's Phase 2: validation, display order and every lookup are
+ * `LoyaltyCatalogSystem` (`@creativo/ecs-core`, `loyalty-catalog.system.ts`),
+ * run over light rows that carry the legacy object they stand for
+ * (`source`). The bridge is the private helpers at the end.
+ */
+
 export interface LoyaltyCatalogParts {
   categories: readonly BadgeCategory[];
   series: readonly BadgeSeries[];
@@ -29,15 +58,6 @@ export interface LoyaltyCatalogParts {
   streakSchedules?: readonly StreakDefinitionSchedule[];
 }
 
-const byOrderThenId = (
-  a: { readonly order: number; readonly id: { toString(): string } },
-  b: { readonly order: number; readonly id: { toString(): string } },
-): number => a.order - b.order || compareText(String(a.id), String(b.id));
-
-function compareText(a: string, b: string): number {
-  return a < b ? -1 : a > b ? 1 : 0;
-}
-
 /**
  * The published loyalty catalogue — shelves, medal families, seasons,
  * tiers, rewards and the rhythm — read and validated as ONE model: a
@@ -47,141 +67,59 @@ function compareText(a: string, b: string): number {
  * half a page. Every list comes back in display order.
  */
 export class LoyaltyCatalog {
-  private constructor(
-    /** The shelves, by `order`. */
-    readonly categories: readonly BadgeCategory[],
-    /** Every family, retired ones included, by `order`. */
-    readonly families: readonly BadgeSeries[],
-    /** Seasons and events, by the day they open. */
-    readonly seasons: readonly Season[],
-    /** By rank, lowest first. */
-    readonly tiers: readonly TierDefinition[],
-    /** By `order`. */
-    readonly rewards: readonly RewardCatalogItem[],
-    /** The rhythm's rules, by id. */
-    readonly streakSchedules: readonly StreakDefinitionSchedule[],
-    private readonly categoryById: ReadonlyMap<string, BadgeCategory>,
-    private readonly seriesById: ReadonlyMap<string, BadgeSeries>,
-    private readonly seasonById: ReadonlyMap<string, Season>,
-  ) {}
+  /** The shelves, by `order`. */
+  readonly categories: readonly BadgeCategory[];
+  /** Every family, retired ones included, by `order`. */
+  readonly families: readonly BadgeSeries[];
+  /** Seasons and events, by the day they open. */
+  readonly seasons: readonly Season[];
+  /** By rank, lowest first. */
+  readonly tiers: readonly TierDefinition[];
+  /** By `order`. */
+  readonly rewards: readonly RewardCatalogItem[];
+  /** The rhythm's rules, by id. */
+  readonly streakSchedules: readonly StreakDefinitionSchedule[];
+
+  private constructor(private readonly refs: Refs) {
+    this.categories = refs.categories.map(sourceOf);
+    this.families = refs.families.map(sourceOf);
+    this.seasons = refs.seasons.map(sourceOf);
+    this.tiers = refs.tiers.map(sourceOf);
+    this.rewards = refs.rewards.map(sourceOf);
+    this.streakSchedules = refs.streaks.map(sourceOf);
+  }
 
   static create(
     parts: LoyaltyCatalogParts,
   ): Result<LoyaltyCatalog, LoyaltyCatalogError[]> {
-    const streakSchedules = parts.streakSchedules ?? [];
-    const errors: LoyaltyCatalogError[] = [
-      ...duplicates(
-        'badgeCategories',
-        parts.categories.map((c) => c.id.value),
-      ),
-      ...duplicates(
-        'badgeSeries',
-        parts.series.map((s) => s.id.value),
-      ),
-      ...duplicates(
-        'seasons',
-        parts.seasons.map((s) => s.id.value),
-      ),
-      ...duplicates(
-        'tierDefinitions',
-        parts.tiers.map((t) => t.id),
-      ),
-      ...duplicates(
-        'rewardsCatalog',
-        parts.rewards.map((r) => r.id),
-      ),
-      ...duplicates(
-        'streakDefinitions',
-        streakSchedules.map((s) => s.id),
-      ),
-    ];
-
-    const categoryById = new Map(parts.categories.map((c) => [c.id.value, c]));
-    const seriesById = new Map(parts.series.map((s) => [s.id.value, s]));
-    const seasonById = new Map(parts.seasons.map((s) => [s.id.value, s]));
-
-    for (const family of parts.series) {
-      const categoryId = family.categoryId?.value;
-      if (categoryId !== undefined && !categoryById.has(categoryId)) {
-        errors.push(
-          new LoyaltyCatalogDanglingCategoryError(family.id.value, categoryId),
-        );
-      }
-      const seasonId = family.seasonId?.value;
-      if (seasonId !== undefined && !seasonById.has(seasonId)) {
-        errors.push(
-          new LoyaltyCatalogDanglingSeasonError(seasonId, family.id.value),
-        );
-      }
-    }
-    for (const season of parts.seasons) {
-      for (const seriesId of season.familyIds()) {
-        const family = seriesById.get(seriesId.value);
-        if (family?.seasonId?.value !== season.id.value) {
-          errors.push(
-            new LoyaltyCatalogDanglingSeasonError(
-              season.id.value,
-              seriesId.value,
-            ),
-          );
-        }
-      }
-    }
-
-    const tiers = [...parts.tiers].sort((a, b) => a.rank - b.rank);
-    if (
-      tiers.some(
-        (t, i) =>
-          i > 0 && t.qualify.atLeast <= (tiers[i - 1]?.qualify.atLeast ?? 0),
-      )
-    ) {
-      errors.push(
-        new LoyaltyCatalogTiersNotRisingError(tiers.map((t) => t.id)),
-      );
-    }
-    for (const reward of parts.rewards) {
-      if (!Number.isInteger(reward.cost) || reward.cost <= 0) {
-        errors.push(
-          new LoyaltyCatalogCostNotPositiveError(reward.id, reward.cost),
-        );
-      }
-    }
-
-    if (errors.length > 0) return fail(errors);
-    return ok(
-      new LoyaltyCatalog(
-        [...parts.categories].sort(byOrderThenId),
-        [...parts.series].sort(byOrderThenId),
-        [...parts.seasons].sort(
-          (a, b) =>
-            compareText(a.window.from, b.window.from) ||
-            compareText(a.id.value, b.id.value),
-        ),
-        tiers,
-        [...parts.rewards].sort(byOrderThenId),
-        [...streakSchedules].sort((a, b) => compareText(a.id, b.id)),
-        categoryById,
-        seriesById,
-        seasonById,
-      ),
-    );
+    const validated = LoyaltyCatalogSystem.validate({
+      categories: parts.categories.map(categoryRef),
+      series: parts.series.map(seriesRef),
+      seasons: parts.seasons.map(seasonRef),
+      tiers: parts.tiers.map(tierRef),
+      rewards: parts.rewards.map(rewardRef),
+      streaks: (parts.streakSchedules ?? []).map(streakRef),
+    });
+    return validated.ok
+      ? ok(new LoyaltyCatalog(validated.value))
+      : fail(validated.error.map(legacyErrorOf));
   }
 
   category(id: string): BadgeCategory | null {
-    return this.categoryById.get(id) ?? null;
+    return LoyaltyCatalogSystem.category(this.refs, id)?.source ?? null;
   }
 
   series(id: string): BadgeSeries | null {
-    return this.seriesById.get(id) ?? null;
+    return LoyaltyCatalogSystem.series(this.refs, id)?.source ?? null;
   }
 
   /** A shelf's families, by `order`, retired ones included (the caller knows who started them). */
   seriesIn(categoryId: string): readonly BadgeSeries[] {
-    return this.families.filter((s) => s.categoryId?.value === categoryId);
+    return LoyaltyCatalogSystem.seriesIn(this.refs, categoryId).map(sourceOf);
   }
 
   season(id: string): Season | null {
-    return this.seasonById.get(id) ?? null;
+    return LoyaltyCatalogSystem.season(this.refs, id)?.source ?? null;
   }
 
   /**
@@ -190,23 +128,20 @@ export class LoyaltyCatalog {
    * reads back from the latest.
    */
   seasonsIn(phase: SeasonPhase, today: IsoDate): readonly Season[] {
-    const inPhase = this.seasons.filter((s) => s.phaseOn(today) === phase);
-    return phase === 'ended'
-      ? [...inPhase].sort(
-          (a, b) =>
-            compareText(b.window.until, a.window.until) ||
-            compareText(a.id.value, b.id.value),
-        )
-      : inPhase;
+    return LoyaltyCatalogSystem.seasonsIn(
+      this.refs,
+      phase,
+      DayKey.of(today),
+    ).map(sourceOf);
   }
 
   tier(id: string): TierDefinition | null {
-    return this.tiers.find((t) => t.id === id) ?? null;
+    return LoyaltyCatalogSystem.tier(this.refs, id)?.source ?? null;
   }
 
   /** A rhythm's head: the rule in force and the one that waits. */
   streakSchedule(id: string): StreakDefinitionSchedule | null {
-    return this.streakSchedules.find((s) => s.id === id) ?? null;
+    return LoyaltyCatalogSystem.streak(this.refs, id)?.source ?? null;
   }
 
   /**
@@ -219,17 +154,111 @@ export class LoyaltyCatalog {
   }
 }
 
-function duplicates(
-  collection: string,
-  ids: readonly string[],
-): LoyaltyCatalogDuplicateIdError[] {
-  const seen = new Set<string>();
-  const repeated = new Set<string>();
-  for (const id of ids) {
-    if (seen.has(id)) repeated.add(id);
-    seen.add(id);
+// ── The bridge: legacy rows ↔ ecs-core refs (Phase 4 deletes it) ─────────
+
+/** A row as the system reads it, carrying the legacy object it stands for. */
+type Ref<R, S> = R & { readonly source: S };
+
+type Refs = SystemCatalog<
+  Ref<CatalogCategoryRef, BadgeCategory>,
+  Ref<CatalogSeriesRef, BadgeSeries>,
+  Ref<CatalogSeasonRef, Season>,
+  Ref<CatalogTierRef, TierDefinition>,
+  Ref<CatalogRewardRef, RewardCatalogItem>,
+  Ref<CatalogStreakRef, StreakDefinitionSchedule>
+>;
+
+const sourceOf = <S>(ref: { readonly source: S }): S => ref.source;
+
+function categoryRef(
+  category: BadgeCategory,
+): Ref<CatalogCategoryRef, BadgeCategory> {
+  return {
+    id: category.id.value as CategoryRefId,
+    order: category.order,
+    source: category,
+  };
+}
+
+function seriesRef(series: BadgeSeries): Ref<CatalogSeriesRef, BadgeSeries> {
+  return {
+    id: series.id.value as SeriesId,
+    categoryId:
+      series.categoryId === null
+        ? null
+        : (series.categoryId.value as CategoryRefId),
+    seasonId:
+      series.seasonId === null ? null : (series.seasonId.value as SeasonRefId),
+    order: series.order,
+    source: series,
+  };
+}
+
+function seasonRef(season: Season): Ref<CatalogSeasonRef, Season> {
+  return {
+    id: season.id.value as SeasonRefId,
+    window: {
+      from: DayKey.of(season.window.from),
+      until: DayKey.of(season.window.until),
+    },
+    trackSeriesId:
+      season.trackSeriesId === null
+        ? null
+        : (season.trackSeriesId.value as SeriesId),
+    seriesIds: season.seriesIds.map((id) => id.value as SeriesId),
+    source: season,
+  };
+}
+
+function tierRef(tier: TierDefinition): Ref<CatalogTierRef, TierDefinition> {
+  return {
+    id: tier.id as TierId,
+    rank: tier.rank,
+    qualify: {
+      metric: tier.qualify.metric as SystemMetric,
+      atLeast: tier.qualify.atLeast,
+      window: tier.qualify.window,
+    },
+    source: tier,
+  };
+}
+
+function rewardRef(
+  reward: RewardCatalogItem,
+): Ref<CatalogRewardRef, RewardCatalogItem> {
+  return {
+    id: reward.id as RewardId,
+    cost: reward.cost as Points,
+    order: reward.order,
+    source: reward,
+  };
+}
+
+function streakRef(
+  schedule: StreakDefinitionSchedule,
+): Ref<CatalogStreakRef, StreakDefinitionSchedule> {
+  return { id: schedule.id as StreakDefinitionId, source: schedule };
+}
+
+/** The system's struct error as the class the legacy readers know. */
+function legacyErrorOf(error: SystemCatalogError): LoyaltyCatalogError {
+  switch (error.code) {
+    case EngagementErrorCode.LoyaltyCatalogDuplicateId:
+      return new LoyaltyCatalogDuplicateIdError(error.collection, error.id);
+    case EngagementErrorCode.LoyaltyCatalogDanglingCategory:
+      return new LoyaltyCatalogDanglingCategoryError(
+        error.seriesId,
+        error.categoryId,
+      );
+    case EngagementErrorCode.LoyaltyCatalogDanglingSeason:
+      return new LoyaltyCatalogDanglingSeasonError(
+        error.seasonId,
+        error.seriesId,
+      );
+    case EngagementErrorCode.LoyaltyCatalogTiersNotRising:
+      // The rank-ordered ids, joined by the system into one i18n parameter.
+      return new LoyaltyCatalogTiersNotRisingError(error.tierIds.split(', '));
+    default:
+      return new LoyaltyCatalogCostNotPositiveError(error.rewardId, error.cost);
   }
-  return [...repeated].map(
-    (id) => new LoyaltyCatalogDuplicateIdError(collection, id),
-  );
 }

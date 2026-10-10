@@ -1,4 +1,5 @@
 import { CalendarDay, DateRange } from '@creativo/application/booking';
+import { CalendarGridSystem, DayKey } from '@creativo/ecs-core';
 
 export interface AvailabilityDayCell {
   readonly day: CalendarDay;
@@ -91,35 +92,31 @@ export function buildAvailabilityMonth(input: {
   const monthStart = anchor.startOfMonth();
   const monthEnd = anchor.endOfMonth();
 
-  // ISO weekday is 1..7 Monday-first, so the lead-in is simply weekday − 1.
-  const cells: AvailabilityGridCell[] = Array.from(
-    { length: monthStart.weekday() - 1 },
-    () => null,
-  );
-
+  // The grid is `CalendarGridSystem.monthGrid`: Monday-first, padded to
+  // whole weeks — the padding is blanks, not the neighbouring months' days.
+  // The month's own days are walked in order beside it, as the legacy days
+  // this step renders.
   let cursor = monthStart;
-  while (!monthEnd.isBefore(cursor)) {
-    const key = cursor.key();
-    cells.push({
-      day: cursor,
-      dayKey: key,
-      dayOfMonth: cursor.day,
-      inCurrentMonth: true,
-      isToday: cursor.equals(today),
-      outOfRange: cursor.isBefore(today) || horizonEnd.isBefore(cursor),
-      freeMinutes: capacityByDay.get(key) ?? 0,
-    });
-    cursor = cursor.next();
-  }
-
-  // Pad the LAST row to seven so the grid's columns stay square; these are
-  // blanks, not the next month's days.
-  while (cells.length % 7 !== 0) cells.push(null);
-
-  const weeks: AvailabilityGridCell[][] = [];
-  for (let index = 0; index < cells.length; index += 7) {
-    weeks.push(cells.slice(index, index + 7));
-  }
+  const weeks: AvailabilityGridCell[][] = CalendarGridSystem.monthGrid(
+    DayKey.of(monthStart.key()),
+    [],
+    [],
+  ).map((week) =>
+    week.map((cell): AvailabilityGridCell => {
+      if (!cell.inMonth || monthEnd.isBefore(cursor)) return null;
+      const day = cursor;
+      cursor = cursor.next();
+      return {
+        day,
+        dayKey: cell.dayKey,
+        dayOfMonth: cell.dayOfMonth,
+        inCurrentMonth: true,
+        isToday: day.equals(today),
+        outOfRange: day.isBefore(today) || horizonEnd.isBefore(day),
+        freeMinutes: capacityByDay.get(cell.dayKey) ?? 0,
+      };
+    }),
+  );
   return { anchor: monthStart, key: monthStart.key().slice(0, 7), weeks };
 }
 

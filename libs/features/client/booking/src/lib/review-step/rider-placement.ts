@@ -1,8 +1,34 @@
-import {
-  type BookingDraftRider,
-  type ScheduleSelection,
-  carriedStartMs,
+import type {
+  BookingDraftRider,
+  ScheduleSelection,
 } from '@creativo/application/booking';
+import {
+  BarberId,
+  type MoveRider,
+  MoveSystem,
+  ServiceId,
+  type ServiceVariantId,
+} from '@creativo/ecs-core';
+
+/*
+ * THIN SHIM (ECS migration Phase 2). Where each rider lands is
+ * `MoveSystem.placeRiders` — the server's one shift, restated for the
+ * review card. This keeps the legacy signature and only converts.
+ */
+
+/* ── Legacy ↔ ECS converters ─────────────────────────────────────────── */
+
+function toRiderData(rider: BookingDraftRider): MoveRider {
+  return {
+    serviceId: ServiceId.of(rider.serviceId),
+    variantId: rider.variantId as ServiceVariantId | null,
+    barberId: BarberId.of(rider.barberId),
+    offsetMinutes: rider.offsetMinutes,
+    durationMinutes: rider.durationMinutes,
+    setupMinutes: rider.setupMinutes,
+    cleanupMinutes: rider.cleanupMinutes,
+  };
+}
 
 /** A rider, and the instant the server will seat them at. */
 export interface PlacedRider {
@@ -27,13 +53,11 @@ export function placeRiders(
   selection: ScheduleSelection,
   riders: readonly BookingDraftRider[],
 ): readonly PlacedRider[] {
-  const starts = selection.assignments.map((assignment) =>
-    assignment.slot.start.toMillis(),
-  );
-  if (starts.length === 0) return [];
-  const earliestMs = Math.min(...starts);
-  return riders.map((rider) => ({
-    rider,
-    startMs: carriedStartMs(earliestMs, rider.offsetMinutes),
+  return MoveSystem.placeRiders(
+    selection.assignments.map((assignment) => assignment.slot.start.toMillis()),
+    riders.map(toRiderData),
+  ).map((placed, index) => ({
+    rider: riders.at(index) as BookingDraftRider,
+    startMs: placed.startMs,
   }));
 }

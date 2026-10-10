@@ -1,3 +1,4 @@
+import { VisitListSystem } from '@creativo/ecs-core';
 import type { VisitFilter, VisitPerspective, VisitRowVm } from './visit-row.vm';
 
 /*
@@ -10,6 +11,9 @@ import type { VisitFilter, VisitPerspective, VisitRowVm } from './visit-row.vm';
  * three terminal outcomes are there because a history is where you go
  * looking for "did I ever no-show?" — and each is an outcome the row
  * genuinely carries, so no option can ever be a lie.
+ *
+ * Phase 2 shim: the options, their order and the narrowing rule are
+ * `VisitListSystem` in `@creativo/ecs-core`; the option words stay here.
  */
 
 /**
@@ -17,26 +21,10 @@ import type { VisitFilter, VisitPerspective, VisitRowVm } from './visit-row.vm';
  * always read, the staff history as its spec lists them (§3.6 HD) — the
  * record's two exceptions side by side, no-shows first.
  */
-const CLIENT_FILTERS: readonly VisitFilter[] = [
-  'all',
-  'upcoming',
-  'completed',
-  'cancelled',
-  'no_show',
-];
-
-const STAFF_FILTERS: readonly VisitFilter[] = [
-  'all',
-  'upcoming',
-  'completed',
-  'no_show',
-  'cancelled',
-];
-
 export function visitFiltersFor(
   perspective: VisitPerspective,
 ): readonly VisitFilter[] {
-  return perspective === 'staff' ? STAFF_FILTERS : CLIENT_FILTERS;
+  return VisitListSystem.filtersFor(perspective);
 }
 
 /**
@@ -72,14 +60,7 @@ export function offeredVisitFilters(
   rows: readonly VisitRowVm[],
   options: { readonly complete: boolean },
 ): readonly VisitFilter[] {
-  return visitFiltersFor(perspective).filter((filter) => {
-    if (filter === 'all') return true;
-    if (!options.complete && filter !== 'upcoming') return true;
-    const answered = rows.some((row) => matchesVisitFilter(row, filter));
-    const narrows =
-      !options.complete || rows.some((row) => !matchesVisitFilter(row, filter));
-    return answered && narrows;
-  });
+  return VisitListSystem.offered(perspective, rows, options.complete);
 }
 
 /**
@@ -96,16 +77,5 @@ export function matchesVisitFilter(
   row: VisitRowVm,
   filter: VisitFilter,
 ): boolean {
-  switch (filter) {
-    case 'all':
-      return true;
-    case 'upcoming':
-      return row.upcoming;
-    case 'completed':
-      return !row.upcoming && row.outcome === 'worked';
-    case 'no_show':
-      return !row.upcoming && row.outcome === 'no_show';
-    case 'cancelled':
-      return !row.upcoming && row.outcome === 'cancelled';
-  }
+  return VisitListSystem.matches(row, filter);
 }

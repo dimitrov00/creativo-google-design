@@ -1,5 +1,11 @@
 import { ZonedDateTime } from '@creativo/application/accounts';
 import { Appointment } from '@creativo/application/booking';
+import {
+  CalendarGridSystem,
+  type CalendarWeek,
+  DayKey,
+  ZonedTimeSystem,
+} from '@creativo/ecs-core';
 
 export interface CalendarDayCell {
   readonly date: ZonedDateTime;
@@ -15,21 +21,15 @@ export interface CalendarMonth {
   readonly weeks: readonly (readonly CalendarDayCell[])[];
 }
 
-function pad2(n: number): string {
-  return n < 10 ? `0${n}` : `${n}`;
-}
-
-/** Same `YYYY-MM-DD` shape as `TimeSlot.calendarDayKey()` — kept in sync so appointment/day matching is a plain string compare. */
-function dayKey(date: ZonedDateTime): string {
-  return `${date.year}-${pad2(date.month)}-${pad2(date.day)}`;
-}
-
 /**
  * A Monday-first month grid, padded to whole weeks, with an appointment
  * count per cell — the "date primitives get a real workout" slice
- * (blueprint §8 Phase 6 item 4). All arithmetic goes through the kernel
- * `ZonedDateTime` (`startOfMonth`/`plusDays`/`weekday`/`daysInMonth`);
- * `today` comes from the injected `Clock` port — never a raw `Date`.
+ * (blueprint §8 Phase 6 item 4). `today` comes from the injected `Clock`
+ * port — never a raw `Date`.
+ *
+ * Phase 2 shim: the grid is `CalendarGridSystem.monthGrid` in
+ * `@creativo/ecs-core` over the anchor zone's day table; this keeps the
+ * legacy cells (each with its `ZonedDateTime`) for its callers.
  */
 export function buildCalendarMonth(
   anchor: ZonedDateTime,
@@ -37,38 +37,49 @@ export function buildCalendarMonth(
   appointments: readonly Appointment[],
 ): CalendarMonth {
   const monthStart = anchor.startOfMonth();
-  const leadingBlanks = monthStart.weekday - 1;
-  const gridStart = monthStart.plusDays(-leadingBlanks);
-  const totalDays = leadingBlanks + monthStart.daysInMonth;
-  const totalCells = Math.ceil(totalDays / 7) * 7;
+  const monthKey = dayKeyOf(monthStart);
+  const range = CalendarGridSystem.gridRange(monthKey);
+  const weeks = CalendarGridSystem.monthGrid(
+    monthKey,
+    ZonedTimeSystem.dayTable(anchor.zoneName, range.fromDayKey, range.toDayKey),
+    appointments.map((appointment) =>
+      DayKey.of(appointment.timeSlot.calendarDayKey()),
+    ),
+  );
+  return {
+    year: monthStart.year,
+    month: monthStart.month,
+    weeks: toLegacyWeeks(weeks, monthStart, monthKey, dayKeyOf(today)),
+  };
+}
 
-  const countsByDay = new Map<string, number>();
-  for (const appointment of appointments) {
-    const key = appointment.timeSlot.calendarDayKey();
-    countsByDay.set(key, (countsByDay.get(key) ?? 0) + 1);
-  }
+/* ── ECS ↔ legacy converters ─────────────────────────────────────────── */
 
-  const cells: CalendarDayCell[] = [];
-  for (let i = 0; i < totalCells; i++) {
-    const date = gridStart.plusDays(i);
-    const key = dayKey(date);
-    cells.push({
-      date,
-      dayKey: key,
-      inCurrentMonth:
-        date.month === monthStart.month && date.year === monthStart.year,
-      isToday:
-        date.year === today.year &&
-        date.month === today.month &&
-        date.day === today.day,
-      appointmentCount: countsByDay.get(key) ?? 0,
-    });
-  }
+function pad2(n: number): string {
+  return n < 10 ? `0${n}` : `${n}`;
+}
 
-  const weeks: CalendarDayCell[][] = [];
-  for (let i = 0; i < cells.length; i += 7) {
-    weeks.push(cells.slice(i, i + 7));
-  }
+/** Same `YYYY-MM-DD` shape as `TimeSlot.calendarDayKey()`, on the instant's own calendar. */
+function dayKeyOf(date: ZonedDateTime): DayKey {
+  return DayKey.of(`${date.year}-${pad2(date.month)}-${pad2(date.day)}`);
+}
 
-  return { year: monthStart.year, month: monthStart.month, weeks };
+/** The system's weeks → the legacy cells, each dated off the month's start. */
+function toLegacyWeeks(
+  weeks: readonly CalendarWeek[],
+  monthStart: ZonedDateTime,
+  monthKey: DayKey,
+  todayKey: DayKey,
+): readonly (readonly CalendarDayCell[])[] {
+  return weeks.map((week) =>
+    week.map((cell) => ({
+      date: monthStart.plusDays(
+        ZonedTimeSystem.daysBetween(monthKey, cell.dayKey),
+      ),
+      dayKey: cell.dayKey,
+      inCurrentMonth: cell.inMonth,
+      isToday: cell.dayKey === todayKey,
+      appointmentCount: cell.marks,
+    })),
+  );
 }

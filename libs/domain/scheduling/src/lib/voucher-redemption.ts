@@ -1,4 +1,33 @@
 import { Money, ZonedDateTime } from '@creativo/domain/kernel';
+import {
+  GiftVoucherId,
+  VoucherRedemption as VoucherRedemptionData,
+} from '@creativo/ecs-core';
+
+/*
+ * THIN SHIM (ECS migration Phase 2). Whether a line still pays the bill is
+ * the ECS `VoucherRedemption` component's (`isLive`); the bill's sums are
+ * `BillingSystem`'s. This class keeps the legacy API and only converts.
+ */
+
+/* ── Legacy ↔ ECS converters ─────────────────────────────────────────── */
+
+function toData(line: VoucherRedemption): VoucherRedemptionData {
+  return {
+    voucherId: GiftVoucherId.of(line.voucherId),
+    code: line.code,
+    amount: {
+      amountMinorUnits: line.amount.toMinorUnits(),
+      currencyCode: line.amount.currencyCode(),
+    },
+    balanceAfter: {
+      amountMinorUnits: line.balanceAfter.toMinorUnits(),
+      currencyCode: line.balanceAfter.currencyCode(),
+    },
+    appliedAtMs: line.appliedAt.toMillis(),
+    reversedAtMs: line.reversedAt === null ? null : line.reversedAt.toMillis(),
+  };
+}
 
 export interface VoucherRedemptionProps {
   readonly voucherId: string;
@@ -45,7 +74,7 @@ export class VoucherRedemption {
 
   /** Still counting against the bill. */
   get live(): boolean {
-    return this.reversedAt === null;
+    return VoucherRedemptionData.isLive(toData(this));
   }
 
   reversed(at: ZonedDateTime): VoucherRedemption {

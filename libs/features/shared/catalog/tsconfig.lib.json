@@ -40,7 +40,7 @@
       "path": "../../../ui/controls/tsconfig.lib.json"
     },
     {
-      "path": "../../../application/catalog/tsconfig.lib.json"
+      "path": "../../../ecs-core/tsconfig.lib.json"
     },
     {
       "path": "../shell/tsconfig.lib.json"
@@ -50,6 +50,9 @@
     },
     {
       "path": "../../../application/identity/tsconfig.lib.json"
+    },
+    {
+      "path": "../../../application/catalog/tsconfig.lib.json"
     }
   ]
 }

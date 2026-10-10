@@ -6,13 +6,8 @@ import {
   ok,
 } from '@creativo/domain/kernel';
 import type { Transaction } from 'firebase-admin/firestore';
-import { handlesMoney, worksTheBook } from '@creativo/domain/accounts';
-import {
-  Coupon,
-  CouponCombinability,
-  CouponValue,
-  GiftVoucher,
-} from '@creativo/domain/engagement';
+import { worksTheBook } from '@creativo/domain/accounts';
+import { Coupon, CouponValue, GiftVoucher } from '@creativo/domain/engagement';
 import {
   AppliedDiscount,
   Appointment,
@@ -73,6 +68,38 @@ import {
   StaffEditUnauthenticatedError,
 } from './staff-edit-appointment.errors';
 import { operationDigest } from './staff-edit-appointment.operations';
+import {
+  type AppliedDiscount as AppliedDiscountData,
+  AppointmentEditSystem,
+  LedgerVerdictKind,
+  BarberId as BarberIdData,
+  BillPendingKind,
+  BillingSystem,
+  type BookingState as BookingStateData,
+  type CouponValue as CouponValueData,
+  CouponGrantId as CouponGrantIdData,
+  type GiftVoucherEntity,
+  GiftVoucherId as GiftVoucherIdData,
+  type Money as MoneyData,
+  type PendingDiscount,
+  StaffEditErrorCode,
+  UserId as UserIdData,
+  VoucherCode as VoucherCodeData,
+  type VoucherRedemption as VoucherRedemptionData,
+  VoucherState as VoucherStateData,
+  type EditCommand,
+  EditCommandKind,
+  LocationId as LocationIdData,
+  ResizeEdge,
+  type Seat as SeatData,
+  SeatId as SeatIdData,
+  SeatLabel as SeatLabelData,
+  SeatOutcome as SeatOutcomeData,
+  SeatSubject as SeatSubjectData,
+  ServiceId as ServiceIdData,
+  type ServiceVariantId as ServiceVariantIdData,
+  TimeInterval as TimeIntervalData,
+} from '@creativo/ecs-core';
 
 /*
  * THE COMMAND LIVES IN THE PORT, and is re-exported here.
@@ -845,117 +872,46 @@ export class StaffEditAppointmentUseCase {
     const now = this.clock.now(template.zone);
     if (now.isFailure()) return fail(new CommitBookingStoreError(now.error));
 
-    const settled: AppliedDiscount[] = [];
-    let manualCount = 0;
-    for (const item of pending.items) {
-      const request = item.request;
-      switch (request.source) {
-        case 'grant': {
-          const kept = existing.find(
-            (discount) =>
-              discount.source === 'grant' &&
-              discount.grantId === request.grantId,
-          );
-          if (kept) {
-            settled.push(kept);
-            break;
-          }
-          const grant = item.grant ?? null;
-          const owner = current['ownerUserId'];
-          if (
-            grant === null ||
-            !grant.usable ||
-            typeof owner !== 'string' ||
-            owner !== grant.userId
-          ) {
-            return fail(new StaffEditInvalidCommandError('discounts'));
-          }
-          settled.push(
-            AppliedDiscount.of({
-              id: `grant:${grant.grantId}`,
-              source: 'grant',
-              label: grant.label,
-              value: grant.value,
-              grantId: grant.grantId,
-              appliedAt: now.value,
-              combinability: grant.exclusive
-                ? CouponCombinability.exclusive()
-                : CouponCombinability.stackable(),
-            }),
-          );
-          break;
-        }
-        case 'code': {
-          const code = Coupon.normalizeCode(request.code);
-          const kept = existing.find(
-            (discount) => discount.source === 'code' && discount.code === code,
-          );
-          if (kept) {
-            settled.push(kept);
-            break;
-          }
-          const coupon = item.coupon ?? null;
-          if (coupon === null) {
-            return fail(new StaffEditInvalidCommandError('discounts'));
-          }
-          settled.push(
-            AppliedDiscount.of({
-              id: `code:${coupon.couponId}`,
-              source: 'code',
-              label: coupon.label,
-              value: coupon.value,
-              code: coupon.code,
-              appliedAt: now.value,
-              combinability: coupon.exclusive
-                ? CouponCombinability.exclusive()
-                : CouponCombinability.stackable(),
-            }),
-          );
-          break;
-        }
-        case 'manual': {
-          manualCount += 1;
-          const value = manualValue(request.value, template.currencyCode);
-          if (value === null) {
-            return fail(new StaffEditInvalidCommandError('discounts'));
-          }
-          const kept = existing.find(
-            (discount) =>
-              discount.source === 'manual' &&
-              discount.value.kind === value.kind &&
-              CouponValue.magnitude(discount.value) ===
-                CouponValue.magnitude(value),
-          );
-          if (kept) {
-            settled.push(kept);
-            break;
-          }
-          // A barber may stretch his own time; he may not discount the shop's
-          // money. Refused as FORBIDDEN, not as a bad command — the shape was
-          // fine, the caller was not.
-          if (!handlesMoney(actorRoles)) {
-            return fail(new StaffEditForbiddenError());
-          }
-          settled.push(
-            AppliedDiscount.of({
-              id: 'manual',
-              source: 'manual',
-              // No name to give: the receipt renders a manual discount by its
-              // value, and the source already says what it is.
-              label: 'manual',
-              value,
-              appliedAt: now.value,
-            }),
-          );
-          break;
-        }
-      }
+    // THIN SHIM (ECS Phase 2): `BillingSystem.settleDiscounts` decides — kept
+    // as stored or NEW, who may add a manual figure, the legal set — and the
+    // legacy snapshots ride back on what it decided.
+    const existingData = existing.map(toDiscountData);
+    const owner = current['ownerUserId'];
+    const settled = BillingSystem.settleDiscounts(
+      {
+        kind: BillPendingKind.Set,
+        items: pending.items.map(toPendingDiscountData),
+      },
+      existingData,
+      typeof owner === 'string' ? UserIdData.of(owner) : null,
+      actorRoles,
+      template.currencyCode,
+      now.value.toMillis(),
+    );
+    if (!settled.ok) {
+      return fail(
+        settled.error.code === StaffEditErrorCode.Forbidden
+          ? new StaffEditForbiddenError()
+          : new StaffEditInvalidCommandError('discounts'),
+      );
     }
-
-    if (manualCount > 1 || !AppliedDiscount.isLegalSet(settled)) {
-      return fail(new StaffEditInvalidCommandError('discounts'));
-    }
-    return ok(settled);
+    return ok(
+      settled.value.map((discount, index) => {
+        const kept = existingData.indexOf(discount);
+        if (kept >= 0) return existing.at(kept) as AppliedDiscount;
+        const item = pending.items.at(index) as PendingDiscountItem;
+        return AppliedDiscount.of({
+          id: discount.id,
+          source: discount.source,
+          label: discount.label,
+          value: legacyValueOf(item, template.currencyCode),
+          grantId: discount.grantId,
+          code: discount.code,
+          appliedAt: now.value,
+          combinability: discount.combinability,
+        });
+      }),
+    );
   }
 
   /**
@@ -981,89 +937,73 @@ export class StaffEditAppointmentUseCase {
     { appointment: Appointment; touched: readonly GiftVoucher[] },
     StaffEditError
   > {
+    // THIN SHIM (ECS Phase 2): `BillingSystem.settleVouchers` covers the
+    // bill in order and gives back what is no longer named; the legacy lines
+    // and vouchers ride back on what it decided.
     const stored = voucherRedemptionsFromDocument(current);
-    const live = stored.filter((redemption) => redemption.live);
-    const codes =
+    const storedData = stored.map(toRedemptionData);
+    const settled = BillingSystem.settleVouchers(
       pending.kind === 'set'
-        ? pending.codes.map((code) => Coupon.normalizeCode(code))
-        : live.map((redemption) => redemption.code);
-    if (live.length === 0 && codes.length === 0) {
-      return ok({ appointment, touched: [] });
-    }
-
-    const currency = appointment.subtotal().currencyCode();
-    const zero = Money.fromMinorUnitsAndCode(0, currency);
-    if (zero.isFailure())
-      return fail(new CommitBookingInvalidInputError('seats'));
-    const money = (minor: number): Money => {
-      const result = Money.fromMinorUnitsAndCode(minor, currency);
-      return result.isSuccess() ? result.value : zero.value;
-    };
-    const byId = new Map(
-      vouchers.map((voucher) => [voucher.id.value, voucher]),
+        ? { kind: BillPendingKind.Set, codes: pending.codes }
+        : { kind: BillPendingKind.Keep },
+      storedData,
+      toMoneyData(appointment.total()),
+      vouchers.map(toVoucherData),
+      now.toMillis(),
     );
-    const byCode = new Map(vouchers.map((voucher) => [voucher.code, voucher]));
-    const touched = new Map<string, GiftVoucher>();
-    const history = stored.filter((redemption) => !redemption.live);
+    if (!settled.ok) return fail(new StaffEditInvalidCommandError('vouchers'));
+    const lines = settled.value.voucherRedemptions;
+    if (lines === storedData) return ok({ appointment, touched: [] });
 
-    // 1. Give back what is no longer named — or what a bill no longer needs.
-    for (const prior of live) {
-      if (codes.includes(prior.code)) continue;
-      const voucher = byId.get(prior.voucherId) ?? byCode.get(prior.code);
-      if (voucher !== undefined) {
-        const settled = voucher.settle(prior.amount, zero.value);
-        if (settled.isFailure()) {
-          return fail(new StaffEditInvalidCommandError('vouchers'));
-        }
-        touched.set(voucher.id.value, settled.value);
-      }
-      history.push(prior.reversed(now));
-    }
-
-    // 2. Cover the bill in order.
-    let due = appointment.total().toMinorUnits();
-    const next: VoucherRedemption[] = [];
-    for (const code of codes) {
-      const voucher = byCode.get(code);
-      if (voucher === undefined) {
-        return fail(new StaffEditInvalidCommandError('vouchers'));
-      }
-      const prior = live.find(
-        (redemption) => redemption.voucherId === voucher.id.value,
-      );
-      if (prior === undefined && voucher.refusal(now) !== null) {
-        return fail(new StaffEditInvalidCommandError('vouchers'));
-      }
-      const previous = prior?.amount ?? zero.value;
-      const available =
-        voucher.balance.toMinorUnits() + previous.toMinorUnits();
-      const cover = Math.max(0, Math.min(available, due));
-      const settled = voucher.settle(previous, money(cover));
-      if (settled.isFailure()) {
-        return fail(new StaffEditInvalidCommandError('vouchers'));
-      }
-      touched.set(voucher.id.value, settled.value);
-      if (cover === 0) {
-        // Nothing left for it to cover: it is not on the bill, and if it
-        // was, its line closes as history.
-        if (prior !== undefined) history.push(prior.reversed(now));
+    const redemptions: VoucherRedemption[] = [];
+    for (const line of lines) {
+      const unchanged = storedData.indexOf(line);
+      if (unchanged >= 0) {
+        redemptions.push(stored.at(unchanged) as VoucherRedemption);
         continue;
       }
-      next.push(
+      const prior = stored.find(
+        (entry) =>
+          entry.live &&
+          entry.voucherId === line.voucherId &&
+          entry.appliedAt.toMillis() === line.appliedAtMs,
+      );
+      if (line.reversedAtMs !== null && prior !== undefined) {
+        redemptions.push(prior.reversed(now));
+        continue;
+      }
+      redemptions.push(
         VoucherRedemption.of({
-          voucherId: voucher.id.value,
-          code: voucher.code,
-          amount: money(cover),
-          balanceAfter: settled.value.balance,
+          voucherId: line.voucherId,
+          code: line.code,
+          amount: fromMoneyData(line.amount),
+          balanceAfter: fromMoneyData(line.balanceAfter),
           appliedAt: prior?.appliedAt ?? now,
         }),
       );
-      due -= cover;
     }
-
+    const touched: GiftVoucher[] = [];
+    for (const entity of settled.value.touched) {
+      const voucher = vouchers.find((entry) => entry.id.value === entity.id);
+      if (voucher === undefined) continue;
+      const back = GiftVoucher.reconstitute({
+        id: voucher.id.value,
+        code: voucher.code,
+        value: voucher.initialValue,
+        balance: fromMoneyData(entity.balance),
+        issuedAt: voucher.issuedAt,
+        expiresAt: voucher.expiresAt,
+        issuedToUserId: voucher.issuedToUserId?.value ?? null,
+        state: voucher.state,
+      });
+      if (back.isFailure()) {
+        return fail(new StaffEditInvalidCommandError('vouchers'));
+      }
+      touched.push(back.value);
+    }
     return ok({
-      appointment: appointment.withVoucherRedemptions([...history, ...next]),
-      touched: [...touched.values()],
+      appointment: appointment.withVoucherRedemptions(redemptions),
+      touched,
     });
   }
 
@@ -1084,32 +1024,34 @@ export class StaffEditAppointmentUseCase {
       return fail(new CommitBookingStoreError(now.error));
     }
 
+    // A visit that NEVER HAPPENED is history; a FINISHED one may be
+    // corrected; nothing may end before its arrival stamp —
+    // `AppointmentEditSystem.guard`.
     const status = (current['status'] ?? {}) as AppointmentStatus;
-    // A visit that NEVER HAPPENED — cancelled, or a no-show — is history and
-    // has nothing to correct. A FINISHED one is not (owner, 2026-09-09): the
-    // barber who had no time for the sheet mid-cut updates the services, the
-    // length, the price after the fact, and the book must take it. It used
-    // to refuse everything `canTransition(_, 'cancelled')` refused, which
-    // lumped the two together.
-    if (status.kind === 'cancelled' || status.kind === 'no_show') {
-      return fail(new CommitBookingInvalidInputError('status'));
-    }
-
     const arrivedAt = arrivedAtFromDocument(current);
-    if (arrivedAt !== null) {
-      const finish = Math.max(...planned.next.map(endMs));
-      if (finish <= arrivedAt.toMillis()) {
-        // A DATA-INTEGRITY refusal, not a scheduling one: nothing is wrong
-        // with the chair, but the visit would claim to have ended before the
-        // client walked in. The stamp is the fact that cannot move.
-        const finishIso = ZonedDateTime.fromMillis(finish, snapshot.zone);
-        return fail(
-          new StaffEditBeforeArrivalError(
-            finishIso.isSuccess() ? finishIso.value.toISO() : String(finish),
-            arrivedAt.toISO(),
-          ),
-        );
+    const refusal = AppointmentEditSystem.guard(
+      status.kind as BookingStateData,
+      planned.next.map((seat) =>
+        TimeIntervalData.of(seat.startMs, endMs(seat)),
+      ),
+      arrivedAt === null ? null : arrivedAt.toMillis(),
+    );
+    if (refusal !== null) {
+      if (refusal.code !== StaffEditErrorCode.BeforeArrival) {
+        return fail(new CommitBookingInvalidInputError(refusal.field));
       }
+      const finishIso = ZonedDateTime.fromMillis(
+        refusal.finishMs,
+        snapshot.zone,
+      );
+      return fail(
+        new StaffEditBeforeArrivalError(
+          finishIso.isSuccess()
+            ? finishIso.value.toISO()
+            : String(refusal.finishMs),
+          arrivedAt === null ? '' : arrivedAt.toISO(),
+        ),
+      );
     }
 
     // A fresh seat must name a chair this shop rosters. The placement engine
@@ -1240,12 +1182,19 @@ function replayOf(
   operation: { readonly id: string; readonly digest: string } | null,
 ): Result<AppliedOperation | null, StaffEditError> {
   if (operation === null) return ok(null);
-  const applied = AppliedOperations.fromDocument(current).find(operation.id);
-  if (applied === null) return ok(null);
-  if (applied.digest !== operation.digest) {
-    return fail(new StaffEditInvalidCommandError('operationId'));
+  const verdict = AppointmentEditSystem.ledgerVerdict(
+    AppliedOperations.fromDocument(current).toArray(),
+    operation.id,
+    operation.digest,
+  );
+  switch (verdict.kind) {
+    case LedgerVerdictKind.New:
+      return ok(null);
+    case LedgerVerdictKind.Mismatch:
+      return fail(new StaffEditInvalidCommandError('operationId'));
+    case LedgerVerdictKind.Replay:
+      return ok(verdict.applied);
   }
-  return ok(applied);
 }
 
 interface PlannedEdit {
@@ -1493,219 +1442,317 @@ interface FoldContext {
   readonly held: ReadonlySet<string>;
 }
 
-/**
- * The command, applied to the stored seats.
+/* ── The fold: `AppointmentEditSystem.applyCommand` (ECS Phase 2 shim) ──
  *
- * ### Which seats an edge belongs to
- * An UNSCOPED `move` is the whole party: every seat shifts by one delta, so
- * the arrangement the shop offered — two guests in parallel, or one barber
- * back to back — is preserved exactly. A move carrying `seatIds` shifts only
- * those, which is how one barber leaves a party without taking the rest of it
- * with them; the delta is then measured from the SCOPE's own start, so the
- * seat lands where it was dropped rather than where the party begins.
- *
- * A `resize` acts on the seats that OWN the edge being dragged: the ones
- * starting at the scope's start, or ending at its end. Two guests
- * finishing together both extend when the bottom handle is pulled down; the
- * last leg of a sequential chain extends alone. Anything else would either
- * silently stretch a leg nobody touched or refuse a gesture the frame draws.
+ * THIN SHIM. The fold's math — an unscoped move is the whole party by ONE
+ * delta, a scoped edge measures from the SCOPE's own start, a resize acts on
+ * the seats that OWN the dragged edge (the top handle holds the end), an
+ * added seat is NEW (an id the stored visit held is never minted again) and
+ * worked on a finished visit, a removed seat must be open and never the
+ * last, a duration driven to zero is refused as `minutes` — is
+ * `AppointmentEditSystem.applyCommand`. What follows only converts the
+ * stored seats and the wire command to the ECS structs and back.
  */
+
+/* ── The bill: `BillingSystem.settleDiscounts/settleVouchers` (ECS shim) ──
+ * Converters only: the system settles, the legacy snapshots ride back. */
+
+function toMoneyData(money: Money): MoneyData {
+  return {
+    amountMinorUnits: money.toMinorUnits(),
+    currencyCode: money.currencyCode(),
+  };
+}
+
+function fromMoneyData(money: MoneyData): Money {
+  const result = Money.fromMinorUnitsAndCode(
+    money.amountMinorUnits,
+    money.currencyCode,
+  );
+  // Unreachable: every figure carries the visit's own, valid currency.
+  if (result.isFailure()) throw new Error('unreachable: bill currency');
+  return result.value;
+}
+
+function toValueData(value: CouponValue): CouponValueData {
+  return value.kind === 'fixed_amount'
+    ? { kind: 'fixed_amount', amount: toMoneyData(value.amount) }
+    : value;
+}
+
+function toDiscountData(discount: AppliedDiscount): AppliedDiscountData {
+  return {
+    id: discount.id,
+    source: discount.source,
+    value: toValueData(discount.value),
+    label: discount.label,
+    grantId:
+      discount.grantId === null ? null : CouponGrantIdData.of(discount.grantId),
+    code: discount.code,
+    appliedAtMs: discount.appliedAt.toMillis(),
+    combinability: discount.combinability,
+  };
+}
+
+function toPendingDiscountData(item: PendingDiscountItem): PendingDiscount {
+  const request = item.request;
+  switch (request.source) {
+    case 'grant': {
+      const grant = item.grant ?? null;
+      return {
+        source: 'grant',
+        grantId: request.grantId,
+        resolved:
+          grant === null
+            ? null
+            : {
+                grantId: CouponGrantIdData.of(grant.grantId),
+                userId: UserIdData.of(grant.userId),
+                label: grant.label,
+                value: toValueData(grant.value),
+                usable: grant.usable,
+                exclusive: grant.exclusive,
+              },
+      };
+    }
+    case 'code': {
+      const coupon = item.coupon ?? null;
+      return {
+        source: 'code',
+        code: request.code,
+        resolved:
+          coupon === null
+            ? null
+            : {
+                couponId: coupon.couponId,
+                label: coupon.label,
+                value: toValueData(coupon.value),
+                code: coupon.code,
+                exclusive: coupon.exclusive,
+              },
+      };
+    }
+    case 'manual':
+      return {
+        source: 'manual',
+        value:
+          request.value.kind === 'percent_off'
+            ? { kind: 'percent_off', percent: request.value.percent }
+            : {
+                kind: 'fixed_amount',
+                amountMinorUnits: request.value.amountMinorUnits,
+              },
+      };
+  }
+}
+
+/** The legacy value a NEW discount was settled from — the resolver's, or the typed figure. */
+function legacyValueOf(
+  item: PendingDiscountItem,
+  currencyCode: string,
+): CouponValue {
+  const request = item.request;
+  const value =
+    request.source === 'grant'
+      ? (item.grant?.value ?? null)
+      : request.source === 'code'
+        ? (item.coupon?.value ?? null)
+        : manualValue(request.value, currencyCode);
+  // Unreachable: the settle refused every item it could not value.
+  if (value === null) throw new Error('unreachable: an unvalued discount');
+  return value;
+}
+
+function toRedemptionData(line: VoucherRedemption): VoucherRedemptionData {
+  return {
+    voucherId: GiftVoucherIdData.of(line.voucherId),
+    code: line.code,
+    amount: toMoneyData(line.amount),
+    balanceAfter: toMoneyData(line.balanceAfter),
+    appliedAtMs: line.appliedAt.toMillis(),
+    reversedAtMs: line.reversedAt === null ? null : line.reversedAt.toMillis(),
+  };
+}
+
+function toVoucherData(voucher: GiftVoucher): GiftVoucherEntity {
+  const state = voucher.state;
+  return {
+    id: GiftVoucherIdData.of(voucher.id.value),
+    code: VoucherCodeData.of(voucher.code),
+    initialValue: toMoneyData(voucher.initialValue),
+    balance: toMoneyData(voucher.balance),
+    issuedAtMs: voucher.issuedAt.toMillis(),
+    expiresAtMs:
+      voucher.expiresAt === null ? null : voucher.expiresAt.toMillis(),
+    issuedToUserId:
+      voucher.issuedToUserId === null
+        ? null
+        : UserIdData.of(voucher.issuedToUserId.value),
+    state:
+      state.kind === 'void'
+        ? VoucherStateData.voided(state.voidedAt.toMillis(), state.reason)
+        : VoucherStateData.active(),
+  };
+}
+
+/** A stored seat → the ECS seat the fold reads (subject and outcome only ride along). */
+function toSeatData(seat: StoredSeat): SeatData {
+  return {
+    id: SeatIdData.of(seat.id),
+    serviceId: ServiceIdData.of(seat.serviceId),
+    variantId: seat.variantId as ServiceVariantIdData | null,
+    barberId: BarberIdData.of(seat.barberId),
+    barberPref: seat.barberPref ?? null,
+    terms: {
+      priceMinorUnits: seat.priceMinorUnits,
+      currencyCode: seat.currencyCode,
+      durationMinutes: seat.durationMinutes,
+      setupMinutes: seat.setupMinutes,
+      cleanupMinutes: seat.cleanupMinutes,
+      catalogPriceMinorUnits: null,
+      catalogDurationMinutes: null,
+    },
+    startMs: seat.startMs,
+    // The fold never reads who a seat is for; the stored subject rides
+    // back from the original seat by id.
+    subject: SeatSubjectData.anonymous(SeatLabelData.of(seat.id)),
+    outcome:
+      seat.outcome.kind === 'scheduled'
+        ? SeatOutcomeData.scheduled()
+        : SeatOutcomeData.worked(0),
+    tip: null,
+  };
+}
+
+/** The wire command → the ECS command (instants as epoch ms). */
+function toCommandData(command: StaffEditCommand): EditCommand {
+  const scope = (ids: readonly string[] | undefined) =>
+    ids === undefined ? null : ids.map((id) => SeatIdData.of(id));
+  switch (command.kind) {
+    case 'move':
+      return {
+        kind: EditCommandKind.Move,
+        startMs: Date.parse(command.startIso),
+        seatIds: scope(command.seatIds),
+      };
+    case 'resize':
+      return {
+        kind: EditCommandKind.Resize,
+        edge: command.edge === 'start' ? ResizeEdge.Start : ResizeEdge.End,
+        atMs: Date.parse(command.atIso),
+        seatIds: scope(command.seatIds),
+      };
+    case 'redurate':
+      return {
+        kind: EditCommandKind.Redurate,
+        seatId: SeatIdData.of(command.seatId),
+        minutes: command.minutes,
+      };
+    case 'reprice':
+      return {
+        kind: EditCommandKind.Reprice,
+        seatId: SeatIdData.of(command.seatId),
+        priceMinorUnits: command.priceMinorUnits,
+      };
+    case 'restaff':
+      return {
+        kind: EditCommandKind.Restaff,
+        seatId: SeatIdData.of(command.seatId),
+        barberId: BarberIdData.of(command.barberId),
+      };
+    case 'addSeat':
+      return {
+        kind: EditCommandKind.AddSeat,
+        seatId: SeatIdData.of(command.seatId),
+        serviceId: ServiceIdData.of(command.serviceId),
+        variantId: (command.variantId ?? null) as ServiceVariantIdData | null,
+        barberId: BarberIdData.of(command.barberId),
+        startMs: Date.parse(command.startIso),
+        minutes: command.minutes,
+        subject: SeatSubjectData.anonymous(SeatLabelData.of(command.seatId)),
+      };
+    case 'removeSeat':
+      return {
+        kind: EditCommandKind.RemoveSeat,
+        seatId: SeatIdData.of(command.seatId),
+      };
+    case 'relocate':
+      return {
+        kind: EditCommandKind.Relocate,
+        locationId: LocationIdData.of(command.locationId),
+      };
+    case 'discounts':
+      return { kind: EditCommandKind.Discounts };
+    case 'vouchers':
+      return { kind: EditCommandKind.Vouchers };
+  }
+}
+
+/**
+ * The ECS seat the fold returned → the stored seat: the original by id with
+ * the fold's geometry, price and chair on it, or — for a seat the command
+ * ADDED — a fresh one on the visit's zone and currency, not yet priced.
+ */
+function fromSeatData(
+  seat: SeatData,
+  originals: readonly StoredSeat[],
+  command: StaffEditCommand,
+): StoredSeat {
+  const original = originals.find((entry) => entry.id === seat.id);
+  if (original !== undefined) {
+    return {
+      ...original,
+      barberId: seat.barberId,
+      startMs: seat.startMs,
+      durationMinutes: seat.terms.durationMinutes,
+      priceMinorUnits: seat.terms.priceMinorUnits,
+    };
+  }
+  const template = originals[0] as StoredSeat;
+  return {
+    id: seat.id,
+    serviceId: seat.serviceId,
+    variantId: seat.variantId,
+    barberId: seat.barberId,
+    zone: template.zone,
+    startMs: seat.startMs,
+    durationMinutes: seat.terms.durationMinutes,
+    priceMinorUnits: 0,
+    currencyCode: template.currencyCode,
+    setupMinutes: 0,
+    cleanupMinutes: 0,
+    outcome:
+      seat.outcome.kind === 'worked'
+        ? { kind: 'worked', atMs: seat.outcome.atMs }
+        : SEAT_SCHEDULED,
+    tipMinorUnits: null,
+    subject: command.kind === 'addSeat' ? command.subject : { kind: 'self' },
+    fresh: true,
+  };
+}
+
+/** The command, applied to the running seats — `AppointmentEditSystem.applyCommand`. */
 function applyCommand(
   stored: readonly StoredSeat[],
   command: StaffEditCommand,
   fold: FoldContext,
 ): Result<readonly StoredSeat[], StaffEditError> {
-  switch (command.kind) {
-    case 'move': {
-      const scoped = scopeOf(stored, command.seatIds);
-      if (scoped.isFailure()) return scoped;
-      const scope = scoped.value;
-      // The delta is measured from the SCOPE's start, so a seat dragged to
-      // 17:00 lands at 17:00 whether or not a sibling in another chair starts
-      // earlier. Measuring from the party envelope is what made a scoped move
-      // land in the wrong place the moment the seats were not aligned.
-      const delta = Date.parse(command.startIso) - startOf(scope);
-      const inScope = idsOf(scope);
-      return ok(
-        stored.map((seat) =>
-          inScope.has(seat.id)
-            ? { ...seat, startMs: seat.startMs + delta }
-            : seat,
-        ),
-      );
-    }
-    case 'resize': {
-      const scoped = scopeOf(stored, command.seatIds);
-      if (scoped.isFailure()) return scoped;
-      const scope = scoped.value;
-      const inScope = idsOf(scope);
-
-      if (command.edge === 'end') {
-        const scopeEnd = endOf(scope);
-        const deltaMinutes = Math.round(
-          (Date.parse(command.atIso) - scopeEnd) / MINUTE_MS,
-        );
-        return reshape(stored, (seat) =>
-          inScope.has(seat.id) && endMs(seat) === scopeEnd
-            ? { ...seat, durationMinutes: seat.durationMinutes + deltaMinutes }
-            : seat,
-        );
-      }
-      // The top handle HOLDS THE END: the start moves and the duration
-      // absorbs it. "I'll start ten minutes later but still finish at eleven"
-      // is one gesture and two written values, which is exactly why a resize
-      // cannot be a patch of one timestamp.
-      const scopeStart = startOf(scope);
-      const at = Date.parse(command.atIso);
-      const deltaMinutes = Math.round((at - scopeStart) / MINUTE_MS);
-      return reshape(stored, (seat) =>
-        inScope.has(seat.id) && seat.startMs === scopeStart
-          ? {
-              ...seat,
-              startMs: at,
-              durationMinutes: seat.durationMinutes - deltaMinutes,
-            }
-          : seat,
-      );
-    }
-    case 'redurate':
-      return reshapeSeat(stored, command.seatId, (seat) => ({
-        ...seat,
-        durationMinutes: command.minutes,
-      }));
-    case 'reprice':
-      return reshapeSeat(stored, command.seatId, (seat) => ({
-        ...seat,
-        priceMinorUnits: command.priceMinorUnits,
-      }));
-    case 'restaff':
-      return reshapeSeat(stored, command.seatId, (seat) => ({
-        ...seat,
-        barberId: command.barberId,
-      }));
-    case 'addSeat': {
-      // Neither a seat the batch still holds, nor one the stored visit held
-      // and an earlier command of this batch removed: an added seat is
-      // NEW, judged by the rule in full, and has no history to borrow.
-      if (
-        fold.held.has(command.seatId) ||
-        stored.some((seat) => seat.id === command.seatId)
-      ) {
-        return fail(new StaffEditInvalidCommandError('seatId'));
-      }
-      // The zone and currency are the appointment's, read off any seat it
-      // already holds; a batch cannot add to an empty visit (`plan` refuses
-      // one before it gets here).
-      const template = stored[0];
-      if (!template) return fail(new StaffEditInvalidCommandError('seats'));
-      return ok([
-        ...stored,
-        {
-          id: command.seatId,
-          serviceId: command.serviceId,
-          variantId: command.variantId ?? null,
-          barberId: command.barberId,
-          zone: template.zone,
-          startMs: Date.parse(command.startIso),
-          durationMinutes: command.minutes,
-          priceMinorUnits: 0,
-          currencyCode: template.currencyCode,
-          setupMinutes: 0,
-          cleanupMinutes: 0,
-          // On a finished visit the new seat is history the moment it is
-          // written — worked, stamped at its own end.
-          outcome: fold.finished
-            ? {
-                kind: 'worked',
-                atMs: Date.parse(command.startIso) + command.minutes * 60_000,
-              }
-            : SEAT_SCHEDULED,
-          tipMinorUnits: null,
-          subject: command.subject,
-          fresh: true,
-        },
-      ]);
-    }
-    case 'removeSeat': {
-      const target = stored.find((seat) => seat.id === command.seatId);
-      if (!target) return fail(new StaffEditInvalidCommandError('seatId'));
-      // A seat somebody already sat in (or was charged for, or cancelled out
-      // of) is history, not a line to delete; and a visit with no seats is
-      // not a visit — that is a cancellation, which has its own path.
-      if (target.outcome.kind !== 'scheduled' || stored.length === 1) {
-        return fail(new StaffEditInvalidCommandError('seatId'));
-      }
-      return ok(stored.filter((seat) => seat !== target));
-    }
-    case 'discounts':
-    case 'vouchers':
-    case 'relocate':
-      // Not seat edits — the bill's and the place's, settled outside the
-      // fold, which skips them. Listed so the switch stays exhaustive.
-      return ok(stored);
+  const applied = AppointmentEditSystem.applyCommand(
+    stored.map(toSeatData),
+    toCommandData(command),
+    {
+      finished: fold.finished,
+      held: [...fold.held].map((id) => SeatIdData.of(id)),
+    },
+  );
+  if (!applied.ok) {
+    return fail(new StaffEditInvalidCommandError(applied.error.field));
   }
-}
-
-/**
- * The seats a scoped edge acts on — every stored seat when unscoped.
- *
- * An unknown or empty id list is refused rather than silently widened to the
- * whole party: a caller that named seats meant to name them, and quietly
- * moving everyone because one id was stale is the failure mode this arm
- * exists to prevent.
- */
-function scopeOf(
-  stored: readonly StoredSeat[],
-  seatIds: readonly string[] | undefined,
-): Result<readonly StoredSeat[], StaffEditError> {
-  // Shape is `validateCommand`'s job and has already been settled; what is
-  // left is whether these ids are seats of THIS appointment.
-  if (seatIds === undefined) return ok(stored);
-  const wanted = new Set(seatIds);
-  const scope = stored.filter((seat) => wanted.has(seat.id));
-  return scope.length === wanted.size
-    ? ok(scope)
-    : fail(new StaffEditInvalidCommandError('seatIds'));
+  return ok(applied.value.map((seat) => fromSeatData(seat, stored, command)));
 }
 
 function idsOf(seats: readonly StoredSeat[]): ReadonlySet<string> {
   return new Set(seats.map((seat) => seat.id));
-}
-
-function startOf(seats: readonly StoredSeat[]): number {
-  return Math.min(...seats.map((seat) => seat.startMs));
-}
-
-function endOf(seats: readonly StoredSeat[]): number {
-  return Math.max(...seats.map(endMs));
-}
-
-/** Map every seat, refusing a duration the edit drove to zero or below. */
-function reshape(
-  stored: readonly StoredSeat[],
-  map: (seat: StoredSeat) => StoredSeat,
-): Result<readonly StoredSeat[], StaffEditError> {
-  const next = stored.map(map);
-  // Not `invalid_range` — there is no range. The end is DERIVED, so the only
-  // thing that can be wrong is the duration, and that is what is named.
-  return next.every(
-    (seat) =>
-      Number.isInteger(seat.durationMinutes) && seat.durationMinutes > 0,
-  )
-    ? ok(next)
-    : fail(new StaffEditInvalidCommandError('minutes'));
-}
-
-/** The same, for the commands that name one seat. */
-function reshapeSeat(
-  stored: readonly StoredSeat[],
-  seatId: string,
-  map: (seat: StoredSeat) => StoredSeat,
-): Result<readonly StoredSeat[], StaffEditError> {
-  if (!stored.some((seat) => seat.id === seatId)) {
-    return fail(new StaffEditInvalidCommandError('seatId'));
-  }
-  return reshape(stored, (seat) => (seat.id === seatId ? map(seat) : seat));
 }
 
 /**

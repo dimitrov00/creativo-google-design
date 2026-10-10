@@ -1,4 +1,12 @@
 import { createHash } from 'node:crypto';
+import { AppointmentEditSystem } from '@creativo/ecs-core';
+
+/*
+ * THIN SHIM (ECS migration Phase 2). The fingerprint's BASIS — the tagged
+ * JSON of the validated commands, in order — is
+ * `AppointmentEditSystem.digestBasis`; the hash stays here, at the edge,
+ * because no system may hold `crypto`.
+ */
 
 /*
  * THE LEDGER ITSELF — `AppliedOperations`, `APPLIED_OPERATIONS_FIELD` —
@@ -20,7 +28,7 @@ import { createHash } from 'node:crypto';
  */
 export function operationDigest(commands: readonly unknown[]): string {
   return createHash('sha256')
-    .update(JSON.stringify(['staff-operation/v1', commands]))
+    .update(AppointmentEditSystem.digestBasis(commands))
     .digest('hex')
     .slice(0, 16);
 }

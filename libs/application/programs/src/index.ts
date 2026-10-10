@@ -30,4 +30,4 @@ export * from './lib/use-cases/update-shop-event.errors';
 // without an illegal `type:domain` import of their own.
 export * from '@creativo/domain/programs';
 export type { DomainError, Result } from '@creativo/domain/kernel';
-export { combine, fail, ok } from '@creativo/domain/kernel';
+export * from './lib/public-reexports';

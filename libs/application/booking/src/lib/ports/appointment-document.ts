@@ -19,7 +19,6 @@ import {
   AppointmentStatus,
   BarberPref,
   BookingContact,
-  CalendarDay,
   CancellationReason,
   CancellationWindow,
   type ChairTime,
@@ -36,6 +35,23 @@ import {
   VoucherRedemption,
 } from '@creativo/domain/scheduling';
 import { RepositoryError } from '@creativo/application/shared';
+import {
+  AppointmentIndexSystem,
+  BarberId as EcsBarberId,
+  BusyKey,
+  BusySystem,
+  DayKey as EcsDayKey,
+  type DayOffset,
+  type IndexedSeat,
+  Seat as EcsSeat,
+  SeatId as EcsSeatId,
+  SeatLabel as EcsSeatLabel,
+  SeatOutcome as EcsSeatOutcome,
+  ServiceId as EcsServiceId,
+  SeatSubject as EcsSeatSubject,
+  UserId as EcsUserId,
+  ZonedTimeSystem,
+} from '@creativo/ecs-core';
 
 /**
  * The persisted shape of an appointment, and of the public busy projection —
@@ -98,7 +114,8 @@ export function appointmentToDocument(
     // what lets the stats trigger read a client's whole history (R33).
     subjectUserIds: subjectUserIdsOf(appointment),
     placement: context.placement ?? null,
-    barberIds: appointment.barberIds().map((id) => id.value),
+    barberIds: AppointmentIndexSystem.queryKeys(indexedSeatsOf(appointment), [])
+      .barberIds,
     // The (barber, day) projection docs this appointment occupies — the
     // rebuild trigger's reverse index. `array-contains` on this plus a
     // status filter is what lets one cancelled booking recompute exactly
@@ -1031,15 +1048,8 @@ export function appointmentFromDocument(
  * never own anything.
  */
 export function ownerUserIdOf(appointment: Appointment): string | null {
-  for (const seat of appointment.seats) {
-    if (
-      seat.subject.kind === 'account' &&
-      seat.subject.relationship === 'self'
-    ) {
-      return seat.subject.userId.value;
-    }
-  }
-  return null;
+  return AppointmentIndexSystem.queryKeys(indexedSeatsOf(appointment), [])
+    .ownerUserId;
 }
 
 /**
@@ -1049,11 +1059,8 @@ export function ownerUserIdOf(appointment: Appointment): string | null {
  * history to find.
  */
 export function subjectUserIdsOf(appointment: Appointment): readonly string[] {
-  const ids = new Set<string>();
-  for (const seat of appointment.seats) {
-    if (seat.subject.kind === 'account') ids.add(seat.subject.userId.value);
-  }
-  return [...ids].sort();
+  return AppointmentIndexSystem.queryKeys(indexedSeatsOf(appointment), [])
+    .subjectUserIds;
 }
 
 /**
@@ -1067,7 +1074,9 @@ export function subjectUserIdsFromDocument(
   const seats = Array.isArray(data?.['seats'])
     ? (data['seats'] as readonly unknown[])
     : [];
-  const ids = new Set<string>();
+  // Only the accounts matter here: each raw account subject becomes a seat
+  // the mirror reads (no chair, no day — neither is asked of it).
+  const accounts: IndexedSeat[] = [];
   for (const raw of seats) {
     if (raw === null || typeof raw !== 'object') continue;
     const subject = (raw as Record<string, unknown>)['subject'];
@@ -1079,10 +1088,15 @@ export function subjectUserIdsFromDocument(
       typeof userId === 'string' &&
       userId.trim().length > 0
     ) {
-      ids.add(userId);
+      accounts.push({
+        barberId: EcsBarberId.of(''),
+        startMs: Number.NaN,
+        subject: EcsSeatSubject.account(EcsUserId.of(userId), 'companion'),
+      });
     }
   }
-  return [...ids].sort();
+  return AppointmentIndexSystem.queryKeys({ seats: accounts }, [])
+    .subjectUserIds;
 }
 
 function placementOf(raw: unknown): AppointmentPlacement | null {
@@ -1142,7 +1156,7 @@ export interface PersistedBusyDocument {
 
 /** Composite key — the barber AND the day, so the grid reads exactly what it renders. */
 export function busyDocumentId(barberId: string, dayKey: string): string {
-  return `${barberId}__${dayKey}`;
+  return BusyKey.of(EcsBarberId.of(barberId), EcsDayKey.of(dayKey));
 }
 
 /**
@@ -1154,16 +1168,48 @@ export function busyDocumentId(barberId: string, dayKey: string): string {
  * one projection doc.
  */
 export function busyKeysOf(appointment: Appointment): readonly string[] {
-  const keys = new Set<string>();
-  for (const seat of appointment.seats) {
-    keys.add(
-      busyDocumentId(
-        seat.barberId.value,
-        CalendarDay.fromZonedDateTime(seat.slot.start).key(),
-      ),
-    );
-  }
-  return [...keys].sort();
+  return AppointmentIndexSystem.queryKeys(
+    indexedSeatsOf(appointment),
+    seatDayTableOf(appointment),
+  ).busyKeys;
+}
+
+/* ── Phase 2 shim converters: the aggregate's seats → ecs-core structs ──── */
+
+/** What `AppointmentIndexSystem.queryKeys` reads of each seat. */
+function indexedSeatsOf(appointment: Appointment): {
+  readonly seats: readonly IndexedSeat[];
+} {
+  return {
+    seats: appointment.seats.map((seat) => ({
+      barberId: EcsBarberId.of(seat.barberId.value),
+      startMs: seat.slot.start.toMillis(),
+      subject:
+        seat.subject.kind === 'account'
+          ? EcsSeatSubject.account(
+              EcsUserId.of(seat.subject.userId.value),
+              seat.subject.relationship,
+            )
+          : EcsSeatSubject.anonymous(EcsSeatLabel.of(seat.subject.label.value)),
+    })),
+  };
+}
+
+/**
+ * The zone table the busy keys are resolved over: the seats' zone (one per
+ * visit — the shop's), the days from the first sold start to the last.
+ */
+function seatDayTableOf(appointment: Appointment): readonly DayOffset[] {
+  const starts = appointment.seats.map((seat) => seat.slot.start);
+  const first = starts[0];
+  if (first === undefined) return [];
+  const ms = starts.map((start) => start.toMillis());
+  return ZonedTimeSystem.dayTableAround(
+    first.zoneName,
+    Math.min(...ms),
+    Math.max(...ms),
+    0,
+  );
 }
 
 /** One (barber, day) projection doc's share of a stored appointment. */
@@ -1186,11 +1232,37 @@ export function busyContributionsOf(
   data: PersistedDocument,
 ): ReadonlyMap<string, BusyContribution> {
   const byKey = new Map<string, { zone: string; intervals: Interval[] }>();
-  for (const chair of persistedChairs(data)) {
-    const key = busyDocumentId(chair.barberId, chair.dayKey);
-    const entry = byKey.get(key) ?? { zone: chair.zone, intervals: [] };
-    entry.intervals.push(chair.occupied);
-    byKey.set(key, entry);
+  // The seats grouped by zone (a visit's seats share the shop's), in the
+  // order the zones first appear: ONE day table per zone, over its seats'
+  // span, and one `contributionsOf` per zone — never Intl per seat.
+  const seatsByZone = new Map<string, EcsSeat[]>();
+  for (const { seat, zone } of persistedSeatsOf(data)) {
+    const seats = seatsByZone.get(zone);
+    if (seats === undefined) seatsByZone.set(zone, [seat]);
+    else seats.push(seat);
+  }
+  for (const [zone, seats] of seatsByZone) {
+    let minStart = Number.POSITIVE_INFINITY;
+    let maxStart = Number.NEGATIVE_INFINITY;
+    for (const seat of seats) {
+      if (seat.startMs < minStart) minStart = seat.startMs;
+      if (seat.startMs > maxStart) maxStart = seat.startMs;
+    }
+    // The system keys the chair by its sold start's local day.
+    const days = ZonedTimeSystem.dayTableAround(zone, minStart, maxStart, 0);
+    for (const contribution of BusySystem.contributionsOf(
+      { seats, zone },
+      days,
+    )) {
+      const entry = byKey.get(contribution.id) ?? {
+        zone: contribution.zone,
+        intervals: [],
+      };
+      for (const span of contribution.spans) {
+        entry.intervals.push(Interval.of(span.startMs, span.endMs));
+      }
+      byKey.set(contribution.id, entry);
+    }
   }
   return byKey;
 }
@@ -1210,25 +1282,29 @@ export function busyContributionsOf(
 export function persistedChairTimesOf(
   data: PersistedDocument,
 ): readonly ChairTime[] {
-  return persistedChairs(data).flatMap((chair): readonly ChairTime[] => {
-    const barberId = BarberId.create(chair.barberId);
-    return barberId.isSuccess()
-      ? [{ barberId: barberId.value, occupied: chair.occupied }]
-      : [];
+  return persistedSeatsOf(data).flatMap((seat): readonly ChairTime[] => {
+    const barberId = BarberId.create(seat.seat.barberId);
+    if (barberId.isFailure()) return [];
+    const occupied = EcsSeat.chairTime(seat.seat);
+    return [
+      {
+        barberId: barberId.value,
+        occupied: Interval.of(occupied.startMs, occupied.endMs),
+      },
+    ];
   });
 }
 
 /**
- * The stored seats' chairs: setup + service + cleanup around each sold
- * slot, the envelope `decideBooking` writes. ONE reading of the raw seat
- * geometry, for the projection and the release alike.
+ * The stored seats as `BusySystem` reads them — the edge parse of the raw
+ * seat geometry (the sold slot's ISO pair, the pads), for the projection and
+ * the release alike. Each seat carries its zone; the day table is the
+ * projection's to build (once per zone), and the release needs none. A seat
+ * with no zone or barber, or an unparseable slot, is skipped.
  */
-function persistedChairs(data: PersistedDocument): readonly {
-  readonly barberId: string;
+function persistedSeatsOf(data: PersistedDocument): readonly {
+  readonly seat: EcsSeat;
   readonly zone: string;
-  /** The sold slot's start day — what the busy doc is keyed by. */
-  readonly dayKey: string;
-  readonly occupied: Interval;
 }[] {
   const seats = Array.isArray(data['seats'])
     ? (data['seats'] as readonly Record<string, unknown>[])
@@ -1246,19 +1322,29 @@ function persistedChairs(data: PersistedDocument): readonly {
 
     const setup = Number(terms['setupMinutes'] ?? 0);
     const cleanup = Number(terms['cleanupMinutes'] ?? 0);
-    return [
-      {
-        barberId,
-        zone,
-        dayKey: CalendarDay.fromZonedDateTime(start.value).key(),
-        occupied: Interval.of(
-          start.value.toMillis() -
-            (Number.isFinite(setup) ? setup : 0) * 60_000,
-          end.value.toMillis() +
-            (Number.isFinite(cleanup) ? cleanup : 0) * 60_000,
-        ),
+    const startMs = start.value.toMillis();
+    const struct: EcsSeat = {
+      id: EcsSeatId.of(String(seat['id'] ?? '')),
+      serviceId: EcsServiceId.of(String(seat['serviceId'] ?? '')),
+      variantId: null,
+      barberId: EcsBarberId.of(barberId),
+      barberPref: null,
+      terms: {
+        priceMinorUnits: 0,
+        currencyCode: '',
+        // The stored END is the truth the projection was drawn from.
+        durationMinutes: (end.value.toMillis() - startMs) / 60_000,
+        setupMinutes: Number.isFinite(setup) ? setup : 0,
+        cleanupMinutes: Number.isFinite(cleanup) ? cleanup : 0,
+        catalogPriceMinorUnits: null,
+        catalogDurationMinutes: null,
       },
-    ];
+      startMs,
+      subject: EcsSeatSubject.anonymous(EcsSeatLabel.of('')),
+      outcome: EcsSeatOutcome.scheduled(),
+      tip: null,
+    };
+    return [{ seat: struct, zone }];
   });
 }
 
@@ -1290,10 +1376,11 @@ export function mergeBusy(
   added: readonly Interval[],
   zone: string,
 ): readonly PersistedSlot[] {
-  const merged = Interval.normalize([
-    ...busyIntervalsOf(existing, zone),
-    ...added,
-  ]);
+  const merged = BusySystem.mergeBusy(
+    busyIntervalsOf(existing, zone),
+    added,
+    [],
+  );
 
   const slots: PersistedSlot[] = [];
   for (const interval of merged) {

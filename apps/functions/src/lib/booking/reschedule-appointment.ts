@@ -1,3 +1,4 @@
+import { AuditSystem } from '@creativo/ecs-core';
 import { HttpsError, onCall } from 'firebase-functions/v2/https';
 import { FirestoreBookingStore } from '../../adapters/firestore-booking-store';
 import { CryptoIdGenerator } from '../../adapters/crypto-id-generator';
@@ -106,15 +107,15 @@ export function moveAudit(
   if (moved.replayed) {
     if (attemptId === undefined || !moved.replayedAttempt) return null;
     return {
-      changeKey: `move:${attemptId}`,
+      changeKey: AuditSystem.changeKey.move(attemptId),
       context: { loggedOn: 'retry', revision: String(moved.revision) },
     };
   }
   return {
     changeKey:
       attemptId === undefined
-        ? `revision:${moved.revision}`
-        : `move:${attemptId}`,
+        ? AuditSystem.changeKey.revision(moved.revision)
+        : AuditSystem.changeKey.move(attemptId),
     context: { revision: String(moved.revision) },
   };
 }

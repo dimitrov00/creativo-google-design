@@ -15,6 +15,15 @@ import {
   sofiaDayOf,
 } from '@creativo/application/engagement';
 import {
+  AchievementsSystem,
+  BarberId as BarberRefId,
+  DayKey,
+  LocationId as LocationRefId,
+  type MetricRef,
+  ServiceId as ServiceRefId,
+  type Weekday,
+} from '@creativo/ecs-core';
+import {
   type RhythmRuleWords,
   type VisitRowVm,
   firstNameOf,
@@ -36,7 +45,6 @@ import {
   NO_BREAK,
   dayLong,
   dayWithYear,
-  daysBetweenDays,
   figure,
   inSentence,
 } from './client-card.format';
@@ -81,14 +89,11 @@ import { visitsRows } from './visits-page.presenter';
  * only carries what it was handed.
  */
 
-/** The last minute a visit may start and still count as an early bird (10:00). */
-const EARLY_BIRD_LAST_MINUTE = 10 * 60;
-
 /** Where the shop's hours are read: the zone of every visit on the card. */
 const SHOP_ZONE = 'Europe/Sofia';
 
-/** ISO weekdays of the shop's weekend: Saturday and Sunday. */
-const WEEKEND_FROM = 6;
+/** A draft with no start yet: a weekday that is no weekend. */
+const WEEKDAY_MONDAY: Weekday = 1;
 
 /** DI — the visits that counted, newest first: never more than these. */
 const COUNTED_VISITS_LIMIT = 5;
@@ -249,45 +254,18 @@ export function countsToward(
   if (metric === null) return false;
   const worked = workedVisitOf(visit, subjectUserId);
   if (worked === null) return false;
-
-  const serviceId = metric.where?.serviceId?.value;
-  if (
-    serviceId !== undefined &&
-    !worked.seats.some((seat) => seat.serviceId.value === serviceId)
-  ) {
-    return false;
-  }
-  const barberId = metric.where?.barberId?.value;
-  if (
-    barberId !== undefined &&
-    !worked.seats.some((seat) => seat.barberId.value === barberId)
-  ) {
-    return false;
-  }
-  const locationId = metric.where?.locationId?.value;
-  if (locationId !== undefined && visit.locationId.value !== locationId) {
-    return false;
-  }
-
-  switch (metric.metric) {
-    case 'client.visits.completed':
-      return true;
-    case 'client.visits.earlyBird':
-      return (
-        worked.start.hour * 60 + worked.start.minute <= EARLY_BIRD_LAST_MINUTE
-      );
-    case 'client.visits.weekend':
-      return worked.start.weekday >= WEEKEND_FROM;
-    case 'client.visits.onTime':
-      return (
-        visit.arrivedAt !== null &&
-        visit.arrivedAt.toMillis() <= worked.start.toMillis()
-      );
-    case 'client.visits.party':
-      return worked.withCompany;
-    default:
-      return false;
-  }
+  return AchievementsSystem.countsToward(metricRefOf(metric), {
+    serviceIds: worked.seats.map((seat) =>
+      ServiceRefId.of(seat.serviceId.value),
+    ),
+    barberIds: worked.seats.map((seat) => BarberRefId.of(seat.barberId.value)),
+    locationId: LocationRefId.of(visit.locationId.value),
+    startMs: worked.start.toMillis(),
+    startMinuteOfDay: worked.start.hour * 60 + worked.start.minute,
+    startWeekday: worked.start.weekday as Weekday,
+    arrivedAtMs: visit.arrivedAt === null ? null : visit.arrivedAt.toMillis(),
+    withCompany: worked.withCompany,
+  });
 }
 
 /**
@@ -301,18 +279,22 @@ function insideWindows(
   data: AchievementsData,
 ): boolean {
   const day = sofiaDayOf(new Date(visit.timeSlot.start.toMillis()));
-  if (series.seasonId !== null) {
-    const season = data.catalog.season(series.seasonId.value);
-    if (
-      season === null ||
-      day < season.window.from ||
-      day > season.window.until
-    ) {
-      return false;
-    }
-  }
-  const lastDays = series.metric?.window?.lastDays;
-  return lastDays === undefined || daysBetweenDays(day, data.today) < lastDays;
+  const season =
+    series.seasonId === null
+      ? null
+      : data.catalog.season(series.seasonId.value);
+  return AchievementsSystem.insideWindows(
+    season === null
+      ? null
+      : {
+          from: DayKey.of(season.window.from),
+          until: DayKey.of(season.window.until),
+        },
+    series.seasonId !== null,
+    series.metric?.window ?? null,
+    DayKey.of(day),
+    DayKey.of(data.today),
+  );
 }
 
 /** The visit on screen, as its draft holds it: when its first service starts. */
@@ -358,41 +340,28 @@ function thisVisitCounts(
     const season = data.catalog.season(series.seasonId.value);
     if (season === null || season.phaseOn(data.today) !== 'open') return false;
   }
-  const serviceId = metric.where?.serviceId?.value;
-  if (
-    serviceId !== undefined &&
-    !visit.legs.some((leg) => leg.serviceId === serviceId)
-  ) {
-    return false;
-  }
-  const barberId = metric.where?.barberId?.value;
-  if (
-    barberId !== undefined &&
-    !visit.legs.some((leg) => leg.barberId === barberId)
-  ) {
-    return false;
-  }
-  const locationId = metric.where?.locationId?.value;
-  if (locationId !== undefined && visit.locationId !== locationId) {
-    return false;
-  }
-  switch (metric.metric) {
-    case 'client.visits.completed':
-      return true;
-    case 'client.visits.earlyBird': {
-      const start = draftStart(visit);
-      return (
-        start !== null &&
-        start.hour * 60 + start.minute <= EARLY_BIRD_LAST_MINUTE
-      );
-    }
-    case 'client.visits.weekend': {
-      const start = draftStart(visit);
-      return start !== null && start.weekday >= WEEKEND_FROM;
-    }
-    default:
-      return false;
-  }
+  // The draft as a visit the system can judge: what the day itself
+  // decides (an arrival, company) is not promised, and a draft with no
+  // start yet is neither early nor on a weekend.
+  const start = draftStart(visit);
+  return AchievementsSystem.countsToward(metricRefOf(metric), {
+    serviceIds: visit.legs.flatMap((leg) =>
+      leg.serviceId === null ? [] : [ServiceRefId.of(leg.serviceId)],
+    ),
+    barberIds: visit.legs.flatMap((leg) =>
+      leg.barberId === null ? [] : [BarberRefId.of(leg.barberId)],
+    ),
+    // A draft with no shop yet is in none: no shop's family counts it.
+    locationId: LocationRefId.of(visit.locationId ?? ''),
+    startMs: start === null ? Number.NaN : start.toMillis(),
+    startMinuteOfDay:
+      start === null
+        ? Number.POSITIVE_INFINITY
+        : start.hour * 60 + start.minute,
+    startWeekday: start === null ? WEEKDAY_MONDAY : (start.weekday as Weekday),
+    arrivedAtMs: null,
+    withCompany: false,
+  });
 }
 
 // ── DK · the dock's verb ────────────────────────────────────────────────
@@ -1098,5 +1067,33 @@ export function medalDetailVm(
     related: neighboursOf(series, data, ctx),
     // A family that cannot move offers no verb, whatever it was handed.
     action: canStillMove(series, standing, data) ? extra.action : null,
+  };
+}
+
+// ── The bridge: legacy shapes → ecs-core structs (Phase 4 deletes it) ────
+
+/** A family's metric as `AchievementsSystem` reads it: every part present, absent is `null`. */
+function metricRefOf(metric: NonNullable<BadgeSeries['metric']>): MetricRef {
+  const where = metric.where;
+  return {
+    metric: metric.metric as MetricRef['metric'],
+    window: metric.window ?? null,
+    where:
+      where === undefined
+        ? null
+        : {
+            serviceId:
+              where.serviceId === undefined
+                ? null
+                : ServiceRefId.of(where.serviceId.value),
+            barberId:
+              where.barberId === undefined
+                ? null
+                : BarberRefId.of(where.barberId.value),
+            locationId:
+              where.locationId === undefined
+                ? null
+                : LocationRefId.of(where.locationId.value),
+          },
   };
 }

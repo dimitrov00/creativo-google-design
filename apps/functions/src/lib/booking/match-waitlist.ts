@@ -12,6 +12,7 @@ import { FirestoreNotificationWriter } from '../../adapters/firestore-notificati
 import { FirestoreWaitlistStore } from '../../adapters/firestore-waitlist-store';
 import { CryptoIdGenerator } from '../../adapters/crypto-id-generator';
 import { SystemClock } from '../../adapters/system-clock';
+import { WaitlistSystem } from '@creativo/ecs-core';
 import { adminFirestore } from '../firebase-admin';
 import { loadBookingPolicy } from './load-booking-policy';
 import { loadDayAvailability } from './load-day-availability';
@@ -20,16 +21,6 @@ import {
   type MatchWaitlistSnapshot,
   matchWaitlist,
 } from '../../use-cases/match-waitlist';
-
-/**
- * How long a notification suppresses the next one for the same request.
- *
- * The trigger fires on every write to a barber's day and a busy shop writes
- * many, so without a floor one afternoon of rescheduling would send the same
- * person a dozen identical messages — the fastest way to make someone turn the
- * feature off entirely.
- */
-const NOTIFY_COOLDOWN_HOURS = 6;
 
 /**
  * Watch the public busy projection; when a day frees up, tell whoever asked.
@@ -94,8 +85,11 @@ export const matchWaitlistOnBusyChange = onDocumentWritten(
     // so every request below still has its lapse read.
     const snapshot = await loadDayAvailability(db, day.value, zone);
 
+    // How long a notification suppresses the next one for the same request
+    // (`WaitlistSystem.cooldownSinceMs`): one afternoon of rescheduling must
+    // not send the same person a dozen identical messages.
     const since = ZonedDateTime.fromMillis(
-      now.toMillis() - NOTIFY_COOLDOWN_HOURS * 3_600_000,
+      WaitlistSystem.cooldownSinceMs(now.toMillis()),
       zone,
     );
 

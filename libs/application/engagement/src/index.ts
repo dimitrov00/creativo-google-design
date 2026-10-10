@@ -24,13 +24,6 @@ export * from './lib/use-cases/preview-streak-definition.use-case';
 // coupon carries and the evaluator that applies a set of them, the coupon
 // and the voucher themselves. Features never import a domain lib directly
 // (module boundaries); the application layer is where they reach it.
-export {
-  Coupon,
-  CouponCombinability,
-  CouponValue,
-  DiscountApplication,
-  GiftVoucher,
-} from '@creativo/domain/engagement';
 export type {
   DiscountBreakdown,
   DiscountInput,
@@ -41,27 +34,6 @@ export type {
 // card: the catalogue's classes, one client's projections and the pure
 // standing services over both. By name, never `export *`, for the reason
 // above: a feature sees exactly what it reads.
-export {
-  BadgeCategory,
-  BadgeCategoryId,
-  BadgeSeries,
-  BadgeSeriesId,
-  LoyaltyCatalog,
-  Season,
-  SeasonId,
-  bestAffordable,
-  closestLevels,
-  earnedLevelCount,
-  familiesIn,
-  familyCounts,
-  isNewSince,
-  levelNumeral,
-  nextAffordable,
-  recentLevelsByDay,
-  redeemProblem,
-  sofiaDayOf,
-  tierSteps,
-} from '@creativo/domain/engagement';
 export type {
   ActivityEffect,
   ActivityEntry,
@@ -103,15 +75,6 @@ export type {
 // its ranges, the projector, and the shapes a feature names when it words
 // the rule, edits it or previews it. `StreakDefinition` is the CLASS,
 // resolved by date from `LoyaltyCatalog.streakInForce`.
-export {
-  STREAK_EXCUSES,
-  STREAK_LIMITS,
-  STREAK_SHOP_EXCUSES,
-  StreakDefinition,
-  StreakDefinitionError,
-  StreakDefinitionSchedule,
-  projectStreak,
-} from '@creativo/domain/engagement';
 export type {
   CouponOccasion,
   StreakDefinitionField,
@@ -129,3 +92,4 @@ export type {
   StreakRuleSummary,
   StreakTransition,
 } from '@creativo/domain/engagement';
+export * from './lib/public-reexports';

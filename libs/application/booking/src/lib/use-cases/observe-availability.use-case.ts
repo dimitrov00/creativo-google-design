@@ -1,6 +1,21 @@
 import { Observable, map, of } from 'rxjs';
 import { Result, ZonedDateTime, fail, ok } from '@creativo/domain/kernel';
-import { BarberId, LocationId, Service } from '@creativo/domain/catalog';
+import {
+  BarberId,
+  LocationId,
+  Service,
+  type ServiceTerms,
+} from '@creativo/domain/catalog';
+import {
+  BarberId as EcsBarberId,
+  type BookingCart as CartData,
+  BookingCartSystem,
+  type CartService,
+  LocationId as EcsLocationId,
+  ServiceId as EcsServiceId,
+  type ServiceTerms as EcsServiceTerms,
+  ServiceVariantId as EcsServiceVariantId,
+} from '@creativo/ecs-core';
 import {
   type AvailabilityLine,
   type AvailabilityOption,
@@ -103,43 +118,34 @@ export function cartToAvailabilityLines(
   services: readonly Service[],
   barberIds: readonly BarberId[],
 ): readonly AvailabilityLine[] {
-  const byId = new Map(services.map((service) => [service.id.value, service]));
-
-  return cart.entries().flatMap(([seatKey, lines]) =>
-    lines.flatMap((line): readonly AvailabilityLine[] => {
-      const service = byId.get(line.serviceId.value);
-      if (!service) return [];
-
-      const toTerms = (barberId: BarberId | null): LineTerms => {
-        const terms = service.termsFor(barberId, line.variantId);
-        return {
-          durationMinutes: terms.durationMinutes,
-          padBeforeMinutes: terms.setupMinutes,
-          padAfterMinutes: terms.cleanupMinutes,
-        };
-      };
-
-      return [
-        {
-          lineId: line.id.value,
-          barberPref: line.barberPref,
-          // WHO: the seat is the person. Two lines of one seat never sit in
-          // two chairs at once — the engine keeps them apart, and the
-          // server's decision refuses a cart that does not.
-          personKey: seatKey,
-          // The catalog terms, before anyone picks a barber.
-          ...toTerms(null),
-          // …and what each barber in the pool actually takes. Resolved for
-          // every barber, not only the preferred one: with an `any`
-          // preference the engine tries them all, and each has to be
-          // measured on their own terms.
-          termsByBarber: new Map(
-            barberIds.map((barberId) => [barberId.value, toTerms(barberId)]),
-          ),
-        },
-      ];
-    }),
+  const prefs = new Map(
+    cart
+      .entries()
+      .flatMap(([, lines]) =>
+        lines.map((line) => [line.id.value, line.barberPref] as const),
+      ),
   );
+  return BookingCartSystem.toAvailabilityLines(
+    cartDataOf(cart),
+    servicesDataOf(services),
+    barberIds.map((barberId) => EcsBarberId.of(barberId.value)),
+  ).map((line) => ({
+    lineId: line.lineId,
+    // The caller's own preference object for the line (the system's is
+    // the same answer, as a struct).
+    barberPref: prefs.get(line.lineId) as AvailabilityLine['barberPref'],
+    personKey: line.personKey ?? undefined,
+    durationMinutes: line.durationMinutes,
+    padBeforeMinutes: line.padBeforeMinutes,
+    padAfterMinutes: line.padAfterMinutes,
+    // The dense per-barber terms, keyed back by the pool's ids.
+    termsByBarber: new Map(
+      barberIds.map((barberId, index) => [
+        barberId.value,
+        line.termsByBarber.at(index) as LineTerms,
+      ]),
+    ),
+  }));
 }
 
 /**
@@ -349,4 +355,75 @@ export class ObserveRangeCapacityUseCase {
       input.barberIds,
     );
   }
+}
+
+// ── The bridge: legacy classes → ecs-core structs (Phase 4 deletes it) ───
+
+function cartDataOf(cart: BookingCart): CartData {
+  return {
+    seats: cart.entries().map(([seatKey, lines]) => ({
+      seatKey,
+      lines: lines.map((line) => ({
+        lineId: line.id.value,
+        seatKey,
+        serviceId: EcsServiceId.of(line.serviceId.value),
+        variantId:
+          line.variantId === null
+            ? null
+            : EcsServiceVariantId.of(line.variantId.value),
+        barberId:
+          line.barberPref.kind === 'specific'
+            ? EcsBarberId.of(line.barberPref.barberId.value)
+            : null,
+        locationId: null,
+      })),
+    })),
+    nextSequence: cart.nextLineSequence,
+  };
+}
+
+function termsDataOf(terms: ServiceTerms): EcsServiceTerms {
+  return {
+    priceMinorUnits: terms.price.toMinorUnits(),
+    currencyCode: terms.price.currencyCode(),
+    durationMinutes: terms.durationMinutes,
+    setupMinutes: terms.setupMinutes,
+    cleanupMinutes: terms.cleanupMinutes,
+  };
+}
+
+/**
+ * A catalogue service as the cart math reads it — its id, scope and terms
+ * matrix.
+ */
+function serviceDataOf(service: Service): CartService {
+  return {
+    id: EcsServiceId.of(service.id.value),
+    locationIds: service.locationIds.map((id) => EcsLocationId.of(id.value)),
+    baseTerms: termsDataOf(service.baseTerms),
+    offerings: service.offerings.map((offering) => ({
+      barberId: EcsBarberId.of(offering.barberId.value),
+      base: termsDataOf(offering.base),
+      overrides: offering.overrideEntries().map(([variantId, terms]) => ({
+        variantId: EcsServiceVariantId.of(variantId),
+        terms: termsDataOf(terms),
+      })),
+    })),
+  };
+}
+
+/**
+ * The catalogue as the cart math reads it. The legacy lookup (a `Map` by id)
+ * kept the LAST of two services under one id and the system finds the
+ * first, so the list is walked from the end and each id kept once.
+ */
+function servicesDataOf(services: readonly Service[]): readonly CartService[] {
+  const out: CartService[] = [];
+  const seen = new Set<string>();
+  for (const service of [...services].reverse()) {
+    if (seen.has(service.id.value)) continue;
+    seen.add(service.id.value);
+    out.push(serviceDataOf(service));
+  }
+  return out;
 }

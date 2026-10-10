@@ -2,10 +2,17 @@ import {
   type IsoDate,
   type StreakDefinition,
   type StreakFacts,
-  type StreakState,
-  isIsoDate,
-  projectStreak,
 } from '@creativo/domain/engagement';
+import {
+  DayKey,
+  type ServiceCategoryId,
+  type ServiceId,
+  type StreakFacts as SystemFacts,
+  StreakIntervalKind,
+  StreakPreviewSystem,
+  StreakQualifierKind,
+  type StreakRule,
+} from '@creativo/ecs-core';
 
 export interface PreviewStreakDefinitionInput {
   /** The rule clients live under today. */
@@ -55,8 +62,6 @@ export type StreakPreview =
   /** One of the two rules counts by a list of services or categories, and the facts cannot say what a visit held. */
   | { readonly kind: 'unavailable'; readonly reason: 'qualifier' };
 
-type Standing = keyof StreakStandingCounts;
-
 /**
  * «Какво ще се промени» (client-card-revision-3.md §4.4): every person
  * folded through the domain's projector twice, once per rule, and the two
@@ -71,73 +76,85 @@ type Standing = keyof StreakStandingCounts;
  */
 export class PreviewStreakDefinitionUseCase {
   execute(input: PreviewStreakDefinitionInput): StreakPreview {
-    const { inForce, draft, today } = input;
-    if (
-      inForce.qualifier.kind !== 'anyVisit' ||
-      draft.qualifier.kind !== 'anyVisit'
-    ) {
-      return { kind: 'unavailable', reason: 'qualifier' };
-    }
-
-    const judged = input.clients
-      .filter((facts) => hasVisit(facts, today))
-      .map((facts) => ({
-        was: standingOf(projectStreak(inForce, facts, today)),
-        is: standingOf(projectStreak(draft, facts, today)),
-      }));
-    // An off rule hands every person a `null`: nobody moved, the rule did.
-    const moved = judged.filter(({ was, is }) => was !== null && is !== null);
-    return {
-      kind: 'estimate',
-      clients: judged.length,
-      before: inForce.enabled ? countsOf(judged.map(({ was }) => was)) : null,
-      after: draft.enabled ? countsOf(judged.map(({ is }) => is)) : null,
-      back: moved.filter(
-        ({ was, is }) => was !== 'inRhythm' && is === 'inRhythm',
-      ).length,
-      out: moved.filter(
-        ({ was, is }) => was === 'inRhythm' && is !== 'inRhythm',
-      ).length,
-    };
+    return StreakPreviewSystem.estimate(
+      ruleOf(input.inForce),
+      ruleOf(input.draft),
+      input.clients.map(factsOf),
+      DayKey.of(input.today),
+    );
   }
 }
 
-function countsOf(
-  standings: readonly (Standing | null)[],
-): StreakStandingCounts {
-  const count = (standing: Standing) =>
-    standings.filter((one) => one === standing).length;
+// ── The bridge: legacy class/facts → ecs-core structs (Phase 4 deletes it) ─
+
+/** A version as the system reads it: the class's figures, the day as a day key. */
+function ruleOf(definition: StreakDefinition): StreakRule {
+  const props = definition.toProps();
+  const { qualifier, interval } = props;
   return {
-    inRhythm: count('inRhythm'),
-    inGrace: count('inGrace'),
-    broken: count('broken'),
+    version: props.version,
+    effectiveFromDayKey: DayKey.of(props.effectiveFrom),
+    enabled: props.enabled,
+    qualifier:
+      qualifier.kind === 'services'
+        ? {
+            kind: StreakQualifierKind.Services,
+            serviceIds: qualifier.serviceIds as readonly ServiceId[],
+          }
+        : qualifier.kind === 'categories'
+          ? {
+              kind: StreakQualifierKind.Categories,
+              categoryIds:
+                qualifier.categoryIds as readonly ServiceCategoryId[],
+            }
+          : { kind: StreakQualifierKind.AnyVisit },
+    minGapDays: props.minGapDays,
+    bookingHold: props.bookingHold,
+    interval:
+      interval.kind === 'fixed'
+        ? { kind: StreakIntervalKind.Fixed, days: interval.days }
+        : {
+            kind: StreakIntervalKind.Personal,
+            tolerancePct: interval.tolerancePct,
+            minDays: interval.minDays,
+            maxDays: interval.maxDays,
+            fallbackDays: interval.fallbackDays,
+          },
+    graceDays: props.graceDays,
+    riskLeadDays: props.riskLeadDays,
+    protections: props.protections,
+    excuses: props.excuses,
+    clientPause: props.clientPause,
+    repair: props.repair,
+    onBreak: props.onBreak,
   };
 }
 
-/**
- * A counted visit on a real day, today or before it: what opens a run
- * under any rule that is on. On a `today` that is no day nobody has one.
- */
-function hasVisit(facts: StreakFacts, today: IsoDate): boolean {
-  return (
-    isIsoDate(today) &&
-    facts.visits.some(
-      (visit) => visit.counted && isIsoDate(visit.day) && visit.day <= today,
-    )
-  );
-}
-
-/** Where a state stands; `null` for no state (the rule is off). */
-function standingOf(state: StreakState | null): Standing | null {
-  if (state === null) return null;
-  switch (state.phase.kind) {
-    case 'active':
-    case 'atRisk':
-    case 'frozen':
-      return 'inRhythm';
-    case 'inGrace':
-      return 'inGrace';
-    case 'broken':
-      return 'broken';
-  }
+/** One person's facts as the system reads them: every field present. */
+function factsOf(facts: StreakFacts): SystemFacts {
+  return {
+    visits: facts.visits.map((visit) => ({
+      day: DayKey.of(visit.day),
+      counted: visit.counted,
+      atMs: visit.at === undefined ? null : visit.at.getTime(),
+    })),
+    excused: facts.excused.map((excused) => ({
+      day: DayKey.of(excused.day),
+      reason: excused.reason,
+    })),
+    bookings: facts.bookings.map((booking) => ({
+      placedOn: DayKey.of(booking.placedOn),
+      day: DayKey.of(booking.day),
+      appointmentId: booking.appointmentId ?? null,
+    })),
+    pauses: facts.pauses.map((pause) => ({
+      from: DayKey.of(pause.from),
+      until: DayKey.of(pause.until),
+      reason: pause.reason,
+    })),
+    grants: facts.grants.map((grant) => ({
+      day: DayKey.of(grant.day),
+      count: grant.count,
+    })),
+  };
 }

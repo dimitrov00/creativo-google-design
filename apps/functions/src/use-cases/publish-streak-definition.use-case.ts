@@ -1,4 +1,17 @@
 import { type Result, fail, ok } from '@creativo/domain/kernel';
+import {
+  DayKey,
+  type ServiceCategoryId,
+  type ServiceId,
+  StreakDefinitionId,
+  StreakIntervalKind,
+  type StreakPublishError,
+  StreakPublishErrorCode,
+  StreakPublishSystem,
+  StreakQualifierKind,
+  type StreakRule,
+  type StreakSchedule,
+} from '@creativo/ecs-core';
 import type { Actor } from '@creativo/domain/governance';
 import {
   type IsoDate,
@@ -178,9 +191,6 @@ export interface StreakDefinitionStore {
   ): Promise<Result<StreakDefinitionOutcome, PublishStreakDefinitionFailure>>;
 }
 
-/** A shop's first rule has nothing before it to be compared with, or to give notice of. */
-const FIRST_RULE: StreakRuleChange = { direction: 'neutral', changed: [] };
-
 /**
  * `publishStreakDefinition`: the ONLY writer of the rhythm's rule
  * (client-card-revision-3 §4.4). `firestore.rules` refuses every client
@@ -290,37 +300,47 @@ export class PublishStreakDefinitionUseCase {
       : ok(receiptOf(outcome.value));
   }
 
-  /** Steps 3 to 7: the publish, decided over what the transaction read. */
+  /**
+   * Steps 3 to 7: the publish, decided over what the transaction read — the
+   * decision is `StreakPublishSystem` (`@creativo/ecs-core`); this method
+   * reads the draft through the wire's reader between its two halves and
+   * hands the answer on as the classes the callable knows.
+   */
   private publish(
     input: PublishStreakDefinitionInput,
     caller: StreakDefinitionCaller,
     snapshot: StreakDefinitionSnapshot,
     now: Moment,
   ): Result<StreakDefinitionDecision, PublishStreakDefinitionFailure> {
-    if (input.transition === 'recompute') {
-      return fail(new PublishStreakDefinitionRecomputeNeedsEngineError());
-    }
-    if (input.previewHash !== null) {
-      return fail(new PublishStreakDefinitionPreviewStaleError());
-    }
-
     const { schedule } = snapshot;
-    const newest = newestOf(schedule);
-    if (input.baseVersion !== newest) {
-      return fail(
-        new PublishStreakDefinitionStaleError(input.baseVersion, newest),
-      );
-    }
+    const head = schedule === null ? null : headOf(schedule);
+    const admitted = StreakPublishSystem.admit(
+      {
+        baseVersion: input.baseVersion,
+        transition: input.transition,
+        previewHash: input.previewHash,
+      },
+      { head, highestVersion: snapshot.highestVersion },
+    );
+    if (!admitted.ok) return fail(refusalOf(admitted.error));
 
-    const name = nameOf(input.streakId, schedule);
+    const name = StreakPublishSystem.nameOf(
+      StreakDefinitionId.of(input.streakId),
+      schedule === null
+        ? null
+        : { bg: schedule.current.name.bg, en: schedule.current.name.en },
+    );
     if (name === null) {
       return fail(new PublishStreakDefinitionInvalidError(['id']));
     }
-    const version = Math.max(newest, snapshot.highestVersion) + 1;
     const built = ruleOf(
       input.streakId,
-      name,
-      { ...input.draft, version, effectiveFrom: input.effectiveFrom },
+      { bg: name.bg, en: name.en },
+      {
+        ...input.draft,
+        version: admitted.value,
+        effectiveFrom: input.effectiveFrom,
+      },
       now.at,
     );
     if (built.isFailure()) {
@@ -328,44 +348,37 @@ export class PublishStreakDefinitionUseCase {
     }
     const definition = built.value;
 
-    const inForce = schedule?.inForceOn(now.today) ?? null;
-    const change =
-      inForce === null ? FIRST_RULE : definition.changeFrom(inForce);
-    if (inForce !== null) {
-      const earliest = StreakDefinitionSchedule.earliestEffectiveDay(
-        change,
-        now.today,
-        this.policy,
-      );
-      if (definition.effectiveFrom < earliest) {
-        return fail(
-          new PublishStreakDefinitionTooEarlyError(
-            definition.effectiveFrom,
-            earliest,
-          ),
-        );
-      }
-    }
+    const decided = StreakPublishSystem.decide(
+      structOf(definition),
+      input.transition,
+      head,
+      DayKey.of(now.today),
+      this.policy,
+    );
+    if (!decided.ok) return fail(refusalOf(decided.error));
+    const { change, calledOff, inForceVersion } = decided.value;
 
-    // A shop's first rule is the rule in force whatever its day: a head
-    // cannot hold a version that waits without one that does not.
-    const head = StreakDefinitionSchedule.create(
-      inForce === null || definition.effectiveFrom <= now.today
+    // The head the system decided, as the classes it was made of: the new
+    // version in force at once, or waiting beside the rule in force.
+    const inForce = schedule?.inForceOn(now.today) ?? null;
+    const legacyHead = StreakDefinitionSchedule.create(
+      decided.value.head.scheduled === null || inForce === null
         ? { current: definition, scheduled: null }
         : {
             current: inForce,
             scheduled: { definition, transition: input.transition },
           },
     );
-    if (head.isFailure()) {
+    if (legacyHead.isFailure()) {
       return fail(
         new PublishStreakDefinitionInvalidError(
-          unique(head.error.map((error) => error.field)),
+          unique(legacyHead.error.map((error) => error.field)),
         ),
       );
     }
 
-    const replaced = schedule?.upcomingOn(now.today) ?? null;
+    const replaced = calledOff[0] ?? null;
+    const changed = change.changed as StreakRuleChange['changed'];
     return ok({
       receipt: {
         kind: 'published',
@@ -373,7 +386,7 @@ export class PublishStreakDefinitionUseCase {
         effectiveFrom: definition.effectiveFrom,
         direction: change.direction,
       },
-      head: head.value,
+      head: legacyHead.value,
       at: now.at,
       version: {
         definition,
@@ -381,26 +394,24 @@ export class PublishStreakDefinitionUseCase {
         publishedBy: caller.uid,
         transition: input.transition,
         direction: change.direction,
-        changed: change.changed,
+        changed,
         requestId: input.requestId,
         withdrawnAt: null,
       },
-      calledOff: replaced === null ? [] : [replaced.definition.version],
+      calledOff,
       audit: {
         actor: caller.actor,
         action: STREAK_DEFINITION_PUBLISHED,
         resourceId: streakDefinitionResourceId(input.streakId),
         atIso: now.at.toISOString(),
         context: {
-          from: String(inForce?.version ?? 0),
+          from: String(inForceVersion),
           to: String(definition.version),
           effectiveFrom: definition.effectiveFrom,
           transition: input.transition,
           direction: change.direction,
-          changed: change.changed.join(','),
-          ...(replaced === null
-            ? {}
-            : { replaced: String(replaced.definition.version) }),
+          changed: changed.join(','),
+          ...(replaced === null ? {} : { replaced: String(replaced) }),
         },
         changeKey: input.requestId,
       },
@@ -408,10 +419,11 @@ export class PublishStreakDefinitionUseCase {
   }
 
   /**
-   * The withdrawal, decided over what the transaction read. `version`
-   * names what is called off, so an undo that arrives after the head moved
-   * on (the day came, another publish replaced it, somebody else called it
-   * off) is refused instead of calling off something else.
+   * The withdrawal, decided over what the transaction read
+   * (`StreakPublishSystem.withdraw`). `version` names what is called off,
+   * so an undo that arrives after the head moved on (the day came, another
+   * publish replaced it, somebody else called it off) is refused instead of
+   * calling off something else.
    */
   private callOff(
     input: WithdrawStreakDefinitionInput,
@@ -420,17 +432,16 @@ export class PublishStreakDefinitionUseCase {
     now: Moment,
   ): Result<StreakDefinitionDecision, PublishStreakDefinitionFailure> {
     const { schedule } = snapshot;
-    const waiting = schedule?.upcomingOn(now.today) ?? null;
-    if (
-      schedule === null ||
-      waiting === null ||
-      waiting.definition.version !== input.version
-    ) {
+    const withdrawn = StreakPublishSystem.withdraw(
+      input.version,
+      schedule === null ? null : headOf(schedule),
+      DayKey.of(now.today),
+    );
+    if (!withdrawn.ok || schedule === null) {
       return fail(
-        new PublishStreakDefinitionStaleError(
-          input.version,
-          waiting?.definition.version ?? 0,
-        ),
+        withdrawn.ok
+          ? new PublishStreakDefinitionStaleError(input.version, 0)
+          : refusalOf(withdrawn.error),
       );
     }
     const head = StreakDefinitionSchedule.create({
@@ -444,12 +455,13 @@ export class PublishStreakDefinitionUseCase {
         ),
       );
     }
+    const { waiting } = withdrawn.value;
     return ok({
       receipt: { kind: 'withdrawn', version: input.version },
       head: head.value,
       at: now.at,
       version: null,
-      calledOff: [input.version],
+      calledOff: withdrawn.value.calledOff,
       audit: {
         actor: caller.actor,
         action: STREAK_DEFINITION_WITHDRAWN,
@@ -459,7 +471,7 @@ export class PublishStreakDefinitionUseCase {
           // What waited, and the version the shop stays under.
           from: String(input.version),
           to: String(schedule.current.version),
-          effectiveFrom: waiting.definition.effectiveFrom,
+          effectiveFrom: waiting.effectiveFromDayKey,
           transition: waiting.transition,
         },
         changeKey: input.requestId,
@@ -493,33 +505,6 @@ function receiptOf(outcome: StreakDefinitionOutcome): StreakDefinitionReceipt {
   return outcome.kind === 'replayed'
     ? outcome.receipt
     : outcome.decision.receipt;
-}
-
-/** The newest version the head holds: the one that waits, else the one in force; 0 with no head. */
-function newestOf(schedule: StreakDefinitionSchedule | null): number {
-  if (schedule === null) return 0;
-  return schedule.scheduled?.definition.version ?? schedule.current.version;
-}
-
-/**
- * The rule's name: the head's, once for every version. A draft carries
- * none (the editor does not show it). With no head the only rule that can
- * be opened is the business's one rhythm, under the recommended rule's own
- * id and name; any other id names nothing, and is refused rather than
- * christened.
- */
-function nameOf(
-  streakId: string,
-  schedule: StreakDefinitionSchedule | null,
-): { bg: string; en: string } | null {
-  if (schedule !== null) {
-    const { name } = schedule.current;
-    return { bg: name.bg, en: name.en };
-  }
-  const recommended = StreakDefinition.default();
-  return streakId === recommended.id
-    ? { bg: recommended.name.bg, en: recommended.name.en }
-    : null;
 }
 
 /**
@@ -581,3 +566,91 @@ function fieldOf(fault: unknown, key: 'field' | 'path'): string | null {
 const unique = (fields: readonly string[]): readonly string[] => [
   ...new Set(fields),
 ];
+
+// ── The bridge: legacy class ↔ ecs-core struct (Phase 4 deletes it) ──────
+
+/** A version as `StreakPublishSystem` reads it: the class's figures, the day as a day key. */
+function structOf(definition: StreakDefinition): StreakRule {
+  const props = definition.toProps();
+  const { qualifier, interval } = props;
+  return {
+    version: props.version,
+    effectiveFromDayKey: DayKey.of(props.effectiveFrom),
+    enabled: props.enabled,
+    qualifier:
+      qualifier.kind === 'services'
+        ? {
+            kind: StreakQualifierKind.Services,
+            serviceIds: qualifier.serviceIds as readonly ServiceId[],
+          }
+        : qualifier.kind === 'categories'
+          ? {
+              kind: StreakQualifierKind.Categories,
+              categoryIds:
+                qualifier.categoryIds as readonly ServiceCategoryId[],
+            }
+          : { kind: StreakQualifierKind.AnyVisit },
+    minGapDays: props.minGapDays,
+    bookingHold: props.bookingHold,
+    interval:
+      interval.kind === 'fixed'
+        ? { kind: StreakIntervalKind.Fixed, days: interval.days }
+        : {
+            kind: StreakIntervalKind.Personal,
+            tolerancePct: interval.tolerancePct,
+            minDays: interval.minDays,
+            maxDays: interval.maxDays,
+            fallbackDays: interval.fallbackDays,
+          },
+    graceDays: props.graceDays,
+    riskLeadDays: props.riskLeadDays,
+    protections: props.protections,
+    excuses: props.excuses,
+    clientPause: props.clientPause,
+    repair: props.repair,
+    onBreak: props.onBreak,
+  };
+}
+
+/** The head as the system reads it. */
+function headOf(schedule: StreakDefinitionSchedule): StreakSchedule {
+  const { scheduled } = schedule;
+  return {
+    current: structOf(schedule.current),
+    scheduled:
+      scheduled === null
+        ? null
+        : {
+            ...structOf(scheduled.definition),
+            transition: scheduled.transition,
+          },
+  };
+}
+
+/** The system's refusal as the class the callable answers with; fields spelled as the legacy rule spells them. */
+function refusalOf(error: StreakPublishError): PublishStreakDefinitionFailure {
+  switch (error.code) {
+    case StreakPublishErrorCode.RecomputeNeedsEngine:
+      return new PublishStreakDefinitionRecomputeNeedsEngineError();
+    case StreakPublishErrorCode.PreviewStale:
+      return new PublishStreakDefinitionPreviewStaleError();
+    case StreakPublishErrorCode.Stale:
+      return new PublishStreakDefinitionStaleError(
+        error.expected,
+        error.actual,
+      );
+    case StreakPublishErrorCode.TooEarly:
+      return new PublishStreakDefinitionTooEarlyError(
+        error.effectiveFromDayKey,
+        error.earliest,
+      );
+    default:
+      return new PublishStreakDefinitionInvalidError(
+        unique(
+          error.fields.map((field) =>
+            field.replace(/effectiveFromDayKey$/, 'effectiveFrom'),
+          ),
+        ),
+      );
+  }
+}

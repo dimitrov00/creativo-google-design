@@ -1,5 +1,21 @@
+import {
+  AuthFlowEvent as FlowEvent,
+  AuthFlowState as FlowState,
+  AuthFlowStep,
+  AuthFlowSystem,
+  Identifier as Channel,
+  IdentifierKind,
+  type ParsedIdentifier,
+  SessionKind as SessionTag,
+} from '@creativo/ecs-core';
 import { Result, fail, ok } from '@creativo/domain/kernel';
-import { Identifier, SessionKind } from '@creativo/domain/identity';
+import {
+  Identifier,
+  NEW_SESSION,
+  RETURNING_SESSION,
+  SessionKind,
+  reconstituteIdentifier,
+} from '@creativo/domain/identity';
 import { InvalidAuthFlowTransitionError } from './auth-flow.errors';
 
 /**
@@ -53,68 +69,126 @@ export type AuthFlowEvent =
 
 export const AUTH_FLOW_INITIAL_STATE: AuthFlowState = { kind: 'identify' };
 
+/*
+ * Phase 2 shim (ECS migration): the transition function is
+ * `AuthFlowSystem.next` (`@creativo/ecs-core`). This file keeps its legacy
+ * state, event and error shapes for the store and converts at the edge — the
+ * helpers below are the only code besides the delegating body.
+ */
+
+function toChannel(identifier: Identifier): ParsedIdentifier {
+  return identifier.kind === 'phone'
+    ? {
+        kind: IdentifierKind.Phone,
+        value: Channel.of(identifier.value.toString()),
+      }
+    : {
+        kind: IdentifierKind.Email,
+        value: Channel.of(identifier.value.toString()),
+      };
+}
+
+function toSessionTag(session: SessionKind): SessionTag {
+  return session.kind === 'new' ? SessionTag.New : SessionTag.Returning;
+}
+
+function toFlowState(state: AuthFlowState): FlowState {
+  switch (state.kind) {
+    case 'identify':
+      return FlowState.identify(state.error ?? null);
+    case 'otp':
+      return FlowState.otp(toChannel(state.identifier), state.error ?? null);
+    case 'blocked':
+      return FlowState.blocked();
+    case 'done':
+      return FlowState.done(
+        toChannel(state.identifier),
+        toSessionTag(state.session),
+      );
+    default:
+      return FlowState.authenticated();
+  }
+}
+
+function toFlowEvent(event: AuthFlowEvent): FlowEvent {
+  switch (event.type) {
+    case 'submit_identifier':
+      return FlowEvent.submitIdentifier(toChannel(event.identifier));
+    case 'request_failed':
+      return FlowEvent.requestFailed(event.blocked, event.message);
+    case 'submit_otp':
+      return FlowEvent.submitOtp();
+    case 'verify_failed':
+      return FlowEvent.verifyFailed(event.blocked, event.message);
+    case 'verified':
+      return FlowEvent.verified(toSessionTag(event.session));
+    case 'resend_otp':
+      return FlowEvent.resendOtp();
+    case 'change_identifier':
+      return FlowEvent.changeIdentifier();
+    default:
+      return FlowEvent.back();
+  }
+}
+
+/**
+ * The legacy identifier a next state carries: the caller's own object
+ * whenever the system copied it from the event or the current state (it
+ * only ever does), rebuilt from the canonical value otherwise.
+ */
+function toLegacyIdentifier(
+  channel: ParsedIdentifier,
+  from: AuthFlowState,
+  event: AuthFlowEvent,
+): Identifier {
+  if (event.type === 'submit_identifier') return event.identifier;
+  if (from.kind === 'otp' || from.kind === 'done') return from.identifier;
+  return reconstituteIdentifier({ kind: channel.kind, value: channel.value });
+}
+
+/** The next state back in the legacy shape. */
+function toLegacyState(
+  next: FlowState,
+  from: AuthFlowState,
+  event: AuthFlowEvent,
+): AuthFlowState {
+  switch (next.kind) {
+    case AuthFlowStep.Identify:
+      return next.error === null
+        ? { kind: 'identify' }
+        : { kind: 'identify', error: next.error };
+    case AuthFlowStep.Otp: {
+      const identifier = toLegacyIdentifier(next.identifier, from, event);
+      return next.error === null
+        ? { kind: 'otp', identifier }
+        : { kind: 'otp', identifier, error: next.error };
+    }
+    case AuthFlowStep.Blocked:
+      return { kind: 'blocked' };
+    case AuthFlowStep.Done:
+      return {
+        kind: 'done',
+        identifier: toLegacyIdentifier(next.identifier, from, event),
+        session:
+          next.session === SessionTag.New ? NEW_SESSION : RETURNING_SESSION,
+      };
+    default:
+      return { kind: 'authenticated' };
+  }
+}
+
 export function advanceAuthFlow(
   state: AuthFlowState,
   event: AuthFlowEvent,
 ): Result<AuthFlowState, InvalidAuthFlowTransitionError> {
-  switch (state.kind) {
-    case 'identify':
-      if (event.type === 'submit_identifier') {
-        return ok({ kind: 'otp', identifier: event.identifier });
-      }
-      break;
-
-    case 'otp':
-      switch (event.type) {
-        case 'request_failed':
-          // A (re)send failed — v2 routes this back to `identify` with the
-          // error attached, rather than stranding the user on the OTP step
-          // for a code that was never actually sent.
-          return ok(
-            event.blocked
-              ? { kind: 'blocked' }
-              : { kind: 'identify', error: event.message },
-          );
-        case 'verify_failed':
-          return ok(
-            event.blocked
-              ? { kind: 'blocked' }
-              : { ...state, error: event.message },
-          );
-        case 'verified':
-          return ok(
-            event.session.kind === 'returning'
-              ? { kind: 'authenticated' }
-              : {
-                  kind: 'done',
-                  identifier: state.identifier,
-                  session: event.session,
-                },
-          );
-        case 'change_identifier':
-        case 'back':
-          // Both the "Edit" affordance and the in-page Back control return
-          // to identify — the identifier field stays pre-filled (feature
-          // state, not machine state) and the outstanding challenge stays
-          // alive in the store: resubmitting the SAME destination rejoins
-          // otp without a fresh code; only a new destination re-requests.
-          return ok({ kind: 'identify' });
-        case 'resend_otp':
-        case 'submit_otp':
-          // No state change — the store awaits the use-case and dispatches
-          // `verified`/`verify_failed`/`request_failed` when it settles.
-          return ok(state);
-        default:
-          break;
-      }
-      break;
-
-    case 'blocked':
-    case 'done':
-    case 'authenticated':
-      // Terminal — no outgoing transitions (mirrors v2's terminal states).
-      break;
+  const current = toFlowState(state);
+  const next = AuthFlowSystem.next(current, toFlowEvent(event));
+  if (!next.ok) {
+    return fail(new InvalidAuthFlowTransitionError(state.kind, event.type));
   }
-
-  return fail(new InvalidAuthFlowTransitionError(state.kind, event.type));
+  // A self-transition (`resend_otp`, `submit_otp`) answers the very state it
+  // was given — and so does this shim: the caller's own object.
+  return ok(
+    next.value === current ? state : toLegacyState(next.value, state, event),
+  );
 }

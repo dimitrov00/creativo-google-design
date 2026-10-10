@@ -6,6 +6,14 @@ import {
   LocationId,
   ServiceId,
 } from '@creativo/domain/catalog';
+import {
+  type BadgeLevel as SystemLevel,
+  type BadgeSeriesError as SystemSeriesError,
+  type BadgeSeriesShape,
+  BadgeSystem,
+  EngagementErrorCode,
+  type Metric as SystemMetric,
+} from '@creativo/ecs-core';
 import { BadgeCategoryId, BadgeSeriesId, SeasonId } from '../ids';
 import type {
   AwardSummary,
@@ -202,82 +210,71 @@ export class BadgeSeries {
    * family has no `next`; a yearly one is complete once earned.
    */
   standing(progress: BadgeProgress | null): SeriesStanding {
-    const highestLevel =
-      progress?.earned.reduce((top, e) => Math.max(top, e.level), 0) ?? 0;
-    const next = this.levels.find((l) => l.level > highestLevel) ?? null;
-    const state: MedalState =
-      highestLevel > 0
-        ? 'earned'
-        : progress !== null
-          ? 'inProgress'
-          : 'notStarted';
-    return {
-      state,
-      highestLevel,
-      next,
-      value: progress?.value ?? 0,
-      target: next?.target ?? null,
-    };
+    const standing = BadgeSystem.standing(
+      levelsOf(this),
+      progress === null
+        ? null
+        : {
+            value: progress.value,
+            earned: progress.earned.map((earned) => ({
+              level: earned.level,
+              earnedAtMs: earned.earnedAt.getTime(),
+              via: earned.via,
+              count: earned.count,
+            })),
+          },
+    );
+    // The system hands back one of this family's own levels, by reference.
+    return { ...standing, next: standing.next as BadgeLevel | null };
   }
 
   /** Withdrawn from the catalogue: shown only where a client already started it. */
   isRetired(): boolean {
-    return this.retiredAt !== null;
+    return BadgeSystem.isRetired({
+      retiredAtMs: this.retiredAt === null ? null : this.retiredAt.getTime(),
+    });
   }
 
   /** Tenure: nothing a visit does moves it, so it never sits in «Скоро». */
   isCalendarDriven(): boolean {
-    return this.metric?.metric === 'client.tenure.days';
+    return BadgeSystem.isCalendarDriven({
+      metric:
+        this.metric === null
+          ? null
+          : {
+              metric: this.metric.metric as SystemMetric,
+              window: null,
+              where: null,
+            },
+    });
   }
 
   levelAt(level: number): BadgeLevel | null {
-    return this.levels.find((l) => l.level === level) ?? null;
+    return BadgeSystem.levelAt(levelsOf(this), level) as BadgeLevel | null;
   }
 }
 
-/** The checks over the levels together, and the family's home (model.ts `badgeSeriesProblems`). */
+/** The checks over the levels together, and the family's home: `BadgeSystem.shapeProblems`. */
 function shapeProblems(props: BadgeSeriesProps): BadgeSeriesError[] {
-  const errors: BadgeSeriesError[] = [];
-  const { levels } = props;
-  if (levels.length === 0) errors.push(new BadgeSeriesNoLevelsError());
-  if (levels.some((l, i) => l.level !== i + 1)) {
-    errors.push(new BadgeSeriesLevelGapError(levels.map((l) => l.level)));
-  }
-  const targets = levels.flatMap((l) => (l.target === null ? [] : [l.target]));
-  if (
-    targets.some(
-      (t, i) =>
-        !Number.isInteger(t) || t <= 0 || (i > 0 && t <= (targets[i - 1] ?? 0)),
-    )
-  ) {
-    errors.push(new BadgeSeriesTargetsNotRisingError(targets));
-  }
-  if (props.categoryId === null && props.seasonId === null) {
-    errors.push(new BadgeSeriesHomelessError());
-  }
-  if (levels.length > 1 && levels.some((l) => l.target === null)) {
-    errors.push(new BadgeSeriesOneOffWithSeveralLevelsError());
-  }
-  if (props.repeatable && levels.length > 1) {
-    errors.push(new BadgeSeriesRepeatableWithSeveralLevelsError());
-  }
-  return errors;
+  return BadgeSystem.shapeProblems(shapeOf(props)).map((error) =>
+    legacyErrorOf(error, props),
+  );
 }
 
 function levelOf(
   props: BadgeLevelProps,
 ): Result<BadgeLevel, BadgeSeriesError[]> {
-  const errors: BadgeSeriesError[] = [];
-  if (props.ruleId.trim().length === 0) {
-    errors.push(new BadgeSeriesLevelWithoutRuleError(props.level));
-  }
+  // The level's own rules (`BadgeSystem.levelProblems`), then its words.
+  const errors: BadgeSeriesError[] = BadgeSystem.levelProblems(
+    levelOfProps(props),
+  ).map((error) => legacyErrorOf(error, null));
   const requirement = LocalizedText.create(props.requirement);
   if (requirement.isFailure()) errors.push(...requirement.error);
   const awards: AwardSummary[] = [];
   for (const award of props.awards) {
-    const parsed = awardOf(props.level, award);
+    const parsed = awardOf(award);
     if (parsed.isFailure()) errors.push(...parsed.error);
-    else awards.push(parsed.value);
+    else if (parsed.value !== null) awards.push(parsed.value);
   }
   if (errors.length > 0 || requirement.isFailure()) return fail(errors);
   return ok({
@@ -289,29 +286,33 @@ function levelOf(
   });
 }
 
-const positiveWhole = (n: number): boolean => Number.isInteger(n) && n > 0;
-
+/**
+ * One award as the level pays it. Its figures were judged by
+ * `BadgeSystem.levelProblems` (a refused one is `null`); a coupon's title is
+ * the edge's to guard.
+ */
 function awardOf(
-  level: number,
   props: AwardSummaryProps,
-): Result<AwardSummary, BadgeSeriesError[]> {
-  const refuse = () =>
-    fail<AwardSummary, BadgeSeriesError[]>([
-      new BadgeSeriesAwardNotPositiveError(level, props.kind),
-    ]);
+): Result<AwardSummary | null, BadgeSeriesError[]> {
   switch (props.kind) {
     case 'points':
-      return positiveWhole(props.points)
-        ? ok({ kind: 'points', points: props.points })
-        : refuse();
+      return ok(
+        positiveWhole(props.points)
+          ? { kind: 'points', points: props.points }
+          : null,
+      );
     case 'freeze':
-      return positiveWhole(props.count)
-        ? ok({ kind: 'freeze', count: props.count })
-        : refuse();
+      return ok(
+        positiveWhole(props.count)
+          ? { kind: 'freeze', count: props.count }
+          : null,
+      );
     case 'perk':
-      return props.forDays === null || positiveWhole(props.forDays)
-        ? ok({ kind: 'perk', perkId: props.perkId, forDays: props.forDays })
-        : refuse();
+      return ok(
+        props.forDays === null || positiveWhole(props.forDays)
+          ? { kind: 'perk', perkId: props.perkId, forDays: props.forDays }
+          : null,
+      );
     case 'coupon': {
       const title = LocalizedText.create(props.title);
       return title.isSuccess()
@@ -320,6 +321,8 @@ function awardOf(
     }
   }
 }
+
+const positiveWhole = (n: number): boolean => Number.isInteger(n) && n > 0;
 
 function subjectOf(
   props: BadgeSubjectProps,
@@ -378,4 +381,55 @@ function metricRefOf(
       : { window: { lastDays: props.window.lastDays } }),
     ...(props.where === undefined ? {} : { where }),
   });
+}
+
+// ── The bridge: legacy props/class ↔ ecs-core struct (Phase 4 deletes it) ──
+
+/** A level's props as the system reads them: the same plain figures. */
+function levelOfProps(props: BadgeLevelProps): SystemLevel {
+  return props as unknown as SystemLevel;
+}
+
+/** The family's levels as the system reads them: the same objects, by reference. */
+function levelsOf(series: BadgeSeries): {
+  readonly levels: readonly SystemLevel[];
+} {
+  return { levels: series.levels as unknown as readonly SystemLevel[] };
+}
+
+function shapeOf(props: BadgeSeriesProps): BadgeSeriesShape {
+  return {
+    categoryId: props.categoryId as BadgeSeriesShape['categoryId'],
+    seasonId: props.seasonId as BadgeSeriesShape['seasonId'],
+    levels: props.levels.map(levelOfProps),
+    repeatable: props.repeatable,
+  };
+}
+
+/** The system's struct error as the class the legacy readers know; the lists from the props they were judged on. */
+function legacyErrorOf(
+  error: SystemSeriesError,
+  props: BadgeSeriesProps | null,
+): BadgeSeriesError {
+  const levels = props?.levels ?? [];
+  switch (error.code) {
+    case EngagementErrorCode.BadgeSeriesNoLevels:
+      return new BadgeSeriesNoLevelsError();
+    case EngagementErrorCode.BadgeSeriesLevelGap:
+      return new BadgeSeriesLevelGapError(levels.map((l) => l.level));
+    case EngagementErrorCode.BadgeSeriesTargetsNotRising:
+      return new BadgeSeriesTargetsNotRisingError(
+        levels.flatMap((l) => (l.target === null ? [] : [l.target])),
+      );
+    case EngagementErrorCode.BadgeSeriesHomeless:
+      return new BadgeSeriesHomelessError();
+    case EngagementErrorCode.BadgeSeriesOneOffWithSeveralLevels:
+      return new BadgeSeriesOneOffWithSeveralLevelsError();
+    case EngagementErrorCode.BadgeSeriesRepeatableWithSeveralLevels:
+      return new BadgeSeriesRepeatableWithSeveralLevelsError();
+    case EngagementErrorCode.BadgeSeriesLevelWithoutRule:
+      return new BadgeSeriesLevelWithoutRuleError(error.level);
+    default:
+      return new BadgeSeriesAwardNotPositiveError(error.level, error.kind);
+  }
 }

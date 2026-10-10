@@ -1,4 +1,5 @@
 import { ZonedDateTime } from '@creativo/application/booking';
+import { DayKey, VisitListSystem } from '@creativo/ecs-core';
 import type { VisitGrain, VisitRowVm, VisitSectionVm } from './visit-row.vm';
 
 /*
@@ -15,10 +16,15 @@ import type { VisitGrain, VisitRowVm, VisitSectionVm } from './visit-row.vm';
  * Since revision 3 (R2-I) both screens read MONTHS: the staff card's
  * «Посещения» is the client's screen, and the jump pills make its length
  * walkable. The year grain stays for a future dense list.
+ *
+ * Phase 2 shim: the sectioning, the section key and the worked figure are
+ * `VisitListSystem` in `@creativo/ecs-core`; the headings' words, the
+ * figure's word and the test ids stay here.
  */
 
 /** The upcoming run's key — not a date, so it can never collide with one. */
-export const UPCOMING_SECTION_KEY = 'upcoming';
+export const UPCOMING_SECTION_KEY: string =
+  VisitListSystem.UPCOMING_SECTION_KEY;
 
 /** The words a list's headings take; the host reads them from the catalogue. */
 export interface VisitSectionLabels {
@@ -62,8 +68,8 @@ export function workedVisitsDetail(
   atLeast = 2,
 ): (rows: readonly VisitRowVm[]) => string | null {
   return (rows) => {
-    const worked = rows.filter((row) => row.outcome === 'worked').length;
-    return worked >= Math.max(1, atLeast) ? word(worked) : null;
+    const worked = VisitListSystem.workedFigure(rows, atLeast);
+    return worked === null ? null : word(worked);
   };
 }
 
@@ -76,8 +82,7 @@ export function visitSectionKey(
   start: ZonedDateTime,
   grain: VisitGrain,
 ): string {
-  const day = start.toISODate();
-  return grain === 'year' ? day.slice(0, 4) : day.slice(0, 7);
+  return VisitListSystem.sectionKeyOf(DayKey.of(start.toISODate()), grain);
 }
 
 /**
@@ -123,56 +128,21 @@ export function sectionVisits(
   options: VisitSectionOptions,
 ): readonly VisitSectionVm[] {
   const prefix = options.testIdPrefix ?? 'visits';
-  const upcoming: VisitRowVm[] = [];
-  const dated = new Map<string, VisitRowVm[]>();
-  for (const row of rows) {
-    if (row.upcoming || row.sectionKey === UPCOMING_SECTION_KEY) {
-      upcoming.push(row);
-      continue;
-    }
-    const key =
-      options.grain === 'year' ? row.sectionKey.slice(0, 4) : row.sectionKey;
-    const bucket = dated.get(key);
-    if (bucket) bucket.push(row);
-    else dated.set(key, [row]);
-  }
-
-  const sections: VisitSectionVm[] = [];
-  if (upcoming.length > 0) {
-    sections.push({
-      key: UPCOMING_SECTION_KEY,
-      label: options.labels.upcoming,
-      detail: null,
-      rows: upcoming.sort(soonestFirst),
-      testId: `${prefix}-${UPCOMING_SECTION_KEY}`,
-    });
-  }
-  for (const key of [...dated.keys()].sort(newestKeyFirst)) {
-    const sectionRows = (dated.get(key) ?? []).sort(newestFirst);
-    sections.push({
-      key,
-      label: options.labels.section(key),
-      detail: options.labels.detail?.(sectionRows) ?? null,
-      rows: sectionRows,
-      testId: `${prefix}-${options.grain}-${key}`,
-    });
-  }
-  return sections;
-}
-
-/** The id breaks a tie, so the input's order never shows in the output. */
-function byId(a: VisitRowVm, b: VisitRowVm): number {
-  return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
-}
-
-function soonestFirst(a: VisitRowVm, b: VisitRowVm): number {
-  return a.startMs - b.startMs || byId(a, b);
-}
-
-function newestFirst(a: VisitRowVm, b: VisitRowVm): number {
-  return b.startMs - a.startMs || byId(a, b);
-}
-
-function newestKeyFirst(a: string, b: string): number {
-  return a < b ? 1 : a > b ? -1 : 0;
+  return VisitListSystem.sections(rows, options.grain).map((section) =>
+    section.upcoming
+      ? {
+          key: section.key,
+          label: options.labels.upcoming,
+          detail: null,
+          rows: section.rows,
+          testId: `${prefix}-${UPCOMING_SECTION_KEY}`,
+        }
+      : {
+          key: section.key,
+          label: options.labels.section(section.key),
+          detail: options.labels.detail?.(section.rows) ?? null,
+          rows: section.rows,
+          testId: `${prefix}-${options.grain}-${section.key}`,
+        },
+  );
 }

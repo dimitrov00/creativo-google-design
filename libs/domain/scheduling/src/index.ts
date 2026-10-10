@@ -45,14 +45,6 @@ export * from './lib/flexible-when.errors';
 export * from './lib/waitlist-request';
 export * from './lib/waitlist-request.errors';
 
-// ── Occupancy / statistics ───────────────────────────────────────────────
-export * from './lib/occupancy-reason';
-export * from './lib/occupancy-class';
-export * from './lib/occupancy-block';
-export * from './lib/barber-day-totals';
-export * from './lib/barber-day';
-export * from './lib/barber-day.errors';
-
 export * from './lib/seat';
 export * from './lib/seat-outcome';
 export * from './lib/barber-pref';

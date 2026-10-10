@@ -5,10 +5,21 @@ import {
   placementFromDocument,
   subjectUserIdsFromDocument,
 } from '@creativo/application/booking';
+import {
+  BackfillPlanSystem,
+  type BackfillRequest as EcsBackfillRequest,
+  BackfillStartKind,
+  type MirrorPatch,
+  type MirrorRow,
+} from '@creativo/ecs-core';
 
 /**
  * The pure half of `runBackfill` (§12.5.3): which job, which page, and what
  * a stored appointment is missing. The shell reads and writes.
+ *
+ * Phase 2 shim: the decisions are `BackfillPlanSystem` in
+ * `@creativo/ecs-core`; this file keeps the legacy names and shapes for its
+ * callers and reads the stored rows through their mappers.
  */
 
 /**
@@ -21,13 +32,13 @@ export const BACKFILL_JOBS = ['subjectMirror', 'clientStats'] as const;
 export type BackfillJob = (typeof BACKFILL_JOBS)[number];
 
 /** Appointments (or stored clients) per call at most — one page read. */
-export const BACKFILL_PAGE_SIZE = 200;
+export const BACKFILL_PAGE_SIZE = BackfillPlanSystem.PAGE_SIZE;
 
 /**
  * Rows handled between two looks at the call's time budget: small enough
  * that the chunk in hand always finishes inside the timeout's reserve.
  */
-export const BACKFILL_CHUNK_SIZE = 25;
+export const BACKFILL_CHUNK_SIZE = BackfillPlanSystem.CHUNK_SIZE;
 
 export const BACKFILL_JOBS_COLLECTION = 'backfillJobs';
 
@@ -56,50 +67,20 @@ export interface BackfillPosition {
   readonly after: string | null;
 }
 
-/**
- * Marks a stored-client cursor. Outside the document-id charset, so no
- * appointment id can ever be read as one.
- */
-const STORED_CLIENTS_MARK = '~';
-
-const DOC_ID = /^[A-Za-z0-9_-]{1,128}$/;
-
 /** The wire cursor for a position: an appointment id as before, `~uid` after. */
 export function cursorOf(position: BackfillPosition): string | null {
-  if (position.phase === 'appointments') return position.after;
-  return `${STORED_CLIENTS_MARK}${position.after ?? ''}`;
+  return BackfillPlanSystem.cursorOf(position);
 }
 
 /** The position a wire cursor names; `null` starts at the very top. */
 export function positionOf(cursor: string | null): BackfillPosition {
-  if (cursor !== null && cursor.startsWith(STORED_CLIENTS_MARK)) {
-    const after = cursor.slice(STORED_CLIENTS_MARK.length);
-    return { phase: 'storedClients', after: after.length > 0 ? after : null };
-  }
-  return { phase: 'appointments', after: cursor };
+  return BackfillPlanSystem.positionOf(cursor);
 }
 
 /** The wire payload, shaped without trusting it; `null` when it names no job. */
 export function toBackfillRequest(raw: unknown): BackfillRequest | null {
-  if (raw === null || typeof raw !== 'object') return null;
-  const data = raw as Record<string, unknown>;
-  const job = BACKFILL_JOBS.find((candidate) => candidate === data['job']);
-  if (job === undefined) return null;
-  const cursor = data['cursor'];
-  if (cursor === undefined) return { job };
-  if (cursor === null) return { job, cursor: null };
-  // A cursor becomes a `startAfter` document id; anything else is refused
-  // rather than turned into a scan from somewhere nobody chose.
-  if (typeof cursor !== 'string') return null;
-  const position = positionOf(cursor);
-  if (position.phase === 'storedClients') {
-    // Only the stats job walks the stored clients.
-    return job === 'clientStats' &&
-      (position.after === null || DOC_ID.test(position.after))
-      ? { job, cursor }
-      : null;
-  }
-  return DOC_ID.test(cursor) ? { job, cursor } : null;
+  const request = BackfillPlanSystem.requestOf(raw);
+  return request === null ? null : toLegacyRequest(request);
 }
 
 /**
@@ -117,16 +98,14 @@ export function toBackfillRequest(raw: unknown): BackfillRequest | null {
 export function inferPlacement(
   auditActions: readonly string[],
 ): AppointmentPlacement | null {
-  if (auditActions.includes('booking.staff_created')) return 'staff';
-  if (auditActions.includes('booking.committed')) return 'self';
-  return null;
+  return BackfillPlanSystem.inferPlacement(auditActions);
 }
 
 /** Neither the commit's stamp nor an inference yet: the audit trail may know. */
 export function lacksPlacement(data: PersistedDocument): boolean {
-  return (
-    placementFromDocument(data) === null &&
-    inferredPlacementFromDocument(data) === null
+  return BackfillPlanSystem.lacksPlacement(
+    placementFromDocument(data),
+    inferredPlacementFromDocument(data),
   );
 }
 
@@ -137,7 +116,7 @@ export function lacksPlacement(data: PersistedDocument): boolean {
  * actually written.
  */
 export function mayLackMirrors(data: PersistedDocument): boolean {
-  return mirrorPatch(data, null) !== null || lacksPlacement(data);
+  return BackfillPlanSystem.mayLackMirrors(mirrorRowOf(data));
 }
 
 /**
@@ -156,16 +135,45 @@ export function mirrorPatch(
   data: PersistedDocument,
   inferred: AppointmentPlacement | null,
 ): Record<string, unknown> | null {
-  const patch: Record<string, unknown> = {};
-  const subjects = subjectUserIdsFromDocument(data);
-  const stored = data['subjectUserIds'];
-  // Both sides are plain string lists, so their JSON is their identity.
-  const same =
-    Array.isArray(stored) &&
-    JSON.stringify(stored) === JSON.stringify(subjects);
-  if (!same) patch['subjectUserIds'] = subjects;
-  if (inferred !== null && lacksPlacement(data)) {
-    patch['inferredPlacement'] = inferred;
+  return toLegacyPatch(
+    BackfillPlanSystem.mirrorPatch(mirrorRowOf(data), inferred),
+  );
+}
+
+/** A stored row as the system judges its mirrors. */
+function mirrorRowOf(data: PersistedDocument): MirrorRow {
+  const stored: unknown = data['subjectUserIds'];
+  return {
+    storedSubjectUserIds: Array.isArray(stored) ? stored : null,
+    seatSubjectUserIds: subjectUserIdsFromDocument(data),
+    placement: placementFromDocument(data),
+    inferredPlacement: inferredPlacementFromDocument(data),
+  };
+}
+
+/** The patch as the `update()` fields it writes — only the ones it fills. */
+function toLegacyPatch(
+  patch: MirrorPatch | null,
+): Record<string, unknown> | null {
+  if (patch === null) return null;
+  const fields: Record<string, unknown> = {};
+  if (patch.subjectUserIds !== null) {
+    fields['subjectUserIds'] = patch.subjectUserIds;
   }
-  return Object.keys(patch).length > 0 ? patch : null;
+  if (patch.inferredPlacement !== null) {
+    fields['inferredPlacement'] = patch.inferredPlacement;
+  }
+  return fields;
+}
+
+/** The validated request with its start as the legacy optional cursor. */
+function toLegacyRequest(request: EcsBackfillRequest): BackfillRequest {
+  switch (request.start.kind) {
+    case BackfillStartKind.Resume:
+      return { job: request.job };
+    case BackfillStartKind.Top:
+      return { job: request.job, cursor: null };
+    case BackfillStartKind.After:
+      return { job: request.job, cursor: request.start.cursor };
+  }
 }

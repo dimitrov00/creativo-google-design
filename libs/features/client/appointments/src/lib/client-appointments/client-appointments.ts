@@ -24,7 +24,6 @@ import {
   BookingPolicy,
   Money,
   formatMoney,
-  shopReachKey,
   wordError,
 } from '@creativo/application/booking';
 import { AccountStateService } from '@creativo/features/client/account-state';
@@ -80,6 +79,16 @@ import {
   UiTextDirective,
   UiWeightDirective,
 } from '@creativo/ui/modifiers';
+import {
+  CalendarGridSystem,
+  DayKey,
+  E164,
+  LocationId as LocationKey,
+  type ReachableShop,
+  ShopReach,
+  ShopReachSystem,
+  ZonedTimeSystem,
+} from '@creativo/ecs-core';
 import { CLOCK } from '@creativo/application/shared';
 import { translateDomainError } from '@creativo/infrastructure/i18n';
 import { AppointmentsStore, APPOINTMENTS_ZONE } from '../appointments.store';
@@ -564,27 +573,36 @@ export class ClientAppointments {
       : '';
   });
 
-  /** Hands the destination to the phone's own navigator. */
-  protected readonly openVisitDirections = computed(() => {
+  /**
+   * The ways to reach the open visit's shop (`ShopReachSystem.reach`): the
+   * `tel:` on its canonical E.164 (the display string is punctuated for
+   * reading, not for dialling), the directions for the phone's navigator,
+   * and which "reach the shop" phrase the copy ends with.
+   */
+  private readonly openVisitReach = computed(() => {
     const shop = this.openVisitShop();
-    if (!shop) return null;
-    return `https://www.google.com/maps/dir/?api=1&destination=${shop.geo.lat},${shop.geo.lng}`;
+    return ShopReachSystem.reach(
+      shop === null ? [] : [reachableShopOf(shop)],
+      shop === null ? null : LocationKey.of(shop.id.value),
+    );
   });
 
-  protected readonly openVisitPhoneHref = computed(() => {
-    const shop = this.openVisitShop();
-    // `e164`, the canonical form the VO documents as "drives tel: links" —
-    // the display string is punctuated for reading, not for dialling.
-    return shop ? `tel:${shop.phone.e164}` : null;
-  });
+  /** Hands the destination to the phone's own navigator. */
+  protected readonly openVisitDirections = computed(
+    () => this.openVisitReach().directionsHref,
+  );
+
+  protected readonly openVisitPhoneHref = computed(
+    () => this.openVisitReach().callHref,
+  );
 
   /**
    * How the visit sheet sends the client to the shop (`{{reach}}`): "call"
    * when the sheet's own call verb is there to press, "get in touch" when
-   * the catalogue has no number for this shop (`shopReachKey`).
+   * the catalogue has no number for this shop.
    */
-  protected readonly openVisitReachKey = computed(() =>
-    shopReachKey(this.openVisitPhoneHref()),
+  protected readonly openVisitReachKey = computed(
+    () => this.openVisitReach().reach,
   );
 
   /**
@@ -949,7 +967,9 @@ export class ClientAppointments {
     // beside it earns (`cancelCallHref`).
     const params = {
       ...error.params,
-      reach: this.transloco.translate(shopReachKey(this.cancelCallHref())),
+      reach: this.transloco.translate(
+        ShopReach.forCallHref(this.cancelCallHref()),
+      ),
     };
     return wordError(error, (code) =>
       translateDomainError(this.transloco, { code, params }),
@@ -1007,40 +1027,37 @@ export class ClientAppointments {
   ): VisitMonthVm {
     const pad = (value: number) => String(value).padStart(2, '0');
     const firstOfMonth = Date.UTC(year, month - 1, 1);
-    const lead = (new Date(firstOfMonth).getUTCDay() + 6) % 7;
-    const days = new Date(Date.UTC(year, month, 0)).getUTCDate();
     const todayKey = this.store.today.toISODate();
 
-    const cells: VisitDayVm[] = [
-      ...Array.from({ length: lead }, () => ({
-        dayKey: '',
-        dayOfMonth: null,
-        isToday: false,
-        visits: [] as readonly ClientVisitVm[],
-      })),
-      ...Array.from({ length: days }, (_, index) => {
-        const dayKey = `${year}-${pad(month)}-${pad(index + 1)}`;
-        return {
-          dayKey,
-          dayOfMonth: index + 1,
-          isToday: dayKey === todayKey,
-          visits: byDay.get(dayKey) ?? [],
-        };
-      }),
-    ];
-    while (cells.length % 7 !== 0) {
-      cells.push({
-        dayKey: '',
-        dayOfMonth: null,
-        isToday: false,
-        visits: [],
-      });
-    }
-
-    const weeks: VisitDayVm[][] = [];
-    for (let index = 0; index < cells.length; index += 7) {
-      weeks.push(cells.slice(index, index + 7));
-    }
+    // The grid is `CalendarGridSystem.monthGrid` over the shop zone's day
+    // table; this list pads with BLANKS, so a neighbour's day reads as one.
+    const monthKey = DayKey.of(`${year}-${pad(month)}-01`);
+    const range = CalendarGridSystem.gridRange(monthKey);
+    const weeks: VisitDayVm[][] = CalendarGridSystem.monthGrid(
+      monthKey,
+      ZonedTimeSystem.dayTable(
+        this.store.today.zoneName,
+        range.fromDayKey,
+        range.toDayKey,
+      ),
+      [],
+    ).map((week) =>
+      week.map((cell) =>
+        cell.inMonth
+          ? {
+              dayKey: cell.dayKey,
+              dayOfMonth: cell.dayOfMonth,
+              isToday: cell.dayKey === todayKey,
+              visits: byDay.get(cell.dayKey) ?? [],
+            }
+          : {
+              dayKey: '',
+              dayOfMonth: null,
+              isToday: false,
+              visits: [] as readonly ClientVisitVm[],
+            },
+      ),
+    );
 
     return {
       key: `${year}-${pad(month)}`,
@@ -1054,4 +1071,20 @@ export class ClientAppointments {
       weeks,
     };
   }
+}
+
+/** A catalogue shop as `ShopReachSystem` reads it: its id, number and pin. */
+function reachableShopOf(location: {
+  readonly id: { readonly value: string };
+  readonly phone: { readonly e164: string; readonly display: string };
+  readonly geo: { readonly lat: number; readonly lng: number };
+}): ReachableShop {
+  return {
+    id: LocationKey.of(location.id.value),
+    phone: {
+      e164: E164.of(location.phone.e164),
+      display: location.phone.display,
+    },
+    geo: { lat: location.geo.lat, lng: location.geo.lng },
+  };
 }

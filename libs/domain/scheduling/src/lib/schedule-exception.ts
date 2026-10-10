@@ -3,6 +3,13 @@ import { BarberId, LocationId } from '@creativo/domain/catalog';
 import { CalendarDay } from './calendar-day';
 import { LocalTimeRange } from './local-time-of-day';
 import { EmptyExceptionRangesError } from './schedule-exception.errors';
+import {
+  BarberId as EcsBarberId,
+  ExceptionDetail,
+  LocationId as EcsLocationId,
+  MinuteRange,
+  ScheduleExceptionSystem,
+} from '@creativo/ecs-core';
 
 export class ScheduleExceptionId extends Id<'ScheduleException'> {
   private constructor(value: string) {
@@ -99,11 +106,14 @@ export class ScheduleException {
 
   /** Applies to every barber at the location, rather than to one person. */
   isLocationWide(): boolean {
-    return this.barberId === null;
+    return ScheduleExceptionSystem.isLocationWide(scopeOf(this.barberId));
   }
 
   appliesTo(barberId: BarberId): boolean {
-    return this.barberId === null || this.barberId.equals(barberId);
+    return ScheduleExceptionSystem.appliesTo(
+      scopeOf(this.barberId),
+      EcsBarberId.of(barberId.value),
+    );
   }
 
   /**
@@ -112,20 +122,57 @@ export class ScheduleException {
    * `break` and `admin` operate within a day that is still worked.
    */
   isWholeDay(): boolean {
-    switch (this.detail.kind) {
-      case 'closed':
-      case 'time_off':
-      case 'sick':
-      case 'training':
-      case 'travel':
-        return true;
-      default:
-        return false;
-    }
+    return ScheduleExceptionSystem.isWholeDay(toEcsDetail(this.detail));
   }
 
   /** Does it REPLACE the pattern's ranges for the day? Only `hours` does. */
   replacesRoster(): boolean {
     return this.detail.kind === 'hours';
+  }
+}
+
+// ── The bridge: legacy detail → ecs-core struct (Phase 4 deletes it) ─────
+
+/** The exception's barber as the system reads it; `null` is shop-wide. */
+function scopeOf(barberId: BarberId | null): EcsBarberId | null {
+  return barberId === null ? null : EcsBarberId.of(barberId.value);
+}
+
+function rangesOf(ranges: readonly LocalTimeRange[]): readonly MinuteRange[] {
+  return ranges.map((range) =>
+    MinuteRange.of(
+      range.start.minutesFromMidnight(),
+      range.end.minutesFromMidnight(),
+    ),
+  );
+}
+
+/**
+ * The reasoned detail as `ScheduleExceptionSystem` reads it — the ONE legacy
+ * → ecs-core detail converter. Every shim that needs a stored exception's
+ * public effect asks `ScheduleExceptionSystem.publicEffect(toEcsDetail(…))`
+ * rather than deciding for itself which reason collapses to what (the GDPR
+ * boundary has one implementation). Phase 4 deletes it with the class.
+ */
+export function toEcsDetail(detail: ScheduleExceptionKind): ExceptionDetail {
+  switch (detail.kind) {
+    case 'closed':
+      return ExceptionDetail.closed();
+    case 'time_off':
+      return ExceptionDetail.timeOff();
+    case 'sick':
+      return ExceptionDetail.sick(detail.paid);
+    case 'training':
+      return ExceptionDetail.training(detail.topic);
+    case 'travel':
+      return ExceptionDetail.travel(
+        EcsLocationId.of(detail.toLocationId.value),
+      );
+    case 'hours':
+      return ExceptionDetail.hours(rangesOf(detail.ranges));
+    case 'break':
+      return ExceptionDetail.break(rangesOf(detail.ranges), detail.paid);
+    case 'admin':
+      return ExceptionDetail.admin(rangesOf(detail.ranges), detail.note);
   }
 }

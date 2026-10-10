@@ -18,6 +18,11 @@ import {
   rankClients,
 } from './client-query';
 import { type VisitSides, adoptSides } from './visit-sides';
+import {
+  BillingSystem,
+  TipPresetKind,
+  VisitDraftSystem,
+} from '@creativo/ecs-core';
 import { ShowcaseGalleryComponent } from '@creativo/features/shared/catalog';
 import { ThemeService } from '@creativo/features/shared/shell';
 import {
@@ -1039,18 +1044,9 @@ function snap(minute: number): number {
   return Math.round(minute / GRAIN_MINUTES) * GRAIN_MINUTES;
 }
 
-/** The minutes a draft describes — its override, or the legs it holds. */
-/** A visit with no service yet still needs a shape to draw: half an hour. */
-const DEFAULT_SPAN_MINUTES = 30;
-
-function sumOrDefault(legs: readonly DraftLeg[]): number {
-  return legs.length === 0
-    ? DEFAULT_SPAN_MINUTES
-    : legs.reduce((total, leg) => total + leg.minutes, 0);
-}
-
+/** The minutes a draft describes — its override, or the legs it holds (`VisitDraftSystem.span`). */
 function spanOf(draft: VisitDraft): number {
-  return draft.durationOverride ?? sumOrDefault(draft.legs);
+  return VisitDraftSystem.span(draft.durationOverride, draft.legs);
 }
 
 /**
@@ -1064,9 +1060,10 @@ function adoptPlaceholderLegs(
   draft: VisitDraft,
   id: string,
 ): readonly DraftLeg[] {
-  if (draft.clients.length > 0) return draft.legs;
-  return draft.legs.map((leg) =>
-    leg.clientId === 'primary' ? { ...leg, clientId: id } : leg,
+  return VisitDraftSystem.adoptPlaceholderLegs(
+    draft.clients.length,
+    draft.legs,
+    id,
   );
 }
 
@@ -1122,15 +1119,17 @@ function seedDraft(vm: VisitEditorVm): VisitDraft {
     ...leg,
     clientId: leg.clientId ?? firstClient,
   }));
-  const sum = sumOrDefault(legs);
-  const span = vm.endMinute - vm.startMinute;
   return {
     revision: vm.revision ?? null,
     dayKey: vm.dayKey,
     dayLabel: vm.dayLabel,
     startMinute: vm.startMinute,
     // Only pin a number when the booked span never was the catalogue's.
-    durationOverride: span === sum ? null : span,
+    durationOverride: VisitDraftSystem.durationOverrideOf(
+      vm.startMinute,
+      vm.endMinute,
+      legs,
+    ),
     chairId: vm.chairId,
     locationId: vm.locationId ?? null,
     legs,
@@ -2150,7 +2149,7 @@ export class StaffVisitEditor {
   protected readonly durationMinutes = computed(
     () =>
       this.draft().durationOverride ??
-      Math.max(sumOrDefault(this.draft().legs), GRAIN_MINUTES),
+      Math.max(VisitDraftSystem.legMinutes(this.draft().legs), GRAIN_MINUTES),
   );
 
   /** THE DERIVED END. It is a computation and it is persisted nowhere. */
@@ -4239,65 +4238,27 @@ export class StaffVisitEditor {
       detail: string;
       size: UiChoiceTileSize;
     }[]
-  >(() => {
-    const total = this.vm().priceMinorUnits;
-    if (total === null || total <= 0) return [];
-    const roundUps: {
-      id: string;
-      amount: number;
-      label: string;
-      detail: string;
-      size: UiChoiceTileSize;
-    }[] = [];
-    const coins: typeof roundUps = [];
-    const seen = new Set<number>();
-    const roundUpTo = (step: number) => {
-      const target = Math.ceil(total / step) * step;
-      const tip = target - total;
-      if (
-        tip < TIP_ROUND_UP_MIN_MINOR ||
-        tip > total * TIP_ROUND_UP_MAX_SHARE ||
-        seen.has(tip)
-      ) {
-        return;
-      }
-      seen.add(tip);
-      // THE TIP IS THE FIGURE, on every tile alike; the target it rounds
-      // the bill to is the muted line beneath — «0,50 € · общо 15,00 €»
-      // (owner, 2026-09-16: «до 15,00 €» as the headline read as "anything
-      // up to 15"). «Общо» rather than «до»: a total cannot read as a range.
-      roundUps.push({
-        id: `amt:${tip}`,
-        amount: tip,
-        label: this.moneyLabel(tip),
-        detail: this.rawCopy('staff.visit.tipRoundUp').replace(
-          '{{total}}',
-          this.moneyLabel(target),
-        ),
-        size: 'large',
-      });
-    };
-    roundUpTo(100);
-    roundUpTo(500);
-    roundUpTo(1000);
-    for (const amount of TIP_FIXED_MINOR) {
-      if (coins.length >= TIP_FIXED_SLOTS) break;
-      const share = amount / total;
-      if (share < TIP_FIXED_MIN_SHARE || share > TIP_FIXED_MAX_SHARE) continue;
-      if (seen.has(amount)) continue;
-      seen.add(amount);
-      // No share beneath a coin: the barber counts money, not percentages
-      // (owner, 2026-09-16), and a coin says all it means by itself.
-      coins.push({
-        id: `amt:${amount}`,
-        amount,
-        label: this.moneyLabel(amount),
-        detail: '',
-        size: 'regular',
-      });
-    }
-    return [...roundUps, ...coins];
-  });
+  >(() =>
+    // The figures are `BillingSystem.tipPresets`: the round-ups LARGE, the
+    // coins REGULAR. THE TIP IS THE FIGURE, on every tile alike; the target
+    // a round-up rounds the bill to is the muted line beneath — «0,50 € ·
+    // общо 15,00 €» (owner, 2026-09-16: «до 15,00 €» as the headline read
+    // as "anything up to 15"). No share beneath a coin: the barber counts
+    // money, not percentages, and a coin says all it means by itself.
+    BillingSystem.tipPresets(this.vm().priceMinorUnits).map((preset) => ({
+      id: `amt:${preset.amountMinorUnits}`,
+      amount: preset.amountMinorUnits,
+      label: this.moneyLabel(preset.amountMinorUnits),
+      detail:
+        preset.targetMinorUnits === null
+          ? ''
+          : this.rawCopy('staff.visit.tipRoundUp').replace(
+              '{{total}}',
+              this.moneyLabel(preset.targetMinorUnits),
+            ),
+      size: preset.kind === TipPresetKind.RoundUp ? 'large' : 'regular',
+    })),
+  );
 
   /* ── THE TIP, A DISCLOSURE ON THE LADDER (owner, 2026-09-17: "adding a
    * tip should be collapsible: «Бакшиш — Без ⌃», and it should expand the
@@ -7042,20 +7003,6 @@ function samePromise(a: VisitEditorDiscount, b: VisitEditorDiscount): boolean {
  * the sums a hand actually holds: the next whole euro, the next 5, the next
  * 10; then the coins on top of an exact payment: 1, 2, 5, 10 €.
  */
-/** A round-up target is offered only while its tip stays within this share of the bill. */
-const TIP_ROUND_UP_MAX_SHARE = 0.4;
-/** A round-up smaller than this is not worth a tile. */
-const TIP_ROUND_UP_MIN_MINOR = 20;
-/**
- * The coins on top of an exact payment, and the share of the bill a coin
- * must fall in to be offered. THREE are offered — with «Без» they fill a
- * row of the four-column bento, or the two cells beside a large tile and
- * the two beneath them.
- */
-const TIP_FIXED_MINOR: readonly number[] = [100, 200, 500, 1000, 2000];
-const TIP_FIXED_MIN_SHARE = 0.03;
-const TIP_FIXED_MAX_SHARE = 0.5;
-const TIP_FIXED_SLOTS = 3;
 /** The bento is four cells across: two large round-ups side by side, four regular tiles a row. */
 const TIP_TILE_COLUMNS = 4;
 

@@ -1,13 +1,16 @@
 import { Result, fail, ok } from '@creativo/domain/kernel';
 import { LocalizedText, LocalizedTextProps } from '@creativo/domain/catalog';
+import {
+  DayKey,
+  EngagementErrorCode,
+  Gamification,
+  type SeasonError as SystemSeasonError,
+  SeasonSystem,
+  type SeriesId,
+} from '@creativo/ecs-core';
 import { BadgeSeriesId, SeasonId } from '../ids';
 import type { BadgeEmblem } from './badge-vocabulary';
-import {
-  IsoDate,
-  daysBetween,
-  isIsoDate,
-  sofiaDayOf,
-} from './loyalty-calendar';
+import { IsoDate, LOYALTY_ZONE } from './loyalty-calendar';
 import {
   SeasonAnnouncedLateError,
   SeasonError,
@@ -17,12 +20,20 @@ import {
   SeasonWithoutTrackError,
 } from './season.errors';
 
+/*
+ * `seasons/{id}` as a class — a thin shim since the ECS migration's Phase 2:
+ * the window's rules, its phase on a day and its families are
+ * `SeasonSystem` (`@creativo/ecs-core`, `season.system.ts`). The id and
+ * title guards stay with the class until Phase 4 deletes it; the bridge to
+ * the system's structs is the private helpers at the end.
+ */
+
 /**
  * How far ahead a season is announced: the loyalty policy's rule-change
  * notice (R29, `ruleChangeNoticeDays`). A season changes what earns, so the
  * client hears of it before it counts.
  */
-export const SEASON_NOTICE_DAYS = 30;
+export const SEASON_NOTICE_DAYS: number = Gamification.SEASON_NOTICE_DAYS;
 
 /** A season or an event on a day: announced — shown «от 1.11», no progress yet; open; ended — archived. */
 export type SeasonPhase = 'announced' | 'open' | 'ended';
@@ -81,22 +92,20 @@ export class Season {
     }
 
     const { from, until } = props.window;
-    if (!isIsoDate(from) || !isIsoDate(until)) {
-      errors.push(new SeasonWindowMalformedError(from, until));
-    } else {
-      if (from > until) errors.push(new SeasonWindowInvertedError(from, until));
-      const announcedOn = sofiaDayOf(props.announcedAt);
-      if (daysBetween(announcedOn, from) < SEASON_NOTICE_DAYS) {
-        errors.push(
-          new SeasonAnnouncedLateError(announcedOn, from, SEASON_NOTICE_DAYS),
-        );
-      }
-    }
-    if (props.kind === 'event' && props.trackSeriesId !== null) {
-      errors.push(new SeasonEventWithTrackError());
-    }
-    if (props.kind === 'season' && props.trackSeriesId === null) {
-      errors.push(new SeasonWithoutTrackError());
+    const rules = SeasonSystem.validate(
+      {
+        kind: props.kind,
+        window: { from: DayKey.of(from), until: DayKey.of(until) },
+        trackSeriesId:
+          props.trackSeriesId === null
+            ? null
+            : (props.trackSeriesId as SeriesId),
+        announcedAtMs: props.announcedAt.getTime(),
+      },
+      LOYALTY_ZONE,
+    );
+    if (!rules.ok) {
+      for (const error of rules.error) errors.push(legacyErrorOf(error));
     }
 
     if (errors.length > 0 || id.isFailure() || title.isFailure()) {
@@ -119,14 +128,38 @@ export class Season {
 
   /** Where the window stands on a Sofia day, both ends inclusive. */
   phaseOn(today: IsoDate): SeasonPhase {
-    if (today < this.window.from) return 'announced';
-    return today > this.window.until ? 'ended' : 'open';
+    return SeasonSystem.phaseOn(
+      {
+        from: DayKey.of(this.window.from),
+        until: DayKey.of(this.window.until),
+      },
+      DayKey.of(today),
+    );
   }
 
   /** Every family the window holds: the track first, then the rest in order. */
   familyIds(): readonly BadgeSeriesId[] {
-    return this.trackSeriesId === null
-      ? this.seriesIds
-      : [this.trackSeriesId, ...this.seriesIds];
+    return SeasonSystem.familyIds(this);
+  }
+}
+
+// ── The bridge: ecs-core struct error → legacy class (Phase 4 deletes it) ──
+
+function legacyErrorOf(error: SystemSeasonError): SeasonError {
+  switch (error.code) {
+    case EngagementErrorCode.SeasonWindowMalformed:
+      return new SeasonWindowMalformedError(error.from, error.until);
+    case EngagementErrorCode.SeasonWindowInverted:
+      return new SeasonWindowInvertedError(error.from, error.until);
+    case EngagementErrorCode.SeasonAnnouncedLate:
+      return new SeasonAnnouncedLateError(
+        error.announcedOn,
+        error.from,
+        error.noticeDays,
+      );
+    case EngagementErrorCode.SeasonEventWithTrack:
+      return new SeasonEventWithTrackError();
+    default:
+      return new SeasonWithoutTrackError();
   }
 }

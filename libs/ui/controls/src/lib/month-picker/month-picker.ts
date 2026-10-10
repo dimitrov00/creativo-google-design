@@ -7,6 +7,7 @@ import {
   linkedSignal,
   output,
 } from '@angular/core';
+import { CalendarGridSystem, DayKey } from '@creativo/ecs-core';
 import { UiSpacer, UiStack } from '@creativo/ui/layout';
 import {
   UiFontDirective,
@@ -36,11 +37,6 @@ export interface UiMonthPickerRelative {
 }
 
 const DAY_KEY = /^\d{4}-\d{2}-\d{2}$/;
-
-/** Monday-first: the week Bulgaria and most of Europe reads. */
-function leadingBlanks(firstWeekdayIndex: number): number {
-  return (firstWeekdayIndex + 6) % 7;
-}
 
 function addDays(dayKey: UiDayKey, delta: number): UiDayKey {
   const [year, month, day] = dayKey.split('-').map(Number);
@@ -205,25 +201,19 @@ export class UiMonthPicker {
   });
 
   /** The month as weeks of cells, `null` padding either end. */
-  protected readonly weeks = computed(() => {
-    const shown = this.shownMonth();
-    const [year, month] = shown.split('-').map(Number);
-    const first = new Date(Date.UTC(year ?? 1970, (month ?? 1) - 1, 1));
-    const days = new Date(Date.UTC(year ?? 1970, month ?? 1, 0)).getUTCDate();
-
-    const cells: ({ day: number; dayKey: UiDayKey } | null)[] = [
-      ...Array.from({ length: leadingBlanks(first.getUTCDay()) }, () => null),
-      ...Array.from({ length: days }, (_, index) => ({
-        day: index + 1,
-        dayKey: `${shown}-${String(index + 1).padStart(2, '0')}`,
-      })),
-    ];
-    while (cells.length % 7 !== 0) cells.push(null);
-
-    const weeks: (typeof cells)[] = [];
-    for (let i = 0; i < cells.length; i += 7) weeks.push(cells.slice(i, i + 7));
-    return weeks;
-  });
+  protected readonly weeks = computed(() =>
+    // Monday-first, padded to whole weeks (`CalendarGridSystem.monthGrid`);
+    // a weekday is civil arithmetic, so no day table is needed.
+    CalendarGridSystem.monthGrid(
+      DayKey.of(`${this.shownMonth()}-01`),
+      [],
+      [],
+    ).map((week) =>
+      week.map((cell): { day: number; dayKey: UiDayKey } | null =>
+        cell.inMonth ? { day: cell.dayOfMonth, dayKey: cell.dayKey } : null,
+      ),
+    ),
+  );
 
   /** A set, read once per month drawn rather than scanned per cell. */
   protected readonly marked = computed(() => new Set(this.uiMarked()));

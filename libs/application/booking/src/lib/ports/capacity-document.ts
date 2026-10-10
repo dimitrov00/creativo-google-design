@@ -1,3 +1,10 @@
+import {
+  BarberId as EcsBarberId,
+  CapacityEntry,
+  DayKey as EcsDayKey,
+  LocationId as EcsLocationId,
+} from '@creativo/ecs-core';
+
 /**
  * The calendar's cost ceiling, as a document: `capacity/{YYYY-MM}`.
  *
@@ -41,7 +48,7 @@ export const CAPACITY_COLLECTION = 'capacity';
 
 /** `2026-08-14` → `2026-08`. */
 export function capacityMonthKey(dayKey: string): string {
-  return dayKey.slice(0, 7);
+  return CapacityEntry.monthOf(EcsDayKey.of(dayKey));
 }
 
 /** One barber's free minutes on one day, keyed by `LocationId.value`. */
@@ -65,18 +72,42 @@ export function freeMinutesFor(
   locationId: string | null,
 ): number {
   if (!dayEntry) return 0;
-  let total = 0;
+  const day = EcsDayKey.of(ANY_DAY);
+  return CapacityEntry.freeMinutesOn(
+    entriesOf(dayEntry, barberIds, day),
+    day,
+    barberIds.map((id) => EcsBarberId.of(id)),
+    locationId === null ? null : EcsLocationId.of(locationId),
+  );
+}
+
+// ── The bridge: the stored day map → ecs-core entries (Phase 4 deletes it) ─
+
+/** Every entry of a converted day shares one key — any will do. */
+const ANY_DAY = '0000-00-00';
+
+/**
+ * The day's map as `CapacityEntry` rows, for the barbers asked about, in
+ * their order (a barber named twice is counted twice, as before). A
+ * malformed contribution is no entry; a malformed figure is `0`.
+ */
+function entriesOf(
+  dayEntry: CapacityDayEntry,
+  barberIds: readonly string[],
+  dayKey: EcsDayKey,
+): readonly CapacityEntry[] {
+  const entries: CapacityEntry[] = [];
   for (const barberId of barberIds) {
     const contribution = dayEntry[barberId];
     if (typeof contribution !== 'object' || contribution === null) continue;
-    if (locationId !== null) {
-      const minutes = (contribution as Record<string, unknown>)[locationId];
-      total += Number.isFinite(Number(minutes)) ? Number(minutes) : 0;
-      continue;
-    }
-    for (const minutes of Object.values(contribution)) {
-      total += Number.isFinite(Number(minutes)) ? Number(minutes) : 0;
+    for (const [locationId, minutes] of Object.entries(contribution)) {
+      entries.push({
+        dayKey,
+        barberId: EcsBarberId.of(barberId),
+        locationId: EcsLocationId.of(locationId),
+        freeMinutes: Number.isFinite(Number(minutes)) ? Number(minutes) : 0,
+      });
     }
   }
-  return total;
+  return entries;
 }

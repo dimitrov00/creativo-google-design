@@ -1,4 +1,9 @@
 import { Result, fail, ok } from '@creativo/domain/kernel';
+import {
+  AvailabilitySystem,
+  DayKey,
+  ZonedTimeSystem,
+} from '@creativo/ecs-core';
 import { CalendarDay } from './calendar-day';
 import type { InvalidCalendarDayError } from './calendar-day.errors';
 import { Interval } from './interval';
@@ -90,13 +95,19 @@ export class DayWindows {
    * instants anyway.
    */
   toIntervals(): readonly Interval[] {
-    // `bounds()` rather than midnight-to-midnight arithmetic: a transition day
-    // is 23 or 25 hours, and the whole-day mask has to be the whole day.
-    if (this.isWholeDay()) return [this.day.bounds()];
-    return this.windows.flatMap((window) => {
-      const interval = window.onDay(this.day);
-      return interval.isSuccess() ? [interval.value] : [];
-    });
+    // Phase 2 shim: the mask is `AvailabilitySystem.withinMsOf` over the
+    // day's row of its zone's table.
+    const dayKey = DayKey.of(this.day.key());
+    return AvailabilitySystem.withinMsOf(
+      {
+        dayKey,
+        windows: this.windows.map((window) => ({
+          startMinutes: window.start.minutesFromMidnight(),
+          endMinutes: window.end.minutesFromMidnight(),
+        })),
+      },
+      ZonedTimeSystem.dayTable(this.day.zone, dayKey, dayKey),
+    );
   }
 
   /** Add a span, re-normalizing — the window sheet's only write. */

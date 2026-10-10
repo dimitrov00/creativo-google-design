@@ -13,6 +13,33 @@ import {
   auditEntryToDocument,
 } from '@creativo/application/shared';
 import type { RequestedSeat } from '../../use-cases/decide-booking';
+import {
+  type AuditSubject as AuditSubjectData,
+  AuditRequestedSubjectKind,
+  AuditSystem,
+  UserId as UserIdData,
+} from '@creativo/ecs-core';
+
+/*
+ * THIN SHIM (ECS migration Phase 2) — the math only. Who gets a row, the
+ * people on a requested cart, and the BASIS a row id is hashed from are
+ * `AuditSystem` (`targets`, `requestedSubjects`, `rowBasis`); the SHA-256
+ * stays here, at the edge, and so do the reads and the batched write.
+ */
+
+/* ── Legacy ↔ ECS converters ─────────────────────────────────────────── */
+
+function toSubjectData(subject: AuditSubject): AuditSubjectData {
+  return subject.kind === 'account'
+    ? { kind: 'account', userId: UserIdData.of(subject.userId) }
+    : { kind: 'anonymous' };
+}
+
+function fromSubjectData(subject: AuditSubjectData): AuditSubject {
+  return subject.kind === 'account'
+    ? { kind: 'account', userId: subject.userId }
+    : { kind: 'anonymous' };
+}
 import { adminFirestore } from '../firebase-admin';
 
 /**
@@ -70,13 +97,12 @@ export function auditEntryIdFor(parts: {
 }): string {
   return createHash('sha256')
     .update(
-      JSON.stringify([
-        'audit-row/v1',
+      AuditSystem.rowBasis(
         parts.action,
         parts.resourceId,
         parts.targetUserId,
         parts.changeKey,
-      ]),
+      ),
     )
     .digest('hex');
 }
@@ -115,13 +141,7 @@ function isAlreadyExists(error: unknown): boolean {
 export function auditTargets(
   subjects: readonly AuditSubject[],
 ): readonly (string | null)[] {
-  const people = new Set<string>();
-  for (const subject of subjects) {
-    if (subject.kind === 'account' && subject.userId.length > 0) {
-      people.add(subject.userId);
-    }
-  }
-  return people.size > 0 ? [...people] : [null];
+  return AuditSystem.targets(subjects.map(toSubjectData));
 }
 
 /**
@@ -188,14 +208,19 @@ export function requestedSeatSubjects(
   seats: readonly RequestedSeat[],
   ownerUserId: string | null,
 ): readonly AuditSubject[] {
-  return seats.map((seat) => {
-    if (seat.subject.kind === 'companion') {
-      return { kind: 'account', userId: seat.subject.userId };
-    }
-    return seat.subject.kind === 'self' && ownerUserId
-      ? { kind: 'account', userId: ownerUserId }
-      : { kind: 'anonymous' };
-  });
+  return AuditSystem.requestedSubjects(
+    seats.map((seat) =>
+      seat.subject.kind === 'companion'
+        ? {
+            kind: AuditRequestedSubjectKind.Companion,
+            userId: UserIdData.of(seat.subject.userId),
+          }
+        : seat.subject.kind === 'self'
+          ? { kind: AuditRequestedSubjectKind.Self, userId: null }
+          : { kind: AuditRequestedSubjectKind.Guest, userId: null },
+    ),
+    ownerUserId === null ? null : UserIdData.of(ownerUserId),
+  ).map(fromSubjectData);
 }
 
 /** Who a stored visit is about: its seats' people and its owner. */

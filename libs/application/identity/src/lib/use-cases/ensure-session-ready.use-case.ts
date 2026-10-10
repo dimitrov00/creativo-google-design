@@ -1,12 +1,22 @@
 import { firstValueFrom } from 'rxjs';
+import {
+  REFRESH_BACKOFF_MS,
+  SessionAccessSystem,
+  SessionReadinessKind,
+} from '@creativo/ecs-core';
 import { Result, fail, ok } from '@creativo/domain/kernel';
 import { Principal } from '@creativo/domain/identity';
+import { principalTagOf } from '../flow/principal-tag';
 import { AuthGateway, AuthGatewayError } from '../ports/auth-gateway.port';
 
-/** Ports v2's `routerAuth.ensureReady()` backoff verbatim (blueprint §1.4/§6). */
-export const REFRESH_UNTIL_ACTIVE_BACKOFF_MS: readonly number[] = [
-  0, 200, 400, 700, 1200, 1600,
-];
+/**
+ * Ports v2's `routerAuth.ensureReady()` backoff verbatim (blueprint §1.4/§6).
+ * Phase 2 shim (ECS migration): the schedule and the settle rule are
+ * `SessionAccessSystem.readiness` (`@creativo/ecs-core`); this use case keeps
+ * the timer, the token refresh and the observation.
+ */
+export const REFRESH_UNTIL_ACTIVE_BACKOFF_MS: readonly number[] =
+  REFRESH_BACKOFF_MS;
 
 export interface EnsureSessionReadyDeps {
   /** Injected so tests don't actually wait — defaults to a real `setTimeout`-backed delay. */
@@ -38,22 +48,22 @@ export class EnsureSessionReadyUseCase {
 
   async execute(): Promise<Result<Principal, AuthGatewayError>> {
     let principal = await firstValueFrom(this.authGateway.observePrincipal());
-    if (principal.kind !== 'onboarding') {
-      return ok(principal);
-    }
-
-    for (const delayMs of REFRESH_UNTIL_ACTIVE_BACKOFF_MS) {
-      if (delayMs > 0) {
-        await this.delay(delayMs);
+    let refreshes = 0;
+    let step = SessionAccessSystem.readiness(principalTagOf(principal), 0);
+    while (step.kind === SessionReadinessKind.Refresh) {
+      if (step.delayMs > 0) {
+        await this.delay(step.delayMs);
       }
       const refreshResult = await this.authGateway.refreshToken();
       if (refreshResult.isFailure()) {
         return fail(refreshResult.error);
       }
+      refreshes++;
       principal = await firstValueFrom(this.authGateway.observePrincipal());
-      if (principal.kind === 'active') {
-        return ok(principal);
-      }
+      step = SessionAccessSystem.readiness(
+        principalTagOf(principal),
+        refreshes,
+      );
     }
 
     return ok(principal);

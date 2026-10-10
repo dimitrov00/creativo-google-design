@@ -1,6 +1,20 @@
+import {
+  AuthStage,
+  type AuthClaims as ClaimsStruct,
+  Identifier,
+  IdentifierKind,
+  type ParsedIdentifier,
+  Registration,
+  RegistrationSystem,
+  type Role,
+  TenantId,
+  UserId as UserKey,
+} from '@creativo/ecs-core';
 import { Otp, OtpId } from '@creativo/domain/models';
 import { Result, fail, ok } from '@creativo/domain/kernel';
 import {
+  AuthClaims,
+  EmptyRolesError,
   ONBOARDING_CLAIMS,
   activeClaims,
   roleFromPrimitive,
@@ -31,6 +45,36 @@ import {
 } from './verify-otp.errors';
 
 const OTP_ZONE = 'UTC';
+
+/*
+ * Phase 2 shim (ECS migration): the claims a sign-in mints and the stub a
+ * first sign-in provisions are `RegistrationSystem.claimsFor` and
+ * `.provision` (`@creativo/ecs-core`). The challenge's own verdict stays on
+ * the models `Otp` until that class is shimmed onto `OtpSystem`. The
+ * converters below are the only code besides the delegating calls.
+ */
+
+function toChannel(destination: OtpDestination): ParsedIdentifier {
+  return {
+    kind:
+      destination.kind === 'sms' ? IdentifierKind.Phone : IdentifierKind.Email,
+    value: Identifier.of(otpDestinationValue(destination)),
+  };
+}
+
+/** The stored role strings as the system reads them (validated by the rules on the way in). */
+function toRoles(roles: readonly string[]): readonly Role[] {
+  return roles as readonly Role[];
+}
+
+/** The system's claims back as the token-port shape (the tenant rides beside them). */
+function toLegacyClaims(
+  claims: ClaimsStruct,
+): Result<AuthClaims, EmptyRolesError> {
+  return claims.stage === AuthStage.Active
+    ? activeClaims(claims.roles.map(roleFromPrimitive))
+    : ok(ONBOARDING_CLAIMS);
+}
 
 export interface VerifyOtpInput {
   otpId: string;
@@ -186,11 +230,15 @@ export class VerifyOtpUseCase {
     // doc says was granted by the Admin SDK — which makes minting it here
     // the missing half of the "granted out-of-band" story rather than a
     // new door. Empty (a stub, a pre-roles doc) falls back to `client`.
-    const storedRoles =
-      user.roles.length > 0 ? user.roles : (['client'] as const);
-    const claims = user.registered
-      ? activeClaims(storedRoles.map(roleFromPrimitive))
-      : ok(ONBOARDING_CLAIMS);
+    const claims = toLegacyClaims(
+      RegistrationSystem.claimsFor(
+        user.registered
+          ? Registration.registered()
+          : Registration.provisioned(),
+        toRoles(user.roles),
+        TenantId.of(verifiedOtp.tenantId.value),
+      ),
+    );
     if (claims.isFailure()) {
       // Unreachable — the literal roles array above is never empty.
       return fail(new TokenMintingFailure(new AuthTokenError('empty roles')));
@@ -219,12 +267,14 @@ export class VerifyOtpUseCase {
 
     // Nothing but the login channel exists yet — the accounts-shape
     // profile (names/roles/status) arrives with `completeRegistration`.
+    const provisioned = RegistrationSystem.provision(
+      UserKey.of(uid.value),
+      toChannel(destination),
+    );
     const stub = {
       id: uid,
-      email:
-        destination.kind === 'email' ? otpDestinationValue(destination) : null,
-      phone:
-        destination.kind === 'sms' ? otpDestinationValue(destination) : null,
+      email: provisioned.email,
+      phone: provisioned.phone,
     };
 
     const saveUserResult = await this.userRepository.provision(stub);

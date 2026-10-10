@@ -1,3 +1,10 @@
+import {
+  AgeSystem,
+  AgeWindow,
+  DayKey,
+  type IdentityError,
+  IdentityErrorCode,
+} from '@creativo/ecs-core';
 import { Result, ZonedDateTime, fail, ok } from '@creativo/domain/kernel';
 import {
   BirthDateError,
@@ -15,8 +22,10 @@ import {
  * doc below). Lowering the floor (e.g. to 13) is a one-line product
  * decision, but it must change in BOTH places together.
  */
-export const BIRTH_DATE_MIN_AGE = 16;
-export const BIRTH_DATE_MAX_AGE = 120;
+// Literals typed by the system's window: the compiler keeps them equal to
+// `AgeWindow` while the module loads nothing of `AgeSystem` (eager bundle).
+export const BIRTH_DATE_MIN_AGE: typeof AgeWindow.MinAge = 16;
+export const BIRTH_DATE_MAX_AGE: typeof AgeWindow.MaxAge = 120;
 
 /** Raw segment values as collected by a DD/MM/YYYY form control. */
 export interface BirthDateParts {
@@ -25,13 +34,34 @@ export interface BirthDateParts {
   readonly year: number;
 }
 
-const ISO_DATE_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/;
+/*
+ * Phase 2 shim (ECS migration): the age window, the calendar check and the
+ * future check live in `AgeSystem` (`@creativo/ecs-core`); "today" is the
+ * `today` instant's calendar day in its own zone. The helpers below are the
+ * only code besides the delegating bodies.
+ */
 
-function toIsoDate(parts: BirthDateParts): string {
-  const year = String(parts.year).padStart(4, '0');
-  const month = String(parts.month).padStart(2, '0');
-  const day = String(parts.day).padStart(2, '0');
-  return `${year}-${month}-${day}`;
+/** `today`'s calendar day, in `today`'s own zone. */
+function todayKeyOf(today: ZonedDateTime): DayKey {
+  return DayKey.of(today.toISODate());
+}
+
+/** The system's refusal struct back as this context's error class. */
+function toLegacyError(error: IdentityError): BirthDateError {
+  switch (error.code) {
+    case IdentityErrorCode.BirthDateInFuture:
+      return new BirthDateInFutureError(error.attempted);
+    case IdentityErrorCode.BirthDateTooYoung:
+      return new BirthDateTooYoungError(error.age, error.minAge);
+    case IdentityErrorCode.BirthDateTooOld:
+      return new BirthDateTooOldError(error.age, error.maxAge);
+    default:
+      return new BirthDateInvalidError(
+        error.code === IdentityErrorCode.BirthDateInvalid
+          ? error.attempted
+          : '',
+      );
+  }
 }
 
 /**
@@ -66,21 +96,10 @@ export class BirthDate {
     parts: BirthDateParts,
     today: ZonedDateTime,
   ): Result<BirthDate, BirthDateError> {
-    const { day, month, year } = parts;
-    if (
-      !Number.isInteger(day) ||
-      !Number.isInteger(month) ||
-      !Number.isInteger(year) ||
-      day < 1 ||
-      day > 31 ||
-      month < 1 ||
-      month > 12 ||
-      year < 1 ||
-      year > 9999
-    ) {
-      return fail(new BirthDateInvalidError(toIsoDate(parts)));
-    }
-    return BirthDate.validate(toIsoDate(parts), today);
+    const checked = AgeSystem.fromParts(parts, todayKeyOf(today));
+    return checked.ok
+      ? ok(new BirthDate(checked.value))
+      : fail(toLegacyError(checked.error));
   }
 
   /**
@@ -92,33 +111,10 @@ export class BirthDate {
     raw: string,
     today: ZonedDateTime,
   ): Result<BirthDate, BirthDateError> {
-    if (!ISO_DATE_PATTERN.test(raw.trim())) {
-      return fail(new BirthDateInvalidError(raw));
-    }
-    return BirthDate.validate(raw.trim(), today);
-  }
-
-  private static validate(
-    iso: string,
-    today: ZonedDateTime,
-  ): Result<BirthDate, BirthDateError> {
-    // Parsed in `today`'s own zone — Luxon rejects impossible calendar
-    // dates (2001-02-30) outright.
-    const parsed = ZonedDateTime.fromISO(iso, today.zoneName);
-    if (parsed.isFailure()) {
-      return fail(new BirthDateInvalidError(iso));
-    }
-    if (parsed.value.isAfter(today)) {
-      return fail(new BirthDateInFutureError(iso));
-    }
-    const age = parsed.value.yearsUntil(today);
-    if (age < BIRTH_DATE_MIN_AGE) {
-      return fail(new BirthDateTooYoungError(age, BIRTH_DATE_MIN_AGE));
-    }
-    if (age > BIRTH_DATE_MAX_AGE) {
-      return fail(new BirthDateTooOldError(age, BIRTH_DATE_MAX_AGE));
-    }
-    return ok(new BirthDate(iso));
+    const checked = AgeSystem.parseIso(raw, todayKeyOf(today));
+    return checked.ok
+      ? ok(new BirthDate(checked.value))
+      : fail(toLegacyError(checked.error));
   }
 
   /** Rebuild from persistence that was validated on the way in. Never call with user input. */

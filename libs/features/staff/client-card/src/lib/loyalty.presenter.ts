@@ -5,6 +5,7 @@ import {
   type StreakState,
   sofiaDayOf,
 } from '@creativo/application/engagement';
+import { DayKey, type GrantTicketRef, RewardSystem } from '@creativo/ecs-core';
 import type { ClientCardGrant } from './client-card.contracts';
 import { dayLong, dayShort, daysBetweenDays } from './client-card.format';
 import type { RewardReadyVm, Slice } from './client-pages.vm';
@@ -46,22 +47,13 @@ export function groupedGrants(
   ready: readonly ClientCardGrant[],
   onBill: readonly ClientCardGrant[],
 ): readonly GrantGroup[] {
-  const groups = new Map<string, ClientCardGrant[]>();
-  for (const grant of ready) {
-    const key = `${grant.title}\u0000${grant.valueLabel ?? ''}`;
-    groups.set(key, [...(groups.get(key) ?? []), grant]);
-  }
-  const soonestFirst = (a: ClientCardGrant, b: ClientCardGrant) =>
-    (a.expiresOn ?? '9999-12-31').localeCompare(b.expiresOn ?? '9999-12-31') ||
-    a.grantId.localeCompare(b.grantId);
-  const firstOf = (group: GrantGroup) => group.grants[0] as ClientCardGrant;
-  return [
-    ...[...groups.values()].map((group) => ({
-      grants: [...group].sort(soonestFirst),
-      applied: false,
-    })),
-    ...onBill.map((grant) => ({ grants: [grant], applied: true })),
-  ].sort((a, b) => soonestFirst(firstOf(a), firstOf(b)));
+  return RewardSystem.groupGrants(
+    ready.map(ticketRefOf),
+    onBill.map(ticketRefOf),
+  ).map((ticket) => ({
+    grants: ticket.grants.map((ref) => ref.source),
+    applied: ticket.applied,
+  }));
 }
 
 export function ticketOf(
@@ -189,11 +181,23 @@ export function offered(
   catalog: LoyaltyCatalog,
   today: string,
 ): readonly RewardCatalogItem[] {
-  return catalog.rewards.filter(
-    (reward) =>
-      reward.enabled &&
-      (reward.available.until === null || reward.available.until >= today),
-  );
+  return RewardSystem.offered(
+    catalog.rewards.map((reward) => ({
+      enabled: reward.enabled,
+      available: {
+        from:
+          reward.available.from === null
+            ? null
+            : DayKey.of(reward.available.from),
+        until:
+          reward.available.until === null
+            ? null
+            : DayKey.of(reward.available.until),
+      },
+      source: reward,
+    })),
+    DayKey.of(today),
+  ).map((ref) => ref.source);
 }
 
 export interface LoyaltyPageInput {
@@ -236,4 +240,21 @@ export function sliceMap<T, U>(
   if (slice.status !== 'ready') return slice;
   const data = map(slice.data);
   return data === null ? undefined : { status: 'ready', data };
+}
+
+// ── The bridge: the card's grant → ecs-core struct (Phase 4 deletes it) ──
+
+/**
+ * A held grant as `RewardSystem.groupGrants` reads it: identical grants —
+ * the same coupon, worded the same — share a key, and the grant rides along.
+ */
+function ticketRefOf(grant: ClientCardGrant): GrantTicketRef & {
+  readonly source: ClientCardGrant;
+} {
+  return {
+    grantId: grant.grantId,
+    groupKey: `${grant.title}\u0000${grant.valueLabel ?? ''}`,
+    expiresOn: grant.expiresOn === null ? null : DayKey.of(grant.expiresOn),
+    source: grant,
+  };
 }

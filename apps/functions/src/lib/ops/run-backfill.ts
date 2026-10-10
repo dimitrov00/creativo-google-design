@@ -22,6 +22,7 @@ import {
 } from '@creativo/application/booking';
 import { AUDIT_LOG_COLLECTION } from '@creativo/application/shared';
 import type { Actor } from '@creativo/domain/governance';
+import { BackfillPhase, BackfillPlanSystem } from '@creativo/ecs-core';
 import { adminFirestore } from '../firebase-admin';
 import { type AuditInput, appendAudit } from '../booking/audit';
 import { callerActor, callerRoles } from '../booking/caller-roles';
@@ -51,7 +52,6 @@ import {
   type BackfillJob,
   type BackfillPosition,
   type BackfillRequest,
-  cursorOf,
   inferPlacement,
   lacksPlacement,
   mayLackMirrors,
@@ -360,15 +360,6 @@ async function stampRows(
 const sum = (values: readonly number[]): number =>
   values.reduce((a, b) => a + b, 0);
 
-/** The id of the last row a walk handled, or `after` when it handled none. */
-function lastHandled(
-  ids: readonly string[],
-  handled: number,
-  after: string | null,
-): string | null {
-  return handled > 0 ? (ids.at(handled - 1) ?? after) : after;
-}
-
 /**
  * A page of appointments, a chunk at a time until the budget is spent:
  * stamp what lacks a mirror, then (stats job) recompute the chunk's people.
@@ -407,18 +398,14 @@ async function appointmentsPage(
     },
   );
 
-  const stoppedEarly = walk.handled < page.size;
   return {
-    next: {
-      phase: 'appointments',
-      after: lastHandled(
-        page.docs.map((doc) => doc.id),
-        walk.handled,
-        after,
-      ),
-    },
-    exhausted: !stoppedEarly && page.size < call.deps.pageSize,
-    stoppedEarly,
+    ...BackfillPlanSystem.pageWalk(
+      BackfillPhase.Appointments,
+      page.docs.map((doc) => doc.id),
+      walk.handled,
+      after,
+      call.deps.pageSize,
+    ),
     processed: walk.handled,
     storedClients: 0,
     stamped: sum(walk.results.map((r) => r.stamped)),
@@ -451,14 +438,14 @@ async function storedClientsPage(
     call.budget,
     (chunk) => recomputeAll(db, chunk, call),
   );
-  const stoppedEarly = walk.handled < page.size;
   return {
-    next: {
-      phase: 'storedClients',
-      after: lastHandled(ids, walk.handled, after),
-    },
-    exhausted: !stoppedEarly && page.size < call.deps.pageSize,
-    stoppedEarly,
+    ...BackfillPlanSystem.pageWalk(
+      BackfillPhase.StoredClients,
+      ids,
+      walk.handled,
+      after,
+      call.deps.pageSize,
+    ),
     processed: 0,
     storedClients: walk.handled,
     stamped: 0,
@@ -530,32 +517,26 @@ export async function runBackfillPage(
           call,
         );
 
-  // The appointments ran out: the stats job goes on to the stored clients,
-  // every other job is finished.
-  const nextPhase =
-    outcome.exhausted &&
-    outcome.next.phase === 'appointments' &&
-    request.job === 'clientStats';
-  const walkedAll = outcome.exhausted && !nextPhase;
-  const sampleDue = walkedAll && request.job === 'clientStats';
-  // The sample is new work too. With the budget spent it waits for the next
-  // call, which finds the phase empty past this cursor and takes it then —
-  // as that call's first unit, so it is never deferred twice.
-  const workedAlready = outcome.processed + outcome.storedClients > 0;
-  const sampleDeferred = sampleDue && workedAlready && call.budget.spent();
-  const done = walkedAll && !sampleDeferred;
-  const nextCursor = cursorOf(
-    nextPhase ? { phase: 'storedClients', after: null } : outcome.next,
+  // How the run goes on (`BackfillPlanSystem.nextPage`): the appointments
+  // ran out → the stats job goes on to the stored clients, every other job
+  // is finished; the closing sample waits for the next call when the budget
+  // is spent (it is new work too), never twice.
+  const verdict = BackfillPlanSystem.nextPage(
+    request.job,
+    outcome,
+    outcome,
+    () => call.budget.spent(),
   );
-  const sample =
-    done && sampleDue
-      ? await sampleDiff(
-          db,
-          await call.policy(),
-          deps.sampleSize,
-          deps.samplePivot(),
-        )
-      : null;
+  const { done, sampleDeferred } = verdict;
+  const nextCursor = verdict.cursor;
+  const sample = verdict.takeSample
+    ? await sampleDiff(
+        db,
+        await call.policy(),
+        deps.sampleSize,
+        deps.samplePivot(),
+      )
+    : null;
 
   const total = carried.processed + outcome.processed;
   await progressRef.set({

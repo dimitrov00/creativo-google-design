@@ -1,4 +1,9 @@
 import {
+  IdentityErrorCode,
+  type OtpCounters,
+  OtpSystem,
+} from '@creativo/ecs-core';
+import {
   Result,
   ZonedDateTime,
   combineAll,
@@ -90,7 +95,7 @@ export class Otp {
     const destinationResult = Otp.validateDestination(props.destination);
     const maxAttemptsResult = Otp.validateMaxAttempts(props.maxAttempts);
     const expiresAtResult = ZonedDateTime.fromISO(
-      now.plusMinutes(props.ttlMinutes).toISO(),
+      toUtcIso(OtpSystem.expiresAtMs(now.toMillis(), props.ttlMinutes)),
       OTP_ZONE,
     );
 
@@ -187,24 +192,21 @@ export class Otp {
     hasher: OtpCodeHasher,
     now: ZonedDateTime,
   ): Result<Otp, OtpVerificationError> {
-    if (this.consumedAt) {
-      return fail({ kind: 'already_consumed' });
-    }
-    if (now.isAfter(this.expiresAt)) {
-      return fail({ kind: 'expired' });
-    }
-    if (this.attemptCount >= this.maxAttempts) {
-      return fail({ kind: 'locked_out' });
-    }
-    if (!hasher.verify(rawCode, this.salt, this.codeHash)) {
-      return fail({ kind: 'wrong_code' });
-    }
-    return ok(this.withConsumedAt(now));
+    const verdict = OtpSystem.verify(
+      toCounters(this),
+      hasher.verify(rawCode, this.salt, this.codeHash),
+      now.toMillis(),
+    );
+    return verdict.ok
+      ? ok(this.withConsumedAt(now))
+      : fail(toLegacyVerdict(verdict.error.code));
   }
 
   /** Explicit, separate mutation — the use-case calls this after a `verify()` failure with `kind: 'wrong_code'` so the incremented attempt count gets persisted. */
   recordFailedAttempt(): Otp {
-    return this.withAttemptCount(this.attemptCount + 1);
+    return this.withAttemptCount(
+      OtpSystem.recordAttempt(toCounters(this)).attemptCount,
+    );
   }
 
   private static validateDestination(
@@ -254,5 +256,37 @@ export class Otp {
       this.consumedAt,
       this.createdAt,
     );
+  }
+}
+
+// ── The bridge: this class ↔ ecs-core's `OtpSystem` (Phase 4 deletes it) ─
+
+/** The four counters `OtpSystem.verify` reads, off this class. */
+function toCounters(otp: Otp): OtpCounters {
+  return {
+    consumedAtMs: otp.consumedAt === null ? null : otp.consumedAt.toMillis(),
+    expiresAtMs: otp.expiresAt.toMillis(),
+    attemptCount: otp.attemptCount,
+    maxAttempts: otp.maxAttempts,
+  };
+}
+
+/** An epoch-ms instant as the class's UTC ISO stamp (`''` — refused — never happens for a finite instant). */
+function toUtcIso(epochMs: number): string {
+  const instant = ZonedDateTime.fromMillis(epochMs, OTP_ZONE);
+  return instant.isSuccess() ? instant.value.toISO() : '';
+}
+
+/** The system's payload-free verdict code back as the class's `{ kind }`. */
+function toLegacyVerdict(code: string): OtpVerificationError {
+  switch (code) {
+    case IdentityErrorCode.OtpAlreadyConsumed:
+      return { kind: 'already_consumed' };
+    case IdentityErrorCode.OtpExpired:
+      return { kind: 'expired' };
+    case IdentityErrorCode.OtpLockedOut:
+      return { kind: 'locked_out' };
+    default:
+      return { kind: 'wrong_code' };
   }
 }

@@ -1,91 +1,76 @@
-import type {
-  ClientMoneyStats,
-  ClientStats,
-  VisitPlacement,
-  VisitPlacements,
+import {
+  type ClientMoneyStats,
+  type ClientStats,
+  type PauseSuggestion,
+  type VisitFact,
+  type VisitPlacements,
+  type VisitRef,
+  toEcsAppointment,
 } from '@creativo/domain/scheduling';
 import {
+  CLIENT_MONEY_DOC,
+  CLIENT_STATS_COLLECTION,
+  CLIENT_STATS_RESTRICTED_COLLECTION,
   type PersistedDocument,
   type PolicyPass,
-  clientMoneyContent,
+  appointmentFromDocument,
   clientMoneyFromDocument,
   clientMoneyToDocument,
-  clientStatsContent,
   clientStatsFromDocument,
   clientStatsToDocument,
   placementFromDocument,
   subjectUserIdsFromDocument,
 } from '@creativo/application/booking';
-import { compareInstants } from './policy-recompute-plan';
+import {
+  type AppointmentEntity,
+  AppointmentId as EcsAppointmentId,
+  BarberId as EcsBarberId,
+  type ClientMoneyStats as EcsClientMoneyStats,
+  type ClientStats as EcsClientStats,
+  ClientStatsSystem,
+  ClientStatsWriteKind,
+  type PauseSuggestion as EcsPauseSuggestion,
+  PlacementKind,
+  type PolicyPass as EcsPolicyPass,
+  PolicyPassVerdictKind,
+  PolicyRecomputeJobSystem,
+  SeatId as EcsSeatId,
+  ServiceId as EcsServiceId,
+  ServiceVariantId as EcsServiceVariantId,
+  UserId as EcsUserId,
+  type VisitFact as EcsVisitFact,
+  type VisitRef as EcsVisitRef,
+} from '@creativo/ecs-core';
+import { instantFromIso } from './policy-recompute-plan';
 
 /**
  * The pure half of the client-stats projection: what a write changed, whom
  * it concerns, and whether a recomputed answer is worth a write. The shell
  * (`recompute-client-stats.ts`) reads, calls these and `computeClientStats`,
  * and writes once.
+ *
+ * Phase 2 shim: the decisions are `ClientStatsSystem` and
+ * `PolicyRecomputeJobSystem` (the pass guard) in `@creativo/ecs-core`; this
+ * file keeps the legacy names for its callers, reads the stored documents
+ * through their mappers, and converts at the edge.
  */
 
 /** JSON with object keys sorted, so two equal values always print the same. */
 export function canonicalJson(value: unknown): string {
-  return JSON.stringify(value, (_key, raw: unknown) => {
-    if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) {
-      return raw;
-    }
-    return Object.fromEntries(
-      Object.entries(raw as Record<string, unknown>).sort(([a], [b]) =>
-        a < b ? -1 : a > b ? 1 : 0,
-      ),
-    );
-  });
-}
-
-function pick(raw: unknown, keys: readonly string[]): unknown {
-  if (raw === null || typeof raw !== 'object') return null;
-  const fields = new Map(Object.entries(raw));
-  return Object.fromEntries(keys.map((key) => [key, fields.get(key) ?? null]));
+  return ClientStatsSystem.canonicalJson(value);
 }
 
 /**
  * The slice of a stored appointment `computeClientStats` and
  * `computeClientMoneyStats` can read — and so the only fields whose change
- * can move anybody's stats (§13 R28). An arrival, a tip, a contact or a
- * voucher changes none of it, and those are most of the writes an
- * appointment ever sees.
- *
- * The root status and `bookedAt` are in because the legacy outcome
- * derivation and the late-cancel rule read them; the discounts because
- * spend is net of them; the placement because the preferred barber counts
- * only visits whose commit stamped one (§11.2 #6). The backfill's
- * `inferredPlacement` is not in: no stat reads it, so stamping one moves
- * nobody's stats and wakes no recompute.
+ * can move anybody's stats (§13 R28): `ClientStatsSystem.statsInputOf` over
+ * the stored visit as the entity, never a field list of its own. An
+ * arrival, a tip, a contact or a voucher changes none of it, and those are
+ * most of the writes an appointment ever sees. The backfill's
+ * `inferredPlacement` is not in it: no stat reads it.
  */
 export function statsInputOf(data: PersistedDocument | undefined): unknown {
-  if (data === undefined) return null;
-  const seats = Array.isArray(data['seats']) ? data['seats'] : [];
-  return {
-    status: data['status'] ?? null,
-    bookedAt: data['bookedAt'] ?? null,
-    discounts: data['discounts'] ?? null,
-    placement: placementFromDocument(data),
-    seats: seats.map((seat: unknown) => {
-      const entry = (seat ?? {}) as Record<string, unknown>;
-      return {
-        id: entry['id'] ?? null,
-        subject: pick(entry['subject'], ['kind', 'userId']),
-        outcome: entry['outcome'] ?? null,
-        slot: pick(entry['slot'], ['startIso', 'zone']),
-        terms: pick(entry['terms'], [
-          'priceMinorUnits',
-          'currencyCode',
-          'durationMinutes',
-        ]),
-        serviceId: entry['serviceId'] ?? null,
-        variantId: entry['variantId'] ?? null,
-        barberId: entry['barberId'] ?? null,
-        barberPref: entry['barberPref'] ?? null,
-      };
-    }),
-  };
+  return ClientStatsSystem.statsInputOf(toEntity(data));
 }
 
 /**
@@ -101,12 +86,12 @@ export function statsInputOf(data: PersistedDocument | undefined): unknown {
 export function placementsFrom(
   docs: readonly { readonly id: string; data(): PersistedDocument }[],
 ): VisitPlacements {
-  const placements = new Map<string, VisitPlacement>();
-  for (const doc of docs) {
-    const placement = placementFromDocument(doc.data());
-    if (placement !== null) placements.set(doc.id, placement);
-  }
-  return placements;
+  return ClientStatsSystem.placementsFrom(
+    docs.map((doc) => ({
+      id: doc.id,
+      placement: placementFromDocument(doc.data()),
+    })),
+  );
 }
 
 /** Did this write change anything a client's stats are computed from? */
@@ -114,9 +99,7 @@ export function statsInputChanged(
   before: PersistedDocument | undefined,
   after: PersistedDocument | undefined,
 ): boolean {
-  return (
-    canonicalJson(statsInputOf(before)) !== canonicalJson(statsInputOf(after))
-  );
+  return ClientStatsSystem.statsInputChanged(toEntity(before), toEntity(after));
 }
 
 /**
@@ -129,12 +112,10 @@ export function affectedSubjects(
   before: PersistedDocument | undefined,
   after: PersistedDocument | undefined,
 ): readonly string[] {
-  return [
-    ...new Set([
-      ...subjectUserIdsFromDocument(before),
-      ...subjectUserIdsFromDocument(after),
-    ]),
-  ].sort();
+  return ClientStatsSystem.affectedSubjects(
+    subjectUserIdsFromDocument(before),
+    subjectUserIdsFromDocument(after),
+  );
 }
 
 /**
@@ -149,8 +130,10 @@ export function projectionClock(
   stored: PersistedDocument | undefined,
 ): number {
   const updatedAt = stored?.['updatedAt'];
-  const storedMs = typeof updatedAt === 'string' ? Date.parse(updatedAt) : NaN;
-  return Number.isFinite(storedMs) ? Math.max(clockMs, storedMs) : clockMs;
+  return ClientStatsSystem.projectionClock(
+    clockMs,
+    typeof updatedAt === 'string' ? Date.parse(updatedAt) : null,
+  );
 }
 
 export type ClientStatsWrite =
@@ -189,34 +172,54 @@ export function planClientStatsWrite(
 ): ClientStatsWrite {
   const storedStats = clientStatsFromDocument(input.userId, input.stored.stats);
   const storedMoney = clientMoneyFromDocument(input.userId, input.stored.money);
-  if (
-    !input.hasHistory &&
-    input.stored.stats === undefined &&
-    input.stored.money === undefined
-  ) {
-    // Nobody to describe and nothing stored: writing zeros would only create
-    // a document for a person the shop has never seen.
+  const plan = ClientStatsSystem.planWrite(
+    {
+      stored: {
+        statsPresent: input.stored.stats !== undefined,
+        moneyPresent: input.stored.money !== undefined,
+        stats:
+          storedStats === null
+            ? null
+            : {
+                ...statsStruct(storedStats),
+                version: storedStats.version,
+                updatedAtMs: storedStats.updatedAtMs,
+              },
+        money:
+          storedMoney === null
+            ? null
+            : {
+                ...moneyStruct(storedMoney),
+                version: storedMoney.version,
+                updatedAtMs: storedMoney.updatedAtMs,
+              },
+        statsVersion: versionOf(input.stored.stats),
+        moneyVersion: versionOf(input.stored.money),
+      },
+      stats: statsStruct(input.stats),
+      money: moneyStruct(input.money),
+      hasHistory: input.hasHistory,
+      nowMs: input.nowMs,
+      // The stamp rides the shell's own write (`policyPassFields`).
+      stamp: null,
+      restamp: false,
+    },
+    {
+      stats: [CLIENT_STATS_COLLECTION, input.userId],
+      money: [
+        CLIENT_STATS_COLLECTION,
+        input.userId,
+        CLIENT_STATS_RESTRICTED_COLLECTION,
+        CLIENT_MONEY_DOC,
+      ],
+    },
+  );
+  if (plan.kind === ClientStatsWriteKind.Unchanged)
     return { kind: 'unchanged' };
-  }
-  const same =
-    storedStats !== null &&
-    storedMoney !== null &&
-    storedStats.version === storedMoney.version &&
-    canonicalJson(clientStatsContent(storedStats)) ===
-      canonicalJson(clientStatsContent(input.stats)) &&
-    canonicalJson(clientMoneyContent(storedMoney)) ===
-      canonicalJson(clientMoneyContent(input.money));
-  if (same) return { kind: 'unchanged' };
-
-  const version =
-    Math.max(
-      versionOf(input.stored.stats) ?? 0,
-      versionOf(input.stored.money) ?? 0,
-    ) + 1;
-  const meta = { version, updatedAtMs: input.nowMs };
+  const meta = { version: plan.version, updatedAtMs: plan.updatedAtMs };
   return {
     kind: 'write',
-    version,
+    version: plan.version,
     stats: clientStatsToDocument(input.stats, meta),
     money: clientMoneyToDocument(input.money, meta),
   };
@@ -273,12 +276,128 @@ export function judgePolicyPass(
   mine: PolicyPass | null,
   stored: PolicyPass | null,
 ): PolicyPassVerdict {
-  if (mine === null) return { kind: 'judge', stamp: stored, restamp: false };
-  if (stored === null) return { kind: 'judge', stamp: mine, restamp: true };
-  if (stored.generation === mine.generation) {
-    return { kind: 'judge', stamp: stored, restamp: false };
+  const ecsMine = mine === null ? null : passStruct(mine);
+  const ecsStored = stored === null ? null : passStruct(stored);
+  const verdict = PolicyRecomputeJobSystem.judgePolicyPass(ecsMine, ecsStored);
+  if (verdict.kind === PolicyPassVerdictKind.Superseded) {
+    return { kind: 'superseded' };
   }
-  const order = compareInstants(mine.changedAt, stored.changedAt);
-  if (order !== null && order < 0) return { kind: 'superseded' };
-  return { kind: 'judge', stamp: mine, restamp: true };
+  return {
+    kind: 'judge',
+    // The stamp is one of the two inputs: hand back the caller's own.
+    stamp:
+      verdict.stamp === null ? null : verdict.stamp === ecsMine ? mine : stored,
+    restamp: verdict.restamp,
+  };
+}
+
+/* ── The Phase 2 bridge: legacy values ↔ ecs-core structs ──────────────── */
+
+/** Any id: the stats input never reads the visit's own. */
+const STATS_INPUT_ID = 'stats-input';
+
+/**
+ * A stored appointment as the entity `ClientStatsSystem` reads: through the
+ * appointment mapper and the aggregate's own converter, with the commit's
+ * placement (which only the document holds) beside it. `null` for no
+ * document — and for one the mapper cannot read, which no recompute can
+ * read either, so its edits move nobody's stats.
+ */
+function toEntity(
+  data: PersistedDocument | undefined,
+): AppointmentEntity | null {
+  if (data === undefined) return null;
+  const parsed = appointmentFromDocument(STATS_INPUT_ID, data);
+  if (parsed.isFailure()) return null;
+  return {
+    ...toEcsAppointment(parsed.value),
+    placement: PlacementKind.parse(placementFromDocument(data)),
+  };
+}
+
+/** A pass stamp with its RFC 3339 instant as the §9 D17 struct. */
+function passStruct(pass: PolicyPass): EcsPolicyPass {
+  return {
+    generation: pass.generation,
+    changedAt: instantFromIso(pass.changedAt),
+  };
+}
+
+function factStruct(fact: VisitFact): EcsVisitFact {
+  return {
+    appointmentId: EcsAppointmentId.of(fact.appointmentId.value),
+    atMs: fact.atMs,
+  };
+}
+
+function refStruct(ref: VisitRef | null): EcsVisitRef | null {
+  if (ref === null) return null;
+  return {
+    ...factStruct(ref),
+    serviceIds: ref.serviceIds.map((id) => EcsServiceId.of(id.value)),
+    barberIds: ref.barberIds.map((id) => EcsBarberId.of(id.value)),
+    legs: ref.legs.map((leg) => ({
+      seatId: EcsSeatId.of(leg.seatId.value),
+      serviceId: EcsServiceId.of(leg.serviceId.value),
+      variantId:
+        leg.variantId === null
+          ? null
+          : EcsServiceVariantId.of(leg.variantId.value),
+      barberId: EcsBarberId.of(leg.barberId.value),
+      minutes: leg.minutes,
+    })),
+  };
+}
+
+function suggestionStruct(
+  suggestion: PauseSuggestion | null,
+): EcsPauseSuggestion | null {
+  if (suggestion === null) return null;
+  return {
+    noShows: suggestion.noShows,
+    windowDays: suggestion.windowDays,
+    basis: suggestion.basis.map((id) => EcsAppointmentId.of(id.value)),
+    raisedAtMs: suggestion.raisedAtMs,
+  };
+}
+
+/** The projection's content as the ecs-core struct the revision guard compares. */
+function statsStruct(stats: ClientStats): EcsClientStats {
+  return {
+    userId: EcsUserId.of(stats.userId.value),
+    lifetime: {
+      visitsCompleted: stats.lifetime.visitsCompleted,
+      noShows: stats.lifetime.noShows,
+      lateCancels: stats.lifetime.lateCancels,
+      clientCancels: stats.lifetime.clientCancels,
+    },
+    last365: {
+      visitsCompleted: stats.last365.visitsCompleted.map(factStruct),
+      noShows: stats.last365.noShows.map(factStruct),
+      lateCancels: stats.last365.lateCancels.map(factStruct),
+    },
+    firstVisitAtMs: stats.firstVisitAtMs,
+    lastVisit: refStruct(stats.lastVisit),
+    nextVisit: refStruct(stats.nextVisit),
+    avgCadenceDays: stats.avgCadenceDays,
+    preferredBarberId:
+      stats.preferredBarberId === null
+        ? null
+        : EcsBarberId.of(stats.preferredBarberId.value),
+    usualServiceIds: stats.usualServiceIds.map((id) =>
+      EcsServiceId.of(id.value),
+    ),
+    pauseSuggestion: suggestionStruct(stats.pauseSuggestion),
+  };
+}
+
+/** The flat legacy spend as the nested `Money` (blueprint §2.5). */
+function moneyStruct(money: ClientMoneyStats): EcsClientMoneyStats {
+  return {
+    userId: EcsUserId.of(money.userId.value),
+    lifetimeSpend: {
+      amountMinorUnits: money.lifetimeSpendMinor,
+      currencyCode: money.currencyCode,
+    },
+  };
 }

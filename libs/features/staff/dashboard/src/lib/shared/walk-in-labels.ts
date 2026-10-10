@@ -1,3 +1,5 @@
+import { VisitDraftSystem, type WalkInLabel } from '@creativo/ecs-core';
+
 /**
  * NAMES FOR THE PEOPLE ON ONE VISIT WHO HAVE NONE (round 3, 2026-09-25).
  *
@@ -18,23 +20,25 @@
  * `word(null)` is the plain label, `word(n)` the numbered one; the caller
  * supplies both from the catalogue. The search is bounded, so a catalogue
  * that words every number alike still ends.
+ *
+ * Phase 2 shim: the rule is `VisitDraftSystem.walkInLabels` in
+ * `@creativo/ecs-core`; this keeps the legacy map keyed by person id.
  */
 export function walkInLabels(
   unlabelled: readonly string[],
   taken: Iterable<string>,
   word: (number: number | null) => string,
 ): ReadonlyMap<string, string> {
-  const used = new Set(taken);
-  const labels = new Map<string, string>();
-  const people = [...new Set(unlabelled)];
-  const limit = used.size + people.length + 2;
-  for (const id of people) {
-    let label = word(null);
-    for (let number = 2; used.has(label) && number <= limit; number += 1) {
-      label = word(number);
-    }
-    labels.set(id, label);
-    used.add(label);
-  }
-  return labels;
+  return toLabelMap(
+    VisitDraftSystem.walkInLabels(unlabelled, [...taken], word),
+  );
+}
+
+/** The system's first-seen list → the legacy map, in the same order. */
+function toLabelMap(
+  labels: readonly WalkInLabel[],
+): ReadonlyMap<string, string> {
+  const map = new Map<string, string>();
+  for (const entry of labels) map.set(entry.personId, entry.label);
+  return map;
 }

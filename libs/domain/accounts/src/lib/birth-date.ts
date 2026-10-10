@@ -1,3 +1,11 @@
+import {
+  AgeSystem,
+  AgeWindow,
+  BirthDate as BirthDay,
+  DayKey,
+  type IdentityError,
+  IdentityErrorCode,
+} from '@creativo/ecs-core';
 import { Result, ZonedDateTime, fail, ok } from '@creativo/domain/kernel';
 import {
   BirthDateError,
@@ -6,8 +14,45 @@ import {
   BirthDateTooYoungError,
 } from './birth-date.errors';
 
-export const MIN_AGE = 16;
-export const MAX_AGE = 120;
+// Literals typed by the system's window: the compiler keeps them equal to
+// `AgeWindow` while the module loads nothing of `AgeSystem` (eager bundle).
+export const MIN_AGE: typeof AgeWindow.MinAge = 16;
+export const MAX_AGE: typeof AgeWindow.MaxAge = 120;
+
+/*
+ * Phase 2 shim (ECS migration): the whole-years age and the 16–120 window
+ * live in `AgeSystem` (`@creativo/ecs-core`), over calendar days. This class
+ * keeps its parse (the kernel's ISO reading in `today`'s zone) and its
+ * `accounts.birth_date.*` error classes; the helpers below are the only code
+ * besides the delegating bodies.
+ */
+
+/** A parsed instant's calendar day, in its own zone. */
+function dayOf(instant: ZonedDateTime): DayKey {
+  return DayKey.of(instant.toISODate());
+}
+
+/**
+ * Whole calendar years from the birth day to `today` (negative for a future
+ * birth, truncated as the legacy instant reader truncated it — whether
+ * `today` is past its own midnight decides the anniversary ON the birth day).
+ */
+function ageBetween(birth: ZonedDateTime, today: ZonedDateTime): number {
+  return AgeSystem.ageAtInstant(
+    BirthDay.of(birth.toISODate()),
+    dayOf(today),
+    today.toMillis() > today.startOfDay().toMillis(),
+  );
+}
+
+/** The window refusal back as this context's error class. */
+function toLegacyError(error: IdentityError): BirthDateError {
+  return error.code === IdentityErrorCode.BirthDateTooOld
+    ? new BirthDateTooOldError(error.age, error.maxAge)
+    : error.code === IdentityErrorCode.BirthDateTooYoung
+      ? new BirthDateTooYoungError(error.age, error.minAge)
+      : new BirthDateInvalidError('');
+}
 
 /**
  * Date of birth. Genuinely new in this pass — v2 has no equivalent
@@ -39,16 +84,9 @@ export class BirthDate {
       return fail([new BirthDateInvalidError(raw)]);
     }
 
-    const age = parsed.value.yearsUntil(today);
-    const errors: BirthDateError[] = [];
-    if (age < MIN_AGE) {
-      errors.push(new BirthDateTooYoungError(age, MIN_AGE));
-    }
-    if (age > MAX_AGE) {
-      errors.push(new BirthDateTooOldError(age, MAX_AGE));
-    }
-    if (errors.length > 0) {
-      return fail(errors);
+    const refusal = AgeSystem.windowRefusal(ageBetween(parsed.value, today));
+    if (refusal !== null) {
+      return fail([toLegacyError(refusal)]);
     }
     return ok(new BirthDate(parsed.value));
   }
@@ -74,7 +112,7 @@ export class BirthDate {
 
   /** Whole-years age as of `today` — never cached, always computed fresh. */
   ageAsOf(today: ZonedDateTime): number {
-    return this._birth.yearsUntil(today);
+    return ageBetween(this._birth, today);
   }
 
   toISODate(): string {

@@ -16,6 +16,20 @@ import {
 import { FirestoreWaitlistStore } from '../../adapters/firestore-waitlist-store';
 import { SystemClock } from '../../adapters/system-clock';
 import { CryptoIdGenerator } from '../../adapters/crypto-id-generator';
+import {
+  BarberId as BarberKey,
+  type BookingCart as CartData,
+  DayKey,
+  DayWindows as DayWindowsData,
+  FlexibleWhen as WhenData,
+  LocationId as LocationKey,
+  MinuteRange,
+  ServiceId as ServiceKey,
+  ServiceVariantId as VariantKey,
+  UserId as UserKey,
+  WaitlistStatus as StatusData,
+  WaitlistSystem,
+} from '@creativo/ecs-core';
 import { adminFirestore } from '../firebase-admin';
 import { loadBookingPolicy } from './load-booking-policy';
 import { TENANT_ZONE } from './tenant-zone';
@@ -172,7 +186,32 @@ export async function loadNamedShop(
  * it an authenticated caller could name thousands of service ids and cost
  * the shop that many document reads per call.
  */
-export const MAX_SERVICES_PER_PERSON = 8;
+export const MAX_SERVICES_PER_PERSON = WaitlistSystem.MAX_SERVICES_PER_PERSON;
+
+/* ── Legacy ↔ ECS converters (the bound and the id basis are WaitlistSystem's) ── */
+
+function toCartData(cart: ReconstituteBookingCartProps): CartData {
+  return {
+    seats: cart.seats.map((seat) => ({
+      seatKey: seat.seatKey,
+      lines: seat.lines.map((line) => ({
+        lineId: line.id,
+        seatKey: seat.seatKey,
+        serviceId: ServiceKey.of(line.serviceId),
+        variantId:
+          line.variantId === null ? null : VariantKey.of(line.variantId),
+        barberId: line.barberId === null ? null : BarberKey.of(line.barberId),
+        locationId: null,
+      })),
+    })),
+    nextSequence: cart.nextSequence,
+  };
+}
+
+/** `'HH:mm'` → minutes of the day (the decided request's faces are always real). */
+function minutesOf(face: string): number {
+  return Number(face.slice(0, 2)) * 60 + Number(face.slice(3, 5));
+}
 
 /**
  * May the callable read the catalogue for this cart? One seat is one person,
@@ -185,11 +224,7 @@ export function cartWithinReadBounds(
   cart: ReconstituteBookingCartProps,
   maxPartySize: number,
 ): boolean {
-  if (cart.seats.length > maxPartySize) return false;
-  const distinct = new Set(
-    cart.seats.flatMap((seat) => seat.lines.map((line) => line.serviceId)),
-  );
-  return distinct.size <= maxPartySize * MAX_SERVICES_PER_PERSON;
+  return WaitlistSystem.withinReadBounds(toCartData(cart), maxPartySize);
 }
 
 /**
@@ -289,11 +324,26 @@ export const requestWaitlist = onCall(async (request) => {
  */
 function deterministicRequestId(request: WaitlistRequest): string {
   const props = request.toProps();
-  const basis = JSON.stringify({
-    owner: props.ownerId,
-    locationId: props.locationId ?? null,
-    when: props.when,
-    cart: props.cart,
+  const when = WhenData.of(
+    props.when.days.map((day) =>
+      DayWindowsData.of(
+        DayKey.of(day.dayKey),
+        day.windows.map((window) =>
+          MinuteRange.of(minutesOf(window.from), minutesOf(window.to)),
+        ),
+      ),
+    ),
+  );
+  const basis = WaitlistSystem.idBasis({
+    ownerUserId: UserKey.of(props.ownerId),
+    locationId:
+      props.locationId === null ? null : LocationKey.of(props.locationId),
+    zone: props.zone,
+    cart: toCartData(props.cart),
+    when,
+    dayKeys: WhenData.dayKeys(when),
+    status: StatusData.open(request.createdAt.toMillis()),
+    createdAtMs: request.createdAt.toMillis(),
   });
   return `wl_${createHash('sha256').update(basis).digest('hex').slice(0, 40)}`;
 }

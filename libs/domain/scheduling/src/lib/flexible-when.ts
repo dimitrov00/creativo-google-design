@@ -1,4 +1,10 @@
 import { Result, fail, ok } from '@creativo/domain/kernel';
+import {
+  DayKey,
+  DayWindows as DayWindowsData,
+  FlexibleWhen as WhenData,
+  MinuteRange,
+} from '@creativo/ecs-core';
 import { CalendarDay } from './calendar-day';
 import {
   DayWindows,
@@ -10,46 +16,53 @@ import {
   type FlexibleWhenError,
 } from './flexible-when.errors';
 
+/*
+ * THIN SHIM (ECS migration Phase 2). The declaration's rules — one entry per
+ * day, chronological, a re-selected day keeps its windows, the day cap,
+ * windows only for a selected day — are the ECS `FlexibleWhen` component.
+ * This class keeps the legacy API and the legacy `DayWindows` objects its
+ * callers read, and only converts.
+ */
+
 export interface FlexibleWhenProps {
   readonly days: readonly DayWindowsProps[];
 }
 
+/* ── Legacy ↔ ECS converters ─────────────────────────────────────────── */
+
+function toDayData(day: DayWindows): DayWindowsData {
+  return DayWindowsData.of(
+    DayKey.of(day.dayKey),
+    day.windows.map((range) =>
+      MinuteRange.of(
+        range.start.minutesFromMidnight(),
+        range.end.minutesFromMidnight(),
+      ),
+    ),
+  );
+}
+
 /**
  * WHEN a client can come, said flexibly: a set of days, each optionally
- * narrowed to spans within it.
- *
- * "I'm free on the 25th and the 26th, but on the 26th only 08:00–12:00 and
- * 15:00–16:30" is one of these. It is the input to two different questions
- * that must never disagree: *is there something right now?* (the flexible
- * search, which turns it into an engine mask) and *tell me if something opens
- * up* (the waitlist request, which persists it verbatim).
- *
- * ### Days are keyed by their own date, deliberately
- * `BookingParty` needs a monotonic counter because two guests can be
- * indistinguishable — "Guest 2" removed and "Guest 2" re-added are different
- * people, and v2's bug 7.7 was minting the same id for both. A DAY has no
- * such problem: the 26th removed and the 26th re-added IS the same day, and
- * anything keyed to it (its windows) SHOULD be replaced rather than
- * resurrected. So this holds a `Map` keyed by `dayKey` and the §7.7 hazard
- * cannot arise here — worth stating, because the phase plan inherited
- * "monotonic ids" from a file where it was load-bearing and here it would be
- * ceremony that makes re-selecting a day mean something subtly different.
- *
- * Insertion order is NOT the iteration order: {@link days} sorts
- * chronologically, because a summary list of dates that runs 26th, 24th, 25th
- * because that is the order they were tapped is a list nobody can scan.
+ * narrowed to spans within it — the input to the flexible search and to a
+ * waitlist request. Days are keyed by their own date and always listed
+ * chronologically. Delegates to the ECS `FlexibleWhen` component.
  */
 export class FlexibleWhen {
   private constructor(
+    private readonly data: WhenData,
     private readonly byDayKey: ReadonlyMap<string, DayWindows>,
   ) {}
 
   static empty(): FlexibleWhen {
-    return new FlexibleWhen(new Map());
+    return new FlexibleWhen(WhenData.empty(), new Map());
   }
 
   static of(days: readonly DayWindows[]): FlexibleWhen {
-    return new FlexibleWhen(new Map(days.map((day) => [day.dayKey, day])));
+    return new FlexibleWhen(
+      WhenData.of(days.map(toDayData)),
+      new Map(days.map((day) => [day.dayKey, day])),
+    );
   }
 
   static create(
@@ -67,62 +80,56 @@ export class FlexibleWhen {
 
   /** Chronological, always — never tap order. */
   get days(): readonly DayWindows[] {
-    return [...this.byDayKey.values()].sort((a, b) =>
-      a.dayKey.localeCompare(b.dayKey),
+    return this.data.days.map(
+      (day) => this.byDayKey.get(day.dayKey) as DayWindows,
     );
   }
 
   get dayCount(): number {
-    return this.byDayKey.size;
+    return this.data.days.length;
   }
 
   isEmpty(): boolean {
-    return this.byDayKey.size === 0;
+    return WhenData.isEmpty(this.data);
   }
 
   has(day: CalendarDay): boolean {
-    return this.byDayKey.has(day.key());
+    return WhenData.has(this.data, DayKey.of(day.key()));
   }
 
   for(day: CalendarDay): DayWindows | null {
-    return this.byDayKey.get(day.key()) ?? null;
+    return this.has(day) ? (this.byDayKey.get(day.key()) ?? null) : null;
   }
 
-  /**
-   * Select a day, as "any time" — narrowing is a second, deliberate act.
-   *
-   * Re-selecting a day already held is a no-op rather than a reset: the
-   * calendar's tap target toggles, so the only way to reach this twice for one
-   * day is a double-fire, and silently discarding the windows someone just
-   * authored would be the worst possible reading of it.
-   */
+  /** Select a day, as "any time"; re-selecting a held day is a no-op, past `maxDays` a refusal. */
   withDay(
     day: CalendarDay,
     maxDays: number,
   ): Result<FlexibleWhen, FlexibleWhenError> {
-    if (this.byDayKey.has(day.key())) return ok(this);
-    if (this.byDayKey.size >= maxDays) {
-      return fail(new FlexibleWhenFullError(maxDays));
-    }
-    const next = new Map(this.byDayKey);
-    next.set(day.key(), DayWindows.of(day));
-    return ok(new FlexibleWhen(next));
+    const next = WhenData.withDay(this.data, DayKey.of(day.key()), maxDays);
+    if (!next.ok) return fail(new FlexibleWhenFullError(maxDays));
+    if (next.value === this.data) return ok(this);
+    const byDayKey = new Map(this.byDayKey);
+    byDayKey.set(day.key(), DayWindows.of(day));
+    return ok(new FlexibleWhen(next.value, byDayKey));
   }
 
   /** Deselect a day — its windows leave with it, which is the point. */
   withoutDay(day: CalendarDay): FlexibleWhen {
-    if (!this.byDayKey.has(day.key())) return this;
-    const next = new Map(this.byDayKey);
-    next.delete(day.key());
-    return new FlexibleWhen(next);
+    const next = WhenData.withoutDay(this.data, DayKey.of(day.key()));
+    if (next === this.data) return this;
+    const byDayKey = new Map(this.byDayKey);
+    byDayKey.delete(day.key());
+    return new FlexibleWhen(next, byDayKey);
   }
 
-  /** Replace one day's windows — what the per-day window sheet commits. */
+  /** Replace one SELECTED day's windows; an unselected day is ignored. */
   withWindows(dayWindows: DayWindows): FlexibleWhen {
-    if (!this.byDayKey.has(dayWindows.dayKey)) return this;
-    const next = new Map(this.byDayKey);
-    next.set(dayWindows.dayKey, dayWindows);
-    return new FlexibleWhen(next);
+    const next = WhenData.withWindows(this.data, toDayData(dayWindows));
+    if (next === this.data) return this;
+    const byDayKey = new Map(this.byDayKey);
+    byDayKey.set(dayWindows.dayKey, dayWindows);
+    return new FlexibleWhen(next, byDayKey);
   }
 
   toProps(): FlexibleWhenProps {

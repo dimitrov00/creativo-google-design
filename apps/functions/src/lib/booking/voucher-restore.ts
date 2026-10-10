@@ -4,7 +4,53 @@ import type {
   Transaction,
 } from 'firebase-admin/firestore';
 import { Money } from '@creativo/domain/kernel';
+import type { GiftVoucher } from '@creativo/domain/engagement';
 import { giftVoucherFromDocument } from '@creativo/application/engagement';
+import {
+  type GiftVoucherEntity,
+  GiftVoucherId,
+  type Money as MoneyData,
+  UserId,
+  VoucherCode,
+  VoucherState,
+  VoucherSystem,
+} from '@creativo/ecs-core';
+
+/*
+ * THIN SHIM (ECS migration Phase 2) — the math only. What a cancellation puts
+ * back on a voucher is `VoucherSystem.restore` (never above what was issued,
+ * allowed on a void or expired voucher); the reads and writes stay here.
+ */
+
+/* ── Legacy ↔ ECS converters ─────────────────────────────────────────── */
+
+function toMoneyData(money: Money): MoneyData {
+  return {
+    amountMinorUnits: money.toMinorUnits(),
+    currencyCode: money.currencyCode(),
+  };
+}
+
+function toVoucherData(voucher: GiftVoucher): GiftVoucherEntity {
+  const state = voucher.state;
+  return {
+    id: GiftVoucherId.of(voucher.id.value),
+    code: VoucherCode.of(voucher.code),
+    initialValue: toMoneyData(voucher.initialValue),
+    balance: toMoneyData(voucher.balance),
+    issuedAtMs: voucher.issuedAt.toMillis(),
+    expiresAtMs:
+      voucher.expiresAt === null ? null : voucher.expiresAt.toMillis(),
+    issuedToUserId:
+      voucher.issuedToUserId === null
+        ? null
+        : UserId.of(voucher.issuedToUserId.value),
+    state:
+      state.kind === 'void'
+        ? VoucherState.voided(state.voidedAt.toMillis(), state.reason)
+        : VoucherState.active(),
+  };
+}
 
 /**
  * What a cancellation must give back: every gift voucher this visit drew on,
@@ -57,11 +103,14 @@ export async function planVoucherRestore(
       String(entry['currencyCode'] ?? ''),
     );
     if (voucher === null || amount.isFailure()) continue;
-    const restored = voucher.restore(amount.value);
-    if (restored.isFailure()) continue;
+    const restored = VoucherSystem.restore(
+      toVoucherData(voucher),
+      toMoneyData(amount.value),
+    );
+    if (!restored.ok) continue;
     restores.push({
       ref,
-      balanceMinorUnits: restored.value.balance.toMinorUnits(),
+      balanceMinorUnits: restored.value.balance.amountMinorUnits,
     });
   }
 

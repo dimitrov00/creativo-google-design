@@ -34,19 +34,13 @@
       "path": "../../../infrastructure/storage/tsconfig.lib.json"
     },
     {
-      "path": "../../../ui/layout/tsconfig.lib.json"
-    },
-    {
-      "path": "../../../infrastructure/i18n/tsconfig.lib.json"
-    },
-    {
-      "path": "../../shared/catalog/tsconfig.lib.json"
+      "path": "../client-card/tsconfig.lib.json"
     },
     {
       "path": "../../shared/visits/tsconfig.lib.json"
     },
     {
-      "path": "../client-card/tsconfig.lib.json"
+      "path": "../../shared/catalog/tsconfig.lib.json"
     },
     {
       "path": "../../../application/shared/tsconfig.lib.json"
@@ -67,16 +61,25 @@
       "path": "../../../application/identity/tsconfig.lib.json"
     },
     {
-      "path": "../../../application/booking/tsconfig.lib.json"
-    },
-    {
       "path": "../../../ui/patterns/tsconfig.lib.json"
     },
     {
       "path": "../../../ui/modifiers/tsconfig.lib.json"
     },
     {
+      "path": "../../../ui/layout/tsconfig.lib.json"
+    },
+    {
       "path": "../../../ui/controls/tsconfig.lib.json"
+    },
+    {
+      "path": "../../../infrastructure/i18n/tsconfig.lib.json"
+    },
+    {
+      "path": "../../../application/booking/tsconfig.lib.json"
+    },
+    {
+      "path": "../../../ecs-core/tsconfig.lib.json"
     }
   ]
 }

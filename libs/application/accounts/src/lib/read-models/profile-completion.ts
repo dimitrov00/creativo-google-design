@@ -1,4 +1,5 @@
 import { User } from '@creativo/domain/accounts';
+import { BirthDate, ProfileCompletionSystem } from '@creativo/ecs-core';
 
 /**
  * Profile-completion model — a pure projection of the `User` aggregate
@@ -32,12 +33,15 @@ export function profileCompletion(
   user: User,
   hasPhoto: boolean,
 ): ProfileCompletion {
-  const items: readonly ProfileCompletionItem[] = [
-    { key: 'name', done: true },
-    { key: 'phone', done: true },
-    { key: 'birthday', done: user.birthDate !== null },
-    { key: 'photo', done: hasPhoto },
-  ];
-  const done = items.reduce((n, item) => n + (item.done ? 1 : 0), 0);
-  return { items, done, total: items.length, complete: done === items.length };
+  // Same keys (the system's dictionary holds these strings), same order.
+  return ProfileCompletionSystem.completion(profileOf(user), hasPhoto);
+}
+
+// ── The bridge: the legacy aggregate → ecs-core's slice (Phase 4 deletes it) ─
+
+function profileOf(user: User): { readonly birthDate: BirthDate | null } {
+  return {
+    birthDate:
+      user.birthDate === null ? null : BirthDate.of(user.birthDate.toISODate()),
+  };
 }

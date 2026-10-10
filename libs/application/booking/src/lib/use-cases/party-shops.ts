@@ -3,6 +3,16 @@ import {
   type AvailabilityRider,
   BookingCart,
 } from '@creativo/domain/scheduling';
+import {
+  BarberId as EcsBarberId,
+  type BookingCart as EcsBookingCart,
+  BookingCartSystem,
+  type CartRider,
+  type CartServiceScope,
+  LocationId as EcsLocationId,
+  ServiceId as EcsServiceId,
+  ServiceVariantId as EcsServiceVariantId,
+} from '@creativo/ecs-core';
 
 /**
  * A seat a MOVE carries, as the grid asks about it: the engine's rider (its
@@ -48,11 +58,20 @@ export function partyServicesOf(
   cart: BookingCart,
   riders: readonly MoveRider[] = [],
 ): PartyServices {
+  const lines = cart.entries().flatMap(([, seatLines]) => seatLines);
+  const asked = BookingCartSystem.partyServicesOf(
+    cartScopeOf(cart),
+    riders.map(riderScopeOf),
+  );
+  // The system answers with the same services in the same order; hand the
+  // caller back its own id objects.
   return {
-    lineServiceIds: cart
-      .entries()
-      .flatMap(([, lines]) => lines.map((line) => line.serviceId)),
-    riderServiceIds: riders.map((rider) => rider.serviceId),
+    lineServiceIds: lines
+      .map((line) => line.serviceId)
+      .filter((id) => asked.lineServiceIds.includes(serviceKeyOf(id))),
+    riderServiceIds: riders
+      .map((rider) => rider.serviceId)
+      .filter((id) => asked.riderServiceIds.includes(serviceKeyOf(id))),
   };
 }
 
@@ -79,16 +98,78 @@ export function shopsServingParty(
   services: readonly Service[],
   locationIds: readonly LocationId[],
 ): readonly LocationId[] {
-  const byId = new Map(services.map((service) => [service.id.value, service]));
-  /** `undefined` when the catalog does not know the service. */
-  const offers = (
-    serviceId: ServiceId,
-    locationId: LocationId,
-  ): boolean | undefined =>
-    byId.get(serviceId.value)?.servesLocation(locationId);
-  return locationIds.filter(
-    (locationId) =>
-      party.lineServiceIds.every((id) => offers(id, locationId) ?? true) &&
-      party.riderServiceIds.every((id) => offers(id, locationId) ?? false),
+  const serving = BookingCartSystem.shopsServingParty(
+    {
+      lineServiceIds: party.lineServiceIds.map(serviceKeyOf),
+      riderServiceIds: party.riderServiceIds.map(serviceKeyOf),
+    },
+    scopesOf(services),
+    locationIds.map(locationKeyOf),
   );
+  return locationIds.filter((locationId) =>
+    serving.includes(locationKeyOf(locationId)),
+  );
+}
+
+// ── The bridge: legacy classes → ecs-core structs (Phase 4 deletes it) ───
+
+function serviceKeyOf(id: ServiceId): EcsServiceId {
+  return EcsServiceId.of(id.value);
+}
+
+function locationKeyOf(id: LocationId): EcsLocationId {
+  return EcsLocationId.of(id.value);
+}
+
+/**
+ * The catalogue as the scope rule reads it. The legacy lookup (a `Map` by
+ * id) kept the LAST of two services under one id and the system finds the
+ * first, so the list is walked from the end and each id kept once.
+ */
+function scopesOf(services: readonly Service[]): readonly CartServiceScope[] {
+  const scopes: CartServiceScope[] = [];
+  const seen = new Set<string>();
+  for (const service of [...services].reverse()) {
+    if (seen.has(service.id.value)) continue;
+    seen.add(service.id.value);
+    scopes.push({
+      id: serviceKeyOf(service.id),
+      locationIds: service.locationIds.map(locationKeyOf),
+    });
+  }
+  return scopes;
+}
+
+/** The cart's lines as the system reads them — only the services are asked of it. */
+function cartScopeOf(cart: BookingCart): EcsBookingCart {
+  return {
+    seats: cart.entries().map(([seatKey, lines]) => ({
+      seatKey,
+      lines: lines.map((line) => ({
+        lineId: line.id.value,
+        seatKey,
+        serviceId: serviceKeyOf(line.serviceId),
+        variantId:
+          line.variantId === null
+            ? null
+            : EcsServiceVariantId.of(line.variantId.value),
+        barberId:
+          line.barberPref.kind === 'specific'
+            ? EcsBarberId.of(line.barberPref.barberId.value)
+            : null,
+        locationId: null,
+      })),
+    })),
+    nextSequence: cart.nextLineSequence,
+  };
+}
+
+/** A carried seat as the system reads it — its service is all the shop rule asks. */
+function riderScopeOf(rider: MoveRider): CartRider {
+  return {
+    barberId: EcsBarberId.of(rider.barberId.value),
+    offsetMinutes: rider.offsetMinutes,
+    terms: rider.terms,
+    serviceId: serviceKeyOf(rider.serviceId),
+  };
 }

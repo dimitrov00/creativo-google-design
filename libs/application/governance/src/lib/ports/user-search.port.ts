@@ -2,6 +2,7 @@ import { InjectionToken } from '@angular/core';
 import { Result } from '@creativo/domain/kernel';
 import { Email, UserId } from '@creativo/domain/accounts';
 import { RepositoryError } from '@creativo/application/shared';
+import { SearchFieldsSystem } from '@creativo/ecs-core';
 
 export interface UserSearchResult {
   readonly userId: UserId;
@@ -29,17 +30,10 @@ export const USER_SEARCH_PORT = new InjectionToken<UserSearchPort>(
  * is a number becomes its digits. Anything else is lowercased text.
  */
 export function normalizeSearchQuery(rawQuery: string): string {
-  const trimmed = rawQuery.trim();
-  if (/^[+\d][\d\s().-]*$/.test(trimmed)) {
-    return trimmed.replace(/\D/g, '').replace(/^00/, '');
-  }
-  return trimmed.toLowerCase();
+  return SearchFieldsSystem.normalizeQuery(rawQuery);
 }
 
 /** A query that is a phone number, by shape. */
 export function looksLikePhone(rawQuery: string): boolean {
-  const trimmed = rawQuery.trim();
-  return (
-    /^[+\d][\d\s().-]*$/.test(trimmed) && trimmed.replace(/\D/g, '').length >= 5
-  );
+  return SearchFieldsSystem.looksLikePhone(rawQuery);
 }

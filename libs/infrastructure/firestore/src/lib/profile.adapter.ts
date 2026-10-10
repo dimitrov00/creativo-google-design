@@ -1,4 +1,5 @@
 import { Injectable, inject } from '@angular/core';
+import { SearchFieldsSystem } from '@creativo/ecs-core';
 import { Observable } from 'rxjs';
 import type { DocumentData, DocumentSnapshot } from 'firebase/firestore';
 import { getDoc, onSnapshot, runTransaction } from 'firebase/firestore';
@@ -27,17 +28,13 @@ function todayInAppZone(): ZonedDateTime {
   return result.value;
 }
 
-function prefixesOf(token: string): string[] {
-  const out: string[] = [];
-  for (let i = 1; i <= token.length; i += 1) {
-    out.push(token.slice(0, i));
-  }
-  return out;
-}
-
-/** Standard Firestore "poor man's search" trick (mirrors v2's real
- * `users (searchPrefixes ARRAY_CONTAINS, searchName ASC)` index): every
- * prefix of every whitespace-split token in the full name, lowercased. */
+/**
+ * The `users/{uid}` search keys (`searchName`, `searchPrefixes`) — Phase 2
+ * shim (ECS migration): computed by `SearchFieldsSystem.fromForms`
+ * (`@creativo/ecs-core`), the ONE implementation the web's profile adapter
+ * and the functions' user repository share, so the two writers of the
+ * document can no longer drift apart.
+ */
 function computeSearchFields(
   fullName: string,
   phoneForms: readonly string[] = [],
@@ -46,32 +43,12 @@ function computeSearchFields(
   searchName: string;
   searchPrefixes: string[];
 } {
-  const searchName = fullName.trim().toLowerCase();
-  const tokens = searchName.split(/\s+/).filter((t) => t.length > 0);
-  const prefixSet = new Set<string>();
-  for (const token of tokens) {
-    for (const prefix of prefixesOf(token)) {
-      prefixSet.add(prefix);
-    }
-  }
-  // Phone digits (E.164 without the plus, and the national form) and the
-  // email (whole, and its local part), from the 3rd character — in lockstep
-  // with the functions' `computeSearchFields` (owner, 2026-09-09).
-  for (const form of phoneForms) {
-    const digits = form.replace(/\D/g, '');
-    for (const prefix of prefixesOf(digits)) {
-      if (prefix.length >= 3) prefixSet.add(prefix);
-    }
-  }
-  if (email) {
-    const lower = email.trim().toLowerCase();
-    for (const token of [lower, lower.split('@')[0] ?? '']) {
-      for (const prefix of prefixesOf(token)) {
-        if (prefix.length >= 3) prefixSet.add(prefix);
-      }
-    }
-  }
-  return { searchName, searchPrefixes: [...prefixSet] };
+  const { searchName, searchPrefixes } = SearchFieldsSystem.fromForms(
+    fullName,
+    phoneForms,
+    email,
+  );
+  return { searchName, searchPrefixes: [...searchPrefixes] };
 }
 
 /**

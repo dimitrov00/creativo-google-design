@@ -12,9 +12,15 @@ import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { combineLatest, from, map, of, switchMap } from 'rxjs';
 import { settledViewTransition } from './shared/view-transition';
 import {
+  GridLayoutSystem,
+  type LandedRevision,
+  type OccupyingVisit,
+  StaffIntentSystem,
+  type UnsettledName,
+} from '@creativo/ecs-core';
+import {
   APPOINTMENT_NOTES,
   APPOINTMENT_PHOTOS,
-  AppliedOperations,
   type AppointmentPhoto,
   APPOINTMENT_REPOSITORY,
   AVAILABILITY_READER,
@@ -89,12 +95,12 @@ export function grantExpiresOn(
  * carried.
  */
 function intentOf(request: StaffEditAppointmentRequest): string {
-  return JSON.stringify([
+  return StaffIntentSystem.intentBasis(
     request.appointmentId,
     request.command,
     request.acknowledgedOverlap === true,
     request.expectedVersion ?? null,
-  ]);
+  );
 }
 
 /**
@@ -106,23 +112,6 @@ function intentOf(request: StaffEditAppointmentRequest): string {
 export type StaffIntent = StaffEditAppointmentRequest & {
   readonly expectedVersion: number | null;
 };
-
-/**
- * How many of its own landed intents per visit the store remembers for
- * rebasing a claim — see `StaffDayStore.claimFor`. A sheet stays open for
- * one visit's worth of saves, not hundreds.
- */
-const LANDED_PER_VISIT = 16;
-
-/**
- * The shortest hole the run will call sellable.
- *
- * NOT `foldBarberDay`'s 15-minute default, which that code describes as
- * deliberately small for REPORTING. Set the bar that low here and a lane
- * becomes a ladder of booking/gap/booking, and the three-second read is gone.
- * 20 minutes is under the shop's shortest service and over its turnaround.
- */
-const SHORTEST_SELLABLE_MINUTES = 20;
 
 /**
  * How many appointments the search reads each side of now.
@@ -215,6 +204,14 @@ export interface StaffDayCell {
   readonly lanes: readonly BarberDayLane[];
 }
 
+/** A day's lanes before the clock: each lane's holes, not yet split at now. */
+interface DayGeometryCell {
+  readonly dayKey: string;
+  readonly lanes: readonly (Omit<BarberDayLane, 'gaps'> & {
+    readonly holes: readonly Interval[];
+  })[];
+}
+
 /** A hole in a chair's rostered day that is long enough to sell. */
 export interface LaneGap {
   readonly startMs: number;
@@ -284,21 +281,11 @@ export function occupiedIntervals(
   barberId: string,
   busy: readonly Interval[],
 ): readonly Interval[] {
-  const envelopes: Interval[] = [];
-  for (const appointment of appointments) {
-    if (appointment.status.kind === 'cancelled') continue;
-    for (const seat of appointment.seats) {
-      if (seat.barberId.value !== barberId) continue;
-      const terms = seat.terms;
-      envelopes.push(
-        Interval.of(
-          seat.slot.start.toMillis() - terms.setupMinutes * 60_000,
-          seat.slot.end.toMillis() + terms.cleanupMinutes * 60_000,
-        ),
-      );
-    }
-  }
-  return Interval.normalize([...busy, ...envelopes]);
+  return GridLayoutSystem.occupiedIntervals(
+    appointments.map(toOccupyingVisit),
+    barberId,
+    busy,
+  );
 }
 
 /**
@@ -307,7 +294,7 @@ export function occupiedIntervals(
  * `busy` arrives ALREADY padded by the barber's turnaround (the reader's own
  * contract), so a gap here is genuinely bookable rather than a sliver that
  * only exists because the padding has not been applied yet. Holes under
- * `SHORTEST_SELLABLE_MINUTES` are dropped, not drawn quieter: an unsellable
+ * `GridLayoutSystem.SHORTEST_SELLABLE_MINUTES` (20) are dropped, not drawn quieter: an unsellable
  * two-minute rounding artefact is noise on a surface graded on being scannable.
  */
 export function laneGaps(
@@ -315,39 +302,29 @@ export function laneGaps(
   occupied: readonly Interval[],
   nowMs: number,
 ): readonly LaneGap[] {
-  if (rostered.length === 0) return [];
-  // SPLIT AT NOW, then floor — never the other way round.
-  //
-  // The hole is one interval either side of the clock; what changes is what
-  // it MEANS. Future minutes are inventory a shop can sell; elapsed minutes
-  // are a record of a chair that sat empty. Flooring before the split would
-  // let a 105-minute hole with five minutes left on it emit a "5 min free"
-  // card, and flooring only the whole would let a mostly-elapsed hole smuggle
-  // an unsellable sliver into the sellable side.
-  //
-  // This used to CLIP to now instead, discarding the elapsed piece outright.
-  // That hid a real fact — an idle morning and a fully booked one rendered
-  // identically — and it was masking `barberBusy` being wrong about the past
-  // rather than fixing it. `occupiedIntervals` fixes the cause, so nothing
-  // has to be hidden any more.
-  const pieces: Interval[] = [];
-  for (const hole of Interval.subtract(rostered, occupied)) {
-    if (hole.startMs < nowMs && nowMs < hole.endMs) {
-      pieces.push(Interval.of(hole.startMs, nowMs));
-      pieces.push(Interval.of(nowMs, hole.endMs));
-    } else {
-      pieces.push(hole);
-    }
-  }
-  return pieces
-    .map((piece) => ({
-      startMs: piece.startMs,
-      endMs: piece.endMs,
-      minutes: Math.round((piece.endMs - piece.startMs) / 60_000),
-      // Only time still ahead can be filled. The past piece is a fact.
-      sellable: piece.endMs > nowMs,
-    }))
-    .filter((gap) => gap.minutes >= SHORTEST_SELLABLE_MINUTES);
+  // SPLIT AT NOW, then floor — never the other way round
+  // (`GridLayoutSystem.sellableAt`). The holes take no clock; the minute
+  // tick re-splits them alone (`StaffDayStore.dayCells`).
+  return GridLayoutSystem.laneGaps(rostered, occupied, nowMs);
+}
+
+/**
+ * A legacy appointment as the occupancy fold reads it — its status and, per
+ * seat, the barber, the start and the snapshotted terms.
+ */
+function toOccupyingVisit(appointment: Appointment): OccupyingVisit {
+  return {
+    bookingStatus: { kind: appointment.status.kind },
+    seats: appointment.seats.map((seat) => ({
+      barberId: seat.barberId.value,
+      startMs: seat.slot.start.toMillis(),
+      terms: {
+        durationMinutes: seat.terms.durationMinutes,
+        setupMinutes: seat.terms.setupMinutes,
+        cleanupMinutes: seat.terms.cleanupMinutes,
+      },
+    })),
+  };
 }
 
 /**
@@ -1235,7 +1212,12 @@ export class StaffDayStore {
    * The flat `lanesResult` is re-paired here and NOWHERE else — day-major,
    * barber-minor, matching the order it was subscribed in.
    */
-  readonly dayCells = computed<readonly StaffDayCell[]>(() => {
+  /**
+   * THE ROW FOLD — every visible day's lanes with their HOLES, and no clock
+   * (blueprint hot path #3): it re-runs when the data changes, never on the
+   * minute tick. `dayCells` splits the holes at now.
+   */
+  private readonly dayGeometry = computed<readonly DayGeometryCell[]>(() => {
     const results = this.lanesResult()?.lanes;
     const barbers = this.scopedBarbers();
     // ⚠ `subscribedDays`, not `visibleDays` — the list the results were
@@ -1269,10 +1251,9 @@ export class StaffDayStore {
           appointments,
           rostered,
           blocks,
-          gaps: laneGaps(
+          holes: GridLayoutSystem.holes(
             rostered,
             occupiedIntervals(appointments, barber.id.value, geo?.busy ?? []),
-            this._nowMs(),
           ),
           failed: result !== undefined && result.isFailure(),
         };
@@ -1280,6 +1261,24 @@ export class StaffDayStore {
 
       return { dayKey, lanes };
     });
+  });
+
+  /**
+   * Every visible day, each with one lane per scoped chair.
+   *
+   * The flat `lanesResult` is re-paired in `dayGeometry` and NOWHERE else —
+   * day-major, barber-minor, matching the order it was subscribed in. The
+   * minute tick reaches only the split at now (`GridLayoutSystem.sellableAt`).
+   */
+  readonly dayCells = computed<readonly StaffDayCell[]>(() => {
+    const nowMs = this._nowMs();
+    return this.dayGeometry().map((cell) => ({
+      dayKey: cell.dayKey,
+      lanes: cell.lanes.map(({ holes, ...lane }) => ({
+        ...lane,
+        gaps: GridLayoutSystem.sellableAt(holes, nowMs),
+      })),
+    }));
   });
 
   /** One subscribed day's cell, anchor or probe — `null` when it is neither. */
@@ -1771,7 +1770,7 @@ export class StaffDayStore {
    * on → the revision it stamped. At most `LANDED_PER_VISIT`, oldest
    * dropped.
    */
-  private readonly landed = new Map<string, Map<number, number>>();
+  private readonly landed = new Map<string, readonly LandedRevision[]>();
 
   /**
    * The claim an intent goes out with: the revision it was made on, carried
@@ -1786,15 +1785,10 @@ export class StaffDayStore {
    * overwritten. `null` claims nothing and stays so.
    */
   private claimFor(appointmentId: string, drawn: number | null): number | null {
-    if (drawn === null) return null;
-    const chain = this.landed.get(appointmentId);
-    let claim = drawn;
-    // Each step strictly climbs (`recordLanded`), so the walk ends.
-    for (let next = chain?.get(claim); next !== undefined;) {
-      claim = next;
-      next = chain?.get(claim);
-    }
-    return claim;
+    return StaffIntentSystem.claimFor(
+      this.landed.get(appointmentId) ?? [],
+      drawn,
+    );
   }
 
   /** An intent of this device landed: `from` → `to`, kept for `claimFor`. */
@@ -1803,17 +1797,11 @@ export class StaffDayStore {
     from: number | null,
     to: number,
   ): void {
-    // A claim of nothing has no revision to carry forward; and a stamp that
-    // does not climb is not one an edit on `from` can have written (a
-    // gateway answer with no revision reads as 0), so it is not trusted.
-    if (from === null || !(to > from)) return;
-    const chain = this.landed.get(appointmentId) ?? new Map<number, number>();
-    chain.set(from, to);
-    for (const oldest of chain.keys()) {
-      if (chain.size <= LANDED_PER_VISIT) break;
-      chain.delete(oldest);
-    }
-    this.landed.set(appointmentId, chain);
+    // A claim of nothing, or a stamp that does not climb, is not recorded
+    // (`StaffIntentSystem.recordLanded` hands the chain back unchanged).
+    const chain = this.landed.get(appointmentId) ?? [];
+    const next = StaffIntentSystem.recordLanded(chain, from, to);
+    if (next !== chain) this.landed.set(appointmentId, next);
   }
 
   /**
@@ -1843,7 +1831,8 @@ export class StaffDayStore {
    * shows, since nothing here moves a block before the server does. Never
    * applied twice is the promise; the lane is the receipt.
    *
-   * AT MOST `AppliedOperations.CAP` FAILED NAMES PER VISIT, oldest dropped.
+   * AT MOST `AppliedOperations.CAP` (`StaffIntentSystem.UNSETTLED_PER_VISIT`)
+   * FAILED NAMES PER VISIT, oldest dropped.
    * That bounds this map and promises nothing about the server's ledger,
    * which keeps the last CAP intents APPLIED to the visit, from any device:
    * once CAP other intents have landed since a name was kept, the server no
@@ -1860,7 +1849,10 @@ export class StaffDayStore {
    * sheet also sends `expectedVersion` (round 5), so a colleague's save in
    * between is refused as stale rather than written over.
    */
-  private readonly unsettledOperations = new Map<string, Map<string, string>>();
+  private readonly unsettledOperations = new Map<
+    string,
+    readonly UnsettledName[]
+  >();
 
   /** The name this send goes out under — see `unsettledOperations`. */
   private operationIdFor(
@@ -1869,8 +1861,10 @@ export class StaffDayStore {
   ): string {
     if (request.operationId !== undefined) return request.operationId;
     return (
-      this.unsettledOperations.get(request.appointmentId)?.get(intent) ??
-      this.ids.next()
+      StaffIntentSystem.operationIdFor(
+        this.unsettledOperations.get(request.appointmentId) ?? [],
+        intent,
+      ) ?? this.ids.next()
     );
   }
 
@@ -1880,23 +1874,23 @@ export class StaffDayStore {
     intent: string,
     operationId: string,
   ): void {
-    const intents =
-      this.unsettledOperations.get(appointmentId) ?? new Map<string, string>();
-    intents.delete(intent);
-    intents.set(intent, operationId);
-    for (const oldest of intents.keys()) {
-      if (intents.size <= AppliedOperations.CAP) break;
-      intents.delete(oldest);
-    }
-    this.unsettledOperations.set(appointmentId, intents);
+    this.unsettledOperations.set(
+      appointmentId,
+      StaffIntentSystem.rememberUnsettled(
+        this.unsettledOperations.get(appointmentId) ?? [],
+        intent,
+        operationId,
+      ),
+    );
   }
 
   /** A send that landed: THAT intent is settled; every other keeps its name. */
   private settle(appointmentId: string, intent: string): void {
     const intents = this.unsettledOperations.get(appointmentId);
     if (intents === undefined) return;
-    intents.delete(intent);
-    if (intents.size === 0) this.unsettledOperations.delete(appointmentId);
+    const left = StaffIntentSystem.settle(intents, intent);
+    if (left.length === 0) this.unsettledOperations.delete(appointmentId);
+    else this.unsettledOperations.set(appointmentId, left);
   }
 
   /**

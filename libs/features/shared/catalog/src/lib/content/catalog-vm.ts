@@ -1,3 +1,11 @@
+import {
+  BarberId,
+  type CatalogPriced,
+  CatalogPricingSystem,
+  ServiceTerms,
+  ServiceVariantId,
+} from '@creativo/ecs-core';
+
 /**
  * The catalog view models every surface renders — landing shelf, onboarding
  * grid, and the booking flow next. They live in `features/shared/catalog`
@@ -114,7 +122,7 @@ export function formatDurationRange(
 
 /** Cheapest base offering — the "from" price on a marketing tile. */
 export function servicePriceFrom(service: ServiceVm): number {
-  return Math.min(...service.offerings.map((offering) => offering.base.price));
+  return toMajor(CatalogPricingSystem.priceFrom(pricedOf(service)));
 }
 
 /**
@@ -158,12 +166,14 @@ export function servicesByBarber(
   services: readonly ServiceVm[],
   barberId: string,
 ): readonly { readonly service: ServiceVm; readonly terms: ServiceTermsVm }[] {
-  return services.flatMap((service) => {
-    const offering = service.offerings.find(
-      (candidate) => candidate.barberId === barberId,
-    );
-    return offering ? [{ service, terms: offering.base }] : [];
-  });
+  const priced = services.map(pricedOf);
+  return CatalogPricingSystem.servicesByBarber(
+    priced,
+    BarberId.of(barberId),
+  ).map((entry) => ({
+    service: services.at(priced.indexOf(entry.service)) as ServiceVm,
+    terms: termsVmOf(entry.terms),
+  }));
 }
 
 /** Global duration range across offerings × variants (v2 Service.durationRange). */
@@ -171,9 +181,61 @@ export function serviceDurationRange(service: ServiceVm): {
   from: number;
   to: number;
 } {
-  const minutes = service.offerings.flatMap((offering) => [
-    offering.base.minutes,
-    ...Object.values(offering.byVariant ?? {}).map((terms) => terms.minutes),
-  ]);
-  return { from: Math.min(...minutes), to: Math.max(...minutes) };
+  const range = CatalogPricingSystem.durationRange(pricedOf(service));
+  return { from: range.min, to: range.max };
+}
+
+/* ── Phase 2 shim converters: the view model ↔ the catalogue's terms ────── */
+
+/** EUR major units (may carry .5) → minor units. */
+function toMinor(major: number): number {
+  return Math.round(major * 100);
+}
+
+function toMajor(minor: number): number {
+  return minor / 100;
+}
+
+function termsOf(terms: ServiceTermsVm): ServiceTerms {
+  return ServiceTerms.unpadded(toMinor(terms.price), 'EUR', terms.minutes);
+}
+
+function termsVmOf(terms: ServiceTerms): ServiceTermsVm {
+  return {
+    price: toMajor(terms.priceMinorUnits),
+    minutes: terms.durationMinutes,
+  };
+}
+
+/**
+ * The view model's offerings → the terms matrix the pricing system reads:
+ * each `byVariant` entry an override, every variant it names declared. The
+ * view model always carries an offering (a service nobody performs stands
+ * in as one anonymous offering), whose base doubles as the base terms.
+ */
+function pricedOf(service: ServiceVm): CatalogPriced {
+  const variantIds = new Set(service.variants.map((variant) => variant.id));
+  for (const offering of service.offerings) {
+    for (const id of Object.keys(offering.byVariant ?? {})) variantIds.add(id);
+  }
+  const first = service.offerings[0];
+  return {
+    baseTerms: first
+      ? termsOf(first.base)
+      : ServiceTerms.unpadded(Number.POSITIVE_INFINITY, 'EUR', 0),
+    variants: [...variantIds].map((id) => ({
+      id: ServiceVariantId.of(id),
+      name: { bg: id, en: id },
+    })),
+    offerings: service.offerings.map((offering) => ({
+      barberId: BarberId.of(offering.barberId),
+      base: termsOf(offering.base),
+      overrides: Object.entries(offering.byVariant ?? {}).map(
+        ([variantId, terms]) => ({
+          variantId: ServiceVariantId.of(variantId),
+          terms: termsOf(terms),
+        }),
+      ),
+    })),
+  };
 }

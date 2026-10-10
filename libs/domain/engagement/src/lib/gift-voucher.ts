@@ -7,6 +7,17 @@ import {
   ok,
 } from '@creativo/domain/kernel';
 import { UserId } from '@creativo/domain/accounts';
+import {
+  EngagementErrorCode,
+  type EngagementError as EngagementErrorData,
+  type GiftVoucherEntity,
+  GiftVoucherId as GiftVoucherIdData,
+  type Money as MoneyData,
+  UserId as UserIdData,
+  VoucherCode as VoucherCodeData,
+  VoucherState,
+  VoucherSystem,
+} from '@creativo/ecs-core';
 import { Coupon } from './coupon';
 import {
   GiftVoucherCurrencyMismatchError,
@@ -19,6 +30,67 @@ import { GiftVoucherId } from './ids';
 import { EmptyIdError } from './ids.errors';
 import { VoucherCode } from './voucher-code';
 import { VoucherCodeInvalidError } from './voucher-code.errors';
+
+/*
+ * THIN SHIM (ECS migration Phase 2). The balance algebra — why a voucher
+ * cannot be used, how much it covers, redeem / restore / settle refusing
+ * rather than rounding, never below zero nor above what was issued — is
+ * `VoucherSystem` over the ECS `GiftVoucherEntity`. This class keeps the
+ * legacy API its callers hold and only converts.
+ */
+
+/* ── Legacy ↔ ECS converters ─────────────────────────────────────────── */
+
+function toMoneyData(money: Money): MoneyData {
+  return {
+    amountMinorUnits: money.toMinorUnits(),
+    currencyCode: money.currencyCode(),
+  };
+}
+
+function toEntity(voucher: GiftVoucher): GiftVoucherEntity {
+  const state = voucher.state;
+  return {
+    id: GiftVoucherIdData.of(voucher.id.value),
+    code: VoucherCodeData.of(voucher.code),
+    initialValue: toMoneyData(voucher.initialValue),
+    balance: toMoneyData(voucher.balance),
+    issuedAtMs: voucher.issuedAt.toMillis(),
+    expiresAtMs:
+      voucher.expiresAt === null ? null : voucher.expiresAt.toMillis(),
+    issuedToUserId:
+      voucher.issuedToUserId === null
+        ? null
+        : UserIdData.of(voucher.issuedToUserId.value),
+    state:
+      state.kind === 'void'
+        ? VoucherState.voided(state.voidedAt.toMillis(), state.reason)
+        : VoucherState.active(),
+  };
+}
+
+type VoucherBalanceError =
+  | GiftVoucherNotRedeemableError
+  | GiftVoucherInsufficientBalanceError
+  | GiftVoucherCurrencyMismatchError
+  | GiftVoucherOverRestoreError;
+
+/** A struct refusal → the legacy class it always was. */
+function toLegacyError(error: EngagementErrorData): VoucherBalanceError {
+  switch (error.code) {
+    case EngagementErrorCode.GiftVoucherNotRedeemable:
+      return new GiftVoucherNotRedeemableError(error.reason);
+    case EngagementErrorCode.GiftVoucherInsufficientBalance:
+      return new GiftVoucherInsufficientBalanceError(
+        error.requestedMinorUnits,
+        error.balanceMinorUnits,
+      );
+    case EngagementErrorCode.GiftVoucherCurrencyMismatch:
+      return new GiftVoucherCurrencyMismatchError(error.expected, error.found);
+    default:
+      return new GiftVoucherOverRestoreError();
+  }
+}
 
 /**
  * `active` until voided; an EMPTY voucher stays active — a restore after a
@@ -132,11 +204,7 @@ export class GiftVoucher {
 
   /** Why it cannot be used now, or `null` when it can. */
   refusal(now: ZonedDateTime): 'void' | 'expired' | 'empty' | null {
-    if (this.state.kind === 'void') return 'void';
-    if (this.expiresAt !== null && now.isAfter(this.expiresAt))
-      return 'expired';
-    if (this.balance.toMinorUnits() <= 0) return 'empty';
-    return null;
+    return VoucherSystem.refusal(toEntity(this), now.toMillis());
   }
 
   isRedeemable(now: ZonedDateTime): boolean {
@@ -148,14 +216,10 @@ export class GiftVoucher {
    * what is owed, whichever is smaller. Zero across a currency line.
    */
   coverage(due: Money): Money {
-    if (due.currencyCode() !== this.balance.currencyCode()) {
-      return GiftVoucher.zero(this.balance.currencyCode());
-    }
-    const minor = Math.max(
-      0,
-      Math.min(this.balance.toMinorUnits(), due.toMinorUnits()),
+    return GiftVoucher.money(
+      VoucherSystem.coverage(toEntity(this), toMoneyData(due)).amountMinorUnits,
+      this.balance.currencyCode(),
     );
-    return GiftVoucher.money(minor, this.balance.currencyCode());
   }
 
   /** The same voucher with `amount` taken off its balance. */
@@ -168,33 +232,19 @@ export class GiftVoucher {
     | GiftVoucherInsufficientBalanceError
     | GiftVoucherCurrencyMismatchError
   > {
-    const refusal = this.refusal(now);
-    if (refusal !== null)
-      return fail(new GiftVoucherNotRedeemableError(refusal));
-    if (amount.currencyCode() !== this.balance.currencyCode()) {
-      return fail(
-        new GiftVoucherCurrencyMismatchError(
-          this.balance.currencyCode(),
-          amount.currencyCode(),
-        ),
-      );
-    }
-    if (amount.toMinorUnits() > this.balance.toMinorUnits()) {
-      return fail(
-        new GiftVoucherInsufficientBalanceError(
-          amount.toMinorUnits(),
-          this.balance.toMinorUnits(),
-        ),
-      );
-    }
-    return ok(
-      this.withBalance(
-        GiftVoucher.money(
-          this.balance.toMinorUnits() - amount.toMinorUnits(),
-          this.balance.currencyCode(),
-        ),
-      ),
+    const redeemed = VoucherSystem.redeem(
+      toEntity(this),
+      toMoneyData(amount),
+      now.toMillis(),
     );
+    return redeemed.ok
+      ? ok(this.withBalanceOf(redeemed.value))
+      : fail(
+          toLegacyError(redeemed.error) as
+            | GiftVoucherNotRedeemableError
+            | GiftVoucherInsufficientBalanceError
+            | GiftVoucherCurrencyMismatchError,
+        );
   }
 
   /**
@@ -209,30 +259,21 @@ export class GiftVoucher {
     GiftVoucher,
     GiftVoucherOverRestoreError | GiftVoucherCurrencyMismatchError
   > {
-    if (amount.currencyCode() !== this.balance.currencyCode()) {
-      return fail(
-        new GiftVoucherCurrencyMismatchError(
-          this.balance.currencyCode(),
-          amount.currencyCode(),
-        ),
-      );
-    }
-    const next = this.balance.toMinorUnits() + amount.toMinorUnits();
-    if (next > this.initialValue.toMinorUnits()) {
-      return fail(new GiftVoucherOverRestoreError());
-    }
-    return ok(
-      this.withBalance(GiftVoucher.money(next, this.balance.currencyCode())),
-    );
+    const restored = VoucherSystem.restore(toEntity(this), toMoneyData(amount));
+    return restored.ok
+      ? ok(this.withBalanceOf(restored.value))
+      : fail(
+          toLegacyError(restored.error) as
+            GiftVoucherOverRestoreError | GiftVoucherCurrencyMismatchError,
+        );
   }
 
   /**
    * One visit's draw on this voucher, CHANGED from `previous` to `next` —
-   * the save that re-settles a bill after a reprice, a discount, or the
-   * removal of another voucher. What the visit already holds is its own
-   * to keep or give back whatever the voucher's state, so a void or an
-   * expired voucher refuses only when the visit would take MORE than it
-   * had; the balance can never go below zero or above what was issued.
+   * the save that re-settles a bill. What the visit already holds is its own
+   * to keep or give back whatever the voucher's state, so a void voucher
+   * refuses only when the visit would take MORE than it had; the balance can
+   * never go below zero or above what was issued.
    */
   settle(
     previous: Money,
@@ -244,31 +285,14 @@ export class GiftVoucher {
     | GiftVoucherCurrencyMismatchError
     | GiftVoucherOverRestoreError
   > {
-    const currency = this.balance.currencyCode();
-    if (
-      previous.currencyCode() !== currency ||
-      next.currencyCode() !== currency
-    ) {
-      return fail(
-        new GiftVoucherCurrencyMismatchError(currency, next.currencyCode()),
-      );
-    }
-    const available = this.balance.toMinorUnits() + previous.toMinorUnits();
-    if (next.toMinorUnits() > previous.toMinorUnits()) {
-      if (this.state.kind === 'void') {
-        return fail(new GiftVoucherNotRedeemableError('void'));
-      }
-    }
-    if (next.toMinorUnits() > available) {
-      return fail(
-        new GiftVoucherInsufficientBalanceError(next.toMinorUnits(), available),
-      );
-    }
-    const balance = available - next.toMinorUnits();
-    if (balance > this.initialValue.toMinorUnits()) {
-      return fail(new GiftVoucherOverRestoreError());
-    }
-    return ok(this.withBalance(GiftVoucher.money(balance, currency)));
+    const settled = VoucherSystem.settle(
+      toEntity(this),
+      toMoneyData(previous),
+      toMoneyData(next),
+    );
+    return settled.ok
+      ? ok(this.withBalanceOf(settled.value))
+      : fail(toLegacyError(settled.error));
   }
 
   void(now: ZonedDateTime, reason: string): GiftVoucher {
@@ -281,6 +305,16 @@ export class GiftVoucher {
       this.expiresAt,
       this.issuedToUserId,
       { kind: 'void', voidedAt: now, reason },
+    );
+  }
+
+  /** The struct's balance, back on the legacy voucher. */
+  private withBalanceOf(entity: GiftVoucherEntity): GiftVoucher {
+    return this.withBalance(
+      GiftVoucher.money(
+        entity.balance.amountMinorUnits,
+        this.balance.currencyCode(),
+      ),
     );
   }
 

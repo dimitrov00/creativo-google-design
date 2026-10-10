@@ -19,6 +19,7 @@ import {
   appointmentFromDocument,
 } from '@creativo/application/booking';
 import { RepositoryError } from '@creativo/application/shared';
+import { PageStepKind, PagingSystem } from '@creativo/ecs-core';
 import { appointmentsCollection } from './firestore-paths';
 
 type Snapshot = QueryDocumentSnapshot<DocumentData>;
@@ -50,7 +51,7 @@ export class FirestoreClientHistoryReader implements ClientHistoryReader {
     const subject = UserId.create(userId);
     if (subject.isFailure())
       return ok({ appointments: [], nextBeforeIso: null });
-    const size = Math.max(1, Math.floor(page.limit));
+    const size = PagingSystem.pageSize(page.limit);
     const theirs = where(
       'subjectUserIds',
       'array-contains',
@@ -64,16 +65,16 @@ export class FirestoreClientHistoryReader implements ClientHistoryReader {
           : [where('timeSlot.startIso', '<', page.beforeIso)],
         size + 1,
       );
-      if (read.length <= size) {
-        return ok({ appointments: parsed(read), nextBeforeIso: null });
-      }
-      const boundary = startIsoOf(read.at(size - 1));
-      if (startIsoOf(read.at(size)) !== boundary) {
+      // The same-instant boundary rule is `PagingSystem`'s: a page never
+      // ends between two visits sharing one start.
+      const step = PagingSystem.nextCursor(read, size, startIsoOf);
+      if (step.kind === PageStepKind.Page) {
         return ok({
-          appointments: parsed(read.slice(0, size)),
-          nextBeforeIso: boundary,
+          appointments: parsed(step.rows),
+          nextBeforeIso: step.cursor,
         });
       }
+      const boundary = step.boundary;
       const [sameInstant, older] = await Promise.all([
         getDocs(
           query(
@@ -88,13 +89,16 @@ export class FirestoreClientHistoryReader implements ClientHistoryReader {
           1,
         ),
       ]);
-      const newer = read.filter((entry) => startIsoOf(entry) > boundary);
-      const tied = [...sameInstant.docs].sort((a, b) =>
-        a.id < b.id ? 1 : a.id > b.id ? -1 : 0,
+      const whole = PagingSystem.sameInstantBoundary(
+        step.newer,
+        sameInstant.docs,
+        idOf,
+        older.length > 0,
+        boundary,
       );
       return ok({
-        appointments: parsed([...newer, ...tied]),
-        nextBeforeIso: older.length > 0 ? boundary : null,
+        appointments: parsed(whole.rows),
+        nextBeforeIso: whole.cursor,
       });
     } catch (error) {
       return fail(
@@ -125,6 +129,11 @@ export class FirestoreClientHistoryReader implements ClientHistoryReader {
 function startIsoOf(entry: Snapshot | undefined): string {
   const slot: unknown = entry?.get('timeSlot.startIso');
   return typeof slot === 'string' ? slot : '';
+}
+
+/** A document's id — what orders a tied instant. */
+function idOf(entry: Snapshot): string {
+  return entry.id;
 }
 
 /** Every appointment that parses; one that does not is dropped, never the page. */

@@ -1,8 +1,14 @@
+import { VisitDraftSystem } from '@creativo/ecs-core';
+
 /**
  * THE TAG's arithmetic — how far a visit runs from the catalogue's length —
  * shared by the frame's block and the agenda's card (owner, 2026-09-10:
  * "the events here should look a lot like the ones in the frame … the
  * ±x min if extended or subtracted").
+ *
+ * Phase 2 shim: the arithmetic is `VisitDraftSystem.catalogMinutesOf` and
+ * `VisitDraftSystem.minutesDelta` in `@creativo/ecs-core`; the `−10 мин`
+ * wording stays here, in the presenter layer.
  */
 
 /**
@@ -16,10 +22,11 @@ export function catalogMinutesOf<S>(
   catalogMinutes: (seat: S) => number | null,
   bookedMinutes: (seat: S) => number,
 ): number | null {
-  if (seats.length === 0) return null;
-  return seats.reduce(
-    (sum, seat) => sum + (catalogMinutes(seat) ?? bookedMinutes(seat)),
-    0,
+  return VisitDraftSystem.catalogMinutesOf(
+    seats.map((seat) => ({
+      catalogMinutes: catalogMinutes(seat),
+      bookedMinutes: bookedMinutes(seat),
+    })),
   );
 }
 
@@ -43,7 +50,6 @@ export function catalogTagOf(
   catalogMinutes: number | null,
   minutesLabel: (minutes: number) => string,
 ): string | null {
-  if (catalogMinutes === null) return null;
-  const delta = spanMinutes - catalogMinutes;
-  return delta === 0 ? null : minutesDeltaLabel(delta, minutesLabel);
+  const delta = VisitDraftSystem.minutesDelta(spanMinutes, catalogMinutes);
+  return delta === null ? null : minutesDeltaLabel(delta, minutesLabel);
 }

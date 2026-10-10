@@ -9,6 +9,18 @@ import {
   UserId,
   EmptyIdError as AccountsEmptyIdError,
 } from '@creativo/domain/accounts';
+import {
+  type CouponGrantEntity,
+  CouponGrantId as CouponGrantIdData,
+  CouponGrantCapacity as CouponGrantCapacityData,
+  CouponGrantSystem,
+  CouponId as CouponIdData,
+  type CouponValue as CouponValueData,
+  type EngagementError as EngagementErrorData,
+  EngagementErrorCode,
+  type GrantStatus,
+  UserId as UserIdData,
+} from '@creativo/ecs-core';
 import { CouponValue } from './coupon-value';
 import {
   CouponGrantEmptyReasonError,
@@ -38,10 +50,10 @@ export const CouponGrantCapacity = {
   multiUse(
     total: number,
   ): Result<CouponGrantCapacityMultiUse, CouponGrantInvalidCapacityError> {
-    if (!Number.isInteger(total) || total <= 0) {
-      return fail(new CouponGrantInvalidCapacityError(total));
-    }
-    return ok({ kind: 'multi_use', remaining: total, totalGranted: total });
+    const capacity = CouponGrantCapacityData.multiUse(total);
+    return capacity.ok
+      ? ok(capacity.value)
+      : fail(new CouponGrantInvalidCapacityError(total));
   },
 } as const;
 
@@ -114,6 +126,90 @@ export interface ReconstituteCouponGrantProps {
   value: CouponValue;
   grantedAt: ZonedDateTime;
   state: CouponGrantState;
+}
+
+/*
+ * THIN SHIM (ECS migration Phase 2). A grant's life — usable, burn (single-use
+ * straight to `used`, multi-use counting down), expire, revoke, each refusing
+ * a grant that is not active — is `CouponGrantSystem` over the ECS
+ * `CouponGrantEntity`. This class keeps the legacy API its callers hold and
+ * only converts: the system decides the next state, the legacy instants it
+ * was stamped with ride back on it.
+ */
+
+/* ── Legacy ↔ ECS converters ─────────────────────────────────────────── */
+
+function toValueData(value: CouponValue): CouponValueData {
+  return value.kind === 'fixed_amount'
+    ? {
+        kind: 'fixed_amount',
+        amount: {
+          amountMinorUnits: value.amount.toMinorUnits(),
+          currencyCode: value.amount.currencyCode(),
+        },
+      }
+    : value;
+}
+
+function toStateData(state: CouponGrantState): GrantStatus {
+  switch (state.kind) {
+    case 'active':
+      return {
+        kind: 'active',
+        capacity: state.capacity,
+        expiration:
+          state.expiration.kind === 'expires_at'
+            ? { kind: 'expires_at', atMs: state.expiration.at.toMillis() }
+            : { kind: 'no_expiry' },
+      };
+    case 'used':
+      return {
+        kind: 'used',
+        usedAtMs: state.usedAt.toMillis(),
+        note: state.note,
+      };
+    case 'expired':
+      return {
+        kind: 'expired',
+        expiredAtMs: state.expiredAt.toMillis(),
+        scheduledForMs: state.scheduledFor.toMillis(),
+      };
+    case 'revoked':
+      return {
+        kind: 'revoked',
+        revokedAtMs: state.revokedAt.toMillis(),
+        revokedBy: UserIdData.of(state.revokedBy.value),
+        reason: state.reason,
+      };
+  }
+}
+
+function toEntity(grant: CouponGrant): CouponGrantEntity {
+  return {
+    id: CouponGrantIdData.of(grant.id.value),
+    userId: UserIdData.of(grant.userId.value),
+    couponId: CouponIdData.of(grant.couponId.value),
+    value: toValueData(grant.value),
+    grantedAtMs: grant.grantedAt.toMillis(),
+    state: toStateData(grant.state),
+  };
+}
+
+type CouponGrantTransitionError =
+  | CouponGrantNotActiveError
+  | CouponGrantNotExpiringError
+  | CouponGrantEmptyReasonError;
+
+/** A struct refusal → the legacy class it always was. */
+function toLegacyError(error: EngagementErrorData): CouponGrantTransitionError {
+  switch (error.code) {
+    case EngagementErrorCode.CouponGrantNotActive:
+      return new CouponGrantNotActiveError(error.currentState);
+    case EngagementErrorCode.CouponGrantNotExpiring:
+      return new CouponGrantNotExpiringError();
+    default:
+      return new CouponGrantEmptyReasonError();
+  }
 }
 
 /**
@@ -197,17 +293,12 @@ export class CouponGrant {
   }
 
   isActive(): boolean {
-    return this.state.kind === 'active';
+    return CouponGrantSystem.isActive(toEntity(this));
   }
 
   /** Active + (no expiry OR not past expiry). */
   isUsable(now: ZonedDateTime): boolean {
-    if (this.state.kind !== 'active') return false;
-    const { expiration } = this.state;
-    if (expiration.kind === 'expires_at' && now.isAfter(expiration.at)) {
-      return false;
-    }
-    return true;
+    return CouponGrantSystem.isUsable(toEntity(this), now.toMillis());
   }
 
   /** Apply one redemption — decrements multi-use capacity or transitions single-use straight to `used`. */
@@ -215,28 +306,21 @@ export class CouponGrant {
     at: ZonedDateTime,
     note = '',
   ): Result<CouponGrant, CouponGrantNotActiveError> {
-    if (this.state.kind !== 'active') {
-      return fail(new CouponGrantNotActiveError(this.state.kind));
+    const burnt = CouponGrantSystem.burn(toEntity(this), at.toMillis(), note);
+    if (!burnt.ok) {
+      return fail(toLegacyError(burnt.error) as CouponGrantNotActiveError);
     }
-    const { capacity } = this.state;
-    if (capacity.kind === 'single_use') {
-      return ok(this.withState({ kind: 'used', usedAt: at, note }));
+    const next = burnt.value.state;
+    if (next.kind === 'active' && this.state.kind === 'active') {
+      return ok(
+        this.withState({
+          kind: 'active',
+          capacity: next.capacity,
+          expiration: this.state.expiration,
+        }),
+      );
     }
-    const remaining = capacity.remaining - 1;
-    if (remaining <= 0) {
-      return ok(this.withState({ kind: 'used', usedAt: at, note }));
-    }
-    return ok(
-      this.withState({
-        kind: 'active',
-        capacity: {
-          kind: 'multi_use',
-          remaining,
-          totalGranted: capacity.totalGranted,
-        },
-        expiration: this.state.expiration,
-      }),
-    );
+    return ok(this.withState({ kind: 'used', usedAt: at, note }));
   }
 
   /** Mark a scheduled grant as expired — only legal on an `active` grant with `expires_at`. */
@@ -246,11 +330,19 @@ export class CouponGrant {
     CouponGrant,
     CouponGrantNotActiveError | CouponGrantNotExpiringError
   > {
-    if (this.state.kind !== 'active') {
-      return fail(new CouponGrantNotActiveError(this.state.kind));
-    }
-    if (this.state.expiration.kind !== 'expires_at') {
-      return fail(new CouponGrantNotExpiringError());
+    const expired = CouponGrantSystem.expire(toEntity(this), at.toMillis());
+    if (
+      !expired.ok ||
+      this.state.kind !== 'active' ||
+      this.state.expiration.kind !== 'expires_at'
+    ) {
+      return fail(
+        toLegacyError(
+          expired.ok
+            ? { code: EngagementErrorCode.CouponGrantNotExpiring }
+            : expired.error,
+        ) as CouponGrantNotActiveError | CouponGrantNotExpiringError,
+      );
     }
     return ok(
       this.withState({
@@ -270,19 +362,27 @@ export class CouponGrant {
     CouponGrant,
     CouponGrantNotActiveError | CouponGrantEmptyReasonError
   > {
-    if (this.state.kind !== 'active') {
-      return fail(new CouponGrantNotActiveError(this.state.kind));
-    }
-    const trimmed = reason.trim();
-    if (trimmed.length === 0) {
-      return fail(new CouponGrantEmptyReasonError());
+    const revoked = CouponGrantSystem.revoke(
+      toEntity(this),
+      at.toMillis(),
+      UserIdData.of(revokedBy.value),
+      reason,
+    );
+    if (!revoked.ok || revoked.value.state.kind !== 'revoked') {
+      return fail(
+        toLegacyError(
+          revoked.ok
+            ? { code: EngagementErrorCode.CouponGrantReasonEmpty }
+            : revoked.error,
+        ) as CouponGrantNotActiveError | CouponGrantEmptyReasonError,
+      );
     }
     return ok(
       this.withState({
         kind: 'revoked',
         revokedAt: at,
         revokedBy,
-        reason: trimmed,
+        reason: revoked.value.state.reason,
       }),
     );
   }

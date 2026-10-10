@@ -1,6 +1,17 @@
+import {
+  type IdentityError,
+  OnboardingFlowEvent as FlowEvent,
+  OnboardingFlowState as FlowState,
+  OnboardingFlowStep,
+  OnboardingFlowSystem,
+  type PersonalizeStep,
+  type Result as FlowResult,
+  ServiceId as ServiceKey,
+} from '@creativo/ecs-core';
 import { Result, fail, ok } from '@creativo/domain/kernel';
 import { ServiceId } from '@creativo/domain/catalog';
 import { RegistrationField } from '@creativo/domain/identity';
+import { toRegistrationFields } from '../registration-fields.shim';
 import { InvalidOnboardingFlowTransitionError } from './onboarding-flow.errors';
 
 /**
@@ -52,79 +63,209 @@ export const ONBOARDING_FLOW_INITIAL_STATE: OnboardingFlowState = {
   kind: 'about',
 };
 
+/*
+ * Phase 2 shim (ECS migration): the transition function and the resume
+ * plan walk are `OnboardingFlowSystem` (`@creativo/ecs-core`). This file
+ * keeps its legacy state, event and error shapes for the store and converts
+ * at the edge — the helpers below are the only code besides the delegating
+ * bodies.
+ */
+
+/** The legacy selection and its system twin, so a carried selection maps back to the caller's own array. */
+type Selection = {
+  readonly legacy: readonly ServiceId[];
+  readonly keys: readonly ServiceKey[];
+};
+
+function toSelection(selected: readonly ServiceId[]): Selection {
+  return {
+    legacy: selected,
+    keys: selected.map((id) => ServiceKey.of(id.value)),
+  };
+}
+
+/** The state as the system's struct, beside the selections it carries. */
+function toFlowState(
+  state: OnboardingFlowState,
+  selections: Selection[],
+): FlowState {
+  switch (state.kind) {
+    case 'about':
+      return FlowState.about(state.error ?? null);
+    case 'reward':
+      return FlowState.reward();
+    case 'services': {
+      const selection = toSelection(state.selected);
+      selections.push(selection);
+      return FlowState.services(selection.keys);
+    }
+    case 'birthday': {
+      const selection = toSelection(state.selected);
+      selections.push(selection);
+      return FlowState.birthday(selection.keys, state.error ?? null);
+    }
+    case 'avatar': {
+      const selection = toSelection(state.selected);
+      selections.push(selection);
+      return FlowState.avatar(selection.keys);
+    }
+    default:
+      return FlowState.entering();
+  }
+}
+
+/** The event as the system's struct, beside the selection it carries. */
+function toFlowEvent(
+  event: OnboardingFlowEvent,
+  selections: Selection[],
+): FlowEvent {
+  switch (event.type) {
+    case 'submit_about':
+      return FlowEvent.submitAbout(toRegistrationFields(event.fields));
+    case 'registered':
+      return FlowEvent.registered();
+    case 'registration_failed':
+      return FlowEvent.registrationFailed(event.message);
+    case 'personalize':
+      return FlowEvent.personalize();
+    case 'enter_app':
+      return FlowEvent.enterApp();
+    case 'submit_services': {
+      const selection = toSelection(event.services);
+      selections.push(selection);
+      return FlowEvent.submitServices(selection.keys);
+    }
+    case 'skip_services':
+      return FlowEvent.skipServices();
+    case 'submit_birthday':
+      return FlowEvent.submitBirthday();
+    case 'skip_birthday':
+      return FlowEvent.skipBirthday();
+    case 'birthday_failed':
+      return FlowEvent.birthdayFailed(event.message);
+    case 'skip_avatar':
+      return FlowEvent.skipAvatar();
+    default:
+      return FlowEvent.back();
+  }
+}
+
+/**
+ * A selection back as the caller's own array — the system only ever carries
+ * one through, or starts an empty one — rebuilt from the keys otherwise.
+ */
+function toLegacySelected(
+  keys: readonly ServiceKey[],
+  selections: readonly Selection[],
+): readonly ServiceId[] {
+  for (const selection of selections) {
+    if (selection.keys === keys) return selection.legacy;
+  }
+  const rebuilt: ServiceId[] = [];
+  for (const key of keys) {
+    const id = ServiceId.create(key);
+    if (id.isSuccess()) rebuilt.push(id.value);
+  }
+  return rebuilt;
+}
+
+function toLegacyState(
+  next: FlowState,
+  selections: readonly Selection[],
+): OnboardingFlowState {
+  switch (next.kind) {
+    case OnboardingFlowStep.About:
+      return next.error === null
+        ? { kind: 'about' }
+        : { kind: 'about', error: next.error };
+    case OnboardingFlowStep.Reward:
+      return { kind: 'reward' };
+    case OnboardingFlowStep.Services:
+      return {
+        kind: 'services',
+        selected: toLegacySelected(next.selected, selections),
+      };
+    case OnboardingFlowStep.Birthday: {
+      const selected = toLegacySelected(next.selected, selections);
+      return next.error === null
+        ? { kind: 'birthday', selected }
+        : { kind: 'birthday', selected, error: next.error };
+    }
+    case OnboardingFlowStep.Avatar:
+      return {
+        kind: 'avatar',
+        selected: toLegacySelected(next.selected, selections),
+      };
+    default:
+      return { kind: 'entering' };
+  }
+}
+
+/** The system's answer back in the legacy shapes — an unchanged state is the caller's own object. */
+function toLegacyResult(
+  next: FlowResult<FlowState, IdentityError>,
+  ecsState: FlowState,
+  state: OnboardingFlowState,
+  event: OnboardingFlowEvent,
+  selections: readonly Selection[],
+): Result<OnboardingFlowState, InvalidOnboardingFlowTransitionError> {
+  if (!next.ok) {
+    return fail(
+      new InvalidOnboardingFlowTransitionError(state.kind, event.type),
+    );
+  }
+  return ok(
+    next.value === ecsState ? state : toLegacyState(next.value, selections),
+  );
+}
+
 export function advanceOnboardingFlow(
   state: OnboardingFlowState,
   event: OnboardingFlowEvent,
 ): Result<OnboardingFlowState, InvalidOnboardingFlowTransitionError> {
-  switch (state.kind) {
-    case 'about':
-      switch (event.type) {
-        case 'submit_about':
-          // No state change — the store awaits `RegisterUserUseCase` and
-          // dispatches `registered`/`registration_failed` when it settles.
-          return ok(state);
-        case 'registered':
-          return ok({ kind: 'reward' });
-        case 'registration_failed':
-          return ok({ kind: 'about', error: event.message });
-        default:
-          break;
-      }
-      break;
+  const selections: Selection[] = [];
+  const ecsState = toFlowState(state, selections);
+  const next = OnboardingFlowSystem.next(
+    ecsState,
+    toFlowEvent(event, selections),
+  );
+  return toLegacyResult(next, ecsState, state, event, selections);
+}
 
-    case 'reward':
-      if (event.type === 'personalize')
-        return ok({ kind: 'services', selected: [] });
-      if (event.type === 'enter_app') return ok({ kind: 'entering' });
-      break;
+/**
+ * {@link advanceOnboardingFlow}, then every personalization step the resume
+ * `plan` leaves out stepped over (`OnboardingFlowSystem.nextWithinPlan`).
+ */
+export function advanceOnboardingFlowWithinPlan(
+  state: OnboardingFlowState,
+  event: OnboardingFlowEvent,
+  plan: readonly PersonalizeStep[],
+): Result<OnboardingFlowState, InvalidOnboardingFlowTransitionError> {
+  const selections: Selection[] = [];
+  const ecsState = toFlowState(state, selections);
+  const next = OnboardingFlowSystem.nextWithinPlan(
+    ecsState,
+    toFlowEvent(event, selections),
+    plan,
+  );
+  return toLegacyResult(next, ecsState, state, event, selections);
+}
 
-    case 'services':
-      switch (event.type) {
-        case 'submit_services':
-          return ok({ kind: 'birthday', selected: event.services });
-        case 'skip_services':
-          return ok({ kind: 'birthday', selected: [] });
-        case 'back':
-          return ok({ kind: 'reward' });
-        default:
-          break;
-      }
-      break;
+/** Back, walked backwards through the resume `plan` (`OnboardingFlowSystem.backWithinPlan`). */
+export function backOnboardingFlowWithinPlan(
+  state: OnboardingFlowState,
+  plan: readonly PersonalizeStep[],
+): Result<OnboardingFlowState, InvalidOnboardingFlowTransitionError> {
+  const selections: Selection[] = [];
+  const ecsState = toFlowState(state, selections);
+  const next = OnboardingFlowSystem.backWithinPlan(ecsState, plan);
+  return toLegacyResult(next, ecsState, state, { type: 'back' }, selections);
+}
 
-    case 'birthday':
-      switch (event.type) {
-        case 'submit_birthday':
-        case 'skip_birthday':
-          return ok({ kind: 'avatar', selected: state.selected });
-        case 'birthday_failed':
-          return ok({
-            kind: 'birthday',
-            selected: state.selected,
-            error: event.message,
-          });
-        case 'back':
-          return ok({ kind: 'services', selected: state.selected });
-        default:
-          break;
-      }
-      break;
-
-    case 'avatar':
-      switch (event.type) {
-        case 'back':
-          return ok({ kind: 'birthday', selected: state.selected });
-        case 'skip_avatar':
-        case 'enter_app':
-          return ok({ kind: 'entering' });
-        default:
-          break;
-      }
-      break;
-
-    case 'entering':
-      // Terminal — no outgoing transitions.
-      break;
-  }
-
-  return fail(new InvalidOnboardingFlowTransitionError(state.kind, event.type));
+/** 1-based position of the state's step within the resume `plan`; 0 outside it. */
+export function onboardingPlanPosition(
+  state: OnboardingFlowState,
+  plan: readonly PersonalizeStep[],
+): number {
+  return OnboardingFlowSystem.planPosition(toFlowState(state, []), plan);
 }

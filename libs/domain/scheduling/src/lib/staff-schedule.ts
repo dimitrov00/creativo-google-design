@@ -7,6 +7,38 @@ import {
   type StaffScheduleError,
 } from './staff-schedule.errors';
 import { WeeklyPattern } from './weekly-pattern';
+import {
+  DayKey,
+  RosterSystem,
+  SchedulingErrorCode,
+  ScheduleVersion as VersionData,
+} from '@creativo/ecs-core';
+
+/*
+ * THIN SHIM (ECS migration Phase 2). A version's span, the history's
+ * no-overlap rule, the amendment and the version in force are the ECS
+ * `ScheduleVersion` component and `RosterSystem.versionFor`. The classes
+ * keep their legacy API (`CalendarDay`, `WeeklyPattern`) and only convert:
+ * the pattern itself is not the span arithmetic's concern, so each struct
+ * carries no segments and maps back to the legacy version it was made from.
+ */
+
+/** The legacy version each ECS struct was made from. */
+const LEGACY_VERSIONS = new WeakMap<VersionData, StaffScheduleVersion>();
+
+function toVersionData(version: StaffScheduleVersion): VersionData {
+  const data: VersionData = {
+    seq: version.seq,
+    effectiveFromDayKey: DayKey.of(version.effectiveFrom.key()),
+    effectiveToDayKey:
+      version.effectiveTo === null
+        ? null
+        : DayKey.of(version.effectiveTo.key()),
+    segments: [],
+  };
+  LEGACY_VERSIONS.set(data, version);
+  return data;
+}
 
 export interface StaffScheduleVersionProps {
   /** Monotonic, 0-based. Never reused, never renumbered. */
@@ -46,13 +78,11 @@ export class StaffScheduleVersion {
   }
 
   coversDay(day: CalendarDay): boolean {
-    if (day.isBefore(this.effectiveFrom)) return false;
-    if (this.effectiveTo === null) return true;
-    return !this.effectiveTo.isBefore(day);
+    return VersionData.coversDay(toVersionData(this), DayKey.of(day.key()));
   }
 
   isOpenEnded(): boolean {
-    return this.effectiveTo === null;
+    return VersionData.isOpenEnded(toVersionData(this));
   }
 
   /** A copy closed at `lastDay` — how a version retires when a new one starts. */
@@ -87,28 +117,25 @@ export class StaffScheduleHistory {
   static create(
     versions: readonly StaffScheduleVersion[],
   ): Result<StaffScheduleHistory, StaffScheduleError> {
-    const sorted = versions
-      .slice()
-      .sort((a, b) => (a.effectiveFrom.isBefore(b.effectiveFrom) ? -1 : 1));
-
-    for (let i = 1; i < sorted.length; i++) {
-      const previous = sorted[i - 1] as StaffScheduleVersion;
-      const current = sorted[i] as StaffScheduleVersion;
-      // An open-ended earlier version, or one whose end reaches the next
-      // start, means two patterns claim the same day.
-      if (
-        previous.effectiveTo === null ||
-        !previous.effectiveTo.isBefore(current.effectiveFrom)
-      ) {
-        return fail(
-          new OverlappingScheduleVersionsError(
-            previous.effectiveFrom.key(),
-            current.effectiveFrom.key(),
-          ),
-        );
-      }
+    const history = VersionData.history(versions.map(toVersionData));
+    if (!history.ok) {
+      const error = history.error;
+      return fail(
+        error.code === SchedulingErrorCode.StaffScheduleOverlappingVersions
+          ? new OverlappingScheduleVersionsError(
+              error.earlierFrom,
+              error.laterFrom,
+            )
+          : new OverlappingScheduleVersionsError('', ''),
+      );
     }
-    return ok(new StaffScheduleHistory(sorted));
+    return ok(
+      new StaffScheduleHistory(
+        history.value.map(
+          (data) => LEGACY_VERSIONS.get(data) as StaffScheduleVersion,
+        ),
+      ),
+    );
   }
 
   static startingWith(
@@ -142,7 +169,11 @@ export class StaffScheduleHistory {
 
   /** The pattern in force on `day`, or `null` before the first version began. */
   versionFor(day: CalendarDay): StaffScheduleVersion | null {
-    return this.versions.find((version) => version.coversDay(day)) ?? null;
+    const found = RosterSystem.versionFor(
+      this.versions.map(toVersionData),
+      DayKey.of(day.key()),
+    );
+    return found === null ? null : (LEGACY_VERSIONS.get(found) ?? null);
   }
 
   /**
@@ -159,29 +190,41 @@ export class StaffScheduleHistory {
     pattern: WeeklyPattern,
     effectiveFrom: CalendarDay,
   ): Result<StaffScheduleHistory, StaffScheduleError> {
-    const last = this.versions[this.versions.length - 1];
-    if (last && !last.effectiveFrom.isBefore(effectiveFrom)) {
+    const amended = VersionData.amend(
+      this.versions.map(toVersionData),
+      [],
+      DayKey.of(effectiveFrom.key()),
+    );
+    if (!amended.ok) {
+      const error = amended.error;
       return fail(
-        new RetroactiveScheduleAmendmentError(
-          effectiveFrom.key(),
-          last.effectiveFrom.key(),
-        ),
+        error.code === SchedulingErrorCode.StaffScheduleRetroactiveAmendment
+          ? new RetroactiveScheduleAmendmentError(
+              error.attemptedFrom,
+              error.currentFrom,
+            )
+          : new RetroactiveScheduleAmendmentError(effectiveFrom.key(), ''),
       );
     }
-
-    const closed = last ? [last.closedAt(effectiveFrom.previous())] : [];
-    const kept = this.versions.slice(0, Math.max(0, this.versions.length - 1));
+    const last = this.versions[this.versions.length - 1];
     return ok(
-      new StaffScheduleHistory([
-        ...kept,
-        ...closed,
-        StaffScheduleVersion.of({
-          seq: (last?.seq ?? -1) + 1,
-          effectiveFrom,
-          effectiveTo: null,
-          pattern,
+      new StaffScheduleHistory(
+        amended.value.map((data) => {
+          const kept = LEGACY_VERSIONS.get(data);
+          if (kept !== undefined) return kept;
+          // The version in force, closed the day before the new one starts…
+          if (last !== undefined && data.seq === last.seq) {
+            return last.closedAt(effectiveFrom.previous());
+          }
+          // …and the new one, open-ended.
+          return StaffScheduleVersion.of({
+            seq: data.seq,
+            effectiveFrom,
+            effectiveTo: null,
+            pattern,
+          });
         }),
-      ]),
+      ),
     );
   }
 }

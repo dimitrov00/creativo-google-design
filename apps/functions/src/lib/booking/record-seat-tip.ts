@@ -1,3 +1,4 @@
+import { AuditSystem } from '@creativo/ecs-core';
 import { HttpsError, onCall } from 'firebase-functions/v2/https';
 import { adminFirestore } from '../firebase-admin';
 import { type AuditSubject, appendAudit, seatSubjectsOf } from './audit';
@@ -152,7 +153,7 @@ export const recordSeatTip = onCall(async (request) => {
       context: { seatId },
       // The seat AND the instant: two seats of one guest tipped in the same
       // millisecond are still two acts.
-      changeKey: `tip:${seatId}:${recordedAtMs}`,
+      changeKey: AuditSystem.changeKey.tip(seatId, recordedAtMs),
     });
   }
 

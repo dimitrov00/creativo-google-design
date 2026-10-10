@@ -13,6 +13,7 @@ import type {
   RhythmRuleWords,
   VisitTranslate,
 } from '@creativo/features/shared/visits';
+import { RhythmDraftSystem } from '@creativo/ecs-core';
 import { pluralForm } from '@creativo/infrastructure/i18n';
 import type {
   UiChoiceOption,
@@ -133,10 +134,11 @@ export function signedDelta(
     : `${MINUS}${figure(context, -delta)}`;
 }
 
-/** Days ↔ weeks, as the interval is edited in weeks and held in days. */
+/** Days ↔ weeks, as the interval is edited in weeks and held in days: `RhythmDraftSystem`'s unit arithmetic. */
 export const weeksOf = (days: number): number =>
-  Math.round(days / DAYS_IN_WEEK);
-export const daysOf = (weeks: number): number => weeks * DAYS_IN_WEEK;
+  RhythmDraftSystem.weeksOf(days);
+export const daysOf = (weeks: number): number =>
+  RhythmDraftSystem.daysOf(weeks);
 
 // ── The menus ────────────────────────────────────────────────────────────
 

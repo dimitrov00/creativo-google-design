@@ -4,18 +4,49 @@ import {
   BookingCart,
   BookingCartError,
   BookingParty,
-  type BookingPartyLabelError,
   CalendarDay,
   CartLineId,
+  CartLineNotFoundError,
   DayWindows,
   DuplicateGuestLabelError,
+  DuplicateServiceForSeatError,
   FlexibleWhen,
   GuestId,
   NewCartLine,
   SeatKey,
+  SeatLabel,
   TimeSlot,
   seatKeyValue,
 } from '@creativo/domain/scheduling';
+import {
+  AppointmentId,
+  BarberId as EcsBarberId,
+  type BookingCart as CartData,
+  BookingCartSystem,
+  type BookingFlowError as EcsBookingFlowError,
+  BookingFlowErrorCode,
+  type BookingFlowEvent as FlowEventData,
+  BookingFlowEventKind,
+  type BookingFlowLimits,
+  BookingFlowState as EcsBookingFlowState,
+  BookingFlowSystem,
+  DayKey as EcsDayKey,
+  DayWindows as DayWindowsData,
+  FlexibleWhen as WhenData,
+  LocationId as EcsLocationId,
+  MinuteRange,
+  type Party as PartyData,
+  PartyMember,
+  PartyMemberKind,
+  type ScheduleSelection as SelectionData,
+  SchedulingErrorCode,
+  SeatLabel as EcsSeatLabel,
+  ServiceId as EcsServiceId,
+  ServiceVariantId as EcsServiceVariantId,
+  TimeInterval,
+  UserId as EcsUserId,
+  WaitlistRequestId,
+} from '@creativo/ecs-core';
 import {
   BarberId,
   LocationId,
@@ -44,6 +75,8 @@ import {
  * policy; every consumer already reads it from one place, so that change is
  * a signature, not a hunt.
  */
+// `BookingPolicy.DEFAULT.maxPartySize`; a literal, so loading this module
+// evaluates nothing of ecs-core (it is on the eager path).
 export const MAX_PARTY_SIZE = 5;
 
 /**
@@ -54,6 +87,7 @@ export const MAX_PARTY_SIZE = 5;
  * already carries it) once the machine takes a policy. Every consumer reads it
  * from one place, so that change is a signature rather than a hunt.
  */
+// `BookingPolicy.DEFAULT.maxFlexibleDays`, literal for the same reason.
 export const MAX_FLEXIBLE_DAYS = 7;
 
 /**
@@ -266,6 +300,8 @@ export type BookingFlowEvent =
   | { readonly type: 'back' };
 
 /** The ordered wizard spine — drives both the stepper and `?step=` rewinding. */
+// `BookingFlowState.SPINE`, literal so the draft store's eager import of it
+// loads nothing of ecs-core.
 export const BOOKING_FLOW_STEPS: readonly BookingFlowStep[] = [
   'location',
   'services',
@@ -276,92 +312,15 @@ export const BOOKING_FLOW_STEPS: readonly BookingFlowStep[] = [
 export function initialBookingFlowState(
   party: BookingParty = BookingParty.createAnonymous(),
 ): BookingFlowState {
+  // The opening step is the component's; only the party is the caller's,
+  // and the bag starts empty.
+  const opening = EcsBookingFlowState.initial(partyDataOf(party));
   return {
-    kind: 'location',
+    kind: opening.kind,
     party,
     cart: BookingCart.empty(),
     locationId: null,
   };
-}
-
-/** The states where the party and the cart are still being assembled. */
-type AssemblingState = Extract<
-  BookingFlowState,
-  { kind: 'location' | 'services' }
->;
-
-/**
- * Guest edits are legal from `guests` AND `services` — the person scope on
- * the services step lets you add someone you forgot without losing the bag,
- * which is half the reason the cart is keyed by seat. Returns `null` when
- * the event isn't a party edit, so the caller can keep matching.
- */
-function advanceParty(
-  state: AssemblingState,
-  event: BookingFlowEvent,
-): Result<BookingFlowState, BookingFlowError> | null {
-  if (event.type === 'add_guest') {
-    // +1 for the booker, who is never on the guest roster.
-    if (state.party.guests.length + 1 >= MAX_PARTY_SIZE) {
-      return fail(new PartyFullError(MAX_PARTY_SIZE));
-    }
-    const result = state.party.addGuest(event.label);
-    if (result.isFailure()) {
-      return fail(guestLabelRefusal(result.error));
-    }
-    return ok({ ...state, party: result.value });
-  }
-
-  if (event.type === 'remove_guest') {
-    const result = state.party.removeGuest(event.guestId);
-    if (result.isFailure()) {
-      return fail(new GuestNotFoundInFlowError(event.guestId.toString()));
-    }
-    // The guest's lines leave with them — a cart line pointing at a seat
-    // nobody occupies would otherwise survive to the confirm write.
-    return ok({
-      ...state,
-      party: result.value,
-      cart: state.cart.dropSeat(SeatKey.guest(event.guestId)),
-    });
-  }
-
-  if (event.type === 'rename_guest') {
-    const result = state.party.renameGuest(event.guestId, event.label);
-    if (result.isFailure()) {
-      // `renameGuest` fails two ways: an array of label errors, or a single
-      // not-found. The array check is the discriminator the domain gives us.
-      return Array.isArray(result.error)
-        ? fail(guestLabelRefusal(result.error))
-        : fail(new GuestNotFoundInFlowError(event.guestId.toString()));
-    }
-    return ok({ ...state, party: result.value });
-  }
-
-  return null;
-}
-
-/**
- * A label the party refused, as the flow reports it. Somebody else's label
- * is its OWN refusal (`DuplicateGuestLabelError`), with its own words —
- * «enter a name» would tell a person who just typed one to type it again.
- */
-function guestLabelRefusal(
-  errors: readonly BookingPartyLabelError[],
-): InvalidGuestError | DuplicateGuestLabelError {
-  const duplicate = errors.find(
-    (error): error is DuplicateGuestLabelError =>
-      error instanceof DuplicateGuestLabelError,
-  );
-  return (
-    duplicate ??
-    new InvalidGuestError(
-      errors.filter(
-        (error): error is Exclude<typeof error, DuplicateGuestLabelError> =>
-          !(error instanceof DuplicateGuestLabelError),
-      ),
-    )
-  );
 }
 
 /**
@@ -373,10 +332,9 @@ function guestLabelRefusal(
  * the guests only. Exported for that reason rather than for this file's use.
  */
 export function partySeats(party: BookingParty): readonly SeatKey[] {
-  return [
-    SeatKey.self(),
-    ...party.guests.map((guest) => SeatKey.guest(guest.id)),
-  ];
+  return BookingCartSystem.partySeats(partyDataOf(party)).map((seat) =>
+    legacySeatKeyOf(party, seat),
+  );
 }
 
 /**
@@ -389,212 +347,525 @@ export function firstSeatWithoutService(
   party: BookingParty,
   cart: BookingCart,
 ): SeatKey | null {
-  return (
-    partySeats(party).find((seat) => cart.lineCountFor(seat) === 0) ?? null
+  const bare = BookingCartSystem.firstSeatWithoutService(
+    partyDataOf(party),
+    cartDataOf(cart),
   );
+  return bare === null ? null : legacySeatKeyOf(party, bare);
 }
 
-function mapCart(
-  state: AssemblingState,
-  result: Result<BookingCart, BookingCartError>,
-): Result<BookingFlowState, BookingFlowError> {
-  if (result.isFailure()) {
-    return fail(new InvalidCartOperationError(result.error));
-  }
-  return ok({ ...state, cart: result.value });
-}
-
-/** Cart edits, legal wherever the cart is still being assembled. */
-function advanceCart(
-  state: AssemblingState,
-  event: BookingFlowEvent,
-): Result<BookingFlowState, BookingFlowError> | null {
-  switch (event.type) {
-    case 'add_line':
-      // A duplicate is now a REFUSAL, not a silently appended second haircut.
-      return mapCart(state, state.cart.addLine(event.seatKey, event.line));
-    case 'remove_line':
-      return mapCart(state, state.cart.removeLine(event.seatKey, event.lineId));
-    case 'set_line_variant':
-      return mapCart(
-        state,
-        state.cart.setVariant(event.seatKey, event.lineId, event.variantId),
-      );
-    case 'set_line_barber':
-      return mapCart(
-        state,
-        state.cart.setBarberPref(event.seatKey, event.lineId, event.barberPref),
-      );
-    default:
-      return null;
-  }
-}
-
+/**
+ * One step of the wizard — `BookingFlowSystem.next` (`@creativo/ecs-core`)
+ * over this module's legacy state: the state and the event are converted to
+ * the component structs, the system decides, and the answer comes back as
+ * the legacy shapes (every bag the step did not change is the caller's own
+ * object; a refusal is the legacy error class).
+ */
 export function advanceBookingFlow(
   state: BookingFlowState,
   event: BookingFlowEvent,
 ): Result<BookingFlowState, BookingFlowError> {
+  const bridge = bridgeOf(state, event);
+  const next = BookingFlowSystem.next(
+    bridge.state,
+    eventDataOf(event, bridge),
+    FLOW_LIMITS,
+  );
+  return next.ok
+    ? ok(legacyStateOf(next.value, bridge))
+    : fail(legacyErrorOf(next.error, state, event));
+}
+
+/* ── The bridge: legacy classes ↔ ecs-core structs (Phase 4 deletes it) ── */
+
+/** The wizard's two policy numbers, as this module has always read them. */
+const FLOW_LIMITS: BookingFlowLimits = {
+  maxPartySize: MAX_PARTY_SIZE,
+  maxFlexibleDays: MAX_FLEXIBLE_DAYS,
+};
+
+function partyDataOf(party: BookingParty): PartyData {
+  return {
+    ownerUserId:
+      party.ownerId === null ? null : EcsUserId.of(party.ownerId.value),
+    members: [
+      PartyMember.owner(),
+      ...party.guests.map((guest) =>
+        PartyMember.guest(guest.id.value, EcsSeatLabel.of(guest.label.value)),
+      ),
+    ],
+    nextGuestSequence: party.nextGuestSequence,
+  };
+}
+
+function legacyPartyOf(party: PartyData): BookingParty {
+  const restored = BookingParty.reconstitute({
+    ownerId: party.ownerUserId,
+    guests: party.members.flatMap((member) =>
+      member.kind === PartyMemberKind.Guest
+        ? [{ id: member.guestId, label: member.label as string }]
+        : [],
+    ),
+    nextSequence: party.nextGuestSequence,
+  });
+  // Unreachable: the system only ever hands back parties its own commands built.
+  if (restored.isFailure()) throw new Error('unreachable: party refused');
+  return restored.value;
+}
+
+function cartDataOf(cart: BookingCart): CartData {
+  return {
+    seats: cart.entries().map(([seatKey, lines]) => ({
+      seatKey,
+      lines: lines.map((line) => ({
+        lineId: line.id.value,
+        seatKey,
+        serviceId: EcsServiceId.of(line.serviceId.value),
+        variantId:
+          line.variantId === null
+            ? null
+            : EcsServiceVariantId.of(line.variantId.value),
+        barberId:
+          line.barberPref.kind === 'specific'
+            ? EcsBarberId.of(line.barberPref.barberId.value)
+            : null,
+        locationId: null,
+      })),
+    })),
+    nextSequence: cart.nextLineSequence,
+  };
+}
+
+function legacyCartOf(cart: CartData): BookingCart {
+  const restored = BookingCart.reconstitute({
+    seats: cart.seats.map((seat) => ({
+      seatKey: seat.seatKey,
+      lines: seat.lines.map((line) => ({
+        id: line.lineId,
+        serviceId: line.serviceId,
+        variantId: line.variantId,
+        barberId: line.barberId,
+      })),
+    })),
+    nextSequence: cart.nextSequence,
+  });
+  // Unreachable: the system only ever hands back carts its own commands built.
+  if (restored.isFailure()) throw new Error('unreachable: cart refused');
+  return restored.value;
+}
+
+function dayWindowsDataOf(day: DayWindows): DayWindowsData {
+  return DayWindowsData.of(
+    EcsDayKey.of(day.dayKey),
+    day.windows.map((window) =>
+      MinuteRange.of(
+        window.start.minutesFromMidnight(),
+        window.end.minutesFromMidnight(),
+      ),
+    ),
+  );
+}
+
+function whenDataOf(when: FlexibleWhen): WhenData {
+  return WhenData.of(when.days.map(dayWindowsDataOf));
+}
+
+function intervalOf(slot: TimeSlot): TimeInterval {
+  return TimeInterval.of(slot.start.toMillis(), slot.end.toMillis());
+}
+
+function selectionDataOf(selection: ScheduleSelection): SelectionData {
+  return {
+    locationId: EcsLocationId.of(selection.locationId.value),
+    timeInterval: intervalOf(selection.timeSlot),
+    assignments: selection.assignments.map((assignment) => ({
+      lineId: assignment.lineId.value,
+      barberId: EcsBarberId.of(assignment.barberId.value),
+      timeInterval: intervalOf(assignment.slot),
+    })),
+  };
+}
+
+/**
+ * The legacy state as the system reads it, and the way back: each struct
+ * built from a legacy bag, mapped to that bag, so a field the step passed
+ * through returns as the caller's own object.
+ */
+type Bridge = {
+  readonly state: EcsBookingFlowState;
+  readonly parties: ReadonlyMap<PartyData, BookingParty>;
+  readonly carts: ReadonlyMap<CartData, BookingCart>;
+  readonly whens: ReadonlyMap<WhenData, FlexibleWhen>;
+  readonly selections: ReadonlyMap<SelectionData, ScheduleSelection>;
+  /** Every legacy shop id in sight, by value. */
+  readonly locations: ReadonlyMap<string, LocationId>;
+  /** Every legacy day's windows in sight, by day key — the event's first. */
+  readonly days: ReadonlyMap<string, DayWindows>;
+  /** The day a toggle names, for a day the declaration did not hold. */
+  readonly toggled: CalendarDay | null;
+};
+
+function bridgeOf(state: BookingFlowState, event: BookingFlowEvent): Bridge {
+  const parties = new Map<PartyData, BookingParty>();
+  const carts = new Map<CartData, BookingCart>();
+  const whens = new Map<WhenData, FlexibleWhen>();
+  const selections = new Map<SelectionData, ScheduleSelection>();
+  const locations = new Map<string, LocationId>();
+  const days = new Map<string, DayWindows>();
+  const party = (legacy: BookingParty): PartyData => {
+    const data = partyDataOf(legacy);
+    parties.set(data, legacy);
+    return data;
+  };
+  const cart = (legacy: BookingCart): CartData => {
+    const data = cartDataOf(legacy);
+    carts.set(data, legacy);
+    return data;
+  };
+  const when = (legacy: FlexibleWhen): WhenData => {
+    const data = whenDataOf(legacy);
+    whens.set(data, legacy);
+    for (const day of legacy.days) {
+      if (!days.has(day.dayKey)) days.set(day.dayKey, day);
+    }
+    return data;
+  };
+  const selection = (legacy: ScheduleSelection): SelectionData => {
+    const data = selectionDataOf(legacy);
+    selections.set(data, legacy);
+    locations.set(legacy.locationId.value, legacy.locationId);
+    return data;
+  };
+  const location = (legacy: LocationId | null): EcsLocationId | null => {
+    if (legacy === null) return null;
+    locations.set(legacy.value, legacy);
+    return EcsLocationId.of(legacy.value);
+  };
+
+  if (event.type === 'set_day_windows') {
+    days.set(event.dayWindows.dayKey, event.dayWindows);
+  }
+  if (event.type === 'select_location') location(event.locationId);
+
+  let data: EcsBookingFlowState;
   switch (state.kind) {
-    case 'location': {
-      const partyAtLocation = advanceParty(state, event);
-      if (partyAtLocation) return partyAtLocation;
-      if (event.type === 'select_location') {
-        return ok({ ...state, locationId: event.locationId });
-      }
-      // `next` needs no precondition: `null` already means "any shop", so
-      // there is nothing left unanswered to block on.
-      // The party is assembled ON the services step now — a screen whose only
-      // job was "add a guest?" asked a question most bookings answer by
-      // walking past it (owner ruling 2026-07-31).
-      if (event.type === 'next') {
-        return ok({
-          kind: 'services',
-          party: state.party,
-          cart: state.cart,
-          locationId: state.locationId,
-        });
-      }
+    case 'location':
+    case 'services':
+      data = {
+        kind: state.kind,
+        party: party(state.party),
+        cart: cart(state.cart),
+        locationId: location(state.locationId),
+      };
       break;
-    }
-
-    case 'services': {
-      const party = advanceParty(state, event);
-      if (party) return party;
-      const cart = advanceCart(state, event);
-      if (cart) return cart;
-      if (event.type === 'back') {
-        return ok({
-          kind: 'location',
-          party: state.party,
-          cart: state.cart,
-          locationId: state.locationId,
-        });
-      }
-      if (event.type === 'next') {
-        if (state.cart.isEmpty()) {
-          return fail(new EmptyCartError());
-        }
-        // Everyone who is coming has to be booking something. A seat with no
-        // lines produces no assignment, so it would leave the step here and
-        // reappear nowhere — not on the schedule, not on the review, not in
-        // the commit. The empty-cart check above stays first: with nothing at
-        // all in the bag, "pick a service" is the truer message than naming
-        // the booker as the person who has none.
-        const bare = firstSeatWithoutService(state.party, state.cart);
-        if (bare) {
-          return fail(new SeatWithoutServiceError(seatKeyValue(bare)));
-        }
-        // One label, one guest. The commands already refuse a second guest
-        // under a taken label; only a restored draft can still hold one, and
-        // past this step the grid would seat them as two people while the
-        // server counts one. One rename, here, is the fix.
-        const shared = state.party.sharedLabel();
-        if (shared) {
-          return fail(new DuplicateGuestLabelError(shared.value));
-        }
-        return ok({
-          kind: 'schedule',
-          party: state.party,
-          cart: state.cart,
-          locationId: state.locationId,
-          when: FlexibleWhen.empty(),
-        });
-      }
+    case 'schedule':
+      data = {
+        kind: state.kind,
+        party: party(state.party),
+        cart: cart(state.cart),
+        locationId: location(state.locationId),
+        when: when(state.when),
+      };
       break;
-    }
-
-    case 'schedule': {
-      if (event.type === 'select_location') {
-        return ok({ ...state, locationId: event.locationId });
-      }
-      if (event.type === 'select_schedule') {
-        return ok({
-          kind: 'review',
-          party: state.party,
-          cart: state.cart,
-          selection: event.selection,
-        });
-      }
-      if (event.type === 'toggle_flexible_day') {
-        if (state.when.has(event.day)) {
-          return ok({ ...state, when: state.when.withoutDay(event.day) });
-        }
-        const added = state.when.withDay(event.day, MAX_FLEXIBLE_DAYS);
-        if (added.isFailure()) {
-          return fail(new FlexibleDaysFullError(MAX_FLEXIBLE_DAYS));
-        }
-        return ok({ ...state, when: added.value });
-      }
-      if (event.type === 'set_day_windows') {
-        // `withWindows` ignores a day that is not selected, so a sheet that
-        // outlives its day cannot resurrect it as a windows-only entry.
-        return ok({ ...state, when: state.when.withWindows(event.dayWindows) });
-      }
-      if (event.type === 'clear_flexible') {
-        return ok({ ...state, when: FlexibleWhen.empty() });
-      }
-      if (event.type === 'waitlisted') {
-        // A request naming no days is not a request — the aggregate refuses it
-        // server-side too, and this keeps the terminal state honest.
-        if (state.when.isEmpty()) return fail(new NoFlexibleDaysError());
-        return ok({
-          kind: 'waitlisted',
-          summary: {
-            requestId: event.requestId,
-            party: state.party,
-            cart: state.cart,
-            when: state.when,
-            locationId: state.locationId,
-          },
-        });
-      }
-      if (event.type === 'back') {
-        return ok({
-          kind: 'services',
-          party: state.party,
-          cart: state.cart,
-          locationId: state.locationId,
-        });
-      }
+    case 'review':
+      data = {
+        kind: state.kind,
+        party: party(state.party),
+        cart: cart(state.cart),
+        selection: selection(state.selection),
+      };
       break;
-    }
-
-    case 'review': {
-      if (event.type === 'confirmed') {
-        return ok({
-          kind: 'confirmed',
-          confirmation: {
-            appointmentId: event.appointmentId,
-            party: state.party,
-            cart: state.cart,
-            selection: state.selection,
-          },
-        });
-      }
-      if (event.type === 'back') {
-        // The location the user already picked survives the step back —
-        // re-asking "which shop?" after a glance at the summary is exactly
-        // the friction that makes a wizard feel like a form.
-        return ok({
-          kind: 'schedule',
-          party: state.party,
-          cart: state.cart,
-          locationId: state.selection.locationId,
-          // The declaration does NOT survive a trip through review: reaching
-          // review means something concrete was chosen, so coming back to
-          // re-choose starts from the day grid rather than from a flexible
-          // search whose results are now one accepted match out of date.
-          when: FlexibleWhen.empty(),
-        });
-      }
-      break;
-    }
-
     case 'confirmed':
+      data = {
+        kind: state.kind,
+        confirmation: {
+          appointmentId: AppointmentId.of(state.confirmation.appointmentId),
+          party: party(state.confirmation.party),
+          cart: cart(state.confirmation.cart),
+          selection: selection(state.confirmation.selection),
+        },
+      };
+      break;
     case 'waitlisted':
-      // Terminal — no outgoing transitions (mirrors v2's terminal states).
+      data = {
+        kind: state.kind,
+        summary: {
+          requestId: WaitlistRequestId.of(state.summary.requestId),
+          party: party(state.summary.party),
+          cart: cart(state.summary.cart),
+          when: when(state.summary.when),
+          locationId: location(state.summary.locationId),
+        },
+      };
       break;
   }
+  return {
+    state: data,
+    parties,
+    carts,
+    whens,
+    selections,
+    locations,
+    days,
+    toggled: event.type === 'toggle_flexible_day' ? event.day : null,
+  };
+}
 
-  return fail(new InvalidBookingFlowTransitionError(state.kind, event.type));
+/** The event as the system reads it; a picked schedule joins the bridge. */
+function eventDataOf(event: BookingFlowEvent, bridge: Bridge): FlowEventData {
+  const selections = bridge.selections as Map<SelectionData, ScheduleSelection>;
+  switch (event.type) {
+    case 'add_guest':
+      return { kind: BookingFlowEventKind.AddGuest, label: event.label };
+    case 'remove_guest':
+      return {
+        kind: BookingFlowEventKind.RemoveGuest,
+        guestId: event.guestId.value,
+      };
+    case 'rename_guest':
+      return {
+        kind: BookingFlowEventKind.RenameGuest,
+        guestId: event.guestId.value,
+        label: event.label,
+      };
+    case 'add_line':
+      return {
+        kind: BookingFlowEventKind.AddLine,
+        seatKey: seatKeyValue(event.seatKey),
+        line: {
+          serviceId: EcsServiceId.of(event.line.serviceId.value),
+          variantId:
+            event.line.variantId === null
+              ? null
+              : EcsServiceVariantId.of(event.line.variantId.value),
+          barberId:
+            event.line.barberPref.kind === 'specific'
+              ? EcsBarberId.of(event.line.barberPref.barberId.value)
+              : null,
+          locationId: null,
+        },
+      };
+    case 'remove_line':
+      return {
+        kind: BookingFlowEventKind.RemoveLine,
+        seatKey: seatKeyValue(event.seatKey),
+        lineId: event.lineId.value,
+      };
+    case 'set_line_variant':
+      return {
+        kind: BookingFlowEventKind.SetLineVariant,
+        seatKey: seatKeyValue(event.seatKey),
+        lineId: event.lineId.value,
+        variantId:
+          event.variantId === null
+            ? null
+            : EcsServiceVariantId.of(event.variantId.value),
+      };
+    case 'set_line_barber':
+      return {
+        kind: BookingFlowEventKind.SetLineBarber,
+        seatKey: seatKeyValue(event.seatKey),
+        lineId: event.lineId.value,
+        barberId:
+          event.barberPref.kind === 'specific'
+            ? EcsBarberId.of(event.barberPref.barberId.value)
+            : null,
+      };
+    case 'select_location':
+      return {
+        kind: BookingFlowEventKind.SelectLocation,
+        locationId:
+          event.locationId === null
+            ? null
+            : EcsLocationId.of(event.locationId.value),
+      };
+    case 'select_schedule': {
+      const data = selectionDataOf(event.selection);
+      selections.set(data, event.selection);
+      return { kind: BookingFlowEventKind.SelectSchedule, selection: data };
+    }
+    case 'toggle_flexible_day':
+      return {
+        kind: BookingFlowEventKind.ToggleFlexibleDay,
+        dayKey: EcsDayKey.of(event.day.key()),
+      };
+    case 'set_day_windows':
+      return {
+        kind: BookingFlowEventKind.SetDayWindows,
+        dayWindows: dayWindowsDataOf(event.dayWindows),
+      };
+    case 'clear_flexible':
+      return { kind: BookingFlowEventKind.ClearFlexible };
+    case 'confirmed':
+      return {
+        kind: BookingFlowEventKind.Confirmed,
+        appointmentId: AppointmentId.of(event.appointmentId),
+      };
+    case 'waitlisted':
+      return {
+        kind: BookingFlowEventKind.Waitlisted,
+        requestId: WaitlistRequestId.of(event.requestId),
+      };
+    case 'next':
+      return { kind: BookingFlowEventKind.Next };
+    case 'back':
+      return { kind: BookingFlowEventKind.Back };
+  }
+}
+
+function legacyPartyFrom(bridge: Bridge, party: PartyData): BookingParty {
+  return bridge.parties.get(party) ?? legacyPartyOf(party);
+}
+
+function legacyCartFrom(bridge: Bridge, cart: CartData): BookingCart {
+  return bridge.carts.get(cart) ?? legacyCartOf(cart);
+}
+
+function legacyLocationFrom(
+  bridge: Bridge,
+  locationId: EcsLocationId | null,
+): LocationId | null {
+  if (locationId === null) return null;
+  return bridge.locations.get(locationId) ?? null;
+}
+
+function legacySelectionFrom(
+  bridge: Bridge,
+  selection: SelectionData,
+): ScheduleSelection {
+  // The step never builds a selection: it is the state's or the event's.
+  return bridge.selections.get(selection) as ScheduleSelection;
+}
+
+/** A declaration the step changed, rebuilt from the legacy days in sight. */
+function legacyWhenFrom(bridge: Bridge, when: WhenData): FlexibleWhen {
+  const own = bridge.whens.get(when);
+  if (own !== undefined) return own;
+  if (WhenData.isEmpty(when)) return FlexibleWhen.empty();
+  return FlexibleWhen.of(
+    when.days.map(
+      (day) =>
+        bridge.days.get(day.dayKey) ??
+        DayWindows.of(bridge.toggled as CalendarDay),
+    ),
+  );
+}
+
+function legacyStateOf(
+  next: EcsBookingFlowState,
+  bridge: Bridge,
+): BookingFlowState {
+  switch (next.kind) {
+    case 'location':
+    case 'services':
+      return {
+        kind: next.kind,
+        party: legacyPartyFrom(bridge, next.party),
+        cart: legacyCartFrom(bridge, next.cart),
+        locationId: legacyLocationFrom(bridge, next.locationId),
+      };
+    case 'schedule':
+      return {
+        kind: next.kind,
+        party: legacyPartyFrom(bridge, next.party),
+        cart: legacyCartFrom(bridge, next.cart),
+        locationId: legacyLocationFrom(bridge, next.locationId),
+        when: legacyWhenFrom(bridge, next.when),
+      };
+    case 'review':
+      return {
+        kind: next.kind,
+        party: legacyPartyFrom(bridge, next.party),
+        cart: legacyCartFrom(bridge, next.cart),
+        selection: legacySelectionFrom(bridge, next.selection),
+      };
+    case 'confirmed':
+      return {
+        kind: next.kind,
+        confirmation: {
+          appointmentId: next.confirmation.appointmentId,
+          party: legacyPartyFrom(bridge, next.confirmation.party),
+          cart: legacyCartFrom(bridge, next.confirmation.cart),
+          selection: legacySelectionFrom(bridge, next.confirmation.selection),
+        },
+      };
+    case 'waitlisted':
+      return {
+        kind: next.kind,
+        summary: {
+          requestId: next.summary.requestId,
+          party: legacyPartyFrom(bridge, next.summary.party),
+          cart: legacyCartFrom(bridge, next.summary.cart),
+          when: legacyWhenFrom(bridge, next.summary.when),
+          locationId: legacyLocationFrom(bridge, next.summary.locationId),
+        },
+      };
+  }
+}
+
+/** A seat key value back as the legacy key — the booker's, or a guest's own id. */
+function legacySeatKeyOf(party: BookingParty, seat: string): SeatKey {
+  const guest = party.guests.find((candidate) => candidate.id.value === seat);
+  return guest === undefined ? SeatKey.self() : SeatKey.guest(guest.id);
+}
+
+/** The label a guest event carries, for the label refusals. */
+function labelOf(event: BookingFlowEvent): string {
+  return event.type === 'add_guest' || event.type === 'rename_guest'
+    ? event.label
+    : '';
+}
+
+/** The system's refusal as the legacy error class, its parameters the event's. */
+function legacyErrorOf(
+  error: EcsBookingFlowError,
+  state: BookingFlowState,
+  event: BookingFlowEvent,
+): BookingFlowError {
+  switch (error.code) {
+    case BookingFlowErrorCode.InvalidTransition:
+      return new InvalidBookingFlowTransitionError(state.kind, event.type);
+    case BookingFlowErrorCode.InvalidGuest: {
+      const label = SeatLabel.create(labelOf(event));
+      return new InvalidGuestError(label.isFailure() ? [label.error] : []);
+    }
+    case SchedulingErrorCode.PartyDuplicateLabel:
+      return new DuplicateGuestLabelError(error.label);
+    case BookingFlowErrorCode.GuestNotFound:
+      return new GuestNotFoundInFlowError(error.guestId);
+    case BookingFlowErrorCode.PartyFull:
+      return new PartyFullError(error.max);
+    case BookingFlowErrorCode.EmptyCart:
+      return new EmptyCartError();
+    case BookingFlowErrorCode.SeatWithoutService:
+      return new SeatWithoutServiceError(error.seatKey);
+    case BookingFlowErrorCode.FlexibleDaysFull:
+      return new FlexibleDaysFullError(error.max);
+    case BookingFlowErrorCode.NoFlexibleDays:
+      return new NoFlexibleDaysError();
+    case BookingFlowErrorCode.InvalidCartOperation:
+      return new InvalidCartOperationError(legacyCartErrorOf(error, event));
+  }
+}
+
+/** The cart refusal underneath, as the legacy class, named by the event. */
+function legacyCartErrorOf(
+  error: EcsBookingFlowError.InvalidCartOperation,
+  event: BookingFlowEvent,
+): BookingCartError {
+  const seatKey =
+    'seatKey' in event ? seatKeyValue(event.seatKey) : SeatKey.self().kind;
+  if (
+    error.reasonCode === SchedulingErrorCode.CartDuplicateService &&
+    event.type === 'add_line'
+  ) {
+    return new DuplicateServiceForSeatError(
+      seatKey,
+      event.line.serviceId.value,
+    );
+  }
+  return new CartLineNotFoundError(
+    seatKey,
+    'lineId' in event ? event.lineId.value : '',
+  );
 }

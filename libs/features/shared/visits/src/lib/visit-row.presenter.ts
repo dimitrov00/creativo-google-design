@@ -9,12 +9,17 @@ import {
   type SeatOutcome,
   type WaitlistRequest,
   ZonedDateTime,
-  clientCaused,
   daypartsTouchedBy,
   formatMoney,
   ownerUserIdOf,
   subjectVisitOf,
 } from '@creativo/application/booking';
+import {
+  DayKey,
+  type PersonSubject,
+  SeatOutcome as EcsSeatOutcome,
+  VisitStorySystem,
+} from '@creativo/ecs-core';
 import { pluralForm } from '@creativo/infrastructure/i18n';
 import { dayRange } from './day-range';
 import type { StaffEventLine } from './event-head/staff-event-line';
@@ -46,6 +51,12 @@ import type {
  *
  * Every date is formatted on the visit's own calendar — the shop's zone
  * travels with the instant — never on the device's.
+ *
+ * Phase 2: the story's math — whose seats, the root outcome, the decisive
+ * cancellation and its side, the people counted, the upcoming rule, the
+ * runs of watched days — is `VisitStorySystem` in `@creativo/ecs-core`;
+ * the words, the clock's formatting and the money's stay here. The legacy
+ * shapes reach it through the converters at the end of this file.
  */
 
 /**
@@ -233,7 +244,11 @@ export function visitRowOf(
   const story = storyOf(appointment, options);
   const id = appointment.id.value;
   const current = id === options.currentAppointmentId;
-  const upcoming = story.outcome === 'open' && startMs >= options.nowMs;
+  const upcoming = VisitStorySystem.isUpcoming(
+    story.outcome,
+    startMs,
+    options.nowMs,
+  );
   const hollow = story.outcome === 'cancelled' || story.outcome === 'no_show';
 
   const title =
@@ -634,25 +649,15 @@ export function storyOf(
 }
 
 function rootStoryOf(appointment: Appointment): VisitStory {
-  switch (appointment.status.kind) {
-    case 'completed':
-      return { seats: appointment.seats, outcome: 'worked', cancelledBy: null };
-    case 'no_show':
-      return {
-        seats: appointment.seats,
-        outcome: 'no_show',
-        cancelledBy: null,
-      };
-    case 'cancelled':
-      return {
-        seats: appointment.seats,
-        outcome: 'cancelled',
-        cancelledBy: sideOf(lastCancellation(appointment.seats)),
-      };
-    case 'pending':
-    case 'confirmed':
-      return { seats: appointment.seats, outcome: 'open', cancelledBy: null };
-  }
+  const root = VisitStorySystem.rootStory(
+    appointment.status.kind,
+    appointment.seats.map((seat) => toEcsOutcome(seat.outcome)),
+  );
+  return {
+    seats: appointment.seats,
+    outcome: root.outcome,
+    cancelledBy: root.cancelledBy,
+  };
 }
 
 /**
@@ -661,20 +666,9 @@ function rootStoryOf(appointment: Appointment): VisitStory {
  * seats, so only a hand-edited document — holds nothing against the client.
  */
 function sideOf(cancellation: Cancellation | null): 'client' | 'shop' {
-  return cancellation !== null && clientCaused(cancellation)
-    ? 'client'
-    : 'shop';
-}
-
-/** The seat called off LAST: the cancellation that ended the visit. */
-function lastCancellation(seats: readonly Seat[]): Cancellation | null {
-  let last: Cancellation | null = null;
-  for (const seat of seats) {
-    const outcome = seat.outcome;
-    if (outcome.kind !== 'cancelled') continue;
-    if (last === null || outcome.atMs > last.atMs) last = outcome;
-  }
-  return last;
+  return VisitStorySystem.cancelledSide(
+    cancellation === null ? null : toEcsCancellation(cancellation),
+  );
 }
 
 /**
@@ -697,21 +691,15 @@ function priceOf(appointment: Appointment, seats: readonly Seat[]): Money {
 
 /** The OTHER people on the visit — an account by its id, a guest by the seat's name. */
 function peersOf(appointment: Appointment, own: readonly Seat[]): number {
-  const people = new Set<string>();
-  for (const seat of appointment.seats) {
-    if (own.includes(seat)) continue;
-    people.add(
-      seat.subject.kind === 'account'
-        ? `account:${seat.subject.userId.value}`
-        : `guest:${seat.subject.label.value}`,
-    );
-  }
-  return people.size;
+  return VisitStorySystem.peerCount(
+    appointment.seats.map((seat) => toPersonSubject(seat)),
+    appointment.seats.map((seat) => own.includes(seat)),
+  );
 }
 
 /** Present names, each once, in first-seen order. */
 export function distinct(names: readonly (string | null)[]): string[] {
-  return [...new Set(names.filter((name): name is string => name !== null))];
+  return [...VisitStorySystem.distinct(names)];
 }
 
 // ── The clock ──────────────────────────────────────────────────────────
@@ -822,24 +810,19 @@ interface DayRun {
 
 /** Runs of consecutive calendar days, in order — «чт, пт» reads «чт – пт». */
 function runsOf(days: readonly DayWindows[]): readonly DayRun[] {
-  const runs: DayRun[] = [];
-  for (const day of days) {
-    const run = runs.at(-1);
-    if (run !== undefined && run.last.day.next().equals(day.day)) {
-      runs[runs.length - 1] = { first: run.first, last: day };
-    } else {
-      runs.push({ first: day, last: day });
-    }
-  }
-  return runs;
+  return VisitStorySystem.dayRuns(
+    days.map((day) => DayKey.of(day.day.key())),
+  ).map((run) => ({
+    first: days[run.first] as DayWindows,
+    last: days[run.last] as DayWindows,
+  }));
 }
 
 /** Inside the coming week: the weekday says it («чт»). */
 function withinWeek(day: DayWindows, today: CalendarDay | null): boolean {
-  return (
-    today !== null &&
-    !day.day.isBefore(today) &&
-    day.day.isBefore(today.plusDays(7))
+  return VisitStorySystem.withinWeek(
+    DayKey.of(day.day.key()),
+    today === null ? null : DayKey.of(today.key()),
   );
 }
 
@@ -881,4 +864,40 @@ function dayLong(
           ? {}
           : { year: 'numeric' }),
       });
+}
+
+// ── Legacy ↔ ECS converters (Phase 2 shim) ──────────────────────────────
+
+/** A legacy seat outcome → the `SeatOutcome` struct. */
+function toEcsOutcome(outcome: SeatOutcome): EcsSeatOutcome {
+  switch (outcome.kind) {
+    case 'scheduled':
+      return EcsSeatOutcome.scheduled();
+    case 'worked':
+      return EcsSeatOutcome.worked(outcome.atMs);
+    case 'no_show':
+      return EcsSeatOutcome.noShow(outcome.atMs);
+    case 'cancelled':
+      return toEcsCancellation(outcome);
+  }
+}
+
+/** A legacy cancellation → the struct (its stamped window as whole hours). */
+function toEcsCancellation(
+  cancellation: Cancellation,
+): EcsSeatOutcome.Cancelled {
+  return {
+    kind: 'cancelled',
+    atMs: cancellation.atMs,
+    by: cancellation.by,
+    reason: { kind: cancellation.reason.kind },
+    windowHours: cancellation.window?.hours ?? null,
+  };
+}
+
+/** Who a legacy seat is for, as people are counted. */
+function toPersonSubject(seat: Seat): PersonSubject {
+  return seat.subject.kind === 'account'
+    ? { kind: 'account', userId: seat.subject.userId.value }
+    : { kind: 'anonymous', label: seat.subject.label.value };
 }

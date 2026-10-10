@@ -3,10 +3,8 @@ import { deleteDoc, getDoc, setDoc, writeBatch } from 'firebase/firestore';
 import { FIREBASE_FIRESTORE } from '@creativo/infrastructure/firebase-app';
 import {
   ScheduleExceptionWriter,
-  coalesceRanges,
   exceptionFromDocument,
   exceptionToDocument,
-  withoutRange,
 } from '@creativo/application/booking';
 import { RepositoryError } from '@creativo/application/shared';
 import { BarberId, LocationId } from '@creativo/domain/catalog';
@@ -14,20 +12,76 @@ import { Result, fail, ok } from '@creativo/domain/kernel';
 import {
   CalendarDay,
   type EmptyExceptionRangesError,
+  LocalTimeOfDay,
   LocalTimeRange,
   ScheduleException,
   ScheduleExceptionId,
+  toEcsDetail,
 } from '@creativo/domain/scheduling';
+import {
+  type ExceptionEffect,
+  MinuteRange,
+  ScheduleExceptionSystem,
+} from '@creativo/ecs-core';
 import { scheduleExceptionDocRef } from './firestore-paths';
 
 /** Firestore's ceiling on the writes one batch may carry. */
 const BATCH_LIMIT = 500;
 
+/* ── Legacy ↔ ECS converters (the merge arithmetic is ScheduleExceptionSystem) ── */
+
+function toMinuteRange(range: LocalTimeRange): MinuteRange {
+  return MinuteRange.of(
+    range.start.minutesFromMidnight(),
+    range.end.minutesFromMidnight(),
+  );
+}
+
+function toMinuteRanges(
+  ranges: readonly LocalTimeRange[],
+): readonly MinuteRange[] {
+  return ranges.map(toMinuteRange);
+}
+
+/** Minutes back to clock faces; a span no clock face can name is dropped (unreachable). */
+function toLocalRanges(
+  ranges: readonly MinuteRange[],
+): readonly LocalTimeRange[] {
+  const out: LocalTimeRange[] = [];
+  for (const range of ranges) {
+    const start = LocalTimeOfDay.of(
+      Math.floor(range.startMinutes / 60),
+      range.startMinutes % 60,
+    );
+    const end = LocalTimeOfDay.of(
+      Math.floor(range.endMinutes / 60),
+      range.endMinutes % 60,
+    );
+    if (start.isFailure() || end.isFailure()) continue;
+    const local = LocalTimeRange.of(start.value, end.value);
+    if (local.isSuccess()) out.push(local.value);
+  }
+  return out;
+}
+
 /**
- * What a day holds once `ranges` are added to it: the union with what is
- * there, coalesced — or `null` when a whole-day absence already covers
- * every minute, so the ranges add nothing and must not demote the day to
- * a partial block. ONE answer for `putRange` and `putSeries`.
+ * A stored day's public effect, as the system reads it — the GDPR boundary
+ * is `ScheduleExceptionSystem.publicEffect`, the detail converted once by
+ * the scheduling shim's `toEcsDetail`.
+ */
+function effectOf(existing: ScheduleException | null): ExceptionEffect | null {
+  if (existing === null) return null;
+  const effect = ScheduleExceptionSystem.publicEffect(
+    toEcsDetail(existing.detail),
+  );
+  return effect.ok ? effect.value : null;
+}
+
+/**
+ * What a day holds once `ranges` are added to it — `ScheduleExceptionSystem.addRanges`:
+ * the union with what is there, coalesced, or `null` when a whole-day
+ * absence already covers every minute. ONE answer for `putRange` and
+ * `putSeries`.
  */
 function withRanges(
   existing: ScheduleException | null,
@@ -36,9 +90,11 @@ function withRanges(
   day: CalendarDay,
   ranges: readonly LocalTimeRange[],
 ): Result<ScheduleException, EmptyExceptionRangesError> | null {
-  if (existing?.isWholeDay()) return null;
-  const current =
-    existing && 'ranges' in existing.detail ? existing.detail.ranges : [];
+  const added = ScheduleExceptionSystem.addRanges(
+    effectOf(existing),
+    toMinuteRanges(ranges),
+  );
+  if (added === null) return null;
   return ScheduleException.create({
     id: ScheduleExceptionId.of(`${barberId.value}__${day.key()}`),
     day,
@@ -46,7 +102,7 @@ function withRanges(
     locationId,
     detail: {
       kind: 'admin',
-      ranges: coalesceRanges([...current, ...ranges]),
+      ranges: added.ok ? toLocalRanges(added.value.ranges) : [],
       note: '',
     },
   });
@@ -229,7 +285,12 @@ export class FirestoreScheduleExceptionWriter implements ScheduleExceptionWriter
         // clear is the honest path and the sheet offers it as such.
         return fail(new RepositoryError('The day is off, not blocked'));
       }
-      const left = withoutRange(existing.detail.ranges, range);
+      const left = toLocalRanges(
+        ScheduleExceptionSystem.withoutRange(
+          toMinuteRanges(existing.detail.ranges),
+          toMinuteRange(range),
+        ),
+      );
       if (left.length === 0) {
         await deleteDoc(ref);
         return ok(undefined);

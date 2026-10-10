@@ -12,6 +12,13 @@ import type {
   StreakDefinition,
   StreakState,
 } from '@creativo/application/engagement';
+import {
+  DayKey,
+  type PersonalRecord as SystemRecord,
+  type RecordVisit,
+  RecordsSystem,
+  ServiceId as ServiceRefId,
+} from '@creativo/ecs-core';
 import type { UiIconName } from '@creativo/ui/controls';
 import type { AchievementsContext } from './achievements.presenter';
 import {
@@ -32,12 +39,7 @@ import type {
   RecordsPageVm,
 } from './client-pages.vm';
 import type { RecordRowWord } from './client-card.words';
-import {
-  RECORD_ICONS,
-  recordCardVm,
-  recordSetOn,
-  recordsOf,
-} from './medals.presenter';
+import { RECORD_ICONS, recordCardVm, recordsOf } from './medals.presenter';
 
 /*
  * «РЕКОРДИ» (client-card-revision-3 §2.3.4, §4.8) — the page behind the
@@ -104,7 +106,7 @@ const ROW_ICONS: Readonly<
 };
 
 /** «По години» says something from the second year on: one bar is «Общо посещения» again. */
-export const YEARS_MIN = 2;
+export const YEARS_MIN = RecordsSystem.YEARS_MIN;
 
 function themeOf(id: string): RecordTheme {
   return THEMES.find((group) => group.rows.includes(id))?.theme ?? 'visits';
@@ -143,16 +145,17 @@ function featuredOf(
   const { data, ctx } = input;
   const words = ctx.words;
   const lang = words.lang;
-  const newest = records
-    .flatMap((record, index) => {
-      const card = recordCardVm(record, data, ctx);
-      return card === null
-        ? []
-        : [{ record, card, index, on: recordSetOn(record, data.today) }];
-    })
-    .sort(
-      (a, b) => (b.on ?? '').localeCompare(a.on ?? '') || a.index - b.index,
-    )[0];
+  const shown = records.flatMap((record) => {
+    const card = recordCardVm(record, data, ctx);
+    return card === null ? [] : [{ record, card }];
+  });
+  // The record set most recently: `RecordsSystem.newest`, the cards' order
+  // breaking a tie.
+  const index = RecordsSystem.newest(
+    shown.map(({ record }) => recordOf(record)),
+    DayKey.of(data.today),
+  );
+  const newest = index === null ? undefined : shown.at(index);
   if (newest === undefined) return null;
   const { record, card } = newest;
   let value = card.value;
@@ -444,36 +447,25 @@ function yearsOf(
   const subject = UserId.create(data.account.userId);
   if (subject.isFailure()) return null;
 
-  const counts = new Map<number, number>();
-  const seen = new Set<string>();
+  // The worked visits of this person, by the shop's day; the counting is
+  // `RecordsSystem.years`.
+  const worked: RecordVisit[] = [];
   for (const appointment of input.visits) {
-    if (seen.has(appointment.id.value)) continue;
-    seen.add(appointment.id.value);
     const visit = subjectVisitOf(subject.value, appointment);
     if (visit === null || visit.outcome.kind !== 'worked') continue;
-    const year = Number(shopDayOf(visit.atMs).slice(0, 4));
-    counts.set(year, (counts.get(year) ?? 0) + 1);
+    worked.push({
+      appointmentId: appointment.id.value,
+      day: DayKey.of(shopDayOf(visit.atMs)),
+    });
   }
-  if (counts.size === 0) return null;
-  const first = Math.min(...counts.keys());
-  const last = Math.max(...counts.keys());
-  if (last - first + 1 < YEARS_MIN) return null;
-
-  const best = Math.max(...counts.values());
-  const bestYears = [...counts.entries()]
-    .filter(([, count]) => count === best)
-    .map(([year]) => year)
-    .sort((a, b) => a - b);
   const stamped =
     records.find((record) => record.kind === 'mostVisitsInYear')?.year ?? null;
-  const recordYear =
-    stamped !== null && bestYears.includes(stamped) ? stamped : bestYears[0];
+  const counted = RecordsSystem.years(worked, stamped);
+  if (counted === null) return null;
 
   const years: RecordYearVm[] = [];
-  for (let year = last; year >= first; year -= 1) {
-    const count = counts.get(year) ?? 0;
-    const record = year === recordYear;
-    const label = String(year);
+  for (const { year: number, count, best, record } of counted) {
+    const label = String(number);
     const name = words.records.yearName(label, count, record);
     years.push({
       year: label,
@@ -518,5 +510,19 @@ export function recordsPageVm(input: RecordsPageInput): RecordsPageVm {
     featured,
     groups,
     years: yearsOf(records, input),
+  };
+}
+
+// ── The bridge: legacy record → ecs-core struct (Phase 4 deletes it) ─────
+
+/** A personal record as `RecordsSystem` reads it: the same figures, days and ids as brands. */
+function recordOf(record: PersonalRecord): SystemRecord {
+  return {
+    kind: record.kind,
+    value: record.value,
+    on: record.on === null ? null : DayKey.of(record.on),
+    year: record.year,
+    serviceId:
+      record.serviceId === null ? null : ServiceRefId.of(record.serviceId),
   };
 }

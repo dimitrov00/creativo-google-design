@@ -70,11 +70,6 @@ export type {
 // the application barrel hands on to the features. The stars above carry
 // these already; this list keeps them on the barrel whatever becomes of
 // the stars.
-export {
-  STREAK_EXCUSES,
-  STREAK_LIMITS,
-  StreakDefinition,
-} from './lib/loyalty/streak-definition';
 export type {
   StreakDefinitionProps,
   StreakExcuse,
@@ -82,13 +77,9 @@ export type {
   StreakRuleDirection,
   StreakRuleSummary,
 } from './lib/loyalty/streak-definition';
-export { StreakDefinitionError } from './lib/loyalty/streak-definition.errors';
 export type { StreakDefinitionField } from './lib/loyalty/streak-definition.errors';
-export { StreakInterval } from './lib/loyalty/streak-interval';
 export type { StreakIntervalProps } from './lib/loyalty/streak-interval';
-export { StreakQualifier } from './lib/loyalty/streak-qualifier';
 export type { StreakQualifierProps } from './lib/loyalty/streak-qualifier';
-export { StreakDefinitionSchedule } from './lib/loyalty/streak-schedule';
 export type { StreakTransition } from './lib/loyalty/streak-schedule';
 
 // The projector (client-card-revision-3 §4.2): the pure fold from one
@@ -97,9 +88,9 @@ export type { StreakTransition } from './lib/loyalty/streak-schedule';
 // five fact types and `STREAK_PERIODS_KEPT`; the two names of the contract
 // (§7.3) are listed by name as well, as the rule's are above.
 export * from './lib/loyalty/streak-projector';
-export { projectStreak } from './lib/loyalty/streak-projector';
 export type { StreakFacts } from './lib/loyalty/streak-projector';
 
 // `StreakPeriodFact`, `CouponOccasion` and `CouponOccasionUnknownError`
 // need no line: the stars of `projections`, `coupon` and `coupon.errors`
 // carry them.
+export * from './lib/public-reexports';

@@ -1,4 +1,4 @@
-import { MAX_AGE, type User } from '@creativo/application/accounts';
+import type { User } from '@creativo/application/accounts';
 import {
   type Appointment,
   CalendarDay,
@@ -24,13 +24,26 @@ import {
   visitRowOf,
   waitlistCardOf,
 } from '@creativo/features/shared/visits';
+import {
+  AgeSystem,
+  BirthDate,
+  ClientGlanceSystem,
+  CouponGrantSystem,
+  CouponOccasion,
+  DayKey,
+  type GiftVoucherEntity,
+  GiftVoucherId,
+  type Money as SystemMoney,
+  UserId as UserRefId,
+  VoucherCode,
+  VoucherState,
+} from '@creativo/ecs-core';
 import type { AchievementsContext } from './achievements.presenter';
 import type { ClientCardGrant } from './client-card.contracts';
 import {
   cardLocaleOf,
   dayShort,
   dayWithYear,
-  daysBetweenDays,
   figure,
   heldFacts,
   hungJoints,
@@ -91,6 +104,9 @@ import { medalRingVm } from './medals.presenter';
 
 /** No-shows in the last 90 days that raise the reliability capsule (old spec R47). */
 const NO_SHOW_CAPSULE_AT = 2;
+
+/** The shop's zone: a voucher's last day is read on its calendar. */
+const SHOP_ZONE = 'Europe/Sofia';
 
 /** How far ahead a birthday is said: the week to come, never further. */
 const BIRTHDAY_NOTICE_DAYS = 7;
@@ -303,25 +319,19 @@ export interface BirthdayInput {
 
 /** The grant's coupon was made for the birthday; a name is never parsed (§4.6). */
 function isBirthdayGrant(grant: ClientCardGrant): boolean {
-  return grant.occasion === 'birthday';
-}
-
-/** The day a birthday is kept in one year: a 29 February one on the 28th outside a leap year. */
-function birthdayIn(year: number, birth: string): string {
-  const monthDay = birth.slice(5);
-  const leap = (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
-  const kept = monthDay === '02-29' && !leap ? '02-28' : monthDay;
-  return `${String(year).padStart(4, '0')}-${kept}`;
+  return CouponGrantSystem.isOccasion(
+    grant.occasion ?? null,
+    CouponOccasion.Birthday,
+  );
 }
 
 /**
- * The age reached on a birthday: that day's year less the year of birth.
- * `null` where the record holds no year a person can have been born in —
- * the band then says the day without a figure.
+ * The age reached on a birthday (`AgeSystem.ageReachedOn`): that day's year
+ * less the year of birth. `null` where the record holds no year a person
+ * can have been born in — the band then says the day without a figure.
  */
 function ageOn(day: string, birth: string): number | null {
-  const age = Number(day.slice(0, 4)) - Number(birth.slice(0, 4));
-  return Number.isInteger(age) && age >= 1 && age <= MAX_AGE ? age : null;
+  return AgeSystem.ageReachedOn(BirthDate.of(birth), DayKey.of(day));
 }
 
 /**
@@ -368,15 +378,14 @@ export function birthdayVm(input: BirthdayInput): BirthdayVm | null {
     };
   }
 
-  const year = Number(today.slice(0, 4));
-  const thisYear = birthdayIn(year, birth);
-  const next = thisYear > today ? thisYear : birthdayIn(year + 1, birth);
-  const ahead = daysBetweenDays(today, next);
-  if (ahead < 1 || ahead > BIRTHDAY_NOTICE_DAYS) return null;
+  // The next birthday on or after today (`AgeSystem.nextBirthday`; today's
+  // own is the band above, so the card's window starts at tomorrow).
+  const next = AgeSystem.nextBirthday(BirthDate.of(birth), DayKey.of(today));
+  if (next.inDays < 1 || next.inDays > BIRTHDAY_NOTICE_DAYS) return null;
   const title = words.birthday.upcoming(
-    weekdayLong(next, words.lang),
-    dayShort(next, today, words.lang),
-    ageOn(next, birth),
+    weekdayLong(next.dayKey, words.lang),
+    dayShort(next.dayKey, today, words.lang),
+    next.turning,
   );
   return {
     kind: 'upcoming',
@@ -549,27 +558,17 @@ interface Holding extends HoldingFactVm {
 /**
  * The vouchers' fact: what is left on every voucher the person can still
  * pay with — active, not empty, and not past its last day on the shop's
- * calendar — as ONE sum. `null` when nothing is left.
+ * calendar — as ONE sum (`ClientGlanceSystem.holdings`). `null` when
+ * nothing is left.
  */
 function voucherHolding(
-  vouchers: readonly GiftVoucher[],
-  today: string,
+  left: SystemMoney | null,
   words: ClientCardWords,
 ): Holding | null {
-  const usable = vouchers.filter(
-    (voucher) =>
-      voucher.state.kind === 'active' &&
-      voucher.balance.toMinorUnits() > 0 &&
-      (voucher.expiresAt === null ||
-        shopDayOf(voucher.expiresAt.toMillis()) >= today),
-  );
-  const currency = usable[0]?.balance.currencyCode();
-  if (currency === undefined) return null;
+  if (left === null) return null;
   const sum = Money.fromMinorUnitsAndCode(
-    usable
-      .filter((voucher) => voucher.balance.currencyCode() === currency)
-      .reduce((minor, voucher) => minor + voucher.balance.toMinorUnits(), 0),
-    currency,
+    left.amountMinorUnits,
+    left.currencyCode,
   );
   if (sum.isFailure()) return null;
   const value = formatMoney(sum.value, words.lang);
@@ -587,21 +586,32 @@ function voucherHolding(
  * data is absent is absent: no voucher left, no stamp card, no run under
  * way (a count of nought is nothing held), a rule that is off, a paused
  * client (the rhythm is frozen: the wallet says so, the glance says
- * nothing).
+ * nothing). Which facts, and their figures, are `ClientGlanceSystem.holdings`.
  */
 function holdingsOf(input: LoyaltyGlanceInput): readonly Holding[] {
   const { account, flags, words } = input;
+  const rule = input.ruleInForce;
+  const state =
+    rule === null
+      ? undefined
+      : new Map(Object.entries(account.streaks)).get(rule.id);
+  const held = ClientGlanceSystem.holdings({
+    vouchers: input.vouchers === null ? null : input.vouchers.map(voucherOf),
+    punchCards: account.punchCards,
+    achievements: flags.achievements,
+    rhythmOn: flags.streaks && rule !== null && rule.enabled,
+    rhythm: state === undefined ? null : { current: state.current },
+    paused: input.paused,
+    today: DayKey.of(input.today),
+    zone: SHOP_ZONE,
+  });
   const holdings: Holding[] = [];
 
-  const voucher =
-    input.vouchers === null
-      ? null
-      : voucherHolding(input.vouchers, input.today, words);
+  const voucher = voucherHolding(held.voucher, words);
   if (voucher !== null) holdings.push(voucher);
 
-  const card = flags.achievements ? account.punchCards[0] : undefined;
-  if (card !== undefined) {
-    const value = words.loyalty.stampsOf(card.filled, card.size);
+  if (held.stamps !== null) {
+    const value = words.loyalty.stampsOf(held.stamps.filled, held.stamps.size);
     holdings.push({
       id: 'stamps',
       label: words.loyalty.holding('stamps'),
@@ -610,18 +620,14 @@ function holdingsOf(input: LoyaltyGlanceInput): readonly Holding[] {
     });
   }
 
-  const rule = input.ruleInForce;
-  if (flags.streaks && !input.paused && rule !== null && rule.enabled) {
-    const state = new Map(Object.entries(account.streaks)).get(rule.id);
-    if (state !== undefined && state.current > 0) {
-      const value = figure(state.current, words.lang);
-      holdings.push({
-        id: 'rhythm',
-        label: words.loyalty.holding('rhythm'),
-        value,
-        spoken: `${value} ${words.loyalty.rhythmUnit(state.current)}`,
-      });
-    }
+  if (held.rhythm !== null) {
+    const value = figure(held.rhythm, words.lang);
+    holdings.push({
+      id: 'rhythm',
+      label: words.loyalty.holding('rhythm'),
+      value,
+      spoken: `${value} ${words.loyalty.rhythmUnit(held.rhythm)}`,
+    });
   }
   return holdings;
 }
@@ -822,5 +828,33 @@ export function medalsGlanceVm(
         : ctx.words.achievements.recordsLineName(
             facts.map((fact) => fact.spoken).join(', '),
           ),
+  };
+}
+
+// ── The bridge: legacy shapes → ecs-core structs (Phase 4 deletes it) ────
+
+/** A voucher as `ClientGlanceSystem.holdings` (and `VoucherSystem.spendable`) reads it. */
+function voucherOf(voucher: GiftVoucher): GiftVoucherEntity {
+  const { state } = voucher;
+  const moneyOf = (money: GiftVoucher['balance']) => ({
+    amountMinorUnits: money.toMinorUnits(),
+    currencyCode: money.currencyCode(),
+  });
+  return {
+    id: GiftVoucherId.of(voucher.id.value),
+    code: VoucherCode.of(voucher.code),
+    initialValue: moneyOf(voucher.initialValue),
+    balance: moneyOf(voucher.balance),
+    issuedAtMs: voucher.issuedAt.toMillis(),
+    expiresAtMs:
+      voucher.expiresAt === null ? null : voucher.expiresAt.toMillis(),
+    issuedToUserId:
+      voucher.issuedToUserId === null
+        ? null
+        : UserRefId.of(voucher.issuedToUserId.value),
+    state:
+      state.kind === 'void'
+        ? VoucherState.voided(state.voidedAt.toMillis(), state.reason)
+        : VoucherState.active(),
   };
 }

@@ -6,6 +6,14 @@ import {
   fail,
   ok,
 } from '@creativo/domain/kernel';
+import {
+  BarberId as EcsBarberId,
+  type BarberOffering as EcsBarberOffering,
+  OfferingPriceSystem,
+  type PricedService,
+  type ServiceTerms as EcsServiceTerms,
+  ServiceVariantId as EcsServiceVariantId,
+} from '@creativo/ecs-core';
 import { EmptyIdError } from './ids.errors';
 import {
   BarberId,
@@ -358,10 +366,12 @@ export class Service {
 
   /** This barber's offering, or null when they don't perform this service. */
   offeringFor(barberId: BarberId): BarberOffering | null {
-    return (
-      this.offerings.find((offering) => offering.barberId.equals(barberId)) ??
-      null
+    const matrix = matrixOf(this);
+    const found = OfferingPriceSystem.offeringFor(
+      matrix.service,
+      EcsBarberId.of(barberId.value),
     );
+    return found === null ? null : (matrix.offeringOf.get(found) ?? null);
   }
 
   /**
@@ -376,43 +386,45 @@ export class Service {
     barberId?: BarberId | null,
     variantId?: ServiceVariantId | null,
   ): ServiceTerms {
-    if (!barberId) return this.baseTerms;
-    return this.offeringFor(barberId)?.termsFor(variantId) ?? this.baseTerms;
-  }
-
-  /** Every terms a booking of this service could land on — base plus the whole matrix. */
-  private everyTerms(): readonly ServiceTerms[] {
-    return [
-      this.baseTerms,
-      ...this.offerings.flatMap((offering) => offering.allTerms()),
-    ];
+    const matrix = matrixOf(this);
+    const terms = OfferingPriceSystem.termsFor(
+      matrix.service,
+      barberId ? EcsBarberId.of(barberId.value) : null,
+      variantId ? EcsServiceVariantId.of(variantId.value) : null,
+    );
+    return matrix.termsOf.get(terms) ?? this.baseTerms;
   }
 
   /** Cheapest and dearest this service can be — drives the catalog's "from …" copy. Single currency is an invariant, so minor units compare directly. */
   priceRange(): { readonly min: Money; readonly max: Money } {
-    const prices = this.everyTerms().map((terms) => terms.price);
+    const matrix = matrixOf(this);
+    const range = OfferingPriceSystem.priceRange(matrix.service);
     return {
-      min: prices.reduce((a, b) =>
-        b.toMinorUnits() < a.toMinorUnits() ? b : a,
-      ),
-      max: prices.reduce((a, b) =>
-        b.toMinorUnits() > a.toMinorUnits() ? b : a,
-      ),
+      min: firstPricedAt(matrix, range.min),
+      max: firstPricedAt(matrix, range.max),
     };
   }
 
   durationRange(): { readonly min: number; readonly max: number } {
-    const minutes = this.everyTerms().map((terms) => terms.durationMinutes);
-    return { min: Math.min(...minutes), max: Math.max(...minutes) };
+    return OfferingPriceSystem.durationRange(matrixOf(this).service);
   }
 
   /** Who performs this service, in declaration order. */
   performerIds(): readonly BarberId[] {
-    return this.offerings.map((offering) => offering.barberId);
+    const ids = OfferingPriceSystem.performerIds(matrixOf(this).service);
+    // The caller's own id objects, in the system's (declaration) order.
+    return this.offerings
+      .filter((offering) =>
+        ids.includes(EcsBarberId.of(offering.barberId.value)),
+      )
+      .map((offering) => offering.barberId);
   }
 
   isPerformedBy(barberId: BarberId): boolean {
-    return this.offeringFor(barberId) !== null;
+    return OfferingPriceSystem.isPerformedBy(
+      matrixOf(this).service,
+      EcsBarberId.of(barberId.value),
+    );
   }
 
   // ── Location / conflict rules ─────────────────────────────────────────
@@ -430,4 +442,67 @@ export class Service {
   isBundle(): boolean {
     return this.composition.kind === 'bundle';
   }
+}
+
+// ── The bridge: legacy matrix → ecs-core structs (Phase 4 deletes it) ────
+
+/**
+ * The service's terms matrix as `OfferingPriceSystem` reads it, and the way
+ * back: each struct the system can answer with, mapped to the legacy object
+ * it was built from (so callers keep receiving their own `ServiceTerms` and
+ * `BarberOffering` instances).
+ */
+type Matrix = {
+  readonly service: PricedService;
+  readonly every: readonly EcsServiceTerms[];
+  readonly termsOf: ReadonlyMap<EcsServiceTerms, ServiceTerms>;
+  readonly offeringOf: ReadonlyMap<EcsBarberOffering, BarberOffering>;
+};
+
+function matrixOf(service: Service): Matrix {
+  const termsOf = new Map<EcsServiceTerms, ServiceTerms>();
+  const offeringOf = new Map<EcsBarberOffering, BarberOffering>();
+  const struct = (terms: ServiceTerms): EcsServiceTerms => {
+    const converted: EcsServiceTerms = {
+      priceMinorUnits: terms.price.toMinorUnits(),
+      currencyCode: terms.price.currencyCode(),
+      durationMinutes: terms.durationMinutes,
+      setupMinutes: terms.setupMinutes,
+      cleanupMinutes: terms.cleanupMinutes,
+    };
+    termsOf.set(converted, terms);
+    return converted;
+  };
+  const baseTerms = struct(service.baseTerms);
+  const offerings = service.offerings.map((offering) => {
+    const converted: EcsBarberOffering = {
+      barberId: EcsBarberId.of(offering.barberId.value),
+      base: struct(offering.base),
+      overrides: offering.overrideEntries().map(([variantId, terms]) => ({
+        variantId: EcsServiceVariantId.of(variantId),
+        terms: struct(terms),
+      })),
+    };
+    offeringOf.set(converted, offering);
+    return converted;
+  });
+  const priced: PricedService = { baseTerms, offerings };
+  return {
+    service: priced,
+    every: OfferingPriceSystem.everyTerms(priced),
+    termsOf,
+    offeringOf,
+  };
+}
+
+/** The legacy price of the FIRST terms (in matrix order) at `minorUnits` — the one the legacy reduce kept. */
+function firstPricedAt(matrix: Matrix, minorUnits: number): Money {
+  for (const terms of matrix.every) {
+    if (terms.priceMinorUnits === minorUnits) {
+      const legacy = matrix.termsOf.get(terms);
+      if (legacy !== undefined) return legacy.price;
+    }
+  }
+  // Unreachable: the range is drawn from these very terms.
+  return (matrix.termsOf.get(matrix.service.baseTerms) as ServiceTerms).price;
 }

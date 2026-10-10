@@ -10,6 +10,16 @@ import {
   type StreakTransition,
   addDays,
 } from '@creativo/domain/engagement';
+import {
+  DayKey,
+  type ServiceCategoryId,
+  type ServiceId,
+  StreakIntervalKind,
+  StreakPublishSystem,
+  StreakQualifierKind,
+  type StreakRule,
+  type StreakSchedule,
+} from '@creativo/ecs-core';
 import { RepositoryError } from '@creativo/application/shared';
 import {
   type PublishStreakDefinitionError,
@@ -140,10 +150,23 @@ export class PublishStreakDefinitionUseCase {
     >,
   ): StreakDraftAssessment {
     const { schedule, published } = input.observed;
-    const inForce = schedule.inForceOn(input.today);
-    const baseVersion = published
-      ? (schedule.scheduled?.definition.version ?? schedule.current.version)
-      : 0;
+    // The decision is `StreakPublishSystem.assess` (`@creativo/ecs-core`);
+    // the factory words a draft that is no rule as the classes the page
+    // knows, and makes the version the page publishes.
+    const assessed = StreakPublishSystem.assess(
+      headOf(schedule),
+      published,
+      structOf(input.draft),
+      DayKey.of(input.effectiveFrom),
+      DayKey.of(input.today),
+      input.policy,
+    );
+    const baseVersion =
+      assessed.kind === 'valid'
+        ? assessed.baseVersion
+        : published
+          ? StreakPublishSystem.newestOf(headOf(schedule))
+          : 0;
     const built = StreakDefinition.create({
       ...input.draft,
       id: schedule.id,
@@ -151,16 +174,15 @@ export class PublishStreakDefinitionUseCase {
       effectiveFrom: input.effectiveFrom,
     });
     if (built.isFailure()) return invalid(built.error);
-    const change = built.value.changeFrom(inForce);
+    if (assessed.kind !== 'valid') return invalid([]);
     return {
       kind: 'valid',
       definition: built.value,
-      change,
-      earliest: StreakDefinitionSchedule.earliestEffectiveDay(
-        change,
-        input.today,
-        input.policy,
-      ),
+      change: {
+        direction: assessed.change.direction,
+        changed: assessed.change.changed as StreakRuleChange['changed'],
+      },
+      earliest: assessed.earliest,
       baseVersion,
     };
   }
@@ -264,3 +286,62 @@ function refusalOf(error: PublishStreakDefinitionError):
 }
 
 const laterOf = (a: IsoDate, b: IsoDate): IsoDate => (a > b ? a : b);
+
+// ── The bridge: legacy class/props ↔ ecs-core struct (Phase 4 deletes it) ──
+
+/** A version as `StreakPublishSystem` reads it: the figures, the day as a day key. */
+function structOf(props: StreakDefinitionProps): StreakRule {
+  const { qualifier, interval } = props;
+  return {
+    version: props.version,
+    effectiveFromDayKey: DayKey.of(props.effectiveFrom),
+    enabled: props.enabled,
+    qualifier:
+      qualifier.kind === 'services'
+        ? {
+            kind: StreakQualifierKind.Services,
+            serviceIds: qualifier.serviceIds as readonly ServiceId[],
+          }
+        : qualifier.kind === 'categories'
+          ? {
+              kind: StreakQualifierKind.Categories,
+              categoryIds:
+                qualifier.categoryIds as readonly ServiceCategoryId[],
+            }
+          : { kind: StreakQualifierKind.AnyVisit },
+    minGapDays: props.minGapDays,
+    bookingHold: props.bookingHold,
+    interval:
+      interval.kind === 'fixed'
+        ? { kind: StreakIntervalKind.Fixed, days: interval.days }
+        : {
+            kind: StreakIntervalKind.Personal,
+            tolerancePct: interval.tolerancePct,
+            minDays: interval.minDays,
+            maxDays: interval.maxDays,
+            fallbackDays: interval.fallbackDays,
+          },
+    graceDays: props.graceDays,
+    riskLeadDays: props.riskLeadDays,
+    protections: props.protections,
+    excuses: props.excuses,
+    clientPause: props.clientPause,
+    repair: props.repair,
+    onBreak: props.onBreak,
+  };
+}
+
+/** The head as the system reads it. */
+function headOf(schedule: StreakDefinitionSchedule): StreakSchedule {
+  const { scheduled } = schedule;
+  return {
+    current: structOf(schedule.current.toProps()),
+    scheduled:
+      scheduled === null
+        ? null
+        : {
+            ...structOf(scheduled.definition.toProps()),
+            transition: scheduled.transition,
+          },
+  };
+}

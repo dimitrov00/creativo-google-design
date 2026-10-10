@@ -6,6 +6,46 @@ import {
   cancelled as cancelledStatus,
 } from './appointment-status';
 import type { CancellationWindow } from './cancellation-window';
+import {
+  BookingStatus as BookingStatusData,
+  type SeatOutcome as SeatOutcomeData,
+  SeatOutcome as SeatOutcomes,
+} from '@creativo/ecs-core';
+
+/*
+ * THIN SHIM (ECS migration Phase 2). The seat-outcome rules — the closed
+ * reason vocabulary, "resolved", the party verb's stamp, and the ROLL-UP of a
+ * party's seats into the root status — are the ECS `SeatOutcome` companion
+ * (`reasonOf`, `isResolved`, `outcomeForStatus`, `summarize`). These keep the
+ * legacy shapes their callers hold (an `other` reason's note, a
+ * `CancellationWindow` stamp, a status without an instant) and only convert.
+ */
+
+/* ── Legacy ↔ ECS converters ─────────────────────────────────────────── */
+
+function toOutcomeData(outcome: SeatOutcome): SeatOutcomeData {
+  switch (outcome.kind) {
+    case 'scheduled':
+      return SeatOutcomes.scheduled();
+    case 'worked':
+      return SeatOutcomes.worked(outcome.atMs);
+    case 'no_show':
+      return SeatOutcomes.noShow(outcome.atMs);
+    case 'cancelled':
+      return SeatOutcomes.cancelled(
+        outcome.atMs,
+        outcome.by,
+        outcome.reason.kind,
+        outcome.window === null ? null : outcome.window.hours,
+      );
+  }
+}
+
+function toStatusData(status: AppointmentStatus) {
+  return status.kind === 'cancelled'
+    ? BookingStatusData.cancel(0, status.reason)
+    : { kind: status.kind, atMs: 0 };
+}
 
 /**
  * Why a seat was called off.
@@ -72,22 +112,13 @@ export function cancellationReasonOf(
   code: string,
   note: string,
 ): CancellationReason | null {
+  const parsed = SeatOutcomes.reasonOf(code);
+  if (parsed === null) return null;
+  if (parsed !== 'other') return { kind: parsed };
+  // The legacy shape keeps an `other`'s sentence beside the code, and an
+  // `other` with nothing written says less than not asking.
   const trimmed = note.trim();
-  switch (code.trim()) {
-    case '':
-    case 'unspecified':
-      return { kind: 'unspecified' };
-    case 'client_changed_plans':
-    case 'client_unwell':
-    case 'staff_barber_absence':
-    case 'staff_shop_closure':
-    case 'no_show_converted':
-      return { kind: code.trim() as Exclude<CancellationReasonKind, 'other'> };
-    case 'other':
-      return trimmed.length === 0 ? null : { kind: 'other', note: trimmed };
-    default:
-      return null;
-  }
+  return trimmed.length === 0 ? null : { kind: 'other', note: trimmed };
 }
 
 /**
@@ -196,7 +227,7 @@ export function seatCancelled(
 
 /** Anything but `scheduled` — a seat whose story is over. */
 export function isSeatResolved(outcome: SeatOutcome): boolean {
-  return outcome.kind !== 'scheduled';
+  return SeatOutcomes.isResolved(toOutcomeData(outcome));
 }
 
 /**
@@ -237,44 +268,23 @@ export function summarizeSeatOutcomes(
   outcomes: readonly SeatOutcome[],
   current: AppointmentStatus,
 ): AppointmentStatus {
-  // Unreachable through `Appointment` (seats are non-empty by invariant), but
-  // this function is total on its own terms.
-  if (outcomes.length === 0) return current;
-  if (outcomes.some((outcome) => outcome.kind === 'scheduled')) return current;
-
-  const cancellations = outcomes.filter(
-    (outcome): outcome is Extract<SeatOutcome, { kind: 'cancelled' }> =>
-      outcome.kind === 'cancelled',
+  const currentData = toStatusData(current);
+  const summary = SeatOutcomes.summarize(
+    outcomes.map(toOutcomeData),
+    currentData,
+    0,
   );
-  if (cancellations.length === outcomes.length) {
-    return cancelledStatus(partyCancellationReason(cancellations, current));
+  // The root unchanged — still a seat open, or already in the derived state —
+  // is the caller's own status, as given.
+  if (summary === currentData) return current;
+  switch (summary.kind) {
+    case 'cancelled':
+      return cancelledStatus(summary.reason);
+    case 'completed':
+      return COMPLETED;
+    default:
+      return NO_SHOW;
   }
-
-  return outcomes.some((outcome) => outcome.kind === 'worked')
-    ? COMPLETED
-    : NO_SHOW;
-}
-
-/**
- * The root's cancellation string when every seat was cancelled individually.
- *
- * A root cancel (`Appointment.cancel`) already carries the reason the shop
- * typed, and it is kept verbatim — re-deriving it from the seats it just
- * stamped would replace a human sentence with a code for no gain. Only a
- * party cancelled seat-by-seat has to synthesise one, and it does so from the
- * distinct codes so the string is still groupable.
- */
-function partyCancellationReason(
-  cancellations: readonly Extract<SeatOutcome, { kind: 'cancelled' }>[],
-  current: AppointmentStatus,
-): string {
-  if (current.kind === 'cancelled') return current.reason;
-  const codes = [
-    ...new Set(
-      cancellations.map((entry) => cancellationReasonCode(entry.reason)),
-    ),
-  ].sort();
-  return codes.join('+');
 }
 
 /**
@@ -288,15 +298,22 @@ export function outcomeForStatus(
   reason: CancellationReason,
   window: CancellationWindow | null,
 ): SeatOutcome | null {
-  switch (to) {
-    case 'completed':
-      return seatWorked(atMs);
+  const stamp = SeatOutcomes.outcomeForStatus(
+    to,
+    atMs,
+    reason.kind,
+    window === null ? null : window.hours,
+  );
+  if (stamp === null) return null;
+  switch (stamp.kind) {
+    case 'worked':
+      return seatWorked(stamp.atMs);
     case 'no_show':
-      return seatNoShow(atMs);
+      return seatNoShow(stamp.atMs);
     case 'cancelled':
-      return seatCancelled(atMs, 'staff', reason, window);
-    // `pending`/`confirmed` say nothing about the work — a confirmed seat is
-    // still `scheduled`.
+      // The legacy stamp keeps the reason as given (an `other`'s note) and
+      // the window as the value the policy holds.
+      return seatCancelled(stamp.atMs, 'staff', reason, window);
     default:
       return null;
   }

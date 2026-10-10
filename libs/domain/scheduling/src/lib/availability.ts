@@ -1,9 +1,16 @@
 import { BarberId } from '@creativo/domain/catalog';
+import {
+  type AvailabilityLine as EcsAvailabilityLine,
+  type AvailabilityQuery as EcsAvailabilityQuery,
+  AvailabilitySystem,
+  BarberId as EcsBarberId,
+  type BarberPref as EcsBarberPref,
+  type BookingPolicy as EcsBookingPolicy,
+  type ChairTime as EcsChairTime,
+} from '@creativo/ecs-core';
 import { BarberPref } from './barber-pref';
 import { BookingPolicy } from './booking-policy';
 import { Interval } from './interval';
-import { carriedStartMs } from './move-shift';
-import { type PersonSlot, sitsTwiceAt } from './person-slot';
 import { RosterWindow } from './roster-window';
 
 /** How long a line takes, and the setup/cleanup that surrounds it. */
@@ -57,7 +64,19 @@ export function termsForBarber(
   line: AvailabilityLine,
   barberId: BarberId,
 ): LineTerms {
-  return line.termsByBarber?.get(barberId.value) ?? line;
+  const [terms] = AvailabilitySystem.denseTerms(
+    line,
+    [
+      {
+        barberId: EcsBarberId.of(barberId.value),
+        windows: [],
+        busy: [],
+        blocks: [],
+      },
+    ],
+    overridesOf(line),
+  );
+  return terms ?? line;
 }
 
 /**
@@ -135,14 +154,12 @@ export function paddedBusy(input: {
   readonly turnaroundMinutes: number;
   readonly release?: readonly ChairTime[];
 }): readonly Interval[] {
-  const released = (input.release ?? [])
-    .filter((chair) => chair.barberId.equals(input.barberId))
-    .map((chair) => chair.occupied);
-  const taken = Interval.subtract(input.spans, released);
-  const turnaround = Math.max(0, input.turnaroundMinutes);
-  return Interval.normalize(
-    taken.map((span) => Interval.pad(span, turnaround, turnaround)),
-  );
+  return AvailabilitySystem.paddedBusy({
+    barberId: EcsBarberId.of(input.barberId.value),
+    spans: input.spans,
+    turnaroundMinutes: input.turnaroundMinutes,
+    release: (input.release ?? []).map(toEcsChairTime),
+  });
 }
 
 export interface AvailabilityAssignment {
@@ -229,130 +246,11 @@ export function candidateStarts(
   stepMinutes: number,
   notBeforeMs: number,
 ): readonly number[] {
-  const durationMs = durationMinutes * 60_000;
-  const stepMs = stepMinutes * 60_000;
-  const starts: number[] = [];
-
-  for (const gap of Interval.normalize(free)) {
-    let start = gap.startMs;
-    if (start < notBeforeMs) {
-      // Jump to the first aligned step at or after the lead-time floor,
-      // keeping the window's own phase.
-      const steps = Math.ceil((notBeforeMs - gap.startMs) / stepMs);
-      start = gap.startMs + steps * stepMs;
-    }
-    for (; start + durationMs <= gap.endMs; start += stepMs) {
-      starts.push(start);
-    }
-  }
-  return starts;
-}
-
-/**
- * Free time for a barber: rostered windows, minus busy, clipped to the
- * caller's mask.
- *
- * The mask is how "I can only do 08:00–12:00" reaches the search. It is
- * applied HERE, to the free set, rather than by filtering the returned options
- * afterwards — and that distinction is load-bearing twice over. The
- * enumeration is capped (`maxOptions`), so post-filtering spends the whole
- * budget enumerating 14:00 arrangements and then discards them, reporting "no
- * availability" for a morning that was wide open. And a mask that clips free
- * time also constrains the SEQUENTIAL arrangements a party can be served by,
- * so a second seat cannot be placed outside the window the person declared.
- */
-function freeFor(
-  barber: BarberDayAvailability,
-  withinMs: readonly Interval[] | undefined,
-): readonly Interval[] {
-  const free = openFor(barber);
-  // `undefined` is "unconstrained", NOT "nothing allowed" — an empty mask
-  // would silently invert the caller's meaning into an empty grid.
-  return withinMs === undefined ? free : Interval.intersect(free, withinMs);
-}
-
-/** A barber's rostered windows minus their (already padded) busy time. */
-function openFor(barber: BarberDayAvailability): readonly Interval[] {
-  return Interval.subtract(
-    barber.windows.map((window) => window.interval),
-    barber.busy,
-  );
-}
-
-/**
- * Does every rider still fit once the party starts at `partyStartMs`?
- *
- * The questions the server asks of a carried seat, asked of the geometry the
- * lines were searched on: is the rider's barber rostered and clear of
- * everyone else for the rider's whole chair time (`busy` arrives padded by
- * turnaround), is it clear of this arrangement's own picks and of the riders
- * already placed, and does it start after the lead-time floor — measured from
- * the chair time's start, exactly as a line's is.
- *
- * Checked against the barber's UNMASKED free time: a declared window is about
- * when the CLIENT can come, and the server does not narrow a carried seat by
- * it. A rider whose barber is not in the pool (not rostered at this shop that
- * day) fits nowhere — the server would refuse that seat too.
- */
-function ridersFit(
-  riders: readonly AvailabilityRider[],
-  partyStartMs: number,
-  openByBarber: ReadonlyMap<string, readonly Interval[]>,
-  picks: readonly {
-    readonly barberId: BarberId;
-    readonly occupied: Interval;
-  }[],
-  notBeforeMs: number,
-): boolean {
-  const placed = [...picks];
-  for (const rider of riders) {
-    const soldStartMs = carriedStartMs(partyStartMs, rider.offsetMinutes);
-    const occupied = Interval.of(
-      soldStartMs - rider.terms.padBeforeMinutes * 60_000,
-      soldStartMs +
-        (rider.terms.durationMinutes + rider.terms.padAfterMinutes) * 60_000,
-    );
-    if (occupied.startMs < notBeforeMs) return false;
-    const open = openByBarber.get(rider.barberId.value);
-    if (!open) return false;
-    const remaining = Interval.subtract(
-      open,
-      placed
-        .filter((pick) => pick.barberId.equals(rider.barberId))
-        .map((pick) => pick.occupied),
-    );
-    if (!remaining.some((gap) => Interval.contains(gap, occupied))) {
-      return false;
-    }
-    placed.push({ barberId: rider.barberId, occupied });
-  }
-  return true;
-}
-
-/**
- * Is `candidate` a better way to serve the party at the same start? Shorter
- * envelope first — that is what "tighter" means to a client waiting around —
- * then the barber ids, so the comparison is total and the winner never
- * depends on which branch the search happened to reach first.
- */
-function isTighter(
-  candidate: AvailabilityOption,
-  incumbent: AvailabilityOption,
-): boolean {
-  if (candidate.envelope.endMs !== incumbent.envelope.endMs) {
-    return candidate.envelope.endMs < incumbent.envelope.endMs;
-  }
-  const key = (option: AvailabilityOption) =>
-    option.assignments.map((assignment) => assignment.barberId.value).join();
-  return key(candidate) < key(incumbent);
-}
-
-function eligible(
-  line: AvailabilityLine,
-  barbers: readonly BarberDayAvailability[],
-): readonly BarberDayAvailability[] {
-  return barbers.filter((barber) =>
-    BarberPref.matches(line.barberPref, barber.barberId),
+  return AvailabilitySystem.candidateStarts(
+    free,
+    durationMinutes,
+    stepMinutes,
+    notBeforeMs,
   );
 }
 
@@ -393,7 +291,11 @@ function eligible(
 export function availableOptions(
   query: AvailabilityQuery,
 ): readonly AvailabilityOption[] {
-  return enumerateOptions(query, { dedupeByStart: false });
+  const ecs = toEcsQuery(query);
+  return toLegacyOptions(
+    query,
+    AvailabilitySystem.availableOptions(ecs, budgetOf(query)).options,
+  );
 }
 
 /**
@@ -416,204 +318,16 @@ export function availableOptions(
 export function availableStarts(
   query: AvailabilityQuery,
 ): readonly AvailabilityOption[] {
-  return enumerateOptions(query, { dedupeByStart: true });
-}
-
-function enumerateOptions(
-  query: AvailabilityQuery,
-  mode: { readonly dedupeByStart: boolean },
-): readonly AvailabilityOption[] {
-  const { lines, barbers, policy, notBeforeMs, withinMs } = query;
-  if (lines.length === 0) return [];
-
-  const freeByBarber = new Map<string, readonly Interval[]>(
-    barbers.map(
-      (barber) => [barber.barberId.value, freeFor(barber, withinMs)] as const,
-    ),
-  );
-  const riders = query.riders ?? [];
-  /** Riders' barbers' whole free time — see `ridersFit` for why unmasked. */
-  const openByBarber = new Map<string, readonly Interval[]>(
-    riders.length === 0
-      ? []
-      : barbers.map((barber) => [barber.barberId.value, openFor(barber)]),
-  );
-
-  // Rule 1 — a stable, constraint-first line order.
-  const ordered = lines.slice().sort((a, b) => {
-    const aSpecific = a.barberPref.kind === 'specific' ? 0 : 1;
-    const bSpecific = b.barberPref.kind === 'specific' ? 0 : 1;
-    return (
-      aSpecific - bSpecific ||
-      b.durationMinutes - a.durationMinutes ||
-      a.lineId.localeCompare(b.lineId)
-    );
-  });
-
-  const maxOptions = query.maxOptions ?? 200;
-  const options: AvailabilityOption[] = [];
-  /** Index into `options` by envelope start — only used when deduping. */
-  const byStart = new Map<number, number>();
-  /**
-   * Backtracking over five lines and a wide-open day is exponential, and
-   * deduping removes the option cap's incidental brake on it. This is the
-   * explicit one: a hard ceiling on placements tried, so a pathological
-   * query degrades to a shorter list rather than to a frozen tab.
-   */
-  let nodeBudget = 200_000;
-  /**
-   * Each pick carries what the client BOUGHT (`slot`) and what the barber is
-   * actually blocked for (`occupied` — the slot plus that line's own setup and
-   * cleanup). Collision and subtraction use `occupied`, so a colour's cleanup
-   * still separates two seats of one party, while the barber's turnaround does
-   * not: they are one booking, and a barber does not reset between a father
-   * and his son.
-   */
-  const chosen: { assignment: AvailabilityAssignment; occupied: Interval }[] =
-    [];
-
-  /**
-   * The sold slots this branch has given each PERSON — a stack kept beside
-   * `chosen`, pushed and popped with it, holding only the lines that name
-   * their person (`AvailabilityLine.personKey`).
-   */
-  const seated: PersonSlot[] = [];
-
-  const collides = (barberId: BarberId, occupied: Interval): boolean =>
-    chosen.some(
-      (pick) =>
-        pick.assignment.barberId.equals(barberId) &&
-        Interval.overlaps(pick.occupied, occupied),
-    );
-
-  function search(index: number): void {
-    if (options.length >= maxOptions) return;
-
-    if (index === ordered.length) {
-      // The envelope spans what the CLIENT experiences — sold slots, not the
-      // barber's cleanup afterwards.
-      const starts = chosen.map((pick) => pick.assignment.slot.startMs);
-      const ends = chosen.map((pick) => pick.assignment.slot.endMs);
-      const envelope = Interval.of(Math.min(...starts), Math.max(...ends));
-      // A start that strands a rider is not an answer for THIS arrangement —
-      // but another one at the same start may still leave them room, so the
-      // walk goes on rather than pruning the start.
-      if (
-        riders.length > 0 &&
-        !ridersFit(
-          riders,
-          envelope.startMs,
-          openByBarber,
-          chosen.map((pick) => ({
-            barberId: pick.assignment.barberId,
-            occupied: pick.occupied,
-          })),
-          notBeforeMs,
-        )
-      ) {
-        return;
-      }
-      const option: AvailabilityOption = {
-        envelope,
-        assignments: chosen
-          .map((pick) => pick.assignment)
-          .sort(
-            (a, b) =>
-              a.slot.startMs - b.slot.startMs ||
-              a.lineId.localeCompare(b.lineId),
-          ),
-      };
-
-      if (mode.dedupeByStart) {
-        const existingIndex = byStart.get(envelope.startMs);
-        if (existingIndex === undefined) {
-          byStart.set(envelope.startMs, options.length);
-          options.push(option);
-        } else if (
-          isTighter(option, options[existingIndex] as AvailabilityOption)
-        ) {
-          options[existingIndex] = option;
-        }
-        return;
-      }
-
-      options.push(option);
-      return;
-    }
-
-    const line = ordered[index] as AvailabilityLine;
-    for (const barber of eligible(line, barbers)) {
-      const free = freeByBarber.get(barber.barberId.value) ?? [];
-      // Subtract what this branch has already given this barber, so the
-      // sequential case is discovered naturally: the second seat simply sees
-      // the first one's slot as taken.
-      const alreadyTaken = chosen
-        .filter((pick) => pick.assignment.barberId.equals(barber.barberId))
-        .map((pick) => pick.occupied);
-      const remaining = Interval.subtract(free, alreadyTaken);
-
-      // This line's own footprint WITH THIS BARBER: setup, the service,
-      // cleanup. The barber's turnaround is NOT added — it is already baked
-      // into `busy`.
-      const terms = termsForBarber(line, barber.barberId);
-      const occupiedMinutes =
-        terms.padBeforeMinutes + terms.durationMinutes + terms.padAfterMinutes;
-
-      for (const start of candidateStarts(
-        remaining,
-        occupiedMinutes,
-        policy.slotStepMinutes,
-        notBeforeMs,
-      )) {
-        if (nodeBudget-- <= 0) return;
-        const occupied = Interval.of(start, start + occupiedMinutes * 60_000);
-        // The SOLD slot is the service itself; the pads surround it.
-        const serviceStart = start + terms.padBeforeMinutes * 60_000;
-        const slot = Interval.of(
-          serviceStart,
-          serviceStart + terms.durationMinutes * 60_000,
-        );
-        if (collides(barber.barberId, occupied)) continue;
-        // …and the PERSON cannot be in another chair then: the same rule the
-        // server's decision refuses by, on the sold slots.
-        const person: PersonSlot | null =
-          line.personKey === undefined
-            ? null
-            : { personKey: line.personKey, slot };
-        if (person !== null && sitsTwiceAt(seated, person)) continue;
-
-        chosen.push({
-          assignment: { lineId: line.lineId, barberId: barber.barberId, slot },
-          occupied,
-        });
-        if (person !== null) seated.push(person);
-        search(index + 1);
-        if (person !== null) seated.pop();
-        chosen.pop();
-        if (options.length >= maxOptions) return;
-      }
-    }
-  }
-
-  search(0);
-
-  // Rule 3 — a total order that never depends on how the search walked.
-  return options.slice().sort(
-    (a, b) =>
-      a.envelope.startMs - b.envelope.startMs ||
-      a.envelope.endMs - b.envelope.endMs ||
-      a.assignments
-        .map((assignment) => assignment.barberId.value)
-        .join()
-        .localeCompare(
-          b.assignments.map((assignment) => assignment.barberId.value).join(),
-        ),
+  const ecs = toEcsQuery(query);
+  return toLegacyOptions(
+    query,
+    AvailabilitySystem.availableStarts(ecs, budgetOf(query)).options,
   );
 }
 
 /** Is there ANY way to serve this party today? Cheaper than enumerating. */
 export function hasAnyOption(query: AvailabilityQuery): boolean {
-  return availableOptions({ ...query, maxOptions: 1 }).length > 0;
+  return AvailabilitySystem.hasAnyOption(toEcsQuery(query), budgetOf(query));
 }
 
 /**
@@ -624,12 +338,116 @@ export function hasAnyOption(query: AvailabilityQuery): boolean {
 export function distinctStarts(
   options: readonly AvailabilityOption[],
 ): readonly number[] {
-  const seen = new Set<number>();
-  const starts: number[] = [];
-  for (const option of options) {
-    if (seen.has(option.envelope.startMs)) continue;
-    seen.add(option.envelope.startMs);
-    starts.push(option.envelope.startMs);
-  }
-  return starts;
+  // Only the envelopes are read; the assignments' shape is the legacy one.
+  return AvailabilitySystem.distinctStarts(
+    options.map((option) => ({ envelope: option.envelope, assignments: [] })),
+  );
+}
+
+/* ── Phase 2 shim converters: legacy shapes ↔ ecs-core structs ──────────── */
+
+/** The legacy engine's brakes: 200 000 placements, `maxOptions` (200) options. */
+function budgetOf(query: AvailabilityQuery) {
+  return {
+    nodeBudget: AvailabilitySystem.DEFAULT_BUDGET.nodeBudget,
+    maxOptions:
+      query.maxOptions ?? AvailabilitySystem.DEFAULT_BUDGET.maxOptions,
+  };
+}
+
+function toEcsPref(pref: BarberPref): EcsBarberPref {
+  return pref.kind === 'any'
+    ? { kind: 'any' }
+    : { kind: 'specific', barberId: EcsBarberId.of(pref.barberId.value) };
+}
+
+function toEcsChairTime(chair: ChairTime): EcsChairTime {
+  return {
+    barberId: EcsBarberId.of(chair.barberId.value),
+    occupied: chair.occupied,
+  };
+}
+
+/** The sparse per-barber overrides of a line, as the system's list. */
+function overridesOf(line: AvailabilityLine) {
+  return [...(line.termsByBarber ?? [])].map(([barberId, terms]) => ({
+    barberId: EcsBarberId.of(barberId),
+    terms,
+  }));
+}
+
+function toEcsPolicy(policy: BookingPolicy): EcsBookingPolicy {
+  return {
+    maxPartySize: policy.maxPartySize,
+    slotStepMinutes: policy.slotStepMinutes,
+    minLeadMinutes: policy.minLeadMinutes,
+    horizonMonths: policy.horizonMonths,
+    cancellationWindowHours: policy.cancellationWindow.hours,
+    maxFlexibleDays: policy.maxFlexibleDays,
+    autoConfirm: policy.autoConfirm,
+  };
+}
+
+/**
+ * Every optional of the legacy query made explicit (Risk 9): no riders is
+ * `[]`, an absent mask is `null` (unconstrained — never `[]`, which is
+ * "nothing qualifies"), and each line's per-barber terms are dense over the
+ * pool.
+ */
+function toEcsQuery(query: AvailabilityQuery): EcsAvailabilityQuery {
+  const barbers = query.barbers.map((barber) => ({
+    barberId: EcsBarberId.of(barber.barberId.value),
+    windows: barber.windows.map((window) => window.interval),
+    busy: barber.busy,
+    blocks: (barber.blocks ?? []).map((window) => window.interval),
+  }));
+  const lines: EcsAvailabilityLine[] = query.lines.map((line) => ({
+    lineId: line.lineId,
+    barberPref: toEcsPref(line.barberPref),
+    durationMinutes: line.durationMinutes,
+    padBeforeMinutes: line.padBeforeMinutes,
+    padAfterMinutes: line.padAfterMinutes,
+    termsByBarber: AvailabilitySystem.denseTerms(
+      line,
+      barbers,
+      overridesOf(line),
+    ),
+    personKey: line.personKey ?? null,
+  }));
+  return {
+    lines,
+    barbers,
+    policy: toEcsPolicy(query.policy),
+    notBeforeMs: query.notBeforeMs,
+    riders: (query.riders ?? []).map((rider) => ({
+      barberId: EcsBarberId.of(rider.barberId.value),
+      offsetMinutes: rider.offsetMinutes,
+      terms: rider.terms,
+    })),
+    withinMs: query.withinMs ?? null,
+  };
+}
+
+/** The system's options → the legacy shape, each barber the query's own id object. */
+function toLegacyOptions(
+  query: AvailabilityQuery,
+  options: readonly {
+    readonly envelope: Interval;
+    readonly assignments: readonly {
+      readonly lineId: string;
+      readonly barberIndex: number;
+      readonly slot: Interval;
+    }[];
+  }[],
+): readonly AvailabilityOption[] {
+  return options.map((option) => ({
+    envelope: option.envelope,
+    assignments: option.assignments.map((assignment) => ({
+      lineId: assignment.lineId,
+      barberId: (
+        query.barbers.at(assignment.barberIndex) as BarberDayAvailability
+      ).barberId,
+      slot: assignment.slot,
+    })),
+  }));
 }

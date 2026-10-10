@@ -6,6 +6,13 @@ import { CalendarDay } from './calendar-day';
 import { FlexibleWhen, type FlexibleWhenProps } from './flexible-when';
 import { WaitlistRequestId } from './ids';
 import {
+  DayKey,
+  FlexibleWhen as WhenData,
+  DayWindows as DayWindowsData,
+  WaitlistStatus as StatusData,
+  WaitlistSystem,
+} from '@creativo/ecs-core';
+import {
   EmptyWaitlistCartError,
   EmptyWaitlistWhenError,
   InvalidWaitlistRequestError,
@@ -29,23 +36,23 @@ import {
 export type WaitlistStatus =
   'open' | 'matched' | 'booked' | 'cancelled' | 'expired';
 
-/**
- * Legal forward moves. Terminal states map to `[]`. One source of truth for
- * the graph, exactly as `AppointmentStatus` does it — every transition method
- * below defers here rather than re-encoding the rules.
- *
- * `matched → open` is the one that looks odd and is the most important: a
- * client who was notified and did not act must go back to being watched. A
- * graph without that edge silently drops people from the waitlist for the
- * crime of being asleep.
+/*
+ * THIN SHIM (ECS migration Phase 2): the status graph is the ECS
+ * `WaitlistStatus` component, the lapse rule `WaitlistSystem.hasLapsed`.
+ * These helpers only convert the legacy status string and declaration.
  */
-const TRANSITIONS: Record<WaitlistStatus, readonly WaitlistStatus[]> = {
-  open: ['matched', 'booked', 'cancelled', 'expired'],
-  matched: ['open', 'booked', 'cancelled', 'expired'],
-  booked: [],
-  cancelled: [],
-  expired: [],
-};
+
+/** A legacy status as the ECS struct (the instant is not the graph's concern). */
+function toStatusData(status: WaitlistStatus): StatusData {
+  return { kind: status, atMs: 0 };
+}
+
+/** The declaration's days as the ECS struct — the lapse rule reads only the keys. */
+function toWhenData(when: FlexibleWhen): WhenData {
+  return WhenData.of(
+    when.days.map((day) => DayWindowsData.wholeDay(DayKey.of(day.dayKey))),
+  );
+}
 
 export interface WaitlistRequestProps {
   readonly id: string;
@@ -173,18 +180,20 @@ export class WaitlistRequest {
    * "expired" must reach the same answer from the same input.
    */
   hasLapsedBy(today: CalendarDay): boolean {
-    const last = this.lastDay();
-    return last !== null && last.isBefore(today);
+    return WaitlistSystem.hasLapsed(
+      toWhenData(this.when),
+      DayKey.of(today.key()),
+    );
   }
 
   isWatching(): boolean {
-    return this.status === 'open' || this.status === 'matched';
+    return StatusData.isWatching(toStatusData(this.status));
   }
 
   private transition(
     to: WaitlistStatus,
   ): Result<WaitlistRequest, WaitlistTransitionError> {
-    if (!TRANSITIONS[this.status].includes(to)) {
+    if (!StatusData.canTransition(toStatusData(this.status), to)) {
       return fail(new WaitlistTransitionError(this.status, to));
     }
     return ok(
