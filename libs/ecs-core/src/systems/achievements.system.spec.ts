@@ -1,0 +1,268 @@
+import { describe, expect, it } from 'vitest';
+import { DayKey } from '../components/day-key.data';
+import { Metric, type MetricRef } from '../components/gamification.data';
+import { Weekday } from '../components/weekday.data';
+import { BarberId } from '../entities/barber.entity';
+import { LocationId } from '../entities/location.entity';
+import { ServiceId } from '../entities/service.entity';
+import { deepFreeze } from '../testing';
+import { AchievementsSystem, type CountedVisit } from './achievements.system';
+
+/*
+ * The `countsToward` cases of
+ * libs/features/staff/client-card/src/lib/medal-detail.presenter.spec.ts,
+ * COPIED (the presenter's spec keeps running against its shim) and
+ * re-targeted to the struct the system reads: the person's own worked
+ * seats (services, barbers), the shop, and the first worked seat's start
+ * on the shop's clock. Which seats are the person's and worked, and when
+ * the first began in Sofia, is the presenter's read of an appointment (the
+ * cases about another person's book, an unfinished companion and an hour
+ * to come stay with its spec); the narrowing and every metric's test are
+ * here. Plus `insideWindows` and the purity case.
+ */
+
+const by = (
+  metric: Metric,
+  where: Partial<NonNullable<MetricRef['where']>> | null = null,
+): MetricRef => ({
+  metric,
+  window: null,
+  where:
+    where === null
+      ? null
+      : {
+          serviceId: where.serviceId ?? null,
+          barberId: where.barberId ?? null,
+          locationId: where.locationId ?? null,
+        },
+});
+
+/** A fade with Иван at Център, 11:00 on Thursday 10 September, alone, never marked arrived. */
+function visit(overrides: Partial<CountedVisit> = {}): CountedVisit {
+  return {
+    serviceIds: [ServiceId.of('svc-fade')],
+    barberIds: [BarberId.of('ivan')],
+    locationId: LocationId.of('loc-center'),
+    startMs: Date.parse('2026-09-10T08:00:00.000Z'),
+    startMinuteOfDay: 11 * 60,
+    startWeekday: Weekday.Thu,
+    arrivedAtMs: null,
+    withCompany: false,
+    ...overrides,
+  };
+}
+
+const VISITS = by(Metric.VisitsCompleted);
+const FADE = by(Metric.VisitsCompleted, {
+  serviceId: ServiceId.of('svc-fade'),
+});
+const CLASSIC = by(Metric.VisitsCompleted, {
+  serviceId: ServiceId.of('svc-classic-cut'),
+});
+const NIKO = by(Metric.VisitsCompleted, { barberId: BarberId.of('niko') });
+const IVAN = by(Metric.VisitsCompleted, { barberId: BarberId.of('ivan') });
+const MLADOST = by(Metric.VisitsCompleted, {
+  locationId: LocationId.of('loc-mladost'),
+});
+const CENTER = by(Metric.VisitsCompleted, {
+  locationId: LocationId.of('loc-center'),
+});
+
+describe('AchievementsSystem.countsToward', () => {
+  it('counts any worked visit towards the visits family, and the family’s own service, barber and shop', () => {
+    for (const metric of [VISITS, FADE, IVAN, CENTER]) {
+      expect(AchievementsSystem.countsToward(metric, visit())).toBe(true);
+    }
+  });
+
+  it('asks for the service, the barber and the shop among the person’s own worked seats', () => {
+    expect(AchievementsSystem.countsToward(CLASSIC, visit())).toBe(false);
+    expect(AchievementsSystem.countsToward(NIKO, visit())).toBe(false);
+    expect(AchievementsSystem.countsToward(MLADOST, visit())).toBe(false);
+    // A companion's fade is not the booker's: his own seat was a beard.
+    const booker = visit({
+      serviceIds: [ServiceId.of('svc-beard')],
+      withCompany: true,
+    });
+    const companion = visit({
+      barberIds: [BarberId.of('niko')],
+      withCompany: true,
+    });
+    expect(AchievementsSystem.countsToward(FADE, booker)).toBe(false);
+    expect(AchievementsSystem.countsToward(FADE, companion)).toBe(true);
+    expect(AchievementsSystem.countsToward(NIKO, booker)).toBe(false);
+    expect(AchievementsSystem.countsToward(NIKO, companion)).toBe(true);
+  });
+
+  it('reads an early bird by when the person’s own first worked seat began: by 10:00', () => {
+    const early = by(Metric.VisitsEarlyBird);
+    expect(
+      AchievementsSystem.countsToward(early, visit({ startMinuteOfDay: 600 })),
+    ).toBe(true);
+    expect(
+      AchievementsSystem.countsToward(early, visit({ startMinuteOfDay: 605 })),
+    ).toBe(false);
+    // The booker sat at 9:30; the companion's own seat began at 10:15.
+    expect(
+      AchievementsSystem.countsToward(early, visit({ startMinuteOfDay: 570 })),
+    ).toBe(true);
+    expect(
+      AchievementsSystem.countsToward(early, visit({ startMinuteOfDay: 615 })),
+    ).toBe(false);
+  });
+
+  it('reads a weekend visit off the shop’s calendar: Saturday and Sunday', () => {
+    const weekend = by(Metric.VisitsWeekend);
+    const days: readonly (readonly [Weekday, boolean])[] = [
+      [Weekday.Fri, false],
+      [Weekday.Sat, true],
+      [Weekday.Sun, true],
+      [Weekday.Mon, false],
+    ];
+    for (const [day, counts] of days) {
+      expect([
+        day,
+        AchievementsSystem.countsToward(weekend, visit({ startWeekday: day })),
+      ]).toEqual([day, counts]);
+    }
+  });
+
+  it('counts a punctual visit only when the arrival was marked, by the start', () => {
+    const onTime = by(Metric.VisitsOnTime);
+    const start = visit().startMs;
+    expect(AchievementsSystem.countsToward(onTime, visit())).toBe(false);
+    expect(
+      AchievementsSystem.countsToward(
+        onTime,
+        visit({ arrivedAtMs: start - 5 * 60_000 }),
+      ),
+    ).toBe(true);
+    expect(
+      AchievementsSystem.countsToward(onTime, visit({ arrivedAtMs: start })),
+    ).toBe(true);
+    expect(
+      AchievementsSystem.countsToward(
+        onTime,
+        visit({ arrivedAtMs: start + 5 * 60_000 }),
+      ),
+    ).toBe(false);
+  });
+
+  it('counts a visit with company only when someone else holds a seat on it', () => {
+    const party = by(Metric.VisitsParty);
+    expect(AchievementsSystem.countsToward(party, visit())).toBe(false);
+    expect(
+      AchievementsSystem.countsToward(party, visit({ withCompany: true })),
+    ).toBe(true);
+    // Two services of his own are not company.
+    expect(
+      AchievementsSystem.countsToward(
+        party,
+        visit({
+          serviceIds: [ServiceId.of('svc-fade'), ServiceId.of('svc-beard')],
+        }),
+      ),
+    ).toBe(false);
+  });
+
+  it('answers no for a family that counts no single visit', () => {
+    expect(AchievementsSystem.countsToward(null, visit())).toBe(false);
+    for (const metric of [
+      Metric.TenureDays,
+      Metric.BookingsSelfService,
+      Metric.ReferralsCompleted,
+      Metric.WaitlistBooked,
+      Metric.ServicesDistinct,
+      Metric.BarbersDistinct,
+      Metric.LocationsDistinct,
+      Metric.MonthsDistinct,
+      Metric.SpendMajor,
+      Metric.PointsLifetime,
+      Metric.ShopBookingsCreated,
+    ]) {
+      expect([
+        metric,
+        AchievementsSystem.countsToward(by(metric), visit()),
+      ]).toEqual([metric, false]);
+    }
+  });
+});
+
+describe('AchievementsSystem.insideWindows', () => {
+  const TODAY = DayKey.of('2026-09-28');
+  const autumn = {
+    from: DayKey.of('2026-09-01'),
+    until: DayKey.of('2026-11-30'),
+  };
+
+  it('counts a season’s family inside the season only, and nothing for a season the catalogue lacks', () => {
+    expect(
+      AchievementsSystem.insideWindows(
+        autumn,
+        true,
+        null,
+        DayKey.of('2026-09-10'),
+        TODAY,
+      ),
+    ).toBe(true);
+    expect(
+      AchievementsSystem.insideWindows(
+        autumn,
+        true,
+        null,
+        DayKey.of('2026-08-31'),
+        TODAY,
+      ),
+    ).toBe(false);
+    expect(
+      AchievementsSystem.insideWindows(
+        null,
+        true,
+        null,
+        DayKey.of('2026-09-10'),
+        TODAY,
+      ),
+    ).toBe(false);
+    expect(
+      AchievementsSystem.insideWindows(
+        null,
+        false,
+        null,
+        DayKey.of('2020-01-01'),
+        TODAY,
+      ),
+    ).toBe(true);
+  });
+
+  it('counts the last `lastDays` days of the metric’s own window, today included', () => {
+    const year = { lastDays: 365 };
+    expect(
+      AchievementsSystem.insideWindows(
+        null,
+        false,
+        year,
+        DayKey.of('2025-09-29'),
+        TODAY,
+      ),
+    ).toBe(true);
+    expect(
+      AchievementsSystem.insideWindows(
+        null,
+        false,
+        year,
+        DayKey.of('2025-09-28'),
+        TODAY,
+      ),
+    ).toBe(false);
+  });
+});
+
+describe('AchievementsSystem purity', () => {
+  it('is pure: same input → same output, inputs untouched', () => {
+    const counted = deepFreeze(visit({ withCompany: true }));
+    const metric = deepFreeze(FADE);
+    expect(AchievementsSystem.countsToward(metric, counted)).toBe(
+      AchievementsSystem.countsToward(metric, counted),
+    );
+  });
+});

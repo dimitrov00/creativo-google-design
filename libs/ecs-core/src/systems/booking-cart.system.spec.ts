@@ -1,0 +1,1771 @@
+import fc from 'fast-check';
+import { describe, expect, it } from 'vitest';
+import { BarberOffering } from '../components/barber-offering.data';
+import { BarberPref, BarberPrefKind } from '../components/barber-pref.data';
+import {
+  BookingFlowState,
+  BookingFlowStep,
+  type SeatAssignment,
+} from '../components/booking-flow.data';
+import { BookingPolicy } from '../components/booking-policy.data';
+import { BookingCart, CartLine, SeatKey } from '../components/cart-line.data';
+import { DayKey } from '../components/day-key.data';
+import type { DayOffset } from '../components/day-offset.data';
+import { DayWindows } from '../components/day-windows.data';
+import { FlexibleWhen } from '../components/flexible-when.data';
+import { MinuteRange } from '../components/minute-range.data';
+import { Party, PartyMember, PartyMemberKind } from '../components/party.data';
+import { RosterWindow } from '../components/roster-window.data';
+import { SchedulingErrorCode } from '../components/scheduling-errors.data';
+import { SeatLabel } from '../components/seat-label.data';
+import { SeatRelationship, SeatSubject } from '../components/seat.data';
+import {
+  ServiceTerms,
+  ServiceVariantId,
+} from '../components/service-terms.data';
+import { TimeInterval } from '../components/time-interval.data';
+import { BarberId } from '../entities/barber.entity';
+import { LocationId } from '../entities/location.entity';
+import { ServiceId } from '../entities/service.entity';
+import { UserId } from '../entities/user.entity';
+import { dayTableFixture, deepFreeze, unwrapErr, unwrapOk } from '../testing';
+import {
+  type AvailabilityLine,
+  AvailabilitySystem,
+  type ChairTime,
+} from './availability.system';
+import {
+  BookingCartSystem,
+  type CartBarberDay,
+  type CartRider,
+  type CartService,
+  CommitSubjectKind,
+  type PrefillSeat,
+  PrefillCompanions,
+} from './booking-cart.system';
+import { BookingFlowEventKind, BookingFlowSystem } from './booking-flow.system';
+import { RosterSystem } from './roster.system';
+import cartSystemSource from './booking-cart.system.ts?raw';
+
+/* ── Fixtures ─────────────────────────────────────────────────────────── */
+
+const SELF = 'self';
+const GUEST = 'guest-0';
+const svc = (raw: string): ServiceId => ServiceId.of(raw);
+const barber = (raw: string): BarberId => BarberId.of(raw);
+const shop = (raw: string): LocationId => LocationId.of(raw);
+
+function line(
+  serviceId: string,
+  barberId: string | null = null,
+  variantId: string | null = null,
+): BookingCart.NewLine {
+  return {
+    serviceId: svc(serviceId),
+    variantId: variantId === null ? null : ServiceVariantId.of(variantId),
+    barberId: barberId === null ? null : barber(barberId),
+    locationId: null,
+  };
+}
+
+const CUT = line('svc-classic-cut');
+/** A SECOND, different service — one seat may hold several, just not twins. */
+const BEARD = line('svc-beard');
+
+/** `addLine` refuses a duplicate; these fixtures know their input is legal. */
+function added(
+  cart: BookingCart,
+  seatKey: string,
+  newLine: BookingCart.NewLine,
+): BookingCart {
+  return unwrapOk(BookingCart.addLine(cart, seatKey, newLine));
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+ * Copied (not moved) from libs/domain/scheduling/src/lib/booking-cart.spec.ts
+ * — all 24 cases, re-targeted from the `BookingCart` class to the
+ * `BookingCart` component (its operations) and `BookingCartSystem.salvage`
+ * (the forgiving `reconstitute`).
+ * ═════════════════════════════════════════════════════════════════════ */
+
+describe('CartLine.seatKeyValue', () => {
+  it('distinguishes the booker from every guest', () => {
+    expect(CartLine.seatKeyValue(SeatKey.self())).toBe('self');
+    expect(CartLine.seatKeyValue(SeatKey.guest('guest-0'))).toBe('guest-0');
+    expect(CartLine.seatKeyValue(SeatKey.guest('guest-1'))).toBe('guest-1');
+  });
+});
+
+describe('BookingCart.addLine / removeLine', () => {
+  it('starts empty and scopes lines to the seat that added them', () => {
+    const cart = added(BookingCart.empty(), SELF, CUT);
+
+    expect(BookingCart.isEmpty(cart)).toBe(false);
+    expect(BookingCart.lineCount(cart)).toBe(1);
+    expect(BookingCart.linesFor(cart, SELF)).toHaveLength(1);
+    expect(BookingCart.linesFor(cart, GUEST)).toHaveLength(0);
+  });
+
+  it('leaves the original cart untouched (every mutation returns a new cart)', () => {
+    const empty = BookingCart.empty();
+    BookingCart.addLine(empty, SELF, CUT);
+    expect(BookingCart.isEmpty(empty)).toBe(true);
+  });
+
+  it('REFUSES the same service twice for one person', () => {
+    const cart = added(BookingCart.empty(), SELF, CUT);
+    const twice = BookingCart.addLine(cart, SELF, CUT);
+
+    expect(twice.ok).toBe(false);
+    expect(!twice.ok && twice.error.code).toBe(
+      'scheduling.booking_cart.duplicate_service',
+    );
+    expect(BookingCart.linesFor(cart, SELF)).toHaveLength(1);
+  });
+
+  it('lets one seat hold several DIFFERENT services', () => {
+    const cart = added(added(BookingCart.empty(), SELF, CUT), SELF, BEARD);
+    const [first, second] = BookingCart.linesFor(cart, SELF);
+    expect(BookingCart.linesFor(cart, SELF)).toHaveLength(2);
+    expect(first?.lineId).not.toBe(second?.lineId);
+  });
+
+  it('lets the SAME service go to two different people', () => {
+    const cart = added(added(BookingCart.empty(), SELF, CUT), GUEST, CUT);
+    expect(BookingCart.linesFor(cart, SELF)).toHaveLength(1);
+    expect(BookingCart.linesFor(cart, GUEST)).toHaveLength(1);
+  });
+
+  it('never reuses a line id after add → remove → add (§7.7 discipline)', () => {
+    const cart = added(BookingCart.empty(), SELF, CUT);
+    const firstId = (BookingCart.linesFor(cart, SELF)[0] as CartLine).lineId;
+
+    const removed = unwrapOk(BookingCart.removeLine(cart, SELF, firstId));
+    expect(BookingCart.lineCount(removed)).toBe(0);
+
+    const readded = added(removed, SELF, CUT);
+    expect(BookingCart.linesFor(readded, SELF)[0]?.lineId).not.toBe(firstId);
+  });
+
+  it('fails removing a line the seat does not hold', () => {
+    const cart = added(BookingCart.empty(), SELF, CUT);
+    const result = BookingCart.removeLine(cart, SELF, CartLine.lineIdOf(99));
+    expect(!result.ok && result.error.code).toBe(
+      'scheduling.booking_cart.line_not_found',
+    );
+  });
+
+  it('fails removing another seat’s line rather than silently succeeding', () => {
+    const cart = added(BookingCart.empty(), SELF, CUT);
+    const selfLineId = (BookingCart.linesFor(cart, SELF)[0] as CartLine).lineId;
+    expect(BookingCart.removeLine(cart, GUEST, selfLineId).ok).toBe(false);
+  });
+
+  it('drops a seat entirely from the cart once its last line goes', () => {
+    const cart = added(BookingCart.empty(), GUEST, CUT);
+    const removed = unwrapOk(
+      BookingCart.removeLine(
+        cart,
+        GUEST,
+        (BookingCart.linesFor(cart, GUEST)[0] as CartLine).lineId,
+      ),
+    );
+    expect(removed.seats).toHaveLength(0);
+  });
+});
+
+describe('BookingCart.setVariant / setBarber', () => {
+  it('re-points one line without disturbing its neighbours', () => {
+    const cart = added(added(BookingCart.empty(), SELF, CUT), SELF, BEARD);
+    const [first, second] = BookingCart.linesFor(cart, SELF) as [
+      CartLine,
+      CartLine,
+    ];
+
+    const updated = unwrapOk(
+      BookingCart.setVariant(
+        cart,
+        SELF,
+        first.lineId,
+        ServiceVariantId.of('long'),
+      ),
+    );
+
+    const lines = BookingCart.linesFor(updated, SELF);
+    expect(lines[0]?.variantId).toBe('long');
+    expect(lines[1]?.variantId).toBeNull();
+    expect(lines[1]?.lineId).toBe(second.lineId);
+  });
+
+  it('moves a line from "anyone" to a specific barber and back', () => {
+    const cart = added(BookingCart.empty(), SELF, CUT);
+    const lineId = (BookingCart.linesFor(cart, SELF)[0] as CartLine).lineId;
+
+    const pinned = unwrapOk(
+      BookingCart.setBarber(cart, SELF, lineId, barber('ivan')),
+    );
+    expect(
+      BarberPref.fromBarberId(
+        (BookingCart.linesFor(pinned, SELF)[0] as CartLine).barberId,
+      ).kind,
+    ).toBe(BarberPrefKind.Specific);
+
+    const loosened = unwrapOk(
+      BookingCart.setBarber(pinned, SELF, lineId, null),
+    );
+    expect(
+      BarberPref.fromBarberId(
+        (BookingCart.linesFor(loosened, SELF)[0] as CartLine).barberId,
+      ).kind,
+    ).toBe(BarberPrefKind.Any);
+  });
+
+  it('fails on an unknown line', () => {
+    const cart = added(BookingCart.empty(), SELF, CUT);
+    expect(
+      BookingCart.setVariant(cart, SELF, CartLine.lineIdOf(99), null).ok,
+    ).toBe(false);
+  });
+});
+
+describe('BookingCart.dropSeat', () => {
+  it('forgets a departing guest’s lines and leaves everyone else alone', () => {
+    const cart = added(added(BookingCart.empty(), SELF, CUT), GUEST, CUT);
+    const dropped = BookingCart.dropSeat(cart, GUEST);
+
+    expect(BookingCart.linesFor(dropped, GUEST)).toHaveLength(0);
+    expect(BookingCart.linesFor(dropped, SELF)).toHaveLength(1);
+    expect(BookingCart.lineCount(dropped)).toBe(1);
+  });
+
+  it('is a no-op for a seat that holds nothing', () => {
+    const cart = added(BookingCart.empty(), SELF, CUT);
+    expect(BookingCart.dropSeat(cart, GUEST)).toBe(cart);
+  });
+
+  it('never rewinds the line counter — a re-added guest cannot inherit an id', () => {
+    const cart = added(BookingCart.empty(), GUEST, CUT);
+    const droppedLineId = (BookingCart.linesFor(cart, GUEST)[0] as CartLine)
+      .lineId;
+
+    const readded = added(BookingCart.dropSeat(cart, GUEST), GUEST, CUT);
+    expect(BookingCart.linesFor(readded, GUEST)[0]?.lineId).not.toBe(
+      droppedLineId,
+    );
+  });
+});
+
+describe('BookingCartSystem.salvage — the forgiving reconstitute', () => {
+  it('round-trips lines, ids and the counter', () => {
+    const original = added(
+      added(BookingCart.empty(), SELF, line('svc-classic-cut', null, 'long')),
+      GUEST,
+      line('svc-classic-cut', 'ivan'),
+    );
+
+    const restored = unwrapOk(
+      BookingCartSystem.salvage(JSON.parse(JSON.stringify(original))),
+    );
+
+    expect(BookingCart.lineCount(restored)).toBe(2);
+    expect(BookingCart.linesFor(restored, SELF)[0]?.variantId).toBe('long');
+    expect(
+      BarberPref.fromBarberId(
+        (BookingCart.linesFor(restored, GUEST)[0] as CartLine).barberId,
+      ),
+    ).toEqual(BarberPref.specific(barber('ivan')));
+    // The restored cart must keep minting FORWARD of the persisted counter,
+    // or a reload would resurrect an id the pre-reload session already used.
+    const beforeIds = original.seats.flatMap((seat) =>
+      seat.lines.map((l) => l.lineId),
+    );
+    const next = BookingCart.linesFor(added(restored, SELF, BEARD), SELF).at(
+      -1,
+    ) as CartLine;
+    expect(beforeIds).not.toContain(next.lineId);
+  });
+
+  it('rejects a corrupt sequence counter rather than coercing it', () => {
+    const error = unwrapErr(
+      BookingCartSystem.salvage({ seats: [], nextSequence: -1 }),
+    );
+    expect(error.code).toBe('scheduling.booking_cart.invalid_line_sequence');
+  });
+
+  it('drops a malformed line but keeps the rest of the draft', () => {
+    const restored = unwrapOk(
+      BookingCartSystem.salvage({
+        seats: [
+          {
+            seatKey: 'self',
+            lines: [
+              {
+                lineId: 'line-0',
+                seatKey: 'self',
+                serviceId: svc(''),
+                variantId: null,
+                barberId: null,
+                locationId: null,
+              },
+              {
+                lineId: 'line-1',
+                seatKey: 'self',
+                serviceId: svc('svc-fade'),
+                variantId: null,
+                barberId: null,
+                locationId: null,
+              },
+            ],
+          },
+        ],
+        nextSequence: 2,
+      }),
+    );
+
+    expect(BookingCart.lineCount(restored)).toBe(1);
+    expect(BookingCart.linesFor(restored, SELF)[0]?.serviceId).toBe('svc-fade');
+  });
+});
+
+describe('BookingCart.acceptedBarbers', () => {
+  const POOL = ['ivan', 'niko', 'stefan'].map(barber);
+
+  function pinned(cart: BookingCart, seatKey: string, id: string): BookingCart {
+    const last = BookingCart.linesFor(cart, seatKey).at(-1);
+    if (last === undefined) throw new Error('bad fixture');
+    return unwrapOk(
+      BookingCart.setBarber(cart, seatKey, last.lineId, barber(id)),
+    );
+  }
+
+  it('narrows the pool to the barber a single pinned line wants', () => {
+    const cart = pinned(added(BookingCart.empty(), SELF, CUT), SELF, 'ivan');
+    expect(BookingCart.acceptedBarbers(cart, POOL)).toEqual(['ivan']);
+  });
+
+  it('keeps every barber a party pins, in the pool’s order', () => {
+    const withGuest = added(
+      pinned(added(BookingCart.empty(), SELF, CUT), SELF, 'stefan'),
+      GUEST,
+      BEARD,
+    );
+    const cart = pinned(withGuest, GUEST, 'ivan');
+    expect(BookingCart.acceptedBarbers(cart, POOL)).toEqual(['ivan', 'stefan']);
+  });
+
+  it('accepts the whole pool as soon as one line takes anyone', () => {
+    const cart = added(
+      pinned(added(BookingCart.empty(), SELF, CUT), SELF, 'ivan'),
+      SELF,
+      BEARD,
+    );
+    expect(BookingCart.acceptedBarbers(cart, POOL)).toEqual([
+      'ivan',
+      'niko',
+      'stefan',
+    ]);
+  });
+
+  it('accepts nobody for an empty cart, and nobody outside the pool', () => {
+    expect(BookingCart.acceptedBarbers(BookingCart.empty(), POOL)).toEqual([]);
+    const cart = pinned(added(BookingCart.empty(), SELF, CUT), SELF, 'ivo');
+    expect(BookingCart.acceptedBarbers(cart, POOL)).toEqual([]);
+  });
+
+  it('is exactly the pool barbers some line’s preference matches', () => {
+    const pref = fc.option(fc.constantFrom('ivan', 'niko', 'stefan', 'ivo'), {
+      nil: null,
+    });
+    const seat = fc.array(pref, { minLength: 1, maxLength: 3 });
+    fc.assert(
+      fc.property(
+        fc.array(seat, { maxLength: 3 }),
+        fc.subarray(['ivan', 'niko', 'stefan', 'ivo']),
+        (seats, poolIds) => {
+          const restored = unwrapOk(
+            BookingCartSystem.salvage({
+              seats: seats.map((prefs, index) => {
+                const seatKey = index === 0 ? 'self' : `guest-${index}`;
+                return {
+                  seatKey,
+                  lines: prefs.map((id, at) => ({
+                    lineId: `line-${index}-${at}`,
+                    seatKey,
+                    serviceId: svc(`svc-${at}`),
+                    variantId: null,
+                    barberId: id === null ? null : barber(id),
+                    locationId: null,
+                  })),
+                };
+              }),
+              nextSequence: 99,
+            }),
+          );
+          const pool = poolIds.map(barber);
+          const prefs = restored.seats.flatMap((entry) =>
+            entry.lines.map((l) => BarberPref.fromBarberId(l.barberId)),
+          );
+          const expected = pool.filter((id) =>
+            prefs.some((p) => BarberPref.matches(p, id)),
+          );
+          expect(BookingCart.acceptedBarbers(restored, pool)).toEqual(expected);
+        },
+      ),
+    );
+  });
+});
+
+/* ═══════════════════════════════════════════════════════════════════════
+ * Copied (not moved) from
+ * libs/application/booking/src/lib/use-cases/party-shops.spec.ts — all 9
+ * cases, re-targeted to `BookingCartSystem.shopsServingParty` /
+ * `partyServicesOf` over `CartService` structs.
+ * ═════════════════════════════════════════════════════════════════════ */
+
+const SHOPS = ['loc-center', 'loc-mladost', 'loc-lozenets'].map(shop);
+
+/** A 30-minute service offered at `locationIds` (empty ⇒ every shop). */
+function serviceAt(id: string, locationIds: readonly string[]): CartService {
+  return {
+    id: svc(id),
+    baseTerms: ServiceTerms.unpadded(2000, 'EUR', 30),
+    offerings: [],
+    locationIds: locationIds.map(shop),
+  };
+}
+
+/** A cut everywhere, a beard at Center, a perm at Center and Mladost. */
+const CATALOG = [
+  serviceAt('svc-cut', []),
+  serviceAt('svc-beard', ['loc-center']),
+  serviceAt('svc-perm', ['loc-center', 'loc-mladost']),
+];
+
+function party(lines: readonly string[], riders: readonly string[] = []) {
+  return {
+    lineServiceIds: lines.map(svc),
+    riderServiceIds: riders.map(svc),
+  };
+}
+
+function serving(
+  asked: ReturnType<typeof party>,
+  services: readonly CartService[] = CATALOG,
+): readonly string[] {
+  return BookingCartSystem.shopsServingParty(asked, services, SHOPS);
+}
+
+describe('BookingCartSystem.shopsServingParty — the shops that can serve the whole visit', () => {
+  it('keeps every shop, in the order given, for services every shop offers', () => {
+    expect(serving(party(['svc-cut'], ['svc-cut']))).toEqual(SHOPS);
+    expect(serving(party([]))).toEqual(SHOPS);
+  });
+
+  it('keeps only the shops that offer EVERY service on the visit', () => {
+    expect(serving(party(['svc-beard']))).toEqual(['loc-center']);
+    expect(serving(party(['svc-perm']))).toEqual(['loc-center', 'loc-mladost']);
+    expect(serving(party(['svc-perm', 'svc-cut']))).toEqual([
+      'loc-center',
+      'loc-mladost',
+    ]);
+  });
+
+  it('holds a carried seat to the same rule as a cart line', () => {
+    expect(serving(party(['svc-cut'], ['svc-beard']))).toEqual(['loc-center']);
+    expect(serving(party(['svc-perm'], ['svc-beard']))).toEqual(['loc-center']);
+  });
+
+  it('keeps no shop when no single shop offers all of it', () => {
+    const lozenetsOnly = serviceAt('svc-color', ['loc-lozenets']);
+    expect(
+      serving(party(['svc-beard', 'svc-color']), [...CATALOG, lozenetsOnly]),
+    ).toEqual([]);
+  });
+
+  it('asks nothing of a shop for a cart line the catalog does not know — the grid dropped it', () => {
+    expect(serving(party(['svc-retired']))).toEqual(SHOPS);
+  });
+
+  it('serves a carried seat the catalog does not know NOWHERE — the server refuses it', () => {
+    expect(serving(party(['svc-cut'], ['svc-retired']))).toEqual([]);
+  });
+
+  it('never gains a shop when the visit asks for more', () => {
+    const ids = ['svc-cut', 'svc-beard', 'svc-perm', 'svc-retired'];
+    const ask = fc.record({
+      lines: fc.subarray(ids),
+      riders: fc.subarray(ids),
+    });
+    fc.assert(
+      fc.property(ask, ask, (smaller, extra) => {
+        const before = serving(party(smaller.lines, smaller.riders));
+        const after = serving(
+          party(
+            [...smaller.lines, ...extra.lines],
+            [...smaller.riders, ...extra.riders],
+          ),
+        );
+        expect(after.every((id) => before.includes(id))).toBe(true);
+      }),
+    );
+  });
+});
+
+describe('BookingCartSystem.partyServicesOf — what a visit asks a shop for', () => {
+  it('names every cart line’s service and every carried seat’s', () => {
+    const cart = added(
+      added(BookingCart.empty(), SELF, line('svc-cut')),
+      SELF,
+      line('svc-beard'),
+    );
+    const son: CartRider = {
+      serviceId: svc('svc-perm'),
+      barberId: barber('niko'),
+      offsetMinutes: 0,
+      terms: { durationMinutes: 30, padBeforeMinutes: 0, padAfterMinutes: 0 },
+    };
+
+    const asked = BookingCartSystem.partyServicesOf(cart, [son]);
+
+    expect(asked.lineServiceIds).toEqual(['svc-cut', 'svc-beard']);
+    expect(asked.riderServiceIds).toEqual(['svc-perm']);
+    expect(BookingCartSystem.partyServicesOf(cart, []).riderServiceIds).toEqual(
+      [],
+    );
+  });
+});
+
+describe('booking-cart.system — the lower module', () => {
+  // The flow consumes the cart system, so the flow system imports it. The
+  // cart importing anything back is the cycle this module is cut free of.
+  it('imports nothing from the flow system that consumes it', () => {
+    expect(cartSystemSource).not.toMatch(/from\s+'\.\/booking-flow\.system/);
+  });
+});
+
+/* ═══════════════════════════════════════════════════════════════════════
+ * Copied (not moved) from
+ * libs/application/booking/src/lib/use-cases/observe-availability.use-case.spec.ts
+ * — 15 of its 16 cases (the DateRange fixture sanity is not this system's),
+ * re-targeted from the use case + reader to `BookingCartSystem
+ * .toAvailabilityLines` / `optionsForDay` over a day row of the zone table:
+ * the reader's padding is `AvailabilitySystem.paddedBusy`, its shop filter
+ * `RosterSystem.windowsAt`.
+ * ═════════════════════════════════════════════════════════════════════ */
+
+const DAY: DayOffset = dayTableFixture(
+  '2026-08-03',
+  '2026-08-03',
+  'Europe/Sofia',
+)[0] as DayOffset;
+const CENTER = shop('loc-center');
+const MLADOST = shop('loc-mladost');
+
+/** Local wall-clock on the fixture day, as epoch millis. */
+function at(hour: number, minute = 0): number {
+  return DAY.dayStartMs + (hour * 60 + minute) * 60_000;
+}
+const mins = (hour: number, minute = 0): number => hour * 60 + minute;
+
+/**
+ * A haircut Ivan does in 30 minutes and Niko in 45, with Niko needing 15
+ * minutes of cleanup after. Both axes of the terms matrix in one fixture.
+ */
+function fadeService(): CartService {
+  const offering = (barberId: string, terms: ServiceTerms): BarberOffering => ({
+    barberId: barber(barberId),
+    base: terms,
+    overrides: [],
+  });
+  return {
+    id: svc('svc-fade'),
+    baseTerms: ServiceTerms.unpadded(2500, 'EUR', 40),
+    offerings: [
+      offering('ivan', ServiceTerms.unpadded(2500, 'EUR', 30)),
+      offering('niko', ServiceTerms.of(2800, 'EUR', 45, 0, 15)),
+    ],
+    locationIds: [CENTER],
+  };
+}
+
+function cartWithFade(barberId: string | null = null): BookingCart {
+  return added(BookingCart.empty(), SELF, line('svc-fade', barberId));
+}
+
+function barberDay(
+  id: string,
+  window: readonly [number, number],
+): CartBarberDay {
+  return {
+    barberId: barber(id),
+    windows: [RosterWindow.of(barber(id), CENTER, window[0], window[1])],
+    busy: [],
+  };
+}
+
+function policyWithLead(minLeadMinutes: number): BookingPolicy {
+  return unwrapOk(
+    BookingPolicy.create({ ...BookingPolicy.DEFAULT, minLeadMinutes }),
+  );
+}
+
+/** The day's options for a bag, as the grid asks for them. */
+function optionsFor(input: {
+  readonly cart: BookingCart;
+  readonly services: readonly CartService[];
+  readonly barbers: readonly CartBarberDay[];
+  readonly policy: BookingPolicy;
+  readonly nowMs: number;
+  readonly riders?: readonly CartRider[];
+}) {
+  return BookingCartSystem.optionsForDay({
+    cart: input.cart,
+    services: input.services,
+    riders: input.riders ?? [],
+    barbers: input.barbers,
+    day: DAY,
+    policy: input.policy,
+    notBeforeMs: AvailabilitySystem.leadFloorMs(input.nowMs, input.policy),
+    withinMs: null,
+    budget: AvailabilitySystem.DEFAULT_BUDGET,
+  });
+}
+
+function startsOf(
+  options: ReturnType<typeof BookingCartSystem.optionsForDay>,
+): readonly number[] {
+  return AvailabilitySystem.distinctStarts(
+    options.map((entry) => entry.option),
+  );
+}
+
+describe('BookingCartSystem.toAvailabilityLines', () => {
+  it('resolves BOTH terms axes — per barber, and the catalog default', () => {
+    const lines = BookingCartSystem.toAvailabilityLines(
+      cartWithFade(),
+      [fadeService()],
+      [barber('ivan'), barber('niko')],
+    );
+
+    expect(lines).toHaveLength(1);
+    const first = lines[0] as AvailabilityLine;
+    // Default = the catalog terms before anyone is picked.
+    expect(first.durationMinutes).toBe(40);
+    expect(first.termsByBarber[0]).toEqual({
+      durationMinutes: 30,
+      padBeforeMinutes: 0,
+      padAfterMinutes: 0,
+    });
+    // Niko's cleanup rides along as a pad, NOT folded into the duration.
+    expect(first.termsByBarber[1]).toEqual({
+      durationMinutes: 45,
+      padBeforeMinutes: 0,
+      padAfterMinutes: 15,
+    });
+  });
+
+  it('names each line’s PERSON by its seat — the key the engine keeps one person in one chair by', () => {
+    const cart = added(cartWithFade(), 'guest-3', line('svc-fade'));
+
+    const lines = BookingCartSystem.toAvailabilityLines(
+      cart,
+      [fadeService()],
+      [barber('ivan'), barber('niko')],
+    );
+
+    expect(lines.map((l) => l.personKey)).toEqual(['self', 'guest-3']);
+  });
+
+  it('never offers one person’s two services in two chairs at once', () => {
+    // The booker with a fade AND a beard, both «any barber», and two barbers
+    // free all morning. Person-blind, the grid offered both at 09:00.
+    const beard: CartService = {
+      id: svc('svc-beard'),
+      baseTerms: ServiceTerms.unpadded(1500, 'EUR', 30),
+      offerings: [],
+      locationIds: [CENTER],
+    };
+    const cart = added(cartWithFade(), SELF, line('svc-beard'));
+    const lines = BookingCartSystem.toAvailabilityLines(
+      cart,
+      [fadeService(), beard],
+      [barber('ivan'), barber('niko')],
+    );
+
+    const options = optionsFor({
+      cart,
+      services: [fadeService(), beard],
+      barbers: [
+        barberDay('ivan', [mins(9), mins(12)]),
+        barberDay('niko', [mins(9), mins(12)]),
+      ],
+      policy: policyWithLead(0),
+      nowMs: at(6),
+    });
+
+    expect(options.length).toBeGreaterThan(0);
+    expect(lines.every((l) => l.personKey === 'self')).toBe(true);
+    for (const { option } of options) {
+      const [first, second] = option.assignments;
+      if (!first || !second) throw new Error('two services, two seats');
+      expect(TimeInterval.overlaps(first.slot, second.slot)).toBe(false);
+    }
+  });
+
+  it('DROPS a line whose service is not in the snapshot', () => {
+    expect(
+      BookingCartSystem.toAvailabilityLines(
+        cartWithFade(),
+        [],
+        [barber('ivan')],
+      ),
+    ).toEqual([]);
+  });
+});
+
+describe('BookingCartSystem.optionsForDay', () => {
+  const policy = policyWithLead(120);
+  const base = (cart = cartWithFade()) => ({
+    cart,
+    services: [fadeService()],
+    policy,
+    nowMs: at(6),
+  });
+
+  it('sells each barber their OWN duration', () => {
+    const options = optionsFor({
+      ...base(),
+      barbers: [
+        barberDay('ivan', [mins(12), mins(12, 30)]),
+        barberDay('niko', [mins(14), mins(15)]),
+      ],
+    });
+
+    const byBarber = new Map(
+      options.map(({ option }) => [
+        option.assignments[0]?.barberId,
+        TimeInterval.durationMinutes(
+          option.assignments[0]?.slot as TimeInterval,
+        ),
+      ]),
+    );
+    expect(byBarber.get(barber('ivan'))).toBe(30);
+    expect(byBarber.get(barber('niko'))).toBe(45);
+  });
+
+  it('keeps ONE arrangement per start, so a long day reaches the evening', () => {
+    const options = optionsFor({
+      ...base(),
+      barbers: [
+        barberDay('ivan', [mins(9), mins(20)]),
+        barberDay('niko', [mins(9), mins(20)]),
+      ],
+    });
+    const starts = startsOf(options);
+    expect(options.length).toBe(starts.length);
+    expect(Math.max(...starts)).toBeGreaterThan(at(17));
+  });
+
+  it('applies the minimum lead time as a floor on the first start', () => {
+    // "Now" is 10:00 with a 120-minute lead, so nothing before 12:00.
+    const options = optionsFor({
+      ...base(),
+      nowMs: at(10),
+      barbers: [barberDay('ivan', [mins(9), mins(18)])],
+    });
+    expect(startsOf(options)[0]).toBe(at(12));
+  });
+
+  it('returns nothing for an empty cart', () => {
+    const options = optionsFor({
+      ...base(BookingCart.empty()),
+      barbers: [barberDay('ivan', [mins(9), mins(18)])],
+    });
+    expect(options).toEqual([]);
+  });
+
+  it('offers a gap only the faster barber fits', () => {
+    // 30 minutes of room, both barbers free, `any` preference. Ivan fits at
+    // 30; Niko needs 45 + 15 cleanup. The slot must still be offered.
+    const options = optionsFor({
+      ...base(),
+      barbers: [
+        barberDay('ivan', [mins(12), mins(12, 30)]),
+        barberDay('niko', [mins(12), mins(12, 30)]),
+      ],
+    });
+    expect(startsOf(options)).toEqual([at(12)]);
+    for (const { option } of options) {
+      expect(option.assignments[0]?.barberId).toBe('ivan');
+    }
+  });
+});
+
+describe('BookingCartSystem.optionsForDay — a move', () => {
+  const policy = policyWithLead(120);
+  /** The client keeps Ivan for their fade: 30 minutes with him. */
+  const cart = cartWithFade('ivan');
+  /** The son the shop seated beside the client, 45 minutes with Niko. */
+  const son: CartRider = {
+    serviceId: svc('svc-fade'),
+    barberId: barber('niko'),
+    offsetMinutes: 0,
+    terms: { durationMinutes: 45, padBeforeMinutes: 0, padAfterMinutes: 0 },
+  };
+
+  /** Stored geometry, padded the way the grid's read pads it. */
+  function stored(
+    days: readonly {
+      readonly id: string;
+      readonly window: readonly [number, number];
+      readonly spans: readonly TimeInterval[];
+      readonly turnaroundMinutes?: number;
+    }[],
+    release: readonly ChairTime[] = [],
+  ): readonly CartBarberDay[] {
+    return days.map((entry) => ({
+      barberId: barber(entry.id),
+      windows: [
+        RosterWindow.of(
+          barber(entry.id),
+          CENTER,
+          entry.window[0],
+          entry.window[1],
+        ),
+      ],
+      busy: AvailabilitySystem.paddedBusy({
+        barberId: barber(entry.id),
+        spans: entry.spans,
+        turnaroundMinutes: entry.turnaroundMinutes ?? 0,
+        release,
+      }),
+    }));
+  }
+
+  it('drops every start where a carried seat’s barber is busy at the shifted time', () => {
+    // Niko is somebody else's until 13:00.
+    const barbers = stored([
+      { id: 'ivan', window: [mins(12), mins(14)], spans: [] },
+      {
+        id: 'niko',
+        window: [mins(12), mins(14)],
+        spans: [TimeInterval.of(at(12), at(13))],
+      },
+    ]);
+    const services = [fadeService()];
+
+    const alone = optionsFor({ cart, services, barbers, policy, nowMs: at(6) });
+    const carried = optionsFor({
+      cart,
+      services,
+      barbers,
+      policy,
+      nowMs: at(6),
+      riders: [son],
+    });
+
+    expect(startsOf(alone)[0]).toBe(at(12));
+    // 13:30 goes too: the son's 45 minutes would run past Niko's day.
+    expect(startsOf(carried)).toEqual([at(13), at(13, 15)]);
+  });
+
+  it('never lets the moved visit’s OWN seats block its move — the client’s and the carried son’s alike', () => {
+    const own: readonly ChairTime[] = [
+      {
+        barberId: barber('ivan'),
+        occupied: TimeInterval.of(at(12), at(12, 30)),
+      },
+      {
+        barberId: barber('niko'),
+        occupied: TimeInterval.of(at(12), at(12, 45)),
+      },
+    ];
+    const geometry = [
+      {
+        id: 'ivan',
+        window: [mins(12), mins(14)] as const,
+        spans: [(own[0] as ChairTime).occupied],
+        turnaroundMinutes: 10,
+      },
+      {
+        id: 'niko',
+        window: [mins(12), mins(14)] as const,
+        spans: [(own[1] as ChairTime).occupied],
+        turnaroundMinutes: 10,
+      },
+    ];
+    const services = [fadeService()];
+
+    const kept = optionsFor({
+      cart,
+      services,
+      barbers: stored(geometry),
+      policy,
+      nowMs: at(6),
+      riders: [son],
+    });
+    const released = optionsFor({
+      cart,
+      services,
+      barbers: stored(geometry, own),
+      policy,
+      nowMs: at(6),
+      riders: [son],
+    });
+
+    // Without the release the visit collides with itself, turnaround and
+    // all: the son's old chair keeps Niko until 12:55.
+    expect(startsOf(kept)[0]).toBe(at(12, 55));
+    // With it, the day is the whole day again, for the lines and the rider.
+    expect(startsOf(released).slice(0, 2)).toEqual([at(12), at(12, 15)]);
+  });
+});
+
+describe('BookingCartSystem.optionsForDay — a shop that cannot serve somebody on the visit', () => {
+  const policy = policyWithLead(0);
+  const cut = () => serviceAt('svc-cut', []);
+  const beard = () => serviceAt('svc-beard', ['loc-center']);
+
+  /** Ivan and Niko work Center 12:00–13:00 and Mladost 15:00–16:00; nobody is booked. */
+  const pool = (): readonly CartBarberDay[] =>
+    ['ivan', 'niko'].map((id) => ({
+      barberId: barber(id),
+      windows: [
+        RosterWindow.of(barber(id), CENTER, mins(12), mins(13)),
+        RosterWindow.of(barber(id), MLADOST, mins(15), mins(16)),
+      ],
+      busy: [],
+    }));
+
+  const son = (serviceId: string): CartRider => ({
+    serviceId: svc(serviceId),
+    barberId: barber('niko'),
+    offsetMinutes: 0,
+    terms: { durationMinutes: 30, padBeforeMinutes: 0, padAfterMinutes: 0 },
+  });
+
+  const cartOf = (serviceId: string): BookingCart =>
+    added(BookingCart.empty(), SELF, line(serviceId, 'ivan'));
+
+  function shopsOffered(input: {
+    readonly cart?: BookingCart;
+    readonly services?: readonly CartService[];
+    readonly locationId?: LocationId | null;
+    readonly riders?: readonly CartRider[];
+  }): readonly string[] {
+    const locationId = input.locationId ?? null;
+    // The read narrows to the named shop's windows, as the grid's reader does.
+    const barbers =
+      locationId === null
+        ? pool()
+        : pool().map((entry) => ({
+            ...entry,
+            windows: RosterSystem.windowsAt(entry.windows, locationId),
+          }));
+    const options = optionsFor({
+      cart: input.cart ?? cartOf('svc-cut'),
+      services: input.services ?? [cut(), beard()],
+      barbers,
+      policy,
+      nowMs: at(6),
+      riders: input.riders ?? [],
+    });
+    return [...new Set(options.map((entry) => entry.locationId))];
+  }
+
+  it('offers every shop to a party every shop can serve', () => {
+    expect(shopsOffered({})).toEqual(['loc-center', 'loc-mladost']);
+    expect(shopsOffered({ riders: [son('svc-cut')] })).toEqual([
+      'loc-center',
+      'loc-mladost',
+    ]);
+  });
+
+  it('offers no time at a shop that does not offer a carried seat’s service — the other shop still does', () => {
+    expect(shopsOffered({ riders: [son('svc-beard')] })).toEqual([
+      'loc-center',
+    ]);
+    expect(
+      shopsOffered({ locationId: MLADOST, riders: [son('svc-beard')] }),
+    ).toEqual([]);
+    expect(
+      shopsOffered({ locationId: CENTER, riders: [son('svc-beard')] }),
+    ).toEqual(['loc-center']);
+  });
+
+  it('offers nothing for a carried seat whose service the catalog no longer holds', () => {
+    expect(
+      shopsOffered({ services: [cut()], riders: [son('svc-beard')] }),
+    ).toEqual([]);
+  });
+
+  it('holds the cart’s own services to the same rule as a carried seat’s', () => {
+    expect(shopsOffered({ cart: cartOf('svc-beard') })).toEqual(['loc-center']);
+  });
+});
+
+/* ═══════════════════════════════════════════════════════════════════════
+ * Copied (not moved) from
+ * libs/features/client/booking/src/lib/booking-flow.store.spec.ts — the
+ * store-helper cases (19): the commit request, the prefilled bag, the
+ * restored draft, the waitlist landing's placeholders and `firstUnusedLabel`,
+ * re-targeted from the Angular store to the system functions it calls.
+ * ═════════════════════════════════════════════════════════════════════ */
+
+const guestLabel = (ordinal: number): string => `Guest ${ordinal}`;
+const CLIENT = UserId.of('client-1');
+const account = (userId: string, relationship: SeatRelationship) =>
+  SeatSubject.account(UserId.of(userId), relationship);
+const anonymous = (label: string) => SeatSubject.anonymous(SeatLabel.of(label));
+
+function seat(
+  subject: SeatSubject,
+  barberId: string,
+  serviceId: string,
+): PrefillSeat {
+  return {
+    serviceId: svc(serviceId),
+    variantId: null,
+    barberId: barber(barberId),
+    subject,
+  };
+}
+
+/** A father, his son (an ACCOUNT staff seated beside him) and a guest with two services. */
+const partyVisit: readonly PrefillSeat[] = [
+  seat(account('client-1', SeatRelationship.Self), 'ivan', 'svc-fade'),
+  seat(account('client-son', SeatRelationship.Companion), 'petar', 'svc-fade'),
+  seat(anonymous('Мария'), 'stefan', 'svc-fade'),
+  seat(anonymous('Мария'), 'stefan', 'svc-beard'),
+];
+
+/** The booker, two anonymous seats under ONE label, and a third guest under another. */
+function sharedLabelVisit(
+  arrangement: 'side_by_side' | 'back_to_back',
+): readonly PrefillSeat[] {
+  return [
+    seat(account('client-1', SeatRelationship.Self), 'ivan', 'svc-fade'),
+    seat(anonymous('Walk-in'), 'stefan', 'svc-fade'),
+    arrangement === 'side_by_side'
+      ? seat(anonymous('Walk-in'), 'petar', 'svc-beard')
+      : seat(anonymous('Walk-in'), 'stefan', 'svc-beard'),
+    seat(anonymous('Мария'), 'ivan', 'svc-fade'),
+  ];
+}
+
+/** The booker, and one guest under the name the visit stored — optionally with a companion first. */
+function labelledGuestVisit(
+  label: string,
+  withCompanion = false,
+): readonly PrefillSeat[] {
+  return [
+    seat(account('client-1', SeatRelationship.Self), 'ivan', 'svc-fade'),
+    ...(withCompanion
+      ? [
+          seat(
+            account('client-son', SeatRelationship.Companion),
+            'petar',
+            'svc-fade',
+          ),
+        ]
+      : []),
+    seat(anonymous(label), 'stefan', 'svc-fade'),
+  ];
+}
+
+/** `rescheduleFrom` (a move) or `repeat` (a new booking), for a signed-in client-1. */
+function prefilled(
+  seats: readonly PrefillSeat[],
+  companions: PrefillCompanions,
+  partyOwner: UserId | null = CLIENT,
+) {
+  const reader = BookingCartSystem.readerOf(seats, partyOwner);
+  const bag = BookingCartSystem.prefill(
+    seats,
+    reader,
+    partyOwner,
+    companions,
+    guestLabel,
+  );
+  if (bag === null) throw new Error('bad fixture: nothing to prefill');
+  return bag;
+}
+
+const guestLabels = (party: Party): readonly string[] =>
+  Party.guests(party).map((guest) => guest.label);
+const linesPerPerson = (cart: BookingCart): readonly number[] =>
+  cart.seats.map((entry) => entry.lines.length);
+
+/** Every line at 12:00 with Ivan — the schedule step's hand-off to review. */
+function assignmentsFor(cart: BookingCart): readonly SeatAssignment[] {
+  return cart.seats.flatMap((entry) =>
+    entry.lines.map((l) => ({
+      lineId: l.lineId,
+      barberId: barber('ivan'),
+      timeInterval: TimeInterval.of(at(12), at(13)),
+    })),
+  );
+}
+
+describe('BookingCartSystem.toCommitSeats — the commit request', () => {
+  it('sends WHAT and WHO, and never a price or a duration', () => {
+    const withMaria = unwrapOk(Party.addGuest(Party.owned(CLIENT), 'Maria'));
+    const guestId = (Party.guests(withMaria)[0] as PartyMember.Guest).guestId;
+    const cart = added(
+      added(BookingCart.empty(), SELF, line('svc-fade')),
+      guestId,
+      line('svc-beard'),
+    );
+
+    const seats = BookingCartSystem.toCommitSeats(
+      cart,
+      withMaria,
+      assignmentsFor(cart),
+    );
+
+    // One per seat — the guest travels too, as a LABEL.
+    expect(seats).toHaveLength(2);
+    // The guest's seat key rides beside the label.
+    expect(seats?.map((entry) => entry.subject)).toEqual([
+      { kind: CommitSubjectKind.Self },
+      { kind: CommitSubjectKind.Guest, label: 'Maria', guestKey: 'guest-0' },
+    ]);
+    const first = seats?.[0] as unknown as Record<string, unknown>;
+    // The server resolves terms.
+    expect(first['priceMinorUnits']).toBeUndefined();
+    expect(first['durationMinutes']).toBeUndefined();
+    expect(first['barberId']).toBe('ivan');
+    expect(first['subject']).toEqual({ kind: CommitSubjectKind.Self });
+    expect(first['barberPref']).toBe(BarberPrefKind.Any);
+  });
+});
+
+describe('BookingCartSystem.prefill — who a prefilled bag holds', () => {
+  it('leaves a companion ACCOUNT out of a move — the server carries them, so no phantom guest', () => {
+    const bag = prefilled(partyVisit, PrefillCompanions.CarriedByServer, null);
+
+    // The father and Maria; the son is NOT re-created as a nameless guest.
+    expect(Party.guests(bag.party)).toHaveLength(1);
+    expect(linesPerPerson(bag.cart)).toEqual([1, 2]);
+  });
+
+  it('offers the companion as a guest on a repeat — a new booking cannot seat an account', () => {
+    const bag = prefilled(partyVisit, PrefillCompanions.AsGuests, null);
+
+    expect(Party.guests(bag.party)).toHaveLength(2);
+    expect(linesPerPerson(bag.cart)).toEqual([1, 1, 2]);
+  });
+
+  it('keeps a guest with two services ONE person, as the server counts them', () => {
+    const bag = prefilled(partyVisit, PrefillCompanions.CarriedByServer, null);
+
+    // Under the name the visit stored for her, not a placeholder.
+    expect(guestLabels(bag.party)).toEqual(['Мария']);
+    expect(BookingCart.lineCount(bag.cart)).toBe(3);
+  });
+
+  it('keeps the name the SHOP gave a guest through a move, and sends it — never «Guest 1» over it', () => {
+    const bag = prefilled(
+      labelledGuestVisit('Иван (син)'),
+      PrefillCompanions.CarriedByServer,
+    );
+    expect(guestLabels(bag.party)).toEqual(['Иван (син)']);
+
+    const seats = BookingCartSystem.toCommitSeats(
+      bag.cart,
+      bag.party,
+      assignmentsFor(bag.cart),
+    );
+    expect(
+      (seats ?? []).flatMap((entry) =>
+        entry.subject.kind === CommitSubjectKind.Guest
+          ? [entry.subject.label]
+          : [],
+      ),
+    ).toEqual(['Иван (син)']);
+  });
+
+  it('keeps the stored names on a repeat too, and numbers a nameless companion around them', () => {
+    const bag = prefilled(
+      labelledGuestVisit('Guest 1', true),
+      PrefillCompanions.AsGuests,
+    );
+
+    expect(guestLabels(bag.party)).toEqual(['Guest 2', 'Guest 1']);
+  });
+
+  it('never hands a guest added later a name a prefilled guest already has', () => {
+    const bag = prefilled(
+      labelledGuestVisit('Guest 3'),
+      PrefillCompanions.CarriedByServer,
+    );
+    const taken = guestLabels(bag.party);
+    expect(BookingCartSystem.firstUnusedLabel(taken, guestLabel, 3)).toBe(
+      'Guest 4',
+    );
+    expect(BookingCartSystem.firstUnusedLabel(taken, guestLabel, 1)).toBe(
+      'Guest 1',
+    );
+  });
+
+  it('sends the move without the companion — only the seats the cart can express', () => {
+    const bag = prefilled(partyVisit, PrefillCompanions.CarriedByServer);
+    const seats = BookingCartSystem.toCommitSeats(
+      bag.cart,
+      bag.party,
+      assignmentsFor(bag.cart),
+    );
+
+    expect(seats?.map((entry) => entry.subject.kind).sort()).toEqual([
+      'guest',
+      'guest',
+      'self',
+    ]);
+  });
+
+  for (const arrangement of ['side_by_side', 'back_to_back'] as const) {
+    it(`reads two guests under ONE label as one person with both services — ${arrangement}, move and repeat alike`, () => {
+      const moved = prefilled(
+        sharedLabelVisit(arrangement),
+        PrefillCompanions.CarriedByServer,
+      );
+      expect(Party.guests(moved.party)).toHaveLength(2);
+      expect(linesPerPerson(moved.cart)).toEqual([1, 2, 1]);
+
+      const repeated = prefilled(
+        sharedLabelVisit(arrangement),
+        PrefillCompanions.AsGuests,
+      );
+      expect(Party.guests(repeated.party)).toHaveLength(2);
+      expect(linesPerPerson(repeated.cart)).toEqual([1, 2, 1]);
+    });
+  }
+
+  it('sends both of that person’s seats under ONE label — the reading the server’s `personKey` agrees with', () => {
+    const bag = prefilled(
+      sharedLabelVisit('side_by_side'),
+      PrefillCompanions.CarriedByServer,
+    );
+    const labels = (
+      BookingCartSystem.toCommitSeats(
+        bag.cart,
+        bag.party,
+        assignmentsFor(bag.cart),
+      ) ?? []
+    )
+      .flatMap((entry) =>
+        entry.subject.kind === CommitSubjectKind.Guest
+          ? [entry.subject.label]
+          : [],
+      )
+      .sort();
+    expect(labels).toEqual(['Walk-in', 'Walk-in', 'Мария']);
+  });
+
+  it('keeps guests under DIFFERENT labels different people', () => {
+    const bag = prefilled(
+      sharedLabelVisit('back_to_back'),
+      PrefillCompanions.AsGuests,
+    );
+    expect(guestLabels(bag.party)).toEqual(['Walk-in', 'Мария']);
+  });
+});
+
+describe('BookingCartSystem.restore — a draft brought back to today', () => {
+  it('resumes a draft holding two guests under one label on SERVICES, where one rename fixes it', () => {
+    let party = Party.owned(CLIENT);
+    party = unwrapOk(Party.addGuest(party, 'Maria'));
+    party = unwrapOk(Party.addGuest(party, 'Ani'));
+    let cart = added(BookingCart.empty(), SELF, line('svc-fade'));
+    for (const guest of Party.guests(party)) {
+      cart = added(cart, guest.guestId, line('svc-fade'));
+    }
+    // A draft from before the rule: both guests answer to «Maria».
+    const stale: Party = {
+      ...party,
+      members: party.members.map((member) =>
+        member.kind === PartyMemberKind.Guest
+          ? PartyMember.guest(member.guestId, SeatLabel.of('Maria'))
+          : member,
+      ),
+    };
+    const draft = {
+      state: {
+        kind: BookingFlowStep.Schedule,
+        party: stale,
+        cart,
+        locationId: null,
+        when: FlexibleWhen.empty(),
+      } as BookingFlowState,
+      selectedDayKey: null,
+    };
+
+    const restored = BookingCartSystem.restore(draft, DayKey.of('2026-08-03'));
+    // Not the grid: it would seat two people the server counts as one.
+    expect(restored.state.kind).toBe(BookingFlowStep.Services);
+    const limits = BookingPolicy.DEFAULT;
+    const refused = BookingFlowSystem.next(
+      restored.state,
+      { kind: BookingFlowEventKind.Next },
+      limits,
+    );
+    expect(!refused.ok && refused.error.code).toBe(
+      SchedulingErrorCode.PartyDuplicateLabel,
+    );
+
+    const second = Party.guests(stale)[1] as PartyMember.Guest;
+    const renamed = unwrapOk(
+      BookingFlowSystem.next(
+        restored.state,
+        {
+          kind: BookingFlowEventKind.RenameGuest,
+          guestId: second.guestId,
+          label: 'Ani',
+        },
+        limits,
+      ),
+    );
+    const moved = unwrapOk(
+      BookingFlowSystem.next(
+        renamed,
+        { kind: BookingFlowEventKind.Next },
+        limits,
+      ),
+    );
+    expect(moved.kind).toBe(BookingFlowStep.Schedule);
+  });
+
+  it('resumes a review on the schedule, drops lapsed days and a lapsed pick', () => {
+    const today = DayKey.of('2026-08-03');
+    const cart = added(BookingCart.empty(), SELF, line('svc-fade'));
+    const when = FlexibleWhen.of([
+      DayWindows.wholeDay(DayKey.of('2026-08-01')),
+      DayWindows.of(DayKey.of('2026-08-05'), [MinuteRange.of(600, 720)]),
+    ]);
+    const onSchedule = BookingCartSystem.restore(
+      {
+        state: {
+          kind: BookingFlowStep.Schedule,
+          party: Party.owned(CLIENT),
+          cart,
+          locationId: CENTER,
+          when,
+        },
+        selectedDayKey: DayKey.of('2026-08-02'),
+      },
+      today,
+    );
+    expect(onSchedule.state.kind).toBe(BookingFlowStep.Schedule);
+    expect(
+      onSchedule.state.kind === BookingFlowStep.Schedule &&
+        FlexibleWhen.dayKeys(onSchedule.state.when),
+    ).toEqual(['2026-08-05']);
+    expect(onSchedule.selectedDayKey).toBeNull();
+
+    const fromReview = BookingCartSystem.restore(
+      {
+        state: {
+          kind: BookingFlowStep.Review,
+          party: Party.owned(CLIENT),
+          cart,
+          selection: {
+            locationId: CENTER,
+            timeInterval: TimeInterval.of(at(12), at(13)),
+            assignments: [],
+          },
+        },
+        selectedDayKey: today,
+      },
+      today,
+    );
+    expect(fromReview.state).toEqual({
+      kind: BookingFlowStep.Schedule,
+      party: Party.owned(CLIENT),
+      cart,
+      locationId: CENTER,
+      when: FlexibleWhen.empty(),
+    });
+    expect(fromReview.selectedDayKey).toBe(today);
+  });
+});
+
+describe('BookingCartSystem.partyForCart — a waitlist landing, one label one guest', () => {
+  const cart = unwrapOk(
+    BookingCartSystem.salvage({
+      seats: ['self', 'guest-0', 'guest-1'].map((seatKey, index) => ({
+        seatKey,
+        lines: [
+          {
+            lineId: `line-${index}`,
+            seatKey,
+            serviceId: svc('svc-fade'),
+            variantId: null,
+            barberId: null,
+            locationId: null,
+          },
+        ],
+      })),
+      nextSequence: 3,
+    }),
+  );
+
+  it('names the guests as the catalogue numbers them', () => {
+    const party = BookingCartSystem.partyForCart(cart, CLIENT, guestLabel);
+    expect(party && guestLabels(party)).toEqual(['Guest 1', 'Guest 2']);
+  });
+
+  it('never hands two guests one placeholder, even from copy that drops the number', () => {
+    const party = BookingCartSystem.partyForCart(cart, CLIENT, () => 'Гост');
+    expect(party).not.toBeNull();
+    expect(party && Party.sharedLabel(party)).toBeNull();
+    expect(
+      party &&
+        BookingFlowState.is({
+          kind: 'location',
+          party,
+          cart,
+          locationId: null,
+        }),
+    ).toBe(true);
+  });
+});
+
+describe('BookingCartSystem.firstUnusedLabel — the one placeholder rule', () => {
+  const guest = (ordinal: number): string => `Гост ${ordinal}`;
+  const first = (
+    taken: readonly string[],
+    label: (n: number) => string,
+    from = 1,
+  ) => BookingCartSystem.firstUnusedLabel(taken, label, from);
+
+  it('counts up from `from`, stepping past every name in use', () => {
+    expect(first([], guest)).toBe('Гост 1');
+    expect(first(['Гост 1', 'Гост 2'], guest)).toBe('Гост 3');
+    expect(first(['Гост 4'], guest, 4)).toBe('Гост 5');
+    expect(first(['Мария'], guest, 2)).toBe('Гост 2');
+  });
+
+  it('matches the label a guest is stored under — trimmed, as `SeatLabel` keeps it', () => {
+    expect(first(['Гост 1'], (n) => ` Гост ${n} `)).toBe('Гост 2');
+  });
+
+  it('numbers the word itself when the catalogue ignores the number — never a taken label', () => {
+    expect(first([], () => 'Гост')).toBe('Гост');
+    expect(first(['Гост'], () => 'Гост')).toBe('Гост 1');
+    expect(first(['Гост', 'Гост 2'], () => 'Гост', 2)).toBe('Гост 3');
+  });
+
+  it('never answers a taken label, whatever the catalogue does with the number (property)', () => {
+    fc.assert(
+      fc.property(
+        fc.uniqueArray(fc.constantFrom('Гост', 'Гост 1', 'Гост 2', 'Гост 3'), {
+          maxLength: 4,
+        }),
+        fc.boolean(),
+        fc.integer({ min: 1, max: 4 }),
+        (takenLabels, ignoresNumber, from) => {
+          const taken: readonly string[] = takenLabels;
+          const label = ignoresNumber ? () => 'Гост' : guest;
+          expect(taken.includes(first(taken, label, from))).toBe(false);
+        },
+      ),
+    );
+  });
+
+  it('is the SMALLEST free ordinal from `from`, and never a taken one (property)', () => {
+    fc.assert(
+      fc.property(
+        fc.uniqueArray(fc.integer({ min: 1, max: 12 }), { maxLength: 10 }),
+        fc.integer({ min: 1, max: 6 }),
+        (takenOrdinals, from) => {
+          const taken = takenOrdinals.map(guest);
+          const label = first(taken, guest, from);
+          expect(taken.includes(label)).toBe(false);
+          const ordinal = Number(label.replace('Гост ', ''));
+          expect(ordinal).toBeGreaterThanOrEqual(from);
+          for (let earlier = from; earlier < ordinal; earlier++) {
+            expect(taken.includes(guest(earlier))).toBe(true);
+          }
+        },
+      ),
+    );
+  });
+});
+
+/* ── Purity ─────────────────────────────────────────────────────────── */
+
+describe('BookingCartSystem — purity', () => {
+  it('is pure: same input → same output, inputs untouched', () => {
+    const cart = deepFreeze(
+      added(
+        added(BookingCart.empty(), SELF, line('svc-fade')),
+        GUEST,
+        line('svc-fade', 'niko'),
+      ),
+    );
+    const services = deepFreeze([fadeService()]);
+    const barbers = deepFreeze([
+      barberDay('ivan', [mins(9), mins(12)]),
+      barberDay('niko', [mins(9), mins(12)]),
+    ]);
+    const before = JSON.stringify([cart, services, barbers]);
+    const ask = () =>
+      optionsFor({
+        cart,
+        services,
+        barbers,
+        policy: policyWithLead(0),
+        nowMs: at(6),
+      });
+    const once = ask();
+    expect(ask()).toEqual(once);
+    expect(once.length).toBeGreaterThan(0);
+    const visit = deepFreeze(partyVisit);
+    expect(
+      BookingCartSystem.prefill(
+        visit,
+        CLIENT,
+        CLIENT,
+        PrefillCompanions.AsGuests,
+        guestLabel,
+      ),
+    ).toEqual(
+      BookingCartSystem.prefill(
+        visit,
+        CLIENT,
+        CLIENT,
+        PrefillCompanions.AsGuests,
+        guestLabel,
+      ),
+    );
+    expect(JSON.stringify([cart, services, barbers])).toBe(before);
+  });
+
+  it('every located option is at a shop serving the whole party, sorted by start then shop (property)', () => {
+    const anyShop = fc.constantFrom('loc-center', 'loc-mladost');
+    const window = fc
+      .record({
+        shop: anyShop,
+        from: fc.integer({ min: 8, max: 15 }),
+        hours: fc.integer({ min: 1, max: 4 }),
+      })
+      .map((w) => ({ ...w, to: Math.min(w.from + w.hours, 20) }));
+    fc.assert(
+      fc.property(
+        fc.array(window, { minLength: 1, maxLength: 3 }),
+        fc.array(window, { minLength: 1, maxLength: 3 }),
+        fc.constantFrom('svc-cut', 'svc-beard'),
+        (ivan, niko, serviceId) => {
+          const barbers: CartBarberDay[] = [
+            ['ivan', ivan] as const,
+            ['niko', niko] as const,
+          ].map(([id, windows]) => ({
+            barberId: barber(id),
+            windows: MinuteRange.normalize(
+              windows
+                .filter((w) => w.shop === 'loc-center')
+                .map((w) => MinuteRange.of(mins(w.from), mins(w.to))),
+            )
+              .map((r) =>
+                RosterWindow.of(
+                  barber(id),
+                  CENTER,
+                  r.startMinutes,
+                  r.endMinutes,
+                ),
+              )
+              .concat(
+                MinuteRange.normalize(
+                  windows
+                    .filter((w) => w.shop === 'loc-mladost')
+                    .map((w) => MinuteRange.of(mins(w.from), mins(w.to))),
+                ).map((r) =>
+                  RosterWindow.of(
+                    barber(id),
+                    MLADOST,
+                    r.startMinutes,
+                    r.endMinutes,
+                  ),
+                ),
+              ),
+            busy: [],
+          }));
+          const cart = added(BookingCart.empty(), SELF, line(serviceId));
+          const services = [
+            serviceAt('svc-cut', []),
+            serviceAt('svc-beard', ['loc-center']),
+          ];
+          const options = optionsFor({
+            cart,
+            services,
+            barbers,
+            policy: policyWithLead(0),
+            nowMs: at(6),
+          });
+          let previous: (typeof options)[number] | null = null;
+          for (const entry of options) {
+            if (serviceId === 'svc-beard')
+              expect(entry.locationId).toBe('loc-center');
+            if (previous !== null) {
+              const order =
+                previous.option.envelope.startMs -
+                  entry.option.envelope.startMs ||
+                (previous.locationId < entry.locationId
+                  ? -1
+                  : previous.locationId > entry.locationId
+                    ? 1
+                    : 0);
+              expect(order).toBeLessThanOrEqual(0);
+            }
+            previous = entry;
+          }
+        },
+      ),
+      { numRuns: 60 },
+    );
+  });
+});
+
+describe('BookingCartSystem — edges', () => {
+  const stored = (seatKey: string, lineId: string, serviceId: string) => ({
+    lineId,
+    seatKey,
+    serviceId: svc(serviceId),
+    variantId: null,
+    barberId: null,
+    locationId: null,
+  });
+
+  it('keeps a seat listed twice at its first place with its last non-empty lines', () => {
+    const restored = unwrapOk(
+      BookingCartSystem.salvage({
+        seats: [
+          { seatKey: 'self', lines: [stored('self', 'line-0', 'svc-a')] },
+          { seatKey: 'guest-0', lines: [stored('guest-0', 'line-1', 'svc-b')] },
+          { seatKey: 'self', lines: [stored('wrong', 'line-2', 'svc-c')] },
+          { seatKey: 'guest-0', lines: [stored('guest-0', 'line-3', '')] },
+        ],
+        nextSequence: 4,
+      }),
+    );
+    expect(restored.seats.map((seat) => seat.seatKey)).toEqual([
+      'self',
+      'guest-0',
+    ]);
+    // The later `self` replaces the earlier, and names its own seat.
+    expect(BookingCart.linesFor(restored, 'self')).toEqual([
+      stored('self', 'line-2', 'svc-c'),
+    ]);
+    // An emptied later entry leaves the earlier alone.
+    expect(BookingCart.linesFor(restored, 'guest-0')).toHaveLength(1);
+  });
+
+  it('refuses a commit naming a line the cart lost, or a seat that is nobody’s', () => {
+    const cart = added(BookingCart.empty(), SELF, line('svc-fade'));
+    const lost: SeatAssignment = {
+      lineId: 'line-99',
+      barberId: barber('ivan'),
+      timeInterval: TimeInterval.of(at(12), at(13)),
+    };
+    expect(
+      BookingCartSystem.toCommitSeats(cart, Party.owned(CLIENT), [lost]),
+    ).toBeNull();
+    const stranger = added(BookingCart.empty(), 'guest-7', line('svc-fade'));
+    expect(
+      BookingCartSystem.toCommitSeats(
+        stranger,
+        Party.owned(CLIENT),
+        assignmentsFor(stranger),
+      ),
+    ).toBeNull();
+  });
+
+  it('reads nobody off a visit with no `self` seat and no claimed owner', () => {
+    expect(
+      BookingCartSystem.readerOf(
+        [seat(anonymous('Мария'), 'ivan', 'svc-fade')],
+        null,
+      ),
+    ).toBeNull();
+    expect(BookingCartSystem.readerOf(partyVisit, null)).toBe('client-1');
+  });
+
+  it('rebuilds nothing from a visit the server carries whole, or under a placeholder that is no label', () => {
+    const onlySon = [
+      seat(
+        account('client-son', SeatRelationship.Companion),
+        'petar',
+        'svc-beard',
+      ),
+    ];
+    expect(
+      BookingCartSystem.prefill(
+        onlySon,
+        CLIENT,
+        CLIENT,
+        PrefillCompanions.CarriedByServer,
+        guestLabel,
+      ),
+    ).toBeNull();
+    expect(
+      BookingCartSystem.prefill(
+        onlySon,
+        CLIENT,
+        CLIENT,
+        PrefillCompanions.AsGuests,
+        () => '   ',
+      ),
+    ).toBeNull();
+    const cart = added(BookingCart.empty(), 'guest-0', line('svc-fade'));
+    expect(BookingCartSystem.partyForCart(cart, CLIENT, () => ' ')).toBeNull();
+  });
+
+  it('resumes a location draft as it was, and a terminal one on services', () => {
+    const cart = added(BookingCart.empty(), SELF, line('svc-fade'));
+    const location = BookingFlowState.initial(Party.owned(CLIENT));
+    expect(
+      BookingCartSystem.restore(
+        { state: location, selectedDayKey: null },
+        DayKey.of('2026-08-03'),
+      ).state,
+    ).toBe(location);
+    const selection = {
+      locationId: CENTER,
+      timeInterval: TimeInterval.of(at(12), at(13)),
+      assignments: [],
+    };
+    for (const terminal of [
+      {
+        kind: BookingFlowStep.Confirmed,
+        confirmation: {
+          appointmentId: 'appt-1',
+          party: Party.owned(CLIENT),
+          cart,
+          selection,
+        },
+      },
+      {
+        kind: BookingFlowStep.Waitlisted,
+        summary: {
+          requestId: 'wl-1',
+          party: Party.owned(CLIENT),
+          cart,
+          when: FlexibleWhen.empty(),
+          locationId: CENTER,
+        },
+      },
+    ] as unknown as readonly BookingFlowState[]) {
+      expect(
+        BookingCartSystem.restore(
+          { state: terminal, selectedDayKey: null },
+          DayKey.of('2026-08-03'),
+        ).state,
+      ).toEqual({
+        kind: BookingFlowStep.Services,
+        party: Party.owned(CLIENT),
+        cart,
+        locationId: CENTER,
+      });
+    }
+  });
+});

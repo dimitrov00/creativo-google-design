@@ -24,6 +24,22 @@
     "unknown_currency_code": "\"{{rawCode}}\" is not a supported currency.",
     "invalid_date_time": "\"{{rawValue}}\" is not a valid date and time.",
     "invalid_time_zone": "\"{{rawZone}}\" is not a valid time zone.",
+    "money": {
+      "invalid_amount": "That is not a valid amount.",
+      "currency_mismatch": "Cannot combine amounts in {{leftCurrency}} and {{rightCurrency}}.",
+      "unknown_currency": "\"{{rawCode}}\" is not a supported currency.",
+      "invalid_ratio": "That share of the amount can't be worked out."
+    },
+    "time": {
+      "invalid_date_time": "\"{{rawValue}}\" is not a valid date and time.",
+      "invalid_time_zone": "\"{{rawZone}}\" is not a valid time zone.",
+      "nonexistent_local_time": "{{rawValue}} doesn't exist in {{zone}} — the clocks jump past it. Pick another time.",
+      "ambiguous_local_time": "{{rawValue}} happens twice in {{zone}} — the clocks go back and repeat it. Pick another time."
+    },
+    "phone": {
+      "invalid": "\"{{attempted}}\" doesn't look like a valid phone number.",
+      "country_unsupported": "We don't recognize the country code \"{{attempted}}\"."
+    },
     "invalid_input": "The information provided is invalid.",
     "otp_rate_limited": "A code was already sent recently — please wait before requesting another.",
     "otp_channel_mismatch": "Sign-in over this channel isn't available — please use the sign-in form.",
@@ -146,6 +162,12 @@
     "booking.transition.invalid_input": "That request is not valid.",
     "booking.transition.unauthenticated": "Sign in again to continue.",
     "scheduling": {
+      "booking_contact": {
+        "empty_name": "Enter a name for the booking.",
+        "invalid_phone": "That number doesn't look valid.",
+        "invalid_email": "\"{{rawValue}}\" is not a valid email address.",
+        "note_too_long": "A note can be at most {{maxLength}} characters."
+      },
       "booking_party": {
         "duplicate_label": "Someone in the party is already called “{{label}}”. Pick another name so we can tell them apart."
       },

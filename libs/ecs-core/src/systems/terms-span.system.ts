@@ -1,0 +1,152 @@
+import type { BarberOffering } from '../components/barber-offering.data';
+import { Money } from '../components/money.data';
+import type {
+  ServiceTerms,
+  ServiceVariantId,
+} from '../components/service-terms.data';
+import type { BarberId } from '../entities/barber.entity';
+import {
+  OfferingPriceSystem,
+  type PricedService,
+} from './offering-price.system';
+
+/**
+ * What a line costs and how long it takes — as a SPAN, always
+ * (`booking-bag-sheet.ts:54-69`). "Anyone" is not a missing answer: whoever
+ * is free decides the price and charges their own rate, so an open barber
+ * leaves the span open; a pinned barber collapses it to a point. Money in
+ * minor units of one currency.
+ */
+export type TermsSpan = {
+  readonly currencyCode: string;
+  readonly minPriceMinorUnits: number;
+  readonly maxPriceMinorUnits: number;
+  readonly minMinutes: number;
+  readonly maxMinutes: number;
+};
+
+function spanOfTerms(terms: readonly ServiceTerms[]): TermsSpan {
+  const first = terms[0] as ServiceTerms;
+  let minPrice = first.priceMinorUnits;
+  let maxPrice = minPrice;
+  let minMinutes = first.durationMinutes;
+  let maxMinutes = minMinutes;
+  for (let i = 1; i < terms.length; i++) {
+    const next = terms[i] as ServiceTerms;
+    if (next.priceMinorUnits < minPrice) minPrice = next.priceMinorUnits;
+    if (next.priceMinorUnits > maxPrice) maxPrice = next.priceMinorUnits;
+    if (next.durationMinutes < minMinutes) minMinutes = next.durationMinutes;
+    if (next.durationMinutes > maxMinutes) maxMinutes = next.durationMinutes;
+  }
+  return {
+    currencyCode: first.currencyCode,
+    minPriceMinorUnits: minPrice,
+    maxPriceMinorUnits: maxPrice,
+    minMinutes,
+    maxMinutes,
+  };
+}
+
+/**
+ * TermsSpanSystem — the bag's quotes (`booking-bag-sheet.ts:336-404`): one
+ * line's span and the spans of several lines summed. Numbers only; the
+ * labels («28,00 €», «13,00 € – 15,50 €») are the template's.
+ */
+export const TermsSpanSystem = {
+  /**
+   * What a (service, variant, barber) will cost and take. A named barber
+   * resolves to exactly the terms the server will charge; "anyone"
+   * (`null`) spans everyone who performs it, because the scheduler picks the
+   * performer and their rate comes with them; a service nobody performs yet
+   * quotes its base terms — the only quote there is.
+   */
+  spanFor(
+    service: PricedService,
+    variantId: ServiceVariantId | null,
+    barberId: BarberId | null,
+  ): TermsSpan {
+    const terms: ServiceTerms[] = [];
+    if (barberId !== null) {
+      terms.push(OfferingPriceSystem.termsFor(service, barberId, variantId));
+    } else {
+      for (let i = 0; i < service.offerings.length; i++) {
+        terms.push(
+          OfferingPriceSystem.termsFor(
+            service,
+            (service.offerings[i] as BarberOffering).barberId,
+            variantId,
+          ),
+        );
+      }
+    }
+    if (terms.length === 0) {
+      terms.push(OfferingPriceSystem.termsFor(service, null, variantId));
+    }
+    return spanOfTerms(terms);
+  },
+
+  /**
+   * Several spans as one: floors add to the floor, ceilings to the ceiling
+   * (a pinned 14,50 € line and an open 13,00–15,50 € line are honestly
+   * 27,50 – 30,00 €). Mixed currencies are a data error, and a PARTIAL total
+   * would be worse than none: `null` — and `null` for no spans at all.
+   */
+  sum(spans: readonly TermsSpan[]): TermsSpan | null {
+    let total: TermsSpan | null = null;
+    for (let i = 0; i < spans.length; i++) {
+      const span = spans[i] as TermsSpan;
+      if (total === null) {
+        total = span;
+        continue;
+      }
+      const min = Money.add(
+        {
+          amountMinorUnits: total.minPriceMinorUnits,
+          currencyCode: total.currencyCode,
+        },
+        {
+          amountMinorUnits: span.minPriceMinorUnits,
+          currencyCode: span.currencyCode,
+        },
+      );
+      const max = Money.add(
+        {
+          amountMinorUnits: total.maxPriceMinorUnits,
+          currencyCode: total.currencyCode,
+        },
+        {
+          amountMinorUnits: span.maxPriceMinorUnits,
+          currencyCode: span.currencyCode,
+        },
+      );
+      if (!min.ok || !max.ok) return null;
+      total = {
+        currencyCode: min.value.currencyCode,
+        minPriceMinorUnits: min.value.amountMinorUnits,
+        maxPriceMinorUnits: max.value.amountMinorUnits,
+        minMinutes: total.minMinutes + span.minMinutes,
+        maxMinutes: total.maxMinutes + span.maxMinutes,
+      };
+    }
+    return total;
+  },
+
+  /** One price, not a range — the label prints a single value. */
+  isPricePoint(span: TermsSpan): boolean {
+    return span.minPriceMinorUnits === span.maxPriceMinorUnits;
+  },
+
+  /** The span's floor and ceiling as `Money`, for the template's formatter. */
+  priceBounds(span: TermsSpan): { readonly min: Money; readonly max: Money } {
+    return {
+      min: {
+        amountMinorUnits: span.minPriceMinorUnits,
+        currencyCode: span.currencyCode,
+      },
+      max: {
+        amountMinorUnits: span.maxPriceMinorUnits,
+        currencyCode: span.currencyCode,
+      },
+    };
+  },
+} as const;

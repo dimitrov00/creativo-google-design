@@ -154,7 +154,9 @@
       "@creativo/features/shared/visits": [
         "./libs/features/shared/visits/src/index.ts"
       ],
-      "@creativo/ui/icons": ["./libs/ui/icons/src/index.ts"]
+      "@creativo/ui/icons": ["./libs/ui/icons/src/index.ts"],
+      "@creativo/ecs-core": ["./libs/ecs-core/src/index.ts"],
+      "@creativo/ecs-core/testing": ["./libs/ecs-core/src/testing.ts"]
     }
   }
 }

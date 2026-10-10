@@ -1,0 +1,566 @@
+import fc from 'fast-check';
+import { describe, expect, it } from 'vitest';
+import { AccountStatus, BlockReason } from '../components/account-status.data';
+import { AuthStage } from '../components/auth-claims.data';
+import {
+  AuthStrategy,
+  AuthStrategyKind,
+} from '../components/auth-strategy.data';
+import { BirthDate } from '../components/birth-date.data';
+import { Email } from '../components/email.data';
+import {
+  IdentifierKind,
+  ParsedIdentifier,
+} from '../components/identifier.data';
+import { E164 } from '../components/phone-number.data';
+import {
+  REGISTRATION_FIELDS,
+  Registration,
+  RegistrationField,
+  type RegistrationFields,
+  isRegistrationField,
+} from '../components/registration.data';
+import { Role } from '../components/role.data';
+import { TenantId } from '../components/tenant-id.data';
+import { type UserEntity, UserId } from '../entities/user.entity';
+import { deepFreeze, unwrapOk } from '../testing';
+import {
+  type RegistrationStanding,
+  RegistrationSystem,
+} from './registration.system';
+import { SearchFieldsSystem } from './search-fields.system';
+
+/*
+ * COPIED and re-targeted (the originals keep running against their shims):
+ * - libs/application/identity/src/lib/use-cases/register-user.use-case.spec.ts
+ *   — the client-side field check (`effectiveFields` + `missingField`);
+ * - the math of apps/functions/src/use-cases/complete-registration.use-case.spec.ts
+ *   — the field check, the settle of a first registration and of a re-run
+ *   (roles, contact channels and status kept), the active claims; its
+ *   birth-date reasons live in age.system.spec.ts, its ownership, not-found
+ *   and unreadable-status cases are the pipeline's (no math);
+ * - the claims math of apps/functions/src/use-cases/verify-otp.use-case.spec.ts
+ *   (onboarding for a stub, the STORED roles once registered, `client` when
+ *   none were granted) and its provisioned stub;
+ * - libs/domain/identity/src/lib/registration-field.spec.ts (the field
+ *   vocabulary, blueprint §7);
+ * - the provisioned stub of apps/functions/src/adapters/
+ *   firestore-user-repository.spec.ts.
+ */
+
+const STRATEGY: AuthStrategy = unwrapOk(
+  AuthStrategy.parse({
+    kind: AuthStrategyKind.EmailOtp,
+    required: [
+      RegistrationField.Phone,
+      RegistrationField.FirstName,
+      RegistrationField.LastName,
+    ],
+    policy: { ttlMinutes: 5, maxAttempts: 5, sessionDays: 30 },
+  }),
+);
+
+const TENANT = TenantId.of('creativo');
+
+function fields(given: Partial<RegistrationFields>): RegistrationFields {
+  return { ...Registration.emptyFields(), ...given };
+}
+
+/** The `{ email, phone }` stub `verifyOtp` provisions — no profile yet. */
+function stub(
+  overrides: Partial<RegistrationStanding> = {},
+): RegistrationStanding {
+  return {
+    registration: Registration.provisioned(),
+    roles: [],
+    email: null,
+    phone: E164.of('+14155552671'),
+    birthDate: null,
+    ...overrides,
+  };
+}
+
+/** A registered body, as a re-run of the callable finds it. */
+function registered(
+  overrides: Partial<RegistrationStanding> = {},
+): RegistrationStanding {
+  return stub({
+    registration: Registration.registered(),
+    roles: [Role.Client],
+    ...overrides,
+  });
+}
+
+describe('RegistrationSystem — the field check (register-user.use-case.spec.ts)', () => {
+  const email = ParsedIdentifier.email(Email.of('client@example.com'));
+  const effective = (given: Partial<RegistrationFields>) =>
+    RegistrationSystem.effectiveFields(email.kind, email.value, fields(given));
+
+  it('completes registration once every required field is present', () => {
+    expect(
+      RegistrationSystem.missingField(
+        STRATEGY,
+        effective({
+          phone: '+359881234567',
+          firstName: 'Jane',
+          lastName: 'Doe',
+        }),
+      ),
+    ).toBeNull();
+  });
+
+  it('rejects when a required field is missing, without calling the client', () => {
+    expect(
+      RegistrationSystem.missingField(
+        STRATEGY,
+        effective({ phone: '+359881234567', firstName: 'Jane' }),
+      ),
+    ).toBe(RegistrationField.LastName);
+  });
+
+  it('forwards an optional birthDate the strategy does not require', () => {
+    const forwarded = effective({
+      phone: '+359881234567',
+      firstName: 'Jane',
+      lastName: 'Doe',
+      birthDate: '1990-07-03',
+    });
+    expect(RegistrationSystem.missingField(STRATEGY, forwarded)).toBeNull();
+    expect(forwarded.birthDate).toBe('1990-07-03');
+  });
+
+  it('still succeeds without birthDate — it is never a required field of the default strategy', () => {
+    const forwarded = effective({
+      phone: '+359881234567',
+      firstName: 'Jane',
+      lastName: 'Doe',
+    });
+    expect(RegistrationSystem.missingField(STRATEGY, forwarded)).toBeNull();
+    expect(forwarded.birthDate).toBeNull();
+  });
+
+  it('treats the identifier itself as satisfying its own required field, even when the caller never resupplies it', () => {
+    const phoneStrategy = unwrapOk(
+      AuthStrategy.parse({
+        kind: AuthStrategyKind.PhoneOtp,
+        required: [
+          RegistrationField.Phone,
+          RegistrationField.FirstName,
+          RegistrationField.LastName,
+        ],
+        policy: { ttlMinutes: 5, maxAttempts: 5, sessionDays: 30 },
+      }),
+    );
+    const phone = ParsedIdentifier.phone(E164.of('+14155552671'));
+    // No `phone` key in `fields` — the about step never re-collects the
+    // number that was just used to sign in.
+    const forwarded = RegistrationSystem.effectiveFields(
+      phone.kind,
+      phone.value,
+      fields({ firstName: 'Ada', lastName: 'Lovelace' }),
+    );
+    expect(
+      RegistrationSystem.missingField(phoneStrategy, forwarded),
+    ).toBeNull();
+    expect(forwarded.phone).toBe('+14155552671');
+  });
+
+  it('keeps a field the form DID send, even blank — and a blank required field is missing', () => {
+    const forwarded = RegistrationSystem.effectiveFields(
+      IdentifierKind.Phone,
+      '+14155552671',
+      fields({ phone: '  ', firstName: 'Ada', lastName: 'Lovelace' }),
+    );
+    expect(forwarded.phone).toBe('  ');
+    expect(RegistrationSystem.missingField(STRATEGY, forwarded)).toBe(
+      RegistrationField.Phone,
+    );
+  });
+});
+
+describe('RegistrationSystem — complete-registration.use-case.spec.ts', () => {
+  const byPhone = (given: Partial<RegistrationFields>) =>
+    RegistrationSystem.effectiveFields(
+      IdentifierKind.Phone,
+      '+14155552671',
+      fields(given),
+    );
+
+  it('fills in the required profile fields and promotes claims to active', () => {
+    const settled = RegistrationSystem.settle(
+      stub(),
+      byPhone({ firstName: 'Ada', lastName: 'Lovelace' }),
+      null,
+    );
+    expect(settled).toEqual({
+      firstName: 'Ada',
+      lastName: 'Lovelace',
+      phone: '+14155552671',
+      email: null,
+      birthDate: null,
+      roles: [Role.Client],
+    });
+    expect(
+      RegistrationSystem.claimsFor(
+        Registration.registered(),
+        settled.roles,
+        TENANT,
+      ),
+    ).toEqual({
+      tenantId: TENANT,
+      stage: AuthStage.Active,
+      roles: [Role.Client],
+    });
+  });
+
+  it('rejects when a required field (e.g. lastName) is missing', () => {
+    expect(
+      RegistrationSystem.missingField(STRATEGY, byPhone({ firstName: 'Ada' })),
+    ).toBe(RegistrationField.LastName);
+  });
+
+  it('persists a valid optional birthDate on the user document', () => {
+    expect(
+      RegistrationSystem.settle(
+        stub(),
+        byPhone({
+          firstName: 'Ada',
+          lastName: 'Lovelace',
+          birthDate: '1990-07-03',
+        }),
+        BirthDate.of('1990-07-03'),
+      ).birthDate,
+    ).toBe('1990-07-03');
+  });
+
+  it('registers exactly as before when birthDate is absent — nothing persisted, nothing rejected', () => {
+    expect(
+      RegistrationSystem.settle(
+        stub(),
+        byPhone({ firstName: 'Ada', lastName: 'Lovelace' }),
+        null,
+      ).birthDate,
+    ).toBeNull();
+  });
+
+  it('takes the channel the login did not verify from the form on a first registration', () => {
+    const settled = RegistrationSystem.settle(
+      stub({ email: Email.of('ada@example.com'), phone: null }),
+      RegistrationSystem.effectiveFields(
+        IdentifierKind.Email,
+        'ada@example.com',
+        fields({
+          firstName: 'Ada',
+          lastName: 'Lovelace',
+          phone: '+14155552671',
+        }),
+      ),
+      null,
+    );
+    expect(settled).toMatchObject({
+      email: 'ada@example.com',
+      phone: '+14155552671',
+      roles: [Role.Client],
+    });
+  });
+
+  describe('a re-run keeps what the server granted', () => {
+    const rerun = byPhone({ firstName: 'Ada', lastName: 'Lovelace' });
+    const user = (
+      standing: RegistrationStanding,
+      status: AccountStatus,
+    ): UserEntity => ({
+      id: UserId.of('uid_1'),
+      firstName: 'Ada',
+      lastName: 'Lovelace',
+      accountStatus: status,
+      searchName: 'ada lovelace',
+      searchPrefixes: [],
+      ...standing,
+    });
+    const paused = AccountStatus.block(BlockReason.Manual, 1_796_083_200_000);
+
+    function reregister(standing: RegistrationStanding, status: AccountStatus) {
+      const settled = RegistrationSystem.settle(standing, rerun, null);
+      return RegistrationSystem.register(user(standing, status), {
+        firstName: settled.firstName,
+        lastName: settled.lastName,
+        phone: E164.of(settled.phone),
+        email: settled.email === null ? null : Email.of(settled.email),
+        birthDate: settled.birthDate,
+        roles: settled.roles,
+      });
+    }
+
+    it('keeps a paused status — calling the callable again never lifts a pause', () => {
+      expect(reregister(registered(), paused).accountStatus).toEqual(paused);
+    });
+
+    it('keeps the pause even when the stored first name was blanked', () => {
+      // Reads as UNregistered, yet the status there was still written by
+      // the server.
+      expect(
+        reregister(stub({ roles: [Role.Client] }), paused).accountStatus,
+      ).toEqual(paused);
+    });
+
+    it('keeps staff roles and mints them, never a demoting plain client', () => {
+      const standing = registered({ roles: [Role.Barber, Role.Receptionist] });
+      const settled = RegistrationSystem.settle(standing, rerun, null);
+      expect(settled.roles).toEqual([Role.Barber, Role.Receptionist]);
+      expect(
+        RegistrationSystem.claimsFor(
+          standing.registration,
+          standing.roles,
+          TENANT,
+        ),
+      ).toEqual({
+        tenantId: TENANT,
+        stage: AuthStage.Active,
+        roles: [Role.Barber, Role.Receptionist],
+      });
+    });
+
+    it('never changes a registered contact channel — those move only through a verified contact change', () => {
+      const standing = registered({ email: Email.of('ada@example.com') });
+      const byPhoneRun = RegistrationSystem.settle(
+        standing,
+        byPhone({
+          firstName: 'Ada',
+          lastName: 'Lovelace',
+          email: 'mallory@example.com',
+        }),
+        null,
+      );
+      expect(byPhoneRun.email).toBe('ada@example.com');
+
+      const byEmailRun = RegistrationSystem.settle(
+        standing,
+        RegistrationSystem.effectiveFields(
+          IdentifierKind.Email,
+          'ada@example.com',
+          fields({
+            firstName: 'Ada',
+            lastName: 'Lovelace',
+            phone: '+14155550999',
+          }),
+        ),
+        null,
+      );
+      expect(byEmailRun.phone).toBe('+14155552671');
+    });
+  });
+
+  it('a blank form e-mail falls back to the stored one; absent names and an unsent phone settle as empty text', () => {
+    // A first registration takes the phone from the form only — the stub's
+    // own number arrives through `effectiveFields` when it is the login.
+    const settled = RegistrationSystem.settle(
+      stub({ email: Email.of('ada@example.com') }),
+      fields({ email: '   ' }),
+      null,
+    );
+    expect(settled).toMatchObject({
+      email: 'ada@example.com',
+      firstName: '',
+      lastName: '',
+      phone: '',
+    });
+    // A registered document without a phone takes the form's.
+    expect(
+      RegistrationSystem.settle(
+        registered({ phone: null }),
+        fields({ phone: ' +14155550999 ' }),
+        null,
+      ).phone,
+    ).toBe('+14155550999');
+  });
+});
+
+describe('RegistrationSystem — the sign-in claims and the stub (verify-otp.use-case.spec.ts)', () => {
+  it('mints onboarding claims for a freshly provisioned user, and provisions the login channel only', () => {
+    const provisioned = RegistrationSystem.provision(
+      UserId.of('uid_1'),
+      ParsedIdentifier.email(Email.of('client@example.com')),
+    );
+    expect(provisioned).toMatchObject({
+      email: 'client@example.com',
+      phone: null,
+      registration: Registration.provisioned(),
+      roles: [],
+      firstName: null,
+      searchPrefixes: [],
+    });
+    expect(
+      RegistrationSystem.claimsFor(
+        provisioned.registration,
+        provisioned.roles,
+        TENANT,
+      ),
+    ).toEqual({ tenantId: TENANT, stage: AuthStage.Onboarding, roles: [] });
+  });
+
+  it('mints the STORED roles for a staff account — the out-of-band grant finally reaches the token', () => {
+    expect(
+      RegistrationSystem.claimsFor(
+        Registration.registered(),
+        [Role.Barber, Role.Admin],
+        TENANT,
+      ).roles,
+    ).toEqual([Role.Barber, Role.Admin]);
+  });
+
+  it('falls back to client claims when the doc carries no roles — a stub or pre-roles record never escalates', () => {
+    expect(
+      RegistrationSystem.claimsFor(Registration.registered(), [], TENANT),
+    ).toEqual({
+      tenantId: TENANT,
+      stage: AuthStage.Active,
+      roles: [Role.Client],
+    });
+  });
+});
+
+describe('RegistrationSystem.provision (firestore-user-repository.spec.ts)', () => {
+  it('provisions a contact-channel stub — unregistered, every key present', () => {
+    expect(
+      RegistrationSystem.provision(
+        UserId.of('uid_2'),
+        ParsedIdentifier.phone(E164.of('+14155552671')),
+      ),
+    ).toEqual({
+      id: 'uid_2',
+      registration: Registration.provisioned(),
+      phone: '+14155552671',
+      firstName: null,
+      lastName: null,
+      roles: [],
+      accountStatus: AccountStatus.active(),
+      email: null,
+      birthDate: null,
+      searchName: null,
+      searchPrefixes: [],
+    });
+  });
+
+  it('writes the registered body with the search keys of the new names and channels', () => {
+    const stubUser = RegistrationSystem.provision(
+      UserId.of('uid_1'),
+      ParsedIdentifier.email(Email.of('client@example.com')),
+    );
+    const body = RegistrationSystem.register(stubUser, {
+      firstName: 'Ada',
+      lastName: 'Lovelace',
+      phone: E164.of('+14155552671'),
+      email: Email.of('client@example.com'),
+      birthDate: BirthDate.of('1990-07-03'),
+      roles: [Role.Client],
+    });
+    expect(body.registration).toEqual(Registration.registered());
+    expect(body.searchName).toBe('ada lovelace');
+    expect(body.searchPrefixes).toEqual(
+      SearchFieldsSystem.searchFields(
+        'Ada',
+        'Lovelace',
+        E164.of('+14155552671'),
+        'client@example.com',
+      ).searchPrefixes,
+    );
+    expect(body.accountStatus).toEqual(AccountStatus.active());
+  });
+});
+
+describe('RegistrationField vocabulary (registration-field.spec.ts)', () => {
+  it('accepts every known field', () => {
+    for (const field of [
+      'phone',
+      'email',
+      'firstName',
+      'lastName',
+      'birthDate',
+    ]) {
+      expect(isRegistrationField(field)).toBe(true);
+    }
+    expect(RegistrationSystem.fieldOf(IdentifierKind.Phone)).toBe('phone');
+    expect(RegistrationSystem.fieldOf(IdentifierKind.Email)).toBe('email');
+  });
+
+  it('rejects an unknown value', () => {
+    expect(isRegistrationField('middleName')).toBe(false);
+    expect(isRegistrationField(123)).toBe(false);
+    expect(isRegistrationField(undefined)).toBe(false);
+  });
+});
+
+describe('RegistrationSystem properties', () => {
+  const anyValue = fc.option(fc.constantFrom('', '  ', 'x', ' Ada '), {
+    nil: null,
+  });
+  const anyFields = fc
+    .tuple(anyValue, anyValue, anyValue, anyValue, anyValue)
+    .map(
+      ([phone, email, firstName, lastName, birthDate]): RegistrationFields => ({
+        phone,
+        email,
+        firstName,
+        lastName,
+        birthDate,
+      }),
+    );
+
+  it('missingField is the first required field that is absent or blank — brute force over the order', () => {
+    fc.assert(
+      fc.property(anyFields, (given) => {
+        const brute =
+          STRATEGY.required.find(
+            // eslint-disable-next-line security/detect-object-injection -- `field` is a RegistrationField literal off the parsed strategy.
+            (field) => (given[field] ?? '').trim().length === 0,
+          ) ?? null;
+        expect(RegistrationSystem.missingField(STRATEGY, given)).toBe(brute);
+      }),
+    );
+  });
+
+  it('effective fields change only the login channel field, and only when it was absent', () => {
+    fc.assert(
+      fc.property(anyFields, (given) => {
+        const out = RegistrationSystem.effectiveFields(
+          IdentifierKind.Email,
+          'a@b.cd',
+          given,
+        );
+        for (const field of REGISTRATION_FIELDS) {
+          if (field === RegistrationField.Email) {
+            expect(out.email).toBe(given.email ?? 'a@b.cd');
+          } else {
+            // eslint-disable-next-line security/detect-object-injection -- `field` iterates the RegistrationField dictionary.
+            expect(out[field]).toBe(given[field]);
+          }
+        }
+      }),
+    );
+  });
+});
+
+describe('RegistrationSystem purity', () => {
+  it('is pure: same input → same output, inputs untouched', () => {
+    const standing = deepFreeze(registered({ roles: [Role.Barber] }));
+    const given = deepFreeze(fields({ firstName: ' Ada ', lastName: 'L' }));
+    const run = () => ({
+      effective: RegistrationSystem.effectiveFields(
+        IdentifierKind.Phone,
+        '+14155552671',
+        given,
+      ),
+      missing: RegistrationSystem.missingField(STRATEGY, given),
+      settled: RegistrationSystem.settle(standing, given, null),
+      claims: RegistrationSystem.claimsFor(
+        standing.registration,
+        standing.roles,
+        TENANT,
+      ),
+    });
+    expect(run()).toEqual(run());
+    expect(standing).toEqual(registered({ roles: [Role.Barber] }));
+    expect(given).toEqual(fields({ firstName: ' Ada ', lastName: 'L' }));
+  });
+});

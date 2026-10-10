@@ -24,6 +24,22 @@
     "unknown_currency_code": "„{{rawCode}}“ не е поддържана валута.",
     "invalid_date_time": "„{{rawValue}}“ не е валидна дата и час.",
     "invalid_time_zone": "„{{rawZone}}“ не е валидна часова зона.",
+    "money": {
+      "invalid_amount": "Това не е валидна сума.",
+      "currency_mismatch": "Не можете да комбинирате суми в {{leftCurrency}} и {{rightCurrency}}.",
+      "unknown_currency": "„{{rawCode}}“ не е поддържана валута.",
+      "invalid_ratio": "Този дял от сумата не може да бъде изчислен."
+    },
+    "time": {
+      "invalid_date_time": "„{{rawValue}}“ не е валидна дата и час.",
+      "invalid_time_zone": "„{{rawZone}}“ не е валидна часова зона.",
+      "nonexistent_local_time": "{{rawValue}} не съществува в {{zone}} — часовникът го прескача. Избери друг час.",
+      "ambiguous_local_time": "{{rawValue}} се случва два пъти в {{zone}} — часовникът се връща назад и го повтаря. Избери друг час."
+    },
+    "phone": {
+      "invalid": "„{{attempted}}“ не изглежда като валиден телефонен номер.",
+      "country_unsupported": "Не разпознаваме кода на държава „{{attempted}}“."
+    },
     "invalid_input": "Предоставената информация е невалидна.",
     "otp_rate_limited": "Вече изпратихме код наскоро — моля, изчакайте преди да поискате нов.",
     "otp_channel_mismatch": "Входът през този канал не е достъпен — моля, използвайте формата за вход.",
@@ -146,6 +162,12 @@
     "booking.transition.invalid_input": "Заявката не е валидна.",
     "booking.transition.unauthenticated": "Влез отново, за да продължиш.",
     "scheduling": {
+      "booking_contact": {
+        "empty_name": "Въведи име за резервацията.",
+        "invalid_phone": "Този номер не изглежда валиден.",
+        "invalid_email": "„{{rawValue}}“ не е валиден имейл адрес.",
+        "note_too_long": "Бележката може да е до {{maxLength}} знака."
+      },
       "booking_party": {
         "duplicate_label": "В групата вече има «{{label}}». Дай друго име, за да не ги объркаме."
       },
