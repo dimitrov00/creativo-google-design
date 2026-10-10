@@ -1,6 +1,9 @@
 import { ESLint } from 'eslint';
 import tsParser from '@typescript-eslint/parser';
-import { ICON_SYNTAX_RESTRICTIONS } from './icon-syntax.mjs';
+import {
+  ICON_SPEC_SYNTAX_RESTRICTIONS,
+  ICON_SYNTAX_RESTRICTIONS,
+} from './icon-syntax.mjs';
 
 /** Lints TypeScript source with exactly the selectors the root config installs. */
 async function lint(code) {
@@ -68,5 +71,16 @@ describe('icon syntax restrictions', () => {
     ).toHaveLength(1);
     expect(await lint(`const f = 'Material Symbols Rounded';`)).toHaveLength(1);
     expect(await lint(`const c = \`x material-icons \${y}\`;`)).toHaveLength(1);
+  });
+
+  it('lets specs cast to UiIconName and nothing else', () => {
+    expect(
+      ICON_SYNTAX_RESTRICTIONS.filter(
+        (restriction) => !ICON_SPEC_SYNTAX_RESTRICTIONS.includes(restriction),
+      ).map((restriction) => restriction.selector),
+    ).toEqual([
+      "TSAsExpression > TSTypeReference > Identifier[name='UiIconName']",
+      "TSTypeAssertion > TSTypeReference > Identifier[name='UiIconName']",
+    ]);
   });
 });

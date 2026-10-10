@@ -9,7 +9,26 @@
  */
 import { iconRegistryOnly } from './icon-registry-only.mjs';
 
-export { ICON_SYNTAX_RESTRICTIONS } from './icon-syntax.mjs';
+export {
+  ICON_SPEC_SYNTAX_RESTRICTIONS,
+  ICON_SYNTAX_RESTRICTIONS,
+} from './icon-syntax.mjs';
+export {
+  ECS_ADAPTER_RESTRICTIONS,
+  ECS_ALL_SUFFIXES,
+  ECS_DATA_RESTRICTIONS,
+  ECS_ENTITY_RESTRICTIONS,
+  ECS_INTL_RESTRICTION,
+  ECS_PIPELINE_RESTRICTIONS,
+  ECS_PORT_RESTRICTIONS,
+  ECS_ROOT_SUFFIXES,
+  ECS_SYSTEM_GLOBALS,
+  ECS_SYSTEM_RESTRICTIONS,
+  ECS_TOKEN_RESTRICTIONS,
+  ECS_ZONED_TIME_RESTRICTIONS,
+  ecsProjectBlocks,
+  ecsSyntaxBlocks,
+} from './ecs-syntax.mjs';
 
 const plugin = {
   meta: { name: 'creativo', version: '1.0.0' },

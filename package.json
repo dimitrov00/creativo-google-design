@@ -10,7 +10,7 @@
     "test:emulator": "firebase emulators:exec --only firestore,auth --project demo-creativo-test \"pnpm nx run-many -t test-integration\"",
     "e2e:web": "pnpm nx build functions && node tools/flags/write-functions-env.mjs --project demo-creativo-test && START_LOGGING_EMULATOR=true firebase emulators:exec --only firestore,auth,functions,storage --project demo-creativo-test \"pnpm nx e2e web\"",
     "verify:p0": "pnpm nx build functions && node tools/flags/write-functions-env.mjs --project demo-creativo-test && START_LOGGING_EMULATOR=true firebase emulators:exec --only firestore,auth,functions,storage --project demo-creativo-test \"node tools/verify/p0/verify-p0.mjs\"",
-    "verify:bundle": "pnpm nx build web --skipSync -- --stats-json && node tools/verify/bundle/check-initial-bundle.mjs",
+    "verify:bundle": "pnpm nx build web -- --stats-json && node tools/verify/bundle/check-initial-bundle.mjs",
     "icons:glyphs": "node tools/icons/build-material-glyphs.mjs",
     "icons:check": "node tools/icons/check-icon-usage.mjs"
   },
@@ -25,8 +25,8 @@
   "private": true,
   "packageManager": "pnpm@9.15.9",
   "devDependencies": {
-    "@analogjs/vite-plugin-angular": "~2.6.0",
-    "@analogjs/vitest-angular": "~2.6.0",
+    "@analogjs/vite-plugin-angular": "~2.8.0",
+    "@analogjs/vitest-angular": "~2.8.0",
     "@angular-devkit/core": "~22.2.0",
     "@angular-devkit/schematics": "~22.2.0",
     "@angular/build": "~22.2.0",

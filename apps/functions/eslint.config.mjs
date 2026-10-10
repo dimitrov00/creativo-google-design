@@ -1,5 +1,6 @@
 import baseConfig, {
   TESTING_ENTRY_POINT_RESTRICTION,
+  ecsProjectBlocks,
 } from '../../eslint.config.mjs';
 
 /**
@@ -11,17 +12,17 @@ const IMPORT_RESTRICTIONS = {
     {
       name: 'dinero.js',
       message:
-        'dinero.js may only be imported from libs/domain/kernel/** — use Money instead.',
+        'dinero.js is retired (D4): money is the plain { amountMinorUnits, currencyCode } struct — use Money from libs/ecs-core/src/components/money.data.ts (only the legacy libs/domain/kernel/** keeps dinero, until Phase 4).',
     },
     {
       name: 'luxon',
       message:
-        'luxon may only be imported from libs/domain/kernel/** — use ZonedDateTime instead.',
+        'luxon is retired (D5): zone math is native Intl inside libs/ecs-core/src/systems/zoned-time.system.ts — use ZonedTimeSystem and ZonedInstant (only the legacy libs/domain/kernel/** keeps luxon, until Phase 4).',
     },
     {
       name: 'libphonenumber-js',
       message:
-        'libphonenumber-js may only be imported from libs/domain/kernel/** — use PhoneNumber instead.',
+        'libphonenumber-js may only be imported from libs/ecs-core/src/systems/phone.system.ts (and the legacy libs/domain/kernel/** until Phase 4) — use PhoneSystem and the PhoneNumber component instead.',
     },
   ],
 };
@@ -47,8 +48,9 @@ export default [
     // One of the two places firebase-admin may be imported directly
     // (blueprint §0.3/§1.2) — override the workspace-wide
     // no-restricted-imports rule to drop the firebase half, keeping the
-    // dinero/luxon/libphonenumber half (Cloud Functions still go through
-    // Money/ZonedDateTime/PhoneNumber, not the raw libs). See the comment
+    // dinero/luxon/libphonenumber half (Cloud Functions go through the
+    // ecs-core Money struct, ZonedTimeSystem and PhoneSystem — or the legacy
+    // kernel's wrappers until Phase 4 — never the raw libs). See the comment
     // in the root eslint.config.mjs for why this lives here instead of an
     // `ignores` pattern on the shared rule.
     files: ['**/*.ts'],
@@ -66,4 +68,11 @@ export default [
       'no-restricted-imports': ['error', IMPORT_RESTRICTIONS],
     },
   },
+  // The InjectionToken guard on every file here (the backend composes
+  // ports as closure parameters, never through a container), and the six
+  // ECS suffix blocks restated with it — `*.port.ts` and `*.adapter.ts`
+  // included, which the root config cannot carry until Phase 4 deletes
+  // libs/application's legacy ports and class adapters (blueprint §6
+  // Phase 1). Last, so these options win over the root's.
+  ...ecsProjectBlocks(),
 ];

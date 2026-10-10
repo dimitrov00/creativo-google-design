@@ -3,16 +3,23 @@ import security from 'eslint-plugin-security';
 import noUnsanitized from 'eslint-plugin-no-unsanitized';
 import templateParser from '@angular-eslint/template-parser';
 import creativo, {
+  ECS_ROOT_SUFFIXES,
+  ICON_SPEC_SYNTAX_RESTRICTIONS,
   ICON_SYNTAX_RESTRICTIONS,
+  ecsSyntaxBlocks,
 } from './tools/lint-rules/index.mjs';
 
 /**
  * The layer half of `no-restricted-imports` (blueprint §0.3/§1.2): Firebase
- * only in infrastructure and the functions, the money/time/phone libraries
- * only behind the kernel's value objects. Named so the spec override below
- * can restate it without the testing half.
+ * only in infrastructure and the functions; libphonenumber only inside
+ * `PhoneSystem` (libs/ecs-core/src/systems/phone.system.ts); luxon and
+ * dinero.js nowhere new — owner decisions D5/D4 (2026-10-10) replace them
+ * with native `Intl` in `ZonedTimeSystem` and the plain `Money` struct, and
+ * the legacy kernel keeps its exemption only until Phase 4 deletes it.
+ * Named and exported so the spec override below, and the projects that
+ * exempt one package for one file (libs/ecs-core), restate it exactly.
  */
-const LAYER_IMPORT_RESTRICTIONS = {
+export const LAYER_IMPORT_RESTRICTIONS = {
   patterns: [
     {
       group: ['firebase', 'firebase/*', 'firebase-admin', 'firebase-admin/*'],
@@ -22,19 +29,19 @@ const LAYER_IMPORT_RESTRICTIONS = {
     {
       group: ['libphonenumber-js', 'libphonenumber-js/*'],
       message:
-        'libphonenumber-js may only be imported from libs/domain/kernel/** — use PhoneNumber instead.',
+        'libphonenumber-js may only be imported from libs/ecs-core/src/systems/phone.system.ts (and the legacy libs/domain/kernel/** until Phase 4) — use PhoneSystem and the PhoneNumber component instead.',
     },
   ],
   paths: [
     {
       name: 'dinero.js',
       message:
-        'dinero.js may only be imported from libs/domain/kernel/** — use Money instead.',
+        'dinero.js is retired (D4): money is the plain { amountMinorUnits, currencyCode } struct — use Money from libs/ecs-core/src/components/money.data.ts (only the legacy libs/domain/kernel/** keeps dinero, until Phase 4).',
     },
     {
       name: 'luxon',
       message:
-        'luxon may only be imported from libs/domain/kernel/** — use ZonedDateTime instead.',
+        'luxon is retired (D5): zone math is native Intl inside libs/ecs-core/src/systems/zoned-time.system.ts — use ZonedTimeSystem and ZonedInstant (only the legacy libs/domain/kernel/** keeps luxon, until Phase 4).',
     },
   ],
 };
@@ -53,6 +60,21 @@ export const TESTING_ENTRY_POINT_RESTRICTION = {
   message:
     '@creativo/**/testing entry points are test support (contracts, in-memory adapters, fixtures) — import them from specs (*.spec.ts) only, never from production code.',
 };
+
+/**
+ * The ECS lint pieces the project-scoped configs (libs/ecs-core,
+ * apps/functions) restate, re-exported from HERE on purpose: this file
+ * belongs to no Nx project, but a project config importing
+ * tools/lint-rules directly gives that project a graph edge to
+ * `lint-rules` — and the functions build then writes eslint's parsers into
+ * its generated package.json (caught by tools/verify/p0/functions-deps.mjs).
+ */
+export {
+  ECS_TOKEN_RESTRICTIONS,
+  ECS_ZONED_TIME_RESTRICTIONS,
+  ICON_SYNTAX_RESTRICTIONS,
+  ecsProjectBlocks,
+} from './tools/lint-rules/index.mjs';
 
 export default [
   ...nx.configs['flat/base'],
@@ -146,12 +168,18 @@ export default [
               ],
             },
             {
+              // `type:domain` added 2026-10-10 (ECS migration D10(a)): a
+              // feature reads the plain ECS data and calls the pure systems
+              // of `@creativo/ecs-core` (tagged `type:domain`) straight from
+              // its stores and `computed()`s — there is no view-model layer
+              // in between (.claude/rules/angular-ui.md).
               sourceTag: 'type:feature',
               onlyDependOnLibsWithTags: [
                 'type:feature',
                 'type:application',
                 'type:ui',
                 'type:infrastructure',
+                'type:domain',
                 'type:util',
               ],
             },
@@ -221,11 +249,14 @@ export default [
   // not the workspace root — a repo-root-relative `ignores` pattern like
   // `**/libs/domain/kernel/**` can never match once basePath already IS
   // `libs/domain/kernel` (the prefix is stripped away). So these rules are
-  // unconditional here, and the two exempt zones (`libs/domain/kernel` for
-  // dinero/luxon/libphonenumber; `libs/infrastructure/*` + `apps/functions`
-  // for firebase) turn the relevant half off in their OWN eslint.config.mjs
-  // instead — see the `rules: { 'no-restricted-imports': 'off' }` overrides
-  // in kernel/eslint.config.mjs, apps/functions/eslint.config.mjs, and each
+  // unconditional here, and the exempt zones (`libs/domain/kernel` for
+  // dinero/luxon/libphonenumber until Phase 4; libs/ecs-core's
+  // `src/systems/phone.system.ts` for libphonenumber and its spec-only
+  // `src/components/money.data.spec.ts` for dinero; `libs/infrastructure/*`
+  // + `apps/functions` for firebase) turn the relevant half off in their OWN
+  // eslint.config.mjs instead — see the `no-restricted-imports` overrides
+  // in kernel/eslint.config.mjs, ecs-core/eslint.config.mjs,
+  // apps/functions/eslint.config.mjs, and each
   // libs/infrastructure/*/eslint.config.mjs. The one exempt zone that is NOT
   // a project — Playwright's Node-side tooling under `apps/*/e2e/` — has no
   // config of its own and is linted under three different basePaths (the
@@ -310,14 +341,25 @@ export default [
     // Specs may cast to UiIconName to exercise the runtime fallback.
     files: ['**/*.spec.ts'],
     rules: {
-      'no-restricted-syntax': [
-        'error',
-        ...ICON_SYNTAX_RESTRICTIONS.filter(
-          (restriction) => !restriction.selector.includes('UiIconName'),
-        ),
-      ],
+      'no-restricted-syntax': ['error', ...ICON_SPEC_SYNTAX_RESTRICTIONS],
     },
   },
+  // ── ECS file kinds (CLAUDE.md §1–2, blueprint §6 Phase 1) ─────────────
+  // One `files:` block per suffix — AST selectors cannot see file names, so
+  // spreading the ECS selectors into the `**/*.ts` block above would fire
+  // `Date.now`, the import bans and the optional-property ban across the
+  // whole repo. Each block restates `[...ICON_SYNTAX_RESTRICTIONS,
+  // ...ECS_<SUFFIX>_RESTRICTIONS]` because options replace, never merge;
+  // systems also get `no-restricted-globals`, data and entities turn
+  // `@typescript-eslint/no-namespace` off for their one type-only
+  // namespace, systems and data turn `security/detect-object-injection`
+  // off. Only the four suffixes no legacy file carries live here: the
+  // `*.port.ts`/`*.adapter.ts` blocks and the `InjectionToken` guard would
+  // hit libs/application's 44 port files and the 40 class adapters, so in
+  // Phase 1 they sit in libs/ecs-core's and apps/functions' own configs and
+  // move here in Phase 4 with the legacy files. Selectors live in
+  // tools/lint-rules/ecs-syntax.mjs and are tested there.
+  ...ecsSyntaxBlocks(ECS_ROOT_SUFFIXES),
   {
     files: ['**/*.html'],
     plugins: { creativo },

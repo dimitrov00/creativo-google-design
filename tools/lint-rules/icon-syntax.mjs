@@ -41,3 +41,12 @@ export const ICON_SYNTAX_RESTRICTIONS = [
       'A Material icon class or font name in code bypasses the registry. Render icons with <ui-icon uiName="…"> or UiIconRegistry.createElement().',
   },
 ];
+
+/**
+ * The spec-file list: specs may cast to UiIconName to exercise the runtime
+ * fallback, so the two cast selectors drop out. Shared by the root spec
+ * block and the project-scoped ECS blocks that restate it.
+ */
+export const ICON_SPEC_SYNTAX_RESTRICTIONS = ICON_SYNTAX_RESTRICTIONS.filter(
+  (restriction) => !restriction.selector.includes('UiIconName'),
+);

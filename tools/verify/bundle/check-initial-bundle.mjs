@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Guard: the Firestore and Storage SDKs stay out of the initial web chunk.
 //
-//   pnpm nx build web --skipSync -- --stats-json
+//   pnpm nx build web -- --stats-json
 //   node tools/verify/bundle/check-initial-bundle.mjs [path/to/stats.json] [--top=N]
 //
 // Reads the esbuild metafile, prints the initial files, their total and the
@@ -28,7 +28,7 @@ try {
 } catch (error) {
   console.error(
     `Cannot read ${statsPath} (${error.message}).\n` +
-      'Build it first: pnpm nx build web --skipSync -- --stats-json',
+      'Build it first: pnpm nx build web -- --stats-json',
   );
   process.exit(2);
 }

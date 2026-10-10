@@ -1,0 +1,14 @@
+{
+  "//": "The dependency keys of the generated dist/apps/functions/package.json (pnpm nx build functions). Checked by tools/verify/p0/functions-deps.mjs; re-record with `node tools/verify/p0/check-functions-deps.mjs --record` only for an intended change (blueprint §6: Phase 1 records, the end of Phase 3b re-records with @angular/* and rxjs absent).",
+  "recordedAt": "2026-10-10",
+  "dependencies": [
+    "@angular/compiler",
+    "@angular/core",
+    "dinero.js",
+    "firebase-admin",
+    "firebase-functions",
+    "libphonenumber-js",
+    "luxon",
+    "rxjs"
+  ]
+}

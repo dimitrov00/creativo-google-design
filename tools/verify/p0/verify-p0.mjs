@@ -20,6 +20,12 @@
  *     that person as `targetUserId`, attributed to Ivan as `admin`.
  * (e) A client renaming themselves (a rules-checked owner write) leaves a
  *     `profile.updated` row whose context names the field and holds no value.
+ * (f) The functions build's generated `dist/apps/functions/package.json`
+ *     lists exactly the runtime dependencies of
+ *     `functions-deps.baseline.json` (ECS migration §6 Phase 1 gate). It
+ *     needs no emulator, so it lives in `functions-deps.mjs` (this file
+ *     refuses to load outside one) and also runs alone:
+ *     `node tools/verify/p0/check-functions-deps.mjs`.
  *
  * Each check prints `pass` or `FAIL` with its evidence; the exit code is the
  * number of failures. The live triggers stay on throughout, as in dev: they
@@ -38,6 +44,7 @@ import { fileURLToPath } from 'node:url';
 import admin from 'firebase-admin';
 import { settleTriggers } from '../../seed/settle.mjs';
 import { readCallableAnswer } from './callable-answer.mjs';
+import { checkFunctionsDeps } from './functions-deps.mjs';
 
 const WORKSPACE_ROOT = resolve(
   dirname(fileURLToPath(import.meta.url)),
@@ -417,6 +424,13 @@ function shiftIso(iso, minutes) {
 }
 
 // ── the proofs ──────────────────────────────────────────────────────────
+
+// First: it reads only the build `verify:p0` has just run, so a stray graph
+// edge is reported before the long emulator proofs.
+await check(
+  '(f) the functions package.json lists the recorded dependencies',
+  () => checkFunctionsDeps(),
+);
 
 let seedStats = null;
 let subjects = [];
