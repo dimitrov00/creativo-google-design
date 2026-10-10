@@ -74,11 +74,13 @@ export const bookAppointment =
         }), // 2
     ); // 3
     if (!result.ok) {
-      ports.log('warn', 'booking.rejected', { code: result.error.code });
+      ports.log('warn', 'booking.rejected', {
+        errorCode: result.error.errorCode,
+      });
       return result;
     }
     await ports.enqueue({
-      kind: 'notify.booked',
+      backgroundTask: 'NOTIFY_BOOKED',
       appointmentId: result.value.appointmentId,
     });
     return Result.ok({ appointmentId: result.value.appointmentId });
@@ -89,6 +91,18 @@ export const bookAppointment =
   summing money here, move it to a system.
 - No SDK import (`firebase-admin`, `pino`, `@sentry/*`) inside a pipeline.
 - `nowMs`/`nextId` are ports so specs can pin them.
+
+## The ingestion boundary owns time (Law 7)
+
+A pipeline that accepts a wall-clock time (a booking, a block, a move) loads
+the location, reads its `timeZone`, and calls `ZonedTimeSystem` ONCE to
+compute `utcEpochMs` — a spring-forward gap time returns the error
+`DST_GAP_INVALID_TIME`, a fall-back repeat resolves to the earlier offset. It
+derives `ShopNow = { localDate, currentMinute, utcEpochMs }` from
+`ports.nowUtcMs()` the same way and hands it to systems, which compute with
+`localDate` + `currentMinute` only and use `utcEpochMs` solely to stamp
+lifecycle instants (`confirmedAtUtcMs`, `cancelledAtUtcMs`). No entity stores a zone; no system
+converts zones.
 
 ## Adapters (`firestore.adapter.ts`, `pino.adapter.ts`, `sentry.adapter.ts`)
 

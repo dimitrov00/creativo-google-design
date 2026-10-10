@@ -1,5 +1,7 @@
 # Module boundaries
 
+> **Note 2026-10-10:** the tag matrix below is still enforced, but every mention of the domain kernel's `ZonedDateTime`, `Money`, `Result` classes or `DomainError` describes code the ECS migration deletes — `CLAUDE.md` Laws 1–7 govern new code (no date classes, branded primitives, flat `errorCode` errors). `libs/ecs-core` (`type:domain`) is the new core; the doc is rewritten from the Nx graph in Phase 4.
+
 Every Nx project in this workspace carries two independent tags, enforced by
 `@nx/enforce-module-boundaries` in `eslint.config.mjs`. Run `nx run <project>:lint`
 to see violations; there is no way to bypass the rule short of editing the config.
@@ -53,6 +55,7 @@ resolves.
 | `type:domain`         | Hexagon core — entities/VOs/domain events, zero Angular/Firebase (`libs/domain/*`)                         |
 | `type:util`           | Pure helpers with no framework opinions (`libs/shared/cursor`)                                             |
 | `type:tokens`         | Design tokens — a true dependency-free leaf (`libs/shared/design-tokens`, `libs/ui/tokens`)                |
+| `type:tooling`        | Workspace tooling whose inputs are typed against the ECS core (`tools/seed` — the `seed-tools` project)    |
 
 **Rule (layering, blueprint §1.2):**
 
@@ -65,7 +68,17 @@ type:infrastructure  ─▶ application, domain, util             (never ui or f
 type:domain          ─▶ domain                                (never depends on application/infrastructure/ui)
 type:util            ──▶ util, tokens
 type:tokens          ─▶ tokens                                (never depends on anything else)
+type:tooling         ─▶ tooling, util, domain                 (never application or infrastructure)
 ```
+
+**Amendment 2026-10-10 — `type:tooling` (ECS migration Phase 3a).**
+`seed-tools` (`tools/seed`) is retagged from `type:util` to `type:tooling`
+before its first fixture body (`tools/seed/fixtures/*.ts`) imports its
+entity type from `@creativo/ecs-core` (`type:domain`) to `satisfies
+Omit<XEntity, 'id'>` it — the `type:util` row allows only `util`/`tokens`.
+Never application or infrastructure: a fixture is a document body, not a
+mapper's input. The row lives in the root `eslint.config.mjs`
+`depConstraints`.
 
 The critical arrow is **`ui` never sees `application` or `infrastructure`** —
 that's the one that keeps the design system reusable across every product

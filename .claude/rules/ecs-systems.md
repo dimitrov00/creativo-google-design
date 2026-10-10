@@ -12,7 +12,13 @@ component slices into new component slices or decisions.
 ## Shape (`interval-collision.system.ts`)
 
 ```ts
-import { TimeInterval } from '../components/time-interval.data';
+import type { MinuteOfDay } from '../primitives/minute-of-day.primitive';
+
+/** The slice this system reads — any entity carrying it is accepted as is (Law 3). */
+export type MinuteSpan = {
+  readonly startMinutes: MinuteOfDay;
+  readonly endMinutes: MinuteOfDay;
+};
 
 export type Collision = {
   readonly candidateIndex: number;
@@ -21,23 +27,27 @@ export type Collision = {
 
 export const IntervalCollisionSystem = {
   /**
-   * Linear scan over two sorted-by-start arrays. O(n + m), no allocation
-   * beyond the result array; both inputs are read, never written.
+   * Linear scan over two sorted-by-start arrays of ONE shop day's local
+   * coordinates (Law 7: collision math never touches UtcEpochMs). O(n + m),
+   * no allocation beyond the result array; both inputs are read, never written.
    */
   findCollisions(
-    candidates: readonly TimeInterval[],
-    busy: readonly TimeInterval[],
+    candidates: readonly MinuteSpan[],
+    busy: readonly MinuteSpan[],
   ): readonly Collision[] {
     const out: Collision[] = [];
     let j = 0;
     for (let i = 0; i < candidates.length; i++) {
-      const c = candidates[i] as TimeInterval;
-      while (j < busy.length && (busy[j] as TimeInterval).endMs <= c.startMs)
+      const c = candidates[i] as MinuteSpan;
+      while (
+        j < busy.length &&
+        (busy[j] as MinuteSpan).endMinutes <= c.startMinutes
+      )
         j++;
       for (let k = j; k < busy.length; k++) {
-        const b = busy[k] as TimeInterval;
-        if (b.startMs >= c.endMs) break;
-        if (TimeInterval.overlaps(c, b))
+        const b = busy[k] as MinuteSpan;
+        if (b.startMinutes >= c.endMinutes) break;
+        if (c.startMinutes < b.endMinutes)
           out.push({ candidateIndex: i, busyIndex: k });
       }
     }
@@ -48,17 +58,35 @@ export const IntervalCollisionSystem = {
 
 ## Rules
 
+- **Zero inbound mapping (Law 6).** A system takes the slice it needs
+  (`readonly TimeCoordinate[]`) or the whole entity, by structural typing —
+  never `.map()` to strip, rename or re-nest properties before calling it.
+- **Narrow on the domain discriminator** (`bookingStatus`, `paymentMethod`,
+  `attendanceState`) with plain `===` against the dictionary value; never a
+  generic `kind`/`type` field.
 - **Inputs in, outputs out.** `now` is a parameter (`nowMs: number`), ids come
   from a `nextId: () => string` parameter supplied by the pipeline, digests
   from a `hash: (input: string) => string` parameter, randomness is a
   parameter. Never `Date.now()`, `new Date()`, `Math.random()`, `crypto`.
-- **Time zones are native `Intl`, in one place.** Zone math (instant to
-  wall clock, wall clock to instant, day keys, DST transitions) lives only in
-  `zoned-time.system.ts`, built on `Intl.DateTimeFormat(…).formatToParts`.
-  Every other system takes epoch ms, minutes-of-day and a precomputed day
-  table. No Luxon, no Moment, no date library. The one sanctioned module
-  state in any system is that file's `Map<zone, Intl.DateTimeFormat>`
-  formatter cache — construction is expensive and the output is pure.
+- **Time is local integers; the zone is touched once (Law 7).** Collision
+  math, schedule packing, availability sweeps and calendar grids run only on
+  the shop wall clock — `LocalDate` + `MinuteOfDay` — never on
+  `UtcEpochMs`, which exists for indexes, crons and `.ics` only. Zone math
+  (wall clock ↔ instant, DST gap rejection, fall-back resolution to the
+  earlier offset) lives only in `zoned-time.system.ts` on native
+  `Intl.DateTimeFormat(…).formatToParts`, and only the ingestion boundary (a
+  pipeline or callable edge) calls it, with the location's `timeZone`. "Now"
+  arrives as `ShopNow = { localDate, currentMinute, utcEpochMs }`: compute
+  only with `localDate` + `currentMinute`; `utcEpochMs` exists solely to stamp
+  lifecycle instants (`confirmedAtUtcMs`). A spring-forward gap time is the
+  error `DST_GAP_INVALID_TIME`; a fall-back repeat resolves to the earlier
+  offset.
+  No `Date`, no Luxon, no Moment, no date library. The one sanctioned module
+  state is that file's `Map<TimeZone, Intl.DateTimeFormat>` formatter cache.
+- **Branded in, branded out (Law 7).** Parameters and results are branded
+  primitives (`MinuteOfDay`, `PriceCents`, `BarberId`, …), never raw
+  `number`/`string` for a coordinate, amount or id. Arithmetic goes through
+  the primitive's companion helpers, which keep the brand.
 - **No I/O of any kind** — no Firestore, no fetch, no logging, no Angular, no
   port imports. If a system needs data, the pipeline loads it first.
 - **Never mutate an argument.** Return new arrays/objects; `readonly` on every
@@ -70,7 +98,8 @@ export const IntervalCollisionSystem = {
   summaries from intervals on demand. Do not materialize slot grids.
 - **Decisions, not side effects.** A system that would "write" returns a write
   plan (`readonly writes: WriteOp[]`) for the pipeline to commit.
-- **Errors are values.** Return `Result<T, E>` with plain error structs.
+- **Errors are values.** Return `Result<T, E>` whose error is a flat struct
+  discriminated by `errorCode` (Law 7). `throw` only for a programmer defect.
 
 ## Spec contract (`*.system.spec.ts`)
 

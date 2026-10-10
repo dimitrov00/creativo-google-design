@@ -33,6 +33,10 @@ injectables. That permission ends at the framework boundary.
   );
   ```
 
+- Never construct a `Date` or a date-library object for domain math (Law 7);
+  the UI reads `LocalDate`, `MinuteOfDay`, `PriceCents` and `UtcEpochMs`
+  straight off the entity. Display "today" and the clock in the LOCATION's
+  `timeZone`, never the browser's.
 - Formatting (money, dates, durations) happens in the template layer via
   existing pipes/helpers (`formatMoney`, native `Intl.DateTimeFormat` /
   `Intl.NumberFormat` formatting in the i18n lib, formatters cached per

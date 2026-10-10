@@ -13,29 +13,55 @@ paths:
 
 # Firestore — the data-oriented layout
 
-Law 5 of `CLAUDE.md`. The database is the archetype table, not a serialized
-object graph.
+Laws 5 and 6 of `CLAUDE.md`. The database is the archetype table — flat
+rows of root fields — not a serialized object graph.
 
-## Document = component bag
+## Document = flat archetype (Law 6)
 
 ```
 /appointments/{appointmentId}
-  timeInterval:   { startMs: 1760000000000, endMs: 1760002700000 }
-  bookingStatus:  { kind: 'confirmed', atMs: 1759990000000, pendingSinceMs: 1759980000000 }
-  serviceBundle:  { items: [{ serviceId, barberId, startMs, endMs, priceMinorUnits }], totalMinorUnits: 2800, currencyCode: 'EUR' }
-  ownerUserId:    'u_…'             // flat query keys live beside the components
-  busyKeys:       ['b_ivan|2026-10-07']
+  tenantId:          'creativo'
+  locationId:        'loc_center'
+  barberIds:         ['b_ivan']                 // 1-to-N: array
+  subjectUserIds:    ['u_42']                   // 1-to-N: array (query key)
+  localDate:         '2026-10-07'               // TimeCoordinate, flat at the root
+  startMinutes:      600
+  endMinutes:        645
+  utcEpochMs:        1759820400000
+  bookingStatus:     'CONFIRMED'                // BookingLifecycle, flat at the root
+  confirmedAtUtcMs:  1759780000000
+  paymentMethod:     'UNPAID'                   // PaymentRecord, flat at the root
+  priceCents:        2800
+  currency:          'EUR'
+  seats:             [{ seatId, barberId, serviceId, startMinutes, durationMinutes, priceCents }]  // 1-to-N
+  busyKeys:          ['b_ivan__2026-10-07']
 ```
 
-- Field names equal the component names; nested maps equal the component
-  types. `snap.data()` is the entity body; `{ id, ...data }` is the entity.
+- Every 1-to-1 field is a root key; the document, the wire JSON and the
+  TypeScript entity are the same flat layout. `snap.data()` is the entity
+  body; `{ id, ...data }` is the entity. Sub-objects and arrays appear only
+  for true 1-to-N relationships (`seats`, `barberIds`) or a third-party
+  audit blob.
 - No mapper files. No `*Document`/`*Doc` interfaces that differ from the
   entity. If a stored shape and an in-memory shape disagree, change one so
   they agree.
-- Store what systems compute on: epoch ms (`number`), minutes-of-day
-  (`number`), money as integer minor units (`number`) beside a `currencyCode` — the repo's vocabulary is `*MinorUnits` + `currencyCode`, never `*Cents` — and `as const` tags (`string`). Never ISO strings
-  for arithmetic fields, never `Timestamp` objects inside components
-  (a server-set `updatedAt` Timestamp at the document root is fine).
+- **Writes target root fields, never dot paths:**
+  `update(ref, { bookingStatus: 'CANCELLED', cancelledAtUtcMs, cancellationReason: 'ILLNESS' })`.
+  A transition also deletes (`FieldValue.delete()`) every field of the old
+  variant that the new variant does not declare, so the stored document is
+  always exactly one variant.
+- **No time-zone field on a temporal document (Law 7).** The IANA zone lives
+  only on `locations/{id}.timeZone`; appointments, exceptions, busy days and
+  waitlist requests store `localDate` + `*Minutes` (the shop wall clock) and
+  `utcEpochMs` (computed once at ingestion).
+- Rules and composite indexes test top-level keys only (`bookingStatus`,
+  `startMinutes`, `utcEpochMs`, `localDate`).
+- Store what systems compute on: instants as `*UtcMs` epoch milliseconds,
+  shop days as `localDate` (`YYYY-MM-DD`), times of day as `*Minutes`, money
+  as integer `*Cents` with a `currency` (`'EUR' | 'BGN'`), tags as
+  SCREAMING_SNAKE strings. Never ISO strings for arithmetic fields, never
+  `Timestamp` objects in the entity (the TTL `purgeAt` Timestamp is the one
+  adapter-stamped root field outside the entity type).
 
 ## Index-explosion prevention
 
@@ -45,7 +71,8 @@ object graph.
 - **Allowed:** bounded maps with keys fixed at design time (`rates: { client,
 staff }`, a component bag itself).
 - **Sequences are arrays of plain structs**, scanned in memory:
-  `blocks: Array<{ startMinutes, endMinutes, kind }>`.
+  `blocks: Array<{ startMinutes, endMinutes, blockKind }>` — array elements
+  are flat structs with domain-prefixed discriminators too.
 - **Arrays that are never queried** (operation logs, seat pairs, photo
   references, write plans) get a `fieldOverrides` entry with `"indexes": []`
   in `firestore.indexes.json` — the file already does this for
@@ -69,7 +96,7 @@ staff }`, a component bag itself).
   `waitlistRequests`, `barberBusy`, `capacity`, `impersonationSessions`,
   `barberLeadTimeSamples`. `purgeAt` is the one Firestore `Timestamp` in a
   document (the TTL service requires it): an adapter-stamped root field
-  outside the entity type, beside the entity's own `*Ms` instant.
+  outside the entity type, beside the entity's own `*UtcMs` instant.
 
 ## Rules and seed
 

@@ -1,5 +1,7 @@
 # Creativo Migration Blueprint — React (`v2/`) → Angular 22 Nx
 
+> **SUPERSEDED 2026-10-10 — read `CLAUDE.md` Laws 1–7 instead.** Its domain-kernel, ports and validation sections (§§0.3, 1.1, 1.3, 2, 5.1, 6, 8, 9) prescribe the superseded class-based shape. The ECS / data-oriented constitution replaced this guidance: no date classes (`ZonedDateTime`, Luxon, Moment) — time is the shop wall clock (`LocalDate` + `MinuteOfDay` integers) plus a `UtcEpochMs` computed once at ingestion, with the IANA zone stored only on the shop location; every coordinate, amount and id is a `Brand<T, B>` primitive with a `Result` smart constructor; errors are flat `{ errorCode }` structs, never `Error`/`DomainError` classes, and `throw` is for programmer defects only. Kept for its history and business rules; do not follow its patterns.
+
 > Status: proposed · Date: 2026-07-21
 > Source: `Creativo/v2` (TanStack Start + React 19, Vite 8, Tailwind v4, XState 5, Valibot, Firebase)
 > Target: `Creativo/creativo-google-design` (Nx 23, Angular ~22.0, pnpm, Vitest, hand-wrapped Firebase SDK)

@@ -1,5 +1,7 @@
 # Domain model architecture
 
+> **SUPERSEDED 2026-10-10 — read `CLAUDE.md` Laws 1–7 instead.** This document describes the rich-domain-model architecture (classes, private constructors, `Result`/`Success`/`Failure` classes, the `DomainError` hierarchy, `ZonedDateTime` over Luxon, `Money` over dinero.js); it is deleted in Phase 4 of the ECS migration. The ECS / data-oriented constitution replaced this guidance: no date classes (`ZonedDateTime`, Luxon, Moment) — time is the shop wall clock (`LocalDate` + `MinuteOfDay` integers) plus a `UtcEpochMs` computed once at ingestion, with the IANA zone stored only on the shop location; every coordinate, amount and id is a `Brand<T, B>` primitive with a `Result` smart constructor; errors are flat `{ errorCode }` structs, never `Error`/`DomainError` classes, and `throw` is for programmer defects only. Kept for its history and business rules; do not follow its patterns.
+
 Rich domain model, not flat DTOs — replaced the Foundation pass's Zod-schema
 `domain-models` lib wholesale. `apps/functions`'s OTP flow is the reference
 implementation of the full pattern end-to-end (the only code in this repo
