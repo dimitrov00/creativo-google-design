@@ -1,11 +1,11 @@
-import { JournalEffect, RedemptionOp } from '../components/journal-effect.data';
-import type {
-  BadgeSeriesId,
-  CorrelationId,
-  JournalEntryId,
-} from '../primitives/ids.primitive';
-import { LocalDate } from '../primitives/local-date.primitive';
-import type { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
+import { JournalEffect, RedemptionOp } from '@core/components';
+import {
+  type BadgeSeriesId,
+  type CorrelationId,
+  type JournalEntryId,
+  LocalDate,
+  type UtcEpochMs,
+} from '@core/primitives';
 
 /*
  * «ДВИЖЕНИЕ» — THE JOURNAL AS A FEED, IN NUMBERS (client-card-revision-3

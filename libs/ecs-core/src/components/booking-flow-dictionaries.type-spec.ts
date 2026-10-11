@@ -14,18 +14,21 @@
  *    .spec.mjs`) — each discriminator and plain tag field is named
  *    `camelCase(Dictionary)`, and its type is exactly the dictionary.
  */
-import type { WaitlistRequest } from '../entities/waitlist-request.entity';
-import type { ScheduleException } from '../entities/schedule-exception.entity';
+import type { WaitlistRequest, ScheduleException } from '@core/entities';
 import {
   type BookingFlowEvent,
   BookingFlowEventKind,
-} from '../systems/booking-flow.system';
-import {
   type CommitSubject,
   CommitSubjectRole,
   PrefillCompanions,
-} from '../systems/booking-cart.system';
-import { BookingFlowErrorCode } from './booking-flow-errors.data';
+} from '@core/systems';
+import {
+  BookingFlowErrorCode,
+  ExceptionEffect,
+  SchedulingErrorCode,
+  WaitlistErrorCode,
+  WaitlistStatus,
+} from '@core/primitives';
 import {
   type BookingFlowState,
   BookingFlowStep,
@@ -36,10 +39,7 @@ import {
 import { type SeatKey, SeatKeyRole } from './cart-line.data';
 import { Daypart } from './daypart.data';
 import { type ExceptionDetail, ExceptionReason } from './exception-detail.data';
-import {
-  ExceptionEffect,
-  type ExceptionEffectRule,
-} from './exception-effect.data';
+import type { ExceptionEffectRule } from './exception-effect-rule.data';
 import { type PartyMember, PartyRole } from './party.data';
 import {
   MonthlyAnchor,
@@ -50,9 +50,7 @@ import {
   type RecurrenceRule,
   WeekOfMonth,
 } from './recurrence-rule.data';
-import { SchedulingErrorCode } from './scheduling-errors.data';
-import { WaitlistErrorCode } from './waitlist-errors.data';
-import { type WaitlistLifecycle, WaitlistStatus } from './waitlist-status.data';
+import type { WaitlistLifecycle } from './waitlist-lifecycle.data';
 
 /** A tag dictionary whose every value is a `T`. */
 type Dictionary<T> = { readonly [key: string]: T };
@@ -102,9 +100,9 @@ dictionary(PrefillCompanions satisfies Dictionary<PrefillCompanions>);
 
 // (2) Holds — each type is exactly its dictionary's values, one key each.
 export type BookingFlowDictionariesHold = [
-  Expect<Holds<typeof BookingFlowErrorCode, BookingFlowErrorCode>>, // components/booking-flow-errors.data.ts
-  Expect<Holds<typeof SchedulingErrorCode, SchedulingErrorCode>>, // components/scheduling-errors.data.ts
-  Expect<Holds<typeof WaitlistErrorCode, WaitlistErrorCode>>, // components/waitlist-errors.data.ts
+  Expect<Holds<typeof BookingFlowErrorCode, BookingFlowErrorCode>>, // primitives/booking-flow-errors.data.ts
+  Expect<Holds<typeof SchedulingErrorCode, SchedulingErrorCode>>, // primitives/scheduling-errors.data.ts
+  Expect<Holds<typeof WaitlistErrorCode, WaitlistErrorCode>>, // primitives/waitlist-errors.data.ts
   Expect<Holds<typeof BookingFlowStep, BookingFlowStep>>, // components/booking-flow.data.ts
   Expect<Holds<typeof MoveRefusalReason, MoveRefusalReason>>, // components/booking-flow.data.ts
   Expect<Holds<Pick<typeof ShopReach, 'Call' | 'Contact'>, ShopReach>>, // components/booking-flow.data.ts
@@ -113,13 +111,13 @@ export type BookingFlowDictionariesHold = [
     Holds<Pick<typeof Daypart, 'Morning' | 'Afternoon' | 'Evening'>, Daypart>
   >, // components/daypart.data.ts
   Expect<Holds<typeof ExceptionReason, ExceptionReason>>, // components/exception-detail.data.ts
-  Expect<Holds<typeof ExceptionEffect, ExceptionEffect>>, // components/exception-effect.data.ts
+  Expect<Holds<typeof ExceptionEffect, ExceptionEffect>>, // primitives/exception-effect.data.ts
   Expect<Holds<typeof PartyRole, PartyRole>>, // components/party.data.ts
   Expect<Holds<typeof RecurrenceFrequency, RecurrenceFrequency>>, // components/recurrence-rule.data.ts
   Expect<Holds<typeof WeekOfMonth, WeekOfMonth>>, // components/recurrence-rule.data.ts
   Expect<Holds<typeof MonthlyAnchor, MonthlyAnchor>>, // components/recurrence-rule.data.ts
   Expect<Holds<typeof RecurrenceEnd, RecurrenceEnd>>, // components/recurrence-rule.data.ts
-  Expect<Holds<typeof WaitlistStatus, WaitlistStatus>>, // components/waitlist-status.data.ts
+  Expect<Holds<typeof WaitlistStatus, WaitlistStatus>>, // primitives/waitlist-status.data.ts
   Expect<Holds<typeof BookingFlowEventKind, BookingFlowEventKind>>, // systems/booking-flow.system.ts
   Expect<Holds<typeof CommitSubjectRole, CommitSubjectRole>>, // systems/booking-cart.system.ts
   Expect<Holds<typeof PrefillCompanions, PrefillCompanions>>, // systems/booking-cart.system.ts
@@ -152,7 +150,7 @@ export type BookingFlowDictionaryFields = [
   Expect<Equals<MoveRefusal['moveRefusalReason'], MoveRefusalReason>>, // components/booking-flow.data.ts
   Expect<Equals<SeatKey['seatKeyRole'], SeatKeyRole>>, // components/cart-line.data.ts
   Expect<Equals<ExceptionDetail['exceptionReason'], ExceptionReason>>, // components/exception-detail.data.ts
-  Expect<Equals<ExceptionEffectRule['exceptionEffect'], ExceptionEffect>>, // components/exception-effect.data.ts
+  Expect<Equals<ExceptionEffectRule['exceptionEffect'], ExceptionEffect>>, // primitives/exception-effect.data.ts
   Expect<Equals<ScheduleException['exceptionEffect'], ExceptionEffect>>, // entities/schedule-exception.entity.ts
   Expect<Equals<PartyMember['partyRole'], PartyRole>>, // components/party.data.ts
   Expect<Equals<RecurrencePattern['recurrenceFrequency'], RecurrenceFrequency>>, // components/recurrence-rule.data.ts
@@ -160,7 +158,7 @@ export type BookingFlowDictionaryFields = [
   Expect<Equals<RecurrencePattern.Monthly['monthlyAnchor'], MonthlyAnchor>>, // components/recurrence-rule.data.ts
   Expect<Equals<RecurrenceEndRule['recurrenceEnd'], RecurrenceEnd>>, // components/recurrence-rule.data.ts
   Expect<Equals<RecurrenceRule['recurrenceEnd'], RecurrenceEnd>>, // components/recurrence-rule.data.ts
-  Expect<Equals<WaitlistLifecycle['waitlistStatus'], WaitlistStatus>>, // components/waitlist-status.data.ts
+  Expect<Equals<WaitlistLifecycle['waitlistStatus'], WaitlistStatus>>, // primitives/waitlist-status.data.ts
   Expect<Equals<WaitlistRequest['waitlistStatus'], WaitlistStatus>>, // entities/waitlist-request.entity.ts
   Expect<
     Equals<BookingFlowEvent['bookingFlowEventKind'], BookingFlowEventKind>

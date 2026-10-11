@@ -1,28 +1,28 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import type { AppliedDiscount } from '../components/applied-discount.data';
-import { Combinability } from '../components/coupon-combinability.data';
-import { CouponValue } from '../components/coupon-value.data';
-import { DiscountSource } from '../components/discount-provenance.data';
-import { EngagementErrorCode } from '../components/engagement-errors.data';
 import {
+  type AppliedDiscount,
+  Combinability,
+  CouponValue,
+  DiscountSource,
   GrantCapacityTerms,
   GrantExpiryTerms,
   GrantLifecycle,
-} from '../components/grant-status.data';
-import type { Money } from '../components/money.data';
-import { VoucherCode } from '../components/voucher-code.data';
-import type { CouponGrant } from '../entities/coupon-grant.entity';
-import { Currency } from '../primitives/currency.primitive';
+  type Money,
+  VoucherCode,
+} from '@core/components';
 import {
+  EngagementErrorCode,
+  Currency,
   AppliedDiscountId,
   CouponGrantId,
   CouponId,
   UserId,
-} from '../primitives/ids.primitive';
-import { PriceCents } from '../primitives/price-cents.primitive';
-import { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
-import { deepFreeze, unwrapOk, utcMs } from '../testing';
+  PriceCents,
+  UtcEpochMs,
+} from '@core/primitives';
+import type { CouponGrant } from '@core/entities';
+import { deepFreeze, unwrapOk, utcMs } from '@core/testing';
 import { type DiscountInput, DiscountSystem } from './discount.system';
 
 /*

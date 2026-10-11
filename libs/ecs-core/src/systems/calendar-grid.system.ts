@@ -1,6 +1,5 @@
-import { DateRange } from '../components/date-range.data';
-import { Weekday } from '../components/weekday.data';
-import { LocalDate } from '../primitives/local-date.primitive';
+import { DateRange } from '@core/components';
+import { Weekday, LocalDate } from '@core/primitives';
 
 const DAYS_PER_WEEK = 7;
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { LocationId } from '../primitives/ids.primitive';
-import { endMinute, minute } from '../testing';
+import { LocationId } from '@core/primitives';
+import { endMinute, minute } from '@core/testing';
 import { ExceptionDetail, ExceptionReason } from './exception-detail.data';
 import { MinuteRange } from './minute-range.data';
 

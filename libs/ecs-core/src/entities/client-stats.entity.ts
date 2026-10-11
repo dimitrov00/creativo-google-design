@@ -2,8 +2,8 @@ import type {
   ClientStats,
   ClientStatsMeta,
   PolicyPassStamp,
-} from '../components/client-stats.data';
-import type { UserId } from '../primitives/ids.primitive';
+} from '@core/components';
+import type { UserId } from '@core/primitives';
 
 /**
  * `clientStats/{uid}` — the projection, its bookkeeping and the stamp of

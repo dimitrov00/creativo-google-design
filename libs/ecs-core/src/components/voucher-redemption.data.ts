@@ -1,7 +1,9 @@
-import type { Currency } from '../primitives/currency.primitive';
-import type { GiftVoucherId } from '../primitives/ids.primitive';
-import { PriceCents } from '../primitives/price-cents.primitive';
-import type { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
+import {
+  type Currency,
+  type GiftVoucherId,
+  PriceCents,
+  type UtcEpochMs,
+} from '@core/primitives';
 import type { VoucherCode } from './voucher-code.data';
 
 /**

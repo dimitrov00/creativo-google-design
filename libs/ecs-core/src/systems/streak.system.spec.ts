@@ -1,27 +1,23 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { StreakIntervalRule } from '../components/streak-interval.data';
 import {
+  StreakIntervalRule,
   STREAK_EXCUSES,
   STREAK_SHOP_EXCUSES,
   StreakExcuse,
   StreakRule,
-} from '../components/streak-rule.data';
-import {
   StreakPhaseState,
   StreakState,
   type StreakPeriodFact,
-} from '../components/streak-state.data';
-import { AppointmentId } from '../primitives/ids.primitive';
-import { LocalDate } from '../primitives/local-date.primitive';
-import { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
+} from '@core/components';
+import { AppointmentId, LocalDate, UtcEpochMs } from '@core/primitives';
 import {
   FIXTURE_TIME_ZONE,
   deepFreeze,
   localDate,
   unwrapOk,
   utcMs,
-} from '../testing';
+} from '@core/testing';
 import {
   StreakSystem,
   StreakTrackMarkKind,

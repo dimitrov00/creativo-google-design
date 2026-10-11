@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { localDate } from '../testing';
+import { localDate } from '@core/testing';
 import {
   RecurrenceEndRule,
   RecurrencePattern,
   RecurrenceRule,
   WeekOfMonth,
 } from './recurrence-rule.data';
-import { Weekday } from './weekday.data';
+import { Weekday } from '@core/primitives';
 
 const times = (count: number): RecurrenceEndRule =>
   RecurrenceEndRule.count(count);

@@ -5,8 +5,8 @@ import { UiFlow, UiStack } from '@creativo/ui/layout';
 import { UiTextDirective } from '@creativo/ui/modifiers';
 import type { UiDateBadgeState } from '@creativo/ui/patterns';
 import { UiCalendarGrid, UiCard, UiDateBadge } from '@creativo/ui/patterns';
-import { ScDemo } from '../../../shared/demo';
-import { ScPage } from '../../../shared/page';
+import { ScDemo } from '@showcase/shared/demo';
+import { ScPage } from '@showcase/shared/page';
 
 interface BadgeSample {
   readonly label: string;

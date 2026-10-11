@@ -1,7 +1,7 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { endMinute, minute } from '../testing';
-import { SeatKeyText } from '../primitives/ids.primitive';
+import { endMinute, minute } from '@core/testing';
+import { SeatKeyText } from '@core/primitives';
 import { StandingSeatPair } from './standing-seat.data';
 
 const at = (personKey: string, start: number, minutes: number) =>

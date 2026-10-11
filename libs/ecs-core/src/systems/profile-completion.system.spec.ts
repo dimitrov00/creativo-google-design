@@ -1,7 +1,7 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { BirthDate } from '../components/birth-date.data';
-import { deepFreeze } from '../testing';
+import { BirthDate } from '@core/components';
+import { deepFreeze } from '@core/testing';
 import {
   ProfileCompletionKey,
   ProfileCompletionSystem,

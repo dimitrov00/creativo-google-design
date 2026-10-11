@@ -1,4 +1,4 @@
-import type { User } from '../entities/user.entity';
+import type { User } from '@core/entities';
 
 /**
  * ProfileCompletionSystem — how complete a profile is (blueprint §2.8), the

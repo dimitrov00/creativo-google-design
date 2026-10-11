@@ -4,7 +4,7 @@ import {
   InvalidCalendarDayError,
   InvalidDateRangeError,
 } from './calendar-day.errors';
-import { defect } from '@creativo/ecs-core';
+import { defect } from '@core/primitives';
 
 const DAY_KEY = /^\d{4}-\d{2}-\d{2}$/;
 

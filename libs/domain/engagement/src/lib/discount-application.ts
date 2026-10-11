@@ -7,17 +7,21 @@ import {
 } from '@creativo/domain/kernel';
 import {
   AppliedDiscountId,
-  type CouponValue as CouponValueData,
   Currency,
-  type DiscountBreakdown as DiscountBreakdownData,
-  type DiscountInput as DiscountInputData,
-  DiscountMethod,
-  DiscountSystem,
-  type Money as MoneyData,
   PriceCents,
   UtcEpochMs,
   defect,
-} from '@creativo/ecs-core';
+} from '@core/primitives';
+import {
+  type CouponValue as CouponValueData,
+  DiscountMethod,
+  type Money as MoneyData,
+} from '@core/components';
+import {
+  type DiscountBreakdown as DiscountBreakdownData,
+  type DiscountInput as DiscountInputData,
+  DiscountSystem,
+} from '@core/systems';
 import { CouponValue } from './coupon-value';
 import { DiscountCapOutOfRangeError } from './discount-application.errors';
 

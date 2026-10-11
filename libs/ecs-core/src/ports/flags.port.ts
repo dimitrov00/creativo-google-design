@@ -1,4 +1,4 @@
-import type { FlagName } from '../components/feature-flags.data';
+import type { FlagName } from '@core/components';
 
 /**
  * Whether a manifest flag is on (blueprint §4.2) — on both sides: the web

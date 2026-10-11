@@ -1,17 +1,12 @@
-import type { Combinability } from '../components/coupon-combinability.data';
-import type { CouponExpiryRule } from '../components/coupon-expiry.data';
 import type {
+  Combinability,
+  CouponExpiryRule,
   CouponOccasion,
   CouponStatus,
-} from '../components/coupon-occasion.data';
-import type { CouponValue } from '../components/coupon-value.data';
-import type { VoucherCode } from '../components/voucher-code.data';
-import type { CouponId } from '../primitives/ids.primitive';
-
-/*
- * F0 STAGING: `CouponId` lives in `primitives/ids.primitive.ts` (§1.5); the
- * barrel still names this file for it until the integrator drops that line.
- */
+  CouponValue,
+  VoucherCode,
+} from '@core/components';
+import type { CouponId } from '@core/primitives';
 
 /** The coupon's identity slice — its id and plain 1-to-1 attributes. */
 export type CouponMeta = {

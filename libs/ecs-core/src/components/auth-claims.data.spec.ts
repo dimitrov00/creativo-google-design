@@ -1,8 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { AuthClaims, AuthStage } from './auth-claims.data';
-import { IdentityErrorCode } from './identity-errors.data';
+import { IdentityErrorCode, TenantId } from '@core/primitives';
 import { Role } from './role.data';
-import { TenantId } from '../primitives/ids.primitive';
 
 /*
  * The cases of libs/domain/identity/src/lib/auth-claims.spec.ts, copied over

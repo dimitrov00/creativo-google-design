@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { at, until } from '../testing/booking-core.fixtures';
-import { BarberId, LocationId } from '../primitives/ids.primitive';
+import { at, until } from '@core/testing';
+import { BarberId, LocationId } from '@core/primitives';
 import { RosterWindow, ShopDayHours } from './roster-window.data';
 
 describe('RosterWindow', () => {

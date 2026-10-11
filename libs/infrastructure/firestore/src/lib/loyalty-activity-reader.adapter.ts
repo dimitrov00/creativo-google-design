@@ -23,7 +23,7 @@ import {
   activityEntryFromDocument,
 } from '@creativo/application/engagement';
 import { RepositoryError } from '@creativo/application/shared';
-import { PageStep, PagingSystem } from '@creativo/ecs-core';
+import { PageStep, PagingSystem } from '@core/systems';
 import { clientJournalCollection } from './firestore-paths';
 
 const NOTHING: LoyaltyActivityPage = { entries: [], next: null };

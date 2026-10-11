@@ -1,7 +1,7 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
-import { deepFreeze, unwrapOk } from '../testing';
+import { UtcEpochMs } from '@core/primitives';
+import { deepFreeze, unwrapOk } from '@core/testing';
 import { WorkBudgetSystem } from './work-budget.system';
 
 /*

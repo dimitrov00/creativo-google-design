@@ -1,37 +1,32 @@
 import {
   BarberPref,
   type BarberPreference,
-} from '../components/barber-pref.data';
-import type { BookingPolicy } from '../components/booking-policy.data';
-import {
+  type BookingPolicy,
   BookingFlowStep,
   BookingFlowState,
   type SeatAssignment,
-} from '../components/booking-flow.data';
-import {
   BookingCart,
   type CartLine,
   type CartSeatLines,
   SeatKey,
-} from '../components/cart-line.data';
-import type { DayWindows } from '../components/day-windows.data';
-import { FlexibleWhen } from '../components/flexible-when.data';
-import type { MinuteRange } from '../components/minute-range.data';
-import { Party, PartyMember, PartyRole } from '../components/party.data';
-import { Result } from '../components/result.data';
-import type { RosterWindow } from '../components/roster-window.data';
-import { SchedulingError } from '../components/scheduling-errors.data';
-import { SeatLabel } from '../components/seat-label.data';
-import {
+  type DayWindows,
+  FlexibleWhen,
+  type MinuteRange,
+  Party,
+  PartyMember,
+  PartyRole,
+  type RosterWindow,
+  SeatLabel,
   Seat,
   type SeatCore,
   type SeatOccupant,
   SeatSubject,
   SubjectRelationship,
-} from '../components/seat.data';
-import type { ServiceTerms } from '../components/service-terms.data';
-import type { Service } from '../entities/service.entity';
+  type ServiceTerms,
+} from '@core/components';
 import {
+  Result,
+  SchedulingError,
   type BarberId,
   CartLineId,
   GuestId,
@@ -40,9 +35,10 @@ import {
   type ServiceId,
   type ServiceVariantId,
   type UserId,
-} from '../primitives/ids.primitive';
-import type { LocalDate } from '../primitives/local-date.primitive';
-import type { MinuteOfDay } from '../primitives/minute-of-day.primitive';
+  type LocalDate,
+  type MinuteOfDay,
+} from '@core/primitives';
+import type { Service } from '@core/entities';
 import {
   type AvailabilityLine,
   type AvailabilityOption,

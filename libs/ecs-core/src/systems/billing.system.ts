@@ -1,28 +1,28 @@
-import type { AppliedDiscount } from '../components/applied-discount.data';
-import { Combinability } from '../components/coupon-combinability.data';
-import { CouponValue, DiscountMethod } from '../components/coupon-value.data';
 import {
+  type AppliedDiscount,
+  Combinability,
+  CouponValue,
+  DiscountMethod,
   DiscountProvenance,
   DiscountSource,
-} from '../components/discount-provenance.data';
-import type { Money } from '../components/money.data';
-import { Result } from '../components/result.data';
-import { seesMoney } from '../components/role.data';
-import { SchedulingError } from '../components/scheduling-errors.data';
-import type { Seat } from '../components/seat.data';
-import { VoucherCode } from '../components/voucher-code.data';
-import { VoucherRedemption } from '../components/voucher-redemption.data';
-import type { Appointment } from '../entities/appointment.entity';
-import type { GiftVoucher } from '../entities/gift-voucher.entity';
-import type { Currency } from '../primitives/currency.primitive';
+  type Money,
+  seesMoney,
+  type Seat,
+  VoucherCode,
+  VoucherRedemption,
+} from '@core/components';
 import {
+  Result,
+  SchedulingError,
+  type Currency,
   AppliedDiscountId,
   type CouponGrantId,
   type CouponId,
   type UserId,
-} from '../primitives/ids.primitive';
-import { PriceCents } from '../primitives/price-cents.primitive';
-import type { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
+  PriceCents,
+  type UtcEpochMs,
+} from '@core/primitives';
+import type { Appointment, GiftVoucher } from '@core/entities';
 import {
   StaffEditError,
   type StaffEditForbidden,

@@ -14,7 +14,13 @@
  *    reads the pair lines below.
  */
 import type { AppliedDiscount } from './applied-discount.data';
-import { BookingStatus, type BookingLifecycle } from './booking-lifecycle.data';
+import {
+  BookingStatus,
+  GrantStatus,
+  AttendanceState,
+  VoucherRefusal,
+} from '@core/primitives';
+import type { BookingLifecycle } from './booking-lifecycle.data';
 import { Combinability } from './coupon-combinability.data';
 import { CouponExpiry, type CouponExpiryRule } from './coupon-expiry.data';
 import { CouponOccasion, CouponStatus } from './coupon-occasion.data';
@@ -26,11 +32,9 @@ import {
   GrantExpiry,
   type GrantExpiryTerms,
   type GrantLifecycle,
-  GrantStatus,
-} from './grant-status.data';
+} from './grant-lifecycle.data';
 import { PhotoOrigin } from './photo-origin.data';
 import {
-  AttendanceState,
   CancellationReason,
   CancelledBy,
   type SeatOutcome,
@@ -40,16 +44,15 @@ import {
   SeatSubject,
   SubjectRelationship,
 } from './seat.data';
-import {
-  type VoucherLifecycle,
-  VoucherRefusal,
-  VoucherStatus,
-} from './voucher-state.data';
-import type { Appointment } from '../entities/appointment.entity';
-import type { AppointmentPhoto } from '../entities/appointment-photo.entity';
-import type { Coupon, CouponMeta } from '../entities/coupon.entity';
-import type { CouponGrant } from '../entities/coupon-grant.entity';
-import type { GiftVoucher } from '../entities/gift-voucher.entity';
+import { type VoucherLifecycle, VoucherStatus } from './voucher-state.data';
+import type {
+  Appointment,
+  AppointmentPhoto,
+  Coupon,
+  CouponMeta,
+  CouponGrant,
+  GiftVoucher,
+} from '@core/entities';
 import {
   EditCommand,
   type EditCommandRequest,
@@ -57,21 +60,17 @@ import {
   type LedgerVerdictResult,
   ResizeEdge,
   StaffEditErrorCode,
-} from '../systems/appointment-edit.system';
-import { ProfileAuthType } from '../systems/audit.system';
-import {
+  ProfileAuthType,
   BillPending,
   type PendingDiscounts,
   TipPreset,
   type TipPresetOption,
-} from '../systems/billing.system';
-import { CancellationRefusalCode } from '../systems/cancellation-policy.system';
-import {
+  CancellationRefusalCode,
   CarriedSeatRefusal,
   type MoveCartSeatInput,
   MoveErrorCode,
   MoveSubjectRole,
-} from '../systems/move.system';
+} from '@core/systems';
 
 /** A tag dictionary whose every value is a `T`. */
 type Dictionary<T> = { readonly [key: string]: T };
@@ -137,8 +136,8 @@ dictionary(MoveSubjectRole satisfies Dictionary<MoveSubjectRole>);
 
 // (2) Holds — exact values, one key per value.
 export type AppointmentDictionariesHold = [
-  Expect<Holds<typeof BookingStatus, BookingStatus>>, // components/booking-lifecycle.data.ts
-  Expect<Holds<typeof AttendanceState, AttendanceState>>, // components/seat-outcome.data.ts
+  Expect<Holds<typeof BookingStatus, BookingStatus>>, // primitives/booking-status.data.ts
+  Expect<Holds<typeof AttendanceState, AttendanceState>>, // primitives/attendance-state.data.ts
   Expect<Holds<typeof CancellationReason, CancellationReason>>, // components/seat-outcome.data.ts
   Expect<Holds<typeof CancelledBy, CancelledBy>>, // components/seat-outcome.data.ts
   Expect<Holds<typeof SeatSubject, SeatSubject>>, // components/seat.data.ts
@@ -151,12 +150,12 @@ export type AppointmentDictionariesHold = [
   Expect<Holds<typeof CouponOccasion, CouponOccasion>>, // components/coupon-occasion.data.ts
   Expect<Holds<typeof CouponStatus, CouponStatus>>, // components/coupon-occasion.data.ts
   Expect<Holds<typeof DiscountMethod, DiscountMethod>>, // components/coupon-value.data.ts
-  Expect<Holds<typeof GrantStatus, GrantStatus>>, // components/grant-status.data.ts
-  Expect<Holds<typeof GrantCapacity, GrantCapacity>>, // components/grant-status.data.ts
-  Expect<Holds<typeof GrantExpiry, GrantExpiry>>, // components/grant-status.data.ts
+  Expect<Holds<typeof GrantStatus, GrantStatus>>, // primitives/grant-status.data.ts
+  Expect<Holds<typeof GrantCapacity, GrantCapacity>>, // primitives/grant-status.data.ts
+  Expect<Holds<typeof GrantExpiry, GrantExpiry>>, // primitives/grant-status.data.ts
   Expect<Holds<Pick<typeof PhotoOrigin, 'Shot' | 'Library'>, PhotoOrigin>>, // components/photo-origin.data.ts (PHOTO_ORIGIN)
   Expect<Holds<typeof VoucherStatus, VoucherStatus>>, // components/voucher-state.data.ts
-  Expect<Holds<typeof VoucherRefusal, VoucherRefusal>>, // components/voucher-state.data.ts
+  Expect<Holds<typeof VoucherRefusal, VoucherRefusal>>, // primitives/voucher-refusal.data.ts
   Expect<Holds<typeof StaffEditErrorCode, StaffEditErrorCode>>, // systems/appointment-edit.system.ts
   Expect<Holds<typeof EditCommand, EditCommand>>, // systems/appointment-edit.system.ts
   Expect<Holds<typeof ResizeEdge, ResizeEdge>>, // systems/appointment-edit.system.ts
@@ -233,8 +232,8 @@ export type AppointmentDictionaryFields = [
   Expect<Equals<Coupon['couponStatus'], CouponStatus>>, // entities/coupon.entity.ts
   Expect<Equals<CouponValue['discountMethod'], DiscountMethod>>, // components/coupon-value.data.ts
   Expect<Equals<CouponGrant['grantStatus'], GrantStatus>>, // entities/coupon-grant.entity.ts
-  Expect<Equals<GrantCapacityTerms['grantCapacity'], GrantCapacity>>, // components/grant-status.data.ts
-  Expect<Equals<GrantExpiryTerms['grantExpiry'], GrantExpiry>>, // components/grant-status.data.ts
+  Expect<Equals<GrantCapacityTerms['grantCapacity'], GrantCapacity>>, // primitives/grant-status.data.ts
+  Expect<Equals<GrantExpiryTerms['grantExpiry'], GrantExpiry>>, // primitives/grant-status.data.ts
   Expect<Equals<ActiveGrant['grantCapacity'], GrantCapacity>>, // N15-exempt: the same field read through the active variant
   Expect<Equals<AppointmentPhoto['photoOrigin'], PhotoOrigin>>, // entities/appointment-photo.entity.ts
   Expect<Equals<GiftVoucher['voucherStatus'], VoucherStatus>>, // entities/gift-voucher.entity.ts

@@ -1,10 +1,5 @@
-import type { BarberStatus } from '../components/catalog-status.data';
-import type { LocalizedText } from '../components/localized-text.data';
-import {
-  BarberId,
-  type LocationId,
-  type MediaRefId,
-} from '../primitives/ids.primitive';
+import type { BarberStatus, LocalizedText } from '@core/components';
+import { BarberId, type LocationId, type MediaRefId } from '@core/primitives';
 
 /**
  * The identity slice of a barber: the id and the plain 1-to-1 attributes.
@@ -53,9 +48,3 @@ export type BarberAvatar = {
  * `avatar`) until the booking-core flip; the shims convert.
  */
 export type Barber = BarberMeta & BarberAvatar;
-
-/**
- * Flatten-pass staging: the barrel's id block still names this module for
- * `BarberId` until the integrator drops that line — the id itself lives in
- * `primitives/ids.primitive.ts` (§1.5).
- */

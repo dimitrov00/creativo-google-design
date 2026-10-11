@@ -1,12 +1,5 @@
-import type { EnrollmentStatus } from '../components/enrollment-status.data';
-import type { LocalizedText } from '../components/localized-text.data';
-import type { CourseId } from '../primitives/ids.primitive';
-
-/*
- * The id lives in `primitives/ids.primitive.ts` (flatten-spec §1.5); it is
- * re-exported here only while the barrel's staging block still names this
- * file (`index.ts`), and leaves with that line.
- */
+import type { EnrollmentStatus, LocalizedText } from '@core/components';
+import type { CourseId } from '@core/primitives';
 
 /**
  * A barbering course listing — `courses/{id}` (the stored body of

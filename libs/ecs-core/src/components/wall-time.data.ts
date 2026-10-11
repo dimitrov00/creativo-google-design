@@ -1,5 +1,4 @@
-import type { LocalDate } from '../primitives/local-date.primitive';
-import type { MinuteOfDay } from '../primitives/minute-of-day.primitive';
+import type { LocalDate, MinuteOfDay } from '@core/primitives';
 
 /**
  * A point on the shop's wall clock — the shop day and the minute from its

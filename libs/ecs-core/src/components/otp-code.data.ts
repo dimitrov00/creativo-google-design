@@ -1,6 +1,4 @@
-import type { Brand } from '../primitives/brand';
-import { IdentityError } from './identity-errors.data';
-import { Result } from './result.data';
+import { type Brand, IdentityError, Result } from '@core/primitives';
 
 /**
  * How many digits a one-time code has — the ONE source of the OTP's length

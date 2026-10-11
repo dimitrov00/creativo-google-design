@@ -1,13 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import type { LocalDate } from '../primitives/local-date.primitive';
-import type { MinuteOfDay } from '../primitives/minute-of-day.primitive';
+import type { LocalDate, MinuteOfDay } from '@core/primitives';
 import {
   FIXTURE_TIME_ZONE,
   deepFreeze,
   localDate,
   minute,
   utcMs,
-} from '../testing';
+} from '@core/testing';
 import {
   type FilterRow,
   type SectionRow,

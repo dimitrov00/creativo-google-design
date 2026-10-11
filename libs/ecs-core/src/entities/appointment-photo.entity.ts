@@ -1,17 +1,11 @@
-import type { PhotoOrigin } from '../components/photo-origin.data';
+import type { PhotoOrigin } from '@core/components';
 import type {
   AppointmentId,
   AppointmentPhotoId,
   BarberId,
   UserId,
-} from '../primitives/ids.primitive';
-import type { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
-
-/*
- * F0 STAGING: `AppointmentPhotoId` lives in `primitives/ids.primitive.ts`
- * (§1.5); the barrel still names this file for it until the integrator drops
- * that line.
- */
+  UtcEpochMs,
+} from '@core/primitives';
 
 /**
  * A picture on a visit — `appointmentPhotos/{id}`, staff-only, a sibling

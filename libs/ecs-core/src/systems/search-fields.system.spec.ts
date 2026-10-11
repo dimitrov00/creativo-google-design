@@ -1,7 +1,7 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { E164 } from '../components/phone-number.data';
-import { deepFreeze } from '../testing';
+import { E164 } from '@core/components';
+import { deepFreeze } from '@core/testing';
 import { PhoneSystem } from './phone.system';
 import { SearchFieldsSystem } from './search-fields.system';
 

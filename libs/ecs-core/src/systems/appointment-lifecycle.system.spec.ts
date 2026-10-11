@@ -1,44 +1,38 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { AuditAction } from '../components/audit-context.data';
-import { BookingContact } from '../components/booking-contact.data';
 import {
+  AuditAction,
+  BookingContact,
   BookingLifecycle,
-  BookingStatus,
-} from '../components/booking-lifecycle.data';
-import { Email } from '../components/email.data';
-import { E164 } from '../components/phone-number.data';
-import {
-  SchedulingError,
-  SchedulingErrorCode,
-} from '../components/scheduling-errors.data';
-import {
-  AttendanceState,
+  Email,
+  E164,
   CancellationReason,
   CancellationReasonSet,
   CancelledBy,
   SeatOutcome,
-} from '../components/seat-outcome.data';
-import {
   Seat,
   SeatOccupant,
   SubjectRelationship,
-} from '../components/seat.data';
-import { ServiceTerms } from '../components/service-terms.data';
-import type { ShopNow } from '../components/shop-now.data';
-import type { Appointment } from '../entities/appointment.entity';
-import { Currency } from '../primitives/currency.primitive';
-import { DurationMinutes } from '../primitives/duration-minutes.primitive';
+  ServiceTerms,
+  type ShopNow,
+} from '@core/components';
 import {
+  BookingStatus,
+  SchedulingError,
+  SchedulingErrorCode,
+  AttendanceState,
+  Currency,
+  DurationMinutes,
   AppointmentId,
   AuditResourceId,
   BarberId,
   SeatId,
   UserId,
-} from '../primitives/ids.primitive';
-import { LocalDate } from '../primitives/local-date.primitive';
-import { PriceCents } from '../primitives/price-cents.primitive';
-import { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
+  LocalDate,
+  PriceCents,
+  UtcEpochMs,
+} from '@core/primitives';
+import type { Appointment } from '@core/entities';
 import {
   FIXTURE_TIME_ZONE,
   FIXTURE_TODAY,
@@ -47,12 +41,10 @@ import {
   unwrapErr,
   unwrapOk,
   utcMs,
-} from '../testing';
-import {
   type AppointmentFixtureOverrides,
   appointmentFixture,
   seatFixture,
-} from '../testing/appointment.fixtures';
+} from '@core/testing';
 import { AppointmentIndexSystem } from './appointment-index.system';
 import {
   AppointmentLifecycleSystem,

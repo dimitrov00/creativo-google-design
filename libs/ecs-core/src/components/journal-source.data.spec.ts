@@ -5,7 +5,7 @@ import {
   JournalEventId,
   MigrationBatchId,
   RedemptionId,
-} from '../primitives/ids.primitive';
+} from '@core/primitives';
 import {
   JournalSource,
   JournalSourceRecord,

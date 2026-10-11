@@ -1,12 +1,10 @@
 import { logger } from 'firebase-functions';
+import { TriggerEventId, UtcEpochMs, defect } from '@core/primitives';
 import {
   type AttemptFailure as EcsAttemptFailure,
   AttemptOutcome,
   TriggerAttemptSystem,
-  TriggerEventId,
-  UtcEpochMs,
-  defect,
-} from '@creativo/ecs-core';
+} from '@core/systems';
 
 /**
  * How a retrying handler judges one failed attempt — shared by every
@@ -16,7 +14,7 @@ import {
  * attempt's age the same way (`reportAttempt`).
  *
  * Phase 2 shim: the verdicts are `TriggerAttemptSystem` in
- * `@creativo/ecs-core`; this file keeps the legacy names and the legacy
+ * `@core/systems`; this file keeps the legacy names and the legacy
  * lowercase outcome on its structs and its log line (the bytes a log query
  * reads stay what they are), parses the event's wire time into a
  * `UtcEpochMs`, and does the logging and the rethrow.

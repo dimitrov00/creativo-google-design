@@ -1,6 +1,9 @@
-import type { AdjustmentId, TierId } from '../primitives/ids.primitive';
-import type { LocalDate } from '../primitives/local-date.primitive';
-import type { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
+import type {
+  AdjustmentId,
+  TierId,
+  LocalDate,
+  UtcEpochMs,
+} from '@core/primitives';
 
 /** Where a manual tier override came from — the discriminator `tierOverrideSource` (`null` = no override). */
 export const TierOverrideSource = {

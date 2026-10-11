@@ -1,21 +1,22 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { GovernanceErrorCode } from '../components/governance-errors.data';
+import {
+  GovernanceErrorCode,
+  ImpersonationSessionId,
+  UserId,
+  UtcEpochMs,
+} from '@core/primitives';
 import {
   ImpersonationScope,
   parseImpersonationScope,
-} from '../components/impersonation-scope.data';
-import {
   EndReasonFields,
   ImpersonationEndReason,
   ImpersonationLifecycle,
   ImpersonationStatus,
-} from '../components/impersonation-status.data';
-import { Role } from '../components/role.data';
-import type { ImpersonationSession } from '../entities/impersonation-session.entity';
-import { ImpersonationSessionId, UserId } from '../primitives/ids.primitive';
-import { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
-import { deepFreeze, unwrapErr, unwrapOk, utcMs } from '../testing';
+  Role,
+} from '@core/components';
+import type { ImpersonationSession } from '@core/entities';
+import { deepFreeze, unwrapErr, unwrapOk, utcMs } from '@core/testing';
 import {
   ImpersonationSystem,
   type StartImpersonation,

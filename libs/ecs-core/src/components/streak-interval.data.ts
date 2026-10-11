@@ -2,8 +2,8 @@ import {
   EngagementError,
   EngagementErrorCode,
   StreakRuleField,
-} from './engagement-errors.data';
-import { Result } from './result.data';
+  Result,
+} from '@core/primitives';
 
 /** How long a period of the rhythm lasts — the rule's discriminator `streakInterval`. */
 export const StreakInterval = {

@@ -1,15 +1,15 @@
 import {
   ExceptionEffect,
-  ExceptionEffectRule,
-} from '../components/exception-effect.data';
+  Result,
+  type SchedulingError,
+  type BarberId,
+} from '@core/primitives';
 import {
+  ExceptionEffectRule,
   type ExceptionDetail,
   ExceptionReason,
-} from '../components/exception-detail.data';
-import { MinuteRange } from '../components/minute-range.data';
-import { Result } from '../components/result.data';
-import type { SchedulingError } from '../components/scheduling-errors.data';
-import type { BarberId } from '../primitives/ids.primitive';
+  MinuteRange,
+} from '@core/components';
 
 /**
  * A staff editor's exception, sanitised to what the public may know, and the

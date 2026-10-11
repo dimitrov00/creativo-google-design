@@ -1,4 +1,4 @@
-import type { BarberId } from '../primitives/ids.primitive';
+import type { BarberId } from '@core/primitives';
 
 /** How many identity tones a shop's chairs are drawn in (`barber-tone.ts:35`). */
 const TONE_COUNT = 5;

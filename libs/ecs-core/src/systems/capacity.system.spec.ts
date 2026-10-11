@@ -1,22 +1,28 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { CapacityEntry } from '../components/capacity-entry.data';
-import { ExceptionEffectRule } from '../components/exception-effect.data';
-import { MinuteRange } from '../components/minute-range.data';
-import { DayHours } from '../components/opening-hours.data';
 import {
+  CapacityEntry,
+  ExceptionEffectRule,
+  MinuteRange,
+  DayHours,
   type ScheduleVersion,
   ShiftSegment,
-} from '../components/schedule-version.data';
-import { Weekday } from '../components/weekday.data';
+} from '@core/components';
 import {
+  Weekday,
   BarberId,
   CapacityMonthId,
   LocationId,
-} from '../primitives/ids.primitive';
-import { LocalDate } from '../primitives/local-date.primitive';
-import { deepFreeze, endMinute, localDate, minute, unwrapOk } from '../testing';
-import { minuteCount } from '../testing/booking-core.fixtures';
+  LocalDate,
+} from '@core/primitives';
+import {
+  deepFreeze,
+  endMinute,
+  localDate,
+  minute,
+  unwrapOk,
+  minuteCount,
+} from '@core/testing';
 import {
   type CapacityPlan,
   type CapacityPlanInput,

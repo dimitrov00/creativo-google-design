@@ -1,23 +1,27 @@
 import { Result, fail, ok } from '@creativo/domain/kernel';
 import {
   EngagementErrorCode,
-  HeadRole,
   LocalDate,
-  type ScheduledStreakRule,
   ServiceCategoryId,
   ServiceId,
+  defect,
+} from '@core/primitives';
+import {
+  HeadRole,
+  type ScheduledStreakRule,
   StreakExcuse as SystemExcuse,
   StreakIntervalRule,
   StreakOnBreak as SystemOnBreak,
   StreakQualifierRule,
   type StreakRule,
   StreakRuleDirection as SystemDirection,
+  StreakTransition as SystemTransition,
+} from '@core/components';
+import {
   StreakRuleSystem,
   type StreakScheduleError,
   type StreakSchedule as SystemSchedule,
-  StreakTransition as SystemTransition,
-  defect,
-} from '@creativo/ecs-core';
+} from '@core/systems';
 import { IsoDate } from './loyalty-calendar';
 import type {
   StreakDefinition,
@@ -39,7 +43,7 @@ import {
 /*
  * The rhythm's head over time — a thin shim since the ECS migration's
  * Phase 2: which version a day is judged by, what waits, and the earliest
- * day a change may start are `StreakRuleSystem` (`@creativo/ecs-core`,
+ * day a change may start are `StreakRuleSystem` (`@core/systems`,
  * `streak-rule.system.ts`); the day count is `LocalDate`'s epoch-day math.
  * The class keeps its API and the instances it was handed; the bridge to
  * the plain structs is the private helpers at the end. The one check the

@@ -5,7 +5,7 @@ import type {
   Transaction,
 } from 'firebase-admin/firestore';
 import { Result, fail, ok } from '@creativo/domain/kernel';
-import { ZonedTimeSystem } from '@creativo/ecs-core';
+import { ZonedTimeSystem } from '@core/systems';
 import { type LocationDayHours, Service } from '@creativo/domain/catalog';
 import {
   CalendarDay,

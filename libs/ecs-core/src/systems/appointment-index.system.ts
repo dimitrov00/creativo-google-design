@@ -1,18 +1,19 @@
-import type { Placement } from '../components/placement-kind.data';
 import {
+  type Placement,
   Seat,
   type SeatOccupant,
   SeatSubject,
   SubjectRelationship,
-} from '../components/seat.data';
-import type { Appointment } from '../entities/appointment.entity';
-import { BusyKey } from '../primitives/busy-key.primitive';
-import type { BarberId, UserId } from '../primitives/ids.primitive';
-import type { LocalDate } from '../primitives/local-date.primitive';
-import type {
-  EndMinute,
-  MinuteOfDay,
-} from '../primitives/minute-of-day.primitive';
+} from '@core/components';
+import type { Appointment } from '@core/entities';
+import {
+  BusyKey,
+  type BarberId,
+  type UserId,
+  type LocalDate,
+  type EndMinute,
+  type MinuteOfDay,
+} from '@core/primitives';
 
 /**
  * The QUERY MIRRORS of an appointment (`appointment-document.ts:94-106`):

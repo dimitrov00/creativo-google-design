@@ -1,5 +1,5 @@
-import type { EarnedLevel } from '../components/badge-level.data';
-import type { BadgeSeriesId } from '../primitives/ids.primitive';
+import type { EarnedLevel } from '@core/components';
+import type { BadgeSeriesId } from '@core/primitives';
 
 /**
  * `loyaltyAccounts/{uid}/badgeProgress/{badgeSeriesId}` — one family's

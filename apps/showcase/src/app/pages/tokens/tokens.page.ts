@@ -7,9 +7,9 @@ import type {
 import { UiRadiusDirective, UiTextDirective } from '@creativo/ui/modifiers';
 import { UiFlow, UiStack } from '@creativo/ui/layout';
 import type { UiSpacing } from '@creativo/ui/layout';
-import { ScDemo } from '../../shared/demo';
-import { ScGapViz } from '../../shared/gap-viz';
-import { ScPage } from '../../shared/page';
+import { ScDemo } from '@showcase/shared/demo';
+import { ScGapViz } from '@showcase/shared/gap-viz';
+import { ScPage } from '@showcase/shared/page';
 
 interface ControlSizeSample {
   readonly name: 'small' | 'regular' | 'large';

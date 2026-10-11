@@ -20,24 +20,19 @@ import { SeatSubject } from './seat.data';
 import {
   ClientQueryShape,
   type ParsedClientQuery,
-} from '../systems/client-query.system';
-import { GridEvent, type RunEvent } from '../systems/grid-layout.system';
-import {
+  GridEvent,
+  type RunEvent,
   type PageKey,
   PageStep,
   type PageStepResult,
-} from '../systems/paging.system';
-import { RepeatPreset } from '../systems/visit-draft.system';
-import {
+  RepeatPreset,
   VisitFilter,
   VisitGrain,
   VisitPerspective,
   VisitRowOutcome,
-} from '../systems/visit-list.system';
-import {
   CancelledSide,
   type PersonSubject,
-} from '../systems/visit-story.system';
+} from '@core/systems';
 
 /** A tag dictionary whose every value is a `T`. */
 type Dictionary<T> = { readonly [key: string]: T };

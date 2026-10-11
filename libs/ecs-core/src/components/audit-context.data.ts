@@ -3,14 +3,14 @@ import type {
   StreakRuleParameter,
   StreakTransition,
 } from './streak-rule.data';
-import type { BackfillJobName } from '../entities/backfill-job.entity';
-import type { LocalDate } from '../primitives/local-date.primitive';
+import type { BackfillJobName } from './backfill-job-name.data';
 import type {
+  LocalDate,
   CustomerId,
   LocationId,
   SeatId,
   UserId,
-} from '../primitives/ids.primitive';
+} from '@core/primitives';
 
 /**
  * The audited verbs — the ONLY source of these strings, the discriminator

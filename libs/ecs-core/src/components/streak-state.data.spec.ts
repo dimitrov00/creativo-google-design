@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { StreakDefinitionId } from '../primitives/ids.primitive';
-import { localDate } from '../testing';
+import { StreakDefinitionId } from '@core/primitives';
+import { localDate } from '@core/testing';
 import { StreakIntervalSource } from './streak-interval.data';
 import {
   FreezeReason,

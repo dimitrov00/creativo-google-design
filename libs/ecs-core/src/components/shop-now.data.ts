@@ -1,6 +1,4 @@
-import type { LocalDate } from '../primitives/local-date.primitive';
-import type { MinuteOfDay } from '../primitives/minute-of-day.primitive';
-import type { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
+import type { LocalDate, MinuteOfDay, UtcEpochMs } from '@core/primitives';
 import { WallTime } from './wall-time.data';
 
 /**

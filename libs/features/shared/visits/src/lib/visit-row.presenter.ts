@@ -19,13 +19,14 @@ import {
 import {
   AttendanceState,
   LocalDate,
-  type PersonSubject,
+  UserId as EcsUserId,
+  defect,
+} from '@core/primitives';
+import {
   type SeatOutcome as EcsSeatOutcome,
   SeatSubject,
-  UserId as EcsUserId,
-  VisitStorySystem,
-  defect,
-} from '@creativo/ecs-core';
+} from '@core/components';
+import { type PersonSubject, VisitStorySystem } from '@core/systems';
 import {
   LEGACY_CANCELLED_SIDE,
   LEGACY_VISIT_ROW_OUTCOME,
@@ -68,7 +69,7 @@ import type {
  *
  * Phase 2: the story's math — whose seats, the root outcome, the decisive
  * cancellation and its side, the people counted, the upcoming rule, the
- * runs of watched days — is `VisitStorySystem` in `@creativo/ecs-core`;
+ * runs of watched days — is `VisitStorySystem` in `@core/systems`;
  * the words, the clock's formatting and the money's stay here. The legacy
  * shapes reach it through the converters at the end of this file. Flatten
  * pass: the system's tags are SCREAMING and its clock is the shop's wall

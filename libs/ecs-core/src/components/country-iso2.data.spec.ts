@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { PhoneSystem } from '../systems/phone.system';
+import { PhoneSystem } from '@core/systems';
 import { CountryIso2 } from './country-iso2.data';
 
 describe('CountryIso2', () => {

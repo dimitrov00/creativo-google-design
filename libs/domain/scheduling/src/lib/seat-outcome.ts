@@ -11,14 +11,16 @@ import type { CancellationWindow } from './cancellation-window';
 import {
   AttendanceState,
   BookingStatus,
+  UtcEpochMs,
+  defect,
+} from '@core/primitives';
+import {
   CancellationReason as CancellationReasonData,
   CancellationReasonSet,
   CancelledBy as CancelledByData,
   type SeatOutcome as SeatOutcomeData,
   SeatOutcome as SeatOutcomes,
-  UtcEpochMs,
-  defect,
-} from '@creativo/ecs-core';
+} from '@core/components';
 
 /*
  * THIN SHIM (ECS migration Phase 2). The seat-outcome rules — the closed

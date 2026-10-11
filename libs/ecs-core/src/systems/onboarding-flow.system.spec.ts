@@ -1,15 +1,14 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { IdentityErrorCode } from '../components/identity-errors.data';
+import { IdentityErrorCode, ServiceId } from '@core/primitives';
 import {
   OnboardingFlowEvent,
   OnboardingFlowEventKind,
   OnboardingFlowState,
   OnboardingFlowStep,
-} from '../components/onboarding-flow.data';
-import { Registration } from '../components/registration.data';
-import { ServiceId } from '../primitives/ids.primitive';
-import { deepFreeze, unwrapErr, unwrapOk } from '../testing';
+  Registration,
+} from '@core/components';
+import { deepFreeze, unwrapErr, unwrapOk } from '@core/testing';
 import {
   OnboardingFlowSystem,
   PERSONALIZE_STEPS,

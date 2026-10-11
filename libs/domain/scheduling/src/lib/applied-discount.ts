@@ -5,20 +5,22 @@ import {
   DiscountInput,
 } from '@creativo/domain/engagement';
 import {
-  AppliedDiscount as AppliedDiscountData,
   AppliedDiscountId,
-  Combinability,
   CouponGrantId,
-  type CouponValue as CouponValueData,
   Currency,
-  DiscountMethod,
-  DiscountProvenance,
-  DiscountSystem,
   PriceCents,
   UtcEpochMs,
-  VoucherCode,
   defect,
-} from '@creativo/ecs-core';
+} from '@core/primitives';
+import {
+  AppliedDiscount as AppliedDiscountData,
+  Combinability,
+  type CouponValue as CouponValueData,
+  DiscountMethod,
+  DiscountProvenance,
+  VoucherCode,
+} from '@core/components';
+import { DiscountSystem } from '@core/systems';
 
 /*
  * THIN SHIM (ECS migration Phase 2). The rules about a discount ON THE VISIT

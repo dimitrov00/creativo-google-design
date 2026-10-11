@@ -1,18 +1,20 @@
 import { Result, fail, ok } from '@creativo/domain/kernel';
 import {
   LocalDate,
+  SchedulingErrorCode,
+  type SchedulingError,
+  type Weekday as IsoWeekday,
+  defect,
+} from '@core/primitives';
+import {
   MonthlyAnchor,
   RecurrenceEndRule,
   RecurrenceFrequency as FrequencyTag,
   RecurrencePattern as PatternData,
   RecurrenceRule as RuleData,
-  RecurrenceSystem,
-  SchedulingErrorCode,
-  type SchedulingError,
-  type Weekday as IsoWeekday,
   WeekOfMonth as WeekOfMonthTag,
-  defect,
-} from '@creativo/ecs-core';
+} from '@core/components';
+import { RecurrenceSystem } from '@core/systems';
 import { CalendarDay } from './calendar-day';
 import { type Weekday, isoOf, weekdayFromIso } from './weekday';
 import {
@@ -29,7 +31,7 @@ import {
 
 /*
  * THIN SHIM (ECS migration Phase 2). The rule's checks are the
- * `RecurrenceRule` component of `@creativo/ecs-core`; the presets, the
+ * `RecurrenceRule` component of `@core/components`; the presets, the
  * start-following and the walk are `RecurrenceSystem`. This file keeps the
  * legacy classes' API for their callers and only converts between the legacy
  * shapes (weekday names, `CalendarDay`, error classes) and the ECS structs.

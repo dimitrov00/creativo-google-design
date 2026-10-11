@@ -22,35 +22,39 @@ import {
   subjectUserIdsFromDocument,
 } from '@creativo/application/booking';
 import {
-  type Appointment as EcsAppointment,
   AppointmentId as EcsAppointmentId,
   BarberId as EcsBarberId,
-  type ClientMoneyStats as EcsClientMoneyStats,
-  type ClientStats as EcsClientStats,
-  ClientStatsSystem,
   Currency,
   DurationMinutes,
+  PriceCents,
+  SeatId as EcsSeatId,
+  ServiceId as EcsServiceId,
+  ServiceVariantId as EcsServiceVariantId,
+  type TimeZone,
+  UserId as EcsUserId,
+  UtcEpochMs,
+  defect,
+} from '@core/primitives';
+import {
+  type ClientMoneyStats as EcsClientMoneyStats,
+  type ClientStats as EcsClientStats,
   LastVisit,
   NextVisit,
   PauseSuggestion,
   Placement,
   type PolicyPass as EcsPolicyPass,
-  PolicyPassVerdict as EcsPolicyPassVerdict,
-  PolicyRecomputeJobSystem,
   type PreciseInstant,
-  PriceCents,
-  SeatId as EcsSeatId,
-  ServiceId as EcsServiceId,
-  ServiceVariantId as EcsServiceVariantId,
-  StatsWriteDecision,
-  type TimeZone,
-  UserId as EcsUserId,
-  UtcEpochMs,
   type VisitFact as EcsVisitFact,
   type VisitLeg as EcsVisitLeg,
+} from '@core/components';
+import { type Appointment as EcsAppointment } from '@core/entities';
+import {
+  ClientStatsSystem,
+  PolicyPassVerdict as EcsPolicyPassVerdict,
+  PolicyRecomputeJobSystem,
+  StatsWriteDecision,
   ZonedTimeSystem,
-  defect,
-} from '@creativo/ecs-core';
+} from '@core/systems';
 import { TENANT_ZONE } from '../booking/tenant-zone';
 import {
   EARLIEST_INSTANT,
@@ -65,7 +69,7 @@ import {
  * and writes once.
  *
  * Phase 2 shim: the decisions are `ClientStatsSystem` and
- * `PolicyRecomputeJobSystem` (the pass guard) in `@creativo/ecs-core`; this
+ * `PolicyRecomputeJobSystem` (the pass guard) in `@core/systems`; this
  * file keeps the legacy names for its callers, reads the stored documents
  * through their mappers, and converts at the edge: a stored instant becomes
  * the shop wall clock (`localDate` + minutes) through `ZonedTimeSystem` in

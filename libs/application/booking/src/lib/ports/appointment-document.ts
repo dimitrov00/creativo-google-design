@@ -37,17 +37,21 @@ import {
 } from '@creativo/domain/scheduling';
 import { RepositoryError } from '@creativo/application/shared';
 import {
-  AppointmentIndexSystem,
   BarberId as EcsBarberId,
   BusyKey,
-  type IndexedSeat,
   LocalDate as EcsLocalDate,
+  UserId as EcsUserId,
+  defect,
+} from '@core/primitives';
+import {
   SeatOccupant as EcsSeatOccupant,
   SubjectRelationship as EcsSubjectRelationship,
-  UserId as EcsUserId,
+} from '@core/components';
+import {
+  AppointmentIndexSystem,
+  type IndexedSeat,
   ZonedTimeSystem,
-  defect,
-} from '@creativo/ecs-core';
+} from '@core/systems';
 
 /**
  * The persisted shape of an appointment, and of the public busy projection —

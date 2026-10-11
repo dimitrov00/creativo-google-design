@@ -1,11 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { LocalizedText } from '../components/localized-text.data';
 import {
+  LocalizedText,
   StreakInterval,
   StreakIntervalRule,
-} from '../components/streak-interval.data';
-import { StreakQualifierRule } from '../components/streak-qualifier.data';
-import {
+  StreakQualifierRule,
   HeadRole,
   STREAK_EXCUSES,
   StreakExcuse,
@@ -15,10 +13,9 @@ import {
   StreakRuleParameter,
   StreakTransition,
   type ScheduledStreakRule,
-} from '../components/streak-rule.data';
-import { ServiceCategoryId, ServiceId } from '../primitives/ids.primitive';
-import { LocalDate } from '../primitives/local-date.primitive';
-import { deepFreeze, localDate } from '../testing';
+} from '@core/components';
+import { ServiceCategoryId, ServiceId, LocalDate } from '@core/primitives';
+import { deepFreeze, localDate } from '@core/testing';
 import {
   StreakRuleSystem,
   type StreakRuleChange,

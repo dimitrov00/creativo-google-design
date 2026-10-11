@@ -1,20 +1,20 @@
-import { ExceptionEffectRule } from '../components/exception-effect.data';
-import type { Result } from '../components/result.data';
-import type { ScheduleException } from '../entities/schedule-exception.entity';
-import { BusyKey } from '../primitives/busy-key.primitive';
+import { ExceptionEffectRule } from '@core/components';
 import {
+  type Result,
+  BusyKey,
   BarberId,
   LocationId,
   ScheduleExceptionId,
-} from '../primitives/ids.primitive';
-import { LocalDate } from '../primitives/local-date.primitive';
-import { ZonedTimeSystem } from '../systems/zoned-time.system';
+  LocalDate,
+} from '@core/primitives';
+import type { ScheduleException } from '@core/entities';
+import { ZonedTimeSystem } from '@core/systems';
 
 /**
  * The booking-flow fixtures (flatten-spec §8.1/§8.4) — the schedule
  * exception in its flat, branded shape, every field present, overridable
  * field by field. Test support only, reached through
- * `@creativo/ecs-core/testing`.
+ * `@core/testing`.
  *
  * Self-contained on purpose: `testing.ts` re-exports this file, so it never
  * imports `testing.ts` back (a cycle would hand a spec half-initialised

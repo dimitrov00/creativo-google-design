@@ -1,19 +1,20 @@
 import type { Auth } from 'firebase-admin/auth';
 import {
-  AttemptOutcome,
-  AuthClaims,
-  type FindAuthUserByDestination,
   IdentifierChannel,
-  type MintCustomToken,
   PipelineError,
   PipelineErrorCode,
-  type ProvisionAuthUser,
   Result,
+  UserId,
+} from '@core/primitives';
+import { AuthClaims } from '@core/components';
+import {
+  type FindAuthUserByDestination,
+  type MintCustomToken,
+  type ProvisionAuthUser,
   type SetClaims,
   type SetDisplayName,
-  TriggerAttemptSystem,
-  UserId,
-} from '@creativo/ecs-core';
+} from '@core/ports';
+import { AttemptOutcome, TriggerAttemptSystem } from '@core/systems';
 
 /**
  * The Admin-Auth ports of `identity.port.ts` over `firebase-admin/auth`:

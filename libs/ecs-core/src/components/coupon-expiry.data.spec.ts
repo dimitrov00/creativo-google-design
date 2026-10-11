@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
-import { utcMs } from '../testing';
+import { UtcEpochMs } from '@core/primitives';
+import { utcMs } from '@core/testing';
 import { CouponExpiry, CouponExpiryRule } from './coupon-expiry.data';
 
 // The `CouponExpiry` and `Coupon.isWithinExpiry` cases of `coupon.spec.ts`,

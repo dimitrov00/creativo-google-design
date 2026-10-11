@@ -13,24 +13,28 @@ import {
   addDays,
 } from '@creativo/domain/engagement';
 import {
-  DraftAssessment,
-  HeadRole,
   LocalDate,
   ServiceCategoryId,
   ServiceId,
+  defect,
+} from '@core/primitives';
+import {
+  HeadRole,
   StreakExcuse as SystemExcuse,
   StreakIntervalRule,
   StreakOnBreak as SystemOnBreak,
-  StreakPublishSystem,
   StreakQualifierRule,
   type StreakRule,
   type StreakRuleInput,
   StreakRuleDirection as SystemDirection,
   StreakRuleParameter,
-  type StreakSchedule,
   StreakTransition as SystemTransition,
-  defect,
-} from '@creativo/ecs-core';
+} from '@core/components';
+import {
+  DraftAssessment,
+  StreakPublishSystem,
+  type StreakSchedule,
+} from '@core/systems';
 import { RepositoryError } from '@creativo/application/shared';
 import {
   type PublishStreakDefinitionError,
@@ -161,7 +165,7 @@ export class PublishStreakDefinitionUseCase {
     >,
   ): StreakDraftAssessment {
     const { schedule, published } = input.observed;
-    // The decision is `StreakPublishSystem.assess` (`@creativo/ecs-core`);
+    // The decision is `StreakPublishSystem.assess` (`@core/systems`);
     // the factory words a draft that is no rule as the classes the page
     // knows, and makes the version the page publishes.
     // The day asked is handed across AS WRITTEN (a `StreakRuleInput`): the

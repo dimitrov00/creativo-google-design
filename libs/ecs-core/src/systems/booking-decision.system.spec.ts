@@ -2,35 +2,31 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { BarberPreference } from '../components/barber-pref.data';
+import {
+  BarberPreference,
+  BookingPolicy,
+  ExceptionEffectRule,
+  MinuteRange,
+  DayHours,
+  Placement,
+  PlacementPolicy,
+  type StaffTermsOverride,
+  type ScheduleVersion,
+  ShiftSegment,
+  type Seat,
+  SeatSubject,
+  type ShopNow,
+} from '@core/components';
 import {
   BookingError,
   BookingErrorField,
   ShopUnavailableReason,
-} from '../components/booking-errors.data';
-import { BookingStatus } from '../components/booking-lifecycle.data';
-import { BookingPolicy } from '../components/booking-policy.data';
-import { ExceptionEffectRule } from '../components/exception-effect.data';
-import { MinuteRange } from '../components/minute-range.data';
-import { DayHours } from '../components/opening-hours.data';
-import { Placement } from '../components/placement-kind.data';
-import {
-  PlacementPolicy,
-  type StaffTermsOverride,
-} from '../components/placement-policy.data';
-import type { Result } from '../components/result.data';
-import {
-  type ScheduleVersion,
-  ShiftSegment,
-} from '../components/schedule-version.data';
-import { type Seat, SeatSubject } from '../components/seat.data';
-import type { ShopNow } from '../components/shop-now.data';
-import { Weekday } from '../components/weekday.data';
-import type { Service } from '../entities/service.entity';
-import { BusyKey } from '../primitives/busy-key.primitive';
-import { Currency } from '../primitives/currency.primitive';
-import type { DurationMinutes } from '../primitives/duration-minutes.primitive';
-import {
+  BookingStatus,
+  type Result,
+  Weekday,
+  BusyKey,
+  Currency,
+  type DurationMinutes,
   BarberId,
   LocationId,
   SeatId,
@@ -38,19 +34,19 @@ import {
   ServiceId,
   ServiceVariantId,
   UserId,
-} from '../primitives/ids.primitive';
-import { LocalDate } from '../primitives/local-date.primitive';
-import { EndMinute, MinuteOfDay } from '../primitives/minute-of-day.primitive';
-import type { PriceCents } from '../primitives/price-cents.primitive';
-import type { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
+  LocalDate,
+  EndMinute,
+  MinuteOfDay,
+  type PriceCents,
+  type UtcEpochMs,
+} from '@core/primitives';
+import type { Service } from '@core/entities';
 import {
   FIXTURE_TIME_ZONE,
   deepFreeze,
   localDate,
   unwrapOk,
   utcMs,
-} from '../testing';
-import {
   at,
   cents,
   duration,
@@ -58,7 +54,7 @@ import {
   serviceFixture,
   termsFixture,
   until,
-} from '../testing/booking-core.fixtures';
+} from '@core/testing';
 import type { ChairTime } from './availability.system';
 import {
   type BookingDecision,

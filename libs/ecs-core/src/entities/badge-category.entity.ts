@@ -1,12 +1,5 @@
-import type { BadgeCategoryKind } from '../components/gamification.data';
-import type { LocalizedText } from '../components/localized-text.data';
-import type { BadgeCategoryId } from '../primitives/ids.primitive';
-
-/*
- * The id lives in `primitives/ids.primitive.ts` (flatten-spec §1.5); it is
- * re-exported here only while the barrel's staging block still names this
- * file (`index.ts`), and leaves with that line.
- */
+import type { BadgeCategoryKind, LocalizedText } from '@core/components';
+import type { BadgeCategoryId } from '@core/primitives';
 
 /**
  * `badgeCategories/{id}` — a shelf of «Постижения»: Етапи, Майсторство,

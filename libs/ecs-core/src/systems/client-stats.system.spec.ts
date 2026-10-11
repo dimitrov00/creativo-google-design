@@ -1,9 +1,9 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { BarberPreference } from '../components/barber-pref.data';
-import { BookingPolicy } from '../components/booking-policy.data';
-import { ClientStatsPolicy } from '../components/client-stats-policy.data';
 import {
+  BarberPreference,
+  BookingPolicy,
+  ClientStatsPolicy,
   type ClientMoneyStats,
   ClientStats,
   type ClientStatsMeta,
@@ -11,51 +11,44 @@ import {
   PolicyPassStamp,
   PreciseInstant,
   type VisitFact,
-} from '../components/client-stats.data';
-import { E164 } from '../components/phone-number.data';
-import { Placement } from '../components/placement-kind.data';
-import { SeatLabel } from '../components/seat-label.data';
-import {
-  AttendanceState,
+  E164,
+  Placement,
+  SeatLabel,
   CancellationReason,
   CancelledBy,
   type SeatOutcome,
-} from '../components/seat-outcome.data';
-import {
   type Seat,
   SeatSubject,
   SubjectRelationship,
-} from '../components/seat.data';
-import { SchedulingErrorCode } from '../components/scheduling-errors.data';
-import type { ShopNow } from '../components/shop-now.data';
-import { WriteAction, WriteOp } from '../components/write-op.data';
-import type { Appointment } from '../entities/appointment.entity';
-import { Currency } from '../primitives/currency.primitive';
+  type ShopNow,
+  WriteAction,
+  WriteOp,
+} from '@core/components';
 import {
+  AttendanceState,
+  SchedulingErrorCode,
+  Currency,
   AppointmentId,
   BarberId,
   SeatId,
   ServiceId,
   UserId,
-} from '../primitives/ids.primitive';
-import { EndMinute } from '../primitives/minute-of-day.primitive';
-import {
+  EndMinute,
   DurationMinutes,
   MinuteCount,
-} from '../primitives/duration-minutes.primitive';
-import { PriceCents } from '../primitives/price-cents.primitive';
-import { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
+  PriceCents,
+  UtcEpochMs,
+} from '@core/primitives';
+import type { Appointment } from '@core/entities';
 import {
   FIXTURE_TIME_ZONE,
   deepFreeze,
   minute,
   unwrapOk,
   utcMs,
-} from '../testing';
-import {
   appointmentFixture,
   seatFixture,
-} from '../testing/appointment.fixtures';
+} from '@core/testing';
 import {
   type BilledAppointment,
   ClientStatsSystem,

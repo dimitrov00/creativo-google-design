@@ -1,20 +1,12 @@
-import type { Brand } from '../primitives/brand';
+import {
+  type Brand,
+  IdentityError,
+  Result,
+  IdentifierChannel,
+} from '@core/primitives';
 import { Email } from './email.data';
-import { IdentityError } from './identity-errors.data';
 import { OtpDestinationType } from './otp-destination-type.data';
 import type { E164 } from './phone-number.data';
-import { Result } from './result.data';
-
-/**
- * The two channels a person can be reached at — the ONLY source of these
- * strings, the discriminator `identifierChannel` of {@link ParsedIdentifier}.
- */
-export const IdentifierChannel = {
-  Phone: 'PHONE',
-  Email: 'EMAIL',
-} as const;
-export type IdentifierChannel =
-  (typeof IdentifierChannel)[keyof typeof IdentifierChannel];
 
 /**
  * The text a channel is spelled with inside {@link ParsedIdentifier.channelKey}

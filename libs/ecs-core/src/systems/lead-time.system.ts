@@ -1,13 +1,13 @@
-import type { CapacityEntry } from '../components/capacity-entry.data';
-import type { BarberLeadTimeSample } from '../entities/barber-lead-time-sample.entity';
-import { MinuteCount } from '../primitives/duration-minutes.primitive';
+import type { CapacityEntry } from '@core/components';
+import type { BarberLeadTimeSample } from '@core/entities';
 import {
+  MinuteCount,
   type BarberId,
   BarberLeadTimeSampleId,
   type CapacityMonthId,
-} from '../primitives/ids.primitive';
-import { LocalDate } from '../primitives/local-date.primitive';
-import type { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
+  LocalDate,
+  type UtcEpochMs,
+} from '@core/primitives';
 
 /** The first day a barber has sellable time, and how far away it is. */
 export type FirstAvailableDay = {

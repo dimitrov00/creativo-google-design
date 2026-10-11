@@ -1,12 +1,12 @@
 import type { Observable } from 'rxjs';
-import type { Identifier } from '../components/identifier.data';
-import type { OtpCode } from '../components/otp-code.data';
-import type { PipelineError } from '../components/pipeline-errors.data';
-import type { Principal } from '../components/principal.data';
-import type { RegistrationFields } from '../components/registration.data';
-import type { Result } from '../components/result.data';
-import type { SessionKind } from '../components/session-kind.data';
-import type { OtpId } from '../primitives/ids.primitive';
+import type {
+  Identifier,
+  OtpCode,
+  Principal,
+  RegistrationFields,
+  SessionKind,
+} from '@core/components';
+import type { PipelineError, Result, OtpId } from '@core/primitives';
 
 /**
  * The web's authentication ports (blueprint §4.2) — the Firebase Auth

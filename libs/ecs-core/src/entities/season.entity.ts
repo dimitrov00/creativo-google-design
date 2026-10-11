@@ -2,17 +2,14 @@ import type {
   BadgeEmblem,
   SeasonKind,
   SeasonWindow,
-} from '../components/gamification.data';
-import type { LocalizedText } from '../components/localized-text.data';
-import type { BadgeSeriesId, SeasonId } from '../primitives/ids.primitive';
-import type { LocalDate } from '../primitives/local-date.primitive';
-import type { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
-
-/*
- * The id lives in `primitives/ids.primitive.ts` (flatten-spec §1.5); it is
- * re-exported here only while the barrel's staging block still names this
- * file (`index.ts`), and leaves with that line.
- */
+  LocalizedText,
+} from '@core/components';
+import type {
+  BadgeSeriesId,
+  SeasonId,
+  LocalDate,
+  UtcEpochMs,
+} from '@core/primitives';
 
 /**
  * The season's identity slice. `seasonKind` was `kind` (N15);

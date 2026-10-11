@@ -1,12 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { BackfillJobName } from '../entities/backfill-job.entity';
-import {
-  CustomerId,
-  LocationId,
-  SeatId,
-  UserId,
-} from '../primitives/ids.primitive';
-import { localDate } from '../testing';
+import { BackfillJobName } from './backfill-job-name.data';
+import { CustomerId, LocationId, SeatId, UserId } from '@core/primitives';
+import { localDate } from '@core/testing';
 import {
   ARRIVAL_ACTIONS,
   AUDIT_ACTIONS,

@@ -5,13 +5,8 @@ import {
 } from '@creativo/domain/scheduling';
 import {
   BarberId as EcsBarberId,
-  type BookingCart as EcsBookingCart,
-  BookingCartSystem,
   CartLineId as EcsCartLineId,
-  type CartRider,
-  type CartServiceScope,
   DurationMinutes,
-  type LineTerms,
   LocationId as EcsLocationId,
   MinuteCount,
   MinuteDelta,
@@ -19,7 +14,14 @@ import {
   ServiceId as EcsServiceId,
   ServiceVariantId as EcsServiceVariantId,
   defect,
-} from '@creativo/ecs-core';
+} from '@core/primitives';
+import { type BookingCart as EcsBookingCart } from '@core/components';
+import {
+  BookingCartSystem,
+  type CartRider,
+  type CartServiceScope,
+  type LineTerms,
+} from '@core/systems';
 
 /**
  * A seat a MOVE carries, as the grid asks about it: the engine's rider (its

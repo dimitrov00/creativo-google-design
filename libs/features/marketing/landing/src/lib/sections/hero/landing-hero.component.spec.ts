@@ -1,6 +1,6 @@
 import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
-import { provideTestI18n } from '../../test-i18n.providers';
+import { provideTestI18n } from '@creativo/features/marketing/landing/testing';
 import { LandingHeroComponent } from './landing-hero.component';
 
 describe('LandingHeroComponent', () => {

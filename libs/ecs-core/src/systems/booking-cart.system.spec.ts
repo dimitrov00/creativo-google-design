@@ -1,28 +1,30 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { BarberPref, BarberPreference } from '../components/barber-pref.data';
 import {
+  BarberPref,
+  BarberPreference,
   BookingFlowState,
   BookingFlowStep,
   type SeatAssignment,
-} from '../components/booking-flow.data';
-import { BookingPolicy } from '../components/booking-policy.data';
-import {
+  BookingPolicy,
   BookingCart,
   type CartLine,
   type CartSeatLines,
   SeatKey,
-} from '../components/cart-line.data';
-import { DayWindows } from '../components/day-windows.data';
-import { FlexibleWhen } from '../components/flexible-when.data';
-import { MinuteRange } from '../components/minute-range.data';
-import { Party, PartyMember, PartyRole } from '../components/party.data';
-import { RosterWindow } from '../components/roster-window.data';
-import { SchedulingErrorCode } from '../components/scheduling-errors.data';
-import { SeatLabel } from '../components/seat-label.data';
-import { SeatOccupant, SubjectRelationship } from '../components/seat.data';
-import type { ShopNow } from '../components/shop-now.data';
+  DayWindows,
+  FlexibleWhen,
+  MinuteRange,
+  Party,
+  PartyMember,
+  PartyRole,
+  RosterWindow,
+  SeatLabel,
+  SeatOccupant,
+  SubjectRelationship,
+  type ShopNow,
+} from '@core/components';
 import {
+  SchedulingErrorCode,
   AppointmentId,
   BarberId,
   CartLineId,
@@ -33,8 +35,8 @@ import {
   ServiceVariantId,
   UserId,
   WaitlistRequestId,
-} from '../primitives/ids.primitive';
-import type { MinuteOfDay } from '../primitives/minute-of-day.primitive';
+  type MinuteOfDay,
+} from '@core/primitives';
 import {
   deepFreeze,
   endMinute,
@@ -44,13 +46,11 @@ import {
   unwrapErr,
   unwrapOk,
   utcMs,
-} from '../testing';
-import {
   duration,
   minuteCount,
   minuteDelta,
   termsFixture,
-} from '../testing/booking-core.fixtures';
+} from '@core/testing';
 import {
   type AvailabilityLine,
   AvailabilitySystem,

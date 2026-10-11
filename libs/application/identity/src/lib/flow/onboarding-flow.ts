@@ -1,14 +1,18 @@
 import {
-  PERSONALIZE_STEPS as FLOW_PERSONALIZE_STEPS,
   type IdentityError,
+  type Result as FlowResult,
+  ServiceId as ServiceKey,
+} from '@core/primitives';
+import {
   OnboardingFlowEvent as FlowEvent,
   OnboardingFlowState as FlowState,
   OnboardingFlowStep,
+} from '@core/components';
+import {
+  PERSONALIZE_STEPS as FLOW_PERSONALIZE_STEPS,
   OnboardingFlowSystem,
   type PersonalizeStep as FlowPersonalizeStep,
-  type Result as FlowResult,
-  ServiceId as ServiceKey,
-} from '@creativo/ecs-core';
+} from '@core/systems';
 import { Result, fail, ok } from '@creativo/domain/kernel';
 import { ServiceId } from '@creativo/domain/catalog';
 import { RegistrationField } from '@creativo/domain/identity';
@@ -108,7 +112,7 @@ function toFlowPlan(
 
 /*
  * Phase 2 shim (ECS migration): the transition function and the resume
- * plan walk are `OnboardingFlowSystem` (`@creativo/ecs-core`). This file
+ * plan walk are `OnboardingFlowSystem` (`@core/systems`). This file
  * keeps its legacy state, event and error shapes for the store and converts
  * at the edge — the helpers below are the only code besides the delegating
  * bodies.

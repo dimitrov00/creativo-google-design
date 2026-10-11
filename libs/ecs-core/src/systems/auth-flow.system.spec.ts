@@ -5,15 +5,13 @@ import {
   AuthFlowEventKind,
   AuthFlowState,
   AuthFlowStep,
-} from '../components/auth-flow.data';
-import { Email } from '../components/email.data';
-import {
+  Email,
   type ParsedIdentifier,
   ParsedIdentifier as Parsed,
-} from '../components/identifier.data';
-import { IdentityErrorCode } from '../components/identity-errors.data';
-import { SessionKind } from '../components/session-kind.data';
-import { deepFreeze, unwrapErr, unwrapOk } from '../testing';
+  SessionKind,
+} from '@core/components';
+import { IdentityErrorCode } from '@core/primitives';
+import { deepFreeze, unwrapErr, unwrapOk } from '@core/testing';
 import { AuthFlowSystem } from './auth-flow.system';
 
 /*

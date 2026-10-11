@@ -11,8 +11,8 @@ import {
   UiForegroundStyleDirective,
   UiTextDirective,
 } from '@creativo/ui/modifiers';
-import { ScDemo } from '../../../shared/demo';
-import { ScPage } from '../../../shared/page';
+import { ScDemo } from '@showcase/shared/demo';
+import { ScPage } from '@showcase/shared/page';
 
 interface BadgeSample {
   readonly tone: UiBadgeTone;

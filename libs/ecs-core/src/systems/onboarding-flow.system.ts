@@ -1,11 +1,10 @@
-import { IdentityError } from '../components/identity-errors.data';
+import { IdentityError, Result } from '@core/primitives';
 import {
   OnboardingFlowEvent,
   OnboardingFlowEventKind,
   OnboardingFlowState,
   OnboardingFlowStep,
-} from '../components/onboarding-flow.data';
-import { Result } from '../components/result.data';
+} from '@core/components';
 
 /**
  * OnboardingFlowSystem — the onboarding flow's transition function

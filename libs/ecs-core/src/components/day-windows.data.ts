@@ -1,4 +1,4 @@
-import { LocalDate } from '../primitives/local-date.primitive';
+import { LocalDate } from '@core/primitives';
 import { MinuteRange } from './minute-range.data';
 
 /**

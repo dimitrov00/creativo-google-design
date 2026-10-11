@@ -1,5 +1,5 @@
-import { Result } from '../components/result.data';
-import type { Weekday } from '../components/weekday.data';
+import { Result } from './result.data';
+import type { Weekday } from './weekday.data';
 import type { Brand } from './brand';
 import { CapacityMonthId } from './ids.primitive';
 import { PrimitiveError, PrimitiveErrorCode } from './primitive-errors.data';

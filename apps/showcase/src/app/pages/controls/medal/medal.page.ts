@@ -19,8 +19,8 @@ import {
 } from '@creativo/ui/controls';
 import { UiFlow, UiGrid, UiStack } from '@creativo/ui/layout';
 import { UiFrameDirective, UiTextDirective } from '@creativo/ui/modifiers';
-import { ScDemo } from '../../../shared/demo';
-import { ScPage } from '../../../shared/page';
+import { ScDemo } from '@showcase/shared/demo';
+import { ScPage } from '@showcase/shared/page';
 
 /** One state of one family, as a presenter hands it to the medal. */
 interface MedalSample {

@@ -6,14 +6,11 @@ import { CalendarDay, Interval } from '@creativo/domain/scheduling';
 import {
   BarberId as BarberKey,
   LocalDate,
-  type MinuteRange,
   MinuteOfDay,
-  ZonedTimeSystem,
-} from '@creativo/ecs-core';
-import {
-  FIXTURE_TIME_ZONE,
-  schedulingPortsContract,
-} from '@creativo/ecs-core/testing';
+} from '@core/primitives';
+import { type MinuteRange } from '@core/components';
+import { ZonedTimeSystem } from '@core/systems';
+import { FIXTURE_TIME_ZONE, schedulingPortsContract } from '@core/testing';
 import { createProjectionFirestore } from '../../test-support/fake-projection-firestore';
 import { loadDayAvailability } from './load-day-availability';
 
@@ -23,7 +20,7 @@ import { loadDayAvailability } from './load-day-availability';
  * notification is decided from.
  *
  * Its `busy` is held to the SAME contract as the scheduling ports
- * (`schedulingPortsContract`, `@creativo/ecs-core/testing` — the successor
+ * (`schedulingPortsContract`, `@core/testing` — the successor
  * of the grid reader's `availabilityReaderBusyCases`): `paddedBusy` of the
  * stored spans and the roster's turnaround. Each case's spans are seeded in
  * this loader's own wire shape. A waitlist request is a new booking, never a

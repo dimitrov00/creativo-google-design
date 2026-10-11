@@ -8,29 +8,179 @@ import baseConfig, {
   ECS_ZONED_TIME_RESTRICTIONS,
   ICON_SYNTAX_RESTRICTIONS,
   LAYER_IMPORT_RESTRICTIONS,
+  PARENT_SEGMENT_REGEX,
   TESTING_ENTRY_POINT_RESTRICTION,
+  creativo,
   ecsProjectBlocks,
-} from '../../eslint.config.mjs';
+} from '#eslint-config';
 
 /**
- * The layer import rule minus one package, for the one file allowed it. A
- * rule's options replace, never merge, so the rest is restated: the
- * firebase ban, the other caged packages and — in production code — the
- * testing entry points.
+ * Law 8 (CLAUDE.md): each folder of `src/` is one tier, exported only
+ * through its own `@core/<tier>` barrel, and a PRODUCTION file of a tier may
+ * import only the tiers listed here — the one-way hierarchy
+ *
+ *   primitives ──> components ──> entities ──> systems ──> pipelines
+ *                                    └──> ports ──────────────┘
+ *
+ * `testing` is the test-support tier (`@core/testing`): it sits above every
+ * production tier, and specs and type-specs sit above it — a spec may import
+ * any tier, because `@core/testing` already reaches all of them. Mirrored by
+ * tools/verify/layering/check-layering.mjs, which also proves the graph has
+ * no cycle; keep the two tables in step.
  */
-function layerImportsWithout(packageName, { production }) {
-  const patterns = LAYER_IMPORT_RESTRICTIONS.patterns.filter(
-    (pattern) => !pattern.group.includes(packageName),
-  );
+const CORE_TIER_IMPORTS = new Map([
+  ['primitives', []],
+  ['components', ['primitives']],
+  ['entities', ['components', 'primitives']],
+  ['ports', ['entities', 'components', 'primitives']],
+  ['systems', ['entities', 'components', 'primitives']],
+  ['pipelines', ['systems', 'ports', 'entities', 'components', 'primitives']],
+  [
+    'testing',
+    ['primitives', 'components', 'entities', 'ports', 'systems', 'pipelines'],
+  ],
+]);
+
+const PRODUCTION_TIERS = [...CORE_TIER_IMPORTS.keys()].filter(
+  (tier) => tier !== 'testing',
+);
+
+/** A `regex` restriction on `@core/<one of tiers>` (and any subpath). */
+function coreAliasRestriction(tiers, message) {
   return {
-    patterns: production
-      ? [...patterns, TESTING_ENTRY_POINT_RESTRICTION]
-      : patterns,
+    regex: `^@core/(${tiers.join('|')})(/.*)?$`,
+    caseSensitive: true,
+    message,
+  };
+}
+
+/**
+ * Law 8.3: no parent traversal anywhere in the library's source — a `..`
+ * segment anywhere in the specifier, so `./../x` and `./a/../../x` are
+ * caught as surely as `../x`.
+ */
+const NO_PARENT_TRAVERSAL = {
+  regex: PARENT_SEGMENT_REGEX,
+  caseSensitive: true,
+  message:
+    'No `../` inside libs/ecs-core (Law 8.3): another tier is its `@core/<tier>` alias, a sibling in the same tier is `./x`.',
+};
+
+/**
+ * The testing entry points, with `@core/testing` always among them in a
+ * production file of the core — whatever the root restriction lists, and
+ * never listed twice (a group matching twice would report every hit twice).
+ */
+const CORE_TESTING_ENTRY_POINT_RESTRICTION = {
+  ...TESTING_ENTRY_POINT_RESTRICTION,
+  group: [
+    ...new Set([...TESTING_ENTRY_POINT_RESTRICTION.group, '@core/testing']),
+  ],
+};
+
+/**
+ * The tier half of `no-restricted-imports` for one file kind of one tier:
+ * its own barrel (a tier importing itself through its barrel cycles), every
+ * tier the hierarchy forbids it (production files only), and `../`.
+ */
+function tierRestrictions(tier, { test }) {
+  const own = coreAliasRestriction(
+    [tier],
+    `\`@core/${tier}\` is this file's own tier barrel — import the sibling with \`./x\` (Law 8.3: a tier importing itself through its barrel cycles).`,
+  );
+  const allowed = CORE_TIER_IMPORTS.get(tier) ?? [];
+  const forbidden = test
+    ? []
+    : PRODUCTION_TIERS.filter(
+        (other) => other !== tier && !allowed.includes(other),
+      );
+  const upward =
+    forbidden.length === 0
+      ? []
+      : [
+          coreAliasRestriction(
+            forbidden,
+            allowed.length === 0
+              ? `Law 8.2: src/${tier} imports nothing from the library — it is the bottom of the hierarchy (primitives → components → entities → systems → pipelines, ports beside).`
+              : `Law 8.2: src/${tier} may import only ${allowed.map((name) => `@core/${name}`).join(', ')} — the hierarchy runs one way (primitives → components → entities → systems → pipelines, ports beside), and nothing inside the library but specs and test support imports pipelines.`,
+          ),
+        ];
+  return [own, ...upward, NO_PARENT_TRAVERSAL];
+}
+
+/**
+ * The FULL `no-restricted-imports` options for one file kind of one tier,
+ * optionally minus one caged package for the one file allowed it. A rule's
+ * options replace, never merge, so every block restates the whole set: the
+ * firebase ban, the caged packages (`libphonenumber-js`, `dinero.js`,
+ * `luxon`), the testing entry points in production code — test support
+ * (`src/testing`) composes test support, and specs and type-specs are what
+ * it is for — and the tier half above.
+ */
+function coreImports(tier, { test = false, exempt = null } = {}) {
+  const layerPatterns = LAYER_IMPORT_RESTRICTIONS.patterns.filter(
+    (pattern) => !(exempt && pattern.group?.includes(exempt)),
+  );
+  const production = !test && tier !== 'testing';
+  return {
+    patterns: [
+      ...layerPatterns,
+      ...(production ? [CORE_TESTING_ENTRY_POINT_RESTRICTION] : []),
+      ...tierRestrictions(tier, { test }),
+    ],
     paths: LAYER_IMPORT_RESTRICTIONS.paths.filter(
-      (path) => path.name !== packageName,
+      (path) => path.name !== exempt,
     ),
   };
 }
+
+/** `@core/testing` as a `regex` pattern — the lazy half has no `group`. */
+const CORE_TESTING_ALIAS = coreAliasRestriction(
+  ['testing'],
+  TESTING_ENTRY_POINT_RESTRICTION.message,
+);
+
+/**
+ * The lazy half for one file kind of one tier: the same tier patterns, plus
+ * `@core/testing` in a production file, for the specifiers
+ * `no-restricted-imports` never reads — `import('…')`, `import('…').X` type
+ * queries, `import x = require('…')` (`creativo/no-restricted-import-expressions`).
+ * The package cages stay static-only: no file of the core imports a package
+ * lazily, and the verifier does not police packages either.
+ */
+function coreImportExpressions(tier, { test = false } = {}) {
+  const production = !test && tier !== 'testing';
+  return {
+    patterns: [
+      ...(production ? [CORE_TESTING_ALIAS] : []),
+      ...tierRestrictions(tier, { test }),
+    ],
+  };
+}
+
+/** Per tier: its production files, then its specs and type-specs. */
+const tierBlocks = [...CORE_TIER_IMPORTS.keys()].flatMap((tier) => [
+  {
+    files: [`src/${tier}/**/*.ts`],
+    rules: {
+      'no-restricted-imports': ['error', coreImports(tier)],
+      'creativo/no-restricted-import-expressions': [
+        'error',
+        coreImportExpressions(tier),
+      ],
+    },
+  },
+  {
+    files: [`src/${tier}/**/*.spec.ts`, `src/${tier}/**/*.type-spec.ts`],
+    rules: {
+      'no-restricted-imports': ['error', coreImports(tier, { test: true })],
+      'creativo/no-restricted-import-expressions': [
+        'error',
+        coreImportExpressions(tier, { test: true }),
+      ],
+    },
+  },
+]);
 
 export default [
   ...baseConfig,
@@ -74,27 +224,40 @@ export default [
       ],
     },
   },
+  // The local plugin, for `creativo/no-restricted-import-expressions` (the
+  // root installs it for templates only).
+  { files: ['**/*.ts'], plugins: { creativo } },
+  // Law 8: the tier hierarchy, the own-barrel ban and the `../` ban, one
+  // block per tier and file kind — static imports through
+  // `no-restricted-imports`, `import()` / `import('…')` type queries /
+  // `import = require()` through `creativo/no-restricted-import-expressions`.
+  // They come after the root's `no-restricted-imports` blocks and before the
+  // two package exemptions below, which restate the static half only (the
+  // lazy half they leave untouched).
+  ...tierBlocks,
   {
     // The libphonenumber cage: PhoneSystem is its only importer (CLAUDE.md
-    // §3). Only that one package is exempt; firebase, luxon, dinero and the
-    // testing entry points stay banned in this file too.
+    // §3). Only that one package is exempt; firebase, luxon, dinero, the
+    // testing entry points and the systems tier's Law 8 restrictions stay
+    // in force in this file too.
     files: ['src/systems/phone.system.ts'],
     rules: {
       'no-restricted-imports': [
         'error',
-        layerImportsWithout('libphonenumber-js', { production: true }),
+        coreImports('systems', { exempt: 'libphonenumber-js' }),
       ],
     },
   },
   {
     // Spec-only: a property test of Money's integer arithmetic against
     // dinero.js (Risk 10), deleted with dinero itself. `money.data.ts`
-    // imports no package — a `*.data.ts` never may.
+    // imports no package — a `*.data.ts` never may. The components tier's
+    // spec restrictions stay in force.
     files: ['src/components/money.data.spec.ts'],
     rules: {
       'no-restricted-imports': [
         'error',
-        layerImportsWithout('dinero.js', { production: false }),
+        coreImports('components', { test: true, exempt: 'dinero.js' }),
       ],
     },
   },

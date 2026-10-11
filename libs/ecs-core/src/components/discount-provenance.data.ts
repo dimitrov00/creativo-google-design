@@ -1,4 +1,4 @@
-import type { CouponGrantId } from '../primitives/ids.primitive';
+import type { CouponGrantId } from '@core/primitives';
 import type { VoucherCode } from './voucher-code.data';
 
 /**

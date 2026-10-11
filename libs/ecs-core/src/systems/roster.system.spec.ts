@@ -1,19 +1,15 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { ExceptionEffectRule } from '../components/exception-effect.data';
-import { MinuteRange } from '../components/minute-range.data';
-import { DayHours } from '../components/opening-hours.data';
 import {
+  ExceptionEffectRule,
+  MinuteRange,
+  DayHours,
   type RosterWindow,
   ShopDayHours,
-} from '../components/roster-window.data';
-import {
   ScheduleVersion,
   ShiftSegment,
-} from '../components/schedule-version.data';
-import { TimeErrorCode } from '../components/time-errors.data';
-import { Weekday } from '../components/weekday.data';
-import { BarberId, LocationId } from '../primitives/ids.primitive';
+} from '@core/components';
+import { TimeErrorCode, Weekday, BarberId, LocationId } from '@core/primitives';
 import {
   type BuildDayWindowsInput,
   type DayException,
@@ -29,8 +25,8 @@ import {
   minute,
   unwrapErr,
   unwrapOk,
-} from '../testing';
-import { minuteCount } from '../testing/booking-core.fixtures';
+  minuteCount,
+} from '@core/testing';
 
 /*
  * The cases of libs/domain/scheduling/src/lib/roster-window.spec.ts, copied

@@ -8,28 +8,30 @@ import {
 import type { BookingCart, BookingPolicy } from '@creativo/domain/scheduling';
 import {
   BarberId as EcsBarberId,
-  type BookingCart as EcsBookingCart,
   type BookingError,
   BookingErrorCode,
-  type BookingPolicy as EcsBookingPolicy,
   CartLineId,
   Currency,
   DurationMinutes,
   LocationId as EcsLocationId,
-  LocationStatus,
   MinuteCount,
-  PartyAdmissionSystem,
   PriceCents,
   SeatKeyText,
-  type Service as EcsService,
   ServiceCategoryId,
-  ServiceComposition,
   ServiceId as EcsServiceId,
-  ServiceStatus,
-  ServiceTerms,
   ServiceVariantId as EcsServiceVariantId,
   defect,
-} from '@creativo/ecs-core';
+} from '@core/primitives';
+import {
+  type BookingCart as EcsBookingCart,
+  type BookingPolicy as EcsBookingPolicy,
+  LocationStatus,
+  ServiceComposition,
+  ServiceStatus,
+  ServiceTerms,
+} from '@core/components';
+import { type Service as EcsService } from '@core/entities';
+import { PartyAdmissionSystem } from '@core/systems';
 import {
   CommitBookingConflictingServicesError,
   type CommitBookingError,

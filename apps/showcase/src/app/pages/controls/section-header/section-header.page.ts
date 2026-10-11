@@ -8,8 +8,8 @@ import {
   UiSectionHeader,
 } from '@creativo/ui/patterns';
 import { UiFrameDirective, UiTextDirective } from '@creativo/ui/modifiers';
-import { ScDemo } from '../../../shared/demo';
-import { ScPage } from '../../../shared/page';
+import { ScDemo } from '@showcase/shared/demo';
+import { ScPage } from '@showcase/shared/page';
 
 /** One pinned section of the demo history: a year, its count, its rows. */
 interface YearSample {

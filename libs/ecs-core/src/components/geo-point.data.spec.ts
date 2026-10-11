@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { unwrapOk } from '../testing';
-import { Latitude, Longitude } from '../primitives/geo.primitive';
+import { unwrapOk } from '@core/testing';
+import { Latitude, Longitude } from '@core/primitives';
 import { GeoPoint } from './geo-point.data';
 
 const point = (latitude: number, longitude: number): GeoPoint => ({

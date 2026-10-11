@@ -1,16 +1,18 @@
-import { BookingError } from '../components/booking-errors.data';
-import type { BookingPolicy } from '../components/booking-policy.data';
-import type {
-  BookingCart,
-  CartLine,
-  CartSeatLines,
-} from '../components/cart-line.data';
-import { LocationStatus } from '../components/catalog-status.data';
-import { Result } from '../components/result.data';
-import type { ServiceVariant } from '../components/service-terms.data';
-import type { Service } from '../entities/service.entity';
-import type { ShopLocation } from '../entities/shop-location.entity';
-import { type LocationId, ServiceVariantId } from '../primitives/ids.primitive';
+import {
+  BookingError,
+  Result,
+  type LocationId,
+  ServiceVariantId,
+} from '@core/primitives';
+import {
+  type BookingPolicy,
+  type BookingCart,
+  type CartLine,
+  type CartSeatLines,
+  LocationStatus,
+  type ServiceVariant,
+} from '@core/components';
+import type { Service, ShopLocation } from '@core/entities';
 import { LocationScopeSystem } from './location-scope.system';
 import { ServiceConflictSystem } from './service-conflict.system';
 

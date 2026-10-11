@@ -1,5 +1,4 @@
-import type { UserId } from '../primitives/ids.primitive';
-import type { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
+import type { UserId, UtcEpochMs } from '@core/primitives';
 
 /**
  * Session status tags — the ONLY source of these strings, the discriminator

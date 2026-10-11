@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { OperationId } from '../primitives/ids.primitive';
+import { OperationId } from '@core/primitives';
 import { AppliedOperation } from './applied-operation.data';
 
 const op = (id: string, revision: number): AppliedOperation => ({

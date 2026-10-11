@@ -1,8 +1,4 @@
-import type { SeatKeyText } from '../primitives/ids.primitive';
-import type {
-  EndMinute,
-  MinuteOfDay,
-} from '../primitives/minute-of-day.primitive';
+import type { SeatKeyText, EndMinute, MinuteOfDay } from '@core/primitives';
 
 /**
  * A SOLD span and the person who sits in it — the unit of "one person, one

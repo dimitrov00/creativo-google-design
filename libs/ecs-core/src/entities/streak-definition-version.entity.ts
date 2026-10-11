@@ -3,20 +3,13 @@ import type {
   StreakRuleDirection,
   StreakRuleParameter,
   StreakTransition,
-} from '../components/streak-rule.data';
+} from '@core/components';
 import type {
   PublishRequestId,
   StreakDefinitionVersionId,
   UserId,
-} from '../primitives/ids.primitive';
-import type { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
-
-/*
- * The id lives in `primitives/ids.primitive.ts` (flatten-spec §1.5), with
- * its `forVersion(version)`; it is re-exported here only while the barrel's
- * staging block still names this file (`index.ts`), and leaves with that
- * line.
- */
+  UtcEpochMs,
+} from '@core/primitives';
 
 /**
  * `streakDefinitions/{streakId}/versions/{version:06}` — ONE publish,

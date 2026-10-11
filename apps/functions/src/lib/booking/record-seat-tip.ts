@@ -1,4 +1,5 @@
-import { AuditSystem, SeatId, UtcEpochMs, defect } from '@creativo/ecs-core';
+import { SeatId, UtcEpochMs, defect } from '@core/primitives';
+import { AuditSystem } from '@core/systems';
 import { HttpsError, onCall } from 'firebase-functions/v2/https';
 import { adminFirestore } from '../firebase-admin';
 import { type AuditSubject, appendAudit, seatSubjectsOf } from './audit';

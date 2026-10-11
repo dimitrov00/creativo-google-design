@@ -1,10 +1,8 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { CapacityEntry } from '../components/capacity-entry.data';
-import { BarberId, LocationId } from '../primitives/ids.primitive';
-import { LocalDate } from '../primitives/local-date.primitive';
-import { deepFreeze, localDate, utcMs } from '../testing';
-import { minuteCount } from '../testing/booking-core.fixtures';
+import { CapacityEntry } from '@core/components';
+import { BarberId, LocationId, LocalDate } from '@core/primitives';
+import { deepFreeze, localDate, utcMs, minuteCount } from '@core/testing';
 import { LeadTimeSystem } from './lead-time.system';
 
 /*

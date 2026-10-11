@@ -2,7 +2,7 @@
  * The callable registry (blueprint §4.1, §4.2) — the ONE spelling of every
  * server export the web dials through {@link CallableClient}
  * (`scheduling.port.ts`). A values file on purpose, like
- * `ports/collections.ts`: not a `*.data.ts` (it names deployed functions, not
+ * `entities/collections.ts`: not a `*.data.ts` (it names deployed functions, not
  * a component) and not a `*.port.ts` (ports are function types). Each value
  * is the export name in `apps/functions/src/main.ts` verbatim — the name
  * Firebase deploys and the browser SDK resolves — so the Phase 3b flips

@@ -1,8 +1,5 @@
-import type { CustomerOrigin } from '../components/customer-origin.data';
-import type { Email } from '../components/email.data';
-import type { E164 } from '../components/phone-number.data';
-import type { CustomerId, UserId } from '../primitives/ids.primitive';
-import type { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
+import type { CustomerOrigin, Email, E164 } from '@core/components';
+import type { CustomerId, UserId, UtcEpochMs } from '@core/primitives';
 
 /**
  * `customers/{customerId}` — the shop's record of a person it serves (D29,

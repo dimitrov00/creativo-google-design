@@ -1,14 +1,11 @@
-import type { LocalizedText } from '../components/localized-text.data';
-import type { EventId, LocationId } from '../primitives/ids.primitive';
-import type { LocalDate } from '../primitives/local-date.primitive';
-import type { MinuteOfDay } from '../primitives/minute-of-day.primitive';
-import type { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
-
-/*
- * The id lives in `primitives/ids.primitive.ts` (flatten-spec §1.5); it is
- * re-exported here only while the barrel's staging block still names this
- * file (`index.ts`), and leaves with that line.
- */
+import type { LocalizedText } from '@core/components';
+import type {
+  EventId,
+  LocationId,
+  LocalDate,
+  MinuteOfDay,
+  UtcEpochMs,
+} from '@core/primitives';
 
 /**
  * A community or marketing event — `events/{id}` (the stored body of

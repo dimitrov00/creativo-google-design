@@ -1,5 +1,4 @@
-import type { RewardId } from '../primitives/ids.primitive';
-import type { LocalDate } from '../primitives/local-date.primitive';
+import type { RewardId, LocalDate } from '@core/primitives';
 
 /**
  * Why a reward cannot be redeemed now — the one gate, shared by the redeem

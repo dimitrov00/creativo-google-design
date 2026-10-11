@@ -1,18 +1,21 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { EngagementErrorCode } from '../components/engagement-errors.data';
-import type { Money } from '../components/money.data';
-import { VoucherCode } from '../components/voucher-code.data';
-import type { VoucherRedemption } from '../components/voucher-redemption.data';
 import {
-  VoucherLifecycle,
+  EngagementErrorCode,
   VoucherRefusal,
-} from '../components/voucher-state.data';
-import type { GiftVoucher } from '../entities/gift-voucher.entity';
-import { Currency } from '../primitives/currency.primitive';
-import { GiftVoucherId, UserId } from '../primitives/ids.primitive';
-import { PriceCents } from '../primitives/price-cents.primitive';
-import { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
+  Currency,
+  GiftVoucherId,
+  UserId,
+  PriceCents,
+  UtcEpochMs,
+} from '@core/primitives';
+import {
+  type Money,
+  VoucherCode,
+  type VoucherRedemption,
+  VoucherLifecycle,
+} from '@core/components';
+import type { GiftVoucher } from '@core/entities';
 import {
   FIXTURE_TIME_ZONE,
   FIXTURE_TODAY,
@@ -20,7 +23,7 @@ import {
   unwrapErr,
   unwrapOk,
   utcMs,
-} from '../testing';
+} from '@core/testing';
 import { ZonedTimeSystem } from './zoned-time.system';
 import { VoucherSystem } from './voucher.system';
 

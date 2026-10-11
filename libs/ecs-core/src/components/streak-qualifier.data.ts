@@ -1,10 +1,11 @@
-import type { ServiceCategoryId, ServiceId } from '../primitives/ids.primitive';
 import {
+  type ServiceCategoryId,
+  type ServiceId,
   EngagementError,
   EngagementErrorCode,
   StreakRuleField,
-} from './engagement-errors.data';
-import { Result } from './result.data';
+  Result,
+} from '@core/primitives';
 
 /** Which visit keeps the rhythm — the rule's discriminator `streakQualifier`. */
 export const StreakQualifier = {

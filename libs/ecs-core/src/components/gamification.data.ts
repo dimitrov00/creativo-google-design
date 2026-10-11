@@ -1,9 +1,10 @@
-import type {
-  BarberId,
-  LocationId,
-  ServiceId,
-} from '../primitives/ids.primitive';
-import type { LocalDate } from '../primitives/local-date.primitive';
+import {
+  type BarberId,
+  type LocationId,
+  type ServiceId,
+  type LocalDate,
+  AwardKind,
+} from '@core/primitives';
 import type { LocalizedText } from './localized-text.data';
 
 /**
@@ -135,15 +136,6 @@ export const PerkId = {
   FreeReschedule: 'perk.freeReschedule',
 } as const;
 export type PerkId = (typeof PerkId)[keyof typeof PerkId];
-
-/** What a level paid — the award element's field `awardKind`. */
-export const AwardKind = {
-  Points: 'POINTS',
-  Coupon: 'COUPON',
-  Freeze: 'FREEZE',
-  Perk: 'PERK',
-} as const;
-export type AwardKind = (typeof AwardKind)[keyof typeof AwardKind];
 
 /** What a family is about — the family's field `badgeSubject` (`null` = about nothing). */
 export const BadgeSubject = {

@@ -1,17 +1,19 @@
 import { describe, expect, it } from 'vitest';
-import { BookingLifecycle } from '../components/booking-lifecycle.data';
-import { CancellationReasonSet } from '../components/seat-outcome.data';
-import { Seat } from '../components/seat.data';
-import { BusyKey } from '../primitives/busy-key.primitive';
-import { ZonedTimeSystem } from '../systems/zoned-time.system';
+import {
+  BookingLifecycle,
+  CancellationReasonSet,
+  Seat,
+} from '@core/components';
+import { BusyKey } from '@core/primitives';
+import { ZonedTimeSystem } from '@core/systems';
 import {
   FIXTURE_IDS,
   FIXTURE_NOW_UTC_MS,
   FIXTURE_TIME_ZONE,
   FIXTURE_TODAY,
-  deepFreeze,
   utcMs,
-} from '../testing';
+} from './test-support';
+import { deepFreeze } from './deep-freeze';
 import { appointmentFixture, seatFixture } from './appointment.fixtures';
 
 // The appointment cases of `testing.spec.ts`'s "fixture builders" block.

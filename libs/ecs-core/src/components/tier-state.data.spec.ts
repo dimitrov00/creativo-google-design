@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { AdjustmentId, TierId } from '../primitives/ids.primitive';
-import { localDate } from '../testing';
+import { AdjustmentId, TierId } from '@core/primitives';
+import { localDate } from '@core/testing';
 import { TierOverride, TierOverrideSource } from './tier-state.data';
 
 describe('TierOverride', () => {

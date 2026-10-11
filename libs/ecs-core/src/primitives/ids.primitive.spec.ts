@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { BackfillJobName } from '../entities/backfill-job.entity';
-import { RecomputeJobName } from '../entities/policy-recompute-job.entity';
+import { BackfillJobName } from '@core/components';
 import {
+  RecomputeJobName,
   BOOKING_POLICY_DOC,
   CLIENT_MONEY_DOC,
   Collections,
   POLICY_RECOMPUTE_DOC,
-} from '../ports/collections';
-import { fixtureHash, unwrapErr, unwrapOk } from '../testing';
+} from '@core/entities';
+import { fixtureHash, unwrapErr, unwrapOk } from '@core/testing';
 import * as Ids from './ids.primitive';
 import {
   AppointmentId,

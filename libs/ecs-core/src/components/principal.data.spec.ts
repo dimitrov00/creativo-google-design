@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { TenantId, UserId } from '../primitives/ids.primitive';
+import { TenantId, UserId } from '@core/primitives';
 import { AuthClaims } from './auth-claims.data';
 import { Principal, PrincipalKind } from './principal.data';
 import { Role } from './role.data';

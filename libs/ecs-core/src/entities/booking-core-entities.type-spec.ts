@@ -7,20 +7,18 @@
  * `false` constant or an unused `@ts-expect-error` — IS the test; nothing
  * here runs.
  */
-import type { BookingPolicy } from '../components/booking-policy.data';
 import {
+  type BookingPolicy,
   BarberStatus,
   LocationStatus,
   ServiceStatus,
-} from '../components/catalog-status.data';
-import type { GeoPoint } from '../components/geo-point.data';
-import {
+  type GeoPoint,
   CompositionKind,
   type ServiceComposition,
-} from '../components/service-composition.data';
-import type { ServiceTerms } from '../components/service-terms.data';
-import type { VenuePhone } from '../components/venue-phone.data';
-import type { AllTrue, Disjoint, NoNested } from '../testing';
+  type ServiceTerms,
+  type VenuePhone,
+} from '@core/components';
+import type { AllTrue, Disjoint, NoNested } from '@core/testing';
 import type { BarberBusyDay } from './barber-busy-day.entity';
 import type { BarberLeadTimeSample } from './barber-lead-time-sample.entity';
 import type { BarberSchedule } from './barber-schedule.entity';

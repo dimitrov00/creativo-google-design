@@ -1,16 +1,16 @@
-import { Currency } from '../primitives/currency.primitive';
-import { defect } from '../primitives/defect';
 import {
+  Currency,
+  defect,
   DurationMinutes,
   MinuteCount,
-} from '../primitives/duration-minutes.primitive';
-import { ServiceVariantId } from '../primitives/ids.primitive';
-import { PriceCents } from '../primitives/price-cents.primitive';
-import { CatalogError } from './catalog-errors.data';
+  ServiceVariantId,
+  PriceCents,
+  CatalogError,
+  type MoneyError,
+  Result,
+} from '@core/primitives';
 import { LocalizedText } from './localized-text.data';
 import { Money } from './money.data';
-import type { MoneyError } from './money-errors.data';
-import { Result } from './result.data';
 
 /**
  * What one booking of a service costs, how long it takes and how much unsold
@@ -241,9 +241,3 @@ function declaredBefore(
   }
   return false;
 }
-
-/**
- * Flatten-pass staging: the barrel still names this module for
- * `ServiceVariantId` (its old home) until the integrator drops that line —
- * the id itself lives in `primitives/ids.primitive.ts` (§1.5).
- */

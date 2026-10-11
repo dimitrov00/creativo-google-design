@@ -1,10 +1,13 @@
-import { defect } from '../primitives/defect';
-import { DurationMinutes } from '../primitives/duration-minutes.primitive';
+import {
+  defect,
+  DurationMinutes,
+  IdentifierChannel,
+  AuthPolicyField,
+  IdentityError,
+  Result,
+} from '@core/primitives';
 import { CountryIso2 } from './country-iso2.data';
-import { IdentifierChannel } from './identifier.data';
-import { AuthPolicyField, IdentityError } from './identity-errors.data';
 import { RegistrationField, isRegistrationField } from './registration.data';
-import { Result } from './result.data';
 
 /**
  * Strategy tags — the ONLY source of these strings (deployment config); the

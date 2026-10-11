@@ -6,37 +6,28 @@
  * variant's fields. `tsc` failing — on a `false` constant or an unused
  * `@ts-expect-error` — IS the test; nothing here runs.
  */
-import type { AppliedDiscount } from '../components/applied-discount.data';
-import type { TimeCoordinate } from '../components/time-coordinate.data';
-import type { BookingContact } from '../components/booking-contact.data';
 import {
+  type AppliedDiscount,
+  type TimeCoordinate,
+  type BookingContact,
   type BookingLifecycle,
-  BookingStatus,
-} from '../components/booking-lifecycle.data';
-import type { CouponExpiryRule } from '../components/coupon-expiry.data';
-import { CouponExpiry } from '../components/coupon-expiry.data';
-import {
+  type CouponExpiryRule,
+  CouponExpiry,
   type CouponValue,
   DiscountMethod,
-} from '../components/coupon-value.data';
-import {
   type DiscountProvenance,
   DiscountSource,
-} from '../components/discount-provenance.data';
-import {
   GrantCapacity,
   type GrantLifecycle,
-  GrantStatus,
-} from '../components/grant-status.data';
-import type { StoodSeatPairs } from '../components/seat-id-pair.data';
-import { AttendanceState } from '../components/seat-outcome.data';
-import { type Seat, SeatSubject } from '../components/seat.data';
-import type { VoucherRedemption } from '../components/voucher-redemption.data';
-import {
+  type StoodSeatPairs,
+  type Seat,
+  SeatSubject,
+  type VoucherRedemption,
   type VoucherLifecycle,
   VoucherStatus,
-} from '../components/voucher-state.data';
-import type { AllTrue, Disjoint, NoNested } from '../testing';
+} from '@core/components';
+import { BookingStatus, GrantStatus, AttendanceState } from '@core/primitives';
+import type { AllTrue, Disjoint, NoNested } from '@core/testing';
 import type { AppointmentNote } from './appointment-note.entity';
 import type { AppointmentPhoto } from './appointment-photo.entity';
 import type {

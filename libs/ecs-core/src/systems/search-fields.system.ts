@@ -1,6 +1,5 @@
-import type { E164 } from '../components/phone-number.data';
-import type { SearchFields } from '../components/search-fields.data';
-import { Profile } from '../entities/user.entity';
+import type { E164, SearchFields } from '@core/components';
+import { Profile } from '@core/entities';
 import { PhoneSystem } from './phone.system';
 
 /**

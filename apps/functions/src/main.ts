@@ -4,13 +4,9 @@ import {
   onDocumentWrittenWithAuthContext,
 } from 'firebase-functions/v2/firestore';
 import { onSchedule } from 'firebase-functions/v2/scheduler';
-import {
-  Callables,
-  Collections,
-  type NowUtcMs,
-  POLICY_RECOMPUTE_DOC,
-  UtcEpochMs,
-} from '@creativo/ecs-core';
+import { UtcEpochMs } from '@core/primitives';
+import { Collections, POLICY_RECOMPUTE_DOC } from '@core/entities';
+import { Callables, type NowUtcMs } from '@core/ports';
 import { authClaimsPorts } from './adapters/auth-claims.adapter';
 import { consoleOtpSender } from './adapters/console-otp-sender.adapter';
 import { consoleTelemetry } from './adapters/console-telemetry.adapter';

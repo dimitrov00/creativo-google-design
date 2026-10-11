@@ -1,7 +1,4 @@
-import type {
-  EndMinute,
-  MinuteOfDay,
-} from '../primitives/minute-of-day.primitive';
+import type { EndMinute, MinuteOfDay } from '@core/primitives';
 import { MinuteRange } from './minute-range.data';
 
 /**

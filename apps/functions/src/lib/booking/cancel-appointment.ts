@@ -1,4 +1,5 @@
-import { AuditSystem, UtcEpochMs, defect } from '@creativo/ecs-core';
+import { UtcEpochMs, defect } from '@core/primitives';
+import { AuditSystem } from '@core/systems';
 import { logger } from 'firebase-functions';
 import { HttpsError, onCall } from 'firebase-functions/v2/https';
 import type { Firestore } from 'firebase-admin/firestore';

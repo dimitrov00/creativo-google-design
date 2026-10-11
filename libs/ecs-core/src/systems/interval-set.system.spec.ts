@@ -1,12 +1,11 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { MinuteRange } from '../components/minute-range.data';
+import { MinuteRange } from '@core/components';
 import { IntervalSetSystem } from './interval-set.system';
-import { MinuteCount } from '../primitives/duration-minutes.primitive';
-import { unwrapOk as okOf } from '../testing';
+import { MinuteCount } from '@core/primitives';
+import { unwrapOk as okOf, deepFreeze } from '@core/testing';
 
 const count = (n: number): MinuteCount => okOf(MinuteCount.of(n));
-import { deepFreeze } from '../testing';
 
 /*
  * The cases of libs/domain/scheduling/src/lib/interval.spec.ts, copied over

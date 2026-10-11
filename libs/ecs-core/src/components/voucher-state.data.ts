@@ -1,4 +1,4 @@
-import type { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
+import type { UtcEpochMs } from '@core/primitives';
 
 /**
  * A gift voucher's state — the field `voucherStatus`, the ONLY source of
@@ -10,19 +10,6 @@ export const VoucherStatus = {
   Void: 'VOID',
 } as const;
 export type VoucherStatus = (typeof VoucherStatus)[keyof typeof VoucherStatus];
-
-/**
- * Why a voucher cannot be drawn on now (`VoucherSystem.refusal`): voided,
- * past its expiry, or nothing left. The error
- * `ENGAGEMENT_GIFT_VOUCHER_NOT_REDEEMABLE` carries it as its reason.
- */
-export const VoucherRefusal = {
-  Void: 'VOID',
-  Expired: 'EXPIRED',
-  Empty: 'EMPTY',
-} as const;
-export type VoucherRefusal =
-  (typeof VoucherRefusal)[keyof typeof VoucherRefusal];
 
 /**
  * `ACTIVE` until voided (`gift-voucher-document.ts:49-55`) — a flat variant

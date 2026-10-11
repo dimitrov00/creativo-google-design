@@ -1,5 +1,4 @@
-import type { AppliedDiscountId } from '../primitives/ids.primitive';
-import type { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
+import type { AppliedDiscountId, UtcEpochMs } from '@core/primitives';
 import { Combinability } from './coupon-combinability.data';
 import type { CouponValue } from './coupon-value.data';
 import type { DiscountProvenance } from './discount-provenance.data';

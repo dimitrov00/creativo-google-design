@@ -1,9 +1,9 @@
 import { User } from '@creativo/domain/accounts';
+import { BirthDate } from '@core/components';
 import {
-  BirthDate,
   ProfileCompletionKey as CompletionKey,
   ProfileCompletionSystem,
-} from '@creativo/ecs-core';
+} from '@core/systems';
 
 /**
  * Profile-completion model — a pure projection of the `User` aggregate

@@ -3,24 +3,21 @@ import {
   EarnedVia,
   MedalState,
   type BadgeLevel,
-} from '../components/badge-level.data';
-import {
   AwardSummary,
   BadgeEmblem,
   BadgeSubjectSlot,
   Metric,
   MetricRef,
-} from '../components/gamification.data';
-import type { BadgeProgress } from '../entities/badge-progress.entity';
-import type { BadgeSeries } from '../entities/badge-series.entity';
+} from '@core/components';
+import type { BadgeProgress, BadgeSeries } from '@core/entities';
 import {
   AchievementRuleId,
   BadgeCategoryId,
   BadgeSeriesId,
   SeasonId,
   ServiceId,
-} from '../primitives/ids.primitive';
-import { deepFreeze, localDate, utcMs } from '../testing';
+} from '@core/primitives';
+import { deepFreeze, localDate, utcMs } from '@core/testing';
 import { BadgeSystem } from './badge.system';
 
 /*

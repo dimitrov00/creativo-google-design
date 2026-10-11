@@ -1,10 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import {
-  BadgeCategoryId,
-  BadgeSeriesId,
-  SeasonId,
-} from '../primitives/ids.primitive';
-import { localDate, utcMs } from '../testing';
+import { BadgeCategoryId, BadgeSeriesId, SeasonId } from '@core/primitives';
+import { localDate, utcMs } from '@core/testing';
 import { EarnedDay, FamilyScope, FamilyScopeFilter } from './standing.data';
 
 describe('FamilyScopeFilter', () => {

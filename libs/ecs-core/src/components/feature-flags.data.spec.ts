@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { GovernanceErrorCode } from './governance-errors.data';
+import { GovernanceErrorCode } from '@core/primitives';
 import { FLAG_NAMES, FeatureFlags, FlagName } from './feature-flags.data';
 
 /*

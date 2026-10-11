@@ -1,5 +1,4 @@
-import { GovernanceError } from './governance-errors.data';
-import { Result } from './result.data';
+import { GovernanceError, Result } from '@core/primitives';
 
 /**
  * What an impersonator may DO inside a session — the session's field

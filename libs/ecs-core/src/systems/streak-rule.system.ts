@@ -1,17 +1,15 @@
 import {
   EngagementError,
   StreakRuleField,
-} from '../components/engagement-errors.data';
-import { Result } from '../components/result.data';
+  Result,
+  defect,
+  LocalDate,
+} from '@core/primitives';
 import {
   StreakInterval,
   StreakIntervalRule,
-} from '../components/streak-interval.data';
-import {
   QualifierComparison,
   StreakQualifierRule,
-} from '../components/streak-qualifier.data';
-import {
   HeadRole,
   STREAK_SHOP_EXCUSES,
   StreakOnBreak,
@@ -22,10 +20,8 @@ import {
   type ScheduledStreakRule,
   type StreakExcuse,
   type StreakHeadRule,
-} from '../components/streak-rule.data';
-import type { StreakDefinition } from '../entities/streak-definition.entity';
-import { defect } from '../primitives/defect';
-import { LocalDate } from '../primitives/local-date.primitive';
+} from '@core/components';
+import type { StreakDefinition } from '@core/entities';
 
 /*
  * THE RHYTHM'S RULE, OVER TIME (client-card revision 3 §4.1, §4.4) — the

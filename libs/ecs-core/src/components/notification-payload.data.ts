@@ -1,9 +1,9 @@
 import type {
   AppointmentId,
   WaitlistRequestId,
-} from '../primitives/ids.primitive';
-import type { LocalDate } from '../primitives/local-date.primitive';
-import type { MinuteOfDay } from '../primitives/minute-of-day.primitive';
+  LocalDate,
+  MinuteOfDay,
+} from '@core/primitives';
 import type { RewardRefFields } from './journal-effect.data';
 import type { LocalizedText } from './localized-text.data';
 

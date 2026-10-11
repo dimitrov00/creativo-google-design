@@ -1,17 +1,14 @@
 import type { Observable } from 'rxjs';
-import type { EnrollmentStatus } from '../components/enrollment-status.data';
-import type { PositionStatus } from '../components/program-status.data';
-import type { RepositoryError } from '../components/repository-errors.data';
-import type { Result } from '../components/result.data';
-import type { Course } from '../entities/course.entity';
-import type { ShopEvent } from '../entities/event.entity';
-import type { Position } from '../entities/position.entity';
+import type { EnrollmentStatus, PositionStatus } from '@core/components';
 import type {
+  RepositoryError,
+  Result,
   CourseId,
   EventId,
   PositionId,
-} from '../primitives/ids.primitive';
-import type { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
+  UtcEpochMs,
+} from '@core/primitives';
+import type { Course, ShopEvent, Position } from '@core/entities';
 
 /**
  * The shop's programs content — `positions`, `courses`, `events` (blueprint

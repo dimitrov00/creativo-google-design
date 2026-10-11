@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ServiceId } from '../primitives/ids.primitive';
+import { ServiceId } from '@core/primitives';
 import {
   OnboardingFlowEvent,
   OnboardingFlowEventKind,

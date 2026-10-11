@@ -1,10 +1,10 @@
-import type { Currency } from '../primitives/currency.primitive';
 import type {
+  Currency,
   DurationMinutes,
   MinuteCount,
-} from '../primitives/duration-minutes.primitive';
-import type { SeatKeyText } from '../primitives/ids.primitive';
-import type { PriceCents } from '../primitives/price-cents.primitive';
+  SeatKeyText,
+  PriceCents,
+} from '@core/primitives';
 import type { ServiceTerms } from './service-terms.data';
 
 /**

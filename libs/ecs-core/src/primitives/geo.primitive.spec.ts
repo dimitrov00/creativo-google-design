@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { unwrapErr } from '../testing';
+import { unwrapErr } from '@core/testing';
 import { Latitude, Longitude } from './geo.primitive';
 
 describe('Latitude / Longitude — WGS-84 degrees (§1.6)', () => {

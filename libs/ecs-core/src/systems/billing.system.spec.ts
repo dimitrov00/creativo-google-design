@@ -1,30 +1,32 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import type { AppliedDiscount } from '../components/applied-discount.data';
-import { Combinability } from '../components/coupon-combinability.data';
-import { CouponValue, DiscountMethod } from '../components/coupon-value.data';
-import { DiscountSource } from '../components/discount-provenance.data';
-import type { Money } from '../components/money.data';
-import { SchedulingErrorCode } from '../components/scheduling-errors.data';
-import { Seat } from '../components/seat.data';
-import { ServiceTerms } from '../components/service-terms.data';
-import { VoucherCode } from '../components/voucher-code.data';
-import { VoucherRedemption } from '../components/voucher-redemption.data';
-import { VoucherLifecycle } from '../components/voucher-state.data';
-import type { Appointment } from '../entities/appointment.entity';
-import type { GiftVoucher } from '../entities/gift-voucher.entity';
-import { Currency } from '../primitives/currency.primitive';
-import { DurationMinutes } from '../primitives/duration-minutes.primitive';
 import {
+  type AppliedDiscount,
+  Combinability,
+  CouponValue,
+  DiscountMethod,
+  DiscountSource,
+  type Money,
+  Seat,
+  ServiceTerms,
+  VoucherCode,
+  VoucherRedemption,
+  VoucherLifecycle,
+} from '@core/components';
+import {
+  SchedulingErrorCode,
+  Currency,
+  DurationMinutes,
   AppliedDiscountId,
   CouponGrantId,
   CouponId,
   GiftVoucherId,
   SeatId,
   UserId,
-} from '../primitives/ids.primitive';
-import { PriceCents } from '../primitives/price-cents.primitive';
-import { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
+  PriceCents,
+  UtcEpochMs,
+} from '@core/primitives';
+import type { Appointment, GiftVoucher } from '@core/entities';
 import {
   FIXTURE_NOW_UTC_MS,
   deepFreeze,
@@ -32,11 +34,9 @@ import {
   unwrapErr,
   unwrapOk,
   utcMs,
-} from '../testing';
-import {
   appointmentFixture,
   seatFixture,
-} from '../testing/appointment.fixtures';
+} from '@core/testing';
 import { AppointmentLifecycleSystem } from './appointment-lifecycle.system';
 import { StaffEditErrorCode } from './appointment-edit.system';
 import {

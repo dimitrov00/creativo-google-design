@@ -2,16 +2,23 @@ import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
   ExceptionEffect,
-  ExceptionEffectRule,
-} from '../components/exception-effect.data';
-import { MinuteRange } from '../components/minute-range.data';
-import { SchedulingErrorCode } from '../components/scheduling-errors.data';
-import { BarberId, LocationId } from '../primitives/ids.primitive';
-import { deepFreeze, endMinute, minute, unwrapErr, unwrapOk } from '../testing';
+  SchedulingErrorCode,
+  BarberId,
+  LocationId,
+} from '@core/primitives';
 import {
+  ExceptionEffectRule,
+  MinuteRange,
   ExceptionDetail,
   ExceptionReason,
-} from '../components/exception-detail.data';
+} from '@core/components';
+import {
+  deepFreeze,
+  endMinute,
+  minute,
+  unwrapErr,
+  unwrapOk,
+} from '@core/testing';
 import { ScheduleExceptionSystem } from './schedule-exception.system';
 
 /** `'12:00'` → minutes of the day. */

@@ -4,8 +4,8 @@ import type { UiIconName, UiIconScale } from '@creativo/ui/icons';
 import { UiFlow, UiStack } from '@creativo/ui/layout';
 import { UiTextDirective } from '@creativo/ui/modifiers';
 import type { UiFontStyle } from '@creativo/ui/modifiers';
-import { ScDemo } from '../../../shared/demo';
-import { ScPage } from '../../../shared/page';
+import { ScDemo } from '@showcase/shared/demo';
+import { ScPage } from '@showcase/shared/page';
 
 interface IconScaleSample {
   readonly scale: UiIconScale;

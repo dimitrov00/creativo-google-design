@@ -4,7 +4,7 @@ import type {
   JournalEventId,
   MigrationBatchId,
   RedemptionId,
-} from '../primitives/ids.primitive';
+} from '@core/primitives';
 
 /** Why a journal entry was written — the entry's discriminator `journalSource`. */
 export const JournalSource = {

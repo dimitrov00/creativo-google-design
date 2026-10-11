@@ -1,18 +1,13 @@
-import type { AccountLifecycle } from '../components/account-status.data';
-import type { BirthDate } from '../components/birth-date.data';
-import type { Email } from '../components/email.data';
-import type { E164 } from '../components/phone-number.data';
-import type { RegistrationState } from '../components/registration.data';
-import type { Role } from '../components/role.data';
-import type { SearchFields } from '../components/search-fields.data';
-import type { UserId } from '../primitives/ids.primitive';
-
-/*
- * Staging re-export (flatten-pass): `UserId` is declared in
- * `primitives/ids.primitive.ts` (flatten-spec §1.5); the barrel's staging
- * block and the unconverted relative importers still name it from this
- * file. The integrator deletes this line with the barrel's block.
- */
+import type {
+  AccountLifecycle,
+  BirthDate,
+  Email,
+  E164,
+  RegistrationState,
+  Role,
+  SearchFields,
+} from '@core/components';
+import type { UserId } from '@core/primitives';
 
 /**
  * The identity slice of `users/{uid}` — the ACCOUNT (D29): the id (the

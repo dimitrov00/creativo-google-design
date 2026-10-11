@@ -1,5 +1,5 @@
 // A named import, so the bundle carries only this environment's map.
-import { production as featureFlags } from '../../../../config/feature-flags.json';
+import { production as featureFlags } from '@creativo/config/feature-flags';
 
 // See environment.ts — same placeholder note applies; this file is swapped
 // in for production builds via project.json's fileReplacements.

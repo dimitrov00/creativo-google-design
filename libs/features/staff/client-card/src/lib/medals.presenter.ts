@@ -1,11 +1,9 @@
+import { LocalDate, ServiceId as ServiceRefId, defect } from '@core/primitives';
 import {
-  LocalDate,
   type PersonalRecord as SystemRecord,
   PersonalRecordKind as SystemRecordKind,
-  RecordsSystem,
-  ServiceId as ServiceRefId,
-  defect,
-} from '@creativo/ecs-core';
+} from '@core/components';
+import { RecordsSystem } from '@core/systems';
 import {
   type BadgeCategory,
   type BadgeProgress,

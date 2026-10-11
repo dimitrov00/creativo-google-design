@@ -1,15 +1,17 @@
 import {
+  IdentifierChannel,
+  TenantId,
+  UserId as UserKey,
+} from '@core/primitives';
+import {
   AuthStage,
   type AuthClaims as ClaimsStruct,
   Identifier,
-  IdentifierChannel,
   type ParsedIdentifier,
   RegistrationState,
-  RegistrationSystem,
   type Role,
-  TenantId,
-  UserId as UserKey,
-} from '@creativo/ecs-core';
+} from '@core/components';
+import { RegistrationSystem } from '@core/systems';
 import { Otp, OtpId } from '@creativo/domain/models';
 import { Result, fail, ok } from '@creativo/domain/kernel';
 import {
@@ -49,7 +51,7 @@ const OTP_ZONE = 'UTC';
 /*
  * Phase 2 shim (ECS migration): the claims a sign-in mints and the stub a
  * first sign-in provisions are `RegistrationSystem.claimsFor` and
- * `.provision` (`@creativo/ecs-core`). The challenge's own verdict stays on
+ * `.provision` (`@core/systems`). The challenge's own verdict stays on
  * the models `Otp` until that class is shimmed onto `OtpSystem`. The
  * converters below are the only code besides the delegating calls.
  */

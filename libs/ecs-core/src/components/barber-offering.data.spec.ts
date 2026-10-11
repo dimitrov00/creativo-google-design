@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { termsFixture } from '../testing/booking-core.fixtures';
-import { Currency } from '../primitives/currency.primitive';
-import { BarberId, ServiceVariantId } from '../primitives/ids.primitive';
+import { termsFixture } from '@core/testing';
+import { Currency, BarberId, ServiceVariantId } from '@core/primitives';
 import {
   BarberOffering,
   type BarberOfferingInput,

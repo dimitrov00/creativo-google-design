@@ -5,11 +5,13 @@ import {
   RecurrencePattern,
   RecurrenceRule,
   WeekOfMonth,
-} from '../components/recurrence-rule.data';
-import { Result } from '../components/result.data';
-import { SchedulingError } from '../components/scheduling-errors.data';
-import type { Weekday } from '../components/weekday.data';
-import { LocalDate } from '../primitives/local-date.primitive';
+} from '@core/components';
+import {
+  Result,
+  SchedulingError,
+  type Weekday,
+  LocalDate,
+} from '@core/primitives';
 
 /**
  * A SERIES — a rule bound to the shop day it starts on, and so to its days

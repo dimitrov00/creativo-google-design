@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { unwrapErr, unwrapOk, utcMs } from '../testing';
+import { unwrapErr, unwrapOk, utcMs } from '@core/testing';
 import { MinuteDelta } from './duration-minutes.primitive';
 import { UtcEpochMs } from './utc-epoch-ms.primitive';
 

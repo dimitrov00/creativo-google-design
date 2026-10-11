@@ -7,13 +7,9 @@ import {
   type StaffScheduleError,
 } from './staff-schedule.errors';
 import { WeeklyPattern } from './weekly-pattern';
-import {
-  LocalDate,
-  RosterSystem,
-  SchedulingErrorCode,
-  ScheduleVersion as VersionData,
-  defect,
-} from '@creativo/ecs-core';
+import { LocalDate, SchedulingErrorCode, defect } from '@core/primitives';
+import { ScheduleVersion as VersionData } from '@core/components';
+import { RosterSystem } from '@core/systems';
 
 /*
  * THIN SHIM (ECS migration Phase 2). A version's span, the history's

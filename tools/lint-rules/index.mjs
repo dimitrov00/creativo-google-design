@@ -8,6 +8,7 @@
  * legacy TypeScript rule root and tries to load a tsconfig from it.
  */
 import { iconRegistryOnly } from './icon-registry-only.mjs';
+import { noRestrictedImportExpressions } from './restricted-import-expressions.mjs';
 
 export {
   ICON_SPEC_SYNTAX_RESTRICTIONS,
@@ -33,11 +34,13 @@ export {
   ecsRootEveryFileBlocks,
   ecsSyntaxBlocks,
 } from './ecs-syntax.mjs';
+export { PARENT_SEGMENT_REGEX } from './restricted-import-expressions.mjs';
 
 const plugin = {
   meta: { name: 'creativo', version: '1.0.0' },
   rules: {
     'icon-registry-only': iconRegistryOnly,
+    'no-restricted-import-expressions': noRestrictedImportExpressions,
   },
 };
 

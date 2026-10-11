@@ -15,10 +15,10 @@ import {
   type Actor as EcsActor,
   ActorRole,
   AuditAction,
-  AuditSystem,
   type ProfileAction,
   SystemSource,
-} from '@creativo/ecs-core';
+} from '@core/components';
+import { AuditSystem } from '@core/systems';
 import { adminFirestore } from '../firebase-admin';
 import {
   attemptFailure,
@@ -66,7 +66,7 @@ export function profileAuditAction(
  * WHO wrote the profile, from the event's auth context — not the profile's
  * owner, which was only ever a guess that happened to be right while the
  * owner was the sole writer. The rule is `AuditSystem.profileWriter`
- * (`@creativo/ecs-core`): the Admin SDK and the platform are processes, an
+ * (`@core/systems`): the Admin SDK and the platform are processes, an
  * end user is credited by a uid-shaped id, and an id that is not one is
  * never guessed at.
  */

@@ -2,6 +2,9 @@
   "name": "creativo-google-design",
   "version": "0.0.0",
   "license": "MIT",
+  "imports": {
+    "#eslint-config": "./eslint.config.mjs"
+  },
   "scripts": {
     "prepare": "husky",
     "lint:styles": "stylelint \"apps/**/*.css\" \"libs/**/*.css\"",

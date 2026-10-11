@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
-import { unwrapOk } from '../testing';
-import { BookingLifecycle, BookingStatus } from './booking-lifecycle.data';
+import { UtcEpochMs, BookingStatus } from '@core/primitives';
+import { unwrapOk } from '@core/testing';
+import { BookingLifecycle } from './booking-lifecycle.data';
 import { CancellationReasonSet } from './seat-outcome.data';
 
 // The cases of `booking-status.data.spec.ts`, on the flat lifecycle slice.

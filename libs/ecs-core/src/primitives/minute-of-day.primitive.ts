@@ -1,4 +1,4 @@
-import { Result } from '../components/result.data';
+import { Result } from './result.data';
 import type { Brand } from './brand';
 import { defect } from './defect';
 import type {

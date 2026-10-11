@@ -1,4 +1,4 @@
-import { LocationId } from '../primitives/ids.primitive';
+import { LocationId } from '@core/primitives';
 
 /**
  * The deployment's constants — **never stored** (§9 D22; `settings/bookingPolicy`

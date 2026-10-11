@@ -1,7 +1,9 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import admin from 'firebase-admin';
 import type { Firestore } from 'firebase-admin/firestore';
-import { QueryOp, RepositoryError, Result, WriteOp } from '@creativo/ecs-core';
+import { RepositoryError, Result } from '@core/primitives';
+import { WriteOp } from '@core/components';
+import { QueryOp } from '@core/entities';
 import { firestoreCommitPlan } from './firestore-tx.adapter';
 
 /**

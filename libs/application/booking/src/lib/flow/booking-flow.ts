@@ -21,41 +21,45 @@ import {
 import {
   AppointmentId,
   BarberId as EcsBarberId,
-  type BookingCart as CartData,
-  BookingCartSystem,
   type BookingFlowError as EcsBookingFlowError,
   BookingFlowErrorCode,
-  type BookingFlowEvent as FlowEventData,
-  BookingFlowEventKind,
-  type BookingFlowLimits,
-  BookingFlowState as EcsBookingFlowState,
-  BookingFlowStep as FlowStep,
-  BookingFlowSystem,
   CartLineId as EcsCartLineId,
-  DayWindows as DayWindowsData,
   EndMinute,
-  FlexibleWhen as WhenData,
   GuestId as EcsGuestId,
   LocalDate,
   LocationId as EcsLocationId,
   MinuteOfDay,
-  MinuteRange,
-  type Party as PartyData,
-  PartyMember,
-  PartyRole,
-  type ScheduleSelection as SelectionData,
   SchedulingErrorCode,
   SeatKeyText,
-  SeatLabel as EcsSeatLabel,
   ServiceId as EcsServiceId,
   ServiceVariantId as EcsServiceVariantId,
   UserId as EcsUserId,
   UtcEpochMs,
   WaitlistRequestId,
-  type WallTime,
-  ZonedTimeSystem,
   defect,
-} from '@creativo/ecs-core';
+} from '@core/primitives';
+import {
+  type BookingCart as CartData,
+  BookingFlowState as EcsBookingFlowState,
+  BookingFlowStep as FlowStep,
+  DayWindows as DayWindowsData,
+  FlexibleWhen as WhenData,
+  MinuteRange,
+  type Party as PartyData,
+  PartyMember,
+  PartyRole,
+  type ScheduleSelection as SelectionData,
+  SeatLabel as EcsSeatLabel,
+  type WallTime,
+} from '@core/components';
+import {
+  BookingCartSystem,
+  type BookingFlowEvent as FlowEventData,
+  BookingFlowEventKind,
+  type BookingFlowLimits,
+  BookingFlowSystem,
+  ZonedTimeSystem,
+} from '@core/systems';
 import {
   BarberId,
   LocationId,
@@ -364,7 +368,7 @@ export function firstSeatWithoutService(
 }
 
 /**
- * One step of the wizard — `BookingFlowSystem.next` (`@creativo/ecs-core`)
+ * One step of the wizard — `BookingFlowSystem.next` (`@core/systems`)
  * over this module's legacy state: the state and the event are converted to
  * the component structs, the system decides, and the answer comes back as
  * the legacy shapes (every bag the step did not change is the caller's own

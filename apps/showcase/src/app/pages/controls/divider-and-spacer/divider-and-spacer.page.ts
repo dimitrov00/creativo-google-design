@@ -3,8 +3,8 @@ import { UiButton, UiIcon } from '@creativo/ui/controls';
 import { UiDivider, UiSpacer, UiStack, UiToolbar } from '@creativo/ui/layout';
 import { UiCard } from '@creativo/ui/patterns';
 import { UiFrameDirective, UiTextDirective } from '@creativo/ui/modifiers';
-import { ScDemo } from '../../../shared/demo';
-import { ScPage } from '../../../shared/page';
+import { ScDemo } from '@showcase/shared/demo';
+import { ScPage } from '@showcase/shared/page';
 
 @Component({
   selector: 'cr-divider-and-spacer-page',

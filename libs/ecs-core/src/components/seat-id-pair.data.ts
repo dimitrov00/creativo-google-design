@@ -1,4 +1,4 @@
-import type { SeatId } from '../primitives/ids.primitive';
+import type { SeatId } from '@core/primitives';
 
 /**
  * Two seats of one visit, by id, that seat one person twice at once —

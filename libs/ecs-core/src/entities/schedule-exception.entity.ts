@@ -1,18 +1,11 @@
-import type { ExceptionEffectRule } from '../components/exception-effect.data';
+import type { ExceptionEffectRule } from '@core/components';
 import type {
   BarberId,
   LocationId,
   ScheduleExceptionId,
-} from '../primitives/ids.primitive';
-import type { LocalDate } from '../primitives/local-date.primitive';
-import type { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
-
-/*
- * F0 STAGING BRIDGE (flatten-spec §1.5): the id is declared once, in
- * `primitives/ids.primitive.ts`; the barrel's flatten block and the legacy
- * id type-specs still name this file for it until the integrator deletes
- * those lines — this re-export goes with them.
- */
+  LocalDate,
+  UtcEpochMs,
+} from '@core/primitives';
 
 /**
  * The identity slice of a barber's changed day. The id's raw string is a

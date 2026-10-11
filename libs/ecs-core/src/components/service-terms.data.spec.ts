@@ -1,12 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import {
-  cents,
-  duration,
-  EUR,
-  minuteCount,
-  termsFixture,
-} from '../testing/booking-core.fixtures';
-import { ServiceVariantId } from '../primitives/ids.primitive';
+import { cents, duration, EUR, minuteCount, termsFixture } from '@core/testing';
+import { ServiceVariantId } from '@core/primitives';
 import {
   ServiceTerms,
   type ServiceTermsInput,

@@ -1,6 +1,5 @@
-import { CatalogError } from './catalog-errors.data';
+import { CatalogError, Result } from '@core/primitives';
 import type { E164 } from './phone-number.data';
-import { Result } from './result.data';
 
 /**
  * A shop's contact phone as TENANT CONTENT (`venue-phone.ts:13`): the

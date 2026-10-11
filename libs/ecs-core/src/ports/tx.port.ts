@@ -1,8 +1,6 @@
-import type { RepositoryError } from '../components/repository-errors.data';
-import type { Result } from '../components/result.data';
-import type { DocPath, WriteOp } from '../components/write-op.data';
-import type { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
-import type { QueryOp } from './collections';
+import type { RepositoryError, Result, UtcEpochMs } from '@core/primitives';
+import type { DocPath, WriteOp } from '@core/components';
+import type { QueryOp } from '@core/entities';
 
 /**
  * The transactional sandwich (Law 4), split by direction (blueprint §4,
@@ -25,13 +23,13 @@ import type { QueryOp } from './collections';
 /**
  * A collection path as alternating collection names and ids — odd length:
  * `['appointments']`, `['users', uid, 'notifications']`. Names come from
- * `ports/collections.ts`, never a literal at the call site.
+ * `entities/collections.ts`, never a literal at the call site.
  */
 export type CollectionPath = readonly string[];
 
 /**
  * Firestore's own filter vocabulary, verbatim (`WhereFilterOp`), read from
- * the `QueryOp` dictionary (`ports/collections.ts`): the adapter passes it
+ * the `QueryOp` dictionary (`entities/collections.ts`): the adapter passes it
  * straight to the SDK, so no second spelling exists to drift.
  */
 export type QueryOperator = (typeof QueryOp)[keyof typeof QueryOp];

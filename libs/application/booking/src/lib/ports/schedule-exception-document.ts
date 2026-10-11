@@ -8,14 +8,13 @@ import {
 } from '@creativo/domain/scheduling';
 import {
   EndMinute,
-  ExceptionDetail,
   ExceptionEffect,
   LocationId as EcsLocationId,
   MinuteOfDay,
-  MinuteRange,
-  ScheduleExceptionSystem,
   defect,
-} from '@creativo/ecs-core';
+} from '@core/primitives';
+import { ExceptionDetail, MinuteRange } from '@core/components';
+import { ScheduleExceptionSystem } from '@core/systems';
 
 /**
  * The PUBLIC face of a schedule exception — how "Ivan is off on the 14th"

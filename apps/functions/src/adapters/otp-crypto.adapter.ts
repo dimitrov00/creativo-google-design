@@ -1,4 +1,5 @@
-import { OTP_CODE_DIGITS, type OtpCrypto } from '@creativo/ecs-core';
+import { OTP_CODE_DIGITS } from '@core/components';
+import { type OtpCrypto } from '@core/ports';
 import {
   hexEqualInConstantTime,
   randomHex,

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { AccountsErrorCode } from './accounts-errors.data';
+import { AccountsErrorCode } from '@core/primitives';
 import {
   BOOK_ROLES,
   MONEY_ROLES,

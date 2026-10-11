@@ -1,6 +1,4 @@
-import type { Brand } from '../primitives/brand';
-import { EngagementError } from './engagement-errors.data';
-import { Result } from './result.data';
+import { type Brand, EngagementError, Result } from '@core/primitives';
 
 /**
  * How many people redeemed an invitation — `invitations.redemptionCount`, a

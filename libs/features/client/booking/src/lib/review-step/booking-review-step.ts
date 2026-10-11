@@ -9,13 +9,8 @@ import {
 import { Router } from '@angular/router';
 import { TranslocoDirective, TranslocoService } from '@jsverse/transloco';
 import { Money, formatMoney } from '@creativo/application/booking';
-import {
-  CalendarGridSystem,
-  Latitude,
-  LocalDate,
-  Longitude,
-  ShopReachSystem,
-} from '@creativo/ecs-core';
+import { Latitude, LocalDate, Longitude } from '@core/primitives';
+import { CalendarGridSystem, ShopReachSystem } from '@core/systems';
 import { PhoneNumber } from '@creativo/application/identity';
 import { BarberId } from '@creativo/application/catalog';
 import { AccountStateService } from '@creativo/features/client/account-state';

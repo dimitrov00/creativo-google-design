@@ -12,7 +12,8 @@ import { FirestoreNotificationWriter } from '../../adapters/firestore-notificati
 import { FirestoreWaitlistStore } from '../../adapters/firestore-waitlist-store';
 import { CryptoIdGenerator } from '../../adapters/crypto-id-generator';
 import { SystemClock } from '../../adapters/system-clock';
-import { UtcEpochMs, WaitlistSystem, defect } from '@creativo/ecs-core';
+import { UtcEpochMs, defect } from '@core/primitives';
+import { WaitlistSystem } from '@core/systems';
 import { adminFirestore } from '../firebase-admin';
 import { loadBookingPolicy } from './load-booking-policy';
 import { loadDayAvailability } from './load-day-availability';

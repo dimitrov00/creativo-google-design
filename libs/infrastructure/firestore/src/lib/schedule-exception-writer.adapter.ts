@@ -18,14 +18,9 @@ import {
   ScheduleExceptionId,
   toEcsDetail,
 } from '@creativo/domain/scheduling';
-import {
-  EndMinute,
-  type ExceptionEffectRule,
-  MinuteOfDay,
-  MinuteRange,
-  ScheduleExceptionSystem,
-  defect,
-} from '@creativo/ecs-core';
+import { EndMinute, MinuteOfDay, defect } from '@core/primitives';
+import { type ExceptionEffectRule, MinuteRange } from '@core/components';
+import { ScheduleExceptionSystem } from '@core/systems';
 import { scheduleExceptionDocRef } from './firestore-paths';
 
 /** Firestore's ceiling on the writes one batch may carry. */

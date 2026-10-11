@@ -1,26 +1,30 @@
 import { type Result, fail, ok } from '@creativo/domain/kernel';
 import {
-  HeadRole,
   LocalDate,
   ServiceCategoryId,
   ServiceId,
   StreakDefinitionId,
+  type StreakPublishError,
+  StreakPublishErrorCode,
+  StreakRuleField,
+  defect,
+} from '@core/primitives';
+import {
+  HeadRole,
   StreakExcuse as SystemExcuse,
   StreakIntervalRule,
   StreakOnBreak as SystemOnBreak,
-  type StreakPublishError,
-  StreakPublishErrorCode,
-  StreakPublishSystem,
   StreakQualifierRule,
   type StreakRule,
   StreakRuleDirection as SystemDirection,
-  StreakRuleField,
   StreakRuleParameter,
+  StreakTransition as SystemTransition,
+} from '@core/components';
+import {
+  StreakPublishSystem,
   StreakRuleSystem,
   type StreakSchedule,
-  StreakTransition as SystemTransition,
-  defect,
-} from '@creativo/ecs-core';
+} from '@core/systems';
 import type { Actor } from '@creativo/domain/governance';
 import {
   type IsoDate,
@@ -313,7 +317,7 @@ export class PublishStreakDefinitionUseCase {
 
   /**
    * Steps 3 to 7: the publish, decided over what the transaction read — the
-   * decision is `StreakPublishSystem` (`@creativo/ecs-core`); this method
+   * decision is `StreakPublishSystem` (`@core/systems`); this method
    * reads the draft through the wire's reader between its two halves and
    * hands the answer on as the classes the callable knows.
    */

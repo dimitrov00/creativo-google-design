@@ -1,17 +1,20 @@
-import { AppliedDiscount } from '../components/applied-discount.data';
-import { CouponValue, DiscountMethod } from '../components/coupon-value.data';
-import { DiscountProvenance } from '../components/discount-provenance.data';
-import { EngagementError } from '../components/engagement-errors.data';
-import type { Money } from '../components/money.data';
-import { Result } from '../components/result.data';
-import type { CouponGrant } from '../entities/coupon-grant.entity';
-import type { Currency } from '../primitives/currency.primitive';
-import type {
-  AppliedDiscountId,
-  CouponGrantId,
-} from '../primitives/ids.primitive';
-import { PriceCents } from '../primitives/price-cents.primitive';
-import { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
+import {
+  AppliedDiscount,
+  CouponValue,
+  DiscountMethod,
+  DiscountProvenance,
+  type Money,
+} from '@core/components';
+import {
+  EngagementError,
+  Result,
+  type Currency,
+  type AppliedDiscountId,
+  type CouponGrantId,
+  PriceCents,
+  UtcEpochMs,
+} from '@core/primitives';
+import type { CouponGrant } from '@core/entities';
 import { CouponGrantSystem } from './coupon-grant.system';
 
 /**

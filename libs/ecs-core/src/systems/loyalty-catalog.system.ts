@@ -1,21 +1,22 @@
-import { EngagementError } from '../components/engagement-errors.data';
-import { SeasonPhase } from '../components/gamification.data';
-import { Result } from '../components/result.data';
-import type { StreakRule } from '../components/streak-rule.data';
-import type { BadgeCategory } from '../entities/badge-category.entity';
-import type { BadgeSeries } from '../entities/badge-series.entity';
-import type { RewardCatalogItem } from '../entities/reward-catalog-item.entity';
-import type { Season } from '../entities/season.entity';
-import type { StreakDefinition } from '../entities/streak-definition.entity';
-import type { TierDefinition } from '../entities/tier-definition.entity';
+import {
+  EngagementError,
+  Result,
+  type BadgeCategoryId,
+  type BadgeSeriesId,
+  type SeasonId,
+  type StreakDefinitionId,
+  type TierId,
+  type LocalDate,
+} from '@core/primitives';
+import { SeasonPhase, type StreakRule } from '@core/components';
 import type {
-  BadgeCategoryId,
-  BadgeSeriesId,
-  SeasonId,
-  StreakDefinitionId,
-  TierId,
-} from '../primitives/ids.primitive';
-import type { LocalDate } from '../primitives/local-date.primitive';
+  BadgeCategory,
+  BadgeSeries,
+  RewardCatalogItem,
+  Season,
+  StreakDefinition,
+  TierDefinition,
+} from '@core/entities';
 import { SeasonSystem } from './season.system';
 import { StreakRuleSystem } from './streak-rule.system';
 

@@ -1,5 +1,4 @@
-import type { Brand } from '../primitives/brand';
-import { LocalDate } from '../primitives/local-date.primitive';
+import { type Brand, LocalDate } from '@core/primitives';
 
 /** Strict `YYYY-MM-DD` — the shape `firestore.rules:93` tests. */
 const ISO_DATE_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/;

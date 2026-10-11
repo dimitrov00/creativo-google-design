@@ -1,8 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { Currency } from '../primitives/currency.primitive';
-import { CouponId } from '../primitives/ids.primitive';
-import { PriceCents } from '../primitives/price-cents.primitive';
-import { unwrapOk } from '../testing';
+import { Currency, CouponId, PriceCents } from '@core/primitives';
+import { unwrapOk } from '@core/testing';
 import { PerkId } from './gamification.data';
 import { RewardGrant, RewardGrantRule } from './reward-grant.data';
 

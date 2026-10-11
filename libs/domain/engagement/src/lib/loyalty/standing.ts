@@ -2,36 +2,40 @@ import type { LocalizedText } from '@creativo/domain/catalog';
 import {
   AchievementRuleId,
   AdjustmentId,
-  AwardSummary as SystemAward,
   BadgeCategoryId as CategoryRefId,
   BadgeSeriesId as SeriesRefId,
+  LocalDate,
+  RewardId,
+  SeasonId as SeasonRefId,
+  TierId,
+  UtcEpochMs,
+  defect,
+} from '@core/primitives';
+import {
+  AwardSummary as SystemAward,
   BadgeSubject as SystemSubject,
   type BadgeLevel as SystemLevel,
-  type CatalogCategoryRef,
-  type CatalogSeasonRef,
   EarnedVia,
   type EarnedLevel,
   FamilyScopeFilter,
-  LocalDate,
   type Metric as SystemMetric,
   Points,
   RedeemProblem as SystemRedeemProblem,
+  TierOverride,
+  type TierState as SystemTierState,
+} from '@core/components';
+import {
+  type CatalogCategoryRef,
+  type CatalogSeasonRef,
   type RedeemableRewardRef,
   RewardSystem,
-  RewardId,
-  SeasonId as SeasonRefId,
   type StandingCatalog,
   type StandingProgress,
   type StandingSeriesRef,
   StandingSystem,
-  TierId,
-  TierOverride,
-  type TierState as SystemTierState,
   type TierStepRef,
   TierSystem,
-  UtcEpochMs,
-  defect,
-} from '@creativo/ecs-core';
+} from '@core/systems';
 import type { BadgeLevel, BadgeSeries } from './badge-series';
 import type { AwardSummary } from './badge-vocabulary';
 import type {
@@ -48,7 +52,7 @@ import type { BadgeProgress, TierState } from './projections';
  * STANDING — what the card derives from one client's progress against the
  * catalogue (client-card-redesign §4.2). A thin shim since the ECS
  * migration's Phase 2: the math is `StandingSystem`, `RewardSystem` and
- * `TierSystem` (`@creativo/ecs-core`); this file carries the legacy API —
+ * `TierSystem` (`@core/systems`); this file carries the legacy API —
  * the class catalogue, the progress `Map`, `Date`s — across, and keeps the
  * one function that stays in the template layer (`levelNumeral`). The
  * bridge is the private helpers at the end.

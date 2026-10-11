@@ -1,4 +1,4 @@
-import baseConfig from "../../../eslint.config.mjs";
+import baseConfig from '#eslint-config';
 
 /**
  * The specs' own import rule, read from the root config rather than
@@ -8,25 +8,27 @@ import baseConfig from "../../../eslint.config.mjs";
  * staff client card's config does the same for its `src/testing/**`).
  */
 const specImports = baseConfig.find(
-    (block) =>
-        block.files?.includes("**/*.spec.ts") &&
-        block.rules?.["no-restricted-imports"] !== undefined,
-)?.rules["no-restricted-imports"];
+  (block) =>
+    block.files?.includes('**/*.spec.ts') &&
+    block.rules?.['no-restricted-imports'] !== undefined,
+)?.rules['no-restricted-imports'];
 if (specImports === undefined) {
-    throw new Error("The root eslint config no longer states the specs' import rule.");
+  throw new Error(
+    "The root eslint config no longer states the specs' import rule.",
+  );
 }
 
 export default [
-    ...baseConfig,
-    {
-        // `src/testing.ts` is this lib's testing entry point
-        // (`@creativo/application/engagement/testing`) — test support,
-        // imported by specs only. Since the ECS migration's Phase 3a it
-        // re-exports the loyalty catalogue and vouchers from
-        // `@creativo/ecs-core/testing`, until Phase 4 deletes it.
-        files: ["**/src/testing.ts"],
-        rules: {
-            "no-restricted-imports": specImports,
-        },
+  ...baseConfig,
+  {
+    // `src/testing.ts` is this lib's testing entry point
+    // (`@creativo/application/engagement/testing`) — test support,
+    // imported by specs only. Since the ECS migration's Phase 3a it
+    // re-exports the loyalty catalogue and vouchers from
+    // `@core/testing`, until Phase 4 deletes it.
+    files: ['**/src/testing.ts'],
+    rules: {
+      'no-restricted-imports': specImports,
     },
+  },
 ];

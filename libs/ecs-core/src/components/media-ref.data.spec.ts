@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { MediaRefId } from '../primitives/ids.primitive';
+import { MediaRefId } from '@core/primitives';
 import { MediaRef, type MediaRefInput } from './media-ref.data';
 
 function validInput(): MediaRefInput {

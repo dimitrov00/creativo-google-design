@@ -1,20 +1,24 @@
 import {
   ExceptionEffect,
-  type ExceptionEffectRule,
-} from '../components/exception-effect.data';
-import { MinuteRange } from '../components/minute-range.data';
-import { type DayHours, OpeningState } from '../components/opening-hours.data';
-import { RosterWindow, ShopDayHours } from '../components/roster-window.data';
+  type Weekday,
+  type MinuteCount,
+  type BarberId,
+  type LocationId,
+  LocalDate,
+  EndMinute,
+  MinuteOfDay,
+} from '@core/primitives';
 import {
+  type ExceptionEffectRule,
+  MinuteRange,
+  type DayHours,
+  OpeningState,
+  RosterWindow,
+  ShopDayHours,
   ScheduleVersion,
   ShiftSegment,
-} from '../components/schedule-version.data';
-import type { Weekday } from '../components/weekday.data';
-import type { ScheduleException } from '../entities/schedule-exception.entity';
-import type { MinuteCount } from '../primitives/duration-minutes.primitive';
-import type { BarberId, LocationId } from '../primitives/ids.primitive';
-import { LocalDate } from '../primitives/local-date.primitive';
-import { EndMinute, MinuteOfDay } from '../primitives/minute-of-day.primitive';
+} from '@core/components';
+import type { ScheduleException } from '@core/entities';
 import { IntervalSetSystem } from './interval-set.system';
 
 /**

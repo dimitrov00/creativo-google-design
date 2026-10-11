@@ -1,13 +1,12 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { localDate, utcMs } from '../testing';
-import { duration, minuteCount } from '../testing/booking-core.fixtures';
-import { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
-import { BookingPolicy, type BookingPolicyInput } from './booking-policy.data';
+import { localDate, utcMs, duration, minuteCount } from '@core/testing';
 import {
+  UtcEpochMs,
   type SchedulingError,
   SchedulingErrorCode,
-} from './scheduling-errors.data';
+} from '@core/primitives';
+import { BookingPolicy, type BookingPolicyInput } from './booking-policy.data';
 
 const VALID_INPUT: BookingPolicyInput = {
   maxPartySize: 5,

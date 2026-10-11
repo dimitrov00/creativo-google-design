@@ -3,8 +3,8 @@ import type { UiControlSize } from '@creativo/ui/controls';
 import { UiButton, UiProgressView } from '@creativo/ui/controls';
 import { UiFlow, UiStack } from '@creativo/ui/layout';
 import { UiTextDirective } from '@creativo/ui/modifiers';
-import { ScDemo } from '../../../shared/demo';
-import { ScPage } from '../../../shared/page';
+import { ScDemo } from '@showcase/shared/demo';
+import { ScPage } from '@showcase/shared/page';
 
 @Component({
   selector: 'cr-progress-view-page',

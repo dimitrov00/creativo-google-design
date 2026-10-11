@@ -1,23 +1,27 @@
 import { describe, expect, it } from 'vitest';
-import type { SeatAssignment } from '../components/booking-flow.data';
-import type { BookingCart, CartLine } from '../components/cart-line.data';
-import { Money } from '../components/money.data';
-import { Currency } from '../primitives/currency.primitive';
 import {
+  type SeatAssignment,
+  type BookingCart,
+  type CartLine,
+  Money,
+} from '@core/components';
+import {
+  Currency,
   BarberId,
   CartLineId,
   SeatKeyText,
   ServiceId,
   ServiceVariantId,
-} from '../primitives/ids.primitive';
+} from '@core/primitives';
 import {
   deepFreeze,
   endMinute,
   minute,
   textFixture,
   unwrapOk,
-} from '../testing';
-import { serviceFixture, termsFixture } from '../testing/booking-core.fixtures';
+  serviceFixture,
+  termsFixture,
+} from '@core/testing';
 import { BookingTotalSystem } from './booking-total.system';
 
 /*

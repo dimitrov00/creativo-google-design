@@ -1,5 +1,4 @@
-import type { UserId } from '../primitives/ids.primitive';
-import type { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
+import type { UserId, UtcEpochMs } from '@core/primitives';
 
 /**
  * `invitations/{invitationId}/redemptions/{refereeUserId}` — a record that

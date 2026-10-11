@@ -1,6 +1,6 @@
 import playwrightPlugin from "eslint-plugin-playwright";
 import nx from "@nx/eslint-plugin";
-import baseConfig from "../../eslint.config.mjs";
+import baseConfig from "#eslint-config";
 
 export default [
     playwrightPlugin.configs["flat/recommended"],

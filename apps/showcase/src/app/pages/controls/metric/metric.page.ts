@@ -3,8 +3,8 @@ import type { UiMetricTrend } from '@creativo/ui/controls';
 import { UiButton, UiCard, UiGauge, UiMetric } from '@creativo/ui/controls';
 import { UiFlow, UiGrid, UiStack } from '@creativo/ui/layout';
 import { UiTextDirective } from '@creativo/ui/modifiers';
-import { ScDemo } from '../../../shared/demo';
-import { ScPage } from '../../../shared/page';
+import { ScDemo } from '@showcase/shared/demo';
+import { ScPage } from '@showcase/shared/page';
 
 /** Whole points in the page's locale — the owner formats, never the metric. */
 const points = new Intl.NumberFormat('bg-BG', { maximumFractionDigits: 0 });

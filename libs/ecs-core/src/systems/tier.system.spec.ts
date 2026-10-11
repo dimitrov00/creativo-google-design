@@ -1,9 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { Metric } from '../components/gamification.data';
-import { TierOverride, type TierState } from '../components/tier-state.data';
-import type { TierDefinition } from '../entities/tier-definition.entity';
-import { AdjustmentId, TierId } from '../primitives/ids.primitive';
-import { deepFreeze, localDate, utcMs } from '../testing';
+import { Metric, TierOverride, type TierState } from '@core/components';
+import type { TierDefinition } from '@core/entities';
+import { AdjustmentId, TierId } from '@core/primitives';
+import { deepFreeze, localDate, utcMs } from '@core/testing';
 import { TierSystem } from './tier.system';
 
 /*

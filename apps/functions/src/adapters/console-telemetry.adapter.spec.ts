@@ -1,5 +1,5 @@
 import { logger } from 'firebase-functions';
-import type { TelemetryPorts } from '@creativo/ecs-core';
+import type { TelemetryPorts } from '@core/ports';
 import { type LogSink, consoleTelemetry } from './console-telemetry.adapter';
 
 type Call = {

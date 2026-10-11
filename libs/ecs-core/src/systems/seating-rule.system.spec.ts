@@ -1,9 +1,8 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { SeatIdPair } from '../components/seat-id-pair.data';
-import { StandingSeatPair } from '../components/standing-seat.data';
-import { SeatId, SeatKeyText } from '../primitives/ids.primitive';
-import { deepFreeze, endMinute, minute } from '../testing';
+import { SeatIdPair, StandingSeatPair } from '@core/components';
+import { SeatId, SeatKeyText } from '@core/primitives';
+import { deepFreeze, endMinute, minute } from '@core/testing';
 import { type SeatedSpan, SeatingRuleSystem } from './seating-rule.system';
 
 /*

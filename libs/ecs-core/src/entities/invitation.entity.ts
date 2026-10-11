@@ -1,12 +1,5 @@
-import type { RedemptionCount } from '../components/redemption-count.data';
-import type { InvitationId, UserId } from '../primitives/ids.primitive';
-import type { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
-
-/*
- * The id lives in `primitives/ids.primitive.ts` (flatten-spec §1.5); it is
- * re-exported here only while the barrel's staging block still names this
- * file (`index.ts`), and leaves with that line.
- */
+import type { RedemptionCount } from '@core/components';
+import type { InvitationId, UserId, UtcEpochMs } from '@core/primitives';
 
 /**
  * `invitations/{id}` — an invitation a user issued; the id IS the shareable

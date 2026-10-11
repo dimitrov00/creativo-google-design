@@ -1,13 +1,5 @@
-import type { Metric, PerkId } from '../components/gamification.data';
-import type { LocalizedText } from '../components/localized-text.data';
-import type { TierId } from '../primitives/ids.primitive';
-import type { LocalDate } from '../primitives/local-date.primitive';
-
-/*
- * The id lives in `primitives/ids.primitive.ts` (flatten-spec §1.5); it is
- * re-exported here only while the barrel's staging block still names this
- * file (`index.ts`), and leaves with that line.
- */
+import type { Metric, PerkId, LocalizedText } from '@core/components';
+import type { TierId, LocalDate } from '@core/primitives';
 
 /**
  * `tierDefinitions/{id}` — Бронз · Сребро · Злато · Платина, the ONE tier

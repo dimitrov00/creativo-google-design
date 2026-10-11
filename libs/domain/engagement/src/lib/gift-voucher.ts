@@ -11,20 +11,21 @@ import {
   Currency,
   EngagementErrorCode,
   type EngagementError as EngagementErrorData,
-  type GiftVoucher as GiftVoucherData,
   GiftVoucherId as GiftVoucherIdData,
   type LocalDate,
-  type Money as MoneyData,
   PriceCents,
   UserId as UserIdData,
   UtcEpochMs,
+  VoucherRefusal,
+  defect,
+} from '@core/primitives';
+import {
+  type Money as MoneyData,
   VoucherCode as VoucherCodeData,
   VoucherLifecycle,
-  VoucherRefusal,
-  VoucherSystem,
-  ZonedTimeSystem,
-  defect,
-} from '@creativo/ecs-core';
+} from '@core/components';
+import { type GiftVoucher as GiftVoucherData } from '@core/entities';
+import { VoucherSystem, ZonedTimeSystem } from '@core/systems';
 import { Coupon } from './coupon';
 import {
   GiftVoucherCurrencyMismatchError,

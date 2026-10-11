@@ -1,5 +1,5 @@
 // A named import, so the bundle carries only this environment's map.
-import { development as featureFlags } from '../../../../config/feature-flags.json';
+import { development as featureFlags } from '@creativo/config/feature-flags';
 
 // Firebase's web config is public, non-secret client config — safe to
 // commit; security comes from Firestore/Functions rules and Auth, not from

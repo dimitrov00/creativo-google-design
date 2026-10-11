@@ -1,38 +1,34 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { AppliedOperation } from '../components/applied-operation.data';
-import { BarberPreference } from '../components/barber-pref.data';
 import {
+  AppliedOperation,
+  BarberPreference,
   BookingLifecycle,
-  BookingStatus,
-} from '../components/booking-lifecycle.data';
-import { MinuteRange } from '../components/minute-range.data';
-import { SeatLabel } from '../components/seat-label.data';
-import { SeatOutcome } from '../components/seat-outcome.data';
-import {
+  MinuteRange,
+  SeatLabel,
+  SeatOutcome,
   Seat,
   SeatOccupant,
   SubjectRelationship,
-} from '../components/seat.data';
-import { ServiceTerms } from '../components/service-terms.data';
-import { WallTime } from '../components/wall-time.data';
-import type { Appointment } from '../entities/appointment.entity';
-import { Currency } from '../primitives/currency.primitive';
-import { DurationMinutes } from '../primitives/duration-minutes.primitive';
+  ServiceTerms,
+  WallTime,
+} from '@core/components';
 import {
+  BookingStatus,
+  Currency,
+  DurationMinutes,
   BarberId,
   LocationId,
   OperationId,
   SeatId,
   ServiceId,
-} from '../primitives/ids.primitive';
-import { LocalDate } from '../primitives/local-date.primitive';
-import type {
-  EndMinute,
-  MinuteOfDay,
-} from '../primitives/minute-of-day.primitive';
-import { PriceCents } from '../primitives/price-cents.primitive';
-import type { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
+  LocalDate,
+  type EndMinute,
+  type MinuteOfDay,
+  PriceCents,
+  type UtcEpochMs,
+} from '@core/primitives';
+import type { Appointment } from '@core/entities';
 import {
   FIXTURE_IDS,
   FIXTURE_TIME_ZONE,
@@ -43,13 +39,11 @@ import {
   unwrapErr,
   unwrapOk,
   utcMs,
-} from '../testing';
-import {
   type AppointmentFixtureOverrides,
   appointmentFixture,
   seatFixture,
   type SeatFixtureOverrides,
-} from '../testing/appointment.fixtures';
+} from '@core/testing';
 import {
   AppointmentEditSystem,
   EditCommand,

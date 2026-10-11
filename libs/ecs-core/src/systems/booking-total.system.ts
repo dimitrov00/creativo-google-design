@@ -1,16 +1,12 @@
-import type { SeatAssignment } from '../components/booking-flow.data';
-import type {
-  BookingCart,
-  CartLine,
-  CartSeatLines,
-} from '../components/cart-line.data';
-import { Money } from '../components/money.data';
-import type { Service } from '../entities/service.entity';
-import type {
-  CartLineId,
-  SeatKeyText,
-  ServiceId,
-} from '../primitives/ids.primitive';
+import {
+  type SeatAssignment,
+  type BookingCart,
+  type CartLine,
+  type CartSeatLines,
+  Money,
+} from '@core/components';
+import type { Service } from '@core/entities';
+import type { CartLineId, SeatKeyText, ServiceId } from '@core/primitives';
 import { OfferingPriceSystem } from './offering-price.system';
 
 /** One seat's subtotal on the review — `null` when its lines span two currencies. */

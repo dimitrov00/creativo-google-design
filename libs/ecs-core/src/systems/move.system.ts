@@ -1,24 +1,20 @@
-import type { BarberPreference } from '../components/barber-pref.data';
 import {
+  type BarberPreference,
   BookingLifecycle,
-  BookingStatus,
-} from '../components/booking-lifecycle.data';
+  SeatOutcome,
+  Seat,
+  SeatSubject,
+  type ServiceTerms,
+} from '@core/components';
 import {
+  BookingStatus,
   BookingError,
   BookingErrorCode,
-} from '../components/booking-errors.data';
-import { Result } from '../components/result.data';
-import { SchedulingErrorCode } from '../components/scheduling-errors.data';
-import { SeatOutcome } from '../components/seat-outcome.data';
-import { Seat, SeatSubject } from '../components/seat.data';
-import type { ServiceTerms } from '../components/service-terms.data';
-import type { Appointment } from '../entities/appointment.entity';
-import type {
-  DurationMinutes,
-  MinuteCount,
-} from '../primitives/duration-minutes.primitive';
-import { MinuteDelta } from '../primitives/duration-minutes.primitive';
-import {
+  Result,
+  SchedulingErrorCode,
+  type DurationMinutes,
+  type MinuteCount,
+  MinuteDelta,
   type BarberId,
   CartLineId,
   type LocationId,
@@ -26,9 +22,10 @@ import {
   type ServiceId,
   type ServiceVariantId,
   type UserId,
-} from '../primitives/ids.primitive';
-import type { LocalDate } from '../primitives/local-date.primitive';
-import { MinuteOfDay } from '../primitives/minute-of-day.primitive';
+  type LocalDate,
+  MinuteOfDay,
+} from '@core/primitives';
+import type { Appointment } from '@core/entities';
 import type { ChairTime } from './availability.system';
 import { LocationScopeSystem } from './location-scope.system';
 

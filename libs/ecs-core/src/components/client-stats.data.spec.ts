@@ -1,8 +1,7 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { UserId } from '../primitives/ids.primitive';
-import { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
-import { unwrapOk } from '../testing';
+import { UserId, UtcEpochMs } from '@core/primitives';
+import { unwrapOk } from '@core/testing';
 import {
   ClientMoneyStats,
   ClientStats,

@@ -1,4 +1,4 @@
-import type { AchievementRuleId } from '../primitives/ids.primitive';
+import type { AchievementRuleId } from '@core/primitives';
 import type { LocalizedText } from './localized-text.data';
 
 /**

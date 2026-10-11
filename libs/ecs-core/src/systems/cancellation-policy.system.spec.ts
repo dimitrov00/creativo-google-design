@@ -2,29 +2,27 @@ import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
   BookingLifecycle,
-  BookingStatus,
-} from '../components/booking-lifecycle.data';
-import { BookingPolicy } from '../components/booking-policy.data';
-import type { Result } from '../components/result.data';
-import {
-  type SchedulingError,
-  SchedulingErrorCode,
-} from '../components/scheduling-errors.data';
-import {
-  AttendanceState,
+  BookingPolicy,
   CancellationReason,
   CancellationReasonSet,
   CancelledBy,
   SeatOutcome,
-} from '../components/seat-outcome.data';
-import {
   Seat,
   SeatOccupant,
   SubjectRelationship,
-} from '../components/seat.data';
-import type { Appointment } from '../entities/appointment.entity';
-import { BarberId, SeatId, UserId } from '../primitives/ids.primitive';
-import { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
+} from '@core/components';
+import {
+  BookingStatus,
+  type Result,
+  type SchedulingError,
+  SchedulingErrorCode,
+  AttendanceState,
+  BarberId,
+  SeatId,
+  UserId,
+  UtcEpochMs,
+} from '@core/primitives';
+import type { Appointment } from '@core/entities';
 import {
   FIXTURE_NOW_UTC_MS,
   FIXTURE_TIME_ZONE,
@@ -35,11 +33,9 @@ import {
   unwrapErr,
   unwrapOk,
   utcMs,
-} from '../testing';
-import {
   appointmentFixture,
   seatFixture,
-} from '../testing/appointment.fixtures';
+} from '@core/testing';
 import {
   AppointmentLifecycleSystem,
   type LifecycleStep,

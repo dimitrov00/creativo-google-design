@@ -1,20 +1,21 @@
-import { GovernanceError } from '../components/governance-errors.data';
-import type { ImpersonationScope } from '../components/impersonation-scope.data';
 import {
+  GovernanceError,
+  Result,
+  type ImpersonationSessionId,
+  type UserId,
+  UtcEpochMs,
+} from '@core/primitives';
+import {
+  type ImpersonationScope,
   EndReasonFields,
   ImpersonationLifecycle,
-} from '../components/impersonation-status.data';
-import { Result } from '../components/result.data';
-import { type Role, isStaff } from '../components/role.data';
+  type Role,
+  isStaff,
+} from '@core/components';
 import type {
   ImpersonationSession,
   ImpersonationSessionMeta,
-} from '../entities/impersonation-session.entity';
-import type {
-  ImpersonationSessionId,
-  UserId,
-} from '../primitives/ids.primitive';
-import { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
+} from '@core/entities';
 
 /**
  * ImpersonationSystem — the time-bounded, audited session in which a staff

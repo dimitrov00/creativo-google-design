@@ -1,4 +1,5 @@
-import { BarberId, BarberToneSystem } from '@creativo/ecs-core';
+import { BarberId } from '@core/primitives';
+import { BarberToneSystem } from '@core/systems';
 
 /**
  * WHOSE CHAIR — identity as colour, the last channel the schedule was missing.
@@ -40,7 +41,7 @@ export const BARBER_TONE_COUNT = BarberToneSystem.TONE_COUNT;
  * Assign every barber in a roster a tone, resolving collisions.
  *
  * Phase 2 shim: the hash, the probe and the ascending-id walk are
- * `BarberToneSystem.assignBarberTones` in `@creativo/ecs-core`, which answers
+ * `BarberToneSystem.assignBarberTones` in `@core/systems`, which answers
  * parallel to the roster; this keeps the legacy map keyed by id for its
  * callers. The system takes `BarberId` brands (Law 7); the roster's raw ids
  * are document ids, so they become brands by construction (`BarberId.of`).

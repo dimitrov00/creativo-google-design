@@ -3,8 +3,8 @@ import { UiButton } from '@creativo/ui/controls';
 import { UiStack } from '@creativo/ui/layout';
 import { UiStepper } from '@creativo/ui/patterns';
 import { UiFrameDirective, UiTextDirective } from '@creativo/ui/modifiers';
-import { ScDemo } from '../../../shared/demo';
-import { ScPage } from '../../../shared/page';
+import { ScDemo } from '@showcase/shared/demo';
+import { ScPage } from '@showcase/shared/page';
 
 @Component({
   selector: 'cr-stepper-page',

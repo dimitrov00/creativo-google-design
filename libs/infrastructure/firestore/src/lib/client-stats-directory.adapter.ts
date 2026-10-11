@@ -9,7 +9,7 @@ import {
   query,
   startAfter,
 } from 'firebase/firestore';
-import { PageStep, PagingSystem } from '@creativo/ecs-core';
+import { PageStep, PagingSystem } from '@core/systems';
 import { FIREBASE_FIRESTORE } from '@creativo/infrastructure/firebase-app';
 import { Result, fail, ok } from '@creativo/domain/kernel';
 import {

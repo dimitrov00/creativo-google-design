@@ -1,4 +1,5 @@
-import { UtcEpochMs, WorkBudgetSystem, defect } from '@creativo/ecs-core';
+import { UtcEpochMs, defect } from '@core/primitives';
+import { WorkBudgetSystem } from '@core/systems';
 
 /**
  * How long a piece of operational work may keep TAKING work — shared by the
@@ -13,7 +14,7 @@ import { UtcEpochMs, WorkBudgetSystem, defect } from '@creativo/ecs-core';
  * hand and say where it stopped. The budget never interrupts a unit: every
  * unit is state-based, so stopping BETWEEN them is always safe to resume.
  *
- * Phase 2 shim: the arithmetic is `WorkBudgetSystem` in `@creativo/ecs-core`;
+ * Phase 2 shim: the arithmetic is `WorkBudgetSystem` in `@core/systems`;
  * this file keeps the legacy names for its callers and the awaiting walk,
  * and reads the injected epoch-ms clock as `UtcEpochMs` instants.
  */

@@ -7,21 +7,21 @@ import {
   MetricRef,
   SeasonKind,
   SeasonPhase,
-} from '../components/gamification.data';
-import { Points } from '../components/points.data';
-import { RewardGrantRule } from '../components/reward-grant.data';
-import { StreakIntervalRule } from '../components/streak-interval.data';
-import {
+  Points,
+  RewardGrantRule,
+  StreakIntervalRule,
   HeadRole,
   StreakRule,
   StreakTransition,
-} from '../components/streak-rule.data';
-import type { BadgeCategory } from '../entities/badge-category.entity';
-import type { BadgeSeries } from '../entities/badge-series.entity';
-import type { RewardCatalogItem } from '../entities/reward-catalog-item.entity';
-import type { Season } from '../entities/season.entity';
-import type { StreakDefinition } from '../entities/streak-definition.entity';
-import type { TierDefinition } from '../entities/tier-definition.entity';
+} from '@core/components';
+import type {
+  BadgeCategory,
+  BadgeSeries,
+  RewardCatalogItem,
+  Season,
+  StreakDefinition,
+  TierDefinition,
+} from '@core/entities';
 import {
   AchievementRuleId,
   BadgeCategoryId,
@@ -31,8 +31,8 @@ import {
   SeasonId,
   StreakDefinitionId,
   TierId,
-} from '../primitives/ids.primitive';
-import { deepFreeze, localDate, utcMs } from '../testing';
+} from '@core/primitives';
+import { deepFreeze, localDate, utcMs } from '@core/testing';
 import {
   LoyaltyCatalogSystem,
   type ValidLoyaltyCatalog,

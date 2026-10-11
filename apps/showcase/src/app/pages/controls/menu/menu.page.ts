@@ -23,8 +23,8 @@ import {
   UiForegroundStyleDirective,
   UiTextDirective,
 } from '@creativo/ui/modifiers';
-import { ScDemo } from '../../../shared/demo';
-import { ScPage } from '../../../shared/page';
+import { ScDemo } from '@showcase/shared/demo';
+import { ScPage } from '@showcase/shared/page';
 
 /** A fixed today, so the page draws the same month on every visit. */
 const TODAY = '2026-10-06';

@@ -89,10 +89,14 @@ const CASES = {
     `import { firestoreLoad } from './firestore.adapter';`,
     `import { bookAppointment } from './book-appointment.pipeline';`,
   ],
-  [String.raw`ImportDeclaration[source.value=/(^|\/)ports\/(?!collections$)(?![^\/]*\.(port|adapter|pipeline)$)[^\/]+$/]`]:
+  [String.raw`ImportDeclaration[source.value=/(^|\/)(ports|pipelines)(\/(?!.*\.(port|adapter|pipeline)$).+)?$/]`]:
     [
       `import { Callables } from '../ports/callables';`,
+      `import { Collections } from '../ports/collections';`,
       `import { Collections } from '../ports/collections.extra';`,
+      `import type { LoadAppointment } from '@core/ports';`,
+      `import { bookAppointment } from '@core/pipelines';`,
+      `import { x } from '@core/ports/scheduling/x';`,
     ],
   'MemberExpression[object.name="Intl"]': [
     `const f = Intl.DateTimeFormat('en-US', { timeZone: 'Europe/Sofia' });`,
@@ -358,7 +362,16 @@ describe('systems (ECS_SYSTEM_RESTRICTIONS)', () => {
     ).toEqual([]);
   });
 
-  it('lets the collection registry through — the one module of `ports/` a system may import', async () => {
+  it('reaches the collection registry through `@core/entities` — never through the ports tier (Law 8.2)', async () => {
+    expect(
+      await lint(
+        `
+        import { Collections, Subcollections } from '@core/entities';
+        export const S = { names: () => [Collections, Subcollections] } as const;
+      `,
+        system,
+      ),
+    ).toEqual([]);
     expect(
       await lint(
         `
@@ -367,7 +380,7 @@ describe('systems (ECS_SYSTEM_RESTRICTIONS)', () => {
       `,
         system,
       ),
-    ).toEqual([]);
+    ).toHaveLength(1);
   });
 
   it('blocks the clock, randomness, crypto, awaiting and every banned import together', async () => {

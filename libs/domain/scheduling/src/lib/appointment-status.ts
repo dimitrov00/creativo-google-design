@@ -1,10 +1,5 @@
-import {
-  BookingLifecycle,
-  BookingStatus,
-  CancellationReasonSet,
-  UtcEpochMs,
-  defect,
-} from '@creativo/ecs-core';
+import { BookingStatus, UtcEpochMs, defect } from '@core/primitives';
+import { BookingLifecycle, CancellationReasonSet } from '@core/components';
 
 /**
  * Lifecycle status of an `Appointment`. A discriminated union (not a status

@@ -1,4 +1,5 @@
-import { AppointmentId, AuditSystem } from '@creativo/ecs-core';
+import { AppointmentId } from '@core/primitives';
+import { AuditSystem } from '@core/systems';
 import { HttpsError, onCall } from 'firebase-functions/v2/https';
 import { FirestoreBookingStore } from '../../adapters/firestore-booking-store';
 import { SystemClock } from '../../adapters/system-clock';

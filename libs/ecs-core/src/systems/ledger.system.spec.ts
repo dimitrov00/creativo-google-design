@@ -1,11 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { JournalEffect, RedemptionOp } from '../components/journal-effect.data';
-import {
-  BadgeSeriesId,
-  CorrelationId,
-  JournalEntryId,
-} from '../primitives/ids.primitive';
-import { FIXTURE_TIME_ZONE, deepFreeze, localDate, utcMs } from '../testing';
+import { JournalEffect, RedemptionOp } from '@core/components';
+import { BadgeSeriesId, CorrelationId, JournalEntryId } from '@core/primitives';
+import { FIXTURE_TIME_ZONE, deepFreeze, localDate, utcMs } from '@core/testing';
 import {
   LedgerSystem,
   type LedgerEffectKind,

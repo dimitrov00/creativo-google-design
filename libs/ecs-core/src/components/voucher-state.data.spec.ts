@@ -1,11 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
-import { unwrapOk } from '../testing';
-import {
-  VoucherLifecycle,
-  VoucherRefusal,
-  VoucherStatus,
-} from './voucher-state.data';
+import { UtcEpochMs, VoucherRefusal } from '@core/primitives';
+import { unwrapOk } from '@core/testing';
+import { VoucherLifecycle, VoucherStatus } from './voucher-state.data';
 
 describe('VoucherLifecycle', () => {
   it('keeps one SCREAMING tag per state and refusal reason', () => {

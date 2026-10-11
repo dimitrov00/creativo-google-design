@@ -1,12 +1,5 @@
-import type { NotificationPayload } from '../components/notification-payload.data';
-import type { NotificationId } from '../primitives/ids.primitive';
-import type { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
-
-/*
- * The id lives in `primitives/ids.primitive.ts` (flatten-spec §1.5); it is
- * re-exported here only while the barrel's staging block still names this
- * file (`index.ts`), and leaves with that line.
- */
+import type { NotificationPayload } from '@core/components';
+import type { NotificationId, UtcEpochMs } from '@core/primitives';
 
 /**
  * `users/{uid}/notifications/{id}` — one delivered message in its

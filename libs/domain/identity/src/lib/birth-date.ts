@@ -1,13 +1,11 @@
 import {
-  AgeSystem,
-  AgeWindow,
   type IdentityError,
   IdentityErrorCode,
   type LocalDate,
   UtcEpochMs,
-  ZonedTimeSystem,
   defect,
-} from '@creativo/ecs-core';
+} from '@core/primitives';
+import { AgeSystem, AgeWindow, ZonedTimeSystem } from '@core/systems';
 import { Result, ZonedDateTime, fail, ok } from '@creativo/domain/kernel';
 import {
   BirthDateError,
@@ -39,7 +37,7 @@ export interface BirthDateParts {
 
 /*
  * Phase 2 shim (ECS migration): the age window, the calendar check and the
- * future check live in `AgeSystem` (`@creativo/ecs-core`); "today" is the
+ * future check live in `AgeSystem` (`@core/systems`); "today" is the
  * `today` instant's calendar day in its own zone. The helpers below are the
  * only code besides the delegating bodies.
  */

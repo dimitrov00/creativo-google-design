@@ -1,5 +1,4 @@
-import { EngagementError } from './engagement-errors.data';
-import { Result } from './result.data';
+import { EngagementError, Result } from '@core/primitives';
 
 /**
  * The occasion a coupon is given FOR, where it has one — the coupon's field

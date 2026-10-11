@@ -1,9 +1,11 @@
 import type { Observable } from 'rxjs';
-import type { RepositoryError } from '../components/repository-errors.data';
-import type { Result } from '../components/result.data';
-import type { AppointmentNote } from '../entities/appointment-note.entity';
-import type { AppointmentPhoto } from '../entities/appointment-photo.entity';
-import type { AppointmentId, UserId } from '../primitives/ids.primitive';
+import type {
+  RepositoryError,
+  Result,
+  AppointmentId,
+  UserId,
+} from '@core/primitives';
+import type { AppointmentNote, AppointmentPhoto } from '@core/entities';
 
 /**
  * The visit's staff-only notes and photos (blueprint §4.2) —

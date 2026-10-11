@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { FIXTURE_NOW, localDate, minute, utcMs } from '../testing';
+import { FIXTURE_NOW, localDate, minute, utcMs } from '@core/testing';
 import { ShopNow } from './shop-now.data';
 import { WallTime } from './wall-time.data';
 

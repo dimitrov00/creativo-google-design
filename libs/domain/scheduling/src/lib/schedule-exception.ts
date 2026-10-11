@@ -6,13 +6,12 @@ import { EmptyExceptionRangesError } from './schedule-exception.errors';
 import {
   BarberId as EcsBarberId,
   EndMinute,
-  ExceptionDetail,
   LocationId as EcsLocationId,
   MinuteOfDay,
-  MinuteRange,
-  ScheduleExceptionSystem,
   defect,
-} from '@creativo/ecs-core';
+} from '@core/primitives';
+import { ExceptionDetail, MinuteRange } from '@core/components';
+import { ScheduleExceptionSystem } from '@core/systems';
 
 export class ScheduleExceptionId extends Id<'ScheduleException'> {
   private constructor(value: string) {

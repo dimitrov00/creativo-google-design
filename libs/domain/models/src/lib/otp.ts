@@ -1,11 +1,10 @@
 import {
   DurationMinutes,
   IdentityErrorCode,
-  type OtpCounters,
-  OtpSystem,
   UtcEpochMs,
   defect,
-} from '@creativo/ecs-core';
+} from '@core/primitives';
+import { type OtpCounters, OtpSystem } from '@core/systems';
 import {
   Result,
   ZonedDateTime,

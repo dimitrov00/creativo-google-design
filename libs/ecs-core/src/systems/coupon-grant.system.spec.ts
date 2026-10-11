@@ -1,20 +1,24 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { CouponOccasion } from '../components/coupon-occasion.data';
-import { CouponValue } from '../components/coupon-value.data';
-import { EngagementErrorCode } from '../components/engagement-errors.data';
 import {
+  CouponOccasion,
+  CouponValue,
   GrantCapacity,
   GrantCapacityTerms,
   GrantExpiryTerms,
   GrantLifecycle,
-  GrantStatus,
   type GrantTerms,
-} from '../components/grant-status.data';
-import type { CouponGrant } from '../entities/coupon-grant.entity';
-import { CouponGrantId, CouponId, UserId } from '../primitives/ids.primitive';
-import { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
-import { deepFreeze, unwrapErr, unwrapOk, utcMs } from '../testing';
+} from '@core/components';
+import {
+  EngagementErrorCode,
+  GrantStatus,
+  CouponGrantId,
+  CouponId,
+  UserId,
+  UtcEpochMs,
+} from '@core/primitives';
+import type { CouponGrant } from '@core/entities';
+import { deepFreeze, unwrapErr, unwrapOk, utcMs } from '@core/testing';
 import { CouponGrantSystem } from './coupon-grant.system';
 
 /*

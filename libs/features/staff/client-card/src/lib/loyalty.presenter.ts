@@ -5,13 +5,8 @@ import {
   type StreakState,
   sofiaDayOf,
 } from '@creativo/application/engagement';
-import {
-  CouponGrantId,
-  type GrantTicketRef,
-  LocalDate,
-  RewardSystem,
-  defect,
-} from '@creativo/ecs-core';
+import { CouponGrantId, LocalDate, defect } from '@core/primitives';
+import { type GrantTicketRef, RewardSystem } from '@core/systems';
 import type { ClientCardGrant } from './client-card.contracts';
 import { dayLong, dayShort, daysBetweenDays } from './client-card.format';
 import type { RewardReadyVm, Slice } from './client-pages.vm';

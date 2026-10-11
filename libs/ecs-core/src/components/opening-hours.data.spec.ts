@@ -1,13 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { minute } from '../testing';
-import { until } from '../testing/booking-core.fixtures';
+import { minute, until } from '@core/testing';
 import {
   type ClockDayHours,
   DayHours,
   type DayHoursInput,
   OpeningState,
 } from './opening-hours.data';
-import { Weekday } from './weekday.data';
+import { Weekday } from '@core/primitives';
 
 const CLOSED = DayHours.closed();
 const NINE_TO_SIX = DayHours.open(minute(540), until(18));

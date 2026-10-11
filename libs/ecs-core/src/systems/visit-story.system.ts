@@ -1,23 +1,26 @@
-import { BookingStatus } from '../components/booking-lifecycle.data';
-import { Result } from '../components/result.data';
-import type { SchedulingError } from '../components/scheduling-errors.data';
 import {
+  BookingStatus,
+  Result,
+  type SchedulingError,
   AttendanceState,
+  type Currency,
+  type BarberId,
+  type ServiceId,
+  type UserId,
+  LocalDate,
+  type EndMinute,
+  type MinuteOfDay,
+  type PriceCents,
+  type UtcEpochMs,
+} from '@core/primitives';
+import {
   type SeatOutcome,
-} from '../components/seat-outcome.data';
-import { Seat, SeatSubject } from '../components/seat.data';
-import { ShopNow } from '../components/shop-now.data';
-import { WallTime } from '../components/wall-time.data';
-import type { Appointment } from '../entities/appointment.entity';
-import type { Currency } from '../primitives/currency.primitive';
-import type { BarberId, ServiceId, UserId } from '../primitives/ids.primitive';
-import { LocalDate } from '../primitives/local-date.primitive';
-import type {
-  EndMinute,
-  MinuteOfDay,
-} from '../primitives/minute-of-day.primitive';
-import type { PriceCents } from '../primitives/price-cents.primitive';
-import type { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
+  Seat,
+  SeatSubject,
+  ShopNow,
+  WallTime,
+} from '@core/components';
+import type { Appointment } from '@core/entities';
 import { BillingSystem } from './billing.system';
 import { ClientStatsSystem, SubjectVisitOutcome } from './client-stats.system';
 import { VisitRowOutcome } from './visit-list.system';

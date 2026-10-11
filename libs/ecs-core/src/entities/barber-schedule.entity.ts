@@ -1,6 +1,5 @@
-import type { ScheduleVersion } from '../components/schedule-version.data';
-import type { MinuteCount } from '../primitives/duration-minutes.primitive';
-import type { BarberId } from '../primitives/ids.primitive';
+import type { ScheduleVersion } from '@core/components';
+import type { MinuteCount, BarberId } from '@core/primitives';
 
 /**
  * A barber's roster with its history — `barberSchedules/{barberId}` (the id

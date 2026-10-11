@@ -1,21 +1,19 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { Currency } from '../primitives/currency.primitive';
 import {
+  Currency,
   DurationMinutes,
   MinuteCount,
-} from '../primitives/duration-minutes.primitive';
-import {
   BarberId,
   SeatId,
   ServiceId,
   UserId,
-} from '../primitives/ids.primitive';
-import { PriceCents } from '../primitives/price-cents.primitive';
-import { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
-import { minute, unwrapOk } from '../testing';
+  PriceCents,
+  UtcEpochMs,
+  SchedulingError,
+} from '@core/primitives';
+import { minute, unwrapOk } from '@core/testing';
 import { BarberPreference } from './barber-pref.data';
-import { SchedulingError } from './scheduling-errors.data';
 import { SeatLabel } from './seat-label.data';
 import { SeatOutcome } from './seat-outcome.data';
 import { ServiceTerms } from './service-terms.data';

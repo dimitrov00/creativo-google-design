@@ -1,8 +1,7 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { TriggerEventId } from '../primitives/ids.primitive';
-import { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
-import { deepFreeze, unwrapOk, utcMs } from '../testing';
+import { TriggerEventId, UtcEpochMs } from '@core/primitives';
+import { deepFreeze, unwrapOk, utcMs } from '@core/testing';
 import { AttemptOutcome, TriggerAttemptSystem } from './trigger-attempt.system';
 
 /*

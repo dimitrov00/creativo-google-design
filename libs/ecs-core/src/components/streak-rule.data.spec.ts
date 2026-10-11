@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { ServiceCategoryId, ServiceId } from '../primitives/ids.primitive';
-import type { LocalDate } from '../primitives/local-date.primitive';
-import { localDate } from '../testing';
-import type { EngagementError } from './engagement-errors.data';
+import {
+  ServiceCategoryId,
+  ServiceId,
+  type LocalDate,
+  type EngagementError,
+} from '@core/primitives';
+import { localDate } from '@core/testing';
 import {
   StreakInterval,
   type StreakIntervalRule,

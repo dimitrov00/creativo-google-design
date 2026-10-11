@@ -1,14 +1,14 @@
 import type { Observable } from 'rxjs';
-import type { NotificationTopic } from '../components/notification-payload.data';
-import type { RepositoryError } from '../components/repository-errors.data';
-import type { Result } from '../components/result.data';
-import type { InboxNotification } from '../entities/notification.entity';
+import type { NotificationTopic } from '@core/components';
 import type {
+  RepositoryError,
+  Result,
   NotificationId,
   UserId,
   WaitlistRequestId,
-} from '../primitives/ids.primitive';
-import type { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
+  UtcEpochMs,
+} from '@core/primitives';
+import type { InboxNotification } from '@core/entities';
 
 /**
  * A person's inbox — `users/{uid}/notifications`, the one owner-scoped

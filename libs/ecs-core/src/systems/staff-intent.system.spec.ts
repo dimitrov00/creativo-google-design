@@ -1,8 +1,8 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { AppliedOperation } from '../components/applied-operation.data';
-import { AppointmentId, OperationId } from '../primitives/ids.primitive';
-import { deepFreeze } from '../testing';
+import { AppliedOperation } from '@core/components';
+import { AppointmentId, OperationId } from '@core/primitives';
+import { deepFreeze } from '@core/testing';
 import {
   type LandedRevision,
   StaffIntentSystem,

@@ -11,16 +11,20 @@ import {
   LocalDate,
   ServiceCategoryId,
   ServiceId,
+  defect,
+} from '@core/primitives';
+import {
   StreakExcuse as SystemExcuse,
   StreakIntervalRule,
   StreakOnBreak as SystemOnBreak,
+  StreakQualifierRule,
+  type StreakRule,
+} from '@core/components';
+import {
   type StreakPreview as SystemPreview,
   StreakPreviewOutcome,
   StreakPreviewSystem,
-  StreakQualifierRule,
-  type StreakRule,
-  defect,
-} from '@creativo/ecs-core';
+} from '@core/systems';
 
 export interface PreviewStreakDefinitionInput {
   /** The rule clients live under today. */

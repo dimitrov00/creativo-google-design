@@ -1,18 +1,14 @@
 import {
   StreakInterval,
   StreakIntervalRule,
-} from '../components/streak-interval.data';
-import {
   StreakQualifier,
   StreakQualifierRule,
-} from '../components/streak-qualifier.data';
-import {
   STREAK_EXCUSES,
   StreakRule,
   type StreakExcuse,
   type StreakOnBreak,
   type StreakRuleInput,
-} from '../components/streak-rule.data';
+} from '@core/components';
 
 /*
  * THE ADMIN'S DRAFT OF THE RHYTHM'S RULE, CLAMPED (client-card revision 3

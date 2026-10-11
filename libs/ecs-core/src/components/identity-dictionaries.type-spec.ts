@@ -22,7 +22,17 @@ import {
   AccountStatus,
   BlockReason,
 } from './account-status.data';
-import { AccountsErrorCode } from './accounts-errors.data';
+import {
+  AccountsErrorCode,
+  GovernanceErrorCode,
+  IdentifierChannel,
+  AuthPolicyField,
+  type IdentityError,
+  IdentityErrorCode,
+  MediaErrorCode,
+  PhoneErrorCode,
+  PhoneInvalidReason,
+} from '@core/primitives';
 import { type Actor, ActorRole, SystemSource } from './actor.data';
 import {
   AuditAction,
@@ -47,13 +57,7 @@ import {
 } from './auth-strategy.data';
 import { CustomerOrigin } from './customer-origin.data';
 import { FlagName } from './feature-flags.data';
-import { GovernanceErrorCode } from './governance-errors.data';
-import { IdentifierChannel, type ParsedIdentifier } from './identifier.data';
-import {
-  AuthPolicyField,
-  type IdentityError,
-  IdentityErrorCode,
-} from './identity-errors.data';
+import type { ParsedIdentifier } from './identifier.data';
 import { ImpersonationScope } from './impersonation-scope.data';
 import {
   type EndReasonFields,
@@ -61,7 +65,6 @@ import {
   type ImpersonationLifecycle,
   ImpersonationStatus,
 } from './impersonation-status.data';
-import { MediaErrorCode } from './media-errors.data';
 import {
   type OnboardingFlowEvent,
   OnboardingFlowEventKind,
@@ -70,21 +73,15 @@ import {
 } from './onboarding-flow.data';
 import { OtpDestinationType } from './otp-destination-type.data';
 import { OtpPurpose } from './otp-purpose.data';
-import { PhoneErrorCode, PhoneInvalidReason } from './phone-errors.data';
 import { type Principal, PrincipalKind } from './principal.data';
 import { RegistrationField, RegistrationState } from './registration.data';
 import { Role } from './role.data';
 import { SessionKind } from './session-kind.data';
-import type { Customer } from '../entities/customer.entity';
-import type { ImpersonationSession } from '../entities/impersonation-session.entity';
-import type { Otp } from '../entities/otp.entity';
-import type { User } from '../entities/user.entity';
-import { SettledVerdict } from '../systems/guest-guard.system';
+import type { Customer, ImpersonationSession, Otp, User } from '@core/entities';
 import {
+  SettledVerdict,
   type ProfileCompletionItem,
   ProfileCompletionKey,
-} from '../systems/profile-completion.system';
-import {
   type AccessDecision,
   AccessTarget,
   AccessVerdict,
@@ -92,7 +89,7 @@ import {
   type RouteGateRule,
   SessionReadiness,
   type SessionReadinessState,
-} from '../systems/session-access.system';
+} from '@core/systems';
 
 type Expect<T extends true> = T;
 type IsNever<T> = [T] extends [never] ? true : false;
@@ -143,7 +140,7 @@ export type IdentityDictionariesHold = [
   Expect<Holds<typeof CustomerOrigin, CustomerOrigin>>, // customer-origin.data.ts
   Expect<Holds<typeof FlagName, FlagName>>, // feature-flags.data.ts
   Expect<Holds<typeof GovernanceErrorCode, GovernanceErrorCode>>, // governance-errors.data.ts
-  Expect<Holds<typeof IdentifierChannel, IdentifierChannel>>, // identifier.data.ts
+  Expect<Holds<typeof IdentifierChannel, IdentifierChannel>>, // primitives/identifier-channel.data.ts
   Expect<Holds<typeof IdentityErrorCode, IdentityErrorCode>>, // identity-errors.data.ts
   Expect<Holds<typeof AuthPolicyField, AuthPolicyField>>, // identity-errors.data.ts
   Expect<Holds<typeof ImpersonationScope, ImpersonationScope>>, // impersonation-scope.data.ts

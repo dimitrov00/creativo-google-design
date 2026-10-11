@@ -1,10 +1,10 @@
-import type { MediaError } from '../components/media-errors.data';
-import type { Result } from '../components/result.data';
 import type {
+  MediaError,
+  Result,
   AppointmentId,
   AppointmentPhotoId,
   UserId,
-} from '../primitives/ids.primitive';
+} from '@core/primitives';
 
 /**
  * The web's Cloud Storage ports (blueprint §4.2): avatars, catalogue media

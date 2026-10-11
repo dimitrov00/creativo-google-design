@@ -1,15 +1,15 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import type { Money } from '../components/money.data';
-import { Currency } from '../primitives/currency.primitive';
-import { BarberId, ServiceVariantId } from '../primitives/ids.primitive';
-import { deepFreeze, textFixture } from '../testing';
+import type { Money } from '@core/components';
+import { Currency, BarberId, ServiceVariantId } from '@core/primitives';
 import {
+  deepFreeze,
+  textFixture,
   cents,
   duration,
   serviceFixture,
   termsFixture,
-} from '../testing/booking-core.fixtures';
+} from '@core/testing';
 import { type TermsSpan, TermsSpanSystem } from './terms-span.system';
 
 /*

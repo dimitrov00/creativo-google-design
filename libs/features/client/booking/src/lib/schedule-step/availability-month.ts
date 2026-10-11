@@ -1,5 +1,6 @@
 import { CalendarDay, DateRange } from '@creativo/application/booking';
-import { CalendarGridSystem, LocalDate, defect } from '@creativo/ecs-core';
+import { LocalDate, defect } from '@core/primitives';
+import { CalendarGridSystem } from '@core/systems';
 
 export interface AvailabilityDayCell {
   readonly day: CalendarDay;

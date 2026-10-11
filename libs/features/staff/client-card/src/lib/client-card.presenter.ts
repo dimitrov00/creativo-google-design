@@ -1,19 +1,19 @@
 import { type User } from '@creativo/application/accounts';
 import {
-  AccountLifecycle,
-  AgeSystem,
-  BirthDate,
-  BlockReason,
-  ClientGlanceSystem,
   LocalDate,
   ServiceId,
   ServiceVariantId,
   type TimeZone,
   UtcEpochMs,
-  type WallTime,
-  ZonedTimeSystem,
   defect,
-} from '@creativo/ecs-core';
+} from '@core/primitives';
+import {
+  AccountLifecycle,
+  BirthDate,
+  BlockReason,
+  type WallTime,
+} from '@core/components';
+import { AgeSystem, ClientGlanceSystem, ZonedTimeSystem } from '@core/systems';
 import {
   type Appointment,
   type AppointmentPhoto,

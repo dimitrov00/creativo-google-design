@@ -1,5 +1,5 @@
-import type { LocalizedText } from '../components/localized-text.data';
-import { ServiceCategoryId } from '../primitives/ids.primitive';
+import type { LocalizedText } from '@core/components';
+import { ServiceCategoryId } from '@core/primitives';
 
 /**
  * A tenant-defined service category — `serviceCategories/{id}`
@@ -12,8 +12,3 @@ export type ServiceCategory = {
   readonly name: LocalizedText;
   readonly sortOrder: number;
 };
-
-/**
- * Flatten-pass staging: the barrel's id block still names this module for
- * `ServiceCategoryId` until the integrator drops that line.
- */

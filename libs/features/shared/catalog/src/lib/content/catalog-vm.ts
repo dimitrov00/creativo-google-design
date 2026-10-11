@@ -1,14 +1,13 @@
 import {
   BarberId,
-  type CatalogPriced,
-  CatalogPricingSystem,
   Currency,
   DurationMinutes,
   PriceCents,
-  ServiceTerms,
   ServiceVariantId,
   defect,
-} from '@creativo/ecs-core';
+} from '@core/primitives';
+import { ServiceTerms } from '@core/components';
+import { type CatalogPriced, CatalogPricingSystem } from '@core/systems';
 
 /**
  * The catalog view models every surface renders — landing shelf, onboarding

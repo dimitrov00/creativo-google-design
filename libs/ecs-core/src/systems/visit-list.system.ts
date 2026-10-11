@@ -1,5 +1,4 @@
-import { LocalDate } from '../primitives/local-date.primitive';
-import type { MinuteOfDay } from '../primitives/minute-of-day.primitive';
+import { LocalDate, type MinuteOfDay } from '@core/primitives';
 
 /** The grain a visit list is sectioned by — the ONLY source of these strings. */
 export const VisitGrain = {

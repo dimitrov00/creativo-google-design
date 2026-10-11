@@ -12,7 +12,7 @@ import { Interval } from './interval';
 import { SeatLabel } from './seat-label';
 import { SEAT_SCHEDULED, SeatOutcome, isSeatResolved } from './seat-outcome';
 import { TimeSlot } from './time-slot';
-import { defect } from '@creativo/ecs-core';
+import { defect } from '@core/primitives';
 
 /**
  * How the seat's subject relates to the booking party's owner.

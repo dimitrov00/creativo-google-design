@@ -1,21 +1,22 @@
-import type { CouponOccasion } from '../components/coupon-occasion.data';
-import { CouponValue } from '../components/coupon-value.data';
-import { EngagementError } from '../components/engagement-errors.data';
 import {
+  type CouponOccasion,
+  CouponValue,
   GrantCapacity,
   GrantCapacityTerms,
   GrantExpiry,
   GrantExpiryTerms,
   GrantLifecycle,
-  GrantStatus,
   type GrantTerms,
-} from '../components/grant-status.data';
-import { Result } from '../components/result.data';
-import { WriteOp } from '../components/write-op.data';
-import type { CouponGrant } from '../entities/coupon-grant.entity';
-import type { UserId } from '../primitives/ids.primitive';
-import { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
-import { Collections } from '../ports/collections';
+  WriteOp,
+} from '@core/components';
+import {
+  EngagementError,
+  GrantStatus,
+  Result,
+  type UserId,
+  UtcEpochMs,
+} from '@core/primitives';
+import { type CouponGrant, Collections } from '@core/entities';
 
 /** The grant with a new lifecycle variant — its meta and value untouched, the old variant's fields gone. */
 function withLifecycle(

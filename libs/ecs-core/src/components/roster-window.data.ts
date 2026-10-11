@@ -1,9 +1,10 @@
-import { MinuteCount } from '../primitives/duration-minutes.primitive';
-import type { BarberId, LocationId } from '../primitives/ids.primitive';
-import type {
-  EndMinute,
-  MinuteOfDay,
-} from '../primitives/minute-of-day.primitive';
+import {
+  MinuteCount,
+  type BarberId,
+  type LocationId,
+  type EndMinute,
+  type MinuteOfDay,
+} from '@core/primitives';
 
 /**
  * A stretch of a barber's rostered day at one shop, on that shop day's wall

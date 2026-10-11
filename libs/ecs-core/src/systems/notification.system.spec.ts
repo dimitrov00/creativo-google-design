@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { NotificationPayload } from '../components/notification-payload.data';
-import type { InboxNotification } from '../entities/notification.entity';
-import { AppointmentId, NotificationId } from '../primitives/ids.primitive';
-import { deepFreeze, localDate, minute, utcMs } from '../testing';
+import { NotificationPayload } from '@core/components';
+import type { InboxNotification } from '@core/entities';
+import { AppointmentId, NotificationId } from '@core/primitives';
+import { deepFreeze, localDate, minute, utcMs } from '@core/testing';
 import { NotificationSystem } from './notification.system';
 
 /*

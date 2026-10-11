@@ -1,29 +1,33 @@
 import { LocationDayHours, LocationId } from '@creativo/domain/catalog';
 import {
   BarberId as EcsBarberId,
-  type BuildDayWindowsInput as EcsBuildDayWindowsInput,
-  type DayException,
-  DayHours,
   EndMinute,
   ExceptionEffect,
-  type ExceptionEffectRule,
   LocalDate,
   LocationId as EcsLocationId,
   MinuteOfDay,
-  type MinuteRange,
-  type RosterWindow as EcsRosterWindow,
-  RosterSystem,
-  ScheduleExceptionSystem,
-  type ScheduleVersion,
-  type ShopHours,
-  ShiftSegment as EcsShiftSegment,
-  ShopDayHours as EcsShopDayHours,
   type TimeZone,
   UtcEpochMs,
   type Weekday,
-  ZonedTimeSystem,
   defect,
-} from '@creativo/ecs-core';
+} from '@core/primitives';
+import {
+  DayHours,
+  type ExceptionEffectRule,
+  type MinuteRange,
+  type RosterWindow as EcsRosterWindow,
+  type ScheduleVersion,
+  ShiftSegment as EcsShiftSegment,
+  ShopDayHours as EcsShopDayHours,
+} from '@core/components';
+import {
+  type BuildDayWindowsInput as EcsBuildDayWindowsInput,
+  type DayException,
+  RosterSystem,
+  ScheduleExceptionSystem,
+  type ShopHours,
+  ZonedTimeSystem,
+} from '@core/systems';
 import { CalendarDay } from './calendar-day';
 import { Interval } from './interval';
 import { ScheduleException, toEcsDetail } from './schedule-exception';

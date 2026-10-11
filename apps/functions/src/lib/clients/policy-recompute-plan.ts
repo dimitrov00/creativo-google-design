@@ -3,15 +3,17 @@ import {
   policyFromDocument,
 } from '@creativo/application/booking';
 import {
-  type PolicyRecomputeJob as EcsPolicyRecomputeJob,
   PolicyRecomputeJobId,
-  PolicyRecomputeJobSystem,
-  PreciseInstant,
-  RecomputeJobName,
   UserId,
   UtcEpochMs,
   defect,
-} from '@creativo/ecs-core';
+} from '@core/primitives';
+import { PreciseInstant } from '@core/components';
+import {
+  type PolicyRecomputeJob as EcsPolicyRecomputeJob,
+  RecomputeJobName,
+} from '@core/entities';
+import { PolicyRecomputeJobSystem } from '@core/systems';
 import { BACKFILL_JOBS_COLLECTION } from '../ops/backfill-plan';
 
 /**
@@ -30,7 +32,7 @@ import { BACKFILL_JOBS_COLLECTION } from '../ops/backfill-plan';
  * over).
  *
  * Phase 2 shim: the decisions are `PolicyRecomputeJobSystem` in
- * `@creativo/ecs-core`, over the job as its flat entity — `UtcEpochMs`
+ * `@core/systems`, over the job as its flat entity — `UtcEpochMs`
  * stamps, the change instant as its D17 halves (`changedAtSeconds` +
  * `changedAtNanos`), the cursor a `UserId`. This file keeps the stored RFC
  * 3339 shapes for its callers and converts at the edge: every instant the

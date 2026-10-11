@@ -23,16 +23,20 @@ import {
   LocalDate,
   ServiceCategoryId,
   ServiceId,
+  defect,
+} from '@core/primitives';
+import {
   StreakExcuse as SystemExcuse,
   StreakIntervalRule,
   StreakOnBreak as SystemOnBreak,
+  StreakQualifierRule,
+  type StreakRule,
+} from '@core/components';
+import {
   type StreakPreview as SystemPreview,
   StreakPreviewOutcome,
   StreakPreviewSystem,
-  StreakQualifierRule,
-  type StreakRule,
-  defect,
-} from '@creativo/ecs-core';
+} from '@core/systems';
 
 /*
  * «КАКВО ЩЕ СЕ ПРОМЕНИ», THE FACTS (client-card revision 3 §2.6.4, §4.4).
@@ -167,7 +171,7 @@ export function rhythmPreviewReadsFacts(
   );
 }
 
-/** The fold: `StreakPreviewSystem.estimate` (`@creativo/ecs-core`), over the facts the walk read. */
+/** The fold: `StreakPreviewSystem.estimate` (`@core/systems`), over the facts the walk read. */
 export function rhythmPreviewOf(input: {
   readonly inForce: StreakDefinition;
   readonly draft: StreakDefinition;

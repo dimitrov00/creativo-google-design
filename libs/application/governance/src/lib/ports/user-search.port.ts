@@ -2,7 +2,7 @@ import { InjectionToken } from '@angular/core';
 import { Result } from '@creativo/domain/kernel';
 import { Email, UserId } from '@creativo/domain/accounts';
 import { RepositoryError } from '@creativo/application/shared';
-import { SearchFieldsSystem } from '@creativo/ecs-core';
+import { SearchFieldsSystem } from '@core/systems';
 
 export interface UserSearchResult {
   readonly userId: UserId;

@@ -1,12 +1,13 @@
-import { BookingStatus } from '../components/booking-lifecycle.data';
-import { MinuteRange } from '../components/minute-range.data';
-import { Seat } from '../components/seat.data';
-import type { ShopNow } from '../components/shop-now.data';
-import type { Appointment } from '../entities/appointment.entity';
-import { MinuteCount } from '../primitives/duration-minutes.primitive';
-import type { BarberId } from '../primitives/ids.primitive';
-import { LocalDate } from '../primitives/local-date.primitive';
-import { EndMinute, MinuteOfDay } from '../primitives/minute-of-day.primitive';
+import {
+  BookingStatus,
+  MinuteCount,
+  type BarberId,
+  LocalDate,
+  EndMinute,
+  MinuteOfDay,
+} from '@core/primitives';
+import { MinuteRange, Seat, type ShopNow } from '@core/components';
+import type { Appointment } from '@core/entities';
 import { IntervalSetSystem } from './interval-set.system';
 
 /**

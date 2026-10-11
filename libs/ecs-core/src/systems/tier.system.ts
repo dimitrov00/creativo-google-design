@@ -1,7 +1,6 @@
-import type { LocalizedText } from '../components/localized-text.data';
-import type { TierState } from '../components/tier-state.data';
-import type { TierDefinition } from '../entities/tier-definition.entity';
-import type { TierId } from '../primitives/ids.primitive';
+import type { LocalizedText, TierState } from '@core/components';
+import type { TierDefinition } from '@core/entities';
+import type { TierId } from '@core/primitives';
 
 /*
  * THE TIER TRACK (client-card-redesign §4.2, `standing.ts:405-426`

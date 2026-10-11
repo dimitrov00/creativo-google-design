@@ -1,5 +1,5 @@
 import type { DocumentData, Firestore } from 'firebase-admin/firestore';
-import { SearchFieldsSystem } from '@creativo/ecs-core';
+import { SearchFieldsSystem } from '@core/systems';
 import { UserId } from '@creativo/domain/models';
 import type { User } from '@creativo/domain/accounts';
 import {
@@ -22,7 +22,7 @@ const COLLECTION = 'users';
 /**
  * The `users/{uid}` search keys (`searchName`, `searchPrefixes`) — Phase 2
  * shim (ECS migration): computed by `SearchFieldsSystem.fromForms`
- * (`@creativo/ecs-core`), the ONE implementation the web's profile adapter
+ * (`@core/systems`), the ONE implementation the web's profile adapter
  * and the functions' user repository share, so the two writers of the
  * document can no longer drift apart.
  */

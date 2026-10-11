@@ -79,17 +79,13 @@ import {
   UiTextDirective,
   UiWeightDirective,
 } from '@creativo/ui/modifiers';
+import { LocalDate, LocationId as LocationKey, defect } from '@core/primitives';
+import { E164, GeoPoint, ShopReach } from '@core/components';
 import {
   CalendarGridSystem,
-  E164,
-  GeoPoint,
-  LocalDate,
-  LocationId as LocationKey,
   type ReachableShop,
-  ShopReach,
   ShopReachSystem,
-  defect,
-} from '@creativo/ecs-core';
+} from '@core/systems';
 import { CLOCK } from '@creativo/application/shared';
 import { translateDomainError } from '@creativo/infrastructure/i18n';
 import { AppointmentsStore, APPOINTMENTS_ZONE } from '../appointments.store';

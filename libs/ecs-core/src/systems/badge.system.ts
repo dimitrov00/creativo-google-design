@@ -1,15 +1,13 @@
-import type { AwardSummary } from '../components/gamification.data';
-import { Gamification } from '../components/gamification.data';
 import {
+  type AwardSummary,
+  Gamification,
   MedalState,
   type BadgeLevel,
   type EarnedLevel,
   type SeriesStanding,
-} from '../components/badge-level.data';
-import { EngagementError } from '../components/engagement-errors.data';
-import { Result } from '../components/result.data';
-import type { BadgeProgress } from '../entities/badge-progress.entity';
-import type { BadgeSeries } from '../entities/badge-series.entity';
+} from '@core/components';
+import { EngagementError, Result } from '@core/primitives';
+import type { BadgeProgress, BadgeSeries } from '@core/entities';
 
 /*
  * ONE MEDAL FAMILY (client-card-redesign §4.2, `badge-series.ts:57-381`):

@@ -1,7 +1,5 @@
-import { BirthDate } from '../components/birth-date.data';
-import { IdentityError } from '../components/identity-errors.data';
-import { Result } from '../components/result.data';
-import { LocalDate } from '../primitives/local-date.primitive';
+import { BirthDate } from '@core/components';
+import { IdentityError, Result, LocalDate } from '@core/primitives';
 
 /**
  * AgeSystem — a person's age from a birth date and a calendar day (blueprint

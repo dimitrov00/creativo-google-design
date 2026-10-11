@@ -1,6 +1,5 @@
-import { EngagementError } from '../components/engagement-errors.data';
-import type { InboxNotification } from '../entities/notification.entity';
-import { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
+import { EngagementError, UtcEpochMs } from '@core/primitives';
+import type { InboxNotification } from '@core/entities';
 
 /*
  * ONE RECIPIENT'S INBOX (`notification.ts:120-148`): read state lives on

@@ -10,25 +10,27 @@ import {
   EmptyIdError as AccountsEmptyIdError,
 } from '@creativo/domain/accounts';
 import {
-  type CouponGrant as CouponGrantData,
   CouponGrantId as CouponGrantIdData,
-  CouponGrantSystem,
   CouponId as CouponIdData,
-  type CouponValue as CouponValueData,
   Currency,
-  DiscountMethod,
   type EngagementError as EngagementErrorData,
   EngagementErrorCode,
-  GrantCapacity,
-  GrantCapacityTerms,
-  GrantExpiry,
-  GrantLifecycle,
   GrantStatus,
   PriceCents,
   UserId as UserIdData,
   UtcEpochMs,
   defect,
-} from '@creativo/ecs-core';
+} from '@core/primitives';
+import {
+  type CouponValue as CouponValueData,
+  DiscountMethod,
+  GrantCapacity,
+  GrantCapacityTerms,
+  GrantExpiry,
+  GrantLifecycle,
+} from '@core/components';
+import { type CouponGrant as CouponGrantData } from '@core/entities';
+import { CouponGrantSystem } from '@core/systems';
 import { CouponValue } from './coupon-value';
 import {
   CouponGrantEmptyReasonError,

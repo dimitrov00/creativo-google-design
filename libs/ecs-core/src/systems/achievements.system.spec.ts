@@ -1,10 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { Metric, MetricRef } from '../components/gamification.data';
-import { Weekday } from '../components/weekday.data';
-import { BarberId, LocationId, ServiceId } from '../primitives/ids.primitive';
-import { MinuteDelta } from '../primitives/duration-minutes.primitive';
-import { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
-import { deepFreeze, localDate, minute, unwrapOk, utcMs } from '../testing';
+import { Metric, MetricRef } from '@core/components';
+import {
+  Weekday,
+  BarberId,
+  LocationId,
+  ServiceId,
+  MinuteDelta,
+  UtcEpochMs,
+} from '@core/primitives';
+import { deepFreeze, localDate, minute, unwrapOk, utcMs } from '@core/testing';
 import { AchievementsSystem, type CountedVisit } from './achievements.system';
 
 /*

@@ -1,5 +1,5 @@
-import type { CapacityEntry } from '../components/capacity-entry.data';
-import { CapacityMonthId } from '../primitives/ids.primitive';
+import type { CapacityEntry } from '@core/components';
+import { CapacityMonthId } from '@core/primitives';
 
 /**
  * The calendar's cost ceiling: one month of every barber's free minutes per
@@ -20,8 +20,3 @@ export type CapacityMonth = {
   /** Sorted by `(localDate, barberId, locationId)`, one entry per key (`CapacityEntry.compare`). */
   readonly entries: readonly CapacityEntry[];
 };
-
-/**
- * Flatten-pass staging: the barrel's id block still names this module for
- * `CapacityMonthId` until the integrator drops that line.
- */

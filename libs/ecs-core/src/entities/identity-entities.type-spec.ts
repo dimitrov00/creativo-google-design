@@ -9,22 +9,19 @@
 import {
   type AccountLifecycle,
   AccountStatus,
-} from '../components/account-status.data';
-import { type Actor, ActorRole } from '../components/actor.data';
-import {
+  type Actor,
+  ActorRole,
   AuditAction,
   type AuditContext,
   AuditTarget,
   type AuditTargetRef,
-} from '../components/audit-context.data';
-import {
   ImpersonationEndReason,
   type ImpersonationLifecycle,
   ImpersonationStatus,
-} from '../components/impersonation-status.data';
-import type { SearchFields } from '../components/search-fields.data';
-import type { CustomerId, UserId } from '../primitives/ids.primitive';
-import type { AllTrue, Disjoint, NoNested } from '../testing';
+  type SearchFields,
+} from '@core/components';
+import type { CustomerId, UserId } from '@core/primitives';
+import type { AllTrue, Disjoint, NoNested } from '@core/testing';
 import type { AuditEntry, AuditEntryMeta } from './audit-entry.entity';
 import type { Customer } from './customer.entity';
 import type {

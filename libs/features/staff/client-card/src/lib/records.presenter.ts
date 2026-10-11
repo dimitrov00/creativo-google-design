@@ -15,13 +15,14 @@ import type {
 import {
   AppointmentId,
   LocalDate,
-  type PersonalRecord as SystemRecord,
-  PersonalRecordKind as SystemRecordKind,
-  type RecordVisit,
-  RecordsSystem,
   ServiceId as ServiceRefId,
   defect,
-} from '@creativo/ecs-core';
+} from '@core/primitives';
+import {
+  type PersonalRecord as SystemRecord,
+  PersonalRecordKind as SystemRecordKind,
+} from '@core/components';
+import { type RecordVisit, RecordsSystem } from '@core/systems';
 import type { UiIconName } from '@creativo/ui/controls';
 import type { AchievementsContext } from './achievements.presenter';
 import {

@@ -26,25 +26,29 @@ import {
 } from '@creativo/features/shared/visits';
 import {
   AchievementRuleId,
-  AgeSystem,
-  BirthDate,
-  ClientGlanceSystem,
-  CouponGrantSystem,
-  CouponOccasion,
   Currency,
-  type GiftVoucher as EcsGiftVoucher,
   GiftVoucherId,
-  type GlanceHoldings,
   LocalDate,
   PriceCents,
   type TimeZone,
   UserId as UserRefId,
   UtcEpochMs,
+  defect,
+} from '@core/primitives';
+import {
+  BirthDate,
+  CouponOccasion,
   VoucherCode,
   VoucherLifecycle,
+} from '@core/components';
+import { type GiftVoucher as EcsGiftVoucher } from '@core/entities';
+import {
+  AgeSystem,
+  ClientGlanceSystem,
+  CouponGrantSystem,
+  type GlanceHoldings,
   ZonedTimeSystem,
-  defect,
-} from '@creativo/ecs-core';
+} from '@core/systems';
 import type { AchievementsContext } from './achievements.presenter';
 import type { ClientCardGrant } from './client-card.contracts';
 import {

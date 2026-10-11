@@ -1,5 +1,4 @@
-import type { ServiceId } from '../primitives/ids.primitive';
-import type { LocalDate } from '../primitives/local-date.primitive';
+import type { ServiceId, LocalDate } from '@core/primitives';
 
 /**
  * A personal best of the «Рекорди» rail — the element's field

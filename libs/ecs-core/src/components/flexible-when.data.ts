@@ -1,7 +1,5 @@
-import type { LocalDate } from '../primitives/local-date.primitive';
+import { type LocalDate, Result, SchedulingError } from '@core/primitives';
 import { DayWindows } from './day-windows.data';
-import { Result } from './result.data';
-import { SchedulingError } from './scheduling-errors.data';
 
 function byLocalDate(a: DayWindows, b: DayWindows): number {
   return a.localDate < b.localDate ? -1 : a.localDate > b.localDate ? 1 : 0;

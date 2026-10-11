@@ -1,30 +1,32 @@
 import type { Observable } from 'rxjs';
-import type { BookingPolicy } from '../components/booking-policy.data';
-import type { PipelineError } from '../components/pipeline-errors.data';
-import type { RepositoryError } from '../components/repository-errors.data';
-import type { Result } from '../components/result.data';
-import type { Appointment } from '../entities/appointment.entity';
-import type { BarberBusyDay } from '../entities/barber-busy-day.entity';
-import type { BarberLeadTimeSample } from '../entities/barber-lead-time-sample.entity';
-import type { BarberSchedule } from '../entities/barber-schedule.entity';
-import type { CapacityMonth } from '../entities/capacity-month.entity';
-import type { ClientMoneyRecord } from '../entities/client-money-stats.entity';
-import type { ClientStatsRecord } from '../entities/client-stats.entity';
-import type { PolicyRecomputeJob } from '../entities/policy-recompute-job.entity';
-import type { ScheduleException } from '../entities/schedule-exception.entity';
-import type { ShopLocation } from '../entities/shop-location.entity';
-import type { WaitlistRequest } from '../entities/waitlist-request.entity';
-import type { BusyKey } from '../primitives/busy-key.primitive';
+import type { BookingPolicy } from '@core/components';
 import type {
+  PipelineError,
+  RepositoryError,
+  Result,
+  BusyKey,
   AppointmentId,
   BarberId,
   CapacityMonthId,
   LocationId,
   UserId,
   WaitlistRequestId,
-} from '../primitives/ids.primitive';
-import type { LocalDate } from '../primitives/local-date.primitive';
-import type { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
+  LocalDate,
+  UtcEpochMs,
+} from '@core/primitives';
+import type {
+  Appointment,
+  BarberBusyDay,
+  BarberLeadTimeSample,
+  BarberSchedule,
+  CapacityMonth,
+  ClientMoneyRecord,
+  ClientStatsRecord,
+  PolicyRecomputeJob,
+  ScheduleException,
+  ShopLocation,
+  WaitlistRequest,
+} from '@core/entities';
 import type { CallableName } from './callables';
 
 /**

@@ -60,43 +60,47 @@ import {
 } from './seat-outcome';
 import { TimeSlot } from './time-slot';
 import {
-  type Appointment as AppointmentData,
   AppointmentId as AppointmentIdData,
-  AppointmentIndexSystem,
-  AppointmentLifecycleSystem,
   BarberId as BarberIdData,
-  BarberPreference,
-  BillingSystem,
-  BookingContact as BookingContactData,
-  CancellationReasonSet,
   Currency,
   DurationMinutes,
   EndMinute,
-  type LifecycleSlice,
   type LocalDate,
   LocationId as LocationIdData,
   MinuteCount,
   type MinuteOfDay,
-  type Money as MoneyData,
-  MoveSystem,
   PriceCents,
   SchedulingErrorCode,
   type SchedulingError,
-  Seat as SeatData,
   SeatId as SeatIdData,
-  SeatLabel as SeatLabelData,
-  SeatOccupant,
-  type SeatOutcome as SeatOutcomeData,
   ServiceId as ServiceIdData,
   ServiceVariantId as ServiceVariantIdData,
-  StoodSeatPairs,
-  SubjectRelationship,
   type TimeZone,
   UserId as UserIdData,
   UtcEpochMs,
-  ZonedTimeSystem,
   defect,
-} from '@creativo/ecs-core';
+} from '@core/primitives';
+import {
+  BarberPreference,
+  BookingContact as BookingContactData,
+  CancellationReasonSet,
+  type Money as MoneyData,
+  Seat as SeatData,
+  SeatLabel as SeatLabelData,
+  SeatOccupant,
+  type SeatOutcome as SeatOutcomeData,
+  StoodSeatPairs,
+  SubjectRelationship,
+} from '@core/components';
+import { type Appointment as AppointmentData } from '@core/entities';
+import {
+  AppointmentIndexSystem,
+  AppointmentLifecycleSystem,
+  BillingSystem,
+  type LifecycleSlice,
+  MoveSystem,
+  ZonedTimeSystem,
+} from '@core/systems';
 
 /*
  * THIN SHIM (ECS migration Phase 2). The appointment's math lives in the

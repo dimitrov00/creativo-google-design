@@ -1,10 +1,15 @@
-import type { BarberOffering } from '../components/barber-offering.data';
-import { Money } from '../components/money.data';
-import type { ServiceTerms } from '../components/service-terms.data';
-import type { Currency } from '../primitives/currency.primitive';
-import { DurationMinutes } from '../primitives/duration-minutes.primitive';
-import type { BarberId, ServiceVariantId } from '../primitives/ids.primitive';
-import { PriceCents } from '../primitives/price-cents.primitive';
+import {
+  type BarberOffering,
+  Money,
+  type ServiceTerms,
+} from '@core/components';
+import {
+  type Currency,
+  DurationMinutes,
+  type BarberId,
+  type ServiceVariantId,
+  PriceCents,
+} from '@core/primitives';
 import {
   OfferingPriceSystem,
   type PricedService,

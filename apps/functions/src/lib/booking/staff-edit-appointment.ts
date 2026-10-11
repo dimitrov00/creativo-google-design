@@ -1,5 +1,6 @@
 import { HttpsError, onCall } from 'firebase-functions/v2/https';
-import { AuditSystem, OperationId } from '@creativo/ecs-core';
+import { OperationId } from '@core/primitives';
+import { AuditSystem } from '@core/systems';
 import { FirestoreBookingStore } from '../../adapters/firestore-booking-store';
 import { FirestoreDiscountResolver } from '../../adapters/firestore-discount-resolver';
 import { FirestoreVoucherLedger } from '../../adapters/firestore-voucher-ledger';

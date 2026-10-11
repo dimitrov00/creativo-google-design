@@ -1,7 +1,5 @@
-import { IdentityError } from './identity-errors.data';
-import { Result } from './result.data';
+import { IdentityError, Result, TenantId } from '@core/primitives';
 import { type Role, knownRoles } from './role.data';
-import { TenantId } from '../primitives/ids.primitive';
 
 /**
  * The account's stage on the token — the stored `stage` claim strings,

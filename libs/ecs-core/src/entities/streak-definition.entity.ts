@@ -1,13 +1,5 @@
-import type { LocalizedText } from '../components/localized-text.data';
-import type { StreakHeadRule } from '../components/streak-rule.data';
-import type { StreakDefinitionId } from '../primitives/ids.primitive';
-import type { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
-
-/*
- * The id lives in `primitives/ids.primitive.ts` (flatten-spec §1.5); it is
- * re-exported here only while the barrel's staging block still names this
- * file (`index.ts`), and leaves with that line.
- */
+import type { LocalizedText, StreakHeadRule } from '@core/components';
+import type { StreakDefinitionId, UtcEpochMs } from '@core/primitives';
 
 /**
  * `streakDefinitions/{id}` — the HEAD every reader loads: the rule in force

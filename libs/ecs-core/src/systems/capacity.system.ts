@@ -1,16 +1,18 @@
-import { CapacityEntry } from '../components/capacity-entry.data';
-import type { MinuteRange } from '../components/minute-range.data';
-import type { DayHours } from '../components/opening-hours.data';
-import type { RosterWindow } from '../components/roster-window.data';
-import type { ScheduleVersion } from '../components/schedule-version.data';
-import type { CapacityMonth } from '../entities/capacity-month.entity';
-import type { MinuteCount } from '../primitives/duration-minutes.primitive';
-import type {
-  BarberId,
-  CapacityMonthId,
-  LocationId,
-} from '../primitives/ids.primitive';
-import { LocalDate } from '../primitives/local-date.primitive';
+import {
+  CapacityEntry,
+  type MinuteRange,
+  type DayHours,
+  type RosterWindow,
+  type ScheduleVersion,
+} from '@core/components';
+import type { CapacityMonth } from '@core/entities';
+import {
+  type MinuteCount,
+  type BarberId,
+  type CapacityMonthId,
+  type LocationId,
+  LocalDate,
+} from '@core/primitives';
 import { AvailabilitySystem } from './availability.system';
 import { IntervalSetSystem } from './interval-set.system';
 import {

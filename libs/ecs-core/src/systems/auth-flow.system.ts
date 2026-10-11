@@ -3,10 +3,9 @@ import {
   type AuthFlowEvent,
   AuthFlowState,
   AuthFlowStep,
-} from '../components/auth-flow.data';
-import { IdentityError } from '../components/identity-errors.data';
-import { Result } from '../components/result.data';
-import { SessionKind } from '../components/session-kind.data';
+  SessionKind,
+} from '@core/components';
+import { IdentityError, Result } from '@core/primitives';
 
 /**
  * AuthFlowSystem — the identity flow's transition function (blueprint

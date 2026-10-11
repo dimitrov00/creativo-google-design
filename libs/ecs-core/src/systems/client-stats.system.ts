@@ -1,10 +1,7 @@
-import { BarberPreference } from '../components/barber-pref.data';
 import {
+  BarberPreference,
   BookingLifecycle,
-  BookingStatus,
-} from '../components/booking-lifecycle.data';
-import { ClientStatsPolicy } from '../components/client-stats-policy.data';
-import {
+  ClientStatsPolicy,
   type ClientMoneyStats,
   type ClientStats,
   type ClientStatsMeta,
@@ -15,35 +12,34 @@ import {
   PolicyPassStamp,
   type VisitFact,
   type VisitLeg,
-} from '../components/client-stats.data';
-import type { Placement } from '../components/placement-kind.data';
-import {
-  AttendanceState,
+  type Placement,
   CancellationReason,
   CancelledBy,
   type SeatOutcome,
-} from '../components/seat-outcome.data';
-import { type Seat, SeatSubject } from '../components/seat.data';
-import type { ShopNow } from '../components/shop-now.data';
-import { type DocPath, WriteOp } from '../components/write-op.data';
-import type { Appointment } from '../entities/appointment.entity';
-import { Currency } from '../primitives/currency.primitive';
-import type { DurationMinutes } from '../primitives/duration-minutes.primitive';
-import type {
-  AppointmentId,
-  BarberId,
-  SeatId,
-  ServiceId,
-  ServiceVariantId,
-  UserId,
-} from '../primitives/ids.primitive';
-import { LocalDate } from '../primitives/local-date.primitive';
-import type {
-  EndMinute,
-  MinuteOfDay,
-} from '../primitives/minute-of-day.primitive';
-import { PriceCents } from '../primitives/price-cents.primitive';
-import { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
+  type Seat,
+  SeatSubject,
+  type ShopNow,
+  type DocPath,
+  WriteOp,
+} from '@core/components';
+import {
+  BookingStatus,
+  AttendanceState,
+  Currency,
+  type DurationMinutes,
+  type AppointmentId,
+  type BarberId,
+  type SeatId,
+  type ServiceId,
+  type ServiceVariantId,
+  type UserId,
+  LocalDate,
+  type EndMinute,
+  type MinuteOfDay,
+  PriceCents,
+  UtcEpochMs,
+} from '@core/primitives';
+import type { Appointment } from '@core/entities';
 
 /**
  * One client's statistics, from every appointment they have a seat on

@@ -1,6 +1,5 @@
-import { Party } from '../components/party.data';
-import { SeatLabel } from '../components/seat-label.data';
-import { SeatKeyText } from '../primitives/ids.primitive';
+import { Party, SeatLabel } from '@core/components';
+import { SeatKeyText } from '@core/primitives';
 
 /**
  * Who a requested seat is for — the ONLY source of these strings, named after

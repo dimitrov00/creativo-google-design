@@ -1,11 +1,7 @@
 import { ZonedDateTime } from '@creativo/application/accounts';
 import { Appointment } from '@creativo/application/booking';
-import {
-  CalendarGridSystem,
-  type CalendarWeek,
-  LocalDate,
-  defect,
-} from '@creativo/ecs-core';
+import { LocalDate, defect } from '@core/primitives';
+import { CalendarGridSystem, type CalendarWeek } from '@core/systems';
 
 export interface CalendarDayCell {
   readonly date: ZonedDateTime;
@@ -28,7 +24,7 @@ export interface CalendarMonth {
  * port — never a raw `Date`.
  *
  * Phase 2 shim: the grid is `CalendarGridSystem.monthGrid` in
- * `@creativo/ecs-core`, on the shop's civil days (`LocalDate`, no zone, no
+ * `@core/systems`, on the shop's civil days (`LocalDate`, no zone, no
  * day table — flatten pass, Law 7); this keeps the legacy cells (each with
  * its `ZonedDateTime`, dated in the anchor's own zone) for its callers.
  */

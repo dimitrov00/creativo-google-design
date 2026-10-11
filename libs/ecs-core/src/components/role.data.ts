@@ -1,5 +1,4 @@
-import { AccountsError } from './accounts-errors.data';
-import { Result } from './result.data';
+import { AccountsError, Result } from '@core/primitives';
 
 /**
  * The roles a user account may hold — the ONLY source of these strings

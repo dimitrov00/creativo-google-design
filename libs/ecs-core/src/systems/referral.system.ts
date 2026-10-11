@@ -1,10 +1,11 @@
-import { EngagementError } from '../components/engagement-errors.data';
-import { RedemptionCount } from '../components/redemption-count.data';
-import { Result } from '../components/result.data';
-import type { InvitationRedemption } from '../entities/invitation-redemption.entity';
-import type { Invitation } from '../entities/invitation.entity';
-import type { UserId } from '../primitives/ids.primitive';
-import type { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
+import {
+  EngagementError,
+  Result,
+  type UserId,
+  type UtcEpochMs,
+} from '@core/primitives';
+import { RedemptionCount } from '@core/components';
+import type { InvitationRedemption, Invitation } from '@core/entities';
 
 /*
  * AN INVITATION REDEEMED (`invitation.ts:105-115`,

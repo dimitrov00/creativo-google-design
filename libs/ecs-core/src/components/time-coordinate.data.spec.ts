@@ -5,8 +5,8 @@ import {
   localDate,
   minute,
   utcMs,
-} from '../testing';
-import { ZonedTimeSystem } from '../systems/zoned-time.system';
+} from '@core/testing';
+import { ZonedTimeSystem } from '@core/systems';
 import { TimeCoordinate } from './time-coordinate.data';
 
 const DAY = localDate('2026-10-07');

@@ -1,26 +1,19 @@
-import type { Actor } from '../components/actor.data';
 import type {
+  Actor,
   JournalEffectRecord,
   JournalVisibility,
   LabelCode,
   LabelParam,
-} from '../components/journal-effect.data';
-import type { JournalSourceRecord } from '../components/journal-source.data';
+  JournalSourceRecord,
+} from '@core/components';
 import type {
   AppointmentId,
   CorrelationId,
   JournalEntryId,
   UserId,
-} from '../primitives/ids.primitive';
-import type { LocalDate } from '../primitives/local-date.primitive';
-import type { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
-
-/*
- * The id lives in `primitives/ids.primitive.ts` (flatten-spec §1.5), with
- * its `forEntry(userId, seq)`; it is re-exported here only while the
- * barrel's staging block still names this file (`index.ts`), and leaves
- * with that line.
- */
+  LocalDate,
+  UtcEpochMs,
+} from '@core/primitives';
 
 /**
  * The entry's identity slice: the id, the client, the order and the

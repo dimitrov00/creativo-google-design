@@ -1,10 +1,13 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { AuthClaims } from '../components/auth-claims.data';
-import { type Principal, Principal as P } from '../components/principal.data';
-import { Role } from '../components/role.data';
-import { TenantId, UserId } from '../primitives/ids.primitive';
-import { deepFreeze, unwrapOk } from '../testing';
+import {
+  AuthClaims,
+  type Principal,
+  Principal as P,
+  Role,
+} from '@core/components';
+import { TenantId, UserId } from '@core/primitives';
+import { deepFreeze, unwrapOk } from '@core/testing';
 import {
   AccessTarget,
   AccessVerdict,

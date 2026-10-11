@@ -1,10 +1,6 @@
-import {
-  RedeemProblem,
-  type RedemptionRecord,
-} from '../components/reward-redemption.data';
-import type { RewardCatalogItem } from '../entities/reward-catalog-item.entity';
-import type { CouponGrantId } from '../primitives/ids.primitive';
-import { LocalDate } from '../primitives/local-date.primitive';
+import { RedeemProblem, type RedemptionRecord } from '@core/components';
+import type { RewardCatalogItem } from '@core/entities';
+import { type CouponGrantId, LocalDate } from '@core/primitives';
 
 /*
  * WHAT POINTS BUY (client-card-redesign §4.2, `standing.ts:319-391`; the

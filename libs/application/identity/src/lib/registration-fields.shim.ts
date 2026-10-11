@@ -1,7 +1,4 @@
-import {
-  REGISTRATION_FIELDS,
-  type RegistrationFields,
-} from '@creativo/ecs-core';
+import { REGISTRATION_FIELDS, type RegistrationFields } from '@core/components';
 import { RegistrationField } from '@creativo/domain/identity';
 
 /**

@@ -6,11 +6,9 @@ import {
   RecurrencePattern,
   RecurrenceRule,
   WeekOfMonth,
-} from '../components/recurrence-rule.data';
-import { SchedulingErrorCode } from '../components/scheduling-errors.data';
-import { Weekday } from '../components/weekday.data';
-import { LocalDate } from '../primitives/local-date.primitive';
-import { deepFreeze, localDate, unwrapOk } from '../testing';
+} from '@core/components';
+import { SchedulingErrorCode, Weekday, LocalDate } from '@core/primitives';
+import { deepFreeze, localDate, unwrapOk } from '@core/testing';
 import { RecurrenceSystem } from './recurrence.system';
 
 /*

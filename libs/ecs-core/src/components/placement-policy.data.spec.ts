@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { termsFixture } from '../testing/booking-core.fixtures';
-import { SeatKeyText } from '../primitives/ids.primitive';
+import { termsFixture } from '@core/testing';
+import { SeatKeyText } from '@core/primitives';
 import { PlacementPolicy, StaffTermsOverride } from './placement-policy.data';
 
 describe('PlacementPolicy', () => {

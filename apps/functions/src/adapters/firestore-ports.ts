@@ -1,5 +1,5 @@
 import type { Firestore } from 'firebase-admin/firestore';
-import type { Hash, NextId, NowUtcMs, TxPorts } from '@creativo/ecs-core';
+import type { Hash, NextId, NowUtcMs, TxPorts } from '@core/ports';
 import { firestoreCommitPlan } from './firestore-tx.adapter';
 
 /**

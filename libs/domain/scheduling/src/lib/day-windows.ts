@@ -1,13 +1,7 @@
 import { Result, fail, ok } from '@creativo/domain/kernel';
-import {
-  AvailabilitySystem,
-  DayWindows as DayWindowsData,
-  EndMinute,
-  LocalDate,
-  MinuteOfDay,
-  MinuteRange,
-  ZonedTimeSystem,
-} from '@creativo/ecs-core';
+import { EndMinute, LocalDate, MinuteOfDay } from '@core/primitives';
+import { DayWindows as DayWindowsData, MinuteRange } from '@core/components';
+import { AvailabilitySystem, ZonedTimeSystem } from '@core/systems';
 import { CalendarDay } from './calendar-day';
 import type { InvalidCalendarDayError } from './calendar-day.errors';
 import { Interval } from './interval';

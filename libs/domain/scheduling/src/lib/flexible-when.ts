@@ -1,13 +1,10 @@
 import { Result, fail, ok } from '@creativo/domain/kernel';
+import { EndMinute, LocalDate, MinuteOfDay, defect } from '@core/primitives';
 import {
   DayWindows as DayWindowsData,
-  EndMinute,
-  LocalDate,
-  MinuteOfDay,
   MinuteRange,
   FlexibleWhen as WhenData,
-  defect,
-} from '@creativo/ecs-core';
+} from '@core/components';
 import { CalendarDay } from './calendar-day';
 import {
   DayWindows,

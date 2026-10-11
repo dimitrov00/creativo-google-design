@@ -305,13 +305,14 @@ export const ECS_SYSTEM_RESTRICTIONS = [
       'A system never imports a port, adapter or pipeline (Law 3): the pipeline loads data and calls the system.',
   },
   {
-    // The one sanctioned exception, spelled out: `ports/collections.ts` is a
-    // values file (the collection registry a `WriteOp` path is built from,
-    // blueprint §4.2); every other module of `ports/` is the I/O boundary.
-    // A `*.port`/`*.adapter`/`*.pipeline` path is left to the selector above.
-    selector: String.raw`ImportDeclaration[source.value=/(^|\/)ports\/(?!collections$)(?![^\/]*\.(port|adapter|pipeline)$)[^\/]+$/]`,
+    // Law 8.2: a system never imports the ports or pipelines tiers — not
+    // their barrels (`@core/ports`, `@core/pipelines`), not any module inside
+    // them. There is no exception: the collection registry a `WriteOp` path
+    // is built from is `entities/collections.ts` (`@core/entities`). A
+    // `*.port`/`*.adapter`/`*.pipeline` path is left to the selector above.
+    selector: String.raw`ImportDeclaration[source.value=/(^|\/)(ports|pipelines)(\/(?!.*\.(port|adapter|pipeline)$).+)?$/]`,
     message:
-      'A system imports nothing from `ports/` but the collection registry `ports/collections` (Law 3, blueprint §4.2): the pipeline owns the I/O boundary.',
+      'A system imports nothing from the ports or pipelines tiers (Law 3, Law 8.2) — not `@core/ports`, not `@core/pipelines`, not a module inside them: the pipeline owns the I/O boundary. The collection registry is `@core/entities`.',
   },
   ECS_INTL_RESTRICTION,
   FREEZE_GUARD,

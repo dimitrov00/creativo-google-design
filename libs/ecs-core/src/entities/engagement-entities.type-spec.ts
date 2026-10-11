@@ -9,40 +9,30 @@
  * `primitives/ids.primitive.ts`. `tsc` failing — on a `false` constant or an
  * unused `@ts-expect-error` — IS the test; nothing here runs.
  */
-import type { Actor } from '../components/actor.data';
 import {
+  type Actor,
   BadgeSubject,
   type BadgeSubjectSlot,
   type MetricRef,
   type SeasonWindow,
-} from '../components/gamification.data';
-import {
   JournalEffect,
   type JournalEffectRecord,
   RewardRef,
-} from '../components/journal-effect.data';
-import {
   JournalSource,
   type JournalSourceRecord,
-} from '../components/journal-source.data';
-import {
   type NotificationPayload,
   NotificationTopic,
-} from '../components/notification-payload.data';
-import type { PointsExpiry } from '../components/points-expiry.data';
-import {
+  type PointsExpiry,
   RewardGrant,
   type RewardGrantRule,
-} from '../components/reward-grant.data';
-import { StreakInterval } from '../components/streak-interval.data';
-import { StreakQualifier } from '../components/streak-qualifier.data';
-import type { StreakRule } from '../components/streak-rule.data';
-import {
+  StreakInterval,
+  StreakQualifier,
+  type StreakRule,
   type TierOverride,
   TierOverrideSource,
   type TierStanding,
   type TierState,
-} from '../components/tier-state.data';
+} from '@core/components';
 import type {
   BadgeCategoryId,
   BadgeSeriesId,
@@ -57,8 +47,8 @@ import type {
   StreakDefinitionId,
   StreakDefinitionVersionId,
   TierId,
-} from '../primitives/ids.primitive';
-import type { AllTrue, Disjoint, NoNested } from '../testing';
+} from '@core/primitives';
+import type { AllTrue, Disjoint, NoNested } from '@core/testing';
 import type { BadgeCategory } from './badge-category.entity';
 import type { BadgeProgress } from './badge-progress.entity';
 import type { BadgeSeries, BadgeSeriesMeta } from './badge-series.entity';

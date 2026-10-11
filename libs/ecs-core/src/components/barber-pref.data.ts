@@ -1,4 +1,4 @@
-import type { BarberId } from '../primitives/ids.primitive';
+import type { BarberId } from '@core/primitives';
 
 /**
  * The preference tags — the ONLY source of these strings, named after the

@@ -4,31 +4,24 @@ import {
   AccountLifecycle,
   AccountStatus,
   BlockReason,
-} from '../components/account-status.data';
-import { AuthStage } from '../components/auth-claims.data';
-import {
+  AuthStage,
   AuthStrategy,
   AuthStrategyKind,
-} from '../components/auth-strategy.data';
-import { BirthDate } from '../components/birth-date.data';
-import { Email } from '../components/email.data';
-import {
-  IdentifierChannel,
+  BirthDate,
+  Email,
   ParsedIdentifier,
-} from '../components/identifier.data';
-import { E164 } from '../components/phone-number.data';
-import {
+  E164,
   REGISTRATION_FIELDS,
   Registration,
   RegistrationField,
   type RegistrationFields,
   RegistrationState,
   isRegistrationField,
-} from '../components/registration.data';
-import { Role } from '../components/role.data';
-import type { User } from '../entities/user.entity';
-import { TenantId, UserId } from '../primitives/ids.primitive';
-import { deepFreeze, unwrapOk, utcMs } from '../testing';
+  Role,
+} from '@core/components';
+import { IdentifierChannel, TenantId, UserId } from '@core/primitives';
+import type { User } from '@core/entities';
+import { deepFreeze, unwrapOk, utcMs } from '@core/testing';
 import {
   type RegistrationStanding,
   RegistrationSystem,

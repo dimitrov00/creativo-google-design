@@ -1,13 +1,12 @@
+import { IdentifierChannel } from '@core/primitives';
 import {
   BirthDate as BirthDay,
   E164,
   Email,
-  IdentifierChannel,
   RegistrationState,
-  type RegistrationStanding,
-  RegistrationSystem,
   type Role,
-} from '@creativo/ecs-core';
+} from '@core/components';
+import { type RegistrationStanding, RegistrationSystem } from '@core/systems';
 import { AccountStatus, User } from '@creativo/domain/accounts';
 import { Result, fail, ok } from '@creativo/domain/kernel';
 import {
@@ -100,7 +99,7 @@ const BIRTH_DATE_ZONE = 'UTC';
 /*
  * Phase 2 shim (ECS migration): the login channel's own field, the
  * strategy's required-field check and the settle of the registered profile
- * (what a re-run keeps) are `RegistrationSystem` (`@creativo/ecs-core`); the
+ * (what a re-run keeps) are `RegistrationSystem` (`@core/systems`); the
  * birthday goes through the identity `BirthDate`, itself a shim over
  * `AgeSystem`. The converter below is the only code besides the delegating
  * calls.

@@ -1,10 +1,6 @@
 import { Id, Result, ZonedDateTime, fail, ok } from '@creativo/domain/kernel';
-import {
-  NotificationSystem,
-  UtcEpochMs,
-  defect,
-  type NotificationReceipt,
-} from '@creativo/ecs-core';
+import { UtcEpochMs, defect } from '@core/primitives';
+import { NotificationSystem, type NotificationReceipt } from '@core/systems';
 import {
   EmptyNotificationIdError,
   EmptyNotificationTitleError,
@@ -67,7 +63,7 @@ export interface NotificationProps {
  * The port returns whole notifications, so adding them later is additive.
  *
  * A thin shim since the ECS migration's Phase 2: the read state and the
- * receipt rule are `NotificationSystem` (`@creativo/ecs-core`); the bridge
+ * receipt rule are `NotificationSystem` (`@core/systems`); the bridge
  * is `receiptOf` at the end.
  */
 export class Notification {

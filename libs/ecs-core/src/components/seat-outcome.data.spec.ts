@@ -1,9 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
-import { unwrapOk } from '../testing';
-import { BookingLifecycle, BookingStatus } from './booking-lifecycle.data';
+import { UtcEpochMs, BookingStatus, AttendanceState } from '@core/primitives';
+import { unwrapOk } from '@core/testing';
+import { BookingLifecycle } from './booking-lifecycle.data';
 import {
-  AttendanceState,
   CancellationReason,
   CancellationReasonSet,
   CancelledBy,

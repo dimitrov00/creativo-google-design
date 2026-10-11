@@ -1,17 +1,25 @@
-import { BookingLifecycle } from '../components/booking-lifecycle.data';
-import { BlockKind, MinuteBlock } from '../components/minute-block.data';
-import type { MinuteRange } from '../components/minute-range.data';
-import { Seat } from '../components/seat.data';
-import { WriteOp } from '../components/write-op.data';
-import type { Appointment } from '../entities/appointment.entity';
-import type { BarberBusyDay } from '../entities/barber-busy-day.entity';
-import { BusyKey } from '../primitives/busy-key.primitive';
-import { defect } from '../primitives/defect';
-import type { BarberId } from '../primitives/ids.primitive';
-import type { LocalDate } from '../primitives/local-date.primitive';
-import { EndMinute, MinuteOfDay } from '../primitives/minute-of-day.primitive';
-import type { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
-import { Collections } from '../ports/collections';
+import {
+  BookingLifecycle,
+  BlockKind,
+  MinuteBlock,
+  type MinuteRange,
+  Seat,
+  WriteOp,
+} from '@core/components';
+import {
+  type Appointment,
+  type BarberBusyDay,
+  Collections,
+} from '@core/entities';
+import {
+  BusyKey,
+  defect,
+  type BarberId,
+  type LocalDate,
+  EndMinute,
+  MinuteOfDay,
+  type UtcEpochMs,
+} from '@core/primitives';
 import { AppointmentIndexSystem } from './appointment-index.system';
 import { IntervalSetSystem } from './interval-set.system';
 

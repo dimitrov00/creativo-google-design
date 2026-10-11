@@ -32,11 +32,7 @@ import {
 import type { BookingCart, MoveRider } from '@creativo/application/booking';
 import {
   BarberId as BarberKey,
-  type BookingCart as CartData,
-  BookingCartSystem,
   CartLineId as LineKey,
-  type CartRider,
-  type CartServiceScope,
   DurationMinutes,
   LocationId as LocationKey,
   MinuteCount,
@@ -45,7 +41,13 @@ import {
   ServiceId as ServiceKey,
   ServiceVariantId as VariantKey,
   defect,
-} from '@creativo/ecs-core';
+} from '@core/primitives';
+import { type BookingCart as CartData } from '@core/components';
+import {
+  BookingCartSystem,
+  type CartRider,
+  type CartServiceScope,
+} from '@core/systems';
 import {
   BarberId,
   type LocationId,

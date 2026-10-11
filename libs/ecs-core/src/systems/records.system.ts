@@ -1,9 +1,5 @@
-import {
-  PersonalRecordKind,
-  type PersonalRecord,
-} from '../components/personal-record.data';
-import type { AppointmentId } from '../primitives/ids.primitive';
-import { LocalDate } from '../primitives/local-date.primitive';
+import { PersonalRecordKind, type PersonalRecord } from '@core/components';
+import { type AppointmentId, LocalDate } from '@core/primitives';
 
 /*
  * «РЕКОРДИ» (client-card-revision-3 §2.3.4, §4.8; `records.presenter.ts`

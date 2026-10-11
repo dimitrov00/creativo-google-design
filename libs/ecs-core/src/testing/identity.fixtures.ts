@@ -1,14 +1,16 @@
-import { AccountLifecycle } from '../components/account-status.data';
-import { E164 } from '../components/phone-number.data';
-import { RegistrationState } from '../components/registration.data';
-import { Role } from '../components/role.data';
-import type { User } from '../entities/user.entity';
-import { UserId } from '../primitives/ids.primitive';
+import {
+  AccountLifecycle,
+  E164,
+  RegistrationState,
+  Role,
+} from '@core/components';
+import type { User } from '@core/entities';
+import { UserId } from '@core/primitives';
 
 /**
  * The identity fixtures (flatten-spec §8.1/§8.7) — the account entities in
  * their flat, branded shapes, every field present, overridable field by
- * field. Test support only, reached through `@creativo/ecs-core/testing`.
+ * field. Test support only, reached through `@core/testing`.
  *
  * Self-contained on purpose: `testing.ts` re-exports this file, so it never
  * imports `testing.ts` back (a cycle would hand a spec half-initialised

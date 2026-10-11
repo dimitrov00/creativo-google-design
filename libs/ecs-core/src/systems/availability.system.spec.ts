@@ -1,26 +1,38 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { BarberPref, BarberPreference } from '../components/barber-pref.data';
-import { BookingPolicy } from '../components/booking-policy.data';
-import { DayWindows } from '../components/day-windows.data';
-import { MinuteRange } from '../components/minute-range.data';
-import { ShopNow } from '../components/shop-now.data';
+import {
+  BarberPref,
+  BarberPreference,
+  BookingPolicy,
+  DayWindows,
+  MinuteRange,
+  ShopNow,
+  ExceptionDetail,
+  ExceptionEffectRule,
+  ShopDayHours,
+  ScheduleVersion,
+  ShiftSegment,
+} from '@core/components';
 import {
   BarberId,
   CartLineId,
   LocationId,
   SeatKeyText,
-} from '../primitives/ids.primitive';
-import {
   type DurationMinutes,
   MinuteCount,
-} from '../primitives/duration-minutes.primitive';
-import type { MinuteOfDay } from '../primitives/minute-of-day.primitive';
+  type MinuteOfDay,
+  Weekday,
+} from '@core/primitives';
 import {
   duration,
   minuteCount,
   minuteDelta,
-} from '../testing/booking-core.fixtures';
+  deepFreeze,
+  endMinute,
+  localDate,
+  minute,
+  utcMs,
+} from '@core/testing';
 import {
   type AvailabilityAssignment,
   type AvailabilityLine,
@@ -37,15 +49,6 @@ import {
 import { IntervalSetSystem } from './interval-set.system';
 import { type DayException, RosterSystem } from './roster.system';
 import { ScheduleExceptionSystem } from './schedule-exception.system';
-import { deepFreeze, endMinute, localDate, minute, utcMs } from '../testing';
-import { ExceptionDetail } from '../components/exception-detail.data';
-import { ExceptionEffectRule } from '../components/exception-effect.data';
-import { ShopDayHours } from '../components/roster-window.data';
-import {
-  ScheduleVersion,
-  ShiftSegment,
-} from '../components/schedule-version.data';
-import { Weekday } from '../components/weekday.data';
 
 /*
  * The cases of libs/domain/scheduling/src/lib/availability.spec.ts, copied

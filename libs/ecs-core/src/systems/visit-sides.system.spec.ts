@@ -1,7 +1,7 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { PriceCents } from '../primitives/price-cents.primitive';
-import { deepFreeze, unwrapOk } from '../testing';
+import { PriceCents } from '@core/primitives';
+import { deepFreeze, unwrapOk } from '@core/testing';
 import {
   type DrawnSides,
   type LiveSides,

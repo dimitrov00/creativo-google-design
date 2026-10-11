@@ -1,5 +1,5 @@
 import { DomainError } from '@creativo/domain/kernel';
-import type { TimeError } from '@creativo/ecs-core';
+import type { TimeError } from '@core/primitives';
 
 /**
  * Every way a commit can be refused, as codes the client maps to copy.

@@ -3,9 +3,9 @@ import {
   AppointmentId,
   CouponGrantId,
   WaitlistRequestId,
-} from '../primitives/ids.primitive';
-import { FIXTURE_TIME_ZONE, localDate, minute, utcMs } from '../testing';
-import { ZonedTimeSystem } from '../systems/zoned-time.system';
+} from '@core/primitives';
+import { FIXTURE_TIME_ZONE, localDate, minute, utcMs } from '@core/testing';
+import { ZonedTimeSystem } from '@core/systems';
 import { RewardRefFields } from './journal-effect.data';
 import {
   NotificationPayload,

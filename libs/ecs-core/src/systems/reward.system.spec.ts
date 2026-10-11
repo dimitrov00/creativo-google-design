@@ -1,10 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { Points } from '../components/points.data';
-import { RewardGrantRule } from '../components/reward-grant.data';
-import { RedeemProblem } from '../components/reward-redemption.data';
-import type { RewardCatalogItem } from '../entities/reward-catalog-item.entity';
-import { CouponGrantId, CouponId, RewardId } from '../primitives/ids.primitive';
-import { deepFreeze, localDate } from '../testing';
+import { Points, RewardGrantRule, RedeemProblem } from '@core/components';
+import type { RewardCatalogItem } from '@core/entities';
+import { CouponGrantId, CouponId, RewardId } from '@core/primitives';
+import { deepFreeze, localDate } from '@core/testing';
 import {
   RewardSystem,
   type GrantTicketRef,

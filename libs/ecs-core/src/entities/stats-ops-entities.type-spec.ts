@@ -6,15 +6,16 @@
  * component sits at the root. `tsc` failing — on a `false` constant or an
  * unused `@ts-expect-error` — IS the test; nothing here runs.
  */
-import type {
-  ClientMoneyStats,
-  ClientStats,
-  ClientStatsMeta,
-  PolicyPassStamp,
-} from '../components/client-stats.data';
-import type { ClientMoneyStatsId, UserId } from '../primitives/ids.primitive';
-import type { AllTrue, Disjoint, NoNested } from '../testing';
-import { type BackfillJob, BackfillJobName } from './backfill-job.entity';
+import {
+  type ClientMoneyStats,
+  type ClientStats,
+  type ClientStatsMeta,
+  type PolicyPassStamp,
+  BackfillJobName,
+} from '@core/components';
+import type { ClientMoneyStatsId, UserId } from '@core/primitives';
+import type { AllTrue, Disjoint, NoNested } from '@core/testing';
+import type { BackfillJob } from './backfill-job.entity';
 import type { ClientMoneyRecord } from './client-money-stats.entity';
 import type { ClientStatsRecord } from './client-stats.entity';
 import {

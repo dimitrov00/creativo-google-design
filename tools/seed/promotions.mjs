@@ -24,7 +24,7 @@
  *
  * ### Gift vouchers
  * Money already paid, drawn down by visits. The vouchers ARE the fixture
- * file `vouchers.json` under `@creativo/ecs-core/testing` (moved there
+ * file `vouchers.json` under `@core/testing` (moved there
  * from `@creativo/application/engagement/testing`, which re-exports it, in
  * the ECS migration's Phase 3a), which the mapper's spec parses and the
  * in-memory reader serves, moved by

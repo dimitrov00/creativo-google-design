@@ -3,15 +3,10 @@ import {
   FieldValue,
   type Firestore,
 } from 'firebase-admin/firestore';
-import {
-  type DocPath,
-  QueryOp,
-  type ReadTx,
-  RepositoryError,
-  RepositoryErrorCode,
-  Result,
-  WriteOp,
-} from '@creativo/ecs-core';
+import { RepositoryError, RepositoryErrorCode, Result } from '@core/primitives';
+import { type DocPath, WriteOp } from '@core/components';
+import { QueryOp } from '@core/entities';
+import { type ReadTx } from '@core/ports';
 import { createProjectionFirestore } from '../test-support/fake-projection-firestore';
 import {
   FIELD_SET_AND_DELETED,

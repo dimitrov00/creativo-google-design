@@ -1,11 +1,6 @@
-import {
-  type Log,
-  OtpDestinationType,
-  ParsedIdentifier,
-  type PipelineError,
-  Result,
-  type SendOtp,
-} from '@creativo/ecs-core';
+import { type PipelineError, Result } from '@core/primitives';
+import { OtpDestinationType, ParsedIdentifier } from '@core/components';
+import { type Log, type SendOtp } from '@core/ports';
 
 /**
  * The `SendOtp` port of `identity.port.ts` — the LOGIN-OTP sender identity.

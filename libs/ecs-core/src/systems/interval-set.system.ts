@@ -1,7 +1,10 @@
-import { MinuteRange } from '../components/minute-range.data';
-import type { Brand } from '../primitives/brand';
-import { MinuteCount } from '../primitives/duration-minutes.primitive';
-import { EndMinute, MinuteOfDay } from '../primitives/minute-of-day.primitive';
+import { MinuteRange } from '@core/components';
+import {
+  type Brand,
+  MinuteCount,
+  EndMinute,
+  MinuteOfDay,
+} from '@core/primitives';
 
 /**
  * A canonical range set: sorted by `startMinutes`, non-empty, pairwise

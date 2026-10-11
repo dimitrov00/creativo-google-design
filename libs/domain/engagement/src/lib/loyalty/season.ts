@@ -3,14 +3,18 @@ import { LocalizedText, LocalizedTextProps } from '@creativo/domain/catalog';
 import {
   BadgeSeriesId as SystemSeriesId,
   EngagementErrorCode,
-  Gamification,
   LocalDate,
+  defect,
+} from '@core/primitives';
+import {
+  Gamification,
   SeasonKind,
   SeasonPhase as SystemSeasonPhase,
+} from '@core/components';
+import {
   type SeasonError as SystemSeasonError,
   SeasonSystem,
-  defect,
-} from '@creativo/ecs-core';
+} from '@core/systems';
 import { BadgeSeriesId, SeasonId } from '../ids';
 import type { BadgeEmblem } from './badge-vocabulary';
 import { IsoDate, sofiaDayOf } from './loyalty-calendar';
@@ -26,7 +30,7 @@ import {
 /*
  * `seasons/{id}` as a class — a thin shim since the ECS migration's Phase 2:
  * the window's rules, its phase on a day and its families are
- * `SeasonSystem` (`@creativo/ecs-core`, `season.system.ts`). The id and
+ * `SeasonSystem` (`@core/systems`, `season.system.ts`). The id and
  * title guards stay with the class until Phase 4 deletes it; the bridge to
  * the system's structs is the private helpers at the end.
  */

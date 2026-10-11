@@ -1,18 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { BlockKind } from '../components/minute-block.data';
-import { OpeningState } from '../components/opening-hours.data';
-import { ServiceTerms } from '../components/service-terms.data';
-import { BusyKey } from '../primitives/busy-key.primitive';
-import { Currency } from '../primitives/currency.primitive';
-import { ZonedTimeSystem } from '../systems/zoned-time.system';
+import { BlockKind, OpeningState, ServiceTerms } from '@core/components';
+import { BusyKey, Currency } from '@core/primitives';
+import { ZonedTimeSystem } from '@core/systems';
 import {
   FIXTURE_IDS,
   FIXTURE_TIME_ZONE,
   FIXTURE_TODAY,
-  deepFreeze,
   textFixture,
   utcMs,
-} from '../testing';
+} from './test-support';
+import { deepFreeze } from './deep-freeze';
 import {
   EUR,
   FIXTURE_TERMS,

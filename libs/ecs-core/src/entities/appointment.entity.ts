@@ -1,26 +1,22 @@
-import type { AppliedDiscount } from '../components/applied-discount.data';
-import type { AppliedOperation } from '../components/applied-operation.data';
-import type { TimeCoordinate } from '../components/time-coordinate.data';
-import type { BookingContact } from '../components/booking-contact.data';
-import type { BookingLifecycle } from '../components/booking-lifecycle.data';
-import type { Placement } from '../components/placement-kind.data';
-import type { StoodSeatPairs } from '../components/seat-id-pair.data';
-import type { Seat } from '../components/seat.data';
-import type { VoucherRedemption } from '../components/voucher-redemption.data';
-import type { BusyKey } from '../primitives/busy-key.primitive';
 import type {
+  AppliedDiscount,
+  AppliedOperation,
+  TimeCoordinate,
+  BookingContact,
+  BookingLifecycle,
+  Placement,
+  StoodSeatPairs,
+  Seat,
+  VoucherRedemption,
+} from '@core/components';
+import type {
+  BusyKey,
   AppointmentId,
   BarberId,
   LocationId,
   UserId,
-} from '../primitives/ids.primitive';
-import type { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
-
-/*
- * F0 STAGING: `AppointmentId` lives in `primitives/ids.primitive.ts` (§1.5);
- * the barrel still names this file for it until the integrator drops that
- * line.
- */
+  UtcEpochMs,
+} from '@core/primitives';
 
 /**
  * The identity slice of a visit — its id and the plain 1-to-1 attributes,

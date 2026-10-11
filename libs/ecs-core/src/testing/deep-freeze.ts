@@ -1,9 +1,8 @@
 /**
  * The purity contract's freezer (`ecs-systems.md` spec contract), in a file
  * of its own so the fixture modules beside it (`loyalty.fixtures.ts`) can
- * freeze what they export without importing the `testing.ts` barrel that
- * re-exports them. Reached through `@creativo/ecs-core/testing` (inside
- * ecs-core, `../testing`); test support only.
+ * freeze what they export without importing the `testing/index.ts` barrel
+ * that re-exports them. Reached through `@core/testing`; test support only.
  */
 
 /**

@@ -1,8 +1,5 @@
-import type {
-  ClientMoneyStats,
-  ClientStatsMeta,
-} from '../components/client-stats.data';
-import type { ClientMoneyStatsId } from '../primitives/ids.primitive';
+import type { ClientMoneyStats, ClientStatsMeta } from '@core/components';
+import type { ClientMoneyStatsId } from '@core/primitives';
 
 /**
  * `clientStats/{uid}/restricted/money` — lifetime spend, admin-only because

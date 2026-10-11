@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
-import { utcMs } from '../testing';
-import { AccountsErrorCode } from './accounts-errors.data';
+import { UtcEpochMs, AccountsErrorCode } from '@core/primitives';
+import { utcMs } from '@core/testing';
 import {
   AccountLifecycle,
   AccountStatus,

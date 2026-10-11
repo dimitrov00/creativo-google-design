@@ -12,38 +12,42 @@ import {
   AdjustmentId,
   AppointmentId,
   Currency,
-  FreezeReason,
   LocalDate,
-  Points,
-  type RedeemableRewardRef,
   RewardId,
-  RewardSystem,
   StreakDefinitionId,
+  TierId,
+  UtcEpochMs,
+  defect,
+  GiftVoucherId,
+  PriceCents,
+  UserId as UserRefId,
+} from '@core/primitives';
+import {
+  FreezeReason,
+  Points,
   StreakExcuse as SystemExcuse,
   StreakIntervalSource as SystemIntervalSource,
   StreakPeriodMark as SystemPeriodMark,
   type StreakPeriodReason as SystemPeriodReason,
   StreakPhaseState,
   type StreakState as SystemStreakState,
+  TierOverride,
+  type TierState,
+  VoucherCode,
+  VoucherLifecycle,
+} from '@core/components';
+import { type GiftVoucher as GiftVoucherEntity } from '@core/entities';
+import {
+  type RedeemableRewardRef,
+  RewardSystem,
   StreakSystem,
   type StreakTrackMark,
   StreakTrackMarkKind,
-  TierId,
-  TierOverride,
-  type TierState,
   type TierStepRef,
   TierSystem,
-  UtcEpochMs,
-  defect,
-  type GiftVoucher as GiftVoucherEntity,
-  GiftVoucherId,
-  PriceCents,
-  UserId as UserRefId,
-  VoucherCode,
-  VoucherLifecycle,
   VoucherSystem,
   ZonedTimeSystem,
-} from '@creativo/ecs-core';
+} from '@core/systems';
 import { rhythmRuleWords } from '@creativo/features/shared/visits';
 import type { UiMark, UiStreakPeriod } from '@creativo/ui/controls';
 import {

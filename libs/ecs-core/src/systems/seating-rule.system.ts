@@ -1,6 +1,5 @@
-import { SeatIdPair } from '../components/seat-id-pair.data';
-import type { SeatId } from '../primitives/ids.primitive';
-import { StandingSeatPair } from '../components/standing-seat.data';
+import { SeatIdPair, StandingSeatPair } from '@core/components';
+import type { SeatId } from '@core/primitives';
 
 /**
  * A SOLD span, its person, and WHICH SEAT it is — a visit's unit of people

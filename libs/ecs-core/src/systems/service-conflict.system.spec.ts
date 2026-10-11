@@ -1,8 +1,8 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { ServiceComposition } from '../components/service-composition.data';
-import { ServiceId } from '../primitives/ids.primitive';
-import { deepFreeze } from '../testing';
+import { ServiceComposition } from '@core/components';
+import { ServiceId } from '@core/primitives';
+import { deepFreeze } from '@core/testing';
 import {
   type ConflictService,
   Selectability,

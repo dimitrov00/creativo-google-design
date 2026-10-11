@@ -1,13 +1,13 @@
-import { StreakDefinitionId } from '../primitives/ids.primitive';
-import { LocalDate } from '../primitives/local-date.primitive';
 import {
+  StreakDefinitionId,
+  LocalDate,
   EngagementError,
   EngagementErrorCode,
   StreakRuleField,
-} from './engagement-errors.data';
-import { Locale } from './locale.data';
+  Locale,
+  Result,
+} from '@core/primitives';
 import type { LocalizedText } from './localized-text.data';
-import { Result } from './result.data';
 import { StreakInterval, StreakIntervalRule } from './streak-interval.data';
 import { StreakQualifier, StreakQualifierRule } from './streak-qualifier.data';
 

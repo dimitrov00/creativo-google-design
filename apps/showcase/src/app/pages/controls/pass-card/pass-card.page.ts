@@ -4,8 +4,8 @@ import { UiLogo } from '@creativo/ui/icons';
 import { UiStack } from '@creativo/ui/layout';
 import { UiTextDirective } from '@creativo/ui/modifiers';
 import { UiPassCard } from '@creativo/ui/patterns';
-import { ScDemo } from '../../../shared/demo';
-import { ScPage } from '../../../shared/page';
+import { ScDemo } from '@showcase/shared/demo';
+import { ScPage } from '@showcase/shared/page';
 
 /** One pass of the states demo: what the card prints, and how it is named. */
 interface PassSample {

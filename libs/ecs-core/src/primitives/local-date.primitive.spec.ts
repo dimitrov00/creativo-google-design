@@ -1,7 +1,7 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { Weekday } from '../components/weekday.data';
-import { deepFreeze, unwrapErr, unwrapOk } from '../testing';
+import { Weekday } from './weekday.data';
+import { deepFreeze, unwrapErr, unwrapOk } from '@core/testing';
 import { LocalDate } from './local-date.primitive';
 import { PrimitiveErrorCode } from './primitive-errors.data';
 

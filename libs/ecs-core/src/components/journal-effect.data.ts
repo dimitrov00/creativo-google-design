@@ -8,10 +8,10 @@ import type {
   SeatId,
   StreakDefinitionId,
   TierId,
-} from '../primitives/ids.primitive';
-import type { LocalDate } from '../primitives/local-date.primitive';
+  LocalDate,
+  AttendanceState,
+} from '@core/primitives';
 import type { PerkId } from './gamification.data';
-import type { AttendanceState } from './seat-outcome.data';
 
 /**
  * What a journal entry changed — the entry's discriminator `journalEffect`.

@@ -1,10 +1,6 @@
 import { ZonedDateTime } from '@creativo/application/booking';
-import {
-  LocalDate,
-  type MinuteOfDay,
-  VisitListSystem,
-  defect,
-} from '@creativo/ecs-core';
+import { LocalDate, type MinuteOfDay, defect } from '@core/primitives';
+import { VisitListSystem } from '@core/systems';
 import { VISIT_GRAIN_OF, filterRowOf, wallTimeOf } from './visit-ecs.shim';
 import type { VisitGrain, VisitRowVm, VisitSectionVm } from './visit-row.vm';
 
@@ -24,7 +20,7 @@ import type { VisitGrain, VisitRowVm, VisitSectionVm } from './visit-row.vm';
  * walkable. The year grain stays for a future dense list.
  *
  * Phase 2 shim: the sectioning, the section key and the worked figure are
- * `VisitListSystem` in `@creativo/ecs-core`; the headings' words, the
+ * `VisitListSystem` in `@core/systems`; the headings' words, the
  * figure's word and the test ids stay here. Flatten pass: the system orders
  * a row by its shop day and minute (`localDate` + `startMinutes`, Law 7), so
  * a row's start instant is read on the shop's calendar at this boundary, and

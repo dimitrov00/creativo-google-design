@@ -1,14 +1,14 @@
-import { BookingPolicy } from '../components/booking-policy.data';
 import {
+  BookingPolicy,
   type PolicyPass,
   PreciseInstant,
-} from '../components/client-stats.data';
+} from '@core/components';
+import { RecomputeJobName, type PolicyRecomputeJob } from '@core/entities';
 import {
-  RecomputeJobName,
-  type PolicyRecomputeJob,
-} from '../entities/policy-recompute-job.entity';
-import { PolicyRecomputeJobId, type UserId } from '../primitives/ids.primitive';
-import { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
+  PolicyRecomputeJobId,
+  type UserId,
+  UtcEpochMs,
+} from '@core/primitives';
 
 /**
  * The policy-change recompute's job, as decisions (`apps/functions/src/lib/

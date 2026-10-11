@@ -2,9 +2,9 @@ import type {
   BadgeCategoryId,
   BadgeSeriesId,
   SeasonId,
-} from '../primitives/ids.primitive';
-import type { LocalDate } from '../primitives/local-date.primitive';
-import type { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
+  LocalDate,
+  UtcEpochMs,
+} from '@core/primitives';
 
 /**
  * STANDING — what the card derives from one client's progress against the

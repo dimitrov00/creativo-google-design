@@ -1,25 +1,25 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { BarberPreference, BarberPref } from '../components/barber-pref.data';
-import { BookingFlowErrorCode } from '../components/booking-flow-errors.data';
 import {
+  BarberPreference,
+  BarberPref,
   BookingFlowState,
   BookingFlowStep,
-} from '../components/booking-flow.data';
-import { BookingPolicy } from '../components/booking-policy.data';
-import {
+  BookingPolicy,
   BookingCart,
   type CartLine,
   SeatKey,
-} from '../components/cart-line.data';
-import { DayWindows } from '../components/day-windows.data';
-import { FlexibleWhen } from '../components/flexible-when.data';
-import { MinuteRange } from '../components/minute-range.data';
-import { Party, PartyMember } from '../components/party.data';
-import { Result } from '../components/result.data';
-import { SchedulingErrorCode } from '../components/scheduling-errors.data';
-import { SeatLabel } from '../components/seat-label.data';
+  DayWindows,
+  FlexibleWhen,
+  MinuteRange,
+  Party,
+  PartyMember,
+  SeatLabel,
+} from '@core/components';
 import {
+  BookingFlowErrorCode,
+  Result,
+  SchedulingErrorCode,
   AppointmentId,
   BarberId,
   GuestId,
@@ -28,9 +28,15 @@ import {
   ServiceId,
   UserId,
   WaitlistRequestId,
-} from '../primitives/ids.primitive';
-import type { LocalDate } from '../primitives/local-date.primitive';
-import { deepFreeze, endMinute, localDate, minute, unwrapOk } from '../testing';
+  type LocalDate,
+} from '@core/primitives';
+import {
+  deepFreeze,
+  endMinute,
+  localDate,
+  minute,
+  unwrapOk,
+} from '@core/testing';
 import {
   type BookingFlowEvent,
   BookingFlowEventKind as E,

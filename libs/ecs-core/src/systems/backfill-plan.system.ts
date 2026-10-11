@@ -1,11 +1,6 @@
-import { AuditAction } from '../components/audit-context.data';
-import { Placement } from '../components/placement-kind.data';
-import {
-  BackfillJobName,
-  type BackfillJob,
-} from '../entities/backfill-job.entity';
-import type { UserId } from '../primitives/ids.primitive';
-import type { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
+import { AuditAction, Placement, BackfillJobName } from '@core/components';
+import type { BackfillJob } from '@core/entities';
+import type { UserId, UtcEpochMs } from '@core/primitives';
 
 /**
  * The pure half of the ops backfill (`apps/functions/src/lib/ops/

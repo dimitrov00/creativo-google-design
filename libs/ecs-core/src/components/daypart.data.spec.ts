@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { endMinute, minute } from '../testing';
+import { endMinute, minute } from '@core/testing';
 import { Daypart } from './daypart.data';
 import { MinuteRange } from './minute-range.data';
 

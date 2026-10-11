@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ImpersonationSessionId, UserId } from '../primitives/ids.primitive';
+import { ImpersonationSessionId, UserId } from '@core/primitives';
 import { Actor, ActorRole, SystemSource } from './actor.data';
 import { ImpersonationScope } from './impersonation-scope.data';
 import { Role } from './role.data';

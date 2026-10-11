@@ -7,9 +7,9 @@ import {
   type ServiceId,
   type ServiceVariantId,
   UserId,
-} from '../primitives/ids.primitive';
-import { Result } from './result.data';
-import { SchedulingError } from './scheduling-errors.data';
+  Result,
+  SchedulingError,
+} from '@core/primitives';
 
 /**
  * Which member of the party a cart seat belongs to — the ONLY source of

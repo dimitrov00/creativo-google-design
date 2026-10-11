@@ -1,6 +1,6 @@
 import { InjectionToken } from '@angular/core';
 import { DomainError, Result } from '@creativo/domain/kernel';
-import { ShopReach } from '@creativo/ecs-core';
+import { ShopReach } from '@core/components';
 import type {
   BookingContactProps,
   CancellationReasonKind,

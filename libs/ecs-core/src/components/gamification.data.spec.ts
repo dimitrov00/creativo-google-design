@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { BarberId, LocationId, ServiceId } from '../primitives/ids.primitive';
+import { BarberId, LocationId, ServiceId, AwardKind } from '@core/primitives';
 import {
-  AwardKind,
   AwardSummary,
   BadgeSubject,
   BadgeSubjectSlot,

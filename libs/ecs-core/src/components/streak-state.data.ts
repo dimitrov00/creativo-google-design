@@ -1,9 +1,9 @@
 import type {
   AppointmentId,
   StreakDefinitionId,
-} from '../primitives/ids.primitive';
-import type { LocalDate } from '../primitives/local-date.primitive';
-import type { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
+  LocalDate,
+  UtcEpochMs,
+} from '@core/primitives';
 import type { StreakIntervalSource } from './streak-interval.data';
 import type { StreakExcuse } from './streak-rule.data';
 

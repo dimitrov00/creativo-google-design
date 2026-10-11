@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { UserId } from '../primitives/ids.primitive';
-import { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
-import { utcMs } from '../testing';
+import { UserId, UtcEpochMs } from '@core/primitives';
+import { utcMs } from '@core/testing';
 import {
   EndReasonFields,
   ImpersonationEndReason,

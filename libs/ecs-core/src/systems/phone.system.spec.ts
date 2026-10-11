@@ -1,13 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { CountryIso2 } from '../components/country-iso2.data';
+import { CountryIso2, E164 } from '@core/components';
 import {
   PhoneErrorCode,
   PhoneInvalidReason,
-} from '../components/phone-errors.data';
-import { E164 } from '../components/phone-number.data';
-import type { Result } from '../components/result.data';
+  type Result,
+} from '@core/primitives';
 import { PhoneSystem, type CountryNaming } from './phone.system';
-import { deepFreeze } from '../testing';
+import { deepFreeze } from '@core/testing';
 
 function value<T, E>(result: Result<T, E>): T {
   if (!result.ok)

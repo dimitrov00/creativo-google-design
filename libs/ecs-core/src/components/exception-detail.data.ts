@@ -1,4 +1,4 @@
-import type { LocationId } from '../primitives/ids.primitive';
+import type { LocationId } from '@core/primitives';
 import type { MinuteRange } from './minute-range.data';
 
 /**

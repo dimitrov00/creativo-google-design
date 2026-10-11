@@ -4,10 +4,12 @@ import {
   GiftVoucherId,
   PriceCents,
   UtcEpochMs,
+  defect,
+} from '@core/primitives';
+import {
   VoucherCode,
   VoucherRedemption as VoucherRedemptionData,
-  defect,
-} from '@creativo/ecs-core';
+} from '@core/components';
 
 /*
  * THIN SHIM (ECS migration Phase 2). Whether a line still pays the bill is

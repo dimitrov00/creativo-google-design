@@ -9,9 +9,7 @@ import {
 } from '@creativo/domain/scheduling';
 import {
   BarberId as BarberKey,
-  type BookingCart as CartData,
   CartLineId as LineKey,
-  DayHours,
   LocalDate,
   SchedulingErrorCode,
   SeatKeyText,
@@ -19,14 +17,20 @@ import {
   ServiceVariantId as VariantKey,
   UserId as UserKey,
   UtcEpochMs,
-  type WaitlistAskInput,
   type WaitlistError,
   WaitlistErrorCode,
-  WaitlistSystem,
-  type FlexibleWhen as WhenData,
-  ZonedTimeSystem,
   defect,
-} from '@creativo/ecs-core';
+} from '@core/primitives';
+import {
+  type BookingCart as CartData,
+  DayHours,
+  type FlexibleWhen as WhenData,
+} from '@core/components';
+import {
+  type WaitlistAskInput,
+  WaitlistSystem,
+  ZonedTimeSystem,
+} from '@core/systems';
 import {
   type AdmissibleShop,
   cartAdmissible,

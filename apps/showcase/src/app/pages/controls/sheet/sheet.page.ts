@@ -3,8 +3,8 @@ import { UiButton } from '@creativo/ui/controls';
 import type { UiSheetPlacement } from '@creativo/ui/layout';
 import { UiFlow, UiSheet, UiStack } from '@creativo/ui/layout';
 import { UiTextDirective } from '@creativo/ui/modifiers';
-import { ScDemo } from '../../../shared/demo';
-import { ScPage } from '../../../shared/page';
+import { ScDemo } from '@showcase/shared/demo';
+import { ScPage } from '@showcase/shared/page';
 
 /** The three placements plus the wide `.page` set-piece demo. */
 type SheetDemoKey = UiSheetPlacement | 'page';

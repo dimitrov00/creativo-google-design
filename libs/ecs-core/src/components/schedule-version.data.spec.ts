@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { endMinute, localDate, minute } from '../testing';
-import { minuteCount } from '../testing/booking-core.fixtures';
-import { LocationId } from '../primitives/ids.primitive';
-import type { LocalDate } from '../primitives/local-date.primitive';
-import { SchedulingErrorCode } from './scheduling-errors.data';
+import { endMinute, localDate, minute, minuteCount } from '@core/testing';
+import {
+  LocationId,
+  type LocalDate,
+  SchedulingErrorCode,
+  Weekday,
+} from '@core/primitives';
 import { ScheduleVersion, ShiftSegment } from './schedule-version.data';
-import { Weekday } from './weekday.data';
 
 const CENTER = LocationId.of('loc-center');
 const MLADOST = LocationId.of('loc-mladost');

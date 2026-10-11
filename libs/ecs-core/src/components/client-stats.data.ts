@@ -1,24 +1,22 @@
-import type { Result } from './result.data';
-import { defect } from '../primitives/defect';
-import type { DurationMinutes } from '../primitives/duration-minutes.primitive';
-import { Currency } from '../primitives/currency.primitive';
-import type {
-  AppointmentId,
-  BarberId,
-  SeatId,
-  ServiceId,
-  ServiceVariantId,
-  UserId,
-} from '../primitives/ids.primitive';
-import type { LocalDate } from '../primitives/local-date.primitive';
-import type { MinuteOfDay } from '../primitives/minute-of-day.primitive';
 import {
+  type Result,
+  defect,
+  type DurationMinutes,
+  Currency,
+  type AppointmentId,
+  type BarberId,
+  type SeatId,
+  type ServiceId,
+  type ServiceVariantId,
+  type UserId,
+  type LocalDate,
+  type MinuteOfDay,
   EpochSeconds,
   SubsecondNanos,
-} from '../primitives/precise-instant.primitive';
-import { PriceCents } from '../primitives/price-cents.primitive';
-import type { PrimitiveError } from '../primitives/primitive-errors.data';
-import { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
+  PriceCents,
+  type PrimitiveError,
+  UtcEpochMs,
+} from '@core/primitives';
 
 const NANOS_PER_MS = 1_000_000;
 

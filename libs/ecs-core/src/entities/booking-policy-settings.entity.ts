@@ -1,5 +1,5 @@
-import type { BookingPolicy } from '../components/booking-policy.data';
-import { BookingPolicySettingsId } from '../primitives/ids.primitive';
+import type { BookingPolicy } from '@core/components';
+import { BookingPolicySettingsId } from '@core/primitives';
 
 /**
  * The tenant's booking policy — `settings/bookingPolicy`, AS STORED TODAY:
@@ -13,10 +13,3 @@ import { BookingPolicySettingsId } from '../primitives/ids.primitive';
 export type BookingPolicySettings = {
   readonly id: BookingPolicySettingsId;
 } & BookingPolicy;
-
-/**
- * Flatten-pass staging: the barrel's id block (and `ports/collections.ts`'s
- * `BOOKING_POLICY_DOC`) still name this module for `BookingPolicySettingsId`
- * until the integrator re-points them — the id, with its `FIXED`, lives in
- * `primitives/ids.primitive.ts` (§1.5).
- */

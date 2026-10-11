@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { unwrapErr, unwrapOk } from '../testing';
+import { unwrapErr, unwrapOk } from '@core/testing';
 import { PriceCents } from './price-cents.primitive';
 
 const c = (raw: number) => unwrapOk(PriceCents.signed(raw));

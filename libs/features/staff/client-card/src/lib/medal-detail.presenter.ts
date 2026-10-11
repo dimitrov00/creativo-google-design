@@ -15,17 +15,17 @@ import {
   sofiaDayOf,
 } from '@creativo/application/engagement';
 import {
-  AchievementsSystem,
   BarberId as BarberRefId,
   LocalDate,
   LocationId as LocationRefId,
-  type MetricRef,
   MinuteOfDay,
   ServiceId as ServiceRefId,
   UtcEpochMs,
   type Weekday,
   defect,
-} from '@creativo/ecs-core';
+} from '@core/primitives';
+import { type MetricRef } from '@core/components';
+import { AchievementsSystem } from '@core/systems';
 import {
   type RhythmRuleWords,
   type VisitRowVm,

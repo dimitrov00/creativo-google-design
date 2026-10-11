@@ -1,15 +1,13 @@
 import type { Auth } from 'firebase-admin/auth';
+import { PipelineErrorCode, TenantId, UserId } from '@core/primitives';
 import {
   AuthClaims,
   AuthStage,
   E164,
   Email,
   ParsedIdentifier,
-  PipelineErrorCode,
   Role,
-  TenantId,
-  UserId,
-} from '@creativo/ecs-core';
+} from '@core/components';
 import {
   TenantId as LegacyTenantId,
   UserId as LegacyUserId,

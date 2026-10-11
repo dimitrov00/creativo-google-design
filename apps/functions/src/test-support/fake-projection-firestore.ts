@@ -3,15 +3,9 @@ import {
   FieldValue,
   type Firestore,
 } from 'firebase-admin/firestore';
-import type {
-  CommitPlan,
-  DocPath,
-  QuerySpec,
-  ReadTx,
-  RepositoryError,
-  Result,
-  WriteOp,
-} from '@creativo/ecs-core';
+import type { RepositoryError, Result } from '@core/primitives';
+import type { DocPath, WriteOp } from '@core/components';
+import type { CommitPlan, QuerySpec, ReadTx } from '@core/ports';
 import { firestoreCommitPlan } from '../adapters/firestore-tx.adapter';
 
 /**

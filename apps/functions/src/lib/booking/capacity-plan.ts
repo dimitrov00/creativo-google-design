@@ -12,33 +12,37 @@ import {
 } from '@creativo/application/booking';
 import {
   BarberId,
-  type CapacityBusyDay,
-  type CapacityEntry,
-  type CapacityShopWeek,
-  CapacitySystem,
-  type DayException,
-  DayHours,
   EndMinute,
-  type ExceptionEffectRule,
   LocalDate,
   LocationId,
   MinuteCount,
   MinuteOfDay,
-  type MinuteRange,
-  ScheduleExceptionSystem,
-  type ScheduleVersion,
-  ShiftSegment,
   type TimeZone,
   UtcEpochMs,
   type Weekday,
-  ZonedTimeSystem,
   defect,
-} from '@creativo/ecs-core';
+} from '@core/primitives';
+import {
+  type CapacityEntry,
+  DayHours,
+  type ExceptionEffectRule,
+  type MinuteRange,
+  type ScheduleVersion,
+  ShiftSegment,
+} from '@core/components';
+import {
+  type CapacityBusyDay,
+  type CapacityShopWeek,
+  CapacitySystem,
+  type DayException,
+  ScheduleExceptionSystem,
+  ZonedTimeSystem,
+} from '@core/systems';
 
 /**
  * The PURE half of the capacity rebuild: geometry in, write plan out.
  *
- * Phase 2 shim: the math is `CapacitySystem` in `@creativo/ecs-core`
+ * Phase 2 shim: the math is `CapacitySystem` in `@core/systems`
  * (`planBarberCapacity`, `byMonth`, `localDatesBetween`, `horizonSpanEnd`);
  * this file keeps the legacy inputs and the month-grouped plan the I/O shell
  * in `rebuild-capacity.ts` applies, and converts at the edge — the stored

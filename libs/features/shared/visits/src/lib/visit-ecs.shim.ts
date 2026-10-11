@@ -1,17 +1,14 @@
+import { type TimeZone, UtcEpochMs, defect } from '@core/primitives';
+import { type ShopNow, type WallTime } from '@core/components';
 import {
   CancelledSide,
   type FilterRow,
-  type ShopNow,
-  type TimeZone,
-  UtcEpochMs,
   VisitFilter as EcsVisitFilter,
   VisitGrain as EcsVisitGrain,
   VisitPerspective as EcsVisitPerspective,
   VisitRowOutcome as EcsVisitRowOutcome,
-  type WallTime,
   ZonedTimeSystem,
-  defect,
-} from '@creativo/ecs-core';
+} from '@core/systems';
 import type {
   VisitFilter,
   VisitGrain,

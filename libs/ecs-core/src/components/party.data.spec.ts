@@ -1,6 +1,6 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { GuestId, UserId } from '../primitives/ids.primitive';
+import { GuestId, UserId } from '@core/primitives';
 import { Party, PartyMember, PartyRole } from './party.data';
 import { SeatLabel } from './seat-label.data';
 

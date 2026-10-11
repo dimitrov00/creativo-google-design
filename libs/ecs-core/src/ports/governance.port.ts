@@ -1,15 +1,17 @@
 import type { Observable } from 'rxjs';
-import type { RepositoryError } from '../components/repository-errors.data';
-import type { Result } from '../components/result.data';
-import type { Appointment } from '../entities/appointment.entity';
-import type { AuditEntry } from '../entities/audit-entry.entity';
-import type { BackfillJob } from '../entities/backfill-job.entity';
-import type { ImpersonationSession } from '../entities/impersonation-session.entity';
 import type {
+  RepositoryError,
+  Result,
   AppointmentId,
   BackfillJobId,
   UserId,
-} from '../primitives/ids.primitive';
+} from '@core/primitives';
+import type {
+  Appointment,
+  AuditEntry,
+  BackfillJob,
+  ImpersonationSession,
+} from '@core/entities';
 
 /**
  * The governance context's ports (blueprint §4, §4.1, §4.2): the audit

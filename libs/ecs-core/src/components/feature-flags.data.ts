@@ -1,5 +1,4 @@
-import { GovernanceError } from './governance-errors.data';
-import { Result } from './result.data';
+import { GovernanceError, Result } from '@core/primitives';
 
 /**
  * The platform's build-time flags — the keys of `config/feature-flags.json`

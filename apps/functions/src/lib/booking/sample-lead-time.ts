@@ -8,15 +8,14 @@ import {
 } from '@creativo/application/booking';
 import {
   BarberId,
-  CapacityEntry,
-  LeadTimeSystem,
   LocalDate,
   LocationId,
   MinuteCount,
   UtcEpochMs,
-  ZonedTimeSystem,
   defect,
-} from '@creativo/ecs-core';
+} from '@core/primitives';
+import { CapacityEntry } from '@core/components';
+import { LeadTimeSystem, ZonedTimeSystem } from '@core/systems';
 import { adminFirestore } from '../firebase-admin';
 import { loadBookingPolicy } from './load-booking-policy';
 import { TENANT_ZONE } from './tenant-zone';

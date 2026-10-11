@@ -1,6 +1,9 @@
-import { BarberId, ServiceVariantId } from '../primitives/ids.primitive';
-import { CatalogError } from './catalog-errors.data';
-import { Result } from './result.data';
+import {
+  BarberId,
+  ServiceVariantId,
+  CatalogError,
+  Result,
+} from '@core/primitives';
 import {
   ServiceTerms,
   type ServiceTermsError,

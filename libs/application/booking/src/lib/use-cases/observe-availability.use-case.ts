@@ -8,10 +8,7 @@ import {
 } from '@creativo/domain/catalog';
 import {
   BarberId as EcsBarberId,
-  type BookingCart as CartData,
-  BookingCartSystem,
   CartLineId as EcsCartLineId,
-  type CartService,
   Currency,
   DurationMinutes,
   LocationId as EcsLocationId,
@@ -19,10 +16,14 @@ import {
   PriceCents,
   SeatKeyText,
   ServiceId as EcsServiceId,
-  ServiceTerms as EcsServiceTerms,
   ServiceVariantId as EcsServiceVariantId,
   defect,
-} from '@creativo/ecs-core';
+} from '@core/primitives';
+import {
+  type BookingCart as CartData,
+  ServiceTerms as EcsServiceTerms,
+} from '@core/components';
+import { BookingCartSystem, type CartService } from '@core/systems';
 import {
   type AvailabilityLine,
   type AvailabilityOption,

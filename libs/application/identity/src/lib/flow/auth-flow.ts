@@ -1,13 +1,13 @@
+import { IdentifierChannel } from '@core/primitives';
 import {
   AuthFlowEvent as FlowEvent,
   AuthFlowState as FlowState,
   AuthFlowStep,
-  AuthFlowSystem,
   Identifier as Channel,
-  IdentifierChannel,
   type ParsedIdentifier,
   SessionKind as SessionTag,
-} from '@creativo/ecs-core';
+} from '@core/components';
+import { AuthFlowSystem } from '@core/systems';
 import { Result, fail, ok } from '@creativo/domain/kernel';
 import {
   Identifier,
@@ -71,7 +71,7 @@ export const AUTH_FLOW_INITIAL_STATE: AuthFlowState = { kind: 'identify' };
 
 /*
  * Phase 2 shim (ECS migration): the transition function is
- * `AuthFlowSystem.next` (`@creativo/ecs-core`). This file keeps its legacy
+ * `AuthFlowSystem.next` (`@core/systems`). This file keeps its legacy
  * state, event and error shapes for the store and converts at the edge — the
  * helpers below are the only code besides the delegating body.
  */

@@ -1,14 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { StreakInterval } from '../components/streak-interval.data';
-import { StreakQualifier } from '../components/streak-qualifier.data';
 import {
+  StreakInterval,
+  StreakQualifier,
   StreakExcuse,
   StreakOnBreak,
   StreakRule,
   type StreakHeadRule,
-} from '../components/streak-rule.data';
-import { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
-import { FIXTURE_TODAY, localDate, unwrapOk, utcMs } from '../testing';
+} from '@core/components';
+import { UtcEpochMs } from '@core/primitives';
+import { FIXTURE_TODAY, localDate, unwrapOk, utcMs } from './test-support';
 import {
   FIXTURE_STREAK_OPENED_AT_UTC_MS,
   giftVouchersJson,

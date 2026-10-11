@@ -1,17 +1,17 @@
-import type { BarberOffering } from '../components/barber-offering.data';
-import type { ServiceStatus } from '../components/catalog-status.data';
-import type { LocalizedText } from '../components/localized-text.data';
-import type { ServiceComposition } from '../components/service-composition.data';
 import type {
+  BarberOffering,
+  ServiceStatus,
+  LocalizedText,
+  ServiceComposition,
   ServiceTerms,
   ServiceVariant,
-} from '../components/service-terms.data';
+} from '@core/components';
 import {
   type LocationId,
   type MediaRefId,
   type ServiceCategoryId,
   ServiceId,
-} from '../primitives/ids.primitive';
+} from '@core/primitives';
 
 /**
  * The identity slice of a service: the id and the plain attributes.
@@ -70,9 +70,3 @@ export type Service = ServiceMeta &
   ServiceTerms &
   ServiceComposition &
   ServiceCover;
-
-/**
- * Flatten-pass staging: the barrel's id block still names this module for
- * `ServiceId` until the integrator drops that line — the id itself lives in
- * `primitives/ids.primitive.ts` (§1.5).
- */

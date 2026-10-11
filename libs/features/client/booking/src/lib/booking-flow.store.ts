@@ -59,40 +59,44 @@ import type {
 import { CLOCK } from '@creativo/application/shared';
 import {
   BarberId as BarberKey,
-  type BookingCart as CartData,
-  BookingCartSystem,
-  type BookingFlowLimits,
-  BookingFlowStep as FlowStep,
-  BookingFlowSystem,
-  type BarberPreference,
   CartLineId as LineKey,
-  CommitSubjectRole,
-  DayWindows as DayWindowsData,
   EndMinute,
-  FlexibleWhen as WhenData,
   GuestId as GuestKey,
-  GuestLabelSystem,
   LocalDate,
   type LocationId as LocationKey,
   MinuteOfDay,
+  SeatKeyText,
+  ServiceId as ServiceKey,
+  ServiceVariantId as VariantKey,
+  UserId as UserKey,
+  UtcEpochMs,
+  defect,
+} from '@core/primitives';
+import {
+  type BookingCart as CartData,
+  BookingFlowStep as FlowStep,
+  type BarberPreference,
+  DayWindows as DayWindowsData,
+  FlexibleWhen as WhenData,
   MinuteRange,
   type Party as PartyData,
   PartyMember as MemberData,
   PartyRole,
-  PrefillCompanions,
-  type PrefillSeat,
   type SeatAssignment,
-  SeatKeyText,
   SeatLabel as LabelData,
   SeatOccupant as OccupantData,
-  ServiceId as ServiceKey,
-  ServiceVariantId as VariantKey,
   SubjectRelationship,
-  UserId as UserKey,
-  UtcEpochMs,
+} from '@core/components';
+import {
+  BookingCartSystem,
+  type BookingFlowLimits,
+  BookingFlowSystem,
+  CommitSubjectRole,
+  GuestLabelSystem,
+  PrefillCompanions,
+  type PrefillSeat,
   ZonedTimeSystem,
-  defect,
-} from '@creativo/ecs-core';
+} from '@core/systems';
 
 /**
  * Wraps the pure `advanceBookingFlow` machine (blueprint §5.3) with the two

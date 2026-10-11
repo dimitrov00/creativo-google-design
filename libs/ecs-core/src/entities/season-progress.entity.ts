@@ -1,4 +1,4 @@
-import type { SeasonId } from '../primitives/ids.primitive';
+import type { SeasonId } from '@core/primitives';
 
 /**
  * `loyaltyAccounts/{uid}/seasonProgress/{seasonId}` — the season's track at

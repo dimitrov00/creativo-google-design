@@ -2,18 +2,14 @@ import { describe, expect, it } from 'vitest';
 import {
   StreakInterval,
   StreakIntervalRule,
-} from '../components/streak-interval.data';
-import {
   StreakQualifier,
   StreakQualifierRule,
-} from '../components/streak-qualifier.data';
-import {
   StreakExcuse,
   StreakOnBreak,
   StreakRule,
-} from '../components/streak-rule.data';
-import { ServiceCategoryId, ServiceId } from '../primitives/ids.primitive';
-import { deepFreeze } from '../testing';
+} from '@core/components';
+import { ServiceCategoryId, ServiceId } from '@core/primitives';
+import { deepFreeze } from '@core/testing';
 import {
   RhythmDraftSystem,
   type RememberedIntervals,

@@ -9,22 +9,26 @@ import {
 import {
   AchievementRuleId,
   AwardKind,
-  AwardSummary as SystemAward,
   BadgeCategoryId as SystemCategoryId,
-  type BadgeLevel as SystemLevel,
-  type BadgeSeriesError as SystemSeriesError,
-  type BadgeSeriesShape,
-  BadgeSystem,
-  EarnedVia,
   EngagementErrorCode,
   LocalDate,
-  MedalState as SystemMedalState,
   SeasonId as SystemSeasonId,
   UtcEpochMs,
   defect,
+} from '@core/primitives';
+import {
+  AwardSummary as SystemAward,
+  type BadgeLevel as SystemLevel,
+  EarnedVia,
+  MedalState as SystemMedalState,
   type EarnedLevel,
   type Metric as SystemMetric,
-} from '@creativo/ecs-core';
+} from '@core/components';
+import {
+  type BadgeSeriesError as SystemSeriesError,
+  type BadgeSeriesShape,
+  BadgeSystem,
+} from '@core/systems';
 import { BadgeCategoryId, BadgeSeriesId, SeasonId } from '../ids';
 import type {
   AwardSummary,

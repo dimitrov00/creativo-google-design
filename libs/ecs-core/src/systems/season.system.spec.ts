@@ -4,11 +4,10 @@ import {
   Gamification,
   SeasonKind,
   SeasonPhase,
-} from '../components/gamification.data';
-import type { Season } from '../entities/season.entity';
-import { BadgeSeriesId, SeasonId } from '../primitives/ids.primitive';
-import type { LocalDate } from '../primitives/local-date.primitive';
-import { FIXTURE_TIME_ZONE, deepFreeze, localDate, utcMs } from '../testing';
+} from '@core/components';
+import type { Season } from '@core/entities';
+import { BadgeSeriesId, SeasonId, type LocalDate } from '@core/primitives';
+import { FIXTURE_TIME_ZONE, deepFreeze, localDate, utcMs } from '@core/testing';
 import { type SeasonShapeInput, SeasonSystem } from './season.system';
 import { ZonedTimeSystem } from './zoned-time.system';
 

@@ -40,7 +40,7 @@ import {
   UiSheetHeader,
   type UiMedalState,
 } from '@creativo/ui/patterns';
-import { ScPage } from '../../../shared/page';
+import { ScPage } from '@showcase/shared/page';
 
 /**
  * The no-break space: BEFORE a separator, so a quiet line that wraps ends

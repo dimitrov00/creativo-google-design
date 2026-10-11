@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { localDate } from '../testing';
+import { localDate } from '@core/testing';
 import {
   PERSONAL_RECORD_KINDS,
   PersonalRecord,

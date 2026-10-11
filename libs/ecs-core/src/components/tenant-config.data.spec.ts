@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { LocationId } from '../primitives/ids.primitive';
-import { PhoneSystem } from '../systems/phone.system';
+import { LocationId } from '@core/primitives';
+import { PhoneSystem } from '@core/systems';
 import { CountryIso2 } from './country-iso2.data';
 import { TenantConfig } from './tenant-config.data';
 

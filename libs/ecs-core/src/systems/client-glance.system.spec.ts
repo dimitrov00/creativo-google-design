@@ -2,23 +2,21 @@ import { describe, expect, it } from 'vitest';
 import {
   AccountLifecycle,
   BlockReason,
-} from '../components/account-status.data';
-import type { PunchCard } from '../components/punch-card.data';
-import { VoucherCode } from '../components/voucher-code.data';
-import {
+  type PunchCard,
+  VoucherCode,
   VoucherLifecycle,
   VoucherStatus,
-} from '../components/voucher-state.data';
-import { WallTime } from '../components/wall-time.data';
-import type { GiftVoucher } from '../entities/gift-voucher.entity';
-import { Currency } from '../primitives/currency.primitive';
+  WallTime,
+} from '@core/components';
+import type { GiftVoucher } from '@core/entities';
 import {
+  Currency,
   AchievementRuleId,
   GiftVoucherId,
   ServiceId,
   ServiceVariantId,
-} from '../primitives/ids.primitive';
-import { PriceCents } from '../primitives/price-cents.primitive';
+  PriceCents,
+} from '@core/primitives';
 import {
   FIXTURE_NOW,
   FIXTURE_NOW_UTC_MS,
@@ -28,7 +26,7 @@ import {
   minute,
   unwrapOk,
   utcMs,
-} from '../testing';
+} from '@core/testing';
 import {
   ClientGlanceSystem,
   type GlanceHoldingsInput,

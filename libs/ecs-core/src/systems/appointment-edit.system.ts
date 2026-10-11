@@ -1,28 +1,31 @@
-import { AppliedOperation } from '../components/applied-operation.data';
-import { BookingStatus } from '../components/booking-lifecycle.data';
-import { BookingError } from '../components/booking-errors.data';
-import type { MinuteRange } from '../components/minute-range.data';
-import { Result } from '../components/result.data';
-import { AttendanceState, SeatOutcome } from '../components/seat-outcome.data';
-import { Seat, type SeatOccupant } from '../components/seat.data';
-import type { WallTime } from '../components/wall-time.data';
-import type { Appointment } from '../entities/appointment.entity';
 import {
+  AppliedOperation,
+  type MinuteRange,
+  SeatOutcome,
+  Seat,
+  type SeatOccupant,
+  type WallTime,
+} from '@core/components';
+import {
+  BookingStatus,
+  BookingError,
+  Result,
+  AttendanceState,
   DurationMinutes,
   MinuteCount,
-} from '../primitives/duration-minutes.primitive';
-import type {
-  BarberId,
-  LocationId,
-  OperationId,
-  SeatId,
-  ServiceId,
-  ServiceVariantId,
-} from '../primitives/ids.primitive';
-import type { LocalDate } from '../primitives/local-date.primitive';
-import { EndMinute, MinuteOfDay } from '../primitives/minute-of-day.primitive';
-import { PriceCents } from '../primitives/price-cents.primitive';
-import type { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
+  type BarberId,
+  type LocationId,
+  type OperationId,
+  type SeatId,
+  type ServiceId,
+  type ServiceVariantId,
+  type LocalDate,
+  EndMinute,
+  MinuteOfDay,
+  PriceCents,
+  type UtcEpochMs,
+} from '@core/primitives';
+import type { Appointment } from '@core/entities';
 
 /** The digest basis version — the server's fingerprint of one intent's batch. */
 const DIGEST_TAG = 'staff-operation/v1';

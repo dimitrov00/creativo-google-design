@@ -18,22 +18,24 @@ import { SystemClock } from '../../adapters/system-clock';
 import { CryptoIdGenerator } from '../../adapters/crypto-id-generator';
 import {
   BarberId as BarberKey,
-  type BookingCart as CartData,
   CartLineId as LineKey,
-  DayWindows as DayWindowsData,
   EndMinute,
   LocalDate,
   LocationId as LocationKey,
   MinuteOfDay,
-  MinuteRange,
   SeatKeyText,
   ServiceId as ServiceKey,
   ServiceVariantId as VariantKey,
   UserId as UserKey,
-  WaitlistSystem,
-  FlexibleWhen as WhenData,
   defect,
-} from '@creativo/ecs-core';
+} from '@core/primitives';
+import {
+  type BookingCart as CartData,
+  DayWindows as DayWindowsData,
+  MinuteRange,
+  FlexibleWhen as WhenData,
+} from '@core/components';
+import { WaitlistSystem } from '@core/systems';
 import { adminFirestore } from '../firebase-admin';
 import { loadBookingPolicy } from './load-booking-policy';
 import { TENANT_ZONE } from './tenant-zone';

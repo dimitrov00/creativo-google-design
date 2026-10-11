@@ -1,17 +1,17 @@
-import type { BadgeLevel } from '../components/badge-level.data';
 import type {
+  BadgeLevel,
   BadgeEmblem,
   BadgeSubjectSlot,
   MetricRef,
-} from '../components/gamification.data';
-import type { LocalizedText } from '../components/localized-text.data';
+  LocalizedText,
+} from '@core/components';
 import type {
   BadgeCategoryId,
   BadgeSeriesId,
   SeasonId,
-} from '../primitives/ids.primitive';
-import type { LocalDate } from '../primitives/local-date.primitive';
-import type { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
+  LocalDate,
+  UtcEpochMs,
+} from '@core/primitives';
 
 /**
  * The family's identity slice: the id and the plain 1-to-1 attributes.

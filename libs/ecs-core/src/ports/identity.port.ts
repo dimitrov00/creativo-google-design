@@ -1,16 +1,18 @@
-import type { AuthClaims } from '../components/auth-claims.data';
 import type {
+  AuthClaims,
   Identifier,
   ParsedIdentifier,
-} from '../components/identifier.data';
-import type { PipelineError } from '../components/pipeline-errors.data';
-import type { RepositoryError } from '../components/repository-errors.data';
-import type { Result } from '../components/result.data';
-import type { Customer } from '../entities/customer.entity';
-import type { Otp } from '../entities/otp.entity';
-import type { User } from '../entities/user.entity';
-import type { OtpId, TenantId, UserId } from '../primitives/ids.primitive';
-import type { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
+} from '@core/components';
+import type {
+  PipelineError,
+  RepositoryError,
+  Result,
+  OtpId,
+  TenantId,
+  UserId,
+  UtcEpochMs,
+} from '@core/primitives';
+import type { Customer, Otp, User } from '@core/entities';
 
 /**
  * The identity context's server ports (blueprint §4.1 `requestOtp`,

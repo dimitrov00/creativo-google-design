@@ -6,18 +6,20 @@ import {
 } from '@creativo/domain/governance';
 import { UserId } from '@creativo/domain/accounts';
 import {
+  ImpersonationSessionId as EcsSessionId,
+  UserId as EcsUserId,
+  UtcEpochMs,
+  defect,
+} from '@core/primitives';
+import {
   EndReasonFields,
   ImpersonationEndReason as EcsEndReason,
   ImpersonationLifecycle,
   ImpersonationScope as EcsScope,
-  type ImpersonationSession as EcsSession,
-  ImpersonationSessionId as EcsSessionId,
   ImpersonationStatus,
-  ImpersonationSystem,
-  UserId as EcsUserId,
-  UtcEpochMs,
-  defect,
-} from '@creativo/ecs-core';
+} from '@core/components';
+import { type ImpersonationSession as EcsSession } from '@core/entities';
+import { ImpersonationSystem } from '@core/systems';
 import { ImpersonationPort } from '../ports/impersonation.port';
 import {
   EndImpersonationError,

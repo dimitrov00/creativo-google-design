@@ -1,9 +1,5 @@
-import {
-  PrincipalKind,
-  type PrincipalTag,
-  isStaff,
-  knownRoles,
-} from '@creativo/ecs-core';
+import { PrincipalKind, isStaff, knownRoles } from '@core/components';
+import { type PrincipalTag } from '@core/systems';
 import { Principal } from '@creativo/domain/identity';
 
 /**

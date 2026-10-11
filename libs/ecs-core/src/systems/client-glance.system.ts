@@ -1,17 +1,20 @@
 import {
   AccountLifecycle,
   AccountStatus,
-} from '../components/account-status.data';
-import type { PunchCard } from '../components/punch-card.data';
-import type { ShopNow } from '../components/shop-now.data';
-import type { StreakState } from '../components/streak-state.data';
-import type { WallTime } from '../components/wall-time.data';
-import type { GiftVoucher } from '../entities/gift-voucher.entity';
-import type { Currency } from '../primitives/currency.primitive';
-import type { ServiceId, ServiceVariantId } from '../primitives/ids.primitive';
-import type { LocalDate } from '../primitives/local-date.primitive';
-import type { PriceCents } from '../primitives/price-cents.primitive';
-import type { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
+  type PunchCard,
+  type ShopNow,
+  type StreakState,
+  type WallTime,
+} from '@core/components';
+import type { GiftVoucher } from '@core/entities';
+import type {
+  Currency,
+  ServiceId,
+  ServiceVariantId,
+  LocalDate,
+  PriceCents,
+  UtcEpochMs,
+} from '@core/primitives';
 import { VoucherSystem } from './voucher.system';
 
 /*

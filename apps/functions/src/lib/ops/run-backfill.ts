@@ -26,7 +26,7 @@ import {
   BackfillPhase,
   type BackfillPageWalk,
   BackfillPlanSystem,
-} from '@creativo/ecs-core';
+} from '@core/systems';
 import { adminFirestore } from '../firebase-admin';
 import { type AuditInput, appendAudit } from '../booking/audit';
 import { callerActor, callerRoles } from '../booking/caller-roles';

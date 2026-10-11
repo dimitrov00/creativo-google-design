@@ -21,7 +21,7 @@ import { CoursesSectionComponent } from '../../sections/courses/courses-section.
 import { LandingHeroComponent } from '../../sections/hero/landing-hero.component';
 import { HiringSectionComponent } from '../../sections/hiring/hiring-section.component';
 import { LocationsComponent } from './locations/locations.component';
-import { TeamShowcaseComponent } from './team-showcase/team-showcase.component';
+import { TeamShowcaseComponent } from '../../sections/team-showcase/team-showcase.component';
 import { ServicesSectionComponent } from '../../sections/services/services-section.component';
 import { WorkGalleryComponent } from '../../sections/work-gallery/work-gallery.component';
 import { LandingContentService } from '../../content/landing-content.service';

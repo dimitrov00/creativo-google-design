@@ -14,23 +14,21 @@
  *    `errorCode` is the law's own field name for every error dictionary
  *    (Law 7.5), so those lines are N15-exempt.
  */
-import { MoneyErrorCode, type MoneyError } from './money-errors.data';
-import { RoundingMode } from './money.data';
-import { PipelineErrorCode, type PipelineError } from './pipeline-errors.data';
 import {
+  MoneyErrorCode,
+  type MoneyError,
+  PipelineErrorCode,
+  type PipelineError,
   RepositoryErrorCode,
   type RepositoryError,
-} from './repository-errors.data';
-import {
   DateTimeInvalidReason,
   TimeErrorCode,
   type TimeError,
-} from './time-errors.data';
-import { WriteAction, type WriteOp } from './write-op.data';
-import {
   PrimitiveErrorCode,
   type PrimitiveError,
-} from '../primitives/primitive-errors.data';
+} from '@core/primitives';
+import { RoundingMode } from './money.data';
+import { WriteAction, type WriteOp } from './write-op.data';
 
 /** A tag dictionary whose every value is a `T`. */
 type Dictionary<T> = { readonly [key: string]: T };

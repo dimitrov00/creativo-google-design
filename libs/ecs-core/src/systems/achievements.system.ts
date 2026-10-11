@@ -1,17 +1,13 @@
+import { Metric, type MetricRef, type SeasonWindow } from '@core/components';
 import {
-  Metric,
-  type MetricRef,
-  type SeasonWindow,
-} from '../components/gamification.data';
-import { Weekday } from '../components/weekday.data';
-import type {
-  BarberId,
-  LocationId,
-  ServiceId,
-} from '../primitives/ids.primitive';
-import { LocalDate } from '../primitives/local-date.primitive';
-import type { MinuteOfDay } from '../primitives/minute-of-day.primitive';
-import { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
+  Weekday,
+  type BarberId,
+  type LocationId,
+  type ServiceId,
+  LocalDate,
+  type MinuteOfDay,
+  UtcEpochMs,
+} from '@core/primitives';
 
 /*
  * DID THIS VISIT COUNT TOWARDS THE FAMILY? (client-card revision 3 §2.4,

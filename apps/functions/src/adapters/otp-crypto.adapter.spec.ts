@@ -1,4 +1,5 @@
-import { OTP_CODE_DIGITS, OtpCode, type OtpCrypto } from '@creativo/ecs-core';
+import { OTP_CODE_DIGITS, OtpCode } from '@core/components';
+import { type OtpCrypto } from '@core/ports';
 import { FixedCodeOtpCrypto } from './fixed-code-otp-crypto';
 import { NodeOtpCrypto } from './node-otp-crypto';
 import {

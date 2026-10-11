@@ -7,7 +7,7 @@
  * by construction rather than by a comment.
  *
  * ### The catalogue IS the fixture file
- * `catalog.json` under `@creativo/ecs-core/testing` (moved there from
+ * `catalog.json` under `@core/testing` (moved there from
  * `@creativo/application/engagement/testing` in the ECS migration's Phase
  * 3a; that entry still re-exports it) is §4.6's catalogue: WP3's mapper
  * specs parse it, the e2e seeds it, and this module writes it — one file,

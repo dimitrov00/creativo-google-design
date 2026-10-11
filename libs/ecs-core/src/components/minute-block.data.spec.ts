@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { at, until } from '../testing/booking-core.fixtures';
+import { at, until } from '@core/testing';
 import { BlockKind, MinuteBlock } from './minute-block.data';
 import { MinuteRange } from './minute-range.data';
 

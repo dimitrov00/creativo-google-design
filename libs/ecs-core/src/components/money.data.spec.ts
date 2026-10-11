@@ -17,11 +17,13 @@ import {
 } from 'dinero.js';
 import * as fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { Currency } from '../primitives/currency.primitive';
-import { PriceCents } from '../primitives/price-cents.primitive';
+import {
+  Currency,
+  PriceCents,
+  MoneyErrorCode,
+  type Result,
+} from '@core/primitives';
 import { Money, RoundingMode } from './money.data';
-import { MoneyErrorCode } from './money-errors.data';
-import type { Result } from './result.data';
 
 function value<T, E>(result: Result<T, E>): T {
   if (!result.ok)

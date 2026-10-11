@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { RedemptionCount } from '../components/redemption-count.data';
-import type { Invitation } from '../entities/invitation.entity';
-import { InvitationId, UserId } from '../primitives/ids.primitive';
-import { deepFreeze, utcMs } from '../testing';
+import { RedemptionCount } from '@core/components';
+import type { Invitation } from '@core/entities';
+import { InvitationId, UserId } from '@core/primitives';
+import { deepFreeze, utcMs } from '@core/testing';
 import { ReferralSystem } from './referral.system';
 
 /*

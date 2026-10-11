@@ -1,20 +1,19 @@
-import type { EarnedLevel } from '../components/badge-level.data';
 import {
+  type EarnedLevel,
   BadgeSubject,
   Gamification,
   SeasonPhase,
-} from '../components/gamification.data';
-import {
   FamilyScope,
   type ClosestLevel,
   type EarnedDay,
   type FamilyScopeFilter,
-} from '../components/standing.data';
-import type { BadgeProgress } from '../entities/badge-progress.entity';
-import type { BadgeSeries } from '../entities/badge-series.entity';
-import type { BadgeSeriesId } from '../primitives/ids.primitive';
-import type { LocalDate } from '../primitives/local-date.primitive';
-import { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
+} from '@core/components';
+import type { BadgeProgress, BadgeSeries } from '@core/entities';
+import {
+  type BadgeSeriesId,
+  type LocalDate,
+  UtcEpochMs,
+} from '@core/primitives';
 import { BadgeSystem } from './badge.system';
 import {
   LoyaltyCatalogSystem,

@@ -38,7 +38,7 @@ import { ServiceId } from '@creativo/application/catalog';
 
 /**
  * The optional phase's steps, in the order the flow machine walks them — the
- * one list, `OnboardingFlowSystem`'s (`@creativo/ecs-core`), in the flow
+ * one list, `OnboardingFlowSystem`'s (`@core/systems`), in the flow
  * shim's lowercase spelling (`@creativo/application/identity` converts the
  * SCREAMING tags, flatten pass). Stepping over the steps a resume's plan
  * leaves out is that system's math too (Phase 2): this store dispatches

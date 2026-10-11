@@ -1,9 +1,8 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { BirthDate } from '../components/birth-date.data';
-import { IdentityErrorCode } from '../components/identity-errors.data';
-import { LocalDate } from '../primitives/local-date.primitive';
-import { deepFreeze, localDate, unwrapErr, unwrapOk } from '../testing';
+import { BirthDate } from '@core/components';
+import { IdentityErrorCode, LocalDate } from '@core/primitives';
+import { deepFreeze, localDate, unwrapErr, unwrapOk } from '@core/testing';
 import { AgeSystem, AgeWindow } from './age.system';
 
 /*

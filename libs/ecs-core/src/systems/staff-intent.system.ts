@@ -1,5 +1,5 @@
-import { AppliedOperation } from '../components/applied-operation.data';
-import type { AppointmentId, OperationId } from '../primitives/ids.primitive';
+import { AppliedOperation } from '@core/components';
+import type { AppointmentId, OperationId } from '@core/primitives';
 
 /**
  * One of THIS device's own intents that landed on a visit: the revision it

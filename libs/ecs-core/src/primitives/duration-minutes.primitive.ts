@@ -1,4 +1,4 @@
-import { Result } from '../components/result.data';
+import { Result } from './result.data';
 import type { Brand } from './brand';
 import type { EndMinute, MinuteOfDay } from './minute-of-day.primitive';
 import { PrimitiveError, PrimitiveErrorCode } from './primitive-errors.data';

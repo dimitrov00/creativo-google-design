@@ -1,6 +1,9 @@
-import { MinuteCount } from '../primitives/duration-minutes.primitive';
-import type { BarberId, LocationId } from '../primitives/ids.primitive';
-import type { LocalDate } from '../primitives/local-date.primitive';
+import {
+  MinuteCount,
+  type BarberId,
+  type LocationId,
+  type LocalDate,
+} from '@core/primitives';
 
 /**
  * One barber's free minutes on one shop day at one shop — an element of the

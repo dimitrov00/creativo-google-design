@@ -1,12 +1,12 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
+import { BarberId, ServiceId, ServiceVariantId } from '@core/primitives';
 import {
-  BarberId,
-  ServiceId,
-  ServiceVariantId,
-} from '../primitives/ids.primitive';
-import { deepFreeze, textFixture } from '../testing';
-import { serviceFixture, termsFixture } from '../testing/booking-core.fixtures';
+  deepFreeze,
+  textFixture,
+  serviceFixture,
+  termsFixture,
+} from '@core/testing';
 import { CatalogPricingSystem } from './catalog-pricing.system';
 
 /*

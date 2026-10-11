@@ -1,10 +1,5 @@
-import {
-  AuditSystem,
-  SeatId,
-  UtcEpochMs,
-  ZonedTimeSystem,
-  defect,
-} from '@creativo/ecs-core';
+import { SeatId, UtcEpochMs, defect } from '@core/primitives';
+import { AuditSystem, ZonedTimeSystem } from '@core/systems';
 import type { Firestore } from 'firebase-admin/firestore';
 import { logger } from 'firebase-functions';
 import { HttpsError, onCall } from 'firebase-functions/v2/https';

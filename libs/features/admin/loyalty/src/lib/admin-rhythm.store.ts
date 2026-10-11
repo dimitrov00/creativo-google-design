@@ -42,12 +42,8 @@ import {
   type StreakTransition,
   type WithdrawOutcome,
 } from '@creativo/application/engagement';
+import { ServiceCategoryId, ServiceId } from '@core/primitives';
 import {
-  RhythmDraftSystem,
-  type RhythmIntervalPatch,
-  type RhythmPatch,
-  ServiceCategoryId,
-  ServiceId,
   StreakExcuse as SystemExcuse,
   StreakInterval as SystemInterval,
   StreakIntervalRule,
@@ -55,7 +51,12 @@ import {
   StreakQualifier as SystemQualifier,
   StreakQualifierRule,
   type StreakRuleInput,
-} from '@creativo/ecs-core';
+} from '@core/components';
+import {
+  RhythmDraftSystem,
+  type RhythmIntervalPatch,
+  type RhythmPatch,
+} from '@core/systems';
 import {
   CLOCK,
   FEATURE_FLAGS,
@@ -203,7 +204,7 @@ export interface AdminRhythmDays {
 
 /*
  * The clamp, the bounds and the diff are `RhythmDraftSystem`
- * (`@creativo/ecs-core`, `rhythm-draft.system.ts`) since the ECS
+ * (`@core/systems`, `rhythm-draft.system.ts`) since the ECS
  * migration's Phase 2; the functions below carry the store's props-shaped
  * API across, and the bridge is the private helpers after them.
  */

@@ -1,7 +1,10 @@
-import { EndMinute, MinuteOfDay } from '../primitives/minute-of-day.primitive';
-import { CatalogError } from './catalog-errors.data';
-import { Result } from './result.data';
-import type { Weekday } from './weekday.data';
+import {
+  EndMinute,
+  MinuteOfDay,
+  CatalogError,
+  Result,
+  type Weekday,
+} from '@core/primitives';
 
 /**
  * The day tags — the ONLY source of these strings, named after the field they

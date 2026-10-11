@@ -6,8 +6,8 @@ import {
   LocationId,
   ServiceId,
   WaitlistRequestId,
-} from '../primitives/ids.primitive';
-import { endMinute, localDate, minute, unwrapOk } from '../testing';
+} from '@core/primitives';
+import { endMinute, localDate, minute, unwrapOk } from '@core/testing';
 import {
   BookingFlowState,
   BookingFlowStep,

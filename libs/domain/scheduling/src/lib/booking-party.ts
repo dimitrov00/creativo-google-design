@@ -10,7 +10,7 @@ import {
   InvalidGuestSequenceError,
 } from './booking-party.errors';
 import { SeatLabel } from './seat-label';
-import { Party, SeatLabel as EcsSeatLabel } from '@creativo/ecs-core';
+import { Party, SeatLabel as EcsSeatLabel } from '@core/components';
 
 export interface BookingPartyGuest {
   readonly id: GuestId;

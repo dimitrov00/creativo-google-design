@@ -13,8 +13,8 @@ import {
   UiTextDirective,
 } from '@creativo/ui/modifiers';
 import { UiCouponCard, UiOccasionBand } from '@creativo/ui/patterns';
-import { ScDemo } from '../../../shared/demo';
-import { ScPage } from '../../../shared/page';
+import { ScDemo } from '@showcase/shared/demo';
+import { ScPage } from '@showcase/shared/page';
 
 /**
  * THE TICKET AND THE BAND (client card, revision 3 §3.4). Every sample

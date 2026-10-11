@@ -6,6 +6,19 @@ Status: **spec for the flatten pass**, written 2026-10-10 after Phase 3a
 mechanical rules of §0.3; a name that is neither here nor derivable is an
 open question (§10), never an improvisation.
 
+> **Note 2026-10-11 — Law 8 (`CLAUDE.md`).** The file paths of this spec
+> are those of the flatten pass. Since Law 8 the library has no root barrel
+> (`src/index.ts`) and no `@creativo/ecs-core` alias: it is imported through
+> `@core/primitives`, `@core/components`, `@core/entities`, `@core/ports`,
+> `@core/systems` and `@core/pipelines`, and the test support is
+> `@core/testing` (`src/testing/index.ts`, was `src/testing.ts`). `Result`
+> and every error struct and dictionary moved to `primitives/` (each
+> `components/*-errors.data.ts`, `components/result.data.ts`,
+> `grant-status`, `waitlist-status`, `exception-effect`, `locale`,
+> `weekday`); the collection registry `ports/collections.ts` is
+> `entities/collections.ts`. The work-package file lists of §8 keep the
+> names they were assigned under.
+
 The blueprint `docs/architecture/ecs-migration.md` §2.5–§2.7 and §3 describe
 the **pre-Law-6/7** shapes; this file translates them. Where the two
 disagree, this file wins for the flatten pass and the reviser folds it back
@@ -245,22 +258,22 @@ The companion absorbs `DayKey` (`day-key.data.ts`) and layer 3 of today's
 `civil_from_days` (today's `DayKey.epochDayOf` / `fromEpochDay`, moved
 verbatim), ISO weekday `((epochDay + 3) mod 7) + 1`.
 
-| Member                                                | Replaces                                                               | Notes                                                                                                                           |
-| ----------------------------------------------------- | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| `parse(raw)`                                          | `DayKey.of` + `DayKey.isValid`                                         | `Result`; `LocalDate.of` is kept only for literals in specs/fixtures via `@creativo/ecs-core/testing` `localDate('2026-10-07')` |
-| `fromParts(year, month, day): Result<LocalDate, …>`   | `BirthDate.fromParts`'s date half                                      |                                                                                                                                 |
-| `parts(d): { year; month; day }`                      | `BirthDate.partsOf`'s date half                                        | returns a plain struct                                                                                                          |
-| `toEpochDay(d): number`, `fromEpochDay(n): LocalDate` | `DayKey.toEpochDay` / `fromEpochDay`                                   | epoch day 0 = 1970-01-01                                                                                                        |
-| `compare(a, b): -1 \| 0 \| 1`                         | `DayKey.compare`                                                       | lexicographic = chronological                                                                                                   |
-| `addDays(d, n)`                                       | `ZonedTimeSystem.addDays`                                              |                                                                                                                                 |
-| `daysBetween(from, to): number`                       | `ZonedTimeSystem.daysBetween`                                          | signed                                                                                                                          |
-| `weekday(d): Weekday`                                 | `ZonedTimeSystem.weekdayOf`, `DayOffset.weekday`, `Weekday.ofEpochDay` | ISO 1 = Monday … 7 = Sunday                                                                                                     |
-| `addMonths(d, n)`                                     | `ZonedTimeSystem.addMonths`                                            | day clamped to the target month's length                                                                                        |
-| `startOfMonth(d)`, `monthKey(d): CapacityMonthId`     | `ZonedTimeSystem.startOfMonth`, `CapacityEntry.monthOf`                | `monthKey` is `YYYY-MM`                                                                                                         |
-| `startOfWeek(d): LocalDate`                           | `CalendarGridSystem.startOfWeek`'s table use                           | Monday                                                                                                                          |
-| `range(from, to): readonly LocalDate[]`               | `ZonedTimeSystem.rangeKeys`                                            | inclusive; empty when inverted                                                                                                  |
-| `wholeYearsBetween(from, to): number`                 | `ZonedTimeSystem.wholeYearsBetween`                                    | ages; 29 Feb anniversaries fall on 28 Feb in common years (today's `LEAP_DAY` rule)                                             |
-| `isLeapYear(year)`, `daysInMonth(year, month)`        | `DayKey.isLeapYear` / `daysInMonth`                                    |                                                                                                                                 |
+| Member                                                | Replaces                                                               | Notes                                                                                                              |
+| ----------------------------------------------------- | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `parse(raw)`                                          | `DayKey.of` + `DayKey.isValid`                                         | `Result`; `LocalDate.of` is kept only for literals in specs/fixtures via `@core/testing` `localDate('2026-10-07')` |
+| `fromParts(year, month, day): Result<LocalDate, …>`   | `BirthDate.fromParts`'s date half                                      |                                                                                                                    |
+| `parts(d): { year; month; day }`                      | `BirthDate.partsOf`'s date half                                        | returns a plain struct                                                                                             |
+| `toEpochDay(d): number`, `fromEpochDay(n): LocalDate` | `DayKey.toEpochDay` / `fromEpochDay`                                   | epoch day 0 = 1970-01-01                                                                                           |
+| `compare(a, b): -1 \| 0 \| 1`                         | `DayKey.compare`                                                       | lexicographic = chronological                                                                                      |
+| `addDays(d, n)`                                       | `ZonedTimeSystem.addDays`                                              |                                                                                                                    |
+| `daysBetween(from, to): number`                       | `ZonedTimeSystem.daysBetween`                                          | signed                                                                                                             |
+| `weekday(d): Weekday`                                 | `ZonedTimeSystem.weekdayOf`, `DayOffset.weekday`, `Weekday.ofEpochDay` | ISO 1 = Monday … 7 = Sunday                                                                                        |
+| `addMonths(d, n)`                                     | `ZonedTimeSystem.addMonths`                                            | day clamped to the target month's length                                                                           |
+| `startOfMonth(d)`, `monthKey(d): CapacityMonthId`     | `ZonedTimeSystem.startOfMonth`, `CapacityEntry.monthOf`                | `monthKey` is `YYYY-MM`                                                                                            |
+| `startOfWeek(d): LocalDate`                           | `CalendarGridSystem.startOfWeek`'s table use                           | Monday                                                                                                             |
+| `range(from, to): readonly LocalDate[]`               | `ZonedTimeSystem.rangeKeys`                                            | inclusive; empty when inverted                                                                                     |
+| `wholeYearsBetween(from, to): number`                 | `ZonedTimeSystem.wholeYearsBetween`                                    | ages; 29 Feb anniversaries fall on 28 Feb in common years (today's `LEAP_DAY` rule)                                |
+| `isLeapYear(year)`, `daysInMonth(year, month)`        | `DayKey.isLeapYear` / `daysInMonth`                                    |                                                                                                                    |
 
 `Weekday` (`weekday.data.ts`, foundation) keeps its ISO numbers; its
 `ofEpochDay` moves to `LocalDate.weekday`.
@@ -1712,13 +1725,13 @@ DocBody): readonly string[]`** — the keys present in `before` and absent
 
 ### 6.2 Adapters and doubles (one behaviour everywhere)
 
-| File                                                                              | Change                                                                                                                                                                                                                                                                                                                         |
-| --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `apps/functions/src/adapters/firestore-tx.adapter.ts`                             | `applyUpdate` passes each `fields` key as a single-segment `FieldPath` (unchanged) and each `deleteFields` key as `FieldPath(key), FieldValue.delete()`; an `Update` with no fields and no deletes writes nothing; a key in both → `RepositoryError.writeFailed`. `WriteKind` → `WriteAction`.                                 |
-| `apps/functions/src/test-support/fake-projection-firestore.ts`                    | models `FieldValue.delete()` at the root (removes the key; a multi-segment path still refused); ALREADY_EXISTS keeps surfacing as the SDK's gRPC-6 error (it doubles the SDK, and the adapter turns it into the value).                                                                                                        |
-| `libs/ecs-core/src/testing.ts` (`memoryCommitPlan`, `applyWrites`, `stageWrites`) | `mergeFields(body, fields, deleteFields)` removes the deleted keys; **`applyWrites` answers the ALREADY_EXISTS conflict as a value too** (`Result<void, RepositoryError>`), so both in-memory doubles and the adapter return conflicts as values (3a issue); an `Update` of an absent document still rejects (infrastructure). |
-| `apps/functions/src/adapters/firestore-ports.ts`                                  | `nowMs` → `nowUtcMs: () => UtcEpochMs`.                                                                                                                                                                                                                                                                                        |
-| `libs/ecs-core/src/ports/tx.port.ts`                                              | §3.8; the JSDoc of `CommitPlan` gains the delete-field sentence.                                                                                                                                                                                                                                                               |
+| File                                                                                           | Change                                                                                                                                                                                                                                                                                                                         |
+| ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `apps/functions/src/adapters/firestore-tx.adapter.ts`                                          | `applyUpdate` passes each `fields` key as a single-segment `FieldPath` (unchanged) and each `deleteFields` key as `FieldPath(key), FieldValue.delete()`; an `Update` with no fields and no deletes writes nothing; a key in both → `RepositoryError.writeFailed`. `WriteKind` → `WriteAction`.                                 |
+| `apps/functions/src/test-support/fake-projection-firestore.ts`                                 | models `FieldValue.delete()` at the root (removes the key; a multi-segment path still refused); ALREADY_EXISTS keeps surfacing as the SDK's gRPC-6 error (it doubles the SDK, and the adapter turns it into the value).                                                                                                        |
+| `libs/ecs-core/src/testing/test-support.ts` (`memoryCommitPlan`, `applyWrites`, `stageWrites`) | `mergeFields(body, fields, deleteFields)` removes the deleted keys; **`applyWrites` answers the ALREADY_EXISTS conflict as a value too** (`Result<void, RepositoryError>`), so both in-memory doubles and the adapter return conflicts as values (3a issue); an `Update` of an absent document still rejects (infrastructure). |
+| `apps/functions/src/adapters/firestore-ports.ts`                                               | `nowMs` → `nowUtcMs: () => UtcEpochMs`.                                                                                                                                                                                                                                                                                        |
+| `libs/ecs-core/src/ports/tx.port.ts`                                                           | §3.8; the JSDoc of `CommitPlan` gains the delete-field sentence.                                                                                                                                                                                                                                                               |
 
 ### 6.3 `CommitPlan` error and `RepositoryError`
 
@@ -1767,7 +1780,7 @@ Notes:
   appointment apply them).
 - **L2 cannot see a named nested type** (`contact: BookingContact`); the
   per-entity type-spec is the guard there. Foundation ships the helpers
-  ONCE, as type-only exports of `@creativo/ecs-core/testing`, and no group
+  ONCE, as type-only exports of `@core/testing`, and no group
   re-types them:
 
   ```ts
@@ -1896,10 +1909,10 @@ _Their specs (10):_ `systems/barber-tone.system.spec.ts`, `systems/calendar-grid
    keep every companion helper (renamed parameters, same math); add the
    per-entity type-spec (`IsNever`, each discriminator narrows, the
    `NoNested` and `Disjoint` assertions of §7 — imported from
-   `@creativo/ecs-core/testing`, never re-typed) and its pair lines in its
+   `@core/testing`, never re-typed) and its pair lines in its
    dictionary type-spec (L8).
 2. Re-shape every spec case of its files (§0.1) — same intent, new shapes;
-   specs use `@creativo/ecs-core/testing` helpers (`localDate`, `minute`,
+   specs use `@core/testing` helpers (`localDate`, `minute`,
    `utcMs`, `FIXTURE_NOW`, `FIXTURE_TIME_ZONE`) instead of `Date.parse` /
    `new Date` (L4).
 3. Rewrite its legacy shims so they convert at their boundary (§0.1):

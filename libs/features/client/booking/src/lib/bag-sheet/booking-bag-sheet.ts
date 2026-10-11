@@ -27,15 +27,19 @@ import {
   Currency,
   DurationMinutes,
   MinuteCount,
-  type Money as MoneyData,
   PriceCents,
-  type PricedService,
-  ServiceTerms as TermsData,
-  type TermsSpan,
-  TermsSpanSystem,
   ServiceVariantId as VariantKey,
   defect,
-} from '@creativo/ecs-core';
+} from '@core/primitives';
+import {
+  type Money as MoneyData,
+  ServiceTerms as TermsData,
+} from '@core/components';
+import {
+  type PricedService,
+  type TermsSpan,
+  TermsSpanSystem,
+} from '@core/systems';
 import {
   CatalogContentService,
   CatalogPresenter,

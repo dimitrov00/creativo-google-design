@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { RewardId } from '../primitives/ids.primitive';
-import { localDate } from '../testing';
+import { RewardId } from '@core/primitives';
+import { localDate } from '@core/testing';
 import { RedeemProblem, RedemptionRecord } from './reward-redemption.data';
 
 describe('RedeemProblem / RedemptionRecord', () => {

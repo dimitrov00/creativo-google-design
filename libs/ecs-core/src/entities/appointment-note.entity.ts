@@ -1,5 +1,4 @@
-import type { AppointmentId, UserId } from '../primitives/ids.primitive';
-import type { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
+import type { AppointmentId, UserId, UtcEpochMs } from '@core/primitives';
 
 /**
  * The staff note on a visit — `appointmentNotes/{appointmentId}`, one note per

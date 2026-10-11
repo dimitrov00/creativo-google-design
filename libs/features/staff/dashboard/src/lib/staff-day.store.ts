@@ -16,25 +16,25 @@ import {
   BarberId as EcsBarberId,
   DurationMinutes,
   EndMinute,
-  GridLayoutSystem,
-  type LandedRevision,
-  type LaneGap as EcsLaneGap,
   LocalDate,
   MinuteCount,
   MinuteOfDay,
-  MinuteRange,
+  OperationId,
+  type TimeZone,
+  UtcEpochMs,
+  defect,
+} from '@core/primitives';
+import { MinuteRange, type ShopNow, type WallTime } from '@core/components';
+import {
+  GridLayoutSystem,
+  type LandedRevision,
+  type LaneGap as EcsLaneGap,
   type OccupyingSeat,
   type OccupyingVisit,
-  OperationId,
-  type ShopNow,
   StaffIntentSystem,
-  type TimeZone,
   type UnsettledName,
-  UtcEpochMs,
-  type WallTime,
   ZonedTimeSystem,
-  defect,
-} from '@creativo/ecs-core';
+} from '@core/systems';
 import {
   APPOINTMENT_NOTES,
   APPOINTMENT_PHOTOS,

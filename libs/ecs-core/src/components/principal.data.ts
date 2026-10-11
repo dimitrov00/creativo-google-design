@@ -1,4 +1,4 @@
-import type { TenantId, UserId } from '../primitives/ids.primitive';
+import type { TenantId, UserId } from '@core/primitives';
 import { type AuthClaims, AuthStage } from './auth-claims.data';
 import { type Role, isStaff } from './role.data';
 

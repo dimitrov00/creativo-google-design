@@ -1,6 +1,6 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { deepFreeze, localDate } from '../testing';
+import { deepFreeze, localDate } from '@core/testing';
 import { BusyKey } from './busy-key.primitive';
 import { BarberId } from './ids.primitive';
 import { LocalDate } from './local-date.primitive';

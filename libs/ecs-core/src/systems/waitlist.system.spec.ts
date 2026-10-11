@@ -1,26 +1,23 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { BookingPolicy } from '../components/booking-policy.data';
 import {
+  BookingPolicy,
   BookingCart,
   type CartLine,
   type CartSeatLines,
-} from '../components/cart-line.data';
-import { DayWindows } from '../components/day-windows.data';
-import { FlexibleWhen } from '../components/flexible-when.data';
-import { MinuteRange } from '../components/minute-range.data';
-import { NotificationTopic } from '../components/notification-payload.data';
-import { RosterWindow } from '../components/roster-window.data';
-import { SchedulingErrorCode } from '../components/scheduling-errors.data';
-import type { ServiceTerms } from '../components/service-terms.data';
-import type { ShopNow } from '../components/shop-now.data';
-import {
+  DayWindows,
+  FlexibleWhen,
+  MinuteRange,
+  NotificationTopic,
+  RosterWindow,
+  type ServiceTerms,
+  type ShopNow,
   WaitlistLifecycle,
-  WaitlistStatus,
-} from '../components/waitlist-status.data';
-import { WriteAction } from '../components/write-op.data';
-import type { WaitlistRequest } from '../entities/waitlist-request.entity';
+  WriteAction,
+} from '@core/components';
 import {
+  SchedulingErrorCode,
+  WaitlistStatus,
   BarberId,
   CartLineId,
   LocationId,
@@ -29,7 +26,9 @@ import {
   ServiceVariantId,
   UserId,
   WaitlistRequestId,
-} from '../primitives/ids.primitive';
+  WaitlistErrorCode,
+} from '@core/primitives';
+import type { WaitlistRequest } from '@core/entities';
 import {
   deepFreeze,
   endMinute,
@@ -39,11 +38,11 @@ import {
   unwrapErr,
   unwrapOk,
   utcMs,
-} from '../testing';
-import { minuteCount, termsFixture } from '../testing/booking-core.fixtures';
+  minuteCount,
+  termsFixture,
+} from '@core/testing';
 import { AvailabilitySystem } from './availability.system';
 import type { CartBarberDay, CartService } from './booking-cart.system';
-import { WaitlistErrorCode } from '../components/waitlist-errors.data';
 import {
   type WaitlistAskInput,
   type WaitlistDoor,

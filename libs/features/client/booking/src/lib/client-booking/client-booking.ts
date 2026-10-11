@@ -14,14 +14,13 @@ import {
 } from '@creativo/application/booking';
 import type { Location } from '@creativo/application/catalog';
 import {
-  E164,
   Latitude,
   LocationId as LocationKey,
   Longitude,
-  type ReachableShop,
-  ShopReachSystem,
   defect,
-} from '@creativo/ecs-core';
+} from '@core/primitives';
+import { E164 } from '@core/components';
+import { type ReachableShop, ShopReachSystem } from '@core/systems';
 import { NgTemplateOutlet } from '@angular/common';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { TranslocoDirective } from '@jsverse/transloco';

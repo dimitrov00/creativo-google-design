@@ -1,16 +1,12 @@
-import type { VoucherCode } from '../components/voucher-code.data';
-import type { VoucherLifecycle } from '../components/voucher-state.data';
-import type { Currency } from '../primitives/currency.primitive';
-import type { GiftVoucherId, UserId } from '../primitives/ids.primitive';
-import type { LocalDate } from '../primitives/local-date.primitive';
-import type { PriceCents } from '../primitives/price-cents.primitive';
-import type { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
-
-/*
- * F0 STAGING: `GiftVoucherId` lives in `primitives/ids.primitive.ts` (§1.5);
- * the barrel still names this file for it until the integrator drops that
- * line.
- */
+import type { VoucherCode, VoucherLifecycle } from '@core/components';
+import type {
+  Currency,
+  GiftVoucherId,
+  UserId,
+  LocalDate,
+  PriceCents,
+  UtcEpochMs,
+} from '@core/primitives';
 
 /** The voucher's identity slice — its id, its money and its stamps. */
 export type GiftVoucherMeta = {

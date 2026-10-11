@@ -1,4 +1,4 @@
-import type { OperationId } from '../primitives/ids.primitive';
+import type { OperationId } from '@core/primitives';
 
 /**
  * One staff edit the visit has already applied — an element of the stored

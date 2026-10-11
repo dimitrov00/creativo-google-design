@@ -13,7 +13,7 @@ collections it reshapes here, in the same commit that changes their shape.
 - Every exported body is checked against its entity:
 
   ```ts
-  import type { Service } from '@creativo/ecs-core';
+  import type { Service } from '@core/entities';
 
   export const classicCut = {
     // …every field of the entity but `id`
@@ -31,7 +31,7 @@ collections it reshapes here, in the same commit that changes their shape.
   Instants are literal epoch-ms numbers and days literal `YYYY-MM-DD`
   strings — no `Date.now()`, no `new Date()`, no date library in a body (the
   fixtures' day is `FIXTURE_TODAY`, 2026-09-28, in
-  `@creativo/ecs-core/testing`).
+  `@core/testing`).
 - Ids that a key is built from (`BusyKey.of`, `StreakDefinitionVersionId.forVersion`)
   are built by their companion, never spelled by hand.
 - The `.mjs` writers (`tools/seed/*.mjs`, `tools/seed-dev-catalog.mjs`) import
@@ -40,7 +40,7 @@ collections it reshapes here, in the same commit that changes their shape.
 
 `seed-tools` is tagged `type:tooling`, whose row in the root
 `eslint.config.mjs` lets it depend on `type:tooling`, `type:util` and
-`type:domain` — so `import type { X } from '@creativo/ecs-core'` (the archetype noun, no `Entity` suffix — flatten-spec N1) is
+`type:domain` — so `import type { X } from '@core/entities'` (the archetype noun, no `Entity` suffix — flatten-spec N1) is
 legal here, and nothing of `type:application`/`type:infrastructure` is.
 
 ## Not here
@@ -48,4 +48,4 @@ legal here, and nothing of `type:application`/`type:infrastructure` is.
 The loyalty catalogue and the gift vouchers the seed reads BY PATH
 (`catalog.json`, `vouchers.json`) are test fixtures shared with the specs:
 they live in `libs/ecs-core/src/testing/fixtures/loyalty/` and are exported
-from `@creativo/ecs-core/testing`.
+from `@core/testing`.

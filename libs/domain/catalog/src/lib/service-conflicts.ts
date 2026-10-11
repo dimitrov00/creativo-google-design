@@ -1,9 +1,6 @@
-import {
-  type ConflictService,
-  ServiceComposition as EcsServiceComposition,
-  ServiceConflictSystem,
-  ServiceId as EcsServiceId,
-} from '@creativo/ecs-core';
+import { ServiceId as EcsServiceId } from '@core/primitives';
+import { ServiceComposition as EcsServiceComposition } from '@core/components';
+import { type ConflictService, ServiceConflictSystem } from '@core/systems';
 import { ServiceId } from './ids';
 import { Service } from './service';
 
@@ -12,7 +9,7 @@ import { Service } from './service';
  * in the way. `blocked` always names the blockers — an unexplained lock is
  * the failure mode this whole module exists to prevent.
  *
- * Phase 2 shim: the rule is `ServiceConflictSystem` in `@creativo/ecs-core`;
+ * Phase 2 shim: the rule is `ServiceConflictSystem` in `@core/systems`;
  * this file keeps the legacy `Service`/`ServiceId` signatures for its callers.
  */
 export type ServiceSelectability =

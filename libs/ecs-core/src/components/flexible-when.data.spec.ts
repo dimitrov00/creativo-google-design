@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import type { LocalDate } from '../primitives/local-date.primitive';
-import { endMinute, localDate, minute, unwrapOk } from '../testing';
+import type { LocalDate } from '@core/primitives';
+import { endMinute, localDate, minute, unwrapOk } from '@core/testing';
 import { DayWindows } from './day-windows.data';
 import { FlexibleWhen } from './flexible-when.data';
 import { MinuteRange } from './minute-range.data';

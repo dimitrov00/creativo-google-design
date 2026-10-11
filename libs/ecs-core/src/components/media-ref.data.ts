@@ -1,6 +1,9 @@
-import { MediaRefId } from '../primitives/ids.primitive';
-import { CatalogError, MediaDimension } from './catalog-errors.data';
-import { Result } from './result.data';
+import {
+  MediaRefId,
+  CatalogError,
+  MediaDimension,
+  Result,
+} from '@core/primitives';
 
 /**
  * A denormalised image pointer embedded where a cover or avatar renders
@@ -136,9 +139,3 @@ function isUnit(n: number): boolean {
 function isPositiveInteger(n: number): boolean {
   return Number.isInteger(n) && n > 0;
 }
-
-/**
- * Flatten-pass staging: the barrel still names this module for `MediaRefId`
- * (its old home) until the integrator drops that line — the id lives in
- * `primitives/ids.primitive.ts` (§1.5).
- */

@@ -1,10 +1,5 @@
-import {
-  LocalDate,
-  UtcEpochMs,
-  ZonedTimeSystem,
-  defect,
-  type TimeZone,
-} from '@creativo/ecs-core';
+import { LocalDate, UtcEpochMs, defect, type TimeZone } from '@core/primitives';
+import { ZonedTimeSystem } from '@core/systems';
 
 /**
  * The shop's calendar. Every loyalty DATE — a season's window, the day a
@@ -12,7 +7,7 @@ import {
  * stay instants (`Date`) until one of them has to become a day.
  *
  * A thin shim since the ECS migration's Phase 2: the calendar arithmetic is
- * `LocalDate` and `ZonedTimeSystem` (`@creativo/ecs-core`, native `Intl`, no
+ * `LocalDate` and `ZonedTimeSystem` (`@core/systems`, native `Intl`, no
  * date library).
  */
 export const LOYALTY_ZONE = 'Europe/Sofia';

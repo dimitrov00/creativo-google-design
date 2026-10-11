@@ -1,17 +1,17 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import type { Result } from '../components/result.data';
 import {
+  type Result,
   DateTimeInvalidReason,
   TimeErrorCode,
-} from '../components/time-errors.data';
-import { Weekday } from '../components/weekday.data';
-import { LocalDate } from '../primitives/local-date.primitive';
-import type { MinuteOfDay } from '../primitives/minute-of-day.primitive';
-import type { TimeZone } from '../primitives/time-zone.primitive';
-import { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
+  Weekday,
+  LocalDate,
+  type MinuteOfDay,
+  type TimeZone,
+  UtcEpochMs,
+} from '@core/primitives';
 import { ZonedTimeSystem } from './zoned-time.system';
-import { deepFreeze, localDate, minute, unwrapOk, utcMs } from '../testing';
+import { deepFreeze, localDate, minute, unwrapOk, utcMs } from '@core/testing';
 
 /*
  * Every expected instant below is a LITERAL epoch-ms constant (its UTC

@@ -1,21 +1,23 @@
 import { Result, fail, ok } from '@creativo/domain/kernel';
 import {
-  type BookingPolicy as EcsBookingPolicy,
-  ClientStatsPolicy as EcsClientStatsPolicy,
   DurationMinutes,
   MinuteCount,
   type SchedulingError,
   SchedulingErrorCode,
   UtcEpochMs,
   defect,
-} from '@creativo/ecs-core';
+} from '@core/primitives';
+import {
+  type BookingPolicy as EcsBookingPolicy,
+  ClientStatsPolicy as EcsClientStatsPolicy,
+} from '@core/components';
 import { BookingPolicy } from './booking-policy';
 import type { CancellationWindow } from './cancellation-window';
 import { InvalidClientStatsPolicyError } from './client-stats.errors';
 
 /*
  * Phase 2 shim: the policy and its rules are `ClientStatsPolicy` in
- * `@creativo/ecs-core` (a component: the validation, the late line). This
+ * `@core/components` (a component: the validation, the late line). This
  * class keeps the legacy shape for its callers — its `booking` is the
  * `BookingPolicy` class — and converts at the edge (`toStruct`): minutes to
  * their brands, epoch ms to `UtcEpochMs`.
@@ -132,7 +134,7 @@ export class ClientStatsPolicy {
   }
 
   /**
-   * Phase 2 bridge: this policy as the `@creativo/ecs-core` struct the
+   * Phase 2 bridge: this policy as the `@core/components` struct the
    * systems take (`ClientStatsSystem`'s `policy`). Deleted with the class.
    */
   toStruct(): EcsClientStatsPolicy {

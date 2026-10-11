@@ -3,27 +3,28 @@ import { describe, expect, it } from 'vitest';
 import {
   AuthStrategy,
   AuthStrategyKind,
-} from '../components/auth-strategy.data';
-import {
   Identifier,
-  IdentifierChannel,
   ParsedIdentifier,
-} from '../components/identifier.data';
-import { IdentityErrorCode } from '../components/identity-errors.data';
-import { OtpDestinationType } from '../components/otp-destination-type.data';
-import { OtpPurpose } from '../components/otp-purpose.data';
-import { RegistrationField } from '../components/registration.data';
-import type { Otp } from '../entities/otp.entity';
-import { DurationMinutes } from '../primitives/duration-minutes.primitive';
-import { OtpId, TenantId } from '../primitives/ids.primitive';
-import { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
+  OtpDestinationType,
+  OtpPurpose,
+  RegistrationField,
+} from '@core/components';
+import {
+  IdentifierChannel,
+  IdentityErrorCode,
+  DurationMinutes,
+  OtpId,
+  TenantId,
+  UtcEpochMs,
+} from '@core/primitives';
+import type { Otp } from '@core/entities';
 import {
   deepFreeze,
   sequentialIds,
   unwrapErr,
   unwrapOk,
   utcMs,
-} from '../testing';
+} from '@core/testing';
 import { type OtpChallenge, OtpLimits, OtpSystem } from './otp.system';
 
 /*

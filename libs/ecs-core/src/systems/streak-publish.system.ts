@@ -1,16 +1,18 @@
-import type { EngagementError } from '../components/engagement-errors.data';
-import type { LocalizedText } from '../components/localized-text.data';
-import { Result } from '../components/result.data';
-import { StreakPublishError } from '../components/streak-publish-errors.data';
 import {
+  type EngagementError,
+  Result,
+  StreakPublishError,
+  type StreakDefinitionId,
+  type LocalDate,
+} from '@core/primitives';
+import {
+  type LocalizedText,
   StreakRule,
   StreakRuleDirection,
   type StreakRuleInput,
   StreakTransition,
   type StreakHeadRule,
-} from '../components/streak-rule.data';
-import type { StreakDefinitionId } from '../primitives/ids.primitive';
-import type { LocalDate } from '../primitives/local-date.primitive';
+} from '@core/components';
 import {
   StreakRuleSystem,
   type StreakNoticePolicy,

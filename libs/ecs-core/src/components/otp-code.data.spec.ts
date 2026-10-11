@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { IdentityErrorCode } from './identity-errors.data';
+import { IdentityErrorCode } from '@core/primitives';
 import { OtpCode } from './otp-code.data';
 
 // The cases of libs/domain/identity/src/lib/otp-code.spec.ts, on the brand.

@@ -1,4 +1,4 @@
-import { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
+import { UtcEpochMs } from '@core/primitives';
 
 /**
  * How long a piece of operational work may keep TAKING work — the

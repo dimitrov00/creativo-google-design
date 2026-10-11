@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { AppliedDiscountId } from '../primitives/ids.primitive';
-import { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
-import { unwrapOk } from '../testing';
+import { AppliedDiscountId, UtcEpochMs } from '@core/primitives';
+import { unwrapOk } from '@core/testing';
 import { AppliedDiscount } from './applied-discount.data';
 import { Combinability } from './coupon-combinability.data';
 import { CouponValue } from './coupon-value.data';

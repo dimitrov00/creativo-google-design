@@ -1,21 +1,23 @@
-import { EngagementError } from '../components/engagement-errors.data';
-import type { Money } from '../components/money.data';
-import { Result } from '../components/result.data';
-import { VoucherCode } from '../components/voucher-code.data';
-import { VoucherRedemption } from '../components/voucher-redemption.data';
 import {
-  VoucherLifecycle,
+  EngagementError,
+  Result,
   VoucherRefusal,
+  type Currency,
+  type GiftVoucherId,
+  type UserId,
+  type LocalDate,
+  PriceCents,
+  UtcEpochMs,
+} from '@core/primitives';
+import {
+  type Money,
+  VoucherCode,
+  VoucherRedemption,
+  VoucherLifecycle,
   VoucherStatus,
-} from '../components/voucher-state.data';
-import { WriteOp } from '../components/write-op.data';
-import type { GiftVoucher } from '../entities/gift-voucher.entity';
-import type { Currency } from '../primitives/currency.primitive';
-import type { GiftVoucherId, UserId } from '../primitives/ids.primitive';
-import type { LocalDate } from '../primitives/local-date.primitive';
-import { PriceCents } from '../primitives/price-cents.primitive';
-import { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
-import { Collections } from '../ports/collections';
+  WriteOp,
+} from '@core/components';
+import { type GiftVoucher, Collections } from '@core/entities';
 
 /** What a new voucher is issued from — every field present. */
 export type IssueVoucher = {

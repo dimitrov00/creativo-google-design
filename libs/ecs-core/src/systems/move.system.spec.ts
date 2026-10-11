@@ -1,36 +1,28 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { BarberPreference } from '../components/barber-pref.data';
-import { BookingLifecycle } from '../components/booking-lifecycle.data';
-import { BookingError } from '../components/booking-errors.data';
-import { BookingPolicy } from '../components/booking-policy.data';
 import {
+  BarberPreference,
+  BookingLifecycle,
+  BookingPolicy,
   PlacementPolicy,
   StaffTermsOverride,
-} from '../components/placement-policy.data';
-import {
   ScheduleVersion,
   ShiftSegment,
-} from '../components/schedule-version.data';
-import { Weekday } from '../components/weekday.data';
-import { SchedulingError } from '../components/scheduling-errors.data';
-import { SeatLabel } from '../components/seat-label.data';
-import { SeatOutcome } from '../components/seat-outcome.data';
-import {
+  SeatLabel,
+  SeatOutcome,
   Seat,
   SeatOccupant,
   SubjectRelationship,
-} from '../components/seat.data';
-import { ServiceTerms } from '../components/service-terms.data';
-import type { Appointment } from '../entities/appointment.entity';
-import type { Service } from '../entities/service.entity';
-import { Currency } from '../primitives/currency.primitive';
+  ServiceTerms,
+} from '@core/components';
 import {
+  BookingError,
+  Weekday,
+  SchedulingError,
+  Currency,
   DurationMinutes,
   MinuteCount,
   MinuteDelta,
-} from '../primitives/duration-minutes.primitive';
-import {
   BarberId,
   LocationId,
   OperationId,
@@ -39,10 +31,11 @@ import {
   ServiceId,
   ServiceVariantId,
   UserId,
-} from '../primitives/ids.primitive';
-import { LocalDate } from '../primitives/local-date.primitive';
-import type { MinuteOfDay } from '../primitives/minute-of-day.primitive';
-import { PriceCents } from '../primitives/price-cents.primitive';
+  LocalDate,
+  type MinuteOfDay,
+  PriceCents,
+} from '@core/primitives';
+import type { Appointment, Service } from '@core/entities';
 import {
   FIXTURE_NOW,
   FIXTURE_TODAY,
@@ -53,13 +46,11 @@ import {
   unwrapErr,
   unwrapOk,
   utcMs,
-} from '../testing';
-import { serviceFixture } from '../testing/booking-core.fixtures';
-import {
+  serviceFixture,
   type SeatFixtureOverrides,
   appointmentFixture,
   seatFixture,
-} from '../testing/appointment.fixtures';
+} from '@core/testing';
 import {
   AppointmentEditSystem,
   LedgerVerdict,

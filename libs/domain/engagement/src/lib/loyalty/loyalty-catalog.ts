@@ -2,25 +2,26 @@ import { Result, fail, ok } from '@creativo/domain/kernel';
 import {
   BadgeCategoryId as CategoryRefId,
   BadgeSeriesId as SeriesRefId,
+  EngagementErrorCode,
+  LocalDate,
+  RewardId,
+  SeasonId as SeasonRefId,
+  StreakDefinitionId,
+  TierId,
+  defect,
+} from '@core/primitives';
+import { Points, SeasonPhase as SystemSeasonPhase } from '@core/components';
+import {
   type CatalogCategoryRef,
   type CatalogRewardRef,
   type CatalogSeasonRef,
   type CatalogSeriesRef,
   type CatalogStreakRef,
   type CatalogTierRef,
-  EngagementErrorCode,
-  LocalDate,
   type ValidLoyaltyCatalog as SystemCatalog,
   type LoyaltyCatalogError as SystemCatalogError,
   LoyaltyCatalogSystem,
-  Points,
-  RewardId,
-  SeasonId as SeasonRefId,
-  SeasonPhase as SystemSeasonPhase,
-  StreakDefinitionId,
-  TierId,
-  defect,
-} from '@creativo/ecs-core';
+} from '@core/systems';
 import type { BadgeCategory } from './badge-category';
 import type { BadgeSeries } from './badge-series';
 import type { RewardCatalogItem, TierDefinition } from './catalog-entries';
@@ -40,7 +41,7 @@ import type { StreakDefinitionSchedule } from './streak-schedule';
 /*
  * The published loyalty catalogue as a class — a thin shim since the ECS
  * migration's Phase 2: validation, display order and every lookup are
- * `LoyaltyCatalogSystem` (`@creativo/ecs-core`, `loyalty-catalog.system.ts`),
+ * `LoyaltyCatalogSystem` (`@core/systems`, `loyalty-catalog.system.ts`),
  * run over light rows that carry the legacy object they stand for
  * (`source`). The bridge is the private helpers at the end.
  */

@@ -1,54 +1,57 @@
 import { defer, of } from 'rxjs';
-import { BlockKind, MinuteBlock } from '../components/minute-block.data';
-import { DayHours } from '../components/opening-hours.data';
-import { Result } from '../components/result.data';
-import type { DocBody } from '../components/write-op.data';
-import { ShiftSegment } from '../components/schedule-version.data';
-import type { ScheduleVersion } from '../components/schedule-version.data';
-import { ServiceTerms } from '../components/service-terms.data';
-import { Weekday } from '../components/weekday.data';
-import { E164 } from '../components/phone-number.data';
-import type { LocalizedText } from '../components/localized-text.data';
 import {
+  BlockKind,
+  MinuteBlock,
+  DayHours,
+  type DocBody,
+  ShiftSegment,
+  type ScheduleVersion,
+  ServiceTerms,
+  E164,
+  type LocalizedText,
   BarberStatus,
   LocationStatus,
   ServiceStatus,
-} from '../components/catalog-status.data';
-import { CompositionKind } from '../components/service-composition.data';
-import type { BarberBusyDay } from '../entities/barber-busy-day.entity';
-import type { BarberSchedule } from '../entities/barber-schedule.entity';
-import type { Barber } from '../entities/barber.entity';
-import type { ShopLocation } from '../entities/shop-location.entity';
-import type { Service } from '../entities/service.entity';
-import { Currency } from '../primitives/currency.primitive';
+  CompositionKind,
+} from '@core/components';
 import {
+  Result,
+  Weekday,
+  Currency,
   DurationMinutes,
   MinuteCount,
   MinuteDelta,
-} from '../primitives/duration-minutes.primitive';
-import { Latitude, Longitude } from '../primitives/geo.primitive';
-import {
+  Latitude,
+  Longitude,
   BarberBusyDayId,
   BarberId,
   LocationId,
   ServiceCategoryId,
   ServiceId,
-} from '../primitives/ids.primitive';
-import { BusyKey } from '../primitives/busy-key.primitive';
-import { LocalDate } from '../primitives/local-date.primitive';
-import { EndMinute, MinuteOfDay } from '../primitives/minute-of-day.primitive';
-import { PriceCents } from '../primitives/price-cents.primitive';
-import type { TimeZone } from '../primitives/time-zone.primitive';
-import { Collections } from '../ports/collections';
-import type { LoadBusyDay, ObserveBusyDay } from '../ports/scheduling.port';
-import { ZonedTimeSystem } from '../systems/zoned-time.system';
+  BusyKey,
+  LocalDate,
+  EndMinute,
+  MinuteOfDay,
+  PriceCents,
+  type TimeZone,
+} from '@core/primitives';
+import {
+  type BarberBusyDay,
+  type BarberSchedule,
+  type Barber,
+  type ShopLocation,
+  type Service,
+  Collections,
+} from '@core/entities';
+import type { LoadBusyDay, ObserveBusyDay } from '@core/ports';
+import { ZonedTimeSystem } from '@core/systems';
 
 /**
  * The booking-core fixtures (flatten-spec §8.1/§8.2) — the catalogue and
  * scheduling entities in their flat, branded shapes, every field present,
  * overridable field by field, and the branded-literal helpers the
  * booking-core specs name their figures with. Test support only, reached
- * through `@creativo/ecs-core/testing`.
+ * through `@core/testing`.
  *
  * Self-contained on purpose: `testing.ts` re-exports this file, so it never
  * imports `testing.ts` back (a cycle would hand a spec half-initialised

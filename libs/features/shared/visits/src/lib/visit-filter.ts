@@ -1,4 +1,4 @@
-import { VisitListSystem } from '@creativo/ecs-core';
+import { VisitListSystem } from '@core/systems';
 import {
   LEGACY_VISIT_FILTER,
   VISIT_FILTER_OF,
@@ -19,7 +19,7 @@ import type { VisitFilter, VisitPerspective, VisitRowVm } from './visit-row.vm';
  * genuinely carries, so no option can ever be a lie.
  *
  * Phase 2 shim: the options, their order and the narrowing rule are
- * `VisitListSystem` in `@creativo/ecs-core`; the option words stay here.
+ * `VisitListSystem` in `@core/systems`; the option words stay here.
  * Flatten pass: the system's tags are SCREAMING; the legacy words are
  * converted at this boundary (`visit-ecs.shim.ts`).
  */

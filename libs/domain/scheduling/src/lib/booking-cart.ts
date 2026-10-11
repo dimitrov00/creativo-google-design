@@ -6,9 +6,6 @@ import {
 } from '@creativo/domain/catalog';
 import {
   BarberId as BarberKey,
-  BookingCart as CartData,
-  BookingCartSystem,
-  type CartLine as LineData,
   CartLineId as LineKey,
   SchedulingErrorCode,
   type SchedulingError,
@@ -16,7 +13,12 @@ import {
   ServiceId as ServiceKey,
   ServiceVariantId as VariantKey,
   defect,
-} from '@creativo/ecs-core';
+} from '@core/primitives';
+import {
+  BookingCart as CartData,
+  type CartLine as LineData,
+} from '@core/components';
+import { BookingCartSystem } from '@core/systems';
 import { BarberPref } from './barber-pref';
 import {
   CartLineNotFoundError,
@@ -27,7 +29,7 @@ import { GuestId } from './ids';
 
 /*
  * THIN SHIM (ECS migration Phase 2). The cart's operations are the
- * `BookingCart` component of `@creativo/ecs-core`; the forgiving restore is
+ * `BookingCart` component of `@core/components`; the forgiving restore is
  * `BookingCartSystem.salvage`. This file keeps the legacy class API (class
  * ids, `Result` classes) for its callers and only converts.
  */

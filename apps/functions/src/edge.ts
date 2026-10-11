@@ -5,11 +5,8 @@ import {
 } from 'firebase-functions/v2/https';
 import {
   AccountsErrorCode,
-  AttemptOutcome,
   BookingErrorCode,
   BookingFlowErrorCode,
-  type CallableName,
-  CancellationRefusalCode,
   CatalogErrorCode,
   EngagementErrorCode,
   GovernanceErrorCode,
@@ -18,28 +15,35 @@ import {
   MediaErrorCode,
   MinuteOfDay,
   MoneyErrorCode,
-  MoveErrorCode,
-  type NowUtcMs,
   PhoneErrorCode,
   PipelineErrorCode,
   PrimitiveErrorCode,
   RepositoryErrorCode,
   type Result,
   SchedulingErrorCode,
-  StaffEditErrorCode,
   StreakPublishErrorCode,
-  type TelemetryPorts,
   TimeErrorCode,
   type TimeZone,
-  type AttemptLine,
-  TriggerAttemptSystem,
   TriggerEventId,
   UtcEpochMs,
   WaitlistErrorCode,
+  defect,
+} from '@core/primitives';
+import {
+  type CallableName,
+  type NowUtcMs,
+  type TelemetryPorts,
+} from '@core/ports';
+import {
+  AttemptOutcome,
+  CancellationRefusalCode,
+  MoveErrorCode,
+  StaffEditErrorCode,
+  type AttemptLine,
+  TriggerAttemptSystem,
   WorkBudgetSystem,
   ZonedTimeSystem,
-  defect,
-} from '@creativo/ecs-core';
+} from '@core/systems';
 import { TENANT_ZONE } from './lib/booking/tenant-zone';
 
 /**

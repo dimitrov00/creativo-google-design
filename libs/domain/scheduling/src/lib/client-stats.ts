@@ -6,44 +6,48 @@ import type {
 } from '@creativo/domain/catalog';
 import type { Money } from '@creativo/domain/kernel';
 import {
-  type AppointmentBill,
   AppointmentId as EcsAppointmentId,
   BarberId as EcsBarberId,
-  BarberPreference as EcsBarberPreference,
-  type BilledAppointment,
-  CancellationAttribution as EcsCancellationAttribution,
-  CancellationReason as EcsCancellationReason,
-  CancelledBy as EcsCancelledBy,
-  type ClientStats as EcsClientStats,
-  ClientStatsSystem,
   Currency,
   DurationMinutes,
   EndMinute,
   type LocalDate,
   MinuteCount,
   type MinuteOfDay,
-  type PauseBasisFact,
-  type PauseSuggestion as EcsPauseSuggestion,
-  Placement,
   PriceCents,
-  Seat as EcsSeatComponent,
   SeatId as EcsSeatId,
-  SeatLabel as EcsSeatLabel,
-  SeatOccupant,
   ServiceId as EcsServiceId,
   ServiceVariantId as EcsServiceVariantId,
-  type StatsAppointment,
-  SubjectRelationship as EcsSubjectRelationship,
-  SubjectVisitOutcome as EcsSubjectVisitOutcome,
-  type SubjectVisitOutcomeState,
   type TimeZone,
   UserId as EcsUserId,
   UtcEpochMs,
+  defect,
+} from '@core/primitives';
+import {
+  BarberPreference as EcsBarberPreference,
+  CancellationReason as EcsCancellationReason,
+  CancelledBy as EcsCancelledBy,
+  type ClientStats as EcsClientStats,
+  type PauseSuggestion as EcsPauseSuggestion,
+  Placement,
+  Seat as EcsSeatComponent,
+  SeatLabel as EcsSeatLabel,
+  SeatOccupant,
+  SubjectRelationship as EcsSubjectRelationship,
   type VisitFact as EcsVisitFact,
   type VisitLeg as EcsVisitLeg,
+} from '@core/components';
+import {
+  type AppointmentBill,
+  type BilledAppointment,
+  CancellationAttribution as EcsCancellationAttribution,
+  ClientStatsSystem,
+  type PauseBasisFact,
+  type StatsAppointment,
+  SubjectVisitOutcome as EcsSubjectVisitOutcome,
+  type SubjectVisitOutcomeState,
   ZonedTimeSystem,
-  defect,
-} from '@creativo/ecs-core';
+} from '@core/systems';
 import type { Appointment } from './appointment';
 import { ClientStatsPolicy } from './client-stats-policy';
 import type { AppointmentId, SeatId } from './ids';
@@ -52,7 +56,7 @@ import { type SeatOutcome, toEcsSeatOutcome } from './seat-outcome';
 
 /*
  * Phase 2 shim: the statistics are `ClientStatsSystem` in
- * `@creativo/ecs-core`. This file keeps the legacy shapes (class ids, the
+ * `@core/systems`. This file keeps the legacy shapes (class ids, the
  * `Appointment` aggregate, epoch-ms instants, the flat spend) for its
  * callers and converts at the edge: appointments go in as the stats slice
  * of the entity (seats flat, outcomes through `toEcsSeatOutcome`), "now" as

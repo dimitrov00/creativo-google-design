@@ -10,18 +10,22 @@ import {
 } from '@creativo/application/booking';
 import {
   LocalDate,
+  type Weekday as IsoWeekday,
+  defect,
+} from '@core/primitives';
+import {
   MonthlyAnchor,
   RecurrenceEnd as EcsRecurrenceEnd,
   RecurrenceEndRule,
   RecurrenceFrequency as EcsFrequency,
   RecurrencePattern as EcsPattern,
   RecurrenceRule as RuleData,
+  type WeekOfMonth as IsoWeekOfMonth,
+} from '@core/components';
+import {
   RepeatPreset as EcsRepeatPreset,
   VisitDraftSystem,
-  type Weekday as IsoWeekday,
-  type WeekOfMonth as IsoWeekOfMonth,
-  defect,
-} from '@creativo/ecs-core';
+} from '@core/systems';
 
 /* ────────────────────────────────────────────────────────────────────────
  * THE REPEAT PAGE'S POLICY — what the sheet does to a rule when a person
@@ -29,7 +33,7 @@ import {
  * steps the frame to another day. The RULE is the domain's; the moves a
  * sheet makes on someone's behalf are the product's.
  *
- * Phase 2 shim: the policy is `VisitDraftSystem` in `@creativo/ecs-core`
+ * Phase 2 shim: the policy is `VisitDraftSystem` in `@core/systems`
  * (over the `RecurrenceRule` struct and `RecurrenceSystem`). This file keeps
  * the legacy names and the legacy rule class / `CalendarDay` for its
  * callers, and converts between them and the ECS structs. Flatten pass: the

@@ -1,10 +1,11 @@
-import { BarberOffering } from '../components/barber-offering.data';
-import type { Money } from '../components/money.data';
-import { ServiceTerms } from '../components/service-terms.data';
-import type { Service } from '../entities/service.entity';
-import type { DurationMinutes } from '../primitives/duration-minutes.primitive';
-import type { BarberId, ServiceVariantId } from '../primitives/ids.primitive';
-import type { PriceCents } from '../primitives/price-cents.primitive';
+import { BarberOffering, type Money, ServiceTerms } from '@core/components';
+import type { Service } from '@core/entities';
+import type {
+  DurationMinutes,
+  BarberId,
+  ServiceVariantId,
+  PriceCents,
+} from '@core/primitives';
 
 /**
  * What the terms matrix reads of a service — its own `ServiceTerms` fields

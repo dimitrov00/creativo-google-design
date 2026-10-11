@@ -1,5 +1,5 @@
 import nx from "@nx/eslint-plugin";
-import baseConfig from "../../../../eslint.config.mjs";
+import baseConfig from "#eslint-config";
 
 /**
  * The specs' own import rule, read from the root config rather than

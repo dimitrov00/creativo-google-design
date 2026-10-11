@@ -1,7 +1,7 @@
 import { getApps } from 'firebase-admin/app';
 import { logger } from 'firebase-functions';
 import { type CallableRequest, HttpsError } from 'firebase-functions/v2/https';
-import { Callables } from '@creativo/ecs-core';
+import { Callables } from '@core/ports';
 import * as main from './main';
 import * as requestOtp from './lib/otp/request-otp';
 import * as verifyOtp from './lib/otp/verify-otp';

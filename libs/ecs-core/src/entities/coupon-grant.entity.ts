@@ -1,17 +1,10 @@
-import type { CouponValue } from '../components/coupon-value.data';
-import type { GrantLifecycle } from '../components/grant-status.data';
+import type { CouponValue, GrantLifecycle } from '@core/components';
 import type {
   CouponGrantId,
   CouponId,
   UserId,
-} from '../primitives/ids.primitive';
-import type { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
-
-/*
- * F0 STAGING: `CouponGrantId` lives in `primitives/ids.primitive.ts` (§1.5);
- * the barrel still names this file for it until the integrator drops that
- * line.
- */
+  UtcEpochMs,
+} from '@core/primitives';
 
 /** The grant's identity slice. */
 export type CouponGrantMeta = {

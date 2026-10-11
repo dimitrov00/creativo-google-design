@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { JournalEntryId, UserId } from '../primitives/ids.primitive';
+import { JournalEntryId, UserId } from '@core/primitives';
 
 describe('JournalEntryId', () => {
   it('pads the per-client sequence to six digits, so ids sort as the ledger', () => {

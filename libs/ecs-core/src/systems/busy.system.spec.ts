@@ -1,18 +1,24 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { BookingLifecycle } from '../components/booking-lifecycle.data';
-import { BlockKind, MinuteBlock } from '../components/minute-block.data';
-import { MinuteRange } from '../components/minute-range.data';
 import {
+  BookingLifecycle,
+  BlockKind,
+  MinuteBlock,
+  MinuteRange,
   CancellationReason,
   CancellationReasonSet,
-} from '../components/seat-outcome.data';
-import { Seat } from '../components/seat.data';
-import { WriteAction, WriteOp } from '../components/write-op.data';
-import type { Appointment } from '../entities/appointment.entity';
-import { BusyKey } from '../primitives/busy-key.primitive';
-import { AppointmentId, BarberId, SeatId } from '../primitives/ids.primitive';
-import type { LocalDate } from '../primitives/local-date.primitive';
+  Seat,
+  WriteAction,
+  WriteOp,
+} from '@core/components';
+import type { Appointment } from '@core/entities';
+import {
+  BusyKey,
+  AppointmentId,
+  BarberId,
+  SeatId,
+  type LocalDate,
+} from '@core/primitives';
 import {
   deepFreeze,
   endMinute,
@@ -20,13 +26,11 @@ import {
   localDate,
   minute,
   utcMs,
-} from '../testing';
-import {
   type AppointmentFixtureOverrides,
   appointmentFixture,
   seatFixture,
-} from '../testing/appointment.fixtures';
-import { termsFixture } from '../testing/booking-core.fixtures';
+  termsFixture,
+} from '@core/testing';
 import { BusySystem } from './busy.system';
 import { ZonedTimeSystem } from './zoned-time.system';
 

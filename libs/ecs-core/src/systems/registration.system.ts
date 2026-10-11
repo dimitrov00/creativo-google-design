@@ -1,22 +1,23 @@
-import { AccountLifecycle } from '../components/account-status.data';
-import { AuthClaims } from '../components/auth-claims.data';
-import type { AuthStrategy } from '../components/auth-strategy.data';
-import type { BirthDate } from '../components/birth-date.data';
-import { Email } from '../components/email.data';
 import {
-  IdentifierChannel,
+  AccountLifecycle,
+  AuthClaims,
+  type AuthStrategy,
+  type BirthDate,
+  Email,
   type ParsedIdentifier,
-} from '../components/identifier.data';
-import { E164 } from '../components/phone-number.data';
-import {
+  E164,
   Registration,
   RegistrationField,
   type RegistrationFields,
   RegistrationState,
-} from '../components/registration.data';
-import { Role } from '../components/role.data';
-import type { User } from '../entities/user.entity';
-import type { TenantId, UserId } from '../primitives/ids.primitive';
+  Role,
+} from '@core/components';
+import {
+  IdentifierChannel,
+  type TenantId,
+  type UserId,
+} from '@core/primitives';
+import type { User } from '@core/entities';
 import { SearchFieldsSystem } from './search-fields.system';
 
 /**

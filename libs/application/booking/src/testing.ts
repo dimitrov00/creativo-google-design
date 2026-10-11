@@ -19,7 +19,7 @@
 import type { Appointment } from '@creativo/domain/scheduling';
 import { type Result, fail, ok } from '@creativo/domain/kernel';
 import { RepositoryError } from '@creativo/application/shared';
-import { PageStep, PagingSystem } from '@creativo/ecs-core';
+import { PageStep, PagingSystem } from '@core/systems';
 import { subjectUserIdsOf } from './lib/ports/appointment-document';
 import type { AppointmentPhoto } from './lib/ports/appointment-photos.port';
 import type {

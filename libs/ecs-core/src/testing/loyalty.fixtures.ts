@@ -3,22 +3,21 @@ import {
   StreakRule,
   StreakRuleDirection,
   StreakTransition,
-} from '../components/streak-rule.data';
-import type { StreakDefinitionVersion } from '../entities/streak-definition-version.entity';
-import type { StreakDefinition } from '../entities/streak-definition.entity';
+} from '@core/components';
+import type { StreakDefinitionVersion, StreakDefinition } from '@core/entities';
 import {
   PublishRequestId,
   StreakDefinitionVersionId,
   UserId,
-} from '../primitives/ids.primitive';
-import { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
+  UtcEpochMs,
+} from '@core/primitives';
 import catalogJson from './fixtures/loyalty/catalog.json';
 import vouchersJson from './fixtures/loyalty/vouchers.json';
 import { deepFreeze } from './deep-freeze';
 
 /**
  * The loyalty and rhythm fixtures (blueprint §6 Phase 3a, §7) — test
- * support, reached through `@creativo/ecs-core/testing`.
+ * support, reached through `@core/testing`.
  *
  * Two families:
  *

@@ -1,5 +1,4 @@
-import { Principal, PrincipalKind } from '../components/principal.data';
-import type { Role } from '../components/role.data';
+import { Principal, PrincipalKind, type Role } from '@core/components';
 import type { PrincipalTag } from './guest-guard.system';
 
 /**

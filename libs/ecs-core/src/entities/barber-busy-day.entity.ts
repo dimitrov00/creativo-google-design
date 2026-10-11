@@ -1,7 +1,10 @@
-import type { MinuteBlock } from '../components/minute-block.data';
-import { type BarberId, BarberBusyDayId } from '../primitives/ids.primitive';
-import type { LocalDate } from '../primitives/local-date.primitive';
-import type { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
+import type { MinuteBlock } from '@core/components';
+import {
+  type BarberId,
+  BarberBusyDayId,
+  type LocalDate,
+  type UtcEpochMs,
+} from '@core/primitives';
 
 /**
  * The PUBLIC busy projection of one barber's shop day — `barberBusy/{id}`,
@@ -24,9 +27,3 @@ export type BarberBusyDay = {
   /** Occupied spans on the day's wall clock, sorted. */
   readonly blocks: readonly MinuteBlock[];
 };
-
-/**
- * Flatten-pass staging: the barrel's id block still names this module for
- * `BarberBusyDayId` until the integrator drops that line — the id lives in
- * `primitives/ids.primitive.ts` (§1.5).
- */

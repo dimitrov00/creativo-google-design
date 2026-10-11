@@ -3,8 +3,8 @@ import {
   MinuteOfDay,
   type TimeZone,
   UtcEpochMs,
-  ZonedTimeSystem,
-} from '@creativo/ecs-core';
+} from '@core/primitives';
+import { ZonedTimeSystem } from '@core/systems';
 
 /*
  * THE LEGACY DROP RULE for a span somebody DECLARED on a shop day's wall

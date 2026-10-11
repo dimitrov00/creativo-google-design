@@ -46,7 +46,8 @@ export const LAYER_IMPORT_RESTRICTIONS = {
 };
 
 /**
- * `@creativo/<lib>/testing` entry points hold TEST SUPPORT — a port's
+ * `@creativo/<lib>/testing` entry points and `@core/testing` (libs/ecs-core's
+ * test-support tier, Law 8) hold TEST SUPPORT — a port's
  * executable contract, its in-memory reference adapter, fixtures — kept off
  * the production barrels so a provider can never be handed one
  * (`libs/application/booking/src/testing.ts`). Specs import them; nothing
@@ -55,9 +56,9 @@ export const LAYER_IMPORT_RESTRICTIONS = {
  * libs/domain/kernel): a restated rule drops this half unless it lists it.
  */
 export const TESTING_ENTRY_POINT_RESTRICTION = {
-  group: ['@creativo/**/testing'],
+  group: ['@creativo/**/testing', '@core/testing'],
   message:
-    '@creativo/**/testing entry points are test support (contracts, in-memory adapters, fixtures) — import them from specs (*.spec.ts) only, never from production code.',
+    '@creativo/**/testing and @core/testing entry points are test support (contracts, in-memory adapters, fixtures) — import them from specs (*.spec.ts) only, never from production code.',
 };
 
 /**
@@ -76,8 +77,17 @@ export {
   ECS_ZONED_TIME_RESTRICTIONS,
   ICON_SPEC_SYNTAX_RESTRICTIONS,
   ICON_SYNTAX_RESTRICTIONS,
+  PARENT_SEGMENT_REGEX,
   ecsProjectBlocks,
 } from './tools/lint-rules/index.mjs';
+
+/**
+ * The local plugin itself, for the project configs that install one of its
+ * TypeScript rules (libs/ecs-core: `creativo/no-restricted-import-expressions`,
+ * Law 8's lazy-import half) — same reason as above: through this file, never
+ * by importing tools/lint-rules.
+ */
+export { creativo };
 
 export default [
   ...nx.configs['flat/base'],
@@ -100,14 +110,11 @@ export default [
         'error',
         {
           enforceBuildableLibDependency: true,
-          allow: [
-            '^.*/eslint(\\.base)?\\.config\\.[cm]?[jt]s$',
-            // The build-time flag manifest (R41, §12.1) sits outside every
-            // project on purpose: the web's environment files import their
-            // map from it, and tools/flags writes the functions params from
-            // the same file.
-            '^(\\.\\./)+config/feature-flags\\.json$',
-          ],
+          // Law 8: libs/ecs-core imports its own tier aliases
+          // (`@core/primitives` … `@core/pipelines`) across tiers; only
+          // same-tier siblings use `./x`.
+          allowCircularSelfDependency: true,
+          allow: ['^.*/eslint(\\.base)?\\.config\\.[cm]?[jt]s$'],
           depConstraints: [
             // Scope isolation: a project can only depend on its own scope
             // plus scope:shared. `domain`/`application`/`infrastructure`/`ui`
@@ -173,7 +180,7 @@ export default [
             {
               // `type:domain` added 2026-10-10 (ECS migration D10(a)): a
               // feature reads the plain ECS data and calls the pure systems
-              // of `@creativo/ecs-core` (tagged `type:domain`) straight from
+              // of libs/ecs-core (`@core/*`, tagged `type:domain`) straight from
               // its stores and `computed()`s — there is no view-model layer
               // in between (.claude/rules/angular-ui.md).
               sourceTag: 'type:feature',
@@ -240,7 +247,7 @@ export default [
               // `seed-tools` (tools/seed), retagged from `type:util` in ECS
               // migration Phase 3a: its fixture bodies
               // (`tools/seed/fixtures/*.ts`) import their entity types from
-              // `@creativo/ecs-core` (`type:domain`) to `satisfies
+              // `@core/entities` (`type:domain`) to `satisfies
               // Omit<XEntity, 'id'>` them, which the `type:util` row above
               // forbids. Never application or infrastructure: a fixture is
               // a document body, not a mapper's input.
@@ -299,8 +306,10 @@ export default [
   {
     // Specs are what the testing entry points are FOR. A rule's options are
     // replaced, never merged, by a later block, so this restates the layer
-    // half without the testing one.
-    files: ['**/*.spec.ts'],
+    // half without the testing one. `*.type-spec.ts` (compile-time
+    // assertions, type-checked by their lib's tsconfig.spec.json) are specs
+    // too: libs/ecs-core's take their fixtures from `@core/testing`.
+    files: ['**/*.spec.ts', '**/*.type-spec.ts'],
     rules: {
       'no-restricted-imports': ['error', LAYER_IMPORT_RESTRICTIONS],
     },
@@ -308,7 +317,7 @@ export default [
   {
     // Playwright e2e tooling (apps/web/e2e/support) mints Firebase Admin
     // custom tokens and seeds the emulators directly, and its fixtures come
-    // from the `@creativo/**/testing` entry points — it is test support that
+    // from the `@creativo/**/testing` and `@core/testing` entry points — it is test support that
     // never ships in an app bundle, so neither half of the boundary applies
     // (blueprint §1.2). `**/e2e/**` on purpose, not `apps/web/e2e/**`: a
     // `files` pattern is resolved against ESLint's basePath, and this folder

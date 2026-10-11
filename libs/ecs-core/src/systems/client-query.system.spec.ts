@@ -1,6 +1,6 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { deepFreeze } from '../testing';
+import { deepFreeze } from '@core/testing';
 import {
   ClientQuerySystem,
   type ParsedClientQuery,

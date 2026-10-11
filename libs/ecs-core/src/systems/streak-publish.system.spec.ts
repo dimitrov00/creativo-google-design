@@ -4,10 +4,9 @@ import {
   StreakRule,
   StreakTransition,
   type StreakHeadRule,
-} from '../components/streak-rule.data';
-import { StreakDefinitionId } from '../primitives/ids.primitive';
-import type { LocalDate } from '../primitives/local-date.primitive';
-import { deepFreeze, localDate } from '../testing';
+} from '@core/components';
+import { StreakDefinitionId, type LocalDate } from '@core/primitives';
+import { deepFreeze, localDate } from '@core/testing';
 import {
   DraftAssessment,
   StreakPublishSystem,

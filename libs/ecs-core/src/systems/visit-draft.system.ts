@@ -4,18 +4,16 @@ import {
   RecurrenceFrequency,
   RecurrencePattern,
   RecurrenceRule,
-} from '../components/recurrence-rule.data';
-import { Weekday } from '../components/weekday.data';
-import { defect } from '../primitives/defect';
+} from '@core/components';
 import {
+  Weekday,
+  defect,
   DurationMinutes,
   MinuteDelta,
-} from '../primitives/duration-minutes.primitive';
-import { LocalDate } from '../primitives/local-date.primitive';
-import type {
-  EndMinute,
-  MinuteOfDay,
-} from '../primitives/minute-of-day.primitive';
+  LocalDate,
+  type EndMinute,
+  type MinuteOfDay,
+} from '@core/primitives';
 import { RecurrenceSystem } from './recurrence.system';
 
 /**

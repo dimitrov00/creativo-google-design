@@ -1,10 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import {
-  CouponGrantId,
-  GiftVoucherId,
-  TierId,
-} from '../primitives/ids.primitive';
-import { localDate } from '../testing';
+import { CouponGrantId, GiftVoucherId, TierId } from '@core/primitives';
+import { localDate } from '@core/testing';
 import { PerkId } from './gamification.data';
 import {
   CosmeticId,

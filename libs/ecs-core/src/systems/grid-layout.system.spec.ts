@@ -1,15 +1,14 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { BookingLifecycle } from '../components/booking-lifecycle.data';
-import { MinuteRange } from '../components/minute-range.data';
 import {
+  BookingLifecycle,
+  MinuteRange,
   CancellationReason,
   CancellationReasonSet,
-} from '../components/seat-outcome.data';
-import { Seat } from '../components/seat.data';
-import type { ShopNow } from '../components/shop-now.data';
-import { BarberId } from '../primitives/ids.primitive';
-import { LocalDate } from '../primitives/local-date.primitive';
+  Seat,
+  type ShopNow,
+} from '@core/components';
+import { BarberId, LocalDate } from '@core/primitives';
 import {
   FIXTURE_TIME_ZONE,
   deepFreeze,
@@ -17,12 +16,10 @@ import {
   localDate,
   minute,
   unwrapOk,
-} from '../testing';
-import {
   appointmentFixture,
   seatFixture,
-} from '../testing/appointment.fixtures';
-import { termsFixture } from '../testing/booking-core.fixtures';
+  termsFixture,
+} from '@core/testing';
 import { IntervalSetSystem } from './interval-set.system';
 import {
   GridEvent,

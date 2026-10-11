@@ -13,7 +13,7 @@ import type {
   RhythmRuleWords,
   VisitTranslate,
 } from '@creativo/features/shared/visits';
-import { RhythmDraftSystem } from '@creativo/ecs-core';
+import { RhythmDraftSystem } from '@core/systems';
 import { pluralForm } from '@creativo/infrastructure/i18n';
 import type {
   UiChoiceOption,

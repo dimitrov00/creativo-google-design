@@ -1,5 +1,4 @@
-import { defect } from '../primitives/defect';
-import { MinuteOfDay } from '../primitives/minute-of-day.primitive';
+import { defect, MinuteOfDay } from '@core/primitives';
 import type { MinuteRange } from './minute-range.data';
 
 /** The parts of the day, in the day's order — the tag source of {@link Daypart}. */

@@ -12,7 +12,7 @@ import {
   streakDefinitionToDocument,
 } from '@creativo/application/engagement';
 import { InMemoryStreakDefinitionRepository } from '@creativo/application/engagement/testing';
-import { FIXTURE_TODAY } from '@creativo/ecs-core/testing';
+import { FIXTURE_TODAY } from '@core/testing';
 import { createProjectionFirestore } from '../../test-support/fake-projection-firestore';
 import {
   PublishStreakDefinitionInvalidError,
@@ -63,7 +63,7 @@ vi.mock('../../adapters/system-clock', async () => {
   };
 });
 
-/** The fixtures' one day pin (`@creativo/ecs-core/testing`), the day the seeded rule is read on. */
+/** The fixtures' one day pin (`@core/testing`), the day the seeded rule is read on. */
 const TODAY: string = FIXTURE_TODAY; // 2026-09-28
 const TOMORROW = '2026-09-29';
 const NEXT_WEEK = '2026-10-05';

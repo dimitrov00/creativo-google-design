@@ -1,12 +1,5 @@
-import type { LocalizedText } from '../components/localized-text.data';
-import type { PositionStatus } from '../components/program-status.data';
-import type { LocationId, PositionId } from '../primitives/ids.primitive';
-
-/*
- * The id lives in `primitives/ids.primitive.ts` (flatten-spec §1.5); it is
- * re-exported here only while the barrel's staging block still names this
- * file (`index.ts`), and leaves with that line.
- */
+import type { LocalizedText, PositionStatus } from '@core/components';
+import type { LocationId, PositionId } from '@core/primitives';
 
 /**
  * An open role on the careers page — `positions/{id}` (the stored body of

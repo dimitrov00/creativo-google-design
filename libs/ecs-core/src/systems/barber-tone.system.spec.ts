@@ -1,7 +1,7 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { BarberId } from '../primitives/ids.primitive';
-import { deepFreeze } from '../testing';
+import { BarberId } from '@core/primitives';
+import { deepFreeze } from '@core/testing';
 import { BarberToneSystem } from './barber-tone.system';
 
 /*

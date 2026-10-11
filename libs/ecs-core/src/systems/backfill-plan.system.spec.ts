@@ -1,14 +1,9 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { AuditAction } from '../components/audit-context.data';
-import { Placement } from '../components/placement-kind.data';
-import {
-  type BackfillJob,
-  BackfillJobName,
-} from '../entities/backfill-job.entity';
-import { BackfillJobId, UserId } from '../primitives/ids.primitive';
-import { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
-import { deepFreeze, unwrapOk, utcMs } from '../testing';
+import { AuditAction, Placement, BackfillJobName } from '@core/components';
+import type { BackfillJob } from '@core/entities';
+import { BackfillJobId, UserId, UtcEpochMs } from '@core/primitives';
+import { deepFreeze, unwrapOk, utcMs } from '@core/testing';
 import {
   BackfillPhase,
   type BackfillPageWalk,

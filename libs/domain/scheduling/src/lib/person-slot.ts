@@ -2,13 +2,14 @@ import {
   EndMinute,
   MinuteOfDay,
   SeatId as EcsSeatId,
-  type SeatIdPair as EcsSeatIdPair,
   SeatKeyText,
-  type SeatedSpan,
-  SeatingRuleSystem,
-  StandingSeatPair,
   defect,
-} from '@creativo/ecs-core';
+} from '@core/primitives';
+import {
+  type SeatIdPair as EcsSeatIdPair,
+  StandingSeatPair,
+} from '@core/components';
+import { type SeatedSpan, SeatingRuleSystem } from '@core/systems';
 import { Interval } from './interval';
 
 /**
@@ -26,7 +27,7 @@ import { Interval } from './interval';
  * 10:45 frees its person at 10:45 for a beard in the next chair, whatever the
  * first barber still has to sweep up.
  *
- * Phase 2 shim: the rule is `SeatingRuleSystem` in `@creativo/ecs-core`; this
+ * Phase 2 shim: the rule is `SeatingRuleSystem` in `@core/systems`; this
  * file keeps the legacy shapes for its callers and converts at the edge.
  */
 export interface PersonSlot {

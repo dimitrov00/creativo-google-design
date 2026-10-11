@@ -1,18 +1,20 @@
 import {
-  EndReasonFields,
   type GovernanceError,
   GovernanceErrorCode,
-  ImpersonationLifecycle,
-  ImpersonationScope as EcsScope,
   ImpersonationSessionId as SessionId,
-  ImpersonationStatus,
-  ImpersonationSystem,
-  type Role,
   UserId as UserKey,
   UtcEpochMs,
   defect,
+} from '@core/primitives';
+import {
+  EndReasonFields,
+  ImpersonationLifecycle,
+  ImpersonationScope as EcsScope,
+  ImpersonationStatus,
+  type Role,
   knownRoles,
-} from '@creativo/ecs-core';
+} from '@core/components';
+import { ImpersonationSystem } from '@core/systems';
 import {
   Clock,
   Result,
@@ -52,7 +54,7 @@ const INSTANT_ZONE = 'UTC';
 
 /*
  * Phase 2 shim (ECS migration): the invariants, the staff gate, the end
- * and the expiry rule live in `ImpersonationSystem` (`@creativo/ecs-core`).
+ * and the expiry rule live in `ImpersonationSystem` (`@core/systems`).
  * This class keeps its public API, its id/scope/instant parsing and its
  * error classes; the helpers below are the only code besides the delegating
  * bodies.

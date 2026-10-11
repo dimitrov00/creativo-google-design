@@ -13,8 +13,8 @@ import {
 } from '@creativo/ui/controls';
 import { UiStack } from '@creativo/ui/layout';
 import { UiTextDirective } from '@creativo/ui/modifiers';
-import { ScDemo } from '../../../shared/demo';
-import { ScPage } from '../../../shared/page';
+import { ScDemo } from '@showcase/shared/demo';
+import { ScPage } from '@showcase/shared/page';
 
 /** One verb of a demo run. A verb with an `href` hands off; one without acts. */
 interface Verb {

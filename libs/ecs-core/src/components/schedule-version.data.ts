@@ -1,17 +1,15 @@
-import { defect } from '../primitives/defect';
 import {
+  defect,
   MinuteCount,
   MinuteDelta,
-} from '../primitives/duration-minutes.primitive';
-import type { LocationId } from '../primitives/ids.primitive';
-import { LocalDate } from '../primitives/local-date.primitive';
-import {
+  type LocationId,
+  LocalDate,
   type EndMinute,
   MinuteOfDay,
-} from '../primitives/minute-of-day.primitive';
-import { Result } from './result.data';
-import { SchedulingError } from './scheduling-errors.data';
-import type { Weekday } from './weekday.data';
+  Result,
+  SchedulingError,
+  type Weekday,
+} from '@core/primitives';
 
 const MINUTES_PER_DAY = 1440;
 

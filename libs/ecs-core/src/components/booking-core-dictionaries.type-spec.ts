@@ -15,35 +15,29 @@
  *    .spec.mjs`) — each discriminator and plain tag field is named
  *    `camelCase(Dictionary)`, and its type is exactly the dictionary.
  */
-import type { Barber } from '../entities/barber.entity';
-import type { Service } from '../entities/service.entity';
-import type { ShopLocation } from '../entities/shop-location.entity';
+import type { Barber, Service, ShopLocation } from '@core/entities';
 import {
   type RequestedSubjectInput,
   RequestedSubjectRole,
-} from '../systems/guest-label.system';
-import {
   Selectability,
   type ServiceSelectability,
-} from '../systems/service-conflict.system';
+} from '@core/systems';
 import { type BarberPref, BarberPreference } from './barber-pref.data';
 import {
   BookingErrorCode,
   BookingErrorField,
   ShopUnavailableReason,
-} from './booking-errors.data';
-import {
   type CatalogError,
   CatalogErrorCode,
   GeoAxis,
   MediaDimension,
-} from './catalog-errors.data';
+  Locale,
+} from '@core/primitives';
 import {
   BarberStatus,
   LocationStatus,
   ServiceStatus,
 } from './catalog-status.data';
-import { Locale } from './locale.data';
 import { BlockKind, type MinuteBlock } from './minute-block.data';
 import {
   type ClockDayHours,
@@ -99,16 +93,16 @@ dictionary(Selectability satisfies Dictionary<Selectability>);
 // (2) Holds — each type is exactly its dictionary's values, one key each.
 export type BookingCoreDictionariesHold = [
   Expect<Holds<typeof BarberPreference, BarberPreference>>, // components/barber-pref.data.ts
-  Expect<Holds<typeof BookingErrorCode, BookingErrorCode>>, // components/booking-errors.data.ts
-  Expect<Holds<typeof BookingErrorField, BookingErrorField>>, // components/booking-errors.data.ts
-  Expect<Holds<typeof ShopUnavailableReason, ShopUnavailableReason>>, // components/booking-errors.data.ts
-  Expect<Holds<typeof CatalogErrorCode, CatalogErrorCode>>, // components/catalog-errors.data.ts
-  Expect<Holds<typeof MediaDimension, MediaDimension>>, // components/catalog-errors.data.ts
-  Expect<Holds<typeof GeoAxis, GeoAxis>>, // components/catalog-errors.data.ts
+  Expect<Holds<typeof BookingErrorCode, BookingErrorCode>>, // primitives/booking-errors.data.ts
+  Expect<Holds<typeof BookingErrorField, BookingErrorField>>, // primitives/booking-errors.data.ts
+  Expect<Holds<typeof ShopUnavailableReason, ShopUnavailableReason>>, // primitives/booking-errors.data.ts
+  Expect<Holds<typeof CatalogErrorCode, CatalogErrorCode>>, // primitives/catalog-errors.data.ts
+  Expect<Holds<typeof MediaDimension, MediaDimension>>, // primitives/catalog-errors.data.ts
+  Expect<Holds<typeof GeoAxis, GeoAxis>>, // primitives/catalog-errors.data.ts
   Expect<Holds<typeof ServiceStatus, ServiceStatus>>, // components/catalog-status.data.ts
   Expect<Holds<typeof BarberStatus, BarberStatus>>, // components/catalog-status.data.ts
   Expect<Holds<typeof LocationStatus, LocationStatus>>, // components/catalog-status.data.ts
-  Expect<Holds<typeof Locale, Locale>>, // components/locale.data.ts
+  Expect<Holds<typeof Locale, Locale>>, // primitives/locale.data.ts
   Expect<Holds<typeof BlockKind, BlockKind>>, // components/minute-block.data.ts
   Expect<Holds<typeof OpeningState, OpeningState>>, // components/opening-hours.data.ts
   Expect<Holds<Pick<typeof Placement, 'Self' | 'Staff'>, Placement>>, // components/placement-kind.data.ts
@@ -161,13 +155,13 @@ export type BookingCoreDictionaryFields = [
     Equals<RequestedSubjectInput['requestedSubjectRole'], RequestedSubjectRole>
   >, // systems/guest-label.system.ts
   Expect<Equals<ServiceSelectability['selectability'], Selectability>>, // systems/service-conflict.system.ts
-  Expect<Equals<CatalogError.LocationInvalidGeoCoordinate['geoAxis'], GeoAxis>>, // components/catalog-errors.data.ts
+  Expect<Equals<CatalogError.LocationInvalidGeoCoordinate['geoAxis'], GeoAxis>>, // primitives/catalog-errors.data.ts
   Expect<
     Equals<
       CatalogError.MediaRefInvalidDimension['mediaDimension'],
       MediaDimension
     >
-  >, // components/catalog-errors.data.ts
+  >, // primitives/catalog-errors.data.ts
 ];
 
 // The checks are not vacuous.

@@ -1,7 +1,6 @@
-import { ShopReach } from '../components/booking-flow.data';
-import type { GeoPoint } from '../components/geo-point.data';
-import type { ShopLocation } from '../entities/shop-location.entity';
-import type { LocationId } from '../primitives/ids.primitive';
+import { ShopReach, type GeoPoint } from '@core/components';
+import type { ShopLocation } from '@core/entities';
+import type { LocationId } from '@core/primitives';
 
 /**
  * What reaching a shop reads of it — a whole `ShopLocation` passes in (zero

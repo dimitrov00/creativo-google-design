@@ -1,22 +1,21 @@
 import {
   AuthStrategy,
   AuthStrategyKind,
-} from '../components/auth-strategy.data';
-import {
   type Identifier,
-  IdentifierChannel,
-} from '../components/identifier.data';
+  OtpDestinationType,
+  type OtpPurpose,
+} from '@core/components';
 import {
+  IdentifierChannel,
   IdentityError,
   IdentityErrorCode,
-} from '../components/identity-errors.data';
-import { OtpDestinationType } from '../components/otp-destination-type.data';
-import type { OtpPurpose } from '../components/otp-purpose.data';
-import { Result } from '../components/result.data';
-import type { Otp } from '../entities/otp.entity';
-import type { DurationMinutes } from '../primitives/duration-minutes.primitive';
-import { OtpId, type TenantId } from '../primitives/ids.primitive';
-import { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
+  Result,
+  type DurationMinutes,
+  OtpId,
+  type TenantId,
+  UtcEpochMs,
+} from '@core/primitives';
+import type { Otp } from '@core/entities';
 
 /**
  * OtpSystem — the one-time-code challenge as pure math (blueprint §2.8),

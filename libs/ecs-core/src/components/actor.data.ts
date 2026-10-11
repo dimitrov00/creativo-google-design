@@ -1,7 +1,4 @@
-import type {
-  ImpersonationSessionId,
-  UserId,
-} from '../primitives/ids.primitive';
+import type { ImpersonationSessionId, UserId } from '@core/primitives';
 import { ImpersonationScope } from './impersonation-scope.data';
 import { Role, isStaffRole, knownRoles } from './role.data';
 

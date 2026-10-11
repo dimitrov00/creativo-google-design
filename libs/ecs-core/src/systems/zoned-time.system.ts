@@ -1,15 +1,14 @@
-import { Result } from '../components/result.data';
-import { ShopNow } from '../components/shop-now.data';
 import {
+  Result,
   DateTimeInvalidReason,
   TimeError,
-} from '../components/time-errors.data';
-import { WallTime } from '../components/wall-time.data';
-import { defect } from '../primitives/defect';
-import { LocalDate } from '../primitives/local-date.primitive';
-import { MinuteOfDay } from '../primitives/minute-of-day.primitive';
-import type { TimeZone } from '../primitives/time-zone.primitive';
-import { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
+  defect,
+  LocalDate,
+  MinuteOfDay,
+  type TimeZone,
+  UtcEpochMs,
+} from '@core/primitives';
+import { ShopNow, WallTime } from '@core/components';
 
 /**
  * ZonedTimeSystem — the ONE file in the repo that does zone math (§9 D5,

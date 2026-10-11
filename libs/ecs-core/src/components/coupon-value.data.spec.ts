@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { Currency } from '../primitives/currency.primitive';
-import { PriceCents } from '../primitives/price-cents.primitive';
-import { unwrapOk } from '../testing';
+import { Currency, PriceCents } from '@core/primitives';
+import { unwrapOk } from '@core/testing';
 import { CouponValue, DiscountMethod } from './coupon-value.data';
 
 // The cases of `coupon-value.spec.ts`, on the flat variant slice.

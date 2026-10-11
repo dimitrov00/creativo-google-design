@@ -1,10 +1,11 @@
-import type { PersonalRecord } from '../components/personal-record.data';
-import type { PointsExpiry } from '../components/points-expiry.data';
-import type { PunchCard } from '../components/punch-card.data';
-import type { StreakState } from '../components/streak-state.data';
-import type { TierState } from '../components/tier-state.data';
-import type { UserId } from '../primitives/ids.primitive';
-import type { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
+import type {
+  PersonalRecord,
+  PointsExpiry,
+  PunchCard,
+  StreakState,
+  TierState,
+} from '@core/components';
+import type { UserId, UtcEpochMs } from '@core/primitives';
 
 /**
  * The account's identity slice: the client, the points ledger's sums, the

@@ -1,4 +1,4 @@
-import type { LocalDate } from '../primitives/local-date.primitive';
+import type { LocalDate } from '@core/primitives';
 
 /**
  * An inclusive span of shop days, `fromLocalDate … toLocalDate` — the shape a

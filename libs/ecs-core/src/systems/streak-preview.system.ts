@@ -1,7 +1,9 @@
-import { StreakQualifier } from '../components/streak-qualifier.data';
-import type { StreakRule } from '../components/streak-rule.data';
-import { StreakPhase } from '../components/streak-state.data';
-import { LocalDate } from '../primitives/local-date.primitive';
+import {
+  StreakQualifier,
+  type StreakRule,
+  StreakPhase,
+} from '@core/components';
+import { LocalDate } from '@core/primitives';
 import {
   StreakSystem,
   type StreakFacts,

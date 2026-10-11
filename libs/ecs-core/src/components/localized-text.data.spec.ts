@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { Locale } from './locale.data';
+import { Locale } from '@core/primitives';
 import { LocalizedText } from './localized-text.data';
 
 // catalog localized-text.spec.ts, on the plain { bg, en } struct.

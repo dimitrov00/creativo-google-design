@@ -1,5 +1,4 @@
-import { MinuteCount } from '../primitives/duration-minutes.primitive';
-import { EndMinute, MinuteOfDay } from '../primitives/minute-of-day.primitive';
+import { MinuteCount, EndMinute, MinuteOfDay } from '@core/primitives';
 
 /**
  * A `[startMinutes, endMinutes)` span of the shop's wall clock within one

@@ -9,7 +9,7 @@ import {
   ServiceId,
   ServiceVariantId,
   UserId,
-} from '../primitives/ids.primitive';
+} from '@core/primitives';
 import { BookingCart, SeatKey, SeatKeyRole } from './cart-line.data';
 
 const SELF = SeatKey.text(SeatKey.self());

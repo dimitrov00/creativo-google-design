@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { StreakDefinitionVersionId } from '../primitives/ids.primitive';
+import { StreakDefinitionVersionId } from '@core/primitives';
 
 describe('StreakDefinitionVersionId', () => {
   it('is the version padded to six digits, so the history sorts by id', () => {

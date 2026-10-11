@@ -1,9 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
-import { unwrapOk, utcMs } from '../testing';
+import { UtcEpochMs, SchedulingErrorCode } from '@core/primitives';
+import { unwrapOk, utcMs } from '@core/testing';
 import { BookingPolicy } from './booking-policy.data';
 import { ClientStatsPolicy } from './client-stats-policy.data';
-import { SchedulingErrorCode } from './scheduling-errors.data';
 
 const HOUR = 3_600_000;
 /** A visit at 2026-10-12T10:00:00Z, as a literal instant. */

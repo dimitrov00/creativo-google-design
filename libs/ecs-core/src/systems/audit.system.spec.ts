@@ -1,21 +1,20 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { Actor, SystemSource } from '../components/actor.data';
 import {
+  Actor,
+  SystemSource,
   AuditAction,
   AuditContext,
   AuditTargetRef,
-} from '../components/audit-context.data';
-import { GovernanceErrorCode } from '../components/governance-errors.data';
-import { Role } from '../components/role.data';
-import { SeatLabel } from '../components/seat-label.data';
-import {
+  Role,
+  SeatLabel,
   SeatOccupant,
   SeatSubject,
   SubjectRelationship,
-} from '../components/seat.data';
-import { DurationMinutes } from '../primitives/duration-minutes.primitive';
+} from '@core/components';
 import {
+  GovernanceErrorCode,
+  DurationMinutes,
   AppointmentId,
   AuditResourceId,
   BarberId,
@@ -25,8 +24,8 @@ import {
   ServiceId,
   TriggerEventId,
   UserId,
-} from '../primitives/ids.primitive';
-import { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
+  UtcEpochMs,
+} from '@core/primitives';
 import {
   FIXTURE_NOW_UTC_MS,
   deepFreeze,
@@ -34,11 +33,9 @@ import {
   unwrapErr,
   unwrapOk,
   utcMs,
-} from '../testing';
-import {
   appointmentFixture,
   seatFixture,
-} from '../testing/appointment.fixtures';
+} from '@core/testing';
 import { EditCommand } from './appointment-edit.system';
 import { type AuditFact, type AuditSubject, AuditSystem } from './audit.system';
 import { RequestedSubjectRole } from './guest-label.system';

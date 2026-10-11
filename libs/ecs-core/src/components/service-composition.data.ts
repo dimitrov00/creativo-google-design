@@ -1,6 +1,4 @@
-import { ServiceId } from '../primitives/ids.primitive';
-import { CatalogError } from './catalog-errors.data';
-import { Result } from './result.data';
+import { ServiceId, CatalogError, Result } from '@core/primitives';
 
 /**
  * The composition tags — the ONLY source of these strings, named after the

@@ -4,7 +4,7 @@ import {
   type ParsedClientQuery as EcsParsedClientQuery,
   type RankableClient as EcsRankableClient,
   type TextSegment as EcsTextSegment,
-} from '@creativo/ecs-core';
+} from '@core/systems';
 
 /**
  * THE ADD-CLIENT OMNIBOX, as pure functions (2026-09-18; owner: "it should
@@ -18,7 +18,7 @@ import {
  * the others rank what comes back and prefill the new-client form.
  *
  * Phase 2 shim: the reading, the lookup keys, the ranking and the marked
- * segments are `ClientQuerySystem` in `@creativo/ecs-core`. This file keeps
+ * segments are `ClientQuerySystem` in `@core/systems`. This file keeps
  * the legacy names and signatures (the default calling code, the generic
  * ranking over the caller's own objects) for its callers. Flatten pass: the
  * system's leading part is the field `clientQueryShape` with SCREAMING

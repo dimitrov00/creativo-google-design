@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { AppointmentEditSystem } from '@creativo/ecs-core';
+import { AppointmentEditSystem } from '@core/systems';
 
 /*
  * THIN SHIM (ECS migration Phase 2). The fingerprint's BASIS — the tagged

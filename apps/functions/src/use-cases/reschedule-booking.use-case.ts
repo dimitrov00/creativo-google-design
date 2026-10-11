@@ -1,9 +1,5 @@
-import {
-  AppointmentEditSystem,
-  LedgerVerdict,
-  OperationId,
-  TimeErrorCode,
-} from '@creativo/ecs-core';
+import { OperationId, TimeErrorCode } from '@core/primitives';
+import { AppointmentEditSystem, LedgerVerdict } from '@core/systems';
 import { Result, ZonedDateTime, fail, ok } from '@creativo/domain/kernel';
 import { UserId } from '@creativo/domain/accounts';
 import {

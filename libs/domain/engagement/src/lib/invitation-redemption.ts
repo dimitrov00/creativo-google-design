@@ -11,13 +11,13 @@ import {
 } from '@creativo/domain/accounts';
 import {
   InvitationId as InvitationRefId,
-  RedemptionCount,
-  ReferralSystem,
   UtcEpochMs,
   defect,
-  type Invitation as InvitationEntity,
   UserId as UserRefId,
-} from '@creativo/ecs-core';
+} from '@core/primitives';
+import { RedemptionCount } from '@core/components';
+import { type Invitation as InvitationEntity } from '@core/entities';
+import { ReferralSystem } from '@core/systems';
 import { InvitationId } from './ids';
 import { EmptyIdError } from './ids.errors';
 import { Invitation } from './invitation';
@@ -37,7 +37,7 @@ export interface CreateInvitationRedemptionProps {
  * document id is the referee's user id, so re-redeeming is a no-op there;
  * this pure VO only carries the fact. A thin shim since the ECS
  * migration's Phase 2: the self-redemption guard is `ReferralSystem.redeem`
- * (`@creativo/ecs-core`).
+ * (`@core/systems`).
  */
 export class InvitationRedemption {
   private constructor(

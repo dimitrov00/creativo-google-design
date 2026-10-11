@@ -1,6 +1,4 @@
-import type { Brand } from '../primitives/brand';
-import { EngagementError } from './engagement-errors.data';
-import { Result } from './result.data';
+import { type Brand, EngagementError, Result } from '@core/primitives';
 
 const MIN_LENGTH = 4;
 const MAX_LENGTH = 32;

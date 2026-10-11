@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CouponGrantId } from '../primitives/ids.primitive';
+import { CouponGrantId } from '@core/primitives';
 import { DiscountProvenance, DiscountSource } from './discount-provenance.data';
 import { VoucherCode } from './voucher-code.data';
 

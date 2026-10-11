@@ -1,4 +1,5 @@
-import { IdentifierChannel, RegistrationSystem } from '@creativo/ecs-core';
+import { IdentifierChannel } from '@core/primitives';
+import { RegistrationSystem } from '@core/systems';
 import { Result, fail, ok } from '@creativo/domain/kernel';
 import {
   AuthStrategy,
@@ -14,7 +15,7 @@ import {
 /*
  * Phase 2 shim (ECS migration): the login channel's own field and the
  * strategy's required-field check are `RegistrationSystem.effectiveFields`
- * and `.missingField` (`@creativo/ecs-core`); the form's partial record
+ * and `.missingField` (`@core/systems`); the form's partial record
  * crosses through the lib's one converter pair.
  */
 

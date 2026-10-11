@@ -3,19 +3,17 @@ import { describe, expect, it } from 'vitest';
 import {
   type PolicyPass,
   PreciseInstant,
-} from '../components/client-stats.data';
-import { BookingPolicy } from '../components/booking-policy.data';
+  BookingPolicy,
+} from '@core/components';
+import { type PolicyRecomputeJob, RecomputeJobName } from '@core/entities';
 import {
-  type PolicyRecomputeJob,
-  RecomputeJobName,
-} from '../entities/policy-recompute-job.entity';
-import { PolicyRecomputeJobId, UserId } from '../primitives/ids.primitive';
-import type {
-  EpochSeconds,
-  SubsecondNanos,
-} from '../primitives/precise-instant.primitive';
-import { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
-import { FIXTURE_TIME_ZONE, deepFreeze, unwrapOk, utcMs } from '../testing';
+  PolicyRecomputeJobId,
+  UserId,
+  type EpochSeconds,
+  type SubsecondNanos,
+  UtcEpochMs,
+} from '@core/primitives';
+import { FIXTURE_TIME_ZONE, deepFreeze, unwrapOk, utcMs } from '@core/testing';
 import {
   type PolicyChange,
   PolicyRecomputeJobSystem,

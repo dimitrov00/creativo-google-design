@@ -1,13 +1,15 @@
-import { EngagementError } from '../components/engagement-errors.data';
+import {
+  EngagementError,
+  Result,
+  type BadgeSeriesId,
+  LocalDate,
+} from '@core/primitives';
 import {
   Gamification,
   SeasonKind,
   SeasonPhase,
   type SeasonWindow,
-} from '../components/gamification.data';
-import { Result } from '../components/result.data';
-import type { BadgeSeriesId } from '../primitives/ids.primitive';
-import { LocalDate } from '../primitives/local-date.primitive';
+} from '@core/components';
 
 /*
  * A SEASON'S WINDOW (client-card-redesign §4.1, `season.ts:62-131`): where

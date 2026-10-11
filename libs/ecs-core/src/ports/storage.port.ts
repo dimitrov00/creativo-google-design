@@ -1,6 +1,5 @@
-import type { BookingFlowState } from '../components/booking-flow.data';
-import type { RepositoryError } from '../components/repository-errors.data';
-import type { Result } from '../components/result.data';
+import type { BookingFlowState } from '@core/components';
+import type { RepositoryError, Result } from '@core/primitives';
 
 /**
  * The browser's device storage (blueprint §4.2) — `sessionStorage`,

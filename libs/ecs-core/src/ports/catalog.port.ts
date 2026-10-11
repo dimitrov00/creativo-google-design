@@ -1,15 +1,17 @@
 import type { Observable } from 'rxjs';
-import type { RepositoryError } from '../components/repository-errors.data';
-import type { Result } from '../components/result.data';
-import type { Barber } from '../entities/barber.entity';
-import type { ServiceCategory } from '../entities/service-category.entity';
-import type { Service } from '../entities/service.entity';
-import type { ShopLocation } from '../entities/shop-location.entity';
 import type {
+  RepositoryError,
+  Result,
   LocationId,
   ServiceCategoryId,
   ServiceId,
-} from '../primitives/ids.primitive';
+} from '@core/primitives';
+import type {
+  Barber,
+  ServiceCategory,
+  Service,
+  ShopLocation,
+} from '@core/entities';
 
 /**
  * The catalogue's read ports (blueprint §4.2) — one function per query

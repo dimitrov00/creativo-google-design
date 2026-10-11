@@ -69,6 +69,9 @@
       "@creativo/features/marketing/landing": [
         "./libs/features/marketing/landing/src/index.ts"
       ],
+      "@creativo/features/marketing/landing/testing": [
+        "./libs/features/marketing/landing/src/testing.ts"
+      ],
       "@creativo/features/client/auth": [
         "./libs/features/client/auth/src/index.ts"
       ],
@@ -155,8 +158,15 @@
         "./libs/features/shared/visits/src/index.ts"
       ],
       "@creativo/ui/icons": ["./libs/ui/icons/src/index.ts"],
-      "@creativo/ecs-core": ["./libs/ecs-core/src/index.ts"],
-      "@creativo/ecs-core/testing": ["./libs/ecs-core/src/testing.ts"]
+      "@creativo/config/feature-flags": ["./config/feature-flags.json"],
+      "@showcase/shared/*": ["./apps/showcase/src/app/shared/*"],
+      "@core/primitives": ["./libs/ecs-core/src/primitives/index.ts"],
+      "@core/components": ["./libs/ecs-core/src/components/index.ts"],
+      "@core/entities": ["./libs/ecs-core/src/entities/index.ts"],
+      "@core/ports": ["./libs/ecs-core/src/ports/index.ts"],
+      "@core/systems": ["./libs/ecs-core/src/systems/index.ts"],
+      "@core/pipelines": ["./libs/ecs-core/src/pipelines/index.ts"],
+      "@core/testing": ["./libs/ecs-core/src/testing/index.ts"]
     }
   }
 }

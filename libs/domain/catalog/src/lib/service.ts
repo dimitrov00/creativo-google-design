@@ -8,17 +8,18 @@ import {
 } from '@creativo/domain/kernel';
 import {
   BarberId as EcsBarberId,
-  type BarberOffering as EcsBarberOffering,
   Currency as EcsCurrency,
   DurationMinutes as EcsDurationMinutes,
   MinuteCount as EcsMinuteCount,
-  OfferingPriceSystem,
   PriceCents as EcsPriceCents,
-  type PricedService,
-  ServiceTerms as EcsServiceTerms,
   ServiceVariantId as EcsServiceVariantId,
   defect,
-} from '@creativo/ecs-core';
+} from '@core/primitives';
+import {
+  type BarberOffering as EcsBarberOffering,
+  ServiceTerms as EcsServiceTerms,
+} from '@core/components';
+import { OfferingPriceSystem, type PricedService } from '@core/systems';
 import { EmptyIdError } from './ids.errors';
 import {
   BarberId,

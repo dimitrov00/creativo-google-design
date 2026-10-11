@@ -22,10 +22,14 @@ import {
   MedalState,
   type SeriesStanding,
 } from './badge-level.data';
-import { EngagementErrorCode, StreakRuleField } from './engagement-errors.data';
+import {
+  EngagementErrorCode,
+  StreakRuleField,
+  AwardKind,
+  StreakPublishErrorCode,
+} from '@core/primitives';
 import { EnrollmentStatus } from './enrollment-status.data';
 import {
-  AwardKind,
   type AwardSummary,
   BadgeCategoryKind,
   BadgeEmblem,
@@ -77,7 +81,6 @@ import {
   type StreakIntervalRule,
   StreakIntervalSource,
 } from './streak-interval.data';
-import { StreakPublishErrorCode } from './streak-publish-errors.data';
 import {
   QualifierComparison,
   StreakQualifier,
@@ -103,26 +106,24 @@ import {
   type StreakState,
 } from './streak-state.data';
 import { type TierOverride, TierOverrideSource } from './tier-state.data';
-import type { BadgeCategory } from '../entities/badge-category.entity';
-import type { Course } from '../entities/course.entity';
-import type { JournalEntry } from '../entities/journal-entry.entity';
-import type { Position } from '../entities/position.entity';
-import type { Season } from '../entities/season.entity';
-import type { StreakDefinitionVersion } from '../entities/streak-definition-version.entity';
+import type {
+  BadgeCategory,
+  Course,
+  JournalEntry,
+  Position,
+  Season,
+  StreakDefinitionVersion,
+} from '@core/entities';
 import {
   DraftAssessment,
   type StreakDraftAssessment,
-} from '../systems/streak-publish.system';
-import {
   type StreakPreview,
   StreakPreviewOutcome,
   StreakPreviewUnavailable,
   StreakStanding,
-} from '../systems/streak-preview.system';
-import {
   type StreakTrackMark,
   StreakTrackMarkKind,
-} from '../systems/streak.system';
+} from '@core/systems';
 
 type Expect<T extends true> = T;
 type IsNever<T> = [T] extends [never] ? true : false;
@@ -170,7 +171,7 @@ export type LoyaltyDictionariesHold = [
   Expect<Holds<typeof BadgeEmblem, BadgeEmblem>>, // gamification.data.ts
   Expect<Holds<typeof Metric, Metric>>, // gamification.data.ts
   Expect<Holds<typeof PerkId, PerkId>>, // gamification.data.ts
-  Expect<Holds<typeof AwardKind, AwardKind>>, // gamification.data.ts
+  Expect<Holds<typeof AwardKind, AwardKind>>, // primitives/award-kind.data.ts
   Expect<Holds<typeof BadgeSubject, BadgeSubject>>, // gamification.data.ts
   Expect<Holds<typeof SeasonKind, SeasonKind>>, // gamification.data.ts
   Expect<Holds<typeof SeasonPhase, SeasonPhase>>, // gamification.data.ts

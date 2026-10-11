@@ -39,7 +39,7 @@
  * barrel hands out.
  *
  * `tools/icons/load-ts.mjs` transpiles file by file and follows relative
- * imports only; this graph crosses the `@creativo/*` path aliases and a
+ * imports only; this graph crosses the `@creativo/*` and `@core/*` path aliases and a
  * hundred-odd files, so it is BUNDLED instead — with the workspace's own
  * esbuild, reading `tsconfig.base.json` for the aliases. npm packages stay
  * external and resolve from the workspace `node_modules`, which is why the
@@ -115,7 +115,9 @@ const externalPackages = {
   name: 'external-packages',
   setup(build) {
     build.onResolve({ filter: /^[^./]/ }, (args) =>
-      args.path.startsWith('@creativo/') || args.path.endsWith('.json')
+      args.path.startsWith('@creativo/') ||
+      args.path.startsWith('@core/') ||
+      args.path.endsWith('.json')
         ? undefined
         : { path: args.path, external: true },
     );

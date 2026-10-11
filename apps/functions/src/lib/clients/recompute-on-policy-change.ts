@@ -3,7 +3,7 @@ import { onDocumentWritten } from 'firebase-functions/v2/firestore';
 import { onSchedule } from 'firebase-functions/v2/scheduler';
 import { FieldPath, type Firestore } from 'firebase-admin/firestore';
 import type { ClientStatsPolicy } from '@creativo/domain/scheduling';
-import { WorkBudgetSystem } from '@creativo/ecs-core';
+import { WorkBudgetSystem } from '@core/systems';
 import {
   BOOKING_POLICY_DOC,
   CLIENT_STATS_COLLECTION,

@@ -1,10 +1,5 @@
-import {
-  E164,
-  Email,
-  type Log,
-  ParsedIdentifier,
-  type SendOtp,
-} from '@creativo/ecs-core';
+import { E164, Email, ParsedIdentifier } from '@core/components';
+import { type Log, type SendOtp } from '@core/ports';
 import { consoleOtpSender } from './console-otp-sender.adapter';
 
 type Line = {

@@ -1,11 +1,10 @@
 import {
   DurationMinutes,
   IdentityErrorCode,
-  type OtpCounters,
-  OtpSystem,
   UtcEpochMs,
   defect,
-} from '@creativo/ecs-core';
+} from '@core/primitives';
+import { type OtpCounters, OtpSystem } from '@core/systems';
 import {
   Result,
   ZonedDateTime,
@@ -33,7 +32,7 @@ const OTP_ZONE = 'UTC';
 
 /*
  * Phase 2 shim (ECS migration): the challenge math lives in
- * `OtpSystem` (`@creativo/ecs-core`). This class keeps its public API for
+ * `OtpSystem` (`@core/systems`). This class keeps its public API for
  * its callers and converts at the edge — the helpers below are the only
  * code besides the delegating bodies.
  */

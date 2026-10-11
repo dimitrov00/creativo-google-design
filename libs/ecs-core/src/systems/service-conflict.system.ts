@@ -1,9 +1,6 @@
-import {
-  CompositionKind,
-  type ServiceComposition,
-} from '../components/service-composition.data';
-import type { Service } from '../entities/service.entity';
-import type { ServiceId } from '../primitives/ids.primitive';
+import { CompositionKind, type ServiceComposition } from '@core/components';
+import type { Service } from '@core/entities';
+import type { ServiceId } from '@core/primitives';
 
 /**
  * What the conflict rule reads of a service — its id, the conflicts its

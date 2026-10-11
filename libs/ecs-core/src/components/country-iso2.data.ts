@@ -1,4 +1,4 @@
-import type { Brand } from '../primitives/brand';
+import type { Brand } from '@core/primitives';
 /**
  * An ISO 3166-1 alpha-2 country code, upper-case, supported by the phone
  * metadata — the brand the phone field's country picker and

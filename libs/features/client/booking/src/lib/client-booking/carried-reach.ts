@@ -6,13 +6,15 @@ import {
   LocationId,
   MinuteCount,
   MinuteDelta,
-  type MoveCatalogService,
-  type MoveRider,
-  MoveSystem,
   ServiceId,
   ServiceVariantId,
   defect,
-} from '@creativo/ecs-core';
+} from '@core/primitives';
+import {
+  type MoveCatalogService,
+  type MoveRider,
+  MoveSystem,
+} from '@core/systems';
 
 /*
  * THIN SHIM (ECS migration Phase 2). Whether the shop can still serve who a

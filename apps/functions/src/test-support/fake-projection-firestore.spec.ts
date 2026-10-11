@@ -1,5 +1,7 @@
 import { FieldPath, FieldValue } from 'firebase-admin/firestore';
-import { QueryOp, RepositoryError, Result, WriteOp } from '@creativo/ecs-core';
+import { RepositoryError, Result } from '@core/primitives';
+import { WriteOp } from '@core/components';
+import { QueryOp } from '@core/entities';
 import { createProjectionFirestore } from './fake-projection-firestore';
 
 describe('FakeProjectionFirestore', () => {

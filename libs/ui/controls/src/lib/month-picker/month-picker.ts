@@ -7,7 +7,8 @@ import {
   linkedSignal,
   output,
 } from '@angular/core';
-import { CalendarGridSystem, LocalDate } from '@creativo/ecs-core';
+import { LocalDate } from '@core/primitives';
+import { CalendarGridSystem } from '@core/systems';
 import { UiSpacer, UiStack } from '@creativo/ui/layout';
 import {
   UiFontDirective,

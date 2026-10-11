@@ -1,4 +1,4 @@
-import type { Brand } from '../primitives/brand';
+import type { Brand } from '@core/primitives';
 /**
  * A canonical E.164 phone number (`+<country><subscriber>`, digits only) —
  * the **stored** shape: `users.phone`, `BookingContact.phone`,

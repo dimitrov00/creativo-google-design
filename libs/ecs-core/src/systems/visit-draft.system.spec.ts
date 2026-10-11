@@ -6,11 +6,15 @@ import {
   RecurrenceFrequency,
   RecurrencePattern,
   RecurrenceRule,
-} from '../components/recurrence-rule.data';
-import { Weekday } from '../components/weekday.data';
-import { DurationMinutes } from '../primitives/duration-minutes.primitive';
-import { LocalDate } from '../primitives/local-date.primitive';
-import { deepFreeze, endMinute, localDate, minute, unwrapOk } from '../testing';
+} from '@core/components';
+import { Weekday, DurationMinutes, LocalDate } from '@core/primitives';
+import {
+  deepFreeze,
+  endMinute,
+  localDate,
+  minute,
+  unwrapOk,
+} from '@core/testing';
 import { RecurrenceSystem } from './recurrence.system';
 import { RepeatPreset, VisitDraftSystem } from './visit-draft.system';
 

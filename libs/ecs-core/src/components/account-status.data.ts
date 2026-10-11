@@ -1,6 +1,4 @@
-import { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
-import { AccountsError } from './accounts-errors.data';
-import { Result } from './result.data';
+import { UtcEpochMs, AccountsError, Result } from '@core/primitives';
 
 /**
  * Account status tags — the ONLY source of these strings, the discriminator

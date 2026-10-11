@@ -19,16 +19,18 @@ import {
 } from './client-query';
 import { type VisitSides, adoptSides } from './visit-sides';
 import {
-  BillingSystem,
-  type DraftLegMinutes,
   DurationMinutes,
   EndMinute,
   MinuteOfDay,
   PriceCents,
+  defect,
+} from '@core/primitives';
+import {
+  BillingSystem,
+  type DraftLegMinutes,
   TipPreset,
   VisitDraftSystem,
-  defect,
-} from '@creativo/ecs-core';
+} from '@core/systems';
 import { ShowcaseGalleryComponent } from '@creativo/features/shared/catalog';
 import { ThemeService } from '@creativo/features/shared/shell';
 import {

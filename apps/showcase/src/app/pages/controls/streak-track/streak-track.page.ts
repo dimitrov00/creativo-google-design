@@ -3,8 +3,8 @@ import type { UiStreakPeriod } from '@creativo/ui/controls';
 import { UiButton, UiCard, UiStreakTrack } from '@creativo/ui/controls';
 import { UiGrid, UiStack } from '@creativo/ui/layout';
 import { UiTextDirective } from '@creativo/ui/modifiers';
-import { ScDemo } from '../../../shared/demo';
-import { ScPage } from '../../../shared/page';
+import { ScDemo } from '@showcase/shared/demo';
+import { ScPage } from '@showcase/shared/page';
 
 const MONTHS = ['май', 'юни', 'юли', 'авг', 'сеп'] as const;
 

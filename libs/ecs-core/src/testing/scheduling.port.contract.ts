@@ -1,21 +1,24 @@
 import { firstValueFrom } from 'rxjs';
-import { BlockKind, MinuteBlock } from '../components/minute-block.data';
-import type { MinuteRange } from '../components/minute-range.data';
-import type { BarberBusyDay } from '../entities/barber-busy-day.entity';
-import { BusyKey } from '../primitives/busy-key.primitive';
-import { MinuteCount } from '../primitives/duration-minutes.primitive';
-import { BarberBusyDayId, type BarberId } from '../primitives/ids.primitive';
-import type { LocalDate } from '../primitives/local-date.primitive';
-import { EndMinute, MinuteOfDay } from '../primitives/minute-of-day.primitive';
-import type { TimeZone } from '../primitives/time-zone.primitive';
-import type { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
-import type { LoadBusyDay, ObserveBusyDay } from '../ports/scheduling.port';
+import { BlockKind, MinuteBlock, type MinuteRange } from '@core/components';
+import type { BarberBusyDay } from '@core/entities';
+import {
+  BusyKey,
+  MinuteCount,
+  BarberBusyDayId,
+  type BarberId,
+  type LocalDate,
+  EndMinute,
+  MinuteOfDay,
+  type TimeZone,
+  type UtcEpochMs,
+} from '@core/primitives';
+import type { LoadBusyDay, ObserveBusyDay } from '@core/ports';
 import {
   AvailabilitySystem,
   type ChairTime,
-} from '../systems/availability.system';
-import { IntervalSetSystem } from '../systems/interval-set.system';
-import { ZonedTimeSystem } from '../systems/zoned-time.system';
+  IntervalSetSystem,
+  ZonedTimeSystem,
+} from '@core/systems';
 
 /**
  * THE SCHEDULING PORTS' BUSY CONTRACT, AS DATA ANY RUNNER CAN EXECUTE — the

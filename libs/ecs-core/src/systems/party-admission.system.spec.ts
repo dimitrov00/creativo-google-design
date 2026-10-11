@@ -1,19 +1,21 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { BookingErrorCode } from '../components/booking-errors.data';
-import { BookingPolicy } from '../components/booking-policy.data';
-import type { BookingCart } from '../components/cart-line.data';
-import { LocationStatus } from '../components/catalog-status.data';
-import { PlacementPolicy } from '../components/placement-policy.data';
-import type { Service } from '../entities/service.entity';
 import {
+  BookingErrorCode,
   CartLineId,
   LocationId,
   SeatKeyText,
   ServiceId,
   ServiceVariantId,
   UserId,
-} from '../primitives/ids.primitive';
+} from '@core/primitives';
+import {
+  BookingPolicy,
+  type BookingCart,
+  LocationStatus,
+  PlacementPolicy,
+} from '@core/components';
+import type { Service } from '@core/entities';
 import {
   FIXTURE_TIME_ZONE,
   deepFreeze,
@@ -22,12 +24,10 @@ import {
   textFixture,
   unwrapOk,
   utcMs,
-} from '../testing';
-import {
   locationFixture,
   serviceFixture,
   termsFixture,
-} from '../testing/booking-core.fixtures';
+} from '@core/testing';
 import {
   BookingDecisionSystem,
   type RequestedSeatInput,

@@ -24,8 +24,8 @@ import {
   UiSheetHeader,
   type UiHeadlineMediaTone,
 } from '@creativo/ui/patterns';
-import { ScDemo } from '../../../shared/demo';
-import { ScPage } from '../../../shared/page';
+import { ScDemo } from '@showcase/shared/demo';
+import { ScPage } from '@showcase/shared/page';
 
 /**
  * The no-break space BEFORE a separator: where a quiet line wraps, its

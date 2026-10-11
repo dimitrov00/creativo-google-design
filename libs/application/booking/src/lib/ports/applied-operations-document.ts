@@ -1,8 +1,6 @@
-import {
-  AppliedOperation as EcsAppliedOperation,
-  AppointmentEditSystem,
-  OperationId,
-} from '@creativo/ecs-core';
+import { OperationId } from '@core/primitives';
+import { AppliedOperation as EcsAppliedOperation } from '@core/components';
+import { AppointmentEditSystem } from '@core/systems';
 import type { PersistedDocument } from './appointment-document';
 
 /*

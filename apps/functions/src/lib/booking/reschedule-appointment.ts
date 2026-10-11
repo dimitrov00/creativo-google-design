@@ -1,4 +1,4 @@
-import { AuditSystem } from '@creativo/ecs-core';
+import { AuditSystem } from '@core/systems';
 import { HttpsError, onCall } from 'firebase-functions/v2/https';
 import { FirestoreBookingStore } from '../../adapters/firestore-booking-store';
 import { CryptoIdGenerator } from '../../adapters/crypto-id-generator';

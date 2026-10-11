@@ -1,27 +1,28 @@
 import type { Observable } from 'rxjs';
-import type { JournalEffect } from '../components/journal-effect.data';
-import type { RepositoryError } from '../components/repository-errors.data';
-import type { Result } from '../components/result.data';
-import type { VoucherCode } from '../components/voucher-code.data';
-import type { BadgeCategory } from '../entities/badge-category.entity';
-import type { BadgeProgress } from '../entities/badge-progress.entity';
-import type { BadgeSeries } from '../entities/badge-series.entity';
-import type { CouponGrant } from '../entities/coupon-grant.entity';
-import type { Coupon } from '../entities/coupon.entity';
-import type { GiftVoucher } from '../entities/gift-voucher.entity';
-import type { JournalEntry } from '../entities/journal-entry.entity';
-import type { LoyaltyAccount } from '../entities/loyalty-account.entity';
-import type { RewardCatalogItem } from '../entities/reward-catalog-item.entity';
-import type { SeasonProgress } from '../entities/season-progress.entity';
-import type { Season } from '../entities/season.entity';
-import type { StreakDefinition } from '../entities/streak-definition.entity';
-import type { StreakDefinitionVersion } from '../entities/streak-definition-version.entity';
-import type { TierDefinition } from '../entities/tier-definition.entity';
+import type { JournalEffect, VoucherCode } from '@core/components';
 import type {
+  RepositoryError,
+  Result,
   CouponGrantId,
   StreakDefinitionId,
   UserId,
-} from '../primitives/ids.primitive';
+} from '@core/primitives';
+import type {
+  BadgeCategory,
+  BadgeProgress,
+  BadgeSeries,
+  CouponGrant,
+  Coupon,
+  GiftVoucher,
+  JournalEntry,
+  LoyaltyAccount,
+  RewardCatalogItem,
+  SeasonProgress,
+  Season,
+  StreakDefinition,
+  StreakDefinitionVersion,
+  TierDefinition,
+} from '@core/entities';
 
 /**
  * The engagement context's read ports (blueprint §4.2): coupons, grants and

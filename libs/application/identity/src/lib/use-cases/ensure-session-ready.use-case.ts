@@ -3,7 +3,7 @@ import {
   REFRESH_BACKOFF_MS,
   SessionAccessSystem,
   SessionReadiness,
-} from '@creativo/ecs-core';
+} from '@core/systems';
 import { Result, fail, ok } from '@creativo/domain/kernel';
 import { Principal } from '@creativo/domain/identity';
 import { principalTagOf } from '../flow/principal-tag';
@@ -12,7 +12,7 @@ import { AuthGateway, AuthGatewayError } from '../ports/auth-gateway.port';
 /**
  * Ports v2's `routerAuth.ensureReady()` backoff verbatim (blueprint §1.4/§6).
  * Phase 2 shim (ECS migration): the schedule and the settle rule are
- * `SessionAccessSystem.readiness` (`@creativo/ecs-core`); this use case keeps
+ * `SessionAccessSystem.readiness` (`@core/systems`); this use case keeps
  * the timer, the token refresh and the observation.
  */
 export const REFRESH_UNTIL_ACTIVE_BACKOFF_MS: readonly number[] =

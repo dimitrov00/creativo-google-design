@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { Currency } from '../primitives/currency.primitive';
-import { GiftVoucherId } from '../primitives/ids.primitive';
-import { PriceCents } from '../primitives/price-cents.primitive';
-import { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
-import { unwrapOk } from '../testing';
+import {
+  Currency,
+  GiftVoucherId,
+  PriceCents,
+  UtcEpochMs,
+} from '@core/primitives';
+import { unwrapOk } from '@core/testing';
 import { VoucherCode } from './voucher-code.data';
 import { VoucherRedemption } from './voucher-redemption.data';
 

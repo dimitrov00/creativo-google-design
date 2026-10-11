@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { BarberId } from '../primitives/ids.primitive';
+import { BarberId } from '@core/primitives';
 import { BarberPref, BarberPreference } from './barber-pref.data';
 
 const IVAN = BarberId.of('ivan');

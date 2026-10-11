@@ -17,35 +17,39 @@ import {
 } from '@creativo/domain/scheduling';
 import {
   BarberId as BarberKey,
-  type BookingCart as CartData,
-  type BookingPolicy as PolicyData,
-  type CartBarberDay,
   CartLineId as LineKey,
-  type CartService,
   Currency,
-  DayWindows as DayWindowsData,
   DurationMinutes,
   EndMinute,
-  FlexibleWhen as WhenData,
   LocalDate,
   LocationId as LocationKey,
   MinuteCount,
   MinuteOfDay,
-  MinuteRange,
   PriceCents,
-  RosterWindow,
   SeatKeyText,
   ServiceId as ServiceKey,
-  ServiceTerms as TermsData,
   ServiceVariantId as VariantKey,
-  type ShopNow,
   type TimeZone,
   UtcEpochMs,
   WaitlistRequestId,
+  defect,
+} from '@core/primitives';
+import {
+  type BookingCart as CartData,
+  type BookingPolicy as PolicyData,
+  DayWindows as DayWindowsData,
+  FlexibleWhen as WhenData,
+  MinuteRange,
+  RosterWindow,
+  ServiceTerms as TermsData,
+  type ShopNow,
+} from '@core/components';
+import {
+  type CartBarberDay,
+  type CartService,
   WaitlistSystem,
   ZonedTimeSystem,
-  defect,
-} from '@creativo/ecs-core';
+} from '@core/systems';
 import { cartAdmissible } from './party-admission';
 
 /*

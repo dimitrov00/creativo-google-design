@@ -1,5 +1,4 @@
-import type { TriggerEventId } from '../primitives/ids.primitive';
-import { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
+import { type TriggerEventId, UtcEpochMs } from '@core/primitives';
 
 /**
  * How a retrying handler judges one failed attempt

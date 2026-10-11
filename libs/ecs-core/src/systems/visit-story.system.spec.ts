@@ -2,33 +2,29 @@ import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
   BookingLifecycle,
-  type BookingStatus,
-} from '../components/booking-lifecycle.data';
-import {
   CancellationReason,
   CancellationReasonSet,
   CancelledBy,
   SeatOutcome,
-} from '../components/seat-outcome.data';
-import { SeatLabel } from '../components/seat-label.data';
-import {
+  SeatLabel,
   Seat,
   SeatOccupant,
   SeatSubject,
   SubjectRelationship,
-} from '../components/seat.data';
-import { ShopNow } from '../components/shop-now.data';
-import { WallTime } from '../components/wall-time.data';
-import type { Appointment } from '../entities/appointment.entity';
+  ShopNow,
+  WallTime,
+} from '@core/components';
 import {
+  type BookingStatus,
   BarberId,
   SeatId,
   ServiceId,
   UserId,
-} from '../primitives/ids.primitive';
-import { LocalDate } from '../primitives/local-date.primitive';
-import type { MinuteOfDay } from '../primitives/minute-of-day.primitive';
-import { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
+  LocalDate,
+  type MinuteOfDay,
+  UtcEpochMs,
+} from '@core/primitives';
+import type { Appointment } from '@core/entities';
 import {
   FIXTURE_TIME_ZONE,
   FIXTURE_TODAY,
@@ -36,12 +32,10 @@ import {
   localDate,
   minute,
   unwrapOk,
-} from '../testing';
-import {
   appointmentFixture,
   seatFixture,
-} from '../testing/appointment.fixtures';
-import { termsFixture } from '../testing/booking-core.fixtures';
+  termsFixture,
+} from '@core/testing';
 import { type PersonSubject, VisitStorySystem } from './visit-story.system';
 import { ZonedTimeSystem } from './zoned-time.system';
 

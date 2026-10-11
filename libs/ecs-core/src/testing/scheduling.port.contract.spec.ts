@@ -1,28 +1,27 @@
 import { describe, expect, it } from 'vitest';
 import { firstValueFrom, of } from 'rxjs';
-import { BlockKind, MinuteBlock } from '../components/minute-block.data';
-import type { MinuteRange } from '../components/minute-range.data';
-import { RepositoryError } from '../components/repository-errors.data';
-import { Result } from '../components/result.data';
-import type { BarberBusyDay } from '../entities/barber-busy-day.entity';
-import { MinuteCount } from '../primitives/duration-minutes.primitive';
-import { BarberId } from '../primitives/ids.primitive';
-import type { TimeZone } from '../primitives/time-zone.primitive';
-import { Collections } from '../ports/collections';
-import type { LoadBusyDay, ObserveBusyDay } from '../ports/scheduling.port';
-import { AvailabilitySystem } from '../systems/availability.system';
-import { IntervalSetSystem } from '../systems/interval-set.system';
+import { BlockKind, MinuteBlock, type MinuteRange } from '@core/components';
+import {
+  RepositoryError,
+  Result,
+  MinuteCount,
+  BarberId,
+  type TimeZone,
+} from '@core/primitives';
+import { type BarberBusyDay, Collections } from '@core/entities';
+import type { LoadBusyDay, ObserveBusyDay } from '@core/ports';
+import { AvailabilitySystem, IntervalSetSystem } from '@core/systems';
 import {
   FIXTURE_TIME_ZONE,
   FIXTURE_TODAY,
-  deepFreeze,
   endMinute,
   localDate,
   memoryStore,
   minute,
   type MemoryStore,
   utcMs,
-} from '../testing';
+} from './test-support';
+import { deepFreeze } from './deep-freeze';
 import {
   memoryLoadBusyDay,
   memoryObserveBusyDay,

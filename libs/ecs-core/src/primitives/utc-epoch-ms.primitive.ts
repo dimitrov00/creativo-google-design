@@ -1,4 +1,4 @@
-import { Result } from '../components/result.data';
+import { Result } from './result.data';
 import type { Brand } from './brand';
 import type { MinuteDelta } from './duration-minutes.primitive';
 import { PrimitiveError, PrimitiveErrorCode } from './primitive-errors.data';

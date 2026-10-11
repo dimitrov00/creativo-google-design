@@ -1,9 +1,7 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { localDate } from '../testing';
-import { minuteCount } from '../testing/booking-core.fixtures';
-import { BarberId, LocationId } from '../primitives/ids.primitive';
-import { LocalDate } from '../primitives/local-date.primitive';
+import { localDate, minuteCount } from '@core/testing';
+import { BarberId, LocationId, LocalDate } from '@core/primitives';
 import { CapacityEntry } from './capacity-entry.data';
 
 const IVAN = BarberId.of('ivan');

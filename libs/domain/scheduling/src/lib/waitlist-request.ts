@@ -6,15 +6,17 @@ import { CalendarDay } from './calendar-day';
 import { FlexibleWhen, type FlexibleWhenProps } from './flexible-when';
 import { WaitlistRequestId } from './ids';
 import {
-  DayWindows as DayWindowsData,
   LocalDate,
   UtcEpochMs,
-  WaitlistLifecycle,
   WaitlistStatus as StatusTag,
-  WaitlistSystem,
-  FlexibleWhen as WhenData,
   defect,
-} from '@creativo/ecs-core';
+} from '@core/primitives';
+import {
+  DayWindows as DayWindowsData,
+  WaitlistLifecycle,
+  FlexibleWhen as WhenData,
+} from '@core/components';
+import { WaitlistSystem } from '@core/systems';
 import {
   EmptyWaitlistCartError,
   EmptyWaitlistWhenError,

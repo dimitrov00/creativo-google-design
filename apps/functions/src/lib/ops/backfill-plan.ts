@@ -5,9 +5,9 @@ import {
   placementFromDocument,
   subjectUserIdsFromDocument,
 } from '@creativo/application/booking';
+import { UserId } from '@core/primitives';
+import { AuditAction, BackfillJobName, Placement } from '@core/components';
 import {
-  AuditAction,
-  BackfillJobName,
   BackfillPhase as EcsBackfillPhase,
   BackfillPlanSystem,
   type BackfillPosition as EcsBackfillPosition,
@@ -15,16 +15,14 @@ import {
   BackfillStart,
   type MirrorPatch,
   type MirrorRow,
-  Placement,
-  UserId,
-} from '@creativo/ecs-core';
+} from '@core/systems';
 
 /**
  * The pure half of `runBackfill` (§12.5.3): which job, which page, and what
  * a stored appointment is missing. The shell reads and writes.
  *
  * Phase 2 shim: the decisions are `BackfillPlanSystem` in
- * `@creativo/ecs-core`; this file keeps the legacy names and shapes for its
+ * `@core/systems`; this file keeps the legacy names and shapes for its
  * callers and reads the stored rows through their mappers. The wire, the
  * stored rows and the audit trail keep their legacy lowercase tags; the
  * tables at the foot of the file are the ONE translation of each.

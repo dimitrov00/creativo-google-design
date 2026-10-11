@@ -1,13 +1,15 @@
-import { TimeCoordinate } from '../components/time-coordinate.data';
 import {
+  TimeCoordinate,
   BookingLifecycle,
+  BookingPolicy,
+} from '@core/components';
+import {
   BookingStatus,
-} from '../components/booking-lifecycle.data';
-import { BookingPolicy } from '../components/booking-policy.data';
-import { Result } from '../components/result.data';
-import { SchedulingError } from '../components/scheduling-errors.data';
-import type { Appointment } from '../entities/appointment.entity';
-import { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
+  Result,
+  SchedulingError,
+  UtcEpochMs,
+} from '@core/primitives';
+import type { Appointment } from '@core/entities';
 import { AppointmentIndexSystem } from './appointment-index.system';
 
 /**

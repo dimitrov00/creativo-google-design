@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import type { Hash, NextId } from '@creativo/ecs-core';
+import type { Hash, NextId } from '@core/ports';
 import { NodeOtpCrypto } from './node-otp-crypto';
 import {
   cryptoPorts,

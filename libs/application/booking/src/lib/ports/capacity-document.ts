@@ -1,10 +1,10 @@
 import {
   BarberId as EcsBarberId,
-  CapacityEntry,
   LocalDate,
   LocationId as EcsLocationId,
   MinuteCount,
-} from '@creativo/ecs-core';
+} from '@core/primitives';
+import { CapacityEntry } from '@core/components';
 
 /**
  * The calendar's cost ceiling, as a document: `capacity/{YYYY-MM}`.

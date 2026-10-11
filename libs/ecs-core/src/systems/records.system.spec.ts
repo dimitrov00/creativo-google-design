@@ -1,10 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import {
-  PersonalRecordKind,
-  type PersonalRecord,
-} from '../components/personal-record.data';
-import { AppointmentId, ServiceId } from '../primitives/ids.primitive';
-import { deepFreeze, localDate } from '../testing';
+import { PersonalRecordKind, type PersonalRecord } from '@core/components';
+import { AppointmentId, ServiceId } from '@core/primitives';
+import { deepFreeze, localDate } from '@core/testing';
 import { RecordsSystem, type RecordVisit } from './records.system';
 
 /*

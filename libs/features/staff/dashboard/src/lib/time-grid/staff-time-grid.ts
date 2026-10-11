@@ -39,16 +39,15 @@ import {
   snapTo,
   timeLabel,
 } from './grid-gesture';
+import { EndMinute, MinuteOfDay } from '@core/primitives';
 import {
-  EndMinute,
   type EventRuns,
   GridEvent as GridEventTag,
   GridLayoutSystem,
   type LaneSlot,
-  MinuteOfDay,
   type MinuteRun,
   type RunEvent,
-} from '@creativo/ecs-core';
+} from '@core/systems';
 
 /** One block drawn in a column — a visit, an absence, or a sellable hole. */
 export interface GridEvent {

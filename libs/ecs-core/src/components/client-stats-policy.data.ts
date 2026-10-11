@@ -1,7 +1,5 @@
-import type { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
+import { type UtcEpochMs, Result, SchedulingError } from '@core/primitives';
 import { BookingPolicy } from './booking-policy.data';
-import { Result } from './result.data';
-import { SchedulingError } from './scheduling-errors.data';
 
 /**
  * How far back `ClientStats` keeps individual instants: the longest window a

@@ -6,35 +6,34 @@
  * (no `Date`, L4): the visit is Ivan's classic cut at 10:00 on
  * `FIXTURE_TODAY` in the fixture shop's zone.
  */
-import type { TimeCoordinate } from '../components/time-coordinate.data';
-import { BookingContact } from '../components/booking-contact.data';
-import { BookingLifecycle } from '../components/booking-lifecycle.data';
-import { Placement } from '../components/placement-kind.data';
-import type { StoodSeatPairs } from '../components/seat-id-pair.data';
-import { SeatOutcome } from '../components/seat-outcome.data';
 import {
+  type TimeCoordinate,
+  BookingContact,
+  BookingLifecycle,
+  Placement,
+  type StoodSeatPairs,
+  SeatOutcome,
   Seat,
   type SeatCatalogTerms,
   type SeatCore,
   SeatOccupant,
   SubjectRelationship,
-} from '../components/seat.data';
-import type { ServiceTerms } from '../components/service-terms.data';
+  type ServiceTerms,
+} from '@core/components';
 import type {
   Appointment,
   AppointmentMeta,
   AppointmentStamps,
-} from '../entities/appointment.entity';
-import { BusyKey } from '../primitives/busy-key.primitive';
-import { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
-import { ZonedTimeSystem } from '../systems/zoned-time.system';
+} from '@core/entities';
+import { BusyKey, UtcEpochMs } from '@core/primitives';
+import { ZonedTimeSystem } from '@core/systems';
 import {
   FIXTURE_IDS,
   FIXTURE_NOW_UTC_MS,
   FIXTURE_TIME_ZONE,
   FIXTURE_TODAY,
   minute,
-} from '../testing';
+} from './test-support';
 import { FIXTURE_TERMS } from './booking-core.fixtures';
 
 const DAY_MS = 86_400_000;

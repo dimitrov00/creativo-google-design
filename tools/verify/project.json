@@ -5,7 +5,16 @@
   "projectType": "library",
   "tags": ["scope:tooling", "type:util"],
   "// test": "The runners here (the initial-bundle guard, the P0 proofs) keep their pure parts in node:test specs, so `test` is node's own runner rather than vitest; the runners themselves need a build or the emulators and run as `pnpm run verify:bundle` and `pnpm run verify:p0`",
+  "// layering": "Law 8 (CLAUDE.md): tier hierarchy, import cycles, tier barrels and the root-barrel ban in libs/ecs-core, deep relative imports across libs/apps/tools. It reads the whole workspace in about a second, so it is never cached: a cached pass could hide a new violation in a project it does not depend on",
   "targets": {
+    "layering": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "options": {
+        "command": "node tools/verify/layering/check-layering.mjs",
+        "cwd": "{workspaceRoot}"
+      }
+    },
     "test": {
       "executor": "nx:run-commands",
       "cache": true,

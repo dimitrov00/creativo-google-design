@@ -1,54 +1,47 @@
-import type { BarberPreference } from '../components/barber-pref.data';
-import { BookingContact } from '../components/booking-contact.data';
 import {
-  BookingError,
-  ShopUnavailableReason,
-} from '../components/booking-errors.data';
-import { BookingLifecycle } from '../components/booking-lifecycle.data';
-import { BookingPolicy } from '../components/booking-policy.data';
-import type { ExceptionEffectRule } from '../components/exception-effect.data';
-import { MinuteRange } from '../components/minute-range.data';
-import type { DayHours } from '../components/opening-hours.data';
-import type { E164 } from '../components/phone-number.data';
-import type { Placement } from '../components/placement-kind.data';
-import {
+  type BarberPreference,
+  BookingContact,
+  BookingLifecycle,
+  BookingPolicy,
+  type ExceptionEffectRule,
+  MinuteRange,
+  type DayHours,
+  type E164,
+  type Placement,
   type PlacementPolicy,
   StaffTermsOverride,
-} from '../components/placement-policy.data';
-import { Result } from '../components/result.data';
-import type { ScheduleVersion } from '../components/schedule-version.data';
-import { SchedulingError } from '../components/scheduling-errors.data';
-import type { SeatIdPair } from '../components/seat-id-pair.data';
-import { SeatLabel } from '../components/seat-label.data';
-import { SeatOutcome } from '../components/seat-outcome.data';
-import {
+  type ScheduleVersion,
+  type SeatIdPair,
+  SeatLabel,
+  SeatOutcome,
   Seat,
   SeatOccupant,
   SubjectRelationship,
-} from '../components/seat.data';
-import { ServiceTerms } from '../components/service-terms.data';
-import type { ShopNow } from '../components/shop-now.data';
-import type { Appointment } from '../entities/appointment.entity';
-import type { ScheduleException } from '../entities/schedule-exception.entity';
-import type { Service } from '../entities/service.entity';
-import { BusyKey } from '../primitives/busy-key.primitive';
-import { Currency } from '../primitives/currency.primitive';
+  ServiceTerms,
+  type ShopNow,
+} from '@core/components';
 import {
+  BookingError,
+  ShopUnavailableReason,
+  Result,
+  SchedulingError,
+  BusyKey,
+  Currency,
   type DurationMinutes,
   MinuteCount,
-} from '../primitives/duration-minutes.primitive';
-import {
   AppointmentId,
   BarberId,
   LocationId,
   SeatId,
   ServiceId,
   UserId,
-} from '../primitives/ids.primitive';
-import { LocalDate } from '../primitives/local-date.primitive';
-import { EndMinute, MinuteOfDay } from '../primitives/minute-of-day.primitive';
-import { PriceCents } from '../primitives/price-cents.primitive';
-import type { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
+  LocalDate,
+  EndMinute,
+  MinuteOfDay,
+  PriceCents,
+  type UtcEpochMs,
+} from '@core/primitives';
+import type { Appointment, ScheduleException, Service } from '@core/entities';
 import { AppointmentIndexSystem } from './appointment-index.system';
 import { AvailabilitySystem, type ChairTime } from './availability.system';
 import {

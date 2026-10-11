@@ -1,9 +1,10 @@
-import type { PolicyRecomputeJobId, UserId } from '../primitives/ids.primitive';
 import type {
+  PolicyRecomputeJobId,
+  UserId,
   EpochSeconds,
   SubsecondNanos,
-} from '../primitives/precise-instant.primitive';
-import type { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
+  UtcEpochMs,
+} from '@core/primitives';
 
 /**
  * The policy pass's job tag — the ONLY source of this string, the job's own

@@ -1,16 +1,18 @@
 import { describe, expect, it } from 'vitest';
-import { ExceptionEffect } from '../components/exception-effect.data';
-import { BusyKey } from '../primitives/busy-key.primitive';
-import { ScheduleExceptionId } from '../primitives/ids.primitive';
-import { ZonedTimeSystem } from '../systems/zoned-time.system';
 import {
-  deepFreeze,
+  ExceptionEffect,
+  BusyKey,
+  ScheduleExceptionId,
+} from '@core/primitives';
+import { ZonedTimeSystem } from '@core/systems';
+import { deepFreeze } from './deep-freeze';
+import {
   FIXTURE_IDS,
   FIXTURE_TIME_ZONE,
   FIXTURE_TODAY,
   localDate,
   utcMs,
-} from '../testing';
+} from './test-support';
 import { scheduleExceptionFixture } from './booking-flow.fixtures';
 
 /*

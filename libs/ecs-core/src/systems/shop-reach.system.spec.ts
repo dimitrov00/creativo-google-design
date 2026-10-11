@@ -1,10 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { ShopReach } from '../components/booking-flow.data';
-import { E164 } from '../components/phone-number.data';
-import { Latitude, Longitude } from '../primitives/geo.primitive';
-import { LocationId } from '../primitives/ids.primitive';
-import { deepFreeze, unwrapOk } from '../testing';
-import { locationFixture } from '../testing/booking-core.fixtures';
+import { ShopReach, E164 } from '@core/components';
+import { Latitude, Longitude, LocationId } from '@core/primitives';
+import { deepFreeze, unwrapOk, locationFixture } from '@core/testing';
 import { ShopReachSystem } from './shop-reach.system';
 
 /*

@@ -1,4 +1,5 @@
-import { DurationMinutes, VisitDraftSystem, defect } from '@creativo/ecs-core';
+import { DurationMinutes, defect } from '@core/primitives';
+import { VisitDraftSystem } from '@core/systems';
 
 /**
  * THE TAG's arithmetic — how far a visit runs from the catalogue's length —
@@ -7,7 +8,7 @@ import { DurationMinutes, VisitDraftSystem, defect } from '@creativo/ecs-core';
  * ±x min if extended or subtracted").
  *
  * Phase 2 shim: the arithmetic is `VisitDraftSystem.catalogMinutesOf` and
- * `VisitDraftSystem.minutesDelta` in `@creativo/ecs-core`; the `−10 мин`
+ * `VisitDraftSystem.minutesDelta` in `@core/systems`; the `−10 мин`
  * wording stays here, in the presenter layer.
  */
 

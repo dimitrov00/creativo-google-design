@@ -9,19 +9,20 @@ import { giftVoucherFromDocument } from '@creativo/application/engagement';
 import type { ZonedDateTime } from '@creativo/domain/kernel';
 import {
   Currency,
-  type GiftVoucher as GiftVoucherData,
   GiftVoucherId,
   type LocalDate,
-  type Money as MoneyData,
   PriceCents,
   UserId,
   UtcEpochMs,
+  defect,
+} from '@core/primitives';
+import {
+  type Money as MoneyData,
   VoucherCode,
   VoucherLifecycle,
-  VoucherSystem,
-  ZonedTimeSystem,
-  defect,
-} from '@creativo/ecs-core';
+} from '@core/components';
+import { type GiftVoucher as GiftVoucherData } from '@core/entities';
+import { VoucherSystem, ZonedTimeSystem } from '@core/systems';
 
 /*
  * THIN SHIM (ECS migration Phase 2) — the math only. What a cancellation puts

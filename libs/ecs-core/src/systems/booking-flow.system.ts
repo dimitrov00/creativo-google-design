@@ -1,30 +1,29 @@
-import type { BookingPolicy } from '../components/booking-policy.data';
-import { BookingFlowError } from '../components/booking-flow-errors.data';
 import {
+  type BookingPolicy,
   BookingFlowState,
   BookingFlowStep,
   type ScheduleSelection,
-} from '../components/booking-flow.data';
-import { BookingCart, SeatKey } from '../components/cart-line.data';
-import type { DayWindows } from '../components/day-windows.data';
-import { FlexibleWhen } from '../components/flexible-when.data';
-import { Party } from '../components/party.data';
-import { Result } from '../components/result.data';
+  BookingCart,
+  SeatKey,
+  type DayWindows,
+  FlexibleWhen,
+  Party,
+} from '@core/components';
 import {
+  BookingFlowError,
+  Result,
   SchedulingError,
   SchedulingErrorCode,
-} from '../components/scheduling-errors.data';
-import type {
-  AppointmentId,
-  BarberId,
-  CartLineId,
-  GuestId,
-  LocationId,
-  SeatKeyText,
-  ServiceVariantId,
-  WaitlistRequestId,
-} from '../primitives/ids.primitive';
-import type { LocalDate } from '../primitives/local-date.primitive';
+  type AppointmentId,
+  type BarberId,
+  type CartLineId,
+  type GuestId,
+  type LocationId,
+  type SeatKeyText,
+  type ServiceVariantId,
+  type WaitlistRequestId,
+  type LocalDate,
+} from '@core/primitives';
 import { BookingCartSystem } from './booking-cart.system';
 
 /**

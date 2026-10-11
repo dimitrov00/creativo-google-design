@@ -19,7 +19,7 @@ import {
   appointmentFromDocument,
 } from '@creativo/application/booking';
 import { RepositoryError } from '@creativo/application/shared';
-import { PageStep, PagingSystem } from '@creativo/ecs-core';
+import { PageStep, PagingSystem } from '@core/systems';
 import { appointmentsCollection } from './firestore-paths';
 
 type Snapshot = QueryDocumentSnapshot<DocumentData>;

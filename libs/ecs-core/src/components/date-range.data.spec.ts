@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { localDate } from '../testing';
+import { localDate } from '@core/testing';
 import { DateRange } from './date-range.data';
 
 /* The successor of the DateRange cases of `day-key.data.spec.ts` (§1.3). */

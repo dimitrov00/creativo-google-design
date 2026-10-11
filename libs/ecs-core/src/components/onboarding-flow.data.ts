@@ -1,4 +1,4 @@
-import type { ServiceId } from '../primitives/ids.primitive';
+import type { ServiceId } from '@core/primitives';
 import type { RegistrationFields } from './registration.data';
 
 /** Onboarding flow step tags — the ONLY source of these strings, the discriminator `onboardingFlowStep`. */

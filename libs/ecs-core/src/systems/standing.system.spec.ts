@@ -1,22 +1,22 @@
 import { describe, expect, it } from 'vitest';
-import { EarnedVia } from '../components/badge-level.data';
 import {
+  EarnedVia,
   BadgeCategoryKind,
   BadgeEmblem,
   BadgeSubjectSlot,
   Metric,
   MetricRef,
   SeasonKind,
-} from '../components/gamification.data';
-import {
   FamilyScopeFilter,
   type FamilyScopeFilter as Scope,
-} from '../components/standing.data';
-import type { BadgeCategory } from '../entities/badge-category.entity';
-import type { BadgeProgress } from '../entities/badge-progress.entity';
-import type { BadgeSeries } from '../entities/badge-series.entity';
-import type { Season } from '../entities/season.entity';
-import type { TierDefinition } from '../entities/tier-definition.entity';
+} from '@core/components';
+import type {
+  BadgeCategory,
+  BadgeProgress,
+  BadgeSeries,
+  Season,
+  TierDefinition,
+} from '@core/entities';
 import {
   AchievementRuleId,
   BadgeCategoryId,
@@ -26,9 +26,9 @@ import {
   SeasonId,
   ServiceId,
   TierId,
-} from '../primitives/ids.primitive';
-import type { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
-import { FIXTURE_TIME_ZONE, deepFreeze, localDate, utcMs } from '../testing';
+  type UtcEpochMs,
+} from '@core/primitives';
+import { FIXTURE_TIME_ZONE, deepFreeze, localDate, utcMs } from '@core/testing';
 import { ZonedTimeSystem } from './zoned-time.system';
 import { LoyaltyCatalogSystem } from './loyalty-catalog.system';
 import { StandingSystem } from './standing.system';

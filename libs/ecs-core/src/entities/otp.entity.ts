@@ -1,15 +1,9 @@
-import type { Identifier } from '../components/identifier.data';
-import type { OtpDestinationType } from '../components/otp-destination-type.data';
-import type { OtpPurpose } from '../components/otp-purpose.data';
-import type { OtpId, TenantId } from '../primitives/ids.primitive';
-import type { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
-
-/*
- * Staging re-export (flatten-pass): `OtpId` is declared in
- * `primitives/ids.primitive.ts` (flatten-spec §1.5); the barrel's staging
- * block still names it from this file. The integrator deletes this line
- * with the barrel's block.
- */
+import type {
+  Identifier,
+  OtpDestinationType,
+  OtpPurpose,
+} from '@core/components';
+import type { OtpId, TenantId, UtcEpochMs } from '@core/primitives';
 
 /**
  * An in-flight (or resolved) one-time-code challenge — `otps/{id}`, flat

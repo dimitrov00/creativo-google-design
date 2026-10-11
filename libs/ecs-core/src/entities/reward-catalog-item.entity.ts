@@ -1,14 +1,5 @@
-import type { LocalizedText } from '../components/localized-text.data';
-import type { Points } from '../components/points.data';
-import type { RewardGrantRule } from '../components/reward-grant.data';
-import type { RewardId } from '../primitives/ids.primitive';
-import type { LocalDate } from '../primitives/local-date.primitive';
-
-/*
- * The id lives in `primitives/ids.primitive.ts` (flatten-spec §1.5); it is
- * re-exported here only while the barrel's staging block still names this
- * file (`index.ts`), and leaves with that line.
- */
+import type { LocalizedText, Points, RewardGrantRule } from '@core/components';
+import type { RewardId, LocalDate } from '@core/primitives';
 
 /**
  * The reward's identity slice. `availableFrom` / `availableUntil` were

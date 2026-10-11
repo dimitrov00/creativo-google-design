@@ -2,28 +2,26 @@ import {
   AuditAction,
   AuditContext,
   type TransitionAction,
-} from '../components/audit-context.data';
-import {
   BookingLifecycle,
-  BookingStatus,
-} from '../components/booking-lifecycle.data';
-import { Result } from '../components/result.data';
-import { SchedulingError } from '../components/scheduling-errors.data';
-import {
-  AttendanceState,
   CancellationReason,
   CancellationReasonSet,
   CancelledBy,
   SeatOutcome,
-} from '../components/seat-outcome.data';
-import { Seat } from '../components/seat.data';
-import type { ShopNow } from '../components/shop-now.data';
-import { WriteOp } from '../components/write-op.data';
-import type { Appointment } from '../entities/appointment.entity';
-import { AuditResourceId, type SeatId } from '../primitives/ids.primitive';
-import type { LocalDate } from '../primitives/local-date.primitive';
-import { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
-import { Collections } from '../ports/collections';
+  Seat,
+  type ShopNow,
+  WriteOp,
+} from '@core/components';
+import {
+  BookingStatus,
+  Result,
+  SchedulingError,
+  AttendanceState,
+  AuditResourceId,
+  type SeatId,
+  type LocalDate,
+  UtcEpochMs,
+} from '@core/primitives';
+import { type Appointment, Collections } from '@core/entities';
 import { AppointmentIndexSystem } from './appointment-index.system';
 import { type AuditFact, AuditSystem } from './audit.system';
 import { CancellationPolicySystem } from './cancellation-policy.system';

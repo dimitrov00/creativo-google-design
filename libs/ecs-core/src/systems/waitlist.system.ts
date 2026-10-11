@@ -1,38 +1,38 @@
-import { BookingPolicy } from '../components/booking-policy.data';
 import {
+  BookingPolicy,
   BookingCart,
   type CartLine,
   type CartSeatLines,
-} from '../components/cart-line.data';
-import { DayWindows } from '../components/day-windows.data';
-import { FlexibleWhen } from '../components/flexible-when.data';
-import { MinuteRange } from '../components/minute-range.data';
-import { NotificationPayload } from '../components/notification-payload.data';
-import { Result } from '../components/result.data';
+  DayWindows,
+  FlexibleWhen,
+  MinuteRange,
+  NotificationPayload,
+  type ShopNow,
+  WaitlistLifecycle,
+  WriteOp,
+} from '@core/components';
 import {
+  Result,
   type SchedulingError,
   SchedulingErrorCode,
-} from '../components/scheduling-errors.data';
-import type { ShopNow } from '../components/shop-now.data';
-import { WaitlistError } from '../components/waitlist-errors.data';
-import {
-  WaitlistLifecycle,
+  WaitlistError,
   WaitlistStatus,
-} from '../components/waitlist-status.data';
-import { WriteOp } from '../components/write-op.data';
-import type { InboxNotification } from '../entities/notification.entity';
-import type { WaitlistRequest } from '../entities/waitlist-request.entity';
-import {
   type BarberId,
   LocationId,
   NotificationId,
   type UserId,
   type WaitlistRequestId,
-} from '../primitives/ids.primitive';
-import { LocalDate } from '../primitives/local-date.primitive';
-import { EndMinute, MinuteOfDay } from '../primitives/minute-of-day.primitive';
-import { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
-import { Collections, Subcollections } from '../ports/collections';
+  LocalDate,
+  EndMinute,
+  MinuteOfDay,
+  UtcEpochMs,
+} from '@core/primitives';
+import {
+  type InboxNotification,
+  type WaitlistRequest,
+  Collections,
+  Subcollections,
+} from '@core/entities';
 import {
   type AvailabilityAssignment,
   AvailabilitySystem,

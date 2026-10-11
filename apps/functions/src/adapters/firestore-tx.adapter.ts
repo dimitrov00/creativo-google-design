@@ -7,19 +7,20 @@ import {
   type Query,
   type Transaction,
 } from 'firebase-admin/firestore';
+import { RepositoryError, Result } from '@core/primitives';
+import {
+  type DocBody,
+  type DocPath,
+  WriteAction,
+  type WriteOp,
+} from '@core/components';
 import {
   type CollectionPath,
   type CommitPlan,
-  type DocBody,
-  type DocPath,
   type QuerySpec,
   type ReadTx,
-  RepositoryError,
-  Result,
-  TriggerAttemptSystem,
-  WriteAction,
-  type WriteOp,
-} from '@creativo/ecs-core';
+} from '@core/ports';
+import { TriggerAttemptSystem } from '@core/systems';
 
 /**
  * The transactional sandwich over the Admin SDK (`tx.port.ts`, blueprint §4):

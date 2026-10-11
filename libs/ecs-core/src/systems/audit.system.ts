@@ -1,20 +1,17 @@
-import { Actor, SystemSource } from '../components/actor.data';
 import {
+  Actor,
+  SystemSource,
   AuditAction,
   AuditContext,
   AuditTargetRef,
   type ProfileAction,
-} from '../components/audit-context.data';
-import { GovernanceError } from '../components/governance-errors.data';
-import { Result } from '../components/result.data';
-import {
   type Seat,
   SeatSubject,
   SubjectRelationship,
-} from '../components/seat.data';
-import type { Appointment } from '../entities/appointment.entity';
-import type { AuditEntryMeta } from '../entities/audit-entry.entity';
+} from '@core/components';
 import {
+  GovernanceError,
+  Result,
   type AppointmentId,
   AuditResourceId,
   type OperationId,
@@ -22,8 +19,9 @@ import {
   type SeatId,
   type TriggerEventId,
   UserId,
-} from '../primitives/ids.primitive';
-import type { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
+  type UtcEpochMs,
+} from '@core/primitives';
+import type { Appointment, AuditEntryMeta } from '@core/entities';
 import {
   EditCommand,
   type EditCommandRequest,

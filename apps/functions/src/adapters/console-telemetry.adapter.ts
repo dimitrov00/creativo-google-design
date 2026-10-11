@@ -1,5 +1,5 @@
 import { logger } from 'firebase-functions';
-import type { Log, TelemetryPorts } from '@creativo/ecs-core';
+import type { Log, TelemetryPorts } from '@core/ports';
 
 /**
  * The telemetry ports (`telemetry.port.ts`) over `firebase-functions/logger`

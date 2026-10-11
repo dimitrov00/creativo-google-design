@@ -1,6 +1,8 @@
-import type { AchievementRuleId } from '../primitives/ids.primitive';
-import type { LocalDate } from '../primitives/local-date.primitive';
-import type { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
+import type {
+  AchievementRuleId,
+  LocalDate,
+  UtcEpochMs,
+} from '@core/primitives';
 import type { AwardSummary } from './gamification.data';
 import type { LocalizedText } from './localized-text.data';
 

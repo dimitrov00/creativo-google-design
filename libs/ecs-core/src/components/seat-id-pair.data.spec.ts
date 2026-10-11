@@ -1,7 +1,7 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import { SeatIdPair, StoodSeatPairs } from './seat-id-pair.data';
-import { SeatId } from '../primitives/ids.primitive';
+import { SeatId } from '@core/primitives';
 
 const A = SeatId.of('seat-a');
 const B = SeatId.of('seat-b');

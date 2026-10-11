@@ -2,14 +2,10 @@ import {
   StreakInterval,
   StreakIntervalRule,
   StreakIntervalSource,
-} from '../components/streak-interval.data';
-import {
   STREAK_SHOP_EXCUSES,
   StreakExcuse,
   StreakOnBreak,
   StreakRule,
-} from '../components/streak-rule.data';
-import {
   FreezeReason,
   StreakPeriodMark,
   StreakPhase,
@@ -18,13 +14,13 @@ import {
   type StreakPeriodFact,
   type StreakPeriodReason,
   type StreakPeriodTerms,
-} from '../components/streak-state.data';
+} from '@core/components';
 import {
   AppointmentId,
   type StreakDefinitionId,
-} from '../primitives/ids.primitive';
-import { LocalDate } from '../primitives/local-date.primitive';
-import type { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
+  LocalDate,
+  type UtcEpochMs,
+} from '@core/primitives';
 
 /*
  * THE RHYTHM'S PROJECTOR (client-card revision 3 §4.2), ported from

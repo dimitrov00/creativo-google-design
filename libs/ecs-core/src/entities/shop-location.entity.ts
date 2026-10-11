@@ -1,11 +1,12 @@
-import type { LocationStatus } from '../components/catalog-status.data';
-import type { GeoPoint } from '../components/geo-point.data';
-import type { LocalizedText } from '../components/localized-text.data';
-import type { MediaRef } from '../components/media-ref.data';
-import type { DayHours } from '../components/opening-hours.data';
-import type { VenuePhone } from '../components/venue-phone.data';
-import type { LocationId, MediaRefId } from '../primitives/ids.primitive';
-import type { TimeZone } from '../primitives/time-zone.primitive';
+import type {
+  LocationStatus,
+  GeoPoint,
+  LocalizedText,
+  MediaRef,
+  DayHours,
+  VenuePhone,
+} from '@core/components';
+import type { LocationId, MediaRefId, TimeZone } from '@core/primitives';
 
 /**
  * The identity slice of a shop: the id and the plain attributes.

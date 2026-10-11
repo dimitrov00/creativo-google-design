@@ -1,20 +1,22 @@
-import { BarberPref, BarberPreference } from '../components/barber-pref.data';
-import type { BookingPolicy } from '../components/booking-policy.data';
-import { DayWindows } from '../components/day-windows.data';
-import { MinuteRange } from '../components/minute-range.data';
-import type { ShopNow } from '../components/shop-now.data';
-import type {
-  DurationMinutes,
-  MinuteCount,
-  MinuteDelta,
-} from '../primitives/duration-minutes.primitive';
-import type {
-  BarberId,
-  CartLineId,
-  SeatKeyText,
-} from '../primitives/ids.primitive';
-import { LocalDate } from '../primitives/local-date.primitive';
-import { EndMinute, MinuteOfDay } from '../primitives/minute-of-day.primitive';
+import {
+  BarberPref,
+  BarberPreference,
+  type BookingPolicy,
+  DayWindows,
+  MinuteRange,
+  type ShopNow,
+} from '@core/components';
+import {
+  type DurationMinutes,
+  type MinuteCount,
+  type MinuteDelta,
+  type BarberId,
+  type CartLineId,
+  type SeatKeyText,
+  LocalDate,
+  EndMinute,
+  MinuteOfDay,
+} from '@core/primitives';
 import {
   IntervalSetSystem,
   type NormalizedRanges,

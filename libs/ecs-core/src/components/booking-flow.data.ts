@@ -1,15 +1,13 @@
-import type {
-  AppointmentId,
-  BarberId,
-  CartLineId,
-  LocationId,
-  WaitlistRequestId,
-} from '../primitives/ids.primitive';
-import { LocalDate } from '../primitives/local-date.primitive';
-import type {
-  EndMinute,
-  MinuteOfDay,
-} from '../primitives/minute-of-day.primitive';
+import {
+  type AppointmentId,
+  type BarberId,
+  type CartLineId,
+  type LocationId,
+  type WaitlistRequestId,
+  LocalDate,
+  type EndMinute,
+  type MinuteOfDay,
+} from '@core/primitives';
 import { BookingCart } from './cart-line.data';
 import { FlexibleWhen } from './flexible-when.data';
 import { Party } from './party.data';

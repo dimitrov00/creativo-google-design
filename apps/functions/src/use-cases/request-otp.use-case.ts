@@ -1,10 +1,6 @@
-import {
-  AuthStrategyKind,
-  OtpDestinationType,
-  OtpSystem,
-  UtcEpochMs,
-  defect,
-} from '@creativo/ecs-core';
+import { UtcEpochMs, defect } from '@core/primitives';
+import { AuthStrategyKind, OtpDestinationType } from '@core/components';
+import { OtpSystem } from '@core/systems';
 import { Email, Otp, OtpId, OtpPurpose } from '@creativo/domain/models';
 import {
   PhoneNumber,
@@ -35,7 +31,7 @@ import {
 
 // The resend window (server-side abuse throttling, deliberately outside
 // deployment config) and the deployment's one challenge channel are
-// `OtpSystem` math (`@creativo/ecs-core`, Phase 2 shim) — this use case
+// `OtpSystem` math (`@core/systems`, Phase 2 shim) — this use case
 // keeps its I/O order and its error classes.
 const OTP_ZONE = 'UTC';
 

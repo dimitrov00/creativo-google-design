@@ -13,13 +13,13 @@ import {
   auditEntryToDocument,
 } from '@creativo/application/shared';
 import type { RequestedSeat } from '../../use-cases/decide-booking';
+import { UserId as UserIdData } from '@core/primitives';
+import { SeatSubject } from '@core/components';
 import {
   type AuditSubject as AuditSubjectData,
   AuditSystem,
   RequestedSubjectRole,
-  SeatSubject,
-  UserId as UserIdData,
-} from '@creativo/ecs-core';
+} from '@core/systems';
 
 /*
  * THIN SHIM (ECS migration Phase 2) — the math only. Who gets a row, the

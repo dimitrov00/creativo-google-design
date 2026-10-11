@@ -1,14 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { PhoneSystem } from '../systems/phone.system';
+import { PhoneSystem } from '@core/systems';
 import { CountryIso2 } from './country-iso2.data';
 import { Email } from './email.data';
 import {
   Identifier,
-  IdentifierChannel,
   ParsedIdentifier,
   type ReadPhone,
 } from './identifier.data';
-import { IdentityErrorCode } from './identity-errors.data';
+import { IdentifierChannel, IdentityErrorCode } from '@core/primitives';
 import { OtpDestinationType } from './otp-destination-type.data';
 import { E164 } from './phone-number.data';
 

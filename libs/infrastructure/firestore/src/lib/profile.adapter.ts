@@ -1,5 +1,5 @@
 import { Injectable, inject } from '@angular/core';
-import { SearchFieldsSystem } from '@creativo/ecs-core';
+import { SearchFieldsSystem } from '@core/systems';
 import { Observable } from 'rxjs';
 import type { DocumentData, DocumentSnapshot } from 'firebase/firestore';
 import { getDoc, onSnapshot, runTransaction } from 'firebase/firestore';
@@ -31,7 +31,7 @@ function todayInAppZone(): ZonedDateTime {
 /**
  * The `users/{uid}` search keys (`searchName`, `searchPrefixes`) — Phase 2
  * shim (ECS migration): computed by `SearchFieldsSystem.fromForms`
- * (`@creativo/ecs-core`), the ONE implementation the web's profile adapter
+ * (`@core/systems`), the ONE implementation the web's profile adapter
  * and the functions' user repository share, so the two writers of the
  * document can no longer drift apart.
  */

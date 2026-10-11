@@ -1,12 +1,10 @@
-import type { BarberOffering } from '../components/barber-offering.data';
 import type {
+  BarberOffering,
   ServiceTerms,
   ServiceVariant,
-} from '../components/service-terms.data';
-import type { Service } from '../entities/service.entity';
-import type { DurationMinutes } from '../primitives/duration-minutes.primitive';
-import type { BarberId } from '../primitives/ids.primitive';
-import type { PriceCents } from '../primitives/price-cents.primitive';
+} from '@core/components';
+import type { Service } from '@core/entities';
+import type { DurationMinutes, BarberId, PriceCents } from '@core/primitives';
 import {
   type OfferingRange,
   OfferingPriceSystem,

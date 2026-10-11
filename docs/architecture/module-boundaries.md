@@ -1,6 +1,6 @@
 # Module boundaries
 
-> **Note 2026-10-10:** the tag matrix below is still enforced, but every mention of the domain kernel's `ZonedDateTime`, `Money`, `Result` classes or `DomainError` describes code the ECS migration deletes — `CLAUDE.md` Laws 1–7 govern new code (no date classes, branded primitives, flat `errorCode` errors). `libs/ecs-core` (`type:domain`) is the new core; the doc is rewritten from the Nx graph in Phase 4.
+> **Note 2026-10-10:** the tag matrix below is still enforced, but every mention of the domain kernel's `ZonedDateTime`, `Money`, `Result` classes or `DomainError` describes code the ECS migration deletes — `CLAUDE.md` Laws 1–7 govern new code (no date classes, branded primitives, flat `errorCode` errors). `libs/ecs-core` (`type:domain`) is the new core, imported only through its `@core/*` tier barrels (Law 8 — see the 2026-10-11 amendment below); the doc is rewritten from the Nx graph in Phase 4.
 
 Every Nx project in this workspace carries two independent tags, enforced by
 `@nx/enforce-module-boundaries` in `eslint.config.mjs`. Run `nx run <project>:lint`
@@ -74,11 +74,27 @@ type:tooling         ─▶ tooling, util, domain                 (never applica
 **Amendment 2026-10-10 — `type:tooling` (ECS migration Phase 3a).**
 `seed-tools` (`tools/seed`) is retagged from `type:util` to `type:tooling`
 before its first fixture body (`tools/seed/fixtures/*.ts`) imports its
-entity type from `@creativo/ecs-core` (`type:domain`) to `satisfies
+entity type from `@core/entities` (libs/ecs-core, `type:domain`) to `satisfies
 Omit<XEntity, 'id'>` it — the `type:util` row allows only `util`/`tokens`.
 Never application or infrastructure: a fixture is a document body, not a
 mapper's input. The row lives in the root `eslint.config.mjs`
 `depConstraints`.
+
+**Amendment 2026-10-11 — Law 8 tier barrels inside `libs/ecs-core`.**
+The tag matrix stops at the project edge; inside `libs/ecs-core` the
+`CLAUDE.md` Law 8 hierarchy takes over. The library has no root barrel and
+is imported only through `@core/primitives`, `@core/components`,
+`@core/entities`, `@core/ports`, `@core/systems` and `@core/pipelines`
+(`@core/testing` from specs and test support only — the root
+`TESTING_ENTRY_POINT_RESTRICTION`). Because the library imports its own
+tier aliases across tiers, the root `@nx/enforce-module-boundaries` options
+set `allowCircularSelfDependency: true`; the one-way tier table lives in
+`libs/ecs-core/eslint.config.mjs` (`no-restricted-imports`, one block per
+tier and file kind) and in `tools/verify/layering/check-layering.mjs`
+(`pnpm nx run verify-tools:layering`: hierarchy, runtime cycles, barrel
+contents, one home tier per exported name, and no `../../../` import
+anywhere in libs/apps/tools — a nested project's `eslint.config.mjs` names
+the root config `#eslint-config`, the root `package.json` `imports` entry).
 
 The critical arrow is **`ui` never sees `application` or `infrastructure`** —
 that's the one that keeps the design system reusable across every product

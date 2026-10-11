@@ -1,6 +1,8 @@
 import type { Firestore } from 'firebase-admin/firestore';
 import { expectTypeOf } from 'vitest';
-import { Result, type TxPorts, UtcEpochMs, WriteOp } from '@creativo/ecs-core';
+import { Result, UtcEpochMs } from '@core/primitives';
+import { WriteOp } from '@core/components';
+import { type TxPorts } from '@core/ports';
 import { createProjectionFirestore } from '../test-support/fake-projection-firestore';
 import { type FirestorePorts, firestorePorts } from './firestore-ports';
 import { firestoreCommitPlan } from './firestore-tx.adapter';

@@ -1,8 +1,10 @@
 import { TestBed } from '@angular/core/testing';
 import { onTestFinished, vi } from 'vitest';
 import { MAPLIBRE_SOURCES, type MapLibreSources } from '@creativo/ui/controls';
-import { provideTestI18n } from '../../../test-i18n.providers';
-import { provideTestCatalog } from '../../../test-catalog.providers';
+import {
+  provideTestCatalog,
+  provideTestI18n,
+} from '@creativo/features/marketing/landing/testing';
 import { LocationsComponent } from './locations.component';
 
 describe('LocationsComponent', () => {

@@ -1,4 +1,4 @@
-import { VisitDraftSystem, type WalkInLabel } from '@creativo/ecs-core';
+import { VisitDraftSystem, type WalkInLabel } from '@core/systems';
 
 /**
  * NAMES FOR THE PEOPLE ON ONE VISIT WHO HAVE NONE (round 3, 2026-09-25).
@@ -22,7 +22,7 @@ import { VisitDraftSystem, type WalkInLabel } from '@creativo/ecs-core';
  * that words every number alike still ends.
  *
  * Phase 2 shim: the rule is `VisitDraftSystem.walkInLabels` in
- * `@creativo/ecs-core`; this keeps the legacy map keyed by person id.
+ * `@core/systems`; this keeps the legacy map keyed by person id.
  */
 export function walkInLabels(
   unlabelled: readonly string[],

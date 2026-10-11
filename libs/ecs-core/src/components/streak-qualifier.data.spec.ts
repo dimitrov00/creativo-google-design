@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ServiceCategoryId, ServiceId } from '../primitives/ids.primitive';
+import { ServiceCategoryId, ServiceId } from '@core/primitives';
 import {
   QualifierComparison,
   StreakQualifier,

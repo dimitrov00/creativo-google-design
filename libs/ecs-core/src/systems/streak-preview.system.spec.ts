@@ -1,21 +1,24 @@
 import { describe, expect, it } from 'vitest';
-import { StreakQualifierRule } from '../components/streak-qualifier.data';
-import { StreakRule, type StreakExcuse } from '../components/streak-rule.data';
-import type { StreakState } from '../components/streak-state.data';
+import {
+  StreakQualifierRule,
+  StreakRule,
+  type StreakExcuse,
+  type StreakState,
+} from '@core/components';
 import {
   AppointmentId,
   ServiceCategoryId,
   ServiceId,
-} from '../primitives/ids.primitive';
-import { LocalDate } from '../primitives/local-date.primitive';
-import { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
+  LocalDate,
+  UtcEpochMs,
+} from '@core/primitives';
 import {
   FIXTURE_TIME_ZONE,
   FIXTURE_TODAY,
   deepFreeze,
   localDate,
   unwrapOk,
-} from '../testing';
+} from '@core/testing';
 import {
   StreakPreviewSystem,
   type StreakPreview,

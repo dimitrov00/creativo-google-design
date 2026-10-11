@@ -1,7 +1,7 @@
 import baseConfig, {
   TESTING_ENTRY_POINT_RESTRICTION,
   ecsProjectBlocks,
-} from '../../eslint.config.mjs';
+} from '#eslint-config';
 
 /**
  * This project's import restrictions (the layer rule minus the half this

@@ -1,28 +1,23 @@
-import { defect } from '../primitives/defect';
-import type {
-  DurationMinutes,
-  MinuteCount,
-} from '../primitives/duration-minutes.primitive';
-import type {
-  BarberId,
-  SeatId,
-  ServiceId,
-  ServiceVariantId,
-  UserId,
-} from '../primitives/ids.primitive';
-import { EndMinute, MinuteOfDay } from '../primitives/minute-of-day.primitive';
-import type { PriceCents } from '../primitives/price-cents.primitive';
+import {
+  defect,
+  type DurationMinutes,
+  type MinuteCount,
+  type BarberId,
+  type SeatId,
+  type ServiceId,
+  type ServiceVariantId,
+  type UserId,
+  EndMinute,
+  MinuteOfDay,
+  type PriceCents,
+  SchedulingError,
+  AttendanceState,
+} from '@core/primitives';
 import type { BarberPreference } from './barber-pref.data';
 import { MinuteRange } from './minute-range.data';
-import { SchedulingError } from './scheduling-errors.data';
 import type { SeatLabel } from './seat-label.data';
-import { AttendanceState, type SeatOutcome } from './seat-outcome.data';
+import type { SeatOutcome } from './seat-outcome.data';
 import { ServiceTerms } from './service-terms.data';
-
-/*
- * F0 STAGING: `SeatId` lives in `primitives/ids.primitive.ts` (§1.5); the
- * barrel still names this file for it until the integrator drops that line.
- */
 
 /**
  * What a seat's chair geometry reads — its start and its snapshotted

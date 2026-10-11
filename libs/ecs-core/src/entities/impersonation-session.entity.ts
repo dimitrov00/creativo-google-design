@@ -1,17 +1,12 @@
-import type { ImpersonationScope } from '../components/impersonation-scope.data';
-import type { ImpersonationLifecycle } from '../components/impersonation-status.data';
+import type {
+  ImpersonationScope,
+  ImpersonationLifecycle,
+} from '@core/components';
 import type {
   ImpersonationSessionId,
   UserId,
-} from '../primitives/ids.primitive';
-import type { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
-
-/*
- * Staging re-export (flatten-pass): `ImpersonationSessionId` is declared in
- * `primitives/ids.primitive.ts` (flatten-spec §1.5); the barrel's staging
- * block and the unconverted relative importers still name it from this
- * file. The integrator deletes this line with the barrel's block.
- */
+  UtcEpochMs,
+} from '@core/primitives';
 
 /**
  * The identity slice of an impersonation session: who acts as whom, under

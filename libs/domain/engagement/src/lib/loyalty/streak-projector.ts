@@ -1,12 +1,16 @@
 import {
   AppointmentId,
-  FreezeReason,
   LocalDate,
   ServiceCategoryId,
   ServiceId,
   StreakDefinitionId,
+  type TimeZone,
+  UtcEpochMs,
+  defect,
+} from '@core/primitives';
+import {
+  FreezeReason,
   StreakExcuse as SystemExcuse,
-  type StreakFacts as SystemFacts,
   StreakIntervalRule,
   StreakIntervalSource as SystemIntervalSource,
   StreakOnBreak as SystemOnBreak,
@@ -16,13 +20,13 @@ import {
   StreakQualifierRule,
   type StreakRule,
   StreakState as SystemState,
+} from '@core/components';
+import {
+  type StreakFacts as SystemFacts,
   StreakSystem,
   type StreakTrace as SystemTrace,
-  type TimeZone,
-  UtcEpochMs,
   ZonedTimeSystem,
-  defect,
-} from '@creativo/ecs-core';
+} from '@core/systems';
 import { IsoDate, LOYALTY_ZONE } from './loyalty-calendar';
 import type {
   StreakPeriodFact as LegacyPeriodFact,
@@ -42,7 +46,7 @@ import type { StreakQualifierProps } from './streak-qualifier';
 
 /*
  * THE RHYTHM'S PROJECTOR — a thin shim since the ECS migration's Phase 2:
- * the fold is `StreakSystem.trace` (`@creativo/ecs-core`,
+ * the fold is `StreakSystem.trace` (`@core/systems`,
  * `streak.system.ts`), and this file only carries the legacy API across —
  * the `StreakDefinition` class in, the `Date`-carrying state out. The
  * private converters below are the whole of it.

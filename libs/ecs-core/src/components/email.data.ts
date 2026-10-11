@@ -1,4 +1,4 @@
-import type { Brand } from '../primitives/brand';
+import type { Brand } from '@core/primitives';
 /**
  * Shape check: one `@`, a non-empty local part, a dotted domain whose last
  * label has at least two characters, no whitespace anywhere. The accounts

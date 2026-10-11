@@ -1,6 +1,8 @@
 import { TestBed } from '@angular/core/testing';
-import { provideTestI18n } from '../../test-i18n.providers';
-import { provideTestCatalog } from '../../test-catalog.providers';
+import {
+  provideTestCatalog,
+  provideTestI18n,
+} from '@creativo/features/marketing/landing/testing';
 import { WorkGalleryComponent } from './work-gallery.component';
 
 describe('WorkGalleryComponent', () => {

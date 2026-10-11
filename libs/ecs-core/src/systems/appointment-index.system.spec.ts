@@ -1,22 +1,24 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { MinuteRange } from '../components/minute-range.data';
-import { Placement } from '../components/placement-kind.data';
-import { SeatLabel } from '../components/seat-label.data';
 import {
+  MinuteRange,
+  Placement,
+  SeatLabel,
   type Seat,
   SeatOccupant,
   SubjectRelationship,
-} from '../components/seat.data';
-import type { Appointment } from '../entities/appointment.entity';
-import { BusyKey } from '../primitives/busy-key.primitive';
-import { BarberId, SeatId, UserId } from '../primitives/ids.primitive';
-import { deepFreeze, endMinute, localDate, minute } from '../testing';
+} from '@core/components';
+import type { Appointment } from '@core/entities';
+import { BusyKey, BarberId, SeatId, UserId } from '@core/primitives';
 import {
+  deepFreeze,
+  endMinute,
+  localDate,
+  minute,
   type AppointmentFixtureOverrides,
   appointmentFixture,
   seatFixture,
-} from '../testing/appointment.fixtures';
+} from '@core/testing';
 import { AppointmentIndexSystem } from './appointment-index.system';
 
 /*

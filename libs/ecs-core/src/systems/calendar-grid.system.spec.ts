@@ -1,8 +1,7 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { Weekday } from '../components/weekday.data';
-import { LocalDate } from '../primitives/local-date.primitive';
-import { deepFreeze, localDate } from '../testing';
+import { Weekday, LocalDate } from '@core/primitives';
+import { deepFreeze, localDate } from '@core/testing';
 import { type CalendarCell, CalendarGridSystem } from './calendar-grid.system';
 
 /*

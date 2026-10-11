@@ -1,13 +1,11 @@
 import {
   MinuteCount,
   MinuteDelta,
-} from '../primitives/duration-minutes.primitive';
-import type { LocalDate } from '../primitives/local-date.primitive';
-import type {
-  EndMinute,
-  MinuteOfDay,
-} from '../primitives/minute-of-day.primitive';
-import { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
+  type LocalDate,
+  type EndMinute,
+  type MinuteOfDay,
+  UtcEpochMs,
+} from '@core/primitives';
 
 /**
  * Where a booking sits on the shop's clock, and on the absolute timeline —

@@ -1,20 +1,9 @@
-import type { Actor } from '../components/actor.data';
-import type {
-  AuditContext,
-  AuditTargetRef,
-} from '../components/audit-context.data';
+import type { Actor, AuditContext, AuditTargetRef } from '@core/components';
 import type {
   AuditEntryId,
   AuditResourceId,
-} from '../primitives/ids.primitive';
-import type { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
-
-/*
- * Staging re-export (flatten-pass): `AuditEntryId` is declared in
- * `primitives/ids.primitive.ts` (flatten-spec §1.5); the barrel's staging
- * block still names it from this file. The integrator deletes this line
- * with the barrel's block.
- */
+  UtcEpochMs,
+} from '@core/primitives';
 
 /**
  * The identity slice of an audit row: its id — `hash(AuditSystem.rowBasis(…))`,

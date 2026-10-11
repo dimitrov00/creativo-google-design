@@ -1,4 +1,4 @@
-import type { LocalDate } from '../primitives/local-date.primitive';
+import type { LocalDate } from '@core/primitives';
 
 /**
  * When the account's points lapse, and from which day the client is told —

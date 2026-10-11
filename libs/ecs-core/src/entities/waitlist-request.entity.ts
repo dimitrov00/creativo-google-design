@@ -1,22 +1,15 @@
-import type { BookingCart } from '../components/cart-line.data';
-import type { FlexibleWhen } from '../components/flexible-when.data';
-import type { WaitlistLifecycle } from '../components/waitlist-status.data';
+import type {
+  BookingCart,
+  FlexibleWhen,
+  WaitlistLifecycle,
+} from '@core/components';
 import type {
   LocationId,
   UserId,
   WaitlistRequestId,
-} from '../primitives/ids.primitive';
-import type { LocalDate } from '../primitives/local-date.primitive';
-import type { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
-
-/*
- * F0 STAGING BRIDGE (flatten-spec §1.5): the id is declared once, in
- * `primitives/ids.primitive.ts` (`wl_` + the first 40 hex of the pipeline's
- * `hash(WaitlistSystem.idBasis(cmd))` — deterministic, so a retried request
- * lands on its own document); the barrel's flatten block and the legacy id
- * type-specs still name this file for it until the integrator deletes those
- * lines — this re-export goes with them.
- */
+  LocalDate,
+  UtcEpochMs,
+} from '@core/primitives';
 
 /**
  * The identity slice of a waitlist request.

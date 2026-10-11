@@ -1,10 +1,10 @@
-import type { MinuteCount } from '../primitives/duration-minutes.primitive';
 import {
+  type MinuteCount,
   type BarberId,
   BarberLeadTimeSampleId,
-} from '../primitives/ids.primitive';
-import type { LocalDate } from '../primitives/local-date.primitive';
-import type { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
+  type LocalDate,
+  type UtcEpochMs,
+} from '@core/primitives';
 
 /**
  * One day's measurement of how far ahead a barber is booked —
@@ -26,8 +26,3 @@ export type BarberLeadTimeSample = {
   readonly horizonDayCount: number;
   readonly sampledAtUtcMs: UtcEpochMs;
 };
-
-/**
- * Flatten-pass staging: the barrel's id block still names this module for
- * `BarberLeadTimeSampleId` until the integrator drops that line.
- */

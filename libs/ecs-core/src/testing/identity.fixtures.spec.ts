@@ -1,9 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import {
-  AccountLifecycle,
-  BlockReason,
-} from '../components/account-status.data';
-import { FIXTURE_IDS, deepFreeze, utcMs } from '../testing';
+import { AccountLifecycle, BlockReason } from '@core/components';
+import { FIXTURE_IDS, utcMs } from './test-support';
+import { deepFreeze } from './deep-freeze';
 import { userFixture } from './identity.fixtures';
 
 /*

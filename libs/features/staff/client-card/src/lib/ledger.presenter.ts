@@ -8,16 +8,17 @@ import {
 import {
   BadgeSeriesId,
   CorrelationId,
-  JournalEffect,
   JournalEntryId,
+  LocalDate,
+  UtcEpochMs,
+  defect,
+} from '@core/primitives';
+import { JournalEffect, RedemptionOp } from '@core/components';
+import {
   type LedgerEffectKind,
   type LedgerEntryRef,
   LedgerSystem,
-  LocalDate,
-  RedemptionOp,
-  UtcEpochMs,
-  defect,
-} from '@creativo/ecs-core';
+} from '@core/systems';
 import { visitSectionLabel } from '@creativo/features/shared/visits';
 import type { UiIconName } from '@creativo/ui/controls';
 import {

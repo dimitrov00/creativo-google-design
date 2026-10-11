@@ -1,4 +1,4 @@
-import { type Principal, PrincipalKind } from '../components/principal.data';
+import { type Principal, PrincipalKind } from '@core/components';
 
 /**
  * GuestGuardSystem — the settled account verdict `/auth` and `/onboarding`

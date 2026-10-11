@@ -9,7 +9,7 @@
  * so the wire cannot drift between packages. They live behind their own
  * entry point so the production barrel (`@creativo/application/engagement`)
  * can never hand one to a provider. Since the ECS migration's Phase 3a the
- * catalogue and the vouchers live in `@creativo/ecs-core/testing`
+ * catalogue and the vouchers live in `@core/testing`
  * (`libs/ecs-core/src/testing/fixtures/loyalty/`, where the dev seed reads
  * them by path) and the fixtures' day is its `FIXTURE_TODAY`; this entry
  * re-exports them, typed as the wire's documents, until Phase 4. The two
@@ -105,7 +105,7 @@ import {
   FIXTURE_TODAY,
   giftVouchersJson,
   loyaltyCatalogJson,
-} from '@creativo/ecs-core/testing';
+} from '@core/testing';
 import georgiJson from './testing/fixtures/loyalty/account-georgi.json';
 import martinJson from './testing/fixtures/loyalty/account-martin.json';
 

@@ -1,4 +1,4 @@
-import type { PriceCents } from '../primitives/price-cents.primitive';
+import type { PriceCents } from '@core/primitives';
 
 /** The note and the tip, as one visit holds them. */
 export type VisitSides = {

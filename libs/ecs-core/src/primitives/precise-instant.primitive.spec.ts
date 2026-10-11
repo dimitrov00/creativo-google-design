@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { unwrapErr } from '../testing';
+import { unwrapErr } from '@core/testing';
 import { EpochSeconds, SubsecondNanos } from './precise-instant.primitive';
 
 describe('EpochSeconds / SubsecondNanos — the D17 precise instant (§1.6)', () => {

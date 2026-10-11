@@ -1,25 +1,29 @@
 import { BarberId } from '@creativo/domain/catalog';
 import {
+  BarberId as EcsBarberId,
+  CartLineId,
+  DurationMinutes,
+  EndMinute,
+  MinuteCount,
+  MinuteDelta,
+  MinuteOfDay,
+  SeatKeyText,
+  defect,
+} from '@core/primitives';
+import {
+  BarberPref as EcsBarberPref,
+  type BookingPolicy as EcsBookingPolicy,
+  type MinuteRange,
+} from '@core/components';
+import {
   type AvailabilityLine as EcsAvailabilityLine,
   type AvailabilityOption as EcsAvailabilityOption,
   type AvailabilityQuery as EcsAvailabilityQuery,
   AvailabilitySystem,
-  BarberId as EcsBarberId,
-  BarberPref as EcsBarberPref,
   type BarberDayAvailability as EcsBarberDayAvailability,
-  type BookingPolicy as EcsBookingPolicy,
-  CartLineId,
   type ChairTime as EcsChairTime,
-  DurationMinutes,
-  EndMinute,
   type LineTerms as EcsLineTerms,
-  MinuteCount,
-  MinuteDelta,
-  MinuteOfDay,
-  type MinuteRange,
-  SeatKeyText,
-  defect,
-} from '@creativo/ecs-core';
+} from '@core/systems';
 import { BarberPref } from './barber-pref';
 import { BookingPolicy } from './booking-policy';
 import { Interval } from './interval';

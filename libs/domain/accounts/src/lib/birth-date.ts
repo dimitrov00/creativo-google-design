@@ -1,14 +1,12 @@
 import {
-  AgeSystem,
-  AgeWindow,
-  BirthDate as BirthDay,
   type IdentityError,
   IdentityErrorCode,
   type LocalDate,
   UtcEpochMs,
-  ZonedTimeSystem,
   defect,
-} from '@creativo/ecs-core';
+} from '@core/primitives';
+import { BirthDate as BirthDay } from '@core/components';
+import { AgeSystem, AgeWindow, ZonedTimeSystem } from '@core/systems';
 import { Result, ZonedDateTime, fail, ok } from '@creativo/domain/kernel';
 import {
   BirthDateError,
@@ -24,7 +22,7 @@ export const MAX_AGE: typeof AgeWindow.MaxAge = 120;
 
 /*
  * Phase 2 shim (ECS migration): the whole-years age and the 16–120 window
- * live in `AgeSystem` (`@creativo/ecs-core`), over calendar days. This class
+ * live in `AgeSystem` (`@core/systems`), over calendar days. This class
  * keeps its parse (the kernel's ISO reading in `today`'s zone) and its
  * `accounts.birth_date.*` error classes; the helpers below are the only code
  * besides the delegating bodies.

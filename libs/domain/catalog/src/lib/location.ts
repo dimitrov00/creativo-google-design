@@ -5,10 +5,8 @@ import {
   fail,
   ok,
 } from '@creativo/domain/kernel';
-import {
-  LocationId as EcsLocationId,
-  LocationScopeSystem,
-} from '@creativo/ecs-core';
+import { LocationId as EcsLocationId } from '@core/primitives';
+import { LocationScopeSystem } from '@core/systems';
 import { LocationId } from './ids';
 import {
   InvalidGeoCoordinateError,

@@ -3,6 +3,9 @@ import {
   LocalDate,
   ServiceCategoryId,
   ServiceId,
+  defect,
+} from '@core/primitives';
+import {
   StreakExcuse as SystemExcuse,
   StreakInterval as SystemInterval,
   StreakIntervalRule,
@@ -12,9 +15,8 @@ import {
   type StreakRule,
   StreakRuleDirection as SystemDirection,
   StreakRuleParameter,
-  StreakRuleSystem,
-  defect,
-} from '@creativo/ecs-core';
+} from '@core/components';
+import { StreakRuleSystem } from '@core/systems';
 import { LocalizedText, LocalizedTextProps } from '@creativo/domain/catalog';
 import { IsoDate, isIsoDate } from './loyalty-calendar';
 import {

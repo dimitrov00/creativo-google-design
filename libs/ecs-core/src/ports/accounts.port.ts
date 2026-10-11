@@ -1,9 +1,7 @@
 import type { Observable } from 'rxjs';
-import type { RepositoryError } from '../components/repository-errors.data';
-import type { Result } from '../components/result.data';
-import type { Role } from '../components/role.data';
-import type { User } from '../entities/user.entity';
-import type { UserId } from '../primitives/ids.primitive';
+import type { RepositoryError, Result, UserId } from '@core/primitives';
+import type { Role } from '@core/components';
+import type { User } from '@core/entities';
 
 /**
  * The accounts context's ports (blueprint §4.1, §4.2) over `users/{uid}` —

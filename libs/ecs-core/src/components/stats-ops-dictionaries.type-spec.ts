@@ -15,35 +15,27 @@
  */
 import {
   type BackfillJob,
-  BackfillJobName,
-} from '../entities/backfill-job.entity';
-import {
   type PolicyRecomputeJob,
   RecomputeJobName,
-} from '../entities/policy-recompute-job.entity';
+} from '@core/entities';
+import { BackfillJobName } from './backfill-job-name.data';
 import {
   BackfillPhase,
   type BackfillPosition,
   type BackfillRequest,
   BackfillStart,
   type BackfillStartRequest,
-} from '../systems/backfill-plan.system';
-import {
   CancellationAttribution,
   type ClientStatsWritePlan,
   StatsWriteDecision,
   SubjectVisitOutcome,
   type SubjectVisitOutcomeState,
-} from '../systems/client-stats.system';
-import {
   type PolicyPassJudgement,
   PolicyPassVerdict,
-} from '../systems/policy-recompute-job.system';
-import {
   type AttemptFailure,
   type AttemptLine,
   AttemptOutcome,
-} from '../systems/trigger-attempt.system';
+} from '@core/systems';
 
 /** A tag dictionary whose every value is a `T`. */
 type Dictionary<T> = { readonly [key: string]: T };
@@ -81,7 +73,7 @@ dictionary(AttemptOutcome satisfies Dictionary<AttemptOutcome>);
 
 // (2) Holds — each type is exactly its dictionary's values, one key each.
 export type StatsOpsDictionariesHold = [
-  Expect<Holds<typeof BackfillJobName, BackfillJobName>>, // entities/backfill-job.entity.ts
+  Expect<Holds<typeof BackfillJobName, BackfillJobName>>, // components/backfill-job-name.data.ts
   Expect<Holds<typeof RecomputeJobName, RecomputeJobName>>, // entities/policy-recompute-job.entity.ts
   Expect<Holds<typeof BackfillPhase, BackfillPhase>>, // systems/backfill-plan.system.ts
   Expect<Holds<typeof BackfillStart, BackfillStart>>, // systems/backfill-plan.system.ts

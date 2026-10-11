@@ -3,7 +3,7 @@ import { RouterLink } from '@angular/router';
 import { UiGrid, UiStack } from '@creativo/ui/layout';
 import { UiCard, UiSectionHeader } from '@creativo/ui/patterns';
 import { UiTextDirective } from '@creativo/ui/modifiers';
-import { ScPage } from '../../shared/page';
+import { ScPage } from '@showcase/shared/page';
 
 interface ControlLink {
   readonly slug: string;

@@ -1,6 +1,4 @@
-import type { Currency } from '../primitives/currency.primitive';
-import type { CouponId } from '../primitives/ids.primitive';
-import type { PriceCents } from '../primitives/price-cents.primitive';
+import type { Currency, CouponId, PriceCents } from '@core/primitives';
 import type { PerkId } from './gamification.data';
 
 /** What a redeemed reward mints — the reward's discriminator `rewardGrant`. */

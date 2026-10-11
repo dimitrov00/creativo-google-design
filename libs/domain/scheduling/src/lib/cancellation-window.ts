@@ -1,9 +1,6 @@
 import { Result, fail, ok } from '@creativo/domain/kernel';
-import {
-  CancellationPolicySystem,
-  UtcEpochMs,
-  defect,
-} from '@creativo/ecs-core';
+import { UtcEpochMs, defect } from '@core/primitives';
+import { CancellationPolicySystem } from '@core/systems';
 import { InvalidCancellationWindowError } from './cancellation-window.errors';
 
 /*

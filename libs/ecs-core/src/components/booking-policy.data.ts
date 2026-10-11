@@ -1,12 +1,12 @@
-import { defect } from '../primitives/defect';
 import {
+  defect,
   DurationMinutes,
   MinuteCount,
-} from '../primitives/duration-minutes.primitive';
-import { LocalDate } from '../primitives/local-date.primitive';
-import { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
-import { Result } from './result.data';
-import { SchedulingError } from './scheduling-errors.data';
+  LocalDate,
+  UtcEpochMs,
+  Result,
+  SchedulingError,
+} from '@core/primitives';
 
 const MS_PER_HOUR = 3_600_000;
 

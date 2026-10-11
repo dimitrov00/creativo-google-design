@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { MinuteRange } from './minute-range.data';
-import { MinuteCount } from '../primitives/duration-minutes.primitive';
-import { endMinute, minute, unwrapOk as okOf } from '../testing';
+import { MinuteCount } from '@core/primitives';
+import { endMinute, minute, unwrapOk as okOf } from '@core/testing';
 
 const count = (n: number): MinuteCount => okOf(MinuteCount.of(n));
 

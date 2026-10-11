@@ -1,12 +1,11 @@
+import { PriceCents, defect } from '@core/primitives';
 import {
   type DrawnSides as EcsDrawnSides,
   type LiveSides,
-  PriceCents,
   type SideWrites as EcsSideWrites,
   type VisitSides as EcsVisitSides,
   VisitSidesSystem,
-  defect,
-} from '@creativo/ecs-core';
+} from '@core/systems';
 
 /**
  * THE SIDE FIELDS OF A VISIT — the team note and the tip (round 5).
@@ -33,7 +32,7 @@ import {
  * One implementation, read by the sheet (adoption) and by the dashboard
  * (the writes and the check), for the save and its undo alike.
  *
- * Phase 2 shim: the rules are `VisitSidesSystem` in `@creativo/ecs-core`.
+ * Phase 2 shim: the rules are `VisitSidesSystem` in `@core/systems`.
  * This file keeps the legacy names and the legacy live reading (`undefined`
  * for a field this device does not hear) for its callers. Flatten pass: the
  * system holds the tip as `tipCents: PriceCents` (N6); the legacy

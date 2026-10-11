@@ -2,7 +2,7 @@ import {
   GuestGuardSystem,
   type LatchedVerdict,
   SettledVerdict,
-} from '@creativo/ecs-core';
+} from '@core/systems';
 import { Principal } from '@creativo/domain/identity';
 import { principalTagOf } from './principal-tag';
 
@@ -21,7 +21,7 @@ export type Settled = 'loading' | 'anonymous' | 'onboarding' | 'active';
 
 /*
  * Phase 2 shim (ECS migration): the verdict and the latch are
- * `GuestGuardSystem` (`@creativo/ecs-core`); the principal reaches it
+ * `GuestGuardSystem` (`@core/systems`); the principal reaches it
  * through the lib's one converter (`principal-tag.ts`), and the SCREAMING
  * verdict tags cross back through the one table below (flatten-spec §8.9).
  */

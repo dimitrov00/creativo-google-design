@@ -6,17 +6,14 @@
  * and each discriminator narrows. `tsc` failing — on a `false` constant or
  * an unused `@ts-expect-error` — IS the test; nothing here runs.
  */
-import type { BookingCart } from '../components/cart-line.data';
-import {
-  ExceptionEffect,
-  type ExceptionEffectRule,
-} from '../components/exception-effect.data';
-import type { FlexibleWhen } from '../components/flexible-when.data';
-import {
-  type WaitlistLifecycle,
-  WaitlistStatus,
-} from '../components/waitlist-status.data';
-import type { AllTrue, Disjoint, NoNested } from '../testing';
+import type {
+  BookingCart,
+  ExceptionEffectRule,
+  FlexibleWhen,
+  WaitlistLifecycle,
+} from '@core/components';
+import { ExceptionEffect, WaitlistStatus } from '@core/primitives';
+import type { AllTrue, Disjoint, NoNested } from '@core/testing';
 import type {
   ScheduleException,
   ScheduleExceptionMeta,
