@@ -4,13 +4,17 @@
 //   pnpm nx build web -- --stats-json
 //   node tools/verify/bundle/check-initial-bundle.mjs [path/to/stats.json] [--top=N]
 //
+// Without a path it reads dist/apps/web/browser-stats.json — the name the
+// Angular 22 application builder writes — and falls back to the older
+// dist/apps/web/stats.json; the report names the file it read.
+//
 // Reads the esbuild metafile, prints the initial files, their total and the
 // top contributors by package/project, and exits 1 when any entry of
 // FORBIDDEN_IN_INITIAL is in the initial closure. The byte ceiling itself is
 // the builder's `initial` budget in apps/web/project.json (it fails the
 // build); this guard proves WHAT is in the chunk, which a size alone cannot.
 
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { analyseInitial, formatBytes } from './initial-bundle.mjs';
 
@@ -18,9 +22,14 @@ const args = process.argv.slice(2);
 const top = Number(
   (args.find((arg) => arg.startsWith('--top=')) ?? '--top=15').slice(6),
 );
-const statsPath = resolve(
-  args.find((arg) => !arg.startsWith('--')) ?? 'dist/apps/web/stats.json',
-);
+const DEFAULT_STATS = [
+  'dist/apps/web/browser-stats.json',
+  'dist/apps/web/stats.json',
+].map((path) => resolve(path));
+const explicit = args.find((arg) => !arg.startsWith('--'));
+const statsPath = explicit
+  ? resolve(explicit)
+  : (DEFAULT_STATS.find((path) => existsSync(path)) ?? DEFAULT_STATS[0]);
 
 let metafile;
 try {

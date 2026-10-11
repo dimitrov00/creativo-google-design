@@ -1,5 +1,5 @@
 // The initial web chunk, read from the esbuild metafile the Angular builder
-// writes with `--stats-json` (dist/apps/web/stats.json).
+// writes with `--stats-json` (dist/apps/web/browser-stats.json under Angular 22).
 //
 // "Initial" is what the browser must fetch before the app can boot: the
 // `main` entry, the global styles (and `polyfills` when there is one), plus
