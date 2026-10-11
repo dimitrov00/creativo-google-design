@@ -1,5 +1,6 @@
 ---
 paths:
+  - 'libs/ecs-core/src/pipelines/**'
   - '**/*.pipeline.ts'
   - '**/*.pipeline.spec.ts'
   - '**/*.port.ts'
@@ -16,10 +17,9 @@ impure write. Nothing else lives in it.
 ## Ports are function types (`storage.port.ts`, `telemetry.port.ts`)
 
 ```ts
-import type { Appointment } from '../entities/appointment.entity';
-import type { MinuteRange } from '../components/minute-range.data';
-import type { AppointmentId, BarberId } from '../primitives/ids.primitive';
-import type { LocalDate } from '../primitives/local-date.primitive';
+import type { Appointment } from '@core/entities';
+import type { MinuteRange } from '@core/components';
+import type { AppointmentId, BarberId, LocalDate } from '@core/primitives';
 
 export type LoadAppointment = (
   id: AppointmentId,
@@ -140,6 +140,6 @@ change.
 
 Pipelines are tested with in-memory port implementations (plain functions
 over arrays/maps) and a pinned `nowUtcMs`/`nextId` (`pinnedNowUtcMs`,
-`FIXTURE_NOW` from `@creativo/ecs-core/testing`). Assert the write plan that
+`FIXTURE_NOW` from `@core/testing`). Assert the write plan that
 reached `commit` and the tasks that reached `enqueue`; never assert on
 Firestore mocks' internals.

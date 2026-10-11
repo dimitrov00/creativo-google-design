@@ -26,7 +26,7 @@ edit both together.
   `apps/functions`) all violate the laws below. Convert what you touch; never
   add to it.
 
-## 1. The seven laws
+## 1. The eight laws
 
 Laws 6 (flat archetypes, domain-prefixed discriminators) and 7 (branded
 primitives, shop-anchored time, error structs) were added by the owner on
@@ -239,18 +239,92 @@ string> = T & { readonly [BrandSymbol]: B };` — nominal per tag, zero
    (an exhausted `switch`, a broken structural invariant) and never crosses a
    system boundary as control flow.
 
+### Law 8 — Layered subpath exports and strict dependency tiering
+
+1. **No monolithic root barrel.** `libs/ecs-core` has no `src/index.ts` and
+   no `@creativo/ecs-core` alias. It is exported ONLY through six tier
+   barrels (`tsconfig.base.json`, paths written relative — `./libs/…` —
+   because TypeScript 6 deprecates `baseUrl`):
+
+   | Alias              | Barrel                                  |
+   | ------------------ | --------------------------------------- |
+   | `@core/primitives` | `libs/ecs-core/src/primitives/index.ts` |
+   | `@core/components` | `libs/ecs-core/src/components/index.ts` |
+   | `@core/entities`   | `libs/ecs-core/src/entities/index.ts`   |
+   | `@core/ports`      | `libs/ecs-core/src/ports/index.ts`      |
+   | `@core/systems`    | `libs/ecs-core/src/systems/index.ts`    |
+   | `@core/pipelines`  | `libs/ecs-core/src/pipelines/index.ts`  |
+
+   plus `@core/testing` (`libs/ecs-core/src/testing/index.ts`), importable
+   from specs and test support only.
+
+2. **One-way dependency hierarchy** — an import may only point to a tier on
+   its left:
+
+   ```
+   @core/primitives ──> @core/components ──> @core/entities ──> @core/systems ──> @core/pipelines
+                                                  ^                                   │
+                                                  └──────────── @core/ports <─────────┘
+   ```
+
+   - **primitives** — branded types, `Result` and the error structs; imports
+     NOTHING from the library.
+   - **components** — atomic flat slices and their companions
+     (`TimeCoordinate`, `PaymentRecord`, `BookingLifecycle`); imports only
+     primitives; never entities.
+   - **entities** — flat archetypes composed by intersection; imports
+     components and primitives.
+   - **ports** — pure I/O contracts (plain function types); imports
+     entities, components, primitives.
+   - **systems** — pure, stateless math, primarily over component slices;
+     imports components, primitives, entities — never ports, never
+     pipelines (Law 3).
+   - **pipelines** — pure coordination: call systems, consume ports, emit
+     WriteOp plans or state patches; imports systems, ports, entities,
+     components, primitives. Nothing inside the library imports pipelines;
+     composition roots (`apps/functions/src/main.ts`, the web app's
+     providers and stores) do.
+
+3. **Imports.** Every cross-tier import names its tier alias
+   (`import { MinuteOfDay } from '@core/primitives'`). Inside one tier,
+   siblings import each other with `./sibling` — never through their own
+   tier's barrel (that would cycle) and never with `../`. No `../` at all
+   inside `libs/ecs-core`; no deep relative traversal (three or more `../`)
+   in any import of code (`.ts`/`.js`/`.mjs`/…) anywhere in the monorepo,
+   with no exception — a file Node loads before any tsconfig alias applies
+   (a nested project's `eslint.config.mjs` extending the root config) names
+   its target through the root `package.json` `imports` (`#eslint-config`).
+   A CSS `@import` in an app's global stylesheet is not a module import and
+   sits outside the rule, as a plain file path does: its order fixes the
+   cascade-layer order and the stylesheet resolver reads no tsconfig alias.
+   Specs and type-specs are leaves of the graph — nothing imports them — so
+   they may import any tier but their own barrel (and `@core/testing`);
+   `src/testing` may import every tier.
+4. **All pipelines live in `@core/pipelines`** — server and browser alike,
+   SDK-free (supersedes D27(b)). Apps keep only their composition roots,
+   edges and adapters.
+5. **Enforced, not trusted.** Per-tier lint restrictions in
+   `libs/ecs-core/eslint.config.mjs` — static imports through
+   `no-restricted-imports`, `import()` and `import('…')` type queries through
+   `creativo/no-restricted-import-expressions` with the same patterns — a
+   tier-and-cycle verifier over the library's import graph
+   (`pnpm nx run verify-tools:layering`: hierarchy, runtime import cycles,
+   barrel contents, one home tier per exported name, deep relative imports
+   of code repo-wide), and Nx `allowCircularSelfDependency` so the library
+   may import its own tier aliases.
+
 ## 2. File kinds at a glance
 
-| Kind      | Suffix                                                     | Contains                                                                  | Never contains                                       |
-| --------- | ---------------------------------------------------------- | ------------------------------------------------------------------------- | ---------------------------------------------------- |
-| Primitive | `*.primitive.ts`                                           | `Brand<T, B>` alias + JSDoc + companion with a `Result` smart constructor | `class`, unchecked casts outside its own file        |
-| Component | `*.data.ts`                                                | root type + `as const` companion + type-only namespace                    | `class`, `new`, I/O, imports of systems or pipelines |
-| Entity    | `*.entity.ts`                                              | branded id + id companion + flat slice intersection                       | logic, `assemble()`, `Object.freeze`                 |
-| System    | `*.system.ts`                                              | pure functions over components and entities                               | I/O, clock, randomness, mutation, SDK imports        |
-| Port      | `*.port.ts`                                                | plain function types                                                      | implementations                                      |
-| Pipeline  | `*.pipeline.ts`                                            | a factory taking ports, returning the use-case function                   | business math (call a system), SDK imports           |
-| Adapter   | `*.adapter.ts`                                             | port implementations over one SDK                                         | business logic                                       |
-| Angular   | `*.component.ts` `*.directive.ts` `*.pipe.ts` `*.store.ts` | framework classes, signals, templates                                     | domain math (call a system), view-model mappers      |
+| Kind      | Suffix                                                                | Contains                                                                  | Never contains                                       |
+| --------- | --------------------------------------------------------------------- | ------------------------------------------------------------------------- | ---------------------------------------------------- |
+| Primitive | `*.primitive.ts`                                                      | `Brand<T, B>` alias + JSDoc + companion with a `Result` smart constructor | `class`, unchecked casts outside its own file        |
+| Component | `*.data.ts`                                                           | root type + `as const` companion + type-only namespace                    | `class`, `new`, I/O, imports of systems or pipelines |
+| Entity    | `*.entity.ts`                                                         | branded id + id companion + flat slice intersection                       | logic, `assemble()`, `Object.freeze`                 |
+| System    | `*.system.ts`                                                         | pure functions over components and entities                               | I/O, clock, randomness, mutation, SDK imports        |
+| Port      | `*.port.ts`                                                           | plain function types                                                      | implementations                                      |
+| Pipeline  | `*.pipeline.ts` in `libs/ecs-core/src/pipelines/` (`@core/pipelines`) | a factory taking ports, returning the use-case function                   | business math (call a system), SDK imports           |
+| Adapter   | `*.adapter.ts`                                                        | port implementations over one SDK                                         | business logic                                       |
+| Angular   | `*.component.ts` `*.directive.ts` `*.pipe.ts` `*.store.ts`            | framework classes, signals, templates                                     | domain math (call a system), view-model mappers      |
 
 `class` is legal **only** in the Angular row. Tests mirror their subject:
 `x.system.spec.ts`, `x.pipeline.spec.ts`.
@@ -260,10 +334,13 @@ string> = T & { readonly [BrandSymbol]: B };` — nominal per tag, zero
 - **Apps:** `apps/web` (Angular 22 SPA, Firebase Hosting), `apps/functions`
   (Firebase Cloud Functions gen 2, Node 22 — the backend composition root
   today), `apps/showcase` (design-system workbench). No `apps/api` exists yet.
-- **ECS core:** `libs/ecs-core` (`@creativo/ecs-core`, tags `scope:shared`,
-  `type:domain`) with `primitives/` (the `Brand` helper and every branded
-  primitive, Law 7), `entities/`, `components/`, `systems/`, `ports/` and a
-  barrel `index.ts`. It replaces `libs/domain/*` (the kernel folds in) and the port halves of `libs/application/*`. Server pipelines live in `apps/functions/src/pipelines/`, beside their composition root, never in ecs-core.
+- **ECS core:** `libs/ecs-core` (tags `scope:shared`, `type:domain`), six
+  tiers exported only through `@core/primitives`, `@core/components`,
+  `@core/entities`, `@core/ports`, `@core/systems`, `@core/pipelines` (+
+  `@core/testing` for specs) — Law 8; no root barrel. It replaces
+  `libs/domain/*` (the kernel folds in) and the port halves of
+  `libs/application/*`; every pipeline, server or browser, lives in
+  `@core/pipelines`.
 - **Design system:** `libs/ui/*` (`ui-*` elements, `--sys-*` tokens), with
   taste rules in `docs/styling-conventions.md` and the design-research docs.
   Unchanged by the ECS move; Angular classes are expected there.
@@ -282,7 +359,9 @@ pipelines and adapters, client integration and legacy deletion). On
 is native `Intl`, no Luxon (D5); money is a plain integer struct, no
 dinero.js (D4). The conditional ones resolved as D12(b) (contact change is not
 shipped; its adapter goes), D16(b) (the public exception effect is the only
-record) and D27(b) (server pipelines in `apps/functions/src/pipelines/`).
+record) and D27(b) (server pipelines in `apps/functions/src/pipelines/` —
+**superseded 2026-10-11 by Law 8**: all pipelines live in `@core/pipelines`;
+D2's single root barrel is superseded by Law 8's tier barrels too).
 Phase status and baselines live in the auto-memory note
 `project-ecs-migration-status`. Implement the phase plan of the blueprint's
 §6; do not reopen a decided question in code.
@@ -293,6 +372,7 @@ Phase status and baselines live in the auto-memory note
 pnpm nx run-many -t typecheck
 pnpm nx run-many -t test
 pnpm nx run-many -t lint
+pnpm nx run verify-tools:layering   # Law 8 — never cached, not part of run-many
 pnpm nx build web
 pnpm nx build functions
 ```

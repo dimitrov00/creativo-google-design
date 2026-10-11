@@ -12,7 +12,7 @@ component slices into new component slices or decisions.
 ## Shape (`interval-collision.system.ts`)
 
 ```ts
-import type { MinuteOfDay } from '../primitives/minute-of-day.primitive';
+import type { MinuteOfDay } from '@core/primitives'; // Law 8 tier alias
 
 /** The slice this system reads — any entity carrying it is accepted as is (Law 3). */
 export type MinuteSpan = {

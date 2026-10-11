@@ -127,9 +127,11 @@ here — `ZonedTimeSystem` does it once, at the ingestion boundary, on native
 ## An entity (`appointment.entity.ts`)
 
 ```ts
-import type { TimeCoordinate } from '../components/time-coordinate.data';
-import type { BookingLifecycle } from '../components/booking-lifecycle.data';
-import type { PaymentRecord } from '../components/payment-record.data'; // illustrative, see below
+import type {
+  TimeCoordinate,
+  BookingLifecycle,
+  PaymentRecord,
+} from '@core/components'; // PaymentRecord illustrative, see below
 
 /** Branded ids; their smart constructors live in primitives/ids.primitive.ts. */
 import type {
@@ -138,9 +140,9 @@ import type {
   LocationId,
   BarberId,
   UserId,
-} from '../primitives/ids.primitive';
-import type { Currency } from '../primitives/currency.primitive';
-import type { PriceCents } from '../primitives/price-cents.primitive';
+  Currency,
+  PriceCents,
+} from '@core/primitives'; // Law 8: cross-tier imports name the tier alias
 
 /** The identity slice: the id and the plain 1-to-1 attributes. */
 export type AppointmentMeta = {
@@ -176,7 +178,7 @@ archetype's noun (`Appointment`), with no `Entity` suffix.
 Every entity ships a compile-only type-spec proving the intersection is not
 `never`, that each discriminator narrows, that every variant is flat and that
 its slices share no field name — with the helpers of
-`@creativo/ecs-core/testing` (`NoNested`, `AllTrue`, `KeysOfUnion`,
+`@core/testing` (`NoNested`, `AllTrue`, `KeysOfUnion`,
 `Disjoint`), never re-typed:
 
 ```ts
