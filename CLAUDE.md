@@ -189,9 +189,16 @@ cancelledAtUtcMs })`). Security rules and composite indexes query top-level
      DST shifts; and
    - the **absolute point**: `utcEpochMs: UtcEpochMs`, computed **once at the
      ingestion boundary** (the pipeline or callable edge) from the shop's
-     `timeZone` with native `Intl` via `ZonedTimeSystem`, and used only for
+     `timeZone` with native `Intl` via `ZonedTimeSystem`, and used for
      Firestore range indexes, reminder crons
-     (`where('utcEpochMs', '>=', now)`) and `.ics` generation.
+     (`where('utcEpochMs', '>=', now)`), `.ics` generation, lifecycle stamps
+     and **elapsed-time rules on those stamps** — **never for placement math**
+     (amended by the owner 2026-10-11, ruling G-1(a)). The elapsed-time rules
+     are exactly the list in `docs/architecture/flatten-spec.md` §2.3 T2:
+     TTLs and expiries (OTP, impersonation, coupon grants, vouchers, account
+     blocks, booking pauses), the cancellation window, lateness and lead-time
+     statistics, staleness budgets, cooldowns and stamp ordering — compared
+     and added only through `UtcEpochMs.compare` / `UtcEpochMs.plus*`.
      **DST at ingestion (locked 2026-10-10):** a wall-clock time inside the
      spring-forward gap returns the error `DST_GAP_INVALID_TIME`; an ambiguous
      time in the fall-back repeat resolves deterministically to the **earlier
@@ -199,8 +206,9 @@ cancelledAtUtcMs })`). Security rules and composite indexes query top-level
      shop-local `ShopNow = { localDate: LocalDate; currentMinute: MinuteOfDay;
 utcEpochMs: UtcEpochMs }` the boundary derived once — `localDate` +
      `currentMinute` for every comparison and calculation, `utcEpochMs` passed
-     alongside ONLY to stamp lifecycle instants (`confirmedAtUtcMs`,
-     `cancelledAtUtcMs`, …), never for math.
+     alongside to stamp lifecycle instants (`confirmedAtUtcMs`,
+     `cancelledAtUtcMs`, …) and for the elapsed-time rules above — never for
+     placement math.
 4. **Universal branded primitives.** Never a raw `number` or `string` for a
    coordinate, an amount of money or an id. One helper,
    `libs/ecs-core/src/primitives/brand.ts`:

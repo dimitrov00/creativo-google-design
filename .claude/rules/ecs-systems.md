@@ -59,7 +59,7 @@ export const IntervalCollisionSystem = {
 ## Rules
 
 - **Zero inbound mapping (Law 6).** A system takes the slice it needs
-  (`readonly AppointmentTime[]`) or the whole entity, by structural typing —
+  (`readonly TimeCoordinate[]`) or the whole entity, by structural typing —
   never `.map()` to strip, rename or re-nest properties before calling it.
 - **Narrow on the domain discriminator** (`bookingStatus`, `paymentMethod`,
   `attendanceState`) with plain `===` against the dictionary value; never a
@@ -74,13 +74,15 @@ export const IntervalCollisionSystem = {
 - **Time is local integers; the zone is touched once (Law 7).** Collision
   math, schedule packing, availability sweeps and calendar grids run only on
   the shop wall clock — `LocalDate` + `MinuteOfDay` — never on
-  `UtcEpochMs`, which exists for indexes, crons and `.ics` only. Zone math
+  `UtcEpochMs`, which exists for indexes, crons, `.ics`, lifecycle stamps and
+  the elapsed-time rules of `flatten-spec.md` §2.3 T2 (expiries, the
+  cancellation window, cooldowns, budgets) — never placement math. Zone math
   (wall clock ↔ instant, DST gap rejection, fall-back resolution to the
   earlier offset) lives only in `zoned-time.system.ts` on native
   `Intl.DateTimeFormat(…).formatToParts`, and only the ingestion boundary (a
   pipeline or callable edge) calls it, with the location's `timeZone`. "Now"
   arrives as `ShopNow = { localDate, currentMinute, utcEpochMs }`: compute
-  only with `localDate` + `currentMinute`; `utcEpochMs` exists solely to stamp
+  only with `localDate` + `currentMinute`; `utcEpochMs` exists to stamp
   lifecycle instants (`confirmedAtUtcMs`). A spring-forward gap time is the
   error `DST_GAP_INVALID_TIME`; a fall-back repeat resolves to the earlier
   offset.

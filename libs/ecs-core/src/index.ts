@@ -37,7 +37,7 @@ export * from './components/accounts-errors.data';
 export * from './components/actor.data';
 export * from './components/applied-discount.data';
 export * from './components/applied-operation.data';
-export * from './components/appointment-time.data';
+export * from './components/time-coordinate.data';
 export * from './components/audit-context.data';
 export * from './components/auth-claims.data';
 export * from './components/auth-flow.data';

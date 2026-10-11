@@ -11,8 +11,8 @@ import { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
 
 /**
  * Where a booking sits on the shop's clock, and on the absolute timeline —
- * the time slice of the `Appointment` archetype (the owner's
- * `TimeCoordinate` under its domain name, F-24), flat at the root of the
+ * the time slice of the `Appointment` archetype — the owner's `TimeCoordinate`,
+ * the general time slice every temporal entity follows — flat at the root of the
  * entity and its document (Law 6):
  *
  * - the SHOP WALL CLOCK — `localDate` plus the envelope `startMinutes` /
@@ -26,7 +26,7 @@ import { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
  *
  * No time-zone field: the zone is the location's (Law 7.2).
  */
-export type AppointmentTime = {
+export type TimeCoordinate = {
   /** The shop's wall-clock day, `YYYY-MM-DD`. */
   readonly localDate: LocalDate;
   /** The envelope start, `[0, 1440)` from the shop's local midnight. */
@@ -37,14 +37,14 @@ export type AppointmentTime = {
   readonly utcEpochMs: UtcEpochMs;
 };
 
-export const AppointmentTime = {
+export const TimeCoordinate = {
   /** The envelope's length on the wall clock — `0` for an empty or inverted one. */
-  durationMinutes(time: AppointmentTime): MinuteCount {
+  durationMinutes(time: TimeCoordinate): MinuteCount {
     return MinuteCount.span(time.startMinutes, time.endMinutes);
   },
 
   /** Do two bookings overlap on the shop's wall clock? Same day, intersecting minutes. */
-  overlaps(a: AppointmentTime, b: AppointmentTime): boolean {
+  overlaps(a: TimeCoordinate, b: TimeCoordinate): boolean {
     return (
       a.localDate === b.localDate &&
       a.startMinutes < b.endMinutes &&
@@ -64,7 +64,7 @@ export const AppointmentTime = {
    * seat on `(localDate, seat.startMinutes)` instead.
    */
   seatStartUtcMs(
-    time: AppointmentTime,
+    time: TimeCoordinate,
     seat: { readonly startMinutes: MinuteOfDay },
   ): UtcEpochMs {
     return UtcEpochMs.plusMinutes(

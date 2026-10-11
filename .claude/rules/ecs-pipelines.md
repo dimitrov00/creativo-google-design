@@ -104,7 +104,7 @@ compute `utcEpochMs` — a spring-forward gap time returns the error
 `DST_GAP_INVALID_TIME`, a fall-back repeat resolves to the earlier offset. It
 derives `ShopNow = { localDate, currentMinute, utcEpochMs }` from
 `ports.nowUtcMs()` the same way and hands it to systems, which compute with
-`localDate` + `currentMinute` only and use `utcEpochMs` solely to stamp
+`localDate` + `currentMinute` only and use `utcEpochMs` to stamp
 lifecycle instants (`confirmedAtUtcMs`, `cancelledAtUtcMs`). No entity stores a zone; no system
 converts zones.
 

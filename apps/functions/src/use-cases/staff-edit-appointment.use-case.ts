@@ -78,7 +78,7 @@ import { operationDigest } from './staff-edit-appointment.operations';
 import {
   AppointmentEditSystem,
   AppointmentIndexSystem,
-  type AppointmentTime,
+  type TimeCoordinate,
   AttendanceState,
   BarberId as BarberIdData,
   BarberPreference,
@@ -1804,7 +1804,7 @@ function seatsOnTheClock(
 }
 
 /** The STORED visit's time slice — the envelope on its day, its start instant. */
-function storedTimeOf(stored: readonly StoredSeat[]): AppointmentTime | null {
+function storedTimeOf(stored: readonly StoredSeat[]): TimeCoordinate | null {
   const clock = seatsOnTheClock(stored);
   if (clock === null) return null;
   const envelope = AppointmentIndexSystem.envelope(clock);

@@ -7,7 +7,7 @@
  * `@ts-expect-error` — IS the test; nothing here runs.
  */
 import type { AppliedDiscount } from '../components/applied-discount.data';
-import type { AppointmentTime } from '../components/appointment-time.data';
+import type { TimeCoordinate } from '../components/time-coordinate.data';
 import type { BookingContact } from '../components/booking-contact.data';
 import {
   type BookingLifecycle,
@@ -57,15 +57,15 @@ type EveryVariantFlat<E> = E extends unknown ? AllTrue<NoNested<E>> : never;
 export const appointmentNotNever: IsNever<Appointment> = false;
 export const appointmentFlat: EveryVariantFlat<Appointment> = true;
 export const appointmentDisjoint: [
-  Disjoint<AppointmentMeta, AppointmentTime>,
+  Disjoint<AppointmentMeta, TimeCoordinate>,
   Disjoint<AppointmentMeta, BookingLifecycle>,
   Disjoint<AppointmentMeta, BookingContact>,
   Disjoint<AppointmentMeta, AppointmentStamps>,
   Disjoint<AppointmentMeta, StoodSeatPairs>,
-  Disjoint<AppointmentTime, BookingLifecycle>,
-  Disjoint<AppointmentTime, BookingContact>,
-  Disjoint<AppointmentTime, AppointmentStamps>,
-  Disjoint<AppointmentTime, StoodSeatPairs>,
+  Disjoint<TimeCoordinate, BookingLifecycle>,
+  Disjoint<TimeCoordinate, BookingContact>,
+  Disjoint<TimeCoordinate, AppointmentStamps>,
+  Disjoint<TimeCoordinate, StoodSeatPairs>,
   Disjoint<BookingLifecycle, BookingContact>,
   Disjoint<BookingLifecycle, AppointmentStamps>,
   Disjoint<BookingLifecycle, StoodSeatPairs>,

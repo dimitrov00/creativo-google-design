@@ -54,15 +54,15 @@ export const MinuteOfDay = {
 
 ## The core set
 
-| Primitive                                                                                                                    | Base     | Meaning                                                          | Smart constructor checks           |
-| ---------------------------------------------------------------------------------------------------------------------------- | -------- | ---------------------------------------------------------------- | ---------------------------------- |
-| `LocalDate`                                                                                                                  | `string` | the shop's wall-clock day, `YYYY-MM-DD`                          | format and a real calendar date    |
-| `MinuteOfDay`                                                                                                                | `number` | minutes from local midnight, `[0, 1440)`                         | integer, range                     |
-| `DurationMinutes`                                                                                                            | `number` | a positive whole number of minutes                               | integer, `> 0`                     |
-| `UtcEpochMs`                                                                                                                 | `number` | an absolute instant — indexes, crons, `.ics` only                | safe integer                       |
-| `PriceCents`                                                                                                                 | `number` | money in minor units (cents, stotinki), always beside a currency | safe integer, `>= 0` unless signed |
-| `TimeZone`                                                                                                                   | `string` | an IANA zone, configuration of a location only                   | accepted by `Intl.DateTimeFormat`  |
-| `TenantId`, `LocationId`, `BarberId`, `CustomerId` (client record), `UserId` (auth account), `ServiceId`, `AppointmentId`, … | `string` | entity ids — `CustomerId` and `UserId` are never interchangeable | non-empty, no `/`                  |
+| Primitive                                                                                                                    | Base     | Meaning                                                                                                  | Smart constructor checks           |
+| ---------------------------------------------------------------------------------------------------------------------------- | -------- | -------------------------------------------------------------------------------------------------------- | ---------------------------------- |
+| `LocalDate`                                                                                                                  | `string` | the shop's wall-clock day, `YYYY-MM-DD`                                                                  | format and a real calendar date    |
+| `MinuteOfDay`                                                                                                                | `number` | minutes from local midnight, `[0, 1440)`                                                                 | integer, range                     |
+| `DurationMinutes`                                                                                                            | `number` | a positive whole number of minutes                                                                       | integer, `> 0`                     |
+| `UtcEpochMs`                                                                                                                 | `number` | an absolute instant — indexes, crons, `.ics`, lifecycle stamps, elapsed-time rules; never placement math | safe integer                       |
+| `PriceCents`                                                                                                                 | `number` | money in minor units (cents, stotinki), always beside a currency                                         | safe integer, `>= 0` unless signed |
+| `TimeZone`                                                                                                                   | `string` | an IANA zone, configuration of a location only                                                           | accepted by `Intl.DateTimeFormat`  |
+| `TenantId`, `LocationId`, `BarberId`, `CustomerId` (client record), `UserId` (auth account), `ServiceId`, `AppointmentId`, … | `string` | entity ids — `CustomerId` and `UserId` are never interchangeable                                         | non-empty, no `/`                  |
 
 ## Rules
 

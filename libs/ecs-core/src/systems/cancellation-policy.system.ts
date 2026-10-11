@@ -1,4 +1,4 @@
-import { AppointmentTime } from '../components/appointment-time.data';
+import { TimeCoordinate } from '../components/time-coordinate.data';
 import {
   BookingLifecycle,
   BookingStatus,
@@ -65,14 +65,14 @@ function allowsFreeCancelAt(
 /**
  * The visit's start as an instant — the earliest seat, the truth, placed on
  * the absolute timeline by its distance from the envelope
- * (`AppointmentTime.seatStartUtcMs`, T9); the envelope's own instant when the
+ * (`TimeCoordinate.seatStartUtcMs`, T9); the envelope's own instant when the
  * visit holds no seat.
  */
 function startUtcMsOf(appointment: Appointment): UtcEpochMs {
   const envelope = AppointmentIndexSystem.envelope(appointment);
   return envelope === null
     ? appointment.utcEpochMs
-    : AppointmentTime.seatStartUtcMs(appointment, envelope);
+    : TimeCoordinate.seatStartUtcMs(appointment, envelope);
 }
 
 /**
@@ -129,7 +129,7 @@ export const CancellationPolicySystem = {
   /**
    * A cancellation recorded at `cancelledAtUtcMs` was LATE under the window
    * it is judged by (its own stamp, else the current policy's), against the
-   * start of the seat it called off (`AppointmentTime.seatStartUtcMs`).
+   * start of the seat it called off (`TimeCoordinate.seatStartUtcMs`).
    */
   isLateCancellation(
     windowHours: number,

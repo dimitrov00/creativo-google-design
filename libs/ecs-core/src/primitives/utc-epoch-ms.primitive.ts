@@ -16,7 +16,9 @@ const MAX_UTC_EPOCH_MS = 253_402_300_800_000 - 1;
 
 /**
  * An absolute instant in epoch milliseconds — for lifecycle stamps, Firestore
- * range indexes, crons and `.ics` only; never for placement math. Computed
+ * range indexes, crons, `.ics` and the elapsed-time rules on stamps (expiries,
+ * the cancellation window, cooldowns, budgets — Law 7.3 as amended
+ * 2026-10-11); never for placement math. Computed
  * once, at the ingestion boundary, by `ZonedTimeSystem` from the location's
  * `timeZone`; collision, packing and availability run on `LocalDate` +
  * `MinuteOfDay` instead.

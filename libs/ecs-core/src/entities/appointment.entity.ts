@@ -1,6 +1,6 @@
 import type { AppliedDiscount } from '../components/applied-discount.data';
 import type { AppliedOperation } from '../components/applied-operation.data';
-import type { AppointmentTime } from '../components/appointment-time.data';
+import type { TimeCoordinate } from '../components/time-coordinate.data';
 import type { BookingContact } from '../components/booking-contact.data';
 import type { BookingLifecycle } from '../components/booking-lifecycle.data';
 import type { Placement } from '../components/placement-kind.data';
@@ -28,7 +28,7 @@ import type { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
  * ledger, the query mirrors).
  *
  * The SEATS are the truth. `ownerUserId`, `subjectUserIds`, `barberIds`,
- * `busyKeys` and the `AppointmentTime` envelope are query mirrors, recomputed
+ * `busyKeys` and the `TimeCoordinate` envelope are query mirrors, recomputed
  * by every write plan (`AppointmentIndexSystem.queryKeys`), so a corrupt
  * mirror can change which queries find a visit, never what it says. No
  * `party`, `tenantId` or `lineage` is stored: the party is derived, the
@@ -89,14 +89,14 @@ export type AppointmentStamps = {
  * everyone, staff included). The archetype is the FLAT intersection of its
  * slices (Law 6, flatten-spec §3.2): every 1-to-1 field at the root of the
  * entity and its document — the identity slice, the shop wall clock and the
- * one instant (`AppointmentTime`), the lifecycle variant (`BookingLifecycle`),
+ * one instant (`TimeCoordinate`), the lifecycle variant (`BookingLifecycle`),
  * the contact snapshot (`BookingContact`, all `null` for a walk-in with
  * nobody to call), the two stamps, and the stood-pair memory
  * (`StoodSeatPairs`). The document body is this type minus `id`. No zone: it
  * is the location's (Law 7.2).
  */
 export type Appointment = AppointmentMeta &
-  AppointmentTime &
+  TimeCoordinate &
   BookingLifecycle &
   BookingContact &
   AppointmentStamps &

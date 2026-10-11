@@ -521,7 +521,7 @@ describe('components and entities (ECS_DATA_RESTRICTIONS, ECS_ENTITY_RESTRICTION
     expect(
       await lint(
         `
-        import type { AppointmentTime } from '../components/appointment-time.data';
+        import type { TimeCoordinate } from '../components/time-coordinate.data';
         import type { BookingLifecycle } from '../components/booking-lifecycle.data';
         import type { AppointmentId, BarberId, LocationId, TenantId, UserId } from '../primitives/ids.primitive';
         export type AppointmentMeta = {
@@ -534,7 +534,7 @@ describe('components and entities (ECS_DATA_RESTRICTIONS, ECS_ENTITY_RESTRICTION
           readonly subjectUserIds: readonly UserId[];
           readonly seats: readonly Seat[];
         };
-        export type Appointment = AppointmentMeta & AppointmentTime & BookingLifecycle;
+        export type Appointment = AppointmentMeta & TimeCoordinate & BookingLifecycle;
       `,
         entity,
       ),

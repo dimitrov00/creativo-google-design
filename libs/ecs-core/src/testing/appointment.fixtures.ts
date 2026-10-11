@@ -6,7 +6,7 @@
  * (no `Date`, L4): the visit is Ivan's classic cut at 10:00 on
  * `FIXTURE_TODAY` in the fixture shop's zone.
  */
-import type { AppointmentTime } from '../components/appointment-time.data';
+import type { TimeCoordinate } from '../components/time-coordinate.data';
 import { BookingContact } from '../components/booking-contact.data';
 import { BookingLifecycle } from '../components/booking-lifecycle.data';
 import { Placement } from '../components/placement-kind.data';
@@ -70,7 +70,7 @@ export function seatFixture(overrides: SeatFixtureOverrides = {}): Seat {
 /** An appointment override: any non-lifecycle field, or a whole lifecycle variant. */
 export type AppointmentFixtureOverrides = Partial<
   AppointmentMeta &
-    AppointmentTime &
+    TimeCoordinate &
     BookingContact &
     AppointmentStamps &
     StoodSeatPairs

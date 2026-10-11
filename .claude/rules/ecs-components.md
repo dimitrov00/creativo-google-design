@@ -91,25 +91,25 @@ The type-alias + `as const` companion + type-only namespace triple merges, and
 esbuild erases the namespace entirely. The namespace must stay type-only — a
 value inside it would collide with the companion `const`.
 
-## A slice without variants (`appointment-time.data.ts`)
+## A slice without variants (`time-coordinate.data.ts`)
 
-The time slice is named for its domain — `AppointmentTime` (F-24; the
-general shape any temporal entity's time slice follows).
+`TimeCoordinate` — the owner's name (Law 6) — is the time slice every
+temporal entity uses, flat at its root.
 
 ```ts
 /** Where a booking sits on the shop's clock, and on the absolute timeline. */
-export type AppointmentTime = {
+export type TimeCoordinate = {
   readonly localDate: LocalDate; // the shop's wall-clock day, 'YYYY-MM-DD'
   readonly startMinutes: MinuteOfDay; // [0, 1440) from the shop's local midnight
   readonly endMinutes: EndMinute; // (0, 1440] — an exclusive end (F-1)
-  readonly utcEpochMs: UtcEpochMs; // absolute start — computed ONCE at ingestion, for indexes/crons/.ics only
+  readonly utcEpochMs: UtcEpochMs; // absolute start — computed ONCE at ingestion; indexes, crons, .ics, lifecycle stamps, elapsed-time checks — never placement math
 };
 
-export const AppointmentTime = {
-  durationMinutes(t: AppointmentTime): MinuteCount {
+export const TimeCoordinate = {
+  durationMinutes(t: TimeCoordinate): MinuteCount {
     return MinuteCount.span(t.startMinutes, t.endMinutes);
   },
-  overlaps(a: AppointmentTime, b: AppointmentTime): boolean {
+  overlaps(a: TimeCoordinate, b: TimeCoordinate): boolean {
     return (
       a.localDate === b.localDate &&
       a.startMinutes < b.endMinutes &&
@@ -127,8 +127,9 @@ here — `ZonedTimeSystem` does it once, at the ingestion boundary, on native
 ## An entity (`appointment.entity.ts`)
 
 ```ts
-import type { AppointmentTime } from '../components/appointment-time.data';
+import type { TimeCoordinate } from '../components/time-coordinate.data';
 import type { BookingLifecycle } from '../components/booking-lifecycle.data';
+import type { PaymentRecord } from '../components/payment-record.data'; // illustrative, see below
 
 /** Branded ids; their smart constructors live in primitives/ids.primitive.ts. */
 import type {
@@ -153,12 +154,19 @@ export type AppointmentMeta = {
   readonly seats: readonly Seat[]; // 1-to-N: an array of flat structs
 };
 
-/**
- * The archetype — every 1-to-1 field at the root. The document is this minus
- * `id`. No `PaymentRecord` slice: no payment data is stored today (F-24).
- */
-export type Appointment = AppointmentMeta & AppointmentTime & BookingLifecycle;
+/** The archetype — every 1-to-1 field at the root. The document is this minus `id`. */
+export type Appointment = AppointmentMeta &
+  TimeCoordinate &
+  BookingLifecycle &
+  PaymentRecord;
 ```
+
+**`PaymentRecord` is the owner's illustrative payment slice** (`paymentMethod:
+'UNPAID' | 'CASH' | 'CARD'`, variant fields such as `paidCents` and
+`stripePaymentIntentId`). No payment data is stored yet, so today's stored
+`Appointment` in `libs/ecs-core` is `AppointmentMeta & TimeCoordinate &
+BookingLifecycle`; `PaymentRecord` joins the intersection — unchanged in shape —
+the day payments are recorded.
 
 Ids are `Brand<string, '…'>` primitives (Law 7) — nominal per tag, zero
 runtime cost. Do **not** add `assemble()`, `create()` that only spreads, or
@@ -178,7 +186,7 @@ type EveryVariantFlat = Appointment extends unknown
   ? AllTrue<NoNested<Appointment>>
   : never;
 const flat: EveryVariantFlat = true;
-const disjoint: Disjoint<AppointmentMeta, AppointmentTime> = true;
+const disjoint: Disjoint<AppointmentMeta, TimeCoordinate> = true;
 declare const apt: Appointment;
 if (apt.bookingStatus === BookingStatus.Cancelled) apt.cancellationReason; // ok
 // @ts-expect-error — a confirmed booking has no cancellationReason
